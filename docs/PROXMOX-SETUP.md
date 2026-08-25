@@ -1,109 +1,121 @@
 # Proxmox access setup
 
-Commands to run **on the Proxmox host as root**. Creates a pool, a
-minimum-privilege role, a user, and a privilege-separated API token scoped so
-it cannot touch anything outside the pool.
+Target: **Proxmox VE 9.x** at `<pve-host>:8006` (`<pve-hostname>`),
+reached over tailnet `aa14` via the subnet router advertising `<lan-subnet>/24`.
 
-Replace `<NODE>` and `<STORAGE>` with your values (`pvesh get /nodes`,
-`pvesh get /storage`).
+The UI walkthrough is the primary path; CLI equivalents are at the bottom.
 
-## 1. Pool
+## Design
 
-```bash
-pveum pool add df-overseer --comment "df-overseer managed VMs"
-```
+- A **dedicated narrow user**, not a shared one.
+- **Privilege separation OFF.** Privsep only earns its doubled ACL work when the
+  *user* has broad rights and you want the *token* narrower. Here the user is
+  itself narrow, so privsep buys nothing.
+- **Everything scoped to one resource pool.** The token cannot see, touch, or
+  enumerate anything outside `df-overseer`.
+- **`VM.Allocate` granted** (decision 2026-08-25) — pool-scoped, so create and
+  destroy apply only within `df-overseer`. Other VMs on the host are unaffected
+  by construction.
 
-## 2. Custom role
+### PVE 9 note
 
-Deliberately **excludes** `VM.Allocate` and `VM.Clone` — the overseer manages
-the VM it is given; it cannot create or destroy VMs. Also excludes everything
-under `Sys.Modify`, `Realm.*`, `User.*` and `Permissions.*`.
+`VM.Monitor` **was removed in Proxmox VE 9** — it will not appear in the role
+editor. Its functions moved to `Sys.Audit` (basic KVM monitor), `Sys.Modify`
+(beyond informational) and the new `VM.GuestAgent`. None are needed here.
 
-```bash
-pveum role add DFOverseer --privs \
-  "VM.Audit,VM.Config.CPU,VM.Config.Disk,VM.Config.Memory,\
-VM.Config.Network,VM.Config.Options,VM.Console,VM.Monitor,\
-VM.PowerMgmt,VM.Snapshot,VM.Snapshot.Rollback"
-```
+## UI walkthrough
 
-If `VM.Snapshot.Rollback` is rejected on your version, drop it and check
-`pveum role list` for the exact name — snapshot privileges have moved between
-releases.
+All under **Datacenter → Permissions**.
 
-## 3. User and token
+**1. Pools → Create**
+Name: `df-overseer`
 
-```bash
-pveum user add df-overseer@pve --comment "Automation user for df-overseer"
+**2. Roles → Create**
+Name: `DFOverseer`. Tick:
 
-# --privsep 1 means the token starts with ZERO privileges and needs its own
-# ACLs. A leaked token then cannot do what the user can.
-pveum user token add df-overseer@pve api --privsep 1
-```
+| Privilege | For |
+|---|---|
+| `VM.Allocate` | Create and destroy VMs *in the pool* |
+| `VM.Audit` | Read config and status |
+| `VM.Config.CPU` / `.Memory` / `.Disk` / `.Network` / `.Options` | Configure |
+| `VM.Config.CDROM` | Mount the install ISO |
+| `VM.Config.HWType` | Set disk/NIC controller types at creation |
+| `VM.Console` | Console / VNC — needed for the display work |
+| `VM.PowerMgmt` | Start, stop, reboot |
+| `VM.Snapshot` | Save rotation |
+| `VM.Snapshot.Rollback` | Roll back after a bad decision |
+| `Datastore.AllocateSpace` | Disks and snapshots need space |
+| `Datastore.Audit` | See what storage exists |
 
-**The secret is printed once and never again.** Capture it straight into
-`infra/local.env` as `PVE_TOKEN_SECRET`.
+Do **not** tick `Sys.Modify`, `Realm.*`, `User.*`, `Permissions.*`, or
+`Pool.Allocate` (that is pool *creation*, a different thing).
 
-## 4. ACLs
+If `VM.Snapshot.Rollback` isn't in the list, drop it — the name has shifted
+between releases and we'll find the right one from the error.
 
-With `privsep=1`, a token's effective permissions are the **intersection** of
-the user's and the token's, so both need granting.
+**3. Users → Add**
+User name: `df-overseer` · Realm: **Proxmox VE authentication server**
 
-```bash
-# Pool — the VM management surface
-pveum acl modify /pool/df-overseer --user  df-overseer@pve       --role DFOverseer
-pveum acl modify /pool/df-overseer --token 'df-overseer@pve!api' --role DFOverseer
+**4. API Tokens → Add**
+User: `df-overseer@pve` · Token ID: `api` · **untick Privilege Separation**
 
-# Node — read-only host stats for the watchdog (CPU/RAM/load).
-# Node privileges cannot be granted on a pool path.
-pveum acl modify /nodes/<NODE> --user  df-overseer@pve       --role PVEAuditor
-pveum acl modify /nodes/<NODE> --token 'df-overseer@pve!api' --role PVEAuditor
+> The secret is shown **once**. Paste it straight into `infra/local.env` as
+> `PVE_TOKEN_SECRET` — that file is gitignored. Not into chat, which is logged.
 
-# Storage — snapshots need space allocation
-pveum acl modify /storage/<STORAGE> --user  df-overseer@pve       --role PVEDatastoreUser
-pveum acl modify /storage/<STORAGE> --token 'df-overseer@pve!api' --role PVEDatastoreUser
-```
+**5. Permissions → Add → User Permission**
+Path: `/pool/df-overseer` · User: `df-overseer@pve` · Role: `DFOverseer`
 
-## 5. Tailscale on the Proxmox host
+**6. Storage grant** — pool paths don't cover storage, so add a second entry:
+Path: `/storage/<your-storage>` · User: `df-overseer@pve` · Role: `DFOverseer`
 
-```bash
-curl -fsSL https://tailscale.com/install.sh | sh
-tailscale up --hostname=prodesk --advertise-tags=tag:server
-```
+## Expect one or two permission errors, and that is the plan
 
-The overseer holds no Tailscale identity of its own — it runs on an
-already-enrolled machine (`wills-laptop`) and uses that machine's access.
-Tighten with tailnet ACLs so only that machine can reach port 8006 if you want
-a second boundary.
+VMIDs are a **global namespace**, so VM *creation* may demand permission on
+`/vms` rather than only the pool, depending on version. Node-level reads (host
+CPU/RAM for the watchdog) definitely need a separate grant at `/nodes/proxmox`.
 
-## 6. Create the VM, assign it to the pool
+Rather than guessing up front, start with the above. Each failure names the
+exact missing privilege, and we add one grant instead of over-provisioning
+against imagined needs.
 
-Create the DF VM by hand (see `docs/PURPOSE.md` for the spec: 2–4 vCPU pinned,
-8 GB RAM, 40 GB disk), then:
+## Verify — including the denial
 
-```bash
-pveum pool modify df-overseer --vms <VMID>
-```
-
-Nothing outside this pool is visible to the token.
-
-## 7. Verify — from the client, not the host
+From the client:
 
 ```bash
-curl -k -H "Authorization: PVEAPIToken=df-overseer@pve!api=<SECRET>" \
-  "https://<PVE_HOST>:8006/api2/json/pool/df-overseer"
+set -a; . infra/local.env; set +a
+AUTH="Authorization: PVEAPIToken=$PVE_TOKEN_ID=$PVE_TOKEN_SECRET"
+
+# should succeed
+curl -sk -H "$AUTH" "https://$PVE_HOST:$PVE_PORT/api2/json/pool/$PVE_POOL"
+
+# should be REFUSED — a VM outside the pool
+curl -sk -H "$AUTH" \
+  "https://$PVE_HOST:$PVE_PORT/api2/json/nodes/$PVE_NODE/qemu/<OTHER_VMID>/status/current"
 ```
 
-Then confirm the boundary actually holds — **this should fail**:
-
-```bash
-curl -k -H "Authorization: PVEAPIToken=df-overseer@pve!api=<SECRET>" \
-  "https://<PVE_HOST>:8006/api2/json/nodes/<NODE>/qemu/<SOME_OTHER_VMID>/status/current"
-```
-
-A permission scheme is only verified once you have watched it *deny* something.
+**A permission scheme is only verified once you have watched it deny
+something.** A green result from a check that never exercised the boundary is
+not evidence.
 
 ## Revoking
 
+Datacenter → Permissions → API Tokens → select → Remove. Or:
+
 ```bash
 pveum user token remove df-overseer@pve api
+```
+
+## CLI equivalents
+
+```bash
+pveum pool add df-overseer --comment "df-overseer managed VMs"
+
+pveum role add DFOverseer --privs "VM.Allocate,VM.Audit,VM.Config.CPU,VM.Config.Memory,VM.Config.Disk,VM.Config.Network,VM.Config.Options,VM.Config.CDROM,VM.Config.HWType,VM.Console,VM.PowerMgmt,VM.Snapshot,VM.Snapshot.Rollback,Datastore.AllocateSpace,Datastore.Audit"
+
+pveum user add df-overseer@pve --comment "Automation user for df-overseer"
+pveum user token add df-overseer@pve api --privsep 0
+
+pveum acl modify /pool/df-overseer  --user df-overseer@pve --role DFOverseer
+pveum acl modify /storage/<STORAGE> --user df-overseer@pve --role DFOverseer
 ```
