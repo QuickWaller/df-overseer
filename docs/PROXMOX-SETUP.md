@@ -1,121 +1,103 @@
-# Proxmox access setup
+# Proxmox setup
 
-Target: **Proxmox VE 9.x** at `<pve-host>:8006` (`<pve-hostname>`),
-reached over tailnet `aa14` via the subnet router advertising `<lan-subnet>/24`.
+**How to build the access layer from nothing.** For what currently *exists* —
+the live role, scopes, verified boundaries and VM specs — see
+`memory/proxmox-access.md`, which is read back from the API rather than assumed.
 
-The UI walkthrough is the primary path; CLI equivalents are at the bottom.
+Target: **Proxmox VE 9.1.1**, node `proxmox`, storage `ssd_storage`.
 
 ## Design
 
 - A **dedicated narrow user**, not a shared one.
 - **Privilege separation OFF.** Privsep only earns its doubled ACL work when the
-  *user* has broad rights and you want the *token* narrower. Here the user is
-  itself narrow, so privsep buys nothing.
-- **Everything scoped to one resource pool.** The token cannot see, touch, or
-  enumerate anything outside `df-overseer`.
-- **`VM.Allocate` granted** (decision 2026-08-25) — pool-scoped, so create and
-  destroy apply only within `df-overseer`. Other VMs on the host are unaffected
-  by construction.
+  *user* is broad and the *token* should be narrower. Here the user is itself
+  narrow, so privsep buys nothing and doubles the setup.
+- **Everything scoped to one resource pool.** Access resolves through pool
+  *membership* — adding or removing a VM from `df-overseer` is what grants or
+  revokes control over it. There are no per-VM grants.
+- **`VM.Allocate` granted**, pool-scoped: create and destroy apply only inside
+  the pool. Other VMs are unaffected by construction, verified by denial.
 
 ### PVE 9 note
 
-`VM.Monitor` **was removed in Proxmox VE 9** — it will not appear in the role
-editor. Its functions moved to `Sys.Audit` (basic KVM monitor), `Sys.Modify`
-(beyond informational) and the new `VM.GuestAgent`. None are needed here.
+`VM.Monitor` **was removed in Proxmox VE 9** and will not appear in the role
+editor. Its functions moved to `Sys.Audit`, `Sys.Modify`, and the new
+`VM.GuestAgent`. Privilege lists written against PVE 8 — including several
+Terraform providers — are wrong on this.
 
 ## UI walkthrough
 
 All under **Datacenter → Permissions**.
 
-**1. Pools → Create**
-Name: `df-overseer`
+**1. Pools → Create** — name `df-overseer`
 
-**2. Roles → Create**
-Name: `DFOverseer`. Tick:
+**2. Roles → Create** — name `DFOverseer`, tick all 16:
 
 | Privilege | For |
 |---|---|
 | `VM.Allocate` | Create and destroy VMs *in the pool* |
 | `VM.Audit` | Read config and status |
-| `VM.Config.CPU` / `.Memory` / `.Disk` / `.Network` / `.Options` | Configure |
-| `VM.Config.CDROM` | Mount the install ISO |
-| `VM.Config.HWType` | Set disk/NIC controller types at creation |
+| `VM.Config.CPU` `.Memory` `.Disk` `.Network` `.Options` | Configure |
+| `VM.Config.CDROM` | Mount install media |
+| `VM.Config.HWType` | Controller types at creation |
 | `VM.Console` | Console / VNC — needed for the display work |
 | `VM.PowerMgmt` | Start, stop, reboot |
 | `VM.Snapshot` | Save rotation |
 | `VM.Snapshot.Rollback` | Roll back after a bad decision |
 | `Datastore.AllocateSpace` | Disks and snapshots need space |
 | `Datastore.Audit` | See what storage exists |
+| `Pool.Audit` | **Read the pool's own membership** — without it the overseer cannot discover which VM is its own |
 
-Do **not** tick `Sys.Modify`, `Realm.*`, `User.*`, `Permissions.*`, or
-`Pool.Allocate` (that is pool *creation*, a different thing).
+Do **not** tick `Sys.Modify`, `Sys.Console`, `Pool.Allocate` (that is pool
+*creation*), `VM.Clone`, `VM.Migrate`, `VM.GuestAgent`, or anything under
+`Realm.*`, `User.*`, `Permissions.*`.
 
-If `VM.Snapshot.Rollback` isn't in the list, drop it — the name has shifted
-between releases and we'll find the right one from the error.
+**3. Users → Add** — user `df-overseer`, realm **Proxmox VE authentication server**
 
-**3. Users → Add**
-User name: `df-overseer` · Realm: **Proxmox VE authentication server**
+**4. API Tokens → Add** — user `df-overseer@pve`, token ID `api`,
+**untick Privilege Separation**
 
-**4. API Tokens → Add**
-User: `df-overseer@pve` · Token ID: `api` · **untick Privilege Separation**
-
-> The secret is shown **once**. Paste it straight into `infra/local.env` as
-> `PVE_TOKEN_SECRET` — that file is gitignored. Not into chat, which is logged.
+> The secret shows **once**. Put it straight into `.env` as
+> `PVE_TOKEN_SECRET` — gitignored. Never into chat or a tracked file.
 
 **5. Permissions → Add → User Permission**
-Path: `/pool/df-overseer` · User: `df-overseer@pve` · Role: `DFOverseer`
+Path `/pool/df-overseer` · User `df-overseer@pve` · Role `DFOverseer`
 
-**6. Storage grant** — pool paths don't cover storage, so add a second entry:
-Path: `/storage/<your-storage>` · User: `df-overseer@pve` · Role: `DFOverseer`
-
-## Expect one or two permission errors, and that is the plan
-
-VMIDs are a **global namespace**, so VM *creation* may demand permission on
-`/vms` rather than only the pool, depending on version. Node-level reads (host
-CPU/RAM for the watchdog) definitely need a separate grant at `/nodes/proxmox`.
-
-Rather than guessing up front, start with the above. Each failure names the
-exact missing privilege, and we add one grant instead of over-provisioning
-against imagined needs.
+**6. Permissions → Add → User Permission** (storage is not covered by the pool path)
+Path `/storage/ssd_storage` · User `df-overseer@pve` · Role `DFOverseer`
 
 ## Verify — including the denial
 
-From the client:
-
 ```bash
-set -a; . infra/local.env; set +a
+set -a; . ./.env; set +a
 AUTH="Authorization: PVEAPIToken=$PVE_TOKEN_ID=$PVE_TOKEN_SECRET"
+B="https://$PVE_HOST:$PVE_PORT/api2/json"
 
-# should succeed
-curl -sk -H "$AUTH" "https://$PVE_HOST:$PVE_PORT/api2/json/pool/$PVE_POOL"
-
-# should be REFUSED — a VM outside the pool
-curl -sk -H "$AUTH" \
-  "https://$PVE_HOST:$PVE_PORT/api2/json/nodes/$PVE_NODE/qemu/<OTHER_VMID>/status/current"
+curl -sk -H "$AUTH" "$B/version"                    # should succeed
+curl -sk -H "$AUTH" "$B/pools/$PVE_POOL"            # should list members
+curl -sk -H "$AUTH" "$B/cluster/resources?type=vm"  # should show ONLY pool VMs
+curl -sk -H "$AUTH" "$B/nodes/proxmox/qemu/<VMID_OUTSIDE_POOL>/config"  # must FAIL
 ```
 
 **A permission scheme is only verified once you have watched it deny
 something.** A green result from a check that never exercised the boundary is
-not evidence.
-
-## Revoking
-
-Datacenter → Permissions → API Tokens → select → Remove. Or:
-
-```bash
-pveum user token remove df-overseer@pve api
-```
+not evidence of anything. Recorded denials are in `memory/proxmox-access.md`.
 
 ## CLI equivalents
 
 ```bash
 pveum pool add df-overseer --comment "df-overseer managed VMs"
 
-pveum role add DFOverseer --privs "VM.Allocate,VM.Audit,VM.Config.CPU,VM.Config.Memory,VM.Config.Disk,VM.Config.Network,VM.Config.Options,VM.Config.CDROM,VM.Config.HWType,VM.Console,VM.PowerMgmt,VM.Snapshot,VM.Snapshot.Rollback,Datastore.AllocateSpace,Datastore.Audit"
+pveum role add DFOverseer --privs "VM.Allocate,VM.Audit,VM.Console,VM.Config.CPU,VM.Config.Memory,VM.Config.Disk,VM.Config.Network,VM.Config.Options,VM.Config.CDROM,VM.Config.HWType,VM.PowerMgmt,VM.Snapshot,VM.Snapshot.Rollback,Datastore.AllocateSpace,Datastore.Audit,Pool.Audit"
 
 pveum user add df-overseer@pve --comment "Automation user for df-overseer"
 pveum user token add df-overseer@pve api --privsep 0
 
-pveum acl modify /pool/df-overseer  --user df-overseer@pve --role DFOverseer
-pveum acl modify /storage/<STORAGE> --user df-overseer@pve --role DFOverseer
+pveum acl modify /pool/df-overseer      --user df-overseer@pve --role DFOverseer
+pveum acl modify /storage/ssd_storage   --user df-overseer@pve --role DFOverseer
 ```
+
+## Rotating the token
+
+Datacenter → Permissions → API Tokens → `api` → Remove, then Add again. Update
+`PVE_TOKEN_SECRET` in `.env`. Role, ACLs and pool are untouched.
