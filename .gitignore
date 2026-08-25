@@ -1,0 +1,29 @@
+.env
+.env.local
+node_modules/
+
+# Machine-local stream-coordination registry (see CLAUDE.md's "Parallel
+# work" section) — only created if a project adopts that pattern.
+ACTIVE.md
+
+# --- df-overseer ---
+
+# Infrastructure specifics (Proxmox host, Coolify, IPs, hostnames, tokens).
+# Committed counterparts live alongside as infra/local.example.*
+infra/local.*
+
+# DF saves — 15-19 MB each, git handles them badly. Worldgen params ARE
+# tracked (see worlds/) so a world can be reproduced without the save.
+save/
+*.dfsave
+
+# Ingested wiki corpus — large, regenerable from the WikiTeam dump process
+# documented in docs/MEMORY.md. Do not commit.
+corpus/
+*.xml.gz
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
