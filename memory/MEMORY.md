@@ -10,6 +10,11 @@ Repo memory: context that isn't derivable from the code. One line per file.
   compaction + memory tool stack, where our four stores map onto the standard,
   and why we deliberately don't let the model edit its own memory.
 
+- [Proxmox access](proxmox-access.md) — **authoritative record** of the live
+  access layer: host, role `DFOverseer` and its 16 privileges, the pool/storage
+  scopes, verified boundaries (confirmed by denial), verified snapshot cycle,
+  and VM 101's specs. Read back from the API, not assumed.
+
 ## See also
 
 The main design artifacts live in `docs/`, not here:
