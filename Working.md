@@ -8,9 +8,10 @@ actually going on right now.
 
 **State at a glance:** two streams, neither blocked on the other.
 
-1. **Infrastructure** — built and verified, blocked on one human action
-   (below). Re-tested this session; same failure, verbatim. Nothing was
-   created or touched on the host, so there is nothing to clean up.
+1. **Infrastructure** — **the storage blocker is cleared.** Provisioning has
+   not been run past it yet; the next session picks up at `fetch-image`.
+   Nothing was created or touched on the host this session, so there is nothing
+   to clean up.
 2. **Perception eval harness** — *built this session*, offline paths verified,
    **never run against a live model**: this machine has no Anthropic
    credentials and no `ant` CLI. See the section below for exactly what is and
@@ -18,23 +19,32 @@ actually going on right now.
 
 No agents are running. Nothing has been pushed — there is still no remote.
 
-**Single next concrete step, per stream:** infra needs the storage checkbox;
-the eval harness needs credentials and one paid run
+**Single next concrete step, per stream:** infra runs the four provisioning
+commands below, starting with a 596 MB `fetch-image`; the eval harness needs
+credentials and one paid run
 (`python -m evals.perception.harness.run --limit 20 --out ...`), then a look at
 the report before spending on the full 342-cell matrix.
 
-### The one thing that needs a human
+### The storage blocker — CLEARED 2026-08-26
 
-**Datacenter → Storage → `ssd_storage` → Edit → Content → tick "Import"**
-(leave `images` and `iso` ticked).
+The `import` content type is enabled on `ssd_storage`. **Verified by reading it
+back from the live API**, not taken on report:
 
-`import-from` refuses an `iso`-class volume, which is what the downloaded cloud
-image is. `download-url` *does* accept `content=import`, so this one checkbox
-makes the whole template build scriptable with no host shell. The token cannot
-do it itself and deliberately should not be able to — confirmed by denial,
-`GET /storage/ssd_storage` → `403 (Datastore.Allocate)`. Re-tested against the
-live API twice on 2026-08-26; still not enabled. CLI equivalent if preferred:
-`pvesm set ssd_storage --content images,iso,import`.
+```
+GET /nodes/proxmox/storage  ->  ssd_storage content: iso,import,images
+```
+
+Background, kept because the reasoning still applies to the next capability
+question: `import-from` refuses an `iso`-class volume, which is what the
+downloaded cloud image was, so the whole template build was unscriptable
+without this flag. The token could not set it itself and deliberately should
+not be able to — confirmed by denial, `GET /storage/ssd_storage` →
+`403 (Datastore.Allocate)`. Granting the role `Datastore.Allocate` was the
+alternative and was rejected: it permits editing and deleting storage
+definitions, far more standing capability than one one-time flag is worth.
+
+`fetch-image` has **not** been re-run since the flag was enabled, so the
+download path is unproven beyond the config read above.
 
 ### Resume from here
 
@@ -150,7 +160,7 @@ Recorded in `memory/proxmox-access.md` with the verbatim errors:
   update `PVE_TOKEN_SECRET` in `.env`. Nothing else changes.
 - **Folder is still `df-automation` on disk** while the project is
   `df-overseer`. Rename between sessions; it breaks the working directory.
-- **Nothing pushed** — no remote configured. 8 local commits on `main`.
+- **Nothing pushed** — no remote configured. 9 local commits on `main`.
 - **DF replay determinism unverified** — the seeded-counterfactual measurement
   idea rests entirely on it.
 - **Our own compliance-vs-doctrine-size curve unmeasured** — the N=80
@@ -184,33 +194,24 @@ Recorded in `memory/proxmox-access.md` with the verbatim errors:
   `vmbr0`, found by direct GET); cloud-init `sshkeys` must be URL-encoded
   *before* form encoding; and `import-from` rejects `iso`-class volumes.
 
-**BLOCKER — one thing only a human with datacenter rights can do:**
+**BLOCKER (cleared 2026-08-26 — kept for the record):**
 
 Datacenter → Storage → `ssd_storage` → Edit → **Content: add "Import"**.
 
 The cloud image was downloaded as `iso` content, and `import-from` refuses an
 `iso` volume — it needs `images` or `import`. `download-url` *does* accept
-`content=import`, so once that box is ticked, `provision_vm.py fetch-image`
-re-downloads the 596 MB image into `import/` and the rest runs unattended.
-Confirmed by denial that this token cannot do it itself: `GET
+`content=import`, so once that box was ticked, `provision_vm.py fetch-image`
+could re-download the 596 MB image into `import/` and the rest run unattended.
+Confirmed by denial that this token could not do it itself: `GET
 /storage/ssd_storage` → `403 (Datastore.Allocate)`. Granting the role
-`Datastore.Allocate` is the alternative and was rejected — it permits editing
-and deleting storage definitions, which is far more than one flag is worth.
+`Datastore.Allocate` was the alternative and was rejected — it permits editing
+and deleting storage definitions, far more than one flag is worth.
 
-**Re-confirmed 2026-08-26 (evening), provisioning run:** `python
-scripts/provision_vm.py fetch-image` was run fresh. Same failure, verbatim:
-
-```
-POST /nodes/proxmox/storage/ssd_storage/download-url
-  -> 500 {"message":"storage 'ssd_storage' is not configured for
-          content-type 'import'\n","data":null}
-```
-
-Per the run's own instructions, stopped immediately at this gate — no attempt
-to work around it, no storage-config changes, no alternate import path tried.
-Nothing beyond this was executed: no VM was created or touched this run, so
-there is nothing to clean up. `scripts/pve.py` and `scripts/provision_vm.py`
-are otherwise unchanged and confirmed still correct as far as this point.
+It was re-tested and still failing twice on 2026-08-26 (verbatim: `POST
+/nodes/proxmox/storage/ssd_storage/download-url -> 500 {"message":"storage
+'ssd_storage' is not configured for content-type 'import'"}`), then enabled by
+the user later the same day. Read back from the live API to confirm:
+`ssd_storage content: iso,import,images`.
 
 **Then, in order, once unblocked:** `fetch-image` → `build-template` →
 `clone --full --name df-fortress` → record `DF_VMID` in `.env` → read
@@ -219,9 +220,9 @@ wait for guest-agent IP → SSH in with
 `ssh -i ~/.ssh/df_overseer_ed25519 -o IdentitiesOnly=yes df@<ip>` → snapshot
 `clean-baseline` → confirm it lists → install DF Classic + DFHack.
 
-**Single next concrete step: unchanged.** Still needs the human step —
-Datacenter → Storage → `ssd_storage` → Edit → Content: add "Import" — before
-any script can proceed past `fetch-image`.
+**Single next concrete step:** run `python scripts/provision_vm.py
+fetch-image` — the flag it was waiting on is now set, but the download itself
+has not been attempted since.
 
 ## Archived
 
