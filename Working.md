@@ -4,26 +4,84 @@ What's currently in progress. Remove an item once it's done, tabled, or
 shelved — don't mark it paused. Any session should read this and know what's
 actually going on right now.
 
-## HANDOVER — 2026-08-26 late evening, work paused here
+## HANDOVER — 2026-08-27, work paused here
 
-**State at a glance:** two streams, neither blocked on the other.
+**State at a glance:** the VM exists. It has never been started.
 
-1. **Infrastructure** — **the storage blocker is cleared.** Provisioning has
-   not been run past it yet; the next session picks up at `fetch-image`.
-   Nothing was created or touched on the host this session, so there is nothing
-   to clean up.
-2. **Perception eval harness** — *built this session*, offline paths verified,
-   **never run against a live model**: this machine has no Anthropic
-   credentials and no `ant` CLI. See the section below for exactly what is and
-   is not verified.
+1. **Infrastructure** — the storage blocker cleared, a second one (SDN) was
+   found and cleared, and **the template and the DF VM are both built**. The VM
+   is stopped and cannot usefully be started on this host — see below.
+2. **Perception eval harness** — built, offline paths verified, **never run
+   against a live model.** No Anthropic credentials on this machine.
+3. **Fort ledger schema** — still not started. Named twice now as this stream's
+   work; it remains the earliest item in the learning design because its schema
+   defines what is learnable.
 
 No agents are running. Nothing has been pushed — there is still no remote.
 
-**Single next concrete step, per stream:** infra runs the four provisioning
-commands below, starting with a 596 MB `fetch-image`; the eval harness needs
-credentials and one paid run
-(`python -m evals.perception.harness.run --limit 20 --out ...`), then a look at
-the report before spending on the full 342-cell matrix.
+### The three things a next session should pick up
+
+**1. `df-fortress` (VM 104) is built and stopped.** It wants 6144 MB; the host
+had **5.4 GB available** at last read. Tight rather than impossible — the
+balloon floor is 2048 MB and KVM only backs touched pages — but worth deciding
+deliberately rather than just booting it. Either free memory on the host, drop
+the VM to 4 GB (a one-line change while stopped), or wait for the second node.
+
+**2. The perception harness needs credentials and one small paid run.**
+`python -m evals.perception.harness.run --limit 20 --out ...`, read the report,
+*then* decide about the full 342-cell matrix. `pip install -r
+evals/perception/requirements.txt` in a venv first — the installed SDK is
+`anthropic` 0.32.0 and the runner targets `>=1.0`.
+
+**3. The push is still unanswered.** The user approved "both, provisioning
+first"; provisioning is done. There is no git remote, so pushing means
+**creating a GitHub repo**, and that needs an explicit **public or private**
+answer before anything is created. 11 local commits on `main`.
+
+### Built this session
+
+**Provisioning ran end to end.** Template 101 (`df-overseer-noble-template`) and
+VM 104 (`df-fortress`, full clone) both live in the `df-overseer` pool.
+`DF_TEMPLATE_VMID=101` and `DF_VMID=104` are in `.env`.
+
+Three problems were hit and fixed on the way:
+
+- **`import` content type** — enabled by the user, verified by reading
+  `/nodes/proxmox/storage` back from the API.
+- **`.img` rejected by an import-content store.** Canonical ships a qcow2 file
+  with an `.img` extension. `download-url` names the destination independently
+  of the URL, so `provision_vm.py` now writes it as `.qcow2` on the way in.
+- **`SDN.Use` at `/sdn/zones/localnetwork`** — attaching a NIC to `vmbr0` is an
+  SDN check in PVE 9, not a VM check. Recorded in `memory/proxmox-access.md`
+  along with the trap that cost a round trip: **with privilege separation off,
+  an ACL bound to the token is inert — it must be bound to the user.**
+
+### Corrected this session — two bad numbers
+
+- **`node_memory()` read `free`, which is the wrong field.** `free` excludes
+  page cache, so it collapsed 5.5 → 1.7 GiB while a 596 MB image and a 25 GB
+  disk copy went through the host, with 5.4 GiB available throughout. That
+  artefact was reported as another VM eating the host, and the standing
+  "do not start below 6.5 GB free" rule was written against the same wrong
+  metric — it was unsatisfiable. `node_memory()` now returns
+  `(total, used, free, available)` and every call site gates on `available`.
+- **Electricity was costed at 30c/kWh.** The NZ average is **39c** (Feb 2026).
+  Any running-cost figure written before 2026-08-27 is ~30% low.
+
+### Hardware planning — deliberately not in this repo
+
+A long session on a second Proxmox node, RAM harvesting, a NAS and clustering
+is written up in **`infra/local.hardware-plan.md`**, which is gitignored via
+`infra/local.*` and **is meant to be deleted** once the hardware is bought.
+
+Two things in it that are repo-relevant if the cluster actually happens, and
+should be lifted into `decisions/DECISIONS.md` rather than lost with the file:
+
+- **A two-node Proxmox cluster loses quorum** when either node dies — the
+  survivor cannot start or migrate anything. Needs a qdevice or a third node.
+- **Cluster join order is destructive.** The joining node must have no guests.
+  The cluster must be created on the **existing** ProDesk (which holds 101 and
+  104) and the new node joined to it, never the reverse.
 
 ### The storage blocker — CLEARED 2026-08-26
 
@@ -43,22 +101,15 @@ not be able to — confirmed by denial, `GET /storage/ssd_storage` →
 alternative and was rejected: it permits editing and deleting storage
 definitions, far more standing capability than one one-time flag is worth.
 
-`fetch-image` has **not** been re-run since the flag was enabled, so the
-download path is unproven beyond the config read above.
-
 ### Resume from here
 
 ```bash
-python scripts/provision_vm.py status         # host memory, next vmid, pool
-python scripts/provision_vm.py fetch-image    # 596 MB into import/
-python scripts/provision_vm.py build-template # create -> import disk -> template
-python scripts/provision_vm.py clone --full --name df-fortress
+python scripts/provision_vm.py status   # gates on 'available', not 'free'
 ```
 
-Then: **read `/nodes/<node>/status` live and gate on `available`, not `free`**
-→ start → wait for the guest-agent IP →
-`ssh -i ~/.ssh/df_overseer_ed25519 -o IdentitiesOnly=yes df@<ip>` → snapshot
-`clean-baseline` → install DF Classic + DFHack.
+Then, once there is memory headroom: start VM 104 → wait for the guest-agent IP
+→ `ssh -i ~/.ssh/df_overseer_ed25519 -o IdentitiesOnly=yes df@<ip>` → snapshot
+`clean-baseline` → confirm it lists → install DF Classic + DFHack.
 
 ### Perception eval harness — built this session, not yet run for real
 
