@@ -4,12 +4,24 @@ What's currently in progress. Remove an item once it's done, tabled, or
 shelved — don't mark it paused. Any session should read this and know what's
 actually going on right now.
 
-## HANDOVER — 2026-08-26 evening, work paused here
+## HANDOVER — 2026-08-26 late evening, work paused here
 
-**State at a glance:** the infrastructure layer is built and verified; the game
-layer has not been started. One human action, and only one, blocks the next
-step. No agents are running. Nothing has been pushed — there is still no
-remote.
+**State at a glance:** two streams, neither blocked on the other.
+
+1. **Infrastructure** — built and verified, blocked on one human action
+   (below). Re-tested this session; same failure, verbatim. Nothing was
+   created or touched on the host, so there is nothing to clean up.
+2. **Perception eval harness** — *built this session*, offline paths verified,
+   **never run against a live model**: this machine has no Anthropic
+   credentials and no `ant` CLI. See the section below for exactly what is and
+   is not verified.
+
+No agents are running. Nothing has been pushed — there is still no remote.
+
+**Single next concrete step, per stream:** infra needs the storage checkbox;
+the eval harness needs credentials and one paid run
+(`python -m evals.perception.harness.run --limit 20 --out ...`), then a look at
+the report before spending on the full 342-cell matrix.
 
 ### The one thing that needs a human
 
@@ -38,10 +50,62 @@ not start if free memory is under ~6.5 GB** → start → wait for the guest-age
 IP → `ssh -i ~/.ssh/df_overseer_ed25519 -o IdentitiesOnly=yes df@<ip>` →
 snapshot `clean-baseline` → install DF Classic + DFHack.
 
-The design-side next step is unchanged and independent of all of this: the
-**perception eval harness**, with the **fort ledger schema** alongside it.
+### Perception eval harness — built this session, not yet run for real
 
-### Built this session
+Lives in `evals/perception/`. Full rationale, flags, and limitations in
+`evals/perception/README.md`; read that before touching it.
+
+**Verified, and how:**
+
+- `python -m evals.perception.harness.selftest` → **selftest OK**. It checks the
+  harness's own ground truth by re-deriving answers a second, independent way
+  (raw BFS over the connection list, a coordinate sign test for bearings,
+  z-levels read straight off the fixtures).
+- The selftest was itself checked by **deliberately corrupting the harness and
+  confirming it goes red**: bearings forced to `N`, z-relations forced to
+  `above`, hop counts forced to `1`, distances forced to a constant, the
+  stranded list emptied, and a grader made permissive. All six caught. Two
+  earlier versions of those checks **missed** two of the probes — the checks
+  were calling the same functions they were meant to be checking — which is why
+  they now re-derive from the raw fixture data instead.
+- `python -m evals.perception.harness.run --dry-run` builds all 342 cells and
+  prints the matrix. Needs no credentials and no SDK.
+- The API request/response path is exercised **against a stub client only**:
+  that the request assembles with adaptive thinking, a JSON answer schema and
+  a cacheable stable prefix, and that a malformed response becomes an error row
+  rather than a silent pass.
+
+**NOT verified — do not report otherwise:**
+
+- **No live model call has been made.** No `ANTHROPIC_API_KEY`, no `ant` CLI on
+  this machine. Every accuracy claim the harness can make is unmeasured.
+- The installed SDK is **`anthropic` 0.32.0**, which predates the API surface
+  the runner is written against (`output_config`, adaptive thinking).
+  `evals/perception/requirements.txt` pins `anthropic>=1.0`; install it in a
+  venv before the first run.
+
+**A finding that already exists, before any run:** `exits_v1` and `prose_v1`
+cannot express geometry between landmarks that are *not* directly connected —
+they skip `bearing_far` and `zlevel_far`, which `coords_v1` answers. That is a
+precise statement of what the agent will never be able to work out for itself
+from a briefing, and therefore of which zoom tools it must be handed. The
+runner skips those cells rather than scoring them wrong.
+
+**Deliberately not built:** an ASCII-map control arm. Building it would mean
+writing the renderer the project committed never to write, and the commitment
+is already settled on prior evidence. Reasoning recorded in the README.
+
+**Next, in order:** credentials → `pip install -r
+evals/perception/requirements.txt` in a venv → one `--limit 20` run → read the
+report → only then the full matrix. Watch the cache line in the report: zero
+cache reads would mean the briefing is not serialising byte-identically, which
+the whole prefix-caching design depends on.
+
+**The fort ledger schema was NOT started.** It was named alongside the harness
+as this stream's work and is still outstanding — it remains the earliest build
+item in the learning design, because its schema defines what is learnable.
+
+### Built earlier this session
 
 - **SSH keypair** `~/.ssh/df_overseer_ed25519` — dedicated, ed25519, no
   passphrase. Fingerprint and rationale in `memory/proxmox-access.md`; paths
