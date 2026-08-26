@@ -89,9 +89,25 @@ Ready and confirmed for that step:
 - Next free VMID is **101**
 - Image is present: `ssd_storage:iso/noble-server-cloudimg-amd64.img` (596 MB)
 - `ciuser`, `sshkeys`, `ipconfig0` all confirmed settable
-- **SSH key not yet chosen.** `~/.ssh/` has candidates including
-  `claude_vm.pub` and `claude_dev_vm_ed25519.pub`; generating a fresh
-  `df-overseer` keypair is probably cleaner than reusing one. User's call.
+- **SSH key done.** Fresh dedicated keypair generated 2026-08-26:
+  `~/.ssh/df_overseer_ed25519` (ed25519, no passphrase, comment `df-overseer`,
+  fingerprint `SHA256:nFmogVJU7sqROeOeudZFcpLow+IXOYRystP9ymBZ0sA`). Paths in
+  `.env` as `DF_SSH_KEY` / `DF_SSH_PUBKEY`; full record in
+  `memory/proxmox-access.md`, rationale in `decisions/DECISIONS.md`. Reusing
+  `claude_vm` was rejected — a shared key makes revocation indivisible.
+
+**Host RAM moved again — re-read it before sizing the VM.** Live reading this
+afternoon: **8.9 GB used / 5.5 GB free** of 15.5 GB, not the 4.8/9.6 recorded
+this morning. The other VMs are outside our pool and invisible, so this number
+is not ours to predict. **6 GB with a 2 GB balloon floor is now tight, not
+comfortable; 4 GB max / 2 GB balloon is the safer call.** Still needs the
+user's decision, and the reading should be taken again at creation time.
+
+Two stale sections in `memory/proxmox-access.md` were corrected against the
+live API while doing this: the role listed 16 privileges (it has 24 — `VM.Clone`
+and the `VM.GuestAgent.*` set were granted this morning but never written back),
+and the host-resources table still carried the 13.7 GB reading that was the
+original blocker.
 
 **Write the provisioning tooling in Python, not bash** — Git Bash's MSYS layer
 rewrites POSIX paths in arguments (`/var/lib/vz/...` became
