@@ -4,6 +4,18 @@ What's currently in progress. Remove an item once it's done, tabled, or
 shelved — don't mark it paused. Any session should read this and know what's
 actually going on right now.
 
+## 2026-08-27 (afternoon) — repo pushed public; harness ran live for the first time
+
+**Pushed:** [github.com/QuickWaller/df-overseer](https://github.com/QuickWaller/df-overseer), public, all commits on `main`. `gh` was already authenticated (QuickWaller); no remote existed before this.
+
+**Perception harness ran against a live model for the first time.** User supplied a temporary Anthropic key (expires ~2026-09-03, stored in gitignored `.env`, do not commit or log it; rotate/remove after use). A 20-cell smoke test (`--limit 20`) immediately hit a real bug: every cell failed with the same 400 — `response_schema()`'s `confidence` field carried `minimum`/`maximum` on a `number` type, which the live structured-output validator rejects (the stub-only tests never caught this, exactly the gap the README predicted). Fixed in `harness/grade.py` — dropped the constraint keywords, stated the 0-1 range in the schema `description` instead. Full account in `decisions/DECISIONS.md` 2026-08-27.
+
+**Re-run after the fix: 20/20 succeeded.** 100% accuracy on `coords_v1` (the only representation this particular 20-cell slice covered — `--limit` takes cells in build order, not a stratified sample). Cache reads confirmed non-zero (12/20 requests, 26,738 cached tokens) — the prefix-caching design works. Actual cost: **$0.043** for the successful run (969 input + 26,738 cached-read + 995 output tokens on `claude-opus-5`), essentially free — the pre-fix all-error run cost nothing (400s bill no tokens).
+
+**New project goal, stated by the user:** the eval data and future fortress runs should build toward a public-facing report, not be throwaway. Reversed a repo-state bug that fought this directly: `evals/perception/.gitignore` was silently excluding `results/` from git. Removed it; `evals/perception/results/*.jsonl` is now tracked. See `memory/` for the standing note on this.
+
+**Next concrete step for the harness:** run the full 342-cell matrix (`python -m evals.perception.harness.run --out evals/perception/results/full-<date>.jsonl`, no `--limit`) — estimated **$5–15** based on the one real data point above, now that the schema bug is fixed. Then `report` it, stratified across all three representations this time.
+
 ## HANDOVER — 2026-08-27, work paused here
 
 **State at a glance:** the VM exists. It has never been started.
@@ -20,6 +32,8 @@ actually going on right now.
 No agents are running. Nothing has been pushed — there is still no remote.
 
 ### The three things a next session should pick up
+
+**Update 2026-08-27:** Proxmox was unreachable this session — the tailnet subnet router (`tailscale`, <tailnet-router-ip>, advertising `<lan-subnet>/24`) wasn't in this machine's peer list at all. Cause: a concurrent AgentSecretary agent was using that Tailscale login elsewhere at the same time — transient contention, not a real outage. Retry once that other session is done.
 
 **1. `df-fortress` (VM 104) is built and stopped.** It wants 6144 MB; the host
 had **5.4 GB available** at last read. Tight rather than impossible — the

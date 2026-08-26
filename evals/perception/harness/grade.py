@@ -142,12 +142,21 @@ def response_schema(answer_type: str) -> dict:
     `confidence` is collected, never graded — it is there so the report can say
     whether wrong answers were also confident answers. An agent that knows when
     it does not know can call a zoom tool; one that does not, cannot.
+
+    `minimum`/`maximum` are deliberately absent: the live API rejects them on a
+    `number`-typed schema property (`output_config.format.schema: For 'number'
+    type, properties maximum, minimum are not supported` — confirmed against
+    the real endpoint 2026-08-27, not just the stub). The 0-1 range is stated
+    in the description instead, as a prompt constraint rather than a schema one.
     """
     return {
         "type": "object",
         "properties": {
             "answer": ANSWER_SCHEMA[answer_type],
-            "confidence": {"type": "number", "minimum": 0, "maximum": 1},
+            "confidence": {
+                "type": "number",
+                "description": "Honest probability between 0 and 1 that the answer is correct.",
+            },
         },
         "required": ["answer", "confidence"],
         "additionalProperties": False,
