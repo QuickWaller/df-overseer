@@ -21,7 +21,13 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from pve import PVE, PVEError, log  # noqa: E402
 
-CLOUD_IMAGE = "noble-server-cloudimg-amd64.img"
+# Stored as .qcow2, not .img. Canonical's file *is* qcow2, but it ships with an
+# .img extension, and an 'import'-content store rejects that outright:
+#   400 {"errors":{"filename":"invalid filename or wrong extension"}}
+# download-url lets us name the destination independently of the URL, so the
+# rename happens on the way in rather than as a second step on the host.
+# Verified by that exact failure, 2026-08-26.
+CLOUD_IMAGE = "noble-server-cloudimg-amd64.qcow2"
 CLOUD_IMAGE_URL = ("https://cloud-images.ubuntu.com/noble/current/"
                    "noble-server-cloudimg-amd64.img")
 # 'import-from' will only read a volume whose content type is 'images' or
