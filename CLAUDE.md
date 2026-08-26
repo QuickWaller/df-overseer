@@ -5,10 +5,13 @@ story without you. See **[docs/PURPOSE.md](docs/PURPOSE.md)** for what this is
 and why, and **[docs/MEMORY-ARCHITECTURE.md](docs/MEMORY-ARCHITECTURE.md)** for the overseer's memory and
 learning architecture.
 
-> **Status: research and design. Nothing is implemented yet.** Everything in
-> `docs/` and `research/` is a design artifact. Claims marked *verified* were
-> checked against the local DFHack install or a primary source; the rest are
-> proposals.
+> **Status: design, plus a live infrastructure layer.** The Proxmox access
+> layer exists and is verified against the API (`memory/proxmox-access.md`),
+> and `scripts/` provisions the VM. Nothing of the *game* side is implemented —
+> no perception layer, no agent, no toolkit. Everything in `docs/` and
+> `research/` is still a design artifact; claims marked *verified* were checked
+> against the local DFHack install, the live API, or a primary source, and the
+> rest are proposals.
 
 This repo is managed with Claude Code using a structured memory system,
 following the pattern published as

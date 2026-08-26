@@ -1,8 +1,10 @@
 # df-overseer
 
-> Working draft, 2026-08-25. Consolidates the research in `research/`.
-> Not yet implemented — nothing below has been tested against a running game
-> except where explicitly marked *verified*.
+> Working draft, 2026-08-25 (VM spec updated 2026-08-26). Consolidates the
+> research in `research/`. Nothing below has been tested against a running game
+> except where explicitly marked *verified*. The infrastructure it runs on is
+> the exception: the Proxmox access layer is live and the provisioning scripts
+> exist — see `memory/proxmox-access.md`.
 
 ## Purpose
 
