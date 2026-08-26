@@ -65,24 +65,33 @@ for the authoritative record (read back from the API, not assumed).
   expanded to nothing when sourcing. Now single-quoted. Any script sourcing
   `.env` would have hit this.
 
-**BLOCKER — host memory:**
+**~~BLOCKER — host memory~~ RESOLVED same day.**
 
-The host has **15.5 GB total, 13.7 GB used, 1.3 GB free** (plus 1 GB of swap in
-use). The 8 GB VM in `docs/PURPOSE.md` cannot be created. The memory is consumed
-by VMs outside our pool, which we cannot see or manage.
+Was 13.7 GB used / 1.3 GB free. User freed memory; now **4.8 GB used, 9.6 GB
+free** of 15.5 GB (swap down to 0.7 GB).
 
-Options, for the user to decide: free memory on the host, add RAM to the
-ProDesk, or size the DF VM to what is available. Our own research says a
-small-world fort needs ~1–2 GB at runtime with worldgen as the peak, so 4 GB
-would be comfortable — but even that exceeds current free memory.
+**Recommended VM sizing: 6 GB with a 2 GB balloon floor**, not the 8 GB in
+`docs/PURPOSE.md`. 8 GB now fits but would leave only ~1.6 GB for the host —
+tight if anything else starts, and it would push into swap. 6 GB is still ~3x
+what a small-world fort needs at runtime, leaves generous room for the worldgen
+spike (the real peak), is reclaimable when idle, and keeps ~3.6 GB of host
+headroom. **Not yet confirmed with the user.**
 
 CPU is fine: **i7-7700T, 4c/8t @ 2.9 GHz.** DF is single-threaded except
 line-of-sight, so single-core performance is what matters and this is adequate.
 
-**NEXT CONCRETE STEP** once RAM is resolved: create the VM from the downloaded
+**NEXT CONCRETE STEP — nothing is blocking.** Create the VM from the downloaded
 cloud image — create VM → `import-from` the `.img` → attach cloud-init drive →
 set `ciuser`/`sshkeys`/`ipconfig0` (all confirmed working) → resize disk →
 convert to template → clone. Then write `scripts/provision-vm.py` around it.
+
+Ready and confirmed for that step:
+- Next free VMID is **101**
+- Image is present: `ssd_storage:iso/noble-server-cloudimg-amd64.img` (596 MB)
+- `ciuser`, `sshkeys`, `ipconfig0` all confirmed settable
+- **SSH key not yet chosen.** `~/.ssh/` has candidates including
+  `claude_vm.pub` and `claude_dev_vm_ed25519.pub`; generating a fresh
+  `df-overseer` keypair is probably cleaner than reusing one. User's call.
 
 **Write the provisioning tooling in Python, not bash** — Git Bash's MSYS layer
 rewrites POSIX paths in arguments (`/var/lib/vz/...` became
