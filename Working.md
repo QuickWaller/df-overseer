@@ -55,10 +55,10 @@ python scripts/provision_vm.py build-template # create -> import disk -> templat
 python scripts/provision_vm.py clone --full --name df-fortress
 ```
 
-Then: record `DF_VMID` in `.env` → **read `/nodes/<node>/status` live and do
-not start if free memory is under ~6.5 GB** → start → wait for the guest-agent
-IP → `ssh -i ~/.ssh/df_overseer_ed25519 -o IdentitiesOnly=yes df@<ip>` →
-snapshot `clean-baseline` → install DF Classic + DFHack.
+Then: **read `/nodes/<node>/status` live and gate on `available`, not `free`**
+→ start → wait for the guest-agent IP →
+`ssh -i ~/.ssh/df_overseer_ed25519 -o IdentitiesOnly=yes df@<ip>` → snapshot
+`clean-baseline` → install DF Classic + DFHack.
 
 ### Perception eval harness — built this session, not yet run for real
 
@@ -137,9 +137,10 @@ item in the learning design, because its schema defines what is learnable.
 - The role has **24** privileges, not the 16 recorded.
 - **VM 101 no longer exists.** The pool is empty and `nextid` is 101, so the
   "linked clone of template 102" fragility is gone with it.
-- Host memory was recorded as 13.7 GB used, then 4.8; it is **~9.0 GB used /
-  5.5 GB free**. It has moved three times in two days and the other VMs are
-  invisible to us — **never size or start from a written number**.
+- Host memory was recorded as 13.7 GB used, then 4.8, then ~9.0; it is now
+  **10.1 GB used with 5.4 GB *available***. It has moved four times in three
+  days and the other VMs are invisible to us — **never size or start from a
+  written number**, and gate on `available` rather than `free` (see below).
 
 ### Three API facts, each learned by failing
 
@@ -215,7 +216,7 @@ the user later the same day. Read back from the live API to confirm:
 
 **Then, in order, once unblocked:** `fetch-image` → `build-template` →
 `clone --full --name df-fortress` → record `DF_VMID` in `.env` → read
-`/nodes/<node>/status` live (do not start if free memory < ~6.5 GB) → start →
+`/nodes/<node>/status` live (gate on `available`, not `free`) → start →
 wait for guest-agent IP → SSH in with
 `ssh -i ~/.ssh/df_overseer_ed25519 -o IdentitiesOnly=yes df@<ip>` → snapshot
 `clean-baseline` → confirm it lists → install DF Classic + DFHack.

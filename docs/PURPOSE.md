@@ -134,11 +134,13 @@ single-threaded except line-of-sight, so extra cores do nothing and
 single-core clock is everything), 25 GB disk. Sized 2026-08-26 against 5.5 GB
 free on a 15.5 GB host — a workable but not comfortable fit; the worldgen
 spike, not idle runtime, is the real peak, and KVM only backs pages the guest
-actually touches so idle DF sits well below the cap. **Standing rule: this
-host's free memory moved 13.7 → 4.8 → 9.0 GB used inside two days, and the
-other VMs sharing it are outside our pool and invisible to us — read
+actually touches so idle DF sits well below the cap. **Standing rule: read
 `/nodes/<node>/status` live immediately before starting the VM, never size or
-start from a number written in a doc.** Saves are 15–19 MB, so
+start from a number written in a doc — this host's usage moved 13.7 → 4.8 →
+9.0 → 10.1 GB inside three days and the other VMs sharing it are outside our
+pool and invisible to us. Gate on that endpoint's `available`, not its `free`:
+`free` excludes page cache and collapses during any large copy, which on
+2026-08-27 read as a 1.7 GB shortage while 5.4 GB was genuinely available.** Saves are 15–19 MB, so
 season-granularity snapshots for a month cost ~2 GB.
 
 **Anti-decay suite** — all present in the install, enable via

@@ -106,12 +106,24 @@ class PVE:
         return self.get("/pools/%s" % self.pool).get("members", [])
 
     def node_memory(self):
-        """(total, used, free) in GiB, read live. Never size a VM from a
-        number written down earlier -- this host's free memory has moved by
-        9 GB inside two days and the other VMs are invisible to us."""
+        """(total, used, free, available) in GiB, read live.
+
+        **Size and gate on `available`, never on `free`.** `free` excludes page
+        cache and reclaimable slab, so it collapses during any large file copy
+        and reads as a memory shortage that isn't one -- pushing a 596 MB image
+        and a 25 GB disk copy through this host on 2026-08-27 took `free` from
+        5.5 to 1.7 GiB while `available` stayed at 5.4. `available` is the
+        kernel's own estimate of what a new workload can obtain.
+
+        Still read it live every time: the other VMs on this host are outside
+        our pool and invisible to us.
+        """
         mem = self.get(self.node_path("/status"))["memory"]
         gib = lambda n: round(n / float(2 ** 30), 1)
-        return gib(mem["total"]), gib(mem["used"]), gib(mem["free"])
+        # 'available' predates PVE 9 but fall back rather than KeyError on a
+        # host that doesn't report it.
+        available = mem.get("available", mem["free"])
+        return gib(mem["total"]), gib(mem["used"]), gib(mem["free"]), gib(available)
 
     def wait_task(self, upid, label="task", timeout=1800, poll=2):
         """Block until a task finishes. Raises unless it exits OK."""

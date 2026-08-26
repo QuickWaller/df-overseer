@@ -39,10 +39,10 @@ TEMPLATE_NAME = "df-overseer-noble-template"
 DISK_SIZE = "25G"
 BRIDGE = "vmbr0"
 
-# 6 GB max with a 2 GB balloon floor: the user's call on 2026-08-26 with 5.5 GB
-# free on the host. KVM only backs pages the guest touches, so idle DF sits far
-# below this; the worldgen spike is the real peak. Memory is a one-line change
-# on a stopped VM -- re-check free memory before starting it.
+# 6 GB max with a 2 GB balloon floor: the user's call on 2026-08-26 with ~5.5 GB
+# available on the host. KVM only backs pages the guest touches, so idle DF sits
+# far below this; the worldgen spike is the real peak. Memory is a one-line
+# change on a stopped VM -- re-check node_memory()'s *available* before booting.
 DEFAULT_MEMORY = 6144
 DEFAULT_BALLOON = 2048
 DEFAULT_CORES = 4
@@ -68,8 +68,10 @@ def read_pubkey(env):
 
 
 def cmd_status(pve, args):
-    total, used, free = pve.node_memory()
-    log("host memory: %.1f GiB total, %.1f used, %.1f free" % (total, used, free))
+    total, used, free, available = pve.node_memory()
+    log("host memory: %.1f GiB total, %.1f available (%.1f used, %.1f free)"
+        % (total, available, used, free))
+    log("  gate on 'available', not 'free' -- see pve.node_memory()")
     log("next free vmid: %s" % pve.next_vmid())
     members = pve.pool_members()
     if not members:
@@ -114,9 +116,10 @@ def cmd_build_template(pve, args):
     pubkey = read_pubkey(pve.env)
     image = "%s:%s/%s" % (pve.storage, IMAGE_CONTENT, CLOUD_IMAGE)
 
-    total, used, free = pve.node_memory()
-    log("host memory now: %.1f GiB free of %.1f (%.1f used)" % (free, total, used))
-    if free < args.memory / 1024.0:
+    total, used, free, available = pve.node_memory()
+    log("host memory now: %.1f GiB available of %.1f (%.1f used, %.1f free)"
+        % (available, total, used, free))
+    if available < args.memory / 1024.0:
         log("NOTE: %d MB requested exceeds free memory. The template is never"
             " started, so building is safe -- but re-check before booting a"
             " clone." % args.memory)
