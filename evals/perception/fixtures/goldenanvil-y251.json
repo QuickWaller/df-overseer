@@ -1,0 +1,44 @@
+{
+  "fixture_id": "goldenanvil-y251",
+  "description": "Year 2 of a small fort. Twelve dwarves, one z-level, everything connected. The floor of the eval: if a representation cannot carry this, nothing else matters.",
+  "tier0": {
+    "fortress": "Goldenanvil",
+    "embark_biome": "temperate conifer forest, brook",
+    "in_game_date": "7th Galena, year 251",
+    "population": 12
+  },
+  "landmarks": [
+    {"name": "Entrance Ramp",     "kind": "custom",    "pos": [100, 100, 0]},
+    {"name": "Main Stair",        "kind": "custom",    "pos": [100, 120, 0]},
+    {"name": "Dining Hall",       "kind": "room",      "pos": [85, 120, 0]},
+    {"name": "Central Stockpile", "kind": "stockpile", "pos": [115, 120, 0]},
+    {"name": "Mason's Shop",      "kind": "workshop",  "pos": [115, 135, 0]},
+    {"name": "Farm Plot",         "kind": "farm",      "pos": [85, 135, 0]}
+  ],
+  "connections": [
+    {"a": "Entrance Ramp",     "b": "Main Stair",        "via": "corridor", "walk_tiles": 22},
+    {"a": "Main Stair",        "b": "Dining Hall",       "via": "corridor", "walk_tiles": 16},
+    {"a": "Main Stair",        "b": "Central Stockpile", "via": "corridor", "walk_tiles": 16},
+    {"a": "Central Stockpile", "b": "Mason's Shop",      "via": "corridor", "walk_tiles": 17},
+    {"a": "Dining Hall",       "b": "Farm Plot",         "via": "corridor", "walk_tiles": 18},
+    {"a": "Dining Hall",       "b": "Central Stockpile", "via": "corridor", "walk_tiles": 33}
+  ],
+  "resources": {
+    "layers": ["granite", "slate"],
+    "ores": ["tetrahedrite"],
+    "liquids": ["brook (surface)", "no magma found"]
+  },
+  "units": [
+    {"name": "Urist McDoors",      "profession": "Miner",  "at": "Main Stair"},
+    {"name": "Kogan Boltwhisper",  "profession": "Farmer", "at": "Farm Plot"},
+    {"name": "Sazir Goldenaxe",    "profession": "Mason",  "at": "Mason's Shop"},
+    {"name": "Litast Rockcrutch",  "profession": "Hauler", "at": "Central Stockpile"}
+  ],
+  "alerts": [
+    {"type": "idle", "detail": "2 citizens idle for more than 200 ticks"}
+  ],
+  "events": [
+    {"type": "JOB_COMPLETED", "detail": "Construct Door completed", "at_tick": 1204},
+    {"type": "ITEM_CREATED",  "detail": "Slate table created",      "at_tick": 1188}
+  ]
+}

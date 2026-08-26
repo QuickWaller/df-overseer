@@ -1,0 +1,63 @@
+{
+  "fixture_id": "deepdelve-y258",
+  "description": "A deep, awkward fort: eleven z-levels, a long vertical spine, two pockets with no route to anything, and deliberately confusable names (Upper/Lower Cistern, North/South Gate). Built to break representations that survive the easy fixtures.",
+  "tier0": {
+    "fortress": "Deepdelve",
+    "embark_biome": "cold taiga, volcano",
+    "in_game_date": "2nd Obsidian, year 258",
+    "population": 94
+  },
+  "landmarks": [
+    {"name": "Surface Gate",    "kind": "custom",    "pos": [300, 300, 0]},
+    {"name": "North Gate",      "kind": "custom",    "pos": [300, 288, 0]},
+    {"name": "South Gate",      "kind": "custom",    "pos": [300, 312, 0]},
+    {"name": "Grand Stair",     "kind": "custom",    "pos": [306, 306, -2]},
+    {"name": "Upper Cistern",   "kind": "custom",    "pos": [318, 306, -2]},
+    {"name": "Lower Cistern",   "kind": "custom",    "pos": [294, 306, -6]},
+    {"name": "Great Hall",      "kind": "room",      "pos": [306, 318, -2]},
+    {"name": "Noble Quarters",  "kind": "room",      "pos": [294, 318, -2]},
+    {"name": "Forge Row",       "kind": "workshop",  "pos": [306, 330, -4]},
+    {"name": "Finished Goods",  "kind": "stockpile", "pos": [318, 330, -4]},
+    {"name": "Refuse Pit",      "kind": "stockpile", "pos": [294, 330, -4]},
+    {"name": "Barracks Deep",   "kind": "room",      "pos": [306, 342, -6]},
+    {"name": "Cavern Outpost",  "kind": "custom",    "pos": [330, 366, -10]},
+    {"name": "Flooded Gallery", "kind": "custom",    "pos": [270, 366, -10]},
+    {"name": "Sealed Vault",    "kind": "custom",    "pos": [270, 342, -8]}
+  ],
+  "connections": [
+    {"a": "Surface Gate",  "b": "North Gate",     "via": "surface path",   "walk_tiles": 12},
+    {"a": "Surface Gate",  "b": "South Gate",     "via": "surface path",   "walk_tiles": 12},
+    {"a": "Surface Gate",  "b": "Grand Stair",    "via": "stairwell",      "walk_tiles": 11},
+    {"a": "Grand Stair",   "b": "Upper Cistern",  "via": "corridor",       "walk_tiles": 13},
+    {"a": "Grand Stair",   "b": "Lower Cistern",  "via": "stairwell",      "walk_tiles": 17},
+    {"a": "Grand Stair",   "b": "Great Hall",     "via": "corridor",       "walk_tiles": 13},
+    {"a": "Great Hall",    "b": "Noble Quarters", "via": "corridor",       "walk_tiles": 13},
+    {"a": "Great Hall",    "b": "Forge Row",      "via": "stairwell",      "walk_tiles": 15},
+    {"a": "Forge Row",     "b": "Finished Goods", "via": "corridor",       "walk_tiles": 13},
+    {"a": "Forge Row",     "b": "Refuse Pit",     "via": "corridor",       "walk_tiles": 13},
+    {"a": "Forge Row",     "b": "Barracks Deep",  "via": "stairwell",      "walk_tiles": 15},
+    {"a": "Barracks Deep", "b": "Cavern Outpost", "via": "cavern passage", "walk_tiles": 44}
+  ],
+  "resources": {
+    "layers": ["gabbro", "obsidian", "microcline"],
+    "ores": ["magnetite", "native gold", "galena"],
+    "liquids": ["magma pipe (z -12)", "underground lake (z -10)"]
+  },
+  "units": [
+    {"name": "Erush Anvilbraid",    "profession": "Miner",     "at": "Cavern Outpost"},
+    {"name": "Zuglar Deepgutter",   "profession": "Hauler",    "at": "Flooded Gallery"},
+    {"name": "Meng Silverbraid",    "profession": "Soldier",   "at": "Barracks Deep"},
+    {"name": "Adil Coppervein",     "profession": "Smith",     "at": "Forge Row"},
+    {"name": "Ustuth Goldenmantle", "profession": "Broker",    "at": "North Gate"},
+    {"name": "Sibrek Boltmourn",    "profession": "Herbalist", "at": "Sealed Vault"}
+  ],
+  "alerts": [
+    {"type": "idle",      "detail": "7 citizens idle for more than 200 ticks"},
+    {"type": "temperature", "detail": "Ambient heat near the lowest workshops is rising"}
+  ],
+  "events": [
+    {"type": "JOB_COMPLETED", "detail": "Smelt Magnetite Ore x6 completed", "at_tick": 42117},
+    {"type": "UNIT_DEATH",    "detail": "Cave crawler died",                "at_tick": 42090},
+    {"type": "ITEM_CREATED",  "detail": "Gold statue created",              "at_tick": 41988}
+  ]
+}

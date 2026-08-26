@@ -1,0 +1,52 @@
+{
+  "fixture_id": "bronzemurmur-y253",
+  "description": "The worked example from research/2026-08-25-spatial-perception.md section 9, made machine-readable: mid-game, several z-levels, and one pocket of the fort with no route back — a hauler is standing in it, and no alert says so.",
+  "tier0": {
+    "fortress": "Bronzemurmur",
+    "embark_biome": "temperate broadleaf forest, river",
+    "in_game_date": "18th Slate, year 253",
+    "population": 55
+  },
+  "landmarks": [
+    {"name": "Main Stair",        "kind": "custom",    "pos": [200, 200, -3]},
+    {"name": "Dining Hall",       "kind": "room",      "pos": [191, 209, -3]},
+    {"name": "Central Stockpile", "kind": "stockpile", "pos": [191, 197, -3]},
+    {"name": "Mason Row",         "kind": "workshop",  "pos": [183, 197, -3]},
+    {"name": "East Bedrooms",     "kind": "room",      "pos": [206, 209, -3]},
+    {"name": "Barracks",          "kind": "room",      "pos": [188, 188, -3]},
+    {"name": "Upper Workshops",   "kind": "workshop",  "pos": [204, 196, -2]},
+    {"name": "Deep Store",        "kind": "stockpile", "pos": [200, 212, -5]},
+    {"name": "Trade Depot",       "kind": "custom",    "pos": [200, 228, 0]},
+    {"name": "Collapsed Gallery", "kind": "custom",    "pos": [212, 236, 0]}
+  ],
+  "connections": [
+    {"a": "Main Stair",        "b": "Dining Hall",     "via": "corridor",     "walk_tiles": 15},
+    {"a": "Central Stockpile", "b": "Dining Hall",     "via": "corridor",     "walk_tiles": 13},
+    {"a": "Central Stockpile", "b": "Mason Row",       "via": "corridor",     "walk_tiles": 9},
+    {"a": "Dining Hall",       "b": "East Bedrooms",   "via": "corridor",     "walk_tiles": 17},
+    {"a": "Main Stair",        "b": "Barracks",        "via": "corridor",     "walk_tiles": 19},
+    {"a": "Main Stair",        "b": "Upper Workshops", "via": "stairwell",    "walk_tiles": 8},
+    {"a": "Main Stair",        "b": "Deep Store",      "via": "stairwell",    "walk_tiles": 16},
+    {"a": "Main Stair",        "b": "Trade Depot",     "via": "surface path", "walk_tiles": 34}
+  ],
+  "resources": {
+    "layers": ["limestone", "shale"],
+    "ores": ["native copper", "magnetite"],
+    "liquids": ["river (surface)", "no magma found"]
+  },
+  "units": [
+    {"name": "Urist Ironbeard",   "profession": "Hauler",       "at": "Collapsed Gallery"},
+    {"name": "Zas Goldwhisker",   "profession": "Craftsdwarf",  "at": "Mason Row"},
+    {"name": "Ilral Copperfist",  "profession": "Mason",        "at": "Mason Row"},
+    {"name": "Onul Steelbeard",   "profession": "Soldier",      "at": "Barracks"},
+    {"name": "Dodok Silverfount", "profession": "Broker",       "at": "Trade Depot"}
+  ],
+  "alerts": [
+    {"type": "idle", "detail": "3 citizens idle for more than 200 ticks"}
+  ],
+  "events": [
+    {"type": "JOB_COMPLETED", "detail": "Construct Wall x4 completed", "at_tick": 8811},
+    {"type": "UNIT_DEATH",    "detail": "Stray cat died",              "at_tick": 8790},
+    {"type": "ITEM_CREATED",  "detail": "Copper battle axe created",   "at_tick": 8702}
+  ]
+}
