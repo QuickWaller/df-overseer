@@ -4,6 +4,58 @@ What's currently in progress. Remove an item once it's done, tabled, or
 shelved — don't mark it paused. Any session should read this and know what's
 actually going on right now.
 
+## 2026-08-26 (afternoon) — provisioning script written; one human step blocks it
+
+**Done:**
+
+- **SSH key generated and documented.** `~/.ssh/df_overseer_ed25519` — ed25519,
+  no passphrase, comment `df-overseer`, fingerprint
+  `SHA256:nFmogVJU7sqROeOeudZFcpLow+IXOYRystP9ymBZ0sA`. Dedicated rather than
+  reusing `claude_vm`, because a shared key makes revocation indivisible. Paths
+  in `.env` (`DF_SSH_KEY`, `DF_SSH_PUBKEY`) and in
+  `infra/local.example.env`; full record in `memory/proxmox-access.md`.
+  Windows note: `chmod 600` is a no-op on NTFS — `icacls /inheritance:r` is
+  what actually restricted it.
+- **`scripts/pve.py`** — thin Proxmox API client (env loading, task polling
+  with log tail on failure, live node-memory read). Python, not bash, for the
+  MSYS path-rewriting reason.
+- **`scripts/provision_vm.py`** — `status`, `fetch-image`, `build-template`,
+  `clone`. Verified working as far as the blocker below.
+- **VM sized 6144 MB / 2048 MB balloon, 4 cores** — user's call, taken with
+  5.5 GB free on the host.
+- Three API facts learned the hard way and recorded in
+  `memory/proxmox-access.md`: the network *list* endpoint hides bridges (use
+  `vmbr0`, found by direct GET); cloud-init `sshkeys` must be URL-encoded
+  *before* form encoding; and `import-from` rejects `iso`-class volumes.
+
+**BLOCKER — one thing only a human with datacenter rights can do:**
+
+Datacenter → Storage → `ssd_storage` → Edit → **Content: add "Import"**.
+
+The cloud image was downloaded as `iso` content, and `import-from` refuses an
+`iso` volume — it needs `images` or `import`. `download-url` *does* accept
+`content=import`, so once that box is ticked, `provision_vm.py fetch-image`
+re-downloads the 596 MB image into `import/` and the rest runs unattended.
+Confirmed by denial that this token cannot do it itself: `GET
+/storage/ssd_storage` → `403 (Datastore.Allocate)`. Granting the role
+`Datastore.Allocate` is the alternative and was rejected — it permits editing
+and deleting storage definitions, which is far more than one flag is worth.
+
+**Then, in order:** `fetch-image` → `build-template` → `clone --full` → boot →
+confirm SSH in with the new key → snapshot as a clean baseline → install DF
+Classic + DFHack.
+
+**Corrected against the live API while doing this** (the docs and reality had
+drifted): the role has **24** privileges, not the 16 recorded; host memory is
+**8.9–9.0 GB used / 5.5 GB free**, not the 13.7 or 4.8 previously written; and
+**VM 101 no longer exists** — the pool is empty and `nextid` is 101, so the
+"linked clone of template 102" fragility is gone with it.
+
+**Host RAM moves.** Three readings in two days: 13.7 → 4.8 → 9.0 GB used. The
+other VMs are outside the pool and invisible. Read
+`/nodes/<node>/status` immediately before starting the VM, never size from a
+number in a doc.
+
 ## 2026-08-25 — research and design phase, nothing implemented
 
 The project is in design. No code exists yet; `docs/` and `research/` are the
@@ -80,8 +132,8 @@ headroom. **Not yet confirmed with the user.**
 CPU is fine: **i7-7700T, 4c/8t @ 2.9 GHz.** DF is single-threaded except
 line-of-sight, so single-core performance is what matters and this is adequate.
 
-**NEXT CONCRETE STEP — nothing is blocking.** Create the VM from the downloaded
-cloud image — create VM → `import-from` the `.img` → attach cloud-init drive →
+**SUPERSEDED — see the 2026-08-26 (afternoon) section at the top of this file.**
+Create the VM from the downloaded cloud image — create VM → `import-from` the `.img` → attach cloud-init drive →
 set `ciuser`/`sshkeys`/`ipconfig0` (all confirmed working) → resize disk →
 convert to template → clone. Then write `scripts/provision-vm.py` around it.
 
