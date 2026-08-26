@@ -12,9 +12,11 @@ Repo memory: context that isn't derivable from the code. One line per file.
 
 - [Proxmox access](proxmox-access.md) — **authoritative record** of the live
   access layer: host, roles `DFOverseer` (24 privileges) and `DFOverseerNode`,
-  the pool/storage/node scopes and the `Sys.*`-binding lesson, verified
-  boundaries (confirmed by denial), verified snapshot cycle, VM 101's specs,
-  and the DF VM's SSH keypair. Read back from the API, not assumed.
+  the pool/storage/node/SDN scopes, and **the three ways a grant silently
+  misses** (wrong privilege / wrong path / wrong subject) — including why an
+  ACL bound to the token does nothing while privilege separation is off.
+  Verified boundaries (confirmed by denial), verified snapshot cycle, VM 101's
+  specs, and the DF VM's SSH keypair. Read back from the API, not assumed.
 
 ## See also
 
