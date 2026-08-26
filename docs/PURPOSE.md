@@ -127,10 +127,17 @@ interface stays smooth.
 At `FPS_CAP:5`, a 60-second model turn is ~¼ game day — so the loop can be
 **non-blocking**; no pausing to think.
 
-**VM:** 2–4 vCPU (DF is single-threaded except line-of-sight; extra cores do
-nothing, single-core clock is everything), 8 GB RAM (runtime is ~1–2 GB for a
-small world; headroom is for the worldgen spike), 40 GB disk. Saves are
-15–19 MB, so season-granularity snapshots for a month cost ~2 GB.
+**VM:** 4 vCPU, 6144 MB RAM with a 2048 MB balloon floor (DF is
+single-threaded except line-of-sight, so extra cores do nothing and
+single-core clock is everything), 25 GB disk. Sized 2026-08-26 against 5.5 GB
+free on a 15.5 GB host — a workable but not comfortable fit; the worldgen
+spike, not idle runtime, is the real peak, and KVM only backs pages the guest
+actually touches so idle DF sits well below the cap. **Standing rule: this
+host's free memory moved 13.7 → 4.8 → 9.0 GB used inside two days, and the
+other VMs sharing it are outside our pool and invisible to us — read
+`/nodes/<node>/status` live immediately before starting the VM, never size or
+start from a number written in a doc.** Saves are 15–19 MB, so
+season-granularity snapshots for a month cost ~2 GB.
 
 **Anti-decay suite** — all present in the install, enable via
 `gui/control-panel` → Automation → Autostart: `deteriorate` (corpses, clothes,
@@ -142,8 +149,12 @@ FPS"), not a compute fix — it does not stop per-tick cost growing.
 short history, population cap, seal the caverns, break line-of-sight with
 walls not doors. A blueprint library encodes this discipline for free.
 
-**Pin DF and DFHack to update-on-launch-only.** A month is long enough that a
-Steam patch lands mid-run and breaks memory offsets.
+**The VM runs DF Classic (Bay12), not Steam** — decided 2026-08-26. Steam
+auto-updating DF mid-fort shifts memory offsets and silently breaks DFHack,
+which was the biggest month-long-run hazard; dropping Steam on the VM removes
+it entirely, along with Steam Guard 2FA in provisioning and the Steam Linux
+Runtime gotcha. Steam DF is still played locally. Same engine version, so
+saves should be interchangeable between the two — *verify, don't assume*.
 
 ## Build order
 
