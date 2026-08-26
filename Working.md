@@ -41,20 +41,31 @@ Confirmed by denial that this token cannot do it itself: `GET
 `Datastore.Allocate` is the alternative and was rejected — it permits editing
 and deleting storage definitions, which is far more than one flag is worth.
 
-**Then, in order:** `fetch-image` → `build-template` → `clone --full` → boot →
-confirm SSH in with the new key → snapshot as a clean baseline → install DF
-Classic + DFHack.
+**Re-confirmed 2026-08-26 (evening), provisioning run:** `python
+scripts/provision_vm.py fetch-image` was run fresh. Same failure, verbatim:
 
-**Corrected against the live API while doing this** (the docs and reality had
-drifted): the role has **24** privileges, not the 16 recorded; host memory is
-**8.9–9.0 GB used / 5.5 GB free**, not the 13.7 or 4.8 previously written; and
-**VM 101 no longer exists** — the pool is empty and `nextid` is 101, so the
-"linked clone of template 102" fragility is gone with it.
+```
+POST /nodes/proxmox/storage/ssd_storage/download-url
+  -> 500 {"message":"storage 'ssd_storage' is not configured for
+          content-type 'import'\n","data":null}
+```
 
-**Host RAM moves.** Three readings in two days: 13.7 → 4.8 → 9.0 GB used. The
-other VMs are outside the pool and invisible. Read
-`/nodes/<node>/status` immediately before starting the VM, never size from a
-number in a doc.
+Per the run's own instructions, stopped immediately at this gate — no attempt
+to work around it, no storage-config changes, no alternate import path tried.
+Nothing beyond this was executed: no VM was created or touched this run, so
+there is nothing to clean up. `scripts/pve.py` and `scripts/provision_vm.py`
+are otherwise unchanged and confirmed still correct as far as this point.
+
+**Then, in order, once unblocked:** `fetch-image` → `build-template` →
+`clone --full --name df-fortress` → record `DF_VMID` in `.env` → read
+`/nodes/<node>/status` live (do not start if free memory < ~6.5 GB) → start →
+wait for guest-agent IP → SSH in with
+`ssh -i ~/.ssh/df_overseer_ed25519 -o IdentitiesOnly=yes df@<ip>` → snapshot
+`clean-baseline` → confirm it lists → install DF Classic + DFHack.
+
+**Single next concrete step: unchanged.** Still needs the human step —
+Datacenter → Storage → `ssd_storage` → Edit → Content: add "Import" — before
+any script can proceed past `fetch-image`.
 
 ## 2026-08-25 — research and design phase, nothing implemented
 
