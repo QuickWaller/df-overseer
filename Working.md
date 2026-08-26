@@ -37,6 +37,63 @@ or agent needed, and it tests the project's biggest risk. Build the **fort
 ledger schema** alongside it, since schema design determines what is ever
 learnable and it is cheap now / painful at twenty rows.
 
+## 2026-08-26 — access layer complete; blocked on host RAM
+
+**Access layer is finished and fully verified.** See `memory/proxmox-access.md`
+for the authoritative record (read back from the API, not assumed).
+
+**Done today:**
+
+- **Diagnosed the `download-url` blocker properly.** `Sys.*` privileges are only
+  checked at `/nodes/<node>` or `/` — never against pool or storage paths.
+  Adding `Sys.AccessNetwork` to `DFOverseer` did nothing because that role is
+  bound only at `/pool` and `/storage`. Fixed with a second narrow role
+  `DFOverseerNode` (`Sys.Audit` + `Sys.AccessNetwork`) bound at
+  `/nodes/proxmox`. **Lesson: diagnose by reading `/access/permissions` for
+  granted *paths*, not by inspecting the role's privilege list.**
+- `VM.Clone` granted (confirmed missing by test — needed to clone our own
+  template) and all five `VM.GuestAgent.*` privileges, including
+  `Unrestricted`, which allows command execution inside pool VMs and therefore
+  guest provisioning without SSH.
+- **Ubuntu 24.04 LTS (`noble`) cloud image downloaded to `ssd_storage`** —
+  596 MB, `ssd_storage:iso/noble-server-cloudimg-amd64.img`. Ready to import.
+- Node status reads now work, which is how the RAM problem below was found.
+- **Decided: drop Steam on the VM, use DF Classic there**; keep playing Steam
+  locally. Removes the auto-update-breaks-DFHack hazard, Steam Guard from
+  provisioning, and the Steam-Linux-Runtime gotcha.
+- Fixed a real bug in `.env`: the Proxmox password contains `$E`, which bash
+  expanded to nothing when sourcing. Now single-quoted. Any script sourcing
+  `.env` would have hit this.
+
+**BLOCKER — host memory:**
+
+The host has **15.5 GB total, 13.7 GB used, 1.3 GB free** (plus 1 GB of swap in
+use). The 8 GB VM in `docs/PURPOSE.md` cannot be created. The memory is consumed
+by VMs outside our pool, which we cannot see or manage.
+
+Options, for the user to decide: free memory on the host, add RAM to the
+ProDesk, or size the DF VM to what is available. Our own research says a
+small-world fort needs ~1–2 GB at runtime with worldgen as the peak, so 4 GB
+would be comfortable — but even that exceeds current free memory.
+
+CPU is fine: **i7-7700T, 4c/8t @ 2.9 GHz.** DF is single-threaded except
+line-of-sight, so single-core performance is what matters and this is adequate.
+
+**NEXT CONCRETE STEP** once RAM is resolved: create the VM from the downloaded
+cloud image — create VM → `import-from` the `.img` → attach cloud-init drive →
+set `ciuser`/`sshkeys`/`ipconfig0` (all confirmed working) → resize disk →
+convert to template → clone. Then write `scripts/provision-vm.py` around it.
+
+**Write the provisioning tooling in Python, not bash** — Git Bash's MSYS layer
+rewrites POSIX paths in arguments (`/var/lib/vz/...` became
+`C:/Program Files/Git/var/lib/vz/...`), which will silently corrupt any
+`import-from` path.
+
+**Still open from before:** token not rotated (user's decision, credentials are
+in an earlier transcript); folder still named `df-automation` on disk; DF replay
+determinism unverified; compliance-vs-doctrine-size curve unmeasured; nothing
+pushed (no remote configured).
+
 ## 2026-08-25 (later) — Proxmox access layer built and verified
 
 **Done, all verified against the live API (not assumed):**
