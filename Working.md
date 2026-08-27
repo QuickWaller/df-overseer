@@ -52,6 +52,45 @@ machine-local runtime file that was showing up untracked).
 **Not pushed.** Local `main` is now several commits ahead of origin. Push is
 gated on an explicit go-ahead each time.
 
+## 2026-08-27 (evening) - the VM is running
+
+**VM 104 `df-fortress` booted for the first time.** Dropped to 4096 MB / 2048
+MB balloon per the user's call (a cluster with more memory per host is coming,
+so sizing around today's 15.5 GiB host is not worth waiting on). It cleared the
+host-memory gate with 1.3 GiB headroom where 6144 MB did not.
+
+Verified live, not assumed: Ubuntu 24.04.4, kernel 6.8.0-137, cloud-init
+`done`, disk resized to 24 G usable, 4 cores, 3915 MB in the guest, SSH as
+`df@<df-vm-ip>` with `DF_SSH_KEY` working.
+
+**The reachability blocker was an account, not an outage.** This machine was
+logged into the `<tailnet-b-account>` tailnet, which does not contain the subnet
+router. `tailscale switch aa14` put it on the tailnet that has `tailscale`
+(<tailnet-router-ip>) advertising `<lan-subnet>/24`, and the API answered immediately.
+Previous sessions read this as a transient peer dropout and advised retrying;
+retrying was never going to work. **Side effect worth knowing: this machine is
+now off the `<tailnet-b-account>` tailnet**, so `gitea`, `secrets` and the tenant
+hosts are not reachable from here until it switches back.
+
+**Template gap found and worked around.** The template sets `agent: enabled=1`
+but never installs `qemu-guest-agent` in the guest, so every `/agent/*` call
+returned 500 and the API could not report the VM's IP. VM 104 had to be located
+by TCP-scanning `<lan-subnet>/24` for port 22 and probing with the SSH key.
+Installed by hand on 104; the API now reads the IP correctly.
+**`cmd_build_template` still has the gap** and will reproduce it.
+
+**New tooling:** `scripts/provision_vm.py set-memory` and `start`. `start`
+enforces the 2026-08-26 standing rule in code rather than leaving it to
+memory: it reads host `available` and refuses when under 1 GiB would remain
+(`--force` overrides). `set-memory` refuses to run against a running VM,
+because a live `memory` write goes through the balloon driver and would report
+a success that did not happen.
+
+**Two things flagged, not fixed:** the IP is an unreserved DHCP lease, so
+anything that pins `<df-vm-ip>` will break when it moves; and there is no
+swap, which is fine at steady state but leaves no cushion behind the 4 GB
+ceiling during worldgen.
+
 ## HANDOVER - 2026-08-27 (evening), work paused here
 
 **State at a glance:** the repo's two earliest build items are both done and
@@ -70,8 +109,10 @@ commits ahead of origin and unpushed**.
    that break each validator rule on purpose. Six decision-register entries
    record the design calls. Full account in the section above this one.
 
-3. **Infrastructure: unchanged.** Template 101 and VM 104 (`df-fortress`) are
-   built. The VM is stopped and was not started this session either.
+3. **Infrastructure: the VM is up.** VM 104 `df-fortress` is running at 4096
+   MB, reachable at `df@<df-vm-ip>`. First boot ever. See the section above
+   for what was verified and for the two things flagged but not fixed (DHCP
+   lease not reserved, no swap).
 
 4. **Repo is public** at [github.com/QuickWaller/df-overseer](https://github.com/QuickWaller/df-overseer).
    `gh` is authenticated (QuickWaller). **Six local commits are unpushed**,
@@ -109,13 +150,18 @@ mechanical reading, in which case they get demoted to `AGENT` and become colour
 rather than evidence. This is gated on the perception layer, so it waits, but
 it is the thing that will actually validate or break the schema.
 
-**4. Proxmox VM start: blocked on the same two things, unchanged.** Memory
-headroom (the VM wants 6144 MB; host had 5.4 GB available at last read; options
-are free host RAM, drop the VM to 4 GB while stopped, or wait for the second
-node) and the tailnet subnet router being reachable (`tailscale`,
-<tailnet-router-ip>, advertising `<lan-subnet>/24`). Resume command:
-`python scripts/provision_vm.py status`, which gates on `available`, not
-`free`.
+**4. The VM is up, so the DFHack side is now unblocked.** `docs/PURPOSE.md`'s
+build order past item 1 needed a running game and could not start. It can now.
+Item 2 is `check_reachable` / `get_connectivity_report`, which copies
+`warn-stranded.lua`'s working algorithm and is the highest-confidence real code
+in that list. Note this competes with the compliance harness above: the
+compliance harness is cheaper and retires a standing caveat, the DFHack work
+unblocks everything downstream. Pick deliberately rather than by whichever is
+in front of you.
+
+**Before either, one prerequisite:** nothing is installed in the guest yet. DF
+Classic and DFHack still need to go on, per the 2026-08-26 decision to drop
+Steam. The guest is a bare Ubuntu 24.04 with a working SSH key.
 
 **5. Re-run the perception eval against real briefings once `llm-brief.lua`
 exists.** Today's result is on hand-authored, generous 15-landmark fixtures;
