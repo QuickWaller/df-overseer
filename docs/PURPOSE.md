@@ -1,10 +1,12 @@
 # df-overseer
 
-> Working draft, 2026-08-25 (VM spec updated 2026-08-26). Consolidates the
-> research in `research/`. Nothing below has been tested against a running game
-> except where explicitly marked *verified*. The infrastructure it runs on is
-> the exception: the Proxmox access layer is live and the provisioning scripts
-> exist — see `memory/proxmox-access.md`.
+> Working draft, 2026-08-25 (VM spec and game install updated 2026-08-27).
+> Consolidates the research in `research/`. Most of the design below has still
+> not been tested against a running game; assume it is a proposal unless marked
+> *verified*. Two layers under it are real: the Proxmox access layer is live
+> and `scripts/` provisions the VM (`memory/proxmox-access.md`), and DF Classic
+> plus DFHack now run headless on the VM and answer RPC
+> (`memory/df-vm-install.md`). No game-side *code* exists yet.
 
 ## Purpose
 
@@ -116,9 +118,11 @@ Verified against DF v53 / DFHack 53.16-r1.1 unless noted.
 
 **FPS cap is the primary dial, not RAM.** One game year is 403,200 ticks.
 Uncapped, a month of real time is ~640 game years — absurd, and FPS-dead long
-before. `FPS_CAP` and `G_FPS_CAP` are separate (`prefs/init.txt` lines 22–23):
-cap simulation low, leave rendering at 50, and the world crawls while the
-interface stays smooth.
+before. `FPS_CAP` and `G_FPS_CAP` are separate tokens in
+`prefs/init.txt` (**find them by name, not line number: they sit at lines
+22–23 in the local Windows install and 71 and 75 on the VM**): cap simulation
+low, leave rendering at 50, and the world crawls while the interface stays
+smooth.
 
 | FPS_CAP | Real time / game year | Game years in 30 days |
 |---|---|---|
@@ -129,18 +133,28 @@ interface stays smooth.
 At `FPS_CAP:5`, a 60-second model turn is ~¼ game day — so the loop can be
 **non-blocking**; no pausing to think.
 
-**VM:** 4 vCPU, 6144 MB RAM with a 2048 MB balloon floor (DF is
+**VM:** 4 vCPU, **4096 MB** RAM with a 2048 MB balloon floor (DF is
 single-threaded except line-of-sight, so extra cores do nothing and
-single-core clock is everything), 25 GB disk. Sized 2026-08-26 against 5.5 GB
-free on a 15.5 GB host — a workable but not comfortable fit; the worldgen
-spike, not idle runtime, is the real peak, and KVM only backs pages the guest
-actually touches so idle DF sits well below the cap. **Standing rule: read
+single-core clock is everything), 25 GB disk, plus a 4 GB swapfile at
+`vm.swappiness=10`. Sized 2026-08-26 against a 15.5 GB host, revised down from
+6144 on 2026-08-27 so clones inherit the size the VM actually runs at.
+
+**The worldgen spike was assumed to be the real peak; measured, it is not**
+(*verified 2026-08-27*). Sampled every 0.5s across a whole `POCKET ISLAND`
+generation: **peak RSS 561 MB**, swap untouched, available memory never below
+2.5 GiB. DF sits at ~263 MB at the main menu, and KVM only backs pages the
+guest actually touches. **This measures worldgen only** — a long-running fort
+with hundreds of units and years of accumulated items is the actual memory
+question and is still unmeasured, so 4096 MB is not yet vindicated, merely not
+refuted. The swapfile is insurance rather than a fix. **Standing rule: read
 `/nodes/<node>/status` live immediately before starting the VM, never size or
 start from a number written in a doc — this host's usage moved 13.7 → 4.8 →
 9.0 → 10.1 GB inside three days and the other VMs sharing it are outside our
 pool and invisible to us. Gate on that endpoint's `available`, not its `free`:
 `free` excludes page cache and collapses during any large copy, which on
-2026-08-27 read as a 1.7 GB shortage while 5.4 GB was genuinely available.** Saves are 15–19 MB, so
+2026-08-27 read as a 1.7 GB shortage while 5.4 GB was genuinely available.** A freshly generated pocket world saves at ~900 KB
+(*measured*); the 15–19 MB figure from the local install is a save with a
+played fortress in it, which is the number snapshot budgeting should use, so
 season-granularity snapshots for a month cost ~2 GB.
 
 **Anti-decay suite** — all present in the install, enable via
@@ -153,18 +167,50 @@ FPS"), not a compute fix — it does not stop per-tick cost growing.
 short history, population cap, seal the caverns, break line-of-sight with
 walls not doors. A blueprint library encodes this discipline for free.
 
-**The VM runs DF Classic (Bay12), not Steam** — decided 2026-08-26. Steam
-auto-updating DF mid-fort shifts memory offsets and silently breaks DFHack,
-which was the biggest month-long-run hazard; dropping Steam on the VM removes
-it entirely, along with Steam Guard 2FA in provisioning and the Steam Linux
-Runtime gotcha. Steam DF is still played locally. Same engine version, so
-saves should be interchangeable between the two — *verify, don't assume*.
+**The VM runs DF Classic (Bay12), not Steam** — decided 2026-08-26,
+*installed and verified 2026-08-27*. Steam auto-updating DF mid-fort shifts
+memory offsets and silently breaks DFHack, which was the biggest
+month-long-run hazard; dropping Steam on the VM removes it entirely, along
+with Steam Guard 2FA in provisioning and the Steam Linux Runtime gotcha. Steam
+DF is still played locally. What is now on the VM is **DF v0.53.16 linux64
+(build tag `ITCH`) with DFHack 53.16-r1.1**, the same DFHack version as the
+local Windows install, so the availability findings in
+`memory/dfhack-environment.md` carry over; audited against the Linux install
+and they hold. Saves *should* be interchangeable between the two builds, and
+that is still the one part of this decision nobody has tested — *verify, don't
+assume*.
+
+**DF runs headless under Xvfb** (*verified*). This revisits the 2026-08-25
+rejection of headless DF, which was right that no text mode exists and beside
+the point: nobody looks at the window, so a virtual framebuffer is enough to
+satisfy SDL, and commitment #1 is untouched because the model never sees it.
+Control is `dfhack-run` against the RPC server on `127.0.0.1:5000`.
+
+**Worlds are generated from the command line** (*verified*):
+`./dfhack -gen <id> <seed> "<preset>"` runs silently and quits, so world
+creation needs no UI driving at all. Preset names are compiled into the
+binary. `POCKET ISLAND` is the current default: 17x17, stops at year 30,
+~900 KB save in about 12 seconds. **It fails silently in roughly a quarter of
+runs**, generating the full history and then never writing an export, with
+nothing in any log; detect by the absence of the region directory, never by
+exit code. Embark is the next thing that will need UI driving, and how much of
+it is scriptable is unknown.
+
+**Saves live at `~/.local/share/Bay 12 Games/Dwarf Fortress/save/`**
+(*verified*), not in the game directory. Anything that rotates, snapshots or
+backs up saves must point there; the pre-v50 `<df>/data/save` layout that most
+community writeups still describe does not exist on this build, and a script
+aimed at it copies nothing and reports success.
 
 ## Build order
 
-1. **Perception eval harness.** Hand-written briefings, questions with known
-   answers, measure comprehension. No running game, no agent needed. Tests the
-   project's biggest risk in an afternoon.
+0. ~~**Get DF and DFHack running on the VM.**~~ **Done 2026-08-27** — see
+   `memory/df-vm-install.md`. Not originally on this list, and it blocked every
+   item below it. Still missing: systemd units, so nothing survives a reboot.
+1. ~~**Perception eval harness.**~~ **Done 2026-08-27** — `evals/perception/`,
+   99.1% across all three representations at n=108 each. Caveat that still
+   stands: hand-authored 15-landmark fixtures, not the lossier real generator
+   (build item 4 produces that), so item 1 wants re-running once it exists.
 2. `check_reachable` / `get_connectivity_report` — copies `warn-stranded.lua`'s
    working algorithm. Highest-confidence real code.
 3. Landmark system on burrows + exits-first representation.
@@ -192,4 +238,10 @@ saves should be interchangeable between the two — *verify, don't assume*.
   unretires) and needs no scripting, since a person can drive the UI. The
   "Save to a new Timeline" fork allows concurrency but the worlds diverge
   permanently. Worth designing for the time-sliced version.
-- Repo has not yet adopted `claude-code-managed-repo-template` conventions.
+- How much of **embark** is scriptable. `-gen` removed UI driving from
+  worldgen; embark is the next thing to need it, and the answer decides
+  whether an unattended re-embark after a fort dies is possible at all. Note
+  that DFHack 53.16 cannot script mode switching (`mode` is unavailable), so
+  this is not a solved problem by assumption.
+- **A running fort's memory ceiling.** Worldgen answered a different question
+  (above). Nothing is known about a fort at year 5 with 100 dwarves.

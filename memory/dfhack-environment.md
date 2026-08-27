@@ -88,9 +88,11 @@ Lua API. `mode`'s own doc also warns that most mode combinations corrupt saves.
 
 ## Game-side facts
 
-- `prefs/init.txt` overrides `data/init/init_default.txt`. `FPS_CAP` (line 22)
-  and `G_FPS_CAP` (line 23) are **separate**: cap the simulation low and leave
-  rendering at 50, and the world crawls while the UI stays smooth.
+- `prefs/init.txt` overrides `data/init/init_default.txt`. `FPS_CAP` and
+  `G_FPS_CAP` are **separate**: cap the simulation low and leave rendering at
+  50, and the world crawls while the UI stays smooth. **Match them by name.**
+  They are lines 22 and 23 here and lines 71 and 75 on the VM's Linux install,
+  so any script that seeks a line number will edit the wrong setting.
 - One game year = 403,200 ticks (336 days x 1200).
 - Existing saves are **15–19 MB** each — small worlds, short histories. Keep it
   that way; the 25 GB RAM horror stories are 250-year histories on large maps.

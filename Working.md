@@ -9,8 +9,10 @@ actually going on right now.
 **State at a glance.** The game is on the machine and it runs. VM 104 now has
 DF Classic and DFHack installed, running headless, answering RPC, and
 generating worlds from the command line without anyone touching a UI. The
-two-session-old blocker in front of every game-side item is gone. Local `main`
-is **13 commits ahead of origin and unpushed**.
+two-session-old blocker in front of every game-side item is gone. `docs/`,
+memory and the decision register are all reconciled against what is actually
+on the VM, so this is a clean point to stop. Local `main` is **14 commits
+ahead of origin and unpushed**.
 
 ### What changed this session
 
@@ -38,6 +40,21 @@ stops at year 30 and saves ~900 KB. Tiny worlds are the user's call for now.
 
 Full detail, including the package list and the exact launch commands, is in
 **`memory/df-vm-install.md`**.
+
+**`docs/PURPOSE.md` was reconciled against reality**, not just appended to.
+The provenance note, the DF Classic section, the VM sizing paragraph and the
+build order all made claims that this session either confirmed or falsified.
+The build order gained an item 0 for the install, item 1 is marked done, and
+two open questions were replaced: the stale one about repo conventions (long
+since adopted) is gone, and embark-scriptability plus a running fort's memory
+ceiling are now written down as the real unknowns.
+
+One drift worth knowing about, found while reconciling: both `PURPOSE.md` and
+`memory/dfhack-environment.md` cited `FPS_CAP` and `G_FPS_CAP` as
+`prefs/init.txt` **lines 22 and 23**. That is true of the Windows install and
+wrong for the VM, where they are lines 71 and 75. A script seeking those line
+numbers would not error, it would quietly edit the wrong settings. Both docs
+now name the tokens and say the numbers differ per install.
 
 ### Things a next session will otherwise get wrong
 
