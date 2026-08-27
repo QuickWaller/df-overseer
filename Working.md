@@ -4,144 +4,117 @@ What's currently in progress. Remove an item once it's done, tabled, or
 shelved, don't mark it paused. Any session should read this and know what's
 actually going on right now.
 
-## HANDOVER - 2026-08-27 (late evening), work paused here
+## HANDOVER - 2026-08-27 (evening), work paused here
 
-**State at a glance.** Three things are now true that were not true this
-morning: the perception bet is measured and accepted, the fort ledger exists
-and is tested, and **the DF VM is running for the first time**. The game side
-is still entirely unbuilt, and the guest is a bare Ubuntu with nothing
-installed on it. Local `main` is **8 commits ahead of origin and unpushed**.
+**State at a glance.** The provisioning layer is now finished and *proven*,
+not just written: a template build produces a VM whose IP the API can report
+by itself, and a clone of it comes up as its own machine. That was a detour.
+The game side remains entirely unbuilt, and **that is what a next session
+should do**. Local `main` is **12 commits ahead of origin and unpushed**.
 
-### Where things stand
+### What changed this session
 
-1. **Perception eval: done for this phase.** `exits_v1` ties `coords_v1` at
-   99.1%, n=108 per representation, `accepted` in the register. $1.14 across
-   three live runs. Standing caveat: hand-authored 15-landmark fixtures, not
-   the lossier production generator.
+Two provisioning gaps were closed, both of which had produced failures that
+read as something other than what they were.
 
-2. **Fort ledger: built.** `ledger/`, JSONL, git-tracked, **deliberately
-   empty**. `python -m ledger.selftest` passes, including eleven negative
-   checks that break each validator rule on purpose. Six decision entries
-   record the design calls. Nothing in it is verified against DFHack:
-   `schema.MECHANICAL_PATH_VERIFIED` is `False`, and every `MECHANICAL` field
-   is still a bet that code can read that value from game state.
+1. **MACs are derived from the vmid and pinned at clone time.** Proxmox rolls
+   a random MAC whenever a NIC is created, *including on clone*, so deleting
+   and rebuilding a VM orphaned its DHCP reservation and the symptom looked
+   like "the static IP stopped working". VM 104 keeps its existing
+   `<reserved-mac>` via `MAC_OVERRIDES`, matching the reservation the user
+   made on the router; new VMs get `BC:24:11:00:hi:lo`.
 
-3. **VM 104 `df-fortress` is running.** 4096 MB / 2048 balloon, 4 cores,
-   Ubuntu 24.04.4, `df@<df-vm-ip>`, SSH key verified. Host sits at 3.2 GiB
-   available with it up. Full record in `memory/proxmox-access.md`.
+2. **`qemu-guest-agent` is baked into the template.** The bake boots the VM
+   once at 2048 MB, installs over SSH at `DF_BUILD_IP`, proves the agent
+   answers, seals cloud-init state and hard-stops. **Template 101 is rebuilt
+   at 4096 MB**, so clones no longer need the resize VM 104 needed.
 
-4. **Repo is public** at [github.com/QuickWaller/df-overseer](https://github.com/QuickWaller/df-overseer),
-   `gh` authenticated (QuickWaller). **8 local commits are unpushed**, covering
-   the ledger, the handover, and the VM work. Push is gated on an explicit
-   go-ahead each time, so ask.
+**Both are verified end to end.** Cloning 101 produced VM 105 with a fresh
+SSH host key, repopulated `machine-id`, fresh `instance-id`, `cloud-init
+status: done` and `qemu-guest-agent` active, **and the API reported its
+address (`<pve-host>0`) with no static configuration** — the capability
+whose absence forced VM 104 to be found by port-scanning the subnet.
 
-### Three operational facts a next session will otherwise get wrong
+Six bugs surfaced only by running it, all fixed and recorded in
+`decisions/DECISIONS.md`: the post-import resize timeout, `/agent/ping` being
+POST rather than GET, sealing breaking graceful shutdown, `os.devnull` being
+`"nul"` on Windows, and the vmid-collision finding below.
 
-**This machine is on the `aa14` tailnet now.** The Proxmox host is only
-reachable from there: `tailscale` (<tailnet-router-ip>) advertises `<lan-subnet>/24`,
-and the `<tailnet-b-account>` tailnet has no such router. Earlier sessions recorded
-the unreachability as a transient peer dropout and advised retrying; that
-diagnosis was wrong and retrying could never have worked. **Side effect:** this
-machine is off the `<tailnet-b-account>` tailnet, so `gitea`, `secrets` and the
-tenant hosts are unreachable from here until it switches back
-(`tailscale switch 1052`).
+### Operational facts a next session will otherwise get wrong
 
-**The VM's IP is now a reserved lease** (`<reserved-mac>` ->
-`<df-vm-ip>`), reversing what this section said earlier today. Clone-time
-MAC pinning (`mac_for_vmid`) means a rebuilt 104 comes back on the same MAC
-and therefore the same address, so the reservation survives a delete and
-recreate. New VMs get a derived MAC and need their own reservation.
+**This machine is on the `aa14` tailnet.** The Proxmox host is only reachable
+from there: `tailscale` (<tailnet-router-ip>) advertises `<lan-subnet>/24`, and the
+`<tailnet-b-account>` tailnet has no such router. **Side effect:** `gitea`,
+`secrets` and the tenant hosts are unreachable from here until it switches
+back (`tailscale switch 1052`).
 
-**`qemu-guest-agent` is baked into template 101, and the bake is proven.**
-`agent: enabled=1` only opens the virtio channel on the Proxmox side; without
-the package in the guest every `/agent/*` call returns 500. The bake boots the
-VM once at 2048 MB, installs over SSH at `DF_BUILD_IP` (<build-ip>, outside
-the .100-.199 DHCP pool), proves `POST /agent/ping` answers, seals cloud-init
-state and hard-stops. Ran end to end on 2026-08-27 after fixing four bugs it
-surfaced: see `decisions/DECISIONS.md`. **Template 101 is rebuilt at 4096 MB**,
-so clones no longer need the resize VM 104 needed.
+**`next_vmid()` is the only safe source of a vmid.** Cloning to a hand-picked
+`--vmid 102` failed: VM 102 exists on this host *outside* the `df-overseer`
+pool, so our token cannot see it (`403 VM.Audit`) and `pool_members()` does
+not list it. **The pool view is not the host view.** Never pick an id by eye.
+
+**The host cannot fit a 4096 MB VM alongside 104.** It sits at ~3.8 GiB
+available with 104 up. `start` enforces this and refuses under 1 GiB
+headroom; `set-memory` is the way down, and it refuses on a running VM.
+
+**DHCP pool is `.100`-`.199`.** `DF_BUILD_IP=<build-ip>/24` sits just
+outside it and is held only during a template build.
 
 ### What a next session should pick up
 
-**1. Install DF Classic and DFHack on the guest, and prove they run.** This is
-the recommendation, and it displaces the compliance harness that the previous
-handover put first. Three reasons. The guest is bare, so *every* game-side item
-in `docs/PURPOSE.md`'s build order is blocked behind this one step. The
-2026-08-26 decision to drop Steam in favour of DF Classic is still completely
-untested. And 4096 MB is a new, unvalidated ceiling: worldgen is the memory
-spike, there is no swap, and whether DF worldgens comfortably in 4 GB is now a
-real open question rather than a theoretical one.
-
-Also worth doing while there: check `memory/dfhack-environment.md`'s claims
-against the actual install on the VM. That file was written against the local
-Windows DFHack, and several tools are recorded as shipped-but-unavailable.
+**1. Install DF Classic and DFHack on VM 104, and prove they run.** This has
+been the recommendation for two sessions and keeps getting displaced. The
+guest is bare, so *every* game-side item in `docs/PURPOSE.md`'s build order
+is blocked behind it. The 2026-08-26 decision to drop Steam for DF Classic is
+still completely untested. And 4096 MB is an unvalidated ceiling: worldgen is
+the memory spike and there is no swap. Also check
+`memory/dfhack-environment.md`'s claims against the real Linux install; that
+file was written against the local Windows DFHack.
 
 **2. Then `check_reachable` / `get_connectivity_report`** (`docs/PURPOSE.md`
 build item 2). It copies `warn-stranded.lua`'s working algorithm and is the
 highest-confidence real code in that list.
 
-**3. The compliance eval harness, whenever there is an afternoon.** This is
-`research/2026-08-25-learning-architecture.md` build item 1, described there as
-"do first, before any fort runs". It needs no game and no agent, so it is never
-blocked and can slot in anywhere. It retires a caveat the register has carried
-since 2026-08-25: the N=80 doctrine-size threshold is a single unreplicated
-study and our own compliance curve is unmeasured. It can reuse the perception
-harness's whole shape (matrix runner, JSONL results, `report.py`, cached-prefix
-layout), so it is mostly assembly.
-
-It is listed third rather than first only because the VM coming up changed what
-is scarce. If the VM turns out to be a time sink, do this instead rather than
-grinding.
+**3. The compliance eval harness, whenever there is an afternoon.** Research
+build item 1, described there as "do first, before any fort runs". Needs no
+game and no agent, so it is never blocked. It retires the standing caveat
+that the N=80 doctrine-size threshold is a single unreplicated study, and it
+reuses the perception harness's whole shape, so it is mostly assembly.
 
 **4. Mechanical prediction grading** (research build item 3): compare a
-prediction's `signal` field against recorded state at `check_at`. Cheap, and no
+prediction's `signal` field against recorded state at `check_at`. No
 prediction-based calibration metric means anything until it exists.
 
-**5. The ledger's write path is its real test, and it waits on the perception
-layer.** `defense_depth`, `primary_industry` and `surface_footprint` are the
-fields likeliest to have no clean mechanical reading; if so they get demoted to
-`AGENT` and become colour rather than evidence.
+**5. The ledger's write path waits on the perception layer.**
+`defense_depth`, `primary_industry` and `surface_footprint` are likeliest to
+have no clean mechanical reading; if so they get demoted to `AGENT`.
 
 **6. Re-run the perception eval against real briefings once `llm-brief.lua`
-exists.** Today's numbers are on generous hand-authored fixtures; the real
-generator is lossier (3 nearest neighbours, geometric distance).
+exists.** Today's 99.1% is on generous hand-authored fixtures; the real
+generator is lossier.
 
 ### Housekeeping, carried forward
 
-- **DONE: the bake works and template 101 is rebuilt with it.** Verified by
-  running it: agent answers, MAC pinned, template converted. **The one thing
-  still unproven is a clone** -- nothing has been cloned from 101, so sealing
-  (fresh machine-id and SSH host keys per clone) is untested. That is the
-  next cheap check and it needs a VM booted at reduced memory, since the host
-  cannot fit 4096 MB alongside VM 104.
-  **Correction:** this file called the fix "a two-line cloud-init change".
-  That was wrong and unchecked -- Proxmox cloud-init cannot install packages,
-  and the `cicustom` route needs a permission grant plus host filesystem
-  access. See `decisions/DECISIONS.md` 2026-08-27.
-- **DONE: DHCP lease reserved** (`<reserved-mac>` -> `<df-vm-ip>`), and
-  MACs are now derived from the vmid and pinned at clone time so a rebuild
-  keeps the reservation. `cmd_clone`'s pinning PUT is **not yet exercised
-  against the API** -- no clone has run since.
-- **Still open: add swap**, or consciously decide it does not matter before
+- **VM 105 `df-seal-test` is stopped but not destroyed.** It is a linked
+  clone created purely to verify sealing and has served its purpose. It needs
+  an explicit go-ahead to destroy, which was not given before the session
+  ended. Destroy it, or keep it as a cheap DF install target.
+- **Add swap to 104**, or consciously decide it does not matter, before
   worldgen is attempted in 4096 MB.
-- **Proxmox token not rotated**, pasted into an earlier transcript. Datacenter
-  > Permissions > API Tokens > `api` > Remove, re-Add, update
+- **Proxmox token not rotated**, pasted into an earlier transcript.
+  Datacenter > Permissions > API Tokens > `api` > Remove, re-Add, update
   `PVE_TOKEN_SECRET` in `.env`.
-- **Temporary Anthropic key in `.env` expires ~2026-09-03** (user-supplied
-  2026-08-27). Rotate or remove after use; do not commit or log it.
+- **Temporary Anthropic key in `.env` expires ~2026-09-03**. Rotate or remove
+  after use; do not commit or log it.
 - **Folder is still `df-automation` on disk** while the project is
   `df-overseer`.
-- **`openclaw` vs `hermes-agent` still deferred.** The multi-agent
-  decomposition point from 2026-08-27 adds a criterion but does not resolve it.
+- **`openclaw` vs `hermes-agent` still deferred.**
 - **DF replay determinism unverified**, and the seeded-counterfactual rerun
   harness (research build item 7) rests entirely on it.
-- **`hypothesis_id` has no registry.** Ledger observations reference
-  hypotheses by bare string and nothing checks the id exists. Belongs with
-  research build item 4, but a typo before then silently orphans evidence.
+- **`hypothesis_id` has no registry.** A typo silently orphans evidence.
 
 **Style note:** the user does not want em dashes in prose. Commas, colons,
-semicolons or full stops instead. They are fine as structural separators
-(aligned definition lists, index lines).
+semicolons or full stops instead. Fine as structural separators.
 
 ## Archived
 
@@ -155,3 +128,5 @@ semicolons or full stops instead. They are fine as structural separators
   moved to the same archive file.
 - 2026-08-27 (late evening): the fort-ledger section and the VM-start
   section, both finished, moved to the same archive file.
+- 2026-08-27 (evening): the late-evening handover, superseded by the
+  provisioning-hardening handover above, moved to the same archive file.
