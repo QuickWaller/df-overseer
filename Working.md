@@ -11,8 +11,10 @@ DF Classic and DFHack installed, running headless, answering RPC, and
 generating worlds from the command line without anyone touching a UI. The
 two-session-old blocker in front of every game-side item is gone. `docs/`,
 memory and the decision register are all reconciled against what is actually
-on the VM, so this is a clean point to stop. Local `main` is **14 commits
-ahead of origin and unpushed**.
+on the VM, so this is a clean point to stop. Local `main` is **16 commits
+ahead of origin and unpushed** (the previous handover said 12; it was already
+undercounting, so trust `git rev-list --count origin/main..main`, not the
+number written in a doc).
 
 ### What changed this session
 
