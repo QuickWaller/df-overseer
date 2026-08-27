@@ -4,193 +4,130 @@ What's currently in progress. Remove an item once it's done, tabled, or
 shelved, don't mark it paused. Any session should read this and know what's
 actually going on right now.
 
-## 2026-08-27 (evening) - fort ledger built
+## HANDOVER - 2026-08-27 (late evening), work paused here
 
-**The build-order item named three times is done.** `ledger/` holds the schema,
-a validating write path, stratification, a coverage report, and a selftest.
-`python -m ledger.selftest` passes all checks; `python -m ledger.report` runs.
-Six entries in `decisions/DECISIONS.md` 2026-08-27 record the design calls.
+**State at a glance.** Three things are now true that were not true this
+morning: the perception bet is measured and accepted, the fort ledger exists
+and is tested, and **the DF VM is running for the first time**. The game side
+is still entirely unbuilt, and the guest is a bare Ubuntu with nothing
+installed on it. Local `main` is **8 commits ahead of origin and unpushed**.
 
-**What it is:** JSONL, one row per fort, git-tracked. `forts.jsonl` is empty
-and stays that way until the game side exists. That order is deliberate:
-section 3.2 of the learning-architecture research warns that retrofitting
-covariates onto old rows defeats the purpose, so the fields have to be right
-before the first fort rather than after the twentieth.
-
-**Four design calls worth knowing about:**
-
-1. **Orthogonal feature axes**, replacing the design doc's single
-   `entrance_design`. You cannot vary one variable when the variable is a
-   portmanteau, and build item 8 depends on being able to.
-2. **Every field declares a `source`**, and `store.assert_gradeable()` refuses
-   to let grading code read `HUMAN` or `AGENT` fields. This makes "never grade
-   the agent's account of its own learning" a code-level failure rather than a
-   discipline anyone has to remember.
-3. **`unrecorded` is dropped by stratification, not pooled**, and the dropped
-   count is part of the result so the denominator stays honest.
-4. **The vocabulary can record our own failures** (`agent_error`,
-   `fps_collapse`, `run_ended_technical`). A schema that cannot record them
-   produces a flattering report by construction.
-
-**Standing caveat, and the next real test of this work:** nothing is verified
-against DFHack. Every `MECHANICAL` field is a bet that code will be able to
-read that value from game state, and `schema.MECHANICAL_PATH_VERIFIED` is
-`False` to say so. `defense_depth`, `primary_industry` and `surface_footprint`
-are the likeliest to have no clean mechanical reading; if so they get demoted
-to `AGENT` and become colour rather than evidence.
-
-**Deliberately not built:** any inference. `report.py` prints coverage and
-descriptive survival with denominators visible and says in its own output that
-it is not evidence. Hypothesis promotion is the hierarchical Beta-Bernoulli
-model (research 3.3, build item 4), which does not exist. Reading a survival
-difference off the report and calling it a lesson is exactly the flat-counter
-mistake the register rejected on 2026-08-25.
-
-**Housekeeping:** added `.claude/scheduled_tasks.lock` to `.gitignore` (a
-machine-local runtime file that was showing up untracked).
-
-**Not pushed.** Local `main` is now several commits ahead of origin. Push is
-gated on an explicit go-ahead each time.
-
-## 2026-08-27 (evening) - the VM is running
-
-**VM 104 `df-fortress` booted for the first time.** Dropped to 4096 MB / 2048
-MB balloon per the user's call (a cluster with more memory per host is coming,
-so sizing around today's 15.5 GiB host is not worth waiting on). It cleared the
-host-memory gate with 1.3 GiB headroom where 6144 MB did not.
-
-Verified live, not assumed: Ubuntu 24.04.4, kernel 6.8.0-137, cloud-init
-`done`, disk resized to 24 G usable, 4 cores, 3915 MB in the guest, SSH as
-`df@<df-vm-ip>` with `DF_SSH_KEY` working.
-
-**The reachability blocker was an account, not an outage.** This machine was
-logged into the `<tailnet-b-account>` tailnet, which does not contain the subnet
-router. `tailscale switch aa14` put it on the tailnet that has `tailscale`
-(<tailnet-router-ip>) advertising `<lan-subnet>/24`, and the API answered immediately.
-Previous sessions read this as a transient peer dropout and advised retrying;
-retrying was never going to work. **Side effect worth knowing: this machine is
-now off the `<tailnet-b-account>` tailnet**, so `gitea`, `secrets` and the tenant
-hosts are not reachable from here until it switches back.
-
-**Template gap found and worked around.** The template sets `agent: enabled=1`
-but never installs `qemu-guest-agent` in the guest, so every `/agent/*` call
-returned 500 and the API could not report the VM's IP. VM 104 had to be located
-by TCP-scanning `<lan-subnet>/24` for port 22 and probing with the SSH key.
-Installed by hand on 104; the API now reads the IP correctly.
-**`cmd_build_template` still has the gap** and will reproduce it.
-
-**New tooling:** `scripts/provision_vm.py set-memory` and `start`. `start`
-enforces the 2026-08-26 standing rule in code rather than leaving it to
-memory: it reads host `available` and refuses when under 1 GiB would remain
-(`--force` overrides). `set-memory` refuses to run against a running VM,
-because a live `memory` write goes through the balloon driver and would report
-a success that did not happen.
-
-**Two things flagged, not fixed:** the IP is an unreserved DHCP lease, so
-anything that pins `<df-vm-ip>` will break when it moves; and there is no
-swap, which is fine at steady state but leaves no cushion behind the 4 GB
-ceiling during worldgen.
-
-## HANDOVER - 2026-08-27 (evening), work paused here
-
-**State at a glance:** the repo's two earliest build items are both done and
-both have their evidence written down. The perception bet is measured and
-accepted; the fort ledger exists, is tested, and is deliberately empty. The VM
-is built, stopped, and has still never been started. Local `main` is **6
-commits ahead of origin and unpushed**.
+### Where things stand
 
 1. **Perception eval: done for this phase.** `exits_v1` ties `coords_v1` at
-   99.1%, n=108 per representation, accepted in the register. Total spend
-   $1.14 across three live runs. Detail archived to
-   [`working-archive/Working_archive-2026-08-24.md`](working-archive/Working_archive-2026-08-24.md).
+   99.1%, n=108 per representation, `accepted` in the register. $1.14 across
+   three live runs. Standing caveat: hand-authored 15-landmark fixtures, not
+   the lossier production generator.
 
-2. **Fort ledger: built this session.** `ledger/`, JSONL, git-tracked, empty by
-   design. `python -m ledger.selftest` passes, including eleven negative checks
-   that break each validator rule on purpose. Six decision-register entries
-   record the design calls. Full account in the section above this one.
+2. **Fort ledger: built.** `ledger/`, JSONL, git-tracked, **deliberately
+   empty**. `python -m ledger.selftest` passes, including eleven negative
+   checks that break each validator rule on purpose. Six decision entries
+   record the design calls. Nothing in it is verified against DFHack:
+   `schema.MECHANICAL_PATH_VERIFIED` is `False`, and every `MECHANICAL` field
+   is still a bet that code can read that value from game state.
 
-3. **Infrastructure: the VM is up.** VM 104 `df-fortress` is running at 4096
-   MB, reachable at `df@<df-vm-ip>`. First boot ever. See the section above
-   for what was verified and for the two things flagged but not fixed (DHCP
-   lease not reserved, no swap).
+3. **VM 104 `df-fortress` is running.** 4096 MB / 2048 balloon, 4 cores,
+   Ubuntu 24.04.4, `df@<df-vm-ip>`, SSH key verified. Host sits at 3.2 GiB
+   available with it up. Full record in `memory/proxmox-access.md`.
 
-4. **Repo is public** at [github.com/QuickWaller/df-overseer](https://github.com/QuickWaller/df-overseer).
-   `gh` is authenticated (QuickWaller). **Six local commits are unpushed**,
-   including the whole ledger. Push is gated on an explicit go-ahead each time,
-   so ask rather than assuming the user still wants it caught up.
+4. **Repo is public** at [github.com/QuickWaller/df-overseer](https://github.com/QuickWaller/df-overseer),
+   `gh` authenticated (QuickWaller). **8 local commits are unpushed**, covering
+   the ledger, the handover, and the VM work. Push is gated on an explicit
+   go-ahead each time, so ask.
 
-### What a next session should pick up, in order
+### Three operational facts a next session will otherwise get wrong
 
-**1. Build the compliance eval harness.** This is
+**This machine is on the `aa14` tailnet now.** The Proxmox host is only
+reachable from there: `tailscale` (<tailnet-router-ip>) advertises `<lan-subnet>/24`,
+and the `<tailnet-b-account>` tailnet has no such router. Earlier sessions recorded
+the unreachability as a transient peer dropout and advised retrying; that
+diagnosis was wrong and retrying could never have worked. **Side effect:** this
+machine is off the `<tailnet-b-account>` tailnet, so `gitea`, `secrets` and the
+tenant hosts are unreachable from here until it switches back
+(`tailscale switch 1052`).
+
+**The VM's IP is an unreserved DHCP lease.** Do not pin `<df-vm-ip>`
+anywhere. Read it from the guest agent, or reserve it on the router first.
+
+**The template does not install `qemu-guest-agent`.** `agent: enabled=1` only
+opens the virtio channel on the Proxmox side; without the package in the guest
+every `/agent/*` call returns 500 and the API cannot report an IP. Installed by
+hand on 104, but **`cmd_build_template` still has the gap** and the next
+template built from it will repeat this. Fixing that is a two-line cloud-init
+change and has not been done.
+
+### What a next session should pick up
+
+**1. Install DF Classic and DFHack on the guest, and prove they run.** This is
+the recommendation, and it displaces the compliance harness that the previous
+handover put first. Three reasons. The guest is bare, so *every* game-side item
+in `docs/PURPOSE.md`'s build order is blocked behind this one step. The
+2026-08-26 decision to drop Steam in favour of DF Classic is still completely
+untested. And 4096 MB is a new, unvalidated ceiling: worldgen is the memory
+spike, there is no swap, and whether DF worldgens comfortably in 4 GB is now a
+real open question rather than a theoretical one.
+
+Also worth doing while there: check `memory/dfhack-environment.md`'s claims
+against the actual install on the VM. That file was written against the local
+Windows DFHack, and several tools are recorded as shipped-but-unavailable.
+
+**2. Then `check_reachable` / `get_connectivity_report`** (`docs/PURPOSE.md`
+build item 2). It copies `warn-stranded.lua`'s working algorithm and is the
+highest-confidence real code in that list.
+
+**3. The compliance eval harness, whenever there is an afternoon.** This is
 `research/2026-08-25-learning-architecture.md` build item 1, described there as
-"cheapest, do first, **before any fort runs**", and it is now the earliest
-unbuilt item in that list. It replicates the instruction-count-decay
-methodology against our actual doctrine format and actual model: load synthetic
-doctrine at increasing rule counts, measure where compliance degrades.
+"do first, before any fort runs". It needs no game and no agent, so it is never
+blocked and can slot in anywhere. It retires a caveat the register has carried
+since 2026-08-25: the N=80 doctrine-size threshold is a single unreplicated
+study and our own compliance curve is unmeasured. It can reuse the perception
+harness's whole shape (matrix runner, JSONL results, `report.py`, cached-prefix
+layout), so it is mostly assembly.
 
-Three reasons it is the right next thing. It needs no game and no agent, so it
-is not blocked behind the VM like everything in `docs/PURPOSE.md`'s build order
-past item 1. It retires a named standing caveat: the register records the N=80
-threshold as "a single unreplicated study" and says to measure our own curve
-early, which has not happened. And it can reuse the perception harness's entire
-shape (matrix runner, JSONL results under version control, `report.py`, the
-prefix-caching prompt layout), so the build is mostly assembly rather than
-design.
+It is listed third rather than first only because the VM coming up changed what
+is scarce. If the VM turns out to be a time sink, do this instead rather than
+grinding.
 
-**2. Then mechanical prediction grading** (research build item 3): a scripted
-comparison of a prediction's `signal` field against recorded state at
-`check_at`. Cheap, and no prediction-based calibration metric means anything
-until it exists.
+**4. Mechanical prediction grading** (research build item 3): compare a
+prediction's `signal` field against recorded state at `check_at`. Cheap, and no
+prediction-based calibration metric means anything until it exists.
 
-**3. The ledger's real test is its write path, and it is not built.** Every
-`MECHANICAL` field is currently a bet that code will be able to read that value
-from game state; `schema.MECHANICAL_PATH_VERIFIED` is `False`. `defense_depth`,
-`primary_industry` and `surface_footprint` are the likeliest to have no clean
-mechanical reading, in which case they get demoted to `AGENT` and become colour
-rather than evidence. This is gated on the perception layer, so it waits, but
-it is the thing that will actually validate or break the schema.
+**5. The ledger's write path is its real test, and it waits on the perception
+layer.** `defense_depth`, `primary_industry` and `surface_footprint` are the
+fields likeliest to have no clean mechanical reading; if so they get demoted to
+`AGENT` and become colour rather than evidence.
 
-**4. The VM is up, so the DFHack side is now unblocked.** `docs/PURPOSE.md`'s
-build order past item 1 needed a running game and could not start. It can now.
-Item 2 is `check_reachable` / `get_connectivity_report`, which copies
-`warn-stranded.lua`'s working algorithm and is the highest-confidence real code
-in that list. Note this competes with the compliance harness above: the
-compliance harness is cheaper and retires a standing caveat, the DFHack work
-unblocks everything downstream. Pick deliberately rather than by whichever is
-in front of you.
+**6. Re-run the perception eval against real briefings once `llm-brief.lua`
+exists.** Today's numbers are on generous hand-authored fixtures; the real
+generator is lossier (3 nearest neighbours, geometric distance).
 
-**Before either, one prerequisite:** nothing is installed in the guest yet. DF
-Classic and DFHack still need to go on, per the 2026-08-26 decision to drop
-Steam. The guest is a bare Ubuntu 24.04 with a working SSH key.
+### Housekeeping, carried forward
 
-**5. Re-run the perception eval against real briefings once `llm-brief.lua`
-exists.** Today's result is on hand-authored, generous 15-landmark fixtures;
-the real generator is lossier (3 nearest neighbours only, geometric distance).
-That gap is the next validity question, not urgent on its own.
-
-**6. Housekeeping, carried forward and still untouched:**
-
+- **Fix `cmd_build_template` to install `qemu-guest-agent`** (see above). New
+  this session.
+- **Reserve the VM's DHCP lease, or add swap**, or consciously decide neither
+  matters. New this session.
 - **Proxmox token not rotated**, pasted into an earlier transcript. Datacenter
-  > Permissions > API Tokens > `api` > Remove, re-Add, update `PVE_TOKEN_SECRET`
-  in `.env`.
+  > Permissions > API Tokens > `api` > Remove, re-Add, update
+  `PVE_TOKEN_SECRET` in `.env`.
 - **Temporary Anthropic key in `.env` expires ~2026-09-03** (user-supplied
   2026-08-27). Rotate or remove after use; do not commit or log it.
+- **Template 101 is still sized 6144 MB.** Harmless while it is never started,
+  but clones inherit it, so the next clone will need the same resize VM 104
+  just had.
 - **Folder is still `df-automation` on disk** while the project is
   `df-overseer`.
-- **`openclaw` vs `hermes-agent` still deferred.** The 2026-08-27 addition
-  stands: multi-agent decomposition by spatial task bears on the choice because
-  openclaw's multi-agent support is a candidate differentiator. Does not
-  resolve it.
+- **`openclaw` vs `hermes-agent` still deferred.** The multi-agent
+  decomposition point from 2026-08-27 adds a criterion but does not resolve it.
 - **DF replay determinism unverified**, and the seeded-counterfactual rerun
   harness (research build item 7) rests entirely on it.
 - **`hypothesis_id` has no registry.** Ledger observations reference
-  hypotheses by bare string, and nothing checks the id exists. Belongs with
-  research build item 4, but a typo before then silently orphans evidence. See
-  `ledger/README.md` open questions.
+  hypotheses by bare string and nothing checks the id exists. Belongs with
+  research build item 4, but a typo before then silently orphans evidence.
 
-**Style note for future sessions:** the user does not want em dashes in prose.
-Commas, colons, semicolons or full stops instead. They are fine as structural
-separators (aligned definition lists, index lines).
+**Style note:** the user does not want em dashes in prose. Commas, colons,
+semicolons or full stops instead. They are fine as structural separators
+(aligned definition lists, index lines).
 
 ## Archived
 
@@ -202,3 +139,5 @@ separators (aligned definition lists, index lines).
 - 2026-08-27 (evening): the afternoon perception-eval section (it reported
   itself finished) and the afternoon handover (superseded by the one above)
   moved to the same archive file.
+- 2026-08-27 (late evening): the fort-ledger section and the VM-start
+  section, both finished, moved to the same archive file.
