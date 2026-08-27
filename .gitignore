@@ -28,3 +28,6 @@ __pycache__/
 .venv/
 venv/
 .venv_perception/
+
+# Machine-local Claude Code scheduled-task lock.
+.claude/scheduled_tasks.lock
