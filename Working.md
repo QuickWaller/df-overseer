@@ -116,11 +116,20 @@ exists.** Today's 99.1% is on generous hand-authored fixtures.
 
 ### Operational facts, carried forward
 
-**This machine is on the `aa14` tailnet.** The Proxmox host is only reachable
-from there: `tailscale` (<tailnet-router-ip>) advertises `<lan-subnet>/24`, and the
-`<tailnet-b-account>` tailnet has no such router. Side effect: `gitea`, `secrets`
-and the tenant hosts are unreachable from here until it switches back
-(`tailscale switch 1052`).
+**This machine switched to the `1052` (<tailnet-b-account>) tailnet at the end of
+this session, so Proxmox and VM 104 are currently unreachable from here.**
+The Proxmox host is only reachable from `aa14`: `tailscale` (<tailnet-router-ip>)
+advertises `<lan-subnet>/24` there, and `1052` has no such router. Run
+`tailscale switch aa14` before touching the VM or `scripts/provision_vm.py`,
+and `tailscale switch 1052` to get `gitea`, `secrets` and the tenant hosts
+back. Only one at a time; this is a real either/or.
+
+**Consequence for this handover:** the VM was last verified healthy minutes
+before the switch (Xvfb and `dwarfort` both up, RPC answering, 2.9 GiB
+available, swap untouched). It has not been checked since and nothing was
+done to it after that, so it should be exactly as described, but the first
+thing a next session should do is switch tailnets and confirm rather than
+assume.
 
 **`next_vmid()` is the only safe source of a vmid.** VM 102 exists on this host
 outside the `df-overseer` pool, so our token cannot see it and `pool_members()`
