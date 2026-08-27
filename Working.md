@@ -32,7 +32,7 @@ read as something other than what they were.
 **Both are verified end to end.** Cloning 101 produced VM 105 with a fresh
 SSH host key, repopulated `machine-id`, fresh `instance-id`, `cloud-init
 status: done` and `qemu-guest-agent` active, **and the API reported its
-address (`<pve-host>0`) with no static configuration** — the capability
+address (`<pve-host>0`) with no static configuration**, the capability
 whose absence forced VM 104 to be found by port-scanning the subnet.
 
 Six bugs surfaced only by running it, all fixed and recorded in
