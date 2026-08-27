@@ -16,7 +16,9 @@ actually going on right now.
 
 **Update, same afternoon — the stratified run happened, and the $5-15 estimate was wrong.** Real per-cell cost is far below the earlier guess (output tokens ran much lower than assumed). Ran a 120-cell stratified slice (`--per-category 1`, all fixtures, all representations — `evals/perception/results/stratified-2026-08-27.jsonl`) for **$0.27 actual**. Result: **first real signal that the core bet holds** — `exits_v1` tied `coords_v1` at 97.4% on the shared question set; see `decisions/DECISIONS.md` 2026-08-27 for the full breakdown, including the `route`-category soft spot and a thin-but-notable calibration difference. Marked `proposed`, not `accepted` — n=1-3/category, small hand-authored fixtures.
 
-**Next concrete step for the harness:** the full 342-cell matrix (3x repeats) would tighten confidence on `route` and calibration specifically — re-estimated at **$0.50-1**, not $5-15, now that real per-cell cost is known. Not urgent; a "when ready" call, not a blocker.
+**Update, same afternoon — full 342-cell matrix run.** $0.83 actual, zero API errors. Confirms the core bet at real sample size: all three representations 99.1% (n=108 each), `route` rose to 88.9% with more data. **The calibration-separation finding from the 120-cell run did not replicate** — reordered entirely at n=108 (see `decisions/DECISIONS.md` 2026-08-27, both the `accepted` promotion and the retraction entry). Total spend today across all three eval runs: **$1.14**.
+
+**Perception harness status: first build-order item now has real, accepted evidence behind it.** Standing caveats unchanged — still 15-landmark hand-authored fixtures, not the real (lossier) production briefing generator. Re-run against real briefings once `llm-brief.lua` exists. Next build-order item is the **fort ledger schema** (still not started, named three times now).
 
 ## HANDOVER — 2026-08-27, work paused here
 
