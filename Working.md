@@ -29,7 +29,8 @@ read as something other than what they were.
    answers, seals cloud-init state and hard-stops. **Template 101 is rebuilt
    at 4096 MB**, so clones no longer need the resize VM 104 needed.
 
-**Both are verified end to end.** Cloning 101 produced VM 105 with a fresh
+**Both are verified end to end.** Cloning 101 produced VM 105 (since
+destroyed, having served its purpose) with a fresh
 SSH host key, repopulated `machine-id`, fresh `instance-id`, `cloud-init
 status: done` and `qemu-guest-agent` active, **and the API reported its
 address (`<pve-host>0`) with no static configuration**, the capability
@@ -95,10 +96,6 @@ generator is lossier.
 
 ### Housekeeping, carried forward
 
-- **VM 105 `df-seal-test` is stopped but not destroyed.** It is a linked
-  clone created purely to verify sealing and has served its purpose. It needs
-  an explicit go-ahead to destroy, which was not given before the session
-  ended. Destroy it, or keep it as a cheap DF install target.
 - **Add swap to 104**, or consciously decide it does not matter, before
   worldgen is attempted in 4096 MB.
 - **Proxmox token not rotated**, pasted into an earlier transcript.
