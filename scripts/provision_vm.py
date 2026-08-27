@@ -196,6 +196,86 @@ def cmd_clone(pve, args):
     return newid
 
 
+def cmd_set_memory(pve, args):
+    """Resize a stopped VM's memory. Refuses while it is running.
+
+    A live `memory` change on a running guest is applied through the balloon
+    driver and does not move the ceiling, so a "success" there would be
+    misleading. Requiring the VM to be stopped keeps the reported result and
+    the actual result the same thing.
+    """
+    vmid = args.vmid or pve.env.get("DF_VMID")
+    if not vmid:
+        raise PVEError("no vmid: pass --vmid or set DF_VMID in .env")
+
+    status = pve.get(pve.vm_path(vmid, "/status/current"))
+    if status.get("status") != "stopped":
+        raise PVEError("vm %s is %s -- stop it before resizing memory"
+                       % (vmid, status.get("status")))
+
+    cfg = pve.get(pve.vm_path(vmid, "/config"))
+    log("vm %s: memory %s -> %s MB, balloon %s -> %s MB"
+        % (vmid, cfg.get("memory"), args.memory,
+           cfg.get("balloon"), args.balloon))
+
+    if args.balloon > args.memory:
+        raise PVEError("balloon (%s) cannot exceed memory (%s)"
+                       % (args.balloon, args.memory))
+
+    pve.put(pve.vm_path(vmid, "/config"),
+            {"memory": args.memory, "balloon": args.balloon})
+
+    after = pve.get(pve.vm_path(vmid, "/config"))
+    if int(after.get("memory", 0)) != args.memory:
+        raise PVEError("config still reads memory=%s after the write"
+                       % after.get("memory"))
+    log("confirmed by read-back: memory=%s balloon=%s"
+        % (after.get("memory"), after.get("balloon")))
+
+
+def cmd_start(pve, args):
+    """Start a VM, refusing if the host cannot currently back it.
+
+    The standing rule from 2026-08-26: **read /nodes/<node>/status before
+    starting.** The other VMs on this host are outside our pool and invisible
+    to us, and this host's free memory moved 13.7 -> 4.8 -> 9.0 GB used inside
+    two days. Gate on `available`, never on `free`.
+    """
+    vmid = args.vmid or pve.env.get("DF_VMID")
+    if not vmid:
+        raise PVEError("no vmid: pass --vmid or set DF_VMID in .env")
+
+    status = pve.get(pve.vm_path(vmid, "/status/current"))
+    if status.get("status") == "running":
+        log("vm %s is already running" % vmid)
+        return
+
+    cfg = pve.get(pve.vm_path(vmid, "/config"))
+    want_gib = int(cfg.get("memory", 0)) / 1024.0
+    total, used, free, available = pve.node_memory()
+    log("host: %.1f GiB available (%.1f used, %.1f free of %.1f total)"
+        % (available, used, free, total))
+    log("vm %s wants up to %.1f GiB" % (vmid, want_gib))
+
+    headroom = available - want_gib
+    if headroom < args.min_headroom and not args.force:
+        raise PVEError(
+            "only %.1f GiB would be left after starting (minimum %.1f). "
+            "Free host memory, lower the VM's ceiling, or pass --force if "
+            "you accept the risk." % (headroom, args.min_headroom))
+    log("headroom after start: %.1f GiB" % headroom)
+
+    upid = pve.post(pve.vm_path(vmid, "/status/start"), {})
+    pve.wait_task(upid, "start vm %s" % vmid, timeout=300)
+
+    after = pve.get(pve.vm_path(vmid, "/status/current"))
+    log("vm %s is now %s" % (vmid, after.get("status")))
+    if after.get("status") != "running":
+        raise PVEError("start task finished but the vm is %s"
+                       % after.get("status"))
+
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     sub = parser.add_subparsers(dest="command", required=True)
@@ -218,6 +298,19 @@ def main():
     clone.add_argument("--full", action="store_true",
                        help="full clone -- no dependency on the template")
 
+    setmem = sub.add_parser("set-memory",
+                            help="resize a stopped VM's memory ceiling")
+    setmem.add_argument("--vmid", type=int)
+    setmem.add_argument("--memory", type=int, required=True)
+    setmem.add_argument("--balloon", type=int, default=DEFAULT_BALLOON)
+
+    start = sub.add_parser("start", help="start a VM, gated on host memory")
+    start.add_argument("--vmid", type=int)
+    start.add_argument("--min-headroom", type=float, default=1.0,
+                       help="GiB that must remain available after starting")
+    start.add_argument("--force", action="store_true",
+                       help="start even if the headroom gate fails")
+
     args = parser.parse_args()
     pve = PVE()
     handler = {
@@ -225,6 +318,8 @@ def main():
         "fetch-image": cmd_fetch_image,
         "build-template": cmd_build_template,
         "clone": cmd_clone,
+        "set-memory": cmd_set_memory,
+        "start": cmd_start,
     }[args.command]
     try:
         handler(pve, args)
