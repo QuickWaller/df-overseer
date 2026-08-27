@@ -52,13 +52,14 @@ MAC pinning (`mac_for_vmid`) means a rebuilt 104 comes back on the same MAC
 and therefore the same address, so the reservation survives a delete and
 recreate. New VMs get a derived MAC and need their own reservation.
 
-**`qemu-guest-agent` is installed by hand on 104, and `cmd_build_template`
-now bakes it** into future templates. `agent: enabled=1` only opens the
-virtio channel on the Proxmox side; without the package in the guest every
-`/agent/*` call returns 500. The bake boots the VM once, installs over SSH,
-proves `/agent/ping` answers, then seals cloud-init state and converts. **It
-has never been run end to end.** It needs `DF_BUILD_IP` in `.env` and a
-template rebuild before anyone should believe it works.
+**`qemu-guest-agent` is baked into template 101, and the bake is proven.**
+`agent: enabled=1` only opens the virtio channel on the Proxmox side; without
+the package in the guest every `/agent/*` call returns 500. The bake boots the
+VM once at 2048 MB, installs over SSH at `DF_BUILD_IP` (<build-ip>, outside
+the .100-.199 DHCP pool), proves `POST /agent/ping` answers, seals cloud-init
+state and hard-stops. Ran end to end on 2026-08-27 after fixing four bugs it
+surfaced: see `decisions/DECISIONS.md`. **Template 101 is rebuilt at 4096 MB**,
+so clones no longer need the resize VM 104 needed.
 
 ### What a next session should pick up
 
@@ -107,10 +108,12 @@ generator is lossier (3 nearest neighbours, geometric distance).
 
 ### Housekeeping, carried forward
 
-- **DONE: `cmd_build_template` now bakes `qemu-guest-agent`** by booting the
-  VM once and installing over SSH, then sealing it. **Written but never run
-  end to end** -- it needs `DF_BUILD_IP` in `.env` (one free address outside
-  the DHCP pool) and a template rebuild to prove it. `--no-bake` skips it.
+- **DONE: the bake works and template 101 is rebuilt with it.** Verified by
+  running it: agent answers, MAC pinned, template converted. **The one thing
+  still unproven is a clone** -- nothing has been cloned from 101, so sealing
+  (fresh machine-id and SSH host keys per clone) is untested. That is the
+  next cheap check and it needs a VM booted at reduced memory, since the host
+  cannot fit 4096 MB alongside VM 104.
   **Correction:** this file called the fix "a two-line cloud-init change".
   That was wrong and unchecked -- Proxmox cloud-init cannot install packages,
   and the `cicustom` route needs a permission grant plus host filesystem
@@ -126,9 +129,6 @@ generator is lossier (3 nearest neighbours, geometric distance).
   `PVE_TOKEN_SECRET` in `.env`.
 - **Temporary Anthropic key in `.env` expires ~2026-09-03** (user-supplied
   2026-08-27). Rotate or remove after use; do not commit or log it.
-- **Template 101 is still sized 6144 MB.** Harmless while it is never started,
-  but clones inherit it, so the next clone will need the same resize VM 104
-  just had.
 - **Folder is still `df-automation` on disk** while the project is
   `df-overseer`.
 - **`openclaw` vs `hermes-agent` still deferred.** The multi-agent
