@@ -566,3 +566,94 @@ and SDN blockers, the RAM-metric and electricity-cost corrections, the
 hardware-planning session, and the original harness build) has moved to
 [`working-archive/Working_archive-2026-08-24.md`](working-archive/Working_archive-2026-08-24.md)
 — it reported itself finished and this file was getting long.
+
+*Moved here 2026-08-27 (late evening). Both sections reported themselves
+finished. Their live consequences are carried in the handover in
+`Working.md`; the detail is here.*
+
+## 2026-08-27 (evening) - fort ledger built
+
+**The build-order item named three times is done.** `ledger/` holds the schema,
+a validating write path, stratification, a coverage report, and a selftest.
+`python -m ledger.selftest` passes all checks; `python -m ledger.report` runs.
+Six entries in `decisions/DECISIONS.md` 2026-08-27 record the design calls.
+
+**What it is:** JSONL, one row per fort, git-tracked. `forts.jsonl` is empty
+and stays that way until the game side exists. That order is deliberate:
+section 3.2 of the learning-architecture research warns that retrofitting
+covariates onto old rows defeats the purpose, so the fields have to be right
+before the first fort rather than after the twentieth.
+
+**Four design calls worth knowing about:**
+
+1. **Orthogonal feature axes**, replacing the design doc's single
+   `entrance_design`. You cannot vary one variable when the variable is a
+   portmanteau, and build item 8 depends on being able to.
+2. **Every field declares a `source`**, and `store.assert_gradeable()` refuses
+   to let grading code read `HUMAN` or `AGENT` fields. This makes "never grade
+   the agent's account of its own learning" a code-level failure rather than a
+   discipline anyone has to remember.
+3. **`unrecorded` is dropped by stratification, not pooled**, and the dropped
+   count is part of the result so the denominator stays honest.
+4. **The vocabulary can record our own failures** (`agent_error`,
+   `fps_collapse`, `run_ended_technical`). A schema that cannot record them
+   produces a flattering report by construction.
+
+**Standing caveat, and the next real test of this work:** nothing is verified
+against DFHack. Every `MECHANICAL` field is a bet that code will be able to
+read that value from game state, and `schema.MECHANICAL_PATH_VERIFIED` is
+`False` to say so. `defense_depth`, `primary_industry` and `surface_footprint`
+are the likeliest to have no clean mechanical reading; if so they get demoted
+to `AGENT` and become colour rather than evidence.
+
+**Deliberately not built:** any inference. `report.py` prints coverage and
+descriptive survival with denominators visible and says in its own output that
+it is not evidence. Hypothesis promotion is the hierarchical Beta-Bernoulli
+model (research 3.3, build item 4), which does not exist. Reading a survival
+difference off the report and calling it a lesson is exactly the flat-counter
+mistake the register rejected on 2026-08-25.
+
+**Housekeeping:** added `.claude/scheduled_tasks.lock` to `.gitignore` (a
+machine-local runtime file that was showing up untracked).
+
+**Not pushed.** Local `main` is now several commits ahead of origin. Push is
+gated on an explicit go-ahead each time.
+
+## 2026-08-27 (evening) - the VM is running
+
+**VM 104 `df-fortress` booted for the first time.** Dropped to 4096 MB / 2048
+MB balloon per the user's call (a cluster with more memory per host is coming,
+so sizing around today's 15.5 GiB host is not worth waiting on). It cleared the
+host-memory gate with 1.3 GiB headroom where 6144 MB did not.
+
+Verified live, not assumed: Ubuntu 24.04.4, kernel 6.8.0-137, cloud-init
+`done`, disk resized to 24 G usable, 4 cores, 3915 MB in the guest, SSH as
+`df@<df-vm-ip>` with `DF_SSH_KEY` working.
+
+**The reachability blocker was an account, not an outage.** This machine was
+logged into the `<tailnet-b-account>` tailnet, which does not contain the subnet
+router. `tailscale switch aa14` put it on the tailnet that has `tailscale`
+(<tailnet-router-ip>) advertising `<lan-subnet>/24`, and the API answered immediately.
+Previous sessions read this as a transient peer dropout and advised retrying;
+retrying was never going to work. **Side effect worth knowing: this machine is
+now off the `<tailnet-b-account>` tailnet**, so `gitea`, `secrets` and the tenant
+hosts are not reachable from here until it switches back.
+
+**Template gap found and worked around.** The template sets `agent: enabled=1`
+but never installs `qemu-guest-agent` in the guest, so every `/agent/*` call
+returned 500 and the API could not report the VM's IP. VM 104 had to be located
+by TCP-scanning `<lan-subnet>/24` for port 22 and probing with the SSH key.
+Installed by hand on 104; the API now reads the IP correctly.
+**`cmd_build_template` still has the gap** and will reproduce it.
+
+**New tooling:** `scripts/provision_vm.py set-memory` and `start`. `start`
+enforces the 2026-08-26 standing rule in code rather than leaving it to
+memory: it reads host `available` and refuses when under 1 GiB would remain
+(`--force` overrides). `set-memory` refuses to run against a running VM,
+because a live `memory` write goes through the balloon driver and would report
+a success that did not happen.
+
+**Two things flagged, not fixed:** the IP is an unreserved DHCP lease, so
+anything that pins `<df-vm-ip>` will break when it moves; and there is no
+swap, which is fine at steady state but leaves no cushion behind the 4 GB
+ceiling during worldgen.
