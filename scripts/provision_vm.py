@@ -53,11 +53,32 @@ BRIDGE = "vmbr0"
 MAC_PREFIX = "BC:24:11"
 # VMs whose MAC predates this scheme and is already reserved on the router.
 # Pinning the existing value is what makes a rebuild land on the reservation
-# that is live today, so these entries must not be "tidied up" to match the
-# derived scheme without re-reserving on the router first.
-MAC_OVERRIDES = {
-    104: "<reserved-mac>",  # df-fortress, reserved -> <df-vm-ip>
-}
+# that is live today, so these must not be "tidied up" to match the derived
+# scheme without re-reserving on the router first.
+#
+# These live in .env, not here: a DHCP reservation is a fact about one
+# person's LAN and this repo is public. Format is comma-separated
+# vmid=mac pairs, e.g. DF_MAC_OVERRIDES=104=BC:24:11:AA:BB:CC
+def mac_overrides(env=None):
+    """Parse DF_MAC_OVERRIDES into {vmid: mac}. Absent means no overrides."""
+    raw = (env or {}).get("DF_MAC_OVERRIDES", "").strip()
+    if not raw:
+        return {}
+    out = {}
+    for pair in raw.split(","):
+        pair = pair.strip()
+        if not pair:
+            continue
+        if "=" not in pair:
+            raise PVEError(
+                "DF_MAC_OVERRIDES entry %r is not vmid=mac" % pair)
+        vmid, _, mac = pair.partition("=")
+        try:
+            out[int(vmid.strip())] = mac.strip().upper()
+        except ValueError:
+            raise PVEError(
+                "DF_MAC_OVERRIDES entry %r has a non-numeric vmid" % pair)
+    return out
 
 # Packages baked into the template while it is booted, before it is sealed.
 # qemu-guest-agent is the one that matters: 'agent: enabled=1' only opens the
@@ -101,15 +122,17 @@ def read_pubkey(env):
         return quote(fh.read().strip(), safe="")
 
 
-def mac_for_vmid(vmid):
+def mac_for_vmid(vmid, env=None):
     """Stable MAC for a vmid, so a rebuilt VM keeps its DHCP reservation.
 
     Overrides win: a VM already reserved on the router keeps the MAC that
-    reservation names, whatever the derived value would have been.
+    reservation names, whatever the derived value would have been. They come
+    from DF_MAC_OVERRIDES in .env; see mac_overrides() above.
     """
     vmid = int(vmid)
-    if vmid in MAC_OVERRIDES:
-        return MAC_OVERRIDES[vmid]
+    overrides = mac_overrides(env)
+    if vmid in overrides:
+        return overrides[vmid]
     if not 0 <= vmid <= 0xFFFF:
         raise PVEError("vmid %s out of range for a derived MAC" % vmid)
     return "%s:00:%02X:%02X" % (MAC_PREFIX, (vmid >> 8) & 0xFF, vmid & 0xFF)
@@ -134,7 +157,7 @@ def build_address(env):
             "  The template bake needs one free address to reach the VM on"
             " before the guest agent exists.\n"
             "  Pick any address outside the router's DHCP pool, e.g."
-            " DF_BUILD_IP=<build-ip>/24\n"
+            " DF_BUILD_IP=192.168.1.240/24\n"
             "  It is held only while the template is built, then released."
         )
     if "/" not in cidr:
@@ -265,7 +288,7 @@ def bake_template(pve, vmid, args):
     ipconfig, ip, dns = build_address(pve.env)
     log("baking %s: %s, dns %s, booting at %d MB"
         % (", ".join(BAKE_PACKAGES), ipconfig, dns, BAKE_MEMORY))
-    mac = mac_for_vmid(vmid)
+    mac = mac_for_vmid(vmid, pve.env)
     pve.put(pve.vm_path(vmid, "/config"), {
         "net0": "virtio=%s,bridge=%s" % (mac, BRIDGE),
         "ipconfig0": ipconfig,
@@ -505,7 +528,7 @@ def cmd_clone(pve, args):
     # The clone came up with a randomly generated MAC. Overwrite it before the
     # VM is ever started, so it takes its first DHCP lease on the pinned
     # address rather than burning a random one and switching later.
-    mac = mac_for_vmid(newid)
+    mac = mac_for_vmid(newid, pve.env)
     log("pinning net0 MAC to %s (rebuild-safe DHCP reservation)" % mac)
     pve.put(pve.vm_path(newid, "/config"),
             {"net0": "virtio=%s,bridge=%s" % (mac, BRIDGE)})

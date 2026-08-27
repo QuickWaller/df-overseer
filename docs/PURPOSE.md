@@ -4,9 +4,9 @@
 > Consolidates the research in `research/`. Most of the design below has still
 > not been tested against a running game; assume it is a proposal unless marked
 > *verified*. Two layers under it are real: the Proxmox access layer is live
-> and `scripts/` provisions the VM (`memory/proxmox-access.md`), and DF Classic
+> and `scripts/` provisions the VM (`infra/local.proxmox-access.md`), and DF Classic
 > plus DFHack now run headless on the VM and answer RPC
-> (`memory/df-vm-install.md`). No game-side *code* exists yet.
+> (`infra/local.df-vm-install.md`). No game-side *code* exists yet.
 
 ## Purpose
 
@@ -205,7 +205,7 @@ aimed at it copies nothing and reports success.
 ## Build order
 
 0. ~~**Get DF and DFHack running on the VM.**~~ **Done 2026-08-27** — see
-   `memory/df-vm-install.md`. Not originally on this list, and it blocked every
+   `infra/local.df-vm-install.md`. Not originally on this list, and it blocked every
    item below it. Still missing: systemd units, so nothing survives a reboot.
 1. ~~**Perception eval harness.**~~ **Done 2026-08-27** — `evals/perception/`,
    99.1% across all three representations at n=108 each. Caveat that still

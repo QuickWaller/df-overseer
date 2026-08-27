@@ -39,7 +39,7 @@ learnable and it is cheap now / painful at twenty rows.
 
 ## 2026-08-26 — access layer complete; blocked on host RAM
 
-**Access layer is finished and fully verified.** See `memory/proxmox-access.md`
+**Access layer is finished and fully verified.** See `infra/local.proxmox-access.md`
 for the authoritative record (read back from the API, not assumed).
 
 **Done today:**
@@ -93,7 +93,7 @@ Ready and confirmed for that step:
   `~/.ssh/df_overseer_ed25519` (ed25519, no passphrase, comment `df-overseer`,
   fingerprint `SHA256:nFmogVJU7sqROeOeudZFcpLow+IXOYRystP9ymBZ0sA`). Paths in
   `.env` as `DF_SSH_KEY` / `DF_SSH_PUBKEY`; full record in
-  `memory/proxmox-access.md`, rationale in `decisions/DECISIONS.md`. Reusing
+  `infra/local.proxmox-access.md`, rationale in `decisions/DECISIONS.md`. Reusing
   `claude_vm` was rejected — a shared key makes revocation indivisible.
 
 **Host RAM moved again — re-read it before sizing the VM.** Live reading this
@@ -103,7 +103,7 @@ is not ours to predict. **6 GB with a 2 GB balloon floor is now tight, not
 comfortable; 4 GB max / 2 GB balloon is the safer call.** Still needs the
 user's decision, and the reading should be taken again at creation time.
 
-Two stale sections in `memory/proxmox-access.md` were corrected against the
+Two stale sections in `infra/local.proxmox-access.md` were corrected against the
 live API while doing this: the role listed 16 privileges (it has 24 — `VM.Clone`
 and the `VM.GuestAgent.*` set were granted this morning but never written back),
 and the host-resources table still carried the 13.7 GB reading that was the
@@ -124,7 +124,7 @@ pushed (no remote configured).
 **Done, all verified against the live API (not assumed):**
 
 - Access layer exists and is recorded authoritatively in
-  `memory/proxmox-access.md` — role `DFOverseer` (17 privileges), scoped to
+  `infra/local.proxmox-access.md` — role `DFOverseer` (17 privileges), scoped to
   `/pool/df-overseer` and `/storage/ssd_storage`. Credentials in `.env`
   (gitignored, confirmed untracked).
 - **Boundaries verified by denial**, not assumption: cannot enumerate any VM
@@ -252,7 +252,7 @@ Three problems were hit and fixed on the way:
   with an `.img` extension. `download-url` names the destination independently
   of the URL, so `provision_vm.py` now writes it as `.qcow2` on the way in.
 - **`SDN.Use` at `/sdn/zones/localnetwork`** — attaching a NIC to `vmbr0` is an
-  SDN check in PVE 9, not a VM check. Recorded in `memory/proxmox-access.md`
+  SDN check in PVE 9, not a VM check. Recorded in `infra/local.proxmox-access.md`
   along with the trap that cost a round trip: **with privilege separation off,
   an ACL bound to the token is inert — it must be bound to the user.**
 
@@ -369,7 +369,7 @@ item in the learning design, because its schema defines what is learnable.
 ### Built earlier this session
 
 - **SSH keypair** `~/.ssh/df_overseer_ed25519` — dedicated, ed25519, no
-  passphrase. Fingerprint and rationale in `memory/proxmox-access.md`; paths
+  passphrase. Fingerprint and rationale in `infra/local.proxmox-access.md`; paths
   only in `.env` (`DF_SSH_KEY`, `DF_SSH_PUBKEY`).
 - **`scripts/pve.py`** — Proxmox API client: env loading, task polling that
   tails the task log on failure, live node-memory read.
@@ -395,7 +395,7 @@ item in the learning design, because its schema defines what is learnable.
 
 ### Three API facts, each learned by failing
 
-Recorded in `memory/proxmox-access.md` with the verbatim errors:
+Recorded in `infra/local.proxmox-access.md` with the verbatim errors:
 
 - The network **list** endpoint returns only physical interfaces for this
   token, so the host reads as having no bridges. It has one — `vmbr0`, found
@@ -431,7 +431,7 @@ Recorded in `memory/proxmox-access.md` with the verbatim errors:
   `SHA256:nFmogVJU7sqROeOeudZFcpLow+IXOYRystP9ymBZ0sA`. Dedicated rather than
   reusing `claude_vm`, because a shared key makes revocation indivisible. Paths
   in `.env` (`DF_SSH_KEY`, `DF_SSH_PUBKEY`) and in
-  `infra/local.example.env`; full record in `memory/proxmox-access.md`.
+  `infra/local.example.env`; full record in `infra/local.proxmox-access.md`.
   Windows note: `chmod 600` is a no-op on NTFS — `icacls /inheritance:r` is
   what actually restricted it.
 - **`scripts/pve.py`** — thin Proxmox API client (env loading, task polling
@@ -442,7 +442,7 @@ Recorded in `memory/proxmox-access.md` with the verbatim errors:
 - **VM sized 6144 MB / 2048 MB balloon, 4 cores** — user's call, taken with
   5.5 GB free on the host.
 - Three API facts learned the hard way and recorded in
-  `memory/proxmox-access.md`: the network *list* endpoint hides bridges (use
+  `infra/local.proxmox-access.md`: the network *list* endpoint hides bridges (use
   `vmbr0`, found by direct GET); cloud-init `sshkeys` must be URL-encoded
   *before* form encoding; and `import-from` rejects `iso`-class volumes.
 
@@ -632,7 +632,7 @@ Verified live, not assumed: Ubuntu 24.04.4, kernel 6.8.0-137, cloud-init
 
 **The reachability blocker was an account, not an outage.** This machine was
 logged into the `<tailnet-b-account>` tailnet, which does not contain the subnet
-router. `tailscale switch aa14` put it on the tailnet that has `tailscale`
+router. `tailscale switch <tailnet-a>` put it on the tailnet that has `tailscale`
 (<tailnet-router-ip>) advertising `<lan-subnet>/24`, and the API answered immediately.
 Previous sessions read this as a transient peer dropout and advised retrying;
 retrying was never going to work. **Side effect worth knowing: this machine is
@@ -687,7 +687,7 @@ installed on it. Local `main` is **8 commits ahead of origin and unpushed**.
 
 3. **VM 104 `df-fortress` is running.** 4096 MB / 2048 balloon, 4 cores,
    Ubuntu 24.04.4, `df@<df-vm-ip>`, SSH key verified. Host sits at 3.2 GiB
-   available with it up. Full record in `memory/proxmox-access.md`.
+   available with it up. Full record in `infra/local.proxmox-access.md`.
 
 4. **Repo is public** at [github.com/QuickWaller/df-overseer](https://github.com/QuickWaller/df-overseer),
    `gh` authenticated (QuickWaller). **8 local commits are unpushed**, covering
@@ -696,14 +696,14 @@ installed on it. Local `main` is **8 commits ahead of origin and unpushed**.
 
 ### Three operational facts a next session will otherwise get wrong
 
-**This machine is on the `aa14` tailnet now.** The Proxmox host is only
+**This machine is on the `<tailnet-a>` tailnet now.** The Proxmox host is only
 reachable from there: `tailscale` (<tailnet-router-ip>) advertises `<lan-subnet>/24`,
 and the `<tailnet-b-account>` tailnet has no such router. Earlier sessions recorded
 the unreachability as a transient peer dropout and advised retrying; that
 diagnosis was wrong and retrying could never have worked. **Side effect:** this
 machine is off the `<tailnet-b-account>` tailnet, so `gitea`, `secrets` and the
 tenant hosts are unreachable from here until it switches back
-(`tailscale switch 1052`).
+(`tailscale switch <tailnet-b>`).
 
 **The VM's IP is now a reserved lease** (`<reserved-mac>` ->
 `<df-vm-ip>`), reversing what this section said earlier today. Clone-time
@@ -833,7 +833,7 @@ read as something other than what they were.
 destroyed, having served its purpose) with a fresh
 SSH host key, repopulated `machine-id`, fresh `instance-id`, `cloud-init
 status: done` and `qemu-guest-agent` active, **and the API reported its
-address (`<pve-host>0`) with no static configuration**, the capability
+address (`<clone-ip>`) with no static configuration**, the capability
 whose absence forced VM 104 to be found by port-scanning the subnet.
 
 Six bugs surfaced only by running it, all fixed and recorded in
@@ -843,11 +843,11 @@ POST rather than GET, sealing breaking graceful shutdown, `os.devnull` being
 
 ### Operational facts a next session will otherwise get wrong
 
-**This machine is on the `aa14` tailnet.** The Proxmox host is only reachable
+**This machine is on the `<tailnet-a>` tailnet.** The Proxmox host is only reachable
 from there: `tailscale` (<tailnet-router-ip>) advertises `<lan-subnet>/24`, and the
 `<tailnet-b-account>` tailnet has no such router. **Side effect:** `gitea`,
 `secrets` and the tenant hosts are unreachable from here until it switches
-back (`tailscale switch 1052`).
+back (`tailscale switch <tailnet-b>`).
 
 **`next_vmid()` is the only safe source of a vmid.** Cloning to a hand-picked
 `--vmid 102` failed: VM 102 exists on this host *outside* the `df-overseer`

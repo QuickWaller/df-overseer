@@ -7,9 +7,9 @@ learning architecture.
 
 > **Status: design, plus a live infrastructure layer and a running game.** The
 > Proxmox access layer exists and is verified against the API
-> (`memory/proxmox-access.md`), `scripts/` provisions the VM, and DF Classic
+> (`infra/local.proxmox-access.md`), `scripts/` provisions the VM, and DF Classic
 > plus DFHack now run headless on VM 104 and answer RPC
-> (`memory/df-vm-install.md`). No *code* of the game side is implemented yet:
+> (`infra/local.df-vm-install.md`). No *code* of the game side is implemented yet:
 > no perception layer, no agent, no toolkit. Everything in `docs/` and
 > `research/` is still a design artifact; claims marked *verified* were checked
 > against a DFHack install, the live API, or a primary source, and the rest are

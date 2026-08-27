@@ -6,7 +6,7 @@ of older community knowledge and several tools are shipped-but-disabled.
 
 **This file describes the local Windows install.** The fortress VM runs the
 same DFHack version on Linux against DF Classic; see
-[`df-vm-install.md`](df-vm-install.md) for that install's paths and layout,
+[`infra/local.df-vm-install.md`](infra/local.df-vm-install.md) for that install's paths and layout,
 which differ. The availability findings below were audited against it on
 2026-08-27 and hold, with two corrections: the tool is `cleaners`, not `clean`,
 and 105 tool docs carry the `unavailable` tag rather than the ~51 implied here.

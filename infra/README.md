@@ -1,10 +1,22 @@
 # infra
 
 Everything here describes the *shape* of the deployment. Actual host names,
-addresses, tokens and IDs live in `infra/local.env`, which is **gitignored**
-(`infra/local.*`). Copy `local.example.env` to `local.env` and fill it in.
+addresses, tokens and IDs live in `infra/local.*`, which is **gitignored**.
+Copy `local.example.env` to `local.env` and fill it in.
 
 This repo is public. Nothing in a committed file should identify the host.
+Committed files use placeholders (`<pve-host>`, `<df-vm-ip>`, `<lan-subnet>`,
+`<tailnet-a>`); the real values are yours and stay local.
+
+Gitignored files you will have if you run this, and will not have if you
+cloned it:
+
+| | |
+|---|---|
+| `local.env` | host, token, node, storage, SSH keys, `DF_MAC_OVERRIDES` |
+| `local.proxmox-access.md` | the access layer as read back from the API |
+| `local.df-vm-install.md` | the fortress VM's DF + DFHack install |
+| `local.hardware-plan.md` | scratch notes, meant to be deleted |
 
 ## Access model
 

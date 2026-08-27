@@ -42,7 +42,7 @@ a few MB. `dfhack-run lua` executes remotely and the RPC server listens on
 stops at year 30 and saves ~900 KB. Tiny worlds are the user's call for now.
 
 Full detail, including the package list and the exact launch commands, is in
-**`memory/df-vm-install.md`**.
+**`infra/local.df-vm-install.md`**.
 
 **`docs/PURPOSE.md` was reconciled against reality**, not just appended to.
 The provenance note, the DF Classic section, the VM sizing paragraph and the
@@ -116,12 +116,12 @@ exists.** Today's 99.1% is on generous hand-authored fixtures.
 
 ### Operational facts, carried forward
 
-**This machine switched to the `1052` (<tailnet-b-account>) tailnet at the end of
+**This machine switched to the `<tailnet-b>` (<tailnet-b-account>) tailnet at the end of
 this session, so Proxmox and VM 104 are currently unreachable from here.**
-The Proxmox host is only reachable from `aa14`: `tailscale` (<tailnet-router-ip>)
-advertises `<lan-subnet>/24` there, and `1052` has no such router. Run
-`tailscale switch aa14` before touching the VM or `scripts/provision_vm.py`,
-and `tailscale switch 1052` to get `gitea`, `secrets` and the tenant hosts
+The Proxmox host is only reachable from `<tailnet-a>`: `tailscale` (<tailnet-router-ip>)
+advertises `<lan-subnet>/24` there, and `<tailnet-b>` has no such router. Run
+`tailscale switch <tailnet-a>` before touching the VM or `scripts/provision_vm.py`,
+and `tailscale switch <tailnet-b>` to get `gitea`, `secrets` and the tenant hosts
 back. Only one at a time; this is a real either/or.
 
 **Consequence for this handover:** the VM was last verified healthy minutes
