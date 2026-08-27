@@ -2,7 +2,7 @@
 
 **How to build the access layer from nothing.** For what currently *exists* —
 the live role, scopes, verified boundaries and VM specs — see
-`memory/proxmox-access.md`, which is read back from the API rather than assumed.
+`infra/local.proxmox-access.md`, which is read back from the API rather than assumed.
 
 Target: **Proxmox VE 9.1.1**, node `proxmox`, storage `ssd_storage`.
 
@@ -89,7 +89,7 @@ a pool or storage path.** Putting `Sys.AccessNetwork` in `DFOverseer` (bound
 only at `/pool` and `/storage`) does nothing — the privilege exists but is
 attached nowhere the node-level check looks. It has to be a separate role
 bound at the node path. Full account, including the wrong hypotheses tried
-first, is in `memory/proxmox-access.md`.
+first, is in `infra/local.proxmox-access.md`.
 
 ## Storage: enable the `import` content type
 
@@ -139,7 +139,7 @@ ssh-keygen -t ed25519 -f ~/.ssh/df_overseer_ed25519 -N "" -C "df-overseer"
 - **`.env` holds paths only** — `DF_SSH_KEY` and `DF_SSH_PUBKEY` — never key
   material. The key itself lives under `~/.ssh` and is never committed.
 
-The fingerprint and full record of this key are in `memory/proxmox-access.md`
+The fingerprint and full record of this key are in `infra/local.proxmox-access.md`
 — not reproduced here.
 
 ## Verify — including the denial
@@ -157,7 +157,7 @@ curl -sk -H "$AUTH" "$B/nodes/proxmox/qemu/<VMID_OUTSIDE_POOL>/config"  # must F
 
 **A permission scheme is only verified once you have watched it deny
 something.** A green result from a check that never exercised the boundary is
-not evidence of anything. Recorded denials are in `memory/proxmox-access.md`.
+not evidence of anything. Recorded denials are in `infra/local.proxmox-access.md`.
 
 ## CLI equivalents
 

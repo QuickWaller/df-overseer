@@ -10,18 +10,22 @@ Repo memory: context that isn't derivable from the code. One line per file.
   compaction + memory tool stack, where our four stores map onto the standard,
   and why we deliberately don't let the model edit its own memory.
 
-- [DF + DFHack on VM 104](df-vm-install.md) — the fortress VM's game install:
-  versions and paths, the Xvfb headless launch, the XDG save location, silent
-  `-gen` worldgen and its ~25% silent-failure rate, and the measured worldgen
-  memory ceiling. Verified by running it.
+## Local only, not in this repo
 
-- [Proxmox access](proxmox-access.md) — **authoritative record** of the live
-  access layer: host, roles `DFOverseer` (24 privileges) and `DFOverseerNode`,
-  the pool/storage/node/SDN scopes, and **the three ways a grant silently
-  misses** (wrong privilege / wrong path / wrong subject) — including why an
-  ACL bound to the token does nothing while privilege separation is off.
-  Verified boundaries (confirmed by denial), verified snapshot cycle, VM 101's
-  specs, and the DF VM's SSH keypair. Read back from the API, not assumed.
+These two are **gitignored** (`infra/local.*`). They are the authoritative
+records for their areas, they just cannot be public: both are made almost
+entirely of host addresses, hostnames, MACs and pool scopes. If you have
+cloned this repo you do not have them, and nothing else here depends on
+their contents.
+
+- `infra/local.proxmox-access.md` — the live access layer: host, the
+  `DFOverseer` / `DFOverseerNode` roles, the pool/storage/node/SDN scopes, and
+  **the three ways a grant silently misses** (wrong privilege / wrong path /
+  wrong subject). Verified boundaries, verified snapshot cycle, VM 101's specs.
+  Read back from the API, not assumed.
+- `infra/local.df-vm-install.md` — the fortress VM's game install: paths, the
+  Xvfb headless launch, the save location, silent `-gen` worldgen and its ~25%
+  silent-failure rate, and the measured worldgen memory ceiling.
 
 ## See also
 
