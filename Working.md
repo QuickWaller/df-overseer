@@ -46,15 +46,19 @@ machine is off the `<tailnet-b-account>` tailnet, so `gitea`, `secrets` and the
 tenant hosts are unreachable from here until it switches back
 (`tailscale switch 1052`).
 
-**The VM's IP is an unreserved DHCP lease.** Do not pin `<df-vm-ip>`
-anywhere. Read it from the guest agent, or reserve it on the router first.
+**The VM's IP is now a reserved lease** (`<reserved-mac>` ->
+`<df-vm-ip>`), reversing what this section said earlier today. Clone-time
+MAC pinning (`mac_for_vmid`) means a rebuilt 104 comes back on the same MAC
+and therefore the same address, so the reservation survives a delete and
+recreate. New VMs get a derived MAC and need their own reservation.
 
-**The template does not install `qemu-guest-agent`.** `agent: enabled=1` only
-opens the virtio channel on the Proxmox side; without the package in the guest
-every `/agent/*` call returns 500 and the API cannot report an IP. Installed by
-hand on 104, but **`cmd_build_template` still has the gap** and the next
-template built from it will repeat this. Fixing that is a two-line cloud-init
-change and has not been done.
+**`qemu-guest-agent` is installed by hand on 104, and `cmd_build_template`
+now bakes it** into future templates. `agent: enabled=1` only opens the
+virtio channel on the Proxmox side; without the package in the guest every
+`/agent/*` call returns 500. The bake boots the VM once, installs over SSH,
+proves `/agent/ping` answers, then seals cloud-init state and converts. **It
+has never been run end to end.** It needs `DF_BUILD_IP` in `.env` and a
+template rebuild before anyone should believe it works.
 
 ### What a next session should pick up
 
@@ -103,10 +107,20 @@ generator is lossier (3 nearest neighbours, geometric distance).
 
 ### Housekeeping, carried forward
 
-- **Fix `cmd_build_template` to install `qemu-guest-agent`** (see above). New
-  this session.
-- **Reserve the VM's DHCP lease, or add swap**, or consciously decide neither
-  matters. New this session.
+- **DONE: `cmd_build_template` now bakes `qemu-guest-agent`** by booting the
+  VM once and installing over SSH, then sealing it. **Written but never run
+  end to end** -- it needs `DF_BUILD_IP` in `.env` (one free address outside
+  the DHCP pool) and a template rebuild to prove it. `--no-bake` skips it.
+  **Correction:** this file called the fix "a two-line cloud-init change".
+  That was wrong and unchecked -- Proxmox cloud-init cannot install packages,
+  and the `cicustom` route needs a permission grant plus host filesystem
+  access. See `decisions/DECISIONS.md` 2026-08-27.
+- **DONE: DHCP lease reserved** (`<reserved-mac>` -> `<df-vm-ip>`), and
+  MACs are now derived from the vmid and pinned at clone time so a rebuild
+  keeps the reservation. `cmd_clone`'s pinning PUT is **not yet exercised
+  against the API** -- no clone has run since.
+- **Still open: add swap**, or consciously decide it does not matter before
+  worldgen is attempted in 4096 MB.
 - **Proxmox token not rotated**, pasted into an earlier transcript. Datacenter
   > Permissions > API Tokens > `api` > Remove, re-Add, update
   `PVE_TOKEN_SECRET` in `.env`.
