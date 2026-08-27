@@ -14,7 +14,9 @@ actually going on right now.
 
 **New project goal, stated by the user:** the eval data and future fortress runs should build toward a public-facing report, not be throwaway. Reversed a repo-state bug that fought this directly: `evals/perception/.gitignore` was silently excluding `results/` from git. Removed it; `evals/perception/results/*.jsonl` is now tracked. See `memory/` for the standing note on this.
 
-**Next concrete step for the harness:** run the full 342-cell matrix (`python -m evals.perception.harness.run --out evals/perception/results/full-<date>.jsonl`, no `--limit`) — estimated **$5–15** based on the one real data point above, now that the schema bug is fixed. Then `report` it, stratified across all three representations this time.
+**Update, same afternoon — the stratified run happened, and the $5-15 estimate was wrong.** Real per-cell cost is far below the earlier guess (output tokens ran much lower than assumed). Ran a 120-cell stratified slice (`--per-category 1`, all fixtures, all representations — `evals/perception/results/stratified-2026-08-27.jsonl`) for **$0.27 actual**. Result: **first real signal that the core bet holds** — `exits_v1` tied `coords_v1` at 97.4% on the shared question set; see `decisions/DECISIONS.md` 2026-08-27 for the full breakdown, including the `route`-category soft spot and a thin-but-notable calibration difference. Marked `proposed`, not `accepted` — n=1-3/category, small hand-authored fixtures.
+
+**Next concrete step for the harness:** the full 342-cell matrix (3x repeats) would tighten confidence on `route` and calibration specifically — re-estimated at **$0.50-1**, not $5-15, now that real per-cell cost is known. Not urgent; a "when ready" call, not a blocker.
 
 ## HANDOVER — 2026-08-27, work paused here
 
