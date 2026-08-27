@@ -10,6 +10,11 @@ Repo memory: context that isn't derivable from the code. One line per file.
   compaction + memory tool stack, where our four stores map onto the standard,
   and why we deliberately don't let the model edit its own memory.
 
+- [DF + DFHack on VM 104](df-vm-install.md) — the fortress VM's game install:
+  versions and paths, the Xvfb headless launch, the XDG save location, silent
+  `-gen` worldgen and its ~25% silent-failure rate, and the measured worldgen
+  memory ceiling. Verified by running it.
+
 - [Proxmox access](proxmox-access.md) — **authoritative record** of the live
   access layer: host, roles `DFOverseer` (24 privileges) and `DFOverseerNode`,
   the pool/storage/node/SDN scopes, and **the three ways a grant silently
