@@ -11,6 +11,8 @@
       "Bash(gh issue view *)",
       "Bash(gh repo list *)",
       "Bash(mkdir *)",
+      "Bash(python scripts/provision_vm.py *)",
+      "PowerShell(python scripts/provision_vm.py *)",
       "PowerShell(git status *)",
       "PowerShell(git diff *)",
       "PowerShell(git log *)",

@@ -17,6 +17,7 @@ import argparse
 import os
 import subprocess
 import sys
+import tempfile
 import time
 from urllib.parse import quote
 
@@ -153,8 +154,15 @@ def ssh_guest(env, ip, command, timeout=120, check=True):
     """Run a command in the guest over SSH, as the cloud-init user.
 
     The build VM is short-lived and its host key dies with it, so it is kept
-    out of known_hosts entirely rather than accepted into it and left to
+    out of the real known_hosts rather than accepted into it and left to
     collide with whatever later takes the address.
+
+    The throwaway file lives in the system temp dir, NOT at os.devnull: on
+    Windows that is the bare string "nul", which OpenSSH treats as a relative
+    filename and duly creates in the working directory. That put an untracked
+    file named `nul` in the repo root, which git cannot even index
+    ("short read while indexing nul"). Verified by that exact failure,
+    2026-08-27.
     """
     key = os.path.expanduser(env.get("DF_SSH_KEY", ""))
     if not key or not os.path.exists(key):
@@ -163,7 +171,8 @@ def ssh_guest(env, ip, command, timeout=120, check=True):
         "ssh", "-i", key,
         "-o", "BatchMode=yes",
         "-o", "StrictHostKeyChecking=no",
-        "-o", "UserKnownHostsFile=%s" % os.devnull,
+        "-o", "UserKnownHostsFile=%s" % os.path.join(
+            tempfile.gettempdir(), "df-overseer-throwaway-known-hosts"),
         "-o", "ConnectTimeout=10",
         "-o", "LogLevel=ERROR",
         "%s@%s" % (env.get("DF_CIUSER", "df"), ip),
@@ -201,6 +210,48 @@ def wait_for_status(pve, vmid, want, timeout=300, poll=3):
             return status
         time.sleep(poll)
     raise PVEError("VM %s did not reach '%s' within %ss" % (vmid, want, timeout))
+
+
+def resize_disk(pve, vmid, disk="scsi0", size=DISK_SIZE, attempts=4, pause=20):
+    """Grow a disk, retrying the storage-load timeout described at the call site.
+
+    Growing is idempotent: PVE treats a resize to the current size as a no-op,
+    so a retry after a *partial* success cannot shrink or damage anything.
+    """
+    for attempt in range(1, attempts + 1):
+        log("resizing %s to %s (attempt %d/%d)" % (disk, size, attempt, attempts))
+        try:
+            upid = pve.put(pve.vm_path(vmid, "/resize"),
+                           {"disk": disk, "size": size})
+            pve.wait_task(upid, "resize", timeout=900)
+            return
+        except PVEError as exc:
+            if "timeout" not in str(exc).lower() or attempt == attempts:
+                raise
+            log("  timed out, retrying in %ds: %s" % (pause, exc))
+            time.sleep(pause)
+
+
+def destroy_failed_build(pve, vmid):
+    """Tear down a VM a failed build created, so no half-made VM is left.
+
+    This deliberately discards the evidence: today's diagnosis of the resize
+    timeout and the agent-verb bug both depended on the broken VM still being
+    there. --keep-failed is the escape hatch, and richer failure capture (task
+    logs, guest console) is the thing to add here if the teardown starts
+    costing more than the clutter it prevents.
+    """
+    try:
+        if pve.get(pve.vm_path(vmid, "/status/current")).get("status") == "running":
+            log("  stopping %s" % vmid)
+            pve.wait_task(pve.post(pve.vm_path(vmid, "/status/stop")), "stop")
+            wait_for_status(pve, vmid, "stopped", timeout=180)
+        log("  destroying %s" % vmid)
+        pve.wait_task(pve.delete(pve.vm_path(vmid)), "destroy %s" % vmid)
+        log("  cleaned up. re-run the build once the cause is fixed.")
+    except PVEError as exc:
+        # Never let cleanup mask the real failure being re-raised above it.
+        log("  CLEANUP FAILED, VM %s is still on the host: %s" % (vmid, exc))
 
 
 def bake_template(pve, vmid, args):
@@ -245,7 +296,11 @@ def bake_template(pve, vmid, args):
         # and a template that silently lacks a working agent is exactly the
         # failure this whole change exists to stop.
         log("verifying the agent answers over the virtio channel")
-        pinged = pve.get(pve.vm_path(vmid, "/agent/ping"))
+        # ping is a *command*, and the command-style agent endpoints are POST;
+        # only the info-style ones (network-get-interfaces, get-osinfo, ...)
+        # answer GET. A GET here returns 501 "not implemented", which reads as
+        # a missing agent rather than a wrong verb. Verified 2026-08-27.
+        pinged = pve.post(pve.vm_path(vmid, "/agent/ping"))
         log("  /agent/ping -> %s" % ("ok" if pinged is not None else pinged))
         ifaces = pve.get(pve.vm_path(vmid, "/agent/network-get-interfaces"))
         addrs = [a.get("ip-address")
@@ -261,15 +316,23 @@ def bake_template(pve, vmid, args):
                   "sudo cloud-init clean --logs --seed && "
                   "sudo rm -f /etc/ssh/ssh_host_* && "
                   "sudo truncate -s 0 /etc/machine-id && "
-                  "sudo rm -f /var/lib/dbus/machine-id", timeout=120)
+                  "sudo rm -f /var/lib/dbus/machine-id && "
+                  "sync", timeout=120)
 
-        log("shutting down %s" % vmid)
-        ssh_guest(pve.env, ip, "sudo systemctl poweroff --no-block",
-                  timeout=30, check=False)
-        wait_for_status(pve, vmid, "stopped", timeout=300)
+        # Hard stop, deliberately. Sealing removes the machine-id systemd needs
+        # to reach dbus, so a `systemctl poweroff` issued *after* it never
+        # completes and the VM sits running until the wait times out (observed
+        # 2026-08-27, hidden at the time by check=False on that call). Sealing
+        # has to happen while the VM is up, so the guest cannot be the thing
+        # that shuts it down. The `sync` above is what makes this safe: the
+        # only writes outstanding are the seal's own handful of small changes.
+        log("stopping %s (hard, see comment: the seal breaks graceful shutdown)"
+            % vmid)
+        pve.wait_task(pve.post(pve.vm_path(vmid, "/status/stop")), "stop")
+        wait_for_status(pve, vmid, "stopped", timeout=180)
     except Exception:
-        log("bake failed -- leaving VM %s running for inspection at %s"
-            % (vmid, ip))
+        log("bake failed at %s; the caller decides whether %s survives it"
+            % (ip, vmid))
         raise
     finally:
         # Never let the build address reach a clone, on the failure path either.
@@ -381,27 +444,43 @@ def cmd_build_template(pve, args):
     pve.wait_task(upid, "create VM %s" % vmid)
     log("  disk imported from %s" % image)
 
-    log("resizing scsi0 to %s" % DISK_SIZE)
-    upid = pve.put(pve.vm_path(vmid, "/resize"),
-                   {"disk": "scsi0", "size": DISK_SIZE})
-    pve.wait_task(upid, "resize")
+    # Everything past creation is guarded: a build that dies partway leaves a
+    # VM that is neither a usable template nor obviously junk, and the next
+    # run picks a different vmid rather than noticing it.
+    try:
 
-    if args.no_bake:
-        log("skipping the bake (--no-bake): this template will clone VMs with"
-            " no guest agent, and the API will not be able to report their IP")
-    else:
-        bake_template(pve, vmid, args)
+        # The resize fires immediately after a 25 GB import, while the storage is
+        # still flushing, and PVE's qemu-img wrapper has its own timeout:
+        #   qemu-img resize '--preallocation=metadata' ... failed: got timeout
+        # Observed on 2026-08-27, then succeeded in 3s on a manual retry, so it is
+        # load, not a real failure. Retrying beats failing a build that has already
+        # copied 25 GB.
+        resize_disk(pve, vmid)
 
-    log("converting %s to a template" % vmid)
-    upid = pve.post(pve.vm_path(vmid, "/template"))
-    pve.wait_task(upid, "template conversion")
+        if args.no_bake:
+            log("skipping the bake (--no-bake): this template will clone VMs with"
+                " no guest agent, and the API will not be able to report their IP")
+        else:
+            bake_template(pve, vmid, args)
 
-    config = pve.get(pve.vm_path(vmid, "/config"))
-    log("done. template %s:" % vmid)
-    for key in ("name", "template", "memory", "balloon", "cores", "scsi0",
-                "ide2", "net0", "ciuser", "ipconfig0"):
-        if key in config:
-            log("  %-9s %s" % (key, config[key]))
+        log("converting %s to a template" % vmid)
+        upid = pve.post(pve.vm_path(vmid, "/template"))
+        pve.wait_task(upid, "template conversion")
+
+        config = pve.get(pve.vm_path(vmid, "/config"))
+        log("done. template %s:" % vmid)
+        for key in ("name", "template", "memory", "balloon", "cores", "scsi0",
+                    "ide2", "net0", "ciuser", "ipconfig0"):
+            if key in config:
+                log("  %-9s %s" % (key, config[key]))
+    except Exception:
+        if getattr(args, "keep_failed", False):
+            log("build failed -- VM %s left in place (--keep-failed)" % vmid)
+        else:
+            log("build failed -- tearing down VM %s" % vmid)
+            destroy_failed_build(pve, vmid)
+        raise
+
     log("\nrecord DF_TEMPLATE_VMID=%s in .env" % vmid)
     return vmid
 
@@ -530,6 +609,9 @@ def main():
     build.add_argument("--balloon", type=int, default=DEFAULT_BALLOON)
     build.add_argument("--cores", type=int, default=DEFAULT_CORES)
     build.add_argument("--ciuser", default="df")
+    build.add_argument("--keep-failed", action="store_true",
+                       help="on failure, leave the half-built VM on the host"
+                            " for inspection instead of destroying it")
     build.add_argument("--no-bake", action="store_true",
                        help="skip booting the VM to install the guest agent"
                             " (clones will have no working /agent/* API)")
