@@ -20,6 +20,54 @@ actually going on right now.
 
 **Perception harness status: first build-order item now has real, accepted evidence behind it.** Standing caveats unchanged — still 15-landmark hand-authored fixtures, not the real (lossier) production briefing generator. Re-run against real briefings once `llm-brief.lua` exists. Next build-order item is the **fort ledger schema** (still not started, named three times now).
 
+## 2026-08-27 (evening) - fort ledger built
+
+**The build-order item named three times is done.** `ledger/` holds the schema,
+a validating write path, stratification, a coverage report, and a selftest.
+`python -m ledger.selftest` passes all checks; `python -m ledger.report` runs.
+Six entries in `decisions/DECISIONS.md` 2026-08-27 record the design calls.
+
+**What it is:** JSONL, one row per fort, git-tracked. `forts.jsonl` is empty
+and stays that way until the game side exists. That order is deliberate:
+section 3.2 of the learning-architecture research warns that retrofitting
+covariates onto old rows defeats the purpose, so the fields have to be right
+before the first fort rather than after the twentieth.
+
+**Four design calls worth knowing about:**
+
+1. **Orthogonal feature axes**, replacing the design doc's single
+   `entrance_design`. You cannot vary one variable when the variable is a
+   portmanteau, and build item 8 depends on being able to.
+2. **Every field declares a `source`**, and `store.assert_gradeable()` refuses
+   to let grading code read `HUMAN` or `AGENT` fields. This makes "never grade
+   the agent's account of its own learning" a code-level failure rather than a
+   discipline anyone has to remember.
+3. **`unrecorded` is dropped by stratification, not pooled**, and the dropped
+   count is part of the result so the denominator stays honest.
+4. **The vocabulary can record our own failures** (`agent_error`,
+   `fps_collapse`, `run_ended_technical`). A schema that cannot record them
+   produces a flattering report by construction.
+
+**Standing caveat, and the next real test of this work:** nothing is verified
+against DFHack. Every `MECHANICAL` field is a bet that code will be able to
+read that value from game state, and `schema.MECHANICAL_PATH_VERIFIED` is
+`False` to say so. `defense_depth`, `primary_industry` and `surface_footprint`
+are the likeliest to have no clean mechanical reading; if so they get demoted
+to `AGENT` and become colour rather than evidence.
+
+**Deliberately not built:** any inference. `report.py` prints coverage and
+descriptive survival with denominators visible and says in its own output that
+it is not evidence. Hypothesis promotion is the hierarchical Beta-Bernoulli
+model (research 3.3, build item 4), which does not exist. Reading a survival
+difference off the report and calling it a lesson is exactly the flat-counter
+mistake the register rejected on 2026-08-25.
+
+**Housekeeping:** added `.claude/scheduled_tasks.lock` to `.gitignore` (a
+machine-local runtime file that was showing up untracked).
+
+**Not pushed.** Local `main` is now several commits ahead of origin. Push is
+gated on an explicit go-ahead each time.
+
 ## HANDOVER — 2026-08-27, work paused here
 
 **State at a glance:** repo is public and pushed. Perception eval — the

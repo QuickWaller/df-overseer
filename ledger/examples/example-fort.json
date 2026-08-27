@@ -1,0 +1,132 @@
+{
+  "schema_version": 1,
+  "fort_id": "EXAMPLE-ironbound-y205",
+  "world_id": "EXAMPLE-world-not-real",
+  "site_id": "EXAMPLE-site-not-real",
+  "fortress_name": "Ironbound (EXAMPLE, invented, never played)",
+  "written_at": "2026-08-27",
+  "embark": {
+    "start_year": 205,
+    "biome": "temperate broadleaf forest, brook",
+    "surroundings": "serene",
+    "embark_tiles": 16,
+    "aquifer": "light",
+    "has_flux": true,
+    "has_shallow_metal": true,
+    "has_deep_metal": false,
+    "soil_depth": 3,
+    "trees": "heavily forested",
+    "nearest_hostile_civ_distance": 14,
+    "neighbour_civs": ["dwarven", "human", "goblin"],
+    "starting_dwarves": 7,
+    "world_age": 125
+  },
+  "design": {
+    "entrance_count": 2,
+    "entrance_seal": "drawbridge",
+    "entrance_traps": "cage",
+    "caverns_sealed": "partial",
+    "caverns_sealed_year": 208,
+    "military_posture": "part_time_militia",
+    "military_first_squad_year": 207,
+    "surface_footprint": "minimal",
+    "water_source": "well_from_cistern",
+    "food_strategy": "underground_farm",
+    "primary_industry": "crafts_for_trade",
+    "burial_provision": "coffins_only",
+    "defense_depth": "single_layer",
+    "max_depth_z": 42,
+    "peak_dwarf_count": 61
+  },
+  "milestones": [
+    {"year": 205, "kind": "first_migrant_wave", "detail": "9 arrivals, mostly peasants"},
+    {"year": 206, "kind": "trade_depot_built", "detail": null},
+    {"year": 207, "kind": "first_squad_formed", "detail": "4 hammerdwarves, part-time"},
+    {"year": 207, "kind": "caverns_breached", "detail": "second cavern layer, z-38"},
+    {"year": 208, "kind": "caverns_sealed", "detail": "walled the main gallery; a side passage was missed"},
+    {"year": 209, "kind": "first_siege", "detail": null},
+    {"year": 210, "kind": "population_peak", "detail": "61 dwarves"}
+  ],
+  "threat_log": [
+    {
+      "year": 206,
+      "kind": "goblin_snatcher",
+      "attacker_count": 1,
+      "population_at_time": 18,
+      "military_strength_at_time": 0,
+      "outcome": "ignored_departed",
+      "dwarf_deaths": 0,
+      "breach_location": null
+    },
+    {
+      "year": 209,
+      "kind": "goblin_siege",
+      "attacker_count": 22,
+      "population_at_time": 54,
+      "military_strength_at_time": 4,
+      "outcome": "repelled_with_losses",
+      "dwarf_deaths": 3,
+      "breach_location": null
+    },
+    {
+      "year": 211,
+      "kind": "cavern_ambush",
+      "attacker_count": 11,
+      "population_at_time": 58,
+      "military_strength_at_time": 4,
+      "outcome": "fort_lost",
+      "dwarf_deaths": 41,
+      "breach_location": "Lower Mushroom Gallery"
+    }
+  ],
+  "outcome": {
+    "status": "dead_abandoned",
+    "end_year": 211,
+    "duration_years": 6,
+    "population_at_end": 0,
+    "total_deaths": 47,
+    "contributing_factors": [
+      {
+        "rank": 1,
+        "factor": "cavern_breach_invasion",
+        "evidence": "threat_log.2: the only breach location recorded for the fort's entire life was the cavern side passage missed when the caverns were sealed in 208."
+      },
+      {
+        "rank": 2,
+        "factor": "agent_error",
+        "evidence": "design.caverns_sealed is 'partial': the overseer recorded the caverns as handled in 208 while a side passage remained open, and never revisited it."
+      },
+      {
+        "rank": 3,
+        "factor": "unhappiness_cascade",
+        "evidence": "burial_provision was coffins_only against 47 total deaths; the final year's fighting outpaced burial."
+      }
+    ],
+    "wealth_at_end": 412000
+  },
+  "observations": [
+    {
+      "hypothesis_id": "caverns-partial-is-not-sealed",
+      "relation": "corroborates",
+      "diagnosticity": "smoking_gun",
+      "rationale": "The one recorded breach in the fort's life was at the cavern passage and nowhere else, while the surface entrance (the design feature under test elsewhere) held through a 22-goblin siege two years earlier. A breach that occurs at the named weak point and at no other point is Van Evera's smoking gun, not a straw in the wind.",
+      "supporting_fields": ["threat_log.2.breach_location", "design.caverns_sealed", "threat_log.1.outcome"]
+    },
+    {
+      "hypothesis_id": "drawbridge-entrance-survives-sieges",
+      "relation": "corroborates",
+      "diagnosticity": "straw_in_the_wind",
+      "rationale": "The drawbridge entrance was never breached, but it was also only tested by one siege of 22 and the fort died to something else entirely. Consistent with the hypothesis; barely discriminating. Classed straw-in-the-wind by rubric because no breach data exists for the feature under test.",
+      "supporting_fields": ["threat_log.1.outcome", "design.entrance_seal"]
+    }
+  ],
+  "experiment": {
+    "variable": "design.entrance_seal",
+    "value": "drawbridge",
+    "control_fort_id": "EXAMPLE-stonehold-y199",
+    "hypothesis_id": "drawbridge-entrance-survives-sieges",
+    "same_world_as_control": true
+  },
+  "epitaph_ref": "chronicle/epitaphs/EXAMPLE-ironbound-y205.md",
+  "notes": "ILLUSTRATIVE EXAMPLE ONLY. This fort was never played and these numbers were invented to exercise the schema. It is deliberately stored outside forts.jsonl so it can never be mistaken for data. Kept because it is the worked answer to 'what does a good row look like', including the case the schema most wants to capture: a fort whose recorded contributing factors include the overseer's own mistake."
+}

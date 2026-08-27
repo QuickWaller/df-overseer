@@ -150,6 +150,16 @@ recorded field, no amount of reasoning will ever produce a lesson about it.
 
 ### 3. Forts must be comparable — the fort ledger
 
+> **Built 2026-08-27, and the sketch below is superseded by it.** The schema
+> now lives in `ledger/` with a validating write path, and it differs from this
+> sketch in three ways worth knowing: `entrance_design` was split into
+> orthogonal axes (you cannot vary one variable when the variable is a
+> portmanteau), the single `cause_of_death` became a plural ranked
+> `contributing_factors` list, and every field declares how it gets populated
+> so grading code can be refused access to anything the agent wrote. See
+> `ledger/README.md` and `decisions/DECISIONS.md` 2026-08-27. The prose below
+> is kept because the *reasoning* still holds; the field list does not.
+
 Cross-fort questions ("what did forts that survived past year 10 have in
 common?") need structured records, not prose. A fifth store: one **fort ledger**
 entry per fort, written at death, queryable.
