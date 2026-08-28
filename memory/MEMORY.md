@@ -25,7 +25,12 @@ their contents.
   Read back from the API, not assumed.
 - `infra/local.df-vm-install.md` — the fortress VM's game install: paths, the
   Xvfb headless launch, the save location, silent `-gen` worldgen and its ~25%
-  silent-failure rate, and the measured worldgen memory ceiling.
+  silent-failure rate, and the measured worldgen memory ceiling. Plus the
+  2026-08-28 process-lifecycle facts that the systemd work depends on: DF
+  ignores SIGTERM, `dfhack-run` colours its output and reports a connect error
+  as ordinary text, launch to RPC is ~3-10s, and `onboot` is unset on the VM.
+- `infra/local.hardware-plan.md` — the RAM, disk and node plan for the two-box
+  cluster, including what was harvested from the stripped Omen.
 
 ## See also
 
