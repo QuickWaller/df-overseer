@@ -11,11 +11,17 @@ ACTIVE.md
 # Infrastructure specifics (Proxmox host, Coolify, IPs, hostnames, tokens).
 # Committed counterparts live alongside as infra/local.example.*
 infra/local.*
+# ...but the example counterparts ARE meant to be committed (CLAUDE.md).
+# Without this negation the pattern above swallows them and a fresh
+# clone gets no template to fill in at all.
+!infra/local.example.*
 
 # DF saves — 15-19 MB each, git handles them badly. Worldgen params ARE
 # tracked (see worlds/) so a world can be reproduced without the save.
 save/
 *.dfsave
+# Save archives pulled off the VM by scripts/install_df.py backup.
+backups/
 
 # Ingested wiki corpus — large, regenerable from the WikiTeam dump process
 # documented in docs/MEMORY.md. Do not commit.

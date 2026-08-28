@@ -1,12 +1,14 @@
 # df-overseer
 
-> Working draft, 2026-08-25 (VM spec and game install updated 2026-08-27).
+> Working draft, 2026-08-25 (VM spec and game install updated 2026-08-27;
+> install scripted and re-verified 2026-08-28).
 > Consolidates the research in `research/`. Most of the design below has still
 > not been tested against a running game; assume it is a proposal unless marked
 > *verified*. Two layers under it are real: the Proxmox access layer is live
-> and `scripts/` provisions the VM (`infra/local.proxmox-access.md`), and DF Classic
-> plus DFHack now run headless on the VM and answer RPC
-> (`infra/local.df-vm-install.md`). No game-side *code* exists yet.
+> and `scripts/provision_vm.py` builds the VM (`infra/local.proxmox-access.md`),
+> and DF Classic plus DFHack run headless on the VM and answer RPC, installed
+> and managed by `scripts/install_df.py` (`infra/local.df-vm-install.md`).
+> No game-side *code* exists yet: no perception layer, no agent, no toolkit.
 
 ## Purpose
 
@@ -186,6 +188,21 @@ the point: nobody looks at the window, so a virtual framebuffer is enough to
 satisfy SDL, and commitment #1 is untouched because the model never sees it.
 Control is `dfhack-run` against the RPC server on `127.0.0.1:5000`.
 
+Three lifecycle facts about that process, all *verified 2026-08-28*, and all of
+them shape the systemd work:
+
+- **Launch to a listening RPC socket is about 3 to 10 seconds.** The process
+  starts immediately; there is no delayed start to wait out.
+- **DF ignores SIGTERM.** There is no graceful shutdown: a stop waits the full
+  timeout and then needs SIGKILL. So the unit must save through `dfhack-run`
+  before stopping and allow a long `TimeoutStopSec`, or every host reboot kills
+  the fort outright.
+- **`dfhack-run` colours its output even when stdout is not a tty**, ending
+  with a bare `[0m` on its own line, and prints
+  `Could not connect to localhost:5000` when the game is down. Both bite: a
+  health check that reads the last line gets the escape sequence, and one that
+  merely tests for non-empty output passes against a dead game.
+
 **Worlds are generated from the command line** (*verified*):
 `./dfhack -gen <id> <seed> "<preset>"` runs silently and quits, so world
 creation needs no UI driving at all. Preset names are compiled into the
@@ -193,20 +210,31 @@ binary. `POCKET ISLAND` is the current default: 17x17, stops at year 30,
 ~900 KB save in about 12 seconds. **It fails silently in roughly a quarter of
 runs**, generating the full history and then never writing an export, with
 nothing in any log; detect by the absence of the region directory, never by
-exit code. Embark is the next thing that will need UI driving, and how much of
+exit code. Reproduced again on 2026-08-28 (one of two attempts on one world)
+and now handled in `scripts/install_df.py gen`, which retries with a fresh
+seed. Note that `save/current` survives a failed run, so its presence
+afterwards proves nothing on its own: compare its mtime across the attempt. Embark is the next thing that will need UI driving, and how much of
 it is scriptable is unknown.
 
 **Saves live at `~/.local/share/Bay 12 Games/Dwarf Fortress/save/`**
 (*verified*), not in the game directory. Anything that rotates, snapshots or
 backs up saves must point there; the pre-v50 `<df>/data/save` layout that most
 community writeups still describe does not exist on this build, and a script
-aimed at it copies nothing and reports success.
+aimed at it copies nothing and reports success. `scripts/install_df.py`
+resolves the path from `getent passwd` (so it is right under sudo too), backs
+it up with `backup`, and `verify` fails outright if `<df>/data/save` ever
+reappears.
 
 ## Build order
 
 0. ~~**Get DF and DFHack running on the VM.**~~ **Done 2026-08-27** — see
    `infra/local.df-vm-install.md`. Not originally on this list, and it blocked every
-   item below it. Still missing: systemd units, so nothing survives a reboot.
+   item below it. **Scripted 2026-08-28** as `scripts/install_df.py`
+   (`install` / `verify` / `start` / `stop` / `gen` / `saves` / `backup`), all
+   verified against VM 104, so the install is now reproducible rather than a
+   hand-built artifact to protect. Still missing: systemd units, so nothing
+   inside the guest survives a reboot — and `onboot` is not set on the VM
+   either, so the VM itself does not come back after a host reboot.
 1. ~~**Perception eval harness.**~~ **Done 2026-08-27** — `evals/perception/`,
    99.1% across all three representations at n=108 each. Caveat that still
    stands: hand-authored 15-landmark fixtures, not the lossier real generator
