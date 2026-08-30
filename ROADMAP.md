@@ -15,10 +15,6 @@ or `decisions/DECISIONS.md`, not here.
 ## Now
 <!-- Actively being worked, or the clear immediate next step. -->
 
-- **Commit this session's changes.** Working tree is dirty: `Working.md`,
-  `decisions/DECISIONS.md`, `memory/MEMORY.md`, `scripts/install_df.py`,
-  `scripts/provision_vm.py`, `working-archive/Working_archive-2026-08-24.md`.
-  → `Working.md` "What a next session should pick up" #1.
 - **Reinstall or rebuild the Proxmox host?** Full reinstall on the ProDesk vs.
   rebuilding the `df-overseer` pool/VMs on the existing install, still
   unanswered across three sessions. Gates cluster creation; do not infer an
@@ -35,11 +31,10 @@ or `decisions/DECISIONS.md`, not here.
 - **`cpu: host` → `x86-64-v2-AES`** in `provision_vm.py`, needed so the two
   cluster hosts (different CPU generations) can migrate VMs between them.
   Accepted, not yet implemented; takes effect on 104's next cold stop/start.
-  → `decisions/DECISIONS.md` 2026-08-28 row, `Working.md` next-session #2.
+  → `decisions/DECISIONS.md` 2026-08-28 row.
 - **`check_reachable` / `get_connectivity_report`.** Copies
   `warn-stranded.lua`'s working algorithm; highest-confidence real code to
-  write next. → `docs/PURPOSE.md` build order item 2, `Working.md`
-  next-session #3.
+  write next. → `docs/PURPOSE.md` build order item 2.
 - **Landmark system on burrows + exits-first representation.**
   → `docs/PURPOSE.md` build order item 3.
 - **`get_overview` / context tiering with deterministic JSON.** Must sort
@@ -52,12 +47,11 @@ or `decisions/DECISIONS.md`, not here.
 - **Embark, and measure a running fort's memory.** Worldgen's peak (561 MB)
   is measured; a fort at year 5 with 100 dwarves is not, and this would also
   give a real number for `TimeoutStopSec`'s quicksave margin.
-  → `Working.md` next-session #4, `docs/PURPOSE.md` open questions.
+  → `docs/PURPOSE.md` open questions.
 - **The compliance eval harness.** Cheapest research build item, do before
   any fort runs: load synthetic doctrine at increasing rule counts, measure
   where compliance degrades. No game, no agent, never blocked.
-  → `research/2026-08-25-learning-architecture.md` §7 item 1, `Working.md`
-  next-session #5.
+  → `research/2026-08-25-learning-architecture.md` §7 item 1.
 
 ## Later
 <!-- Real, worth tracking, but genuinely further out or gated on scale/decisions not yet made. -->
@@ -67,13 +61,12 @@ or `decisions/DECISIONS.md`, not here.
 - **Mechanical prediction grading.** Scripted comparison of a `signal` field
   against recorded state at `check_at`; needed before any prediction-based
   calibration metric means anything. → `research/2026-08-25-learning-architecture.md`
-  §7 item 3, `Working.md` next-session #6.
+  §7 item 3.
 - **The fort ledger's write path** for the remaining fields waits on the
-  perception layer existing. → `Working.md` next-session #7, `ledger/README.md`.
+  perception layer existing. → `ledger/README.md`.
 - **Re-run the perception eval against real briefings** once `llm-brief.lua`
   exists, replacing today's hand-authored 15-landmark fixtures with the
-  actual lossier generator. → `Working.md` next-session #8, `docs/PURPOSE.md`
-  build order item 1's caveat.
+  actual lossier generator. → `docs/PURPOSE.md` build order item 1's caveat.
 - **Seeded counterfactual rerun harness**, the only real answer to the
   control-arm problem for "doctrine improved outcomes" claims. Rests on DF
   replay determinism, which is unverified. → `research/2026-08-25-learning-architecture.md`

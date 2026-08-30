@@ -13,11 +13,22 @@ both units came back with DF answering RPC and zero manual steps. `onboot=1`
 is set on VM 104 (confirmed by reading the config back), though the
 host-reboot case itself remains untested -- only the cheaper guest-reboot
 proxy was, deliberately, since rebooting the physical host is a bigger action
-than this session took unilaterally. Working tree is **dirty, not committed**:
-`scripts/install_df.py`, `scripts/provision_vm.py`,
-`infra/local.df-vm-install.md`. VM 104 is up, DF running under systemd, RPC
-answering. Stayed on whichever tailnet gives Proxmox/VM access the whole
-session; never needed to switch.
+than this session took unilaterally. **Committed as two commits, `d275ccc`
+(systemd/onboot) and `847ccdf` (ROADMAP.md)**; working tree is clean; **not
+pushed** -- that needs its own go-ahead per the Rules section. VM 104 is up,
+DF running under systemd, RPC answering. Stayed on whichever tailnet gives
+Proxmox/VM access the whole session; never needed to switch.
+
+**`ROADMAP.md` now exists**, following the convention documented in
+AgentSecretary's `CLAUDE.md` (a sibling repo at
+`c:\website-projects\AgentSecretary`): Now/Next/Later/explicitly-not-doing
+buckets, one line per item pointing into `Working.md`/`decisions/`/`docs/`/
+`research/` rather than re-narrating. `CLAUDE.md`'s Structure section gained a
+matching bullet, including the update triggers (a Now-item starting or
+finishing, an explicit user priority call, a full-review pass at least every
+~2 weeks). Its Now bucket's "commit this session's changes" item is removed
+below, since that update trigger (a Now-item finishing) fired within the same
+session that added the file.
 
 ### What changed this session
 
@@ -121,29 +132,12 @@ root in the GUI before wiping anything.
 
 ### What a next session should pick up
 
-**1. Commit this session's changes**, then decide whether to ask the user for
-the host-reboot test (the one piece of "does the fort survive a reboot" still
-unverified), or move on and revisit it once there is more reason to reboot the
-host anyway (e.g. the cluster work, once decision 1 above lands).
-
-**2. `cpu: host` -> `x86-64-v2-AES`** in `provision_vm.py`, still set on 104.
-Accepted in `DECISIONS.md`, not implemented.
-
-**3. `check_reachable` / `get_connectivity_report`** (`docs/PURPOSE.md` build
-item 2). Copies `warn-stranded.lua`'s algorithm.
-
-**4. Embark, and measure a running fort's memory**, which would also finally
-give a real number for `TimeoutStopSec`'s quicksave margin above.
-
-**5. The compliance eval harness.** Research build item 1. No game, no agent,
-never blocked.
-
-**6. Mechanical prediction grading** (research build item 3).
-
-**7. The ledger's write path** waits on the perception layer.
-
-**8. Re-run the perception eval against real briefings** once `llm-brief.lua`
-exists.
+Same list as `ROADMAP.md`'s Now/Next buckets, which is now the canonical
+version of this; kept here only as the short form. Headline items: decide
+whether to ask the user for the host-reboot test now or fold it into the
+cluster work once decision 1 above lands; `cpu: host` -> `x86-64-v2-AES`;
+`check_reachable`/`get_connectivity_report`; embark and measure a running
+fort's memory; the compliance eval harness.
 
 ### Housekeeping, carried forward
 
