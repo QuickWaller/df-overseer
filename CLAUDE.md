@@ -26,6 +26,18 @@ file first in any session.
 
 ## Structure
 
+- **`ROADMAP.md`** (root) — the forward-looking, priority-ordered plan: what's
+  next and roughly when, in Now/Next/Later buckets plus an "explicitly not
+  doing" list. Complements `Working.md` rather than duplicating it —
+  `Working.md` is tactical detail on what's in motion right now, `ROADMAP.md`
+  is the strategic list it's drawn from. One line per item: what/why plus a
+  pointer into `decisions/DECISIONS.md`, `Working.md`, `docs/`, or `research/`
+  for the real detail, never a re-narration. **Update triggers:** a Now-bucket
+  item starting or finishing, an explicit user priority call, and a
+  lightweight full-review pass at least every ~2 weeks regardless (bump
+  `**Last reviewed:**`, actually re-scan for anything quietly finished or
+  stalled).
+
 - **`Working.md`** (root) — what's currently in progress. If something is
   tabled, shelved, or paused, remove it rather than marking it paused. Any
   session — fresh, resumed, or accidentally concurrent — should read this file
