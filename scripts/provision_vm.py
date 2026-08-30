@@ -5,6 +5,7 @@
     python scripts/provision_vm.py build-template [--vmid N] [--memory 6144]
                                                   [--no-bake]
     python scripts/provision_vm.py clone [--name df-fortress] [--full]
+    python scripts/provision_vm.py set-onboot [--vmid N] --enable|--disable
 
 The template is built from scratch out of a cloud image we downloaded, on
 purpose: an earlier VM here was a linked clone of a template outside our pool,
@@ -201,7 +202,14 @@ def ssh_guest(env, ip, command, timeout=120, check=True):
         "%s@%s" % (env.get("DF_CIUSER", "df"), ip),
         command,
     ]
-    proc = subprocess.run(argv, capture_output=True, text=True, timeout=timeout)
+    # encoding/errors explicit: text=True alone decodes with the platform's
+    # preferred encoding, cp1252 on Windows, which raised UnicodeDecodeError
+    # on this workstation the first time a remote command's output contained
+    # a UTF-8 multibyte character (systemd's unit-state bullet, 2026-08-30).
+    # The guest is Ubuntu and everything it prints is UTF-8.
+    proc = subprocess.run(argv, capture_output=True, text=True,
+                          encoding="utf-8", errors="replace",
+                          timeout=timeout)
     if check and proc.returncode != 0:
         raise PVEError("ssh failed (%s): %s"
                        % (proc.returncode, (proc.stderr or proc.stdout).strip()))
@@ -575,6 +583,32 @@ def cmd_set_memory(pve, args):
         % (after.get("memory"), after.get("balloon")))
 
 
+def cmd_set_onboot(pve, args):
+    """Set whether a VM starts automatically when the host boots.
+
+    Unlike memory, `onboot` is a scheduling flag, not a hardware allocation --
+    it applies live and needs no stopped VM. VM 104 shipped without it: the
+    2026-08-27 host reboot brought Proxmox back but left the VM itself
+    stopped, discovered only because 'verify' was run rather than assumed. A
+    VM the host doesn't restart is a VM that doesn't survive its own crash.
+    """
+    vmid = args.vmid or pve.env.get("DF_VMID")
+    if not vmid:
+        raise PVEError("no vmid: pass --vmid or set DF_VMID in .env")
+
+    want = 1 if args.enable else 0
+    cfg = pve.get(pve.vm_path(vmid, "/config"))
+    log("vm %s: onboot %s -> %s" % (vmid, cfg.get("onboot", 0), want))
+
+    pve.put(pve.vm_path(vmid, "/config"), {"onboot": want})
+
+    after = pve.get(pve.vm_path(vmid, "/config"))
+    if int(after.get("onboot", 0)) != want:
+        raise PVEError("config still reads onboot=%s after the write"
+                       % after.get("onboot"))
+    log("confirmed by read-back: onboot=%s" % after.get("onboot"))
+
+
 def cmd_start(pve, args):
     """Start a VM, refusing if the host cannot currently back it.
 
@@ -652,6 +686,15 @@ def main():
     setmem.add_argument("--memory", type=int, required=True)
     setmem.add_argument("--balloon", type=int, default=DEFAULT_BALLOON)
 
+    onboot = sub.add_parser("set-onboot",
+                            help="start (or not) the VM when the host boots")
+    onboot.add_argument("--vmid", type=int)
+    group = onboot.add_mutually_exclusive_group(required=True)
+    group.add_argument("--enable", action="store_true", dest="enable",
+                       help="start this VM automatically on host boot")
+    group.add_argument("--disable", action="store_false", dest="enable",
+                       help="do not start this VM automatically on host boot")
+
     start = sub.add_parser("start", help="start a VM, gated on host memory")
     start.add_argument("--vmid", type=int)
     start.add_argument("--min-headroom", type=float, default=1.0,
@@ -667,6 +710,7 @@ def main():
         "build-template": cmd_build_template,
         "clone": cmd_clone,
         "set-memory": cmd_set_memory,
+        "set-onboot": cmd_set_onboot,
         "start": cmd_start,
     }[args.command]
     try:

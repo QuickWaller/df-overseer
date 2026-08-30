@@ -7,6 +7,7 @@
     python scripts/install_df.py gen     [--world-id 7] [--preset "POCKET ISLAND"]
     python scripts/install_df.py saves   [--vmid N]
     python scripts/install_df.py backup  [--vmid N] [--out backups]
+    python scripts/install_df.py systemd [--vmid N] [--start]
 
 VM 104 was built by hand on 2026-08-27 and the only record of it is prose
 (infra/local.df-vm-install.md). This turns that prose into something re-runnable,
@@ -149,7 +150,9 @@ def scp_from(env, ip, remote_path, local_path):
         "%s@%s:%s" % (env.get("DF_CIUSER", "df"), ip, remote_path),
         local_path,
     ]
-    proc = subprocess.run(argv, capture_output=True, text=True, timeout=600)
+    # See provision_vm.ssh_guest for why encoding/errors are explicit here.
+    proc = subprocess.run(argv, capture_output=True, text=True,
+                          encoding="utf-8", errors="replace", timeout=600)
     if proc.returncode != 0:
         raise PVEError("scp failed (%s): %s"
                        % (proc.returncode, (proc.stderr or proc.stdout).strip()))
@@ -274,6 +277,178 @@ dfhack_lua() {
 
 def dfhack_lua_sh():
     return DFHACK_LUA_SH % {"game": GAME_DIR}
+
+
+# --- systemd ---------------------------------------------------------------
+
+# Two units rather than one process tree, because Xvfb and dwarfort have
+# different failure handling: Xvfb restarting is safe and should happen
+# automatically, but dwarfort restarting on its own would silently start a
+# fresh process without the save discipline in systemd-stop.sh ever running.
+XVFB_UNIT = '''[Unit]
+Description=Xvfb virtual display for Dwarf Fortress
+After=network.target
+
+[Service]
+Type=simple
+User=%(user)s
+ExecStart=/usr/bin/Xvfb %(display)s -screen 0 %(geometry)s -nolisten tcp
+Restart=on-failure
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target
+'''
+
+# ExecStartPre polls for the display rather than trusting unit ordering:
+# systemd considers df-xvfb "started" the instant Xvfb forks, not once it is
+# accepting connections, and dwarfort launched against a display that is not
+# there yet exits before dfhack-run has anything to talk to.
+WAIT_XVFB_SH = '''#!/bin/bash
+for _ in $(seq 1 30); do
+  DISPLAY=%(display)s xdpyinfo >/dev/null 2>&1 && exit 0
+  sleep 1
+done
+echo "Xvfb never came up on %(display)s" >&2
+exit 1
+'''
+
+# The load-bearing piece: DF ignores SIGTERM (verified 2026-08-28 -- 'stop'
+# always runs the full timeout before SIGKILL is needed), so systemd's default
+# kill sequence would lose the fort on every host reboot. ExecStop is this
+# script instead of systemd's own kill: it quicksaves unconditionally --
+# unlike install_df.py's manual 'stop --save', there is no one at the console
+# to decide, and 'once a fort is live, saving before stopping is mandatory' --
+# then falls through to the same TERM-then-KILL escalation as cmd_stop.
+STOP_SH = '''#!/bin/bash
+cd %(game)s
+if ! pgrep -x dwarfort >/dev/null 2>&1; then
+  exit 0
+fi
+./dfhack-run quicksave > %(logdir)s/systemd-stop.out 2>&1 || true
+sleep 5
+pkill -TERM -x dwarfort || true
+for _ in $(seq 1 30); do
+  pgrep -x dwarfort >/dev/null 2>&1 || exit 0
+  sleep 1
+done
+pkill -KILL -x dwarfort || true
+sleep 2
+exit 0
+'''
+
+# TimeoutStopSec covers ExecStop's own worst case (quicksave, unmeasured on a
+# live fort -- no fort has been embarked yet -- plus the 5s settle, the 30s
+# TERM wait, and the 2s KILL settle) with margin. Revisit once a real fort's
+# quicksave time is known.
+DF_UNIT = '''[Unit]
+Description=Dwarf Fortress (DFHack), headless
+After=df-xvfb.service network.target
+Requires=df-xvfb.service
+
+[Service]
+Type=simple
+User=%(user)s
+WorkingDirectory=%(game)s
+Environment=DISPLAY=%(display)s
+ExecStartPre=%(game)s/systemd-wait-xvfb.sh
+ExecStart=%(game)s/dfhack
+ExecStop=%(game)s/systemd-stop.sh
+TimeoutStopSec=180
+Restart=no
+# ExecStop does its own kill (quicksave first, DF ignores SIGTERM) rather than
+# systemd's built-in one. MainPID is './dfhack', a launcher script that waits
+# on dwarfort and re-exits with dwarfort's signal folded into its own exit
+# code (bash's wait/$? convention) rather than dying by that signal itself --
+# confirmed on VM 104 on 2026-08-30: 'systemctl status' showed
+# 'ExecStart=...dfhack (code=exited, status=137)', an EXIT CODE, not a
+# signal death, so listing SIGKILL by name here did not help. 137 = 128+9
+# (SIGKILL), 143 = 128+15 (SIGTERM), for whichever escalation step actually
+# ends it. Without this, 'systemctl is-active' reads 'failed' after every
+# clean stop, a false alarm for any future health check reading unit state.
+SuccessExitStatus=137 143
+
+[Install]
+WantedBy=multi-user.target
+'''
+
+
+def cmd_systemd(pve, args):
+    """Install (or update) the df-xvfb and df-fortress units, and enable them.
+
+    Does not start either unit by default: DF may already be running from a
+    manual 'start', and systemd starting a second instance would contend for
+    the RPC port and the save directory the same way '-gen' does. Pass
+    --start to start them now instead of waiting for the next boot.
+    """
+    vmid, ip = target(pve, args)
+    user = pve.env.get("DF_CIUSER", "df")
+    log("installing systemd units on VM %s" % vmid)
+    helpers = '''
+install -d -m755 %(game)s
+cat > %(game)s/systemd-wait-xvfb.sh <<'EOF'
+%(wait_sh)s
+EOF
+cat > %(game)s/systemd-stop.sh <<'EOF'
+%(stop_sh)s
+EOF
+chmod +x %(game)s/systemd-wait-xvfb.sh %(game)s/systemd-stop.sh
+chown %(user)s:%(user)s %(game)s/systemd-wait-xvfb.sh %(game)s/systemd-stop.sh
+
+cat > /etc/systemd/system/df-xvfb.service <<'EOF'
+%(xvfb_unit)s
+EOF
+cat > /etc/systemd/system/df-fortress.service <<'EOF'
+%(df_unit)s
+EOF
+systemctl daemon-reload
+systemctl enable df-xvfb.service df-fortress.service
+echo "units installed and enabled"
+systemctl is-enabled df-xvfb.service df-fortress.service
+''' % {
+        "game": GAME_DIR,
+        "user": user,
+        "wait_sh": WAIT_XVFB_SH % {"display": DISPLAY_NUM},
+        "stop_sh": STOP_SH % {"game": GAME_DIR, "logdir": LOG_DIR},
+        "xvfb_unit": XVFB_UNIT % {"user": user, "display": DISPLAY_NUM,
+                                  "geometry": FB_GEOMETRY},
+        "df_unit": DF_UNIT % {"user": user, "game": GAME_DIR,
+                              "display": DISPLAY_NUM},
+    }
+    proc = remote(pve.env, ip, helpers, "systemd install", timeout=120,
+                  sudo=True, dry_run=args.dry_run)
+    if proc:
+        for line in proc.stdout.strip().splitlines():
+            log("  " + line)
+
+    if args.start:
+        log("starting units now")
+        # is-active/is-enabled, not 'systemctl status': status's unit-state
+        # bullet is a non-ASCII glyph, and the workstation's subprocess pipe
+        # decodes as cp1252, which raised UnicodeDecodeError on that byte
+        # rather than the VM -- caught starting these units for the first
+        # time on 2026-08-30.
+        script = '''
+systemctl start df-xvfb.service df-fortress.service
+sleep 2
+for u in df-xvfb.service df-fortress.service; do
+  echo "$u: active=$(systemctl is-active "$u") enabled=$(systemctl is-enabled "$u")"
+done
+'''
+        proc = remote(pve.env, ip, script, "systemd start", timeout=120,
+                      sudo=True, check=False, dry_run=args.dry_run)
+        if proc:
+            for line in proc.stdout.strip().splitlines():
+                log("  " + line)
+            if proc.returncode != 0:
+                raise PVEError("systemd start reported a problem; check the"
+                               " lines above and 'journalctl -u df-fortress'"
+                               " on the VM")
+    else:
+        log("units enabled for next boot, not started. Pass --start to start"
+            " them now, or 'systemctl start df-fortress' on the VM -- after"
+            " stopping any manually-launched instance first (install_df.py"
+            " stop), since the two would contend for the RPC port.")
 
 
 # --- install -------------------------------------------------------------
@@ -554,8 +729,9 @@ fi
     if proc:
         for line in proc.stdout.strip().splitlines():
             log("  " + line)
-        log("note: this does not survive a reboot. The systemd units are still"
-            " to be written.")
+        log("note: this manual instance is not managed by systemd and will"
+            " not survive a reboot. For that, use 'install_df.py systemd"
+            " --start' instead (stop this one first with 'stop').")
 
 
 def cmd_stop(pve, args):
@@ -771,8 +947,24 @@ else
   info "run: install_df.py start"
 fi
 
-units="$(systemctl list-unit-files 2>/dev/null | grep -cE '^(df|dfhack|xvfb)' || true)"
-info "systemd: $units df/xvfb unit(s) installed (0 is expected today)"
+check_unit() {
+  # 'systemctl is-enabled' by itself, not piped through grep: under
+  # 'set -o pipefail' (this whole script runs with it) 'list-unit-files |
+  # grep -q' reported every unit as absent on VM 104 on 2026-08-30, because
+  # grep -q exits the instant it matches, SIGPIPEs the still-writing
+  # systemctl, and pipefail turns that SIGPIPE into a pipeline failure --
+  # even though the match was real. A bare command substitution has no
+  # downstream reader to close early, so it has nothing to race.
+  name="$1"
+  state="$(systemctl is-enabled "$name" 2>/dev/null || true)"
+  case "$state" in
+    enabled) ok "$name installed and enabled" ;;
+    "") info "$name not installed (run: install_df.py systemd)" ;;
+    *) bad "$name installed but state is '$state', not enabled -- will not survive a reboot" ;;
+  esac
+}
+check_unit df-xvfb.service
+check_unit df-fortress.service
 exit $fail
 ''' % {"game": GAME_DIR, "dfver": DF_VERSION_STRING,
        "initpairs": " ".join("%s=%s" % kv for kv in INIT_SETTINGS)}
@@ -907,6 +1099,11 @@ def main():
     backup.add_argument("--out", default="backups",
                         help="local directory, default ./backups")
 
+    systemd = add("systemd", help="install and enable the Xvfb + DF units")
+    systemd.add_argument("--start", action="store_true",
+                         help="also start the units now, instead of only"
+                              " enabling them for the next boot")
+
     args = parser.parse_args()
     # SUPPRESS means an unsupplied flag leaves no attribute at all.
     args.vmid = getattr(args, "vmid", None)
@@ -920,6 +1117,7 @@ def main():
         "gen": cmd_gen,
         "saves": cmd_saves,
         "backup": cmd_backup,
+        "systemd": cmd_systemd,
     }[args.command]
     try:
         handler(pve, args)
