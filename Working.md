@@ -90,8 +90,11 @@ for it.
 - **`-gen` fails silently** roughly a quarter of the time. Success is the
   region directory existing, never the exit code.
 - **Saves live at the XDG path**, not in the game directory.
-- **`DF_MAC_OVERRIDES` in `.env` is load-bearing.** Without it a rebuilt VM
-  gets a derived MAC and drops its DHCP reservation.
+- **Never convert a booted VM to a template without sealing it** (`cloud-init
+  clean`, remove SSH host keys, truncate `machine-id`). The code that enforced
+  this went with the bake on 2026-09-08, because a template that is never
+  booted has nothing to seal. If anyone reintroduces a boot-before-convert
+  step, the seal has to come back with it.
 - **The published hostname is exposed.** The user chose not to rename it.
 - **`willsmith.nz` is deliberate**, not a leak: the intended public face.
 - **Folder is still `df-automation` on disk** while the project is
