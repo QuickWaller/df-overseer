@@ -108,18 +108,6 @@ nothing running unattended. Next real step is `install_df.py gen` (worldgen)
 and `install_df.py start`, whenever that's wanted — not assumed to be
 "now" just because the VM is ready.
 
-**Still owed, in home-lab not here: VM 103 needs onboarding into home-lab's
-inventory.** Flagged by home-lab-43 (a sibling Claude session), not fixed by
-either session, since home-lab's own rule 2 forbids editing its declared
-layer to match observed reality — this needs someone to actually look at the
-host. `df-colony-01` at `192.168.2.201` exists in neither `SRV-01.yaml` nor
-`ips.yaml`, and `.201` is outside the `.100`-`.199` DHCP pool, so it's a
-static allocation that never passed through `ips.yaml`'s "consult before
-assigning, update on assignment" registry. Separately stale there: VM 104
-`df-fortress` (`.157`) still reads `confidence: confirmed` with no mention
-of its 2026-09-01 deletion, and `services.yaml` still has `host:
-df-fortress`.
-
 **Provisioning work completed 2026-09-08, steps 1 and 2 of the migration path
 in `research/2026-09-08-provisioning-recommendation.md` §11.** Both were
 unconditional and independent of the still-open build-tool decision, so most
