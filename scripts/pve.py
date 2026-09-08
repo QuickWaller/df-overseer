@@ -16,6 +16,8 @@ import time
 
 import requests
 import urllib3
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
@@ -42,6 +44,39 @@ def load_env(path=None):
     return env
 
 
+def _retry_policy():
+    """Retry transient failures. Never retry a POST.
+
+    Added 2026-09-08. Before it, every call was a single unguarded attempt,
+    and wait_task polls every 2s: fetch-image and clone pass timeout=3600, so
+    roughly 1800 consecutive GETs, any one of which aborted the whole build.
+    On a cluster with no QDevice that is the likeliest way a rebuild dies.
+
+    This leans on urllib3's DEFAULT_ALLOWED_METHODS, which excludes POST.
+    That is exactly right here and is not incidental: this client's POSTs
+    create, clone, start and stop VMs, so a replayed POST after a timeout
+    could create two VMs. The GETs are what the polling loop is made of.
+    **Do not add POST to allowed_methods.**
+
+    500 is deliberately not in status_forcelist. PVE returns it for real
+    permission and quorum faults, which are persistent, and retrying those
+    just turns a clear error into a slow one.
+    """
+    policy = dict(
+        total=5,
+        backoff_factor=1.0,
+        status_forcelist=(502, 503, 504),
+        # We raise on status ourselves in request(), with the body attached.
+        raise_on_status=False,
+    )
+    try:
+        return Retry(backoff_jitter=0.5, **policy)
+    except TypeError:
+        # backoff_jitter landed in urllib3 2.0; without it, retries from
+        # several callers can still align, which is survivable here.
+        return Retry(**policy)
+
+
 class PVEError(RuntimeError):
     pass
 
@@ -66,6 +101,7 @@ class PVE:
         if not self.verify:
             urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
         self.session = requests.Session()
+        self.session.mount("https://", HTTPAdapter(max_retries=_retry_policy()))
         self.session.headers["Authorization"] = "PVEAPIToken=%s=%s" % (
             self.env["PVE_TOKEN_ID"],
             self.env["PVE_TOKEN_SECRET"],
@@ -91,8 +127,16 @@ class PVE:
             method, url, verify=self.verify, timeout=60, **kwargs
         )
         if resp.status_code >= 400:
-            raise PVEError("%s %s -> %s %s" % (method, path, resp.status_code,
-                                               resp.text.strip()))
+            hint = ""
+            if resp.status_code in (403, 500):
+                # Both repos predicted this misdiagnosis in writing before it
+                # could happen: an inquorate node makes /etc/pve read-only and
+                # every write fails in a way that reads exactly like an ACL
+                # fault. No retry policy fixes it, so say so at the error.
+                hint = ("\n  note: this can also mean the cluster is inquorate."
+                        " Check `pvecm status` before assuming a permissions problem.")
+            raise PVEError("%s %s -> %s %s%s" % (method, path, resp.status_code,
+                                                 resp.text.strip(), hint))
         if not resp.text:
             return None
         return resp.json().get("data")
