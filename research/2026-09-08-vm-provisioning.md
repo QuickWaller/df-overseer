@@ -291,3 +291,99 @@ Nothing here re-proposes an approach the register rejected without saying so, an
 - **No practice survey turned up the specific seam this project has** (many public per-project repos, one private estate repo). I looked and found monorepos. Reported as an absence rather than padded into a pattern.
 - **Tailscale billing behaviour** for the four-hour ephemeral threshold is from Tailscale's documentation, not from this tailnet's invoices.
 - **I did not evaluate whether the estate's node is a sound host for a month-long stateful run.** That is an open question the estate repo already raises about itself, and it is a risk-acceptance call for the user, not a provisioning-design one.
+
+---
+
+# ERRATUM, added 2026-09-08
+
+**Section 5 ("The build tool") of this spec is superseded by
+`research/2026-09-08-provisioning-recommendation.md`.** Sections 3 (addressing)
+and 4 (image sourcing and pinning) stand, are not superseded, and are
+load-bearing in the replacement document.
+
+This erratum is appended rather than folded into the text above, because the
+register's value is that it can be trusted, and a document that quietly
+rewrites its own wrong claims teaches a reader nothing about how much to
+trust the rest of it.
+
+Two claims in section 5 blocked an option and neither is supportable.
+
+## E1. Section 5.2, Ansible: the disqualification does not hold
+
+The text says Ansible "is disqualified by where the control node is", citing
+`os_guide/intro_windows.html` for "WSL... is not supported by Ansible and
+should not be used for production systems".
+
+**That quotation is genuine.** The page does say it, and it was correctly
+transcribed. The error is different and it is worse: the claim was presented
+as settled when the primary sources are in direct conflict, and a
+disqualification was drawn from one side of that conflict without the other
+side being checked.
+
+Ansible's own installation guide, which is the canonical page for control-node
+requirements, states: *"For your control node (the machine that runs Ansible),
+you can use nearly any UNIX-like machine with Python installed. This includes
+Red Hat, Debian, Ubuntu, macOS, BSDs, and Windows under a Windows Subsystem
+for Linux (WSL) distribution."* It goes on: *"Windows without WSL is not
+natively supported as a control node."*
+
+So the vendor's documentation contradicts itself, WSL is listed as supported
+on the requirements page, and "Ansible cannot be used here" is not a claim the
+sources support. The replacement document still recommends keeping
+`install_df.py`, but on grounds that hold: the checks it encodes are ones a
+generic module expresses badly, and this is the layer where unattended
+operation actually bites.
+
+## E2. Section 5.1, `bpg/proxmox`: the SSH requirement is overstated to the point of being misleading
+
+The text says the provider "documents that file uploads and disk import
+require an SSH connection to the Proxmox node", and concludes that adopting it
+"means importing exactly the host-shell dependency the containment design
+exists to exclude".
+
+The provider's own documentation (`docs/index.md`) says the opposite for this
+project's path. It carries an explicit list:
+
+> **SSH is NOT required for:**
+> - Creating, modifying, or deleting VMs and Containers
+> - Managing storage, networks, pools, users, or any other resources
+> - Importing disks using `import_from` attribute (uses API)
+> - Downloading files using `proxmox_virtual_environment_download_file` (uses API)
+>
+> If you don't need the operations listed above, you can skip the SSH
+> configuration entirely.
+
+SSH is required only for uploading snippets, uploading certain file types,
+importing disks via `source_file.path`, and container `idmap`. **None of those
+is in this project's path.** `import_from` plus `download_file` is exactly the
+pattern `provision_vm.py` already uses.
+
+Independently confirmed by reading the provider binary at v0.112.0: its
+compiled schema gives `download_file`'s `content_type` as *"Must be `iso` or
+`import` for VM images"*, and its only SSH-mode description is scoped to
+"non-API content types (snippets, backups, etc.)".
+
+The `Permission check failed (user != root@pam)` caveat quoted in section 5.1
+is real, but its documented examples are LXC feature flags and `arch` config,
+neither of which this project sets.
+
+## What both errors have in common, which is the reusable lesson
+
+Each cited a real primary source and each stopped at the first source that
+supported the conclusion already reached. Neither looked for a source that
+would contradict it. That is the same shape as the 2026-08-28 leak-scan entry
+in `decisions/DECISIONS.md`: **a search that finds confirming evidence and a
+search that could not have found disconfirming evidence produce the same
+output.** For a claim that closes off an option, the check has to include
+looking for the counter-evidence, and saying whether it was found.
+
+## One thing section 5 got right and is upheld
+
+Section 5.4's conclusion on `cicustom` snippets, and its amended reason, are
+correct and are now verified at higher confidence than it could claim. Proxmox's
+own API source (`pve-storage.git`, `src/PVE/API2/Storage/Status.pm`) declares
+both the `upload` and `download_url` content parameters as
+`enum => ['iso', 'vztmpl', 'import']`. Snippets genuinely cannot be uploaded
+through the PVE API by any client. Section 4.2's `checksum` /
+`checksum-algorithm` parameter spelling, which section 5 could only mark
+medium-high, is also now confirmed from that same source.

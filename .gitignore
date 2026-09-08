@@ -44,3 +44,15 @@ venv/
 
 # Machine-local Claude Code scheduled-task lock.
 .claude/scheduled_tasks.lock
+
+# Terraform / OpenTofu, added 2026-09-08 ahead of any `terraform init`.
+# State files hold resource attributes in cleartext and are the same class of
+# near-miss as the .env sidecar above: untracked is not the same as safe in a
+# repo where an agent may run `git add -A`. The negation keeps a committed
+# example tfvars possible.
+*.tfstate
+*.tfstate.*
+.terraform/
+.terraform.lock.hcl
+*.tfvars
+!*.tfvars.example
