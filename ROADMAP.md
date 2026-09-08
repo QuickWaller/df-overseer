@@ -24,22 +24,26 @@ or `decisions/DECISIONS.md`, not here.
 > home-lab's own infra specifics; a clone of this public repo will not have
 > it).
 
-- **Paste the new token secret into `.env`.** Everything else in that file is
-  already repointed (`PVE_NODE`, `PVE_POOL`, `PVE_STORAGE`, `PVE_TOKEN_ID`);
-  `PVE_TOKEN_SECRET` is deliberately blank because no automation may copy it.
-  The value is minted and proven — `200` against its own pool, `403` outside.
-- **Verify with the safe read-only call first.** `python scripts/provision_vm.py
-  status` — memory, next VMID, pool members. It is a live API call, not a
-  rehearsal, but it allocates nothing. First proof the new identity works from
-  this machine rather than from inside the hypervisor.
+> **Identity proven 2026-09-08.** The token secret is in `.env` and
+> `provision_vm.py status` answered from this workstation: 12.5 GiB available,
+> next free vmid 102, pool empty (which independently confirms the 2026-09-01
+> deletion rather than a visibility problem). That call also exercised the
+> auth-header fix; an unauthenticated client returns `401`, not data.
+
+- **Set `DF_VM_IP` (and optionally `DF_GW`, `DF_DNS`) in `.env` before
+  cloning.** Required since addressing moved to static assignment at clone
+  time. CIDR form, one free address outside the router's DHCP pool. `clone`
+  fails loudly without it. → `decisions/DECISIONS.md` 2026-09-08 row.
 - **Rebuild the template, then the VM.** `fetch-image` → `build-template` →
   `clone`. Both the template and the running VM were deleted 2026-09-01, and
   neither is manual work to restore: `build-template` builds from the Ubuntu
   cloud image by design. The new storage already carries the `import` content
   type this needs.
-- **Name the rebuilt guest with the `.internal` suffix** — decided 2026-09-08.
-  `cmd_clone`'s `--name` takes any string with no convention attached, so this
-  has to be passed explicitly.
+- **Name the rebuilt guest with the `.internal` suffix**, decided 2026-09-08.
+  `cmd_clone`'s `--name` takes any string with no convention attached, so pass
+  it explicitly. It is a naming convention only: `.internal` does not resolve
+  from this workstation, and nothing depends on it doing so, because SSH now
+  targets the address assigned at clone time rather than a name.
 - **If a write step fails oddly, check quorum before suspecting permissions.**
   The cluster has no QDevice and the second node is unwell, so a single node
   can drop below quorum and make every config write fail with an error that
