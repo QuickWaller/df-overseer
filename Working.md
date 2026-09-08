@@ -37,13 +37,29 @@ see its own VMs. The call also exercised this session's auth-header fix
 against the live API, since an unauthenticated client gets `401` rather than
 data.
 
-**The next action is `fetch-image` then `build-template`**, which are writes
-and were deliberately left for an explicit go-ahead. Completing them
-discharges home-lab's Phase H, which is what lets the old **exposed** token be
-retired; until then it stays live. **Before the `clone` after that, `.env`
-needs `DF_VM_IP`** in CIDR form, one free address outside the router's DHCP
-pool, because addressing moved from discovery to assignment. `clone` fails
-loudly without it rather than silently picking something.
+**Spike A is done and it passed clean, first attempt, 2026-09-08.**
+`fetch-image` downloaded the pinned image and PVE accepted the checksum;
+`build-template` created VM 102, imported the disk, resized to 25G on attempt
+1 of 4, and converted to a template **without ever booting it**, which is the
+bake deletion working end to end. `DF_TEMPLATE_VMID=102` is recorded in
+`.env`.
+
+Four things that were unverified are now verified by that run: the
+`checksum`/`checksum-algorithm` spelling on `download-url`, which was the
+single least-confident claim in the provisioning research; the new storage
+having the `import` content type; the pool-scoped token driving the whole
+image-to-template flow; and the auth-header fix under real load.
+
+**This discharges home-lab's Phase H.** Retirement of the old `df-overseer@pve`
+identity was deliberately gated on one successful `build-template` run against
+the new token. That has now happened, so the old **exposed** token can and
+should be retired. It is still live until someone does it, and that is now the
+highest-value outstanding item.
+
+**Next is `clone`, and `.env` needs `DF_VM_IP` first**, CIDR form, one free
+address outside the router's DHCP pool, because addressing moved from
+discovery to assignment. `clone` fails loudly without it rather than silently
+picking something.
 
 **Provisioning work completed 2026-09-08, steps 1 and 2 of the migration path
 in `research/2026-09-08-provisioning-recommendation.md` §11.** Both were
