@@ -28,11 +28,22 @@ error, and `cb9560d` deletes the template bake and switches the VM to a
 static address assigned at clone time, taking `provision_vm.py` from 724
 lines to 533.
 
-**One thing is waiting on a human, and nothing else is blocked:** paste
-`PVE_TOKEN_SECRET` into `.env`. Then spike A is `python scripts/provision_vm.py
-status`, then `fetch-image`, then `build-template`. That run is also what
-discharges home-lab's Phase H, so an exposed credential stays live until it
-happens.
+**The blocking human step is discharged.** `PVE_TOKEN_SECRET` is in `.env`
+and the new pool-scoped identity is **proven from this workstation**:
+`provision_vm.py status` returned 12.5 GiB available, next free vmid 102, and
+an empty pool. That last point is worth keeping: the pool being empty
+independently confirms the 2026-09-01 deletion rather than a token that cannot
+see its own VMs. The call also exercised this session's auth-header fix
+against the live API, since an unauthenticated client gets `401` rather than
+data.
+
+**The next action is `fetch-image` then `build-template`**, which are writes
+and were deliberately left for an explicit go-ahead. Completing them
+discharges home-lab's Phase H, which is what lets the old **exposed** token be
+retired; until then it stays live. **Before the `clone` after that, `.env`
+needs `DF_VM_IP`** in CIDR form, one free address outside the router's DHCP
+pool, because addressing moved from discovery to assignment. `clone` fails
+loudly without it rather than silently picking something.
 
 **Provisioning work completed 2026-09-08, steps 1 and 2 of the migration path
 in `research/2026-09-08-provisioning-recommendation.md` §11.** Both were
