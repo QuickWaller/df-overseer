@@ -64,10 +64,33 @@ exists, then re-ran `provision_vm.py status` to confirm this repo still
 authenticates. **Still owed, in home-lab not here:** its
 `secrets/registry.md` row goes to `retired` with the date.
 
-**Next is `clone`, and `.env` needs `DF_VM_IP` first**, CIDR form, one free
-address outside the router's DHCP pool, because addressing moved from
-discovery to assignment. `clone` fails loudly without it rather than silently
-picking something.
+**`clone` is done, 2026-09-08: VM 103 `df-colony-01` is up at
+`192.168.2.201`.** User supplied `DF_VM_IP=192.168.2.201/24`. `clone --name
+df-fortress.internal --full` built VM 103 from template 102 as a full clone
+(matching the 2026-08-24 precedent for VM 104), `start --vmid 103` brought it
+up, and `install_df.py verify --vmid 103` reached it over SSH with no address
+discovery, confirming the static-assignment design works end to end on a real
+build. Its FAIL lines are the expected shape for a bare clone (no DF/DFHack,
+`init.txt` unset, no swap, no systemd units) — see
+`decisions/DECISIONS.md` 2026-09-08 row. `DF_VMID=103` is recorded in `.env`.
+
+**Renamed to `df-colony-01` same day: `.internal` is DNS-only, never part of
+a name or hostname.** User caught two problems with `df-fortress.internal`:
+"df" already means Dwarf Fortress, and unlike `subnet-router-02`, the literal
+string `.internal` was showing up in the Proxmox name field. The guest's own
+hostname was already the short form (`df-fortress`, cloud-init dropped the
+FQDN suffix at first boot), so the bug was cosmetic to Proxmox's name field
+only. Fixed on both sides and verified by reading back: Proxmox
+`config.name` and the guest's `hostname`/`/etc/hosts` both now read
+`df-colony-01`. The 2026-09-08 DECISIONS.md row claiming the OS hostname
+should carry `.internal` is superseded, it misread the home-lab convention.
+`scripts/` keys everything off `DF_VMID`/`DF_VM_IP`, never the VM name, so
+nothing else needed to change.
+
+**Next is `install_df.py install --vmid 103`**, then reapplying
+`init.txt`, swap, and the `df-xvfb.service`/`df-fortress.service` units with
+`onboot=1` — none of it carries over from the deleted VM 104, per the
+"re-scope, don't assume" trap below.
 
 **Provisioning work completed 2026-09-08, steps 1 and 2 of the migration path
 in `research/2026-09-08-provisioning-recommendation.md` §11.** Both were
@@ -175,9 +198,10 @@ for it.
 
 ### What a next session should pick up
 
-`ROADMAP.md`'s Now bucket is the canonical list. Headline order: paste the
-token secret, verify with the read-only `status` call, rebuild template then
-VM, name the new guest with the `.internal` suffix, watch for quorum during
+`ROADMAP.md`'s Now bucket is the canonical list. Token pasted, `status`
+verified, template and VM rebuilt, VM 103 named `df-colony-01` (not
+`.internal`, that's DNS-only, never part of a name or hostname) — all done.
+Remaining: `install_df.py install` on VM 103, watch for quorum during
 writes, rotate the stale `ANTHROPIC_API_KEY`.
 
 **Style note:** the user does not want em dashes in prose. Commas, colons,
