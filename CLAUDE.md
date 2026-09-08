@@ -5,19 +5,21 @@ story without you. See **[docs/PURPOSE.md](docs/PURPOSE.md)** for what this is
 and why, and **[docs/MEMORY-ARCHITECTURE.md](docs/MEMORY-ARCHITECTURE.md)** for the overseer's memory and
 learning architecture.
 
-> **Status: design, plus infrastructure that is scripted and proven, not
-> currently running.** The Proxmox identity this project runs against is
+> **Status: design, plus infrastructure that is scripted, proven, and
+> currently standing.** The Proxmox identity this project runs against is
 > provisioned outside this repo (see `infra/README.md`);
-> `scripts/provision_vm.py` builds the template and VM against it, and
-> `scripts/install_df.py` installs DF Classic and DFHack, which ran headless
-> and answered RPC on a VM verified end to end
-> (`infra/local.df-vm-install.md`). That VM and its template were deleted
-> 2026-09-01 in an estate rebuild, so the honest claim is that the whole
-> stack is rebuildable from this repo, not that it is running. No *code* of the game side is implemented yet: no
-> perception layer, no agent, no toolkit. Everything in `docs/` and
-> `research/` is still a design artifact; claims marked *verified* were
-> checked against a DFHack install, the live API, or a primary source, and
-> the rest are proposals.
+> `scripts/provision_vm.py` built VM `df-colony-01` (vmid 103) against it on
+> 2026-09-08, and `scripts/install_df.py` installed DF Classic and DFHack on
+> it, verified end to end (`decisions/DECISIONS.md` 2026-09-08 rows). This is
+> a rebuild, not the original: an earlier VM and template, built 2026-08-27,
+> were deleted 2026-09-01 in an estate rebuild, and today's VM is a fresh one
+> from this repo's own scripts, not a restore. **DF itself has not been
+> started and no world exists yet**, so nothing is running unattended; the
+> honest claim is that the stack is up and verified, not that a fort is in
+> progress. No *code* of the game side is implemented yet: no perception
+> layer, no agent, no toolkit. Everything in `docs/` and `research/` is still
+> a design artifact; claims marked *verified* were checked against a DFHack
+> install, the live API, or a primary source, and the rest are proposals.
 
 This repo is managed with Claude Code using a structured memory system,
 following the pattern published as

@@ -1,16 +1,19 @@
 # df-overseer
 
 > Working draft, 2026-08-25 (VM spec and game install updated 2026-08-27;
-> status corrected 2026-09-08). Consolidates the research in `research/`.
-> Most of the design below has still not been tested against a running game;
-> assume it is a proposal unless marked *verified*. Two layers under it are
-> scripted and proven, not currently standing: the template and VM build
-> (`scripts/provision_vm.py`), and the DF Classic plus DFHack install that
-> ran headless and answered RPC (`scripts/install_df.py`,
-> `infra/local.df-vm-install.md`). Both the template and the VM were deleted
-> 2026-09-01 in an estate rebuild, so the stack is rebuildable from this repo
-> rather than running. The Proxmox identity they run against is provisioned
-> outside this repo; see `infra/README.md`.
+> status corrected 2026-09-08, rebuild completed later the same day).
+> Consolidates the research in `research/`. Most of the design below has
+> still not been tested against a running game; assume it is a proposal
+> unless marked *verified*. Two layers under it are scripted, proven, and
+> currently standing: the template and VM build (`scripts/provision_vm.py`),
+> and the DF Classic plus DFHack install that runs headless and answers RPC
+> (`scripts/install_df.py`). An earlier template and VM (built 2026-08-27)
+> were deleted 2026-09-01 in an estate rebuild; today's VM, `df-colony-01`,
+> is a fresh rebuild from this repo's own scripts, verified end to end
+> (`decisions/DECISIONS.md` 2026-09-08 rows). DF itself has not been started
+> and no world exists yet, so nothing is running unattended. The Proxmox
+> identity they run against is provisioned outside this repo; see
+> `infra/README.md`.
 > No game-side *code* exists yet: no perception layer, no agent, no toolkit.
 
 ## Purpose
