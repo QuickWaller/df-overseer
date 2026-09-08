@@ -6,7 +6,8 @@ var/lib/vz/...'), which silently corrupts any storage path or 'import-from'
 value passed on a command line.
 
 Credentials come from the repo-root .env, which is gitignored. Nothing in this
-file identifies the host.
+file identifies the host -- and as of 2026-09-08 no default value in it
+names a real pool, storage or node either; those must all come from .env.
 """
 
 import os
@@ -51,8 +52,13 @@ class PVE:
         self.host = self.env["PVE_HOST"]
         self.port = self.env.get("PVE_PORT", "8006")
         self.node = self.env["PVE_NODE"]
-        self.pool = self.env.get("PVE_POOL", "df-overseer")
-        self.storage = self.env.get("PVE_STORAGE", "ssd_storage")
+        # Required, deliberately. These carried hardcoded defaults until
+        # 2026-09-08; both names stopped existing when the estate was rebuilt,
+        # so the defaults resolved to nothing and the first symptom was an
+        # error that read like a permissions fault. Fail loudly at
+        # construction instead of resolving to a dead name.
+        self.pool = self._require("PVE_POOL")
+        self.storage = self._require("PVE_STORAGE")
         self.base = "https://%s:%s/api2/json" % (self.host, self.port)
         self.verify = self.env.get("PVE_TLS_VERIFY", "false").lower() not in (
             "false", "0", "no", ""
@@ -64,6 +70,18 @@ class PVE:
             self.env["PVE_TOKEN_ID"],
             self.env["PVE_TOKEN_SECRET"],
         )
+
+    def _require(self, key):
+        """Read a setting that has no safe default, or refuse to construct."""
+        value = self.env.get(key, "").strip()
+        if not value:
+            raise PVEError(
+                "%s is not set in .env. It has no default on purpose: a dead "
+                "default reads as a permissions error, not a config error. "
+                "Set it to the name this project's own pool or storage "
+                "actually uses on your cluster." % key
+            )
+        return value
 
     # --- transport -------------------------------------------------------
 

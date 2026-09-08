@@ -1,10 +1,26 @@
 # Proxmox setup
 
+> **SUPERSEDED 2026-09-08 — this describes an identity that is being retired.**
+> The `df-overseer@pve` user, the `DFOverseer`/`DFOverseerNode` roles and the
+> pool/storage/node ACLs below were all real and all worked, but the estate
+> they were built against has been rebuilt: this project now uses a
+> pool-scoped service identity provisioned from a generalized runbook that
+> lives in the private home-lab repo, and this project is that runbook's
+> reference instance. **Do not follow the steps below to set up a new
+> identity** — they will build the retired shape. Kept as the record of how
+> the access layer was originally reasoned out, and because the `Sys.*`
+> scoping lesson in step 8 is still correct and still worth reading.
+>
+> Literals were genericized in the same pass: this repo is public, and
+> home-lab's standing rule is that other repos cite IDs (`SRV-01`) and never
+> carry a hostname, an address, a subnet or a storage ID. `<pve-node>` and
+> `<storage>` below are parameters, not names.
+
 **How to build the access layer from nothing.** For what currently *exists* —
 the live role, scopes, verified boundaries and VM specs — see
 `infra/local.proxmox-access.md`, which is read back from the API rather than assumed.
 
-Target: **Proxmox VE 9.1.1**, node `proxmox`, storage `ssd_storage`.
+Target: **Proxmox VE 9.1.1**, node `<pve-node>`, storage `<storage>`.
 
 ## Design
 
@@ -74,13 +90,13 @@ Do **not** tick `VM.Migrate`, `Sys.Modify`, `Sys.Console`, `Pool.Allocate`
 Path `/pool/df-overseer` · User `df-overseer@pve` · Role `DFOverseer`
 
 **6. Permissions → Add → User Permission** (storage is not covered by the pool path)
-Path `/storage/ssd_storage` · User `df-overseer@pve` · Role `DFOverseer`
+Path `/storage/<storage>` · User `df-overseer@pve` · Role `DFOverseer`
 
 **7. Roles → Create** — name `DFOverseerNode`, tick only `Sys.Audit` and
 `Sys.AccessNetwork`.
 
 **8. Permissions → Add → User Permission**
-Path `/nodes/proxmox` · User `df-overseer@pve` · Role `DFOverseerNode` ·
+Path `/nodes/<pve-node>` · User `df-overseer@pve` · Role `DFOverseerNode` ·
 **Propagate: on**
 
 This second role exists because of a lesson that cost three wrong diagnoses:
@@ -103,13 +119,13 @@ content type is `iso` — it needs `images` or `import`. That matters because
 the cloud image the template is built from arrives as a download, and
 `download-url` only writes into a content type the storage is configured for.
 
-**UI:** Datacenter → Storage → `ssd_storage` → Edit → Content → add
+**UI:** Datacenter → Storage → `<storage>` → Edit → Content → add
 **"Import"** (leave existing `images`/`iso` content ticked too).
 
 **CLI:**
 
 ```bash
-pvesm set ssd_storage --content images,iso,import
+pvesm set <storage> --content images,iso,import
 ```
 
 Nothing else about the storage changes. After this, `scripts/provision_vm.py
@@ -152,7 +168,7 @@ B="https://$PVE_HOST:$PVE_PORT/api2/json"
 curl -sk -H "$AUTH" "$B/version"                    # should succeed
 curl -sk -H "$AUTH" "$B/pools/$PVE_POOL"            # should list members
 curl -sk -H "$AUTH" "$B/cluster/resources?type=vm"  # should show ONLY pool VMs
-curl -sk -H "$AUTH" "$B/nodes/proxmox/qemu/<VMID_OUTSIDE_POOL>/config"  # must FAIL
+curl -sk -H "$AUTH" "$B/nodes/<pve-node>/qemu/<VMID_OUTSIDE_POOL>/config"  # must FAIL
 ```
 
 **A permission scheme is only verified once you have watched it deny
@@ -172,10 +188,10 @@ pveum user add df-overseer@pve --comment "Automation user for df-overseer"
 pveum user token add df-overseer@pve api --privsep 0
 
 pveum acl modify /pool/df-overseer      --user df-overseer@pve --role DFOverseer
-pveum acl modify /storage/ssd_storage   --user df-overseer@pve --role DFOverseer
-pveum acl modify /nodes/proxmox         --user df-overseer@pve --role DFOverseerNode --propagate 1
+pveum acl modify /storage/<storage>   --user df-overseer@pve --role DFOverseer
+pveum acl modify /nodes/<pve-node>         --user df-overseer@pve --role DFOverseerNode --propagate 1
 
-pvesm set ssd_storage --content images,iso,import
+pvesm set <storage> --content images,iso,import
 ```
 
 ## Rotating the token

@@ -401,7 +401,7 @@ def cmd_status(pve, args):
 def cmd_fetch_image(pve, args):
     """Download the Ubuntu cloud image into the storage's 'import' content.
 
-    Requires ssd_storage to have the 'import' content type enabled
+    Requires <storage> to have the 'import' content type enabled
     (Datacenter -> Storage -> Edit -> Content). That flag is datacenter
     configuration and needs Datastore.Allocate at /storage, which this token
     deliberately does not have -- it is a one-time human step.

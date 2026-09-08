@@ -4,158 +4,96 @@ What's currently in progress. Remove an item once it's done, tabled, or
 shelved, don't mark it paused. Any session should read this and know what's
 actually going on right now.
 
-## HANDOVER - 2026-08-30
+## HANDOVER - 2026-09-08
 
-**State at a glance.** Item 1 from the previous handover's pick-list is done
-and proven, not just written: `df-xvfb.service` and `df-fortress.service`
-exist, are enabled, and a **full guest reboot was actually triggered** and
-both units came back with DF answering RPC and zero manual steps. `onboot=1`
-is set on VM 104 (confirmed by reading the config back), though the
-host-reboot case itself remains untested -- only the cheaper guest-reboot
-proxy was, deliberately, since rebooting the physical host is a bigger action
-than this session took unilaterally. **Committed as two commits, `d275ccc`
-(systemd/onboot) and `847ccdf` (ROADMAP.md)**; working tree is clean; **not
-pushed** -- that needs its own go-ahead per the Rules section. VM 104 is up,
-DF running under systemd, RPC answering. Stayed on whichever tailnet gives
-Proxmox/VM access the whole session; never needed to switch.
+**State at a glance.** Nothing from this project runs anywhere right now.
+VM 104 (`df-fortress`) and template 101 were both deleted 2026-09-01, not
+migrated, while this repo sat quiet since 2026-08-30. The Proxmox host was
+reinstalled 2026-09-02 and renamed `SRV-01`; a two-node cluster `citadel`
+formed 2026-09-01 and `SRV-01` rejoined it cleanly 2026-09-06. This project
+got its own dedicated pool-scoped storage on 2026-09-08. The next action is a
+**rebuild from this repo's own scripts** (`fetch-image` -> `build-template` ->
+`clone`), not a restore of anything, and it is genuinely cheap: both pieces
+were always meant to be reconstitutible this way, confirmed by reading the
+code rather than assumed. Full analysis behind this handover:
+`infra/local.2026-09-08-doc-reorg-plan.md` (gitignored: it quotes home-lab's
+own infra specifics, so it lives under `infra/local.*` rather than `docs/`; a
+clone of this public repo will not have it).
 
-**`ROADMAP.md` now exists**, following the convention documented in
-AgentSecretary's `CLAUDE.md` (a sibling repo at
-`c:\website-projects\AgentSecretary`): Now/Next/Later/explicitly-not-doing
-buckets, one line per item pointing into `Working.md`/`decisions/`/`docs/`/
-`research/` rather than re-narrating. `CLAUDE.md`'s Structure section gained a
-matching bullet, including the update triggers (a Now-item starting or
-finishing, an explicit user priority call, a full-review pass at least every
-~2 weeks). Its Now bucket's "commit this session's changes" item is removed
-below, since that update trigger (a Now-item finishing) fired within the same
-session that added the file.
+**The one blocking human step.** `.env` is already repointed to the new
+identity (`PVE_NODE`, `PVE_POOL`, `PVE_STORAGE`, `PVE_TOKEN_ID` all updated).
+`PVE_TOKEN_SECRET` is deliberately left blank: no automation may paste a
+secret into a file, so a human has to do this one copy before anything else
+in `ROADMAP.md`'s Now bucket can run.
 
-### What changed this session
+**A live bug found and fixed this session, worth internalising the shape
+of.** The same-day refactor that made `PVE_POOL`/`PVE_STORAGE` required (see
+`decisions/DECISIONS.md` 2026-09-08) briefly left `scripts/pve.py`'s new
+`_require()` call sitting where it broke `__init__`'s control flow, which
+would have left `self.session` built with no `Authorization` header at all.
+Every API call would have gone out unauthenticated and come back `401` on the
+very first use of the brand-new token, reading as "the new identity doesn't
+work" and sending the next session hunting in the identity/ACL layer instead
+of the client code. Fixed and verified with a positive control: the check
+fails against the broken code and passes against the fixed code. `pve.py`'s
+current state is correct, `_require()` is a normal method and the
+`Authorization` header is set unconditionally at the end of `__init__`.
 
-**`install_df.py systemd`** (new command): writes and enables
-`df-xvfb.service` + `df-fortress.service`, idempotent, `--start` to also start
-now rather than only enabling for next boot. **`provision_vm.py set-onboot
---enable|--disable`** (new command): flips the VM's `onboot` flag with the same
-read-back-verify pattern as `set-memory`. Both dry-run clean.
+**Quorum can masquerade as a permissions failure.** `citadel` has no QDevice
+and the second node is resetting roughly every 2.5 hours. A single node can
+drop below quorum on its own, and every config write then fails with an error
+that reads exactly like an ACL problem. Run `pvecm status` before suspecting
+permissions on any write that fails oddly during the rebuild.
 
-**Four real bugs found by actually exercising the stop/start/reboot cycle**,
-not just writing the units -- full detail and the fixes are in
-`infra/local.df-vm-install.md`'s new "Verified 2026-08-30" section:
+**Two more stale values sitting in `.env`, not yet acted on.** `PVE_PASSWORD`
+predates the 2026-09-02 reinstall and nothing reads it; it is a credential
+with no purpose left. `ANTHROPIC_API_KEY` expired around 2026-09-03. Neither
+blocks the rebuild, both are worth rotating out or removing; do not commit or
+log either.
 
-1. `install_df.py stop` never killed the manually-started Xvfb, only
-   `dwarfort`. A leftover one squatting on `:99` made `df-xvfb.service`
-   crash-loop and destabilized `df-fortress.service` with it.
-2. `set -o pipefail` + `systemctl list-unit-files | grep -q` in `verify`'s new
-   unit check reported real, enabled units as "not installed" -- `grep -q`'s
-   early exit SIGPIPEs the still-writing `systemctl`, and pipefail turns that
-   into a reported failure. Fixed with `systemctl is-enabled` directly, no
-   pipe.
-3. `ExecStop`'s own kill (needed because DF ignores SIGTERM) left the unit
-   `failed` after every clean stop: `MainPID` is `./dfhack`, which folds
-   dwarfort's kill signal into its own bash exit code (137/143), so
-   `SuccessExitStatus=SIGKILL` (a signal name) matched nothing. Fixed with
-   `SuccessExitStatus=137 143`.
-4. The workstation's SSH transport decodes remote output as cp1252 by
-   default; the first UTF-8 character in remote output (`systemctl status`'s
-   unit-state bullet) raised `UnicodeDecodeError` and killed the tool. Fixed
-   in both `ssh_guest` and `scp_from` with explicit `encoding="utf-8",
-   errors="replace"`. This was latent beyond just that one command.
+**Re-scope, don't assume, on `df-xvfb.service`/`df-fortress.service` and
+`onboot=1`.** Both were live VM config on the deleted VM 104, not baked into
+template 101. They need to be reapplied in full to whatever VMID the rebuild
+produces; nothing carries over automatically.
 
-**Measured, not assumed:** `systemctl stop df-fortress` takes 37.8 s end to
-end (5 s post-quicksave settle, up to 30 s SIGTERM wait, 2 s SIGKILL settle).
-`TimeoutStopSec=180` has wide margin against that, but zero margin has been
-tested against an actual live fort's quicksave time -- none has been embarked.
+**`infra/local.proxmox-access.md` is stale and nothing else says so.** It is
+gitignored, so not a leak, but it is this repo's only "access layer verified"
+record and it describes the retired identity (`df-overseer@pve`, roles
+`DFOverseer`/`DFOverseerNode`, token `api`), read back from the API on
+2026-08-27. The new identity's own proof, the `200`-in-pool/`403`-outside
+pool-fence test, lives in home-lab, not here: this repo currently has no
+equivalent record of the new identity's live scopes. Worth deciding whether
+re-recording that into a fresh version of the file is a Now or a Next item;
+not done as part of this pass since the file is gitignored and out of scope
+for it.
 
-### Decisions still owed by the user
+### Durable traps, still true, not about VM 104 specifically
 
-**1. Reinstall or rebuild.** Full Proxmox reinstall on the ProDesk, or rebuild
-the `df-overseer` pool and VMs on the existing install? Still **not answered**
-across three sessions now. Gates cluster creation. Do not infer an answer from
-silence.
-
-**2. Deleting the test worlds.** Eight now (`region1`-`region8`) plus a stale
-4 KB `save/current`. Destructive, so still left alone.
-
-### Things a next session will otherwise get wrong
-
-**Verify VM 104 rather than assuming it.** `install_df.py verify` is the cheap
-check.
-
-**DF still ignores SIGTERM**, confirmed again this session under systemd's own
-kill path, not just the manual one. Once a fort is live, quicksave before stop
-is mandatory. `systemd-stop.sh` on the VM does this unconditionally now for
-the systemd path; `install_df.py stop --save` is still opt-in for the manual
-path.
-
-**The manual (`start`/`stop`) and systemd-managed paths must not run at once.**
-Stop one before starting the other, or they contend for `:99` and the RPC
-port. `install_df.py start`'s output now says so.
-
-**Host-reboot survival is still unverified.** Guest-reboot survival is proven;
-`onboot=1` is set and read back from the API; but nobody has actually power-cycled
-the Proxmox host to watch VM 104 come back on its own. That is the one piece
-of the original ask not yet end-to-end tested, and doing so needs the user's
-go-ahead first (see the Rules section: destructive/hard-to-reverse actions).
-
-**A check that cannot fail is not a check**, again -- bug 2 above is the same
-shape as three of the four bugs from 2026-08-28 and the 2026-08-28 leak-scan
-`DECISIONS.md` entry. Before reporting an all-clear, prove the check can go
-red.
-
-**`onboot` is now `1` on VM 104.** If VM 104 is ever rebuilt from scratch via
-`provision_vm.py clone`, re-run `set-onboot --enable` -- it is a live VM
-config, not baked into the template.
-
-**`-gen` still fails silently** roughly a quarter of the time. Success is the
-region directory existing, never the exit code; `save/current` survives a
-failed run and proves nothing by its presence alone.
-
-**Saves are not in the game directory.** XDG path, resolved from `getent
-passwd`.
-
-**`DF_MAC_OVERRIDES` in `.env` is load-bearing.** Without it a rebuilt VM 104
-gets a derived MAC and drops its DHCP reservation.
-
-**Cluster join order is destructive.** The joining node must have no guests.
-Create on the ProDesk, join the empty EliteDesk.
-
-**A two-node cluster is worse than two standalone hosts** until the qdevice
-lands.
-
-**A reset destroys VMs we cannot see.** VM 102 exists on the host outside the
-`df-overseer` pool; our token gets `403` and does not list it. Enumerate as
-root in the GUI before wiping anything.
-
-**Clusters do not pool RAM.**
-
-**Our Proxmox token is pool-scoped and cannot run node-level commands.**
+- **DF ignores SIGTERM.** Quicksave before stop is mandatory once a fort is
+  live; a bare stop takes the full timeout and ends in SIGKILL.
+- **The manual (`start`/`stop`) and systemd-managed paths must not run at
+  once.** They contend for `:99` and the RPC port.
+- **`-gen` fails silently** roughly a quarter of the time. Success is the
+  region directory existing, never the exit code.
+- **Saves live at the XDG path**, not in the game directory.
+- **`DF_MAC_OVERRIDES` in `.env` is load-bearing.** Without it a rebuilt VM
+  gets a derived MAC and drops its DHCP reservation.
+- **The published hostname is exposed.** The user chose not to rename it.
+- **`willsmith.nz` is deliberate**, not a leak: the intended public face.
+- **Folder is still `df-automation` on disk** while the project is
+  `df-overseer`.
+- **DF replay determinism is unverified.**
+- **`hypothesis_id` has no registry.**
+- **`openclaw` vs `hermes-agent` still deferred.**
+- **Tarball checksums are pinned and enforced** as of 2026-09-08;
+  `bzip2 -t` catches truncation, the sha256 catches substitution.
 
 ### What a next session should pick up
 
-Same list as `ROADMAP.md`'s Now/Next buckets, which is now the canonical
-version of this; kept here only as the short form. Headline items: decide
-whether to ask the user for the host-reboot test now or fold it into the
-cluster work once decision 1 above lands; `cpu: host` -> `x86-64-v2-AES`;
-`check_reachable`/`get_connectivity_report`; embark and measure a running
-fort's memory; the compliance eval harness.
-
-### Housekeeping, carried forward
-
-- **Proxmox token not rotated**, pasted into an earlier transcript.
-- **Temporary Anthropic key in `.env` expires ~2026-09-03**, three days out now.
-  Rotate or remove; do not commit or log it.
-- **Tarball checksums recorded** in `infra/local.df-vm-install.md` but **not
-  enforced** by the script, which only runs `bzip2 -t`.
-- **The published hostname should be treated as exposed.** The user chose not
-  to rename.
-- **`willsmith.nz` was deliberately left in.** Intended public face, not a leak.
-- **The ProDesk's RAM slot layout is still unknown.**
-- **The SSD out of the Omen has an unverified size.**
-- **Folder is still `df-automation` on disk** while the project is
-  `df-overseer`.
-- **`openclaw` vs `hermes-agent` still deferred.**
-- **DF replay determinism unverified**, and research build item 7 rests on it.
-- **`hypothesis_id` has no registry.**
+`ROADMAP.md`'s Now bucket is the canonical list. Headline order: paste the
+token secret, verify with the read-only `status` call, rebuild template then
+VM, name the new guest with the `.internal` suffix, watch for quorum during
+writes, rotate the stale `ANTHROPIC_API_KEY`.
 
 **Style note:** the user does not want em dashes in prose. Commas, colons,
 semicolons or full stops instead. Fine as structural separators.
@@ -185,3 +123,8 @@ semicolons or full stops instead. Fine as structural separators.
 - 2026-08-30: the 2026-08-28 (evening) handover, superseded by the handover
   above (systemd units built, tested through a real guest reboot, and
   `onboot` set), moved to the same archive file.
+- 2026-09-08: the 2026-08-30 handover moved wholesale to
+  [`working-archive/Working_archive-2026-09-07.md`](working-archive/Working_archive-2026-09-07.md).
+  Not superseded content so much as overtaken by events: VM 104 and template
+  101 were deleted 2026-09-01 while this repo sat quiet, so the handover
+  describing them is now history rather than current state.

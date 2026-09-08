@@ -46,6 +46,15 @@ DF_URL = "https://www.bay12games.com/dwarves/df_53_16_linux.tar.bz2"
 DFHACK_VERSION = "53.16-r1.1"
 DFHACK_URL = ("https://github.com/DFHack/dfhack/releases/download/"
               "%s/dfhack-%s-Linux-64bit.tar.bz2" % (DFHACK_VERSION, DFHACK_VERSION))
+# Enforced, not just recorded. Until 2026-09-08 the fetch step computed a
+# sha256 and echoed it into a log line without comparing it to anything, so
+# `bzip2 -t` was the only real check: that catches a truncated download or an
+# HTML error page, and proves nothing about *which* archive arrived. Bay12
+# serves DF over plain releases with no signature, so the hash is the only pin
+# there is. Values measured on the 2026-08-28 install and recorded in
+# infra/local.df-vm-install.md.
+DF_SHA256 = "2f9c0134b2465cccb705b8d3e322cdff07df7374ffbfafffe8f982f2ef7e7e7d"
+DFHACK_SHA256 = "87e041a3e9d260fd9295170182a90eb27ea3c92f05471e4e65259b32f7cb0204"
 # What `dfhack.getDFVersion()` returns on a correct install. The 'ITCH' build
 # tag is how Classic identifies itself; a Steam build would say otherwise, and
 # would not match this DFHack.
@@ -509,7 +518,7 @@ def step_fetch(env, ip, args):
 install -d -o %(user)s -g %(user)s %(root)s %(dist)s %(logdir)s
 cd %(dist)s
 fetch() {
-  url="$1"; name="$2"
+  url="$1"; name="$2"; want="$3"
   if [ -s "$name" ]; then
     echo "have $name ($(stat -c%%s "$name") bytes)"
   else
@@ -520,13 +529,25 @@ fetch() {
   # A truncated download or an HTML error page extracts as garbage rather than
   # failing, so prove it is really a bzip2 archive before anything unpacks it.
   bzip2 -t "$name"
-  echo "  bzip2 -t ok: $name  sha256 $(sha256sum "$name" | cut -d' ' -f1)"
+  # Then prove it is the *right* archive. This runs on the cached path too, so
+  # a wrong file already sitting in dist/ is caught rather than trusted.
+  got=$(sha256sum "$name" | cut -d' ' -f1)
+  if [ "$got" != "$want" ]; then
+    echo "sha256 mismatch for $name" >&2
+    echo "  expected $want" >&2
+    echo "  got      $got" >&2
+    echo "  refusing to unpack. If this is an intended version bump, update" >&2
+    echo "  DF_SHA256/DFHACK_SHA256 in scripts/install_df.py deliberately." >&2
+    exit 1
+  fi
+  echo "  bzip2 -t ok, sha256 pinned and matching: $name"
 }
-fetch "%(df_url)s" df.tar.bz2
-fetch "%(dfhack_url)s" dfhack.tar.bz2
+fetch "%(df_url)s" df.tar.bz2 "%(df_sha)s"
+fetch "%(dfhack_url)s" dfhack.tar.bz2 "%(dfhack_sha)s"
 chown -R %(user)s:%(user)s %(root)s
 ''' % {"user": env.get("DF_CIUSER", "df"), "root": DF_ROOT, "dist": DIST_DIR,
-       "logdir": LOG_DIR, "df_url": DF_URL, "dfhack_url": DFHACK_URL}
+       "logdir": LOG_DIR, "df_url": DF_URL, "dfhack_url": DFHACK_URL,
+       "df_sha": DF_SHA256, "dfhack_sha": DFHACK_SHA256}
     proc = remote(env, ip, script, "fetch", timeout=1800, sudo=True,
                   dry_run=args.dry_run)
     if proc:
