@@ -30,20 +30,18 @@ or `decisions/DECISIONS.md`, not here.
 > deletion rather than a visibility problem). That call also exercised the
 > auth-header fix; an unauthenticated client returns `401`, not data.
 
-> **VM rebuilt and renamed 2026-09-08.** `clone --full` produced VM 103 at
-> the user-supplied `DF_VM_IP=192.168.2.201/24`, `start` brought it up, and
-> `install_df.py verify --vmid 103` reached it over SSH with no address
-> discovery. Renamed `df-fortress.internal` → `df-colony-01`: `.internal` is
-> DNS-only and was never meant to sit in the name/hostname field.
-> → `decisions/DECISIONS.md` 2026-09-08 rows.
+> **VM rebuilt, renamed and installed, 2026-09-08.** `clone --full` produced
+> VM 103 at the user-supplied `DF_VM_IP=192.168.2.201/24`; renamed to
+> `df-colony-01` in Proxmox with `df-colony-01.internal` as its OS hostname
+> (`.internal` is DNS-plus-hostname, never the bare Proxmox name — that split
+> is now scripted as `install_df.py`'s `step_hostname`). `install_df.py
+> install`, `systemd`, and `provision_vm.py set-onboot --enable` all ran
+> clean; `verify` reports all checks passed. No world exists yet; DF has not
+> been started. → `decisions/DECISIONS.md` 2026-09-08 rows.
 
-- **Install DF/DFHack on VM 103**: `install_df.py install --vmid 103`.
-  Nothing carries over from the deleted VM 104.
-- **Reapply `init.txt` settings, swap, and the
-  `df-xvfb.service`/`df-fortress.service` units with `onboot=1`** on VM 103.
-  Both were live config on the deleted VM 104, never baked into the template,
-  so they need to be set again in full. → `Working.md` "re-scope, don't
-  assume" trap.
+- **Generate a world and start DF on VM 103** whenever wanted:
+  `install_df.py gen`, then `start`. Nothing runs unattended until this
+  happens.
 - **If a write step fails oddly, check quorum before suspecting permissions.**
   The cluster has no QDevice and the second node is unwell, so a single node
   can drop below quorum and make every config write fail with an error that

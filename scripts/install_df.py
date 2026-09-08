@@ -475,8 +475,38 @@ done
 
 # --- install -------------------------------------------------------------
 
+def step_hostname(env, ip, name, args):
+    """Set the guest's OS hostname to <Proxmox VM name>.internal.
+
+    The two fields deliberately differ: Proxmox's own name field stays bare
+    (matches subnet-router-01, and cloud-init already sets it that way at
+    first boot from the VM's name), while '.internal' is home-lab's DNS
+    convention for the FQDN, applied here explicitly since it's the guest's
+    own hostname/etc/hosts, not something DNS can supply on its own. See
+    decisions/DECISIONS.md 2026-09-08, the row correcting the earlier
+    misread that put '.internal' in the Proxmox name field instead.
+    """
+    log("[1/6] hostname")
+    fqdn = "%s.internal" % name
+    script = '''
+if [ "$(hostname)" = "%(fqdn)s" ]; then
+  echo "hostname already %(fqdn)s"
+else
+  hostnamectl set-hostname %(fqdn)s
+  sed -i "s/^127\\.0\\.1\\.1.*/127.0.1.1\\t%(fqdn)s\\t%(short)s/" /etc/hosts
+  echo "hostname set to %(fqdn)s"
+fi
+hostname
+''' % {"fqdn": fqdn, "short": name}
+    proc = remote(env, ip, script, "hostname", timeout=60, sudo=True,
+                  dry_run=args.dry_run)
+    if proc:
+        for line in proc.stdout.strip().splitlines():
+            log("  " + line)
+
+
 def step_packages(env, ip, args):
-    log("[1/5] packages")
+    log("[2/6] packages")
     # Automatic upgrades are turned off before anything is installed, and this
     # is the same call the register already made once: DF Classic replaced the
     # Steam build because an auto-update mid-fort shifts memory offsets and
@@ -516,7 +546,7 @@ def step_swap(env, ip, args):
     question that is still open: a long-running fort with hundreds of units
     and years of accumulated items, which nobody has measured yet.
     """
-    log("[2/5] swapfile (%s, swappiness %d)" % (SWAP_SIZE, SWAPPINESS))
+    log("[3/6] swapfile (%s, swappiness %d)" % (SWAP_SIZE, SWAPPINESS))
     script = '''
 if swapon --show=NAME --noheadings | grep -qx /swapfile; then
   echo "swapfile already active"
@@ -545,7 +575,7 @@ swapon --show
 
 
 def step_fetch(env, ip, args):
-    log("[3/5] fetching tarballs into %s" % DIST_DIR)
+    log("[4/6] fetching tarballs into %s" % DIST_DIR)
     script = '''
 install -d -o %(user)s -g %(user)s %(root)s %(dist)s %(logdir)s
 cd %(dist)s
@@ -600,7 +630,7 @@ def step_extract(env, ip, args):
     is wrong. Detecting it costs one 'ls' and turns a silent mislayout into a
     log line.
     """
-    log("[4/5] extracting into %s%s"
+    log("[5/6] extracting into %s%s"
         % (GAME_DIR, " (--force: existing install will be replaced)"
            if args.force else ""))
     script = '''
@@ -663,7 +693,7 @@ def step_init(env, ip, args):
     silently skipped and the game would come up asking for sound on a machine
     with no audio device.
     """
-    log("[5/5] prefs/init.txt")
+    log("[6/6] prefs/init.txt")
     sed_lines = "\n".join(
         "sed -i -E 's/\\[%s:[^]]*\\]/[%s:%s]/' \"$INIT\"" % (key, key, value)
         for key, value in INIT_SETTINGS)
@@ -705,6 +735,10 @@ def cmd_install(pve, args):
     vmid, ip = target(pve, args)
     log("installing DF %s + DFHack %s on VM %s"
         % (DF_VERSION, DFHACK_VERSION, vmid))
+    # Same "no API call under dry-run" contract as target() above.
+    name = ("<dry-run>" if args.dry_run
+            else pve.get(pve.vm_path(vmid, "/config")).get("name", "df-overseer"))
+    step_hostname(pve.env, ip, name, args)
     step_packages(pve.env, ip, args)
     step_swap(pve.env, ip, args)
     step_fetch(pve.env, ip, args)
