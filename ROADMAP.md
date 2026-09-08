@@ -64,6 +64,12 @@ or `decisions/DECISIONS.md`, not here.
 ## Next
 <!-- Clearly in line, not yet started. -->
 
+- **Wire up the live-view ingest, blocked on Cloudflare console work only.**
+  Screenshot capture itself is built and verified on VM 103
+  (`install_df.py stream`); the only missing piece is an R2 bucket + API
+  token, cost-checked at $0/month for this traffic shape. Exact setup steps
+  and what to do once the credentials land are in `Working.md`'s live-view
+  section. → `decisions/DECISIONS.md` 2026-09-08 row.
 - **Spike B.** The `bpg` OpenTofu config with no `ssh` block, its absence
   being the test of whether a pool-scoped token can drive it end to end.
   Spike A (`status` → `fetch-image` → `build-template` on the new token)

@@ -145,16 +145,43 @@ viewing it — genuine DF title screen. Two bugs found and fixed in the same
 pass: ImageMagick silently wrote PostScript instead of PNG because the temp
 filename didn't end in a recognized extension, and the capture directory was
 root-owned while the service runs as `df`. → `decisions/DECISIONS.md`
-2026-09-08 row. **Blocked on the ingest side**: willsmith.nz is a static
-GitHub Pages site, no backend, confirmed by
-`research/2026-09-08-live-viewing.md`. User is provisioning a Cloudflare R2
-bucket now (account ID, access key, secret, bucket name — once handed over,
-wire `DF_STREAM_INGEST_URL` and convert the capture script's plain `curl -F`
-POST to an S3-compatible signed PUT, since R2 doesn't accept the former). A
-standalone viewer page exists at `willsmith-portfolio/public/dwarf-fortress/index.html`
-(committed there locally, **not pushed** — publishing/deploying needs its
-own go-ahead per the Rules section, same as this repo), currently showing
-"not wired up yet" instead of a broken image.
+2026-09-08 row. **Blocked on the ingest side, paused 2026-09-08 — user can't
+do the Cloudflare console work right now.** willsmith.nz is a static GitHub
+Pages site, no backend, confirmed by `research/2026-09-08-live-viewing.md`.
+**Cost check done, not just deferred blind:** for this traffic shape (one
+tiny overwritten object, ~175K writes/month, personal-site read volume),
+R2's free tier covers it indefinitely — 1M writes/mo and 10GB storage free,
+and R2's actual differentiator is **zero egress fees ever**, unlike S3,
+which is the one thing that would otherwise scale with viewer traffic. Should
+land at $0/month.
+
+**Exact steps for whoever does the Cloudflare console work, so this doesn't
+need re-deriving:**
+1. R2 → Create bucket, e.g. `df-overseer-stream`.
+2. Bucket → Settings → Public access → enable the `r2.dev` public URL
+   (simplest option, no custom domain needed). Copy it
+   (`https://pub-<hash>.r2.dev`).
+3. R2 → Manage API tokens → Create API token, scoped to **only this
+   bucket**, permission **Object Read & Write**. Copy the Access Key ID,
+   Secret Access Key, and the Account ID (on the R2 overview page — needed
+   for the S3-compatible endpoint, `https://<account-id>.r2.cloudflarestorage.com`).
+4. Hand those four values (account ID, access key, secret, bucket name)
+   back to a session working this repo.
+
+**What happens once those land:** wire `DF_STREAM_INGEST_URL` in `.env`, and
+— this is the real remaining code work, not just config — convert the
+capture script's plain `curl -F` multipart POST to an S3-compatible signed
+PUT (`aws s3 cp` via `awscli`, apt-installable, is the simplest route; R2
+does not accept a plain multipart POST the way a generic upload endpoint
+would). Then fill in `IMAGE_BASE` in `willsmith-portfolio`'s
+`public/dwarf-fortress/index.html` with the `r2.dev` URL from step 2, commit,
+and — separately gated, ask first — push/deploy.
+
+A standalone viewer page already exists at
+`willsmith-portfolio/public/dwarf-fortress/index.html` (committed there
+locally, **not pushed** — publishing/deploying needs its own go-ahead per
+the Rules section, same as this repo), currently showing "not wired up yet"
+instead of a broken image.
 
 **Also mid-flight, paused for this: the embark-automation live-testing**
 (`research/2026-09-08-embark-automation.md`'s remaining gap — the
