@@ -7,12 +7,14 @@ A language model plays the fort. It is never shown the map.
 
 ## Status
 
-**Design, plus infrastructure that is scripted and proven, but not currently
-running.** The Proxmox provisioning and the DF Classic plus DFHack install are
-both scripted here and were verified end to end against a real VM. That VM and
-its template were deleted on 2026-09-01 when the hypervisor underneath them was
-rebuilt, so the honest claim today is that the whole stack is reconstitutible
-from this repo, not that it is up.
+**Design, plus infrastructure that is scripted, proven, and currently
+standing.** The Proxmox provisioning and the DF Classic plus DFHack install
+are both scripted here and were verified end to end against a real VM,
+`df-colony-01`, rebuilt from scratch on 2026-09-08 after an earlier VM and
+template (built 2026-08-27) were deleted on 2026-09-01 in a hypervisor
+rebuild. DF itself has not been started and no world exists yet, so the
+honest claim is that the stack is up and verified, not that a fort is
+running unattended.
 
 No game-side code exists yet: no perception layer, no agent, no toolkit.
 Everything in `docs/` and `research/` is a design artifact. Claims marked
