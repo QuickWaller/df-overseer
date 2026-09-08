@@ -103,10 +103,20 @@ ran clean (packages, swap, both tarball checksums matched, extraction,
 VM to go clone-to-verified purely from this repo's own scripts, no manual
 VM 104-era step anywhere. → `decisions/DECISIONS.md` 2026-09-08 row.
 
-**Not done yet: no world exists.** DF has not been started, so there is
-nothing running unattended. Next real step is `install_df.py gen` (worldgen)
-and `install_df.py start`, whenever that's wanted — not assumed to be
-"now" just because the VM is ready.
+**World generated and DF running under systemd, 2026-09-08 — first thing in
+this project to run unattended.** `install_df.py gen` produced world 1 on
+attempt 1 of 3 (seed 658085253, region present, 692K). Started manually first
+to confirm it worked, then deliberately stopped again (`stop --save`;
+quicksave was a no-op since no fort has been embarked yet, then needed
+SIGKILL after the full SIGTERM timeout, the documented trap behaving exactly
+as expected) because a manual instance doesn't survive a reboot. Re-started
+via `install_df.py systemd --start`: `verify` now shows `dwarfort` running
+(pid 11359), RPC on `127.0.0.1:5000`, not exposed off-box, both units
+installed and enabled. → `decisions/DECISIONS.md` 2026-09-08 row.
+
+**Not done yet: no fort exists.** A world was generated and DF is idling at
+it, but nobody has embarked. That's the next real step, whenever it's
+wanted.
 
 **Provisioning work completed 2026-09-08, steps 1 and 2 of the migration path
 in `research/2026-09-08-provisioning-recommendation.md` §11.** Both were
@@ -163,8 +173,8 @@ and are now **also deleted**, so `.env` was down to 15 keys, all of them live.
 Two more went the same way later the same day: `DF_BUILD_IP` and
 `DF_MAC_OVERRIDES` were leftover from decisions that already retired the code
 reading them, see `decisions/DECISIONS.md` 2026-09-08 row. `.env` is now 13
-keys. `ANTHROPIC_API_KEY` is still expired;
-the user is minting a replacement. Do not commit or log either.
+keys. `ANTHROPIC_API_KEY` was rotated by the user the same day, 30-day
+validity. Do not commit or log it.
 
 **Assume the value that grep printed is exposed.** Deleting `PVE_PASSWORD`
 required reading `.env`, which put the old password into a session transcript.

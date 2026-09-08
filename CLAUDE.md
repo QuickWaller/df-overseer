@@ -68,6 +68,39 @@ file first in any session.
   Long, cited, and honest about what could not be verified. Read the relevant
   one before designing in its area rather than re-deriving it.
 
+## Upstream obligations
+
+- **`home-lab`** (`../home-lab` — private, permanently; the declared source
+  of truth for the physical server estate this repo automates). Cite its IDs
+  (`SRV-01`, `DISK-06`, a VMID); **never copy a hostname, address or subnet
+  into this repo** — a public repo cannot leak what it does not contain, and
+  that separation is the whole reason the IDs exist.
+
+  **Obligation — creating, deleting, resizing or re-addressing a guest here
+  makes `home-lab/inventory/` wrong.** In the same turn, not later:
+  - allocate the IP through `home-lab/inventory/ips.yaml` *before* assigning
+    it — that file is an allocation registry, "consult before assigning,
+    update on assignment", and skipping it is how `192.168.2.201` came to be
+    in use for a week without being registered anywhere;
+  - record the guest change in that host's `inventory/hosts/SRV-0x.yaml`
+    `guests:` block, and in `inventory/services.yaml` if a service moved.
+
+  **You are not authorised to edit that repo from here, and it will not
+  thank you for trying.** home-lab's own rules forbid reconciling drift
+  silently in either direction — writing your observations into its declared
+  layer is the specific failure it exists to prevent. Follow the
+  consulting-another-repo procedure in `## Rules`: if a session is live in
+  `../home-lab`, tell it; otherwise record the obligation in `Working.md` as
+  open and say so in your summary, so the user can route it. Anything you do
+  send is second-hand there and must arrive with the command you actually
+  ran against the live system, not just your conclusion.
+
+  Recorded because it was already decided and never written down:
+  `home-lab/decisions/DECISIONS.md` 2026-08-27 accepted that consumption is
+  "via a sibling checkout plus one line in the consuming repo's `CLAUDE.md`."
+  This is that line. Its eleven-day absence is why VM 103's rebuild sat
+  unrecorded in home-lab for a week.
+
 ## Rules
 
 - Before proposing or researching an approach, check the decision register —
