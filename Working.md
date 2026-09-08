@@ -138,6 +138,35 @@ session that spawns background research agents: a 429 on a background agent
 doesn't lose its work if you resume the same agent (by id) rather than
 starting fresh — it kept everything it had found across three attempts.
 
+**Live-view capture built and verified on VM 103, 2026-09-08** —
+`install_df.py stream` (new subcommand), a systemd timer running `import` on
+the Xvfb display every 15s. Verified for real by pulling `latest.png` and
+viewing it — genuine DF title screen. Two bugs found and fixed in the same
+pass: ImageMagick silently wrote PostScript instead of PNG because the temp
+filename didn't end in a recognized extension, and the capture directory was
+root-owned while the service runs as `df`. → `decisions/DECISIONS.md`
+2026-09-08 row. **Blocked on the ingest side**: willsmith.nz is a static
+GitHub Pages site, no backend, confirmed by
+`research/2026-09-08-live-viewing.md`. User is provisioning a Cloudflare R2
+bucket now (account ID, access key, secret, bucket name — once handed over,
+wire `DF_STREAM_INGEST_URL` and convert the capture script's plain `curl -F`
+POST to an S3-compatible signed PUT, since R2 doesn't accept the former). A
+standalone viewer page exists at `willsmith-portfolio/public/dwarf-fortress/index.html`
+(committed there locally, **not pushed** — publishing/deploying needs its
+own go-ahead per the Rules section, same as this repo), currently showing
+"not wired up yet" instead of a broken image.
+
+**Also mid-flight, paused for this: the embark-automation live-testing**
+(`research/2026-09-08-embark-automation.md`'s remaining gap — the
+title-to-region hop). One `SELECT` was sent to the title screen before the
+Xvfb incident interrupted the session; DF's title screen currently sits one
+level into the "Start" submenu (confirmed visually via the stream capture
+above — "Start new game in existing world" / "Create new world" options
+visible), not back at the bare root menu. Harmless (no world loaded), but
+worth knowing before the next `simulateInput` call assumes a fresh title
+screen. `pre-embark-test-2026-09-08` VM snapshot is still in place as a
+rollback point.
+
 **Provisioning work completed 2026-09-08, steps 1 and 2 of the migration path
 in `research/2026-09-08-provisioning-recommendation.md` §11.** Both were
 unconditional and independent of the still-open build-tool decision, so most

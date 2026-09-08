@@ -8,6 +8,7 @@
     python scripts/install_df.py saves   [--vmid N]
     python scripts/install_df.py backup  [--vmid N] [--out backups]
     python scripts/install_df.py systemd [--vmid N] [--start]
+    python scripts/install_df.py stream  [--interval 15] [--ingest-url URL]
 
 VM 104 was built by hand on 2026-08-27 and the only record of it is prose
 (infra/local.df-vm-install.md). This turns that prose into something re-runnable,
@@ -89,6 +90,8 @@ PACKAGES = [
 # game window inside it, which is what init.txt is set to below.
 DISPLAY_NUM = ":99"
 FB_GEOMETRY = "1280x800x24"
+
+STREAM_DIR = "/opt/df/stream"
 
 # prefs/init.txt overrides applied to a copy of data/init/init_default.txt.
 # SOUND:NO because the VM has no audio device; 2D because there is no GPU.
@@ -1140,6 +1143,113 @@ tar -tzf %(tmp)s | wc -l | sed 's/^/entries:/'
     log("backup: %s (%.1f KB)" % (local, size / 1024.0))
 
 
+# --- live view -------------------------------------------------------------
+
+# One-shot capture-and-push, run on a timer rather than as a long-lived
+# process -- matches research/2026-09-08-live-viewing.md's recommendation:
+# outbound push only (no inbound port, ever), periodic rather than a held
+# connection. `enable spectate` first so the in-game camera is pointed at
+# something happening before each capture, per the same report -- the
+# cheapest lever for making a still frame worth looking at.
+STREAM_CAPTURE_SH = '''
+mkdir -p %(streamdir)s
+chown %(user)s:%(user)s %(streamdir)s
+cat > %(streamdir)s/capture-push.sh <<'CAPEOF'
+#!/bin/bash
+set -uo pipefail
+DISPLAY=%(display)s import -display %(display)s -window root png:%(streamdir)s/latest.png.tmp \\
+  && mv %(streamdir)s/latest.png.tmp %(streamdir)s/latest.png
+if [ -n "%(ingest_url)s" ]; then
+  curl -fsS --max-time 10 -F "file=@%(streamdir)s/latest.png" "%(ingest_url)s" \\
+    >> %(logdir)s/stream-push.log 2>&1 || \\
+    echo "$(date -Is) push failed, will retry next tick" >> %(logdir)s/stream-push.log
+fi
+CAPEOF
+chmod +x %(streamdir)s/capture-push.sh
+chown %(user)s:%(user)s %(streamdir)s/capture-push.sh
+
+cat > /etc/systemd/system/df-stream.service <<'EOF'
+[Unit]
+Description=Capture and push a Dwarf Fortress screenshot (one-shot)
+After=df-xvfb.service
+Requires=df-xvfb.service
+
+[Service]
+Type=oneshot
+User=%(user)s
+ExecStart=%(streamdir)s/capture-push.sh
+EOF
+
+cat > /etc/systemd/system/df-stream.timer <<'EOF'
+[Unit]
+Description=Run df-stream.service on a timer
+
+[Timer]
+OnBootSec=30s
+OnUnitActiveSec=%(interval)ss
+
+[Install]
+WantedBy=timers.target
+EOF
+
+systemctl daemon-reload
+systemctl enable --now df-stream.timer
+systemctl is-enabled df-stream.timer
+'''
+
+
+def cmd_stream(pve, args):
+    """Set up periodic screenshot capture (and optional push) on the VM.
+
+    Ingest side is deliberately out of scope here -- willsmith.nz is a static
+    GitHub Pages site with no backend (research/2026-09-08-live-viewing.md),
+    so DF_STREAM_INGEST_URL must point somewhere that can actually receive an
+    upload. Left unset, this still sets up local capture to
+    %(streamdir)s/latest.png on the VM, useful on its own for a LAN-side
+    viewer (docs/PURPOSE.md's 'VNC -> Pi -> monitor' leg) or to confirm
+    capture itself works before wiring up a receiving end.
+    """
+    vmid, ip = target(pve, args)
+    ingest_url = args.ingest_url or pve.env.get("DF_STREAM_INGEST_URL", "")
+    log("setting up screenshot capture on VM %s, every %ss%s"
+        % (vmid, args.interval,
+           (" -> %s" % ingest_url) if ingest_url else " (local only, no ingest URL set)"))
+
+    pkg_script = '''
+if ! command -v import >/dev/null 2>&1; then
+  export DEBIAN_FRONTEND=noninteractive
+  apt-get update -qq
+  apt-get install -y -qq imagemagick
+fi
+'''
+    remote(pve.env, ip, pkg_script, "install imagemagick", timeout=180,
+          sudo=True, dry_run=args.dry_run)
+
+    remote(pve.env, ip, dfhack_lua_sh() + '''
+cd %(game)s
+dfhack_lua "if not dfhack.isEnabled('spectate') then dfhack.run_command('enable spectate') end"
+''' % {"game": GAME_DIR}, "enable spectate", timeout=60, dry_run=args.dry_run)
+
+    script = STREAM_CAPTURE_SH % {
+        "streamdir": STREAM_DIR,
+        "display": DISPLAY_NUM,
+        "ingest_url": ingest_url,
+        "logdir": LOG_DIR,
+        "user": pve.env.get("DF_CIUSER", "df"),
+        "interval": args.interval,
+    }
+    proc = remote(pve.env, ip, script, "stream setup", timeout=120,
+                  sudo=True, dry_run=args.dry_run)
+    if args.dry_run:
+        return
+    for line in proc.stdout.strip().splitlines():
+        log("  " + line)
+    log("capturing to %s/latest.png on the VM every %ss"
+        % (STREAM_DIR, args.interval))
+    if not ingest_url:
+        log("no DF_STREAM_INGEST_URL set -- capture only, nothing is pushed anywhere yet")
+
+
 # --- cli -----------------------------------------------------------------
 
 def main():
@@ -1203,6 +1313,14 @@ def main():
                          help="also start the units now, instead of only"
                               " enabling them for the next boot")
 
+    stream = add("stream", help="periodic screenshot capture (and optional push)")
+    stream.add_argument("--interval", type=int, default=15,
+                        help="seconds between captures, default 15")
+    stream.add_argument("--ingest-url", default=None,
+                        help="where to POST each screenshot; defaults to"
+                             " DF_STREAM_INGEST_URL in .env, or local-only"
+                             " capture if neither is set")
+
     args = parser.parse_args()
     # SUPPRESS means an unsupplied flag leaves no attribute at all.
     args.vmid = getattr(args, "vmid", None)
@@ -1217,6 +1335,7 @@ def main():
         "saves": cmd_saves,
         "backup": cmd_backup,
         "systemd": cmd_systemd,
+        "stream": cmd_stream,
     }[args.command]
     try:
         handler(pve, args)
