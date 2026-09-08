@@ -90,8 +90,8 @@ permissions on any write that fails oddly during the rebuild.
 from under it by the 2026-09-02 OS reinstall, so it was dead twice over. The
 live value lives in home-lab's own store, not here. No backup file was written
 when removing it, deliberately, since a `.env` sidecar is what caused this
-session's near-miss. `PVE_USER` and `PVE_FQDN` are also read by no code and
-are candidates for the same treatment. `ANTHROPIC_API_KEY` is still expired;
+session's near-miss. `PVE_USER` and `PVE_FQDN` were read by no code either
+and are now **also deleted**, so `.env` is down to 15 keys, all of them live. `ANTHROPIC_API_KEY` is still expired;
 the user is minting a replacement. Do not commit or log either.
 
 **Assume the value that grep printed is exposed.** Deleting `PVE_PASSWORD`
