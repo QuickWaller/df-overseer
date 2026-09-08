@@ -50,11 +50,19 @@ single least-confident claim in the provisioning research; the new storage
 having the `import` content type; the pool-scoped token driving the whole
 image-to-template flow; and the auth-header fix under real load.
 
-**This discharges home-lab's Phase H.** Retirement of the old `df-overseer@pve`
-identity was deliberately gated on one successful `build-template` run against
-the new token. That has now happened, so the old **exposed** token can and
-should be retired. It is still live until someone does it, and that is now the
-highest-value outstanding item.
+**Phase H is done: the old identity is retired, 2026-09-08.** The exposed
+`df-overseer@pve` token, live since 2026-08-24, no longer exists. Removed at a
+root shell on a confirmed-quorate node: token `api`, the user, and both
+`DFOverseer`/`DFOverseerNode` roles. Deleting the user took its three ACLs with
+it, including a `/sdn/zones/localnetwork` grant that was **not** in this repo's
+record and only surfaced because the retirement was checked before it was run,
+and a `/nodes/proxmox` binding that had pointed at a node name that stopped
+existing on 2026-09-02. Nothing was lost: the new identity already holds
+`PVESDNUser` on that same zone. Verified both directions, that the old user,
+ACLs and roles are gone **and** that `svc-df-overseer-sandbox@pve` still
+exists, then re-ran `provision_vm.py status` to confirm this repo still
+authenticates. **Still owed, in home-lab not here:** its
+`secrets/registry.md` row goes to `retired` with the date.
 
 **Next is `clone`, and `.env` needs `DF_VM_IP` first**, CIDR form, one free
 address outside the router's DHCP pool, because addressing moved from
