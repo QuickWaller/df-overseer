@@ -20,6 +20,11 @@ code rather than assumed. Full analysis behind this handover:
 own infra specifics, so it lives under `infra/local.*` rather than `docs/`; a
 clone of this public repo will not have it).
 
+**Commit state.** This session's work is two local commits, `fb96fa0`
+(the provisioning research spec) and `1791bc6` (the estate reconciliation plus
+two dead-check bugfixes). Working tree is clean. **Not pushed**, that needs its
+own go-ahead per the Rules section.
+
 **The one blocking human step.** `.env` is already repointed to the new
 identity (`PVE_NODE`, `PVE_POOL`, `PVE_STORAGE`, `PVE_TOKEN_ID` all updated).
 `PVE_TOKEN_SECRET` is deliberately left blank: no automation may paste a
