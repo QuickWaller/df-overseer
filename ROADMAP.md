@@ -52,6 +52,15 @@ or `decisions/DECISIONS.md`, not here.
 ## Next
 <!-- Clearly in line, not yet started. -->
 
+- **Decide on the provisioning rework.** `research/2026-09-08-vm-provisioning.md`
+  recommends a static address assigned at clone time (deleting the MAC
+  derivation, the override table, the router reservation and the runtime
+  override), a properly pinned base image, and a single `rebuild` command.
+  Scoped, costed and not yet accepted. → `research/2026-09-08-vm-provisioning.md`.
+- **Not extracting a shared provisioning library yet**, decided 2026-09-08: a
+  second sandbox project will come one day but none is planned, so the spec's
+  restructure-now-extract-later call stands. Revisit when project two is named.
+  → `decisions/DECISIONS.md` 2026-09-08 row.
 - **Re-record the new identity's live scopes into a fresh
   `infra/local.proxmox-access.md`.** The existing file (gitignored) describes
   the retired `df-overseer@pve` identity, read back from the API on
