@@ -30,20 +30,20 @@ or `decisions/DECISIONS.md`, not here.
 > deletion rather than a visibility problem). That call also exercised the
 > auth-header fix; an unauthenticated client returns `401`, not data.
 
-- **Set `DF_VM_IP` (and optionally `DF_GW`, `DF_DNS`) in `.env` before
-  cloning.** Required since addressing moved to static assignment at clone
-  time. CIDR form, one free address outside the router's DHCP pool. `clone`
-  fails loudly without it. → `decisions/DECISIONS.md` 2026-09-08 row.
-- **Rebuild the template, then the VM.** `fetch-image` → `build-template` →
-  `clone`. Both the template and the running VM were deleted 2026-09-01, and
-  neither is manual work to restore: `build-template` builds from the Ubuntu
-  cloud image by design. The new storage already carries the `import` content
-  type this needs.
-- **Name the rebuilt guest with the `.internal` suffix**, decided 2026-09-08.
-  `cmd_clone`'s `--name` takes any string with no convention attached, so pass
-  it explicitly. It is a naming convention only: `.internal` does not resolve
-  from this workstation, and nothing depends on it doing so, because SSH now
-  targets the address assigned at clone time rather than a name.
+> **VM rebuilt and renamed 2026-09-08.** `clone --full` produced VM 103 at
+> the user-supplied `DF_VM_IP=192.168.2.201/24`, `start` brought it up, and
+> `install_df.py verify --vmid 103` reached it over SSH with no address
+> discovery. Renamed `df-fortress.internal` → `df-colony-01`: `.internal` is
+> DNS-only and was never meant to sit in the name/hostname field.
+> → `decisions/DECISIONS.md` 2026-09-08 rows.
+
+- **Install DF/DFHack on VM 103**: `install_df.py install --vmid 103`.
+  Nothing carries over from the deleted VM 104.
+- **Reapply `init.txt` settings, swap, and the
+  `df-xvfb.service`/`df-fortress.service` units with `onboot=1`** on VM 103.
+  Both were live config on the deleted VM 104, never baked into the template,
+  so they need to be set again in full. → `Working.md` "re-scope, don't
+  assume" trap.
 - **If a write step fails oddly, check quorum before suspecting permissions.**
   The cluster has no QDevice and the second node is unwell, so a single node
   can drop below quorum and make every config write fail with an error that
