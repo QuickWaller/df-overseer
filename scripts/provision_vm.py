@@ -6,6 +6,8 @@
     python scripts/provision_vm.py clone [--name df-fortress] [--full]
     python scripts/provision_vm.py set-memory --vmid N --memory 6144
     python scripts/provision_vm.py set-onboot [--vmid N] --enable|--disable
+    python scripts/provision_vm.py snapshot --name N [--vmid N] [--description D]
+    python scripts/provision_vm.py rollback --name N [--vmid N]
     python scripts/provision_vm.py start [--vmid N] [--force]
 
 The template is built from scratch out of a cloud image we downloaded, on
@@ -449,6 +451,46 @@ def cmd_set_onboot(pve, args):
     log("confirmed by read-back: onboot=%s" % after.get("onboot"))
 
 
+def cmd_snapshot(pve, args):
+    """Create a named Proxmox snapshot, as a rollback point before risky work.
+
+    Added 2026-09-08 for live-testing the untested title-to-embark input
+    sequence in research/2026-09-08-embark-automation.md against a running
+    VM -- a state a bad simulated key could plausibly corrupt.
+    """
+    vmid = args.vmid or pve.env.get("DF_VMID")
+    if not vmid:
+        raise PVEError("no vmid: pass --vmid or set DF_VMID in .env")
+
+    log("vm %s: creating snapshot '%s'" % (vmid, args.name))
+    upid = pve.post(pve.vm_path(vmid, "/snapshot"),
+                    {"snapname": args.name, "description": args.description or ""})
+    pve.wait_task(upid, "snapshot %s" % args.name, timeout=300)
+
+    snaps = pve.get(pve.vm_path(vmid, "/snapshot"))
+    if not any(s.get("name") == args.name for s in snaps or []):
+        raise PVEError("snapshot task finished but '%s' is not listed" % args.name)
+    log("confirmed: snapshot '%s' exists" % args.name)
+
+
+def cmd_rollback(pve, args):
+    """Roll a VM back to a named snapshot."""
+    vmid = args.vmid or pve.env.get("DF_VMID")
+    if not vmid:
+        raise PVEError("no vmid: pass --vmid or set DF_VMID in .env")
+
+    snaps = pve.get(pve.vm_path(vmid, "/snapshot"))
+    if not any(s.get("name") == args.name for s in snaps or []):
+        names = [s.get("name") for s in snaps or [] if s.get("name") != "current"]
+        raise PVEError("no snapshot '%s' on vm %s -- have: %s"
+                       % (args.name, vmid, ", ".join(names) or "(none)"))
+
+    log("vm %s: rolling back to snapshot '%s'" % (vmid, args.name))
+    upid = pve.post(pve.vm_path(vmid, "/snapshot/%s/rollback" % quote(args.name, safe="")))
+    pve.wait_task(upid, "rollback %s" % args.name, timeout=300)
+    log("rollback finished")
+
+
 def cmd_start(pve, args):
     """Start a VM, refusing if the host cannot currently back it.
 
@@ -532,6 +574,15 @@ def main():
     group.add_argument("--disable", action="store_false", dest="enable",
                        help="do not start this VM automatically on host boot")
 
+    snap = sub.add_parser("snapshot", help="create a named snapshot")
+    snap.add_argument("--vmid", type=int)
+    snap.add_argument("--name", required=True)
+    snap.add_argument("--description")
+
+    rollback = sub.add_parser("rollback", help="roll back to a named snapshot")
+    rollback.add_argument("--vmid", type=int)
+    rollback.add_argument("--name", required=True)
+
     start = sub.add_parser("start", help="start a VM, gated on host memory")
     start.add_argument("--vmid", type=int)
     start.add_argument("--min-headroom", type=float, default=1.0,
@@ -548,6 +599,8 @@ def main():
         "clone": cmd_clone,
         "set-memory": cmd_set_memory,
         "set-onboot": cmd_set_onboot,
+        "snapshot": cmd_snapshot,
+        "rollback": cmd_rollback,
         "start": cmd_start,
     }[args.command]
     try:
