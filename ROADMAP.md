@@ -45,8 +45,12 @@ or `decisions/DECISIONS.md`, not here.
 > yet — nobody has embarked. → `decisions/DECISIONS.md` 2026-09-08 row,
 > `Working.md` handover.
 
-- **Embark and start a fort on VM 103.** The world exists and DF is idling
-  at it; embarking is the next real milestone.
+- **Live-test and finish the embark-automation script.** Research is done
+  (`research/2026-09-08-embark-automation.md`): screen sequence, keybindings
+  and success check are primary-source-confirmed. One gap remains —
+  how "Start" reaches a fresh embark vs. continue/reclaim — needing live
+  polled testing against VM 103, ideally snapshotted first. → `Working.md`
+  handover.
 - **If a write step fails oddly, check quorum before suspecting permissions.**
   The cluster has no QDevice and the second node is unwell, so a single node
   can drop below quorum and make every config write fail with an error that
