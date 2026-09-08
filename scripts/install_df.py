@@ -77,6 +77,12 @@ PACKAGES = [
     "libgl1-mesa-dri", "libglu1-mesa",
     "libopenal1", "libncursesw6", "libgtk-3-0",
     "bzip2", "curl", "tar",
+    # Moved here from the template bake on 2026-09-08. The bake existed only
+    # to install this package before the guest agent could be asked for the
+    # VM's address; now the address is assigned at clone time instead, so
+    # nothing needs the agent to exist before this install runs, and the
+    # package can simply travel with the rest of the guest install.
+    "qemu-guest-agent",
 ]
 
 # Xvfb display and geometry. 1280x800 for the framebuffer, 1280x720 for the
@@ -170,10 +176,11 @@ def scp_from(env, ip, remote_path, local_path):
 def guest_ip(pve, vmid):
     """Where to SSH. DF_VM_IP wins; otherwise ask the guest agent.
 
-    Asking the agent rather than pinning an address is what lets a rebuilt VM
-    be installed onto without editing .env -- though the MAC override in
-    DF_MAC_OVERRIDES should mean a rebuild lands back on the same DHCP
-    reservation anyway.
+    DF_VM_IP is the address the VM was assigned at clone time (see
+    provision_vm.guest_address()), so this is the normal path now, not an
+    override of one. The guest-agent lookup below is kept as a fallback for
+    when DF_VM_IP is not set, and as a cross-check against it, not as the
+    primary way of finding the VM.
 
     A tailnet address is ranked last: this host reaches the VM over a subnet
     route to its LAN address, so the 100.64/10 address the VM reports is not
@@ -181,8 +188,14 @@ def guest_ip(pve, vmid):
     """
     override = pve.env.get("DF_VM_IP")
     if override:
-        log("guest ip %s (DF_VM_IP)" % override)
-        return override
+        # DF_VM_IP is CIDR, because provision_vm.guest_address() feeds the same
+        # value straight into cloud-init's ipconfig0, which requires a prefix.
+        # ssh does not want one. One variable, one meaning, each consumer takes
+        # the part it needs; splitting this into two settings would put the
+        # same address in .env twice and let them drift.
+        ip = override.split("/")[0]
+        log("guest ip %s (DF_VM_IP)" % ip)
+        return ip
     try:
         ifaces = pve.get(pve.vm_path(vmid, "/agent/network-get-interfaces"))
     except PVEError as exc:

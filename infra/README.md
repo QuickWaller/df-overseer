@@ -20,7 +20,7 @@ cloned it:
 
 | | |
 |---|---|
-| `.env` (repo root) | host, token, node, storage, SSH keys, `DF_MAC_OVERRIDES`, `DF_VM_IP` |
+| `.env` (repo root) | host, token, node, storage, SSH keys, `DF_VM_IP` and its gateway/resolver |
 | `local.proxmox-access.md` | the access layer as read back from the API |
 | `local.df-vm-install.md` | the fortress VM's DF + DFHack install, and the verified facts about running it |
 | `local.hardware-plan.md` | the RAM/disk/node plan for the two-box cluster |

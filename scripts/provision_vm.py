@@ -3,13 +3,17 @@
     python scripts/provision_vm.py status
     python scripts/provision_vm.py fetch-image
     python scripts/provision_vm.py build-template [--vmid N] [--memory 6144]
-                                                  [--no-bake]
     python scripts/provision_vm.py clone [--name df-fortress] [--full]
+    python scripts/provision_vm.py set-memory --vmid N --memory 6144
     python scripts/provision_vm.py set-onboot [--vmid N] --enable|--disable
+    python scripts/provision_vm.py start [--vmid N] [--force]
 
 The template is built from scratch out of a cloud image we downloaded, on
 purpose: an earlier VM here was a linked clone of a template outside our pool,
-invisible to us and able to take our VM with it if deleted.
+invisible to us and able to take our VM with it if deleted. The template is
+never booted: it is created, resized and converted, nothing more, so there is
+nothing on it to seal. See guest_address() below for how a clone gets its
+address instead of the template ever running.
 
 Nothing host-specific is hardcoded -- it all comes from .env (gitignored).
 """
@@ -44,57 +48,6 @@ TEMPLATE_NAME = "df-overseer-noble-template"
 DISK_SIZE = "25G"
 BRIDGE = "vmbr0"
 
-# A router DHCP reservation binds to a MAC, and Proxmox rolls a fresh random
-# one every time a NIC is created -- including on *clone*, which is why this is
-# applied in cmd_clone and not in the template. Without it, deleting and
-# rebuilding a VM silently orphans its reservation: the new VM pulls a random
-# pool address and the symptom reads as "the static IP stopped working".
-# Deriving the MAC from the vmid makes a rebuild reproduce the same address.
-# BC:24:11 is Proxmox's own OUI, kept to stay out of other vendors' space.
-MAC_PREFIX = "BC:24:11"
-# VMs whose MAC predates this scheme and is already reserved on the router.
-# Pinning the existing value is what makes a rebuild land on the reservation
-# that is live today, so these must not be "tidied up" to match the derived
-# scheme without re-reserving on the router first.
-#
-# These live in .env, not here: a DHCP reservation is a fact about one
-# person's LAN and this repo is public. Format is comma-separated
-# vmid=mac pairs, e.g. DF_MAC_OVERRIDES=104=BC:24:11:AA:BB:CC
-def mac_overrides(env=None):
-    """Parse DF_MAC_OVERRIDES into {vmid: mac}. Absent means no overrides."""
-    raw = (env or {}).get("DF_MAC_OVERRIDES", "").strip()
-    if not raw:
-        return {}
-    out = {}
-    for pair in raw.split(","):
-        pair = pair.strip()
-        if not pair:
-            continue
-        if "=" not in pair:
-            raise PVEError(
-                "DF_MAC_OVERRIDES entry %r is not vmid=mac" % pair)
-        vmid, _, mac = pair.partition("=")
-        try:
-            out[int(vmid.strip())] = mac.strip().upper()
-        except ValueError:
-            raise PVEError(
-                "DF_MAC_OVERRIDES entry %r has a non-numeric vmid" % pair)
-    return out
-
-# Packages baked into the template while it is booted, before it is sealed.
-# qemu-guest-agent is the one that matters: 'agent: enabled=1' only opens the
-# virtio channel on the Proxmox side, and without the package in the guest
-# every /agent/* call returns 500. Proxmox's native cloud-init fields cannot
-# install a package -- that needs cicustom, which needs a snippets volume on
-# the host filesystem, which has no API upload path. Booting the VM once and
-# installing over SSH is the only route that needs no human step.
-BAKE_PACKAGES = ["qemu-guest-agent"]
-# The bake actually boots the VM, so the template's *configured* size is not
-# what the host has to find -- an apt install needs nothing like it. Booting at
-# the configured size would put a 6 GB ask on a host that has had ~3 GiB free
-# all week, and fail the build for no reason. Restored before conversion.
-BAKE_MEMORY = 2048
-
 # 6 GB max with a 2 GB balloon floor: the user's call on 2026-08-26 with ~5.5 GB
 # available on the host. KVM only backs pages the guest touches, so idle DF sits
 # far below this; the worldgen spike is the real peak. Memory is a one-line
@@ -123,55 +76,39 @@ def read_pubkey(env):
         return quote(fh.read().strip(), safe="")
 
 
-def mac_for_vmid(vmid, env=None):
-    """Stable MAC for a vmid, so a rebuilt VM keeps its DHCP reservation.
+def guest_address(env):
+    """(ipconfig0 value, nameserver) for a clone, from .env.
 
-    Overrides win: a VM already reserved on the router keeps the MAC that
-    reservation names, whatever the derived value would have been. They come
-    from DF_MAC_OVERRIDES in .env; see mac_overrides() above.
+    Static assignment replaces DHCP plus MAC pinning: the address is known
+    before the VM ever boots, there is no router reservation to keep in sync
+    with a rebuild, and the guest agent is no longer the way to find the VM --
+    it is assigned at clone time, not discovered afterwards. This also removes
+    the router's hand-edited reservation table as a source of truth: the
+    address lives in .env, which this repo already treats as the record of
+    what a VM is.
+
+    DF_GW defaults to .1 of the same /24, which is right on essentially every
+    home network and wrong loudly rather than silently if it is not.
     """
-    vmid = int(vmid)
-    overrides = mac_overrides(env)
-    if vmid in overrides:
-        return overrides[vmid]
-    if not 0 <= vmid <= 0xFFFF:
-        raise PVEError("vmid %s out of range for a derived MAC" % vmid)
-    return "%s:00:%02X:%02X" % (MAC_PREFIX, (vmid >> 8) & 0xFF, vmid & 0xFF)
-
-
-def build_address(env):
-    """(ipconfig0 value, ip) for the template build, from .env.
-
-    The bake has to SSH into the VM before the guest agent exists, so the API
-    cannot be asked where the VM is -- that is the very capability being
-    installed. A static address for the build breaks that circularity. It is
-    used only while the template is being sealed and is reset to dhcp before
-    conversion, so nothing clones with it.
-
-    DF_BUILD_GW defaults to .1 of the same /24, which is right on essentially
-    every home network and wrong loudly rather than silently if it is not.
-    """
-    cidr = env.get("DF_BUILD_IP")
+    cidr = env.get("DF_VM_IP")
     if not cidr:
         raise PVEError(
-            "DF_BUILD_IP is not set in .env.\n"
-            "  The template bake needs one free address to reach the VM on"
-            " before the guest agent exists.\n"
-            "  Pick any address outside the router's DHCP pool, e.g."
-            " DF_BUILD_IP=192.168.1.240/24\n"
-            "  It is held only while the template is built, then released."
+            "DF_VM_IP is not set in .env.\n"
+            "  A clone needs a static address assigned before it boots.\n"
+            "  Pick one outside the router's DHCP pool, e.g."
+            " DF_VM_IP=192.168.1.240/24"
         )
     if "/" not in cidr:
-        raise PVEError("DF_BUILD_IP must include a prefix, e.g. %s/24" % cidr)
+        raise PVEError("DF_VM_IP must include a prefix, e.g. %s/24" % cidr)
     ip = cidr.split("/")[0]
-    gw = env.get("DF_BUILD_GW") or ".".join(ip.split(".")[:3] + ["1"])
+    gw = env.get("DF_GW") or ".".join(ip.split(".")[:3] + ["1"])
     # A DHCP guest is handed DNS by the router; a static one is not. Without an
-    # explicit nameserver the guest boots with no resolver and the bake fails
-    # on apt-get's first name lookup, which reads as a network fault rather
-    # than a missing setting. The gateway answers DNS on essentially every
-    # home router, and DF_BUILD_DNS overrides it where it does not.
-    dns = env.get("DF_BUILD_DNS") or gw
-    return "ip=%s,gw=%s" % (cidr, gw), ip, dns
+    # explicit nameserver the guest boots with no resolver and the guest
+    # install fails on apt-get's first name lookup, which reads as a network
+    # fault rather than a missing setting. The gateway answers DNS on
+    # essentially every home router, and DF_DNS overrides it where it does not.
+    dns = env.get("DF_DNS") or gw
+    return "ip=%s,gw=%s" % (cidr, gw), dns
 
 
 def ssh_guest(env, ip, command, timeout=120, check=True):
@@ -214,23 +151,6 @@ def ssh_guest(env, ip, command, timeout=120, check=True):
         raise PVEError("ssh failed (%s): %s"
                        % (proc.returncode, (proc.stderr or proc.stdout).strip()))
     return proc
-
-
-def wait_for_ssh(env, ip, timeout=300, poll=5):
-    log("waiting for ssh on %s (up to %ss)" % (ip, timeout))
-    deadline = time.time() + timeout
-    last = ""
-    while time.time() < deadline:
-        try:
-            proc = ssh_guest(env, ip, "true", timeout=20, check=False)
-            if proc.returncode == 0:
-                log("  ssh up after %ds" % (timeout - int(deadline - time.time())))
-                return True
-            last = (proc.stderr or proc.stdout).strip()
-        except (subprocess.TimeoutExpired, PVEError) as exc:
-            last = str(exc)
-        time.sleep(poll)
-    raise PVEError("no ssh on %s after %ss. last error: %s" % (ip, timeout, last))
 
 
 def wait_for_status(pve, vmid, want, timeout=300, poll=3):
@@ -283,100 +203,6 @@ def destroy_failed_build(pve, vmid):
     except PVEError as exc:
         # Never let cleanup mask the real failure being re-raised above it.
         log("  CLEANUP FAILED, VM %s is still on the host: %s" % (vmid, exc))
-
-
-def bake_template(pve, vmid, args):
-    """Boot the VM once, install the guest packages, and seal it again.
-
-    Sealing is the part that is easy to get wrong: a template cloned from a
-    booted VM carries that VM's cloud-init instance-id, machine-id and SSH
-    host keys, so every clone comes up as a duplicate of it. 'cloud-init clean'
-    plus removing those files makes each clone re-run first boot as itself.
-    """
-    ipconfig, ip, dns = build_address(pve.env)
-    log("baking %s: %s, dns %s, booting at %d MB"
-        % (", ".join(BAKE_PACKAGES), ipconfig, dns, BAKE_MEMORY))
-    mac = mac_for_vmid(vmid, pve.env)
-    pve.put(pve.vm_path(vmid, "/config"), {
-        "net0": "virtio=%s,bridge=%s" % (mac, BRIDGE),
-        "ipconfig0": ipconfig,
-        "nameserver": dns,
-        "memory": BAKE_MEMORY,
-        "balloon": 0,
-    })
-
-    log("starting %s for the bake" % vmid)
-    pve.wait_task(pve.post(pve.vm_path(vmid, "/status/start")), "start")
-    try:
-        wait_for_ssh(pve.env, ip)
-
-        log("waiting for cloud-init to finish")
-        ssh_guest(pve.env, ip, "sudo cloud-init status --wait", timeout=600,
-                  check=False)
-
-        log("installing: %s" % " ".join(BAKE_PACKAGES))
-        ssh_guest(pve.env, ip,
-                  "sudo DEBIAN_FRONTEND=noninteractive apt-get update -qq && "
-                  "sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq "
-                  + " ".join(BAKE_PACKAGES), timeout=900)
-        ssh_guest(pve.env, ip,
-                  "sudo systemctl enable --now qemu-guest-agent", timeout=120)
-
-        # Prove the channel end to end *now*, while there is still a running
-        # VM to prove it against. After conversion the next chance is a clone,
-        # and a template that silently lacks a working agent is exactly the
-        # failure this whole change exists to stop.
-        log("verifying the agent answers over the virtio channel")
-        # ping is a *command*, and the command-style agent endpoints are POST;
-        # only the info-style ones (network-get-interfaces, get-osinfo, ...)
-        # answer GET. A GET here returns 501 "not implemented", which reads as
-        # a missing agent rather than a wrong verb. Verified 2026-08-27.
-        pinged = pve.post(pve.vm_path(vmid, "/agent/ping"))
-        log("  /agent/ping -> %s" % ("ok" if pinged is not None else pinged))
-        ifaces = pve.get(pve.vm_path(vmid, "/agent/network-get-interfaces"))
-        addrs = [a.get("ip-address")
-                 for i in (ifaces or {}).get("result", [])
-                 for a in i.get("ip-addresses", [])
-                 if a.get("ip-address-type") == "ipv4"]
-        log("  agent reports ipv4: %s" % ", ".join(addrs))
-        if ip not in addrs:
-            raise PVEError("agent did not report the build address %s" % ip)
-
-        log("sealing: cloud-init clean, machine-id and host keys removed")
-        ssh_guest(pve.env, ip,
-                  "sudo cloud-init clean --logs --seed && "
-                  "sudo rm -f /etc/ssh/ssh_host_* && "
-                  "sudo truncate -s 0 /etc/machine-id && "
-                  "sudo rm -f /var/lib/dbus/machine-id && "
-                  "sync", timeout=120)
-
-        # Hard stop, deliberately. Sealing removes the machine-id systemd needs
-        # to reach dbus, so a `systemctl poweroff` issued *after* it never
-        # completes and the VM sits running until the wait times out (observed
-        # 2026-08-27, hidden at the time by check=False on that call). Sealing
-        # has to happen while the VM is up, so the guest cannot be the thing
-        # that shuts it down. The `sync` above is what makes this safe: the
-        # only writes outstanding are the seal's own handful of small changes.
-        log("stopping %s (hard, see comment: the seal breaks graceful shutdown)"
-            % vmid)
-        pve.wait_task(pve.post(pve.vm_path(vmid, "/status/stop")), "stop")
-        wait_for_status(pve, vmid, "stopped", timeout=180)
-    except Exception:
-        log("bake failed at %s; the caller decides whether %s survives it"
-            % (ip, vmid))
-        raise
-    finally:
-        # Never let the build address reach a clone, on the failure path either.
-        pve.put(pve.vm_path(vmid, "/config"), {
-            "ipconfig0": "ip=dhcp",
-            "memory": args.memory,
-            "balloon": args.balloon,
-            # Drop the build nameserver rather than blanking it: a clone on
-            # dhcp should take the router's resolver, not inherit ours.
-            "delete": "nameserver",
-        })
-        log("build address released; ipconfig0 dhcp, memory back to %d/%d MB"
-            % (args.memory, args.balloon))
 
 
 def cmd_status(pve, args):
@@ -433,14 +259,8 @@ def cmd_build_template(pve, args):
         % (available, total, used, free))
     if available < args.memory / 1024.0:
         log("NOTE: %d MB requested exceeds available memory. The template is"
-            " only ever booted at %d MB for the bake, so building is still"
-            " safe -- but re-check before booting a clone."
-            % (args.memory, BAKE_MEMORY))
-    if not args.no_bake and available < BAKE_MEMORY / 1024.0:
-        raise PVEError(
-            "only %.1f GiB available and the bake needs to boot the VM at %d MB."
-            " Free memory on the host, or build with --no-bake and install the"
-            " guest agent by hand." % (available, BAKE_MEMORY))
+            " never booted, so building is still safe -- but re-check before"
+            " starting a clone." % args.memory)
 
     log("creating VM %s (%s) in pool %s" % (vmid, TEMPLATE_NAME, pve.pool))
     upid = pve.post(pve.node_path("/qemu"), {
@@ -488,12 +308,6 @@ def cmd_build_template(pve, args):
         # copied 25 GB.
         resize_disk(pve, vmid)
 
-        if args.no_bake:
-            log("skipping the bake (--no-bake): this template will clone VMs with"
-                " no guest agent, and the API will not be able to report their IP")
-        else:
-            bake_template(pve, vmid, args)
-
         log("converting %s to a template" % vmid)
         upid = pve.post(pve.vm_path(vmid, "/template"))
         pve.wait_task(upid, "template conversion")
@@ -533,16 +347,14 @@ def cmd_clone(pve, args):
     })
     pve.wait_task(upid, "clone", timeout=3600)
 
-    # The clone came up with a randomly generated MAC. Overwrite it before the
-    # VM is ever started, so it takes its first DHCP lease on the pinned
-    # address rather than burning a random one and switching later.
-    mac = mac_for_vmid(newid, pve.env)
-    log("pinning net0 MAC to %s (rebuild-safe DHCP reservation)" % mac)
+    # Assign the address now, before the VM is ever started, so it comes up
+    # on it directly rather than taking a DHCP lease and switching later.
+    ipconfig, dns = guest_address(pve.env)
+    log("assigning address: %s, dns %s" % (ipconfig, dns))
     pve.put(pve.vm_path(newid, "/config"),
-            {"net0": "virtio=%s,bridge=%s" % (mac, BRIDGE)})
+            {"ipconfig0": ipconfig, "nameserver": dns})
 
     log("done. record DF_VMID=%s in .env" % newid)
-    log("  reserve %s -> this VM's address on the router" % mac)
     return newid
 
 
@@ -669,9 +481,6 @@ def main():
     build.add_argument("--keep-failed", action="store_true",
                        help="on failure, leave the half-built VM on the host"
                             " for inspection instead of destroying it")
-    build.add_argument("--no-bake", action="store_true",
-                       help="skip booting the VM to install the guest agent"
-                            " (clones will have no working /agent/* API)")
 
     clone = sub.add_parser("clone", help="clone the template into a VM")
     clone.add_argument("--template", type=int)
