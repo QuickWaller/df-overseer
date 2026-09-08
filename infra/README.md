@@ -32,19 +32,30 @@ identity of its own — it runs on an already-enrolled machine and uses that
 machine's network access. Tailscale ACLs are therefore the outer boundary; the
 Proxmox token is the inner one.
 
-## Principle: the token cannot leave its pool
+## Principle: the pool is the fence, not the role
 
-Proxmox access is scoped to a single resource pool, granted to an API token with
-privilege separation enabled. The token deliberately **cannot create or destroy
-VMs** — `VM.Allocate` and `VM.Clone` are excluded. A human creates the VM; the
-overseer manages the one it is given.
+The token (`svc-<project>-sandbox@pve!build`, scoped to a matching
+`<project>-sandbox` pool and storage, plus a narrow node role at
+`/nodes/<pve-node>` and an SDN role at `/sdn/zones/localnetwork`) **can create and
+destroy VMs, standing and ungated, inside its own pool.** `VM.Allocate` and
+`VM.Clone` are both granted (`decisions/DECISIONS.md`, 2026-08-25 and
+2026-08-26). Containment comes from the pool boundary, not from a narrow
+role: proved by a 200 against its own pool against a 403 against a guest
+outside the pool on the same node, which makes that 403 a proof of the pool
+fence rather than the node fence.
 
-If the overseer later needs to provision its own VMs, that is a deliberate
-privilege expansion with its own decision-register entry, not a quiet addition.
+A privilege reaching outside the pool, such as a second pool or broader node
+rights, is still a deliberate expansion with its own decision-register entry,
+not a quiet addition.
 
 ## Setup
 
-See `docs/PROXMOX-SETUP.md` for the commands.
+Building the pool, role, user, token and storage is home-lab's job:
+`runbooks/project-sandbox.md` in the private `home-lab` repo is the
+generalized procedure, and this project is its reference instance. This repo
+owns what runs against that identity once built: `.env`, the scripts below,
+and the verified facts in `infra/local.*`. `docs/PROXMOX-SETUP.md` is
+superseded history, not a live setup guide.
 
 ## Scripts
 

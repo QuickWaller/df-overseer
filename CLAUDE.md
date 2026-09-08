@@ -5,17 +5,19 @@ story without you. See **[docs/PURPOSE.md](docs/PURPOSE.md)** for what this is
 and why, and **[docs/MEMORY-ARCHITECTURE.md](docs/MEMORY-ARCHITECTURE.md)** for the overseer's memory and
 learning architecture.
 
-> **Status: design, plus a live infrastructure layer and a running game.** The
-> Proxmox access layer exists and is verified against the API
-> (`infra/local.proxmox-access.md`), `scripts/provision_vm.py` builds the VM, and
-> DF Classic plus DFHack run headless on VM 104 and answer RPC. The game install
-> is scripted and verified end to end as `scripts/install_df.py`
-> (`infra/local.df-vm-install.md`), so the VM is rebuildable rather than
-> precious. No *code* of the game side is implemented yet:
-> no perception layer, no agent, no toolkit. Everything in `docs/` and
-> `research/` is still a design artifact; claims marked *verified* were checked
-> against a DFHack install, the live API, or a primary source, and the rest are
-> proposals.
+> **Status: design, plus infrastructure that is scripted and proven, not
+> currently running.** The Proxmox identity this project runs against is
+> provisioned outside this repo (see `infra/README.md`);
+> `scripts/provision_vm.py` builds the template and VM against it, and
+> `scripts/install_df.py` installs DF Classic and DFHack, which ran headless
+> and answered RPC on a VM verified end to end
+> (`infra/local.df-vm-install.md`). That VM and its template were deleted
+> 2026-09-01 in an estate rebuild, so the honest claim is that the whole
+> stack is rebuildable from this repo, not that it is running. No *code* of the game side is implemented yet: no
+> perception layer, no agent, no toolkit. Everything in `docs/` and
+> `research/` is still a design artifact; claims marked *verified* were
+> checked against a DFHack install, the live API, or a primary source, and
+> the rest are proposals.
 
 This repo is managed with Claude Code using a structured memory system,
 following the pattern published as

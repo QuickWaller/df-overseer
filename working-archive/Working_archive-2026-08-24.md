@@ -49,14 +49,14 @@ for the authoritative record (read back from the API, not assumed).
   Adding `Sys.AccessNetwork` to `DFOverseer` did nothing because that role is
   bound only at `/pool` and `/storage`. Fixed with a second narrow role
   `DFOverseerNode` (`Sys.Audit` + `Sys.AccessNetwork`) bound at
-  `/nodes/proxmox`. **Lesson: diagnose by reading `/access/permissions` for
+  `/nodes/<pve-node>`. **Lesson: diagnose by reading `/access/permissions` for
   granted *paths*, not by inspecting the role's privilege list.**
 - `VM.Clone` granted (confirmed missing by test — needed to clone our own
   template) and all five `VM.GuestAgent.*` privileges, including
   `Unrestricted`, which allows command execution inside pool VMs and therefore
   guest provisioning without SSH.
-- **Ubuntu 24.04 LTS (`noble`) cloud image downloaded to `ssd_storage`** —
-  596 MB, `ssd_storage:iso/noble-server-cloudimg-amd64.img`. Ready to import.
+- **Ubuntu 24.04 LTS (`noble`) cloud image downloaded to `<storage>`** —
+  596 MB, `<storage>:iso/noble-server-cloudimg-amd64.img`. Ready to import.
 - Node status reads now work, which is how the RAM problem below was found.
 - **Decided: drop Steam on the VM, use DF Classic there**; keep playing Steam
   locally. Removes the auto-update-breaks-DFHack hazard, Steam Guard from
@@ -87,7 +87,7 @@ convert to template → clone. Then write `scripts/provision-vm.py` around it.
 
 Ready and confirmed for that step:
 - Next free VMID is **101**
-- Image is present: `ssd_storage:iso/noble-server-cloudimg-amd64.img` (596 MB)
+- Image is present: `<storage>:iso/noble-server-cloudimg-amd64.img` (596 MB)
 - `ciuser`, `sshkeys`, `ipconfig0` all confirmed settable
 - **SSH key done.** Fresh dedicated keypair generated 2026-08-26:
   `~/.ssh/df_overseer_ed25519` (ed25519, no passphrase, comment `df-overseer`,
@@ -125,7 +125,7 @@ pushed (no remote configured).
 
 - Access layer exists and is recorded authoritatively in
   `infra/local.proxmox-access.md` — role `DFOverseer` (17 privileges), scoped to
-  `/pool/df-overseer` and `/storage/ssd_storage`. Credentials in `.env`
+  `/pool/df-overseer` and `/storage/<storage>`. Credentials in `.env`
   (gitignored, confirmed untracked).
 - **Boundaries verified by denial**, not assumption: cannot enumerate any VM
   outside the pool (`/cluster/resources?type=vm` → `[]`), cannot read template
@@ -152,18 +152,18 @@ pushed (no remote configured).
 
 **NEXT CONCRETE STEP — one blocker, diagnosed but not resolved:**
 
-`POST /nodes/proxmox/storage/ssd_storage/download-url` still returns a bare
+`POST /nodes/<pve-node>/storage/<storage>/download-url` still returns a bare
 `Permission check failed`. **`Datastore.AllocateTemplate` is NOT the problem** —
 it was granted and confirmed present (role has 17 privs; effective value is `1`
-on `/storage/ssd_storage`).
+on `/storage/<storage>`).
 
 Strong hypothesis, untested: `download-url` makes the *host* fetch an arbitrary
 URL, which requires **`Sys.AccessNetwork`**. Being a `Sys.*` privilege it likely
-must be granted at `/` or `/nodes/proxmox`, not on the storage path.
+must be granted at `/` or `/nodes/<pve-node>`, not on the storage path.
 
 Worth granting deliberately rather than reflexively — it lets the Proxmox host
 fetch arbitrary URLs on our behalf, which is SSRF-adjacent. Scope it to
-`/nodes/proxmox` if possible.
+`/nodes/<pve-node>` if possible.
 
 Once that is resolved, the template build is:
 `download Ubuntu cloud image → create VM → import disk → cloud-init → convert to
@@ -181,7 +181,7 @@ Write the provisioning tooling in Python, not bash.
 - **Rotate the Proxmox token.** Credentials were pasted into chat and are in the
   session transcript. Datacenter → Permissions → API Tokens → remove/re-add,
   update `.env`. Nothing else changes.
-- **VM 101 is a linked clone** of template 102 (`ssd_storage:102/base-102-disk-0
+- **VM 101 is a linked clone** of template 102 (`<storage>:102/base-102-disk-0
   .qcow2/101/vm-101-disk-0.qcow2`) and dies if 102 is deleted. Moot once we
   build and clone our own template.
 - Folder still named `df-automation` on disk while the project is `df-overseer`.
@@ -247,7 +247,7 @@ VM 104 (`df-fortress`, full clone) both live in the `df-overseer` pool.
 Three problems were hit and fixed on the way:
 
 - **`import` content type** — enabled by the user, verified by reading
-  `/nodes/proxmox/storage` back from the API.
+  `/nodes/<pve-node>/storage` back from the API.
 - **`.img` rejected by an import-content store.** Canonical ships a qcow2 file
   with an `.img` extension. `download-url` names the destination independently
   of the URL, so `provision_vm.py` now writes it as `.qcow2` on the way in.
@@ -280,23 +280,23 @@ should be lifted into `decisions/DECISIONS.md` rather than lost with the file:
 - **A two-node Proxmox cluster loses quorum** when either node dies — the
   survivor cannot start or migrate anything. Needs a qdevice or a third node.
 - **Cluster join order is destructive.** The joining node must have no guests.
-  The cluster must be created on the **existing** ProDesk (which holds 101 and
+  The cluster must be created on the **existing** SRV-01 (which holds 101 and
   104) and the new node joined to it, never the reverse.
 
 ### The storage blocker — CLEARED 2026-08-26
 
-The `import` content type is enabled on `ssd_storage`. **Verified by reading it
+The `import` content type is enabled on `<storage>`. **Verified by reading it
 back from the live API**, not taken on report:
 
 ```
-GET /nodes/proxmox/storage  ->  ssd_storage content: iso,import,images
+GET /nodes/<pve-node>/storage  ->  <storage> content: iso,import,images
 ```
 
 Background, kept because the reasoning still applies to the next capability
 question: `import-from` refuses an `iso`-class volume, which is what the
 downloaded cloud image was, so the whole template build was unscriptable
 without this flag. The token could not set it itself and deliberately should
-not be able to — confirmed by denial, `GET /storage/ssd_storage` →
+not be able to — confirmed by denial, `GET /storage/<storage>` →
 `403 (Datastore.Allocate)`. Granting the role `Datastore.Allocate` was the
 alternative and was rejected: it permits editing and deleting storage
 definitions, far more standing capability than one one-time flag is worth.
@@ -448,22 +448,22 @@ Recorded in `infra/local.proxmox-access.md` with the verbatim errors:
 
 **BLOCKER (cleared 2026-08-26 — kept for the record):**
 
-Datacenter → Storage → `ssd_storage` → Edit → **Content: add "Import"**.
+Datacenter → Storage → `<storage>` → Edit → **Content: add "Import"**.
 
 The cloud image was downloaded as `iso` content, and `import-from` refuses an
 `iso` volume — it needs `images` or `import`. `download-url` *does* accept
 `content=import`, so once that box was ticked, `provision_vm.py fetch-image`
 could re-download the 596 MB image into `import/` and the rest run unattended.
 Confirmed by denial that this token could not do it itself: `GET
-/storage/ssd_storage` → `403 (Datastore.Allocate)`. Granting the role
+/storage/<storage>` → `403 (Datastore.Allocate)`. Granting the role
 `Datastore.Allocate` was the alternative and was rejected — it permits editing
 and deleting storage definitions, far more than one flag is worth.
 
 It was re-tested and still failing twice on 2026-08-26 (verbatim: `POST
-/nodes/proxmox/storage/ssd_storage/download-url -> 500 {"message":"storage
-'ssd_storage' is not configured for content-type 'import'"}`), then enabled by
+/nodes/<pve-node>/storage/<storage>/download-url -> 500 {"message":"storage
+'<storage>' is not configured for content-type 'import'"}`), then enabled by
 the user later the same day. Read back from the live API to confirm:
-`ssd_storage content: iso,import,images`.
+`<storage> content: iso,import,images`.
 
 **Then, in order, once unblocked:** `fetch-image` → `build-template` →
 `clone --full --name df-fortress` → record `DF_VMID` in `.env` → read
@@ -1141,18 +1141,18 @@ it is what lets a box be opened without downtime.
 
 1. Safety net first: repo pushed (**done**), script the DF install (**not
    done**), dump 104 off-host.
-2. `dmidecode -t memory` on the ProDesk. Decides add vs replace, and whether
+2. `dmidecode -t memory` on SRV-01. Decides add vs replace, and whether
    the spare 8 GB stick has a home at all.
 3. **Decide reinstall vs rebuild.** Blocking, see below.
 4. `cpu: host` -> `x86-64-v2-AES` in `provision_vm.py`.
-5. EliteDesk arrives, set up standalone: second stick, WiFi card, 2 TB in the
+5. SRV-02 arrives, set up standalone: second stick, WiFi card, 2 TB in the
    free bay as the backup target.
-6. Create the cluster **on the ProDesk**, then join the empty EliteDesk.
+6. Create the cluster **on SRV-01**, then join the empty SRV-02.
 7. Qdevice last: HA into a VM, reflash the Pi, `corosync-qnetd`.
 
 ### Blocking question, for the user
 
-**Full Proxmox reinstall on the ProDesk, or rebuild the `df-overseer` pool and
+**Full Proxmox reinstall on SRV-01, or rebuild the `df-overseer` pool and
 VMs on the existing install?** Step 3 gates step 6, because a reinstall must
 happen before a cluster exists. Nothing in the hardware sequence can be
 scheduled until this is answered.
@@ -1175,8 +1175,8 @@ failure that cost a session earlier this week. It is gitignored, so it does
 not travel with the repo.
 
 **Cluster join order is destructive.** The joining node must have no guests;
-joining wipes its guest config. Create on the ProDesk, join the empty
-EliteDesk. The reverse loses `df-fortress`.
+joining wipes its guest config. Create on SRV-01, join the empty
+SRV-02. The reverse loses `df-fortress`.
 
 **A two-node cluster is worse than two standalone hosts** until the qdevice
 lands. One node down leaves the survivor unable to start, stop or edit
@@ -1242,10 +1242,10 @@ exists.** Today's 99.1% is on generous hand-authored fixtures.
   user chose not to rename the host. Not secret, just no longer advertised.
 - **`willsmith.nz` was deliberately left in** (30 occurrences). It is the
   project's intended public face per `docs/PURPOSE.md`, not a leak.
-- **The ProDesk's RAM slot layout is still unknown**, and it decides whether
+- **SRV-01's RAM slot layout is still unknown**, and it decides whether
   the spare 8 GB stick is useful or scrap.
 - **The SSD out of the Omen has an unverified size.** Only worth putting in a
-  node if it beats the EliteDesk's 239 GB NVMe.
+  node if it beats the SRV-02's 239 GB NVMe.
 - **Six test worlds (`region1`-`region6`)** are sitting in VM 104's save
   directory. ~900 KB each, delete when done with them.
 - **Proxmox token not rotated**, pasted into an earlier transcript.
@@ -1450,7 +1450,7 @@ everything VM-specific.
 
 ### Decisions still owed by the user
 
-**1. Reinstall or rebuild.** Full Proxmox reinstall on the ProDesk, or rebuild
+**1. Reinstall or rebuild.** Full Proxmox reinstall on SRV-01, or rebuild
 the `df-overseer` pool and VMs on the existing install? Asked again this
 session and **explicitly not answered**. It gates cluster creation, because a
 reinstall must happen before a cluster exists, so nothing in the hardware
@@ -1504,8 +1504,8 @@ gets a derived MAC and drops its DHCP reservation. Gitignored, so it does not
 travel with the repo.
 
 **Cluster join order is destructive.** The joining node must have no guests;
-joining wipes its guest config. Create on the ProDesk, join the empty
-EliteDesk. The reverse loses `df-fortress`.
+joining wipes its guest config. Create on SRV-01, join the empty
+SRV-02. The reverse loses `df-fortress`.
 
 **A two-node cluster is worse than two standalone hosts** until the qdevice
 lands. One node down leaves the survivor unable to start, stop or edit
@@ -1519,7 +1519,7 @@ Enumerate as root in the GUI before wiping anything.
 login.
 
 **Our Proxmox token is pool-scoped and cannot run node-level commands.**
-Anything like `dmidecode` on the ProDesk needs root SSH to the host, which has
+Anything like `dmidecode` on SRV-01 needs root SSH to the host, which has
 not been established. Check that access exists before planning around it.
 
 ### What a next session should pick up
@@ -1570,7 +1570,7 @@ exists. Today's 99.1% is on generous hand-authored fixtures.
 - **The published hostname should be treated as exposed.** The rewrite removed
   it from the repo; it did not un-publish it. The user chose not to rename.
 - **`willsmith.nz` was deliberately left in.** Intended public face, not a leak.
-- **The ProDesk's RAM slot layout is still unknown**, and it decides whether
+- **SRV-01's RAM slot layout is still unknown**, and it decides whether
   the spare 8 GB stick is useful or scrap.
 - **The SSD out of the Omen has an unverified size.**
 - **Folder is still `df-automation` on disk** while the project is

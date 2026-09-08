@@ -1,6 +1,6 @@
 # Roadmap
 
-**Last reviewed:** 2026-08-31
+**Last reviewed:** 2026-09-08
 
 This file is df-overseer's forward-looking, priority-ordered plan: what's
 next and roughly when, across infrastructure, game-side engineering, and the
@@ -15,22 +15,53 @@ or `decisions/DECISIONS.md`, not here.
 ## Now
 <!-- Actively being worked, or the clear immediate next step. -->
 
-- **Reinstall or rebuild the Proxmox host?** Full reinstall on the ProDesk vs.
-  rebuilding the `df-overseer` pool/VMs on the existing install, still
-  unanswered across three sessions. Gates cluster creation; do not infer an
-  answer from silence. → `Working.md` "Decisions still owed by the user" #1.
-- **Delete the eight test worlds?** `region1`-`region8` plus a stale 4 KB
-  `save/current`, destructive so left alone until the user says go.
-  → `Working.md` "Decisions still owed by the user" #2.
-- **Temporary Anthropic key in `.env` expires ~2026-09-03.** Rotate or
-  remove before then; do not commit or log it. → `Working.md` housekeeping.
+> **Rewritten 2026-09-08.** The previous Now bucket was stale in a way worth
+> naming: its top item asked a question ("reinstall or rebuild the Proxmox
+> host?") that was answered a week ago, and it had no awareness that this
+> project's VM and template were both deleted on 2026-09-01. This repo went
+> quiet on 2026-08-30 while the estate underneath it was rebuilt. Full
+> analysis: `infra/local.2026-09-08-doc-reorg-plan.md` (gitignored, it quotes
+> home-lab's own infra specifics; a clone of this public repo will not have
+> it).
+
+- **Paste the new token secret into `.env`.** Everything else in that file is
+  already repointed (`PVE_NODE`, `PVE_POOL`, `PVE_STORAGE`, `PVE_TOKEN_ID`);
+  `PVE_TOKEN_SECRET` is deliberately blank because no automation may copy it.
+  The value is minted and proven — `200` against its own pool, `403` outside.
+- **Verify with the safe read-only call first.** `python scripts/provision_vm.py
+  status` — memory, next VMID, pool members. It is a live API call, not a
+  rehearsal, but it allocates nothing. First proof the new identity works from
+  this machine rather than from inside the hypervisor.
+- **Rebuild the template, then the VM.** `fetch-image` → `build-template` →
+  `clone`. Both the template and the running VM were deleted 2026-09-01, and
+  neither is manual work to restore: `build-template` builds from the Ubuntu
+  cloud image by design. The new storage already carries the `import` content
+  type this needs.
+- **Name the rebuilt guest with the `.internal` suffix** — decided 2026-09-08.
+  `cmd_clone`'s `--name` takes any string with no convention attached, so this
+  has to be passed explicitly.
+- **If a write step fails oddly, check quorum before suspecting permissions.**
+  The cluster has no QDevice and the second node is unwell, so a single node
+  can drop below quorum and make every config write fail with an error that
+  reads exactly like a permissions fault. `pvecm status` first, always.
+- **Rotate or remove the temporary Anthropic key in `.env`.** It expired
+  ~2026-09-03 and is now past due — the previous version of this line predicted
+  that and did not prevent it, which is the argument for doing it now rather
+  than re-dating it. Do not commit or log it.
 
 ## Next
 <!-- Clearly in line, not yet started. -->
 
+- **Re-record the new identity's live scopes into a fresh
+  `infra/local.proxmox-access.md`.** The existing file (gitignored) describes
+  the retired `df-overseer@pve` identity, read back from the API on
+  2026-08-27; the new identity's pool-fence proof (`200` in-pool, `403`
+  outside) currently lives only in home-lab. This repo has no equivalent
+  record of its own once the old identity retires. → `Working.md` handover.
 - **`cpu: host` → `x86-64-v2-AES`** in `provision_vm.py`, needed so the two
   cluster hosts (different CPU generations) can migrate VMs between them.
-  Accepted, not yet implemented; takes effect on 104's next cold stop/start.
+  Accepted, not yet implemented; takes effect on the rebuilt VM's next cold
+  stop/start.
   → `decisions/DECISIONS.md` 2026-08-28 row.
 - **`check_reachable` / `get_connectivity_report`.** Copies
   `warn-stranded.lua`'s working algorithm; highest-confidence real code to
@@ -70,20 +101,20 @@ or `decisions/DECISIONS.md`, not here.
 - **Seeded counterfactual rerun harness**, the only real answer to the
   control-arm problem for "doctrine improved outcomes" claims. Rests on DF
   replay determinism, which is unverified. → `research/2026-08-25-learning-architecture.md`
-  §7 item 7, `Working.md` housekeeping ("DF replay determinism unverified").
-- **Host-reboot survival test itself.** Guest-reboot survival is proven and
-  `onboot=1` is set and read back; nobody has power-cycled the physical
-  Proxmox host to watch VM 104 come back unattended. Needs the user's
-  go-ahead first (destructive/hard-to-reverse actions rule).
-  → `Working.md` 2026-08-30 handover, "Host-reboot survival is still
-  unverified".
-- **Cluster the ProDesk and the incoming EliteDesk**, once the reinstall-vs-
-  rebuild decision above lands. Not for HA; buys one API, migration, and
-  replicated `/etc/pve`. Gated on a Pi qdevice before it's better than two
-  standalone hosts. → `decisions/DECISIONS.md` 2026-08-28 clustering row.
-- **The ProDesk's RAM slot layout is still unknown**, and the SSD out of the
-  Omen has an unverified size. Both matter once hardware work on the cluster
-  starts. → `Working.md` housekeeping.
+  §7 item 7, `Working.md` handover ("DF replay determinism is unverified").
+- **Host-reboot survival test**, re-scoped to whichever VMID the current
+  rebuild produces (VM 104 no longer exists). Complicated now by `citadel`'s
+  missing QDevice: a reboot of `SRV-01` while `SRV-02` is also down would be
+  a real inquorate-cluster test, not just a VM-restart test. Needs the
+  user's go-ahead first either way (destructive/hard-to-reverse actions
+  rule). → `working-archive/Working_archive-2026-09-07.md`, "Host-reboot
+  survival is still unverified".
+- **`citadel` has no QDevice.** The reinstall-vs-rebuild question that used
+  to gate clustering is answered and the cluster already exists; the
+  QDevice is the real remaining gap, and until it lands a two-node cluster
+  is worse than two standalone hosts (either node down leaves the survivor
+  unable to start, stop, or edit anything). → `decisions/DECISIONS.md`
+  2026-08-28 clustering row.
 - **`openclaw` vs `hermes-agent`** as the driving brain, still deferred.
   Tiebreaker is meant to be empirical: which survives 30 days unattended.
   → `decisions/DECISIONS.md` 2026-08-25 row, 2026-08-27 multi-agent-by-task

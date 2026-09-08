@@ -1,5 +1,12 @@
 .env
 .env.local
+# Any .env sidecar — backups, dated copies, .env.bak-<date>, .env.old.
+# Added 2026-09-08 after a pre-edit backup named `.env.bak-2026-09-08` landed
+# untracked-but-committable in this PUBLIC repo, holding an exposed Proxmox
+# token, a hypervisor password and an API key. `.env` alone did not cover it.
+# The negation keeps a committed template possible if one is ever added here.
+.env.*
+!.env.example
 node_modules/
 
 # Machine-local stream-coordination registry (see CLAUDE.md's "Parallel

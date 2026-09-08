@@ -1,13 +1,16 @@
 # df-overseer
 
 > Working draft, 2026-08-25 (VM spec and game install updated 2026-08-27;
-> install scripted and re-verified 2026-08-28).
-> Consolidates the research in `research/`. Most of the design below has still
-> not been tested against a running game; assume it is a proposal unless marked
-> *verified*. Two layers under it are real: the Proxmox access layer is live
-> and `scripts/provision_vm.py` builds the VM (`infra/local.proxmox-access.md`),
-> and DF Classic plus DFHack run headless on the VM and answer RPC, installed
-> and managed by `scripts/install_df.py` (`infra/local.df-vm-install.md`).
+> status corrected 2026-09-08). Consolidates the research in `research/`.
+> Most of the design below has still not been tested against a running game;
+> assume it is a proposal unless marked *verified*. Two layers under it are
+> scripted and proven, not currently standing: the template and VM build
+> (`scripts/provision_vm.py`), and the DF Classic plus DFHack install that
+> ran headless and answered RPC (`scripts/install_df.py`,
+> `infra/local.df-vm-install.md`). Both the template and the VM were deleted
+> 2026-09-01 in an estate rebuild, so the stack is rebuildable from this repo
+> rather than running. The Proxmox identity they run against is provisioned
+> outside this repo; see `infra/README.md`.
 > No game-side *code* exists yet: no perception layer, no agent, no toolkit.
 
 ## Purpose
@@ -90,7 +93,7 @@ Video and a dashboard are different bets:
 
 | Approach | Bandwidth / CPU | Build cost |
 |---|---|---|
-| 24/7 video (OBS → Owncast/Twitch) | Continuous encode on a ProDesk already running DF | Low |
+| 24/7 video (OBS → Owncast/Twitch) | Continuous encode on a host already running DF | Low |
 | **Periodic screenshot + live dashboard** | Near zero | Medium |
 | Full custom web renderer (RFR → browser) | Near zero | High |
 
