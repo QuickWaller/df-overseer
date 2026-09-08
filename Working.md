@@ -28,12 +28,37 @@ error, and `cb9560d` deletes the template bake and switches the VM to a
 static address assigned at clone time, taking `provision_vm.py` from 724
 lines to 533.
 
-**Two things are waiting on a human, and nothing else is blocked.** First,
-the guest OS choice, which is the only thing holding up image pinning: the
-pinned serial depends on it. Second, pasting `PVE_TOKEN_SECRET` into `.env`,
-after which spike A (`status`, `fetch-image`, `build-template`) can run. That
-run is also what discharges home-lab's Phase H, so an exposed credential stays
-live until it happens.
+**One thing is waiting on a human, and nothing else is blocked:** paste
+`PVE_TOKEN_SECRET` into `.env`. Then spike A is `python scripts/provision_vm.py
+status`, then `fetch-image`, then `build-template`. That run is also what
+discharges home-lab's Phase H, so an exposed credential stays live until it
+happens.
+
+**Provisioning work completed 2026-09-08, steps 1 and 2 of the migration path
+in `research/2026-09-08-provisioning-recommendation.md` §11.** Both were
+unconditional and independent of the still-open build-tool decision, so most
+of the practical benefit is now banked whatever happens to that. Layer 1: the
+API client mounts a `urllib3` retry policy, POST deliberately excluded so a
+timeout can never create two VMs, and 403/500 now say the cluster may be
+inquorate. Layer 0: the template bake is deleted, `qemu-guest-agent` moved
+into the guest install, and the VM's address is assigned at clone time rather
+than discovered, which retired the derived MACs, the override table and the
+router's reservation as a source of truth. `provision_vm.py` went 724 to 533
+lines. The base image is pinned by dated serial and sha256, verified
+host-side by PVE. Automatic upgrades are disabled on the guest.
+
+**What is still open on provisioning:** whether to move image, template and
+clone to OpenTofu with `bpg/proxmox`. Deliberately left at `proposed` in the
+register, because the one thing nobody has tested is whether a pool-scoped
+token can drive it end to end, and that is what spike B settles. Do not treat
+it as decided. → `research/2026-09-08-provisioning-recommendation.md` §7.4.
+
+**Two provisioning claims are believed but untested**, and both have a written
+falsifying test. An unbaked template needs no seal (clone twice, compare SSH
+host key fingerprints and `machine-id`; if they match, the bake comes back).
+And `bpg`'s VMID allocation may use a workstation-local sequence file rather
+than `/cluster/nextid`, which would reintroduce the second-source-of-truth
+problem the 2026-08-27 `next_vmid()` decision exists to prevent.
 
 **The one blocking human step.** `.env` is already repointed to the new
 identity (`PVE_NODE`, `PVE_POOL`, `PVE_STORAGE`, `PVE_TOKEN_ID` all updated).

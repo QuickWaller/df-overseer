@@ -477,8 +477,27 @@ done
 
 def step_packages(env, ip, args):
     log("[1/5] packages")
+    # Automatic upgrades are turned off before anything is installed, and this
+    # is the same call the register already made once: DF Classic replaced the
+    # Steam build because an auto-update mid-fort shifts memory offsets and
+    # silently breaks DFHack. An unattended glibc or SDL2 upgrade under a
+    # running fort is that hazard one layer down, and a fort is meant to run
+    # unattended for a month.
+    #
+    # The containment is that this VM is LAN-only and cheap to rebuild, which
+    # is the whole point of the project. The intended pattern is to pin the
+    # box for the duration of a fort and rebuild between forts, rather than to
+    # let libraries move under a live one. Written as apt config rather than
+    # by masking the unit, because config survives the package being updated.
     script = '''
 export DEBIAN_FRONTEND=noninteractive
+cat > /etc/apt/apt.conf.d/99-df-overseer-no-auto-upgrade <<'CONF'
+// Set by scripts/install_df.py. See decisions/DECISIONS.md 2026-09-08.
+// A fort runs unattended for a month; libraries must not move underneath it.
+APT::Periodic::Update-Package-Lists "0";
+APT::Periodic::Unattended-Upgrade "0";
+CONF
+echo "automatic upgrades disabled"
 apt-get update -qq
 apt-get install -y -qq %s
 echo "packages ok"
