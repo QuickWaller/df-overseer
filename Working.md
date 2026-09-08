@@ -118,6 +118,26 @@ installed and enabled. → `decisions/DECISIONS.md` 2026-09-08 row.
 it, but nobody has embarked. That's the next real step, whenever it's
 wanted.
 
+**Embark-automation research done, 2026-09-08** —
+`research/2026-09-08-embark-automation.md`, read-only against VM 103. Screen
+sequence, keybindings for the confirmed part of the flow, and the success
+check are all primary-source-confirmed from installed DFHack scripts (chiefly
+`deep-embark.lua` and `gui/embark-anywhere.lua`), not guessed. The one real
+gap: how "Start" on the title screen reaches a fresh embark in the existing
+region, as opposed to continuing/reclaiming — no installed script exercises
+that hop, so it needs live, polled testing (`dfhack.gui.getCurViewscreen()`
+after each simulated key) to nail down, ideally against a snapshotted VM
+state given the hard-to-reverse-actions rule. → `decisions/DECISIONS.md`
+2026-09-08 row. **Next step:** either write and live-test the implementation
+script against VM 103, or snapshot the VM first if that live-testing risk is
+a concern.
+
+**This research got knocked out twice by an account-wide rate limit** before
+finishing on a third resume after an account switch. Worth knowing for any
+session that spawns background research agents: a 429 on a background agent
+doesn't lose its work if you resume the same agent (by id) rather than
+starting fresh — it kept everything it had found across three attempts.
+
 **Provisioning work completed 2026-09-08, steps 1 and 2 of the migration path
 in `research/2026-09-08-provisioning-recommendation.md` §11.** Both were
 unconditional and independent of the still-open build-tool decision, so most
