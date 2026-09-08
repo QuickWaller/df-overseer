@@ -39,17 +39,23 @@ or `decisions/DECISIONS.md`, not here.
 > clean; `verify` reports all checks passed. No world exists yet; DF has not
 > been started. → `decisions/DECISIONS.md` 2026-09-08 rows.
 
-- **Generate a world and start DF on VM 103** whenever wanted:
-  `install_df.py gen`, then `start`. Nothing runs unattended until this
-  happens.
+> **World generated, DF running under systemd, 2026-09-08.** `install_df.py
+> gen` then `systemd --start`; `verify` confirms `dwarfort` running with RPC
+> up. First thing in this project to run unattended, though no fort exists
+> yet — nobody has embarked. → `decisions/DECISIONS.md` 2026-09-08 row,
+> `Working.md` handover.
+
+- **Embark and start a fort on VM 103.** The world exists and DF is idling
+  at it; embarking is the next real milestone.
 - **If a write step fails oddly, check quorum before suspecting permissions.**
   The cluster has no QDevice and the second node is unwell, so a single node
   can drop below quorum and make every config write fail with an error that
   reads exactly like a permissions fault. `pvecm status` first, always.
-- **Rotate or remove the temporary Anthropic key in `.env`.** It expired
-  ~2026-09-03 and is now past due — the previous version of this line predicted
-  that and did not prevent it, which is the argument for doing it now rather
-  than re-dating it. Do not commit or log it.
+- **Decide on home-lab-43's unstaged `## Upstream obligations` addition to
+  `CLAUDE.md`** (stage/commit, edit, or drop). It declares home-lab as source
+  of truth for IDs/addresses this repo cites and sets an obligation to update
+  `home-lab/inventory/` in the same turn a guest here is created, deleted,
+  resized, or re-addressed. → `Working.md` handover.
 
 ## Next
 <!-- Clearly in line, not yet started. -->
