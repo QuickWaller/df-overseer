@@ -6,8 +6,11 @@ actually going on right now.
 
 ## HANDOVER - 2026-09-08
 
-**State at a glance.** Nothing from this project runs anywhere right now.
-VM 104 (`df-fortress`) and template 101 were both deleted 2026-09-01, not
+**State at a glance.** VM 103 (`df-colony-01`) is rebuilt, installed and
+verified, but DF itself has not been started yet, so no world exists and
+nothing is actually running unattended. The infrastructure this handover
+opens with (below) is history now: VM 104 (`df-fortress`) and template 101
+were both deleted 2026-09-01, not
 migrated, while this repo sat quiet since 2026-08-30. The Proxmox host was
 reinstalled 2026-09-02 and renamed `SRV-01`; a two-node cluster `citadel`
 formed 2026-09-01 and `SRV-01` rejoined it cleanly 2026-09-06. This project
@@ -74,18 +77,36 @@ build. Its FAIL lines are the expected shape for a bare clone (no DF/DFHack,
 `init.txt` unset, no swap, no systemd units) — see
 `decisions/DECISIONS.md` 2026-09-08 row. `DF_VMID=103` is recorded in `.env`.
 
-**Renamed to `df-colony-01` same day: `.internal` is DNS-only, never part of
-a name or hostname.** User caught two problems with `df-fortress.internal`:
-"df" already means Dwarf Fortress, and unlike `subnet-router-02`, the literal
-string `.internal` was showing up in the Proxmox name field. The guest's own
-hostname was already the short form (`df-fortress`, cloud-init dropped the
-FQDN suffix at first boot), so the bug was cosmetic to Proxmox's name field
-only. Fixed on both sides and verified by reading back: Proxmox
-`config.name` and the guest's `hostname`/`/etc/hosts` both now read
-`df-colony-01`. The 2026-09-08 DECISIONS.md row claiming the OS hostname
-should carry `.internal` is superseded, it misread the home-lab convention.
-`scripts/` keys everything off `DF_VMID`/`DF_VM_IP`, never the VM name, so
-nothing else needed to change.
+**Renamed to `df-colony-01` same day, then the `.internal` convention itself
+corrected twice more.** User caught the first problem: "df" already means
+Dwarf Fortress, and the literal string `.internal` was showing up in the
+Proxmox name field, unlike `subnet-router-01`/`-02`. First fix (wrong):
+dropped `.internal` from both the Proxmox name and the guest hostname,
+reasoning it was DNS-only. **Corrected by the user against home-lab's actual
+convention**: the two fields split, Proxmox's name stays bare
+(`df-colony-01`) and `.internal` belongs on the guest's own OS hostname
+(`df-colony-01.internal`), matching `subnet-router-01` on both fields. Fixed
+by hand, verified, then scripted so it isn't manual next time:
+`install_df.py` gained `step_hostname`, run first (now `[1/6]`, the rest
+renumbered), reading the VM's Proxmox name over the API and setting
+`hostnamectl`/`/etc/hosts` to `<name>.internal`, idempotent. →
+`decisions/DECISIONS.md` 2026-09-08 rows (two, the wrong read and the
+correction).
+
+**VM 103 fully installed and verified, 2026-09-08.** `install_df.py install`
+ran clean (packages, swap, both tarball checksums matched, extraction,
+`init.txt`), `install_df.py systemd` installed and enabled
+`df-xvfb.service`/`df-fortress.service` for next boot, and
+`provision_vm.py set-onboot --enable` set the Proxmox-level `onboot=1`.
+`install_df.py verify` reports all checks passed, with only the two expected
+`....` lines (no save dir, DF not running — no world generated yet). First
+VM to go clone-to-verified purely from this repo's own scripts, no manual
+VM 104-era step anywhere. → `decisions/DECISIONS.md` 2026-09-08 row.
+
+**Not done yet: no world exists.** DF has not been started, so there is
+nothing running unattended. Next real step is `install_df.py gen` (worldgen)
+and `install_df.py start`, whenever that's wanted — not assumed to be
+"now" just because the VM is ready.
 
 **Next is `install_df.py install --vmid 103`**, then reapplying
 `init.txt`, swap, and the `df-xvfb.service`/`df-fortress.service` units with
@@ -199,10 +220,12 @@ for it.
 ### What a next session should pick up
 
 `ROADMAP.md`'s Now bucket is the canonical list. Token pasted, `status`
-verified, template and VM rebuilt, VM 103 named `df-colony-01` (not
-`.internal`, that's DNS-only, never part of a name or hostname) — all done.
-Remaining: `install_df.py install` on VM 103, watch for quorum during
-writes, rotate the stale `ANTHROPIC_API_KEY`.
+verified, template and VM rebuilt, VM 103 named `df-colony-01` in Proxmox
+with `df-colony-01.internal` as its OS hostname (`step_hostname` sets this
+automatically now), DF/DFHack installed and verified, systemd units enabled
+with `onboot=1` — all done. Remaining: generate a world and start DF
+(`install_df.py gen`, then `start`) whenever that's wanted, watch for quorum
+during writes, rotate the stale `ANTHROPIC_API_KEY`.
 
 **Style note:** the user does not want em dashes in prose. Commas, colons,
 semicolons or full stops instead. Fine as structural separators.
