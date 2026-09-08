@@ -1,6 +1,6 @@
 # Roadmap
 
-**Last reviewed:** 2026-09-08
+**Last reviewed:** 2026-09-08 (evening)
 
 This file is df-overseer's forward-looking, priority-ordered plan: what's
 next and roughly when, across infrastructure, game-side engineering, and the
@@ -15,51 +15,26 @@ or `decisions/DECISIONS.md`, not here.
 ## Now
 <!-- Actively being worked, or the clear immediate next step. -->
 
-> **Rewritten 2026-09-08.** The previous Now bucket was stale in a way worth
-> naming: its top item asked a question ("reinstall or rebuild the Proxmox
-> host?") that was answered a week ago, and it had no awareness that this
-> project's VM and template were both deleted on 2026-09-01. This repo went
-> quiet on 2026-08-30 while the estate underneath it was rebuilt. Full
-> analysis: `infra/local.2026-09-08-doc-reorg-plan.md` (gitignored, it quotes
-> home-lab's own infra specifics; a clone of this public repo will not have
-> it).
+> **Rewritten 2026-09-08 (evening).** VM 103 (`df-colony-01`) is fully
+> rebuilt, installed, verified, and running DF under systemd with a
+> generated world — the first thing in this project to run unattended.
+> Nobody has embarked yet. Full narrative of how it got here (identity
+> retirement, clone, install, hostname-convention fix) is archived, not
+> repeated here — see `Working.md`'s handover and its archive pointer.
 
-> **Identity proven 2026-09-08.** The token secret is in `.env` and
-> `provision_vm.py status` answered from this workstation: 12.5 GiB available,
-> next free vmid 102, pool empty (which independently confirms the 2026-09-01
-> deletion rather than a visibility problem). That call also exercised the
-> auth-header fix; an unauthenticated client returns `401`, not data.
-
-> **VM rebuilt, renamed and installed, 2026-09-08.** `clone --full` produced
-> VM 103 at the user-supplied `DF_VM_IP=192.168.2.201/24`; renamed to
-> `df-colony-01` in Proxmox with `df-colony-01.internal` as its OS hostname
-> (`.internal` is DNS-plus-hostname, never the bare Proxmox name — that split
-> is now scripted as `install_df.py`'s `step_hostname`). `install_df.py
-> install`, `systemd`, and `provision_vm.py set-onboot --enable` all ran
-> clean; `verify` reports all checks passed. No world exists yet; DF has not
-> been started. → `decisions/DECISIONS.md` 2026-09-08 rows.
-
-> **World generated, DF running under systemd, 2026-09-08.** `install_df.py
-> gen` then `systemd --start`; `verify` confirms `dwarfort` running with RPC
-> up. First thing in this project to run unattended, though no fort exists
-> yet — nobody has embarked. → `decisions/DECISIONS.md` 2026-09-08 row,
-> `Working.md` handover.
-
-- **Live-test and finish the embark-automation script.** Research is done
+- **Finish live-testing the embark-automation script.** Research is done
   (`research/2026-09-08-embark-automation.md`): screen sequence, keybindings
-  and success check are primary-source-confirmed. One gap remains —
-  how "Start" reaches a fresh embark vs. continue/reclaim — needing live
-  polled testing against VM 103, ideally snapshotted first. → `Working.md`
-  handover.
+  and success check are primary-source-confirmed. One gap remains — how
+  "Start" reaches a fresh embark vs. continue/reclaim. Live-testing started
+  (one `SELECT` sent) and was interrupted by an unrelated Xvfb incident, not
+  by a problem with the testing itself. DF currently sits one level into the
+  title screen's "Start" submenu, not the root menu — check before assuming.
+  `pre-embark-test-2026-09-08` VM snapshot exists as a clean-baseline
+  rollback. → `Working.md` handover.
 - **If a write step fails oddly, check quorum before suspecting permissions.**
   The cluster has no QDevice and the second node is unwell, so a single node
   can drop below quorum and make every config write fail with an error that
   reads exactly like a permissions fault. `pvecm status` first, always.
-- **Decide on home-lab-43's unstaged `## Upstream obligations` addition to
-  `CLAUDE.md`** (stage/commit, edit, or drop). It declares home-lab as source
-  of truth for IDs/addresses this repo cites and sets an obligation to update
-  `home-lab/inventory/` in the same turn a guest here is created, deleted,
-  resized, or re-addressed. → `Working.md` handover.
 
 ## Next
 <!-- Clearly in line, not yet started. -->
