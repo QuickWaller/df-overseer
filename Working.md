@@ -50,11 +50,20 @@ drop below quorum on its own, and every config write then fails with an error
 that reads exactly like an ACL problem. Run `pvecm status` before suspecting
 permissions on any write that fails oddly during the rebuild.
 
-**Two more stale values sitting in `.env`, not yet acted on.** `PVE_PASSWORD`
-predates the 2026-09-02 reinstall and nothing reads it; it is a credential
-with no purpose left. `ANTHROPIC_API_KEY` expired around 2026-09-03. Neither
-blocks the rebuild, both are worth rotating out or removing; do not commit or
-log either.
+**`.env` credential hygiene, mostly resolved 2026-09-08.** `PVE_PASSWORD` is
+**deleted**: no script read it, and the credential it named was rotated out
+from under it by the 2026-09-02 OS reinstall, so it was dead twice over. The
+live value lives in home-lab's own store, not here. No backup file was written
+when removing it, deliberately, since a `.env` sidecar is what caused this
+session's near-miss. `PVE_USER` and `PVE_FQDN` are also read by no code and
+are candidates for the same treatment. `ANTHROPIC_API_KEY` is still expired;
+the user is minting a replacement. Do not commit or log either.
+
+**Assume the value that grep printed is exposed.** Deleting `PVE_PASSWORD`
+required reading `.env`, which put the old password into a session transcript.
+It was already superseded by the reinstall so the blast radius is nil, but the
+standing convention in this repo is to treat a credential that reaches a
+transcript as exposed rather than to reason about whether it mattered.
 
 **Re-scope, don't assume, on `df-xvfb.service`/`df-fortress.service` and
 `onboot=1`.** Both were live VM config on the deleted VM 104, not baked into
