@@ -20,10 +20,20 @@ code rather than assumed. Full analysis behind this handover:
 own infra specifics, so it lives under `infra/local.*` rather than `docs/`; a
 clone of this public repo will not have it).
 
-**Commit state.** This session's work is two local commits, `fb96fa0`
-(the provisioning research spec) and `1791bc6` (the estate reconciliation plus
-two dead-check bugfixes). Working tree is clean. **Not pushed**, that needs its
-own go-ahead per the Rules section.
+**Commit state.** Six local commits this session, ending at `cb9560d`.
+Working tree is clean. **Not pushed**, that needs its own go-ahead per the
+Rules section. The last two are the provisioning work: `4e0f8da` mounts a
+`urllib3` retry policy on the API client and names the inquorate trap at the
+error, and `cb9560d` deletes the template bake and switches the VM to a
+static address assigned at clone time, taking `provision_vm.py` from 724
+lines to 533.
+
+**Two things are waiting on a human, and nothing else is blocked.** First,
+the guest OS choice, which is the only thing holding up image pinning: the
+pinned serial depends on it. Second, pasting `PVE_TOKEN_SECRET` into `.env`,
+after which spike A (`status`, `fetch-image`, `build-template`) can run. That
+run is also what discharges home-lab's Phase H, so an exposed credential stays
+live until it happens.
 
 **The one blocking human step.** `.env` is already repointed to the new
 identity (`PVE_NODE`, `PVE_POOL`, `PVE_STORAGE`, `PVE_TOKEN_ID` all updated).

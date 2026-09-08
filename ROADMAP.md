@@ -52,15 +52,23 @@ or `decisions/DECISIONS.md`, not here.
 ## Next
 <!-- Clearly in line, not yet started. -->
 
-- **Decide on the provisioning rework.** `research/2026-09-08-vm-provisioning.md`
-  recommends a static address assigned at clone time (deleting the MAC
-  derivation, the override table, the router reservation and the runtime
-  override), a properly pinned base image, and a single `rebuild` command.
-  Scoped, costed and not yet accepted. → `research/2026-09-08-vm-provisioning.md`.
+- **Pin the base image**, the one piece of the provisioning rework still
+  unbuilt. `download-url` takes `checksum`/`checksum-algorithm`, so PVE
+  verifies host-side with no host shell. Blocked only on the OS choice, since
+  the pinned serial depends on it. → `decisions/DECISIONS.md` 2026-09-08 row.
+- **Decide the guest OS.** Ubuntu 24.04 LTS today. Weight is not the issue at
+  a 561 MB peak in a 6 GB VM; churn is, and the register already ruled that
+  way once by dropping Steam over auto-updates. Debian is the alternative,
+  and disabling unattended upgrades matters more than the distro either way.
+- **Spike A, then B.** A is `status` → `fetch-image` → `build-template` on the
+  new token, which also discharges home-lab's Phase H so the exposed
+  credential can retire. B is the `bpg` config with no `ssh` block, its
+  absence being the test. → `research/2026-09-08-provisioning-recommendation.md`
+  §7.4, §11.
 - **Not extracting a shared provisioning library yet**, decided 2026-09-08: a
-  second sandbox project will come one day but none is planned, so the spec's
-  restructure-now-extract-later call stands. Revisit when project two is named.
-  → `decisions/DECISIONS.md` 2026-09-08 row.
+  second sandbox project will come one day but none is planned. Adopting an
+  externally maintained provider is not the extraction that row declines, and
+  would discharge it permanently. → `decisions/DECISIONS.md` 2026-09-08 rows.
 - **Re-record the new identity's live scopes into a fresh
   `infra/local.proxmox-access.md`.** The existing file (gitignored) describes
   the retired `df-overseer@pve` identity, read back from the API on
