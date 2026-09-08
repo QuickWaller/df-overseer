@@ -10,8 +10,8 @@ actually going on right now.
 verified, but DF itself has not been started yet, so no world exists and
 nothing is actually running unattended. The infrastructure this handover
 opens with (below) is history now: VM 104 (`df-fortress`) and template 101
-were both deleted 2026-09-01, not
-migrated, while this repo sat quiet since 2026-08-30. The Proxmox host was
+were both deleted 2026-09-01, not migrated, while this repo sat quiet since
+2026-08-30. The Proxmox host was
 reinstalled 2026-09-02 and renamed `SRV-01`; a two-node cluster `citadel`
 formed 2026-09-01 and `SRV-01` rejoined it cleanly 2026-09-06. This project
 got its own dedicated pool-scoped storage on 2026-09-08. The next action is a
@@ -108,10 +108,17 @@ nothing running unattended. Next real step is `install_df.py gen` (worldgen)
 and `install_df.py start`, whenever that's wanted — not assumed to be
 "now" just because the VM is ready.
 
-**Next is `install_df.py install --vmid 103`**, then reapplying
-`init.txt`, swap, and the `df-xvfb.service`/`df-fortress.service` units with
-`onboot=1` — none of it carries over from the deleted VM 104, per the
-"re-scope, don't assume" trap below.
+**Still owed, in home-lab not here: VM 103 needs onboarding into home-lab's
+inventory.** Flagged by home-lab-43 (a sibling Claude session), not fixed by
+either session, since home-lab's own rule 2 forbids editing its declared
+layer to match observed reality — this needs someone to actually look at the
+host. `df-colony-01` at `192.168.2.201` exists in neither `SRV-01.yaml` nor
+`ips.yaml`, and `.201` is outside the `.100`-`.199` DHCP pool, so it's a
+static allocation that never passed through `ips.yaml`'s "consult before
+assigning, update on assignment" registry. Separately stale there: VM 104
+`df-fortress` (`.157`) still reads `confidence: confirmed` with no mention
+of its 2026-09-01 deletion, and `services.yaml` still has `host:
+df-fortress`.
 
 **Provisioning work completed 2026-09-08, steps 1 and 2 of the migration path
 in `research/2026-09-08-provisioning-recommendation.md` §11.** Both were
@@ -177,11 +184,6 @@ It was already superseded by the reinstall so the blast radius is nil, but the
 standing convention in this repo is to treat a credential that reaches a
 transcript as exposed rather than to reason about whether it mattered.
 
-**Re-scope, don't assume, on `df-xvfb.service`/`df-fortress.service` and
-`onboot=1`.** Both were live VM config on the deleted VM 104, not baked into
-template 101. They need to be reapplied in full to whatever VMID the rebuild
-produces; nothing carries over automatically.
-
 **`infra/local.proxmox-access.md` is stale and nothing else says so.** It is
 gitignored, so not a leak, but it is this repo's only "access layer verified"
 record and it describes the retired identity (`df-overseer@pve`, roles
@@ -216,6 +218,19 @@ for it.
 - **`openclaw` vs `hermes-agent` still deferred.**
 - **Tarball checksums are pinned and enforced** as of 2026-09-08;
   `bzip2 -t` catches truncation, the sha256 catches substitution.
+- **PVE's cloud-init takes only the first label of the VM `name` and discards
+  everything after the first dot.** This is why VM 103 booted with the plain
+  hostname `df-fortress` despite `--name df-fortress.internal`: no `--name`
+  spelling can ever deliver a suffixed hostname, which is what makes
+  `install_df.py`'s `step_hostname` the only workable route, not merely the
+  tidier one. Found by home-lab-43 (a sibling Claude session in
+  `home-lab`) reviewing this session's commit; see
+  `decisions/DECISIONS.md` 2026-09-08 rows on the `.internal` convention.
+- **Hostname convention has one canonical source: home-lab's `CLAUDE.md`,
+  Conventions section, "Hostnames: `.internal`, on the OS hostname only."**
+  Cite it, do not restate it here or in `DECISIONS.md` — restating it across
+  files is exactly what produced two wrong reads of it in one session
+  (2026-09-08).
 
 ### What a next session should pick up
 
