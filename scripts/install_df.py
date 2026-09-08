@@ -314,6 +314,17 @@ After=network.target
 [Service]
 Type=simple
 User=%(user)s
+# Xvfb refuses to start if /tmp/.X%(displaynum)s-lock (or the matching
+# .X11-unix socket) already exists, and does not distinguish "a live server
+# is using this" from "the last one died without cleaning up" -- it just
+# checks for the file. Restart=on-failure below turns any unclean death
+# (OOM kill, host crash, `kill -9`) into an infinite crash loop against its
+# own stale lock, found 2026-09-08 after 47 restarts: 38s apart, "Server is
+# already active for display %(displaynum)s" every time, and it cascades --
+# df-fortress.service requires this unit so it cycled too, even though
+# nothing about the fortress side was at fault. The leading '-' tells
+# systemd not to fail the start if the files are already gone.
+ExecStartPre=-/bin/rm -f /tmp/.X%(displaynum)s-lock /tmp/.X11-unix/X%(displaynum)s
 ExecStart=/usr/bin/Xvfb %(display)s -screen 0 %(geometry)s -nolisten tcp
 Restart=on-failure
 RestartSec=2
@@ -433,6 +444,7 @@ systemctl is-enabled df-xvfb.service df-fortress.service
         "wait_sh": WAIT_XVFB_SH % {"display": DISPLAY_NUM},
         "stop_sh": STOP_SH % {"game": GAME_DIR, "logdir": LOG_DIR},
         "xvfb_unit": XVFB_UNIT % {"user": user, "display": DISPLAY_NUM,
+                                  "displaynum": DISPLAY_NUM.lstrip(":"),
                                   "geometry": FB_GEOMETRY},
         "df_unit": DF_UNIT % {"user": user, "game": GAME_DIR,
                               "display": DISPLAY_NUM},

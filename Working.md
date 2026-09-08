@@ -218,7 +218,21 @@ for it.
 - **DF ignores SIGTERM.** Quicksave before stop is mandatory once a fort is
   live; a bare stop takes the full timeout and ends in SIGKILL.
 - **The manual (`start`/`stop`) and systemd-managed paths must not run at
-  once.** They contend for `:99` and the RPC port.
+  once — and `install_df.py stop` does not clean up after `start`.** Confirmed
+  the hard way 2026-09-08: `start` launches Xvfb via `setsid nohup ... &`,
+  outside systemd entirely, and `stop` only kills `dwarfort`, never that Xvfb.
+  A manual Xvfb left running after `stop` becomes an orphan that silently
+  poisons every later `systemd --start`: `df-xvfb.service` crash-loops
+  forever against a real listener already on `:99` (not just a stale lock —
+  `Restart=on-failure` retries a failure it can never fix on its own), and
+  `df-fortress.service` cycles as its downstream dependency. Fix if it
+  recurs: find and `kill` the orphaned Xvfb process (`ps aux | grep -i xvfb`,
+  won't show up correctly in `systemctl status` since it's untracked), then
+  `systemctl restart df-xvfb.service df-fortress.service`. A defensive
+  `ExecStartPre` lock-file cleanup was added to `XVFB_UNIT` in
+  `scripts/install_df.py` the same day, which self-heals the *stale-lock-only*
+  version of this failure but not a live orphan. → `decisions/DECISIONS.md`
+  2026-09-08 incident row.
 - **`-gen` fails silently** roughly a quarter of the time. Success is the
   region directory existing, never the exit code.
 - **Saves live at the XDG path**, not in the game directory.
