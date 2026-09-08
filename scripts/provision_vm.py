@@ -36,9 +36,33 @@ from pve import PVE, PVEError, log  # noqa: E402
 # download-url lets us name the destination independently of the URL, so the
 # rename happens on the way in rather than as a second step on the host.
 # Verified by that exact failure, 2026-08-26.
-CLOUD_IMAGE = "noble-server-cloudimg-amd64.qcow2"
-CLOUD_IMAGE_URL = ("https://cloud-images.ubuntu.com/noble/current/"
-                   "noble-server-cloudimg-amd64.img")
+#
+# Pinned, not tracking 'current'. Two rebuilds a month apart used to fetch
+# different, unverified base images, which made "rebuildable" true and
+# "reproducible" false. A dated URL is only a name: the sha256 is the actual
+# pin, and PVE verifies it host-side during download-url, so no host shell and
+# no check of our own is needed.
+#
+# Two traps, both confirmed against the published tree on 2026-09-08:
+#   1. The filename differs between the daily tree and the releases tree.
+#      'releases/noble/release-<serial>/' carries
+#      ubuntu-24.04-server-cloudimg-amd64.img and does NOT carry
+#      noble-server-cloudimg-amd64.img, so changing only the directory 404s.
+#   2. The daily tree keeps roughly six serials; the releases tree goes back
+#      to release-20240423, which is why the pin lives there.
+#
+# Bumping the pin is a deliberate act: change the serial and the hash
+# together, and record it in decisions/DECISIONS.md.
+CLOUD_IMAGE_SERIAL = "20260826"
+CLOUD_IMAGE_SHA256 =     "d0fe84bb5f80853425fa6be28e2c106f30104c3cfe8611933f2e65c9b63f0e30"
+CLOUD_IMAGE_URL = ("https://cloud-images.ubuntu.com/releases/noble/"
+                   "release-%s/ubuntu-24.04-server-cloudimg-amd64.img"
+                   % CLOUD_IMAGE_SERIAL)
+# The serial is in the destination name on purpose. The 'already present'
+# check below matches on volid, so without it a bumped pin would find the old
+# image sitting in storage and reuse it without ever downloading or verifying
+# the new one, which is the cached-file trust bug in a different costume.
+CLOUD_IMAGE = "ubuntu-24.04-server-cloudimg-amd64-%s.qcow2" % CLOUD_IMAGE_SERIAL
 # 'import-from' will only read a volume whose content type is 'images' or
 # 'import' -- an 'iso' volume is rejected outright, even though the file is
 # identical. download-url can write straight into 'import', so the image is
@@ -243,6 +267,10 @@ def cmd_fetch_image(pve, args):
         "content": IMAGE_CONTENT,
         "filename": CLOUD_IMAGE,
         "url": CLOUD_IMAGE_URL,
+        # PVE verifies this itself, during the download, on the host. A
+        # mismatch fails the task rather than importing a wrong image.
+        "checksum": CLOUD_IMAGE_SHA256,
+        "checksum-algorithm": "sha256",
     })
     pve.wait_task(upid, "download cloud image", timeout=3600)
     log("done: %s" % volid)

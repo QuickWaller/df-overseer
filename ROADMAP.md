@@ -52,14 +52,9 @@ or `decisions/DECISIONS.md`, not here.
 ## Next
 <!-- Clearly in line, not yet started. -->
 
-- **Pin the base image**, the one piece of the provisioning rework still
-  unbuilt. `download-url` takes `checksum`/`checksum-algorithm`, so PVE
-  verifies host-side with no host shell. Blocked only on the OS choice, since
-  the pinned serial depends on it. → `decisions/DECISIONS.md` 2026-09-08 row.
-- **Decide the guest OS.** Ubuntu 24.04 LTS today. Weight is not the issue at
-  a 561 MB peak in a 6 GB VM; churn is, and the register already ruled that
-  way once by dropping Steam over auto-updates. Debian is the alternative,
-  and disabling unattended upgrades matters more than the distro either way.
+- **Paste `PVE_TOKEN_SECRET` into `.env`.** Still the one blocking human
+  step; everything else in that file is repointed. Nothing below can run
+  until it lands.
 - **Spike A, then B.** A is `status` → `fetch-image` → `build-template` on the
   new token, which also discharges home-lab's Phase H so the exposed
   credential can retire. B is the `bpg` config with no `ssh` block, its
