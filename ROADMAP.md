@@ -56,14 +56,11 @@ or `decisions/DECISIONS.md`, not here.
 ## Next
 <!-- Clearly in line, not yet started. -->
 
-- **Paste `PVE_TOKEN_SECRET` into `.env`.** Still the one blocking human
-  step; everything else in that file is repointed. Nothing below can run
-  until it lands.
-- **Spike A, then B.** A is `status` → `fetch-image` → `build-template` on the
-  new token, which also discharges home-lab's Phase H so the exposed
-  credential can retire. B is the `bpg` config with no `ssh` block, its
-  absence being the test. → `research/2026-09-08-provisioning-recommendation.md`
-  §7.4, §11.
+- **Spike B.** The `bpg` OpenTofu config with no `ssh` block, its absence
+  being the test of whether a pool-scoped token can drive it end to end.
+  Spike A (`status` → `fetch-image` → `build-template` on the new token)
+  passed clean 2026-09-08, which also discharged home-lab's Phase H.
+  → `research/2026-09-08-provisioning-recommendation.md` §7.4, §11.
 - **Not extracting a shared provisioning library yet**, decided 2026-09-08: a
   second sandbox project will come one day but none is planned. Adopting an
   externally maintained provider is not the extraction that row declines, and

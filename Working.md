@@ -95,12 +95,6 @@ And `bpg`'s VMID allocation may use a workstation-local sequence file rather
 than `/cluster/nextid`, which would reintroduce the second-source-of-truth
 problem the 2026-08-27 `next_vmid()` decision exists to prevent.
 
-**The one blocking human step.** `.env` is already repointed to the new
-identity (`PVE_NODE`, `PVE_POOL`, `PVE_STORAGE`, `PVE_TOKEN_ID` all updated).
-`PVE_TOKEN_SECRET` is deliberately left blank: no automation may paste a
-secret into a file, so a human has to do this one copy before anything else
-in `ROADMAP.md`'s Now bucket can run.
-
 **A live bug found and fixed this session, worth internalising the shape
 of.** The same-day refactor that made `PVE_POOL`/`PVE_STORAGE` required (see
 `decisions/DECISIONS.md` 2026-09-08) briefly left `scripts/pve.py`'s new
@@ -126,7 +120,11 @@ from under it by the 2026-09-02 OS reinstall, so it was dead twice over. The
 live value lives in home-lab's own store, not here. No backup file was written
 when removing it, deliberately, since a `.env` sidecar is what caused this
 session's near-miss. `PVE_USER` and `PVE_FQDN` were read by no code either
-and are now **also deleted**, so `.env` is down to 15 keys, all of them live. `ANTHROPIC_API_KEY` is still expired;
+and are now **also deleted**, so `.env` was down to 15 keys, all of them live.
+Two more went the same way later the same day: `DF_BUILD_IP` and
+`DF_MAC_OVERRIDES` were leftover from decisions that already retired the code
+reading them, see `decisions/DECISIONS.md` 2026-09-08 row. `.env` is now 13
+keys. `ANTHROPIC_API_KEY` is still expired;
 the user is minting a replacement. Do not commit or log either.
 
 **Assume the value that grep printed is exposed.** Deleting `PVE_PASSWORD`

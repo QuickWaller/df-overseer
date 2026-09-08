@@ -1,6 +1,6 @@
 # Proxmox setup
 
-> **SUPERSEDED 2026-09-08 — this describes an identity that is being retired.**
+> **SUPERSEDED 2026-09-08 — this describes an identity that has been retired.**
 > The `df-overseer@pve` user, the `DFOverseer`/`DFOverseerNode` roles and the
 > pool/storage/node ACLs below were all real and all worked, but the estate
 > they were built against has been rebuilt: this project now uses a
