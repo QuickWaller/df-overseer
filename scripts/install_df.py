@@ -1,7 +1,8 @@
 """Install Dwarf Fortress Classic + DFHack on a df-overseer VM, over SSH.
 
-    python scripts/install_df.py install [--vmid N] [--force]
-    python scripts/install_df.py verify  [--vmid N]
+    python scripts/install_df.py install  [--vmid N] [--force]
+    python scripts/install_df.py verify   [--vmid N]
+    python scripts/install_df.py graphics [--source PATH]
     python scripts/install_df.py start   [--vmid N]
     python scripts/install_df.py stop    [--vmid N] [--save]
     python scripts/install_df.py gen     [--world-id 7] [--preset "POCKET ISLAND"]
@@ -32,6 +33,7 @@ import random
 import secrets
 import subprocess
 import sys
+import tarfile
 import tempfile
 from datetime import datetime
 
@@ -104,20 +106,28 @@ NOVNC_PORT = 6080
 # SOUND:NO because the VM has no audio device; 2D because there is no GPU.
 #
 # FONT/FULLFONT:curses_square_16x16.png -- nicer bitmap font for the VNC
-# viewer, isolated and verified safe 2026-09-09 after an initial attempt
-# broke world-map rendering entirely. Root cause was USE_CLASSIC_ASCII:NO,
-# not the font file: that flag switches the map's rendering path to expect
-# real tile-graphics data (this build has no raw/graphics folder at all),
-# so the map came back solid black -- confirmed by DFHack's own
-# screen-tile buffer reading blank across the whole viewport and by a
-# screenshot taken directly off VM 103's Xvfb display (not through the
-# VNC/relay chain, ruling out a display-chain bug). Isolated by testing
-# the font swap alone with USE_CLASSIC_ASCII left at YES: full colored
-# terrain rendered correctly on both the world overview and the Site
-# Finder screen, confirmed by direct screenshots. USE_CLASSIC_ASCII is
-# therefore deliberately NOT in this list -- leave it at whatever
-# init_default.txt ships (YES). → decisions/DECISIONS.md 2026-09-09 rows
-# for both the failed and the working attempt.
+# viewer, isolated and verified safe 2026-09-09.
+#
+# USE_CLASSIC_ASCII:NO -- re-added 2026-09-09 (second attempt), after being
+# deliberately left out of this list the first time that same day. The first
+# attempt's diagnosis was half right: flipping this to NO does switch the
+# map's rendering path to expect real per-tile graphics data, and the map
+# came back solid black because this build's graphics modules
+# (data/vanilla/vanilla_*_graphics/, vanilla_world_map -- the actual v50+
+# mod-module location; there is no raw/graphics folder at all in this DF
+# version, an earlier session's shorthand for the same thing) genuinely had
+# no PNG/graphics_*.txt content, confirmed on VM 103 directly: `find
+# data/vanilla/vanilla_*_graphics -type f` returned only info.txt in each,
+# and research/2026-09-09-df-modern-graphics.md independently confirmed this
+# is a deliberate Classic/Premium content split, not a bug. What changed:
+# the user's own legitimately-purchased Steam copy (confirmed local install,
+# DF 53.15) has real content in those same module folders -- 583 PNGs across
+# the eight modules in GRAPHICS_MODULES below -- and `install_df.py graphics`
+# transplants it onto this install via scp, never through this public repo's
+# git tree (the asset files are proprietary Kitfox-commissioned art and must
+# never be committed). With that data present, USE_CLASSIC_ASCII:NO is safe:
+# confirmed by a live screenshot and non-blank dfhack.screen.readTile buffer
+# on the Site Finder screen. → decisions/DECISIONS.md 2026-09-09 rows.
 INIT_SETTINGS = [
     ("SOUND", "NO"),
     ("WINDOWED", "YES"),
@@ -126,6 +136,29 @@ INIT_SETTINGS = [
     ("PRINT_MODE", "2D"),
     ("FONT", "curses_square_16x16.png"),
     ("FULLFONT", "curses_square_16x16.png"),
+    ("USE_CLASSIC_ASCII", "NO"),
+]
+
+# The eight v50+ mod-module directories under data/vanilla/ that carry real
+# tile-page graphics content on a Premium/Steam install and ship as empty
+# info.txt-only stubs on free Classic (confirmed on VM 103 2026-09-09, and
+# independently by research/2026-09-09-df-modern-graphics.md). Names, not
+# paths: cmd_graphics resolves them against both a local source install and
+# GAME_DIR/data/vanilla on the guest. All eight are already unconditionally
+# part of every worldgen's mod list (confirmed via VM 103's own
+# gen_modlist.txt from its existing world, generated with no mod-selection UI
+# ever touched) -- vanilla_* modules are not opt-in, so no mod-selection
+# screen automation is needed at all, just populating the folders these
+# already-active empty modules point at.
+GRAPHICS_MODULES = [
+    "vanilla_buildings_graphics",
+    "vanilla_creatures_graphics",
+    "vanilla_creatures_extinct_graphics",
+    "vanilla_descriptors_graphics",
+    "vanilla_interactions_graphics",
+    "vanilla_items_graphics",
+    "vanilla_plants_graphics",
+    "vanilla_world_map",
 ]
 
 SWAP_SIZE = "4G"
@@ -194,6 +227,36 @@ def scp_from(env, ip, remote_path, local_path):
         local_path,
     ]
     # See provision_vm.ssh_guest for why encoding/errors are explicit here.
+    proc = subprocess.run(argv, capture_output=True, text=True,
+                          encoding="utf-8", errors="replace", timeout=600)
+    if proc.returncode != 0:
+        raise PVEError("scp failed (%s): %s"
+                       % (proc.returncode, (proc.stderr or proc.stdout).strip()))
+
+
+def scp_to(env, ip, local_path, remote_path):
+    """Push one local file into the guest -- the mirror of scp_from.
+
+    Used only for the graphics transplant (cmd_graphics): the source asset
+    tarball is binary and built from the caller's own local Steam/Premium
+    install, so it must go straight over scp, never through remote()'s
+    base64-a-bash-script path (that path is for *scripts*, not payloads) and
+    never through this repo's git tree.
+    """
+    key = os.path.expanduser(env.get("DF_SSH_KEY", ""))
+    if not key or not os.path.exists(key):
+        raise PVEError("DF_SSH_KEY not found: %s" % key)
+    argv = [
+        "scp", "-i", key,
+        "-o", "BatchMode=yes",
+        "-o", "StrictHostKeyChecking=no",
+        "-o", "UserKnownHostsFile=%s" % os.path.join(
+            tempfile.gettempdir(), "df-overseer-throwaway-known-hosts"),
+        "-o", "ConnectTimeout=10",
+        "-o", "LogLevel=ERROR",
+        local_path,
+        "%s@%s:%s" % (env.get("DF_CIUSER", "df"), ip, remote_path),
+    ]
     proc = subprocess.run(argv, capture_output=True, text=True,
                           encoding="utf-8", errors="replace", timeout=600)
     if proc.returncode != 0:
@@ -914,6 +977,132 @@ echo "stopped (killed)"
     if proc:
         for line in proc.stdout.strip().splitlines():
             log("  " + line)
+
+
+# --- graphics --------------------------------------------------------------
+
+def cmd_graphics(pve, args):
+    """Transplant official Steam/Premium tile graphics onto this Classic install.
+
+    Source is a LOCAL directory (the caller's own legitimately-purchased
+    Steam/Premium DF install root, e.g. the default Steam library path), never
+    a URL: this is personal-use asset data with no redistribution license,
+    not something to fetch or pin like DF_URL/DFHACK_URL above. It never
+    enters this repo's working tree or git history -- the eight module
+    folders in GRAPHICS_MODULES are tarred up in a temp file, scp'd straight
+    to the guest, extracted into a /tmp staging dir, and copied into
+    GAME_DIR/data/vanilla/<module>/ over the top of the existing
+    info.txt-only stubs. See scripts/install_df.py's INIT_SETTINGS comment
+    and decisions/DECISIONS.md 2026-09-09 for the full reasoning.
+
+    Deliberately does NOT touch prefs/init.txt or trigger worldgen -- run
+    'install' (to apply the now-updated INIT_SETTINGS incl. USE_CLASSIC_ASCII)
+    and 'gen' separately. Keeping this to one job (get the bytes onto the VM,
+    correctly) matches every other step_* function above.
+    """
+    vmid, ip = target(pve, args)
+    source = args.source or pve.env.get("DF_GRAPHICS_SOURCE")
+    if not source:
+        raise PVEError(
+            "no --source given and DF_GRAPHICS_SOURCE not set in .env -- point"
+            " it at the root of a local Steam/Premium Dwarf Fortress install"
+            " (the directory containing 'data/vanilla'), e.g. .env:\n"
+            "  DF_GRAPHICS_SOURCE=C:/Program Files (x86)/Steam/steamapps/"
+            "common/Dwarf Fortress")
+    vanilla_src = os.path.join(source, "data", "vanilla")
+    if not os.path.isdir(vanilla_src):
+        raise PVEError("%s has no data/vanilla -- is --source the DF install"
+                       " root (the folder with 'dwarfort'/'Dwarf Fortress.exe'"
+                       " in it), not a subfolder of it?" % source)
+
+    missing = [m for m in GRAPHICS_MODULES
+              if not os.path.isdir(os.path.join(vanilla_src, m))]
+    if missing:
+        raise PVEError("source install is missing graphics module(s): %s\n"
+                       "  This does not look like a Premium/Steam install --"
+                       " free Classic ships these as empty stubs, and this"
+                       " command is meant to copy FROM the paid one."
+                       % ", ".join(missing))
+
+    manifest = []
+    total_bytes = 0
+    for module in GRAPHICS_MODULES:
+        mdir = os.path.join(vanilla_src, module)
+        n_files = 0
+        n_png = 0
+        size = 0
+        for root, _dirs, files in os.walk(mdir):
+            for fn in files:
+                n_files += 1
+                if fn.lower().endswith(".png"):
+                    n_png += 1
+                size += os.path.getsize(os.path.join(root, fn))
+        manifest.append((module, n_files, n_png, size))
+        total_bytes += size
+    log("source: %s" % source)
+    for module, n_files, n_png, size in manifest:
+        log("  %-32s %4d files (%3d png), %.1f KB"
+            % (module, n_files, n_png, size / 1024.0))
+    log("total: %.1f MB across %d modules" % (total_bytes / 1024.0 / 1024.0,
+                                               len(GRAPHICS_MODULES)))
+
+    if args.dry_run:
+        log("--- graphics (dry run, not sent) ---")
+        log("would tar the %d module dirs above, scp to VM %s, and copy each"
+            " into %s/data/vanilla/<module>/ (overwriting the existing"
+            " info.txt-only stub, leaving every other vanilla module"
+            " untouched)" % (len(GRAPHICS_MODULES), vmid, GAME_DIR))
+        log("--- end graphics ---")
+        return
+
+    fd, tmp_path = tempfile.mkstemp(prefix="df-graphics-", suffix=".tar.gz")
+    os.close(fd)
+    try:
+        log("building local tarball (never written into this repo)")
+        with tarfile.open(tmp_path, "w:gz") as tf:
+            for module in GRAPHICS_MODULES:
+                tf.add(os.path.join(vanilla_src, module), arcname=module)
+        tar_size = os.path.getsize(tmp_path)
+        log("tarball: %.1f MB, pushing to VM %s" % (tar_size / 1024.0 / 1024.0, vmid))
+
+        remote_tmp = "/tmp/df-graphics-transfer.tar.gz"
+        scp_to(pve.env, ip, tmp_path, remote_tmp)
+        log("  scp complete")
+    finally:
+        os.remove(tmp_path)
+
+    script = '''
+GAME=%(game)s
+STAGE=/tmp/df-graphics-stage
+rm -rf "$STAGE"
+mkdir -p "$STAGE"
+tar -xzf %(remote_tmp)s -C "$STAGE"
+for m in %(modules)s; do
+  if [ ! -d "$STAGE/$m" ]; then
+    echo "MISSING in transfer: $m"
+    exit 1
+  fi
+  dest="$GAME/data/vanilla/$m"
+  if [ ! -d "$dest" ]; then
+    echo "MISSING on guest (not a known vanilla module?): $dest"
+    exit 1
+  fi
+  cp -a "$STAGE/$m/." "$dest/"
+  n_files=$(find "$dest" -type f | wc -l)
+  n_png=$(find "$dest" -iname '*.png' | wc -l)
+  echo "  $m: now $n_files files ($n_png png) in $dest"
+done
+rm -rf "$STAGE" %(remote_tmp)s
+echo "graphics install complete"
+''' % {"game": GAME_DIR, "remote_tmp": remote_tmp,
+       "modules": " ".join(GRAPHICS_MODULES)}
+    proc = remote(pve.env, ip, script, "graphics install", timeout=180,
+                  dry_run=False)
+    for line in proc.stdout.strip().splitlines():
+        log(line if line.startswith("  ") else "  " + line)
+    log("graphics data landed on VM %s. Next: 'install_df.py install' to"
+        " apply USE_CLASSIC_ASCII:NO, then 'gen' a fresh world, then 'verify'"
+        " with a screenshot." % vmid)
 
 
 # --- worldgen ------------------------------------------------------------
@@ -1648,6 +1837,15 @@ def main():
                       help="replace an existing game dir and re-seed init.txt")
 
     add("verify", help="check the install, PASS/FAIL per item")
+
+    graphics = add("graphics", help="transplant official Steam/Premium tile"
+                                     " graphics from a local install onto"
+                                     " this VM's free Classic install")
+    graphics.add_argument("--source", default=None,
+                          help="root of a local Steam/Premium DF install"
+                               " (the folder containing data/vanilla);"
+                               " defaults to DF_GRAPHICS_SOURCE in .env")
+
     start = add("start", help="start Xvfb and DF, wait for RPC")
     start.add_argument("--wait", type=int, default=120,
                        help="seconds to wait for the RPC socket."
@@ -1727,6 +1925,7 @@ def main():
     handler = {
         "install": cmd_install,
         "verify": cmd_verify,
+        "graphics": cmd_graphics,
         "start": cmd_start,
         "stop": cmd_stop,
         "gen": cmd_gen,

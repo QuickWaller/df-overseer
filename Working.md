@@ -16,9 +16,10 @@ true right now, and the one concrete task queued next.
 ### State at a glance
 
 - **VM 103** (`df-colony-01.internal`, `192.168.2.201`): running DF under
-  systemd, world generated, **still no fort**. A candidate embark site was
-  found this session ("Match found!") but nobody has clicked through to
-  actually embark yet — that's the real next DF-side milestone.
+  systemd, real Steam-graphics rendering confirmed working (see below),
+  a fresh graphics-enabled world (`region2`) generated with a candidate
+  embark site found on it, **still no fort**. Nobody has clicked through
+  to actually embark yet — that's the real next DF-side milestone.
 - **Relay VM** (`df-colony-relay-01.internal`, vmid 105, `192.168.2.202`,
   Debian 12 bookworm, home-lab's Proxmox pool, `srv-01`): built this
   session, LAN-only, purpose is bridging VM 103's VNC feed toward a future
@@ -33,81 +34,91 @@ true right now, and the one concrete task queued next.
 - **Public leg (Cloudflare Tunnel on the relay) is the one piece not
   built**, deliberately deferred — get LAN infra solid first, agreed
   explicitly, not forgotten.
-- **DF's look is currently the safe, working default**: classic curses
-  ASCII rendering (`USE_CLASSIC_ASCII:YES`, default `curses_640x300.png`
-  font). The nicer square-tile font attempt was tried, found to still be
-  "just ASCII" in the way that matters to the user, and superseded by the
-  investigation below — currently reverted to plain default while the
-  real fix is researched.
+- **DF's look is now the real, official Steam-style modern graphics,
+  confirmed genuinely rendering** — resolved 2026-09-09, see below. Not
+  ASCII, not the plain bundled font: actual per-tile sprite art
+  transplanted from the user's own purchased Steam copy.
 
-### Open thread, with a queued task for next session: get the built-in modern (Steam-style) graphics working, without a third-party pack
+### RESOLVED 2026-09-09: built-in modern (Steam-style) graphics are working on VM 103
 
-**What's confirmed, in order of how it was found:**
-1. `USE_CLASSIC_ASCII:NO` unlocks a genuinely different, modern UI —
-   smooth anti-aliased text, full-width colored buttons — confirmed via a
-   direct screenshot of the title screen (no map dependency), and the
-   user independently confirmed it looks good live. This is real,
-   legitimate DF Classic 0.53.16 functionality, not a hack or a
-   third-party mod.
-2. In that same mode, the world/embark map viewport renders **completely
-   empty** — confirmed twice, with two very differently-shaped font files
-   (a 256×256 square font, and `curses_640x300.png` at its *actual* pixel
-   size of 128×192, which a wiki page says is the exact spec
-   `USE_CLASSIC_ASCII:NO` needs for "custom tiles" to render). Both gave
-   the identical empty-map result. Confirmed via `dfhack.screen.readTile`
-   buffer stats (0 non-blank tiles in the viewport both times), not just
-   a visual impression.
-3. Ruling out font dimensions as the map's specific problem (two
-   different shapes, same failure) points at a different, unconfirmed
-   hypothesis: the world/embark map is very likely rendered through a
-   categorically separate system from menu text — real per-tile terrain
-   sprites (`raw/graphics` tile-page + creature/inorganic graphics tags)
-   — and this build's `raw/graphics` folder is confirmed empty. That's a
-   plausible explanation, **not yet verified against DF's actual source,
-   a changelog, or any primary documentation** — it's this session's best
-   guess, not a settled finding.
+**Bottom line**: `research/2026-09-09-df-modern-graphics.md` confirmed
+there is no *free* official path — Premium's tileset is proprietary
+Kitfox-commissioned art bundled only in the paid build, and free Classic's
+`data/vanilla/vanilla_*_graphics`/`vanilla_world_map` module folders ship
+as empty `info.txt`-only stubs by design. What actually unblocked this:
+the user already owns a legitimate Steam copy locally (confirmed install
+at `C:\Program Files (x86)\Steam\steamapps\common\Dwarf Fortress`, version
+**53.15**, one patch behind VM 103's pinned 53.16). `install_df.py` gained
+a new `graphics` subcommand (`--source PATH`, or `DF_GRAPHICS_SOURCE` in
+`.env`) that tars the eight real module folders from that local install,
+`scp`s the tarball straight to VM 103, and extracts it over the existing
+empty stubs — the asset bytes never touch this repo's git tree, matching
+the public-repo/no-committed-binaries convention. Full reasoning,
+legitimacy basis, and the version-gap analysis →
+`decisions/DECISIONS.md` 2026-09-09 (the graphics-transplant row).
 
-**What the user wants, stated directly, worth quoting the intent
-precisely**: they don't like the ASCII look, they want the modern
-Steam-style graphics working, and they explicitly do **not** want to reach
-for a third-party community graphics pack as the first move — that's the
-bigger, riskier fallback, not the default plan. They suspect this is a
-**fixable bug or missing-file issue**, not a fundamental limitation of the
-free Classic build.
+**No mod-selection screen automation was needed.** The task's anticipated
+hard problem — DF v50+ graphics modules needing to be opted into a
+world's mod list via a UI mod-selection screen before worldgen — turned
+out not to apply: VM 103's own `gen_modlist.txt` already listed all eight
+`vanilla_*` modules as active with no mod-selection UI ever touched,
+confirming they're baked into every worldgen unconditionally, not opt-in
+like a Workshop mod. The actual work was pure file-placement (populate
+the stub folders DF already reads at render time) plus
+`USE_CLASSIC_ASCII:NO` (both already in `scripts/install_df.py`'s
+`INIT_SETTINGS`/`GRAPHICS_MODULES`).
 
-**Queued task for next session, to be handed to a Sonnet researcher
-(cheap, background — matches this project's established pattern from
-earlier in this same session for the Alpine cloud-init investigation)**:
-investigate whether DF Classic 0.53.16's built-in/official modern graphics
-(the ones bundled with or shipped alongside the Steam/premium release) can
-be obtained and made to work in this free Classic distribution, *without*
-resorting to a third-party community pack. Concretely, the research should
-answer:
-- Does Bay12 distribute an official graphics/tileset asset bundle for
-  Classic separately from the base game download (e.g. an optional
-  download on itch.io/Bay12's own site), distinct from what
-  `scripts/install_df.py` currently fetches (`DF_URL`, pinned to
-  `df_53_16_linux.tar.bz2`)?
-- Is the empty `raw/graphics` folder actually the blocker, or is there a
-  missing init.txt/config setting instead (a real primary-source check of
-  DF's own source or official documentation, not forum folklore — this
-  session's own web searches surfaced some inconsistent/unverified
-  community claims already, flagged as such in the archived detail)?
-- If an official asset bundle exists: exact download URL, checksum
-  (matching this project's own pinning discipline — see `DF_SHA256`/
-  `DFHACK_SHA256` in `scripts/install_df.py` for the existing pattern),
-  and what installing it actually involves (which files go where, whether
-  it's compatible with the exact pinned DFHack 53.16-r1.1 build).
-- If no official bundle exists and this really is a hard limitation of
-  the free Classic build: say so plainly, and only then is a third-party
-  pack the next real option — but that's explicitly the fallback, not the
-  default plan.
+**Verified genuinely rendering, not just a setting flipped**: real
+screenshots (saved locally at `C:\Users\wills\df-graphics-screenshots\`,
+11 files, sequentially numbered) show actual pixel-art sprites — trees,
+wave-textured water, mountains, a volcano, sand — on three separate
+screens: the world overview, the unzoomed Site Finder panel, and the
+zoomed embark-placement map. One honest caveat: `dfhack.screen.readTile`'s
+aggregate non-blank-tile count (the exact diagnostic that proved the
+original bug) reads back 0 again over the equivalent clean map-only
+region in this now-confirmed-working case — that screen's terrain is
+drawn via a texture-blit path invisible to `dfhack.screen`'s
+character-buffer instrumentation, so that specific check is not a valid
+signal either way for this widget; the screenshot is the load-bearing
+evidence, not the buffer read.
 
-Current live state to resume from: VM 103's `prefs/init.txt` has
-`FONT`/`FULLFONT:curses_640x300.png`, `USE_CLASSIC_ASCII:YES` (the safe
-default, matching `scripts/install_df.py`'s checked-in `INIT_SETTINGS`,
-which is *not* carrying the square-font change — that was fully reverted
-this session, see the archive for the exact history of tries).
+**This task had been started and interrupted mid-session by an earlier
+agent with no final report.** Rather than assume its stopping point, this
+session opened by directly inspecting VM 103 (process list, current
+viewscreen, `data/vanilla/` module file counts, `prefs/init.txt`) before
+doing anything further. That inspection found the interrupted agent had
+already correctly finished the graphics transplant, the
+`USE_CLASSIC_ASCII:NO` flip, and a full fresh worldgen (`region2`,
+discarding the old ASCII-era candidate site per the user's prior
+approval) — DF was sitting idle at the title screen, nothing stuck or
+mid-write. This session completed the remaining unverified half: the
+screenshot confirmation and a fresh Site Finder pass on `region2`.
+
+**Two live follow-up questions from the user (watching via the VNC feed)
+were investigated directly, both came back negative**: (1) whether DF's
+v50+ button-style menus expose per-screen keyboard hotkeys — checked via
+screenshots and `pen.fg` colour dumps on the Site Finder panel, world-map
+buttons, and the title menu; no bracketed/underlined/distinctly-coloured
+hotkey letter exists anywhere, confirmed via uniform `fg` values, not
+just a glance. (2) whether a global keyboard-vs-mouse interface-mode
+toggle exists — checked Settings' Video/Game/Keybindings tabs in full
+(including scrolling Game to its actual end) and `prefs/init.txt`/
+`data/init/d_init_default.txt`; `Keybindings` is a physical-key
+**rebinding** screen for named actions already known dead against these
+widgets, not a mode switch, and no such toggle exists anywhere. The
+existing buffer-scan-and-click mouse automation remains the correct
+mechanism. For the Site Finder's search criteria specifically, a direct
+struct-field write (`scr.find_param[2] = 0`, the `gui/embark-anywhere.lua`
+idiom) proved more robust than hunting for a `+`/`-` button's coordinates,
+which don't render as static glyphs on that particular panel.
+
+**Current state**: `region2` (the graphics-enabled world) has a confirmed
+candidate embark site (`find_results == 2`, "Match found!", Savagery set
+to Calm) — not yet embarked, per instruction. `region1` (the old
+ASCII-era world/candidate) still exists on disk, superseded, not deleted.
+DF is back under systemd management (`df-fortress.service`/
+`df-xvfb.service`, both active) after this session's manual
+stop/start/reset cycles — `verify` passes clean.
 
 ### Durable traps, still true
 
@@ -222,8 +233,9 @@ this session, see the archive for the exact history of tries).
   6. Once confirmed live, fill in the link in
      `willsmith-portfolio/public/dwarf-fortress/index.html` (currently
      present but marked not-yet-live) and update this section again.
-- **Actually embark** — a candidate site was found ("Match found!") but
-  nobody has embarked. The real first-fort milestone.
+- **Actually embark** — a candidate site was found on `region2` (the
+  graphics-enabled world, "Match found!") but nobody has embarked. The
+  real first-fort milestone.
 
 **Style note:** the user does not want em dashes in prose. Commas, colons,
 semicolons or full stops instead. Fine as structural separators.
