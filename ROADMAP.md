@@ -1,6 +1,6 @@
 # Roadmap
 
-**Last reviewed:** 2026-09-08 (evening)
+**Last reviewed:** 2026-09-09
 
 This file is df-overseer's forward-looking, priority-ordered plan: what's
 next and roughly when, across infrastructure, game-side engineering, and the
@@ -15,22 +15,51 @@ or `decisions/DECISIONS.md`, not here.
 ## Now
 <!-- Actively being worked, or the clear immediate next step. -->
 
-> **Rewritten 2026-09-08 (evening).** VM 103 (`df-colony-01`) is fully
-> rebuilt, installed, verified, and running DF under systemd with a
-> generated world — the first thing in this project to run unattended.
-> Nobody has embarked yet. Full narrative of how it got here (identity
-> retirement, clone, install, hostname-convention fix) is archived, not
-> repeated here — see `Working.md`'s handover and its archive pointer.
+> **Rewritten 2026-09-09 (end of session).** VM 103 (`df-colony-01`) is
+> fully rebuilt, installed, verified, running DF under systemd with a
+> generated world, and a candidate embark site has been found — nobody has
+> embarked yet. Live human viewing is fully built end to end (VM 103 →
+> reverse SSH tunnel → relay VM → browser noVNC), user-confirmed working.
+> Full narrative archived, not repeated here — see `Working.md`'s handover
+> and its archive pointer.
 
-- **Finish live-testing the embark-automation script.** Research is done
-  (`research/2026-09-08-embark-automation.md`): screen sequence, keybindings
-  and success check are primary-source-confirmed. One gap remains — how
-  "Start" reaches a fresh embark vs. continue/reclaim. Live-testing started
-  (one `SELECT` sent) and was interrupted by an unrelated Xvfb incident, not
-  by a problem with the testing itself. DF currently sits one level into the
-  title screen's "Start" submenu, not the root menu — check before assuming.
-  `pre-embark-test-2026-09-08` VM snapshot exists as a clean-baseline
-  rollback. → `Working.md` handover.
+- **Kick off a Sonnet researcher: get DF's built-in modern graphics
+  working, without a third-party pack.** User doesn't like the ASCII
+  look, wants the Steam-style modern graphics, and explicitly does not
+  want to reach for a community graphics pack as the first move —
+  suspects this is a fixable bug/missing-file issue. `USE_CLASSIC_ASCII:NO`
+  genuinely unlocks a modern UI (confirmed, looks good) but leaves the
+  world/embark map completely blank regardless of which font file is
+  used (tested two, both failed identically) — likely because the map
+  needs real `raw/graphics` sprite data this build doesn't ship, but that
+  is NOT yet confirmed against any primary source. Full research brief
+  (what to actually check, in order) → `Working.md` handover.
+- **Next: actually embark.** "Match found!" is a found candidate site, not
+  a founded fortress — nobody has embarked yet. The real first-fort
+  milestone. → `Working.md` handover.
+- **Live human viewing: done for LAN, user-confirmed working end to
+  end.** VM 103's `x11vnc` → reverse SSH tunnel
+  (`install_df.py vnc-tunnel`, dedicated `permitopen`-restricted key) →
+  relay VM's `websockify`/noVNC (`provision_relay.py webvnc`) → browser.
+  Relay is `df-colony-relay-01.internal` (`192.168.2.202`, Debian 12,
+  home-lab's Proxmox pool). `cloudflared` (relay → public internet) is
+  installed and verified running (`provision_relay.py cloudflared`), blocked
+  only on the Cloudflare Zero Trust dashboard connector token, which only a
+  human can create. Once it lands: `provision_relay.py cloudflared --token
+  <token>`, then a Public Hostname entry in the dashboard tunnel config
+  (`dwarf-fortress.willsmith.nz` → `http://localhost:6080`) — exact steps in
+  `Working.md`. The SSH tunnel and Cloudflare Tunnel are two permanent
+  legs of one chain, not alternatives.
+  → `research/2026-09-09-reverse-vnc-relay.md`,
+  `decisions/DECISIONS.md` 2026-09-09 rows, `Working.md`.
+- **Design commitment #1's absolute wording vs. its evidence base.** The
+  core (no rendered map in the model's ongoing spatial reasoning) is
+  well-evidenced and shouldn't be relitigated; the literal "not even a
+  screenshot, ever" wording may be broader than what
+  `research/2026-08-25-spatial-perception.md` actually tested (dense,
+  continuously-updating game-world content over many turns, not a static UI
+  menu or a one-off human debug glance). Queued for a `decisions/DECISIONS.md`
+  entry on the user's own timing, not urgent. → `Working.md` handover.
 - **If a write step fails oddly, check quorum before suspecting permissions.**
   The cluster has no QDevice and the second node is unwell, so a single node
   can drop below quorum and make every config write fail with an error that
@@ -111,12 +140,6 @@ or `decisions/DECISIONS.md`, not here.
   user's go-ahead first either way (destructive/hard-to-reverse actions
   rule). → `working-archive/Working_archive-2026-09-07.md`, "Host-reboot
   survival is still unverified".
-- **`citadel` has no QDevice.** The reinstall-vs-rebuild question that used
-  to gate clustering is answered and the cluster already exists; the
-  QDevice is the real remaining gap, and until it lands a two-node cluster
-  is worse than two standalone hosts (either node down leaves the survivor
-  unable to start, stop, or edit anything). → `decisions/DECISIONS.md`
-  2026-08-28 clustering row.
 - **`openclaw` vs `hermes-agent`** as the driving brain, still deferred.
   Tiebreaker is meant to be empirical: which survives 30 days unattended.
   → `decisions/DECISIONS.md` 2026-08-25 row, 2026-08-27 multi-agent-by-task
