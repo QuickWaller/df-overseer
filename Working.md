@@ -66,10 +66,20 @@ right now, and the one concrete task queued next.
 
 **Do not restart DF, do not re-run Site Finder, do not re-navigate the
 menus.** The state described above (committed match, UI already in the
-Embark sub-mode) is exactly where to resume from — confirm with a fresh
-`dfhack.gui.getDFViewscreen(true)` field read before touching anything,
-per this repo's "verify the verification" rule, since state may have
-drifted if DF kept running.
+Embark sub-mode) is exactly where to resume from — confirm with
+`./dfhack-run df-overseer-ui type` and `dump` (see below) before touching
+anything, per this repo's "verify the verification" rule, since state may
+have drifted if DF kept running.
+
+**Read `docs/DF-UI-AUTOMATION.md` first.** A reusable Lua tool,
+`scripts/dfhack/df-overseer-ui.lua` (deployed via
+`python scripts/install_df.py ui-install`, callable as
+`./dfhack-run df-overseer-ui <type|click TEXT|dump>`), was built 2026-09-10
+specifically so this and future menu-automation work stops hand-writing a
+fresh one-off script over SSH for every click — use it instead of
+re-deriving the buffer-scan-and-click technique again. It does not yet
+solve the off-center-click problem below; that's the next thing to fix in
+it, not around it.
 
 **What's been tried, all unsuccessful, so don't re-attempt these first
 without a new idea**:

@@ -47,6 +47,13 @@ or `decisions/DECISIONS.md`, not here.
   A promising untested lead (`df.global.gps.precise_mouse_x/y`, a second
   mouse-position field found sitting at a fixed screen-center value all
   night) is queued. → `Working.md` handover's queued task.
+- **DONE 2026-09-10: reusable menu-automation tool, replacing one-off Lua
+  scripts per click.** `scripts/dfhack/df-overseer-ui.lua`
+  (`install_df.py ui-install`, then `./dfhack-run df-overseer-ui
+  <type|click TEXT|dump>`) plus a screen-atlas reference doc,
+  `docs/DF-UI-AUTOMATION.md`, cataloging every DF menu screen driven so far
+  with its confirmed fields and working/dead techniques. → `decisions/
+  DECISIONS.md` 2026-09-10 row.
 - **Live human viewing: done, both LAN and public, user-confirmed working
   end to end.** VM 103's `x11vnc` → reverse SSH tunnel
   (`install_df.py vnc-tunnel`, dedicated `permitopen`-restricted key) →
