@@ -260,7 +260,14 @@ reappears.
 ## Open questions
 
 - Which display to test first: game view (VNC → Pi → monitor, zero build) or
-  chronicle (ESP32 + e-ink ambient panel).
+  chronicle (ESP32 + e-ink ambient panel). **Partially answered 2026-09-09**:
+  game view was built and works — `x11vnc` on VM 103, bridged to a plain
+  browser tab via a relay VM (`websockify`/noVNC), verified end to end on
+  the LAN. The public/internet leg (Cloudflare Tunnel) and the literal
+  physical Pi/monitor form factor are both still open; only "can a human
+  watch the game view live" is answered, not "on what hardware." →
+  `decisions/DECISIONS.md` 2026-09-09 rows,
+  `research/2026-09-09-reverse-vnc-relay.md`.
 - Loop shape — trigger (event-driven vs heartbeat vs self-pacing), and whether
   a two-speed strategist/operator split earns its complexity.
 - Multi-agent: two agents on one fort is available today over shared RPC.
