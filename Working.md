@@ -191,48 +191,51 @@ stop/start/reset cycles — `verify` passes clean.
   signed PUT, fill in `IMAGE_BASE` in
   `willsmith-portfolio/public/dwarf-fortress/index.html`, commit, ask
   before pushing/deploying either repo.
-- **Cloudflare Tunnel on the relay — installed and verified, blocked only on
-  the dashboard connector token.** `scripts/provision_relay.py cloudflared`
+- **Cloudflare Tunnel on the relay — live and verified, public URL
+  confirmed working end to end.** `https://dwarf-fortress.willsmith.nz/`
+  returns HTTP 200 (confirmed via `curl`) and serves the same noVNC bridge
+  the relay serves on the LAN. `scripts/provision_relay.py cloudflared`
   installs `cloudflared` from Cloudflare's own apt repo (verified 2026-09-09
-  against `pkg.cloudflare.com`'s own index page, fetched directly: the
-  current documented method is a `/usr/share/keyrings/` keyring file plus
-  an inline `signed-by=` apt line, not the deprecated `apt-key` path) —
-  idempotent, re-run and confirmed skipping reinstall. `cloudflared 2026.8.3`
-  is live on the relay (`192.168.2.202`), confirmed by `cloudflared
-  --version` over SSH. The subcommand also runs the token-based
-  `cloudflared service install <token>` step, but only once a token exists;
-  not invoked with any placeholder this session, per the task's own
-  constraint. `decisions/DECISIONS.md` 2026-09-09 rows record both this as a
-  deliberate simplification over `research/2026-09-09-reverse-vnc-relay.md`
-  §6's generic-VPS/nginx/certbot sketch, and the explicit revisit of both
-  research docs' screenshot-over-VNC recommendation for the public leg.
+  against `pkg.cloudflare.com`'s own index page, fetched directly: current
+  method is a `/usr/share/keyrings/` keyring file plus an inline
+  `signed-by=` apt line, not the deprecated `apt-key` path) and runs the
+  token-based `cloudflared service install <token>` step once
+  `CLOUDFLARE_TUNNEL_TOKEN` is in `.env`. Public Hostname in the dashboard:
+  `dwarf-fortress.willsmith.nz` -> `http://localhost:6080`, subdomain chosen
+  over a `willsmith.nz/dwarf-fortress` path deliberately: Cloudflare
+  Tunnel's path-routing only works for a hostname already pointed at that
+  tunnel, so a path at the apex would mean re-pointing all of
+  `willsmith.nz`'s DNS through the relay and proxying everything else back
+  out to GitHub Pages — real added risk (the whole site's uptime tied to
+  the relay) for a URL-shape preference. `decisions/DECISIONS.md` 2026-09-09
+  rows record the Cloudflare-Tunnel-over-generic-VPS simplification and the
+  explicit revisit of both research docs' screenshot-over-VNC
+  recommendation for the public leg.
 
-  **Exact steps for whoever holds the Cloudflare console access, once the
-  tunnel exists:**
-  1. In the Zero Trust dashboard: Networks -> Tunnels -> create a tunnel
-     (any name, e.g. `df-colony-relay`) -> choose the Debian/generic
-     connector option -> copy the connector token shown (a long string, the
-     dashboard's non-interactive install flow, not `cloudflared tunnel
-     login`).
-  2. Put that token in `.env` as `CLOUDFLARE_TUNNEL_TOKEN` (a placeholder
-     line already exists there and in `infra/local.example.env`), or pass
-     it directly: `python scripts/provision_relay.py cloudflared --token
-     <token>`.
-  3. Run `python scripts/provision_relay.py cloudflared` (no `--token`
-     needed once it's in `.env`). This runs `cloudflared service install
-     <token>` on the relay and confirms `systemctl is-active cloudflared`.
-  4. Back in the same tunnel's dashboard config, open the **Public
-     Hostname** tab and add: hostname `dwarf-fortress.willsmith.nz`,
-     service type HTTP, URL `http://localhost:6080`. Since `willsmith.nz`
-     is already on Cloudflare DNS, saving this auto-creates the CNAME —
-     no `cloudflared tunnel route dns` needed (that command belongs to the
-     older CLI-managed tunnel workflow, not this dashboard-token one).
-  5. Verify: `https://dwarf-fortress.willsmith.nz` should load the same
-     noVNC page `http://192.168.2.202:6080/vnc.html` already serves on the
-     LAN, prompting for `DF_VNC_PASSWORD`.
-  6. Once confirmed live, fill in the link in
-     `willsmith-portfolio/public/dwarf-fortress/index.html` (currently
-     present but marked not-yet-live) and update this section again.
+  **Public feed is deliberately unauthenticated (`x11vnc -nopw`), decided
+  2026-09-09 once it actually went public** — `install_df.py vnc
+  --no-password` drops the `-rfbauth` gate entirely (not just an empty
+  password); the feed is still `-viewonly` (confirmed live: `ps aux` on VM
+  103 shows `-nopw ... -viewonly`, no keyboard/mouse ever reaches the
+  guest), so an anonymous connection can only watch, not act. This is the
+  same x11vnc instance the LAN path also uses, so LAN access lost its
+  password too as a side effect, trading away a defense-in-depth layer
+  against LAN-side snooping specifically (not any control-surface risk) —
+  see `cmd_vnc`'s docstring in `scripts/install_df.py` for the full
+  reasoning. `DF_VNC_PASSWORD` is still in `.env` but unused while
+  `--no-password` is in effect.
+  **Root URL now redirects straight to the viewer** instead of a raw
+  directory listing (confirmed live 2026-09-09: the stock `novnc` apt
+  package ships no `index.html`, so `/` was serving an Apache-style file
+  list of `app/`, `core/`, `vendor/`, etc.) — a shared `install_novnc_index`
+  helper (`scripts/install_df.py`) drops a meta-refresh redirect to
+  `vnc.html?autoconnect=true&resize=scale` into `/usr/share/novnc/`, used by
+  both VM 103's own `webvnc` (LAN) and the relay's (public), autoconnect
+  only being a safe default because the password gate is actually off.
+  Lives in an apt package path, not this repo, so a future `apt upgrade` of
+  `novnc` could overwrite it — cheap to re-run `webvnc` if so.
+  Link is live in `willsmith-portfolio/public/dwarf-fortress/index.html`
+  (pushed, deploy triggered).
 - **Actually embark** — a candidate site was found on `region2` (the
   graphics-enabled world, "Match found!") but nobody has embarked. The
   real first-fort milestone.

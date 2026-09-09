@@ -1526,7 +1526,7 @@ Requires=df-xvfb.service
 Type=simple
 User=%(user)s
 Environment=DISPLAY=%(display)s
-ExecStart=/usr/bin/x11vnc -display %(display)s -rfbauth %(vncdir)s/passwd \\
+ExecStart=/usr/bin/x11vnc -display %(display)s %(authflag)s \\
   -rfbport %(port)s -viewonly -forever -shared -noxdamage \\
   -o %(logdir)s/x11vnc.log
 Restart=on-failure
@@ -1538,27 +1538,41 @@ WantedBy=multi-user.target
 
 
 def cmd_vnc(pve, args):
-    """Install x11vnc on the Xvfb display: LAN-reachable, view-only, password-gated.
+    """Install x11vnc on the Xvfb display: LAN-reachable, view-only, password-gated by default.
 
-    Password-protected even though VM 103 has no public IP: the VM currently
-    has no network-isolation boundary (Working.md's durable-traps section --
-    no tag:ai-sandbox ACL yet), so a new inbound LAN port gets a password as
-    cheap defense-in-depth rather than riding on "LAN-only" alone. The
-    password is never logged or printed -- it comes from --password, from
+    Password-protected by default even though VM 103 has no public IP: the VM
+    currently has no network-isolation boundary (Working.md's durable-traps
+    section -- no tag:ai-sandbox ACL yet), so a new inbound LAN port gets a
+    password as cheap defense-in-depth rather than riding on "LAN-only" alone.
+    The password is never logged or printed -- it comes from --password, from
     DF_VNC_PASSWORD in .env, or is freshly generated and appended to .env for
     the caller to read from there.
+
+    --no-password drops that gate entirely (x11vnc's own -nopw flag, not just
+    an empty password), decided 2026-09-09 once this feed started being
+    deliberately exposed at dwarf-fortress.willsmith.nz: the feed is -viewonly
+    (no keyboard/mouse ever reaches the guest, see X11VNC_UNIT's own comment),
+    so an unauthenticated connection can only watch, not act -- removing the
+    password trades away a defense-in-depth layer against LAN-side snooping,
+    not any control-surface risk, and this is the same x11vnc instance the LAN
+    path also uses, so this applies there too, not just the public leg.
     """
     vmid, ip = target(pve, args)
     user = pve.env.get("DF_CIUSER", "df")
     port = args.port
 
-    password = args.password or pve.env.get("DF_VNC_PASSWORD")
-    generated = False
-    if not password:
-        password = secrets.token_urlsafe(15)
-        generated = True
+    if args.no_password:
+        password = None
+        generated = False
+    else:
+        password = args.password or pve.env.get("DF_VNC_PASSWORD")
+        generated = False
+        if not password:
+            password = secrets.token_urlsafe(15)
+            generated = True
 
-    log("installing x11vnc on VM %s (view-only, port %s)" % (vmid, port))
+    log("installing x11vnc on VM %s (view-only, port %s%s)"
+        % (vmid, port, ", no password" if args.no_password else ""))
 
     pkg_script = '''
 if ! command -v x11vnc >/dev/null 2>&1; then
@@ -1574,24 +1588,28 @@ fi
     # script (remote()'s dry-run path logs the whole body) never puts the real
     # value on screen or in a saved log.
     script_password = "<DF_VNC_PASSWORD>" if args.dry_run else password
+    authflag = "-nopw" if args.no_password else "-rfbauth %s/passwd" % VNC_DIR
     unit = X11VNC_UNIT % {
         "user": user, "display": DISPLAY_NUM, "vncdir": VNC_DIR,
-        "port": port, "logdir": LOG_DIR,
+        "port": port, "logdir": LOG_DIR, "authflag": authflag,
     }
+    passwd_step = "" if args.no_password else (
+        "x11vnc -storepasswd %(password)s %(vncdir)s/passwd\n"
+        "chown -R %(user)s:%(user)s %(vncdir)s\n"
+        "chmod 600 %(vncdir)s/passwd\n"
+    ) % {"vncdir": VNC_DIR, "password": script_password, "user": user}
     setup_script = '''
 mkdir -p %(vncdir)s
-x11vnc -storepasswd %(password)s %(vncdir)s/passwd
-chown -R %(user)s:%(user)s %(vncdir)s
-chmod 600 %(vncdir)s/passwd
-
+%(passwd_step)s
 cat > /etc/systemd/system/df-vnc.service <<'EOF'
 %(unit)s
 EOF
 
 systemctl daemon-reload
 systemctl enable --now df-vnc.service
+systemctl restart df-vnc.service
 systemctl is-active df-vnc.service
-''' % {"vncdir": VNC_DIR, "password": script_password, "user": user, "unit": unit}
+''' % {"vncdir": VNC_DIR, "passwd_step": passwd_step, "unit": unit}
 
     proc = remote(pve.env, ip, setup_script, "vnc setup", timeout=120,
                   sudo=True, dry_run=args.dry_run)
@@ -1604,7 +1622,11 @@ systemctl is-active df-vnc.service
         _append_env_var("DF_VNC_PASSWORD", password)
         log("generated a VNC password, wrote DF_VNC_PASSWORD to .env"
             " (gitignored) -- read it from there, not printed here")
-    log("x11vnc listening on %s:%s -- view-only, password required" % (ip, port))
+    if args.no_password:
+        log("x11vnc listening on %s:%s -- view-only, NO PASSWORD (public feed)"
+            % (ip, port))
+    else:
+        log("x11vnc listening on %s:%s -- view-only, password required" % (ip, port))
 
 
 # noVNC + websockify bridge the existing x11vnc server to a plain browser tab,
@@ -1639,6 +1661,30 @@ RestartSec=2
 WantedBy=multi-user.target
 '''
 
+# The stock novnc package ships no index.html, so the bare hostname/port
+# serves an Apache-style directory listing (app/, core/, vendor/, ...)
+# instead of the viewer -- confirmed live on the public dwarf-fortress.
+# willsmith.nz URL 2026-09-09. Shared by both this file's cmd_webvnc (VM 103,
+# LAN) and provision_relay.py's cmd_webvnc (the relay, public) since it's the
+# same fix either way. autoconnect=true is only a good default once the
+# password gate is actually off ('vnc --no-password') -- otherwise this
+# would hide the prompt behind a connection that just sits there looking
+# blank. Lives in /usr/share/novnc (an apt package path, not this repo), so a
+# future `apt upgrade` of the novnc package could overwrite it; cheap to
+# re-run this than to solve, same "disposable, rebuild it" posture the relay
+# already has elsewhere.
+NOVNC_INDEX_HTML = '''<!doctype html><meta charset="utf-8">
+<title>Dwarf Fortress -- live</title>
+<meta http-equiv="refresh" content="0; url=vnc.html?autoconnect=true&resize=scale">
+<a href="vnc.html?autoconnect=true&resize=scale">Dwarf Fortress -- live</a>
+'''
+
+
+def install_novnc_index(env, ip, dry_run):
+    script = "cat > /usr/share/novnc/index.html <<'EOF'\n%s\nEOF\n" % NOVNC_INDEX_HTML
+    remote(env, ip, script, "install novnc index redirect", timeout=30,
+           sudo=True, dry_run=dry_run)
+
 
 def cmd_webvnc(pve, args):
     """Bridge the running x11vnc server to a plain browser tab, no VNC client needed.
@@ -1666,6 +1712,7 @@ fi
 '''
     remote(pve.env, ip, pkg_script, "install novnc/websockify", timeout=180,
           sudo=True, dry_run=args.dry_run)
+    install_novnc_index(pve.env, ip, args.dry_run)
 
     unit = NOVNC_UNIT % {
         "user": user, "port": port, "vncport": vnc_port,
@@ -1687,8 +1734,8 @@ systemctl is-active df-webvnc.service
         return
     for line in proc.stdout.strip().splitlines():
         log("  " + line)
-    log("open http://%s:%s/vnc.html in a browser -- password required"
-        " (same DF_VNC_PASSWORD as 'vnc')" % (ip, port))
+    log("open http://%s:%s/ in a browser -- auto-redirects to the live feed"
+        " (password requirement depends on how 'vnc' was run)" % (ip, port))
 
 
 # The public-relay leg: VM 103 dials OUT to the relay so it never accepts an
@@ -1899,6 +1946,10 @@ def main():
     vnc.add_argument("--password", default=None,
                      help="VNC password; defaults to DF_VNC_PASSWORD in .env,"
                           " or a freshly generated one appended there")
+    vnc.add_argument("--no-password", action="store_true",
+                     help="drop the password gate entirely (x11vnc -nopw)."
+                          " Feed stays -viewonly regardless -- see cmd_vnc's"
+                          " docstring for why this is safe for a public feed")
 
     webvnc = add("webvnc", help="bridge the x11vnc server to a plain browser tab"
                                  " via noVNC (no VNC client needed)")
