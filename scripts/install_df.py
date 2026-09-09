@@ -9,6 +9,9 @@
     python scripts/install_df.py backup  [--vmid N] [--out backups]
     python scripts/install_df.py systemd [--vmid N] [--start]
     python scripts/install_df.py stream  [--interval 15] [--ingest-url URL]
+    python scripts/install_df.py vnc     [--port 5900] [--password PW]
+    python scripts/install_df.py webvnc  [--port 6080] [--vnc-port 5900]
+    python scripts/install_df.py vnc-tunnel --relay-ip IP [--relay-user relay] [--vnc-port 5900]
 
 VM 104 was built by hand on 2026-08-27 and the only record of it is prose
 (infra/local.df-vm-install.md). This turns that prose into something re-runnable,
@@ -26,6 +29,7 @@ import argparse
 import base64
 import os
 import random
+import secrets
 import subprocess
 import sys
 import tempfile
@@ -92,15 +96,36 @@ DISPLAY_NUM = ":99"
 FB_GEOMETRY = "1280x800x24"
 
 STREAM_DIR = "/opt/df/stream"
+VNC_DIR = "/opt/df/vnc"
+VNC_PORT = 5900
+NOVNC_PORT = 6080
 
 # prefs/init.txt overrides applied to a copy of data/init/init_default.txt.
 # SOUND:NO because the VM has no audio device; 2D because there is no GPU.
+#
+# FONT/FULLFONT:curses_square_16x16.png -- nicer bitmap font for the VNC
+# viewer, isolated and verified safe 2026-09-09 after an initial attempt
+# broke world-map rendering entirely. Root cause was USE_CLASSIC_ASCII:NO,
+# not the font file: that flag switches the map's rendering path to expect
+# real tile-graphics data (this build has no raw/graphics folder at all),
+# so the map came back solid black -- confirmed by DFHack's own
+# screen-tile buffer reading blank across the whole viewport and by a
+# screenshot taken directly off VM 103's Xvfb display (not through the
+# VNC/relay chain, ruling out a display-chain bug). Isolated by testing
+# the font swap alone with USE_CLASSIC_ASCII left at YES: full colored
+# terrain rendered correctly on both the world overview and the Site
+# Finder screen, confirmed by direct screenshots. USE_CLASSIC_ASCII is
+# therefore deliberately NOT in this list -- leave it at whatever
+# init_default.txt ships (YES). → decisions/DECISIONS.md 2026-09-09 rows
+# for both the failed and the working attempt.
 INIT_SETTINGS = [
     ("SOUND", "NO"),
     ("WINDOWED", "YES"),
     ("WINDOWEDX", "1280"),
     ("WINDOWEDY", "720"),
     ("PRINT_MODE", "2D"),
+    ("FONT", "curses_square_16x16.png"),
+    ("FULLFONT", "curses_square_16x16.png"),
 ]
 
 SWAP_SIZE = "4G"
@@ -225,6 +250,23 @@ def guest_ip(pve, vmid):
     log("guest ip %s (from the guest agent%s)"
         % (ip, ", other candidates: " + others if others else ""))
     return ip
+
+
+def _append_env_var(key, value):
+    """Append KEY='value' to the repo-root .env, guaranteeing a fresh line.
+
+    2026-09-09 incident: a bare open(path, 'a').write(...) landed directly on
+    the end of the previous line when the file had no trailing newline,
+    silently merging two values (DF_VNC_PASSWORD onto ANTHROPIC_API_KEY) into
+    one unparseable line. Checking for and inserting a leading '\\n' when
+    needed is the actual fix, not a defensive nicety.
+    """
+    env_path = os.path.join(REPO_ROOT, ".env")
+    with open(env_path, "rb") as fh:
+        data = fh.read()
+    prefix = "" if (not data or data.endswith(b"\n")) else "\n"
+    with open(env_path, "a", encoding="utf-8") as fh:
+        fh.write("%s%s='%s'\n" % (prefix, key, value))
 
 
 def resolve_vmid(pve, args):
@@ -974,6 +1016,34 @@ fi
                    % (world_id, args.attempts, LOG_DIR, world_id))
 
 
+def cmd_lua(pve, args):
+    """Run one dfhack-run lua expression against the live DF process.
+
+    dfhack_lua_sh()'s helper is for single-value verify checks (tail -n1);
+    live embark-testing needs full multi-line output -- a pairs() field dump
+    or a viewscreen type name -- so this prints everything, ANSI-stripped.
+    The code is heredoc'd with a quoted delimiter so it reaches dfhack-run
+    byte-for-byte: no shell expansion of '$', quotes or '%' in the Lua itself.
+    """
+    vmid, ip = target(pve, args)
+    script = (
+        "cd %s\n" % GAME_DIR +
+        "./dfhack-run lua \"$(cat <<'DF_LUA_EOF'\n"
+        + args.code + "\n"
+        "DF_LUA_EOF\n"
+        ")\" 2>&1 | sed -e 's/\\x1b\\[[0-9;]*m//g' -e 's/\\r$//'\n"
+    )
+    proc = remote(pve.env, ip, script, "lua", timeout=args.timeout,
+                 check=False, dry_run=args.dry_run)
+    if args.dry_run:
+        return
+    out = (proc.stdout or "").strip()
+    for line in out.splitlines():
+        log("  " + line)
+    if proc.returncode != 0:
+        raise PVEError("lua command exited %s" % proc.returncode)
+
+
 # --- verify / saves / backup ---------------------------------------------
 
 def cmd_verify(pve, args):
@@ -1250,6 +1320,304 @@ dfhack_lua "if not dfhack.isEnabled('spectate') then dfhack.run_command('enable 
         log("no DF_STREAM_INGEST_URL set -- capture only, nothing is pushed anywhere yet")
 
 
+# x11vnc rather than the screenshot pipeline above, for the human-follow-along
+# use case: research/2026-09-08-live-viewing.md 3b already recommended it for
+# exactly this leg ("the Pi/wall-display x11vnc leg... a separate, LAN-only
+# build with none of the relay complexity"). Genuinely live, incremental-update
+# RFB, no relay/ingest side to build. View-only on purpose: this build does not
+# forward keyboard/mouse input back into the guest. Adding that later is a
+# small change (drop -viewonly) once the view-only version is confirmed
+# working, not a redesign -- deliberately deferred, not an oversight.
+X11VNC_UNIT = '''[Unit]
+Description=x11vnc (view-only) for the Dwarf Fortress Xvfb display
+After=df-xvfb.service
+Requires=df-xvfb.service
+
+[Service]
+Type=simple
+User=%(user)s
+Environment=DISPLAY=%(display)s
+ExecStart=/usr/bin/x11vnc -display %(display)s -rfbauth %(vncdir)s/passwd \\
+  -rfbport %(port)s -viewonly -forever -shared -noxdamage \\
+  -o %(logdir)s/x11vnc.log
+Restart=on-failure
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target
+'''
+
+
+def cmd_vnc(pve, args):
+    """Install x11vnc on the Xvfb display: LAN-reachable, view-only, password-gated.
+
+    Password-protected even though VM 103 has no public IP: the VM currently
+    has no network-isolation boundary (Working.md's durable-traps section --
+    no tag:ai-sandbox ACL yet), so a new inbound LAN port gets a password as
+    cheap defense-in-depth rather than riding on "LAN-only" alone. The
+    password is never logged or printed -- it comes from --password, from
+    DF_VNC_PASSWORD in .env, or is freshly generated and appended to .env for
+    the caller to read from there.
+    """
+    vmid, ip = target(pve, args)
+    user = pve.env.get("DF_CIUSER", "df")
+    port = args.port
+
+    password = args.password or pve.env.get("DF_VNC_PASSWORD")
+    generated = False
+    if not password:
+        password = secrets.token_urlsafe(15)
+        generated = True
+
+    log("installing x11vnc on VM %s (view-only, port %s)" % (vmid, port))
+
+    pkg_script = '''
+if ! command -v x11vnc >/dev/null 2>&1; then
+  export DEBIAN_FRONTEND=noninteractive
+  apt-get update -qq
+  apt-get install -y -qq x11vnc
+fi
+'''
+    remote(pve.env, ip, pkg_script, "install x11vnc", timeout=180,
+          sudo=True, dry_run=args.dry_run)
+
+    # A placeholder stands in for the password under --dry-run so a printed
+    # script (remote()'s dry-run path logs the whole body) never puts the real
+    # value on screen or in a saved log.
+    script_password = "<DF_VNC_PASSWORD>" if args.dry_run else password
+    unit = X11VNC_UNIT % {
+        "user": user, "display": DISPLAY_NUM, "vncdir": VNC_DIR,
+        "port": port, "logdir": LOG_DIR,
+    }
+    setup_script = '''
+mkdir -p %(vncdir)s
+x11vnc -storepasswd %(password)s %(vncdir)s/passwd
+chown -R %(user)s:%(user)s %(vncdir)s
+chmod 600 %(vncdir)s/passwd
+
+cat > /etc/systemd/system/df-vnc.service <<'EOF'
+%(unit)s
+EOF
+
+systemctl daemon-reload
+systemctl enable --now df-vnc.service
+systemctl is-active df-vnc.service
+''' % {"vncdir": VNC_DIR, "password": script_password, "user": user, "unit": unit}
+
+    proc = remote(pve.env, ip, setup_script, "vnc setup", timeout=120,
+                  sudo=True, dry_run=args.dry_run)
+    if args.dry_run:
+        return
+    for line in proc.stdout.strip().splitlines():
+        log("  " + line)
+
+    if generated:
+        _append_env_var("DF_VNC_PASSWORD", password)
+        log("generated a VNC password, wrote DF_VNC_PASSWORD to .env"
+            " (gitignored) -- read it from there, not printed here")
+    log("x11vnc listening on %s:%s -- view-only, password required" % (ip, port))
+
+
+# noVNC + websockify bridge the existing x11vnc server to a plain browser tab,
+# for LAN viewing with zero client install. Deliberately NOT the mechanism for
+# willsmith.nz: research/2026-09-08-live-viewing.md 4 already worked out that
+# a persistent inbound-facing bridge like this is the wrong shape for the
+# public internet (it would mean tunnelling/Funnel-ing this same port, making
+# VM 103 a public-facing endpoint indefinitely -- a real, separate decision,
+# not a small extension of this). The public leg stays the outbound
+# screenshot-push design (cmd_stream above), blocked only on R2 credentials.
+# %(depends)s is a full [Unit]-section dependency block (After=/Requires=
+# lines, or empty), not baked in fixed: on VM 103 the x11vnc server is a
+# local sibling unit (df-vnc.service) and this should wait on it, but on the
+# relay (provision_relay.py's cmd_webvnc reuses this same template) the
+# thing on the other end of localhost:<vncport> is a *tunneled* port from a
+# different host entirely -- no local unit exists to depend on, and
+# 'Requires=' naming a unit that does not exist on that host would fail this
+# service to start, not just warn. websockify's own Restart=on-failure
+# already covers "nothing is listening yet" on either host.
+NOVNC_UNIT = '''[Unit]
+Description=noVNC websocket bridge to the Dwarf Fortress x11vnc server
+%(depends)s
+
+[Service]
+Type=simple
+User=%(user)s
+ExecStart=/usr/bin/websockify --web=/usr/share/novnc %(port)s localhost:%(vncport)s
+Restart=on-failure
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target
+'''
+
+
+def cmd_webvnc(pve, args):
+    """Bridge the running x11vnc server to a plain browser tab, no VNC client needed.
+
+    Requires 'vnc' to already be set up (df-vnc.service listening on
+    --vnc-port, default VNC_PORT) -- this only adds the browser-facing hop.
+    Still LAN-only, still password-gated: websockify just relays bytes to the
+    existing x11vnc server, so the browser page prompts for the same
+    DF_VNC_PASSWORD, not a second credential to manage.
+    """
+    vmid, ip = target(pve, args)
+    user = pve.env.get("DF_CIUSER", "df")
+    port = args.port
+    vnc_port = args.vnc_port
+
+    log("installing noVNC + websockify on VM %s (browser port %s -> vnc port %s)"
+        % (vmid, port, vnc_port))
+
+    pkg_script = '''
+if ! command -v websockify >/dev/null 2>&1 || [ ! -d /usr/share/novnc ]; then
+  export DEBIAN_FRONTEND=noninteractive
+  apt-get update -qq
+  apt-get install -y -qq novnc websockify
+fi
+'''
+    remote(pve.env, ip, pkg_script, "install novnc/websockify", timeout=180,
+          sudo=True, dry_run=args.dry_run)
+
+    unit = NOVNC_UNIT % {
+        "user": user, "port": port, "vncport": vnc_port,
+        "depends": "After=df-vnc.service\nRequires=df-vnc.service",
+    }
+    setup_script = '''
+cat > /etc/systemd/system/df-webvnc.service <<'EOF'
+%(unit)s
+EOF
+
+systemctl daemon-reload
+systemctl enable --now df-webvnc.service
+systemctl is-active df-webvnc.service
+''' % {"unit": unit}
+
+    proc = remote(pve.env, ip, setup_script, "webvnc setup", timeout=120,
+                  sudo=True, dry_run=args.dry_run)
+    if args.dry_run:
+        return
+    for line in proc.stdout.strip().splitlines():
+        log("  " + line)
+    log("open http://%s:%s/vnc.html in a browser -- password required"
+        " (same DF_VNC_PASSWORD as 'vnc')" % (ip, port))
+
+
+# The public-relay leg: VM 103 dials OUT to the relay so it never accepts an
+# inbound connection from anywhere, LAN or internet. Recommended over a
+# VNC-repeater chain in research/2026-09-09-reverse-vnc-relay.md -- no new
+# protocol, x11vnc's own config (X11VNC_UNIT above) is untouched, this is
+# pure SSH remote port forwarding. The private key is generated ON VM 103
+# and never leaves it; only the public half goes to the relay.
+TUNNEL_DIR = "/opt/df/vnc-tunnel"
+
+# 127.0.0.1 on both sides of -R, deliberately: the relay's sshd has
+# 'GatewayPorts no' (confirmed live 2026-09-09), so the forwarded listener on
+# the relay binds to loopback only -- reachable by the relay's own
+# websockify process, not by anything else on the relay's network. The
+# restricted authorized_keys entry below (permitopen=) is the second,
+# independent layer: even if GatewayPorts were ever flipped, this specific
+# key still could not open anything else.
+VNC_TUNNEL_UNIT = '''[Unit]
+Description=Reverse SSH tunnel: expose df-vnc's x11vnc to the relay (LAN-internal only)
+After=network.target df-vnc.service
+Requires=df-vnc.service
+
+[Service]
+Type=simple
+User=%(user)s
+ExecStart=/usr/bin/ssh -N -o ServerAliveInterval=30 -o ExitOnForwardFailure=yes \\
+  -o StrictHostKeyChecking=accept-new -o UserKnownHostsFile=%(tunneldir)s/known_hosts \\
+  -i %(tunneldir)s/id_ed25519 -R 127.0.0.1:%(vncport)s:127.0.0.1:%(vncport)s \\
+  %(relayuser)s@%(relayip)s
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+'''
+
+
+def cmd_vnc_tunnel(pve, args):
+    """Reverse SSH tunnel from VM 103 to the public relay -- VM 103 dials out.
+
+    Generates a dedicated ed25519 keypair on VM 103 (idempotent -- skips if
+    one already exists) used for nothing but this tunnel, distinct from the
+    admin key (DF_SSH_KEY) used to manage VM 103 itself. Installs only the
+    public half on the relay's authorized_keys, restricted with
+    'permitopen=\"127.0.0.1:<port>\",no-pty,no-agent-forwarding,no-X11-forwarding'
+    -- per research/2026-09-09-reverse-vnc-relay.md 5, even a fully
+    compromised copy of this key can only ever forward to that one loopback
+    port on the relay, nothing else: no shell, no other host, no other port.
+    """
+    vmid, ip = target(pve, args)
+    user = pve.env.get("DF_CIUSER", "df")
+    vnc_port = args.vnc_port
+    relay_ip = args.relay_ip
+    relay_user = args.relay_user
+
+    log("setting up reverse VNC tunnel: VM %s -> %s@%s (port %s)"
+        % (vmid, relay_user, relay_ip, vnc_port))
+
+    keygen_script = '''
+mkdir -p %(tunneldir)s
+if [ ! -f %(tunneldir)s/id_ed25519 ]; then
+  ssh-keygen -t ed25519 -f %(tunneldir)s/id_ed25519 -N '' -C 'df-vnc-tunnel' -q
+fi
+chown -R %(user)s:%(user)s %(tunneldir)s
+chmod 700 %(tunneldir)s
+chmod 600 %(tunneldir)s/id_ed25519
+cat %(tunneldir)s/id_ed25519.pub
+''' % {"tunneldir": TUNNEL_DIR, "user": user}
+    proc = remote(pve.env, ip, keygen_script, "generate tunnel key",
+                  timeout=60, sudo=True, dry_run=args.dry_run)
+    if args.dry_run:
+        return
+    pubkey = proc.stdout.strip().splitlines()[-1]
+    log("  tunnel public key: %s..." % pubkey[:40])
+
+    # This SSHes to the RELAY, a different host from VM 103 -- reusing
+    # remote()/ssh_guest with a copied env whose DF_CIUSER is overridden to
+    # the relay's own login user, the same trick provision_relay.py's
+    # scripts use, rather than a second copy of the SSH plumbing.
+    relay_env = dict(pve.env)
+    relay_env["DF_CIUSER"] = relay_user
+    authkey_line = ('command="echo restricted",no-pty,no-agent-forwarding,'
+                    'no-X11-forwarding,permitopen="127.0.0.1:%s" %s'
+                    % (vnc_port, pubkey))
+    relay_script = '''
+mkdir -p ~/.ssh
+chmod 700 ~/.ssh
+touch ~/.ssh/authorized_keys
+grep -qxF '%(line)s' ~/.ssh/authorized_keys || echo '%(line)s' >> ~/.ssh/authorized_keys
+chmod 600 ~/.ssh/authorized_keys
+''' % {"line": authkey_line}
+    remote(relay_env, relay_ip, relay_script, "install tunnel key on relay",
+          timeout=30, dry_run=args.dry_run)
+    log("  restricted key installed on relay (permitopen=127.0.0.1:%s only)"
+        % vnc_port)
+
+    unit = VNC_TUNNEL_UNIT % {
+        "user": user, "tunneldir": TUNNEL_DIR, "vncport": vnc_port,
+        "relayuser": relay_user, "relayip": relay_ip,
+    }
+    setup_script = '''
+cat > /etc/systemd/system/df-vnc-tunnel.service <<'EOF'
+%(unit)s
+EOF
+
+systemctl daemon-reload
+systemctl enable --now df-vnc-tunnel.service
+sleep 2
+systemctl is-active df-vnc-tunnel.service
+''' % {"unit": unit}
+    proc = remote(pve.env, ip, setup_script, "vnc-tunnel setup", timeout=60,
+                  sudo=True, dry_run=args.dry_run)
+    for line in proc.stdout.strip().splitlines():
+        log("  " + line)
+    log("tunnel service started on VM %s -- verify from the relay side"
+        " (connect to its own 127.0.0.1:%s)" % (vmid, vnc_port))
+
+
 # --- cli -----------------------------------------------------------------
 
 def main():
@@ -1302,6 +1670,12 @@ def main():
     gen.add_argument("--allow-running", action="store_true",
                      help="generate even though dwarfort is already up")
 
+    lua = add("lua", help="run one dfhack-run lua expression, print raw output")
+    lua.add_argument("code",
+                     help="Lua code, e.g."
+                          " 'print(dfhack.gui.getCurViewscreen()._type)'")
+    lua.add_argument("--timeout", type=int, default=60)
+
     add("saves", help="list worlds in the XDG save dir, with sizes")
 
     backup = add("backup", help="pull the save dir off the VM")
@@ -1321,6 +1695,30 @@ def main():
                              " DF_STREAM_INGEST_URL in .env, or local-only"
                              " capture if neither is set")
 
+    vnc = add("vnc", help="LAN-reachable, view-only VNC (x11vnc) on the Xvfb display")
+    vnc.add_argument("--port", type=int, default=VNC_PORT,
+                     help="VNC port, default %s" % VNC_PORT)
+    vnc.add_argument("--password", default=None,
+                     help="VNC password; defaults to DF_VNC_PASSWORD in .env,"
+                          " or a freshly generated one appended there")
+
+    webvnc = add("webvnc", help="bridge the x11vnc server to a plain browser tab"
+                                 " via noVNC (no VNC client needed)")
+    webvnc.add_argument("--port", type=int, default=NOVNC_PORT,
+                        help="browser-facing port, default %s" % NOVNC_PORT)
+    webvnc.add_argument("--vnc-port", type=int, default=VNC_PORT,
+                        help="existing x11vnc port to bridge to, default %s"
+                             % VNC_PORT)
+
+    tunnel = add("vnc-tunnel", help="reverse SSH tunnel from VM 103 to the"
+                                     " public relay (VM 103 dials out)")
+    tunnel.add_argument("--relay-ip", required=True,
+                        help="the relay's LAN IP, e.g. 192.168.2.202")
+    tunnel.add_argument("--relay-user", default="relay",
+                        help="login user on the relay, default 'relay'")
+    tunnel.add_argument("--vnc-port", type=int, default=VNC_PORT,
+                        help="port to forward, default %s" % VNC_PORT)
+
     args = parser.parse_args()
     # SUPPRESS means an unsupplied flag leaves no attribute at all.
     args.vmid = getattr(args, "vmid", None)
@@ -1332,10 +1730,14 @@ def main():
         "start": cmd_start,
         "stop": cmd_stop,
         "gen": cmd_gen,
+        "lua": cmd_lua,
         "saves": cmd_saves,
         "backup": cmd_backup,
         "systemd": cmd_systemd,
         "stream": cmd_stream,
+        "vnc": cmd_vnc,
+        "webvnc": cmd_webvnc,
+        "vnc-tunnel": cmd_vnc_tunnel,
     }[args.command]
     try:
         handler(pve, args)
