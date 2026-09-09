@@ -23,20 +23,19 @@ or `decisions/DECISIONS.md`, not here.
 > Full narrative archived, not repeated here — see `Working.md`'s handover
 > and its archive pointer.
 
-- **Kick off a Sonnet researcher: get DF's built-in modern graphics
-  working, without a third-party pack.** User doesn't like the ASCII
-  look, wants the Steam-style modern graphics, and explicitly does not
-  want to reach for a community graphics pack as the first move —
-  suspects this is a fixable bug/missing-file issue. `USE_CLASSIC_ASCII:NO`
-  genuinely unlocks a modern UI (confirmed, looks good) but leaves the
-  world/embark map completely blank regardless of which font file is
-  used (tested two, both failed identically) — likely because the map
-  needs real `raw/graphics` sprite data this build doesn't ship, but that
-  is NOT yet confirmed against any primary source. Full research brief
-  (what to actually check, in order) → `Working.md` handover.
-- **Next: actually embark.** "Match found!" is a found candidate site, not
-  a founded fortress — nobody has embarked yet. The real first-fort
-  milestone. → `Working.md` handover.
+- **DONE 2026-09-09: DF's built-in modern (Steam-style) graphics are
+  working on VM 103, no third-party pack.** Research confirmed no free
+  official bundle exists (`research/2026-09-09-df-modern-graphics.md`) —
+  but the user's own legitimately-purchased Steam copy (local install,
+  DF 53.15) does, and `install_df.py graphics` transplants its eight
+  `data/vanilla/vanilla_*_graphics`/`vanilla_world_map` module folders
+  onto VM 103 over scp, never through this repo's git tree. Confirmed
+  genuinely rendering by direct screenshot (real pixel-art terrain,
+  trees/water/mountains) on three separate screens, not just a viewscreen
+  check → `decisions/DECISIONS.md` 2026-09-09 rows, `Working.md`.
+- **Next: actually embark.** A new candidate site was found on the fresh
+  graphics-enabled world (region2, "Match found!", not yet embarked) —
+  the real first-fort milestone. → `Working.md` handover.
 - **Live human viewing: done for LAN, user-confirmed working end to
   end.** VM 103's `x11vnc` → reverse SSH tunnel
   (`install_df.py vnc-tunnel`, dedicated `permitopen`-restricted key) →
