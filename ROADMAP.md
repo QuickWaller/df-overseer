@@ -1,6 +1,6 @@
 # Roadmap
 
-**Last reviewed:** 2026-09-09
+**Last reviewed:** 2026-09-10
 
 This file is df-overseer's forward-looking, priority-ordered plan: what's
 next and roughly when, across infrastructure, game-side engineering, and the
@@ -15,27 +15,38 @@ or `decisions/DECISIONS.md`, not here.
 ## Now
 <!-- Actively being worked, or the clear immediate next step. -->
 
-> **Rewritten 2026-09-09 (end of session).** VM 103 (`df-colony-01`) is
-> fully rebuilt, installed, verified, running DF under systemd with a
-> generated world, and a candidate embark site has been found — nobody has
-> embarked yet. Live human viewing is fully built end to end (VM 103 →
-> reverse SSH tunnel → relay VM → browser noVNC), user-confirmed working.
-> Full narrative archived, not repeated here — see `Working.md`'s handover
-> and its archive pointer.
+> **Rewritten 2026-09-10 (end of session).** VM 103 (`df-colony-01`) is
+> sitting one click from its first fort: a confirmed Site Finder match is
+> already committed, the UI is already in the "click Embark" sub-mode, and
+> that one click has resisted several automation attempts tonight — see
+> `Working.md`'s queued task. Graphics are now genuinely complete (not just
+> "confirmed rendering" — two whole modules were found missing tonight).
+> Live human viewing is fully live and public. Full narrative not repeated
+> here — see `Working.md`'s handover.
 
-- **DONE 2026-09-09: DF's built-in modern (Steam-style) graphics are
-  working on VM 103, no third-party pack.** Research confirmed no free
-  official bundle exists (`research/2026-09-09-df-modern-graphics.md`) —
-  but the user's own legitimately-purchased Steam copy (local install,
-  DF 53.15) does, and `install_df.py graphics` transplants its eight
-  `data/vanilla/vanilla_*_graphics`/`vanilla_world_map` module folders
-  onto VM 103 over scp, never through this repo's git tree. Confirmed
-  genuinely rendering by direct screenshot (real pixel-art terrain,
-  trees/water/mountains) on three separate screens, not just a viewscreen
-  check → `decisions/DECISIONS.md` 2026-09-09 rows, `Working.md`.
-- **Next: actually embark.** A new candidate site was found on the fresh
-  graphics-enabled world (region2, "Match found!", not yet embarked) —
-  the real first-fort milestone. → `Working.md` handover.
+- **DONE 2026-09-09/10: DF's built-in modern (Steam-style) graphics are
+  working on VM 103, no third-party pack, and now genuinely complete.**
+  Research confirmed no free official bundle exists
+  (`research/2026-09-09-df-modern-graphics.md`) — but the user's own
+  legitimately-purchased Steam copy (local install, DF 53.15) does, and
+  `install_df.py graphics` transplants its module folders onto VM 103 over
+  scp, never through this repo's git tree. The initial 8-module transplant
+  (2026-09-09) missed two real modules that don't share the `_graphics`
+  naming suffix — found 2026-09-10 via a full recursive manifest diff, not
+  spot-checks: `vanilla_interface` (UI panel/chrome — the actual missing
+  panel a user report and external search confirmed) and
+  `vanilla_environment` (core terrain: walls/floors/water/fire — used
+  throughout real fortress-mode play). `GRAPHICS_MODULES` is now 10
+  entries; confirmed visually fixed. → `decisions/DECISIONS.md` 2026-09-09
+  and 2026-09-10 rows, `Working.md`.
+- **Next: actually embark — one click away, not just "found candidate
+  site."** A confirmed Site Finder match on `region2` is already committed
+  via the `warn_mm_*`/`warn_flags.GENERIC` struct write, and the UI is
+  already showing "Click 'Embark' to place your fortress" — but three
+  separate attempts to make that specific click register failed tonight.
+  A promising untested lead (`df.global.gps.precise_mouse_x/y`, a second
+  mouse-position field found sitting at a fixed screen-center value all
+  night) is queued. → `Working.md` handover's queued task.
 - **Live human viewing: done, both LAN and public, user-confirmed working
   end to end.** VM 103's `x11vnc` → reverse SSH tunnel
   (`install_df.py vnc-tunnel`, dedicated `permitopen`-restricted key) →

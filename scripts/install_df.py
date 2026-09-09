@@ -159,6 +159,53 @@ GRAPHICS_MODULES = [
     "vanilla_items_graphics",
     "vanilla_plants_graphics",
     "vanilla_world_map",
+    # Found 2026-09-10, missed in the original 8: no "_graphics" suffix, so it
+    # didn't match this list's own naming pattern. Unlike the others, free
+    # Classic's copy is not a pure empty stub -- it already has
+    # graphics_classic.txt (matches Steam's byte-for-byte) but is missing
+    # graphics_interface.txt (236 KB) and every one of ~70 images entirely,
+    # including interface_bits_embark.png -- confirmed the cause of a
+    # user-reported missing UI panel on the embark/site-selection screen
+    # (plain black background behind info text/dialogs, should show a
+    # bordered panel). cp -a's overwrite-in-place behavior handles the
+    # partial-module case fine: existing matching files are untouched,
+    # missing ones are added.
+    "vanilla_interface",
+    # Found in the same 2026-09-10 pass, via a full recursive manifest diff
+    # of every file under data/vanilla (not just spot-checks) after the user
+    # asked "what else is missing" -- this module was ~95 files short, the
+    # single largest gap found: walls, floors, water/liquids, ramps, blood,
+    # fire, snow -- the core terrain tile graphics used throughout actual
+    # fortress-mode play, not just the embark screen. Would have surfaced as
+    # a much worse blank-terrain problem once a fort was founded, not caught
+    # by any of this session's embark-screen-focused verification.
+    "vanilla_environment",
+]
+
+# data/art files present on the Premium/Steam install but not free Classic's
+# copy, found 2026-09-10 comparing directory listings directly (VM 103 had
+# 15 of 27 files) while investigating a user-reported missing UI panel on the
+# embark screen. These are splash/logo/title-art assets (Bay12, Kitfox, FMOD
+# branding, title-screen backgrounds) -- distinct from GRAPHICS_MODULES, which
+# are empty *stubs* free Classic ships intentionally; these are simply absent,
+# consistent with Premium bundling extra Steam-release branding free Classic
+# never needed. `border.png` (the one file this project suspected might be the
+# missing panel) was checked first and is NOT missing -- present on both,
+# byte-identical size -- so whatever panel is or isn't missing, it is not this
+# list's doing. Included anyway for completeness now that the transplant is
+# already being done; not confirmed to fix any visual gap.
+ART_FILES = [
+    "bay12.png",
+    "bay12_small.png",
+    "bay12_tiny.png",
+    "df_logo.png",
+    "fmod.png",
+    "pixel_kf.png",
+    "pixel_kf_small.png",
+    "pixel_kf_tiny.png",
+    "title_adv.png",
+    "title_background.png",
+    "title_siege.png",
 ]
 
 SWAP_SIZE = "4G"
@@ -989,11 +1036,12 @@ def cmd_graphics(pve, args):
     a URL: this is personal-use asset data with no redistribution license,
     not something to fetch or pin like DF_URL/DFHACK_URL above. It never
     enters this repo's working tree or git history -- the eight module
-    folders in GRAPHICS_MODULES are tarred up in a temp file, scp'd straight
-    to the guest, extracted into a /tmp staging dir, and copied into
-    GAME_DIR/data/vanilla/<module>/ over the top of the existing
-    info.txt-only stubs. See scripts/install_df.py's INIT_SETTINGS comment
-    and decisions/DECISIONS.md 2026-09-09 for the full reasoning.
+    folders in GRAPHICS_MODULES, plus the ART_FILES splash/title assets, are
+    tarred up in a temp file, scp'd straight to the guest, extracted into a
+    /tmp staging dir, and copied into GAME_DIR/data/vanilla/<module>/ (over
+    the existing info.txt-only stubs) and GAME_DIR/data/art/ respectively.
+    See scripts/install_df.py's INIT_SETTINGS comment, ART_FILES's own
+    comment, and decisions/DECISIONS.md 2026-09-09 for the full reasoning.
 
     Deliberately does NOT touch prefs/init.txt or trigger worldgen -- run
     'install' (to apply the now-updated INIT_SETTINGS incl. USE_CLASSIC_ASCII)
@@ -1024,6 +1072,13 @@ def cmd_graphics(pve, args):
                        " command is meant to copy FROM the paid one."
                        % ", ".join(missing))
 
+    art_src = os.path.join(source, "data", "art")
+    missing_art = [f for f in ART_FILES
+                  if not os.path.isfile(os.path.join(art_src, f))]
+    if missing_art:
+        raise PVEError("source install is missing data/art file(s): %s"
+                       % ", ".join(missing_art))
+
     manifest = []
     total_bytes = 0
     for module in GRAPHICS_MODULES:
@@ -1043,15 +1098,19 @@ def cmd_graphics(pve, args):
     for module, n_files, n_png, size in manifest:
         log("  %-32s %4d files (%3d png), %.1f KB"
             % (module, n_files, n_png, size / 1024.0))
-    log("total: %.1f MB across %d modules" % (total_bytes / 1024.0 / 1024.0,
-                                               len(GRAPHICS_MODULES)))
+    art_size = sum(os.path.getsize(os.path.join(art_src, f)) for f in ART_FILES)
+    log("  %-32s %4d files, %.1f KB" % ("data/art (splash/title assets)",
+                                        len(ART_FILES), art_size / 1024.0))
+    log("total: %.1f MB across %d modules + data/art"
+        % ((total_bytes + art_size) / 1024.0 / 1024.0, len(GRAPHICS_MODULES)))
 
     if args.dry_run:
         log("--- graphics (dry run, not sent) ---")
-        log("would tar the %d module dirs above, scp to VM %s, and copy each"
-            " into %s/data/vanilla/<module>/ (overwriting the existing"
-            " info.txt-only stub, leaving every other vanilla module"
-            " untouched)" % (len(GRAPHICS_MODULES), vmid, GAME_DIR))
+        log("would tar the %d module dirs above plus %d data/art file(s), scp"
+            " to VM %s, and copy each module into %s/data/vanilla/<module>/"
+            " (overwriting the existing info.txt-only stub) and the art files"
+            " into %s/data/art/, leaving everything else untouched"
+            % (len(GRAPHICS_MODULES), len(ART_FILES), vmid, GAME_DIR, GAME_DIR))
         log("--- end graphics ---")
         return
 
@@ -1062,6 +1121,8 @@ def cmd_graphics(pve, args):
         with tarfile.open(tmp_path, "w:gz") as tf:
             for module in GRAPHICS_MODULES:
                 tf.add(os.path.join(vanilla_src, module), arcname=module)
+            for fn in ART_FILES:
+                tf.add(os.path.join(art_src, fn), arcname="_art/" + fn)
         tar_size = os.path.getsize(tmp_path)
         log("tarball: %.1f MB, pushing to VM %s" % (tar_size / 1024.0 / 1024.0, vmid))
 
@@ -1092,6 +1153,10 @@ for m in %(modules)s; do
   n_png=$(find "$dest" -iname '*.png' | wc -l)
   echo "  $m: now $n_files files ($n_png png) in $dest"
 done
+if [ -d "$STAGE/_art" ]; then
+  cp -a "$STAGE/_art/." "$GAME/data/art/"
+  echo "  data/art: copied $(find "$STAGE/_art" -type f | wc -l) file(s) into $GAME/data/art"
+fi
 rm -rf "$STAGE" %(remote_tmp)s
 echo "graphics install complete"
 ''' % {"game": GAME_DIR, "remote_tmp": remote_tmp,
