@@ -52,7 +52,9 @@ from pve import PVE, PVEError, log  # noqa: E402
 from provision_vm import (  # noqa: E402
     read_pubkey, wait_for_status, resize_disk, destroy_failed_build,
 )
-from install_df import remote, NOVNC_UNIT, NOVNC_PORT, VNC_PORT  # noqa: E402
+from install_df import (  # noqa: E402
+    remote, NOVNC_UNIT, NOVNC_PORT, VNC_PORT, install_novnc_index,
+)
 
 # Pinned to an exact dated build, not 'latest' -- same reasoning as
 # provision_vm.CLOUD_IMAGE_SERIAL: a dated URL is only a name, the checksum
@@ -308,6 +310,7 @@ fi
 '''
     remote(relay_env, ip, pkg_script, "install novnc/websockify", timeout=180,
           sudo=True, dry_run=args.dry_run)
+    install_novnc_index(relay_env, ip, args.dry_run)
 
     # No local unit to depend on here: x11vnc is on VM 103, reached only
     # through the reverse SSH tunnel (a different host's systemd unit
@@ -332,8 +335,9 @@ systemctl is-active df-webvnc.service
         return
     for line in proc.stdout.strip().splitlines():
         log("  " + line)
-    log("open http://%s:%s/vnc.html in a browser -- password required"
-        " (VM 103's DF_VNC_PASSWORD)" % (ip, port))
+    log("open http://%s:%s/ in a browser -- auto-redirects to the live feed"
+        " (password requirement depends on how VM 103's 'vnc' was run)"
+        % (ip, port))
 
 
 def cmd_cloudflared(pve, args):

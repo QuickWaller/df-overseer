@@ -36,19 +36,17 @@ or `decisions/DECISIONS.md`, not here.
 - **Next: actually embark.** A new candidate site was found on the fresh
   graphics-enabled world (region2, "Match found!", not yet embarked) —
   the real first-fort milestone. → `Working.md` handover.
-- **Live human viewing: done for LAN, user-confirmed working end to
-  end.** VM 103's `x11vnc` → reverse SSH tunnel
+- **Live human viewing: done, both LAN and public, user-confirmed working
+  end to end.** VM 103's `x11vnc` → reverse SSH tunnel
   (`install_df.py vnc-tunnel`, dedicated `permitopen`-restricted key) →
-  relay VM's `websockify`/noVNC (`provision_relay.py webvnc`) → browser.
-  Relay is `df-colony-relay-01.internal` (`192.168.2.202`, Debian 12,
-  home-lab's Proxmox pool). `cloudflared` (relay → public internet) is
-  installed and verified running (`provision_relay.py cloudflared`), blocked
-  only on the Cloudflare Zero Trust dashboard connector token, which only a
-  human can create. Once it lands: `provision_relay.py cloudflared --token
-  <token>`, then a Public Hostname entry in the dashboard tunnel config
-  (`dwarf-fortress.willsmith.nz` → `http://localhost:6080`) — exact steps in
-  `Working.md`. The SSH tunnel and Cloudflare Tunnel are two permanent
-  legs of one chain, not alternatives.
+  relay VM's `websockify`/noVNC (`provision_relay.py webvnc`) → Cloudflare
+  Tunnel (`provision_relay.py cloudflared`) → `https://dwarf-fortress.
+  willsmith.nz` — confirmed live (`curl` returns HTTP 200, root redirects
+  straight into the viewer). Relay is `df-colony-relay-01.internal`
+  (`192.168.2.202`, Debian 12, home-lab's Proxmox pool). Feed is
+  intentionally unauthenticated (`x11vnc -nopw`) but stays `-viewonly` —
+  anyone with the link can watch, nobody can act. Linked live from
+  `willsmith-portfolio/public/dwarf-fortress/index.html`.
   → `research/2026-09-09-reverse-vnc-relay.md`,
   `decisions/DECISIONS.md` 2026-09-09 rows, `Working.md`.
 - **Design commitment #1's absolute wording vs. its evidence base.** The
