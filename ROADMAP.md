@@ -1,6 +1,6 @@
 # Roadmap
 
-**Last reviewed:** 2026-09-10 (fifth pass — second fort founded, first fort's save lost)
+**Last reviewed:** 2026-09-10 (sixth pass — Uniboslan's first room and stockpile dug)
 
 This file is df-overseer's forward-looking, priority-ordered plan: what's
 next and roughly when, across infrastructure, game-side engineering, and the
@@ -15,20 +15,21 @@ or `decisions/DECISIONS.md`, not here.
 ## Now
 <!-- Actively being worked, or the clear immediate next step. -->
 
-> **Rewritten 2026-09-10 (fifth pass, end of session).** A second fort was
-> founded, **"Uniboslan, 'Ragwind'"** — but the first fort, "Artobcatten,
-> Combinedchannel," is gone: its save (`save/autosave 1`) was overwritten
-> in the process, confirmed via `md5sum` (that slot and `autosave 2` are
-> now byte-identical, both holding Uniboslan's data), with no backup ever
-> taken and no recovery path found. Told the user directly; **the user
-> chose to accept the loss and move forward with Uniboslan** rather than
-> chase a Proxmox-snapshot recovery. This pass also built and ran the
-> text-only sweep planned in the fourth pass — `df-overseer-ui.lua` gained
-> `embark-mode`/`leave-embark-mode`/`hover`, and a real Windows-specific
-> SSH bug surfaced and got fixed while deploying it (Git's MSYS-linked
-> `ssh.exe` silently truncates a command-line argument to ~8182 characters
-> when spawned by Python's `subprocess` rather than bash — payloads now go
-> over stdin). Full narrative: `Working.md`'s handover,
+> **Rewritten 2026-09-10 (sixth pass, end of session).** **Uniboslan,
+> "Ragwind," now has real structure**: a first room dug and a stockpile
+> placed via `quickfort` blueprints (`blueprints/`), all 7 citizens alive
+> and behaving normally, paused and quicksaved. This followed a longer
+> arc the same session: the first fort, "Artobcatten," was lost when
+> founding Uniboslan overwrote its save (DF's save-slot names turned out
+> to be a shared pool, not per-fort); a Proxmox snapshot meant as a safety
+> net before playing forward was blocked by cluster quorum (SRV-02 down,
+> no QDevice, not this repo's to fix) and worked around with a verified
+> `install_df.py backup` instead. A first pass at `check_reachable`/
+> `get_connectivity_report` plus an experimental seed landmark were also
+> built this session, then deliberately kept off `main` on their own
+> branch, `perception-layer-experiments`, at the user's explicit request.
+> Full narrative: `working-archive/Working_archive-2026-09-07.md`
+> (`Working.md`'s own current handover is now the compacted summary),
 > `decisions/DECISIONS.md` 2026-09-10.
 
 - **DONE 2026-09-09/10: DF's built-in modern (Steam-style) graphics are
@@ -91,13 +92,27 @@ or `decisions/DECISIONS.md`, not here.
   `subprocess` rather than bash; large payloads now go over stdin
   (`input_data` param). `provision_relay.py` inherits the fix for free. →
   `decisions/DECISIONS.md` 2026-09-10.
-- **Next: `docs/PURPOSE.md`'s build order (`check_reachable`/
-  `get_connectivity_report` first, see the "Next" bucket below) is
-  unchanged and still the next real code to write.** Uniboslan is
-  standing, not being played — no perception layer, no agent exists yet.
-  If the "Confirm"/map-click crash recurs on a future embark, running it
-  under gdb again is the known workaround, not a fix. → `Working.md`
-  handover.
+- **DONE 2026-09-10 (sixth pass): Uniboslan's first room dug and a
+  stockpile placed, via `quickfort` blueprints** (`blueprints/`, four
+  files — the first entries in the "Blueprint library" scope item),
+  anchored near the experimental seed landmark's coordinates. Applied
+  headlessly via `quickfort run <file> -c x,y,z`, matching design
+  commitment #4 rather than raw designation writes. Found live: the
+  founding-message dialog silently blocks all citizen activity regardless
+  of pause state; a downstair can't be designated on grass tiles; a plain
+  floor dig beneath a completed stair never becomes a job unless the
+  connecting tile is itself a matching stair type; the real job list is
+  `df.global.world.jobs.list`, not what the research sketch guessed; and
+  DF Classic's 2D engine does have real zoom (`[`/`]` keys), contrary to
+  a wrong claim made mid-session. → `decisions/DECISIONS.md` 2026-09-10,
+  `working-archive/Working_archive-2026-09-07.md`.
+- **Next: the real burrow/building enumeration + adjacency graph**
+  (`docs/PURPOSE.md` build order item 3's remaining scope) now has
+  something real to work against — the stockpile above is a genuine
+  `building` object, the first non-seed landmark candidate. Still needs
+  to happen on `perception-layer-experiments`, not `main`. If the
+  "Confirm"/map-click crash recurs on a future embark, running it under
+  gdb again is the known workaround, not a fix. → `Working.md` handover.
 - **DONE 2026-09-10: reusable menu-automation tool, replacing one-off Lua
   scripts per click.** `scripts/dfhack/df-overseer-ui.lua`
   (`install_df.py ui-install`, then `./dfhack-run df-overseer-ui
