@@ -13,16 +13,18 @@
 -- Usage: ./dfhack-run df-overseer-connectivity <report|check UNIT_ID UNIT_ID>
 --   report      -- get_connectivity_report(): JSON, stranded groups + main group id
 --   check A B   -- check_reachable() stopgap: takes two citizen unit ids, not
---                  landmark names -- the landmark system (build order item 3)
---                  doesn't exist yet, so named endpoints aren't resolvable.
---                  Replace this stopgap's signature once get_landmark() exists.
+--                  landmark names. df-overseer-landmarks.lua's get_landmark()
+--                  now exists (build order item 3, 2026-09-10), so named
+--                  endpoints are resolvable -- this stopgap's signature is
+--                  still not replaced, tracked as open work, not done here.
 --
 -- near_landmark (part of the research spec's stranded_groups shape) is
 -- intentionally omitted here, not stubbed with raw coordinates: design
 -- commitment #1 (docs/PURPOSE.md) rules out exposing raw map geometry to the
 -- model, and the research spec explicitly replaced the original draft's
--- approx_pos field with near_landmark for exactly that reason. Wire this in
--- once the landmark system exists rather than leaking coordinates now.
+-- approx_pos field with near_landmark for exactly that reason. The landmark
+-- system now exists (df-overseer-landmarks.lua) but near_landmark still
+-- isn't wired in here -- open work, not done in this pass.
 --
 -- JSON key order is deterministic without any manual sorting: DFHack's own
 -- json.lua delegates encoding to a C++ (jsonxx-derived) internal module,

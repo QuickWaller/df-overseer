@@ -125,18 +125,71 @@ along the way.
   real burrow/building enumeration + adjacency-graph system build order
   item 3 still calls for.
 
-### Next: the fort's fate, and the rest of the landmark system
+### HANDOVER - 2026-09-10 (new session, `perception-layer-experiments`
+worktree at `../df-automation-perception`, separate from `main`'s own
+Working.md and its own "sixth pass" quickfort/blueprint session)
 
-1. **The real burrow/building enumeration + adjacency-graph system**
-   (build order item 3's actual scope) is still unstarted — the seed
-   landmark above only unblocks the very first dig, not a general named-
-   place system. Needs the fort to actually be played (dig something,
-   build something) before there's anything real to enumerate.
-2. **Not done this session, still open from an earlier handover**: the
+Picked up the item below as the queued next step. **The real burrow/
+building enumeration + adjacency graph is built and verified live**,
+extending `df-overseer-landmarks.lua` past its seed-only first slice.
+Every call now merges the persisted seed landmark with a fresh
+enumeration of `df.global.world.buildings.all` (filtered to a non-empty
+`dfhack.buildings.getName()`) and `df.global.plotinfo.burrows.list`, and
+computes a nearest-3 exits graph per landmark (direction, distance, and a
+live-verified `walkable` bool from `dfhack.maps.canWalkBetween`).
+
+**Two real bugs were found and fixed by verifying live against Uniboslan
+rather than trusting the research doc's prototype sketch**, both
+documented in the script's own comments:
+1. `df.global.world.burrows.all` does not exist as a field
+   (`"Cannot read field world.burrows: not found"`). The correct path is
+   `df.global.plotinfo.burrows.list`.
+2. `dfhack.buildings.getSize(building)`'s returned `cx,cy` are local to
+   the building's own bounding box, not absolute map coordinates
+   (confirmed: a 3x3 Wagon building returned `cx=1,cy=1`; a 5x5 stockpile
+   returned `cx=2,cy=2`). Would have silently collapsed every building's
+   centroid onto nonsense points if the research doc's prototype had been
+   used as written. Absolute centroid is `(x1+x2)/2, (y1+y2)/2, z` instead.
+
+Also found live: the embark wagon genuinely is a first-class `building`
+object (`building_type` "Wagon") with a real default name. The
+seed-landmark session's conclusion that no wagon object exists at all
+checked `world.vehicles.all` (empty for this embark), not `buildings.all`:
+that was the wrong list to check, not a true absence of a wagon object.
+
+Deployed via `install_df.py ui-install` and tested live against the real
+Uniboslan fort: `list` returns three landmarks ("Embark Site", "Wagon",
+"Stockpile #1") each with correctly directed, distance-labeled,
+walkability-verified exits; `get NAME` matches; a missing name returns a
+clean `{error: "not found"}`. Full detail: `decisions/DECISIONS.md`
+2026-09-10 (latest row).
+
+**Cross-session coordination, this session**: another session,
+`df-automation-7d`, is working the same repo concurrently on `main` (its
+own worktree), building independent per-viewer pan/Z-level camera control
+for the public live-view feed via `RemoteFortressReader`. Confirmed
+directly with them: no data-path overlap (this session's work never reads
+RFR or raw tile geometry, theirs never touches `dfhack.buildings`/
+`dfhack.burrows`), and flagged that both sides' scripts share the same
+`dfhack-run`/RPC server on VM 103, so either side should tell the user
+before deploying anything that runs continuously.
+
+### Next
+
+1. **Not done in this pass**: `check_reachable`'s stopgap signature (raw
+   unit ids, in `df-overseer-connectivity.lua`) still isn't replaced with
+   named-landmark endpoints, even though `get_landmark` now exists to
+   resolve them. Flagged as open in that script's own comments.
+2. **Not done in this pass**: the research spec's `via` (path-type
+   classification, e.g. "corridor") exit field is deliberately not
+   implemented. Would need real path-tracing this slice doesn't attempt.
+3. **Not done this session, still open from an earlier handover**: the
    `find_mm_*` Y-axis transform mystery (cheap, read-only, not blocking).
-3. **Worth deciding, not urgent**: whether to pull an actual
+4. **Worth deciding, not urgent**: whether to pull an actual
    `install_df.py backup` of Uniboslan's save now that this session found
    out the hard way that none had ever been taken of a fort-bearing save.
+5. **Not pushed**: committed locally to `perception-layer-experiments`,
+   per this repo's rule, needs explicit go-ahead before `git push`.
 
 ### Durable traps, still true (additions marked NEW)
 
