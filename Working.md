@@ -75,24 +75,31 @@ along the way.
   different worlds, not a bug in the coordinate frame itself. The sweep
   had to be re-run fresh in the world actually reached this time.
 
-### Open: pre-playthrough snapshot blocked, possibly on home-lab's side
+### Resolved: pre-playthrough snapshot blocked by cluster quorum, worked around
 
 User asked for a Proxmox snapshot of VM 103 before playing Uniboslan
 forward (a safety net, given this session already lost one fort's save
 with no backup). `provision_vm.py snapshot --name pre-uniboslan-playthrough`
 failed: `unable to open file '/etc/pve/nodes/srv-01/qemu-server/103.conf.tmp...'
-- Permission denied`. A separate diagnostic `GET /cluster/status` on the
-same token also came back `403 Sys.Audit`, unusual for a token that
-otherwise works fine (start/stop/status all succeed) — this matches the
-repo's own documented trap ("if a write step fails oddly, check quorum
-before suspecting permissions," `ROADMAP.md`) almost exactly.
-**Messaged the live `home-lab-c1` session** (per CLAUDE.md's
-consult-another-repo procedure — df-overseer has no host shell access to
-check `pvecm status` itself, only a pool-scoped API token) with the exact
-command and error, asking it to check quorum on SRV-01. **Holding off on
-both the snapshot and playing Uniboslan forward until that comes back** —
-the user's own sequencing was snapshot-then-play, and proceeding to play
-without the safety net first would defeat the point of asking for it.
+- Permission denied`, and a diagnostic `GET /cluster/status` on the same
+token also came back `403 Sys.Audit` — matching the repo's own documented
+trap ("if a write step fails oddly, check quorum before suspecting
+permissions," `ROADMAP.md`) closely enough to check before assuming
+anything else. Messaged the live `home-lab-c1` session (df-overseer has
+no host shell access to check `pvecm status` itself, only a pool-scoped
+API token); **user confirmed directly: SRV-02 is down**, and with no
+QDevice on this cluster a single remaining node isn't a majority —
+inquorate, exactly as suspected. **Not this repo's to fix** (home-lab
+owns cluster/estate infra).
+
+**Worked around rather than blocked on it**: `install_df.py backup`
+doesn't touch the Proxmox API at all, just pulls the save directory off
+the VM over SSH — ran it, got a real 18MB archive, and verified (not just
+trusted the exit code) that it actually contains `autosave 2` (Uniboslan's
+real save: unit files, region snapshots, `world.sav`), at
+`backups/df-saves-103-20260910-162147.tar.gz`. This is a genuine safety
+net, just a file-level one instead of a VM-level one — good enough to
+proceed with playing the fort forward.
 
 ### Next: the fort's fate, now that a second one exists
 
