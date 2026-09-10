@@ -162,9 +162,13 @@ or `decisions/DECISIONS.md`, not here.
   → `decisions/DECISIONS.md` 2026-08-28 row.
 - **`check_reachable` / `get_connectivity_report`.** Copies
   `warn-stranded.lua`'s working algorithm; highest-confidence real code to
-  write next. → `docs/PURPOSE.md` build order item 2.
+  write next. → `docs/PURPOSE.md` build order item 2. **A first pass
+  exists on the `perception-layer-experiments` branch** (not merged,
+  user's explicit call to keep this experimental and off `main` for now)
+  — see `Working.md`'s handover before rebuilding this from scratch.
 - **Landmark system on burrows + exits-first representation.**
-  → `docs/PURPOSE.md` build order item 3.
+  → `docs/PURPOSE.md` build order item 3. Same branch has an experimental
+  seed-landmark first slice; see `Working.md`.
 - **`get_overview` / context tiering with deterministic JSON.** Must sort
   keys: Lua table order isn't guaranteed and a reshuffle silently busts the
   prefix cache every turn. → `docs/PURPOSE.md` build order item 4.
