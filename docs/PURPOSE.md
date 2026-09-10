@@ -302,7 +302,18 @@ reappears.
    real prospect-equivalent scan) and event-driven diffing (item 5) are
    deliberately not attempted here. → `decisions/DECISIONS.md`
    2026-09-10 rows.
-5. `get_diff_since` via `eventful`.
+5. ~~**`get_diff_since` via `eventful`.**~~ **Done 2026-09-10 (same
+   session/branch), partially verified** —
+   `scripts/dfhack/df-overseer-diff.lua`: `JOB_COMPLETED`/`UNIT_DEATH`
+   handlers registered once per process lifetime, appending to an
+   in-memory ring buffer with a monotonic cursor. Verified live: a plain
+   Lua global survives across separate `dfhack-run` invocations (the
+   assumption this whole design rests on), and the log/cursor logic
+   itself (injected synthetic entries directly, confirmed correct
+   drain/advance behavior). **Not verified**: the real
+   eventful-triggered callback path, since the fort was left paused this
+   session per the user's own rule and unpausing just to generate a test
+   event felt like overstepping. → `decisions/DECISIONS.md` 2026-09-10.
 6. `find_open_area` (built terrain), hard radius cap from day one.
 7. `find_chokepoints`, then `rank_candidate_sites`.
 8. `get_stuck_jobs` — least-verified primitive; test in isolation.
