@@ -9,10 +9,12 @@ actually going on right now.
 The prior handover from earlier the same day is archived wholesale —
 [`working-archive/Working_archive-2026-09-07.md`](working-archive/Working_archive-2026-09-07.md),
 superseded by this one. **This session's result: a second fort was
-founded ("Uniboslan, 'Ragwind'"), but the first fort's save ("Artobcatten")
-was lost as a side effect — an unrecoverable incident, not a close call.**
-The text-only sweep also got built and a real Windows SSH bug got fixed
-along the way.
+founded ("Uniboslan, 'Ragwind'"), the first fort's save ("Artobcatten")
+was lost as a side effect (unrecoverable, not a close call), and — after
+a file-level backup — Uniboslan was actually played forward: a real room
+dug, a real stockpile placed, several genuine DF/DFHack mechanics learned
+the hard way.** The text-only sweep also got built and a real Windows SSH
+bug got fixed along the way.
 
 ### State at a glance
 
@@ -101,30 +103,81 @@ real save: unit files, region snapshots, `world.sav`), at
 net, just a file-level one instead of a VM-level one — good enough to
 proceed with playing the fort forward.
 
-### Next: the fort's fate, now that a second one exists
+### Played Uniboslan forward: first room and stockpile, real findings
 
-1. **`docs/PURPOSE.md`'s build order (`check_reachable`/`get_connectivity_report`
-   first) is the next real code to write on `main`** — unchanged by this
-   session's `main` history. Neither fort is being played yet: no
-   perception layer, no agent exists. → `ROADMAP.md`'s "Next" bucket.
-2. **A first pass at this actually got built this session, then moved off
-   `main` onto its own branch, `perception-layer-experiments`**
-   (`107adf1`/`ac7547f`, both still reachable there): `check_reachable`/
-   `get_connectivity_report` (reuses `warn-stranded.lua`'s own
-   `getStrandedGroups()`) and an experimental "Embark Site" seed landmark
-   (citizen-position centroid, `dfhack.persistent`-backed, confirmed live
-   to survive a real save/reload). User's call, 2026-09-10: keep this
-   explicitly experimental and off `main` rather than merge it in.
-   **The live VM currently has both scripts deployed** (from before the
-   branch split) and Uniboslan's save already has the seed landmark
-   persisted in it — that's independent of which branch is checked out
-   locally. Any further perception-layer work should happen checked out
-   on that branch, not `main`, until/unless the user decides to merge it.
+User's direction: back up first (done — see above), then actually play
+the fort forward rather than keep it standing untouched, driving it
+directly and documenting as it goes rather than building the framework
+first. Result: **Uniboslan now has real structure**, not just seven idle
+citizens on open ground.
+
+- **`blueprints/` is now a real directory**, first entries in the
+  "Blueprint library" scope item: `starter-entrance-1x1.csv` (one
+  downstair), `starter-connector-1x1.csv` (one upstair, the fix for the
+  job-creation bug below), `starter-room-5x5.csv` (`#dig`), and
+  `starter-stockpile-5x5.csv` (`#place`, Food+Wood+Stone+Furniture+
+  Finished Goods+Bars and Blocks). Applied via `quickfort run <file> -c
+  x,y,z` — chosen deliberately over raw designation-poking because it
+  matches design commitment #4 ("blueprints, not generated coordinates"),
+  and `-c`/`--cursor` confirmed to need no interactive map cursor.
+  Deployed to the guest via plain `scp` into `dfhack-config/blueprints/`
+  (quickfort's own player-blueprint directory) — not through
+  `install_df.py`'s script-deploy mechanism, since these are quickfort
+  data files, not DFHack Lua scripts.
+- **Four real findings, all confirmed live**: (1) the founding "A Dwarven
+  Outpost..." dialog silently froze all citizen activity for 40+ real
+  seconds even with `pause_state` reading `false` — the user, watching
+  the live feed, correctly guessed this before I diagnosed it; dismissing
+  it unfroze everything instantly. (2) A downstair can't be designated on
+  a grass-covered surface tile ("light grass"/"dark grass") — needed a
+  non-grass tile (here, "stone floor") within the room's own footprint.
+  (3) **The costly one**: a plain `d` (floor) dig directly beneath an
+  already-dug, walkable downstair does not get turned into a job at
+  all — `checkDesignationsNow()` correctly reported it unreachable no
+  matter how many times it was re-run, because the connecting tile
+  specifically needs to be a **matching stair type** (`u`) to link the
+  levels for job-creation, not just any walkable-adjacent floor. Fixing
+  that one tile immediately created six real jobs from zero. (4) The
+  fortress-wide job list is `df.global.world.jobs.list` (a linked-list,
+  `.next`/`.item`), not `df.global.job_list` as
+  `research/2026-08-25-spatial-perception.md`'s prototype sketch guessed
+  (that doc's own §8 flagged this as its one unverified primitive — now
+  verified, and the guess was wrong).
+- **Also corrected a wrong claim I made mid-session**: told the user DF
+  Classic's 2D engine has no zoom; they pushed back, and
+  `data/init/interface.txt` directly proved real `ZOOM_IN`/`ZOOM_OUT`
+  binds exist (`[`/`]`), confirmed working via real `xdotool` keypresses.
+  Don't assert a negative about DF's feature set without checking the
+  keybinding file first.
+- **End state, paused and quicksaved (confirmed via mtime + file size,
+  not just exit code)**: 25/25 room tiles dug, stockpile live, all 7
+  citizens alive and behaving normally, Year 30, mid-Summer (month 3, day
+  6). Paused deliberately per the user's own suggestion — pause the
+  colony when not actively driving it, rather than leave it running
+  unwatched. Full trail: `decisions/DECISIONS.md` 2026-09-10.
+- **DONE this session**: pulled an `install_df.py backup` of Uniboslan's
+  save (used as the pre-playthrough safety net, see above) — the
+  "worth deciding" item from the prior draft of this section is resolved.
+
+### Next: the fort's fate, and the real landmark system
+
+1. **`docs/PURPOSE.md` build order item 3's real scope (burrow/building
+   enumeration + adjacency graph) now has something real to work
+   against** — the stockpile placed this session is a genuine `building`
+   object, the first non-seed landmark candidate. Still needs to happen
+   on the `perception-layer-experiments` branch, not `main` (see below),
+   and is still unstarted beyond the seed landmark.
+2. **`check_reachable`/`get_connectivity_report` and the seed landmark
+   remain parked on `perception-layer-experiments`** (`107adf1`/`ac7547f`,
+   not on `main`), user's explicit call to keep them experimental. The
+   live VM still has both scripts deployed regardless of which branch is
+   checked out locally.
 3. **Not done this session, still open from an earlier handover**: the
    `find_mm_*` Y-axis transform mystery (cheap, read-only, not blocking).
-4. **Worth deciding, not urgent**: whether to pull an actual
-   `install_df.py backup` of Uniboslan's save now that this session found
-   out the hard way that none had ever been taken of a fort-bearing save.
+4. **A general "audit the docs for stale info" pass was delegated to a
+   Sonnet subagent** at the user's request, running in parallel with this
+   handover being written — check its report/diff before trusting this
+   handover is the only doc change from this session.
 
 ### Durable traps, still true (additions marked NEW)
 
@@ -286,6 +339,52 @@ proceed with playing the fort forward.
   fresh embark attempt (this session briefly assumed otherwise after they
   didn't show up in the very first `type` check, before actually dumping
   the screen and finding them present).
+- NEW: **A founded fort's own "A Dwarven Outpost..." welcome message
+  (with an "Okay" button) silently blocks all citizen activity — walking,
+  jobs, everything — even though `df.global.pause_state` reads `false`.**
+  Citizens sit frozen at their exact founding positions indefinitely until
+  it's dismissed (`click "Okay"`); dismissing it unfreezes everything
+  instantly. Always dump the screen and check for this dialog before
+  concluding a fort is "stuck" or unpaused-but-not-progressing.
+- NEW: **A downward-staircase (`j`) dig designation cannot be placed on a
+  grass-covered surface tile** ("light grass"/"dark grass" — confirmed,
+  `quickfort` reports "0 tiles designated" with no error). Works
+  immediately on other floor types (stone floor, stone pebbles, dirt).
+  When anchoring a dig entrance, check the actual tile type at the target
+  first, or scan the room's footprint for a non-grass tile.
+- NEW: **A plain `d` (floor) dig designation directly beneath an
+  already-completed, walkable downstair does not get turned into an
+  assignable job at all** — `dfhack.job.checkDesignationsNow()` correctly
+  reports it as unreachable no matter how many times it's re-run. The
+  connecting tile between two z-levels needs to be a **matching stair
+  type** (`u`, upstair) to link them for job-creation purposes; a plain
+  floor immediately below a stair is not sufficient even though the stair
+  above it is itself walkable. Confirmed live: changing one tile from `d`
+  to `u` created six real jobs from zero. Any blueprint spanning z-levels
+  needs its connecting tile to be a proper stair, not a floor designation.
+- NEW: **The fortress-wide job list is `df.global.world.jobs.list`**, a
+  linked-list struct (traverse via `.next`/`.item`, `#`/`ipairs` both
+  fail on it), **not `df.global.job_list`** as
+  `research/2026-08-25-spatial-perception.md`'s prototype sketch guessed
+  (flagged there, §8, as its one unverified primitive) — now verified
+  live, and the guess was wrong.
+- NEW: **DF Classic's 2D engine (`PRINT_MODE:2D`) does have real zoom**,
+  contrary to a wrong claim made mid-session: `data/init/interface.txt`
+  defines genuine `ZOOM_IN`/`ZOOM_OUT` binds (`[`/`]` keys), confirmed
+  working live via real `xdotool key bracketright`/`bracketleft` in
+  fortress mode. Check the actual keybinding file before asserting DF
+  lacks a feature.
+- NEW: **`install_df.py backup` is a genuine, verified substitute safety
+  net when a Proxmox snapshot is blocked by cluster quorum issues** — it
+  pulls the save directory over SSH, no Proxmox API involved at all.
+  Verify the resulting archive actually contains the expected save data
+  (e.g. `tar -tzf` and grep for the save folder name) rather than trusting
+  a nonzero file size alone.
+- NEW: **A `quicksave` RPC call can return and log "The game should
+  autosave now" before the file actually lands on disk** — a save-file
+  mtime check run immediately after can read stale, even though the save
+  genuinely completes moments later. Wait a few seconds and recheck
+  before concluding a quicksave silently failed.
 
 ### Other open items, carried forward
 

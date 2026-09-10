@@ -6,7 +6,7 @@ and why, and **[docs/MEMORY-ARCHITECTURE.md](docs/MEMORY-ARCHITECTURE.md)** for 
 learning architecture.
 
 > **Status: infrastructure proven and standing, and — as of 2026-09-10 —
-> the first fort exists.** The Proxmox identity this project runs against is
+> a fort exists.** The Proxmox identity this project runs against is
 > provisioned outside this repo (see `infra/README.md`);
 > `scripts/provision_vm.py` built VM `df-colony-01` (vmid 103) against it on
 > 2026-09-08, and `scripts/install_df.py` installed DF Classic and DFHack on
@@ -14,15 +14,22 @@ learning architecture.
 > a rebuild, not the original: an earlier VM and template, built 2026-08-27,
 > were deleted 2026-09-01 in an estate rebuild, and today's VM is a fresh one
 > from this repo's own scripts, not a restore. **A fort has actually been
-> founded**: "Artobcatten, Combinedchannel" on `region2`, driven entirely
-> through DFHack struct writes and simulated mouse clicks (menu automation,
-> Site Finder, embark placement), running unattended under systemd
-> (`decisions/DECISIONS.md` 2026-09-10 rows). Still no *code* of the game
-> side's actual play loop: no perception layer, no agent, no toolkit — the
-> fort exists but nothing is deciding what it does yet, so it is standing,
-> not being played. Everything in `docs/` and `research/` beyond the
-> menu-automation work itself is still a design artifact; claims marked
-> *verified* were checked against a DFHack install, the live API, or a
+> founded, twice.** The first, "Artobcatten, Combinedchannel" on `region2`,
+> was driven entirely through DFHack struct writes and simulated mouse
+> clicks (menu automation, Site Finder, embark placement) — then lost,
+> unrecoverably, as a side effect of founding a second fort, "Uniboslan,
+> 'Ragwind'" (`decisions/DECISIONS.md` 2026-09-10, "second fort was founded,
+> but the first fort's save was lost"). **Uniboslan is the fort that exists
+> now**, running unattended under systemd (`decisions/DECISIONS.md`
+> 2026-09-10 rows). Still no *code* of the game side's actual play loop: no
+> perception layer, no agent, no toolkit — the fort exists but nothing is
+> deciding what it does yet, so it is standing, not being played. A first
+> pass at a perception-layer slice (`check_reachable`/`get_connectivity_report`,
+> an experimental seed landmark) was built this session and then deliberately
+> kept off `main`, on its own branch, `perception-layer-experiments` — not
+> part of this repo's current state. Everything in `docs/` and `research/`
+> beyond the menu-automation work itself is still a design artifact; claims
+> marked *verified* were checked against a DFHack install, the live API, or a
 > primary source, and the rest are proposals.
 
 This repo is managed with Claude Code using a structured memory system,
@@ -66,7 +73,7 @@ file first in any session.
   remembering: **date**, **status**, **reason**. Entries running past ~300
   words get trimmed to a summary plus a pointer into `memory/`.
 
-- **`docs/`** — the design artifacts: `PURPOSE.md`, `MEMORY.md`.
+- **`docs/`** — the design artifacts: `PURPOSE.md`, `MEMORY-ARCHITECTURE.md`.
 
 - **`research/`** — dated research specs produced by `researcher` agents.
   Long, cited, and honest about what could not be verified. Read the relevant
