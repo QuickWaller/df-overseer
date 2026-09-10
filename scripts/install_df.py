@@ -1302,43 +1302,57 @@ def cmd_lua(pve, args):
         raise PVEError("lua command exited %s" % proc.returncode)
 
 
-UI_HELPERS_SCRIPT = os.path.join(
-    os.path.dirname(os.path.abspath(__file__)), "dfhack", "df-overseer-ui.lua")
+DFHACK_SCRIPTS_DIR = os.path.join(
+    os.path.dirname(os.path.abspath(__file__)), "dfhack")
 
 
 def cmd_ui_install(pve, args):
-    """Deploy scripts/dfhack/df-overseer-ui.lua onto the guest's own
-    hack/scripts/ directory, so 'type'/'click TEXT'/'dump' are callable
-    directly (./dfhack-run df-overseer-ui click "Fortress") instead of
-    hand-writing a fresh Lua script over SSH for every single button click.
+    """Deploy every scripts/dfhack/df-overseer-*.lua file onto the guest's
+    own hack/scripts/ directory, so their subcommands are callable directly
+    (e.g. './dfhack-run df-overseer-ui click "Fortress"') instead of
+    hand-writing a fresh Lua script over SSH for every single action.
 
     Found 2026-09-10: that one-off-script-per-action pattern is what made
     the whole embark-flow session slow, and re-derived the same
     buffer-scan-and-click/retry technique from scratch each time instead of
     reusing tested code. Plain automation logic, not game data or a secret
     -- checked into this repo like any other script, unlike GRAPHICS_MODULES
-    or ART_FILES.
+    or ART_FILES. Generalized from a single hardcoded file (df-overseer-ui.lua
+    only) to every df-overseer-*.lua file in the directory once a second one
+    (df-overseer-connectivity.lua) was added, rather than adding a new
+    one-off CLI verb per script going forward.
     """
     vmid, ip = target(pve, args)
-    with open(UI_HELPERS_SCRIPT, "r", encoding="utf-8") as f:
-        lua_source = f.read()
-    # Built by concatenation, not %-formatting, because the Lua source itself
-    # is full of %d/%s directives (string.format calls) that a % on the
-    # combined string would try to consume as Python format args.
-    script = (
-        "mkdir -p " + GAME_DIR + "/hack/scripts\n"
-        "cat > " + GAME_DIR + "/hack/scripts/df-overseer-ui.lua <<'DF_OVERSEER_UI_EOF'\n"
-        + lua_source +
-        "\nDF_OVERSEER_UI_EOF\n"
-        "echo installed\n"
-    )
-    proc = remote(pve.env, ip, script, "ui-install", timeout=30,
+    names = sorted(
+        f for f in os.listdir(DFHACK_SCRIPTS_DIR)
+        if f.startswith("df-overseer-") and f.endswith(".lua"))
+    if not names:
+        raise PVEError("no df-overseer-*.lua files found in %s" % DFHACK_SCRIPTS_DIR)
+    parts = ["mkdir -p " + GAME_DIR + "/hack/scripts\n"]
+    for name in names:
+        with open(os.path.join(DFHACK_SCRIPTS_DIR, name), "r", encoding="utf-8") as f:
+            lua_source = f.read()
+        # Built by concatenation, not %-formatting, because the Lua source
+        # itself is full of %d/%s directives (string.format calls) that a %
+        # on the combined string would try to consume as Python format args.
+        # Delimiter is per-file (not a fixed 'DF_OVERSEER_UI_EOF') so two
+        # scripts in one deploy can't collide if either ever contained the
+        # other's delimiter text.
+        delim = "DF_OVERSEER_EOF_%s" % name.replace("-", "_").replace(".", "_").upper()
+        parts.append(
+            "cat > " + GAME_DIR + "/hack/scripts/" + name + " <<'" + delim + "'\n"
+            + lua_source +
+            "\n" + delim + "\n"
+            "echo installed: " + name + "\n"
+        )
+    proc = remote(pve.env, ip, "".join(parts), "ui-install", timeout=30,
                   dry_run=args.dry_run)
     if args.dry_run:
         return
-    log("  " + proc.stdout.strip())
-    log("df-overseer-ui.lua deployed on VM %s -- try:"
-        " ./dfhack-run df-overseer-ui type" % vmid)
+    for line in proc.stdout.strip().splitlines():
+        log("  " + line)
+    log("%d df-overseer-*.lua script(s) deployed on VM %s -- try:"
+        " ./dfhack-run df-overseer-ui type" % (len(names), vmid))
 
 
 # --- verify / saves / backup ---------------------------------------------

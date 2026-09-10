@@ -91,12 +91,25 @@ or `decisions/DECISIONS.md`, not here.
   `subprocess` rather than bash; large payloads now go over stdin
   (`input_data` param). `provision_relay.py` inherits the fix for free. →
   `decisions/DECISIONS.md` 2026-09-10.
-- **Next: `docs/PURPOSE.md`'s build order (`check_reachable`/
-  `get_connectivity_report` first, see the "Next" bucket below) is
-  unchanged and still the next real code to write.** Uniboslan is
-  standing, not being played — no perception layer, no agent exists yet.
-  If the "Confirm"/map-click crash recurs on a future embark, running it
-  under gdb again is the known workaround, not a fix. → `Working.md`
+- **DONE 2026-09-10: `check_reachable`/`get_connectivity_report` built —
+  the first real perception-layer code, not just bootstrapping.**
+  `scripts/dfhack/df-overseer-connectivity.lua`, deployed via
+  `install_df.py ui-install` (now generalized to deploy every
+  `df-overseer-*.lua` file, not just one hardcoded name).
+  `get_connectivity_report()` calls `warn-stranded.lua`'s own
+  `getStrandedGroups()` via `reqscript` rather than reimplementing it,
+  confirmed live against Uniboslan. `check_reachable()` is an explicit
+  stopgap (raw unit ids, not landmark names) pending the landmark system
+  (build order item 3). JSON output is deterministically key-sorted for
+  free via DFHack's own C++ encoder, satisfying build item 4's requirement
+  early. → `docs/PURPOSE.md` build order item 2, `decisions/DECISIONS.md`
+  2026-09-10.
+- **Next: the landmark system on burrows + exits-first representation**
+  (`docs/PURPOSE.md` build order item 3) — needed before `check_reachable`
+  can take named endpoints instead of raw unit ids, and before
+  `near_landmark` can be added to `get_connectivity_report`'s output.
+  Uniboslan has no buildings/burrows yet (brand new outpost), so there's
+  nothing to name as a landmark until it's played further. → `Working.md`
   handover.
 - **DONE 2026-09-10: reusable menu-automation tool, replacing one-off Lua
   scripts per click.** `scripts/dfhack/df-overseer-ui.lua`
@@ -160,9 +173,6 @@ or `decisions/DECISIONS.md`, not here.
   Accepted, not yet implemented; takes effect on the rebuilt VM's next cold
   stop/start.
   → `decisions/DECISIONS.md` 2026-08-28 row.
-- **`check_reachable` / `get_connectivity_report`.** Copies
-  `warn-stranded.lua`'s working algorithm; highest-confidence real code to
-  write next. → `docs/PURPOSE.md` build order item 2.
 - **Landmark system on burrows + exits-first representation.**
   → `docs/PURPOSE.md` build order item 3.
 - **`get_overview` / context tiering with deterministic JSON.** Must sort
