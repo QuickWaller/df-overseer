@@ -1,6 +1,6 @@
 # Roadmap
 
-**Last reviewed:** 2026-09-10 (fifth pass — text-only sweep built, second-site candidate found)
+**Last reviewed:** 2026-09-10 (fifth pass — second fort founded, first fort's save lost)
 
 This file is df-overseer's forward-looking, priority-ordered plan: what's
 next and roughly when, across infrastructure, game-side engineering, and the
@@ -15,26 +15,21 @@ or `decisions/DECISIONS.md`, not here.
 ## Now
 <!-- Actively being worked, or the clear immediate next step. -->
 
-> **Rewritten 2026-09-10 (fifth pass, end of session).** The first fort
-> ("Artobcatten, Combinedchannel," `region2`, `save/autosave 1`) still
-> stands, saved but not currently loaded. This pass's real result: the
-> text-only sweep planned in the fourth pass is now **built and run**.
-> `df-overseer-ui.lua` gained `embark-mode`/`leave-embark-mode`/`hover`
-> subcommands; a new mechanic was found along the way (`neighbor_hover_mm_*`
-> only live-updates while `scr.choosing_embark` is `true`, not during
-> ordinary browsing). A real Windows-specific SSH bug surfaced and was
-> fixed while deploying the updated script: Git's MSYS-linked `ssh.exe`
-> silently truncates a command-line argument to ~8182 characters when
-> spawned by Python's `subprocess` (a native Win32 process) rather than
-> bash — `provision_vm.ssh_guest` now pipes large payloads over stdin
-> instead. A raster sweep near the original Site Finder match's
-> neighborhood found real land immediately (the idle camera position had
-> drifted into open ocean) and a strong candidate site: absolute embark
-> rectangle `sx=128 sy=84 ex=131 ey=87` — Temperate Conifer Forest,
-> "Recommended size," deep soil, no aquifer, full minerals plus flux,
-> hostile goblins nearby as the one caution. **Nothing committed** —
-> founding a second fort is left for the user's own go/no-go call. Full
-> narrative: `Working.md`'s handover, `decisions/DECISIONS.md` 2026-09-10.
+> **Rewritten 2026-09-10 (fifth pass, end of session).** A second fort was
+> founded, **"Uniboslan, 'Ragwind'"** — but the first fort, "Artobcatten,
+> Combinedchannel," is gone: its save (`save/autosave 1`) was overwritten
+> in the process, confirmed via `md5sum` (that slot and `autosave 2` are
+> now byte-identical, both holding Uniboslan's data), with no backup ever
+> taken and no recovery path found. Told the user directly; **the user
+> chose to accept the loss and move forward with Uniboslan** rather than
+> chase a Proxmox-snapshot recovery. This pass also built and ran the
+> text-only sweep planned in the fourth pass — `df-overseer-ui.lua` gained
+> `embark-mode`/`leave-embark-mode`/`hover`, and a real Windows-specific
+> SSH bug surfaced and got fixed while deploying it (Git's MSYS-linked
+> `ssh.exe` silently truncates a command-line argument to ~8182 characters
+> when spawned by Python's `subprocess` rather than bash — payloads now go
+> over stdin). Full narrative: `Working.md`'s handover,
+> `decisions/DECISIONS.md` 2026-09-10.
 
 - **DONE 2026-09-09/10: DF's built-in modern (Steam-style) graphics are
   working on VM 103, no third-party pack, and now genuinely complete.**
@@ -51,16 +46,27 @@ or `decisions/DECISIONS.md`, not here.
   throughout real fortress-mode play). `GRAPHICS_MODULES` is now 10
   entries; confirmed visually fixed. → `decisions/DECISIONS.md` 2026-09-09
   and 2026-09-10 rows, `Working.md`.
-- **DONE 2026-09-10: the first fort is founded.** "Artobcatten,
-  Combinedchannel" on `region2`, driven entirely through DFHack struct
-  writes and simulated clicks: Site Finder → embark placement → the
-  "Confirm" step that had blocked every attempt so far, resolved as a
-  timing/race condition (ran cleanly under gdb; root mechanism still
-  unconfirmed). Quicksaved, transitioned off the diagnostic gdb-wrapped
-  process, and verified it reloads correctly under normal
-  `df-fortress.service` systemd supervision via the title screen's new
-  "Continue active game" button. → `decisions/DECISIONS.md` 2026-09-10
-  ("First fort founded"), `docs/DF-UI-AUTOMATION.md`, `Working.md`.
+- **DONE 2026-09-10: the first fort was founded ("Artobcatten,
+  Combinedchannel," `region2`), driven entirely through DFHack struct
+  writes and simulated clicks** — the "Confirm" step that had blocked
+  every attempt so far resolved as a timing/race condition (ran cleanly
+  under gdb; root mechanism still unconfirmed). **Superseded 2026-09-10
+  (fifth pass): its save was overwritten founding the second fort and is
+  gone** — see the row below and `decisions/DECISIONS.md` 2026-09-10
+  ("second fort was founded, but the first fort's save was lost").
+  → `docs/DF-UI-AUTOMATION.md`, `Working.md`.
+- **DONE 2026-09-10 (fifth pass): a second fort was founded, "Uniboslan,
+  'Ragwind'," using the text-only sweep — but the first fort's save was
+  lost as a side effect.** DF's save-slot names (`autosave 1`/`autosave 2`/
+  `current`) turned out to be a shared generic pool, not scoped per fort;
+  Artobcatten's save (`autosave 1`) got overwritten by Uniboslan's own
+  autosave activity, confirmed via `md5sum`, no backup existed, no
+  recovery path found. User chose to accept the loss and move forward with
+  Uniboslan, now the one active fort, confirmed reloading correctly under
+  normal systemd supervision. **Before founding any further fort: pull an
+  `install_df.py backup` of the existing save first** — this install gives
+  no guarantee an existing fort's slot survives a new one being founded.
+  → `decisions/DECISIONS.md` 2026-09-10, `Working.md` handover.
 - **DONE 2026-09-10: root cause of the map-navigation struggle found, and
   the headless-input limitation that caused it fixed.** `find_mm_*` vs
   `neighbor_hover_mm_*`/`warn_mm_*` confirmed as two different coordinate
@@ -85,15 +91,13 @@ or `decisions/DECISIONS.md`, not here.
   `subprocess` rather than bash; large payloads now go over stdin
   (`input_data` param). `provision_relay.py` inherits the fix for free. →
   `decisions/DECISIONS.md` 2026-09-10.
-- **Next: the user's call on the second-site candidate above.** Founding a
-  second fort is a real decision, not an auto-execute — this session
-  deliberately left it uncommitted. Once decided (embark it, or keep just
-  the first fort, "Artobcatten"): nothing is deciding what either fort
-  does turn to turn yet — `docs/PURPOSE.md`'s build order
-  (`check_reachable`/`get_connectivity_report` first, see the "Next"
-  bucket below) is unchanged and still the next real code to write. If
-  the earlier "Confirm" crash recurs on a future embark, running it under
-  gdb again is the known workaround, not a fix. → `Working.md` handover.
+- **Next: `docs/PURPOSE.md`'s build order (`check_reachable`/
+  `get_connectivity_report` first, see the "Next" bucket below) is
+  unchanged and still the next real code to write.** Uniboslan is
+  standing, not being played — no perception layer, no agent exists yet.
+  If the "Confirm"/map-click crash recurs on a future embark, running it
+  under gdb again is the known workaround, not a fix. → `Working.md`
+  handover.
 - **DONE 2026-09-10: reusable menu-automation tool, replacing one-off Lua
   scripts per click.** `scripts/dfhack/df-overseer-ui.lua`
   (`install_df.py ui-install`, then `./dfhack-run df-overseer-ui

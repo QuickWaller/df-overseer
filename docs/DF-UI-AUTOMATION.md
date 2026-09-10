@@ -166,7 +166,11 @@ row titled "First fort founded").
 **A genuine fort now exists**: "Artobcatten, Combinedchannel" on
 `region2`, confirmed via the in-game founding message, `gametype == 0`
 (`DWARF_MAIN`), and a real save directory (`save/autosave 1`, containing
-`world.sav`). After quicksaving, the ad-hoc gdb-wrapped process was
+`world.sav`). **Superseded 2026-09-10 (fifth pass): this fort's save was
+overwritten founding a second fort and no longer exists** — see
+`decisions/DECISIONS.md` 2026-09-10 ("second fort was founded, but the
+first fort's save was lost") and the new save-slot-naming trap in
+`Working.md`. After quicksaving, the ad-hoc gdb-wrapped process was
 stopped cleanly and the fort was reloaded under normal `df-fortress.service`
 systemd supervision via the title screen's new "Continue active game"
 button (present for the first time once a save exists) — verified
@@ -319,6 +323,46 @@ payload of unbounded size directly in an SSH command string again.
 `provision_relay.py` gets the fix for free, since it reuses the same
 `remote()`. See `provision_vm.ssh_guest`'s docstring for the full
 mechanism.
+
+## Founded a second fort with the sweep — three more findings, one costly
+
+Used the sweep above to actually commit a second embark. Three things
+worth recording that weren't true of the first fort's flow:
+
+**The tutorial intro dialogs render as overlays on
+`viewscreen_choose_start_sitest` itself, not as a separate viewscreen
+type**, and do reappear on every fresh embark attempt (a `type` check
+right after reaching the embark screen can miss them if the dump isn't
+also checked — they don't change `_type`).
+
+**A real `xdotool` click on a genuinely valid, placeable tile went
+straight through the entire remaining flow to
+`viewscreen_setupdwarfgamest`** — no `warn_mm_*` force-write, no separate
+map-click-then-Confirm sequence needed at all, unlike the three-click
+mechanism documented above for the first fort. Not fully explained; the
+force-write/Confirm dance documented above may have been compensating for
+something specific to DFHack's fake input rather than being an inherent
+property of the flow. The first commit attempt this session *did* still
+hit the documented crash signature (`code=exited, status=1`, same `gdb`
+workaround), but at the map-click step rather than Confirm — so the race
+isn't scoped to one specific click either.
+
+**The costly one**: restarting the embark flow from the title screen does
+not reliably return to the same world as wherever a stale, uncommitted
+embark attempt was sitting — this session's fresh "Start new game in
+existing world" landed in `region1`, not the `region2` a stale
+mid-navigation state (and its `neighbor_hover_mm_*` numbers) belonged to.
+Reusing those stale numbers pointed at real mountain terrain in the new
+world (DF's own "cannot embark entirely on water or mountains" validation
+caught it, no harm done) — but more importantly, **DF's save-slot names
+(`autosave 1`, `autosave 2`, `current`) turned out to be a shared generic
+pool, not scoped per fort**: founding this second fort overwrote the
+first fort's actual save (which lived in `autosave 1`, not a
+region-named folder), confirmed via `md5sum` — `autosave 1/world.sav` and
+`autosave 2/world.sav` are now byte-identical, both holding the new
+fort's data, with no backup ever taken and no recovery found. **Pull an
+`install_df.py backup` of every existing save before founding any future
+additional fort.** Full incident: `decisions/DECISIONS.md` 2026-09-10.
 
 ## Screen atlas
 

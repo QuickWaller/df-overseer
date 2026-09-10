@@ -8,90 +8,84 @@ actually going on right now.
 
 The prior handover from earlier the same day is archived wholesale —
 [`working-archive/Working_archive-2026-09-07.md`](working-archive/Working_archive-2026-09-07.md),
-superseded by this one. **This session's result: the text-only sweep is
-built and working, a real Windows-specific SSH deployment bug got fixed
-along the way, and a genuinely strong second-site candidate was found —
-nothing committed, that decision is left for the user.**
+superseded by this one. **This session's result: a second fort was
+founded ("Uniboslan, 'Ragwind'"), but the first fort's save ("Artobcatten")
+was lost as a side effect — an unrecoverable incident, not a close call.**
+The text-only sweep also got built and a real Windows SSH bug got fixed
+along the way.
 
 ### State at a glance
 
-- **DF is idle at `viewscreen_choose_start_sitest`, `zoomed_in=true`,
-  `choosing_embark=false`, `warn_mm_startx=-1` (nothing committed).**
-  Camera is currently centered near `zoom_cent≈151,86` (moved there this
-  session from the prior idle position, deep in open ocean, to search near
-  the original Site Finder match area). The first fort ("Artobcatten,
-  Combinedchannel," `region2`, `save/autosave 1`) is untouched, safely
-  saved, not currently loaded. `df-fortress.service` is `active`.
-- **Committed the prior session's own doc updates** (they'd been left
-  uncommitted) as `169fc21`, then did this session's work on top. Nothing
-  pushed — local commits only, per the push-needs-explicit-go-ahead rule.
-- **Extended `df-overseer-ui.lua`** with `embark-mode` (click the real
-  Embark button, row 57), `leave-embark-mode` (`LEAVESCREEN`, no side
-  effect), and `hover` (read `neighbor_hover_mm_*` plus buffer-scanned
-  ocean/aquifer/soil/biome/trees flags in one call). Deployed via
-  `install_df.py ui-install`, all three confirmed working live.
+- **A second fort exists and is running normally: "Uniboslan, 'Ragwind'"**,
+  founded via the text-only sweep, confirmed via the in-game founding
+  message and `gametype==0`. Quicksaved, transitioned off the diagnostic
+  gdb-wrapped process (used as the crash workaround, see below) onto
+  normal `df-fortress.service` systemd supervision, reloaded via the
+  title screen's "Continue active game" button, verified via
+  `viewscreen_dwarfmodest`'s own header. `df.global.world.cur_savegame.save_dir`
+  is `autosave 2`.
+- **The first fort, "Artobcatten, Combinedchannel," is gone.** Its actual
+  save data lived in `save/autosave 1` (this repo already knew DF doesn't
+  name a fort's save after its region — see the durable traps). Founding
+  Uniboslan overwrote it: `save/autosave 1/world.sav` and
+  `save/autosave 2/world.sav` are now byte-for-byte identical (confirmed
+  via `md5sum`), both holding Uniboslan's data. `save/current` is empty,
+  `region1`/`region2` are confirmed (again) pure world-gen-history with no
+  player-fort data, and this repo's `backups/` directory has never
+  actually been used (empty) — no recovery path was found. Told the user
+  directly before doing anything else; **the user chose to accept the
+  loss and move forward with Uniboslan** rather than pursue a
+  Proxmox-snapshot recovery check. Full incident trail:
+  `decisions/DECISIONS.md` 2026-09-10 ("second fort was founded, but the
+  first fort's save was lost").
+- **Extended `df-overseer-ui.lua`** with `embark-mode`, `leave-embark-mode`,
+  `hover` — see the durable traps section for the mechanics these
+  depend on. Deployed via `install_df.py ui-install`, confirmed working
+  live and used to actually find and commit Uniboslan's site.
 - **Found and fixed a real, previously-latent Windows-specific SSH bug**
-  while deploying the above: the first `ui-install` attempt reported
-  success but silently failed to update the file (Git's MSYS-linked
-  `ssh.exe` truncates a command-line argument to ~8182 characters when
-  spawned by Python's `subprocess`, a native Win32 process, but not when
-  spawned by bash) — see the durable-traps section and
-  `decisions/DECISIONS.md` for the full mechanism and fix
-  (`provision_vm.ssh_guest`'s new `input_data` param, `install_df.remote()`
-  now pipes its payload over stdin). `provision_relay.py` inherits the fix
-  for free.
-- **New mechanic found, not in the prior research doc**:
-  `neighbor_hover_mm_*` only live-updates from real mouse movement while
-  `scr.choosing_embark` is `true` — during ordinary zoomed browsing it's
-  frozen, even though the text-panel hover info updates live in both
-  modes. A sweep has to enter `choosing_embark` mode and stay there
-  throughout. Also confirmed: `LEAVESCREEN` cleanly cancels
-  `choosing_embark` with no side effect, and WASD panning keeps working
-  while `choosing_embark` is `true` — no need to leave the mode to pan
-  between samples.
-- **Ran the sweep live**: navigated the camera from its idle position
-  (deep ocean) back toward the original Site Finder match's neighborhood
-  (`region_pos 9,5`, absolute `~150,79`) using WASD taps toward the
-  target, checking `zoom_cent_x/y` between taps. A 5×5-point raster there
-  found real land immediately — no ocean anywhere in that viewport,
-  mostly `Temperate Shrubland`/`Temperate Conifer Forest`/`Mountain`,
-  several points with no aquifer.
-- **Found a genuinely strong candidate, full-detail-checked, nothing
-  committed**: absolute embark rectangle **`sx=128 sy=84 ex=131 ey=87`**
-  (`neighbor_hover_mm_*`, the confirmed world-absolute frame — this is
-  exactly what would go into `warn_mm_*` to actually commit it). Temperate
-  Conifer Forest, Warm, Heavily Forested, Thick other vegetation, **DF's
-  own "Recommended size" flag present**, Deep soil (Clay/Sand — better
-  than the first fort's "Little soil"), no aquifer, full mineral suite
-  (Iron/Gold/Silver/Copper/Nickel/Zinc/Platinum/Tin/Lead) plus a Flux
-  stone layer (steel-capable). One real caution: hostile Goblins "a short
-  trip east" (closer than ideal, not disqualifying). Left the screen
-  clean afterward — `leave-embark-mode` confirmed, nothing committed.
+  while deploying the above script: Git's MSYS-linked `ssh.exe` truncates
+  a command-line argument to ~8182 characters when spawned by Python's
+  `subprocess` (a native Win32 process) but not when spawned by bash.
+  Fixed: `provision_vm.ssh_guest` gained `input_data` (pipes a payload
+  over stdin instead), `install_df.remote()` uses it. `provision_relay.py`
+  inherits the fix for free.
+- **A crash, same signature as the first fort's "Confirm" race, recurred
+  at a different step** (the map-click step, not Confirm) on the first
+  commit attempt for Uniboslan's site — `code=exited, status=1`, no core
+  dump, no save created, nothing lost by the crash itself. The known `gdb`
+  workaround (run `dwarfort` directly under `gdb` with a `catch syscall
+  exit_group` batch script, matching systemd's exact environment) avoided
+  it again on retry, same as for the first fort.
+- **New finding while retrying under `gdb`**: a real `xdotool` click on a
+  genuinely valid, placeable tile went straight through to
+  `viewscreen_setupdwarfgamest` with no `warn_mm_*` force-write and no
+  separate Confirm click needed at all — unlike the first fort's
+  documented flow. Not fully explained; possibly the force-write/Confirm
+  dance was compensating for something specific to DFHack's fake input,
+  not an inherent property of the flow. Worth revisiting if a third embark
+  is ever attempted.
+- **New finding, load-bearing for any future second embark**: restarting
+  the embark flow from the title screen ("Start new game in existing
+  world") did **not** return to the same world/coordinate frame as the
+  stale mid-navigation state this session started in — it landed in
+  `region1`, not `region2`. The stale `neighbor_hover_mm_*` numbers from
+  before the crash pointed at real mountain terrain in this different
+  world (DF's own validation correctly flagged it unplaceable), not the
+  forest found earlier — a coincidence of matching numbers across
+  different worlds, not a bug in the coordinate frame itself. The sweep
+  had to be re-run fresh in the world actually reached this time.
 
-### Next: the user's call on this candidate, then the fort's fate
+### Next: the fort's fate, now that a second one exists
 
-1. **This session deliberately did not commit the candidate above.**
-   Founding a second fort is exactly the kind of decision
-   `Working.md`/`ROADMAP.md` have been flagging as needing the user, not
-   an auto-execute — surface `sx=128 sy=84 ex=131 ey=87` and ask.
-2. To actually commit it: enter `embark-mode`, `xdotool mousemove` to a
-   pixel within that rectangle (`px≈280,360` at the current camera
-   position — recompute if the camera has moved since), a real click sets
-   `warn_mm_*` correctly (confirmed this session that a real click
-   produces correct world-absolute values, same mechanism as the first
-   fort's placement), then re-set `warn_flags.GENERIC=true` if needed,
-   click through to "Confirm" (watch for the known timing/race crash — run
-   under `gdb` if it recurs) → "Play now!" → a second real fort.
-3. Once a good second fort exists (or the user decides the first,
-   "Artobcatten," is good enough after all, or to abandon one): decide
-   whether to keep both, abandon one, or move on. The fort(s) are still
-   standing, not being played — no perception layer, no agent exists yet.
-   `docs/PURPOSE.md`'s build order (`check_reachable`/`get_connectivity_report`
-   first) is the next real code to write regardless, unchanged by this
-   session — see `ROADMAP.md`'s "Next" bucket.
-4. **Not done this session, still open from the prior handover**: the
-   `find_mm_*` Y-axis transform mystery (cheap, read-only, not blocking —
-   the sweep found a candidate without needing it).
+1. **`docs/PURPOSE.md`'s build order (`check_reachable`/`get_connectivity_report`
+   first) is the next real code to write** — unchanged by this session.
+   Neither fort is being played yet: no perception layer, no agent exists.
+   → `ROADMAP.md`'s "Next" bucket.
+2. **Not done this session, still open from an earlier handover**: the
+   `find_mm_*` Y-axis transform mystery (cheap, read-only, not blocking).
+3. **Worth deciding, not urgent**: whether to pull an actual
+   `install_df.py backup` of Uniboslan's save now that this session found
+   out the hard way that none had ever been taken of a fort-bearing save.
 
 ### Durable traps, still true (additions marked NEW)
 
@@ -214,6 +208,45 @@ nothing committed, that decision is left for the user.**
   embed an unbounded-size payload directly in an SSH command string again
   — see `provision_vm.ssh_guest`'s docstring and
   `decisions/DECISIONS.md` 2026-09-10 for the full mechanism.
+- NEW, **the costly one — read before ever founding another fort while
+  one already exists**: **DF's save-slot names (`autosave 1`, `autosave 2`,
+  `current`) are a shared generic pool, not scoped per fort.** Founding
+  Uniboslan overwrote Artobcatten's actual save data, which lived in
+  `autosave 1` — confirmed via `md5sum`, `autosave 1/world.sav` and
+  `autosave 2/world.sav` are now byte-for-byte identical, both holding
+  Uniboslan's state, with no trace of Artobcatten's left anywhere
+  (`current` empty, `region1`/`region2` are pure world-gen history, no
+  backup ever taken). **Before founding any future additional fort**: pull
+  an `install_df.py backup` of every existing save first, since this
+  install's save naming gives no guarantee that an existing fort's slot
+  survives a new one being founded.
+- NEW: **A crash matching the first fort's "Confirm" signature
+  (`code=exited, status=1`, no core dump) can also trigger at the
+  map-click step, not just Confirm** — same `gdb`-wrapped-launch
+  workaround applies (see the RESOLVED entry above), just don't assume the
+  race is scoped to one specific click.
+- NEW: **Restarting the embark flow from the title screen does not
+  reliably return to the same world/coordinate frame as wherever a stale,
+  not-yet-committed embark attempt was sitting** — this session's fresh
+  "Start new game in existing world" landed in `region1`, not the `region2`
+  the stale mid-navigation state (and its `neighbor_hover_mm_*` numbers)
+  belonged to. Re-verify the actual world/region reached (region name text
+  on the embark screen, not just numeric coordinates matching a prior
+  session) before reusing any previously-found coordinates.
+- NEW: **A real `xdotool` click on a genuinely valid, placeable tile can
+  go straight through the whole embark-placement flow to
+  `viewscreen_setupdwarfgamest`**, with no `warn_mm_*` force-write and no
+  separate Confirm click at all — different from the first fort's
+  documented sequence. Not fully explained (possibly the force-write/
+  Confirm dance was compensating for something specific to DFHack's fake
+  input on an earlier attempt, not an inherent property of the flow).
+  Worth confirming if a third embark is ever attempted.
+- NEW: **The tutorial intro dialogs ("Quick start and short tutorial?",
+  "On your own!") render as overlays on `viewscreen_choose_start_sitest`
+  itself, not as separate viewscreen types** — they do reappear on each
+  fresh embark attempt (this session briefly assumed otherwise after they
+  didn't show up in the very first `type` check, before actually dumping
+  the screen and finding them present).
 
 ### Other open items, carried forward
 
