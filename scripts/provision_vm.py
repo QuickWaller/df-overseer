@@ -137,7 +137,7 @@ def guest_address(env):
     return "ip=%s,gw=%s" % (cidr, gw), dns
 
 
-def ssh_guest(env, ip, command, timeout=120, check=True):
+def ssh_guest(env, ip, command, timeout=120, check=True, input_data=None):
     """Run a command in the guest over SSH, as the cloud-init user.
 
     The build VM is short-lived and its host key dies with it, so it is kept
@@ -150,6 +150,21 @@ def ssh_guest(env, ip, command, timeout=120, check=True):
     file named `nul` in the repo root, which git cannot even index
     ("short read while indexing nul"). Verified by that exact failure,
     2026-08-27.
+
+    `input_data` (str, optional): sent to the remote command over stdin
+    instead of being embedded in `command` itself. **Required for any
+    payload beyond a few KB** -- found 2026-09-10 debugging a silent
+    `install_df.py ui-install` failure: this same `ssh.exe` (Git's MSYS-linked
+    build) accepts an arbitrarily long command line when a POSIX parent
+    (bash) execs it directly, but silently truncates the command line to
+    ~8182 characters when a native Win32 parent (Python's `subprocess`,
+    which must flatten argv into one `CreateProcess` command-line string)
+    spawns it instead -- confirmed by reproducing the exact truncation length
+    with a minimal script, and confirming bash-invoked `ssh` with an
+    identical, longer payload does not truncate. No error, no non-zero exit:
+    the remote side just receives and runs a truncated command. `remote()`'s
+    base64 payload now goes over stdin for exactly this reason -- never
+    revert to embedding a payload of unbounded size directly in `command`.
     """
     key = os.path.expanduser(env.get("DF_SSH_KEY", ""))
     if not key or not os.path.exists(key):
@@ -172,7 +187,7 @@ def ssh_guest(env, ip, command, timeout=120, check=True):
     # The guest is Ubuntu and everything it prints is UTF-8.
     proc = subprocess.run(argv, capture_output=True, text=True,
                           encoding="utf-8", errors="replace",
-                          timeout=timeout)
+                          timeout=timeout, input=input_data)
     if check and proc.returncode != 0:
         raise PVEError("ssh failed (%s): %s"
                        % (proc.returncode, (proc.stderr or proc.stdout).strip()))

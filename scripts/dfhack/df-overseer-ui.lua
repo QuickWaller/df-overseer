@@ -104,6 +104,90 @@ local function dump_screen()
   end
 end
 
+-- Embark-site-sweep helpers, added 2026-09-10. These are specific to
+-- viewscreen_choose_start_sitest and depend on a finding from that same
+-- session: neighbor_hover_mm_* (the live-hovered embark rectangle) only
+-- updates from real mouse movement while scr.choosing_embark is true --
+-- during ordinary browsing (choosing_embark false) it is frozen, even
+-- though the hover-info text panel updates in both modes. This was not
+-- previously documented; research/2026-09-10-embark-screen-rendering-and-coordinates.md
+-- only tested it via a real embark placement click, not casual hovering.
+-- The sweep therefore has to run inside choosing_embark mode throughout.
+
+-- Clicks the real "Embark" button at its known row-57 position directly,
+-- rather than a text scan -- a whole-screen scan for "Embark" false-matches
+-- the instructional sentence at row 52 first (see the screen atlas in
+-- docs/DF-UI-AUTOMATION.md). Caller must already be on
+-- viewscreen_choose_start_sitest with zoomed_in true.
+local function embark_mode()
+  local scr = dfhack.gui.getCurViewscreen()
+  if scr.choosing_embark then
+    return true, "already in choosing_embark mode"
+  end
+  df.global.gps.mouse_x = 115
+  df.global.gps.mouse_y = 57
+  gui.simulateInput(scr, '_MOUSE_L')
+  scr = dfhack.gui.getCurViewscreen()
+  if scr.choosing_embark then
+    return true, "entered choosing_embark mode"
+  end
+  return false, "Embark click did not flip choosing_embark"
+end
+
+-- Cancels choosing_embark mode with LEAVESCREEN (confirmed live 2026-09-10
+-- to cleanly return to ordinary browsing with warn_mm_* untouched, no
+-- confirm/abort prompt, so long as the local map itself was never clicked).
+local function leave_embark_mode()
+  local scr = dfhack.gui.getCurViewscreen()
+  gui.simulateInput(scr, 'LEAVESCREEN')
+  scr = dfhack.gui.getCurViewscreen()
+  return not scr.choosing_embark
+end
+
+-- Reads the current hover state: the live neighbor_hover_mm_* rectangle
+-- (only meaningful in choosing_embark mode -- see above) plus a handful of
+-- buffer-scanned criteria flags from the hover-info side panel (biome name
+-- row, aquifer/soil/tree lines). This is read-only: it does not move the
+-- mouse itself, so the caller drives the real cursor (xdotool, over SSH)
+-- before calling this. One compact tagged line, easy to grep/parse from
+-- the calling shell loop.
+local function row_text(y)
+  local w = dfhack.screen.getWindowSize()
+  local line = ""
+  for x = 0, w - 1 do
+    local tile = dfhack.screen.readTile(x, y)
+    local ch = tile and tile.ch
+    line = line .. (ch and ch >= 32 and ch < 127 and string.char(ch) or " ")
+  end
+  return line
+end
+
+local function hover_info()
+  local scr = dfhack.gui.getCurViewscreen()
+  local sx, sy, ex, ey = scr.neighbor_hover_mm_sx, scr.neighbor_hover_mm_sy,
+                         scr.neighbor_hover_mm_ex, scr.neighbor_hover_mm_ey
+  -- Panel rows confirmed live 2026-09-10: 1 = region name, 4 = biome name,
+  -- 5 = temperature, 6 = trees, 7 = other vegetation, 8 = surroundings;
+  -- soil/aquifer lines float lower (17-22ish) depending on how many mineral
+  -- lines print above them, so search a wider band rather than one row.
+  -- Row 4 carries an extra "N x N" embark-size prefix while choosing_embark
+  -- is true (not present during plain browsing, confirmed live 2026-09-10)
+  -- ahead of the actual biome name -- search the whole row for "Ocean"
+  -- rather than assuming the biome name is the row's only content.
+  local biome = row_text(4):match("%S.*%S") or ""
+  local trees = row_text(6):match("%S.*%S") or ""
+  local flags = ""
+  for y = 15, 24 do
+    flags = flags .. " " .. row_text(y)
+  end
+  local ocean = (flags:find("Ocean") or biome:find("Ocean")) and 1 or 0
+  local aquifer = flags:find("aquifer") and 1 or 0
+  local no_soil = flags:find("No soil") and 1 or 0
+  print(string.format(
+    "HOVER sx=%d sy=%d ex=%d ey=%d ocean=%d aquifer=%d no_soil=%d biome=%q trees=%q",
+    sx, sy, ex, ey, ocean, aquifer, no_soil, biome, trees))
+end
+
 local args = {...}
 local cmd = args[1]
 
@@ -118,6 +202,13 @@ elseif cmd == "click" then
   end
 elseif cmd == "dump" then
   dump_screen()
+elseif cmd == "embark-mode" then
+  local ok, msg = embark_mode()
+  print((ok and "OK: " or "FAIL: ") .. msg)
+elseif cmd == "leave-embark-mode" then
+  print(leave_embark_mode() and "OK: left choosing_embark mode" or "FAIL: still in choosing_embark mode")
+elseif cmd == "hover" then
+  hover_info()
 else
-  print("usage: df-overseer-ui <type|click TEXT|dump>")
+  print("usage: df-overseer-ui <type|click TEXT|dump|embark-mode|leave-embark-mode|hover>")
 end

@@ -243,8 +243,12 @@ def remote(env, ip, script, label="remote", timeout=600, check=True,
         return None
     payload = base64.b64encode(body.encode("utf-8")).decode("ascii")
     shell = "sudo -H bash -s" if sudo else "bash -s"
-    proc = ssh_guest(env, ip, "echo %s | base64 -d | %s" % (payload, shell),
-                     timeout=timeout, check=False)
+    # payload goes over stdin, not embedded in the command string: found
+    # 2026-09-10 that this ssh.exe truncates a long command line to ~8182
+    # chars when spawned by a native Win32 parent (Python) instead of a
+    # POSIX one (bash) -- see ssh_guest's input_data docstring.
+    proc = ssh_guest(env, ip, "base64 -d | %s" % shell,
+                     timeout=timeout, check=False, input_data=payload)
     if check and proc.returncode != 0:
         raise PVEError("%s failed (exit %s):\n%s"
                        % (label, proc.returncode,

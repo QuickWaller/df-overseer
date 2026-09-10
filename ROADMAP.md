@@ -1,6 +1,6 @@
 # Roadmap
 
-**Last reviewed:** 2026-09-10 (fourth pass — map-navigation root cause found)
+**Last reviewed:** 2026-09-10 (fifth pass — text-only sweep built, second-site candidate found)
 
 This file is df-overseer's forward-looking, priority-ordered plan: what's
 next and roughly when, across infrastructure, game-side engineering, and the
@@ -15,24 +15,26 @@ or `decisions/DECISIONS.md`, not here.
 ## Now
 <!-- Actively being worked, or the clear immediate next step. -->
 
-> **Rewritten 2026-09-10 (fourth pass, end of session).** The first fort
+> **Rewritten 2026-09-10 (fifth pass, end of session).** The first fort
 > ("Artobcatten, Combinedchannel," `region2`, `save/autosave 1`) still
 > stands, saved but not currently loaded. This pass's real result: the
-> actual root cause of the night's map-navigation struggle, found and
-> fixed. `find_mm_*` (Site Finder's match output) and
-> `neighbor_hover_mm_*`/`warn_mm_*` (the real, committable embark
-> rectangle) are two different coordinate frames — confirmed live,
-> `warn_mm_*` is world-absolute, `find_mm_*` is not — and every forced
-> `warn_mm_* = find_mm_*` write all night was writing nonsense coordinates,
-> not a camera bug. Separately: installed `xdotool` and confirmed real
-> X11 input against the headless Xvfb display genuinely drives map
-> hover/clicks/panning, none of which DFHack's fake input can ever touch.
-> Plan going forward, agreed with the user: a text-only sweep (real cursor
-> + buffer-scanned hover/warning text, zero image dependency, camera
-> panning in sync so the search is visible on the live feed) rather than
-> chasing the visual overlay or `find_mm_*`'s exact transform. Not yet
-> implemented. Full narrative: `Working.md`'s handover,
-> `research/2026-09-10-embark-screen-rendering-and-coordinates.md`.
+> text-only sweep planned in the fourth pass is now **built and run**.
+> `df-overseer-ui.lua` gained `embark-mode`/`leave-embark-mode`/`hover`
+> subcommands; a new mechanic was found along the way (`neighbor_hover_mm_*`
+> only live-updates while `scr.choosing_embark` is `true`, not during
+> ordinary browsing). A real Windows-specific SSH bug surfaced and was
+> fixed while deploying the updated script: Git's MSYS-linked `ssh.exe`
+> silently truncates a command-line argument to ~8182 characters when
+> spawned by Python's `subprocess` (a native Win32 process) rather than
+> bash — `provision_vm.ssh_guest` now pipes large payloads over stdin
+> instead. A raster sweep near the original Site Finder match's
+> neighborhood found real land immediately (the idle camera position had
+> drifted into open ocean) and a strong candidate site: absolute embark
+> rectangle `sx=128 sy=84 ex=131 ey=87` — Temperate Conifer Forest,
+> "Recommended size," deep soil, no aquifer, full minerals plus flux,
+> hostile goblins nearby as the one caution. **Nothing committed** —
+> founding a second fort is left for the user's own go/no-go call. Full
+> narrative: `Working.md`'s handover, `decisions/DECISIONS.md` 2026-09-10.
 
 - **DONE 2026-09-09/10: DF's built-in modern (Steam-style) graphics are
   working on VM 103, no third-party pack, and now genuinely complete.**
@@ -67,14 +69,27 @@ or `decisions/DECISIONS.md`, not here.
   the fix for map hover/click/panning, which DFHack's fake input can
   never drive in headless Xvfb. → `research/2026-09-10-embark-screen-rendering-and-coordinates.md`,
   `decisions/DECISIONS.md` 2026-09-10, `Working.md`.
-- **Next: implement the text-only sweep to place a properly-verified
-  second site.** Move the real cursor candidate to candidate, read the
-  hover-info panel and placement-warning text (both buffer-scannable, no
-  image dependency), commit the first clean criteria-match — panning the
-  camera in sync so the search is visible on the live feed, not just log
-  output. Not yet built. Once a good site exists, decide whether to keep
-  both forts, abandon one, or move on: nothing is deciding what either
-  fort does turn to turn yet — `docs/PURPOSE.md`'s build order
+- **DONE 2026-09-10: text-only sweep built and run, second-site candidate
+  found, nothing committed.** `df-overseer-ui.lua` gained `embark-mode`/
+  `leave-embark-mode`/`hover`; found live that `neighbor_hover_mm_*` only
+  updates while `choosing_embark` is `true`. A raster sweep near the
+  original Site Finder match found real land and a strong candidate:
+  `sx=128 sy=84 ex=131 ey=87` (Temperate Conifer Forest, "Recommended
+  size," no aquifer, deep soil, full minerals + flux; hostile goblins
+  nearby as the one caution). → `decisions/DECISIONS.md` 2026-09-10,
+  `Working.md` handover.
+- **DONE 2026-09-10: fixed a Windows-specific SSH command-line truncation
+  bug in `provision_vm.ssh_guest`/`install_df.remote()`**, found deploying
+  the sweep tool above. Git's MSYS-linked `ssh.exe` silently truncated a
+  long command-line argument to ~8182 characters when spawned by Python's
+  `subprocess` rather than bash; large payloads now go over stdin
+  (`input_data` param). `provision_relay.py` inherits the fix for free. →
+  `decisions/DECISIONS.md` 2026-09-10.
+- **Next: the user's call on the second-site candidate above.** Founding a
+  second fort is a real decision, not an auto-execute — this session
+  deliberately left it uncommitted. Once decided (embark it, or keep just
+  the first fort, "Artobcatten"): nothing is deciding what either fort
+  does turn to turn yet — `docs/PURPOSE.md`'s build order
   (`check_reachable`/`get_connectivity_report` first, see the "Next"
   bucket below) is unchanged and still the next real code to write. If
   the earlier "Confirm" crash recurs on a future embark, running it under
