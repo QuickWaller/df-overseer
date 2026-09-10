@@ -78,12 +78,25 @@ along the way.
 ### Next: the fort's fate, now that a second one exists
 
 1. **`docs/PURPOSE.md`'s build order (`check_reachable`/`get_connectivity_report`
-   first) is the next real code to write** — unchanged by this session.
-   Neither fort is being played yet: no perception layer, no agent exists.
-   → `ROADMAP.md`'s "Next" bucket.
-2. **Not done this session, still open from an earlier handover**: the
+   first) is the next real code to write on `main`** — unchanged by this
+   session's `main` history. Neither fort is being played yet: no
+   perception layer, no agent exists. → `ROADMAP.md`'s "Next" bucket.
+2. **A first pass at this actually got built this session, then moved off
+   `main` onto its own branch, `perception-layer-experiments`**
+   (`107adf1`/`ac7547f`, both still reachable there): `check_reachable`/
+   `get_connectivity_report` (reuses `warn-stranded.lua`'s own
+   `getStrandedGroups()`) and an experimental "Embark Site" seed landmark
+   (citizen-position centroid, `dfhack.persistent`-backed, confirmed live
+   to survive a real save/reload). User's call, 2026-09-10: keep this
+   explicitly experimental and off `main` rather than merge it in.
+   **The live VM currently has both scripts deployed** (from before the
+   branch split) and Uniboslan's save already has the seed landmark
+   persisted in it — that's independent of which branch is checked out
+   locally. Any further perception-layer work should happen checked out
+   on that branch, not `main`, until/unless the user decides to merge it.
+3. **Not done this session, still open from an earlier handover**: the
    `find_mm_*` Y-axis transform mystery (cheap, read-only, not blocking).
-3. **Worth deciding, not urgent**: whether to pull an actual
+4. **Worth deciding, not urgent**: whether to pull an actual
    `install_df.py backup` of Uniboslan's save now that this session found
    out the hard way that none had ever been taken of a fort-bearing save.
 
