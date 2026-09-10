@@ -1,4 +1,5 @@
 -- df-overseer-connectivity.lua
+--@module = true
 --
 -- check_reachable / get_connectivity_report: the first real perception-layer
 -- primitives, docs/PURPOSE.md build order item 2. Reuses warn-stranded.lua's
@@ -60,7 +61,11 @@ local function group_centroid(units)
   return sx / n, sy / n, sz / n
 end
 
-local function get_connectivity_report()
+-- Exported for other df-overseer-*.lua scripts via reqscript (see
+-- df-overseer-landmarks.lua's own "Module exports" comment for the
+-- pattern). df-overseer-overview.lua uses this for get_overview()'s
+-- alerts.
+function get_connectivity_report()
   local groupList, _, mainGroup = stranded.getStrandedGroups()
   local strandedGroups = {}
   for _, group in ipairs(groupList) do
@@ -125,6 +130,11 @@ local function check_reachable_units(unit_id_a, unit_id_b)
     from_group = dfhack.maps.getWalkableGroup(posA),
     to_group = dfhack.maps.getWalkableGroup(posB),
   }
+end
+
+-- Same module-load guard as df-overseer-landmarks.lua -- see its comment.
+if dfhack_flags.module then
+  return
 end
 
 local args = {...}

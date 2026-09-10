@@ -192,15 +192,31 @@ before deploying anything that runs continuously.
    stranded citizens to test against, and manufacturing one felt too
    disruptive to the live fort just for a query-tool test. →
    `decisions/DECISIONS.md` 2026-09-10 (latest row).
-2. **Not done in this pass**: the research spec's `via` (path-type
+2. **DONE (same session): `get_overview()`/context tiering built, build
+   order item 4.** New `df-overseer-overview.lua`, composing
+   `list_landmarks()` (tier1) and `get_connectivity_report()` (tier2
+   alerts, rendered as real sentences) via `reqscript`. Found and fixed a
+   second real `reqscript` requirement: loading a module ran its CLI
+   dispatch code too, printing stray "usage: ..." lines ahead of the
+   JSON, because the module-load call passes an internal table as `...`
+   that matches none of the CLI's expected subcommands. Fixed with the
+   `dfhack_flags.module` early-return guard `warn-stranded.lua` already
+   uses. Also fixed: `list_landmarks()` now sorts landmarks and their
+   exits by name, not engine iteration order, for turn-to-turn JSON
+   stability. Verified live: `df-overseer-overview get` returns clean
+   JSON, zero stray lines. **Deliberately not implemented, flagged not
+   faked**: `resource_summary` (needs a real prospect-equivalent scan)
+   and `get_diff_since`/event-driven tier2 (build order item 5, separate
+   later work). → `decisions/DECISIONS.md` 2026-09-10 (latest row).
+3. **Not done in this pass**: the research spec's `via` (path-type
    classification, e.g. "corridor") exit field is deliberately not
    implemented. Would need real path-tracing this slice doesn't attempt.
-3. **Not done this session, still open from an earlier handover**: the
+4. **Not done this session, still open from an earlier handover**: the
    `find_mm_*` Y-axis transform mystery (cheap, read-only, not blocking).
-4. **Worth deciding, not urgent**: whether to pull an actual
+5. **Worth deciding, not urgent**: whether to pull an actual
    `install_df.py backup` of Uniboslan's save now that this session found
    out the hard way that none had ever been taken of a fort-bearing save.
-5. **Not pushed**: committed locally to `perception-layer-experiments`,
+6. **Not pushed**: committed locally to `perception-layer-experiments`,
    per this repo's rule, needs explicit go-ahead before `git push`.
 
 ### Durable traps, still true (additions marked NEW)

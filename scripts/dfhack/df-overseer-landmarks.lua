@@ -67,6 +67,12 @@
 -- Module exports (via reqscript('df-overseer-landmarks'), same pattern
 -- warn-stranded.lua uses for getStrandedGroups -- a non-local function
 -- becomes a field on the table reqscript returns):
+--   list_landmarks() -> [{name, kind, exits}], err?
+--     The same list the CLI's own `list` command prints, for a caller that
+--     wants the model-facing (coordinate-stripped) shape directly rather
+--     than re-parsing this script's own JSON output.
+--     df-overseer-overview.lua uses this for get_overview()'s
+--     tier1.landmarks.
 --   get_landmark_centroid(name) -> x, y, z | nil
 --     Server-side only -- the one place this file hands out a raw
 --     coordinate, and only to another script, never through print/json.
@@ -207,7 +213,10 @@ local function build_exits(landmarks, max_edges)
         })
       end
     end
-    table.sort(candidates, function(x, y) return x.distance_tiles < y.distance_tiles end)
+    table.sort(candidates, function(x, y)
+      if x.distance_tiles ~= y.distance_tiles then return x.distance_tiles < y.distance_tiles end
+      return x.to < y.to
+    end)
     a.exits = {}
     for i = 1, math.min(max_edges, #candidates) do
       table.insert(a.exits, candidates[i])
@@ -221,7 +230,18 @@ end
 -- from a genuinely empty landmark set -- callers must not splat this
 -- directly into json.encode (see the seed-slice's original bug,
 -- decisions/DECISIONS.md 2026-09-10).
-local function list_landmarks()
+--
+-- Sorted by name (both the top-level list and each entry's exits, which
+-- break distance ties by name too) -- not just a JSON-encoding nicety.
+-- build order item 4 (get_overview/context tiering) needs turn-to-turn
+-- byte-identical output for anything that hasn't actually changed, for
+-- prefix-cache determinism (research/2026-08-25-spatial-perception.md §7);
+-- buildings.all/burrows.list iterate in engine insertion/index order, which
+-- is not name order and isn't guaranteed stable if anything gets
+-- deconstructed and rebuilt. Exported (non-local) for other
+-- df-overseer-*.lua scripts via reqscript -- df-overseer-overview.lua uses
+-- this directly for get_overview()'s tier1.landmarks.
+function list_landmarks()
   local landmarks, err = merged_landmarks_with_coords()
   if err then
     return {}, err
@@ -230,6 +250,7 @@ local function list_landmarks()
   for _, lm in ipairs(landmarks) do
     lm.x, lm.y, lm.z = nil, nil, nil
   end
+  table.sort(landmarks, function(a, b) return a.name < b.name end)
   return landmarks
 end
 
@@ -275,6 +296,16 @@ function nearest_landmark(x, y, z)
     return nil
   end
   return {name = best_name, direction = best_dir, distance_tiles = best_dist}
+end
+
+-- Loading this file as a module (reqscript, from another df-overseer-*.lua
+-- script) must be side-effect-free -- no stray "usage: ..." print to stdout
+-- that a real caller would have to filter out of otherwise-clean JSON.
+-- dfhack_flags.module is true exactly during that load (same guard
+-- warn-stranded.lua uses); ordinary CLI invocation via dfhack-run never
+-- sets it, so everything below still runs normally in that case.
+if dfhack_flags.module then
+  return
 end
 
 local args = {...}
