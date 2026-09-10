@@ -104,13 +104,27 @@ or `decisions/DECISIONS.md`, not here.
   free via DFHack's own C++ encoder, satisfying build item 4's requirement
   early. → `docs/PURPOSE.md` build order item 2, `decisions/DECISIONS.md`
   2026-09-10.
-- **Next: the landmark system on burrows + exits-first representation**
-  (`docs/PURPOSE.md` build order item 3) — needed before `check_reachable`
-  can take named endpoints instead of raw unit ids, and before
-  `near_landmark` can be added to `get_connectivity_report`'s output.
-  Uniboslan has no buildings/burrows yet (brand new outpost), so there's
-  nothing to name as a landmark until it's played further. → `Working.md`
-  handover.
+- **DONE 2026-09-10, explicitly experimental: seed landmark bootstrap.**
+  User caught a real gap — `find_open_area`/`get_connectivity_report` have
+  nothing to anchor to on a virgin embark, since burrows/buildings only
+  exist once something's been dug or built, and the build order never said
+  how the first landmark gets created. Also asked whether the model could
+  instead just read a full 3D world representation; answered from this
+  repo's own evidence rather than re-litigating (`evals/perception/`
+  deliberately never built a full-grid arm, per the cross-domain research
+  behind it). `scripts/dfhack/df-overseer-landmarks.lua` seeds one
+  landmark ("Embark Site," citizen-position centroid — a wagon-based
+  anchor was checked and ruled out empty) via `dfhack.persistent`,
+  confirmed live to survive a full save/reload. User's framing: try it as
+  an experiment, not a settled design. **Not** the real burrow/building
+  enumeration + adjacency-graph system item 3 still calls for. →
+  `docs/PURPOSE.md` build order item 3, `decisions/DECISIONS.md`
+  2026-09-10.
+- **Next: the real burrow/building enumeration + adjacency-graph system**
+  (`docs/PURPOSE.md` build order item 3's actual remaining scope) — the
+  seed landmark above only unblocks the very first dig. Needs the fort to
+  actually be played (something dug, something built) before there's
+  anything real to enumerate. → `Working.md` handover.
 - **DONE 2026-09-10: reusable menu-automation tool, replacing one-off Lua
   scripts per click.** `scripts/dfhack/df-overseer-ui.lua`
   (`install_df.py ui-install`, then `./dfhack-run df-overseer-ui
