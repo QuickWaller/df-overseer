@@ -215,17 +215,19 @@ before deploying anything that runs continuously.
    CURSOR` drains past it. Verified a load-bearing assumption live first:
    a plain Lua global genuinely persists across separate `dfhack-run`
    invocations within the same running DF process (two independent calls
-   incrementing a counter returned 1 then 2). **Honest gap, deliberate**:
-   the fort is paused (per the user's own "pause when not driving" rule),
-   so no real event ever fires this session — unpausing just to
-   manufacture a test event felt like overstepping. What's proven instead:
-   the log/cursor logic itself, by calling the script's exposed
-   `log_event` hook directly to inject two synthetic entries and
-   confirming `since` drains and advances the cursor correctly. The real
-   eventful→callback wiring is unverified, and the script's own comments
-   say so. Two harmless "TEST:"-labeled entries remain in the live
-   in-memory log until the next DF restart. →
-   `decisions/DECISIONS.md` 2026-09-10 (latest row).
+   incrementing a counter returned 1 then 2), then the log/cursor logic
+   itself (synthetic entries first). **Gap closed later the same
+   session**: with the user's explicit go-ahead, briefly unpaused the
+   fort (~15s real time), designated and watched a real wall tile get
+   dug, and confirmed `since` returned the genuine resulting
+   `JOB_COMPLETED` event with correct tick/cursor — the actual
+   eventful→callback wiring, not just synthetic injection. Re-paused and
+   quicksaved immediately after; verified the quicksave actually landed
+   via `world.sav` mtime, not just the call's exit code. Two harmless
+   "TEST:"-labeled entries remain in the in-memory log from the earlier
+   synthetic test, cleared on next DF restart. Build order item 5 is now
+   fully verified, no remaining gap. →
+   `decisions/DECISIONS.md` 2026-09-10 rows.
 4. **Not done in this pass**: the research spec's `via` (path-type
    classification, e.g. "corridor") exit field is deliberately not
    implemented. Would need real path-tracing this slice doesn't attempt.
@@ -234,15 +236,13 @@ before deploying anything that runs continuously.
 6. **Worth deciding, not urgent**: whether to pull an actual
    `install_df.py backup` of Uniboslan's save now that this session found
    out the hard way that none had ever been taken of a fort-bearing save.
-7. **Worth deciding, not urgent**: whether to unpause Uniboslan (with the
-   user's go-ahead) specifically to get a real end-to-end check of
-   `get_diff_since`'s eventful wiring, since that's the one thing this
-   session couldn't verify without live game ticks.
-8. **Not pushed**: committed locally to `perception-layer-experiments`,
+7. **Not pushed**: committed locally to `perception-layer-experiments`,
    per this repo's rule, needs explicit go-ahead before `git push`.
 
 ### Durable traps, still true (additions marked NEW)
 
+- NEW: **Directly changing a live fort's pause state (`dfhack.world.SetPauseState(false)`) is blocked by Claude Code's own auto-mode classifier**, categorically — it rejected the identical call twice even after explicit conversational "go ahead" from the user each time, and only went through once the user changed a Bash permission setting (exited auto mode / adjusted `.claude/settings.json`). Conversational approval alone does not satisfy this gate for this class of action; don't retry the same call expecting a different result after a chat-level "yes," and don't try to route around it with an equivalent raw struct write — surface it and wait for the user to actually adjust the permission.
+- NEW: **`quickfort run <file>` resolves a plain filename relative to `dfhack-config/blueprints/`, not the working directory or an absolute path** — `quickfort run /opt/df/foo.csv` fails with `"failed to open dfhack-config/blueprints//opt/df/foo.csv"` (the two paths get concatenated, not replaced). Write ad-hoc blueprints directly into that directory.
 - **VM 103 is running DF unattended with no network isolation boundary.**
   home-lab's `memory/tailscale-architecture.md` assigns `df-fortress`/
   `df-colony-01` to `tag:ai-sandbox` — "unattended, possibly LLM-driven,
