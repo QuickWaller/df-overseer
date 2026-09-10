@@ -24,10 +24,16 @@ fields and character-buffer text, never an image, for automation decisions.
 `python scripts/install_df.py ui-install`, then callable directly:
 
 ```
-./dfhack-run df-overseer-ui type          # print the current real viewscreen type
-./dfhack-run df-overseer-ui click "TEXT"  # buffer-scan for TEXT, click its center, retry, verify
-./dfhack-run df-overseer-ui dump          # print every non-blank row of the character buffer
+./dfhack-run df-overseer-ui type               # print the current real viewscreen type
+./dfhack-run df-overseer-ui click "TEXT"       # buffer-scan for TEXT, click its center, retry, verify
+./dfhack-run df-overseer-ui dump               # print every non-blank row of the character buffer
+./dfhack-run df-overseer-ui embark-mode        # click the real Embark button (row 57), enter choosing_embark
+./dfhack-run df-overseer-ui leave-embark-mode  # LEAVESCREEN out of choosing_embark, no side effect
+./dfhack-run df-overseer-ui hover              # read the live-hovered tile: neighbor_hover_mm_* + criteria flags
 ```
+
+`embark-mode`/`leave-embark-mode`/`hover` are the 2026-09-10 (fifth pass) embark-site-sweep helpers — see
+the sweep section below for how they're meant to be driven together.
 
 Re-run `ui-install` any time the script changes — it's a plain overwrite,
 idempotent, no state to preserve.
@@ -249,9 +255,70 @@ placement-warning dialog (both plain character-buffer text, already
 proven completely reliable, zero image dependency — the warning text
 correctly named "salt water," "light aquifer," "another site," and
 "Recommended size" every single time it was tested), and commit the first
-candidate that matches desired criteria and comes back clean. Not yet
-implemented as of this doc pass — see `Working.md`'s handover. Full
+candidate that matches desired criteria and comes back clean. Full
 research trail: `research/2026-09-10-embark-screen-rendering-and-coordinates.md`.
+
+## Built 2026-09-10 (fifth pass): the sweep, and a new mechanic it depends on
+
+**New finding, not in the research doc above**: `neighbor_hover_mm_*` only
+live-updates from real mouse movement while `scr.choosing_embark` is
+`true`. During ordinary zoomed browsing (`choosing_embark` false) it sits
+frozen regardless of real `xdotool` mouse moves or clicks, even though the
+hover-info text panel on the right (biome, temperature, trees, soil,
+minerals) updates live in *both* modes. The research doc's earlier live
+confirmation of `neighbor_hover_mm_*` tracking the real cursor came from
+an actual embark-placement click, which is inside `choosing_embark` mode
+— this wasn't previously generalized to casual hovering, and it doesn't
+hold there. **Practical consequence: a sweep must enter `choosing_embark`
+mode first and stay in it throughout**, using the text panel plus
+`neighbor_hover_mm_*` together for every sample.
+
+Two more things confirmed live while building this: **`LEAVESCREEN`
+cleanly cancels `choosing_embark`** (back to ordinary browsing, `warn_mm_*`
+still `-1,-1,-1,-1`, no side effect) as long as the local map itself is
+never clicked — a safe way to test/abort without committing anything. And
+**WASD camera panning keeps working while `choosing_embark` is `true`** —
+no need to leave the mode to pan the camera between sweep samples.
+
+`hover` reads `neighbor_hover_mm_sx/sy/ex/ey` plus a few buffer-scanned
+criteria flags (`ocean`, `aquifer`, `no_soil`, raw `biome`/`trees` text) in
+one call, printed as one grep-friendly `HOVER ...` line. **Panel layout
+differs between browsing and `choosing_embark` mode**: row 4 gains a
+leading "N x N" embark-size indicator ahead of the biome name once
+`choosing_embark` is `true`, not present during plain browsing — `hover`'s
+`ocean` check has to scan the whole row for "Ocean," not assume the biome
+name is the row's only content, since the size prefix pushes it to a
+variable column.
+
+The actual sweep loop (enter `embark-mode` once, pan with `xdotool
+keydown/keyup` toward a region worth checking, raster a grid of
+`xdotool mousemove` + `hover` calls, `leave-embark-mode` when done) was
+driven by hand over SSH this session, not yet wrapped into its own
+script/subcommand — see `Working.md`'s handover for the concrete
+candidate rectangle it found and the recommended shape for that script if
+it's built out further.
+
+### A Windows-specific SSH transport bug, found deploying this
+
+`install_df.py ui-install` failed **silently** deploying the larger
+updated script: exit 0, "deployed" logged, but the file on the guest was
+untouched and the remote command's stdout was the literal, un-decoded
+base64 payload instead of the expected `installed` echo. Root cause,
+confirmed by reproduction: `remote()`'s `echo <payload> | base64 -d |
+bash -s` pattern embeds the whole payload directly in the SSH
+command-line argument, and Git's MSYS-linked `ssh.exe` silently truncates
+that argument to **~8182 characters** when spawned by a native Win32
+process (Python's `subprocess`, which must flatten argv into one
+`CreateProcess` command-line string) — but not when spawned by a POSIX
+process (bash, execing the real argv array directly, no re-serialization).
+This was a latent bug the whole time; every earlier `remote()` payload
+happened to stay under ~8KB. **Fixed**: `provision_vm.ssh_guest` gained an
+`input_data` parameter that pipes the payload over the child's stdin
+instead, and `install_df.remote()` now uses it — never embed a
+payload of unbounded size directly in an SSH command string again.
+`provision_relay.py` gets the fix for free, since it reuses the same
+`remote()`. See `provision_vm.ssh_guest`'s docstring for the full
+mechanism.
 
 ## Screen atlas
 
