@@ -208,15 +208,37 @@ before deploying anything that runs continuously.
    faked**: `resource_summary` (needs a real prospect-equivalent scan)
    and `get_diff_since`/event-driven tier2 (build order item 5, separate
    later work). → `decisions/DECISIONS.md` 2026-09-10 (latest row).
-3. **Not done in this pass**: the research spec's `via` (path-type
+3. **DONE (same session): `get_diff_since()` built via `eventful`, build
+   order item 5.** New `df-overseer-diff.lua`: registers
+   `JOB_COMPLETED`/`UNIT_DEATH` handlers once per DF process lifetime,
+   appends to an in-memory `_G` ring buffer with a monotonic id, `since
+   CURSOR` drains past it. Verified a load-bearing assumption live first:
+   a plain Lua global genuinely persists across separate `dfhack-run`
+   invocations within the same running DF process (two independent calls
+   incrementing a counter returned 1 then 2). **Honest gap, deliberate**:
+   the fort is paused (per the user's own "pause when not driving" rule),
+   so no real event ever fires this session — unpausing just to
+   manufacture a test event felt like overstepping. What's proven instead:
+   the log/cursor logic itself, by calling the script's exposed
+   `log_event` hook directly to inject two synthetic entries and
+   confirming `since` drains and advances the cursor correctly. The real
+   eventful→callback wiring is unverified, and the script's own comments
+   say so. Two harmless "TEST:"-labeled entries remain in the live
+   in-memory log until the next DF restart. →
+   `decisions/DECISIONS.md` 2026-09-10 (latest row).
+4. **Not done in this pass**: the research spec's `via` (path-type
    classification, e.g. "corridor") exit field is deliberately not
    implemented. Would need real path-tracing this slice doesn't attempt.
-4. **Not done this session, still open from an earlier handover**: the
+5. **Not done this session, still open from an earlier handover**: the
    `find_mm_*` Y-axis transform mystery (cheap, read-only, not blocking).
-5. **Worth deciding, not urgent**: whether to pull an actual
+6. **Worth deciding, not urgent**: whether to pull an actual
    `install_df.py backup` of Uniboslan's save now that this session found
    out the hard way that none had ever been taken of a fort-bearing save.
-6. **Not pushed**: committed locally to `perception-layer-experiments`,
+7. **Worth deciding, not urgent**: whether to unpause Uniboslan (with the
+   user's go-ahead) specifically to get a real end-to-end check of
+   `get_diff_since`'s eventful wiring, since that's the one thing this
+   session couldn't verify without live game ticks.
+8. **Not pushed**: committed locally to `perception-layer-experiments`,
    per this repo's rule, needs explicit go-ahead before `git push`.
 
 ### Durable traps, still true (additions marked NEW)
