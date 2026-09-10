@@ -1,4 +1,5 @@
 -- df-overseer-landmarks.lua
+--@module = true
 --
 -- docs/PURPOSE.md build order item 3: the real landmark system on burrows +
 -- buildings, exits-first representation (research/2026-08-25-spatial-perception.md
@@ -62,6 +63,19 @@
 -- guaranteed walkable itself (an irregular burrow's mean point can land
 -- outside it entirely), so canWalkBetween is called under pcall and a
 -- failure is reported as walkable=false, never as a crash.
+--
+-- Module exports (via reqscript('df-overseer-landmarks'), same pattern
+-- warn-stranded.lua uses for getStrandedGroups -- a non-local function
+-- becomes a field on the table reqscript returns):
+--   get_landmark_centroid(name) -> x, y, z | nil
+--     Server-side only -- the one place this file hands out a raw
+--     coordinate, and only to another script, never through print/json.
+--     df-overseer-connectivity.lua uses this to resolve named endpoints
+--     for check_reachable, replacing its original unit-id-only stopgap.
+--   nearest_landmark(x, y, z) -> {name, direction, distance_tiles} | nil
+--     Used to fill in near_landmark for get_connectivity_report's stranded
+--     groups (research spec's field, omitted until this landmark system
+--     existed).
 --
 -- Usage: ./dfhack-run df-overseer-landmarks <list|get NAME>
 
@@ -143,10 +157,41 @@ local function enumerate_burrows()
   return out
 end
 
--- Mutates `landmarks` in place, adding an `exits` field to each and
--- stripping the (server-side-only, per design commitment #1) x/y/z fields
--- before the caller serializes the result.
-local function build_exits_and_strip_coords(landmarks, max_edges)
+-- Seed + live buildings + live burrows, each {name, kind, x, y, z}, no
+-- exits computed yet. The one place coordinates exist in this file's
+-- output before either (a) exits get computed from them or (b) they get
+-- stripped for the model-facing JSON -- every caller below goes through
+-- this, so there is exactly one merge-and-persist-the-seed path to keep
+-- in sync.
+local function merged_landmarks_with_coords()
+  local state = dfhack.persistent.getSiteData(GLOBAL_KEY, {landmarks = {}})
+  if #state.landmarks == 0 then
+    local seed, err = compute_embark_site_centroid()
+    if not seed then
+      return {}, err
+    end
+    state.landmarks = {seed}
+    dfhack.persistent.saveSiteData(GLOBAL_KEY, state)
+  end
+
+  local landmarks = {}
+  for _, lm in ipairs(state.landmarks) do
+    table.insert(landmarks, {name = lm.name, kind = lm.kind, x = lm.x, y = lm.y, z = lm.z})
+  end
+  for _, lm in ipairs(enumerate_buildings()) do
+    table.insert(landmarks, lm)
+  end
+  for _, lm in ipairs(enumerate_burrows()) do
+    table.insert(landmarks, lm)
+  end
+  return landmarks
+end
+
+-- Mutates `landmarks` in place, adding an `exits` field to each. Coordinates
+-- stay on each entry -- callers that serialize to the model strip them
+-- separately (list_landmarks below); callers that stay server-side
+-- (get_landmark_centroid, nearest_landmark) don't need to.
+local function build_exits(landmarks, max_edges)
   for _, a in ipairs(landmarks) do
     local candidates = {}
     for _, b in ipairs(landmarks) do
@@ -168,40 +213,23 @@ local function build_exits_and_strip_coords(landmarks, max_edges)
       table.insert(a.exits, candidates[i])
     end
   end
-  for _, lm in ipairs(landmarks) do
-    lm.x, lm.y, lm.z = nil, nil, nil
-  end
 end
 
 -- Returns the full landmark table (seed + live buildings + live burrows,
--- each with a computed `exits` list) and an optional error string. Two
--- return values (not one) so a failure is distinguishable from a genuinely
--- empty landmark set -- callers must not splat this directly into
--- json.encode (see the seed-slice's original bug, decisions/DECISIONS.md
--- 2026-09-10).
+-- each with a computed `exits` list, coordinates stripped) and an optional
+-- error string. Two return values (not one) so a failure is distinguishable
+-- from a genuinely empty landmark set -- callers must not splat this
+-- directly into json.encode (see the seed-slice's original bug,
+-- decisions/DECISIONS.md 2026-09-10).
 local function list_landmarks()
-  local state = dfhack.persistent.getSiteData(GLOBAL_KEY, {landmarks = {}})
-  if #state.landmarks == 0 then
-    local seed, err = compute_embark_site_centroid()
-    if not seed then
-      return {}, err
-    end
-    state.landmarks = {seed}
-    dfhack.persistent.saveSiteData(GLOBAL_KEY, state)
+  local landmarks, err = merged_landmarks_with_coords()
+  if err then
+    return {}, err
   end
-
-  local landmarks = {}
-  for _, lm in ipairs(state.landmarks) do
-    table.insert(landmarks, {name = lm.name, kind = lm.kind, x = lm.x, y = lm.y, z = lm.z})
+  build_exits(landmarks, MAX_EXITS_PER_LANDMARK)
+  for _, lm in ipairs(landmarks) do
+    lm.x, lm.y, lm.z = nil, nil, nil
   end
-  for _, lm in ipairs(enumerate_buildings()) do
-    table.insert(landmarks, lm)
-  end
-  for _, lm in ipairs(enumerate_burrows()) do
-    table.insert(landmarks, lm)
-  end
-
-  build_exits_and_strip_coords(landmarks, MAX_EXITS_PER_LANDMARK)
   return landmarks
 end
 
@@ -212,6 +240,41 @@ local function get_landmark(name)
     end
   end
   return nil
+end
+
+-- Exported for other df-overseer-*.lua scripts via reqscript -- see the
+-- "Module exports" comment above. Deliberately global (no `local`).
+
+function get_landmark_centroid(name)
+  local landmarks, err = merged_landmarks_with_coords()
+  if err then
+    return nil
+  end
+  for _, lm in ipairs(landmarks) do
+    if lm.name == name then
+      return lm.x, lm.y, lm.z
+    end
+  end
+  return nil
+end
+
+function nearest_landmark(x, y, z)
+  local landmarks, err = merged_landmarks_with_coords()
+  if err then
+    return nil
+  end
+  local from = {x = x, y = y, z = z}
+  local best_name, best_dir, best_dist = nil, nil, math.huge
+  for _, lm in ipairs(landmarks) do
+    local dir, dist = direction_and_distance(from, lm)
+    if dist < best_dist then
+      best_name, best_dir, best_dist = lm.name, dir, dist
+    end
+  end
+  if not best_name then
+    return nil
+  end
+  return {name = best_name, direction = best_dir, distance_tiles = best_dist}
 end
 
 local args = {...}
