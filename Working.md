@@ -176,10 +176,22 @@ before deploying anything that runs continuously.
 
 ### Next
 
-1. **Not done in this pass**: `check_reachable`'s stopgap signature (raw
-   unit ids, in `df-overseer-connectivity.lua`) still isn't replaced with
-   named-landmark endpoints, even though `get_landmark` now exists to
-   resolve them. Flagged as open in that script's own comments.
+1. **DONE (same session): `check_reachable`'s stopgap replaced with named
+   landmark endpoints, and `near_landmark` wired into
+   `get_connectivity_report`.** `df-overseer-landmarks.lua` now exports
+   `get_landmark_centroid(name)`/`nearest_landmark(x,y,z)` via `reqscript`
+   (needed an undocumented-locally `--@module = true` directive, found by
+   reading how `warn-stranded.lua` declares itself reqscript-able).
+   `df-overseer-connectivity.lua`'s `check FROM TO` now takes landmark
+   names (old unit-id form kept as `check-units A B` for debugging), and
+   stranded groups in `report` carry `near_landmark`/`direction`/
+   `distance_tiles`. Verified live against Uniboslan: named `check`
+   works both ways (found and not-found), `check-units` still works.
+   **Honest gap**: `near_landmark` enrichment's actual code path (not
+   just the empty-list case) is unverified live — Uniboslan has no
+   stranded citizens to test against, and manufacturing one felt too
+   disruptive to the live fort just for a query-tool test. →
+   `decisions/DECISIONS.md` 2026-09-10 (latest row).
 2. **Not done in this pass**: the research spec's `via` (path-type
    classification, e.g. "corridor") exit field is deliberately not
    implemented. Would need real path-tracing this slice doesn't attempt.
