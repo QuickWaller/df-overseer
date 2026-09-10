@@ -228,15 +228,29 @@ before deploying anything that runs continuously.
    synthetic test, cleared on next DF restart. Build order item 5 is now
    fully verified, no remaining gap. →
    `decisions/DECISIONS.md` 2026-09-10 rows.
-4. **Not done in this pass**: the research spec's `via` (path-type
+4. **DONE (2026-09-11, resumed session): `find_open_area` (terrain=
+   "built") built, build order item 6.** New
+   `df-overseer-openarea.lua`: a `near`-landmark-anchored, radius-capped
+   (hard cap 60, clamped in code) scan for WxH windows of free tiles
+   (walkable, no building on it), ranked by distance to the anchor and
+   deduplicated to non-overlapping placements, each described via its own
+   nearest landmark. A plain per-window check, not the histogram/stack
+   algorithm the research doc sketches — simpler to verify correctly and
+   cheap enough at this project's actual room scale. Verified live: a
+   findable 1x1 (the earlier test dig), a correctly-empty 5x5 (the room
+   is entirely covered by its own stockpile — a real "whole area is one
+   building" case), 5 distinct non-overlapping 2x2 surface candidates
+   near "Wagon", and an explicit not-found error for a bad landmark name.
+   → `decisions/DECISIONS.md` 2026-09-11.
+5. **Not done in this pass**: the research spec's `via` (path-type
    classification, e.g. "corridor") exit field is deliberately not
    implemented. Would need real path-tracing this slice doesn't attempt.
-5. **Not done this session, still open from an earlier handover**: the
+6. **Not done this session, still open from an earlier handover**: the
    `find_mm_*` Y-axis transform mystery (cheap, read-only, not blocking).
-6. **Worth deciding, not urgent**: whether to pull an actual
+7. **Worth deciding, not urgent**: whether to pull an actual
    `install_df.py backup` of Uniboslan's save now that this session found
    out the hard way that none had ever been taken of a fort-bearing save.
-7. **Not pushed**: committed locally to `perception-layer-experiments`,
+8. **Not pushed**: committed locally to `perception-layer-experiments`,
    per this repo's rule, needs explicit go-ahead before `git push`.
 
 ### Durable traps, still true (additions marked NEW)

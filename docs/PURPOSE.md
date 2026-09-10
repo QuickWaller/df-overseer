@@ -316,7 +316,19 @@ reappears.
    tick and cursor. Re-paused and quicksaved immediately after, verified
    via `world.sav` mtime (not just the quicksave call's exit code) that
    the save actually landed. → `decisions/DECISIONS.md` 2026-09-10 rows.
-6. `find_open_area` (built terrain), hard radius cap from day one.
+6. ~~**`find_open_area` (built terrain), hard radius cap from day one.**~~
+   **Done 2026-09-11 (same branch), verified live** —
+   `scripts/dfhack/df-overseer-openarea.lua`: a `near`-landmark-anchored,
+   radius-capped (hard cap 60, clamped in code) scan for WxH windows of
+   free tiles (walkable, no building on it), ranked by distance and
+   deduplicated to non-overlapping placements, each described via its own
+   nearest landmark. A plain per-window check, not the histogram/stack
+   algorithm the research doc sketches — simpler and cheap enough at this
+   project's actual room scale. Verified live: a findable 1x1, a
+   correctly-empty 5x5 (the room is entirely covered by its stockpile —
+   a real "whole area is one building" case), 5 distinct non-overlapping
+   2x2 surface candidates, and an explicit not-found error for a bad
+   landmark name. → `decisions/DECISIONS.md` 2026-09-11.
 7. `find_chokepoints`, then `rank_candidate_sites`.
 8. `get_stuck_jobs` — least-verified primitive; test in isolation.
 9. `find_open_area` (cavern terrain) — genuinely hard, deliberately last.
