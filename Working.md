@@ -4,143 +4,133 @@ What's currently in progress. Remove an item once it's done, tabled, or
 shelved, don't mark it paused. Any session should read this and know what's
 actually going on right now.
 
-## HANDOVER - 2026-09-10 (end of session)
+## HANDOVER - 2026-09-10 (end of session, fourth handover today)
 
-The full blow-by-blow of the 2026-09-09 session is archived wholesale —
-[`working-archive/Working_archive-2026-09-07.md`](working-archive/Working_archive-2026-09-07.md).
-This session's own detail lives in this session's tool history, not
-archived separately (nothing here exceeded the length that would force
-that yet). This handover is the tight, current-state version: what's true
-right now, and the one concrete task queued next.
+The prior handover from earlier the same day is archived wholesale —
+[`working-archive/Working_archive-2026-09-07.md`](working-archive/Working_archive-2026-09-07.md),
+superseded by this one. **This session's big result: the actual root
+cause of the whole night's map-navigation struggle, found and fixed.**
 
 ### State at a glance
 
-- **VM 103** (`df-colony-01.internal`, `192.168.2.201`): running DF under
-  systemd, idle at `viewscreen_choose_start_sitest` (zoomed in, on
-  `region2`), with a confirmed valid Site Finder match (Savagery: Calm,
-  `find_mm_sx/sy/ex/ey = 6,8,9,11`, `find_cur_best_value = 10066`) already
-  committed into `warn_mm_*`/`warn_flags.GENERIC = true`, and the UI already
-  showing "Click 'Embark' to place your fortress." **One click from the
-  first fort** — see the queued task below, that click has not been made to
-  register yet. Still no fort.
-- **Graphics are now genuinely complete**, not just "confirmed rendering."
-  2026-09-09's transplant only covered 8 of 10 real `data/vanilla` modules
-  (`GRAPHICS_MODULES` in `scripts/install_df.py`). A user-reported missing
-  UI panel (later confirmed via external search to be a real expected
-  element) led to a full recursive file-manifest diff of *all* of
-  `data/vanilla` between the user's Steam install and VM 103, not just
-  spot-checks — this found two modules missed because they don't share the
-  `_graphics` naming suffix the original list was built around:
-  `vanilla_interface` (75 files — UI panel/chrome, including
-  `interface_bits_embark.png`, the exact missing panel) and
-  `vanilla_environment` (95 files — walls, floors, water, blood, fire,
-  ramps: the core terrain tiles used throughout actual fortress-mode play,
-  not just this embark screen — would have been a much worse blank-terrain
-  bug to hit later). Both added to `GRAPHICS_MODULES` (now 10 entries),
-  transplanted, DF restarted, confirmed visually fixed: proper bordered
-  panels render everywhere now. `ART_FILES` (11 splash/title/logo assets
-  in `data/art`, found missing the same night) also transplanted —
-  cosmetic, not confirmed to fix anything specific, just completeness.
-- **Public live viewing is fully live and public, not just "built."**
-  `https://dwarf-fortress.willsmith.nz` is confirmed working end to end
-  (Cloudflare Tunnel → relay → VM 103's noVNC), deliberately
-  unauthenticated (`x11vnc -nopw`, still `-viewonly` — anyone with the link
-  can watch, nobody can act) with the root URL auto-redirecting straight
-  into the viewer. Linked live from `willsmith-portfolio`. Full detail
-  already in `decisions/DECISIONS.md` 2026-09-09 rows; nothing more to do
-  here.
-- **Embark automation was re-driven live, end to end, tonight** — title
-  screen → region list → mode select → site selection, confirming the full
-  screen sequence exactly matches `research/2026-09-08-embark-automation.md`'s
-  predicted chain (`viewscreen_titlest` → `viewscreen_adopt_regionst`
-  (loading) → `viewscreen_choose_game_typest` → `viewscreen_update_regionst`
-  (loading) → `viewscreen_choose_start_sitest`), plus one screen the
-  research hadn't named (`viewscreen_choose_game_typest`, the
-  Fortress/Adventurer/Legends picker). The `force_embark()` struct-write
-  idiom (`warn_mm_*` = `find_mm_*`, `warn_flags.GENERIC = true`) **partially
-  works**: it persists in memory and does flip the UI into the "click
-  Embark" sub-mode, but three separate attempts to make the actual Embark
-  click register all failed — see the queued task.
+- **The first fort ("Artobcatten, Combinedchannel," `region2`,
+  `save/autosave 1`) still exists, safely saved, currently not loaded.**
+  Not touched this session. DF is instead sitting mid-navigation on a
+  **second, not-yet-committed** embark attempt: `viewscreen_choose_start_sitest`,
+  `zoomed_in=true`, `choosing_embark=false`, `warn_mm_* = -1,-1,-1,-1`
+  (nothing committed), `location.region_pos = (9,5)`, `find_results=2`
+  (stale, from an earlier search). This is a safe, non-fragile idle state
+  — nothing will progress or crash on its own while left here. `df-fortress.service`
+  is `active` under systemd.
+- **Root cause found: two different coordinate frames were being treated
+  as one, and that's what actually broke navigation all night, not a
+  camera/rendering bug.** `neighbor_hover_mm_*`/`warn_mm_*` are confirmed
+  **world-absolute** embark-tile coordinates (live-matched, exactly, against
+  `location.embark_pos_min/max`, whose real decompiled names are literally
+  `abs_mm_start`/`abs_mm_end`). `find_mm_*` (Site Finder's own match
+  output) is a **different, smaller-magnitude, non-absolute** coordinate.
+  Every time earlier tonight `warn_mm_*` was force-written directly from
+  `find_mm_*` (e.g. `(6,8,9,11)`), that was writing nonsense-scale
+  coordinates near the map's origin corner, not the intended site — this
+  is *the* explanation for "the same forced numbers landed in wildly
+  different real places every time," not a camera/zoom/rendering issue as
+  suspected for most of the session. Full trail, live-verified via direct
+  struct reads (not inference): `research/2026-09-10-embark-screen-rendering-and-coordinates.md`.
+  One sub-question is still open: the wiki's "one region tile = 16×16
+  embark tiles" fact gives `region_pos.x*16 + find_mm_sx` matching
+  `neighbor_hover_mm_sx` exactly, but the same formula on Y is off by a
+  consistent, unexplained 9 (the sample wasn't time-aligned —
+  `doing_site_finder` was already `false` when read). **Single recommended
+  test, cheap and read-only**: run Site Finder fresh ("Begin"), immediately
+  read `find_mm_*` + `neighbor_hover_mm_*` + `location.region_pos` in one
+  atomic `dfhack-run lua` call. Not blocking — see below.
+- **Separately, and just as important: found why the map itself was
+  fundamentally unsteerable all night, and fixed it.** `df.global.gps.precise_mouse_x/y`
+  (the real, pixel-level mouse state that map hover-info, map clicks, and
+  WASD camera panning all actually depend on, as opposed to
+  `gps.mouse_x/y`, the coarse character-grid position DFHack's fake
+  `gui.simulateInput` *can* set and which only text buttons need) is
+  polled live from the real OS mouse every frame — confirmed via DFHack's
+  own `enabler.get_precise_mouse_coords` vmethod. Headless Xvfb has no
+  real mouse, so it sat permanently frozen all night regardless of any
+  Lua write. **Fix**: install `xdotool` (`apt-get install -y xdotool`,
+  not present by default) and drive REAL X11 input against the Xvfb
+  display directly — `DISPLAY=:99 xdotool mousemove/keydown/keyup` —
+  which genuinely updates `precise_mouse_x/y`, unblocks real hover-info
+  readouts, real map clicks, and real WASD panning, none of which
+  DFHack's fake input path can ever drive. Calibration, live-confirmed
+  exact: the DF window sits at `+0,+40` within the virtual display (no
+  window manager; `xwininfo` gives this directly), so
+  `precise_mouse_x = real_X11_X` and `precise_mouse_y = real_X11_Y - 40`.
+  `xdotool getmouselocation --shell` (needs `DISPLAY=:99` set explicitly —
+  not inherited over SSH) is a valid independent cross-check.
+- **`xdotool` click reliability**: a bare `mousemove X Y click 1` is
+  flaky — confirmed via `xdotool`'s own docs that this build's `click`
+  path has **no default inter-step delay**. What worked reliably all
+  night: explicit `mousemove` → `sleep 0.3` → `mousedown 1` → `sleep 0.2`
+  → `mouseup 1`. Minimum viable hold time was not characterized (untested
+  whether shorter holds work); DF's own `G_FPS_CAP:50` (~20ms/frame) is
+  offered only as a plausible order-of-magnitude floor, not measured.
+- **WASD panning via `xdotool keydown`/`keyup` genuinely works** (unlike
+  DFHack's fake-input WASD, confirmed dead again this session, pixel-identical
+  screenshots before/after) — but panning speed for this specific tiny
+  17×17-embark-tile "pocket" world is very fast relative to hold-time: a
+  0.5s hold overshot the entire visible island into open ocean; ~0.05s
+  taps gave small, controllable increments. Not calibrated to an exact
+  tiles-per-second figure.
+- **The visual "green = Site Finder match / red = existing site, can't
+  settle / no highlight = valid but not a Finder pick" overlay legend
+  was confirmed live by the user watching the actual feed** (matches the
+  DF Wiki's "Site finder" page too, pasted in this session). The green
+  overlay reliably appeared right after Site Finder's "Begin" but seemed
+  to stop rendering after further interaction even though `find_results`/
+  `find_mm_*` stayed intact underneath — `doing_site_finder` is the
+  best-supported (live-observed, not proven) gate candidate; "we just
+  panned away and it was still there" was not ruled out. There is also
+  **no rendered mouse cursor sprite at all** in this setup (confirmed by
+  the user watching live) — the only visual position feedback is DF's own
+  native ~2×2 blue hover-square overlay, confirmed (via a subagent's
+  GitHub-code-search of the entire DFHack C++ source, zero hits for
+  `neighbor_hover_mm_*`/`warn_mm_*`/`find_mm_*`/`warn_flags` anywhere) to
+  be **pure native, closed-source DF engine rendering** — not a DFHack
+  overlay, not settable, not readable from any source this project has
+  access to. This is a confirmed hard limit, not a gap to keep digging at.
+- **Decided approach going forward, agreed with the user**: don't chase
+  the visual overlay or try to reproduce `find_mm_*`'s exact transform.
+  Since a real `xdotool` click already produces a correct, world-absolute
+  `warn_mm_*` directly (confirmed working), do a **text-only sweep**:
+  move the real cursor to successive candidate tiles (panning the camera
+  to keep pace, so the sweep is also visible to anyone watching the live
+  feed — the user specifically wants viewers to see the AI's search
+  happening, not just infer it from logs), read the hover-info side panel
+  and the placement-warning dialog (both plain character-buffer text,
+  already proven 100% reliable all night, zero image dependency, squarely
+  within design commitment #1's "never decide from a rendered map" rule),
+  and commit the first candidate that matches desired criteria and comes
+  back clean (no salt water / aquifer / mountain / "another site" warning).
+  **Not yet implemented** — this is the concrete next step.
+- **`docs/DF-UI-AUTOMATION.md`'s screen atlas now covers the full chain**
+  through `viewscreen_setupdwarfgamest` ("Play now!") and
+  `viewscreen_dwarfmodest` (fortress mode), plus the title screen's new
+  "Continue active game" button that appears once a save exists.
 
-### Queued task for next session: make the final "click Embark" register
+### Next: implement the text-only sweep, then decide the fort's fate
 
-**Do not restart DF, do not re-run Site Finder, do not re-navigate the
-menus.** The state described above (committed match, UI already in the
-Embark sub-mode) is exactly where to resume from — confirm with
-`./dfhack-run df-overseer-ui type` and `dump` (see below) before touching
-anything, per this repo's "verify the verification" rule, since state may
-have drifted if DF kept running.
-
-**Read `docs/DF-UI-AUTOMATION.md` first.** A reusable Lua tool,
-`scripts/dfhack/df-overseer-ui.lua` (deployed via
-`python scripts/install_df.py ui-install`, callable as
-`./dfhack-run df-overseer-ui <type|click TEXT|dump>`), was built 2026-09-10
-specifically so this and future menu-automation work stops hand-writing a
-fresh one-off script over SSH for every click — use it instead of
-re-deriving the buffer-scan-and-click technique again. It does not yet
-solve the off-center-click problem below; that's the next thing to fix in
-it, not around it.
-
-**What's been tried, all unsuccessful, so don't re-attempt these first
-without a new idea**:
-1. Buffer-scan-and-click on the literal "Embark" button text (the
-   technique that reliably works elsewhere on this same screen — Site
-   Finder criteria panel, "Skip tutorial", "Okay", "Fortress" all worked
-   with retries).
-2. A real `_MOUSE_L` click at a screen-pixel position visually estimated
-   from a screenshot to land on one of the map's green candidate squares
-   (not buffer-verified — the map itself renders via a texture-blit path
-   invisible to `dfhack.screen.readTile`, confirmed in the 2026-09-09
-   graphics work, so this click's target coordinate was a guess, not a
-   scan result).
-3. Setting `df.global.gps.mouse_x/mouse_y` **and** a second,
-   previously-undiscovered field, `df.global.gps.precise_mouse_x/y`,
-   together before the click. `precise_mouse_x/y` was found sitting at a
-   fixed `(640, 360)` — suspiciously exactly the center of a 1280×720
-   frame — completely unmoved by any of tonight's `gps.mouse_x/y` writes
-   despite those writes reading back correctly. This is the most promising
-   untested-to-completion lead: **the working theory is that
-   `gui.simulateInput`'s `_MOUSE_L` click reliability correlates with
-   whether the target is near screen-center** (title screen buttons, mode
-   picker: all roughly horizontally centered, worked with retries) **or
-   off-center** (the Embark button is bottom-right, the map itself is
-   large and mostly off-center: consistently failed) — but setting
-   `precise_mouse_x/y` proportionally alongside `mouse_x/y` did NOT
-   unblock the Embark click either, so either the scaling/coordinate-space
-   conversion used was wrong, or this isn't the actual mechanism and
-   something else is.
-
-**Concrete next steps worth trying, not yet attempted**:
-- Check whether `precise_mouse_x/y`'s coordinate space is something other
-  than the guessed 1280×720 (e.g. a DPI-scaled or letterboxed frame) —
-  read DFHack's own source/docs for `gps` rather than inferring from one
-  data point.
-- Check whether DF actually renders a visible mouse cursor sprite at all
-  in this headless Xvfb setup — if it does, a screenshot showing exactly
-  where the cursor icon appears vs. where it was set would directly
-  confirm or rule out the coordinate-space theory, rather than inferring
-  from click success/failure alone.
-- Consider whether the map click needs to go through a *different* code
-  path than a plain `_MOUSE_L` on `scr` — e.g. a click on a `widget`
-  sub-object (`scr.widgets`, seen in the full field dump but never
-  explored) rather than the top-level viewscreen.
-- If struct-level automation continues to resist, the fallback is a
-  genuinely interactive session: the user watching live and directing
-  clicks in real time is not available on the current public feed (it's
-  `-viewonly`) — re-enabling input for a **private, password-gated**
-  session (not the public unauthenticated one) is possible but was not
-  set up tonight and would need its own decision, given the security
-  reasoning already on record for why the public feed stays view-only.
-
-**Site Finder internals, resolved 2026-09-10, useful context for whoever
-continues this**: `research/2026-09-10-site-finder-internals.md` confirms
-via DFHack's own `df-structures` that `mm` means "min/max" (in embark
-tiles), and via the current DF Wiki page that Site Finder tracks exactly
-**one** best-fit candidate (`find_mm_*`/`find_cur_best_value`, scalars,
-not a vector) while the map's broader green highlighting is a *separate*
-"all acceptable sites" display layer — the other green squares on screen
-are real, independently valid sites, just not tracked as a comparable
-list anywhere in the struct.
+Two independent threads, in order:
+1. **Optionally**, run the one atomic read described above to settle the
+   `find_mm_*` transform's Y-axis mystery — cheap, read-only, not
+   blocking anything.
+2. **Build and run the text-sweep** (see above) to find and commit a
+   genuinely good second site — camera panning in sync with the sweep so
+   it's visible on the live feed, not just log output.
+3. Once a good second fort exists (or if the first one, "Artobcatten," is
+   judged good enough after all — it was never actually re-examined
+   in detail beyond "mostly ocean, bad"), decide whether to keep both,
+   abandon one, or just carry on: the fort is still standing, not being
+   played — no perception layer, no agent exists yet. `docs/PURPOSE.md`'s
+   build order (`check_reachable`/`get_connectivity_report` first) is the
+   next real code to write, unchanged by tonight, see `ROADMAP.md`'s
+   "Next" bucket.
 
 ### Durable traps, still true (additions marked NEW)
 
@@ -152,7 +142,9 @@ list anywhere in the struct.
   fix** — host-level Tailscale/ACL work, forbidden to any agent by
   home-lab's own rule.
 - **DF ignores SIGTERM.** Quicksave before stop is mandatory once a fort
-  is live; a bare stop takes the full timeout and ends in SIGKILL.
+  is live; a bare stop takes the full timeout and ends in SIGKILL. **This
+  is now load-bearing, not theoretical** — a real fort has existed since
+  2026-09-10 and must be quicksaved before any future stop.
 - **The manual (`start`/`stop`) and systemd-managed paths must not run at
   once** — `install_df.py stop` does not clean up a manually-started
   Xvfb. See archive for the full incident/fix.
@@ -186,20 +178,98 @@ list anywhere in the struct.
   already-known title-screen/region-list menu cases. Mouse clicks
   (buffer-scan for text, compute coordinate, `_MOUSE_L`) remain the only
   confirmed-working input method for menu-style screens.
-- NEW: **A `_MOUSE_L` click's reliability appears to depend on whether the
-  target is near screen-center or off-center** — unconfirmed as to why,
-  but every off-center click attempt on `choose_start_sitest` (the Embark
-  button, the map itself) failed tonight while every roughly-centered
-  button elsewhere (title screen, mode picker, Site Finder panel) worked
-  with retries. See the queued task above for the `precise_mouse_x/y`
-  lead.
-- NEW: **`df.global.gps.precise_mouse_x/y` is a second, separate
-  mouse-position field from `gps.mouse_x/y`** — found sitting at a fixed
-  `(640, 360)` all night regardless of `gps.mouse_x/y` writes succeeding.
-  Not yet confirmed as load-bearing (setting both together did not fix the
-  Embark click), but a real, previously-undocumented field worth
-  understanding before more mouse-automation work on this or other
-  screens.
+- **RESOLVED, was flagged NEW last session**: the "off-center clicks don't
+  register" theory is disproven — the real cause was a whole-screen text
+  scan false-matching an earlier occurrence of the target string. See
+  `docs/DF-UI-AUTOMATION.md`. Whenever scanning for button text, scope the
+  scan to the specific row/region the real button is known to be on if
+  the same or similar text could appear elsewhere on screen first.
+- **RESOLVED, was flagged NEW last session**: `df.global.gps.precise_mouse_x/y`
+  is a live OS-polled pixel-space mouse position (`enabler`'s
+  `get_precise_mouse_coords` vmethod, confirmed via DFHack's own
+  `df-structures` source), not a writable struct field — it's clobbered
+  by the next poll before a Lua write can affect anything. Don't try
+  writing it again for mouse automation; `gps.mouse_x/y` (the character-grid
+  position) is the real input.
+- **RESOLVED, was flagged NEW earlier today**: The Embark button (row 57)
+  resets `warn_mm_*` to `-1,-1,-1,-1` and flips `choosing_embark` to
+  `true` when clicked — the committed Site Finder match does not survive
+  that click and must be re-applied (along with `warn_flags.GENERIC`)
+  after the subsequent map click, not just once up front. Still true and
+  load-bearing, just no longer "new."
+- **RESOLVED, was flagged NEW earlier today**: clicking "Confirm" crashed
+  DF/DFHack outright, three times reproduced, two other hypotheses ruled
+  out (a skipped native accept step; a rectangle mismatch). The real cause
+  is a **timing/race condition** — running under `gdb` avoided it
+  entirely, though the exact mechanism is unconfirmed (the gdb catchpoint
+  never actually fired). If this crash recurs on a future embark, running
+  it under gdb again is the known workaround. See
+  `decisions/DECISIONS.md` 2026-09-10 ("First fort founded") and
+  `docs/DF-UI-AUTOMATION.md` for the full trail.
+- NEW: **`find_mm_*` (Site Finder's match output) and
+  `neighbor_hover_mm_*`/`warn_mm_*` (the real, committable embark
+  rectangle) are two different coordinate frames — never write `find_mm_*`
+  directly into `warn_mm_*`.** `warn_mm_*`/`neighbor_hover_mm_*` are
+  confirmed world-absolute (live-matched exactly against
+  `location.embark_pos_min/max`, real names `abs_mm_start`/`abs_mm_end`);
+  `find_mm_*` is not. This was the actual cause of "the same forced
+  coordinates landed in wildly different real locations" all night, not a
+  camera bug. See `research/2026-09-10-embark-screen-rendering-and-coordinates.md`.
+- NEW: **`df.global.gps.precise_mouse_x/y` (real pixel-level mouse state)
+  can be made to actually work in headless Xvfb by installing `xdotool`
+  and sending it real X11 input** (`DISPLAY=:99 xdotool mousemove/keydown/keyup`
+  against the Xvfb display) — this is the fix for map hover-info, map
+  clicks, and WASD camera panning, none of which DFHack's fake
+  `gui.simulateInput` can ever drive (confirmed: that fake path only
+  updates the coarse character-grid `gps.mouse_x/y`, which text buttons
+  need but the map does not). Calibration: the DF window sits at `+0,+40`
+  within the virtual display (no window manager, `xwininfo` gives this
+  directly) — `precise_mouse_x = real_X11_X`, `precise_mouse_y = real_X11_Y - 40`.
+  `xdotool getmouselocation --shell` cross-checks this independently
+  (needs `DISPLAY=:99` set explicitly, not inherited over SSH).
+- NEW: **`xdotool`'s `click` action has no default inter-step delay in
+  this version** — a bare `mousemove X Y click 1` is flaky. Use explicit
+  `mousemove` → `sleep 0.3` → `mousedown 1` → `sleep 0.2` → `mouseup 1`
+  instead; this was empirically reliable all night. Minimum viable hold
+  time not characterized.
+- NEW: **There is no rendered mouse cursor sprite anywhere in this setup**
+  (confirmed live by the user watching the actual feed) — the only visual
+  position feedback is DF's native ~2×2 blue hover-square overlay, which
+  is confirmed (GitHub-code-search of the entire DFHack C++ source: zero
+  hits for `neighbor_hover_mm_*`/`warn_mm_*`/`find_mm_*`/`warn_flags`
+  anywhere) to be pure native, closed-source DF rendering — not settable,
+  not readable from any source available to this project. Don't spend
+  more time trying to locate or drive it directly; use the hover-info
+  panel text and placement-warning text instead, both of which are
+  reliable and buffer-scannable.
+- NEW: **`code=exited, status=1` in `systemctl status` means the process
+  called `exit(1)` itself — not a signal death — so a core dump will
+  never fire for it.** Distinguish this from `code=killed, status=SIGxxx`
+  before spending time on core-dump tooling. Confirmed by reading the
+  `./dfhack` wrapper script itself: it captures `dwarfort`'s real exit
+  code in `ret=$?` immediately after it exits, and an unrelated `tput
+  sgr0` cosmetic call (which fails harmlessly on every shutdown under
+  systemd's unset `$TERM`, clean or crashed) does not touch `$ret` before
+  the final `exit $ret`.
+- NEW: **The title screen gains a "Continue active game" button, above
+  "Start new game in existing world," once any save exists** — the
+  reliable signal to check for whether a fort has actually been founded,
+  rather than inferring it from screen type alone.
+- NEW: **A founded fort's real save directory is not necessarily
+  "region2" (or whatever `cur_savegame.save_dir` said pre-embark)** — DF
+  named it `"autosave 1"` this time. Check
+  `df.global.world.cur_savegame.save_dir` on the live fort itself rather
+  than assuming it matches the world it was founded in; `region1`/`region2`
+  remain pure world-history folders (they gain `unit-*.dat`/`world.dat`
+  from worldgen's own history simulation, not from a player fort — don't
+  mistake that for fort save data).
+- NEW: **`df-overseer-ui.lua`'s `click` self-reported `FAIL` twice this
+  session on clicks that had actually worked** (`"Fortress"`,
+  `"Skip tutorial"`, `"Okay"`) — its success check (does the scanned text
+  disappear) is unreliable when the same screen persists with the text
+  still present, or a duplicate match exists elsewhere. Verify with
+  `type` or a field read, don't trust its FAIL/PASS report alone. Not yet
+  fixed in the script.
 - NEW: **Writes to `neighbor_hover_mm_*` alone, and `gps.mouse_x/y` alone
   without an accompanying click in the same call, do not move anything
   visually** — confirmed by direct write-then-screenshot tests. These
@@ -272,3 +342,16 @@ semicolons or full stops instead. Fine as structural separators.
   the same archive file, superseded by this session's own handover above
   (Cloudflare Tunnel completion, the graphics-completeness fix, and the
   live embark-flow attempt).
+- 2026-09-10 (second handover today): that session's own handover moved
+  wholesale to the same archive file, superseded by this session's handover
+  above (the click-registration mystery resolved, the real embark mechanism
+  found, and the new "Confirm" crash).
+- 2026-09-10 (third handover today): that session's own handover moved
+  wholesale to the same archive file, superseded by this session's handover
+  above — **the first fort was founded**, and the "Confirm" crash resolved
+  empirically via gdb.
+- 2026-09-10 (fourth handover today): that session's own handover moved
+  wholesale to the same archive file, superseded by this session's handover
+  above — the `find_mm_*`/`warn_mm_*` coordinate-frame bug found, and
+  `xdotool` real-input fix for headless map/hover interaction discovered
+  and validated.

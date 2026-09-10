@@ -38,8 +38,21 @@ character buffer for an exact text match (never a pixel/image guess — the
 `df.global.gps.mouse_x/mouse_y` to the match's center, fires
 `gui.simulateInput(scr, '_MOUSE_L')`, then re-scans for the same text as a
 success proxy (its disappearance suggests something changed). Retries up to
-3 times, because these clicks are genuinely flaky for reasons not yet fully
-understood (see "Known unresolved problem" below).
+3 times.
+
+**Known flaw in the success check, found 2026-09-10**: a whole-screen
+top-to-bottom text scan matches the *first* occurrence of the target
+string, which can be a mention in unrelated help/instructional text above
+the real button (`"Embark"` on `viewscreen_choose_start_sitest` is a
+concrete example — see the screen atlas entry below). The tool reports
+`FAIL` whenever the scanned text is still present afterward even though
+the click landed correctly and the screen moved on — this happened twice
+live this session on `"Fortress"` and `"Skip tutorial"`/`"Okay"`, all of
+which had actually worked; `type`/struct-field checks confirmed the real
+outcome in each case. Treat a `FAIL` report from this tool as
+inconclusive, not authoritative — verify with `type` or a targeted field
+read before concluding a click didn't register. Not yet fixed in the
+script itself.
 
 **What it cannot do yet**: click anything that doesn't render as scannable
 character-buffer text — the actual map viewport (world overview, embark
@@ -51,22 +64,194 @@ position from a screenshot and converting to grid coordinates by hand — see
 the queued task in `Working.md` for the specific case (the final embark
 placement click) this blocks.
 
-## Known unresolved problem: off-center clicks don't register
+## Resolved 2026-09-10: the "off-center clicks fail" theory was wrong
 
-Confirmed 2026-09-10: every click attempt near horizontal/vertical
-screen-center succeeded (with retries) — title screen buttons, the mode
-picker, Site Finder's own panel controls. Every off-center click attempt
-failed outright, even after many retries and several different techniques —
-the embark screen's own "Embark" button (bottom-right) and direct clicks on
-the map itself (large, mostly off-center). Not yet root-caused. The leading
-untested-to-completion lead: `df.global.gps.precise_mouse_x/y`, a **second**
-mouse-position field distinct from `gps.mouse_x/y`, found sitting at a fixed
-`(640, 360)` — the exact center of a 1280×720 frame — all night regardless
-of `gps.mouse_x/y` writes succeeding. Setting both together did not fix it
-either, so either the coordinate-space conversion tried was wrong, or this
-isn't the actual mechanism. Full detail and concrete next steps to try are
-in `Working.md`'s queued task — read that before spending more time here,
-so failed approaches aren't repeated.
+The prior session's click-on-"Embark" failures were a **duplicate-text
+false match**, not a screen-center/off-center physics problem. A naive
+top-to-bottom buffer scan for the literal string `"Embark"` on
+`viewscreen_choose_start_sitest` matches the instructional sentence at row
+52 (`Click "Embark" to place your fortress.`) before it ever reaches the
+real button at row 57 — so a generic `click("Embark")` was very likely
+clicking that sentence, not the button, every time. Once aimed at the
+button's exact buffer-scanned coordinates (confirmed via an explicit
+column search on row 57 specifically, not a whole-screen text scan), the
+click registered correctly on the first try, confirmed live twice. The
+button sits at roughly 71% across, 95% down a 160×60 grid — about as
+off-center as this screen gets — directly disproving the center-proximity
+theory.
+
+`df.global.gps.precise_mouse_x/y` (a second mouse-position field distinct
+from `gps.mouse_x/y`, found stuck at `(640, 360)`) is also now resolved,
+via DFHack's own `df-structures` source (`df.g_src.graphics.xml`):
+`mouse_x/y` is documented `'tile offset'` (the character grid);
+`precise_mouse_x/y` is documented `'pixel offset'`, and `enabler` exposes a
+`get_precise_mouse_coords` **vmethod** — meaning it's polled live from the
+real OS/platform mouse backend every frame, not a durable struct field. In
+headless Xvfb there's no real mouse device moving, so it just keeps
+reporting the window's pixel center; any Lua write to it is clobbered by
+the next poll before a click can use it. `scr.widgets` (the newer
+button-framework sub-object, the other queued lead) is also a dead end on
+this screen specifically: empty, no children — this viewscreen predates
+that framework.
+
+## The real mechanism: Embark has two more clicks after it, not zero
+
+Reading `gui/embark-anywhere.lua` (the source of the `force_embark()`
+struct-write idiom already in use) revealed the actual flow has two
+*additional* clicks after committing `warn_mm_*`/`warn_flags.GENERIC`, not
+one:
+
+1. Click **"Embark"** (row 57 button) → `scr.choosing_embark` flips to
+   `true`, and — important — `warn_mm_*` gets reset to `-1,-1,-1,-1` by the
+   native game at this transition, discarding the earlier commit.
+2. Click **anywhere on the local map** (any reasonable pixel inside the
+   viewport, away from the button bar) → the native click handler runs;
+   immediately re-set `warn_mm_*` to the desired rectangle and
+   `warn_flags.GENERIC = true` again in the same call, mirroring exactly
+   what `force_embark()` does inside `embark-anywhere.lua`'s own `onInput`
+   in response to a real map click.
+3. A **"Confirm / Abort" bar appears** (not previously documented) — click
+   **"Confirm"**.
+
+Confirmed live twice, including a full fresh re-drive (title →
+`"Start new game in existing world"` → Fortress mode → the two intro
+dialogs, `"Skip tutorial"` then `"Okay"` — both must be dismissed first on
+a fresh embark attempt, or the Embark-button click lands on the dialog
+instead and `choosing_embark` never flips → re-committing the known-good
+Site Finder rectangle directly, since the world/seed is unchanged, rather
+than re-running Site Finder's own search).
+
+## Resolved 2026-09-10 (second pass): the "Confirm" crash was a timing/race condition
+
+Both hypotheses above (rectangle mismatch, arbitrary-pixel-vs-committed
+mismatch) were disproven by direct test: copying the *real*,
+engine-computed `neighbor_hover_mm_*` into `warn_mm_*` — the literal
+`gui/embark-anywhere.lua` idiom, eliminating any mismatch — still crashed
+identically on a throwaway test site. `systemctl status` consistently
+showed `code=exited, status=1`, not `code=killed, status=SIGSEGV` —
+confirmed via the `./dfhack` wrapper script's own source that this really
+is `dwarfort` calling `exit(1)` itself (the wrapper's `ret=$?` captures
+`dwarfort`'s exit code immediately after it exits, and passes it through
+unchanged after an unrelated `tput sgr0` cosmetic call that fails
+harmlessly on every shutdown, clean or crashed, regardless of `$TERM`) —
+meaning a traditional core dump would never fire for this.
+
+**The fix that actually worked**: running `dwarfort` directly under `gdb`
+(installed fresh via `apt-get install gdb`, not present by default),
+matching the exact environment `/proc/<pid>/environ` showed systemd using,
+with a `catch syscall exit_group` batch script. The identical crash
+sequence did **not** crash under gdb — it reached
+`viewscreen_setupdwarfgamest` ("Play now!" / "Prepare for the journey
+carefully") for the first time, then a real founded fort
+(`viewscreen_dwarfmodest`). The catchpoint never actually fired (the
+process never called `exit_group` this time), so the exact race is still
+unidentified — gdb's `ptrace` overhead evidently changes timing enough to
+avoid whatever it is, not fixes it. **Practical implication**: if a future
+embark attempt hits this same crash again, running it under gdb (or
+otherwise slowing the process — even an extra `sleep` between the map
+click and the Confirm click might work, untested) is the known workaround,
+not a real fix. Root-causing the actual race (verbose DFHack logging, or a
+breakpoint on the real crash path rather than gdb's overhead merely
+avoiding it) is worth doing if it recurs, but wasn't necessary to get the
+first fort founded. Full evidence trail, including the two ruled-out
+hypotheses that preceded this, in `decisions/DECISIONS.md` 2026-09-10 (the
+row titled "First fort founded").
+
+**A genuine fort now exists**: "Artobcatten, Combinedchannel" on
+`region2`, confirmed via the in-game founding message, `gametype == 0`
+(`DWARF_MAIN`), and a real save directory (`save/autosave 1`, containing
+`world.sav`). After quicksaving, the ad-hoc gdb-wrapped process was
+stopped cleanly and the fort was reloaded under normal `df-fortress.service`
+systemd supervision via the title screen's new "Continue active game"
+button (present for the first time once a save exists) — verified
+identical via screenshot. This reload is a routine, well-trodden DF code
+path, distinct from the embark-finalization race above, so it was judged
+safe to do despite the race being unresolved.
+
+## Resolved 2026-09-10 (second pass): the map itself was unsteerable, and why
+
+The first fort above landed on a bad site (mostly ocean/aquifer) because
+`warn_mm_*` was force-written from `find_mm_*` directly — plausible at the
+time, wrong in hindsight (see the corrected field table above). Fixing
+this properly required first fixing something more fundamental: **the map
+viewport, hover-info panel, and WASD panning cannot be driven by
+DFHack's fake input at all**, only by real input. Two confirmed, distinct
+mouse-state fields are load-bearing here, not one:
+
+- `gps.mouse_x/y` — coarse character-grid position (160×60 cells). This
+  is what `gui.simulateInput` sets, and it's genuinely sufficient for text
+  buttons and dialogs (everything the "reusable tool" section above
+  covers).
+- `gps.precise_mouse_x/y` — real pixel-level position (1280×720), which
+  the map viewport, hover-info side panel, and camera panning actually
+  read. Confirmed via DFHack's own source (`enabler.get_precise_mouse_coords`
+  vmethod) to be **polled live from the real OS mouse every frame** — in
+  headless Xvfb, with no real mouse, this sits permanently frozen
+  regardless of any Lua write. This is why the map never responded, the
+  hover-info panel always showed the same stale reading, and WASD panning
+  (even via the correct `CUSTOM_W/A/S/D` interface keys, not just generic
+  `STANDARDSCROLL_*`) never moved the camera.
+
+**The fix**: install `xdotool` (`apt-get install -y xdotool`, not present
+by default) and send REAL X11 input directly to the Xvfb display —
+`DISPLAY=:99 xdotool mousemove X Y`, and `keydown`/`sleep`/`keyup` for
+held keys. This is indistinguishable from genuine hardware input to
+DF/SDL, and confirmed live to: update `precise_mouse_x/y` correctly, make
+the hover-info panel show real, dynamically-changing terrain data, make
+real map clicks produce correct `warn_mm_*`/`neighbor_hover_mm_*` values,
+and make WASD camera panning actually move the view (confirmed via
+before/after screenshots — DFHack's fake WASD is pixel-identical no-op,
+`xdotool`'s is not).
+
+**Calibration** (exact, live-verified, not approximate): the DF window
+sits at `+0,+40` within the virtual display — confirmed via `xwininfo -root -tree`
+on `DISPLAY=:99` (no window manager is running, so this offset is fixed,
+not something a WM could move). `precise_mouse_x = real_X11_X` (no
+offset); `precise_mouse_y = real_X11_Y - 40`. `xdotool getmouselocation --shell`
+is a valid independent cross-check of `precise_mouse_x/y` — set
+`DISPLAY=:99` explicitly, it is not inherited automatically over SSH.
+
+**Click reliability**: a bare `xdotool mousemove X Y click 1` is flaky —
+confirmed via this `xdotool` build's own docs that its `click` action has
+no default inter-step delay. What worked reliably all session: explicit
+`mousemove` → `sleep 0.3` → `mousedown 1` → `sleep 0.2` → `mouseup 1`.
+Minimum viable hold time was not characterized.
+
+**Panning speed**: WASD panning via `xdotool keydown`/`keyup` works, but
+this project's test world is a tiny 17×17-embark-tile "pocket" world, and
+panning is fast relative to it — a 0.5s hold overshot the entire visible
+island into open ocean; ~0.05s taps gave small, controllable increments.
+Not calibrated to an exact tiles-per-second figure, and this will differ
+on a larger world.
+
+**The blue hover-cursor square itself remains a hard limit, confirmed, not
+a gap to keep digging at**: a subagent's GitHub code search across the
+entire `DFHack/dfhack` C++ source found zero references anywhere to
+`neighbor_hover_mm_*`, `warn_mm_*`, `find_mm_*`, or `warn_flags` (control
+queries for other, known-present strings confirmed the search itself
+wasn't failing silently). The one DFHack plugin that does hook this exact
+screen's render (`plugins/embark-assistant/overlay.cpp`, via
+`VTableInterpose`) draws its own, different overlay (a match-result grid)
+and never touches these fields. The hover square is pure native,
+closed-source DF engine rendering — not settable, not readable, not a
+DFHack overlay. Don't spend more time trying to locate or drive it
+directly.
+
+**Practical consequence for site selection going forward**: since a real
+`xdotool` click already produces correct, world-absolute `warn_mm_*`
+directly, there is no need to reconstruct `find_mm_*`'s exact transform
+or chase the visual "acceptable sites" overlay (green = Site Finder
+match, red = existing/unsettleable site, no highlight = valid-but-not-a-Finder-pick,
+confirmed against the DF Wiki's own "Site finder" page and live by the
+user watching the feed) at all. The plan is a **text-only sweep**: move
+the real cursor across candidate tiles, read the hover-info panel and the
+placement-warning dialog (both plain character-buffer text, already
+proven completely reliable, zero image dependency — the warning text
+correctly named "salt water," "light aquifer," "another site," and
+"Recommended size" every single time it was tested), and commit the first
+candidate that matches desired criteria and comes back clean. Not yet
+implemented as of this doc pass — see `Working.md`'s handover. Full
+research trail: `research/2026-09-10-embark-screen-rendering-and-coordinates.md`.
 
 ## Screen atlas
 
@@ -130,21 +315,36 @@ distinguished by struct fields, not `_type`:
 | `zoomed_in` | `false` = wide regional map ("Click the map to embark location... press wasd to recenter"); `true` = local 4x4-tile close-up map |
 | `doing_site_finder` | Site Finder criteria panel is open |
 | `find_results` | scalar status (confirmed 2 = "Match found!"; a `T_find_results` enum, not a count) |
-| `find_mm_sx/sy/ex/ey` | the ONE current best-fit Site Finder match, in embark-tile coordinates (`mm` = min/max, confirmed via DFHack's own `df-structures` naming convention — `research/2026-09-10-site-finder-internals.md`) |
+| `find_mm_sx/sy/ex/ey` | the ONE current best-fit Site Finder match (`mm` = min/max, confirmed via DFHack's own `df-structures` naming convention — `research/2026-09-10-site-finder-internals.md`) — **confirmed 2026-09-10 (second pass) to be a DIFFERENT, smaller-magnitude, non-absolute coordinate frame from `warn_mm_*`/`neighbor_hover_mm_*` below. Never write it directly into `warn_mm_*`** — doing so all night produced nonsense-scale coordinates near the map's origin corner, not the intended site (the actual cause of that session's "same forced numbers, wildly different real locations" bug, not a camera/rendering issue as first suspected). `location.region_pos.x*16 + find_mm_sx` matched the correct absolute X exactly in one live test (consistent with the DF Wiki's "one region tile = 16×16 embark tiles"), but the same formula on Y was off by a consistent, unexplained 9 from a non-time-aligned sample — see `research/2026-09-10-embark-screen-rendering-and-coordinates.md` for the full trail and the one cheap atomic-read test that would settle it. |
 | `find_cur_best_value` | that match's internal score |
-| `neighbor_hover_mm_sx/sy/ex/ey` | the currently-hovered rectangle (the light-blue square on screen) — **confirmed a render-derived output, not a settable input**: writing it directly does not move anything on screen |
-| `warn_mm_startx/endx/starty/endy` | the rectangle being committed as the embark choice; `-1,-1,-1,-1` means nothing committed yet |
-| `warn_flags.GENERIC` | setting `true` (alongside `warn_mm_*`) is `gui/embark-anywhere.lua`'s `force_embark()` idiom — flips the UI into "Click 'Embark' to place your fortress," confirmed working for that much, but the final Embark click itself is the open problem above |
+| `neighbor_hover_mm_sx/sy/ex/ey` | the currently-hovered rectangle (DF's native ~2×2 blue hover-square, confirmed pure closed-source engine rendering — not a DFHack overlay, see 2026-09-10 second-pass section below) — **confirmed a render-derived output, not a settable input**: writing it directly does not move anything on screen. **Confirmed 2026-09-10 (second pass) to be WORLD-ABSOLUTE embark-tile coordinates** — live-matched exactly against `location.embark_pos_min/max` (real decompiled field names `abs_mm_start`/`abs_mm_end`). Only ever updates from a genuine mouse-over-map event; DFHack's fake `gui.simulateInput` never triggers it (see the `precise_mouse_x/y`/`xdotool` section below) — a real `xdotool` click does. |
+| `warn_mm_startx/endx/starty/endy` | the rectangle being committed as the embark choice; `-1,-1,-1,-1` means nothing committed yet. **Same world-absolute frame as `neighbor_hover_mm_*`** (confirmed together, same live read) — safe to copy from `neighbor_hover_mm_*` (the `gui/embark-anywhere.lua` idiom), never safe to copy from `find_mm_*` directly. |
+| `warn_flags.GENERIC` | setting `true` (alongside `warn_mm_*`) is `gui/embark-anywhere.lua`'s `force_embark()` idiom — gets consumed/reset by each of the two further clicks below, so must be re-set after each one, not just once |
 | `find_param[2]` | Savagery criterion; `0` = Calm (the value used this session) — set directly, not via a `+`/`-` button click, which is more robust per 2026-09-09's finding |
+| `choosing_embark` | `true` once the "Embark" button (row 57) has been clicked — the screen is now waiting for a click on the local map itself. Resets `warn_mm_*` to `-1,-1,-1,-1` at this transition |
+| (no struct field found yet) | the **"Confirm / Abort"** bar that appears after the map click + re-committed `warn_mm_*`/`warn_flags.GENERIC` — detected via buffer text only so far, not yet traced to a struct flag |
 
 Sequence confirmed live, in order: land on this screen zoomed out
 (`zoomed_in = false`) → click `"Find embark location"` to open the Site
 Finder criteria panel → set the desired `find_param[...]` fields directly →
 click `"Begin"` → `"Match found!"` appears with `find_mm_*` populated →
-commit via `warn_mm_*` + `warn_flags.GENERIC = true` → the screen needs
-`zoomed_in = true` for the local map/Embark-button sub-mode to actually show
-(writing this flag directly did work, unlike `neighbor_hover_mm_*`) → click
-`"Embark"` (**the still-open problem**).
+**do NOT commit `warn_mm_* = find_mm_*` directly — see the corrected field
+table above and the 2026-09-10 (second pass) section below; this produced
+a real but badly-placed fort.** The screen needs `zoomed_in = true` for
+the local map/Embark-button sub-mode to actually show (writing this flag
+directly did work, unlike `neighbor_hover_mm_*`) → click
+**"Embark"** at its exact buffer-scanned position, row 57 (a whole-screen
+text scan for `"Embark"` will false-match the help sentence at row 52
+first — scope the scan to row 57) → `choosing_embark` flips `true`,
+`warn_mm_*` resets to `-1,-1,-1,-1` → click anywhere on the local map
+viewport, then in the same call re-set `warn_mm_*` to the desired
+rectangle and `warn_flags.GENERIC = true` again → a **"Confirm / Abort"**
+bar appears → click **"Confirm"** at its buffer-scanned position → a
+**"Play now!" / "Prepare for the journey carefully"** screen
+(`viewscreen_setupdwarfgamest`) → click **"Play now!"** for default
+supplies → **fortress mode** (`viewscreen_dwarfmodest`), a real founded
+fort. This last click was flaky (a timing/race condition, resolved below,
+not a permanent blocker) on its first several attempts.
 
 Two dialogs appear on a fresh embark attempt, both dismissed the normal way:
 `"Quick start and short tutorial?"` (`"Skip tutorial"` button) and
@@ -167,14 +367,39 @@ scanning will ever find the green "acceptable site" highlighting or read
 the map's actual pixels; only the plain-text side panel (criteria list,
 `"Match found!"`, button labels) is buffer-scannable.
 
+### `viewscreen_setupdwarfgamest` — starting supplies
+
+Appears once, right after a successful "Confirm" on the embark screen.
+Buttons: `"Play now!"` (default skills/equipment/animals) and
+`"Prepare for the journey carefully"` (custom loadout, not yet exercised).
+`click("Play now!")` confirmed working. Leads directly into
+`viewscreen_dwarfmodest`.
+
+### `viewscreen_dwarfmodest` — fortress mode
+
+Real gameplay. Confirmed reachable 2026-09-10 as the endpoint of the full
+embark chain above. Not otherwise explored yet — the perception/action
+layer `docs/PURPOSE.md`'s build order describes for actually playing a
+founded fort is a separate, still-unbuilt system.
+
+### Title screen gains a "Continue active game" button once a save exists
+
+Not present on a fresh boot with no save; appears as the first button,
+above `"Start new game in existing world"`, once one does. Loads straight
+into `viewscreen_loadgamest` (a brief loading screen, same wait-and-recheck
+pattern as the other loading screens), then `viewscreen_dwarfmodest`.
+
 ## Sources
 
 `decisions/DECISIONS.md` 2026-09-09 and 2026-09-10 rows carry the full
 evidence trail (exact test sequences, screenshots referenced, what was
-tried and ruled out) behind every claim above. `Working.md`'s handover has
-the concrete queued task for the one open problem. `research/2026-09-08-
-embark-automation.md` and `research/2026-09-10-site-finder-internals.md`
-are the primary-source research this was built on. This file is the
-living summary; when a claim here and a decisions-register row disagree,
-the decisions register is the more detailed, dated source of truth — fix
-this file to match it, not the other way around.
+tried and ruled out) behind every claim above, including the "First fort
+founded" row and the `find_mm_*`/coordinate-frame row. `Working.md`'s
+handover has the current state and next steps. `research/2026-09-08-embark-automation.md`,
+`research/2026-09-10-site-finder-internals.md`, and
+`research/2026-09-10-embark-screen-rendering-and-coordinates.md` are the
+primary-source research this was built on. This file is the living
+summary; when a claim
+here and a decisions-register row disagree, the decisions register is the
+more detailed, dated source of truth — fix this file to match it, not the
+other way around.

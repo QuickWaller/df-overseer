@@ -1,6 +1,6 @@
 # Roadmap
 
-**Last reviewed:** 2026-09-10
+**Last reviewed:** 2026-09-10 (fourth pass — map-navigation root cause found)
 
 This file is df-overseer's forward-looking, priority-ordered plan: what's
 next and roughly when, across infrastructure, game-side engineering, and the
@@ -15,14 +15,24 @@ or `decisions/DECISIONS.md`, not here.
 ## Now
 <!-- Actively being worked, or the clear immediate next step. -->
 
-> **Rewritten 2026-09-10 (end of session).** VM 103 (`df-colony-01`) is
-> sitting one click from its first fort: a confirmed Site Finder match is
-> already committed, the UI is already in the "click Embark" sub-mode, and
-> that one click has resisted several automation attempts tonight — see
-> `Working.md`'s queued task. Graphics are now genuinely complete (not just
-> "confirmed rendering" — two whole modules were found missing tonight).
-> Live human viewing is fully live and public. Full narrative not repeated
-> here — see `Working.md`'s handover.
+> **Rewritten 2026-09-10 (fourth pass, end of session).** The first fort
+> ("Artobcatten, Combinedchannel," `region2`, `save/autosave 1`) still
+> stands, saved but not currently loaded. This pass's real result: the
+> actual root cause of the night's map-navigation struggle, found and
+> fixed. `find_mm_*` (Site Finder's match output) and
+> `neighbor_hover_mm_*`/`warn_mm_*` (the real, committable embark
+> rectangle) are two different coordinate frames — confirmed live,
+> `warn_mm_*` is world-absolute, `find_mm_*` is not — and every forced
+> `warn_mm_* = find_mm_*` write all night was writing nonsense coordinates,
+> not a camera bug. Separately: installed `xdotool` and confirmed real
+> X11 input against the headless Xvfb display genuinely drives map
+> hover/clicks/panning, none of which DFHack's fake input can ever touch.
+> Plan going forward, agreed with the user: a text-only sweep (real cursor
+> + buffer-scanned hover/warning text, zero image dependency, camera
+> panning in sync so the search is visible on the live feed) rather than
+> chasing the visual overlay or `find_mm_*`'s exact transform. Not yet
+> implemented. Full narrative: `Working.md`'s handover,
+> `research/2026-09-10-embark-screen-rendering-and-coordinates.md`.
 
 - **DONE 2026-09-09/10: DF's built-in modern (Steam-style) graphics are
   working on VM 103, no third-party pack, and now genuinely complete.**
@@ -39,14 +49,36 @@ or `decisions/DECISIONS.md`, not here.
   throughout real fortress-mode play). `GRAPHICS_MODULES` is now 10
   entries; confirmed visually fixed. → `decisions/DECISIONS.md` 2026-09-09
   and 2026-09-10 rows, `Working.md`.
-- **Next: actually embark — one click away, not just "found candidate
-  site."** A confirmed Site Finder match on `region2` is already committed
-  via the `warn_mm_*`/`warn_flags.GENERIC` struct write, and the UI is
-  already showing "Click 'Embark' to place your fortress" — but three
-  separate attempts to make that specific click register failed tonight.
-  A promising untested lead (`df.global.gps.precise_mouse_x/y`, a second
-  mouse-position field found sitting at a fixed screen-center value all
-  night) is queued. → `Working.md` handover's queued task.
+- **DONE 2026-09-10: the first fort is founded.** "Artobcatten,
+  Combinedchannel" on `region2`, driven entirely through DFHack struct
+  writes and simulated clicks: Site Finder → embark placement → the
+  "Confirm" step that had blocked every attempt so far, resolved as a
+  timing/race condition (ran cleanly under gdb; root mechanism still
+  unconfirmed). Quicksaved, transitioned off the diagnostic gdb-wrapped
+  process, and verified it reloads correctly under normal
+  `df-fortress.service` systemd supervision via the title screen's new
+  "Continue active game" button. → `decisions/DECISIONS.md` 2026-09-10
+  ("First fort founded"), `docs/DF-UI-AUTOMATION.md`, `Working.md`.
+- **DONE 2026-09-10: root cause of the map-navigation struggle found, and
+  the headless-input limitation that caused it fixed.** `find_mm_*` vs
+  `neighbor_hover_mm_*`/`warn_mm_*` confirmed as two different coordinate
+  frames (the latter world-absolute, live-matched against
+  `location.embark_pos_min/max`); `xdotool` real X11 input confirmed as
+  the fix for map hover/click/panning, which DFHack's fake input can
+  never drive in headless Xvfb. → `research/2026-09-10-embark-screen-rendering-and-coordinates.md`,
+  `decisions/DECISIONS.md` 2026-09-10, `Working.md`.
+- **Next: implement the text-only sweep to place a properly-verified
+  second site.** Move the real cursor candidate to candidate, read the
+  hover-info panel and placement-warning text (both buffer-scannable, no
+  image dependency), commit the first clean criteria-match — panning the
+  camera in sync so the search is visible on the live feed, not just log
+  output. Not yet built. Once a good site exists, decide whether to keep
+  both forts, abandon one, or move on: nothing is deciding what either
+  fort does turn to turn yet — `docs/PURPOSE.md`'s build order
+  (`check_reachable`/`get_connectivity_report` first, see the "Next"
+  bucket below) is unchanged and still the next real code to write. If
+  the earlier "Confirm" crash recurs on a future embark, running it under
+  gdb again is the known workaround, not a fix. → `Working.md` handover.
 - **DONE 2026-09-10: reusable menu-automation tool, replacing one-off Lua
   scripts per click.** `scripts/dfhack/df-overseer-ui.lua`
   (`install_df.py ui-install`, then `./dfhack-run df-overseer-ui
@@ -121,10 +153,11 @@ or `decisions/DECISIONS.md`, not here.
 - **`find_open_area` (built terrain), then `find_chokepoints` /
   `rank_candidate_sites`, then `get_stuck_jobs`** (least-verified primitive,
   test in isolation). → `docs/PURPOSE.md` build order items 6-8.
-- **Embark, and measure a running fort's memory.** Worldgen's peak (561 MB)
-  is measured; a fort at year 5 with 100 dwarves is not, and this would also
-  give a real number for `TimeoutStopSec`'s quicksave margin.
-  → `docs/PURPOSE.md` open questions.
+- **Measure a running fort's memory over time**, now that one exists
+  (`decisions/DECISIONS.md` 2026-09-10, "First fort founded"). Worldgen's
+  peak (561 MB) is measured; a fort at year 5 with 100 dwarves is not, and
+  this would also give a real number for `TimeoutStopSec`'s quicksave
+  margin. → `docs/PURPOSE.md` open questions.
 - **The compliance eval harness.** Cheapest research build item, do before
   any fort runs: load synthetic doctrine at increasing rule counts, measure
   where compliance degrades. No game, no agent, never blocked.
