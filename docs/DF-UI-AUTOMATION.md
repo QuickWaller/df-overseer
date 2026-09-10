@@ -18,6 +18,11 @@ own design commitments. Design commitment #1 (never show the model a
 rendered map) is unaffected either way: everything here reads structured
 fields and character-buffer text, never an image, for automation decisions.
 
+The first real automation *past* this doc's scope — actually digging and
+furnishing a founded fort, not bootstrapping into one — is
+`quickfort`-driven, not covered here: see `blueprints/README.md` and
+`decisions/DECISIONS.md` 2026-09-10 ("Played Uniboslan forward for real").
+
 ## The reusable tool
 
 `scripts/dfhack/df-overseer-ui.lua`, deployed onto the guest with
