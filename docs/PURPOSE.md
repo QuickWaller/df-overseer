@@ -15,6 +15,15 @@
 > identity they run against is provisioned outside this repo; see
 > `infra/README.md`.
 > No game-side *code* exists yet: no perception layer, no agent, no toolkit.
+>
+> **This banner is stale relative to `main`.** This file's status text
+> above predates this branch's own most recent commits (build order items
+> 2-4 below are marked Done, all verified live against a real, running
+> fort). This is `perception-layer-experiments`, deliberately kept off
+> `main` (see `Working.md`), so its own copy of this doc was never updated
+> to match `main`'s. Check `main`'s copy of this file for the real current
+> picture of the whole project; this branch's build order section below is
+> accurate for the perception layer specifically.
 
 ## Purpose
 
@@ -245,35 +254,54 @@ reappears.
    99.1% across all three representations at n=108 each. Caveat that still
    stands: hand-authored 15-landmark fixtures, not the lossier real generator
    (build item 4 produces that), so item 1 wants re-running once it exists.
-2. ~~**`check_reachable` / `get_connectivity_report`.**~~ **Done 2026-09-10**
-   — `scripts/dfhack/df-overseer-connectivity.lua`, deployed via
+2. ~~**`check_reachable` / `get_connectivity_report`.**~~ **Done
+   2026-09-10, named-endpoint stopgap resolved same day (separate
+   session, `perception-layer-experiments`)** —
+   `scripts/dfhack/df-overseer-connectivity.lua`, deployed via
    `install_df.py ui-install`. `get_connectivity_report()` calls
    `warn-stranded.lua`'s own `getStrandedGroups()` directly via `reqscript`
    rather than reimplementing it, confirmed live against a real fort
-   (Uniboslan). `check_reachable()` is a stopgap taking two raw unit ids,
-   not landmark names — the spec's named-endpoint resolution depends on
-   `get_landmark` (build order item 3, not built yet); replace the
-   signature once that exists. `near_landmark` is omitted from the
-   stranded-groups output rather than stubbed with raw coordinates, for
-   the same reason. JSON output is deterministically key-sorted for free —
-   DFHack's `json.encode` delegates to a C++ (jsonxx-derived) encoder,
-   confirmed live across repeated fresh processes, not dependent on Lua's
-   own table iteration order. → `decisions/DECISIONS.md` 2026-09-10.
-3. Landmark system on burrows + exits-first representation. **First slice
-   started 2026-09-10, explicitly experimental** (user's framing, not a
-   settled design): a fresh embark has no burrows or buildings yet to
-   enumerate, and no wagon object either (confirmed empty
-   `world.vehicles.all` on a real embark) — so nothing for `find_open_area`
-   etc. to anchor their first result to. `scripts/dfhack/df-overseer-landmarks.lua`
-   seeds one landmark, "Embark Site," from the citizen-position centroid,
-   persisted via `dfhack.persistent.saveSiteData` and confirmed live to
-   survive a full save/reload. This is one bootstrap node only, not the
-   real burrow/building enumeration + adjacency-graph system this item
-   still calls for — that's unstarted. → `decisions/DECISIONS.md`
+   (Uniboslan), and now carries `near_landmark`/`direction`/
+   `distance_tiles` per stranded group. `check_reachable` (`check FROM
+   TO`) resolves landmark names via item 3's `get_landmark_centroid`; the
+   original raw-unit-id form is kept separately as `check-units` for
+   low-level debugging. JSON output is deterministically key-sorted for
+   free — DFHack's `json.encode` delegates to a C++ (jsonxx-derived)
+   encoder, confirmed live across repeated fresh processes, not dependent
+   on Lua's own table iteration order. → `decisions/DECISIONS.md`
    2026-09-10.
-4. `get_overview` / context tiering with **deterministic JSON** (sort keys —
-   Lua table order is not guaranteed, and a reshuffle silently busts the
-   prefix cache every turn).
+3. ~~**Landmark system on burrows + exits-first representation.**~~ **Done
+   2026-09-10 (separate session, `perception-layer-experiments`, not
+   `main`)**, after a first bootstrap-only slice earlier the same day
+   (the seed "Embark Site" landmark, still kept for continuity).
+   `scripts/dfhack/df-overseer-landmarks.lua` now enumerates real
+   buildings (`buildings.all`, filtered to named ones) and burrows
+   (`plotinfo.burrows.list` — NOT `world.burrows.all`, which does not
+   exist, correcting this doc's own §10 prototype sketch), merges them
+   with the persisted seed, and computes a nearest-3 exits graph per
+   landmark with a live-verified `walkable` flag. Exports
+   `get_landmark_centroid`/`nearest_landmark`/`list_landmarks` via
+   `reqscript` for item 2 and item 4 to consume. Confirmed live against
+   Uniboslan; found two real bugs the research doc's prototype sketch
+   would have hit verbatim (`getSize()`'s `cx,cy` are local to the
+   building's own box, not absolute) and one wrong prior conclusion (the
+   embark wagon *is* a `building` object; the seed-landmark session
+   checked the wrong list, `vehicles.all`). → `decisions/DECISIONS.md`
+   2026-09-10 rows.
+4. ~~**`get_overview` / context tiering with deterministic JSON.**~~ **Done
+   2026-09-10 (same session/branch)** —
+   `scripts/dfhack/df-overseer-overview.lua`, composing item 2 and item
+   3's `reqscript` exports into a tier0 (fortress name) / tier1
+   (population, landmarks) / tier2 (in-game date, alerts) shape. Key
+   sorting is free (see item 2); array ordering (landmark list, exits) is
+   sorted by name explicitly, since engine iteration order isn't. Fixed a
+   second real `reqscript` gotcha in the process: a module load runs the
+   loaded script's own CLI-dispatch code too unless guarded with
+   `dfhack_flags.module`, which was leaking stray "usage: ..." lines
+   ahead of the real JSON before the fix. `resource_summary` (needs a
+   real prospect-equivalent scan) and event-driven diffing (item 5) are
+   deliberately not attempted here. → `decisions/DECISIONS.md`
+   2026-09-10 rows.
 5. `get_diff_since` via `eventful`.
 6. `find_open_area` (built terrain), hard radius cap from day one.
 7. `find_chokepoints`, then `rank_candidate_sites`.
