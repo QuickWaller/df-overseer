@@ -2283,3 +2283,401 @@ Two independent threads, in order:
 **Style note:** the user does not want em dashes in prose. Commas, colons,
 semicolons or full stops instead. Fine as structural separators.
 
+
+## HANDOVER - 2026-09-10 (end of session, fifth handover today)
+
+The prior handover from earlier the same day is archived wholesale —
+[`working-archive/Working_archive-2026-09-07.md`](working-archive/Working_archive-2026-09-07.md),
+superseded by this one. **This session's result: a second fort was
+founded ("Uniboslan, 'Ragwind'"), the first fort's save ("Artobcatten")
+was lost as a side effect (unrecoverable, not a close call), and — after
+a file-level backup — Uniboslan was actually played forward: a real room
+dug, a real stockpile placed, several genuine DF/DFHack mechanics learned
+the hard way.** The text-only sweep also got built and a real Windows SSH
+bug got fixed along the way.
+
+### State at a glance
+
+- **A second fort exists and is running normally: "Uniboslan, 'Ragwind'"**,
+  founded via the text-only sweep, confirmed via the in-game founding
+  message and `gametype==0`. Quicksaved, transitioned off the diagnostic
+  gdb-wrapped process (used as the crash workaround, see below) onto
+  normal `df-fortress.service` systemd supervision, reloaded via the
+  title screen's "Continue active game" button, verified via
+  `viewscreen_dwarfmodest`'s own header. `df.global.world.cur_savegame.save_dir`
+  is `autosave 2`.
+- **The first fort, "Artobcatten, Combinedchannel," is gone.** Its actual
+  save data lived in `save/autosave 1` (this repo already knew DF doesn't
+  name a fort's save after its region — see the durable traps). Founding
+  Uniboslan overwrote it: `save/autosave 1/world.sav` and
+  `save/autosave 2/world.sav` are now byte-for-byte identical (confirmed
+  via `md5sum`), both holding Uniboslan's data. `save/current` is empty,
+  `region1`/`region2` are confirmed (again) pure world-gen-history with no
+  player-fort data, and this repo's `backups/` directory has never
+  actually been used (empty) — no recovery path was found. Told the user
+  directly before doing anything else; **the user chose to accept the
+  loss and move forward with Uniboslan** rather than pursue a
+  Proxmox-snapshot recovery check. Full incident trail:
+  `decisions/DECISIONS.md` 2026-09-10 ("second fort was founded, but the
+  first fort's save was lost").
+- **Extended `df-overseer-ui.lua`** with `embark-mode`, `leave-embark-mode`,
+  `hover` — see the durable traps section for the mechanics these
+  depend on. Deployed via `install_df.py ui-install`, confirmed working
+  live and used to actually find and commit Uniboslan's site.
+- **Found and fixed a real, previously-latent Windows-specific SSH bug**
+  while deploying the above script: Git's MSYS-linked `ssh.exe` truncates
+  a command-line argument to ~8182 characters when spawned by Python's
+  `subprocess` (a native Win32 process) but not when spawned by bash.
+  Fixed: `provision_vm.ssh_guest` gained `input_data` (pipes a payload
+  over stdin instead), `install_df.remote()` uses it. `provision_relay.py`
+  inherits the fix for free.
+- **A crash, same signature as the first fort's "Confirm" race, recurred
+  at a different step** (the map-click step, not Confirm) on the first
+  commit attempt for Uniboslan's site — `code=exited, status=1`, no core
+  dump, no save created, nothing lost by the crash itself. The known `gdb`
+  workaround (run `dwarfort` directly under `gdb` with a `catch syscall
+  exit_group` batch script, matching systemd's exact environment) avoided
+  it again on retry, same as for the first fort.
+- **New finding while retrying under `gdb`**: a real `xdotool` click on a
+  genuinely valid, placeable tile went straight through to
+  `viewscreen_setupdwarfgamest` with no `warn_mm_*` force-write and no
+  separate Confirm click needed at all — unlike the first fort's
+  documented flow. Not fully explained; possibly the force-write/Confirm
+  dance was compensating for something specific to DFHack's fake input,
+  not an inherent property of the flow. Worth revisiting if a third embark
+  is ever attempted.
+- **New finding, load-bearing for any future second embark**: restarting
+  the embark flow from the title screen ("Start new game in existing
+  world") did **not** return to the same world/coordinate frame as the
+  stale mid-navigation state this session started in — it landed in
+  `region1`, not `region2`. The stale `neighbor_hover_mm_*` numbers from
+  before the crash pointed at real mountain terrain in this different
+  world (DF's own validation correctly flagged it unplaceable), not the
+  forest found earlier — a coincidence of matching numbers across
+  different worlds, not a bug in the coordinate frame itself. The sweep
+  had to be re-run fresh in the world actually reached this time.
+
+### Resolved: pre-playthrough snapshot blocked by cluster quorum, worked around
+
+User asked for a Proxmox snapshot of VM 103 before playing Uniboslan
+forward (a safety net, given this session already lost one fort's save
+with no backup). `provision_vm.py snapshot --name pre-uniboslan-playthrough`
+failed: `unable to open file '/etc/pve/nodes/srv-01/qemu-server/103.conf.tmp...'
+- Permission denied`, and a diagnostic `GET /cluster/status` on the same
+token also came back `403 Sys.Audit` — matching the repo's own documented
+trap ("if a write step fails oddly, check quorum before suspecting
+permissions," `ROADMAP.md`) closely enough to check before assuming
+anything else. Messaged the live `home-lab-c1` session (df-overseer has
+no host shell access to check `pvecm status` itself, only a pool-scoped
+API token); **user confirmed directly: SRV-02 is down**, and with no
+QDevice on this cluster a single remaining node isn't a majority —
+inquorate, exactly as suspected. **Not this repo's to fix** (home-lab
+owns cluster/estate infra).
+
+**Worked around rather than blocked on it**: `install_df.py backup`
+doesn't touch the Proxmox API at all, just pulls the save directory off
+the VM over SSH — ran it, got a real 18MB archive, and verified (not just
+trusted the exit code) that it actually contains `autosave 2` (Uniboslan's
+real save: unit files, region snapshots, `world.sav`), at
+`backups/df-saves-103-20260910-162147.tar.gz`. This is a genuine safety
+net, just a file-level one instead of a VM-level one — good enough to
+proceed with playing the fort forward.
+
+### Played Uniboslan forward: first room and stockpile, real findings
+
+User's direction: back up first (done — see above), then actually play
+the fort forward rather than keep it standing untouched, driving it
+directly and documenting as it goes rather than building the framework
+first. Result: **Uniboslan now has real structure**, not just seven idle
+citizens on open ground.
+
+- **`blueprints/` is now a real directory**, first entries in the
+  "Blueprint library" scope item: `starter-entrance-1x1.csv` (one
+  downstair), `starter-connector-1x1.csv` (one upstair, the fix for the
+  job-creation bug below), `starter-room-5x5.csv` (`#dig`), and
+  `starter-stockpile-5x5.csv` (`#place`, Food+Wood+Stone+Furniture+
+  Finished Goods+Bars and Blocks). Applied via `quickfort run <file> -c
+  x,y,z` — chosen deliberately over raw designation-poking because it
+  matches design commitment #4 ("blueprints, not generated coordinates"),
+  and `-c`/`--cursor` confirmed to need no interactive map cursor.
+  Deployed to the guest via plain `scp` into `dfhack-config/blueprints/`
+  (quickfort's own player-blueprint directory) — not through
+  `install_df.py`'s script-deploy mechanism, since these are quickfort
+  data files, not DFHack Lua scripts.
+- **Four real findings, all confirmed live**: (1) the founding "A Dwarven
+  Outpost..." dialog silently froze all citizen activity for 40+ real
+  seconds even with `pause_state` reading `false` — the user, watching
+  the live feed, correctly guessed this before I diagnosed it; dismissing
+  it unfroze everything instantly. (2) A downstair can't be designated on
+  a grass-covered surface tile ("light grass"/"dark grass") — needed a
+  non-grass tile (here, "stone floor") within the room's own footprint.
+  (3) **The costly one**: a plain `d` (floor) dig directly beneath an
+  already-dug, walkable downstair does not get turned into a job at
+  all — `checkDesignationsNow()` correctly reported it unreachable no
+  matter how many times it was re-run, because the connecting tile
+  specifically needs to be a **matching stair type** (`u`) to link the
+  levels for job-creation, not just any walkable-adjacent floor. Fixing
+  that one tile immediately created six real jobs from zero. (4) The
+  fortress-wide job list is `df.global.world.jobs.list` (a linked-list,
+  `.next`/`.item`), not `df.global.job_list` as
+  `research/2026-08-25-spatial-perception.md`'s prototype sketch guessed
+  (that doc's own §8 flagged this as its one unverified primitive — now
+  verified, and the guess was wrong).
+- **Also corrected a wrong claim I made mid-session**: told the user DF
+  Classic's 2D engine has no zoom; they pushed back, and
+  `data/init/interface.txt` directly proved real `ZOOM_IN`/`ZOOM_OUT`
+  binds exist (`[`/`]`), confirmed working via real `xdotool` keypresses.
+  Don't assert a negative about DF's feature set without checking the
+  keybinding file first.
+- **End state, paused and quicksaved (confirmed via mtime + file size,
+  not just exit code)**: 25/25 room tiles dug, stockpile live, all 7
+  citizens alive and behaving normally, Year 30, mid-Summer (month 3, day
+  6). Paused deliberately per the user's own suggestion — pause the
+  colony when not actively driving it, rather than leave it running
+  unwatched. Full trail: `decisions/DECISIONS.md` 2026-09-10.
+- **DONE this session**: pulled an `install_df.py backup` of Uniboslan's
+  save (used as the pre-playthrough safety net, see above) — the
+  "worth deciding" item from the prior draft of this section is resolved.
+
+### Next: the fort's fate, and the real landmark system
+
+1. **`docs/PURPOSE.md` build order item 3's real scope (burrow/building
+   enumeration + adjacency graph) now has something real to work
+   against** — the stockpile placed this session is a genuine `building`
+   object, the first non-seed landmark candidate. Still needs to happen
+   on the `perception-layer-experiments` branch, not `main` (see below),
+   and is still unstarted beyond the seed landmark.
+2. **`check_reachable`/`get_connectivity_report` and the seed landmark
+   remain parked on `perception-layer-experiments`** (`107adf1`/`ac7547f`,
+   not on `main`), user's explicit call to keep them experimental. The
+   live VM still has both scripts deployed regardless of which branch is
+   checked out locally.
+3. **Not done this session, still open from an earlier handover**: the
+   `find_mm_*` Y-axis transform mystery (cheap, read-only, not blocking).
+4. **A general "audit the docs for stale info" pass was delegated to a
+   Sonnet subagent** at the user's request, running in parallel with this
+   handover being written — check its report/diff before trusting this
+   handover is the only doc change from this session.
+
+### Durable traps, still true (additions marked NEW)
+
+- **VM 103 is running DF unattended with no network isolation boundary.**
+  home-lab's `memory/tailscale-architecture.md` assigns `df-fortress`/
+  `df-colony-01` to `tag:ai-sandbox` — "unattended, possibly LLM-driven,
+  lowest trust that isn't internet-facing" — but `runbooks/tailscale-topology.md`
+  Phase 5 (the actual hard gate) is still unchecked. **Not this repo's to
+  fix** — host-level Tailscale/ACL work, forbidden to any agent by
+  home-lab's own rule.
+- **DF ignores SIGTERM.** Quicksave before stop is mandatory once a fort
+  is live; a bare stop takes the full timeout and ends in SIGKILL. **This
+  is now load-bearing, not theoretical** — a real fort has existed since
+  2026-09-10 and must be quicksaved before any future stop.
+- **The manual (`start`/`stop`) and systemd-managed paths must not run at
+  once** — `install_df.py stop` does not clean up a manually-started
+  Xvfb. See archive for the full incident/fix.
+- **`-gen` fails silently** roughly a quarter of the time. Success is the
+  region directory existing, never the exit code.
+- **Saves live at the XDG path**, not in the game directory.
+- **Never convert a booted VM to a template without sealing it.**
+- **The published hostname is exposed.** The user chose not to rename it.
+- **`willsmith.nz` is deliberate**, not a leak: the intended public face.
+- **Folder is still `df-automation` on disk** while the project is
+  `df-overseer`.
+- **DF replay determinism is unverified.**
+- **`hypothesis_id` has no registry.**
+- **`openclaw` vs `hermes-agent` still deferred.**
+- **Tarball checksums are pinned and enforced.**
+- **PVE's cloud-init takes only the first label of the VM `name`** —
+  `install_df.py`'s `step_hostname` (reused for the relay too) is the only
+  workable route to a suffixed guest hostname.
+- **Hostname convention has one canonical source: home-lab's `CLAUDE.md`,
+  Conventions section.** Cite it, do not restate it here.
+- **ImageMagick's `import` infers output format from the file extension.**
+  Use an explicit `format:` prefix (`png:path`).
+- **On a screen with an actual map viewport, never do a blanket
+  full-screen `dfhack.screen.readTile` dump.** Scope scans to the specific
+  rows/columns a label search actually needs.
+- **`gui.simulateInput`'s generic keys don't work on DF v50+'s native
+  button-style menus, and this extends to WASD map-panning and all four
+  `CURSOR_*` directions too** — confirmed dead (pixel-identical
+  before/after, and unchanged struct fields) on `choose_start_sitest`'s
+  camera panning and cursor movement specifically, alongside the
+  already-known title-screen/region-list menu cases. Mouse clicks
+  (buffer-scan for text, compute coordinate, `_MOUSE_L`) remain the only
+  confirmed-working input method for menu-style screens. **Note the
+  exception found this session**: real `xdotool`-driven WASD (not
+  DFHack's fake input) does work for camera panning, including while
+  `choosing_embark` is `true`.
+- **`find_mm_*` (Site Finder's match output) and
+  `neighbor_hover_mm_*`/`warn_mm_*` (the real, committable embark
+  rectangle) are two different coordinate frames — never write `find_mm_*`
+  directly into `warn_mm_*`.** `warn_mm_*`/`neighbor_hover_mm_*` are
+  confirmed world-absolute (live-matched exactly against
+  `location.embark_pos_min/max`, real names `abs_mm_start`/`abs_mm_end`);
+  `find_mm_*` is not. See `research/2026-09-10-embark-screen-rendering-and-coordinates.md`.
+- **`df.global.gps.precise_mouse_x/y` (real pixel-level mouse state) works
+  in headless Xvfb via `xdotool`** (`DISPLAY=:99 xdotool mousemove/keydown/keyup`)
+  — the fix for map hover-info, map clicks, and WASD camera panning, none
+  of which DFHack's fake `gui.simulateInput` can drive. Calibration: DF
+  window sits at `+0,+40` within the virtual display; `precise_mouse_x =
+  real_X11_X`, `precise_mouse_y = real_X11_Y - 40`.
+- **`xdotool`'s `click` action has no default inter-step delay in this
+  version** — a bare `mousemove X Y click 1` is flaky. Use explicit
+  `mousemove` → `sleep 0.3` → `mousedown 1` → `sleep 0.2` → `mouseup 1`.
+- **There is no rendered mouse cursor sprite anywhere in this setup** —
+  the only visual position feedback is DF's native ~2×2 blue hover-square
+  overlay, confirmed pure native closed-source DF rendering, not settable
+  or readable from any source available to this project.
+- **`code=exited, status=1` in `systemctl status` means the process called
+  `exit(1)` itself, not a signal death** — a core dump will never fire for
+  it. Distinguish from `code=killed, status=SIGxxx`.
+- **The title screen gains a "Continue active game" button, above "Start
+  new game in existing world," once any save exists** — the reliable
+  signal a fort has actually been founded.
+- **A founded fort's real save directory is not necessarily "region2"**
+  (or whatever `cur_savegame.save_dir` said pre-embark) — check
+  `df.global.world.cur_savegame.save_dir` on the live fort itself.
+- **`df-overseer-ui.lua`'s `click` self-reported `FAIL` on clicks that had
+  actually worked** — its success check (does the scanned text disappear)
+  is unreliable when the same screen persists with the text still present,
+  or a duplicate match exists elsewhere. Verify with `type` or a field
+  read. Not yet fixed in the script.
+- **Writes to `neighbor_hover_mm_*` alone, and `gps.mouse_x/y` alone
+  without an accompanying click in the same call, do not move anything
+  visually** — these behave like render-loop-derived outputs, not
+  authoritative inputs. **Refined this session**: `neighbor_hover_mm_*`
+  specifically only live-updates from real mouse *movement* (no click
+  needed) while `scr.choosing_embark` is `true`; during ordinary zoomed
+  browsing it's frozen regardless. `zoomed_in` is the opposite case — it
+  CAN be set directly and does affect which screen renders next.
+- **DF's "Re-run finder" confirmation dialog offers only "P: Pause this
+  confirmation" or "Enter: Yes, proceed" — no plain cancel.** `CUSTOM_P`
+  dismisses it without losing the existing match.
+- **A full-tree file-manifest diff must tab-separate size and path**
+  (`find ... -printf '%s\t%P\n'`, split with `awk -F'\t'`), not
+  space-separate.
+- **`dfhack-run lua -f script.lua ARG1 ARG2` passes arguments via Lua
+  varargs (`local x, y = ...`), not a global `arg` table.**
+- **Site Finder's "Begin" needs at least one non-N/A criterion set, or it
+  silently no-ops forever.**
+- **`load-save.lua`'s `sel_menu_line`-on-`viewscreen_titlest` approach
+  does not apply to this build.** Tagged `unavailable`, don't re-attempt.
+- **A checksum must never pass through an LLM-summarized web fetch** —
+  fetch it directly with `curl` and compare byte-for-byte.
+- **`.env` appends must check for a trailing newline first** —
+  `install_df.py`'s `_append_env_var()` helper does this.
+- NEW: **`LEAVESCREEN` cleanly cancels `viewscreen_choose_start_sitest`'s
+  `choosing_embark` mode with no side effect** (`warn_mm_*` stays
+  `-1,-1,-1,-1`) as long as the local map itself was never clicked — a
+  safe way to test or abort a placement attempt without committing
+  anything.
+- NEW: **A long payload embedded directly in an SSH command string
+  silently truncates at ~8182 characters when Git's MSYS-linked `ssh.exe`
+  is spawned by a native Win32 process (Python's `subprocess`) rather than
+  a POSIX one (bash)** — no error, exit 0, the remote side just runs a
+  truncated command. `provision_vm.ssh_guest` now takes `input_data` to
+  pipe a payload over stdin instead; `install_df.remote()` uses it. Never
+  embed an unbounded-size payload directly in an SSH command string again
+  — see `provision_vm.ssh_guest`'s docstring and
+  `decisions/DECISIONS.md` 2026-09-10 for the full mechanism.
+- NEW, **the costly one — read before ever founding another fort while
+  one already exists**: **DF's save-slot names (`autosave 1`, `autosave 2`,
+  `current`) are a shared generic pool, not scoped per fort.** Founding
+  Uniboslan overwrote Artobcatten's actual save data, which lived in
+  `autosave 1` — confirmed via `md5sum`, `autosave 1/world.sav` and
+  `autosave 2/world.sav` are now byte-for-byte identical, both holding
+  Uniboslan's state, with no trace of Artobcatten's left anywhere
+  (`current` empty, `region1`/`region2` are pure world-gen history, no
+  backup ever taken). **Before founding any future additional fort**: pull
+  an `install_df.py backup` of every existing save first, since this
+  install's save naming gives no guarantee that an existing fort's slot
+  survives a new one being founded.
+- NEW: **A crash matching the first fort's "Confirm" signature
+  (`code=exited, status=1`, no core dump) can also trigger at the
+  map-click step, not just Confirm** — same `gdb`-wrapped-launch
+  workaround applies (see the RESOLVED entry above), just don't assume the
+  race is scoped to one specific click.
+- NEW: **Restarting the embark flow from the title screen does not
+  reliably return to the same world/coordinate frame as wherever a stale,
+  not-yet-committed embark attempt was sitting** — this session's fresh
+  "Start new game in existing world" landed in `region1`, not the `region2`
+  the stale mid-navigation state (and its `neighbor_hover_mm_*` numbers)
+  belonged to. Re-verify the actual world/region reached (region name text
+  on the embark screen, not just numeric coordinates matching a prior
+  session) before reusing any previously-found coordinates.
+- NEW: **A real `xdotool` click on a genuinely valid, placeable tile can
+  go straight through the whole embark-placement flow to
+  `viewscreen_setupdwarfgamest`**, with no `warn_mm_*` force-write and no
+  separate Confirm click at all — different from the first fort's
+  documented sequence. Not fully explained (possibly the force-write/
+  Confirm dance was compensating for something specific to DFHack's fake
+  input on an earlier attempt, not an inherent property of the flow).
+  Worth confirming if a third embark is ever attempted.
+- NEW: **The tutorial intro dialogs ("Quick start and short tutorial?",
+  "On your own!") render as overlays on `viewscreen_choose_start_sitest`
+  itself, not as separate viewscreen types** — they do reappear on each
+  fresh embark attempt (this session briefly assumed otherwise after they
+  didn't show up in the very first `type` check, before actually dumping
+  the screen and finding them present).
+- NEW: **A founded fort's own "A Dwarven Outpost..." welcome message
+  (with an "Okay" button) silently blocks all citizen activity — walking,
+  jobs, everything — even though `df.global.pause_state` reads `false`.**
+  Citizens sit frozen at their exact founding positions indefinitely until
+  it's dismissed (`click "Okay"`); dismissing it unfreezes everything
+  instantly. Always dump the screen and check for this dialog before
+  concluding a fort is "stuck" or unpaused-but-not-progressing.
+- NEW: **A downward-staircase (`j`) dig designation cannot be placed on a
+  grass-covered surface tile** ("light grass"/"dark grass" — confirmed,
+  `quickfort` reports "0 tiles designated" with no error). Works
+  immediately on other floor types (stone floor, stone pebbles, dirt).
+  When anchoring a dig entrance, check the actual tile type at the target
+  first, or scan the room's footprint for a non-grass tile.
+- NEW: **A plain `d` (floor) dig designation directly beneath an
+  already-completed, walkable downstair does not get turned into an
+  assignable job at all** — `dfhack.job.checkDesignationsNow()` correctly
+  reports it as unreachable no matter how many times it's re-run. The
+  connecting tile between two z-levels needs to be a **matching stair
+  type** (`u`, upstair) to link them for job-creation purposes; a plain
+  floor immediately below a stair is not sufficient even though the stair
+  above it is itself walkable. Confirmed live: changing one tile from `d`
+  to `u` created six real jobs from zero. Any blueprint spanning z-levels
+  needs its connecting tile to be a proper stair, not a floor designation.
+- NEW: **The fortress-wide job list is `df.global.world.jobs.list`**, a
+  linked-list struct (traverse via `.next`/`.item`, `#`/`ipairs` both
+  fail on it), **not `df.global.job_list`** as
+  `research/2026-08-25-spatial-perception.md`'s prototype sketch guessed
+  (flagged there, §8, as its one unverified primitive) — now verified
+  live, and the guess was wrong.
+- NEW: **DF Classic's 2D engine (`PRINT_MODE:2D`) does have real zoom**,
+  contrary to a wrong claim made mid-session: `data/init/interface.txt`
+  defines genuine `ZOOM_IN`/`ZOOM_OUT` binds (`[`/`]` keys), confirmed
+  working live via real `xdotool key bracketright`/`bracketleft` in
+  fortress mode. Check the actual keybinding file before asserting DF
+  lacks a feature.
+- NEW: **`install_df.py backup` is a genuine, verified substitute safety
+  net when a Proxmox snapshot is blocked by cluster quorum issues** — it
+  pulls the save directory over SSH, no Proxmox API involved at all.
+  Verify the resulting archive actually contains the expected save data
+  (e.g. `tar -tzf` and grep for the save folder name) rather than trusting
+  a nonzero file size alone.
+- NEW: **A `quicksave` RPC call can return and log "The game should
+  autosave now" before the file actually lands on disk** — a save-file
+  mtime check run immediately after can read stale, even though the save
+  genuinely completes moments later. Wait a few seconds and recheck
+  before concluding a quicksave silently failed.
+
+### Other open items, carried forward
+
+- **Design commitment #1's absolute wording vs. its actual evidence
+  base** — still queued for a `decisions/DECISIONS.md` entry, deliberately
+  not written yet (user's call on timing).
+- **Live-view ingest (the public screenshot-push leg), still waiting on
+  the user.** Once Cloudflare R2 credentials arrive: wire
+  `DF_STREAM_INGEST_URL` in `.env`, convert `curl -F` to an S3-compatible
+  signed PUT, fill in `IMAGE_BASE` in
+  `willsmith-portfolio/public/dwarf-fortress/index.html`, commit, ask
+  before pushing/deploying either repo.
+
+**Style note:** the user does not want em dashes in prose. Commas, colons,
+semicolons or full stops instead. Fine as structural separators.
+
