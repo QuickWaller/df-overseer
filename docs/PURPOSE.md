@@ -329,7 +329,23 @@ reappears.
    a real "whole area is one building" case), 5 distinct non-overlapping
    2x2 surface candidates, and an explicit not-found error for a bad
    landmark name. → `decisions/DECISIONS.md` 2026-09-11.
-7. `find_chokepoints`, then `rank_candidate_sites`.
+7. ~~**`find_chokepoints`**~~, **done 2026-09-11 (same branch), verified
+   live** — `scripts/dfhack/df-overseer-chokepoints.lua`, a cheap
+   heuristic (not Voronoi-based) scan for two chokepoint kinds:
+   "corridor" (the research doc's literal 1-wide-passage heuristic) and
+   "stair" (any stair/ramp tile — not in the research doc's sketch, added
+   because it's the most common real chokepoint shape in an actual early
+   fort). Honest deviation: reports a single `near_landmark` rather than
+   the spec's `between: [a,b]` pair, since the landmark system doesn't
+   track full region extents/adjacency yet. Verified live: found the
+   fort's one real chokepoint, the soil/stone stair pair at `(100,96)`
+   connecting the room to the surface, with no false-positive corridor
+   hits over the open room. → `decisions/DECISIONS.md` 2026-09-11.
+   **`rank_candidate_sites` NOT attempted** — composes `find_open_area`
+   with a scoring formula needing `resource_summary` and threat data,
+   neither of which exist yet; building it now would mean fabricating
+   placeholder scoring terms, which this session's pattern has
+   consistently avoided.
 8. `get_stuck_jobs` — least-verified primitive; test in isolation.
 9. `find_open_area` (cavern terrain) — genuinely hard, deliberately last.
 

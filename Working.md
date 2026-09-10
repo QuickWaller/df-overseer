@@ -242,15 +242,30 @@ before deploying anything that runs continuously.
    building" case), 5 distinct non-overlapping 2x2 surface candidates
    near "Wagon", and an explicit not-found error for a bad landmark name.
    → `decisions/DECISIONS.md` 2026-09-11.
-5. **Not done in this pass**: the research spec's `via` (path-type
+5. **DONE (2026-09-11): `find_chokepoints` built, build order item 7
+   (first half).** New `df-overseer-chokepoints.lua`: a cheap heuristic
+   scan for two chokepoint kinds — "corridor" (the research doc's literal
+   1-wide-passage heuristic) and "stair" (any stair/ramp tile, not in the
+   research doc's sketch but the most common real chokepoint shape in an
+   actual early fort). Honest deviation: reports a single `near_landmark`
+   rather than the spec's `between: [a,b]` pair, since the landmark
+   system doesn't track region extents/adjacency yet. Verified live:
+   found the fort's one real chokepoint (the soil/stone stair pair at
+   `(100,96)` connecting the room to the surface), no false-positive
+   corridor hits over the open room, explicit not-found error for a bad
+   landmark. **`rank_candidate_sites` NOT attempted** — needs
+   `resource_summary` and threat data that don't exist yet; building it
+   now would mean fabricating placeholder scoring terms. →
+   `decisions/DECISIONS.md` 2026-09-11.
+6. **Not done in this pass**: the research spec's `via` (path-type
    classification, e.g. "corridor") exit field is deliberately not
    implemented. Would need real path-tracing this slice doesn't attempt.
-6. **Not done this session, still open from an earlier handover**: the
+7. **Not done this session, still open from an earlier handover**: the
    `find_mm_*` Y-axis transform mystery (cheap, read-only, not blocking).
-7. **Worth deciding, not urgent**: whether to pull an actual
+8. **Worth deciding, not urgent**: whether to pull an actual
    `install_df.py backup` of Uniboslan's save now that this session found
    out the hard way that none had ever been taken of a fort-bearing save.
-8. **Not pushed**: committed locally to `perception-layer-experiments`,
+9. **Not pushed**: committed locally to `perception-layer-experiments`,
    per this repo's rule, needs explicit go-ahead before `git push`.
 
 ### Durable traps, still true (additions marked NEW)
