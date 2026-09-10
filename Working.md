@@ -95,17 +95,43 @@ along the way.
   4's requirement early, no manual sort needed. Live-tested three cases
   (empty report, two reachable citizens, one nonexistent unit id) — see
   `decisions/DECISIONS.md` 2026-09-10.
+- **User raised a real gap in build order item 3 before it was built**:
+  every downstream tool that expresses results relative to a named
+  landmark has nothing to anchor to on a virgin embark, since burrows/
+  buildings only exist once something's been dug or built — the build
+  order never said how the first landmark gets created. Also asked
+  whether a full 3D world representation would be readable by the model;
+  answered from evidence already in this repo (`evals/perception/`
+  deliberately never built a full-grid arm, and the cross-domain research
+  behind it — BALROG, NLE, Voyager, robotics scene graphs — already found
+  transformers don't reliably reconstruct spatial adjacency from a
+  flattened grid regardless of encoding) rather than re-litigating it from
+  scratch. **User's call: try a fix, explicitly framed as experimental, not
+  settled.** Built `scripts/dfhack/df-overseer-landmarks.lua`
+  (`list`/`get NAME`): seeds one landmark, "Embark Site," from the
+  citizen-position centroid (a wagon-based anchor was checked and ruled
+  out — `world.vehicles.all` is confirmed empty for this embark),
+  persisted via `dfhack.persistent.saveSiteData`. **Verified live**:
+  computed `(96, 96, 169)` matching a hand-computed centroid, confirmed
+  stable across repeated calls, and — the real test — confirmed it
+  survives a full quicksave + systemd stop/start + "Continue active game"
+  reload (genuine save-file persistence, not an in-memory cache). Found
+  and fixed a real bug in the process: querying `list` immediately after
+  triggering a reload (before the map had finished loading) crashed inside
+  `json.encode` because the error path's two return values got splatted
+  positionally into a function where the second argument means something
+  else entirely (`options`, not "error message") — fixed by destructuring
+  explicitly at the call site. This is one bootstrap node only, not the
+  real burrow/building enumeration + adjacency-graph system build order
+  item 3 still calls for.
 
-### Next: the landmark system, then the fort's fate
+### Next: the fort's fate, and the rest of the landmark system
 
-1. **`docs/PURPOSE.md` build order item 3 (landmark system on burrows +
-   exits-first representation) is next.** Needed before `check_reachable`
-   can take named endpoints instead of raw unit ids, and before
-   `near_landmark` can be added to `get_connectivity_report`. Uniboslan
-   has no buildings/burrows yet (brand new outpost) — there's nothing to
-   name as a landmark until it's played further, which may mean this
-   needs the fort to progress a bit first, or a design decision about what
-   counts as a landmark on a day-one embark.
+1. **The real burrow/building enumeration + adjacency-graph system**
+   (build order item 3's actual scope) is still unstarted — the seed
+   landmark above only unblocks the very first dig, not a general named-
+   place system. Needs the fort to actually be played (dig something,
+   build something) before there's anything real to enumerate.
 2. **Not done this session, still open from an earlier handover**: the
    `find_mm_*` Y-axis transform mystery (cheap, read-only, not blocking).
 3. **Worth deciding, not urgent**: whether to pull an actual

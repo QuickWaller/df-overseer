@@ -259,7 +259,18 @@ reappears.
    DFHack's `json.encode` delegates to a C++ (jsonxx-derived) encoder,
    confirmed live across repeated fresh processes, not dependent on Lua's
    own table iteration order. → `decisions/DECISIONS.md` 2026-09-10.
-3. Landmark system on burrows + exits-first representation.
+3. Landmark system on burrows + exits-first representation. **First slice
+   started 2026-09-10, explicitly experimental** (user's framing, not a
+   settled design): a fresh embark has no burrows or buildings yet to
+   enumerate, and no wagon object either (confirmed empty
+   `world.vehicles.all` on a real embark) — so nothing for `find_open_area`
+   etc. to anchor their first result to. `scripts/dfhack/df-overseer-landmarks.lua`
+   seeds one landmark, "Embark Site," from the citizen-position centroid,
+   persisted via `dfhack.persistent.saveSiteData` and confirmed live to
+   survive a full save/reload. This is one bootstrap node only, not the
+   real burrow/building enumeration + adjacency-graph system this item
+   still calls for — that's unstarted. → `decisions/DECISIONS.md`
+   2026-09-10.
 4. `get_overview` / context tiering with **deterministic JSON** (sort keys —
    Lua table order is not guaranteed, and a reshuffle silently busts the
    prefix cache every turn).
