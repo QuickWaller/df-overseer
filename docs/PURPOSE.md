@@ -10,11 +10,15 @@
 > (`scripts/install_df.py`). An earlier template and VM (built 2026-08-27)
 > were deleted 2026-09-01 in an estate rebuild; today's VM, `df-colony-01`,
 > is a fresh rebuild from this repo's own scripts, verified end to end
-> (`decisions/DECISIONS.md` 2026-09-08 rows). DF itself has not been started
-> and no world exists yet, so nothing is running unattended. The Proxmox
+> (`decisions/DECISIONS.md` 2026-09-08 rows). **Superseded 2026-09-10**: DF
+> has since been started, a world generated, and a fort founded and run
+> unattended under systemd — see `CLAUDE.md`'s status banner and
+> `decisions/DECISIONS.md` 2026-09-10 rows for current state. The Proxmox
 > identity they run against is provisioned outside this repo; see
 > `infra/README.md`.
-> No game-side *code* exists yet: no perception layer, no agent, no toolkit.
+> No game-side *code* exists yet: no perception layer, no agent, no toolkit —
+> the one parked exception, a `check_reachable`/seed-landmark first slice,
+> sits off `main` on `perception-layer-experiments`; see `Working.md`.
 
 ## Purpose
 
