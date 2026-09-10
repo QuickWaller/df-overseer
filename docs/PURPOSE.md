@@ -245,8 +245,20 @@ reappears.
    99.1% across all three representations at n=108 each. Caveat that still
    stands: hand-authored 15-landmark fixtures, not the lossier real generator
    (build item 4 produces that), so item 1 wants re-running once it exists.
-2. `check_reachable` / `get_connectivity_report` — copies `warn-stranded.lua`'s
-   working algorithm. Highest-confidence real code.
+2. ~~**`check_reachable` / `get_connectivity_report`.**~~ **Done 2026-09-10**
+   — `scripts/dfhack/df-overseer-connectivity.lua`, deployed via
+   `install_df.py ui-install`. `get_connectivity_report()` calls
+   `warn-stranded.lua`'s own `getStrandedGroups()` directly via `reqscript`
+   rather than reimplementing it, confirmed live against a real fort
+   (Uniboslan). `check_reachable()` is a stopgap taking two raw unit ids,
+   not landmark names — the spec's named-endpoint resolution depends on
+   `get_landmark` (build order item 3, not built yet); replace the
+   signature once that exists. `near_landmark` is omitted from the
+   stranded-groups output rather than stubbed with raw coordinates, for
+   the same reason. JSON output is deterministically key-sorted for free —
+   DFHack's `json.encode` delegates to a C++ (jsonxx-derived) encoder,
+   confirmed live across repeated fresh processes, not dependent on Lua's
+   own table iteration order. → `decisions/DECISIONS.md` 2026-09-10.
 3. Landmark system on burrows + exits-first representation.
 4. `get_overview` / context tiering with **deterministic JSON** (sort keys —
    Lua table order is not guaranteed, and a reshuffle silently busts the

@@ -74,13 +74,38 @@ along the way.
   forest found earlier — a coincidence of matching numbers across
   different worlds, not a bug in the coordinate frame itself. The sweep
   had to be re-run fresh in the world actually reached this time.
+- **Then built the first real perception-layer code**:
+  `check_reachable`/`get_connectivity_report`, `docs/PURPOSE.md` build
+  order item 2, done. `scripts/dfhack/df-overseer-connectivity.lua`
+  (`./dfhack-run df-overseer-connectivity <report|check A B>`) reuses
+  `warn-stranded.lua`'s own `getStrandedGroups()` via `reqscript` rather
+  than reimplementing it — confirmed live against Uniboslan (7 citizens,
+  one walk group, matches `warn-stranded status`'s own output exactly).
+  `install_df.py ui-install` generalized to deploy every
+  `df-overseer-*.lua` file, not just one hardcoded name, now that a second
+  script exists. `check_reachable()` is an explicit stopgap: takes two raw
+  unit ids, not landmark names, since named-endpoint resolution needs
+  `get_landmark` (build order item 3, not built) — flagged in the script's
+  own comments to replace, not left as a silent permanent API.
+  `near_landmark` omitted from the stranded-groups output rather than
+  stubbed with raw coordinates, matching the research spec's own reasoning
+  for that field's existence. JSON key order is deterministic for free:
+  DFHack's `json.encode` delegates to a C++ (jsonxx-derived) encoder,
+  confirmed stable across repeated fresh processes — satisfies build item
+  4's requirement early, no manual sort needed. Live-tested three cases
+  (empty report, two reachable citizens, one nonexistent unit id) — see
+  `decisions/DECISIONS.md` 2026-09-10.
 
-### Next: the fort's fate, now that a second one exists
+### Next: the landmark system, then the fort's fate
 
-1. **`docs/PURPOSE.md`'s build order (`check_reachable`/`get_connectivity_report`
-   first) is the next real code to write** — unchanged by this session.
-   Neither fort is being played yet: no perception layer, no agent exists.
-   → `ROADMAP.md`'s "Next" bucket.
+1. **`docs/PURPOSE.md` build order item 3 (landmark system on burrows +
+   exits-first representation) is next.** Needed before `check_reachable`
+   can take named endpoints instead of raw unit ids, and before
+   `near_landmark` can be added to `get_connectivity_report`. Uniboslan
+   has no buildings/burrows yet (brand new outpost) — there's nothing to
+   name as a landmark until it's played further, which may mean this
+   needs the fort to progress a bit first, or a design decision about what
+   counts as a landmark on a day-one embark.
 2. **Not done this session, still open from an earlier handover**: the
    `find_mm_*` Y-axis transform mystery (cheap, read-only, not blocking).
 3. **Worth deciding, not urgent**: whether to pull an actual
