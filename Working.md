@@ -256,8 +256,12 @@ gotchas, and fresh findings without another doc home yet.
 - **Design commitment #1's absolute wording vs. its actual evidence
   base** — still queued for a `decisions/DECISIONS.md` entry, deliberately
   not written yet (user's call on timing).
-- **Live-view ingest (the public screenshot-push leg), still waiting on
-  the user.** Once Cloudflare R2 credentials arrive: wire
+- **Live-view ingest (the public screenshot-push leg): explicitly shelved
+  for now, user's call 2026-09-12** — not because it's redundant with the
+  two working VNC streams (public view-only + authenticated admin), it
+  isn't, it's a lighter-weight static-image embed meant to sit alongside
+  the "watch live via noVNC" link on the portfolio page, just not a
+  priority right now. Once revisited: wire
   `DF_STREAM_INGEST_URL` in `.env`, convert `curl -F` to an S3-compatible
   signed PUT, fill in `IMAGE_BASE` in
   `willsmith-portfolio/public/dwarf-fortress/index.html`, commit, ask
