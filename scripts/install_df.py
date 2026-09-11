@@ -102,6 +102,17 @@ VNC_DIR = "/opt/df/vnc"
 VNC_PORT = 5900
 NOVNC_PORT = 6080
 
+# The authenticated personal-control channel (real mouse/keyboard, not
+# view-only) is a second, separate instance of everything below -- its own
+# port, its own systemd service, its own tunnel keypair -- never a mode
+# switch on the existing public/LAN view-only path. See cmd_vnc's --control
+# handling. Auth for this one is Cloudflare Access alone (gated at the edge,
+# before any byte reaches the relay), not a second in-app password -- see
+# provision_relay.py's cmd_webvnc --control, which binds loopback-only so
+# Access is the only way in at all, not merely the intended one.
+VNC_CONTROL_PORT = 5901
+NOVNC_CONTROL_PORT = 6081
+
 # prefs/init.txt overrides applied to a copy of data/init/init_default.txt.
 # SOUND:NO because the VM has no audio device; 2D because there is no GPU.
 #
@@ -1626,7 +1637,7 @@ dfhack_lua "if not dfhack.isEnabled('spectate') then dfhack.run_command('enable 
 # small change (drop -viewonly) once the view-only version is confirmed
 # working, not a redesign -- deliberately deferred, not an oversight.
 X11VNC_UNIT = '''[Unit]
-Description=x11vnc (view-only) for the Dwarf Fortress Xvfb display
+Description=x11vnc (%(desc)s) for the Dwarf Fortress Xvfb display
 After=df-xvfb.service
 Requires=df-xvfb.service
 
@@ -1635,7 +1646,7 @@ Type=simple
 User=%(user)s
 Environment=DISPLAY=%(display)s
 ExecStart=/usr/bin/x11vnc -display %(display)s %(authflag)s \\
-  -rfbport %(port)s -viewonly -forever -shared -noxdamage \\
+  -rfbport %(port)s %(viewonlyflag)s -forever -shared -noxdamage \\
   -o %(logdir)s/x11vnc.log
 Restart=on-failure
 RestartSec=2
@@ -1664,23 +1675,53 @@ def cmd_vnc(pve, args):
     password trades away a defense-in-depth layer against LAN-side snooping,
     not any control-surface risk, and this is the same x11vnc instance the LAN
     path also uses, so this applies there too, not just the public leg.
+
+    --control installs a SEPARATE, second instance (df-vnc-control.service,
+    default port VNC_CONTROL_PORT) rather than changing the one above: drops
+    -viewonly (real mouse/keyboard reach the game) and forces -nopw
+    unconditionally, ignoring --password/--no-password -- this instance's
+    auth is Cloudflare Access at the edge (provision_relay.py's cmd_webvnc
+    --control), not an x11vnc password, decided 2026-09-11 specifically to
+    avoid a redundant second sign-in once Access already gates the only path
+    in. The existing view-only df-vnc.service is completely untouched by
+    this flag; both can run at once, on different ports.
     """
     vmid, ip = target(pve, args)
     user = pve.env.get("DF_CIUSER", "df")
-    port = args.port
+    control = args.control
+    port = args.port if args.port is not None else (
+        VNC_CONTROL_PORT if control else VNC_PORT)
+    service = "df-vnc-control" if control else "df-vnc"
 
-    if args.no_password:
+    if control:
+        # Forced, not merely defaulted -- an explicit --password here would
+        # silently do nothing, which is worse than refusing it outright.
+        if args.password or args.no_password:
+            raise PVEError("--control always runs -nopw (auth is Cloudflare"
+                            " Access, not an x11vnc password) -- drop"
+                            " --password/--no-password")
+        no_password = True
+        password = None
+        generated = False
+    elif args.no_password:
+        no_password = True
         password = None
         generated = False
     else:
+        no_password = False
         password = args.password or pve.env.get("DF_VNC_PASSWORD")
         generated = False
         if not password:
             password = secrets.token_urlsafe(15)
             generated = True
 
-    log("installing x11vnc on VM %s (view-only, port %s%s)"
-        % (vmid, port, ", no password" if args.no_password else ""))
+    log("installing x11vnc on VM %s (%s, port %s%s)"
+        % (vmid, "CONTROL -- real mouse/keyboard reach the game" if control
+                  else "view-only", port,
+           ", no password" if no_password else ""))
+    if control:
+        log("  -- this instance is meant to sit behind Cloudflare Access"
+            " only; do not expose port %s directly" % port)
 
     pkg_script = '''
 if ! command -v x11vnc >/dev/null 2>&1; then
@@ -1696,28 +1737,32 @@ fi
     # script (remote()'s dry-run path logs the whole body) never puts the real
     # value on screen or in a saved log.
     script_password = "<DF_VNC_PASSWORD>" if args.dry_run else password
-    authflag = "-nopw" if args.no_password else "-rfbauth %s/passwd" % VNC_DIR
+    vncdir = VNC_DIR + ("-control" if control else "")
+    authflag = "-nopw" if no_password else "-rfbauth %s/passwd" % vncdir
     unit = X11VNC_UNIT % {
-        "user": user, "display": DISPLAY_NUM, "vncdir": VNC_DIR,
+        "user": user, "display": DISPLAY_NUM, "vncdir": vncdir,
         "port": port, "logdir": LOG_DIR, "authflag": authflag,
+        "desc": "CONTROL, real input" if control else "view-only",
+        "viewonlyflag": "" if control else "-viewonly",
     }
-    passwd_step = "" if args.no_password else (
+    passwd_step = "" if no_password else (
         "x11vnc -storepasswd %(password)s %(vncdir)s/passwd\n"
         "chown -R %(user)s:%(user)s %(vncdir)s\n"
         "chmod 600 %(vncdir)s/passwd\n"
-    ) % {"vncdir": VNC_DIR, "password": script_password, "user": user}
+    ) % {"vncdir": vncdir, "password": script_password, "user": user}
     setup_script = '''
 mkdir -p %(vncdir)s
 %(passwd_step)s
-cat > /etc/systemd/system/df-vnc.service <<'EOF'
+cat > /etc/systemd/system/%(service)s.service <<'EOF'
 %(unit)s
 EOF
 
 systemctl daemon-reload
-systemctl enable --now df-vnc.service
-systemctl restart df-vnc.service
-systemctl is-active df-vnc.service
-''' % {"vncdir": VNC_DIR, "passwd_step": passwd_step, "unit": unit}
+systemctl enable --now %(service)s.service
+systemctl restart %(service)s.service
+systemctl is-active %(service)s.service
+''' % {"vncdir": vncdir, "passwd_step": passwd_step, "unit": unit,
+       "service": service}
 
     proc = remote(pve.env, ip, setup_script, "vnc setup", timeout=120,
                   sudo=True, dry_run=args.dry_run)
@@ -1730,7 +1775,10 @@ systemctl is-active df-vnc.service
         _append_env_var("DF_VNC_PASSWORD", password)
         log("generated a VNC password, wrote DF_VNC_PASSWORD to .env"
             " (gitignored) -- read it from there, not printed here")
-    if args.no_password:
+    if control:
+        log("x11vnc listening on %s:%s -- CONTROL (real input), NO x11vnc"
+            " password -- must stay behind Cloudflare Access" % (ip, port))
+    elif no_password:
         log("x11vnc listening on %s:%s -- view-only, NO PASSWORD (public feed)"
             % (ip, port))
     else:
@@ -1754,6 +1802,16 @@ systemctl is-active df-vnc.service
 # 'Requires=' naming a unit that does not exist on that host would fail this
 # service to start, not just warn. websockify's own Restart=on-failure
 # already covers "nothing is listening yet" on either host.
+# %(bindhost)s is "" (all interfaces -- the existing public/LAN behavior,
+# unchanged) or "127.0.0.1:" (loopback only). Every caller must supply it
+# explicitly, even as "" -- there is no implicit default, so a new call site
+# can't silently inherit the wrong exposure. provision_relay.py's cmd_webvnc
+# --control uses "127.0.0.1:" so Cloudflare Access (reached only via
+# cloudflared's own loopback-side connection) is the *only* way to this
+# port, not merely the intended one -- confirmed 2026-09-11 that the
+# no-bindhost form binds all interfaces, which is fine for the existing
+# view-only public feed but would have left the control channel reachable
+# directly on the relay's LAN, bypassing Access entirely.
 NOVNC_UNIT = '''[Unit]
 Description=noVNC websocket bridge to the Dwarf Fortress x11vnc server
 %(depends)s
@@ -1761,7 +1819,7 @@ Description=noVNC websocket bridge to the Dwarf Fortress x11vnc server
 [Service]
 Type=simple
 User=%(user)s
-ExecStart=/usr/bin/websockify --web=/usr/share/novnc %(port)s localhost:%(vncport)s
+ExecStart=/usr/bin/websockify --web=/usr/share/novnc %(bindhost)s%(port)s localhost:%(vncport)s
 Restart=on-failure
 RestartSec=2
 
@@ -1823,7 +1881,7 @@ fi
     install_novnc_index(pve.env, ip, args.dry_run)
 
     unit = NOVNC_UNIT % {
-        "user": user, "port": port, "vncport": vnc_port,
+        "user": user, "port": port, "vncport": vnc_port, "bindhost": "",
         "depends": "After=df-vnc.service\nRequires=df-vnc.service",
     }
     setup_script = '''
@@ -1862,9 +1920,9 @@ TUNNEL_DIR = "/opt/df/vnc-tunnel"
 # independent layer: even if GatewayPorts were ever flipped, this specific
 # key still could not open anything else.
 VNC_TUNNEL_UNIT = '''[Unit]
-Description=Reverse SSH tunnel: expose df-vnc's x11vnc to the relay (LAN-internal only)
-After=network.target df-vnc.service
-Requires=df-vnc.service
+Description=Reverse SSH tunnel: expose %(requires)s's x11vnc to the relay (LAN-internal only)
+After=network.target %(requires)s
+Requires=%(requires)s
 
 [Service]
 Type=simple
@@ -1892,26 +1950,39 @@ def cmd_vnc_tunnel(pve, args):
     -- per research/2026-09-09-reverse-vnc-relay.md 5, even a fully
     compromised copy of this key can only ever forward to that one loopback
     port on the relay, nothing else: no shell, no other host, no other port.
+
+    --control tunnels the control x11vnc instance (df-vnc-control.service,
+    default VNC_CONTROL_PORT) instead, via a completely separate keypair,
+    authorized_keys line, and systemd service (df-vnc-control-tunnel) --
+    deliberately not reusing the view-only tunnel's key, so nothing about
+    this ever touches (or risks breaking) the existing public tunnel.
     """
     vmid, ip = target(pve, args)
     user = pve.env.get("DF_CIUSER", "df")
-    vnc_port = args.vnc_port
+    control = args.control
+    vnc_port = args.vnc_port if args.vnc_port is not None else (
+        VNC_CONTROL_PORT if control else VNC_PORT)
     relay_ip = args.relay_ip
     relay_user = args.relay_user
+    tunnel_dir = TUNNEL_DIR + ("-control" if control else "")
+    service = "df-vnc-control-tunnel" if control else "df-vnc-tunnel"
+    requires = "df-vnc-control.service" if control else "df-vnc.service"
+    key_comment = service
 
-    log("setting up reverse VNC tunnel: VM %s -> %s@%s (port %s)"
-        % (vmid, relay_user, relay_ip, vnc_port))
+    log("setting up reverse VNC tunnel%s: VM %s -> %s@%s (port %s)"
+        % (" (CONTROL)" if control else "", vmid, relay_user, relay_ip,
+           vnc_port))
 
     keygen_script = '''
 mkdir -p %(tunneldir)s
 if [ ! -f %(tunneldir)s/id_ed25519 ]; then
-  ssh-keygen -t ed25519 -f %(tunneldir)s/id_ed25519 -N '' -C 'df-vnc-tunnel' -q
+  ssh-keygen -t ed25519 -f %(tunneldir)s/id_ed25519 -N '' -C '%(comment)s' -q
 fi
 chown -R %(user)s:%(user)s %(tunneldir)s
 chmod 700 %(tunneldir)s
 chmod 600 %(tunneldir)s/id_ed25519
 cat %(tunneldir)s/id_ed25519.pub
-''' % {"tunneldir": TUNNEL_DIR, "user": user}
+''' % {"tunneldir": tunnel_dir, "user": user, "comment": key_comment}
     proc = remote(pve.env, ip, keygen_script, "generate tunnel key",
                   timeout=60, sudo=True, dry_run=args.dry_run)
     if args.dry_run:
@@ -1941,19 +2012,19 @@ chmod 600 ~/.ssh/authorized_keys
         % vnc_port)
 
     unit = VNC_TUNNEL_UNIT % {
-        "user": user, "tunneldir": TUNNEL_DIR, "vncport": vnc_port,
-        "relayuser": relay_user, "relayip": relay_ip,
+        "user": user, "tunneldir": tunnel_dir, "vncport": vnc_port,
+        "relayuser": relay_user, "relayip": relay_ip, "requires": requires,
     }
     setup_script = '''
-cat > /etc/systemd/system/df-vnc-tunnel.service <<'EOF'
+cat > /etc/systemd/system/%(service)s.service <<'EOF'
 %(unit)s
 EOF
 
 systemctl daemon-reload
-systemctl enable --now df-vnc-tunnel.service
+systemctl enable --now %(service)s.service
 sleep 2
-systemctl is-active df-vnc-tunnel.service
-''' % {"unit": unit}
+systemctl is-active %(service)s.service
+''' % {"unit": unit, "service": service}
     proc = remote(pve.env, ip, setup_script, "vnc-tunnel setup", timeout=60,
                   sudo=True, dry_run=args.dry_run)
     for line in proc.stdout.strip().splitlines():
@@ -2052,15 +2123,25 @@ def main():
                              " capture if neither is set")
 
     vnc = add("vnc", help="LAN-reachable, view-only VNC (x11vnc) on the Xvfb display")
-    vnc.add_argument("--port", type=int, default=VNC_PORT,
-                     help="VNC port, default %s" % VNC_PORT)
+    vnc.add_argument("--port", type=int, default=None,
+                     help="VNC port; default %s normally, %s with --control"
+                          % (VNC_PORT, VNC_CONTROL_PORT))
     vnc.add_argument("--password", default=None,
                      help="VNC password; defaults to DF_VNC_PASSWORD in .env,"
-                          " or a freshly generated one appended there")
+                          " or a freshly generated one appended there."
+                          " Rejected with --control (see cmd_vnc's docstring)")
     vnc.add_argument("--no-password", action="store_true",
                      help="drop the password gate entirely (x11vnc -nopw)."
                           " Feed stays -viewonly regardless -- see cmd_vnc's"
-                          " docstring for why this is safe for a public feed")
+                          " docstring for why this is safe for a public feed."
+                          " Rejected with --control (already implied there)")
+    vnc.add_argument("--control", action="store_true",
+                     help="install a SEPARATE df-vnc-control.service instead:"
+                          " drops -viewonly (real mouse/keyboard reach the"
+                          " game) and forces -nopw, meant to sit behind"
+                          " Cloudflare Access only. Does not touch the"
+                          " existing view-only instance -- see cmd_vnc's"
+                          " docstring")
 
     webvnc = add("webvnc", help="bridge the x11vnc server to a plain browser tab"
                                  " via noVNC (no VNC client needed)")
@@ -2076,8 +2157,13 @@ def main():
                         help="the relay's LAN IP, e.g. 192.168.2.202")
     tunnel.add_argument("--relay-user", default="relay",
                         help="login user on the relay, default 'relay'")
-    tunnel.add_argument("--vnc-port", type=int, default=VNC_PORT,
-                        help="port to forward, default %s" % VNC_PORT)
+    tunnel.add_argument("--vnc-port", type=int, default=None,
+                        help="port to forward; default %s normally, %s with"
+                             " --control" % (VNC_PORT, VNC_CONTROL_PORT))
+    tunnel.add_argument("--control", action="store_true",
+                        help="tunnel the control x11vnc instance instead,"
+                             " via a completely separate keypair/service --"
+                             " see cmd_vnc_tunnel's docstring")
 
     args = parser.parse_args()
     # SUPPRESS means an unsupplied flag leaves no attribute at all.

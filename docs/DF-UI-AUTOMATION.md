@@ -23,6 +23,30 @@ furnishing a founded fort, not bootstrapping into one — is
 `quickfort`-driven, not covered here: see `blueprints/README.md` and
 `decisions/DECISIONS.md` 2026-09-10 ("Played Uniboslan forward for real").
 
+## Standing rule: flag every real-input (`xdotool`) fallback, out loud
+
+DFHack's own fake input (`gui.simulateInput`, struct writes) cannot drive
+everything — several screens (the map/embark hover, click-registration) only
+respond to genuine X11 mouse/keyboard events, which is why this project's
+automation falls back to `xdotool` sending real events into VM 103's Xvfb
+display (`:99` locally; see the "map itself was unsteerable" section below
+for why). **That fallback shares the exact same input channel as any human
+VNC session connected to the same display** — there is no separation between
+"the AI's simulated hand" and "a person's real hand" at the X11 level once
+`xdotool` is involved; both are just events on the same virtual mouse and
+keyboard. Once the authenticated personal-control VNC channel exists
+(`decisions/DECISIONS.md`, live-viewing thread), a session driving `xdotool`
+against VM 103 while a human is also connected would genuinely fight over the
+same cursor and keyboard focus.
+
+**Rule: any use of `xdotool` (or any other real-X11-input mechanism) against
+VM 103 must be called out explicitly at the point it happens** — in the
+session's own output, not buried in a script's stdout nobody reads — never
+run silently as a routine implementation detail. This costs nothing when
+nothing else is connected (true today — no autonomous agent plays the fort
+yet) and is the one habit that keeps this safe once something else might be
+watching or driving at the same time.
+
 ## The reusable tool
 
 `scripts/dfhack/df-overseer-ui.lua`, deployed onto the guest with
