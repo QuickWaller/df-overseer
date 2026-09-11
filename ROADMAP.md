@@ -201,28 +201,33 @@ or `decisions/DECISIONS.md`, not here.
   not ready to merge yet, chose to keep working with the branch as-is and
   see how far it goes rather than merge now. → `Working.md`,
   `decisions/DECISIONS.md` 2026-09-11 rows.
-- **NEW 2026-09-11: no primitive converts a chosen named candidate into a
-  real anchor coordinate `quickfort` can use.** Found live, by an actual
-  autonomous-play attempt, not by inspection: `find_open_area` and
-  `df-overseer-landmarks.lua` both deliberately strip `x,y,z` before
-  returning anything to a caller (matches design commitment #1's spirit),
-  but nothing fills the resulting gap — a real, well-justified decision
-  ("build here, ranked #1, next to Stockpile #1") had no way to actually
-  become a `quickfort -c x,y,z` call without guessing or reading a map,
-  both forbidden. Needed: a `resolve_landmark`/`resolve_candidate`
-  primitive, callable only by the mechanical blueprint-anchoring step,
-  never by the model's own reasoning. Blocks any real autonomous
-  build-and-dig loop until it exists. → `decisions/DECISIONS.md` 2026-09-11
-  ("First real autonomous-play experiment on Uniboslan"), `Working.md`.
+- **DONE 2026-09-11: the coordinate-resolution gap found by the first
+  autonomous-play attempt is closed** — `build_open_area`/`build` (fused
+  resolve-and-act, coordinate never surfaced) on `df-overseer-openarea.lua`,
+  `perception-layer-experiments`. Produced the project's first fully
+  autonomous, tool-derived, end-to-end fort mutation: a real second
+  stockpile now exists on Uniboslan, independently verified against the
+  live VM. Also found (empirically, not by inspection) that this doesn't
+  extend to digging new rooms — `find_open_area` finds already-open space,
+  not diggable rock, so that's genuinely build order item 9's territory,
+  not left unfinished here. Still uncommitted on the branch, same
+  merge-timing question as everything else there. → `decisions/DECISIONS.md`
+  2026-09-11 ("Closed the coordinate-resolution gap..."), `Working.md`.
 - **Measure a running fort's memory over time**, now that one exists
   (`decisions/DECISIONS.md` 2026-09-10, "First fort founded"). Worldgen's
   peak (561 MB) is measured; a fort at year 5 with 100 dwarves is not, and
   this would also give a real number for `TimeoutStopSec`'s quicksave
   margin. → `docs/PURPOSE.md` open questions.
-- **The compliance eval harness.** Cheapest research build item, do before
-  any fort runs: load synthetic doctrine at increasing rule counts, measure
-  where compliance degrades. No game, no agent, never blocked.
-  → `research/2026-08-25-learning-architecture.md` §7 item 1.
+- **DONE 2026-09-11: compliance eval harness built** (`evals/compliance/`),
+  mirroring `evals/perception/`'s structure — a ~170-rule synthetic doctrine
+  pool, nested by rule count, graded mechanically, no LLM judging another
+  model's compliance. Selftest caught two real pool-design bugs before any
+  live call; a small live smoke test (4 cells) confirmed the request/grading
+  path works end to end against the real API. **Not yet run at the paper's
+  full rule-count sweep or meaningful sample size** — that's the concrete
+  next step. → `decisions/DECISIONS.md` 2026-09-11, `Working.md`,
+  `evals/compliance/README.md`, `research/2026-08-25-learning-architecture.md`
+  §7 item 1.
 
 ## Later
 <!-- Real, worth tracking, but genuinely further out or gated on scale/decisions not yet made. -->
