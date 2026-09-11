@@ -257,21 +257,42 @@ before deploying anything that runs continuously.
    `resource_summary` and threat data that don't exist yet; building it
    now would mean fabricating placeholder scoring terms. →
    `decisions/DECISIONS.md` 2026-09-11.
-6. **Not done in this pass**: the research spec's `via` (path-type
+6. **DONE (2026-09-11): `get_stuck_jobs` built, build order item 8** —
+   the primitive the research doc itself flagged as least-verified in the
+   whole design. Resolved that flag properly: found three real, shipped
+   uses of `utils.listpairs(df.global.world.jobs.list)` on this exact
+   install (`suspend.lua`, `dwarfvet.lua`, `suspendmanager.lua`), stronger
+   confirmation than the research doc had. New
+   `df-overseer-stuckjobs.lua`: "stuck" = no worker assigned, a suspended
+   job labeled distinctly; `idle_ticks` tracked via its own
+   `JOB_INITIATED` handler (same pattern as item 5's diff script), since
+   DF doesn't expose a job's start time directly. Verified live: the
+   empty-queue case, and — with a second explicit go-ahead for another
+   brief unpause — real `JOB_INITIATED`/`JOB_COMPLETED` firing with
+   correct tracked start ticks for real jobs. **Honest gap**: the actual
+   "no worker assigned" window itself was too fast to catch (an idle
+   miner grabbed both test digs in under a second of unpaused time), so
+   the traversal/tracking is proven real but that specific output branch
+   wasn't exercised against a genuinely idle job. Also surfaced a new,
+   real wrinkle on the "quicksave lands with a delay" trap: `save/current`
+   is transient staging, not an addressable save — see durable traps. →
+   `decisions/DECISIONS.md` 2026-09-11.
+7. **Not done in this pass**: the research spec's `via` (path-type
    classification, e.g. "corridor") exit field is deliberately not
    implemented. Would need real path-tracing this slice doesn't attempt.
-7. **Not done this session, still open from an earlier handover**: the
+8. **Not done this session, still open from an earlier handover**: the
    `find_mm_*` Y-axis transform mystery (cheap, read-only, not blocking).
-8. **Worth deciding, not urgent**: whether to pull an actual
+9. **Worth deciding, not urgent**: whether to pull an actual
    `install_df.py backup` of Uniboslan's save now that this session found
    out the hard way that none had ever been taken of a fort-bearing save.
-9. **Not pushed**: committed locally to `perception-layer-experiments`,
-   per this repo's rule, needs explicit go-ahead before `git push`.
+10. **Not pushed**: committed locally to `perception-layer-experiments`,
+    per this repo's rule, needs explicit go-ahead before `git push`.
 
 ### Durable traps, still true (additions marked NEW)
 
-- NEW: **Directly changing a live fort's pause state (`dfhack.world.SetPauseState(false)`) is blocked by Claude Code's own auto-mode classifier**, categorically — it rejected the identical call twice even after explicit conversational "go ahead" from the user each time, and only went through once the user changed a Bash permission setting (exited auto mode / adjusted `.claude/settings.json`). Conversational approval alone does not satisfy this gate for this class of action; don't retry the same call expecting a different result after a chat-level "yes," and don't try to route around it with an equivalent raw struct write — surface it and wait for the user to actually adjust the permission.
+- NEW: **Directly changing a live fort's pause state (`dfhack.world.SetPauseState(false)`) is blocked by Claude Code's own auto-mode classifier by default**, not something a bare mid-conversation "go ahead" reliably satisfies — the first time, it rejected the identical call twice even after explicit conversational approval each time, and only went through once the user actually adjusted a permission setting. A second, later instance (new session) was blocked again on the first attempt but went through on retry after asking specifically and getting a fresh explicit yes, with no further settings change visible. Net guidance: don't assume a general "continue"/"lets do it" earlier in a conversation covers this specific action — ask right before the call, get an explicit answer to that exact question, and if it's still blocked after that, say so plainly and let the user adjust settings rather than retrying blind or routing around it with an equivalent raw struct write.
 - NEW: **`quickfort run <file>` resolves a plain filename relative to `dfhack-config/blueprints/`, not the working directory or an absolute path** — `quickfort run /opt/df/foo.csv` fails with `"failed to open dfhack-config/blueprints//opt/df/foo.csv"` (the two paths get concatenated, not replaced). Write ad-hoc blueprints directly into that directory.
+- NEW: **`save/current` is transient staging, not itself an addressable save.** A quicksave briefly writes a fresh `world.sav` there, then DF moves it into the actual numbered slot (`autosave N`, whichever `df.global.world.cur_savegame.save_dir` names) within moments, leaving `current` empty again. Checking `save/current`'s mtime instead of the slot `cur_savegame.save_dir` actually names can read a just-written save as apparently vanished when it has simply already moved — a new, concrete instance of the already-known "quicksave lands with a delay" trap, not a separate bug.
 - **VM 103 is running DF unattended with no network isolation boundary.**
   home-lab's `memory/tailscale-architecture.md` assigns `df-fortress`/
   `df-colony-01` to `tag:ai-sandbox` — "unattended, possibly LLM-driven,
