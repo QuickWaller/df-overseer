@@ -215,6 +215,51 @@ flaws) are the permanent, living content of `docs/DF-UI-AUTOMATION.md` —
 not duplicated here. This list is everything else: infra, project-wide
 gotchas, and fresh findings without another doc home yet.
 
+Embark-screen automation mechanics (coordinate frames, `xdotool`
+calibration, dead input paths, dialog handling, the click tool's known
+flaws) are the permanent, living content of `docs/DF-UI-AUTOMATION.md` —
+not duplicated here, confirmed still current on this branch. This list is
+everything else: infra, project-wide gotchas, and this session's findings.
+
+- NEW: **Directly changing a live fort's pause state
+  (`dfhack.world.SetPauseState(false)`) is blocked by Claude Code's own
+  auto-mode classifier by default**, not something a bare mid-conversation
+  "go ahead" reliably satisfies. The first time this session, it rejected
+  the identical call twice even after explicit conversational approval
+  each time, and only went through once the user actually adjusted a
+  permission setting. A second, later instance (new session) was blocked
+  again on the first attempt but went through on retry after asking
+  specifically and getting a fresh explicit yes, with no further settings
+  change visible. Net guidance: don't assume a general "continue"/"lets do
+  it" earlier in a conversation covers this specific action — ask right
+  before the call, get an explicit answer to that exact question, and if
+  it's still blocked after that, say so plainly and let the user adjust
+  settings rather than retrying blind or routing around it with an
+  equivalent raw struct write.
+- NEW: **`quickfort run <file>` resolves a plain filename relative to
+  `dfhack-config/blueprints/`, not the working directory or an absolute
+  path** — `quickfort run /opt/df/foo.csv` fails with `"failed to open
+  dfhack-config/blueprints//opt/df/foo.csv"` (the two paths get
+  concatenated, not replaced). Write ad-hoc blueprints directly into that
+  directory.
+- NEW: **`save/current` is transient staging, not itself an addressable
+  save.** A quicksave briefly writes a fresh `world.sav` there, then DF
+  moves it into the actual numbered slot (`autosave N`, whichever
+  `df.global.world.cur_savegame.save_dir` names) within moments, leaving
+  `current` empty again. Checking `save/current`'s mtime instead of the
+  slot `cur_savegame.save_dir` actually names can read a just-written save
+  as apparently vanished when it has simply already moved — a new,
+  concrete instance of the already-known "quicksave lands with a delay"
+  trap, not a separate bug.
+- NEW: **`reqscript`-loading a `df-overseer-*.lua` file requires a
+  `--@module = true` directive as one of its leading comment lines**, or
+  `reqscript` refuses it outright ("Cannot be used as a module") — found
+  by reading how `warn-stranded.lua` declares itself reqscript-able.
+  Separately, a module-loaded script's own top-level CLI-dispatch code
+  still runs during that load unless explicitly guarded (`if
+  dfhack_flags.module then return end`, same pattern `warn-stranded.lua`
+  uses) — without it, loading a module prints its own "usage: ..." text
+  ahead of whatever the actual caller wanted.
 - **VM 103 is running DF unattended with no network isolation boundary.**
   home-lab's `memory/tailscale-architecture.md` assigns `df-fortress`/
   `df-colony-01` to `tag:ai-sandbox` — "unattended, possibly LLM-driven,
@@ -335,11 +380,11 @@ semicolons or full stops instead. Fine as structural separators.
 
 ## Archived
 
-- Sections for the week of 2026-08-24 moved to
-  [`working-archive/Working_archive-2026-08-24.md`](working-archive/Working_archive-2026-08-24.md).
-- 2026-08-27 through 2026-09-08: provisioning build, host-RAM blocker,
-  perception eval, fort ledger, VM-start, provisioning-hardening,
-  DF-install-scripting, systemd-unit handovers — all moved wholesale to
+- Sections through 2026-09-10 (fifth handover) — provisioning build,
+  perception eval, fort ledger, systemd units, title-screen bootstrap,
+  live-viewing/relay/tunnel, the tileset investigation, Site Finder
+  resolution, the embark-flow saga through both forts founded, and the
+  seed-landmark bootstrap — all moved wholesale to
   [`working-archive/Working_archive-2026-09-07.md`](working-archive/Working_archive-2026-09-07.md)
   as each was superseded or reported itself finished.
 - 2026-09-09: the 2026-09-08 (evening) handover moved wholesale to the

@@ -106,13 +106,35 @@ or `decisions/DECISIONS.md`, not here.
   DF Classic's 2D engine does have real zoom (`[`/`]` keys), contrary to
   a wrong claim made mid-session. → `decisions/DECISIONS.md` 2026-09-10,
   `working-archive/Working_archive-2026-09-07.md`.
-- **Next: the real burrow/building enumeration + adjacency graph**
-  (`docs/PURPOSE.md` build order item 3's remaining scope) now has
-  something real to work against — the stockpile above is a genuine
-  `building` object, the first non-seed landmark candidate. Still needs
-  to happen on `perception-layer-experiments`, not `main`. If the
-  "Confirm"/map-click crash recurs on a future embark, running it under
-  gdb again is the known workaround, not a fix. → `Working.md` handover.
+- **DONE 2026-09-10: `check_reachable`/`get_connectivity_report` built —
+  the first real perception-layer code, not just bootstrapping.**
+  `scripts/dfhack/df-overseer-connectivity.lua`, deployed via
+  `install_df.py ui-install` (now generalized to deploy every
+  `df-overseer-*.lua` file, not just one hardcoded name).
+  `get_connectivity_report()` calls `warn-stranded.lua`'s own
+  `getStrandedGroups()` via `reqscript` rather than reimplementing it,
+  confirmed live against Uniboslan. `check_reachable()` is an explicit
+  stopgap (raw unit ids, not landmark names) pending the landmark system
+  (build order item 3). JSON output is deterministically key-sorted for
+  free via DFHack's own C++ encoder, satisfying build item 4's requirement
+  early. → `docs/PURPOSE.md` build order item 2, `decisions/DECISIONS.md`
+  2026-09-10.
+- **DONE 2026-09-10, explicitly experimental: seed landmark bootstrap.**
+  User caught a real gap — `find_open_area`/`get_connectivity_report` have
+  nothing to anchor to on a virgin embark, since burrows/buildings only
+  exist once something's been dug or built, and the build order never said
+  how the first landmark gets created. Also asked whether the model could
+  instead just read a full 3D world representation; answered from this
+  repo's own evidence rather than re-litigating (`evals/perception/`
+  deliberately never built a full-grid arm, per the cross-domain research
+  behind it). `scripts/dfhack/df-overseer-landmarks.lua` seeds one
+  landmark ("Embark Site," citizen-position centroid — a wagon-based
+  anchor was checked and ruled out empty) via `dfhack.persistent`,
+  confirmed live to survive a full save/reload. User's framing: try it as
+  an experiment, not a settled design. **Not** the real burrow/building
+  enumeration + adjacency-graph system item 3 still calls for. →
+  `docs/PURPOSE.md` build order item 3, `decisions/DECISIONS.md`
+  2026-09-10.
 - **DONE 2026-09-10: reusable menu-automation tool, replacing one-off Lua
   scripts per click.** `scripts/dfhack/df-overseer-ui.lua`
   (`install_df.py ui-install`, then `./dfhack-run df-overseer-ui

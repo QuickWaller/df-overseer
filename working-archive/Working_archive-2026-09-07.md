@@ -2461,6 +2461,225 @@ citizens on open ground.
 
 ### Durable traps, still true (additions marked NEW)
 
+- **Then built the first real perception-layer code**:
+  `check_reachable`/`get_connectivity_report`, `docs/PURPOSE.md` build
+  order item 2, done. `scripts/dfhack/df-overseer-connectivity.lua`
+  (`./dfhack-run df-overseer-connectivity <report|check A B>`) reuses
+  `warn-stranded.lua`'s own `getStrandedGroups()` via `reqscript` rather
+  than reimplementing it — confirmed live against Uniboslan (7 citizens,
+  one walk group, matches `warn-stranded status`'s own output exactly).
+  `install_df.py ui-install` generalized to deploy every
+  `df-overseer-*.lua` file, not just one hardcoded name, now that a second
+  script exists. `check_reachable()` is an explicit stopgap: takes two raw
+  unit ids, not landmark names, since named-endpoint resolution needs
+  `get_landmark` (build order item 3, not built) — flagged in the script's
+  own comments to replace, not left as a silent permanent API.
+  `near_landmark` omitted from the stranded-groups output rather than
+  stubbed with raw coordinates, matching the research spec's own reasoning
+  for that field's existence. JSON key order is deterministic for free:
+  DFHack's `json.encode` delegates to a C++ (jsonxx-derived) encoder,
+  confirmed stable across repeated fresh processes — satisfies build item
+  4's requirement early, no manual sort needed. Live-tested three cases
+  (empty report, two reachable citizens, one nonexistent unit id) — see
+  `decisions/DECISIONS.md` 2026-09-10.
+- **User raised a real gap in build order item 3 before it was built**:
+  every downstream tool that expresses results relative to a named
+  landmark has nothing to anchor to on a virgin embark, since burrows/
+  buildings only exist once something's been dug or built — the build
+  order never said how the first landmark gets created. Also asked
+  whether a full 3D world representation would be readable by the model;
+  answered from evidence already in this repo (`evals/perception/`
+  deliberately never built a full-grid arm, and the cross-domain research
+  behind it — BALROG, NLE, Voyager, robotics scene graphs — already found
+  transformers don't reliably reconstruct spatial adjacency from a
+  flattened grid regardless of encoding) rather than re-litigating it from
+  scratch. **User's call: try a fix, explicitly framed as experimental, not
+  settled.** Built `scripts/dfhack/df-overseer-landmarks.lua`
+  (`list`/`get NAME`): seeds one landmark, "Embark Site," from the
+  citizen-position centroid (a wagon-based anchor was checked and ruled
+  out — `world.vehicles.all` is confirmed empty for this embark),
+  persisted via `dfhack.persistent.saveSiteData`. **Verified live**:
+  computed `(96, 96, 169)` matching a hand-computed centroid, confirmed
+  stable across repeated calls, and — the real test — confirmed it
+  survives a full quicksave + systemd stop/start + "Continue active game"
+  reload (genuine save-file persistence, not an in-memory cache). Found
+  and fixed a real bug in the process: querying `list` immediately after
+  triggering a reload (before the map had finished loading) crashed inside
+  `json.encode` because the error path's two return values got splatted
+  positionally into a function where the second argument means something
+  else entirely (`options`, not "error message") — fixed by destructuring
+  explicitly at the call site. This is one bootstrap node only, not the
+  real burrow/building enumeration + adjacency-graph system build order
+  item 3 still calls for.
+
+### HANDOVER - 2026-09-10 (new session, `perception-layer-experiments`
+worktree at `../df-automation-perception`, separate from `main`'s own
+Working.md and its own "sixth pass" quickfort/blueprint session)
+
+Picked up the item below as the queued next step. **The real burrow/
+building enumeration + adjacency graph is built and verified live**,
+extending `df-overseer-landmarks.lua` past its seed-only first slice.
+Every call now merges the persisted seed landmark with a fresh
+enumeration of `df.global.world.buildings.all` (filtered to a non-empty
+`dfhack.buildings.getName()`) and `df.global.plotinfo.burrows.list`, and
+computes a nearest-3 exits graph per landmark (direction, distance, and a
+live-verified `walkable` bool from `dfhack.maps.canWalkBetween`).
+
+**Two real bugs were found and fixed by verifying live against Uniboslan
+rather than trusting the research doc's prototype sketch**, both
+documented in the script's own comments:
+1. `df.global.world.burrows.all` does not exist as a field
+   (`"Cannot read field world.burrows: not found"`). The correct path is
+   `df.global.plotinfo.burrows.list`.
+2. `dfhack.buildings.getSize(building)`'s returned `cx,cy` are local to
+   the building's own bounding box, not absolute map coordinates
+   (confirmed: a 3x3 Wagon building returned `cx=1,cy=1`; a 5x5 stockpile
+   returned `cx=2,cy=2`). Would have silently collapsed every building's
+   centroid onto nonsense points if the research doc's prototype had been
+   used as written. Absolute centroid is `(x1+x2)/2, (y1+y2)/2, z` instead.
+
+Also found live: the embark wagon genuinely is a first-class `building`
+object (`building_type` "Wagon") with a real default name. The
+seed-landmark session's conclusion that no wagon object exists at all
+checked `world.vehicles.all` (empty for this embark), not `buildings.all`:
+that was the wrong list to check, not a true absence of a wagon object.
+
+Deployed via `install_df.py ui-install` and tested live against the real
+Uniboslan fort: `list` returns three landmarks ("Embark Site", "Wagon",
+"Stockpile #1") each with correctly directed, distance-labeled,
+walkability-verified exits; `get NAME` matches; a missing name returns a
+clean `{error: "not found"}`. Full detail: `decisions/DECISIONS.md`
+2026-09-10 (latest row).
+
+**Cross-session coordination, this session**: another session,
+`df-automation-7d`, is working the same repo concurrently on `main` (its
+own worktree), building independent per-viewer pan/Z-level camera control
+for the public live-view feed via `RemoteFortressReader`. Confirmed
+directly with them: no data-path overlap (this session's work never reads
+RFR or raw tile geometry, theirs never touches `dfhack.buildings`/
+`dfhack.burrows`), and flagged that both sides' scripts share the same
+`dfhack-run`/RPC server on VM 103, so either side should tell the user
+before deploying anything that runs continuously.
+
+### Next
+
+1. **DONE (same session): `check_reachable`'s stopgap replaced with named
+   landmark endpoints, and `near_landmark` wired into
+   `get_connectivity_report`.** `df-overseer-landmarks.lua` now exports
+   `get_landmark_centroid(name)`/`nearest_landmark(x,y,z)` via `reqscript`
+   (needed an undocumented-locally `--@module = true` directive, found by
+   reading how `warn-stranded.lua` declares itself reqscript-able).
+   `df-overseer-connectivity.lua`'s `check FROM TO` now takes landmark
+   names (old unit-id form kept as `check-units A B` for debugging), and
+   stranded groups in `report` carry `near_landmark`/`direction`/
+   `distance_tiles`. Verified live against Uniboslan: named `check`
+   works both ways (found and not-found), `check-units` still works.
+   **Honest gap**: `near_landmark` enrichment's actual code path (not
+   just the empty-list case) is unverified live — Uniboslan has no
+   stranded citizens to test against, and manufacturing one felt too
+   disruptive to the live fort just for a query-tool test. →
+   `decisions/DECISIONS.md` 2026-09-10 (latest row).
+2. **DONE (same session): `get_overview()`/context tiering built, build
+   order item 4.** New `df-overseer-overview.lua`, composing
+   `list_landmarks()` (tier1) and `get_connectivity_report()` (tier2
+   alerts, rendered as real sentences) via `reqscript`. Found and fixed a
+   second real `reqscript` requirement: loading a module ran its CLI
+   dispatch code too, printing stray "usage: ..." lines ahead of the
+   JSON, because the module-load call passes an internal table as `...`
+   that matches none of the CLI's expected subcommands. Fixed with the
+   `dfhack_flags.module` early-return guard `warn-stranded.lua` already
+   uses. Also fixed: `list_landmarks()` now sorts landmarks and their
+   exits by name, not engine iteration order, for turn-to-turn JSON
+   stability. Verified live: `df-overseer-overview get` returns clean
+   JSON, zero stray lines. **Deliberately not implemented, flagged not
+   faked**: `resource_summary` (needs a real prospect-equivalent scan)
+   and `get_diff_since`/event-driven tier2 (build order item 5, separate
+   later work). → `decisions/DECISIONS.md` 2026-09-10 (latest row).
+3. **DONE (same session): `get_diff_since()` built via `eventful`, build
+   order item 5.** New `df-overseer-diff.lua`: registers
+   `JOB_COMPLETED`/`UNIT_DEATH` handlers once per DF process lifetime,
+   appends to an in-memory `_G` ring buffer with a monotonic id, `since
+   CURSOR` drains past it. Verified a load-bearing assumption live first:
+   a plain Lua global genuinely persists across separate `dfhack-run`
+   invocations within the same running DF process (two independent calls
+   incrementing a counter returned 1 then 2), then the log/cursor logic
+   itself (synthetic entries first). **Gap closed later the same
+   session**: with the user's explicit go-ahead, briefly unpaused the
+   fort (~15s real time), designated and watched a real wall tile get
+   dug, and confirmed `since` returned the genuine resulting
+   `JOB_COMPLETED` event with correct tick/cursor — the actual
+   eventful→callback wiring, not just synthetic injection. Re-paused and
+   quicksaved immediately after; verified the quicksave actually landed
+   via `world.sav` mtime, not just the call's exit code. Two harmless
+   "TEST:"-labeled entries remain in the in-memory log from the earlier
+   synthetic test, cleared on next DF restart. Build order item 5 is now
+   fully verified, no remaining gap. →
+   `decisions/DECISIONS.md` 2026-09-10 rows.
+4. **DONE (2026-09-11, resumed session): `find_open_area` (terrain=
+   "built") built, build order item 6.** New
+   `df-overseer-openarea.lua`: a `near`-landmark-anchored, radius-capped
+   (hard cap 60, clamped in code) scan for WxH windows of free tiles
+   (walkable, no building on it), ranked by distance to the anchor and
+   deduplicated to non-overlapping placements, each described via its own
+   nearest landmark. A plain per-window check, not the histogram/stack
+   algorithm the research doc sketches — simpler to verify correctly and
+   cheap enough at this project's actual room scale. Verified live: a
+   findable 1x1 (the earlier test dig), a correctly-empty 5x5 (the room
+   is entirely covered by its own stockpile — a real "whole area is one
+   building" case), 5 distinct non-overlapping 2x2 surface candidates
+   near "Wagon", and an explicit not-found error for a bad landmark name.
+   → `decisions/DECISIONS.md` 2026-09-11.
+5. **DONE (2026-09-11): `find_chokepoints` built, build order item 7
+   (first half).** New `df-overseer-chokepoints.lua`: a cheap heuristic
+   scan for two chokepoint kinds — "corridor" (the research doc's literal
+   1-wide-passage heuristic) and "stair" (any stair/ramp tile, not in the
+   research doc's sketch but the most common real chokepoint shape in an
+   actual early fort). Honest deviation: reports a single `near_landmark`
+   rather than the spec's `between: [a,b]` pair, since the landmark
+   system doesn't track region extents/adjacency yet. Verified live:
+   found the fort's one real chokepoint (the soil/stone stair pair at
+   `(100,96)` connecting the room to the surface), no false-positive
+   corridor hits over the open room, explicit not-found error for a bad
+   landmark. **`rank_candidate_sites` NOT attempted** — needs
+   `resource_summary` and threat data that don't exist yet; building it
+   now would mean fabricating placeholder scoring terms. →
+   `decisions/DECISIONS.md` 2026-09-11.
+6. **DONE (2026-09-11): `get_stuck_jobs` built, build order item 8** —
+   the primitive the research doc itself flagged as least-verified in the
+   whole design. Resolved that flag properly: found three real, shipped
+   uses of `utils.listpairs(df.global.world.jobs.list)` on this exact
+   install (`suspend.lua`, `dwarfvet.lua`, `suspendmanager.lua`), stronger
+   confirmation than the research doc had. New
+   `df-overseer-stuckjobs.lua`: "stuck" = no worker assigned, a suspended
+   job labeled distinctly; `idle_ticks` tracked via its own
+   `JOB_INITIATED` handler (same pattern as item 5's diff script), since
+   DF doesn't expose a job's start time directly. Verified live: the
+   empty-queue case, and — with a second explicit go-ahead for another
+   brief unpause — real `JOB_INITIATED`/`JOB_COMPLETED` firing with
+   correct tracked start ticks for real jobs. **Honest gap**: the actual
+   "no worker assigned" window itself was too fast to catch (an idle
+   miner grabbed both test digs in under a second of unpaused time), so
+   the traversal/tracking is proven real but that specific output branch
+   wasn't exercised against a genuinely idle job. Also surfaced a new,
+   real wrinkle on the "quicksave lands with a delay" trap: `save/current`
+   is transient staging, not an addressable save — see durable traps. →
+   `decisions/DECISIONS.md` 2026-09-11.
+7. **Not done in this pass**: the research spec's `via` (path-type
+   classification, e.g. "corridor") exit field is deliberately not
+   implemented. Would need real path-tracing this slice doesn't attempt.
+8. **Not done this session, still open from an earlier handover**: the
+   `find_mm_*` Y-axis transform mystery (cheap, read-only, not blocking).
+9. **Worth deciding, not urgent**: whether to pull an actual
+   `install_df.py backup` of Uniboslan's save now that this session found
+   out the hard way that none had ever been taken of a fort-bearing save.
+10. **Not pushed**: committed locally to `perception-layer-experiments`,
+    per this repo's rule, needs explicit go-ahead before `git push`.
+
+### Durable traps, still true (additions marked NEW)
+
+- NEW: **Directly changing a live fort's pause state (`dfhack.world.SetPauseState(false)`) is blocked by Claude Code's own auto-mode classifier by default**, not something a bare mid-conversation "go ahead" reliably satisfies — the first time, it rejected the identical call twice even after explicit conversational approval each time, and only went through once the user actually adjusted a permission setting. A second, later instance (new session) was blocked again on the first attempt but went through on retry after asking specifically and getting a fresh explicit yes, with no further settings change visible. Net guidance: don't assume a general "continue"/"lets do it" earlier in a conversation covers this specific action — ask right before the call, get an explicit answer to that exact question, and if it's still blocked after that, say so plainly and let the user adjust settings rather than retrying blind or routing around it with an equivalent raw struct write.
+- NEW: **`quickfort run <file>` resolves a plain filename relative to `dfhack-config/blueprints/`, not the working directory or an absolute path** — `quickfort run /opt/df/foo.csv` fails with `"failed to open dfhack-config/blueprints//opt/df/foo.csv"` (the two paths get concatenated, not replaced). Write ad-hoc blueprints directly into that directory.
+- NEW: **`save/current` is transient staging, not itself an addressable save.** A quicksave briefly writes a fresh `world.sav` there, then DF moves it into the actual numbered slot (`autosave N`, whichever `df.global.world.cur_savegame.save_dir` names) within moments, leaving `current` empty again. Checking `save/current`'s mtime instead of the slot `cur_savegame.save_dir` actually names can read a just-written save as apparently vanished when it has simply already moved — a new, concrete instance of the already-known "quicksave lands with a delay" trap, not a separate bug.
 - **VM 103 is running DF unattended with no network isolation boundary.**
   home-lab's `memory/tailscale-architecture.md` assigns `df-fortress`/
   `df-colony-01` to `tag:ai-sandbox` — "unattended, possibly LLM-driven,
