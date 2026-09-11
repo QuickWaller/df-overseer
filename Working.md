@@ -307,10 +307,42 @@ personal-control VNC session (above) with no channel contention.
    of design commitment #2 only (code does the bitfield read/write); the
    judgment half (an actual policy: who should mine, who's idle too long,
    when to pull someone off hauling) is still unbuilt.
-4. Whether to enable `autolabor` as the baseline underneath this, and how it
-   interacts with any future manual `set-labor` calls (autolabor fights back
-   if it's left running and something else touches the same bits), is an
-   open question, not decided.
+4. ~~Whether to enable `autolabor`~~ — **done, see below.**
+
+### `autolabor` enabled on Uniboslan — verified live, persisted
+
+User's go-ahead. Checked the tool's own doc before touching anything rather
+than assuming behavior: enabling it disables the vanilla work-detail system
+outright and recalculates labors on its own cycle, and it **explicitly
+leaves dwarves on active military duty or assigned to a burrow untouched** —
+that's the actual answer to "does it fight manual `set-labor`," found in the
+primary source, no live experiment needed. Confirmed genuinely off before
+enabling (`autolabor status` returned "plugin is not enabled"), enabled
+(`enable autolabor`), and confirmed genuinely on afterward (`autolabor
+status` returned real data: "6 IDLE, 1 OTHER") — not just trusting the
+"Enabling autolabor" message. World was and remains paused throughout
+(`pause_state` checked before and after, unchanged).
+
+The doc states the enabled flag "stays enabled... even if you save and
+reload," which implies it's written into the save itself, not just live
+in DFHack's process memory — quicksaved afterward to make sure that's
+actually true rather than leaving it to chance. Found a new, real,
+previously-undocumented behavior doing this: **`quicksave` rotates forward
+through the `autosave N` slot pool by one on each call, rather than
+overwriting the currently-active slot in place** — confirmed live, two
+quicksaves in a row moved `cur_savegame.save_dir` from `autosave 1` →
+`autosave 2` → `autosave 3`, each with a fresh mtime matching when it ran.
+Distinct from (and less alarming than) the Artobcatten incident: that was
+two *different forts* colliding on the same slot pool; this is one fort
+rotating forward through its own slots normally, nothing overwritten
+unexpectedly, nothing lost. Worth remembering for any future mtime-based
+"did my save land" check: check `cur_savegame.save_dir` fresh each time
+rather than assuming the slot name from an earlier check is still current.
+
+**Not yet done**: no live check of whether `autolabor` actually starts
+moving dwarves onto jobs once the fort is unpaused again (only checked its
+own status output and the persistence question so far) — worth a quick
+watch next time the fort is actively driven forward.
 
 ### Other open items, carried forward
 
