@@ -82,8 +82,15 @@
 --     Used to fill in near_landmark for get_connectivity_report's stranded
 --     groups (research spec's field, omitted until this landmark system
 --     existed).
+--   build_at_landmark(name, blueprint_file) -> {..., quickfort_ok, ...}
+--     Added 2026-09-11, the landmark-direct counterpart to
+--     df-overseer-openarea.lua's build_open_area -- see that function's own
+--     header comment for the full "fuse resolution and action" rationale.
+--     Resolves NAME via get_landmark_centroid and runs
+--     `quickfort run BLUEPRINT_FILE -c cx,cy,z` directly against it,
+--     without ever returning the resolved coordinate.
 --
--- Usage: ./dfhack-run df-overseer-landmarks <list|get NAME>
+-- Usage: ./dfhack-run df-overseer-landmarks <list|get NAME|build NAME BLUEPRINT_FILE>
 
 local json = require('json')
 
@@ -279,6 +286,57 @@ function get_landmark_centroid(name)
   return nil
 end
 
+-- Parses quickfort's own "Blueprint statistics:" block into a plain
+-- label->count table. See df-overseer-openarea.lua's identical helper for
+-- the full rationale (why line-anchored, why never forwarding raw text) --
+-- duplicated here rather than shared via reqscript because it's a single
+-- self-contained pure-string function with no landmark/openarea-specific
+-- state, and reqscript-ing openarea FROM landmarks to save six lines would
+-- invert this file's own dependency direction (openarea already depends on
+-- landmarks, not the other way around).
+local function parse_quickfort_stats(output)
+  local stats = {}
+  if not output then
+    return stats
+  end
+  for line in output:gmatch('[^\n]+') do
+    local label, value = line:match('^  ([^:]-): (%d+)%s*$')
+    if label and value then
+      stats[label] = tonumber(value)
+    end
+  end
+  return stats
+end
+
+-- The landmark-direct counterpart to df-overseer-openarea.lua's
+-- build_open_area, noted as a follow-up gap in this session's own design
+-- brief and built alongside it since it reuses the same mechanics: anchor
+-- a blueprint directly at a NAMED landmark's own centroid, for the case
+-- where the model already knows the target landmark and isn't choosing
+-- among find_open_area's ranked candidates. Same atomic
+-- resolve-and-act shape, same guarantee: the real coordinate
+-- (get_landmark_centroid's return value) lives only in this function's own
+-- local scope for the instant it takes to build quickfort's argument list,
+-- never assigned into, printed, or returned.
+function build_at_landmark(name, blueprint_file)
+  local cx, cy, cz = get_landmark_centroid(name)
+  if not cx then
+    return nil, "landmark not found: " .. name
+  end
+
+  local ok_run, output, result = pcall(
+    dfhack.run_command_silent, 'quickfort', 'run', blueprint_file, '-c',
+    string.format('%d,%d,%d', cx, cy, cz))
+
+  return {
+    landmark = name,
+    blueprint = blueprint_file,
+    quickfort_ok = ok_run and result == CR_OK,
+    quickfort_error = (not ok_run) and tostring(output) or nil,
+    quickfort_stats = ok_run and parse_quickfort_stats(output) or nil,
+  }
+end
+
 function nearest_landmark(x, y, z)
   local landmarks, err = merged_landmarks_with_coords()
   if err then
@@ -321,6 +379,13 @@ elseif cmd == "get" then
     local lm = get_landmark(args[2])
     print(lm and json.encode(lm) or json.encode({error = "not found"}))
   end
+elseif cmd == "build" then
+  if not (args[2] and args[3]) then
+    print("usage: df-overseer-landmarks build NAME BLUEPRINT_FILE")
+  else
+    local result, err = build_at_landmark(args[2], args[3])
+    print(json.encode(err and {error = err} or result))
+  end
 else
-  print("usage: df-overseer-landmarks <list|get NAME>")
+  print("usage: df-overseer-landmarks <list|get NAME|build NAME BLUEPRINT_FILE>")
 end
