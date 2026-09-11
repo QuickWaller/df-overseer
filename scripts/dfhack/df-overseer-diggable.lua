@@ -41,10 +41,30 @@
 -- gain term. Not attempted here; v1 filters them out and says so in the
 -- doc comment, not silently.
 --
--- No `build`/dig-execution subcommand here (mirroring df-overseer-
--- openarea.lua's `build_open_area`) -- `designate_dig` (research spec
--- §5.2) is a separate, not-yet-built action tool. This file is perception
--- only: it answers "where could I dig," never "dig here."
+-- `dig` subcommand (added 2026-09-11, same session as find_diggable_area
+-- itself, after find_diggable_area was live-verified against VM 103):
+-- closes the loop the same way `build_open_area` did for `find_open_area`
+-- (`decisions/DECISIONS.md` 2026-09-11, "Closed the coordinate-resolution
+-- gap..."). `dig_diggable_area` is the fused resolve-and-act primitive --
+-- NOT the research spec's original `designate_dig(shape, pos, dims)`
+-- sketch (§5.2), which assumed some upstream tool would hand it a raw
+-- `pos` and never specified one. Matching `build_open_area`'s exact shape
+-- instead: takes a `blueprint_file` (a `#dig` quickfort blueprint, e.g.
+-- `starter-room-5x5.csv`) rather than a `shape` enum, re-runs this file's
+-- own `ranked_candidates`, resolves the chosen candidate's real cx,cy
+-- internally, and calls `quickfort run BLUEPRINT_FILE -c cx,cy,z` directly
+-- -- the coordinate exists only inside this function's local scope, for
+-- the instant it takes to build quickfort's argument list, never returned
+-- or printed. `parse_quickfort_stats` is intentionally duplicated from
+-- `df-overseer-openarea.lua` rather than shared, to avoid touching that
+-- file's own uncommitted in-flight changes (`build`/`build_open_area`,
+-- Working.md 2026-09-11) for a few identical lines.
+--
+-- Real mutation, not a query: unlike `find_diggable_area`, calling `dig`
+-- creates a genuine dig designation dwarves will act on -- treat a live
+-- call the same as any other fort-mutating action this project already
+-- gates (quicksave discipline, a peer/user heads-up), not like the
+-- read-only `find` subcommand.
 --
 -- Enum names verified against the actual installed DFHack 53.16-r1.1
 -- (`memory/dfhack-environment.md`), not recalled from memory or web
@@ -52,13 +72,20 @@
 -- (`df.tiletype_shape`) and STONE/SOIL/FEATURE/MINERAL/LAVA_STONE/
 -- FROZEN_LIQUID (`df.tiletype_material`) all appear exactly this way in
 -- the local install's own `hack/lua/tile-material.lua` (its `BasicMats`
--- table) and `hack/docs/docs/tools/tiletypes.txt`. NOT yet verified live
--- against VM 103's actual terrain -- no dfhack-run call against the fort
--- has happened for this file, only static verification against the
--- shipped DFHack source. Flag this as still-proposed behavior until a live
--- run confirms it, per the same rule.
+-- table) and `hack/docs/docs/tools/tiletypes.txt`.
+--
+-- `find_diggable_area` itself IS live-verified against VM 103/Uniboslan
+-- (`decisions/DECISIONS.md` 2026-09-11, "live-verified against VM 103,
+-- both a correct negative and a correct positive"): a correct empty
+-- result near the surface Embark Site (nearby WALL-shaped tiles were all
+-- TREE material, correctly excluded) and a correct set of 5 ranked SOIL
+-- candidates underground near Stockpile #1. `dig_diggable_area`/`dig`
+-- (below) is NOT yet live-tested -- unlike `find`, it's a real fort
+-- mutation, so a live call needs the same explicit go-ahead as any other
+-- mutating action this project gates, not just a peer heads-up.
 --
 -- Usage: ./dfhack-run df-overseer-diggable find W H Z NEAR_LANDMARK [RADIUS_TILES]
+-- Usage: ./dfhack-run df-overseer-diggable dig W H Z NEAR_LANDMARK BLUEPRINT_FILE [RANK] [RADIUS_TILES]
 
 local json = require('json')
 local landmarks_mod = reqscript('df-overseer-landmarks')
@@ -248,6 +275,78 @@ function find_diggable_area(w, h, z, near, radius_tiles)
   return results
 end
 
+-- Parses quickfort's own "Blueprint statistics:" block into a plain
+-- label->count table. Line-anchored the same deliberate way as
+-- df-overseer-openarea.lua's identical helper (see that file's comment for
+-- the full rationale): "two leading spaces, label, colon, digits, nothing
+-- else" can never match a coordinate-bearing line like dig.lua's own
+-- "removing existing job at X, Y, Z", so no raw position can leak through
+-- even if some other quickfort mode's stdout format changes later.
+local function parse_quickfort_stats(output)
+  local stats = {}
+  if not output then
+    return stats
+  end
+  for line in output:gmatch('[^\n]+') do
+    local label, value = line:match('^  ([^:]-): (%d+)%s*$')
+    if label and value then
+      stats[label] = tonumber(value)
+    end
+  end
+  return stats
+end
+
+-- See the header comment above for the full design rationale. Picks
+-- candidate `rank` (default 1) from the exact same ranking find_diggable_area
+-- uses, resolves its real center coordinate, and runs
+-- `quickfort run BLUEPRINT_FILE -c cx,cy,z` directly against it. The real
+-- coordinate lives only in this function's own local scope -- never
+-- assigned into, printed, or returned in anything handed back to the
+-- caller. `blueprint_file` resolves relative to dfhack-config/blueprints/
+-- on the guest (quickfort's own resolution rule, not this repo's tree) --
+-- pass a bare filename already deployed there, e.g. `starter-room-5x5.csv`.
+function dig_diggable_area(w, h, z, near, blueprint_file, rank, radius_tiles)
+  rank = rank or 1
+  local chosen, err = ranked_candidates(w, h, z, near, radius_tiles)
+  if err then
+    return nil, err
+  end
+  if rank < 1 or rank > #chosen then
+    return nil, string.format(
+      "no candidate at rank %d (found %d near %s)", rank, #chosen, near)
+  end
+
+  local c = chosen[rank]
+  local cx = c.x + math.floor((w - 1) / 2)
+  local cy = c.y + math.floor((h - 1) / 2)
+
+  local ok_near, near_info = pcall(landmarks_mod.nearest_landmark, cx, cy, z)
+  local info = ok_near and near_info
+  local ok_mat_name, mat_name = pcall(function()
+    return c.material and df.tiletype_material[c.material] or nil
+  end)
+
+  -- The one place a real coordinate exists in this file: assembled
+  -- directly into quickfort's own argument list, never stored anywhere
+  -- else and never returned.
+  local ok_run, output, result = pcall(
+    dfhack.run_command_silent, 'quickfort', 'run', blueprint_file, '-c',
+    string.format('%d,%d,%d', cx, cy, z))
+
+  return {
+    rank = rank,
+    dims = {w, h},
+    near_landmark = info and info.name or nil,
+    direction = info and info.direction or nil,
+    distance_tiles = info and info.distance_tiles or nil,
+    material = ok_mat_name and mat_name or nil,
+    blueprint = blueprint_file,
+    quickfort_ok = ok_run and result == CR_OK,
+    quickfort_error = (not ok_run) and tostring(output) or nil,
+    quickfort_stats = ok_run and parse_quickfort_stats(output) or nil,
+  }
+end
+
 -- Same module-load guard as the other df-overseer-*.lua scripts.
 if dfhack_flags.module then
   return
@@ -266,6 +365,21 @@ if cmd == "find" then
     local results, err = find_diggable_area(w, h, z, near, radius)
     print(json.encode(err and {error = err} or results))
   end
+elseif cmd == "dig" then
+  local w, h, z = tonumber(args[2]), tonumber(args[3]), tonumber(args[4])
+  local near = args[5]
+  local blueprint = args[6]
+  local rank = tonumber(args[7])
+  local radius = tonumber(args[8])
+  if not (w and h and z and near and blueprint) then
+    print("usage: df-overseer-diggable dig W H Z NEAR_LANDMARK"
+      .. " BLUEPRINT_FILE [RANK] [RADIUS_TILES]")
+  else
+    local result, err = dig_diggable_area(w, h, z, near, blueprint, rank, radius)
+    print(json.encode(err and {error = err} or result))
+  end
 else
   print("usage: df-overseer-diggable find W H Z NEAR_LANDMARK [RADIUS_TILES]")
+  print("usage: df-overseer-diggable dig W H Z NEAR_LANDMARK"
+    .. " BLUEPRINT_FILE [RANK] [RADIUS_TILES]")
 end
