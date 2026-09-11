@@ -213,10 +213,31 @@ or `decisions/DECISIONS.md`, not here.
   stockpile now exists on Uniboslan, independently verified against the
   live VM. Also found (empirically, not by inspection) that this doesn't
   extend to digging new rooms — `find_open_area` finds already-open space,
-  not diggable rock, so that's genuinely build order item 9's territory,
-  not left unfinished here. Still uncommitted on the branch, same
+  not diggable rock. **Corrected 2026-09-11, user caught it**: this is
+  *not* build order item 9 (that's still "find already-open space," just
+  in irregular natural caverns, not rectangles — a different problem).
+  It's a genuinely new, unspecified gap: nothing in the whole research
+  spec finds a candidate region of *solid* rock/soil to dig into, even
+  though `designate_dig`'s own sketch assumes something upstream supplies
+  that. See the item below. Still uncommitted on the branch, same
   merge-timing question as everything else there. → `decisions/DECISIONS.md`
   2026-09-11 ("Closed the coordinate-resolution gap..."), `Working.md`.
+- **NEW 2026-09-11, found correcting the row above: no tool anywhere in
+  the research spec finds a candidate region of *solid, diggable*
+  rock/soil.** `find_open_area` (both `terrain="built"` and the unbuilt
+  `terrain="cavern"`) only ever searches *walkable* tiles — confirmed by
+  re-reading its own spec, `find_open_area`'s cavern variant is "take the
+  set of walkable tiles... sharing a getWalkableGroup id," not solid rock.
+  `designate_dig(shape, pos, dims)` is sketched as the actual dig-action
+  tool and its own note says "where to dig" should be "closed-loop with
+  the landmark system" — but nothing supplies that `pos`. This is
+  genuinely unspecified, not just unbuilt: needs something like
+  `find_diggable_area(w, h, z, near, radius_tiles) -> ranked candidates`,
+  the inverse of `find_open_area` (non-walkable/solid tiles instead of
+  walkable ones), before "dig a new room" can close the loop the same way
+  today's stockpile-placement fix did. → `decisions/DECISIONS.md`
+  2026-09-11 ("Closed the coordinate-resolution gap..." correction),
+  `research/2026-08-25-spatial-perception.md`.
 - **Measure a running fort's memory over time**, now that one exists
   (`decisions/DECISIONS.md` 2026-09-10, "First fort founded"). Worldgen's
   peak (561 MB) is measured; a fort at year 5 with 100 dwarves is not, and
