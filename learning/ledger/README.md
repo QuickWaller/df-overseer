@@ -23,8 +23,8 @@ of this schema, and it is cheaper now than after twenty forts.
 ## Running it
 
 ```bash
-python -m ledger.selftest              # checks the schema and the validator
-python -m ledger.report                # what is currently learnable, and what isn't
+python -m learning.ledger.selftest              # checks the schema and the validator
+python -m learning.ledger.report                # what is currently learnable, and what isn't
 ```
 
 ## Layout

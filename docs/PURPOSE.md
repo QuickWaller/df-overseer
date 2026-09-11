@@ -26,6 +26,15 @@
 > 2026-09-11 rows for the full trail — this file's own build order below is
 > the timeless spec, not a status tracker; don't edit it to say "done,"
 > that lives in `ROADMAP.md`.
+> **Superseded once more, same day**: the same session went on to close an
+> analogous gap for diggable terrain (`find_diggable_area`/
+> `dig_diggable_area`, live-tested end to end: a dwarf claimed a real dig
+> job and all 41 designated tiles were fully dug), a second fully closed
+> coordinate-free decision-to-mutation loop, and found and fixed a real
+> shared bug in the process (`quickfort`'s `-c` anchors a blueprint's
+> top-left corner, not its center). `CLAUDE.md`'s status banner is the
+> fuller and more current account; this note only points at it rather than
+> repeating it.
 
 ## Purpose
 
@@ -282,18 +291,64 @@ reappears.
 - Loop shape — trigger (event-driven vs heartbeat vs self-pacing), and whether
   a two-speed strategist/operator split earns its complexity.
 - Multi-agent: two agents on one fort is available today over shared RPC.
-  Multi-fort round-robin is gated on automating retire/unretire, which DFHack
-  53.16 cannot script (`mode` is tagged unavailable).
+  Multi-fort round-robin was assumed gated on automating retire/unretire via
+  `mode` (unavailable in this DFHack build) — **corrected 2026-09-11,
+  researched properly rather than accepted at face value**: `mode` turns out
+  to be nearly irrelevant here. `unretire-anyone` (available) is
+  adventure-mode-only, confirmed by reading its own shipped doc, not a fort
+  mechanism at all. The real path is the same struct-field-write technique
+  (`gui/embark-anywhere.lua`) plus scripted UI navigation this project
+  already used twice to found Artobcatten and Uniboslan — see the bullet
+  below, which this one duplicated before the correction.
 - **Adventure mode cannot run concurrently with an active fortress** — playing
   any mode locks the world (*verified*). A human visiting the agent's fortress
   as an adventurer works time-sliced (agent retires → play → retire → agent
   unretires) and needs no scripting, since a person can drive the UI. The
   "Save to a new Timeline" fork allows concurrency but the worlds diverge
   permanently. Worth designing for the time-sliced version.
-- How much of **embark** is scriptable. `-gen` removed UI driving from
-  worldgen; embark is the next thing to need it, and the answer decides
-  whether an unattended re-embark after a fort dies is possible at all. Note
-  that DFHack 53.16 cannot script mode switching (`mode` is unavailable), so
-  this is not a solved problem by assumption.
+- How much of **embark** is scriptable. **Answered, 2026-09-10/11**: embark
+  is scriptable, and has been driven live twice, end to end, with no human
+  mouse involved (`gui/embark-anywhere.lua`'s struct-field-write technique
+  for site selection, plus `df-overseer-ui.lua`/`xdotool` for title-screen
+  navigation) — not through `mode` (still confirmed unavailable in this
+  build, but a red herring for this question: `mode` was never the
+  mechanism either successful embark actually used). **Unattended re-embark
+  after a fort dies is real, buildable, closer than this file used to
+  suggest, and gated on two specific, named things, not a blanket
+  DFHack-version limitation**: (1) an unresolved, reproducible crash on the
+  embark-finalizing "Confirm" click, a timing/race condition currently
+  worked around only by a manual `gdb`-attach ritual with no scripted
+  equivalent (`decisions/DECISIONS.md` 2026-09-10); (2) DF's actual
+  behavior the instant a fort dies has never been observed — no installed
+  DFHack script reacts to a fort-wide death at all (checked exhaustively,
+  all 406 shipped scripts) — so the "detect death and trigger re-embark"
+  half is entirely unbuilt, separate from the "then re-embark" half that's
+  proven. Reclaim (fixing up a dead fort instead of founding fresh) looks
+  structurally supported by the same mechanism (`choosing_reclaim` sits
+  beside the already-exploited `choosing_embark` on the same viewscreen,
+  `df.game_type.DWARF_RECLAIM` is a real, confirmed enum value) but has
+  never been tried, and carries an independent community report that DF's
+  own reclaim mechanic has been buggy since v50. → `decisions/DECISIONS.md`
+  2026-09-11.
 - **A running fort's memory ceiling.** Worldgen answered a different question
   (above). Nothing is known about a fort at year 5 with 100 dwarves.
+- **NEW 2026-09-12: should `learning/` (`ledger/` + `predictions/`, grouped
+  under one parent this same day) be shaped to fit `openclaw`'s own
+  persistent-memory conventions, once the brain choice resolves?** Raised by
+  the user while the grouping was in progress, deliberately not acted on
+  speculatively — `openclaw` vs `hermes-agent` is still an open, deferred
+  choice (`decisions/DECISIONS.md` 2026-08-25), and designing `learning/`
+  around one candidate's specific conventions before that choice is made
+  would repeat the mistake this project already declined once (2026-09-08,
+  not extracting a shared provisioning library ahead of a real second
+  consumer). The safer, already-true property to lean on: `learning/`'s
+  data is plain JSONL, read/written by small scripts, not deeply coupled to
+  being driven by anything in particular — and design commitment #5's own
+  answer to "how does an outside brain reach this project" is already MCP,
+  not a bespoke integration per brain. The natural shape once M8 (the
+  currently-nonexistent MCP server/tool schema — see the take-stock pass,
+  `decisions/DECISIONS.md` 2026-09-11) gets built is to expose
+  `learning/ledger`/`learning/predictions` read/write through that same MCP
+  boundary, so it fits *any* MCP-speaking brain including `openclaw`,
+  rather than hand-fitting `openclaw`'s specific memory API today. Revisit
+  when the brain choice and the MCP seam are both real, not before.
