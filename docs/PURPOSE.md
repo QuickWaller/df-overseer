@@ -346,7 +346,28 @@ reappears.
    neither of which exist yet; building it now would mean fabricating
    placeholder scoring terms, which this session's pattern has
    consistently avoided.
-8. `get_stuck_jobs` — least-verified primitive; test in isolation.
+8. ~~**`get_stuck_jobs` — least-verified primitive; test in isolation.**~~
+   **Done 2026-09-11 (same branch), verified live** — the "unverified
+   locally" flag this item carried is resolved: found three real, shipped
+   uses of `utils.listpairs(df.global.world.jobs.list)` on this exact
+   install (`suspend.lua`, `dwarfvet.lua`, `suspendmanager.lua`), stronger
+   confirmation than the research doc itself had. New
+   `scripts/dfhack/df-overseer-stuckjobs.lua`: "stuck" = no worker
+   assigned, with a suspended job labeled distinctly rather than
+   conflated. `idle_ticks` tracked via its own `JOB_INITIATED` handler
+   (same pattern as item 5's `df-overseer-diff.lua`), since DF doesn't
+   expose a job's start time directly. Verified live: the empty-queue
+   case, and — with the user's explicit go-ahead for a second brief
+   unpause — real `JOB_INITIATED`/`JOB_COMPLETED` firing with correct
+   tracked start ticks. **Honest gap**: the actual "no worker assigned"
+   window was too fast to catch live (an idle miner grabbed both test
+   digs within under a second of unpausing), so the traversal/tracking
+   machinery is proven real but the specific stuck-job output branch
+   wasn't exercised against a genuinely idle job. Also surfaced a new
+   wrinkle on the "quicksave lands with a delay" trap: `save/current` is
+   transient staging, briefly holds the fresh save before DF moves it
+   into the real numbered slot — check the slot `cur_savegame.save_dir`
+   names, not `current`. → `decisions/DECISIONS.md` 2026-09-11.
 9. `find_open_area` (cavern terrain) — genuinely hard, deliberately last.
 
 ## Open questions
