@@ -84,8 +84,15 @@
 -- mutation, so a live call needs the same explicit go-ahead as any other
 -- mutating action this project gates, not just a peer heads-up.
 --
--- Usage: ./dfhack-run df-overseer-diggable find W H Z NEAR_LANDMARK [RADIUS_TILES]
--- Usage: ./dfhack-run df-overseer-diggable dig W H Z NEAR_LANDMARK BLUEPRINT_FILE [RANK] [RADIUS_TILES]
+-- Z defaults to NEAR_LANDMARK's own z (same fix, same day, as
+-- df-overseer-openarea.lua -- see that file's header for the full story):
+-- ranked_candidates already resolves the landmark's real az internally and
+-- was discarding it in favor of this argument, with no coordinate-free way
+-- for a caller to learn the right value otherwise. Pass an explicit Z only
+-- to search a different level than the landmark's own.
+--
+-- Usage: ./dfhack-run df-overseer-diggable find W H [Z] NEAR_LANDMARK [RADIUS_TILES]
+-- Usage: ./dfhack-run df-overseer-diggable dig W H [Z] NEAR_LANDMARK BLUEPRINT_FILE [RANK] [RADIUS_TILES]
 
 local json = require('json')
 local landmarks_mod = reqscript('df-overseer-landmarks')
@@ -200,6 +207,9 @@ local function ranked_candidates(w, h, z, near, radius_tiles)
   if not ax then
     return nil, "landmark not found: " .. near
   end
+  -- Default to the landmark's own level rather than requiring the caller
+  -- to supply one -- see the file header for why this matters.
+  z = z or az
   local radius = math.min(radius_tiles or DEFAULT_RADIUS, MAX_RADIUS)
 
   local anchor_group = walkable_group(ax, ay, az)
@@ -241,14 +251,15 @@ local function ranked_candidates(w, h, z, near, radius_tiles)
       end
     end
   end
-  return chosen
+  return chosen, nil, z
 end
 
 function find_diggable_area(w, h, z, near, radius_tiles)
-  local chosen, err = ranked_candidates(w, h, z, near, radius_tiles)
+  local chosen, err, resolved_z = ranked_candidates(w, h, z, near, radius_tiles)
   if err then
     return nil, err
   end
+  z = resolved_z
 
   local results = {}
   for _, c in ipairs(chosen) do
@@ -307,10 +318,11 @@ end
 -- pass a bare filename already deployed there, e.g. `starter-room-5x5.csv`.
 function dig_diggable_area(w, h, z, near, blueprint_file, rank, radius_tiles)
   rank = rank or 1
-  local chosen, err = ranked_candidates(w, h, z, near, radius_tiles)
+  local chosen, err, resolved_z = ranked_candidates(w, h, z, near, radius_tiles)
   if err then
     return nil, err
   end
+  z = resolved_z
   if rank < 1 or rank > #chosen then
     return nil, string.format(
       "no candidate at rank %d (found %d near %s)", rank, #chosen, near)
@@ -372,31 +384,43 @@ end
 local args = {...}
 local cmd = args[1]
 
+-- Z is optional in both subcommands (see file header): args[4] is read as Z
+-- only when it parses as a number, otherwise it's NEAR_LANDMARK and every
+-- argument after it shifts left by one, with z left nil so ranked_candidates
+-- defaults it to the landmark's own level.
 if cmd == "find" then
-  local w, h, z = tonumber(args[2]), tonumber(args[3]), tonumber(args[4])
-  local near = args[5]
-  local radius = tonumber(args[6])
-  if not (w and h and z and near) then
-    print("usage: df-overseer-diggable find W H Z NEAR_LANDMARK [RADIUS_TILES]")
+  local w, h = tonumber(args[2]), tonumber(args[3])
+  local z, near, radius
+  if tonumber(args[4]) then
+    z, near, radius = tonumber(args[4]), args[5], tonumber(args[6])
+  else
+    near, radius = args[4], tonumber(args[5])
+  end
+  if not (w and h and near) then
+    print("usage: df-overseer-diggable find W H [Z] NEAR_LANDMARK [RADIUS_TILES]")
   else
     local results, err = find_diggable_area(w, h, z, near, radius)
     print(json.encode(err and {error = err} or results))
   end
 elseif cmd == "dig" then
-  local w, h, z = tonumber(args[2]), tonumber(args[3]), tonumber(args[4])
-  local near = args[5]
-  local blueprint = args[6]
-  local rank = tonumber(args[7])
-  local radius = tonumber(args[8])
-  if not (w and h and z and near and blueprint) then
-    print("usage: df-overseer-diggable dig W H Z NEAR_LANDMARK"
+  local w, h = tonumber(args[2]), tonumber(args[3])
+  local z, near, blueprint, rank, radius
+  if tonumber(args[4]) then
+    z, near, blueprint, rank, radius =
+      tonumber(args[4]), args[5], args[6], tonumber(args[7]), tonumber(args[8])
+  else
+    near, blueprint, rank, radius =
+      args[4], args[5], tonumber(args[6]), tonumber(args[7])
+  end
+  if not (w and h and near and blueprint) then
+    print("usage: df-overseer-diggable dig W H [Z] NEAR_LANDMARK"
       .. " BLUEPRINT_FILE [RANK] [RADIUS_TILES]")
   else
     local result, err = dig_diggable_area(w, h, z, near, blueprint, rank, radius)
     print(json.encode(err and {error = err} or result))
   end
 else
-  print("usage: df-overseer-diggable find W H Z NEAR_LANDMARK [RADIUS_TILES]")
-  print("usage: df-overseer-diggable dig W H Z NEAR_LANDMARK"
+  print("usage: df-overseer-diggable find W H [Z] NEAR_LANDMARK [RADIUS_TILES]")
+  print("usage: df-overseer-diggable dig W H [Z] NEAR_LANDMARK"
     .. " BLUEPRINT_FILE [RANK] [RADIUS_TILES]")
 end
