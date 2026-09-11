@@ -206,11 +206,14 @@ gotchas, and fresh findings without another doc home yet.
   `willsmith.nz` is deliberate, not a leak.
 - **Folder is still `df-automation` on disk** while the project is
   `df-overseer`.
-- **DF replay determinism is unverified. `hypothesis_id` has no registry.
-  `openclaw` vs `hermes-agent` still deferred** — and per today's
-  take-stock pass, `learning/` should fit whichever brain is eventually
-  chosen through the still-unbuilt MCP seam, not be hand-shaped around
-  one candidate's conventions ahead of that choice.
+- **DF replay determinism is unverified. `hypothesis_id` has no registry.**
+- **DONE 2026-09-12: the driving-brain choice decided — `openclaw`**, user's
+  explicit call, not the originally-planned empirical 30-day survival test.
+  `learning/` should still be built to the still-unbuilt MCP seam, not
+  hand-shaped around openclaw's own conventions ahead of that seam
+  existing — the choice being settled removes the uncertainty about which
+  brain it eventually needs to fit, it doesn't change that sequencing.
+  → `decisions/DECISIONS.md` 2026-09-12 row.
 - **PVE's cloud-init takes only the first label of the VM `name`** —
   `install_df.py`'s `step_hostname` is the only workable route to a
   suffixed guest hostname.
