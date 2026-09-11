@@ -1,6 +1,6 @@
 # Roadmap
 
-**Last reviewed:** 2026-09-11 (seventh pass — personal-control VNC channel deployed, first labor-management slice built)
+**Last reviewed:** 2026-09-11 (eighth pass — `cpu: host` → `x86-64-v2-AES` applied for real; a cluster-quorum outage blocked VM start/stop entirely, resolved)
 
 This file is df-overseer's forward-looking, priority-ordered plan: what's
 next and roughly when, across infrastructure, game-side engineering, and the
