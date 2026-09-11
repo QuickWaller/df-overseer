@@ -207,5 +207,18 @@ class PVE:
 
 
 def log(msg):
-    sys.stdout.write(msg + "\n")
+    """Print one line, tolerating text the console's codepage can't show.
+
+    Found live 2026-09-12 relaying real DF gamelog text (df-overseer-diff's
+    recent-combat output) through a Windows console pinned to cp1252:
+    sys.stdout.write raised UnicodeEncodeError on a single unencodable
+    character and crashed the whole command after most of the output had
+    already printed. DF text is not guaranteed to be cp1252-safe (it can
+    carry arbitrary Unicode from dwarf/creature names), so encode explicitly
+    against the stream's own reported encoding with errors='replace' rather
+    than letting write() choose how to fail.
+    """
+    encoding = getattr(sys.stdout, "encoding", None) or "utf-8"
+    line = (msg + "\n").encode(encoding, errors="replace").decode(encoding)
+    sys.stdout.write(line)
     sys.stdout.flush()
