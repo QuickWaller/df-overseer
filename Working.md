@@ -376,6 +376,25 @@ enable was already durably saved by the first successful quicksave, before
 this was even discovered) and `df-fortress.service`'s own `ExecStop`
 already quicksaves unconditionally before any real stop regardless.
 
+### First real combat, used as a live test case for `unit-status hostile`
+
+User spotted a kea fighting the fort's dogs live via the viewer and asked
+for it to be used as a real experiment rather than staying synthetic. Good
+call — it surfaced a real gap, not just confirmed a theoretical one.
+Reconstructed from `gamelog.txt`: the kea (unit 321) picked a fight, the
+stray dog + stray war dog + citizen 196 (Fisherdwarf) fought it off, the
+kea died (confirmed `isDead=true`), one dog took a minor wound (confirmed
+`body.wounds`), no dwarf was hurt. `unit-status hostile` was checked both
+before and after finding this — in both cases it reported only the same 4
+harmless deep-cavern demons, completely blind to a real, fort-relevant
+fight that had just happened at the front door. Full detail and the
+correction to the original spec: `decisions/DECISIONS.md` 2026-09-11
+("First real combat on Uniboslan"), `research/2026-08-25-spatial-perception.md`
+§5. **Not fixed** — the right fix is almost certainly `get_diff_since`
+(build order item 5, `eventful`-backed), since "something attacked
+something" is an event, not a queryable static predicate; a better
+`isDanger`-style filter would be solving the wrong shape of problem.
+
 ### Other open items, carried forward
 
 - **Design commitment #1's absolute wording vs. its actual evidence
