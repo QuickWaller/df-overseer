@@ -458,6 +458,47 @@ correction to the original spec: `decisions/DECISIONS.md` 2026-09-11
 something" is an event, not a queryable static predicate; a better
 `isDanger`-style filter would be solving the wrong shape of problem.
 
+**Update, same day**: dispatched a Sonnet subagent to investigate/prototype
+this properly. Result: `scripts/dfhack/df-overseer-combat.lua`, written but
+**deliberately not committed** — user's own call, see below. Verified
+independently before anything else: exhaustively checked every
+`dfhack.units.*` predicate resembling danger/hostile/combat (found one not
+previously tried, `isAgitated` — also `false` for the kea, confirming the
+gap is real, not an oversight); found and live-verified
+`df.global.world.status.reports` as a structured, typed combat-data source
+(not `gamelog.txt` text-scraping) that reconstructs the kea fight exactly;
+live-verified `eventful`'s `onReport`/`onUnitAttack` hooks actually fire
+end-to-end, including isolating (via a deliberate controlled test, not just
+one observation) that DFHack's event queue only drains on unpaused ticks
+and backfills its whole backlog on first drain. Fort re-confirmed paused
+and saved afterward, independently re-checked by this session too.
+
+**The bigger finding, not the combat mechanism itself**: `df-overseer-diff.lua`
+already exists on `perception-layer-experiments` (df-automation-ca's
+branch, deployed live on VM 103) and is **already an implementation of the
+same primitive**, `get_diff_since` — same `eventful`+`_G`-persisted-log+
+cursor design, covering `JOB_COMPLETED`/`UNIT_DEATH` instead of
+`REPORT`/`UNIT_ATTACK`. Its own header honestly flags that it **never
+verified a real eventful callback firing live** (only hand-called its
+listener directly) — this session's subagent closes exactly that gap, just
+for different event types, on a different branch, without either session
+knowing about the other's approach. **`df-automation-ca` was not reachable
+to coordinate directly** (not connected at the time). Asked the user how to
+handle it: **chose to wait for `df-automation-ca` before reconciling or
+committing anything** rather than commit unilaterally and sort it out
+later. `scripts/dfhack/df-overseer-combat.lua` sits on disk, deployed to
+VM 103's `hack/scripts/`, but **untracked in git** — do not commit it
+without checking back on this first.
+
+**Separately, a real documentation-vs-reality gap, per this repo's own
+"flag it, don't silently patch" rule**: `perception-layer-experiments` also
+has `df-overseer-chokepoints.lua`, `-openarea.lua`, `-overview.lua`,
+`-stuckjobs.lua` deployed on VM 103 (all dated 2026-09-10 23:20) —
+most of `docs/PURPOSE.md` build order items 2 and 5-8 already exist there.
+Working.md/ROADMAP.md still describe that branch as just "connectivity +
+a seed landmark." Needs a proper memory audit once `df-automation-ca` is
+reachable, not a quiet rewrite from secondhand file-listing evidence alone.
+
 ### Other open items, carried forward
 
 - **Design commitment #1's absolute wording vs. its actual evidence
