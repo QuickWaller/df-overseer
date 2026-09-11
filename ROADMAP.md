@@ -1,6 +1,6 @@
 # Roadmap
 
-**Last reviewed:** 2026-09-11 (eighth pass — `cpu: host` → `x86-64-v2-AES` applied for real; a cluster-quorum outage blocked VM start/stop entirely, resolved)
+**Last reviewed:** 2026-09-11 (ninth pass — perception-layer-experiments audited for real: build order items 2-8 are actually done, not just files; first autonomous-play attempt found the coordinate-resolution gap blocking it from closing the loop)
 
 This file is df-overseer's forward-looking, priority-ordered plan: what's
 next and roughly when, across infrastructure, game-side engineering, and the
@@ -187,22 +187,33 @@ or `decisions/DECISIONS.md`, not here.
   documented — resolved once the user restored quorum at a root shell;
   not this repo's to fix.
   → `decisions/DECISIONS.md` 2026-08-28 row, `Working.md`.
-- **`check_reachable` / `get_connectivity_report`.** Copies
-  `warn-stranded.lua`'s working algorithm; highest-confidence real code to
-  write next. → `docs/PURPOSE.md` build order item 2. **A first pass
-  exists on the `perception-layer-experiments` branch** (not merged,
-  user's explicit call to keep this experimental and off `main` for now)
-  — see `Working.md`'s handover before rebuilding this from scratch.
-- **Landmark system on burrows + exits-first representation.**
-  → `docs/PURPOSE.md` build order item 3. Same branch has an experimental
-  seed-landmark first slice; see `Working.md`.
-- **`get_overview` / context tiering with deterministic JSON.** Must sort
-  keys: Lua table order isn't guaranteed and a reshuffle silently busts the
-  prefix cache every turn. → `docs/PURPOSE.md` build order item 4.
-- **`get_diff_since` via `eventful`.** → `docs/PURPOSE.md` build order item 5.
-- **`find_open_area` (built terrain), then `find_chokepoints` /
-  `rank_candidate_sites`, then `get_stuck_jobs`** (least-verified primitive,
-  test in isolation). → `docs/PURPOSE.md` build order items 6-8.
+- **UPDATED 2026-09-11, audited properly (not file-listing guesswork):
+  build order items 2-8 are DONE, not "next to build."** `check_reachable`/
+  `get_connectivity_report` (item 2), the real landmark system (item 3),
+  `get_overview` (item 4), `get_diff_since` via `eventful` (item 5, live
+  eventful-callback firing genuinely verified, not just the registration
+  calls), `find_open_area` for built terrain (item 6), `find_chokepoints`
+  (item 7, first half — `rank_candidate_sites` genuinely blocked, needs
+  `resource_summary`/threat data that don't exist yet), and `get_stuck_jobs`
+  (item 8) are all built and verified live against the real fort, all 8
+  commits pushed to `origin/perception-layer-experiments`. **Still
+  deliberately unmerged into `main`** — user's explicit call (2026-09-11):
+  not ready to merge yet, chose to keep working with the branch as-is and
+  see how far it goes rather than merge now. → `Working.md`,
+  `decisions/DECISIONS.md` 2026-09-11 rows.
+- **NEW 2026-09-11: no primitive converts a chosen named candidate into a
+  real anchor coordinate `quickfort` can use.** Found live, by an actual
+  autonomous-play attempt, not by inspection: `find_open_area` and
+  `df-overseer-landmarks.lua` both deliberately strip `x,y,z` before
+  returning anything to a caller (matches design commitment #1's spirit),
+  but nothing fills the resulting gap — a real, well-justified decision
+  ("build here, ranked #1, next to Stockpile #1") had no way to actually
+  become a `quickfort -c x,y,z` call without guessing or reading a map,
+  both forbidden. Needed: a `resolve_landmark`/`resolve_candidate`
+  primitive, callable only by the mechanical blueprint-anchoring step,
+  never by the model's own reasoning. Blocks any real autonomous
+  build-and-dig loop until it exists. → `decisions/DECISIONS.md` 2026-09-11
+  ("First real autonomous-play experiment on Uniboslan"), `Working.md`.
 - **Measure a running fort's memory over time**, now that one exists
   (`decisions/DECISIONS.md` 2026-09-10, "First fort founded"). Worldgen's
   peak (561 MB) is measured; a fort at year 5 with 100 dwarves is not, and

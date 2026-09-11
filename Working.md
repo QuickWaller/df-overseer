@@ -603,15 +603,22 @@ already exists on `perception-layer-experiments` (df-automation-ca's
 branch, deployed live on VM 103) and is **already an implementation of the
 same primitive**, `get_diff_since` — same `eventful`+`_G`-persisted-log+
 cursor design, covering `JOB_COMPLETED`/`UNIT_DEATH` instead of
-`REPORT`/`UNIT_ATTACK`. Its own header honestly flags that it **never
-verified a real eventful callback firing live** (only hand-called its
-listener directly) — this session's subagent closes exactly that gap, just
-for different event types, on a different branch, without either session
-knowing about the other's approach. **`df-automation-ca` was not reachable
-to coordinate directly** (not connected at the time). Asked the user how to
-handle it: **chose to wait for `df-automation-ca` before reconciling or
-committing anything** rather than commit unilaterally and sort it out
-later. `scripts/dfhack/df-overseer-combat.lua` sits on disk, deployed to
+`REPORT`/`UNIT_ATTACK`. ~~Its own header honestly flags that it **never
+verified a real eventful callback firing live**~~ — **correction, found
+auditing the full branch afterward**: it *was* verified live
+(`e627440`, "closing the last honest gap" — same unpause/watch/re-pause/
+verify-mtime discipline used all session), the file's own header comment
+just never got updated after the fact and is stale, not accurate. This
+session's subagent still closes a real, different gap (`REPORT`/`UNIT_ATTACK`
+event types diff.lua deliberately left unwired), just not the "never
+verified live" one originally believed. Doesn't change the reconciliation
+question, but the correct framing is "extend diff.lua's proven design with
+more event types," not "diff.lua's core mechanism is unverified." **`df-automation-ca`
+was not reachable to coordinate directly** (not connected at the time).
+Asked the user how to handle it: **chose to wait for `df-automation-ca`
+before reconciling or committing anything** rather than commit unilaterally
+and sort it out later. `scripts/dfhack/df-overseer-combat.lua` sits on disk,
+deployed to
 VM 103's `hack/scripts/`, but **untracked in git** — do not commit it
 without checking back on this first.
 
@@ -621,8 +628,58 @@ has `df-overseer-chokepoints.lua`, `-openarea.lua`, `-overview.lua`,
 `-stuckjobs.lua` deployed on VM 103 (all dated 2026-09-10 23:20) —
 most of `docs/PURPOSE.md` build order items 2 and 5-8 already exist there.
 Working.md/ROADMAP.md still describe that branch as just "connectivity +
-a seed landmark." Needs a proper memory audit once `df-automation-ca` is
-reachable, not a quiet rewrite from secondhand file-listing evidence alone.
+a seed landmark." **Update, audited properly this session** (not just
+file-listing guesswork): fetched and read the branch's own commit log and
+its own `Working.md` directly. Confirmed for real: **all of build order
+items 2 through 8 are built, verified live against the real fort, and all
+8 commits are pushed to `origin/perception-layer-experiments`** — not just
+present as files. Two real bugs caught there worth knowing regardless of
+merge status: `dfhack.buildings.getSize()`'s `cx,cy` are local to the
+building's own box, not absolute map coordinates; `df.global.world.burrows.all`
+doesn't exist, the real path is `df.global.plotinfo.burrows.list`. The
+branch's own `Working.md` explicitly leaves "whether/when to merge" as
+"still the user's call to make, not assumed" — asked; **user chose not to
+merge yet, wants to keep working with what's there and see how far it
+goes** (see the autonomous-play entry below). `df-automation-ca` still
+wasn't reachable to coordinate directly this session.
+
+### First autonomous-play experiment — a real judgment win, a real tooling gap
+
+User's framing: "let's keep working with it and seeing how far we can take
+this... how far can an AI work" — chosen as a genuine bounded experiment,
+not a demo. A subagent was given the deployed `perception-layer-experiments`
+tools plus today's labor tools and told to make one real construction
+decision using only tool output, build it via `quickfort` only, and hard-stop
+rather than improvise if it hit a wall. Full detail: `decisions/DECISIONS.md`
+2026-09-11 ("First real autonomous-play experiment on Uniboslan").
+
+**What worked**: the decision itself was cleanly tool-derived — `find_open_area`
+ranked a real, walkable, non-stranded 5x5 candidate next to "Stockpile #1,"
+using `z=169` read from the citizens' own real positions, not guessed.
+Design commitments #1/#2 held up on a real case, not just in theory.
+
+**What it found, verified independently against the actual script source,
+not just taken on the subagent's word**: `quickfort run -c x,y,z` needs a
+literal absolute coordinate, but **every deployed perception tool
+deliberately strips coordinates before returning** — `find_open_area`
+computes a real `cx,cy` internally and never includes it in what it hands
+back; `df-overseer-landmarks.lua` explicitly nils out `x,y,z` before
+returning a landmark, even though an internal function
+(`get_landmark_centroid`) holds the real value and is never exposed via any
+command. This looks like commitment #1's spirit applied without its
+mechanical conclusion ever being built: **nothing converts "the model
+picked a good, named candidate" into something `quickfort` can actually
+anchor to.** Correctly treated as a stop condition — no coordinate was
+guessed, nothing on the fort changed, re-verified after the fact (still
+paused, same save slot, 0 injured, no repo files touched).
+
+**Next, concrete, not vague**: a `resolve_landmark`/`resolve_candidate`-style
+primitive that hands back a real anchor coordinate for a name or a ranked
+result — callable only by the mechanical blueprint-anchoring step, never
+by the model's own reasoning, keeping commitment #1 intact while actually
+closing the loop end to end. Lives on `perception-layer-experiments`, same
+branch-ownership question as the `diff.lua`/`combat.lua` overlap above —
+not started, not mine to build unilaterally given that's still open.
 
 ### Other open items, carried forward
 
