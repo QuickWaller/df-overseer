@@ -4,7 +4,46 @@ What's currently in progress. Remove an item once it's done, tabled, or
 shelved, don't mark it paused. Any session should read this and know what's
 actually going on right now.
 
-## URGENT, ONGOING 2026-09-11: VM 103 is OFFLINE, blocked on cluster quorum
+## RESOLVED 2026-09-11: VM 103 outage from cluster quorum loss, fort back up
+
+**Fully resolved.** User SSH'd into SRV-01 directly and ran `pvecm expected
+1` (the same non-persistent override used in the 2026-09-02 incident,
+confirmed via `pvecm status`: Quorate went No → Yes). `provision_vm.py
+start --vmid 103` then succeeded. `install_df.py verify` came back all
+PASS (dwarfort running, RPC listening). The fort itself needed one more
+step beyond the VM being up: `df-fortress.service` starts DFHack but
+lands at the **title screen**, not an auto-loaded fort — clicked "Continue
+active game" via `df-overseer-ui.lua`; the tool's own success-check
+reported FAIL (a known, pre-existing flaw — text-disappearing isn't a
+reliable signal here) but the actual screen type confirmed it worked:
+`viewscreen_titlest` → `viewscreen_loadgamest` → `viewscreen_dwarfmodest`.
+Final state confirmed directly, not assumed: Uniboslan/Ragwind, Year 30,
+Mid-Summer, population 7 intact, `pause_state=true`, active slot
+`autosave 2` — exactly the paused state it was left in before the
+shutdown. User also separately confirmed the public noVNC feed is working
+again (it had looked broken mid-incident, most likely just showing the
+idle title screen through the Xvfb-restart window, not an actual fault in
+the VNC/tunnel/relay chain itself — `curl` of both the public and admin
+hostnames returned their expected codes, 200 and 302, throughout).
+
+**Caution worth carrying forward, from home-lab-29**: the quorum override
+is temporary and non-persistent — `corosync.conf` on disk still says
+`expected: 2`, so it reverts whenever SRV-01 reboots or SRV-02 actually
+rejoins the ring. If SRV-02 comes back while the override is still active,
+there's a known small risk of the two nodes disagreeing (a `cfs-lock` hang
+happened once before from exactly this). Not something to act on from
+here, just context if an oddly-quorum-shaped error shows up again later
+today.
+
+**Still undecided**: whether to retry `set-cpu` given how disruptive this
+attempt turned out to be, now that quorum is only provisionally restored.
+Leaning toward leaving `cpu: host` alone until quorum is durably fixed
+(QDevice, or SRV-02 genuinely healthy) rather than risking another
+stop/start against a single-node override — asking the user directly
+rather than deciding this alone.
+
+<details>
+<summary>Original incident writeup (kept for the full trail)</summary>
 
 **Read this first if you're picking up this repo.** Uniboslan, the one
 live fort, is currently **not running** — the VM itself is powered off and
@@ -83,6 +122,8 @@ wants its own explicit go-ahead before going out, not a free ride on
 whoever pushes next. Worth folding into `CLAUDE.md`'s new peer-check-in
 rule: before pushing, check `git log origin/main..HEAD` for commits that
 aren't yours, and flag them specifically, not just ask about your own.
+
+</details>
 
 ## HANDOVER - 2026-09-10 (end of session)
 
