@@ -46,7 +46,10 @@
 #     ui-install / script-install). All 10 files are, confirmed
 #     2026-09-12 (Working.md handover) -- this field exists per-command
 #     anyway since a file being deployed doesn't mean every subcommand in it
-#     has been exercised for real.
+#     has been exercised for real. "STALE" (see notes) marks a command
+#     whose code was fixed in the repo but where VM 103 is still running an
+#     older version of the file -- distinct from a clean true/false, since
+#     the file IS present, just not the current code.
 #   verified
 #     Last date this SPECIFIC command was confirmed against a real, running
 #     fort (not just "the file loads without error"). "unverified" is an
@@ -160,26 +163,26 @@ df-overseer-diff.lua:
     "recent-combat [N]":
       lua_function: recent_combat
       effect: read
-      coordinate_bearing: true
-      live_deployed: true
-      verified: "2026-09-12"
+      coordinate_bearing: false
+      live_deployed: "STALE -- see notes"
+      verified: "2026-09-11 (pre-fix code; VM 103's deployed copy is the pre-fix version)"
       notes: >
-        NEWLY FLAGGED building this manifest, not previously documented:
-        report_line() prints a raw `pos=%d,%d,%d` for every combat/threat
-        report -- this is a SECOND raw-coordinate leak alongside the
-        already-known df-overseer-labor unit-status one, not yet recorded
-        anywhere else in this repo. Real finding (99 combat/threat reports
-        reconstructed live, kea-fight blow-by-blow confirmed 2026-09-11/12),
-        but out of design-commitment-#1 compliance until fixed the same way
-        unit-status's leak is queued to be. See Working.md's known-exceptions
-        list.
+        FIXED IN THE REPO 2026-09-12, NOT YET REDEPLOYED: report_line() used
+        to print a raw `pos=%d,%d,%d` for every combat/threat report --
+        flagged building this manifest, not previously documented anywhere
+        else in this repo. Now resolves near_landmark/direction/
+        distance_tiles via nearest_landmark, same as every other perception
+        tool. VM 103 is still running the pre-fix file (last deployed
+        2026-09-12 before this fix); the "2026-09-11" verified date reflects
+        that OLD, leak-carrying behavior, not the new one -- needs a real
+        deploy + re-verify pass before trusting the new output shape live.
     "since-report REPORT_ID":
       lua_function: since_report
       effect: read
-      coordinate_bearing: true
-      live_deployed: true
-      verified: "2026-09-11"
-      notes: "Same pos=x,y,z leak as recent-combat above, same function (report_line). 21/34 real reports matched reconstructing the kea fight."
+      coordinate_bearing: false
+      live_deployed: "STALE -- see notes"
+      verified: "2026-09-11 (pre-fix code; VM 103's deployed copy is the pre-fix version)"
+      notes: "Same fix, same function (report_line) as recent-combat above -- see its notes. Pre-fix, 21/34 real reports matched reconstructing the kea fight."
 
 df-overseer-openarea.lua:
   build_order_item: 6
@@ -270,19 +273,20 @@ df-overseer-labor.lua:
     "unit-status [idle|injured|military|hostile]":
       lua_function: unit_status
       effect: read
-      coordinate_bearing: true
-      live_deployed: true
-      verified: "2026-09-11"
+      coordinate_bearing: false
+      live_deployed: "STALE -- see notes"
+      verified: "2026-09-11 (pre-fix code; VM 103's deployed copy is the pre-fix version)"
       notes: >
-        KNOWN, ALREADY-DOCUMENTED EXCEPTION (Working.md): prints raw
-        `pos=x,y,z` for every citizen/threat row -- the landmark system
-        this repo's spec calls for wasn't merged to main yet when this file
-        was written. Out of design-commitment-#1 compliance until addressed;
-        not yet fixed. Separately: the `hostile` filter
-        (dfhack.units.isDanger/isInvader) is proven UNRELIABLE as a
-        fort-defense signal -- missed a real kea attack entirely, flagged
-        harmless demons instead. Treat its output as "worth a second look,"
-        never "confirmed safe/hostile" on its own.
+        FIXED IN THE REPO 2026-09-12: used to print raw `pos=x,y,z` for
+        every citizen/threat row -- a documented placeholder from before the
+        landmark system was merged to main. Now resolves near_landmark/
+        direction/distance_tiles via nearest_landmark, same as every other
+        perception tool. VM 103 is still running the pre-fix file; needs a
+        real deploy + re-verify pass. Separately, unaffected by this fix:
+        the `hostile` filter (dfhack.units.isDanger/isInvader) is proven
+        UNRELIABLE as a fort-defense signal -- missed a real kea attack
+        entirely, flagged harmless demons instead. Treat its output as
+        "worth a second look," never "confirmed safe/hostile" on its own.
     "labors UNIT_ID":
       lua_function: list_labors
       effect: read

@@ -17,11 +17,20 @@
 -- plus a thin set_labor action tool, following design commitment #2
 -- (docs/PURPOSE.md: code does the mechanics -- reading/writing the labor
 -- bitfield -- the model does the judgment of which labor to assign, given a
--- ranked/labelled status list, not raw memory). `near_landmark` is
--- deliberately omitted from unit-status's output: the landmark system this
--- repo's spec calls for lives only on the perception-layer-experiments
--- branch (a different session's work, not merged to main) -- raw x,y,z is
--- printed instead, a placeholder until that lands.
+-- ranked/labelled status list, not raw memory).
+--
+-- FIXED 2026-09-12 (found building scripts/dfhack/TOOLS.yaml's
+-- coordinate-bearing audit): this used to print raw pos=x,y,z for every
+-- citizen/threat row, a documented placeholder for the time before the
+-- landmark system existed on main ("the landmark system this repo's spec
+-- calls for lives only on the perception-layer-experiments branch... raw
+-- x,y,z is printed instead, a placeholder until that lands"). That branch
+-- merged into main 2026-09-12, so the placeholder reason no longer holds --
+-- both citizen_line and the hostile-filter branch below now resolve
+-- near_landmark/direction/distance_tiles via df-overseer-landmarks.lua's
+-- nearest_landmark (reqscript'd), same pattern every other perception tool
+-- uses, and never print the raw coordinate. Not yet redeployed to VM 103 --
+-- this is a code fix pending the next deploy/live-verify pass.
 --
 -- Usage: ./dfhack-run df-overseer-labor <command> [args...]
 --   unit-status [idle|injured|military|hostile]
@@ -70,18 +79,36 @@
 -- instead of treating every row as a confirmed siege -- cross-check against
 -- isInvader specifically once a real siege happens.
 
+local landmarks_mod = reqscript('df-overseer-landmarks')
+
 local args = {...}
 local cmd = args[1]
 
+-- Server-side only: resolves a raw x,y,z to near_landmark/direction/
+-- distance_tiles, never handing the coordinate itself back to a caller.
+-- Best-effort -- a resolution failure (e.g. no landmarks at all) falls back
+-- to an honest "unknown" rather than crashing the whole status line.
+local function describe_position(x, y, z)
+  if not x then
+    return "unknown", "?", -1
+  end
+  local ok, info = pcall(landmarks_mod.nearest_landmark, x, y, z)
+  if ok and info then
+    return info.name, info.direction, info.distance_tiles
+  end
+  return "unknown", "?", -1
+end
+
 local function citizen_line(unit, is_idle, is_injured, is_military)
   local x, y, z = dfhack.units.getPosition(unit)
+  local near, direction, distance = describe_position(x, y, z)
   local job = unit.job.current_job
   local job_name = job and dfhack.job.getName(job) or "idle"
   local wounds = unit.body.wounds and #unit.body.wounds or 0
   return string.format(
-    "CITIZEN id=%d profession=%q pos=%d,%d,%d job=%q wounds=%d"
-      .. " idle=%s injured=%s military=%s",
-    unit.id, dfhack.units.getProfessionName(unit), x or -1, y or -1, z or -1,
+    "CITIZEN id=%d profession=%q near_landmark=%q direction=%s distance_tiles=%d"
+      .. " job=%q wounds=%d idle=%s injured=%s military=%s",
+    unit.id, dfhack.units.getProfessionName(unit), near, direction, distance,
     job_name, wounds, tostring(is_idle), tostring(is_injured),
     tostring(is_military))
 end
@@ -107,9 +134,11 @@ local function unit_status(filter)
     for _, unit in ipairs(df.global.world.units.active) do
       if dfhack.units.isDanger(unit) and not dfhack.units.isOwnCiv(unit) then
         local x, y, z = dfhack.units.getPosition(unit)
+        local near, direction, distance = describe_position(x, y, z)
         print(string.format(
-          "THREAT id=%d race=%q pos=%d,%d,%d invader=%s danger=%s",
-          unit.id, dfhack.units.getRaceName(unit), x or -1, y or -1, z or -1,
+          "THREAT id=%d race=%q near_landmark=%q direction=%s distance_tiles=%d"
+            .. " invader=%s danger=%s",
+          unit.id, dfhack.units.getRaceName(unit), near, direction, distance,
           tostring(dfhack.units.isInvader(unit)),
           tostring(dfhack.units.isDanger(unit))))
         printed = printed + 1

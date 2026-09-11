@@ -92,6 +92,7 @@
 
 local json = require('json')
 local eventful = require('plugins.eventful')
+local landmarks_mod = reqscript('df-overseer-landmarks')
 
 -- df.announcement_type ids this fort-defense caller needs to distinguish,
 -- grouped into categories. Verified live against this install's real enum
@@ -216,13 +217,28 @@ function drain_since(cursor)
   return events, _G.__df_overseer_diff_next_id - 1
 end
 
+-- FIXED 2026-09-12 (found building scripts/dfhack/TOOLS.yaml's
+-- coordinate-bearing audit): this used to print rep.pos.x/y/z raw -- an
+-- undocumented design-commitment-#1 violation, the same category of issue
+-- as the already-known df-overseer-labor unit-status leak, just never
+-- flagged until the manifest's per-command audit surfaced it. Now resolves
+-- near_landmark/direction/distance_tiles via df-overseer-landmarks.lua's
+-- nearest_landmark (reqscript'd), same as every other perception tool.
+-- Best-effort: a resolution failure falls back to an honest "unknown"
+-- rather than crashing recent-combat/since-report entirely. Not yet
+-- redeployed to VM 103 -- code fix pending the next deploy/live-verify pass.
 local function report_line(rep)
   local cat = category_of(rep.type)
   local type_name = df.announcement_type[rep.type] or tostring(rep.type)
+  local near, direction, distance = "unknown", "?", -1
+  local ok, info = pcall(landmarks_mod.nearest_landmark, rep.pos.x, rep.pos.y, rep.pos.z)
+  if ok and info then
+    near, direction, distance = info.name, info.direction, info.distance_tiles
+  end
   return string.format(
-    "COMBAT id=%d year=%d time=%d category=%q type=%q pos=%d,%d,%d text=%q",
-    rep.id, rep.year, rep.time, cat, type_name,
-    rep.pos.x, rep.pos.y, rep.pos.z, rep.text)
+    "COMBAT id=%d year=%d time=%d category=%q type=%q near_landmark=%q"
+      .. " direction=%s distance_tiles=%d text=%q",
+    rep.id, rep.year, rep.time, cat, type_name, near, direction, distance, rep.text)
 end
 
 -- Retrospective, registration-free poll over world.status.reports -- see
