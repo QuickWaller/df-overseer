@@ -233,6 +233,22 @@ or `decisions/DECISIONS.md`, not here.
 - **Loop shape, multi-agent split, first display to build (game view vs.
   chronicle e-ink), and the time-sliced adventure-mode design.**
   → `docs/PURPOSE.md` Open Questions.
+- **Dwarf/labor management (`get_unit_status` + labor-assignment action
+  tools), not Dwarf Therapist.** A real gap, found 2026-09-11 by checking
+  rather than assuming: `docs/PURPOSE.md`'s numbered build order (0-9) is
+  entirely spatial/perception primitives — nothing in it covers labor,
+  skills, happiness, or mood, even though `get_unit_status` is specced in
+  `research/2026-08-25-spatial-perception.md` §5. Dwarf Therapist itself
+  doesn't fit this project (GUI-only, needs a rendered window; the fort
+  runs headless and unattended); DFHack's own equivalent, `manipulator`,
+  is tagged `unavailable` on this install (same v50-transition breakage
+  `memory/dfhack-environment.md` already tracks elsewhere). The shape
+  that does fit: `get_unit_status` (perception, `dfhack.units`) plus a
+  thin `set_labor`-style action tool (design commitment #2 — code does
+  the mechanics, model does the judgment), with `autolabor` (available,
+  headless, no interaction needed) as a sensible baseline underneath so
+  the agent isn't re-deciding routine hauling/mining balance every turn.
+  → `decisions/DECISIONS.md` 2026-09-11.
 
 ## Explicitly not doing
 <!-- Deliberate non-goals, so they don't get re-proposed. -->
