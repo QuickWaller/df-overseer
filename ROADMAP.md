@@ -260,9 +260,18 @@ or `decisions/DECISIONS.md`, not here.
 - **DONE 2026-09-11: first slice built and verified live** —
   `scripts/dfhack/df-overseer-labor.lua` (`unit-status`, `labors`,
   `set-labor`), `dfhack.units`-backed, verified against Uniboslan's real
-  citizens rather than assumed from docs. `autolabor` confirmed available
-  but not enabled; the judgment half (an actual labor-assignment policy) is
-  still unbuilt. → `decisions/DECISIONS.md` 2026-09-11, `Working.md`.
+  citizens rather than assumed from docs. The judgment half (an actual
+  labor-assignment policy) is still unbuilt.
+  → `decisions/DECISIONS.md` 2026-09-11, `Working.md`.
+- **DONE 2026-09-11: `autolabor` enabled on Uniboslan as the baseline**,
+  user's go-ahead — confirmed genuinely on (not just the enable message),
+  confirmed it persists via a real quicksave, explicitly leaves
+  military/burrow-assigned dwarves untouched (so it doesn't blanket-override
+  the manual primitives above). Found along the way: `quicksave` rotates
+  forward through the `autosave N` slot pool each call rather than
+  overwriting in place — re-read `cur_savegame.save_dir` fresh each time,
+  don't assume a previously-checked slot name is still current.
+  → `decisions/DECISIONS.md` 2026-09-11, `Working.md`.
 
 ## Explicitly not doing
 <!-- Deliberate non-goals, so they don't get re-proposed. -->
