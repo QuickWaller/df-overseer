@@ -673,13 +673,45 @@ anchor to.** Correctly treated as a stop condition — no coordinate was
 guessed, nothing on the fort changed, re-verified after the fact (still
 paused, same save slot, 0 injured, no repo files touched).
 
-**Next, concrete, not vague**: a `resolve_landmark`/`resolve_candidate`-style
-primitive that hands back a real anchor coordinate for a name or a ranked
-result — callable only by the mechanical blueprint-anchoring step, never
-by the model's own reasoning, keeping commitment #1 intact while actually
-closing the loop end to end. Lives on `perception-layer-experiments`, same
-branch-ownership question as the `diff.lua`/`combat.lua` overlap above —
-not started, not mine to build unilaterally given that's still open.
+**Update, same day — closed, not just proposed.** Built `build_open_area`/
+`build` on `df-overseer-openarea.lua` (worktree `df-automation-perception`,
+`perception-layer-experiments`), fused resolve-and-act exactly as
+scoped — a real coordinate exists only inside the function long enough to
+assemble `quickfort`'s own argument list, never returned or printed;
+verified this myself directly against the function body, not just the
+report. Real end-to-end result, independently re-checked against the live
+VM: **a genuine new "Stockpile #2" building now exists on Uniboslan**,
+wired into the exits graph. Also produced a useful negative result: the
+same primitive against a `#dig` blueprint designated 0 tiles, because
+`find_open_area`'s candidates are already-walkable space, not diggable
+rock — confirming (empirically, not just by reasoning) that "dig a new
+room" is a distinct, still-open gap (build order item 9, cavern/diggable-
+terrain search), not something left unfinished by this fix. Full detail:
+`decisions/DECISIONS.md` 2026-09-11 ("Closed the coordinate-resolution
+gap..."). Still lives on `perception-layer-experiments`, uncommitted,
+same branch-ownership/merge-timing question as the `diff.lua`/`combat.lua`
+overlap above — this is a real capability now, not just a proposal, but
+whether/how it lands anywhere permanent is still open.
+
+### Compliance eval harness built — selftested and live-smoke-tested, not yet run at full scale
+
+Picked up as this session's task specifically because it touched neither VM
+103 nor `perception-layer-experiments` (both held by a concurrent peer
+session's live subagent at the time) — research build-order item 1
+(`research/2026-08-25-learning-architecture.md` §7): replicate "Prompt Design
+at Scale"'s instruction-count-decay methodology against this project's own
+doctrine format and model, before any fort run depends on doctrine size being
+safe. Built `evals/compliance/`, mirroring `evals/perception/`'s structure and
+philosophy exactly: full detail, the two bugs the selftest caught before any
+live call, and the smoke-test numbers are in `decisions/DECISIONS.md`'s newest
+row and `evals/compliance/README.md`.
+
+**Next, not yet done:** a real run at the paper's full rule-count sweep
+(10/20/40/80/120/160 x 3 formats x 10 scenarios, `--repeats` above 1 for a
+real sample size) — the smoke test was 4 cells, enough to prove the harness
+works end to end, not enough to be a finding. `.env` has a working
+`ANTHROPIC_API_KEY`; the harness needs `evals/compliance/requirements.txt`
+(`anthropic>=1.0`) installed, which `.venv_perception` already satisfies.
 
 ### Other open items, carried forward
 
