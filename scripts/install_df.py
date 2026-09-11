@@ -1647,7 +1647,7 @@ User=%(user)s
 Environment=DISPLAY=%(display)s
 ExecStart=/usr/bin/x11vnc -display %(display)s %(authflag)s \\
   -rfbport %(port)s %(viewonlyflag)s -forever -shared -noxdamage \\
-  -o %(logdir)s/x11vnc.log
+  -o %(logdir)s/%(logfile)s
 Restart=on-failure
 RestartSec=2
 
@@ -1744,6 +1744,11 @@ fi
         "port": port, "logdir": LOG_DIR, "authflag": authflag,
         "desc": "CONTROL, real input" if control else "view-only",
         "viewonlyflag": "" if control else "-viewonly",
+        # Separate log files -- found live 2026-09-11 that both instances
+        # pointed at the same x11vnc.log (this key didn't exist before),
+        # which made the shared file an unreliable signal for either
+        # instance's actual connection activity once both were running.
+        "logfile": "x11vnc-control.log" if control else "x11vnc.log",
     }
     passwd_step = "" if no_password else (
         "x11vnc -storepasswd %(password)s %(vncdir)s/passwd\n"
