@@ -340,6 +340,22 @@ personal-control VNC session (above) with no channel contention.
    when to pull someone off hauling) is still unbuilt.
 4. ~~Whether to enable `autolabor`~~ — **done, see below.**
 
+### `provision_vm.py set-cpu` built — done, local only, not yet applied to VM 103
+
+Picks up the 2026-08-28 accepted-but-never-applied decision: `cpu: host`
+in `provision_vm.py` blocks live migration between the cluster's two
+different CPU generations, defeating the point of clustering at all; `DEFAULT_CPU`
+is now `x86-64-v2-AES` for future template builds, and a new `set-cpu`
+subcommand (mirroring `set-onboot`'s live-PUT-to-/config pattern) can apply
+it to an already-built VM. **Deliberately not run against VM 103 this
+session** — same reason as `script-install` above (da's subagent had VM
+103's state in flux), plus a sharper one of its own: the change only
+actually takes effect on the VM's next cold stop/start, and Uniboslan is a
+live, running fort — applying it now would be pointless without also
+cold-cycling the VM, which is exactly the kind of disruption to avoid
+casually. Needs the user's go-ahead before ever actually running `set-cpu`
++ a deliberate stop/start against the live fort, not just code review.
+
 ### Generic `install_df.py script-install <name>` subcommand — done, local only, not yet run against VM 103
 
 Coordinated with peer session `df-automation-da` first (their subagent had

@@ -81,6 +81,11 @@ BRIDGE = "vmbr0"
 DEFAULT_MEMORY = 6144
 DEFAULT_BALLOON = 2048
 DEFAULT_CORES = 4
+# 'host' blocks migration between the cluster's two different CPU
+# generations (Kaby Lake / Coffee Lake), defeating the point of clustering
+# at all; a common baseline fixes it, and DF's workload (single-threaded,
+# not AVX-heavy) doesn't need 'host'. decisions/DECISIONS.md 2026-08-28.
+DEFAULT_CPU = "x86-64-v2-AES"
 
 
 def read_pubkey(env):
@@ -315,7 +320,7 @@ def cmd_build_template(pve, args):
         "ostype": "l26",
         "cores": args.cores,
         "sockets": 1,
-        "cpu": "host",
+        "cpu": DEFAULT_CPU,
         "memory": args.memory,
         "balloon": args.balloon,
         "agent": "enabled=1",
@@ -466,6 +471,34 @@ def cmd_set_onboot(pve, args):
     log("confirmed by read-back: onboot=%s" % after.get("onboot"))
 
 
+def cmd_set_cpu(pve, args):
+    """Change a VM's configured CPU type. Like onboot, this applies live (no
+    stopped-VM requirement) but the guest only actually sees the new CPUID
+    after its next cold stop/start -- a running VM keeps presenting whatever
+    type it booted with. decisions/DECISIONS.md 2026-08-28: moving off
+    'host' is accepted in principle (fixes cross-host migration, negligible
+    loss for DF's workload) but was never applied; this is the apply step,
+    still gated on the user's own go-ahead per this repo's live-infra rule
+    since it sits dormant until a cold boot the fort's uptime shouldn't be
+    interrupted for casually.
+    """
+    vmid = args.vmid or pve.env.get("DF_VMID")
+    if not vmid:
+        raise PVEError("no vmid: pass --vmid or set DF_VMID in .env")
+
+    cfg = pve.get(pve.vm_path(vmid, "/config"))
+    log("vm %s: cpu %s -> %s (takes effect on next cold stop/start)"
+        % (vmid, cfg.get("cpu", "(unset, defaults to 'host')"), args.cpu_type))
+
+    pve.put(pve.vm_path(vmid, "/config"), {"cpu": args.cpu_type})
+
+    after = pve.get(pve.vm_path(vmid, "/config"))
+    if after.get("cpu") != args.cpu_type:
+        raise PVEError("config still reads cpu=%s after the write"
+                       % after.get("cpu"))
+    log("confirmed by read-back: cpu=%s" % after.get("cpu"))
+
+
 def cmd_snapshot(pve, args):
     """Create a named Proxmox snapshot, as a rollback point before risky work.
 
@@ -589,6 +622,13 @@ def main():
     group.add_argument("--disable", action="store_false", dest="enable",
                        help="do not start this VM automatically on host boot")
 
+    setcpu = sub.add_parser("set-cpu",
+                            help="change a VM's CPU type (effective on its"
+                                 " next cold stop/start, not immediately)")
+    setcpu.add_argument("--vmid", type=int)
+    setcpu.add_argument("--cpu-type", default=DEFAULT_CPU,
+                        help="default %r" % DEFAULT_CPU)
+
     snap = sub.add_parser("snapshot", help="create a named snapshot")
     snap.add_argument("--vmid", type=int)
     snap.add_argument("--name", required=True)
@@ -614,6 +654,7 @@ def main():
         "clone": cmd_clone,
         "set-memory": cmd_set_memory,
         "set-onboot": cmd_set_onboot,
+        "set-cpu": cmd_set_cpu,
         "snapshot": cmd_snapshot,
         "rollback": cmd_rollback,
         "start": cmd_start,
