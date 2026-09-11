@@ -4,208 +4,98 @@ What's currently in progress. Remove an item once it's done, tabled, or
 shelved, don't mark it paused. Any session should read this and know what's
 actually going on right now.
 
-## HANDOVER - 2026-09-11 (end of session, written for a `/clear`)
+## HANDOVER - 2026-09-12 (end of session, written for a `/clear`)
 
-The entire prior handover (2026-09-10's end-of-session summary, plus today's
-own VM-outage/quorum incident) is archived wholesale —
-[`working-archive/Working_archive-2026-09-07.md`](working-archive/Working_archive-2026-09-07.md).
-This is a genuinely dense session — read this whole section before doing
-anything, not just skimming for the next task.
+The entire prior handover (2026-09-11's end-of-session summary — the branch
+audit, both autonomous-play experiments, the diggable-area saga) is archived
+wholesale — [`working-archive/Working_archive-2026-09-07.md`](working-archive/Working_archive-2026-09-07.md).
+**The headline: `perception-layer-experiments` is merged into `main` and
+pushed. The branch this project spent three weeks deliberately keeping
+separate no longer exists.**
 
 ### State at a glance, verified fresh, not assumed
 
 - **Uniboslan, "Ragwind," is the one fort, healthy.** `pause_state=true`,
-  active save `autosave 1`, all 7 citizens (192-198) present and uninjured,
-  confirmed live moments before writing this, not carried over from an
-  earlier check in this session.
-- **VM 103 survived a real outage and came back clean.** Cluster quorum
-  loss (SRV-02 down, no QDevice — home-lab's structural gap, not this
-  repo's) blocked VM start/stop entirely for a while, a new confirmed
-  failure mode beyond the already-documented snapshot-blocking one. User
-  restored quorum directly at a root shell (non-persistent override —
-  reverts on reboot or if SRV-02 rejoins, watch for quorum-shaped errors
-  again). `cpu: x86-64-v2-AES` is now genuinely applied (was accepted
-  2026-08-28, never actually run until today).
-- **`main` is now even with `origin/main`, nothing outstanding to push.**
-  Corrected during a later documentation pass (`git log origin/main..HEAD`
-  came back empty, `git rev-parse HEAD`/`origin/main` identical at
-  `e8caa41`): the 5 commits once queued here (`b8dd6a9`, `f48a641`,
-  `0a47c56`, `89a04d2`, `e8caa41` itself) have all landed on `origin/main`
-  since this line was first written. This repo's working tree still carries
-  live, uncommitted edits to `Working.md`/`ROADMAP.md`/`decisions/DECISIONS.md`
-  (today's find_diggable_area consolidation pass) plus untracked
-  `evals/compliance/`, `predictions/`, and `scripts/dfhack/df-overseer-combat.lua`
-  from earlier in the session, none of which are on `origin` yet either.
-- **The `df-automation-perception` worktree (`perception-layer-experiments`
-  branch) has real, working, uncommitted code**: `df-overseer-openarea.lua`
-  and `df-overseer-landmarks.lua` gained `build`/`build_open_area` —
-  verified live to have actually built a real "Stockpile #2" on Uniboslan.
-  **Not committed** — same open question as everything else on that
-  branch (below). If you're a fresh session: `cd` there, don't touch
-  `main`'s checkout to look at it.
-- **`scripts/dfhack/df-overseer-combat.lua` sits untracked in `main`'s
-  working tree, deployed live on VM 103, deliberately uncommitted.**
-  Event-driven combat/threat detection (`recent-combat`, `since-report`,
-  `event-log`), overlaps in design with `df-overseer-diff.lua` on
-  `perception-layer-experiments`. **`df-automation-ca` never appeared this
-  entire session** — this is still unresolved, not stale, don't delete or
-  build on it without checking first.
+  15 citizens (the original 7 plus a migrant wave), 0 wounded, `alerts: []`,
+  no stuck jobs — checked multiple times today across several live
+  experiments, always confirmed undisturbed afterward.
+- **`main` is merged, clean, and pushed.** `perception-layer-experiments`
+  (14 commits) merged into `main` (`f078bf8`), six real conflicts resolved
+  deliberately (not auto-accepted — see `decisions/DECISIONS.md`'s
+  2026-09-12 row for the full per-file reasoning), then
+  `df-overseer-combat.lua` folded into `df-overseer-diff.lua` (`6dd92bb`).
+  22 commits pushed to `origin/main`. The branch and its worktree
+  (`../df-automation-perception`) are deleted — **a fresh session should
+  not look for that worktree, it's gone.**
+- **`scripts/dfhack/` now holds 10 files, all live-deployed on VM 103**:
+  connectivity, landmarks, overview, diff (now covering combat/threat
+  detection too), openarea, chokepoints, stuckjobs, diggable, labor, ui.
+  `df-overseer-combat.lua` no longer exists, folded in, not just deleted.
+- **`learning/` exists**: `ledger/` and `predictions/` grouped under one
+  parent (real code coupling, not just theme), done while `predictions/`
+  was still untracked so it cost a `git mv` instead of a rename later.
+- **Quorum situation, relayed from `home-lab-29`, not resolved, just
+  current**: SRV-02 is physically back up, but SRV-01 is still running
+  with `pvecm expected 1` forced (temporary, non-persistent, not written to
+  `corosync.conf`). If SRV-02 has rejoined the corosync ring since coming
+  back, that's the two-nodes-disagreeing combination that caused a
+  `cfs-lock` hang once before. Not this repo's to fix — check `pvecm
+  status` before any Proxmox-API-level action on VM 103, don't assume
+  "resolved" still holds.
 
-### The big open decision, asked more than once, still the same answer
+### What actually happened today, compressed (full detail: `decisions/DECISIONS.md`'s 2026-09-12 rows)
 
-**Whether/when `perception-layer-experiments` merges into `main`.** Audited
-properly this session (not file-listing guesswork): it has built and
-live-verified nearly the whole spatial-perception build order (items 2-8:
-connectivity, landmarks, `get_overview`, `get_diff_since`, `find_open_area`,
-`find_chokepoints`, `get_stuck_jobs`), all 8 original commits pushed to
-`origin/perception-layer-experiments`, plus today's uncommitted
-`build`/`build_open_area` addition. **User's explicit, repeated call: not
-ready to merge yet, wants to keep working with the branch and see how far
-it goes.** Don't merge unilaterally; don't assume this has changed since
-the last time it was asked. Whoever picks this up next should ask again
-before touching the merge question, not just before merging.
-
-### What actually got built today, compressed (full detail: `decisions/DECISIONS.md`'s 2026-09-11 rows, in order)
-
-1. **Authenticated personal-control VNC channel** — deployed and confirmed
-   working. A second, real-mouse-and-keyboard, Cloudflare-Access-gated
-   channel for the user alone (`dwarf-fortress-admin.willsmith.nz`),
-   completely separate from the existing public view-only feed. **Standing
-   caution**: any future `xdotool`/simulated-input use against VM 103
-   shares this exact channel and can visibly collide with the user
-   actually using it — call it out explicitly first, per
-   `docs/DF-UI-AUTOMATION.md`.
-2. **Dwarf/labor management, first slice**: `scripts/dfhack/df-overseer-labor.lua`
-   (`unit-status`, `labors`, `set-labor`), `autolabor` enabled and
-   *confirmed* actually assigning jobs (idle count dropped live during a
-   brief unpause). The mechanics half of design commitment #2 exists now;
-   nothing yet decides labor policy beyond `autolabor`'s own defaults.
-3. **A real kea attack happened and was used as a live test case.** The
-   fort's dogs and a citizen killed it. `unit-status hostile` missed the
-   entire fight, before/during/after — proven unreliable in *both*
-   directions the same day (also flags harmless deep-cavern demons).
-   Root cause: `dfhack.units.isDanger`/`isInvader` just aren't the right
-   signal for "is my fort under attack right now" — that's an event
-   (`get_diff_since`), not a queryable static predicate. Not fixed on
-   `main`; a prototype exists (`df-overseer-combat.lua`, see above) but is
-   blocked on the branch-overlap question.
-4. **The quicksave "silent no-op" was root-caused, not just patched
-   around.** `quicksave.lua` pushes an overlay whose real save logic only
-   runs on a later game render pass — delay observed 8 to 80+ seconds,
-   totally variable. `stderr.log`'s "Invoking:"/"should autosave" lines are
-   proven unreliable as a signal in **both** directions (absent for a call
-   that worked, and the reverse was already known). **New protocol,
-   supersedes everything written before today**: poll the active save
-   slot's `world.sav` mtime for up to ~90 seconds; never trust the log
-   lines. Full trail: `research/2026-09-11-quicksave-silent-noop.md`.
-5. **The `perception-layer-experiments` audit** (see the big decision
-   above) — found it does far more than this file used to credit it with.
-6. **First real autonomous-play experiment**: a subagent used
-   `find_open_area` to pick a genuine, ranked, named construction
-   candidate — then correctly **stopped without building anything**,
-   because every deployed perception tool deliberately strips coordinates
-   before returning them, and nothing bridged "the model picked a good
-   spot" to "here's where `quickfort` should anchor." A real, honest
-   non-result, not a failure.
-7. **Second attempt closed that gap for real.** Built `build_open_area`/
-   `build` (fused resolve-and-act — the coordinate exists for one line,
-   inside the function, to build `quickfort`'s own argument list, and is
-   never returned or printed; verified this directly against the function
-   body, not taken on trust). Used it to place a genuine, independently-
-   verified new building, **"Stockpile #2,"** on Uniboslan — the first
-   fully closed loop this project has: a coordinate-free ranked decision,
-   turned into a real, persistent fort mutation, with the raw coordinate
-   never once visible to whatever made the decision.
-8. **Two real gaps found doing that, both corrected after the user caught
-   an overstatement in each, and the first one then closed for real, same
-   session**:
-   - "Dig a brand-new room" is **not** build order item 9 (that's still
-     "find already-open cavern space," a different problem) — nothing in
-     the whole spec finds *solid, diggable* terrain at all. Needs a new
-     `find_diggable_area` primitive, the mirror of `find_open_area`.
-     **Closed later the same session**: built, live-verified, paired with a
-     `dig_diggable_area`/`dig` fused resolve-and-act primitive, live-tested
-     for real, and (after finding and fixing a genuine coordinate-anchoring
-     bug, see below) confirmed working end to end, a dwarf claiming a real
-     job and all 41 designated tiles fully dug. Full detail: item 10 below.
-   - A diggable candidate with no border on the existing walkable network
-     isn't *invalid* (first draft said this, wrong) — it just needs a
-     connector tunnel dug too, a pattern this project already uses
-     (entrance+connector+room). `find_diggable_area` should score
-     connector cost, not hard-reject isolated candidates. **v1 still scopes
-     to adjacent-only candidates** (connector-cost scoring is a later
-     version, not built this session), documented as such in the file
-     itself, not silently.
-   - Also found: `rank_candidate_sites` (still unbuilt) needs a
-     proximity-to-*named-room-by-kind* scoring term (the concrete case:
-     site the brewery near the farming room), distinct from and cheaper
-     than the resource-proximity term already spec'd — the landmark graph
-     already tags every building's `kind`. All three captured in
-     `research/2026-08-25-spatial-perception.md` directly, before anyone
-     builds these, not after.
-9. **Status banners refreshed**: `CLAUDE.md`'s top banner and
-   `docs/PURPOSE.md`'s superseded-notice were both badly stale (still said
-   "no game-side code exists"); both rewritten to reflect the above.
-10. **`find_diggable_area`/`dig_diggable_area` built, live-verified, and
-    (after a real bug was found, root-caused, and fixed) confirmed working
-    end to end**: `scripts/dfhack/df-overseer-diggable.lua`,
-    `perception-layer-experiments`. Mirrors `find_open_area`/`build_open_area`
-    for solid terrain instead of walkable space. Live testing found a real,
-    previously-unknown bug shared with `build_open_area`: `quickfort`'s `-c`
-    anchors a blueprint's **top-left corner, not its center**, and both
-    tools were silently passing the computed center: Stockpile #2 (item 7)
-    only worked anyway because its candidate sat in broadly open space, luck
-    not correctness. Fixed in both (`df-overseer-diggable.lua`'s fix
-    committed, `df-overseer-openarea.lua`'s left uncommitted matching that
-    file's own pre-existing state, its own comment explains why). Re-tested
-    live after the fix: designation landed at the correct spot, real `Dig`
-    jobs appeared and were claimed almost immediately, and all 41 designated
-    tiles were fully dug by the next check: **the second fully closed
-    coordinate-free decision-to-mutation loop this project has**, after
-    Stockpile #2. Full detail archived: see the "Archived" section below.
-11. **A second, independent live bug found and fixed the same day, this one
-    from a bounded Haiku-driven autonomous-play run**: Haiku called
-    `df-overseer-openarea build` with a guessed `z=0` (no tool exposed a
-    landmark's own level), which is a real but disconnected part of the map
-    (`walkable_group: 15`) — the call silently designated 0 tiles instead of
-    erroring. Root cause: `ranked_candidates()` in both
-    `df-overseer-openarea.lua` and `df-overseer-diggable.lua` already
-    resolves the named landmark's own real Z (`az`) internally but was
-    discarding it in favor of a separately-required `z` argument. **Fixed**:
-    `z` now defaults to `az` when omitted; an explicit numeric Z (old CLI
-    form) still works, shifting later args left by one otherwise. Deployed
-    live via `ui-install`, then **live re-verified, read-only only**: `find`
-    with Z omitted returns candidates at `walkable_group: 11` (the fort's
-    real group, matching `df-overseer-overview`'s `main_group_id: 11`), and
-    the old explicit-Z-169 form returns byte-for-byte the same candidates
-    for both tools. Fort confirmed undisturbed throughout (`population: 15`,
-    `alerts: []`, `get_stuck_jobs` empty). Full detail:
-    `decisions/DECISIONS.md`'s 2026-09-11 row, "Found and fixed a second,
-    independent live bug...".
-12. **A take-stock pass (Opus-authored architecture proposal, then a
-    user-pushed correction) found this project's mortality/re-embark premise
-    was being undersold, not oversold.** The claim "`mode` unavailable means
-    unattended re-embark is blocked" doesn't survive research: `mode`'s
-    unavailability is real (re-verified live, three ways) but was never the
-    mechanism either real embark actually used. Re-embark is proven twice,
-    end to end, no human mouse involved, via `gui/embark-anywhere.lua` plus
-    this project's own scripted UI navigation. The real gaps are narrower:
-    the unresolved "Confirm"-click race-condition crash (worked around by a
-    manual `gdb` ritual, no scripted equivalent), and DF's actual behavior
-    at the moment of fort death, never observed and correctly not tested
-    against Uniboslan. `unretire-anyone` confirmed irrelevant (adventure
-    mode only). `docs/PURPOSE.md`'s open questions corrected to match.
-    Full trail: `decisions/DECISIONS.md`'s newest 2026-09-11 row.
-    **`df-ai` follow-up, done same day**: read its actual source (cloned,
-    not just described) — its fort-death detection is a genuinely usable,
-    Lua-reachable technique (watch for a `viewscreen_textviewerst` showing
-    one of three literal end-game strings), but its restart mechanism
-    can't be trusted to transfer: it targets DF 0.47, predating the v50
-    Steam/Premium embark-screen rewrite, so it gives no evidence either way
-    on the Confirm-click crash. **User's call, same day: not worth pursuing
-    further right now** — the death-detection script stays a documented,
-    cheap idea (this note) rather than a queued next step. Thread closed
-    unless raised again.
+1. **A Sonnet subagent brought `README.md` up to date** — its Status
+   section still said "no game-side code exists yet," badly stale.
+2. **An Opus-authored take-stock/architecture pass**, at the user's
+   request: inventoried both the `main` and branch codebases, mapped real
+   functional milestones (not dates), and argued against splitting the
+   Lua tools into perception/action directories (every action tool is
+   deliberately fused with its perception counterpart) in favor of a
+   small tool manifest instead. **The manifest itself is not built yet —
+   the one item from this pass still outstanding.** Its other
+   recommendations were acted on: merge the branch (done, above), group
+   `learning/` (done, above), fold `combat.lua`/`diff.lua` (done, above).
+3. **A bounded Haiku-driven autonomous-play experiment**, testing whether
+   a cheaper model can navigate the coordinate-free perception/action
+   tools at all. It explored correctly, then guessed a Z-level (`z=0`)
+   for `openarea build` since no tool exposed a landmark's own level —
+   landed on a real but disconnected part of the map and got a silent,
+   misleading no-op instead of an error, then mis-self-diagnosed it as
+   "probably occupied tiles." **Root cause found and fixed**: both
+   `ranked_candidates()` implementations (openarea, diggable) already
+   resolved the landmark's real Z internally and were discarding it —
+   `z` now defaults to it when omitted, backward-compatible. Deployed and
+   live re-verified, read-only. The real finding: a weak model's failure
+   mode here wasn't "gives up" (the honest thing a stronger model did on
+   the first autonomous-play attempt, 2026-09-11) — it was "guess, then
+   confabulate a plausible reason for the resulting no-op."
+4. **The user caught an overstated claim and it held up under real
+   research, not just an apology.** Relayed a claim that DFHack's `mode`
+   being unavailable blocks unattended re-embark/reclaim outright — the
+   user didn't believe it, correctly. Live-verified `mode`'s
+   unavailability three ways (it's real), then a proper research pass
+   found `mode` was never the mechanism either real embark (Artobcatten,
+   Uniboslan) actually used — both went through `gui/embark-anywhere.lua`'s
+   struct-write technique plus this project's own scripted UI navigation,
+   already proven twice. The real gaps are narrower: an unresolved
+   Confirm-click race-condition crash, and DF's actual fort-death
+   behavior, never observed. `unretire-anyone` confirmed irrelevant
+   (adventure mode only). `df-ai` read directly as outside corroboration —
+   its death-detection technique is genuinely reusable, but it targets DF
+   0.47, predating the v50 embark rewrite, so it says nothing about the
+   Confirm-click crash specifically. **User's call: not worth pursuing
+   further right now.** `docs/PURPOSE.md` corrected to match either way.
+5. **Two more real bugs found live, fixed, and re-verified**, both while
+   finishing the merge: `install_df.py`'s new `run` subcommand (call any
+   deployed script by name, built this session) exposed that `pve.py`'s
+   `log()` crashed outright on DF gamelog text containing a character
+   outside Windows' console codepage — fixed to encode with
+   `errors='replace'` instead of letting `write()` fail. And two DFHack
+   API facts from the original perception-layer build (`getSize()`'s
+   `cx,cy` being building-local not absolute; the real burrows path being
+   `plotinfo.burrows.list`) were sitting only in a decision row, not in
+   `memory/dfhack-environment.md` where they belong — added.
 
 ### Durable traps, still true (carried forward; additions marked NEW same as before)
 
@@ -215,58 +105,43 @@ flaws) are the permanent, living content of `docs/DF-UI-AUTOMATION.md` —
 not duplicated here. This list is everything else: infra, project-wide
 gotchas, and fresh findings without another doc home yet.
 
-Embark-screen automation mechanics (coordinate frames, `xdotool`
-calibration, dead input paths, dialog handling, the click tool's known
-flaws) are the permanent, living content of `docs/DF-UI-AUTOMATION.md` —
-not duplicated here, confirmed still current on this branch. This list is
-everything else: infra, project-wide gotchas, and this session's findings.
-
-- NEW: **Directly changing a live fort's pause state
+- NEW: **`ranked_candidates()`-style helpers that resolve a named
+  landmark's own coordinate internally must actually use that resolved
+  value everywhere, not just to validate the caller's separately-supplied
+  one.** Found 2026-09-12 (the Haiku Z-default bug, above): the real
+  coordinate was computed and then discarded in favor of a redundant,
+  guessable argument. If a function already has the right answer
+  internally, don't also ask the caller for it.
+- NEW: **DF gamelog/report text is not guaranteed to be safely printable
+  through a Windows console's default codepage.** Any tool that relays
+  raw DF text (report text, unit/creature names) should encode
+  defensively (`errors='replace'`) rather than let a bare `write()` choose
+  how to fail mid-output.
+- NEW: **`dfhack.buildings.getSize()`'s `cx,cy` are local to the
+  building's own box, not absolute map coordinates** — add the building's
+  own origin field before using them as a real coordinate.
+- NEW: **`df.global.world.burrows.all` does not exist** — the correct
+  path is `df.global.plotinfo.burrows.list`.
+- **Directly changing a live fort's pause state
   (`dfhack.world.SetPauseState(false)`) is blocked by Claude Code's own
   auto-mode classifier by default**, not something a bare mid-conversation
-  "go ahead" reliably satisfies. The first time this session, it rejected
-  the identical call twice even after explicit conversational approval
-  each time, and only went through once the user actually adjusted a
-  permission setting. A second, later instance (new session) was blocked
-  again on the first attempt but went through on retry after asking
-  specifically and getting a fresh explicit yes, with no further settings
-  change visible. Net guidance: don't assume a general "continue"/"lets do
-  it" earlier in a conversation covers this specific action — ask right
-  before the call, get an explicit answer to that exact question, and if
-  it's still blocked after that, say so plainly and let the user adjust
-  settings rather than retrying blind or routing around it with an
-  equivalent raw struct write.
-- NEW: **`quickfort run <file>` resolves a plain filename relative to
+  "go ahead" reliably satisfies. Ask right before the call, get an
+  explicit answer to that exact question; if still blocked, say so
+  plainly rather than routing around it with an equivalent raw struct
+  write.
+- **`quickfort run <file>` resolves a plain filename relative to
   `dfhack-config/blueprints/`, not the working directory or an absolute
-  path** — `quickfort run /opt/df/foo.csv` fails with `"failed to open
-  dfhack-config/blueprints//opt/df/foo.csv"` (the two paths get
-  concatenated, not replaced). Write ad-hoc blueprints directly into that
-  directory.
-- NEW: **`save/current` is transient staging, not itself an addressable
-  save.** A quicksave briefly writes a fresh `world.sav` there, then DF
-  moves it into the actual numbered slot (`autosave N`, whichever
-  `df.global.world.cur_savegame.save_dir` names) within moments, leaving
-  `current` empty again. Checking `save/current`'s mtime instead of the
-  slot `cur_savegame.save_dir` actually names can read a just-written save
-  as apparently vanished when it has simply already moved — a new,
-  concrete instance of the already-known "quicksave lands with a delay"
-  trap, not a separate bug.
-- NEW: **`reqscript`-loading a `df-overseer-*.lua` file requires a
-  `--@module = true` directive as one of its leading comment lines**, or
-  `reqscript` refuses it outright ("Cannot be used as a module") — found
-  by reading how `warn-stranded.lua` declares itself reqscript-able.
-  Separately, a module-loaded script's own top-level CLI-dispatch code
-  still runs during that load unless explicitly guarded (`if
-  dfhack_flags.module then return end`, same pattern `warn-stranded.lua`
-  uses) — without it, loading a module prints its own "usage: ..." text
-  ahead of whatever the actual caller wanted.
+  path.** Write ad-hoc blueprints directly into that directory.
+- **`save/current` is transient staging, not itself an addressable
+  save** — a quicksave briefly writes there, then DF moves it into the
+  real numbered slot (`cur_savegame.save_dir`) within moments.
+- **`reqscript`-loading a `df-overseer-*.lua` file requires a
+  `--@module = true` directive as a leading comment line**, and a
+  module-loaded script's own CLI-dispatch code still runs during that
+  load unless guarded (`if dfhack_flags.module then return end`).
 - **VM 103 is running DF unattended with no network isolation boundary.**
-  home-lab's `memory/tailscale-architecture.md` assigns `df-fortress`/
-  `df-colony-01` to `tag:ai-sandbox` — "unattended, possibly LLM-driven,
-  lowest trust that isn't internet-facing" — but `runbooks/tailscale-topology.md`
-  Phase 5 (the actual hard gate) is still unchecked. **Not this repo's to
-  fix** — host-level Tailscale/ACL work, forbidden to any agent by
-  home-lab's own rule.
+  home-lab's own structural gap (Tailscale ACL Phase 5 unchecked) — not
+  this repo's to fix.
 - **DF ignores SIGTERM.** Quicksave before stop is mandatory once a fort
   is live; a bare stop takes the full timeout and ends in SIGKILL.
 - **`-gen` fails silently** roughly a quarter of the time. Success is the
@@ -278,90 +153,45 @@ everything else: infra, project-wide gotchas, and this session's findings.
 - **Folder is still `df-automation` on disk** while the project is
   `df-overseer`.
 - **DF replay determinism is unverified. `hypothesis_id` has no registry.
-  `openclaw` vs `hermes-agent` still deferred.**
+  `openclaw` vs `hermes-agent` still deferred** — and per today's
+  take-stock pass, `learning/` should fit whichever brain is eventually
+  chosen through the still-unbuilt MCP seam, not be hand-shaped around
+  one candidate's conventions ahead of that choice.
 - **PVE's cloud-init takes only the first label of the VM `name`** —
   `install_df.py`'s `step_hostname` is the only workable route to a
   suffixed guest hostname.
 - **`dfhack-run lua -f script.lua ARG1 ARG2` passes arguments via Lua
   varargs (`local x, y = ...`), not a global `arg` table.**
 - **DF's save-slot names (`autosave 1/2/3`, `current`) are a shared,
-  generic pool, not scoped per fort** — founding a second fort while one
-  exists can silently overwrite the first's save (this is how Artobcatten
-  was lost). Pull an `install_df.py backup` first, always.
+  generic pool, not scoped per fort** — pull an `install_df.py backup`
+  first, always, before founding any further fort.
 - **A founded fort's own welcome dialog silently blocks all citizen
   activity even when `pause_state` reads `false`.** Always check for an
   undismissed dialog before concluding a fort is stuck.
 - **A downstair can't be designated on a grass tile**; a plain floor dig
   beneath a completed stair never becomes a job unless the connecting tile
   is itself a matching stair type — boundary connectivity, not just the
-  target tile's state, gates job creation. The same lesson now also
-  applies to `find_diggable_area`'s design (above).
+  target tile's state, gates job creation.
 - **The fortress-wide job list is `df.global.world.jobs.list`** (linked
   list, `.next`/`.item`), not `df.global.job_list`.
 - **`quicksave` is asynchronous and its own log line is not a reliable
-  signal in either direction** — see item 4 above. Poll the save slot's
-  mtime for up to ~90s.
+  signal in either direction.** Poll the save slot's mtime for up to ~90s.
 - **Quicksave rotates forward through the `autosave N` slot pool,
-  overwrite-oldest-first, not a fixed round-robin or in-place update** —
-  always re-read `cur_savegame.save_dir` fresh, never assume a
-  previously-checked slot name is still current.
+  overwrite-oldest-first** — always re-read `cur_savegame.save_dir` fresh.
 - **VM 103's SSH host key changes across a full Proxmox stop/start
-  cycle** — expected, not a MITM concern, given documented intentional
-  restarts; fix with `ssh-keygen -R <ip>` then accept the new key, don't
-  just disable host-key checking as a habit.
-- NEW: **Every deployed perception-layer tool deliberately strips
-  coordinates before returning anything** (`find_open_area`,
-  `df-overseer-landmarks.lua`) — by design, matching commitment #1, but
-  it means nothing downstream can get a raw position except through a
-  fused resolve-and-act primitive built specifically for that purpose
-  (`build_open_area`/`build`). Don't expect a coordinate back from any
-  perception query; if you need one, an action tool has to compute and
-  consume it internally, never return it.
-- NEW: **`unit-status hostile` (`dfhack.units.isDanger`/`isInvader`) is
-  not a trustworthy fort-defense signal** — proven wrong in both
-  directions the same day (flags harmless deep-cavern creatures, misses a
-  real on-map attack entirely). Treat its output as "worth a second look,"
+  cycle** — expected, given documented intentional restarts; fix with
+  `ssh-keygen -R <ip>` then accept the new key.
+- **Every deployed perception-layer tool deliberately strips coordinates
+  before returning anything** — by design, matching commitment #1. Don't
+  expect a coordinate back from any perception query; an action tool has
+  to compute and consume one internally, never return it. (Known
+  exception, not yet fixed: `df-overseer-labor unit-status` leaks raw
+  `pos=x,y,z` — out of scope for any perception/action experiment until
+  addressed.)
+- **`unit-status hostile` (`dfhack.units.isDanger`/`isInvader`) is not a
+  trustworthy fort-defense signal** — proven wrong in both directions the
+  same day it was tested. Treat its output as "worth a second look,"
   never as "confirmed safe" or "confirmed hostile" on its own.
-
-### Peer sessions and immediate next steps, as of end of session
-
-**Live peer sessions** (check `ListAgents` fresh, this will be stale by the
-time you read it): `df-automation-e6` was mid-way through the compliance
-eval harness above (an Opus sweep may still be running or may have landed —
-check `evals/compliance/results/` and message them rather than assume);
-`home-lab-29` was around for the quorum incident, unrelated to this repo's
-own work otherwise. `df-automation-ca` (owns `perception-layer-experiments`
-in spirit, per its own commits) **never appeared once this entire
-session** — if it shows up, it's the one session that can actually settle
-the `df-overseer-diff.lua`/`df-overseer-combat.lua` overlap.
-
-**If you're picking this up fresh, in rough priority order**:
-1. `ListAgents`, then message whoever's live — per the standing rule in
-   `CLAUDE.md`'s Rules section (added today), don't assume a clean slate.
-2. **Done, same session, after this was written**: the compliance eval
-   harness finished for real — full sweeps against both `claude-opus-5` and
-   `deepseek-chat`, a real finding (DeepSeek's `required_word` collapse), a
-   cost overrun ($9-13 on Opus) that got corrected (DeepSeek is now the
-   default provider), and mechanical prediction grading (`predictions/`)
-   built as a follow-on. Archived into
-   `working-archive/Working_archive-2026-09-07.md`; nothing left open on
-   either thread. Not something a fresh session needs to check on.
-3. Re-verify Uniboslan is still paused/healthy before touching it — don't
-   trust this document's "State at a glance" as current for more than a
-   few minutes past when it was written.
-4. **Corrected in a later documentation pass**: `main`'s commits are now
-   pushed (`origin/main` matches `HEAD` at `e8caa41`), nothing to ask about
-   there. The uncommitted worktree changes (`df-overseer-openarea.lua`,
-   `df-overseer-landmarks.lua`) and `combat.lua` are still real, reviewed,
-   working, and still need the branch-merge question settled, not more
-   investigation.
-5. **Done, same session, after this was written**: `find_diggable_area`/
-   `dig_diggable_area` were built, live-verified, live-tested, and (after a
-   real coordinate-anchoring bug was found and fixed) confirmed working end
-   to end: see item 10 in "What actually got built today" above. The
-   connector-cost scoring for non-adjacent candidates is still unbuilt
-   (v1 scope, documented as such), the clearest next build if this thread
-   continues.
 
 ### Other open items, carried forward
 
@@ -374,6 +204,14 @@ the `df-overseer-diff.lua`/`df-overseer-combat.lua` overlap.
   signed PUT, fill in `IMAGE_BASE` in
   `willsmith-portfolio/public/dwarf-fortress/index.html`, commit, ask
   before pushing/deploying either repo.
+- **The tool manifest** (`scripts/dfhack/TOOLS.yaml` or similar) —
+  Opus's take-stock recommendation, agreed on, not yet built. Per-command
+  metadata (reads/mutates, coordinate-bearing, live-deployed, verified
+  date); doubles as a first draft of the still-missing MCP tool schema.
+  The clearest next build if this thread continues.
+- **`df-overseer-labor unit-status`'s raw coordinate leak** — found
+  2026-09-11 setting up the Haiku experiment, real but low-urgency: the
+  only tool of the ten that doesn't strip coordinates before returning.
 
 **Style note:** the user does not want em dashes in prose. Commas, colons,
 semicolons or full stops instead. Fine as structural separators.
@@ -447,3 +285,10 @@ semicolons or full stops instead. Fine as structural separators.
   carries the compacted find_diggable_area/dig summary, and
   `decisions/DECISIONS.md`'s 2026-09-11 rows carry the full trail for all
   three.
+- 2026-09-12: the entire 2026-09-11 end-of-session handover (the
+  branch-merge question, the "what got built" list through item 12, and
+  the peer-sessions/next-steps section) moved wholesale to the same
+  archive file — the branch-merge question it spent most of its length on
+  is resolved (merged, above), so it's fully superseded, not just over
+  the line-count threshold. The handover at the top of this file is the
+  new compacted current state.
