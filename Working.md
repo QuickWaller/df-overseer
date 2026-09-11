@@ -5,6 +5,101 @@ shelved, don't mark it paused. Any session should read this and know what's
 actually going on right now.
 
 
+## Agent architecture design phase — started 2026-09-12
+
+The design/research phase the handover below anticipated. **Design is written,
+nothing is built.**
+
+### Done this session
+
+- **[`docs/AGENT-ARCHITECTURE.md`](docs/AGENT-ARCHITECTURE.md) written**, the
+  full design: 8 principles, 5 components (2 of them code with no model in
+  them), a 6-role roster, the communication protocol, the information
+  architecture, graded urgency, write authority, reliability, recording and
+  learning, modularity, explicit non-goals, and open questions. It is a design
+  artifact and says so at the top.
+- **12 register rows** appended to `decisions/DECISIONS.md`, plus 2 finding
+  rows (below). The doc is the design; the rows are why each call was made.
+- **`ROADMAP.md` updated**: two new Now items (the architecture, and the MCP
+  server as the standing blocker), and three stale items corrected where the
+  design closed them.
+
+### The shape that was settled, in one paragraph
+
+One actor (**Overseer**, sole writer, strongest model). Read-only
+**specialists** (Architect, Quartermaster, Marshal, Consultant, Chronicler)
+that may call exactly one write tool, `propose`. Two code components: a
+**Sentry** (reflexes, graded escalation, status publishing) and **Triage**
+(diff plus thresholds each heartbeat, so a quiet cycle costs zero tokens).
+Latency is answered by **playbooks executed as code**, not by more actors.
+Communication is one append-only queue that is channel, audit log and
+write-ahead log at once; writes are tool calls with typed fields, reads render
+as XML; no peer-to-peer chat in v1. One snapshot per cycle, per-role
+projections, three information tiers. Confidence is **tool-stated for facts**
+(`MECHANICAL`/`DERIVED`/`HEURISTIC`) and **measured from graded predictions**
+for proposals; self-reported confidence is never a decision input.
+
+### In flight: four research briefs, all Sonnet, all read-only
+
+1. `research/2026-09-12-write-conflict-matrix.md` — **back, see findings
+   below.**
+2. `research/2026-09-12-openclaw-primitives.md` — does openclaw actually
+   support per-agent models, per-agent tool scoping, external event wake,
+   parseable tool-call logs, crash journaling. **If per-agent tool scoping
+   does not exist, principle 8 has no enforcement mechanism and §11 needs
+   rework.**
+3. `research/2026-09-12-multi-agent-architecture-prior-art.md` — is "no peer
+   chat" well-founded or superstition. Deliberately framed as the design's
+   most-likely-wrong call.
+4. `research/2026-09-12-dfhack-capability-checks.md` — six unverified
+   capabilities: runtime frame cap (gates the throttle tier), in-game overlay,
+   `dfhack-run` concurrency (gates any multi-writer future), quickfort dig
+   priorities and work-order APIs, `eventful` coverage for the wake
+   vocabulary, `dfhack.persistent` under concurrent writes.
+
+### Findings already in from the write-conflict audit
+
+- **`set_labor` already races `autolabor` on ordinary citizens.** Verified at
+  source (`df-overseer-labor.lua` writes `unit.status.labors[code]` directly,
+  no coordination), not taken on the subagent's word. autolabor exempts only
+  military-duty and burrow-restricted units, so the exemption is real but
+  narrow. `ROADMAP.md`'s parenthetical claiming autolabor "doesn't
+  blanket-override the manual primitives" was an overstatement and is
+  corrected in place. **This is a single-writer violation that exists in
+  production today**, before any roster is built. **Fix not yet designed.**
+- **The Quartermaster and Chronicler roles have essentially no tool surface.**
+  Neither manager work orders nor stockpile settings (filters, thresholds,
+  links) have any tool in this repo, and DFHack's `stocks`/`workflow` are
+  tagged `unavailable` on this install, so the "work orders plus stockpile
+  settings is a disjoint write domain" hypothesis is **untestable rather than
+  confirmed**. No tool writes a chronicle entry anywhere.
+- **18 of 25 existing subcommands are pure reads**; only 7 mutate (3 via
+  `quickfort -c`, 1 direct labor write, 3 via the UI input path). The three
+  quickfort mutators are cleanly sliceable and mutually disjoint by
+  construction; the three UI-path writers are the least sliceable of all,
+  since their mutation target is whatever screen happens to be focused.
+- **Two read-only tools share one unpartitioned `_G` table** across all
+  callers: a shared-resource hazard for concurrent *readers*, even under a
+  single writer.
+
+### Next concrete step
+
+Wait for the three outstanding briefs, then revise
+`docs/AGENT-ARCHITECTURE.md` against what they find (particularly §11 if
+openclaw lacks per-agent tool scoping, and §4 if the prior art contradicts the
+no-peer-chat call). **Do not start building before the openclaw brief lands**:
+the roster's enforcement mechanism depends on primitives nobody has verified.
+
+**Ruled out already, so nobody re-derives it:** one agent per squad (DF combat
+resolves faster than an agent round trip, and the threat sensor is verified
+unreliable); multiple general writers (no transaction boundary in DF); an
+efficiency-analysis agent and a safety-veto agent (both are code);
+self-reported confidence as a decision input; publishing raw agent thinking.
+
+**Not yet asked for:** the 5 unpushed commits below, plus everything written
+this session, are all still local. Publishing the reasoning stream (§8) is
+designed but explicitly needs its own go-ahead.
+
 ## HANDOVER — 2026-09-12 (session end, written for a `/clear`)
 
 The entire prior session's content (tool manifest build, both coordinate-leak
