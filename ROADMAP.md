@@ -178,12 +178,14 @@ or `decisions/DECISIONS.md`, not here.
   2026-08-27; the new identity's pool-fence proof (`200` in-pool, `403`
   outside) currently lives only in home-lab. This repo has no equivalent
   record of its own once the old identity retires. → `Working.md` handover.
-- **`cpu: host` → `x86-64-v2-AES`** in `provision_vm.py`, needed so the two
-  cluster hosts (different CPU generations) can migrate VMs between them.
-  **Built 2026-09-11** (`DEFAULT_CPU`, plus a `set-cpu` subcommand to apply
-  it to an already-built VM); **not yet run against VM 103** — needs the
-  user's go-ahead, since it only takes effect on the VM's next cold
-  stop/start and Uniboslan is a live fort.
+- **DONE 2026-09-11: `cpu: host` → `x86-64-v2-AES`**, applied to VM 103 for
+  real and verified (`cpu=x86-64-v2-AES` confirmed by read-back, fort
+  reloaded and confirmed identical afterward: same citizens, same save
+  slot, same year). Surfaced a real incident along the way: the cold
+  stop/start needed to apply it hit cluster quorum loss (SRV-02 down, no
+  QDevice) blocking VM start entirely, not just snapshots as previously
+  documented — resolved once the user restored quorum at a root shell;
+  not this repo's to fix.
   → `decisions/DECISIONS.md` 2026-08-28 row, `Working.md`.
 - **`check_reachable` / `get_connectivity_report`.** Copies
   `warn-stranded.lua`'s working algorithm; highest-confidence real code to

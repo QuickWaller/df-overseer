@@ -35,12 +35,16 @@ happened once before from exactly this). Not something to act on from
 here, just context if an oddly-quorum-shaped error shows up again later
 today.
 
-**Still undecided**: whether to retry `set-cpu` given how disruptive this
-attempt turned out to be, now that quorum is only provisionally restored.
-Leaning toward leaving `cpu: host` alone until quorum is durably fixed
-(QDevice, or SRV-02 genuinely healthy) rather than risking another
-stop/start against a single-node override — asking the user directly
-rather than deciding this alone.
+**Update, same session**: asked the user directly; chose to retry now
+while quorum holds rather than wait. Second cycle: `shutdown` → `set-cpu`
+(confirmed by read-back: `cpu=x86-64-v2-AES`) → `start` → `verify` (all
+PASS) → "Continue active game" (same false-negative success-check as
+before, confirmed via screen type instead) → `viewscreen_dwarfmodest`.
+**Fully verified identical state to before this whole incident started**:
+same 7 citizen IDs (192-198), same professions, same slot `autosave 2`,
+Year 30/Mid-Summer, `pause_state=true`. `decisions/DECISIONS.md`
+2026-08-28's `cpu: host` → `x86-64-v2-AES` item is now genuinely done, not
+just built — closes that ROADMAP.md "Next" item for real.
 
 <details>
 <summary>Original incident writeup (kept for the full trail)</summary>
