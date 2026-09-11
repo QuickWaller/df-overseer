@@ -242,7 +242,13 @@ or `decisions/DECISIONS.md`, not here.
   tile to dig from, so an unreachable candidate would silently never
   become a job, the exact failure class this project already paid for
   once (`decisions/DECISIONS.md` 2026-09-10, the stair-connectivity dig
-  bug). Not a low-ranked candidate, not a valid one at all. →
+  bug). **Corrected right after, user caught this overstatement too**:
+  isolated doesn't mean invalid, just "needs a connector tunnel dug too" —
+  a normal pattern this project already uses (the original room dig was
+  entrance+connector+room, three blueprints). v1 can reasonably return
+  only directly-adjacent candidates; a fuller version should score
+  non-adjacent ones by connector-tunnel cost and let the model choose,
+  not hard-code isolation as a validity failure. →
   `decisions/DECISIONS.md` 2026-09-11 ("Closed the coordinate-resolution
   gap..." correction), `research/2026-08-25-spatial-perception.md`.
 - **Measure a running fort's memory over time**, now that one exists

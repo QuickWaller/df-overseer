@@ -5,32 +5,52 @@ story without you. See **[docs/PURPOSE.md](docs/PURPOSE.md)** for what this is
 and why, and **[docs/MEMORY-ARCHITECTURE.md](docs/MEMORY-ARCHITECTURE.md)** for the overseer's memory and
 learning architecture.
 
-> **Status: infrastructure proven and standing, and — as of 2026-09-10 —
-> a fort exists.** The Proxmox identity this project runs against is
-> provisioned outside this repo (see `infra/README.md`);
-> `scripts/provision_vm.py` built VM `df-colony-01` (vmid 103) against it on
-> 2026-09-08, and `scripts/install_df.py` installed DF Classic and DFHack on
-> it, verified end to end (`decisions/DECISIONS.md` 2026-09-08 rows). This is
-> a rebuild, not the original: an earlier VM and template, built 2026-08-27,
-> were deleted 2026-09-01 in an estate rebuild, and today's VM is a fresh one
-> from this repo's own scripts, not a restore. **A fort has actually been
-> founded, twice.** The first, "Artobcatten, Combinedchannel" on `region2`,
-> was driven entirely through DFHack struct writes and simulated mouse
-> clicks (menu automation, Site Finder, embark placement) — then lost,
-> unrecoverably, as a side effect of founding a second fort, "Uniboslan,
-> 'Ragwind'" (`decisions/DECISIONS.md` 2026-09-10, "second fort was founded,
-> but the first fort's save was lost"). **Uniboslan is the fort that exists
-> now**, running unattended under systemd (`decisions/DECISIONS.md`
-> 2026-09-10 rows). Still no *code* of the game side's actual play loop: no
-> perception layer, no agent, no toolkit — the fort exists but nothing is
-> deciding what it does yet, so it is standing, not being played. A first
-> pass at a perception-layer slice (`check_reachable`/`get_connectivity_report`,
-> an experimental seed landmark) was built this session and then deliberately
-> kept off `main`, on its own branch, `perception-layer-experiments` — not
-> part of this repo's current state. Everything in `docs/` and `research/`
-> beyond the menu-automation work itself is still a design artifact; claims
-> marked *verified* were checked against a DFHack install, the live API, or a
-> primary source, and the rest are proposals.
+> **Status, rewritten 2026-09-11: the fort is not just standing anymore —
+> something has actually decided what it does, at least once, end to end.**
+> Infra layer unchanged and still solid: `scripts/provision_vm.py` built VM
+> `df-colony-01` (vmid 103, rebuilt 2026-09-08 after an earlier estate
+> rebuild deleted the original), `scripts/install_df.py` installs/runs DF
+> Classic + DFHack on it, verified end to end. **Uniboslan, "Ragwind," is
+> the one fort** (a first fort, Artobcatten, was founded and then
+> unrecoverably lost as a side effect of founding Uniboslan —
+> `decisions/DECISIONS.md` 2026-09-10). It survived a real VM outage
+> 2026-09-11 (cluster quorum loss blocked start/stop entirely, not just
+> snapshots — resolved by the user directly, not this repo) and now runs on
+> `cpu: x86-64-v2-AES` (applied for real, not just accepted).
+>
+> **Game-side code now exists, and some of it has been run for real.**
+> `perception-layer-experiments` (its own worktree, `../df-automation-perception`)
+> turns out to have **built and live-verified nearly the entire spatial-
+> perception build order** (`docs/PURPOSE.md` items 2-8: connectivity,
+> landmarks, `get_overview`, `get_diff_since`, `find_open_area`,
+> `find_chokepoints`, `get_stuck_jobs`) — audited properly 2026-09-11 after
+> this file badly undersold it as "connectivity + a seed landmark."
+> **Deliberately still unmerged** — the user's explicit call, more than
+> once, to keep working with it rather than merge yet. On `main`: a labor-
+> management slice (`get_unit_status`/`set_labor`, `autolabor` enabled and
+> confirmed actually assigning jobs) and a second, authenticated
+> personal-control VNC channel (real mouse/keyboard for the user alone,
+> Cloudflare Access-gated, alongside the existing public view-only feed).
+>
+> **The actual milestone**: a bounded, tools-only autonomous-play
+> experiment used `find_open_area` to pick a real, ranked, named
+> construction candidate, then a new fused resolve-and-act primitive
+> (`build_open_area`/`build`) turned that pick into a real, independently-
+> verified fort mutation — a genuine second stockpile, "Stockpile #2,"
+> wired into the exits graph — **without the raw coordinate ever being
+> visible to whatever made the decision.** First fully closed loop this
+> project has. The same experiment, and the correction pass right after,
+> found two real, still-open gaps worth knowing before touching this
+> again: (1) nothing finds *diggable* rock/soil — `find_open_area` only
+> ever finds already-open space, so "dig a brand-new room" doesn't work
+> yet; (2) `unit-status hostile` is a known-unreliable signal (missed a
+> real kea attack entirely, flagged harmless demons instead) — an
+> event-driven prototype exists (`df-overseer-combat.lua`) but sits
+> deliberately uncommitted, pending reconciliation with an overlapping,
+> independently-built `df-overseer-diff.lua` on the perception branch.
+> Full trail: `decisions/DECISIONS.md`'s 2026-09-11 rows, `Working.md`'s
+> current handover. Everything in `docs/`/`research/` beyond what's cited
+> as verified above is still a design artifact or proposal.
 
 This repo is managed with Claude Code using a structured memory system,
 following the pattern published as
