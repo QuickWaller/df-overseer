@@ -385,10 +385,16 @@ or `decisions/DECISIONS.md`, not here.
   user's go-ahead first either way (destructive/hard-to-reverse actions
   rule). → `working-archive/Working_archive-2026-09-07.md`, "Host-reboot
   survival is still unverified".
-- **`openclaw` vs `hermes-agent`** as the driving brain, still deferred.
-  Tiebreaker is meant to be empirical: which survives 30 days unattended.
-  → `decisions/DECISIONS.md` 2026-08-25 row, 2026-08-27 multi-agent-by-task
-  row.
+- **DONE 2026-09-12: the driving-brain choice decided — `openclaw`.**
+  User's explicit call, not the originally-planned empirical 30-day
+  survival test: `openclaw`'s multi-agent support (flagged as a candidate
+  differentiator back on 2026-08-27) is exactly the wanted shape — many
+  agents, each a single responsibility, each free to run a different model.
+  Closes the 2026-08-25 deferred item. **Not yet built**: the actual
+  multi-agent-by-task decomposition (patrol/military, construction/
+  placement, economy, per the 2026-08-27 row) and the MCP seam this repo
+  still needs before any brain, `openclaw` included, can actually drive it.
+  → `decisions/DECISIONS.md` 2026-09-12 row (also 2026-08-25, 2026-08-27).
 - **Loop shape, multi-agent split, first display to build (game view vs.
   chronicle e-ink), and the time-sliced adventure-mode design.**
   → `docs/PURPOSE.md` Open Questions.

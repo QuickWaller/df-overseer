@@ -339,23 +339,25 @@ reappears.
   2026-09-11.
 - **A running fort's memory ceiling.** Worldgen answered a different question
   (above). Nothing is known about a fort at year 5 with 100 dwarves.
-- **NEW 2026-09-12: should `learning/` (`ledger/` + `predictions/`, grouped
-  under one parent this same day) be shaped to fit `openclaw`'s own
-  persistent-memory conventions, once the brain choice resolves?** Raised by
-  the user while the grouping was in progress, deliberately not acted on
-  speculatively — `openclaw` vs `hermes-agent` is still an open, deferred
-  choice (`decisions/DECISIONS.md` 2026-08-25), and designing `learning/`
-  around one candidate's specific conventions before that choice is made
-  would repeat the mistake this project already declined once (2026-09-08,
-  not extracting a shared provisioning library ahead of a real second
-  consumer). The safer, already-true property to lean on: `learning/`'s
-  data is plain JSONL, read/written by small scripts, not deeply coupled to
-  being driven by anything in particular — and design commitment #5's own
-  answer to "how does an outside brain reach this project" is already MCP,
-  not a bespoke integration per brain. The natural shape once M8 (the
-  currently-nonexistent MCP server/tool schema — see the take-stock pass,
-  `decisions/DECISIONS.md` 2026-09-11) gets built is to expose
-  `learning/ledger`/`learning/predictions` read/write through that same MCP
-  boundary, so it fits *any* MCP-speaking brain including `openclaw`,
-  rather than hand-fitting `openclaw`'s specific memory API today. Revisit
-  when the brain choice and the MCP seam are both real, not before.
+- **Should `learning/` (`ledger/` + `predictions/`, grouped under one
+  parent 2026-09-12) be shaped to fit `openclaw`'s own persistent-memory
+  conventions, now that `openclaw` is the decided driving brain
+  (`decisions/DECISIONS.md` 2026-09-12)?** Raised by the user 2026-09-12
+  while the grouping was in progress, deliberately not acted on
+  speculatively at the time since the brain choice was still open. **The
+  brain choice is now settled, but the conclusion is unchanged**: designing
+  `learning/` around one candidate's specific conventions ahead of the
+  still-unbuilt MCP seam would repeat the mistake this project already
+  declined once (2026-09-08, not extracting a shared provisioning library
+  ahead of a real second consumer) — the seam, not the brain identity, was
+  always the actual gate. The safer, already-true property to lean on:
+  `learning/`'s data is plain JSONL, read/written by small scripts, not
+  deeply coupled to being driven by anything in particular — and design
+  commitment #5's own answer to "how does an outside brain reach this
+  project" is already MCP, not a bespoke integration per brain. The natural
+  shape once M8 (the currently-nonexistent MCP server/tool schema — see the
+  take-stock pass, `decisions/DECISIONS.md` 2026-09-11) gets built is to
+  expose `learning/ledger`/`learning/predictions` read/write through that
+  same MCP boundary, so it fits *any* MCP-speaking brain, `openclaw`
+  included, rather than hand-fitting `openclaw`'s specific memory API before
+  that boundary exists. Revisit once the MCP seam is real, not before.
