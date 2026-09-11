@@ -26,14 +26,16 @@ anything, not just skimming for the next task.
   reverts on reboot or if SRV-02 rejoins, watch for quorum-shaped errors
   again). `cpu: x86-64-v2-AES` is now genuinely applied (was accepted
   2026-08-28, never actually run until today).
-- **`main` is 4 commits ahead of `origin/main`, not yet pushed**:
-  `b8dd6a9`, `f48a641`, `0a47c56`, `89a04d2` — the `rank_candidate_sites`
-  design gap, the "digging isn't cavern-terrain" correction, the
-  reachability-constraint addendum, and refreshed status banners
-  (`CLAUDE.md`/`docs/PURPOSE.md`). Push needs the user's go-ahead, per
-  standing rule, and per the newer rule: check whether any of these are
-  actually someone else's commits before asking (they aren't, this time —
-  all mine, confirmed via `git log origin/main..HEAD`).
+- **`main` is now even with `origin/main`, nothing outstanding to push.**
+  Corrected during a later documentation pass (`git log origin/main..HEAD`
+  came back empty, `git rev-parse HEAD`/`origin/main` identical at
+  `e8caa41`): the 5 commits once queued here (`b8dd6a9`, `f48a641`,
+  `0a47c56`, `89a04d2`, `e8caa41` itself) have all landed on `origin/main`
+  since this line was first written. This repo's working tree still carries
+  live, uncommitted edits to `Working.md`/`ROADMAP.md`/`decisions/DECISIONS.md`
+  (today's find_diggable_area consolidation pass) plus untracked
+  `evals/compliance/`, `predictions/`, and `scripts/dfhack/df-overseer-combat.lua`
+  from earlier in the session, none of which are on `origin` yet either.
 - **The `df-automation-perception` worktree (`perception-layer-experiments`
   branch) has real, working, uncommitted code**: `df-overseer-openarea.lua`
   and `df-overseer-landmarks.lua` gained `build`/`build_open_area` —
@@ -115,16 +117,25 @@ before touching the merge question, not just before merging.
    turned into a real, persistent fort mutation, with the raw coordinate
    never once visible to whatever made the decision.
 8. **Two real gaps found doing that, both corrected after the user caught
-   an overstatement in each**:
+   an overstatement in each, and the first one then closed for real, same
+   session**:
    - "Dig a brand-new room" is **not** build order item 9 (that's still
      "find already-open cavern space," a different problem) — nothing in
      the whole spec finds *solid, diggable* terrain at all. Needs a new
      `find_diggable_area` primitive, the mirror of `find_open_area`.
+     **Closed later the same session**: built, live-verified, paired with a
+     `dig_diggable_area`/`dig` fused resolve-and-act primitive, live-tested
+     for real, and (after finding and fixing a genuine coordinate-anchoring
+     bug, see below) confirmed working end to end, a dwarf claiming a real
+     job and all 41 designated tiles fully dug. Full detail: item 10 below.
    - A diggable candidate with no border on the existing walkable network
      isn't *invalid* (first draft said this, wrong) — it just needs a
      connector tunnel dug too, a pattern this project already uses
      (entrance+connector+room). `find_diggable_area` should score
-     connector cost, not hard-reject isolated candidates.
+     connector cost, not hard-reject isolated candidates. **v1 still scopes
+     to adjacent-only candidates** (connector-cost scoring is a later
+     version, not built this session), documented as such in the file
+     itself, not silently.
    - Also found: `rank_candidate_sites` (still unbuilt) needs a
      proximity-to-*named-room-by-kind* scoring term (the concrete case:
      site the brewery near the farming room), distinct from and cheaper
@@ -135,6 +146,66 @@ before touching the merge question, not just before merging.
 9. **Status banners refreshed**: `CLAUDE.md`'s top banner and
    `docs/PURPOSE.md`'s superseded-notice were both badly stale (still said
    "no game-side code exists"); both rewritten to reflect the above.
+10. **`find_diggable_area`/`dig_diggable_area` built, live-verified, and
+    (after a real bug was found, root-caused, and fixed) confirmed working
+    end to end**: `scripts/dfhack/df-overseer-diggable.lua`,
+    `perception-layer-experiments`. Mirrors `find_open_area`/`build_open_area`
+    for solid terrain instead of walkable space. Live testing found a real,
+    previously-unknown bug shared with `build_open_area`: `quickfort`'s `-c`
+    anchors a blueprint's **top-left corner, not its center**, and both
+    tools were silently passing the computed center: Stockpile #2 (item 7)
+    only worked anyway because its candidate sat in broadly open space, luck
+    not correctness. Fixed in both (`df-overseer-diggable.lua`'s fix
+    committed, `df-overseer-openarea.lua`'s left uncommitted matching that
+    file's own pre-existing state, its own comment explains why). Re-tested
+    live after the fix: designation landed at the correct spot, real `Dig`
+    jobs appeared and were claimed almost immediately, and all 41 designated
+    tiles were fully dug by the next check: **the second fully closed
+    coordinate-free decision-to-mutation loop this project has**, after
+    Stockpile #2. Full detail archived: see the "Archived" section below.
+11. **A second, independent live bug found and fixed the same day, this one
+    from a bounded Haiku-driven autonomous-play run**: Haiku called
+    `df-overseer-openarea build` with a guessed `z=0` (no tool exposed a
+    landmark's own level), which is a real but disconnected part of the map
+    (`walkable_group: 15`) — the call silently designated 0 tiles instead of
+    erroring. Root cause: `ranked_candidates()` in both
+    `df-overseer-openarea.lua` and `df-overseer-diggable.lua` already
+    resolves the named landmark's own real Z (`az`) internally but was
+    discarding it in favor of a separately-required `z` argument. **Fixed**:
+    `z` now defaults to `az` when omitted; an explicit numeric Z (old CLI
+    form) still works, shifting later args left by one otherwise. Deployed
+    live via `ui-install`, then **live re-verified, read-only only**: `find`
+    with Z omitted returns candidates at `walkable_group: 11` (the fort's
+    real group, matching `df-overseer-overview`'s `main_group_id: 11`), and
+    the old explicit-Z-169 form returns byte-for-byte the same candidates
+    for both tools. Fort confirmed undisturbed throughout (`population: 15`,
+    `alerts: []`, `get_stuck_jobs` empty). Full detail:
+    `decisions/DECISIONS.md`'s 2026-09-11 row, "Found and fixed a second,
+    independent live bug...".
+12. **A take-stock pass (Opus-authored architecture proposal, then a
+    user-pushed correction) found this project's mortality/re-embark premise
+    was being undersold, not oversold.** The claim "`mode` unavailable means
+    unattended re-embark is blocked" doesn't survive research: `mode`'s
+    unavailability is real (re-verified live, three ways) but was never the
+    mechanism either real embark actually used. Re-embark is proven twice,
+    end to end, no human mouse involved, via `gui/embark-anywhere.lua` plus
+    this project's own scripted UI navigation. The real gaps are narrower:
+    the unresolved "Confirm"-click race-condition crash (worked around by a
+    manual `gdb` ritual, no scripted equivalent), and DF's actual behavior
+    at the moment of fort death, never observed and correctly not tested
+    against Uniboslan. `unretire-anyone` confirmed irrelevant (adventure
+    mode only). `docs/PURPOSE.md`'s open questions corrected to match.
+    Full trail: `decisions/DECISIONS.md`'s newest 2026-09-11 row.
+    **`df-ai` follow-up, done same day**: read its actual source (cloned,
+    not just described) — its fort-death detection is a genuinely usable,
+    Lua-reachable technique (watch for a `viewscreen_textviewerst` showing
+    one of three literal end-game strings), but its restart mechanism
+    can't be trusted to transfer: it targets DF 0.47, predating the v50
+    Steam/Premium embark-screen rewrite, so it gives no evidence either way
+    on the Confirm-click crash. **User's call, same day: not worth pursuing
+    further right now** — the death-detection script stays a documented,
+    cheap idea (this note) rather than a queued next step. Thread closed
+    unless raised again.
 
 ### Durable traps, still true (carried forward; additions marked NEW same as before)
 
@@ -222,70 +293,30 @@ the `df-overseer-diff.lua`/`df-overseer-combat.lua` overlap.
 **If you're picking this up fresh, in rough priority order**:
 1. `ListAgents`, then message whoever's live — per the standing rule in
    `CLAUDE.md`'s Rules section (added today), don't assume a clean slate.
-2. Check the compliance eval harness's actual end state (item above) —
-   it may have finished unattended since this was written.
+2. **Done, same session, after this was written**: the compliance eval
+   harness finished for real — full sweeps against both `claude-opus-5` and
+   `deepseek-chat`, a real finding (DeepSeek's `required_word` collapse), a
+   cost overrun ($9-13 on Opus) that got corrected (DeepSeek is now the
+   default provider), and mechanical prediction grading (`predictions/`)
+   built as a follow-on. Archived into
+   `working-archive/Working_archive-2026-09-07.md`; nothing left open on
+   either thread. Not something a fresh session needs to check on.
 3. Re-verify Uniboslan is still paused/healthy before touching it — don't
    trust this document's "State at a glance" as current for more than a
    few minutes past when it was written.
-4. The 4 unpushed `main` commits and the uncommitted worktree/`combat.lua`
-   changes are all real, reviewed, working — they just need the user's
-   go-ahead on push and the branch-merge question respectively, not more
+4. **Corrected in a later documentation pass**: `main`'s commits are now
+   pushed (`origin/main` matches `HEAD` at `e8caa41`), nothing to ask about
+   there. The uncommitted worktree changes (`df-overseer-openarea.lua`,
+   `df-overseer-landmarks.lua`) and `combat.lua` are still real, reviewed,
+   working, and still need the branch-merge question settled, not more
    investigation.
-5. `find_diggable_area` (with the reachability/connector-cost design
-   already spec'd) is the clearest, best-scoped next build if the user
-   wants to keep pushing the autonomous-play thread forward.
-
-### Compliance eval harness built, gained a second provider, first full runs in flight
-
-Picked up as this session's task specifically because it touched neither VM
-103 nor `perception-layer-experiments` (both held by a concurrent peer
-session's live subagent at the time) — research build-order item 1
-(`research/2026-08-25-learning-architecture.md` §7): replicate "Prompt Design
-at Scale"'s instruction-count-decay methodology against this project's own
-doctrine format and model, before any fort run depends on doctrine size being
-safe. Built `evals/compliance/`, mirroring `evals/perception/`'s structure and
-philosophy exactly: full detail, the two bugs the selftest caught before any
-live call, and the smoke-test numbers are in `decisions/DECISIONS.md`'s newest
-rows and `evals/compliance/README.md`.
-
-**Gained a second provider mid-session**: `harness/providers.py` now supports
-DeepSeek (and anything else speaking the OpenAI-compatible chat-completions
-API) alongside Anthropic's native Messages API, via `--provider`. Not a
-speculative feature — the user's own framing: df-overseer is heading toward
-multiple concurrent sessions/roles via `openclaw`, with model choice made
-*per role*, not one global model. "How does compliance degrade" only means
-something once asked of whichever model(s) actually end up running each role,
-which is the whole reason `providers.py` is a seam rather than a hardcoded
-Anthropic call.
-
-**Full sweeps run this session** (10/20/40/80/120/160 rules x 3 formats x 10
-scenarios, 180 cells each, `--repeats 1`):
-- `deepseek-chat`: **complete**, real finding —
-  perfect-response rate is 70-83% at n=10/20, then **craters to 0% from n=40
-  onward** (far earlier than the paper's own ~80 for other models), while
-  per-rule pass rate degrades far more gently (97% → 72% from n=10 to n=160).
-  The collapse is concentrated almost entirely in one category:
-  `required_word` pass rate is 20.6% at n=160 while `banned_word` stays at
-  100% — this model is much better at *not* doing something across many
-  simultaneous rules than at reliably inserting many specific required words.
-  Full numbers: `evals/compliance/results/deepseek-full-2026-09-11.jsonl`.
-- `claude-opus-5`: **in flight** at session's end, expected to complete
-  shortly after. Cost was raised as a live concern mid-run (Opus for a
-  180-cell sweep) — user's explicit call: let it finish rather than stop
-  partway, but **flagged model-cost-per-eval-run as a real open design
-  question**, not resolved here: once `openclaw`'s per-role model selection
-  is real, this harness's own default model (`claude-opus-5`) may not be the
-  right default to keep reaching for on every future run — a cheaper model
-  matching whichever role is actually being evaluated may be more honest
-  *and* cheaper. Not acted on this session, just named so it isn't silently
-  forgotten.
-
-**Next, not yet done**: once the Opus run lands, a combined report
-(`report.py` already splits by model when a file mixes them) is the
-Claude-vs-DeepSeek comparison this was building toward. Then: decide whether
-`DEFAULT_MODEL["anthropic"]` should move off Opus by default, and whether a
-third provider (whatever `openclaw` ends up routing non-Opus roles to) is
-worth wiring in before that decision is made blind.
+5. **Done, same session, after this was written**: `find_diggable_area`/
+   `dig_diggable_area` were built, live-verified, live-tested, and (after a
+   real coordinate-anchoring bug was found and fixed) confirmed working end
+   to end: see item 10 in "What actually got built today" above. The
+   connector-cost scoring for non-adjacent candidates is still unbuilt
+   (v1 scope, documented as such), the clearest next build if this thread
+   continues.
 
 ### Other open items, carried forward
 
@@ -361,3 +392,13 @@ semicolons or full stops instead. Fine as structural separators.
   not superseded by new work. The handover at the top of this file is the
   compacted current-state summary, written deliberately thorough for a
   `/clear`; the archive has the full decision-by-decision detail.
+- 2026-09-11 (documentation consistency pass): three fully-self-reporting
+  ### threads moved wholesale to the same archive file: the compliance
+  eval harness build (done for the session), mechanical prediction grading
+  (built, selftested), and the full find_diggable_area/dig_diggable_area
+  saga (built, live-verified, live-tested, the quickfort `-c` top-left-vs-
+  center bug found and fixed, re-confirmed working end to end). None were
+  gated on a human; item 10 in "What actually got built today" above now
+  carries the compacted find_diggable_area/dig summary, and
+  `decisions/DECISIONS.md`'s 2026-09-11 rows carry the full trail for all
+  three.

@@ -40,10 +40,20 @@ learning architecture.
 > wired into the exits graph — **without the raw coordinate ever being
 > visible to whatever made the decision.** First fully closed loop this
 > project has. The same experiment, and the correction pass right after,
-> found two real, still-open gaps worth knowing before touching this
-> again: (1) nothing finds *diggable* rock/soil — `find_open_area` only
-> ever finds already-open space, so "dig a brand-new room" doesn't work
-> yet; (2) `unit-status hostile` is a known-unreliable signal (missed a
+> found two real gaps. (1) Nothing found *diggable* rock/soil: **closed the
+> same day.** `find_diggable_area`/`dig_diggable_area`
+> (`df-overseer-diggable.lua`, `perception-layer-experiments`) mirror
+> `find_open_area`/`build_open_area` for solid terrain instead of walkable
+> space, live-verified and then live-tested end to end: a dwarf claimed a
+> real dig job and all 41 designated tiles were fully dug, the project's
+> second fully closed coordinate-free decision-to-mutation loop. Getting
+> there found a real, previously-unknown bug shared by both tools:
+> `quickfort`'s `-c` anchors a blueprint's *top-left* corner, not its
+> center, and both were silently passing the computed center (Stockpile #2
+> only worked anyway by luck). Fixed in both (`df-overseer-diggable.lua`'s
+> fix committed, `df-overseer-openarea.lua`'s left uncommitted matching
+> that file's own pre-existing state, with an inline comment explaining
+> why). (2) `unit-status hostile` is a known-unreliable signal (missed a
 > real kea attack entirely, flagged harmless demons instead) — an
 > event-driven prototype exists (`df-overseer-combat.lua`) but sits
 > deliberately uncommitted, pending reconciliation with an overlapping,
