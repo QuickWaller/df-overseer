@@ -129,6 +129,13 @@ file first in any session.
   regardless of `.claude/settings.json`.
 - Treat `git push` and any deploy as outward-facing actions needing explicit
   go-ahead **each time**. Committing locally is fine; publishing is gated.
+  **This repo's sessions share one working tree**: before pushing, check
+  `git log origin/main..HEAD` for commits that aren't yours — go-ahead for
+  your own commit doesn't obviously extend to publishing a sibling
+  session's separate, unpushed work riding along with it. Flag whose
+  commits are in the batch, don't just ask about your own (found
+  2026-09-11 — a push correctly approved for one session's commit swept in
+  another session's five, without that session's own go-ahead).
 - **Verify the verification.** Before reporting an all-clear, confirm the check
   you ran could actually have detected the problem in question. State what was
   verified and how, not just the outcome.
