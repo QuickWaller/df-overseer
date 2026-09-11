@@ -132,6 +132,20 @@ file first in any session.
 - **Verify the verification.** Before reporting an all-clear, confirm the check
   you ran could actually have detected the problem in question. State what was
   verified and how, not just the outcome.
+- **On session start (a fresh session, or right after `/clear`), check
+  `ListAgents` for other sessions on this repo and message them to check
+  in** — what they have in flight, uncommitted changes, which branch, any
+  live-infra state — before assuming a clean slate. This repo routinely runs
+  several concurrent Claude sessions; asking first is what has actually
+  prevented file-collision and duplicate-work incidents (2026-09-11 rows in
+  `decisions/DECISIONS.md` — the personal-control VNC channel, the quicksave
+  investigation's pause-flip, and the `df-overseer-diff.lua`/
+  `df-overseer-combat.lua` overlap were all caught this way, not by luck).
+- **Check in again before modifying a VM or any live-prod state** — a
+  peer-session heads-up (what you're about to do, expected visible effect,
+  e.g. brief downtime) in addition to, not instead of, this file's existing
+  explicit-confirmation rule above. A peer's earlier go-ahead for a
+  different action does not cover a new one.
 
 ## Project-specific rules
 
