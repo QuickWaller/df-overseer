@@ -53,7 +53,8 @@ from provision_vm import (  # noqa: E402
     read_pubkey, wait_for_status, resize_disk, destroy_failed_build,
 )
 from install_df import (  # noqa: E402
-    remote, NOVNC_UNIT, NOVNC_PORT, VNC_PORT, install_novnc_index,
+    remote, NOVNC_UNIT, NOVNC_PORT, VNC_PORT, NOVNC_CONTROL_PORT,
+    VNC_CONTROL_PORT, install_novnc_index,
 )
 
 # Pinned to an exact dated build, not 'latest' -- same reasoning as
@@ -109,6 +110,32 @@ DEFAULT_CORES = 1
 CLOUDFLARED_GPG_URL = "https://pkg.cloudflare.com/cloudflare-main.gpg"
 CLOUDFLARED_GPG_PATH = "/usr/share/keyrings/cloudflare-main.gpg"
 CLOUDFLARED_APT_REPO = "https://pkg.cloudflare.com/cloudflared"
+
+# 'cloudflared service install <token>' (the plain cmd_cloudflared path) is
+# Cloudflare's own convenience wrapper, but it always installs to a single,
+# fixed systemd unit name ('cloudflared.service') -- confirmed by reading its
+# own behavior, not assumed. Running it a second time with a different token
+# would silently overwrite the already-running public tunnel's connector,
+# breaking dwarf-fortress.willsmith.nz. A second, independent tunnel
+# therefore needs its own unit under a different name, running
+# 'cloudflared tunnel run --token' directly instead of the wrapper --
+# confirmed a real, documented flag (`cloudflared tunnel run --help` on the
+# relay, 2026-09-11) achieving the exact same non-interactive,
+# dashboard-managed-token connection the wrapper provides, just without the
+# fixed service name. Never touches or depends on the existing service.
+CLOUDFLARED_ADMIN_UNIT = '''[Unit]
+Description=Cloudflare Tunnel (admin/control channel, separate from the public tunnel)
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/cloudflared tunnel run --token %(token)s
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+'''
 
 
 def guest_address(env):
@@ -287,16 +314,36 @@ def cmd_webvnc(pve, args):
     loopback -- this only adds the browser-facing hop, same NOVNC_UNIT
     install_df.py's own 'webvnc' uses on VM 103, reused rather than
     duplicated, just pointed at this host instead.
+
+    --control installs a SEPARATE instance (df-webvnc-control.service,
+    default browser port NOVNC_CONTROL_PORT, bridging to
+    localhost:VNC_CONTROL_PORT) bound to 127.0.0.1 ONLY, not every
+    interface -- decided 2026-09-11: the plain (public) instance binds all
+    interfaces since websockify's own arg format is bare '<port>' with no
+    host prefix, which is fine for a view-only public feed, but would leave
+    this control channel reachable directly on the relay's LAN, bypassing
+    the Cloudflare Access policy meant to be its only gate. With this
+    binding, cloudflared's own loopback-side connection is the only way to
+    reach it at all -- Access genuinely is the whole gate, which is also why
+    this channel carries no separate x11vnc password (see install_df.py's
+    cmd_vnc --control): stacking a second credential behind a gate nothing
+    else can reach would just be a redundant sign-in, not real defense.
     """
     ip = (pve.env.get("RELAY_VM_IP") or "").split("/")[0]
     if not ip:
         raise PVEError("RELAY_VM_IP is not set in .env")
     user = pve.env.get("RELAY_CIUSER", "relay")
-    port = args.port
-    vnc_port = args.vnc_port
+    control = args.control
+    port = args.port if args.port is not None else (
+        NOVNC_CONTROL_PORT if control else NOVNC_PORT)
+    vnc_port = args.vnc_port if args.vnc_port is not None else (
+        VNC_CONTROL_PORT if control else VNC_PORT)
+    service = "df-webvnc-control" if control else "df-webvnc"
+    bindhost = "127.0.0.1:" if control else ""
 
-    log("installing noVNC + websockify on the relay (browser port %s ->"
-        " localhost:%s)" % (port, vnc_port))
+    log("installing noVNC + websockify on the relay (browser port %s%s ->"
+        " localhost:%s)%s" % (bindhost, port, vnc_port,
+                               " -- CONTROL, loopback-only" if control else ""))
 
     relay_env = dict(pve.env)
     relay_env["DF_CIUSER"] = user
@@ -318,26 +365,31 @@ fi
     # 'Requires=df-vnc.service' would be wrong (and fatal) on this host.
     unit = NOVNC_UNIT % {
         "user": user, "port": port, "vncport": vnc_port,
-        "depends": "After=network.target",
+        "bindhost": bindhost, "depends": "After=network.target",
     }
     setup_script = '''
-cat > /etc/systemd/system/df-webvnc.service <<'EOF'
+cat > /etc/systemd/system/%(service)s.service <<'EOF'
 %(unit)s
 EOF
 
 systemctl daemon-reload
-systemctl enable --now df-webvnc.service
-systemctl is-active df-webvnc.service
-''' % {"unit": unit}
+systemctl enable --now %(service)s.service
+systemctl is-active %(service)s.service
+''' % {"unit": unit, "service": service}
     proc = remote(relay_env, ip, setup_script, "webvnc setup", timeout=120,
                   sudo=True, dry_run=args.dry_run)
     if args.dry_run:
         return
     for line in proc.stdout.strip().splitlines():
         log("  " + line)
-    log("open http://%s:%s/ in a browser -- auto-redirects to the live feed"
-        " (password requirement depends on how VM 103's 'vnc' was run)"
-        % (ip, port))
+    if control:
+        log("noVNC listening on 127.0.0.1:%s only (relay-local) -- point a"
+            " Cloudflare Access-gated Public Hostname at localhost:%s, do"
+            " not expose this port directly" % (port, port))
+    else:
+        log("open http://%s:%s/ in a browser -- auto-redirects to the live feed"
+            " (password requirement depends on how VM 103's 'vnc' was run)"
+            % (ip, port))
 
 
 def cmd_cloudflared(pve, args):
@@ -376,6 +428,16 @@ def cmd_cloudflared(pve, args):
     long as the zone is on Cloudflare DNS -- confirmed true for willsmith.nz
     (user-confirmed 2026-09-09). See Working.md for the exact dashboard
     steps this leaves for whoever holds the token.
+
+    --control connects a SECOND, independent tunnel instead (its own
+    systemd service, 'cloudflared-admin', running 'cloudflared tunnel run
+    --token' directly rather than the 'service install' wrapper) -- see
+    CLOUDFLARED_ADMIN_UNIT's own comment for why the wrapper is unsafe to
+    call twice. Token comes from --token or CLOUDFLARE_TUNNEL_TOKEN_ADMIN in
+    .env (a distinct variable from the public tunnel's
+    CLOUDFLARE_TUNNEL_TOKEN, since these are two different Cloudflare
+    Tunnels with two different tokens, not one tunnel with two hostnames).
+    Never touches the existing 'cloudflared' service.
     """
     ip = (pve.env.get("RELAY_VM_IP") or "").split("/")[0]
     if not ip:
@@ -383,8 +445,12 @@ def cmd_cloudflared(pve, args):
     user = pve.env.get("RELAY_CIUSER", "relay")
     relay_env = dict(pve.env)
     relay_env["DF_CIUSER"] = user
+    control = args.control
 
-    token = args.token or pve.env.get("CLOUDFLARE_TUNNEL_TOKEN")
+    if control:
+        token = args.token or pve.env.get("CLOUDFLARE_TUNNEL_TOKEN_ADMIN")
+    else:
+        token = args.token or pve.env.get("CLOUDFLARE_TUNNEL_TOKEN")
 
     log("installing cloudflared on the relay via pkg.cloudflare.com's apt repo")
     install_script = '''
@@ -409,19 +475,51 @@ cloudflared --version
         for line in proc.stdout.strip().splitlines():
             log("  " + line)
 
+    env_var = "CLOUDFLARE_TUNNEL_TOKEN_ADMIN" if control else "CLOUDFLARE_TUNNEL_TOKEN"
     if not token:
-        log("no connector token given (--token / CLOUDFLARE_TUNNEL_TOKEN) --"
-            " cloudflared is installed but not yet connected to any tunnel.")
+        log("no connector token given (--token / %s) --"
+            " cloudflared is installed but not yet connected to any tunnel."
+            % env_var)
         log("  create a tunnel in the Zero Trust dashboard (Networks -> Tunnels),"
             " copy its connector token, then re-run this with --token or"
-            " CLOUDFLARE_TUNNEL_TOKEN in .env.")
+            " %s in .env." % env_var)
         return
 
-    log("connecting cloudflared to the dashboard tunnel (service install)")
     # Never let the real token land in a --dry-run script dump -- remote()
     # logs the whole body under --dry-run, same reasoning as cmd_vnc's
     # script_password placeholder in install_df.py.
-    script_token = "<CLOUDFLARE_TUNNEL_TOKEN>" if args.dry_run else token
+    script_token = "<%s>" % env_var if args.dry_run else token
+
+    if control:
+        log("connecting the SECOND (admin) tunnel -- separate service,"
+            " does not touch the existing 'cloudflared' service")
+        unit = CLOUDFLARED_ADMIN_UNIT % {"token": script_token}
+        service_script = '''
+cat > /etc/systemd/system/cloudflared-admin.service <<'EOF'
+%(unit)s
+EOF
+
+systemctl daemon-reload
+systemctl enable --now cloudflared-admin.service
+sleep 2
+systemctl is-active cloudflared-admin.service
+''' % {"unit": unit}
+        proc = remote(relay_env, ip, service_script,
+                      "cloudflared-admin service install", timeout=60,
+                      sudo=True, dry_run=args.dry_run)
+        if args.dry_run:
+            return
+        for line in proc.stdout.strip().splitlines():
+            log("  " + line)
+        log("cloudflared-admin connected. In THAT tunnel's own Public"
+            " Hostname tab (a different tunnel from the public one -- this"
+            " token identifies its own separate tunnel in the dashboard),"
+            " add hostname 'dwarf-fortress-admin.willsmith.nz' -> service"
+            " 'http://localhost:6081', then add a Cloudflare Access policy"
+            " on that hostname restricted to your own email.")
+        return
+
+    log("connecting cloudflared to the dashboard tunnel (service install)")
     service_script = '''
 cloudflared service install %(token)s
 sleep 2
@@ -470,10 +568,18 @@ def main():
 
     webvnc = add("webvnc", help="install websockify+noVNC pointed at"
                                  " localhost:<vnc-port>")
-    webvnc.add_argument("--port", type=int, default=NOVNC_PORT,
-                        help="browser-facing port, default %s" % NOVNC_PORT)
-    webvnc.add_argument("--vnc-port", type=int, default=VNC_PORT,
-                        help="tunneled port to bridge to, default %s" % VNC_PORT)
+    webvnc.add_argument("--port", type=int, default=None,
+                        help="browser-facing port; default %s normally, %s"
+                             " with --control" % (NOVNC_PORT, NOVNC_CONTROL_PORT))
+    webvnc.add_argument("--vnc-port", type=int, default=None,
+                        help="tunneled port to bridge to; default %s"
+                             " normally, %s with --control"
+                             % (VNC_PORT, VNC_CONTROL_PORT))
+    webvnc.add_argument("--control", action="store_true",
+                        help="install a SEPARATE df-webvnc-control.service,"
+                             " bound to 127.0.0.1 only (not every interface)"
+                             " so Cloudflare Access is the only way in --"
+                             " see cmd_webvnc's docstring")
     webvnc.add_argument("--dry-run", action="store_true",
                         help="print the remote script instead of running it")
 
@@ -482,9 +588,18 @@ def main():
                                             " token exists, connect it to a tunnel")
     cloudflared.add_argument("--token", default=None,
                              help="dashboard tunnel connector token; defaults to"
-                                  " CLOUDFLARE_TUNNEL_TOKEN in .env. If neither is"
-                                  " set, this only installs cloudflared and does"
-                                  " not connect it to anything.")
+                                  " CLOUDFLARE_TUNNEL_TOKEN (or"
+                                  " CLOUDFLARE_TUNNEL_TOKEN_ADMIN with --control)"
+                                  " in .env. If neither is set, this only"
+                                  " installs cloudflared and does not connect"
+                                  " it to anything.")
+    cloudflared.add_argument("--control", action="store_true",
+                             help="connect a SECOND, independent tunnel"
+                                  " (its own systemd service,"
+                                  " 'cloudflared-admin') instead of the"
+                                  " public one -- see cmd_cloudflared's"
+                                  " docstring for why this is not just"
+                                  " '--token <different token>'")
     cloudflared.add_argument("--dry-run", action="store_true",
                              help="print the remote script instead of running it")
 

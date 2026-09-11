@@ -168,6 +168,95 @@ gotchas, and fresh findings without another doc home yet.
   mtime check run immediately after can read stale. Wait a few seconds
   and recheck before concluding a quicksave silently failed.
 
+### Authenticated personal-control VNC channel — code written, not yet deployed
+
+**Decided 2026-09-11**: user chose to ship neither the free-look 3D idea nor
+the Stonesense-per-minute public viewer for now. Instead: a second,
+authenticated VNC channel giving **the user personally** real mouse/keyboard
+control of the live game (pan, click, look around, change z-levels) — the
+existing public/LAN feed stays exactly as-is, untouched, view-only. Both
+public-facing ideas above remain live research threads to return to later,
+not abandoned, just not what's being built right now.
+
+**Auth design, reasoned through with the user**: Cloudflare Access only (email
+OTP at Cloudflare's edge), no second x11vnc password — confirmed safe *only*
+after checking that the relay's existing `websockify` binds all interfaces
+(no host prefix in its arg), which would have left a LAN-side bypass around
+Access. Fix: the control instance's `websockify` binds `127.0.0.1` only, so
+Cloudflare Access is structurally the *only* path in, not merely the intended
+one — a second in-app password would be pure friction at that point, not real
+defense. One sign-in, not two.
+
+**Built this session, dry-run verified, NOT yet run against VM 103 or the
+relay**: `scripts/install_df.py`'s `vnc`/`vnc-tunnel` and
+`scripts/provision_relay.py`'s `webvnc` all gained a `--control` flag that
+installs a completely separate, second instance (own systemd service, own
+port, own tunnel keypair) rather than modifying the existing public one —
+`df-vnc-control.service` (port 5901, no `-viewonly`, forced `-nopw`),
+`df-vnc-control-tunnel.service` (own keypair/authorized_keys line, doesn't
+touch the public tunnel's), `df-webvnc-control.service` (port 6081,
+`127.0.0.1`-bound). `--control --password`/`--no-password` together is a
+hard error (redundant flags would silently do nothing). Confirmed via
+`--dry-run` that the existing non-`--control` paths are byte-for-byte
+unchanged.
+
+**A standing rule was added while building this**
+(`docs/DF-UI-AUTOMATION.md`): any future use of real X11 input (`xdotool`)
+against VM 103 must be called out explicitly, not run silently — it shares
+the exact channel this new control session uses, and would genuinely collide
+with a connected human session once any future agent needs UI-level input the
+way past embark automation here has.
+
+**Next, not yet done, needs the user**: (1) actually run the three
+`--control` commands against VM 103 and the relay (currently gated on the
+user's go-ahead per this project's live-infra rule); (2) a Cloudflare
+dashboard step this repo cannot do for itself — a new Public Hostname on the
+existing tunnel pointed at `localhost:6081` on the relay, gated by a
+Cloudflare Access policy restricted to the user's own email.
+
+### New thread: real-time, per-viewer free-look fortress viewer (idea stage)
+
+Started this session, separate work from the perception-layer branch (no
+overlap — coordinated live with the peer session on `perception-layer-experiments`,
+`decisions/DECISIONS.md` doesn't have this yet since nothing's been decided,
+only researched). The ask moved twice as it was discussed: shared VNC (exists)
+→ periodic per-z-level screenshot with independent client-side pan/zoom
+(`research/2026-09-10-stonesense-headless-rendering.md`, medium-confidence,
+Stonesense-based) → **real-time, independent FPS-style free-look per viewer**
+(`research/2026-09-10-live-freelook-viewer-architecture.md`, low-to-medium
+confidence, idea stage only). The free-look requirement rules Stonesense out
+entirely (fixed isometric camera, no live API) and points toward a
+client-rendered-3D-via-live-RemoteFortressReader-feed architecture instead —
+closest prior art is Armok Vision. Also reopens the tileset-licensing question
+the screenshot approach had sidestepped, since free-look rendering needs real
+texture assets on the client, not just server-rendered pixels — three options
+laid out in that doc's §5, **user hasn't picked one yet**.
+
+**Update 2026-09-11**: Armok Vision researched
+(`research/2026-09-11-armok-vision-and-overburden-rendering.md`). Both open
+questions substantially resolved: RFR's `GetBlockList` is a server-side
+hash-diffed poll (client polls, but only changed blocks get sent — confirmed
+at this project's exact pinned DFHack tag), and Armok Vision's `GetVisibility(z)`
+is a real, shipped, camera-relative Z-band occlusion technique (levels above
+camera hidden, current level full detail, lower levels walls-only with caps
+suppressed) that answers the user's "strip away the ground" question directly
+and transfers cleanly to a browser client with no server involvement.
+Also corrected Stonesense's action name (`CHOP_WALLS`, not `CHOP_WALL`) and
+found it's narrower than hoped — only affects the single topmost loaded
+z-level, complementary to `SEGMENTSIZE_Z:1`, not a substitute for it, and not
+itself an answer to the free-look design's occlusion question (that's
+Armok Vision's mechanism, not Stonesense's). **Real warning surfaced**:
+Armok Vision's own issue tracker reports DFHack's CPU going from 5-7% to
+40-50% under a single polling client — foreign hardware/fort, doesn't
+transfer directly, but is a concrete reason not to assume "broadcast once,
+cheaply" is safe. **Gating next step, not yet done**: a cheap live test —
+hook any RFR client to Uniboslan for a few minutes and measure DFHack's own
+CPU delta — before further design work on either the free-look architecture
+or the Stonesense capture job. User is still deciding overall direction
+(also considering a simpler two-tier idea: Stonesense screenshots every
+minute for the public, plus a separate authenticated full-control channel
+for themselves, not yet reconciled with the free-look thread).
+
 ### Other open items, carried forward
 
 - **Design commitment #1's absolute wording vs. its actual evidence
