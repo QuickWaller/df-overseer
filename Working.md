@@ -163,18 +163,30 @@ gotchas, and fresh findings without another doc home yet.
   Proxmox API involved at all. Verify the resulting archive actually
   contains the expected save data (`tar -tzf` + grep) rather than
   trusting a nonzero file size alone.
-- NEW: **A `quicksave` RPC call can return and log "The game should
-  autosave now" before the file actually lands on disk** — a save-file
-  mtime check run immediately after can read stale. Wait a few seconds
-  and recheck before concluding a quicksave silently failed.
-- NEW: **`quicksave` can silently no-op entirely, not just lag** — found
-  2026-09-11 enabling `autolabor`: two consecutive `./dfhack-run quicksave`
-  calls produced no "should autosave" log line and no file change at all on
-  a longer recheck, then a third, identical-method attempt worked normally.
-  Confirm success by isolating the new `stderr.log` lines for that specific
-  attempt (a line-count diff, not a tail glance) plus a fresh
-  `cur_savegame.save_dir` + mtime check, and **retry** rather than just
-  wait-and-recheck once, if the first attempt doesn't confirm.
+- NEW, **root-caused 2026-09-11, corrects the two entries below**:
+  `quicksave` is not a synchronous save call at all — read directly from
+  the installed `quicksave.lua`: it pushes a `QuicksaveOverlay` screen
+  whose `save()` body only runs inside that overlay's own `:render()`,
+  on a later, unpredictable game render pass (confirmed live: 45-80+
+  seconds observed in one reproduced case, under 8s in another, no fixed
+  delay). **The "should autosave now" log line is not evidence either way**
+  — a live reproduction this session produced a call that unambiguously
+  succeeded (slot rotated, fresh mtime) with that line completely absent,
+  before and after. The two apparent "silent no-ops" below are now judged
+  **most likely the same lag, just checked with too short a window** —
+  not a confirmed distinct failure mode — though this can't be proven
+  after the fact (only 3 save slots exist, overwrite-oldest-first, so any
+  late completion would already be overwritten). **Verification protocol
+  going forward: poll the active save slot's `world.sav` mtime for up to
+  ~90 seconds, never key off `stderr.log`'s "Invoking:"/"should autosave"
+  lines.** Full evidence trail: `research/2026-09-11-quicksave-silent-noop.md`.
+- ~~NEW: A `quicksave` RPC call can return and log "The game should~~
+  ~~autosave now" before the file actually lands on disk~~ — superseded by
+  the entry above (the actual delay is far longer and more variable than
+  "wait a few seconds" ever accounted for).
+- ~~NEW: `quicksave` can silently no-op entirely, not just lag~~ —
+  superseded by the entry above; downgraded from confirmed to unresolved,
+  likely-just-lag.
 
 ### Authenticated personal-control VNC channel — DONE, deployed and confirmed live
 
@@ -203,7 +215,18 @@ full-control feed for the user alone — both up simultaneously, confirmed.
 `xdotool`/DFHack-fake-input use against VM 103 shares this exact channel and
 can visibly collide with the user actively driving the game through it —
 call it out explicitly before running it, per `docs/DF-UI-AUTOMATION.md`'s
-rule. Nothing else queued on this thread; it's finished.
+rule. **Update, later the same day**: exactly this happened, harmlessly.
+A quicksave-investigation subagent found `pause_state` flip to `false` on
+its own during a live check, with no cause it had taken — flagged as a real
+concern rather than shrugged off, `df-automation-e6` was asked directly.
+Answer: the user really was connected via this control channel at that
+time and unpaused the fort themselves (exactly what it's for) — not a
+mystery agent. Genuinely useful side effect of asking: e6 also found and
+fixed a real, separate bug this uncovered — both x11vnc instances
+(`df-vnc` since 2026-09-09, `df-vnc-control` since today) were writing to
+the same log file, so the *log* looked silent during that window even
+though real input was happening; each now has its own log (`65a96fc`).
+Nothing else queued on this thread; it's finished.
 
 **Auth design, reasoned through with the user**: Cloudflare Access only (email
 OTP at Cloudflare's edge), no second x11vnc password — confirmed safe *only*
