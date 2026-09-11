@@ -4,6 +4,68 @@ What's currently in progress. Remove an item once it's done, tabled, or
 shelved, don't mark it paused. Any session should read this and know what's
 actually going on right now.
 
+## URGENT, ONGOING 2026-09-11: VM 103 is OFFLINE, blocked on cluster quorum
+
+**Read this first if you're picking up this repo.** Uniboslan, the one
+live fort, is currently **not running** — the VM itself is powered off and
+cannot be started back up. No data was lost: DF was stopped cleanly first
+(quicksave confirmed on disk via the new poll-based `systemd-stop.sh`
+before SIGTERM, see below), so this is downtime, not an incident on the
+fort's save.
+
+**What happened**: attempting to apply the accepted-but-unapplied
+`set-cpu` change (`decisions/DECISIONS.md` 2026-08-28) required a cold
+stop/start of VM 103 to take effect. Shut it down cleanly via the new
+`provision_vm.py shutdown` (ACPI, confirmed stopped). The `set-cpu` PUT
+itself then failed (`500 unable to open file ... Permission denied`), and
+**starting VM 103 back up also failed**: `POST .../status/start -> 500
+"cluster not ready - no quorum?"`. User confirmed live: **SRV-02 is down**.
+home-lab-29 (sibling session) confirms this is a known structural gap, not
+a new fault — the `citadel` cluster (SRV-01+SRV-02) has never had a
+QDevice (the NAS that would have hosted one was lost at auction; the Pi
+3B+ fallback was never built), so any time either node drops, the cluster
+goes fully inquorate and **all** `pve-guests`/`pveum`/VM start-stop blocks
+indefinitely — not just snapshots, which is the only manifestation this
+repo had previously documented. SRV-02 has also been separately unstable
+since 2026-09-01 (home-lab's own instability tracking).
+
+**New fact worth keeping**: quorum loss blocking VM power operations
+(start/stop), not just snapshots and config writes, was not previously
+confirmed in this repo — it is now, by direct API failure.
+
+**Not this repo's to fix** — home-lab owns quorum/QDevice infra, and
+every prior recovery on this cluster (the 2026-09-02 `pvecm expected 1`
+override, and the most recent provisioning session) was done by the user
+directly at a root shell on the host, deliberately never via an agent
+SSH/API path. **Waiting on the user or home-lab to restore quorum; do
+not attempt `pvecm expected 1` or any other override from an agent
+session.** Once quorum is confirmed back: retry `provision_vm.py start
+--vmid 103`, confirm `status/current` is `running`, confirm DF/DFHack
+come back up cleanly (`install_df.py verify`), then decide whether to
+still pursue `set-cpu` (built, `decisions/DECISIONS.md` 2026-08-28 row,
+see "set-cpu" section below) or leave `cpu: host` alone for now given how
+disruptive this attempt turned out to be.
+
+**Real, useful thing found along the way**: while preparing this,
+re-read `systemd-stop.sh` (the live `ExecStop`) and `install_df.py`'s
+manual `stop --save`, and found both still had the stale flat `sleep 5`
+between quicksave and SIGTERM that predates the 2026-09-11 quicksave-
+timing finding (45-80s+ observed) — a real latent risk of SIGTERM'ing
+`dwarfort` mid-write on the one live, irreplaceable fort. Fixed both to
+poll the active slot's `world.sav` mtime for up to 90s instead (commit
+`1d5ed74`). **Verified working live, for real**, stopping VM 103 for this
+attempt: journal shows `quicksave confirmed on disk (slot: autosave 2)`
+at +10s, then the TERM-wait loop ran its full 30s before a SIGKILL was
+needed — DF genuinely still ignores SIGTERM, confirmed again, and the fix
+caught it correctly rather than cutting in early.
+
+**Also flagged, not mine to resolve**: `df-automation-da` pushed a batch
+of commits to `origin/main` (`eb5f017..da73ca4`, fast-forward, no
+conflicts) without asking first — this repo's rule treats `git push` as
+needing explicit go-ahead each time, and that wasn't checked. Nothing
+destructive (fast-forward only), told the user directly rather than
+silently treating it as fine.
+
 ## HANDOVER - 2026-09-10 (end of session)
 
 The entire prior handover (text-only sweep, second fort founded,
