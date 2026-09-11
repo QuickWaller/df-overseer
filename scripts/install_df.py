@@ -31,6 +31,7 @@ import base64
 import os
 import random
 import secrets
+import shlex
 import subprocess
 import sys
 import tarfile
@@ -1371,6 +1372,37 @@ def cmd_lua(pve, args):
         raise PVEError("lua command exited %s" % proc.returncode)
 
 
+def cmd_run(pve, args):
+    """Call one already-deployed named dfhack script directly, e.g.
+    'df-overseer-openarea find 5 5 169 "Embark Site"', without hand-rolling
+    an ssh command or going through cmd_lua's raw-Lua path.
+
+    This is the gap between cmd_lua (arbitrary Lua, full raw access) and
+    the single-purpose subcommands like ui-install/script-install: a way to
+    invoke a named tool's own CLI exactly as documented in its file header
+    or docs/DF-UI-AUTOMATION.md, with each argument passed through shell-safe
+    (a landmark name like "Embark Site" needs its own quoting preserved, not
+    word-split by the remote shell). Read-only or mutating is up to the
+    script being called; this wrapper does not know or care which.
+    """
+    vmid, ip = target(pve, args)
+    quoted = " ".join(shlex.quote(a) for a in [args.script_name] + args.script_args)
+    script = (
+        "cd %s\n" % GAME_DIR +
+        "./dfhack-run %s 2>&1 | sed -e 's/\\x1b\\[[0-9;]*m//g' -e 's/\\r$//'\n"
+        % quoted
+    )
+    proc = remote(pve.env, ip, script, "run", timeout=args.timeout,
+                 check=False, dry_run=args.dry_run)
+    if args.dry_run:
+        return
+    out = (proc.stdout or "").strip()
+    for line in out.splitlines():
+        log("  " + line)
+    if proc.returncode != 0:
+        raise PVEError("run command exited %s" % proc.returncode)
+
+
 DFHACK_SCRIPTS_DIR = os.path.join(
     os.path.dirname(os.path.abspath(__file__)), "dfhack")
 
@@ -2175,6 +2207,16 @@ def main():
                           " 'print(dfhack.gui.getCurViewscreen()._type)'")
     lua.add_argument("--timeout", type=int, default=60)
 
+    run = add("run", help="call one already-deployed named dfhack script"
+                          " directly, e.g. df-overseer-openarea find 5 5 169"
+                          " \"Embark Site\" -- see docs/DF-UI-AUTOMATION.md"
+                          " or the script's own file header for its CLI")
+    run.add_argument("script_name",
+                     help="script name without .lua, e.g. df-overseer-openarea")
+    run.add_argument("script_args", nargs=argparse.REMAINDER,
+                     help="arguments passed through to the script's own CLI")
+    run.add_argument("--timeout", type=int, default=60)
+
     add("ui-install", help="deploy df-overseer-ui.lua (type/click/dump"
                             " helpers) onto the guest's hack/scripts/"
                             " -- alias for 'script-install df-overseer-ui'")
@@ -2261,6 +2303,7 @@ def main():
         "stop": cmd_stop,
         "gen": cmd_gen,
         "lua": cmd_lua,
+        "run": cmd_run,
         "ui-install": cmd_ui_install,
         "script-install": cmd_script_install,
         "saves": cmd_saves,
