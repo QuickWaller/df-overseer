@@ -167,6 +167,14 @@ gotchas, and fresh findings without another doc home yet.
   autosave now" before the file actually lands on disk** — a save-file
   mtime check run immediately after can read stale. Wait a few seconds
   and recheck before concluding a quicksave silently failed.
+- NEW: **`quicksave` can silently no-op entirely, not just lag** — found
+  2026-09-11 enabling `autolabor`: two consecutive `./dfhack-run quicksave`
+  calls produced no "should autosave" log line and no file change at all on
+  a longer recheck, then a third, identical-method attempt worked normally.
+  Confirm success by isolating the new `stderr.log` lines for that specific
+  attempt (a line-count diff, not a tail glance) plus a fresh
+  `cur_savegame.save_dir` + mtime check, and **retry** rather than just
+  wait-and-recheck once, if the first attempt doesn't confirm.
 
 ### Authenticated personal-control VNC channel — DONE, deployed and confirmed live
 
@@ -339,10 +347,34 @@ unexpectedly, nothing lost. Worth remembering for any future mtime-based
 "did my save land" check: check `cur_savegame.save_dir` fresh each time
 rather than assuming the slot name from an earlier check is still current.
 
-**Not yet done**: no live check of whether `autolabor` actually starts
-moving dwarves onto jobs once the fort is unpaused again (only checked its
-own status output and the persistence question so far) — worth a quick
-watch next time the fort is actively driven forward.
+**Update, same session**: watched it actually work. Unpaused briefly (~15s
+real time), re-checked `unit-status`: idle count dropped from 6 to 1
+(`autolabor status` agreed: "1 IDLE, 6 OTHER"), citizens' positions had
+genuinely moved, and jobs were assigned (`Sleep`, `Drink`) — real simulation,
+not a stuck state. One citizen briefly showed `injured=true` (a real
+`body.wounds` entry, not a UI artifact) that had fully healed by the next
+check moments later, with nothing in `gamelog.txt` for that window — read as
+a minor, self-resolving incident (a scrape, not combat), not a threat; no
+DEMON_* unit from the earlier `hostile` scan is anywhere near the fort's
+z-level regardless. Re-paused and quicksaved afterward, per the "pause when
+not actively driving" convention.
+
+**A second real finding surfaced doing the quicksave-to-confirm-persistence
+step, not the autolabor question but adjacent to it**: two consecutive
+`./dfhack-run quicksave` calls (both while paused, ~15-20s apart) produced
+**no** "The game should autosave now" line in `stderr.log` and **no** file
+change on disk at all — confirmed by isolating exactly the new `stderr.log`
+lines per attempt (line-count diff, not just a tail glance) and `stat`-ing
+the active save slot before and after each. A third attempt, no different
+in method, worked normally (log line appeared, `autosave 3`'s mtime updated
+to match). **`quicksave` can silently no-op**, not just "log success before
+the file lands" (the already-documented trap) — this is a stronger claim,
+worth downgrading the standing "wait a few seconds and recheck" advice to
+"retry and recheck" if a single retry doesn't confirm. Root cause
+unidentified; not chased further since it isn't blocking (the autolabor
+enable was already durably saved by the first successful quicksave, before
+this was even discovered) and `df-fortress.service`'s own `ExecStop`
+already quicksaves unconditionally before any real stop regardless.
 
 ### Other open items, carried forward
 
