@@ -1,6 +1,18 @@
 # Roadmap
 
-**Last reviewed:** 2026-09-11 (tenth pass, documentation consistency check: confirmed the diggable-area items below are accurately marked DONE and already correctly placed, not still in progress; fixed a stale "main not yet pushed" claim elsewhere in this repo's docs. Ninth pass, same day: perception-layer-experiments audited for real, build order items 2-8 are actually done, not just files; first autonomous-play attempt found the coordinate-resolution gap blocking it from closing the loop, closed later the same day, see below)
+**Last reviewed:** 2026-09-12 (eleventh pass, post-merge documentation
+consistency check: `perception-layer-experiments` merged into `main`
+(`f078bf8`) and its worktree deleted, so every bullet below that framed the
+branch-merge question as open, or cited the branch/worktree as separate
+from `main`, is updated to say so: none of that work itself changed, only
+its merge status. `df-overseer-combat.lua` no longer exists as a separate
+file (folded into `df-overseer-diff.lua`, `6dd92bb`); no open bullet named
+it directly, so nothing else needed touching there. `openclaw` vs
+`hermes-agent` checked and left as-is: still a genuinely open, deferred
+choice, not resolved by the merge. Tenth pass, 2026-09-11: confirmed the
+diggable-area items below are accurately marked DONE and already correctly
+placed, not still in progress; fixed a stale "main not yet pushed" claim
+elsewhere in this repo's docs. Ninth pass, same day: perception-layer-experiments audited for real, build order items 2-8 are actually done, not just files; first autonomous-play attempt found the coordinate-resolution gap blocking it from closing the loop, closed later the same day, see below)
 
 This file is df-overseer's forward-looking, priority-ordered plan: what's
 next and roughly when, across infrastructure, game-side engineering, and the
@@ -222,11 +234,12 @@ or `decisions/DECISIONS.md`, not here.
   addendum added 2026-09-11, `research/2026-08-25-spatial-perception.md`
   §6, before this gets built so it isn't missed), and `get_stuck_jobs`
   (item 8) are all built and verified live against the real fort, all 8
-  commits pushed to `origin/perception-layer-experiments`. **Still
-  deliberately unmerged into `main`** — user's explicit call (2026-09-11):
-  not ready to merge yet, chose to keep working with the branch as-is and
-  see how far it goes rather than merge now. → `Working.md`,
-  `decisions/DECISIONS.md` 2026-09-11 rows.
+  commits pushed to `origin/perception-layer-experiments`. **Superseded
+  2026-09-12: the branch-merge question below is resolved.**
+  `perception-layer-experiments` merged into `main` (`f078bf8`, six real
+  conflicts resolved deliberately, not auto-accepted); the branch and its
+  worktree are deleted. → `Working.md`, `decisions/DECISIONS.md` 2026-09-11
+  rows.
 - **DONE 2026-09-11: the coordinate-resolution gap found by the first
   autonomous-play attempt is closed** — `build_open_area`/`build` (fused
   resolve-and-act, coordinate never surfaced) on `df-overseer-openarea.lua`,
@@ -241,8 +254,9 @@ or `decisions/DECISIONS.md`, not here.
   It's a genuinely new, unspecified gap: nothing in the whole research
   spec finds a candidate region of *solid* rock/soil to dig into, even
   though `designate_dig`'s own sketch assumes something upstream supplies
-  that. See the item below. Still uncommitted on the branch, same
-  merge-timing question as everything else there. → `decisions/DECISIONS.md`
+  that. See the item below. **Superseded 2026-09-12: merged into `main`
+  with the rest of `perception-layer-experiments`, the merge-timing
+  question resolved.** → `decisions/DECISIONS.md`
   2026-09-11 ("Closed the coordinate-resolution gap..."), `Working.md`.
 - **NEW 2026-09-11, found correcting the row above: no tool anywhere in
   the research spec finds a candidate region of *solid, diggable*
@@ -283,7 +297,9 @@ or `decisions/DECISIONS.md`, not here.
   TREE-material walls nearby, correctly excluded) and a correct positive
   underground near Stockpile #1 (5 real ranked SOIL candidates). Still no
   `designate_dig` action tool to actually act on a candidate — the natural
-  next piece. → `decisions/DECISIONS.md` 2026-09-11, `Working.md`.
+  next piece. **Merged into `main` 2026-09-12** with the rest of
+  `perception-layer-experiments`. → `decisions/DECISIONS.md` 2026-09-11,
+  `Working.md`.
 - **DONE 2026-09-11: `dig_diggable_area`/`dig` built, a real bug found live,
   root-caused, fixed, and re-confirmed working end to end.** First live test
   designated real tiles correctly but at an unreachable location — no dwarf
@@ -299,10 +315,13 @@ or `decisions/DECISIONS.md`, not here.
   `Dig` jobs almost immediately, and all 41 designated tiles (this run's 25
   plus leftover from the buggy run) were fully dug by the next check — the
   loop is genuinely closed now, not just mechanically plausible.
-  `df-overseer-diggable.lua`'s fix committed (`2d0eb7b`, not pushed);
-  `df-overseer-openarea.lua`'s fix applied but left uncommitted, matching
-  that file's own pre-existing uncommitted state, flagged in its own
-  comment for whoever reconciles it. →
+  `df-overseer-diggable.lua`'s fix committed (`2d0eb7b`, not pushed at the
+  time); `df-overseer-openarea.lua`'s fix applied but left uncommitted,
+  matching that file's own pre-existing uncommitted state, flagged in its
+  own comment for whoever reconciles it. **Superseded 2026-09-12: both
+  files, fixes included, are merged into `main` and pushed** as part of
+  `perception-layer-experiments`'s merge (`f078bf8`); the reconciliation
+  question the comment flagged is resolved by the merge itself. →
   `decisions/DECISIONS.md` 2026-09-11 ("Root cause found and fixed..."),
   `Working.md`.
 - **Measure a running fort's memory over time**, now that one exists

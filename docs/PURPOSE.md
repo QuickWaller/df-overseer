@@ -35,6 +35,13 @@
 > top-left corner, not its center). `CLAUDE.md`'s status banner is the
 > fuller and more current account; this note only points at it rather than
 > repeating it.
+> **Superseded again, 2026-09-12**: `perception-layer-experiments` merged
+> into `main` (`f078bf8`) and its branch/worktree are deleted, so every
+> item above still describing that build order work as living on a
+> separate, unmerged branch is now stale on that one point only. The work
+> itself, and this file's build order below, are unchanged. `CLAUDE.md`'s
+> status banner and `decisions/DECISIONS.md`'s newest rows carry the
+> current account.
 
 ## Purpose
 

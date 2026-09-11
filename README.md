@@ -22,13 +22,15 @@ Game-side code now exists, and much of it has run for real, not just been
 written. A spatial-perception layer (connectivity, landmarks, `get_overview`,
 `get_diff_since`, `find_open_area`, `find_chokepoints`, `get_stuck_jobs`,
 build order items 2-8 in `docs/PURPOSE.md`) is built and live-verified
-against Uniboslan, on its own branch and worktree,
-`perception-layer-experiments`. It stays unmerged deliberately, on the
-user's own repeated call to keep working with it rather than merge yet, not
-because it is unfinished or blocked. On `main`: a labor-management slice
-(`get_unit_status`/`set_labor`, with `autolabor` enabled and confirmed
-actually assigning jobs) and a second, authenticated personal-control VNC
-channel for the user, alongside the existing public view-only feed.
+against Uniboslan. It was developed for three weeks on its own branch and
+worktree, `perception-layer-experiments`, deliberately kept separate on the
+user's own repeated call to keep working with it rather than merge yet; that
+branch merged into `main` on 2026-09-12 (`f078bf8`), and the branch and its
+worktree are now deleted. Everything below is on `main`, including a
+labor-management slice (`get_unit_status`/`set_labor`, with `autolabor`
+enabled and confirmed actually assigning jobs) and a second, authenticated
+personal-control VNC channel for the user, alongside the existing public
+view-only feed.
 
 The headline result: **two independently-verified, fully closed,
 coordinate-free decision-to-mutation loops**, the first real end-to-end
