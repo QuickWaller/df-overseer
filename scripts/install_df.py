@@ -523,13 +523,45 @@ exit 1
 # unlike install_df.py's manual 'stop --save', there is no one at the console
 # to decide, and 'once a fort is live, saving before stopping is mandatory' --
 # then falls through to the same TERM-then-KILL escalation as cmd_stop.
+#
+# Found 2026-09-11 (decisions/DECISIONS.md same date, the quicksave no-op
+# root-cause): quicksave is not synchronous -- it queues on a later,
+# unpredictable game render pass, 45-80s+ observed, no fixed delay. This
+# script's own flat 'sleep 5' predates that finding and could SIGTERM
+# dwarfort mid-write on a live fort. Fixed to poll the active save slot's
+# world.sav mtime (re-reading cur_savegame.save_dir fresh each time, since
+# quicksave rotates slots forward) for up to 90s instead of trusting a fixed
+# delay or stderr.log's "should autosave" line, neither reliable evidence.
 STOP_SH = '''#!/bin/bash
+''' + SAVE_PATH_SH + DFHACK_LUA_SH + '''
 cd %(game)s
 if ! pgrep -x dwarfort >/dev/null 2>&1; then
   exit 0
 fi
 ./dfhack-run quicksave > %(logdir)s/systemd-stop.out 2>&1 || true
-sleep 5
+slot_before="$(dfhack_lua "print(df.global.world.cur_savegame.save_dir)")"
+mtime_before=0
+if [ -n "$slot_before" ] && [ -f "$SAVE_DIR/$slot_before/world.sav" ]; then
+  mtime_before=$(stat -c %%Y "$SAVE_DIR/$slot_before/world.sav" 2>/dev/null || echo 0)
+fi
+landed=0
+deadline=$(( $(date +%%s) + 90 ))
+while [ "$(date +%%s)" -lt "$deadline" ]; do
+  sleep 3
+  slot_now="$(dfhack_lua "print(df.global.world.cur_savegame.save_dir)")"
+  if [ -n "$slot_now" ] && [ -f "$SAVE_DIR/$slot_now/world.sav" ]; then
+    mtime_now=$(stat -c %%Y "$SAVE_DIR/$slot_now/world.sav" 2>/dev/null || echo 0)
+    if [ "$slot_now" != "$slot_before" ] || [ "$mtime_now" -gt "$mtime_before" ]; then
+      landed=1
+      break
+    fi
+  fi
+done
+if [ "$landed" = "1" ]; then
+  echo "quicksave confirmed on disk (slot: ${slot_now:-$slot_before})"
+else
+  echo "quicksave NOT confirmed within 90s -- stopping anyway, ExecStop must not hang forever"
+fi
 pkill -TERM -x dwarfort || true
 for _ in $(seq 1 30); do
   pgrep -x dwarfort >/dev/null 2>&1 || exit 0
@@ -540,10 +572,10 @@ sleep 2
 exit 0
 '''
 
-# TimeoutStopSec covers ExecStop's own worst case (quicksave, unmeasured on a
-# live fort -- no fort has been embarked yet -- plus the 5s settle, the 30s
-# TERM wait, and the 2s KILL settle) with margin. Revisit once a real fort's
-# quicksave time is known.
+# TimeoutStopSec covers ExecStop's own worst case (up to 90s quicksave poll,
+# the 30s TERM wait, and the 2s KILL settle -- comfortable margin under 180s)
+# now that a real fort's quicksave timing is known (45-80s+ observed,
+# decisions/DECISIONS.md 2026-09-11).
 DF_UNIT = '''[Unit]
 Description=Dwarf Fortress (DFHack), headless
 After=df-xvfb.service network.target
@@ -612,7 +644,7 @@ systemctl is-enabled df-xvfb.service df-fortress.service
         "game": GAME_DIR,
         "user": user,
         "wait_sh": WAIT_XVFB_SH % {"display": DISPLAY_NUM},
-        "stop_sh": STOP_SH % {"game": GAME_DIR, "logdir": LOG_DIR},
+        "stop_sh": STOP_SH % {"game": GAME_DIR, "logdir": LOG_DIR, "user": user},
         "xvfb_unit": XVFB_UNIT % {"user": user, "display": DISPLAY_NUM,
                                   "displaynum": DISPLAY_NUM.lstrip(":"),
                                   "geometry": FB_GEOMETRY},
@@ -1013,7 +1045,10 @@ def cmd_stop(pve, args):
     vmid, ip = target(pve, args)
     log("stopping DF on VM %s%s"
         % (vmid, " (quicksave first)" if args.save else ""))
-    script = '''
+    # Same fix as systemd-stop.sh (decisions/DECISIONS.md 2026-09-11): quicksave
+    # is async, 45-80s+ observed, so a flat sleep before SIGTERM could kill
+    # dwarfort mid-write. Poll the active slot's world.sav mtime instead.
+    tail_script = '''
 cd %(game)s
 if ! pgrep -x dwarfort >/dev/null 2>&1; then
   echo "dwarfort is not running"
@@ -1021,7 +1056,29 @@ if ! pgrep -x dwarfort >/dev/null 2>&1; then
 fi
 if [ "%(save)s" = "1" ]; then
   echo "quicksave: $(./dfhack-run quicksave 2>&1 | tail -n1)"
-  sleep 5
+  slot_before="$(dfhack_lua "print(df.global.world.cur_savegame.save_dir)")"
+  mtime_before=0
+  if [ -n "$slot_before" ] && [ -f "$SAVE_DIR/$slot_before/world.sav" ]; then
+    mtime_before=$(stat -c %%Y "$SAVE_DIR/$slot_before/world.sav" 2>/dev/null || echo 0)
+  fi
+  landed=0
+  deadline=$(( $(date +%%s) + 90 ))
+  while [ "$(date +%%s)" -lt "$deadline" ]; do
+    sleep 3
+    slot_now="$(dfhack_lua "print(df.global.world.cur_savegame.save_dir)")"
+    if [ -n "$slot_now" ] && [ -f "$SAVE_DIR/$slot_now/world.sav" ]; then
+      mtime_now=$(stat -c %%Y "$SAVE_DIR/$slot_now/world.sav" 2>/dev/null || echo 0)
+      if [ "$slot_now" != "$slot_before" ] || [ "$mtime_now" -gt "$mtime_before" ]; then
+        landed=1
+        break
+      fi
+    fi
+  done
+  if [ "$landed" = "1" ]; then
+    echo "quicksave confirmed on disk (slot: ${slot_now:-$slot_before})"
+  else
+    echo "quicksave NOT confirmed within 90s -- stopping anyway"
+  fi
 fi
 pkill -TERM -x dwarfort || true
 for _ in $(seq 1 30); do
@@ -1034,7 +1091,8 @@ sleep 2
 if pgrep -x dwarfort >/dev/null 2>&1; then echo "still running"; exit 1; fi
 echo "stopped (killed)"
 ''' % {"game": GAME_DIR, "save": "1" if args.save else "0"}
-    proc = remote(pve.env, ip, script, "stop", timeout=180,
+    script = save_path_sh(pve.env) + dfhack_lua_sh() + tail_script
+    proc = remote(pve.env, ip, script, "stop", timeout=240,
                   dry_run=args.dry_run)
     if proc:
         for line in proc.stdout.strip().splitlines():
