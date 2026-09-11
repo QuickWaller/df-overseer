@@ -1313,43 +1313,55 @@ def cmd_lua(pve, args):
         raise PVEError("lua command exited %s" % proc.returncode)
 
 
-UI_HELPERS_SCRIPT = os.path.join(
-    os.path.dirname(os.path.abspath(__file__)), "dfhack", "df-overseer-ui.lua")
+DFHACK_SCRIPTS_DIR = os.path.join(
+    os.path.dirname(os.path.abspath(__file__)), "dfhack")
 
 
-def cmd_ui_install(pve, args):
-    """Deploy scripts/dfhack/df-overseer-ui.lua onto the guest's own
-    hack/scripts/ directory, so 'type'/'click TEXT'/'dump' are callable
-    directly (./dfhack-run df-overseer-ui click "Fortress") instead of
-    hand-writing a fresh Lua script over SSH for every single button click.
+def cmd_script_install(pve, args):
+    """Deploy any scripts/dfhack/<name>.lua onto the guest's own
+    hack/scripts/ directory, so './dfhack-run <name> ...' is callable
+    directly instead of hand-writing a fresh Lua script over SSH, or
+    scp'ing one ad hoc, for every new piece of automation.
 
-    Found 2026-09-10: that one-off-script-per-action pattern is what made
-    the whole embark-flow session slow, and re-derived the same
-    buffer-scan-and-click/retry technique from scratch each time instead of
-    reusing tested code. Plain automation logic, not game data or a secret
-    -- checked into this repo like any other script, unlike GRAPHICS_MODULES
-    or ART_FILES.
+    Generalizes what was cmd_ui_install (one hardcoded file) now that a
+    second script, df-overseer-labor.lua, exists and had only ever been
+    deployed by hand via plain scp -- see Working.md 2026-09-11. Same
+    tested remote()-over-stdin mechanism, just parameterized by name.
     """
     vmid, ip = target(pve, args)
-    with open(UI_HELPERS_SCRIPT, "r", encoding="utf-8") as f:
+    local_path = os.path.join(DFHACK_SCRIPTS_DIR, args.name + ".lua")
+    if not os.path.isfile(local_path):
+        raise PVEError("no such script: %s" % local_path)
+    with open(local_path, "r", encoding="utf-8") as f:
         lua_source = f.read()
+    remote_name = args.name + ".lua"
     # Built by concatenation, not %-formatting, because the Lua source itself
     # is full of %d/%s directives (string.format calls) that a % on the
     # combined string would try to consume as Python format args.
     script = (
         "mkdir -p " + GAME_DIR + "/hack/scripts\n"
-        "cat > " + GAME_DIR + "/hack/scripts/df-overseer-ui.lua <<'DF_OVERSEER_UI_EOF'\n"
+        "cat > " + GAME_DIR + "/hack/scripts/" + remote_name
+        + " <<'DF_SCRIPT_INSTALL_EOF'\n"
         + lua_source +
-        "\nDF_OVERSEER_UI_EOF\n"
+        "\nDF_SCRIPT_INSTALL_EOF\n"
         "echo installed\n"
     )
-    proc = remote(pve.env, ip, script, "ui-install", timeout=30,
+    proc = remote(pve.env, ip, script, "script-install", timeout=30,
                   dry_run=args.dry_run)
     if args.dry_run:
         return
     log("  " + proc.stdout.strip())
-    log("df-overseer-ui.lua deployed on VM %s -- try:"
-        " ./dfhack-run df-overseer-ui type" % vmid)
+    log("%s deployed on VM %s -- try: ./dfhack-run %s ..."
+        % (remote_name, vmid, args.name))
+
+
+def cmd_ui_install(pve, args):
+    """Back-compat alias for 'script-install df-overseer-ui' -- kept as its
+    own subcommand since it predates script-install and is already referenced
+    by name throughout docs/ and decisions/.
+    """
+    args.name = "df-overseer-ui"
+    cmd_script_install(pve, args)
 
 
 # --- verify / saves / backup ---------------------------------------------
@@ -2106,7 +2118,15 @@ def main():
     lua.add_argument("--timeout", type=int, default=60)
 
     add("ui-install", help="deploy df-overseer-ui.lua (type/click/dump"
-                            " helpers) onto the guest's hack/scripts/")
+                            " helpers) onto the guest's hack/scripts/"
+                            " -- alias for 'script-install df-overseer-ui'")
+
+    script_install = add("script-install",
+                         help="deploy any scripts/dfhack/<name>.lua onto the"
+                              " guest's hack/scripts/")
+    script_install.add_argument("name",
+                                help="script name without .lua, e.g."
+                                     " df-overseer-labor")
 
     add("saves", help="list worlds in the XDG save dir, with sizes")
 
@@ -2184,6 +2204,7 @@ def main():
         "gen": cmd_gen,
         "lua": cmd_lua,
         "ui-install": cmd_ui_install,
+        "script-install": cmd_script_install,
         "saves": cmd_saves,
         "backup": cmd_backup,
         "systemd": cmd_systemd,

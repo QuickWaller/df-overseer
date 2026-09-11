@@ -329,8 +329,8 @@ simulated input, so it ran safely alongside the user's newly-live
 personal-control VNC session (above) with no channel contention.
 
 **Next, not yet done:**
-1. A proper `install_df.py` deploy subcommand for this script, matching
-   `ui-install`'s pattern (currently `scp`'d ad hoc).
+1. ~~A proper `install_df.py` deploy subcommand for this script~~ — **done,
+   see below.**
 2. `near_landmark` in `unit-status`'s output is a placeholder (`x,y,z` only)
    until the landmark system on `perception-layer-experiments` merges — a
    different session's branch, not touched here.
@@ -339,6 +339,23 @@ personal-control VNC session (above) with no channel contention.
    judgment half (an actual policy: who should mine, who's idle too long,
    when to pull someone off hauling) is still unbuilt.
 4. ~~Whether to enable `autolabor`~~ — **done, see below.**
+
+### Generic `install_df.py script-install <name>` subcommand — done, local only, not yet run against VM 103
+
+Coordinated with peer session `df-automation-da` first (their subagent had
+VM 103's pause/save state in flux investigating combat detection, so this
+stayed local-only: code + `--dry-run` checks, no SSH). Generalizes
+`cmd_ui_install` (one hardcoded file) into `cmd_script_install`, which
+deploys any `scripts/dfhack/<name>.lua` by name — `ui-install` now survives
+as a thin alias (`args.name = "df-overseer-ui"`), confirmed byte-identical
+output via `--dry-run` before and after. Covers the still-open
+`df-overseer-labor.lua` deploy gap (was plain `scp`'d ad hoc) and, per
+da's suggestion, whatever combat-detection script their subagent lands
+next, without a third near-identical subcommand. `--dry-run` confirmed:
+correct payload for `df-overseer-labor`, byte-identical alias behavior for
+`ui-install`, and a clean `PVEError` (no silent no-op) for an unknown name.
+**Not yet actually run against VM 103** — no urgency, next session or once
+da's subagent clears can verify live with a real deploy.
 
 ### `autolabor` enabled on Uniboslan — verified live, persisted
 
