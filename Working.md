@@ -4,6 +4,34 @@ What's currently in progress. Remove an item once it's done, tabled, or
 shelved, don't mark it paused. Any session should read this and know what's
 actually going on right now.
 
+## Tool manifest built (2026-09-12, post-`/clear` session)
+
+`scripts/dfhack/TOOLS.yaml` built — the one item the take-stock pass below
+left outstanding. Per-CLI-subcommand metadata (not per-file): `effect`
+(read/mutate), `coordinate_bearing` (false/internal-only/true, each `true`
+annotated with why — spec-sanctioned exception, known gap, or out-of-scope
+embark tooling), `live_deployed`, `verified` (date or honestly
+`unverified`), and a `notes` pointer rather than re-narrated rationale.
+Doubles as a first draft of the still-missing MCP tool schema per design
+commitment #5.
+
+Auditing every command's `coordinate_bearing` field this way surfaced a
+**second, previously undocumented raw-coordinate leak**: `df-overseer-diff`'s
+`recent-combat`/`since-report` both print `pos=%d,%d,%d` via their shared
+`report_line()` helper, the same design-commitment-#1 violation as the
+already-known `df-overseer-labor unit-status` leak, just not written down
+anywhere until now. Recorded in the "Durable traps" list below and in
+`TOOLS.yaml` itself; not fixed yet, same as the labor leak — flagging, not
+silently patching, per this repo's own rule on docs/reality mismatches.
+
+Also: `home-lab-29` (peer session, 20h uptime) corrected this file's carried-
+forward quorum note on check-in — `pvecm status` confirmed `Quorate: Yes`,
+2/2, checked fresh the morning of 2026-09-12; SRV-02 rejoined the ring
+cleanly, the `pvecm expected 1` override on SRV-01 is stale. SRV-02's own
+crash-pattern stability (76 reboots/8 days, PSU-connector reseat, held clean
+since ~06:09 2026-09-12) is still genuinely open, not this repo's to fix.
+Updated in place below rather than left stale.
+
 ## HANDOVER - 2026-09-12 (end of session, written for a `/clear`)
 
 The entire prior handover (2026-09-11's end-of-session summary — the branch
@@ -34,14 +62,17 @@ separate no longer exists.**
 - **`learning/` exists**: `ledger/` and `predictions/` grouped under one
   parent (real code coupling, not just theme), done while `predictions/`
   was still untracked so it cost a `git mv` instead of a rename later.
-- **Quorum situation, relayed from `home-lab-29`, not resolved, just
-  current**: SRV-02 is physically back up, but SRV-01 is still running
-  with `pvecm expected 1` forced (temporary, non-persistent, not written to
-  `corosync.conf`). If SRV-02 has rejoined the corosync ring since coming
-  back, that's the two-nodes-disagreeing combination that caused a
-  `cfs-lock` hang once before. Not this repo's to fix — check `pvecm
-  status` before any Proxmox-API-level action on VM 103, don't assume
-  "resolved" still holds.
+- **Quorum: resolved, confirmed fresh by `home-lab-29` the morning of
+  2026-09-12** (`pvecm status`: `Quorate: Yes`, 2/2 votes, both nodes in
+  membership). SRV-02 rejoined the corosync ring cleanly; the `pvecm
+  expected 1` override on SRV-01 is stale, not something to route around
+  anymore. **Still genuinely open**: SRV-02's underlying stability —
+  76 reboots in 8 days, came back after a PSU-connector reseat, crashed a
+  few more times that evening, then held clean since ~06:09 2026-09-12. Not
+  declared fixed; a PSU brick swap is under consideration if it recurs.
+  Don't assume host uptime for anything relying on SRV-02. Not this repo's
+  to fix, just current context. VM 103 itself: running, paused, 15
+  citizens, 0 injured, untouched since this repo's last session.
 
 ### What actually happened today, compressed (full detail: `decisions/DECISIONS.md`'s 2026-09-12 rows)
 
@@ -52,10 +83,11 @@ separate no longer exists.**
    functional milestones (not dates), and argued against splitting the
    Lua tools into perception/action directories (every action tool is
    deliberately fused with its perception counterpart) in favor of a
-   small tool manifest instead. **The manifest itself is not built yet —
-   the one item from this pass still outstanding.** Its other
-   recommendations were acted on: merge the branch (done, above), group
-   `learning/` (done, above), fold `combat.lua`/`diff.lua` (done, above).
+   small tool manifest instead. **Built this session (see above),
+   closing the one item from this pass that was still outstanding.** Its
+   other recommendations were acted on: merge the branch (done, above),
+   group `learning/` (done, above), fold `combat.lua`/`diff.lua` (done,
+   above).
 3. **A bounded Haiku-driven autonomous-play experiment**, testing whether
    a cheaper model can navigate the coordinate-free perception/action
    tools at all. It explored correctly, then guessed a Z-level (`z=0`)
@@ -122,6 +154,12 @@ gotchas, and fresh findings without another doc home yet.
   own origin field before using them as a real coordinate.
 - NEW: **`df.global.world.burrows.all` does not exist** — the correct
   path is `df.global.plotinfo.burrows.list`.
+- NEW: **`df-overseer-diff`'s `recent-combat`/`since-report` leak raw
+  `pos=x,y,z`** for every combat/threat report (both go through the shared
+  `report_line()` helper) — a second, previously undocumented instance of
+  the same design-commitment-#1 violation as the known `df-overseer-labor
+  unit-status` leak below. Found 2026-09-12 building `scripts/dfhack/
+  TOOLS.yaml`'s coordinate-bearing audit, not yet fixed.
 - **Directly changing a live fort's pause state
   (`dfhack.world.SetPauseState(false)`) is blocked by Claude Code's own
   auto-mode classifier by default**, not something a bare mid-conversation
@@ -184,10 +222,14 @@ gotchas, and fresh findings without another doc home yet.
 - **Every deployed perception-layer tool deliberately strips coordinates
   before returning anything** — by design, matching commitment #1. Don't
   expect a coordinate back from any perception query; an action tool has
-  to compute and consume one internally, never return it. (Known
-  exception, not yet fixed: `df-overseer-labor unit-status` leaks raw
-  `pos=x,y,z` — out of scope for any perception/action experiment until
-  addressed.)
+  to compute and consume one internally, never return it. **Known
+  exceptions, not yet fixed** (both surfaced building `scripts/dfhack/
+  TOOLS.yaml`'s coordinate-bearing audit): `df-overseer-labor unit-status`
+  leaks raw `pos=x,y,z` for every citizen/threat row; NEW 2026-09-12,
+  previously undocumented — `df-overseer-diff`'s `recent-combat`/
+  `since-report` also leak raw `pos=x,y,z` (both go through the same
+  `report_line()` helper) for every combat/threat report. Neither is in
+  scope for a perception/action experiment until addressed.
 - **`unit-status hostile` (`dfhack.units.isDanger`/`isInvader`) is not a
   trustworthy fort-defense signal** — proven wrong in both directions the
   same day it was tested. Treat its output as "worth a second look,"
@@ -204,14 +246,15 @@ gotchas, and fresh findings without another doc home yet.
   signed PUT, fill in `IMAGE_BASE` in
   `willsmith-portfolio/public/dwarf-fortress/index.html`, commit, ask
   before pushing/deploying either repo.
-- **The tool manifest** (`scripts/dfhack/TOOLS.yaml` or similar) —
-  Opus's take-stock recommendation, agreed on, not yet built. Per-command
-  metadata (reads/mutates, coordinate-bearing, live-deployed, verified
-  date); doubles as a first draft of the still-missing MCP tool schema.
-  The clearest next build if this thread continues.
+- **DONE 2026-09-12: the tool manifest built** (`scripts/dfhack/TOOLS.yaml`),
+  see the "Tool manifest built" section above. Per-command (not per-file)
+  metadata; doubles as a first draft of the still-missing MCP tool schema.
 - **`df-overseer-labor unit-status`'s raw coordinate leak** — found
-  2026-09-11 setting up the Haiku experiment, real but low-urgency: the
-  only tool of the ten that doesn't strip coordinates before returning.
+  2026-09-11 setting up the Haiku experiment, real but low-urgency.
+- **NEW 2026-09-12: `df-overseer-diff`'s `recent-combat`/`since-report`
+  raw coordinate leak** — found building the tool manifest's
+  coordinate-bearing audit; same category of issue as the row above, not
+  yet fixed. See "Durable traps" above and `TOOLS.yaml` for detail.
 
 **Style note:** the user does not want em dashes in prose. Commas, colons,
 semicolons or full stops instead. Fine as structural separators.
