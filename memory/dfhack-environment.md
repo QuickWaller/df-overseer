@@ -86,6 +86,27 @@ Lua API. `mode`'s own doc also warns that most mode combinations corrupt saves.
 - `hack/scripts/prioritize.lua` — event-driven updates via the `eventful`
   plugin.
 
+## quickfort
+
+- **`quickfort run ... -c x,y,z` anchors a blueprint's top-left corner, not
+  its center.** Confirmed against `hack/docs/docs/tools/quickfort.txt`
+  ("the blueprint start position... is the upper left corner by default"),
+  not recalled from memory. This is easy to get backwards when a candidate
+  box is computed as (top-left, width, height) and a center coordinate gets
+  derived for display purposes elsewhere (e.g. landmark direction/distance
+  reporting): passing that center to `-c` silently shifts the real
+  designation by `(floor((w-1)/2), floor((h-1)/2))` tiles away from wherever
+  a reachability/adjacency check actually validated. Found live 2026-09-11
+  after this exact mixup broke both `dig_diggable_area`
+  (`df-overseer-diggable.lua`) and `build_open_area`
+  (`df-overseer-openarea.lua`) on `perception-layer-experiments`; the build
+  case happened to still work by luck (its candidates sit in broadly open
+  space), while the dig case produced a real, silently-unreachable
+  designation. Full trail: `decisions/DECISIONS.md` 2026-09-11 ("Root cause
+  found and fixed..."). **Any future tool that resolves a ranked
+  candidate box to a real coordinate for a `quickfort -c` call must pass the
+  box's true top-left, never a computed center.**
+
 ## Game-side facts
 
 - `prefs/init.txt` overrides `data/init/init_default.txt`. `FPS_CAP` and

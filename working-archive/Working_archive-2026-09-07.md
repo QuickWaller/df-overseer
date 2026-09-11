@@ -3375,3 +3375,249 @@ same branch-ownership/merge-timing question as the `diff.lua`/`combat.lua`
 overlap above — this is a real capability now, not just a proposal, but
 whether/how it lands anywhere permanent is still open.
 
+### Compliance eval harness: built, run against two providers, DeepSeek now the default — done for this session
+
+Picked up as this session's task specifically because it touched neither VM
+103 nor `perception-layer-experiments` (both held by a concurrent peer
+session's live subagent at the time) — research build-order item 1
+(`research/2026-08-25-learning-architecture.md` §7): replicate "Prompt Design
+at Scale"'s instruction-count-decay methodology against this project's own
+doctrine format and model, before any fort run depends on doctrine size being
+safe. Built `evals/compliance/`, mirroring `evals/perception/`'s structure and
+philosophy exactly. Gained a second provider mid-session
+(`harness/providers.py`, DeepSeek + any OpenAI-compatible endpoint) —
+deliberately, not speculatively: the user's own framing is that df-overseer is
+heading toward multiple concurrent sessions/roles via `openclaw` with model
+choice made *per role*, so "where does compliance collapse" only means
+something once asked of whichever model actually runs a given role.
+
+**Findings (`deepseek-chat`, complete and clean — the one to trust)**:
+perfect-response rate 70-83% at n=10/20, **collapsing to 0% at every n≥40**
+(earlier than the paper's own ~80-rule collapse for the models it tested).
+Per-rule pass rate degrades gently (97%→72%, n=10→160), and the collapse is
+concentrated almost entirely in `required_word` (20.6% pass rate at n=160 vs.
+`banned_word`'s 100%) — a real, actionable asymmetry: this model sustains
+*avoidance* rules far better than *inclusion* rules at scale, worth keeping in
+mind when phrasing real DF doctrine.
+
+**`claude-opus-5` — real data, but this is where it went wrong.** The
+original 180-cell sweep used `max_tokens=4000`; adaptive thinking at
+n=120/160 sometimes consumed the whole budget before any text was emitted
+(confirmed by reproducing it directly: one n=160 call spent 3469 of 4000
+tokens on thinking alone), so 27/180 cells came back empty — a harness bug,
+not a compliance finding, now fixed (`max_tokens` defaults to 16000). Cost was
+flagged mid-run with the two priciest batches (n=120/160) still ahead; asked
+directly, the user chose to let it finish and named model-cost-per-run as an
+open design question. It finished at ~$9. A rerun of the fixed n=120/160
+cells was started (max_tokens=12000, confirmed 0 empty responses in 46/60
+cells) — then the user's sharper call landed: **stop spending on Opus
+entirely, default the harness to DeepSeek, document what exists.** The rerun
+was killed via `TaskStop` mid-flight; its 46 valid rows are kept, not
+discarded. **Total session spend, computed from recorded token usage against
+published rates: ~$9-13 for `claude-opus-5` (~250 calls, overwhelmingly
+`thinking`-token output), ~$0.05-0.10 for `deepseek-chat` (184 calls)** — a
+~100x gap for comparable coverage. `run.py --provider` now defaults to
+`deepseek`; `anthropic` remains fully supported but opt-in only, and no
+further Anthropic runs happen without asking first. Opus's own
+perfect-response curve is noisy/non-monotonic across doctrine sizes at
+`--repeats 1` — flagged honestly as unresolved (needs more samples), not
+presented as a clean collapse point.
+
+Full write-up (with all the numbers and caveats above): `evals/compliance/README.md`.
+Full data: `evals/compliance/results/{deepseek-full,full,full-fix}-2026-09-11.jsonl`.
+Decision trail: `decisions/DECISIONS.md`, three 2026-09-11 rows (build,
+DeepSeek addition, cost overrun + correction).
+
+**Nothing left open on this thread for now** — the harness exists, is
+selftested, has real (if partly caveated) data from two providers, and
+defaults to the cheap one. A genuinely clean Opus collapse curve (more
+repeats, no empty-response artifacts) is a real next step but needs explicit
+go-ahead given the cost this session already spent finding that out.
+
+### Mechanical prediction grading built — `predictions/`, no game/API cost
+
+Picked up next once the compliance-eval thread closed, after correcting an
+earlier wrong claim that this was already done (the fort ledger was built
+2026-08-27; prediction grading, a separate build-order item, was not).
+Research build order item 3 (`research/2026-08-25-learning-architecture.md`
+§7): implements `docs/MEMORY-ARCHITECTURE.md`'s own `decision`/`expectation`/
+`check_at`/`signal` example as real, gradeable data. Reuses the ledger's own
+field-introspection (`ledger.store.get_path`/`field_source`/
+`assert_gradeable`) rather than duplicating it — a prediction's `signal` is a
+dotted path into the fort ledger, and `store.register()` refuses to write one
+that doesn't resolve to a `MECHANICAL`/`DERIVED` ledger field (the literal
+"reject predictions at write-time that don't resolve to a ledger/dossier
+field" from §1.3). Grading (`grade.grade()`) never reads the prediction's own
+`decision`/`expectation` prose, only the ledger row plus a closed predicate-op
+vocabulary — self-report structurally cannot leak into a grade.
+
+**Real scope limitation, stated not hidden**: `signal` can only resolve
+against the ledger, because the fort dossier the research spec also names
+(mid-fort working state) is still a design concept with no code. The design
+doc's own headline example — "food stores stop falling within 2 seasons" —
+has no matching ledger field and cannot be expressed yet; the doc's other
+example, "seal the caverns before year 3," works today
+(`design.caverns_sealed_year`). Selftest reuses the ledger's own worked
+example fixture (`ledger/examples/example-fort.json`) rather than inventing a
+second one, and passed clean on the first real run — including the tricky
+case that several ledger fields are legitimately `null` as a fact (no breach
+happened), which `grade()` handles correctly for `exists`/`not_exists` but
+(deliberately) grades `unresolvable` for every other op, since it cannot tell
+"doesn't apply" from "not yet known" without per-field judgement.
+
+Full detail: `predictions/README.md`, `decisions/DECISIONS.md` 2026-09-11.
+**Next, not yet done**: nothing calls `register()` from a real decision yet —
+same "schema had to exist before any row gets written" reasoning as the
+ledger. The fort dossier gap is a real, separate, still-open item, not solved
+here.
+
+### find_diggable_area: built and live-verified
+
+Picked up as the clearest, best-scoped next step flagged in this file's own
+handover above — the inverse of `find_open_area` for solid terrain, closing
+the gap the autonomous-play experiment found (this file's handover item 8,
+`decisions/DECISIONS.md` 2026-09-11). Built on `perception-layer-experiments`
+(worktree `C:\website-projects\df-automation-perception`, not `main`):
+`scripts/dfhack/df-overseer-diggable.lua`, committed locally (`f741cfc`), not
+pushed. Mirrors `df-overseer-openarea.lua`'s scoped maximal-rectangle scan,
+inverted (non-walkable, `WALL`-shaped, natural-material tiles instead of
+walkable ones), with the v1 scope the corrected spec calls for: only
+candidates that directly border the existing walkable network, documented as
+a reasonable first cut rather than a validity claim.
+
+Enum names (`df.tiletype_shape.WALL`, `df.tiletype_material.{STONE,SOIL,
+FEATURE,MINERAL,LAVA_STONE,FROZEN_LIQUID}`) were checked against the actual
+installed DFHack 53.16-r1.1 source (`hack/lua/tile-material.lua`'s own
+`BasicMats` table, `hack/docs/docs/tools/tiletypes.txt`) before writing the
+diggability check, not recalled from memory or web results, per this
+project's "mark verified vs proposed" rule.
+
+**Live-verified against VM 103, same session.** Before touching the VM:
+confirmed it was actually running via a live Proxmox API call
+(`provision_vm.py status`), not assumed — worth doing specifically because
+`home-lab-29` flagged mid-session that VM 103 had just been stopped by the
+`citadel` quorum incident and its restart wasn't independently confirmed
+yet. Gave both peers a heads-up first, per the standing rule, since this
+still touches the live VM even though it's read-only.
+
+Deployed via the repo's own `ui-install` tool (deploys every
+`scripts/dfhack/df-overseer-*.lua`), not a raw ad hoc SSH write — the first
+attempt at a plain `ssh`+heredoc was correctly blocked by the permission
+classifier, and the repo's own established deploy path worked instead
+without needing an override.
+
+**A genuinely informative pair of results, not just "it ran"**: near
+"Embark Site" (surface, z=169) it correctly returned `[]` — investigated,
+not accepted blind: a live tile-material probe found 64 nearby
+`WALL`-shaped tiles, all `TREE` material, correctly excluded (trees aren't
+mining-diggable). Near "Stockpile #1" (underground, z=168, 872 `SOIL` wall
+tiles nearby per the same probe), it returned 5 real ranked, non-overlapping,
+network-adjacent 3x3 `SOIL` candidates with plausible direction/distance
+fields and no raw coordinate in the output. Fort state re-confirmed
+unchanged immediately after, directly against `df.global`: `pause_state=true`,
+7 citizens — the whole pass was read-only, no designation, no mutation.
+
+**Update, same session: `dig_diggable_area`/`dig` built**, closing that gap.
+Committed locally on `perception-layer-experiments` (`fa47459`), not pushed.
+Mirrors `build_open_area`/`build` exactly rather than the research spec's
+original `designate_dig(shape, pos, dims)` sketch (which assumed an upstream
+tool would supply `pos` and never specified one): re-runs `find_diggable_area`'s
+own `ranked_candidates`, resolves the chosen candidate's real `cx,cy`
+internally, and calls `quickfort run BLUEPRINT_FILE -c cx,cy,z` directly — the
+coordinate never leaves the function's local scope, checked directly against
+the function body, same guarantee as `build_open_area`'s.
+
+**Update, same session: live-tested for real, user's explicit go-ahead** (a
+Bash permission classifier blocked the first attempt; user approved it
+interactively rather than pre-authorizing a standing rule — see
+`decisions/DECISIONS.md` if a permanent allow rule for
+`scripts/install_df.py *` gets added later, it still needs adding by hand,
+edits to `.claude/settings.json` are blocked for this session too).
+
+**Mechanically, `dig_diggable_area` worked exactly as designed.** Picked the
+tool's own real rank-1 candidate (5x5 SOIL, one tile east of Stockpile #2,
+no coordinate ever seen), called it, got `quickfort_ok: true,
+"Tiles designated for digging": 25` — independently re-confirmed by scanning
+the actual map designation flags directly, not trusting quickfort's
+self-report: exactly 25 real tiles found flagged. (Caught and fixed one
+process bug getting here: forgot to redeploy the script after adding
+`dig_diggable_area` to the file, first call errored on a nil function —
+`ui-install` fixes that, now a standing reminder to redeploy after every
+edit to a file already live on the VM.)
+
+**But the reachability claim did not hold up live — a real bug, not a clean
+success.** Unpaused to watch a dwarf claim the job (2 idle citizens with
+`MINE` labor, zero burrows, no alerts) — after ~14 in-game days, zero `Dig`
+jobs ever appeared. Investigated rather than assumed: a direct re-scan of
+the designated box's entire 8-connected ring (all edges + all 4 corners)
+found `getWalkableGroup == 0` everywhere — genuinely not bordered by the
+walkable network, contradicting `find_diggable_area`'s own
+`borders_walkable_network: true` for this exact candidate at selection time.
+**Leading hypothesis, not confirmed**: the adjacency scan ran entirely while
+the fort was paused, and `getWalkableGroup`'s own documented caveat (its
+cache "only updates while the game is unpaused") means a border tile no
+dwarf has actually pathed near could return a stale or never-computed value
+that isn't trustworthy either way. Not root-caused this session — flagged
+honestly, not diagnosed with certainty. **Next concrete step**: fix or at
+least test around this (try a brief unpause before running `find`/`dig`
+rather than entirely paused) before trusting `dig` again.
+
+**Real, incidental fort progress happened while unpaused, not buried**:
+population went 7→15 (a migrant wave, confirmed via `get_overview`, in-game
+date year 30 month 5 day 14→28), and one citizen (unit 192, one of the two
+idle miners) now shows one wound — not deeply investigated (struct field
+names for wound severity didn't match on a quick attempt), but
+`get_overview`'s `alerts` stayed empty throughout. Worth a look next session,
+same "second look, not confirmed-safe" posture already applied to
+`unit-status hostile`.
+
+**The 25-tile dig designation was left in place**, not undesignated — harmless
+clutter no dwarf will ever work as things stand, a faithful record of what
+actually happened rather than quietly cleaned up. Re-paused and
+quicksave-confirmed (slot rotated `autosave 3`→`autosave 1`) before ending
+this thread. Full trail: `decisions/DECISIONS.md` 2026-09-11 ("`dig`
+live-tested for real...").
+
+**Update, same session: user said keep chasing it — root cause found, fixed,
+re-confirmed working.** The "leading hypothesis" above (paused-cache
+staleness) was wrong. Checked quickfort's own docs
+(`hack/docs/docs/tools/quickfort.txt`) before guessing further: `-c` anchors
+a blueprint's **upper-left corner by default**, not its center. Both
+`dig_diggable_area` and `build_open_area` were computing the candidate box's
+*center* (`c.x + floor((w-1)/2)`, etc.) and passing that to `-c` — silently
+shifting every real dig/build by that offset away from the box actually
+validated as bordering the walkable network. Confirmed empirically, not just
+from the docs: a direct re-scan of the box the algorithm had actually
+validated showed real walkable neighbors on its ring; the box that got
+shifted-and-dug showed none. **`build_open_area` had the exact same bug the
+whole time** — Stockpile #2 only worked because `find_open_area`'s
+candidates sit inside broadly open space, so the shift happened to still
+land on free tiles. Luck, not correctness.
+
+**Fixed in both files**: pass the box's real top-left (`c.x, c.y`) to
+quickfort, not the computed center. `cx,cy` stays right for
+`nearest_landmark`'s direction/distance reporting, where center is the
+correct choice — only the quickfort call itself was wrong.
+`df-overseer-diggable.lua`'s fix is committed on `perception-layer-experiments`
+(`2d0eb7b`, not pushed). `df-overseer-openarea.lua`'s fix is applied in the
+worktree but deliberately left **uncommitted**, matching that file's own
+pre-existing uncommitted `build_open_area` state — the fix and its
+rationale are in a comment right at the fixed line, for whoever eventually
+commits or reconciles that file.
+
+**Live-reconfirmed end to end, with the user's explicit go-ahead for each
+mutating step** (a second permission prompt for unpausing was also blocked
+by the classifier; user approved it live via `AskUserQuestion`). Redeployed
+both fixed files, re-ran the identical `dig_diggable_area` call — this time
+it designated at the correct top-left (bounding box `100,101` to `106,107`,
+41 tiles total: this run's 25 plus 16 left over from the buggy run,
+overlapping in a 3x3 region — the arithmetic checks out exactly). Unpaused:
+real `Dig` jobs appeared almost immediately (8 jobs, 2 already claimed on
+the first check), and by the next check **all 41 tiles were fully dug, zero
+jobs remaining**. The loop is genuinely closed now, not just mechanically
+plausible. Re-paused, quicksave-confirmed (slot `autosave 1`→`autosave 2`).
+**Incidental good news**: the citizen with the unconfirmed wound from
+earlier now shows zero wounds — resolved on its own. Population steady at
+15, no fort alerts throughout. Full trail: `decisions/DECISIONS.md`
+2026-09-11 ("Root cause found and fixed...").
+
