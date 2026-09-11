@@ -194,7 +194,11 @@ or `decisions/DECISIONS.md`, not here.
   eventful-callback firing genuinely verified, not just the registration
   calls), `find_open_area` for built terrain (item 6), `find_chokepoints`
   (item 7, first half — `rank_candidate_sites` genuinely blocked, needs
-  `resource_summary`/threat data that don't exist yet), and `get_stuck_jobs`
+  `resource_summary`/threat data that don't exist yet; **its scoring
+  formula's spec now also covers "site the brewery near the farming room"**,
+  proximity to another *named room by kind*, not just raw resources —
+  addendum added 2026-09-11, `research/2026-08-25-spatial-perception.md`
+  §6, before this gets built so it isn't missed), and `get_stuck_jobs`
   (item 8) are all built and verified live against the real fort, all 8
   commits pushed to `origin/perception-layer-experiments`. **Still
   deliberately unmerged into `main`** — user's explicit call (2026-09-11):
