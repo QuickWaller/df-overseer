@@ -1,0 +1,692 @@
+# Agent Architecture
+
+How the overseer is actually built: what components exist, who may act, how they
+communicate, what they read, and how they learn.
+
+> **Status: design artifact, written 2026-09-12. None of this is built.**
+> It is the record of a design conversation, not a report on working code.
+> Anything below marked **(verified)** cites something this project has already
+> run and confirmed; everything else is **proposed** and may not survive contact
+> with the real primitives. Four research briefs are out as of writing
+> (`research/2026-09-12-*`) precisely because six mechanisms here rest on
+> capabilities nobody has checked. Read those before building.
+
+Companion documents: [`PURPOSE.md`](PURPOSE.md) for the design commitments this
+must not break, [`MEMORY-ARCHITECTURE.md`](MEMORY-ARCHITECTURE.md) for the
+learning substrate this extends, `decisions/DECISIONS.md` 2026-09-12 rows for
+the calls made here and why.
+
+---
+
+## 1. Principles
+
+Eight rules. Everything below is a consequence of one of them, and a change to
+one of them invalidates the parts that rest on it.
+
+1. **If it is computable, it is a tool. An agent exists only where there is
+   judgment under uncertainty.** This is design commitment #2 restated. It is
+   the test applied to every proposed role, and it demoted two of them to code.
+2. **One writer.** Exactly one component may mutate the fortress. DF has no
+   transaction boundary, so parallel writers would require a reservation layer
+   that costs more than it buys at five frames per second.
+3. **Specialists propose, the Overseer decides.** Advisors are read-only. Their
+   only write is appending a proposal. The chain of command is the mechanism,
+   not a metaphor.
+4. **Speed comes from precommitment, not from more actors.** An agent round trip
+   is tens of seconds. A precompiled reflex is milliseconds. Anything that must
+   be fast is decided in advance and executed by code.
+5. **Every message is a structured record.** Agents communicate by tool call
+   with typed fields, never by prose. The audit log is therefore the
+   communication channel itself, not a transcript written alongside it.
+6. **Confidence is stated by tools and measured from outcomes. It is never
+   self-reported into a decision.** LLM self-assessment is confident and largely
+   uncorrelated with truth (`decisions/DECISIONS.md` 2026-08-25).
+7. **Prompt size must not scale with fortress size.** A fort at 100 dwarves has
+   many times the raw state of one at 15. Any representation that grows with the
+   fort will fail exactly when the fort becomes interesting.
+8. **A role is defined by its tool allowlist.** Prompts are editable opinions;
+   the allowlist is the actual boundary, and it is what makes a role swappable.
+
+---
+
+## 2. Components
+
+| Component | Kind | Runs | May write to the fort |
+|---|---|---|---|
+| **Sentry** | code | continuously, seconds | yes, reflexes only, from playbooks |
+| **Triage** | code | every heartbeat | no |
+| **Projection** | code | per cycle | no |
+| **Overseer** | model, strongest | when woken | **yes, sole general writer** |
+| **Specialists** | models, per role | when woken, in parallel | no, propose only |
+
+Two of the five are code with no model in them. That is deliberate: the
+components responsible for keeping the fortress alive and for keeping costs
+bounded are the ones that must not be probabilistic.
+
+### Sentry
+
+Code, supervised by systemd alongside the existing DF units. Polls cheap signals
+every few seconds and does three things:
+
+- **Executes reflexes** from playbooks when a trigger fires. No model in the
+  loop, no pause needed for most of them.
+- **Escalates**, using the graded response in §6, up to pausing the game and
+  waking the Overseer.
+- **Publishes state** (`normal` / `throttled` / `paused`, with trigger, game
+  tick and expected duration) as a small JSON file for the stream banner (§8).
+
+The Sentry is the only component whose failure is fatal to the fortress, which
+is why it holds no model and why it carries a dead man's handle (§6).
+
+### Triage
+
+Code, one call per heartbeat: read the diff since the last cycle, apply
+thresholds, decide whether to wake anyone. **A quiet cycle costs zero tokens.**
+Given how little changes in a minute at `FPS_CAP:5`, most cycles should be
+quiet. This single component is the main defence against the cost profile that
+makes a resident roster unaffordable.
+
+Built on `get_diff_since` (**verified**: live `eventful` callback firing
+confirmed, `decisions/DECISIONS.md` 2026-09-11).
+
+### Projection
+
+Code. Takes one snapshot and renders the per-role, per-tier views described in
+§5. Deterministic, so it is unit-testable and contributes no variance.
+
+### Overseer
+
+The only agent that acts. Reads Tier 0 signals plus the proposal queue, resolves
+conflicts, sets priorities, enforces the work-in-progress limit, writes an
+ordered plan, executes it. Also, during quiet cycles, does the deliberate work
+that makes fast response possible: **writing and revising playbooks**.
+
+Strongest available model. Its outage is not fatal (§9), so it is the right
+place to spend capability rather than reliability.
+
+### Specialists
+
+Read-only advisors, one per domain, run in parallel on a shared snapshot. Each
+gets a narrow projection and may call exactly one write tool: `propose`.
+
+---
+
+## 3. The roster
+
+| Role | Owns | Explicitly does not own | Cadence |
+|---|---|---|---|
+| **Overseer** | Arbitration, priority, the plan, the WIP limit, playbook revision, the calendar | Domain analysis | Woken by Triage or Sentry |
+| **Architect** | Rooms, workshops, stockpile siting, smoothing, dig order | Anything military; what to produce | Called |
+| **Quartermaster** | Food, drink, seeds, work orders, stock thresholds | Where things go physically | Called |
+| **Marshal** | Military posture, burrows, squads, equipment, training; post-fight triage. **Deliverable is playbooks, not live orders** | Real-time tactics (see §11) | Called, and on threat events |
+| **Consultant** | DF domain knowledge, wiki and community practice, cited | Any fort-specific decision | On demand only |
+| **Chronicler** | The history, written for humans | Any decision at all | Cheap model, per cycle |
+
+Two roles that were proposed and **rejected as agents**, per principle 1:
+
+- **Efficiency analysis.** Idle counts, stalled jobs, hauling distances and
+  unlinked stockpiles are deterministic analysis over structured state. It
+  became a tool that returns ranked findings. An LLM "running algorithms" is
+  nondeterministic and expensive at something code does exactly.
+- **Safety veto.** Fort-enders (aquifer breach, magma, unsealed caverns,
+  atom-smashing something alive) are enforced as **refusals in the tool layer**,
+  not as an agent's remembered vigilance. A guardrail that can be forgotten is
+  not a guardrail.
+
+---
+
+## 4. Communication
+
+### The queue is the channel and the audit log
+
+One append-only record per fort. Specialists write proposals to it; the Overseer
+writes plans and decisions to it. Nothing else carries meaning between agents.
+Because it is the channel rather than a log of the channel, an unaudited
+communication is structurally impossible.
+
+### No peer-to-peer chat in v1
+
+Specialists do not talk to each other. Free-form agent chat scales cost faster
+than value and propagates errors, because an LLM treats a peer's confident
+assertion as evidence. If a specialist needs another's input, it is routed as a
+request through the Overseer, which keeps it in the log.
+
+This is the single most likely thing in this document to be wrong, and it is the
+load-bearing question of `research/2026-09-12-multi-agent-architecture-prior-art.md`.
+
+### Writes are tool calls; reads are XML
+
+A specialist **cannot emit prose into the queue.** It calls `propose(...)` with
+typed fields, validated at write time, and a malformed proposal is refused. That
+guarantees the queue is machine-readable forever, and it means schema violations
+surface immediately instead of becoming a parsing problem later.
+
+Records are rendered **as XML** when placed into a prompt, which is the form
+models handle most reliably.
+
+Proposal record:
+
+```xml
+<proposal id="p-0142" role="architect" cycle="317" snapshot="s-0317">
+  <type>stockpile_siting</type>          <!-- closed vocabulary, see below -->
+  <summary>Site a food stockpile adjacent to the Dining Hall.</summary>
+  <rationale>Hauling distance from the still is the largest single
+    contributor to current idle-hauler time.</rationale>
+  <prediction signal="hauling.still_to_food.tiles" op="lt" value="12"
+              check_after_ticks="20000"/>
+  <cost estimate="41" unit="dwarf_ticks"/>
+  <suggested_priority>4</suggested_priority>       <!-- DF 1-7 -->
+  <preconditions>
+    <requires landmark="Dining Hall" state="exists"/>
+    <requires area="candidate_3" state="unclaimed"/>
+  </preconditions>
+  <public_rationale>The brewers are walking too far. Put the food
+    beside the dining hall.</public_rationale>
+</proposal>
+```
+
+Four fields earn their place:
+
+- **`type` comes from a closed vocabulary.** Without it, every proposal is
+  bespoke, no two are ever the same kind of decision, and no hit rate can ever
+  accumulate. The whole calibration scheme in §10 fails without this one field.
+- **`prediction` is falsifiable and mechanically gradeable**, its `signal` a
+  dotted path validated against the ledger's own field registry (**verified**
+  mechanism: `learning/predictions/` already validates signals against
+  `ledger.store.field_source` and refuses anything not `MECHANICAL`/`DERIVED`).
+- **`preconditions`** are what the action tool re-checks at execution time (§9).
+- **`public_rationale`** is written deliberately for an audience, and is the only
+  reasoning field that reaches the public stream (§8).
+
+### Wake events
+
+A **closed** vocabulary, each with a severity and a named owning role, so that no
+event can arrive with nobody responsible for it:
+
+`hostile_detected`, `breach`, `cave_in`, `unit_critical`, `migrant_wave`,
+`caravan_arrived`, `job_stalled`, `stock_below_threshold`, `season_change`.
+
+Which of these have a real DFHack event and which need polling is an open
+question, being checked in `research/2026-09-12-dfhack-capability-checks.md`.
+
+**Only the Sentry and the Overseer may wake anyone.** Specialists cannot wake
+each other, which forecloses wake loops.
+
+Each role keeps **its own cursor** into the diff stream, so a woken specialist
+receives "what changed in your domain since you last woke" rather than a general
+briefing. Cheaper and sharper, and `get_diff_since` already has the
+since-a-point shape for it.
+
+---
+
+## 5. Information architecture
+
+### One snapshot, many projections
+
+**A shared snapshot is not a shared briefing.** One canonical read of the world
+per cycle, immutable, stamped with the **game tick** (not just wall clock) and
+with the tool versions that produced it. Every specialist in that cycle reads
+only from it, through its own projection.
+
+Why the snapshot must be shared: DF keeps running while specialists think. If
+the Architect reads at t=0 and the Marshal at t=12s, they write proposals about
+two different worlds, and the Overseer cannot tell whether a disagreement is
+judgment or timing. The concrete failure: the Architect proposes a room reached
+through the east corridor, the Marshal (twelve seconds later, hostile now
+visible) proposes sealing that corridor, both are correct at their own read
+time, and accepting both digs a sealed room.
+
+Why the projection must not be shared: the Marshal has no use for stockpile
+contents, and every token of it costs money and dilutes attention.
+
+Two further payoffs of snapshots, both real:
+
+- **Replayability.** A snapshot plus the proposals it produced is a
+  self-contained test case. It is the only way to A/B two models on the same
+  situation, because the live world is never the same twice. This is how per-role
+  model selection becomes an eval rather than a guess.
+- **Archive.** Snapshots are exactly the accumulating experiment data the
+  project's public-report goal wants.
+
+### Three tiers, earned
+
+| Tier | Content | Scale | Read by |
+|---|---|---|---|
+| **0, signals** | Numbers and booleans only. Booze 38, idle 5, alerts 0, stalled 2, food-days 47 | O(1) in fort size | Triage, Overseer by default |
+| **1, briefing** | Named-landmark / exits-graph summary, scoped to one domain | O(landmarks) | A woken specialist |
+| **2, detail** | Per-unit, per-stockpile, per-job drill-down | O(fort) | Only on a flagged anomaly, on request |
+
+**An agent earns its way down the tiers.** Start cheapest, drill only on
+something flagged. Tier 2 is never in a default prompt, which is what keeps
+principle 7 true.
+
+Note that **the roster is itself a compression scheme**: six specialists reading
+Tier 1 in narrow domains and emitting a paragraph each is far cheaper than one
+brain reading everything. The org chart and the token budget want the same shape.
+
+### What the code layer owes the models
+
+Every number a model would otherwise compute, code computes. Specifically:
+
+- **Aggregation**: counts, totals, rates of change.
+- **Anomaly detection instead of reporting.** Never 200 job rows; "2 jobs
+  stalled beyond 500 ticks".
+- **Deltas, not states** (`get_diff_since`).
+- **Ranking** (the pattern `find_open_area` and `find_diggable_area` already
+  set: ranked, named candidates, **verified**).
+- **Thresholding**: continuous state to named conditions.
+- **Derived metrics**: food-days remaining, booze-days remaining, hauling
+  distance, military coverage. Food-days is the exemplar, one integer replacing
+  an entire inventory listing, and arithmetic over many rows is precisely what
+  models are worst at.
+
+This is not a new philosophy. It is the perception layer's existing one
+(commitments #1 and #3, no rendered map, computed facts asserted in text)
+extended from spatial representation to volume.
+
+---
+
+## 6. Urgency: a graded response
+
+Because the fort is an ambient display and a public stream, a frequently frozen
+fortress is a failure, not a safe default. So the Sentry has four levels rather
+than one:
+
+| Level | Mechanism | Game time | Use |
+|---|---|---|---|
+| **Reflex** | Playbook, executed by code | runs normally | Anything precompilable: raise the bridge, forbid a breach, route to a burrow |
+| **Throttle** | Lower the frame cap | runs slowly | Thinking time needed, freeze not warranted. **Unverified**, see below |
+| **Pause** | Stop the game | stopped | Urgent *and* not precompilable. Rare, budgeted, logged |
+| **Alert** | Notify the human | either | Beyond the roster's authority |
+
+Two notes on the mechanics. Throttling depends on the frame cap being settable
+at runtime, which is **unverified** and is question 1 of
+`research/2026-09-12-dfhack-capability-checks.md`. And pausing is the safe
+direction while **resuming is the sensitive one** (`Working.md` records that
+flipping pause state is gated here), so the asymmetry is deliberate.
+
+How few things are genuinely sub-minute urgent is worth stating, because it is
+the reason this tiering works: a siege takes many in-game minutes to cross the
+map, starvation takes seasons, mood spirals take weeks. The fast killers are a
+short enumerable list: water or magma breach, a dwarf bleeding out, a cave-in,
+something already inside the walls. Pausing should be rare **by construction**.
+
+### Playbooks, and why they must be data
+
+The Overseer's quiet-cycle work includes writing contingencies: *if a siege is
+detected, raise the bridge, station squads at the entrance, pull everyone inside
+burrow Home, resume when clear.* The Sentry then executes with no pause and no
+model call. **This, and not extra actors, is the answer to reaction latency.**
+
+A playbook is **structured data, never prose**: triggers, thresholds and actions
+as typed fields. A threshold you can tune is a threshold you can learn; a
+paragraph of instructions can only be rewritten. And **no reflex retunes
+itself**: the Overseer proposes threshold changes through the normal queue,
+auditable like any other decision. Silent self-modification would destroy the
+ability to explain what the fortress did.
+
+### The dead man's handle
+
+If the Sentry pauses and the Overseer never comes back, the fort freezes
+indefinitely, which quietly defeats "runs unattended" and is visible to anyone
+watching the public feed. So: **auto-resume on timeout, plus an alert.** A
+pause must expire.
+
+### Reflexes are logged, and that is how the threat sensor gets fixed
+
+Every firing records the trigger, the world state at fire, the action, its
+measured cost, and a follow-up check. What this yields, honestly:
+
+- **Cost accounting.** Work stopped, dwarves locked out, a caravan turned away,
+  hauling halted for N ticks. Directly measurable.
+- **False-positive rate.** Fired on `hostile_detected`, and post-hoc the hostile
+  was a cavern demon forty z-levels down behind solid rock. Also directly
+  measurable, and this matters immediately: `unit-status hostile` is **verified
+  unreliable in both directions** (`decisions/DECISIONS.md` 2026-09-11, it
+  missed a real kea attack and flagged harmless demons). **The reflex log is the
+  dataset that repairs that sensor.** That alone justifies building it.
+- **Trigger tuning**, from base rates over many firings.
+
+What it cannot yield: **whether a reflex ever saved the fortress.** That needs a
+counterfactual, and the counterfactual harness rests on DF replay determinism,
+which this repo records as unverified. Stated here so it is not quietly
+overclaimed later.
+
+The practical consequence: since benefit is unprovable and cost is measurable,
+**keep the reflex set small and cost-capped.** Unprovable benefit plus
+measurable cost is how a system accumulates expensive superstitions.
+
+---
+
+## 7. Write authority
+
+### Single writer in v1
+
+Only the Overseer acts. The argument is not tidiness, it is that DF offers no
+transaction boundary: two actors that can both designate and both assign labor
+will corrupt each other's work, and preventing that means building reservations
+and locking, which is strictly more work than a serial decider and buys nothing
+at this tick rate.
+
+### What is sliceable and what is not
+
+The write paths already fall into two classes:
+
+- **Cleanly sliceable: DFHack Lua and quickfort.** `quickfort run -c x,y,z`
+  takes an explicit absolute anchor (**verified**, and note the anchor is the
+  blueprint's **top-left**, not its centre, a bug this project already paid for
+  twice, `decisions/DECISIONS.md` 2026-09-11). No dependence on cursor or screen
+  state.
+- **Never sliceable: the UI automation path.** `df-overseer-ui.lua` and
+  `xdotool` depend on one keyboard, one mouse, one focused screen, one cursor.
+  Concurrent menu driving would corrupt input in near-undebuggable ways. If
+  parallel writers are ever allowed, **the UI path is a single mutex-held
+  resource**, and ideally steady-state play never touches it (it was needed for
+  embark, which is one-time bootstrap).
+
+Crossed dependencies that are not cursor-shaped but bite the same way:
+designations over overlapping tiles; `autolabor`, which is a **global policy
+writer already enabled on the live fort** (**verified**, 2026-09-11) and will
+reassign labors a specialist sets by hand; burrows, where military assignment
+meets civilian restriction; the manager work-order queue, a single ordered list
+where order is the semantics; pause state, global, with a nasty race if one
+actor resumes while another assumes frozen; and `dfhack.persistent`, shared
+mutable state behind the landmark system.
+
+### If throughput ever justifies carving
+
+Escalate to **single-writer-per-resource**, not to multiple general writers.
+Ranked by whether carving pays:
+
+1. **Quartermaster: the clean candidate.** Work orders and stockpile settings
+   are a named, separate subsystem, largely disjoint from tiles. Frequent,
+   fire-and-forget, no contention if it is the sole writer there.
+2. **Marshal: carvable with one documented interlock** (the bridge, which the
+   Quartermaster cares about for caravans; and burrows, which meet civilian
+   labor).
+3. **Architect: the worst candidate.** Touches the most shared state, and is
+   slow and rare, so carving it buys the least.
+
+The decisive argument: **carving only pays for a role that is both urgent and
+frequent, and playbooks already gave the urgent path its own fast lane.** What
+remains is throughput, which has not been measured and should not be pre-solved.
+
+So: v1 single writer; Quartermaster designated first carve-out candidate;
+allowlists designed so that carve is a config change rather than a rewrite. The
+evidence to settle it is being gathered in
+`research/2026-09-12-write-conflict-matrix.md`, and mechanically gated on
+whether concurrent `dfhack-run` calls are even safe (question 3 of the
+capability checks).
+
+Costs of carving, recorded so the trade is explicit: you lose the single
+coherent plan, the WIP limit fragments per role so the fort can again accumulate
+half-finished projects, and the audit log becomes interleaved rather than an
+ordered narrative.
+
+### Staleness: optimistic validation
+
+Distinct from snapshot consistency (§5) and often conflated with it. The
+snapshot is stale by the time the Overseer acts, so **every action tool
+re-validates the proposal's `preconditions` against live state and refuses if
+the world moved.** That is optimistic concurrency, and it is the cheap version
+of the locking layer we declined to build.
+
+---
+
+## 8. The public reasoning stream
+
+The project's own position is that the distinctive content is the reasoning
+beside the image, not the image. A fort where you watch six specialists argue and
+an overseer rule on it is better viewing than a fort that merely moves.
+
+**Publish the structured stream, not raw thinking.** Raw chain-of-thought is
+long, repetitive, poor content, and it is where accidents live: tool errors carry
+file paths, stack traces carry host details, and this is a public page in a
+project that keeps infrastructure specifics out of a public repo on purpose.
+The queue is already structured, so the public feed is a *rendering* of it, at
+near-zero extra cost.
+
+Three conditions, all load-bearing:
+
+1. **Allowlist the fields published. Never regex-redact a firehose.** A denylist
+   fails silently, and silent failure on a public page cannot be walked back.
+   Published fields: `role`, `type`, `public_rationale`, the decision and its
+   priority. Nothing else.
+2. **Delay it** by thirty to sixty seconds, so a filter can run and a kill
+   switch exists.
+3. **Sentry state is published too**, so a throttle or pause reads as visible
+   deliberation ("Overseer is deciding: siege response") rather than as a crash.
+
+Mechanism: the Sentry's status JSON plus a queue rendering, read by the existing
+stream page beside the noVNC frame. Deliberately **outside the game**, because
+anything drawing into DF's window is a write path into the thing we are
+observing, and this project has been bitten by input-path surprises before. A
+DFHack in-game overlay would look better and is question 2 of the capability
+checks.
+
+Publishing is outward-facing, so it needs explicit go-ahead and its own register
+row at the time, not merely this design note.
+
+---
+
+## 9. Reliability
+
+**The Overseer does not need to be the most survivable component, because its
+outage is not fatal.** A fortress that makes no decisions for six hours is fine.
+A fortress with no watchdog is not.
+
+So reliability is held by code under systemd: the Sentry, save rotation, the
+existing DF units. The agent host sits above that floor and may crash. This
+inverts the intuition that the brain should be the sturdiest thing, and it is
+why the Overseer seat takes the most capable model rather than the most reliable
+host.
+
+**The survival property that actually matters is crash-consistency, not
+uptime.** The damaging failure is dying halfway through applying a plan, leaving
+the fort in a state nobody recorded. So the Overseer **writes its ordered plan to
+the queue before executing, and marks each step done as it goes**: the queue is
+a write-ahead log. A crash mid-plan is then recoverable and re-application is
+detectable. That buys more real survival than any choice of host, and it is ours
+to build rather than something to select for.
+
+---
+
+## 10. Recording and learning
+
+### Four record types, which must not be conflated
+
+| # | Type | What it is | Written by |
+|---|---|---|---|
+| 1 | **Snapshots** | What the world was. Immutable, replayable | code |
+| 2 | **Queue** | What was decided, by whom, why. Audit trail and write-ahead log | agents, via tool calls |
+| 3 | **Outcomes** | What happened next. Mechanical fields, graded by the game | code |
+| 4 | **Doctrine** | What we now believe. Small, budgeted, loaded into prompts | **derived from 1-3** |
+
+The failure mode is letting 4 be written directly from an agent's
+self-assessment. **Only 1 to 3 are recorded; doctrine is derived, and its size
+is capped**, because the compliance eval found perfect-response rate collapsing
+toward zero well past a few dozen simultaneous rules (**verified for
+`deepseek-chat`**: 0% at n≥40, `evals/compliance/`, 2026-09-11). That is the
+existing "outcome tracking, not self-critique" rule made operational for a
+roster instead of a single brain, and it is also a real argument *for* the
+roster: six small charters each clear a cliff that one combined charter would
+not.
+
+### Confidence in facts comes from tools, not models
+
+A tool knows its own reliability, and asking a model to re-guess it per call
+produces noise. So every tool output carries a reliability tag, extending the
+vocabulary `learning/ledger`'s `field_source` already uses:
+
+| Tag | Meaning |
+|---|---|
+| `MECHANICAL` | Read directly from game state. Trust it |
+| `DERIVED` | Computed from mechanical inputs. Trust it if they hold |
+| `HEURISTIC` | A guess with known error modes. Cite with caution |
+
+Agents **inherit** stated reliability rather than inventing it. The learning loop
+is then mechanical and central: when the reflex log shows the hostile sensor has
+a high false-positive rate, you change **one line in `TOOLS.yaml`** and every
+agent's view improves at once. `unit-status hostile` is the first `HEURISTIC`
+entry, and it is already evidenced.
+
+### Confidence in proposals comes from measured track record
+
+Do not ask a model for a confidence number. Numbers like that cluster around 80
+and predict nothing, and averaging them into decisions produces a field that
+looks rigorous and is not.
+
+Instead: every proposal carries a **falsifiable prediction** (§4), graded
+mechanically against the ledger. Then **the confidence that matters is the
+measured historical hit rate, per role and per proposal type**: *the Architect's
+`stockpile_siting` predictions have held 11 of 13; its `workshop_siting`
+predictions 3 of 9.* That is earned confidence, fully mechanical, and the
+Overseer weights proposals by it. It answers "learn what deserves confidence"
+without any agent introspecting at all.
+
+This is why `type` must come from a closed vocabulary. Bespoke proposal types
+never accumulate enough samples for a rate, and the scheme yields nothing.
+
+Self-reported confidence may still be **captured as a field to be graded, never
+as an input to a decision.** We are logging everything anyway, so it costs
+nothing to discover whether a given model's stated confidence predicts its own
+hit rate. If it turns out calibrated for some role, start using it then. That is
+a cheap experiment and publishable material for the report.
+
+### Scoping
+
+One shared ledger, because a fortress has one history. Lessons carry an owning
+role, so each agent loads its own plus universal doctrine and stays under
+budget. Generalisation across forts is already handled by the hierarchical
+partial-pooling design (`research/2026-08-25-learning-architecture.md`) rather
+than by hand-sorting lessons into buckets.
+
+**Honest prerequisite:** `learning/predictions/` grades only ledger-backed
+signals, and the **fort dossier (mid-fort state) is still uncoded**, which is why
+the design's own "food stores" example cannot yet be expressed
+(`ROADMAP.md`, 2026-09-11). **The dossier is the gating piece for any per-cycle
+learning**, not anything about the roster.
+
+### Vent and friction: a separate pipeline, different destination
+
+Two streams, because self-report alone will not find tool gaps. Models vent
+about the wrong things: they blame themselves for a broken tool, or are politely
+vague about a real blocker.
+
+| Stream | Nature | Use |
+|---|---|---|
+| `vent.md` | Subjective, free-form, cheap | **Hypothesis generator** about tool gaps. Never evidence |
+| `friction.jsonl` | Mechanical, from the tool-call log | Failed calls, retry loops, gave-up-after-N, tools never called by a role that has them |
+
+An agent that vented nothing but hit the same tool fourteen times is the real
+signal, and only the mechanical stream sees it.
+
+**These feed `ROADMAP.md`, never doctrine.** "The tool is broken" and "the
+fortress should do X" are different claims with different evidence standards,
+and the pipeline needs a named owner: reviewed per cycle in a maintenance
+session and turned into repo work items. Otherwise the roster vents into files
+nobody reads.
+
+---
+
+## 11. Modularity
+
+The requirement is that roles can be added, removed and reassigned under human
+authority, and that a person can read the setup and understand it. So: one
+directory per role, strict file contract, one enabling file.
+
+```
+agents/
+  ROSTER.yaml              # enabled roles, one line each. The only file you edit to add or remove one.
+  overseer/
+    role.md                # charter: owns, does NOT own, escalation, refusals
+    tools.yaml             # allowlist by id, referencing scripts/dfhack/TOOLS.yaml
+    model.yaml             # model, budget ceiling, cadence
+    evals/                 # this role's decision suite, run against recorded snapshots
+  architect/ ...
+  quartermaster/ ...
+playbooks/                 # structured data, not prose. Owned by the Overseer, revised through the queue.
+runtime/                   # gitignored
+  snapshots/
+  queue.jsonl              # channel, audit log, and write-ahead log
+  <role>/vent.md
+  <role>/friction.jsonl
+```
+
+Properties this buys:
+
+- **Adding a role is a directory plus one line.** Removing one is deleting that
+  line. No code change.
+- **Tool allowlists reference the manifest by id**, so the tool surface stays
+  single-source and a role cannot quietly gain a capability.
+- **A role's charter, its permissions, its model and its tests sit together**,
+  which is what makes a role reviewable by a person in one sitting.
+- **Read and write allowlists are separable**, which is what makes the
+  Quartermaster carve-out (§7) a config change.
+
+### Where this lives, and commitment #5
+
+Design commitment #5 says the brain lives outside this repo. The split that
+respects it:
+
+| In this repo | Outside |
+|---|---|
+| Role charters, tool allowlists, eval suites, playbook schema, the queue schema | API keys, provider config, openclaw's own runtime wiring |
+
+Rationale: charters and allowlists are about the DF domain and this repo's tool
+surface, and they port to any MCP-speaking brain, which is the entire point of
+the boundary. This also matches the reasoning already recorded on 2026-09-12
+about not hand-fitting one brain's conventions ahead of the MCP seam existing.
+
+---
+
+## 12. Explicitly not doing
+
+Recorded so they are not re-proposed without new evidence.
+
+- **One agent per squad, talking to each other.** DF combat resolves in seconds
+  while an agent round trip is tens of seconds, so no agent conversation can ever
+  be inside a fight. Everything that decides a fight happens before it (burrows,
+  stationing, equipment, training, the bridge) or after it (hospital, recovery).
+  Compounding reason: the threat sensor is verified unreliable, so a command
+  hierarchy built on it would be confidently wrong on a schedule.
+- **Peer-to-peer specialist chat in v1.** See §4. Revisit on the prior-art
+  brief's evidence, not on preference.
+- **Multiple general writers.** See §7. Revisit per-resource, if measured
+  throughput justifies it and `dfhack-run` concurrency turns out safe.
+- **Self-reported confidence as a decision input.** See §10.
+- **An agent that runs efficiency algorithms**, or **an agent that remembers to
+  check for fort-enders.** Both are code. See §3.
+- **Publishing raw agent thinking.** See §8.
+
+---
+
+## 13. Open questions
+
+Gated on research already in flight:
+
+1. **Does openclaw support per-agent models and per-agent tool scoping?** If
+   not, principle 8 has no enforcement mechanism and §11 needs rework.
+   → `research/2026-09-12-openclaw-primitives.md`
+2. **Is "no peer chat" well-founded or superstition?**
+   → `research/2026-09-12-multi-agent-architecture-prior-art.md`
+3. **Can write authority be partitioned at all, and is the Quartermaster
+   genuinely disjoint?** → `research/2026-09-12-write-conflict-matrix.md`
+4. **Six unverified DFHack capabilities**: runtime frame cap, in-game overlay,
+   `dfhack-run` concurrency, quickfort dig priorities and work-order APIs,
+   `eventful` coverage for the wake vocabulary, `dfhack.persistent` under
+   concurrent writes. → `research/2026-09-12-dfhack-capability-checks.md`
+
+Not yet gated on anything, and needing a decision:
+
+5. **The MCP server itself does not exist.** `scripts/dfhack/TOOLS.yaml` is a
+   first-draft schema, not a server. Everything here assumes the seam, and the
+   seam needs per-role scoping designed in from the start, because retrofitting
+   identity-aware allowlists later is painful.
+6. **The fort dossier is unbuilt**, and it gates per-cycle prediction grading
+   (§10).
+7. **Several roster roles have no tool surface at all** (work orders, squads,
+   burrows, smoothing). Being enumerated by the write-conflict brief.
+8. **Cycle wall-clock, queue depth and urgent-event frequency are unmeasured.**
+   Instrument all three in v1 rather than pre-solving a throughput problem that
+   may not exist.

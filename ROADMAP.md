@@ -27,6 +27,32 @@ or `decisions/DECISIONS.md`, not here.
 ## Now
 <!-- Actively being worked, or the clear immediate next step. -->
 
+- **NOW, started 2026-09-12: the agent architecture is designed and written
+  down.** [`docs/AGENT-ARCHITECTURE.md`](docs/AGENT-ARCHITECTURE.md) is the
+  design: one actor (Overseer), read-only specialist advisors that propose
+  rather than act, two code-level components (Sentry, Triage), a single
+  append-only queue that is simultaneously the channel, the audit log and the
+  write-ahead log, graded urgency response with playbooks as data, one
+  snapshot per cycle with per-role projections at three information tiers,
+  and confidence that is tool-stated for facts and measured from graded
+  predictions for proposals. **Nothing is built.** Twelve register rows carry
+  the reasoning (`decisions/DECISIONS.md` 2026-09-12). Four research briefs
+  were sent the same day and are the gate on building any of it:
+  `research/2026-09-12-openclaw-primitives.md` (does openclaw support
+  per-agent models and tool scoping at all),
+  `research/2026-09-12-multi-agent-architecture-prior-art.md` (is "no peer
+  chat" well-founded), `research/2026-09-12-write-conflict-matrix.md` (**back
+  already**, see the two finding rows in the register), and
+  `research/2026-09-12-dfhack-capability-checks.md` (six unverified DFHack
+  capabilities the design leans on). → `docs/AGENT-ARCHITECTURE.md` §13 for
+  the open questions.
+- **NOW, unchanged and still the hard blocker: the MCP server does not
+  exist.** Every part of the architecture above assumes it, and it needs
+  per-role identity and scoping designed in from the start, because
+  retrofitting identity-aware tool allowlists later is painful.
+  `scripts/dfhack/TOOLS.yaml` is a first-draft schema, not a server.
+  → `docs/PURPOSE.md` commitment #5, `docs/AGENT-ARCHITECTURE.md` §13 item 5.
+
 > **Rewritten 2026-09-10 (sixth pass, end of session).** **Uniboslan,
 > "Ragwind," now has real structure**: a first room dug and a stockpile
 > placed via `quickfort` blueprints (`blueprints/`), all 7 citizens alive
@@ -390,14 +416,19 @@ or `decisions/DECISIONS.md`, not here.
   survival test: `openclaw`'s multi-agent support (flagged as a candidate
   differentiator back on 2026-08-27) is exactly the wanted shape — many
   agents, each a single responsibility, each free to run a different model.
-  Closes the 2026-08-25 deferred item. **Not yet built**: the actual
-  multi-agent-by-task decomposition (patrol/military, construction/
-  placement, economy, per the 2026-08-27 row) and the MCP seam this repo
-  still needs before any brain, `openclaw` included, can actually drive it.
-  → `decisions/DECISIONS.md` 2026-09-12 row (also 2026-08-25, 2026-08-27).
-- **Loop shape, multi-agent split, first display to build (game view vs.
-  chronicle e-ink), and the time-sliced adventure-mode design.**
-  → `docs/PURPOSE.md` Open Questions.
+  Closes the 2026-08-25 deferred item. **UPDATED 2026-09-12: the
+  multi-agent-by-task decomposition is now designed** (not built) in
+  `docs/AGENT-ARCHITECTURE.md`, and it is a different shape from the
+  patrol/military, construction/placement, economy split the 2026-08-27 row
+  sketched: those became *advisory* roles with no write authority, because
+  the same day settled on a single actor. Also settled the same day:
+  `openclaw` is the **sole** host, `hermes-agent` is not used even for the
+  Overseer. Still unbuilt: the MCP seam, which remains the real blocker.
+  → `decisions/DECISIONS.md` 2026-09-12 rows (also 2026-08-25, 2026-08-27).
+- **First display to build (game view vs. chronicle e-ink), and the
+  time-sliced adventure-mode design.** → `docs/PURPOSE.md` Open Questions.
+  (Loop shape and the multi-agent split are no longer open here: both are
+  answered by `docs/AGENT-ARCHITECTURE.md`, §4 and §3 respectively.)
 - **Dwarf/labor management (`get_unit_status` + labor-assignment action
   tools), not Dwarf Therapist.** A real gap, found 2026-09-11 by checking
   rather than assuming: `docs/PURPOSE.md`'s numbered build order (0-9) is
@@ -423,8 +454,14 @@ or `decisions/DECISIONS.md`, not here.
 - **DONE 2026-09-11: `autolabor` enabled on Uniboslan as the baseline**,
   user's go-ahead — confirmed genuinely on (not just the enable message),
   confirmed it persists via a real quicksave, explicitly leaves
-  military/burrow-assigned dwarves untouched (so it doesn't blanket-override
-  the manual primitives above). Found along the way: `quicksave` rotates
+  military/burrow-assigned dwarves untouched. **CORRECTED 2026-09-12: that
+  exemption is real but narrow, and the parenthetical this bullet used to
+  carry ("so it doesn't blanket-override the manual primitives above") was an
+  overstatement.** `set_labor` writes `unit.status.labors[code]` directly with
+  no coordination, so on an *ordinary* citizen it races autolabor and will
+  probably lose on autolabor's next pass. Verified at source, not taken on a
+  subagent's word. → `decisions/DECISIONS.md` 2026-09-12,
+  `research/2026-09-12-write-conflict-matrix.md`. Found along the way: `quicksave` rotates
   forward through the `autosave N` slot pool each call rather than
   overwriting in place — re-read `cur_savegame.save_dir` fresh each time,
   don't assume a previously-checked slot name is still current.
