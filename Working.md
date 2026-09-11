@@ -168,7 +168,7 @@ gotchas, and fresh findings without another doc home yet.
   mtime check run immediately after can read stale. Wait a few seconds
   and recheck before concluding a quicksave silently failed.
 
-### Authenticated personal-control VNC channel — code written, not yet deployed
+### Authenticated personal-control VNC channel — DONE, deployed and confirmed live
 
 **Decided 2026-09-11**: user chose to ship neither the free-look 3D idea nor
 the Stonesense-per-minute public viewer for now. Instead: a second,
@@ -177,6 +177,25 @@ control of the live game (pan, click, look around, change z-levels) — the
 existing public/LAN feed stays exactly as-is, untouched, view-only. Both
 public-facing ideas above remain live research threads to return to later,
 not abandoned, just not what's being built right now.
+
+**Update, same day**: deployed for real (peer session `df-automation-e6`,
+commit `05aaf01`) and the user completed the one remaining manual step
+(Cloudflare Access app for `dwarf-fortress-admin.willsmith.nz`, scoped to
+their own email) — **confirmed working by the user directly** ("it works"),
+and independently re-verified in this session rather than taken on trust:
+both control-channel systemd units on VM 103 (`df-vnc-control.service`,
+`df-vnc-control-tunnel.service`) read `active`, and an unauthenticated
+`curl` of the admin hostname returns `302` (redirected to the Access gate)
+while the public hostname still returns `200`, unaffected. Full detail:
+`decisions/DECISIONS.md` 2026-09-11 (the row directly under the original
+build decision). **There are now genuinely two live layers on this one
+fort**: the pre-existing public view-only feed, and this new authenticated
+full-control feed for the user alone — both up simultaneously, confirmed.
+**Standing caution, now live rather than hypothetical**: any future
+`xdotool`/DFHack-fake-input use against VM 103 shares this exact channel and
+can visibly collide with the user actively driving the game through it —
+call it out explicitly before running it, per `docs/DF-UI-AUTOMATION.md`'s
+rule. Nothing else queued on this thread; it's finished.
 
 **Auth design, reasoned through with the user**: Cloudflare Access only (email
 OTP at Cloudflare's edge), no second x11vnc password — confirmed safe *only*
@@ -256,6 +275,42 @@ or the Stonesense capture job. User is still deciding overall direction
 (also considering a simpler two-tier idea: Stonesense screenshots every
 minute for the public, plus a separate authenticated full-control channel
 for themselves, not yet reconciled with the free-look thread).
+
+### Dwarf/labor management — first slice built and verified live
+
+Picks up the 2026-09-11 gap (`decisions/DECISIONS.md` same date, "found a
+real gap: dwarf/labor management has no build-order item"). Built
+`scripts/dfhack/df-overseer-labor.lua` this session:
+`unit-status [idle|injured|military|hostile]`, `labors UNIT_ID`,
+`set-labor UNIT_ID LABOR_NAME on|off`. Every primitive verified live against
+Uniboslan (7 citizens, Year 30) before being written, not assumed from docs
+— full detail in `decisions/DECISIONS.md`'s newest row. Confirmed live:
+`manipulator` genuinely unavailable on this install (checked, not repeated
+on trust), `autolabor` genuinely available but not enabled (out of scope
+this session), and `dfhack.units.isDanger`'s "hostile" filter is real but
+broader than actual sieges — this fort's own live data (4 `DEMON_*` hits, all
+deep-cavern z-levels, `invader=false`) demonstrates the caveat concretely.
+Deployed via plain `scp` (mirroring the blueprints precedent) rather than
+through `install_df.py`, since that file had a concurrent peer session's
+uncommitted changes in flight when this started. All of it went over
+`dfhack-run lua`/RPC only, deliberately never touching `xdotool` or
+simulated input, so it ran safely alongside the user's newly-live
+personal-control VNC session (above) with no channel contention.
+
+**Next, not yet done:**
+1. A proper `install_df.py` deploy subcommand for this script, matching
+   `ui-install`'s pattern (currently `scp`'d ad hoc).
+2. `near_landmark` in `unit-status`'s output is a placeholder (`x,y,z` only)
+   until the landmark system on `perception-layer-experiments` merges — a
+   different session's branch, not touched here.
+3. Nothing yet *decides* what labor to assign — this is the mechanics half
+   of design commitment #2 only (code does the bitfield read/write); the
+   judgment half (an actual policy: who should mine, who's idle too long,
+   when to pull someone off hauling) is still unbuilt.
+4. Whether to enable `autolabor` as the baseline underneath this, and how it
+   interacts with any future manual `set-labor` calls (autolabor fights back
+   if it's left running and something else touches the same bits), is an
+   open question, not decided.
 
 ### Other open items, carried forward
 

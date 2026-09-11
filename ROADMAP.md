@@ -1,6 +1,6 @@
 # Roadmap
 
-**Last reviewed:** 2026-09-10 (sixth pass — Uniboslan's first room and stockpile dug)
+**Last reviewed:** 2026-09-11 (seventh pass — personal-control VNC channel deployed, first labor-management slice built)
 
 This file is df-overseer's forward-looking, priority-ordered plan: what's
 next and roughly when, across infrastructure, game-side engineering, and the
@@ -133,6 +133,14 @@ or `decisions/DECISIONS.md`, not here.
   `willsmith-portfolio/public/dwarf-fortress/index.html`.
   → `research/2026-09-09-reverse-vnc-relay.md`,
   `decisions/DECISIONS.md` 2026-09-09 rows, `Working.md`.
+- **DONE 2026-09-11: authenticated personal-control VNC channel, deployed
+  and confirmed live** — a second, fully separate x11vnc/tunnel/webvnc
+  instance (real mouse/keyboard, `dwarf-fortress-admin.willsmith.nz`) gated
+  by Cloudflare Access alone (email OTP, the user's own account only), no
+  second password. Existing public view-only feed untouched and reconfirmed
+  healthy throughout. Two live layers now exist on the one fort: public
+  view-only, and this authenticated full-control channel for the user.
+  → `decisions/DECISIONS.md` 2026-09-11 rows, `Working.md`.
 - **Design commitment #1's absolute wording vs. its evidence base.** The
   core (no rendered map in the model's ongoing spatial reasoning) is
   well-evidenced and shouldn't be relitigated; the literal "not even a
@@ -249,6 +257,12 @@ or `decisions/DECISIONS.md`, not here.
   headless, no interaction needed) as a sensible baseline underneath so
   the agent isn't re-deciding routine hauling/mining balance every turn.
   → `decisions/DECISIONS.md` 2026-09-11.
+- **DONE 2026-09-11: first slice built and verified live** —
+  `scripts/dfhack/df-overseer-labor.lua` (`unit-status`, `labors`,
+  `set-labor`), `dfhack.units`-backed, verified against Uniboslan's real
+  citizens rather than assumed from docs. `autolabor` confirmed available
+  but not enabled; the judgment half (an actual labor-assignment policy) is
+  still unbuilt. → `decisions/DECISIONS.md` 2026-09-11, `Working.md`.
 
 ## Explicitly not doing
 <!-- Deliberate non-goals, so they don't get re-proposed. -->
