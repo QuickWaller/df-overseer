@@ -16,9 +16,16 @@
 > `decisions/DECISIONS.md` 2026-09-10 rows for current state. The Proxmox
 > identity they run against is provisioned outside this repo; see
 > `infra/README.md`.
-> No game-side *code* exists yet: no perception layer, no agent, no toolkit —
-> the one parked exception, a `check_reachable`/seed-landmark first slice,
-> sits off `main` on `perception-layer-experiments`; see `Working.md`.
+> **Superseded again, 2026-09-11**: game-side code now exists and some of
+> it has run for real — nearly the entire build order below (items 2-8) is
+> built and live-verified on `perception-layer-experiments` (deliberately
+> still unmerged), and a bounded autonomous-play experiment used it to make
+> a real, tool-derived construction decision and execute it end to end with
+> no raw coordinate ever surfaced to the decision-maker. See `CLAUDE.md`'s
+> status banner for the current summary and `decisions/DECISIONS.md`'s
+> 2026-09-11 rows for the full trail — this file's own build order below is
+> the timeless spec, not a status tracker; don't edit it to say "done,"
+> that lives in `ROADMAP.md`.
 
 ## Purpose
 
