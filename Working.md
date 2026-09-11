@@ -96,9 +96,11 @@ unreliable); multiple general writers (no transaction boundary in DF); an
 efficiency-analysis agent and a safety-veto agent (both are code);
 self-reported confidence as a decision input; publishing raw agent thinking.
 
-**Not yet asked for:** the 5 unpushed commits below, plus everything written
-this session, are all still local. Publishing the reasoning stream (§8) is
-designed but explicitly needs its own go-ahead.
+**Not yet asked for:** this session's work is committed locally as `500d8ce`
+and **not pushed**, which is the only unpushed commit on `main` (the
+handover below claimed five; that claim was stale and is corrected there).
+Publishing the reasoning stream (§8) is designed but explicitly needs its own
+go-ahead, separately.
 
 ## HANDOVER — 2026-09-12 (session end, written for a `/clear`)
 
@@ -116,12 +118,16 @@ a fresh session needs, not a prescribed next task.
 - **Uniboslan, "Ragwind," is the one fort, healthy and untouched**: 15
   citizens, all idle/healthy, confirmed by a live `unit-status` call at the
   end of this session (also used to verify the coordinate-leak fix, below).
-- **`main` is clean but has 5 unpushed local commits** — `034f555` (tool
-  manifest), `809baaa` (leak fixes, code), `8ac539d` (leak fixes, deployed +
-  verified), `4108c1f` (live-view ingest shelved), `c5de471` (openclaw brain
-  decision). **Not pushed — needs explicit go-ahead, and per this repo's own
-  rule, check `git log origin/main..HEAD` again before pushing in case
-  another session added commits of its own in the meantime.**
+- **CORRECTED 2026-09-12: the "5 unpushed local commits" this handover used to
+  claim were in fact already pushed.** Verified after a real `git fetch`:
+  `origin/main` is at `ecf591b`, the last of them. The five were `034f555`
+  (tool manifest), `809baaa` (leak fixes, code), `8ac539d` (leak fixes,
+  deployed + verified), `4108c1f` (live-view ingest shelved), `c5de471`
+  (openclaw brain decision). The only unpushed commit is now `500d8ce` (the
+  agent architecture design, see the section above). **Still needs explicit
+  go-ahead to push, and per this repo's own rule, re-check
+  `git log origin/main..HEAD` immediately before pushing in case another
+  session added commits of its own in the meantime.**
 - **`scripts/dfhack/` holds 10 files plus a new manifest, `TOOLS.yaml`,**
   all live-deployed and live-verified on VM 103 as of this session (its own
   per-command `verified` dates are the source of truth, not this paragraph).
