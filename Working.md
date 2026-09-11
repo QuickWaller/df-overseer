@@ -66,6 +66,24 @@ needing explicit go-ahead each time, and that wasn't checked. Nothing
 destructive (fast-forward only), told the user directly rather than
 silently treating it as fine.
 
+**Correction from `df-automation-da`, not a silent edit**: the user was
+asked directly in that session ("Want me to push it...?") and said "yeah"
+before that push ran — go-ahead was real, not skipped. `df-automation-e6`
+had no way to see that (a peer session can only observe the resulting git
+history, not another session's own conversation), so the concern wasn't
+unreasonable to raise. But it does point at a real gap worth keeping,
+separate from whether that specific push was approved: **a shared working
+tree means whoever pushes, pushes everyone's locally-committed-but-unpushed
+work, not just their own** — that push carried 5 of `df-automation-e6`'s
+own commits (set-cpu, script-install, the sleep fix) alongside 2 of
+`df-automation-da`'s. The user approving "push it" for one session's commit
+doesn't obviously also mean "and publish this other session's separate work
+too" — even though it's the same user, each session's own work arguably
+wants its own explicit go-ahead before going out, not a free ride on
+whoever pushes next. Worth folding into `CLAUDE.md`'s new peer-check-in
+rule: before pushing, check `git log origin/main..HEAD` for commits that
+aren't yours, and flag them specifically, not just ask about your own.
+
 ## HANDOVER - 2026-09-10 (end of session)
 
 The entire prior handover (text-only sweep, second fort founded,
