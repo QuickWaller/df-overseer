@@ -235,9 +235,16 @@ or `decisions/DECISIONS.md`, not here.
   `find_diggable_area(w, h, z, near, radius_tiles) -> ranked candidates`,
   the inverse of `find_open_area` (non-walkable/solid tiles instead of
   walkable ones), before "dig a new room" can close the loop the same way
-  today's stockpile-placement fix did. → `decisions/DECISIONS.md`
-  2026-09-11 ("Closed the coordinate-resolution gap..." correction),
-  `research/2026-08-25-spatial-perception.md`.
+  today's stockpile-placement fix did. **Second constraint, same
+  conversation**: a candidate is only valid if it *borders* the fort's
+  existing walkable network (same `getWalkableGroup` `find_open_area`
+  already reports) — a mining job needs a dwarf on an adjacent walkable
+  tile to dig from, so an unreachable candidate would silently never
+  become a job, the exact failure class this project already paid for
+  once (`decisions/DECISIONS.md` 2026-09-10, the stair-connectivity dig
+  bug). Not a low-ranked candidate, not a valid one at all. →
+  `decisions/DECISIONS.md` 2026-09-11 ("Closed the coordinate-resolution
+  gap..." correction), `research/2026-08-25-spatial-perception.md`.
 - **Measure a running fort's memory over time**, now that one exists
   (`decisions/DECISIONS.md` 2026-09-10, "First fort founded"). Worldgen's
   peak (561 MB) is measured; a fort at year 5 with 100 dwarves is not, and
