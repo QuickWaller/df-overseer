@@ -180,9 +180,11 @@ or `decisions/DECISIONS.md`, not here.
   record of its own once the old identity retires. → `Working.md` handover.
 - **`cpu: host` → `x86-64-v2-AES`** in `provision_vm.py`, needed so the two
   cluster hosts (different CPU generations) can migrate VMs between them.
-  Accepted, not yet implemented; takes effect on the rebuilt VM's next cold
-  stop/start.
-  → `decisions/DECISIONS.md` 2026-08-28 row.
+  **Built 2026-09-11** (`DEFAULT_CPU`, plus a `set-cpu` subcommand to apply
+  it to an already-built VM); **not yet run against VM 103** — needs the
+  user's go-ahead, since it only takes effect on the VM's next cold
+  stop/start and Uniboslan is a live fort.
+  → `decisions/DECISIONS.md` 2026-08-28 row, `Working.md`.
 - **`check_reachable` / `get_connectivity_report`.** Copies
   `warn-stranded.lua`'s working algorithm; highest-confidence real code to
   write next. → `docs/PURPOSE.md` build order item 2. **A first pass
