@@ -539,6 +539,35 @@ def cmd_rollback(pve, args):
     log("rollback finished")
 
 
+def cmd_shutdown(pve, args):
+    """Gracefully shut down a running VM (ACPI signal, guest OS halts on its
+    own), the missing counterpart to cmd_start. Handles only the VM/QEMU
+    level -- whatever is running inside the guest (DF, its own quicksave-
+    before-stop discipline) is the caller's job to have already stopped
+    cleanly first. Needed to apply any VM-level config change (e.g. 'cpu')
+    that only takes effect on the next cold stop/start.
+    """
+    vmid = args.vmid or pve.env.get("DF_VMID")
+    if not vmid:
+        raise PVEError("no vmid: pass --vmid or set DF_VMID in .env")
+
+    status = pve.get(pve.vm_path(vmid, "/status/current"))
+    if status.get("status") == "stopped":
+        log("vm %s is already stopped" % vmid)
+        return
+
+    log("vm %s: shutting down (ACPI, timeout %ss)" % (vmid, args.timeout))
+    upid = pve.post(pve.vm_path(vmid, "/status/shutdown"),
+                    {"timeout": args.timeout})
+    pve.wait_task(upid, "shutdown vm %s" % vmid, timeout=args.timeout + 60)
+
+    after = pve.get(pve.vm_path(vmid, "/status/current"))
+    log("vm %s is now %s" % (vmid, after.get("status")))
+    if after.get("status") != "stopped":
+        raise PVEError("shutdown task finished but the vm is %s"
+                       % after.get("status"))
+
+
 def cmd_start(pve, args):
     """Start a VM, refusing if the host cannot currently back it.
 
@@ -638,6 +667,12 @@ def main():
     rollback.add_argument("--vmid", type=int)
     rollback.add_argument("--name", required=True)
 
+    shutdown = sub.add_parser("shutdown",
+                              help="gracefully shut down a running VM (ACPI)")
+    shutdown.add_argument("--vmid", type=int)
+    shutdown.add_argument("--timeout", type=int, default=60,
+                          help="seconds to wait for ACPI shutdown, default 60")
+
     start = sub.add_parser("start", help="start a VM, gated on host memory")
     start.add_argument("--vmid", type=int)
     start.add_argument("--min-headroom", type=float, default=1.0,
@@ -657,6 +692,7 @@ def main():
         "set-cpu": cmd_set_cpu,
         "snapshot": cmd_snapshot,
         "rollback": cmd_rollback,
+        "shutdown": cmd_shutdown,
         "start": cmd_start,
     }[args.command]
     try:
