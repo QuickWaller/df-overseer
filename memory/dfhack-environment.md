@@ -119,3 +119,12 @@ Lua API. `mode`'s own doc also warns that most mode combinations corrupt saves.
   that way; the 25 GB RAM horror stories are 250-year histories on large maps.
 - DFHack persistent site data survives retire/unretire (*per Lua API docs*),
   which matters for the fort dossier.
+- **`dfhack.buildings.getSize()`'s `cx,cy` are local to the building's own
+  box, not absolute map coordinates.** Found live 2026-09-10 building the
+  real burrow/building enumeration (`df-overseer-landmarks.lua`): using
+  them directly as a centroid collapses every building's position onto
+  nonsense points near the map origin. Add the building's own `x1,y1` (or
+  equivalent origin field) before using them as a real coordinate.
+- **`df.global.world.burrows.all` does not exist.** The correct path on
+  this install is `df.global.plotinfo.burrows.list` — confirmed live, not
+  guessed from a naming pattern.

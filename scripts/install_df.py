@@ -1446,12 +1446,63 @@ def cmd_script_install(pve, args):
 
 
 def cmd_ui_install(pve, args):
-    """Back-compat alias for 'script-install df-overseer-ui' -- kept as its
-    own subcommand since it predates script-install and is already referenced
-    by name throughout docs/ and decisions/.
+    """Deploy every scripts/dfhack/df-overseer-*.lua file onto the guest's
+    own hack/scripts/ directory, so their subcommands are callable directly
+    (e.g. './dfhack-run df-overseer-ui click "Fortress"') instead of
+    hand-writing a fresh Lua script over SSH for every single action.
+
+    Found 2026-09-10: that one-off-script-per-action pattern is what made
+    the whole embark-flow session slow, and re-derived the same
+    buffer-scan-and-click/retry technique from scratch each time instead of
+    reusing tested code. Plain automation logic, not game data or a secret
+    -- checked into this repo like any other script, unlike GRAPHICS_MODULES
+    or ART_FILES. Generalized from a single hardcoded file (df-overseer-ui.lua
+    only) to every df-overseer-*.lua file in the directory once a second one
+    (df-overseer-connectivity.lua) was added, rather than adding a new
+    one-off CLI verb per script going forward.
+
+    Reconciled 2026-09-12 merging perception-layer-experiments into main:
+    this branch's bulk-deploy-everything implementation is kept as the real
+    'ui-install' (its name predates script-install and is already referenced
+    throughout docs/ and decisions/, so the name stays even though it now
+    deploys every script, not just the UI one) -- main's own independently-
+    built version of this function had instead become a thin two-line alias
+    for cmd_script_install once that single-file-targeted command existed.
+    Both capabilities are real and worth keeping: this one for "redeploy
+    everything after touching several files," script-install below for
+    "deploy just this one file."
     """
-    args.name = "df-overseer-ui"
-    cmd_script_install(pve, args)
+    vmid, ip = target(pve, args)
+    names = sorted(
+        f for f in os.listdir(DFHACK_SCRIPTS_DIR)
+        if f.startswith("df-overseer-") and f.endswith(".lua"))
+    if not names:
+        raise PVEError("no df-overseer-*.lua files found in %s" % DFHACK_SCRIPTS_DIR)
+    parts = ["mkdir -p " + GAME_DIR + "/hack/scripts\n"]
+    for name in names:
+        with open(os.path.join(DFHACK_SCRIPTS_DIR, name), "r", encoding="utf-8") as f:
+            lua_source = f.read()
+        # Built by concatenation, not %-formatting, because the Lua source
+        # itself is full of %d/%s directives (string.format calls) that a %
+        # on the combined string would try to consume as Python format args.
+        # Delimiter is per-file (not a fixed 'DF_OVERSEER_UI_EOF') so two
+        # scripts in one deploy can't collide if either ever contained the
+        # other's delimiter text.
+        delim = "DF_OVERSEER_EOF_%s" % name.replace("-", "_").replace(".", "_").upper()
+        parts.append(
+            "cat > " + GAME_DIR + "/hack/scripts/" + name + " <<'" + delim + "'\n"
+            + lua_source +
+            "\n" + delim + "\n"
+            "echo installed: " + name + "\n"
+        )
+    proc = remote(pve.env, ip, "".join(parts), "ui-install", timeout=30,
+                  dry_run=args.dry_run)
+    if args.dry_run:
+        return
+    for line in proc.stdout.strip().splitlines():
+        log("  " + line)
+    log("%d df-overseer-*.lua script(s) deployed on VM %s -- try:"
+        " ./dfhack-run df-overseer-ui type" % (len(names), vmid))
 
 
 # --- verify / saves / backup ---------------------------------------------
@@ -2217,9 +2268,9 @@ def main():
                      help="arguments passed through to the script's own CLI")
     run.add_argument("--timeout", type=int, default=60)
 
-    add("ui-install", help="deploy df-overseer-ui.lua (type/click/dump"
-                            " helpers) onto the guest's hack/scripts/"
-                            " -- alias for 'script-install df-overseer-ui'")
+    add("ui-install", help="deploy every scripts/dfhack/df-overseer-*.lua"
+                            " file onto the guest's hack/scripts/ -- use"
+                            " script-install to deploy just one")
 
     script_install = add("script-install",
                          help="deploy any scripts/dfhack/<name>.lua onto the"
