@@ -5,62 +5,67 @@ story without you. See **[docs/PURPOSE.md](docs/PURPOSE.md)** for what this is
 and why, and **[docs/MEMORY-ARCHITECTURE.md](docs/MEMORY-ARCHITECTURE.md)** for the overseer's memory and
 learning architecture.
 
-> **Status, rewritten 2026-09-11: the fort is not just standing anymore —
-> something has actually decided what it does, at least once, end to end.**
-> Infra layer unchanged and still solid: `scripts/provision_vm.py` built VM
-> `df-colony-01` (vmid 103, rebuilt 2026-09-08 after an earlier estate
-> rebuild deleted the original), `scripts/install_df.py` installs/runs DF
-> Classic + DFHack on it, verified end to end. **Uniboslan, "Ragwind," is
-> the one fort** (a first fort, Artobcatten, was founded and then
-> unrecoverably lost as a side effect of founding Uniboslan —
+> **Status, rewritten 2026-09-12: the fort is not just standing anymore.**
+> **Something has actually decided what it does, at least once, end to
+> end, and the codebase that got it there is no longer split across two
+> branches.** Infra layer unchanged and still solid: `scripts/provision_vm.py`
+> built VM `df-colony-01` (vmid 103, rebuilt 2026-09-08 after an earlier
+> estate rebuild deleted the original), `scripts/install_df.py`
+> installs/runs DF Classic + DFHack on it, verified end to end. **Uniboslan,
+> "Ragwind," is the one fort** (a first fort, Artobcatten, was founded and
+> then unrecoverably lost as a side effect of founding Uniboslan, see
 > `decisions/DECISIONS.md` 2026-09-10). It survived a real VM outage
 > 2026-09-11 (cluster quorum loss blocked start/stop entirely, not just
-> snapshots — resolved by the user directly, not this repo) and now runs on
+> snapshots, resolved by the user directly, not this repo) and now runs on
 > `cpu: x86-64-v2-AES` (applied for real, not just accepted).
 >
-> **Game-side code now exists, and some of it has been run for real.**
-> `perception-layer-experiments` (its own worktree, `../df-automation-perception`)
-> turns out to have **built and live-verified nearly the entire spatial-
-> perception build order** (`docs/PURPOSE.md` items 2-8: connectivity,
-> landmarks, `get_overview`, `get_diff_since`, `find_open_area`,
-> `find_chokepoints`, `get_stuck_jobs`) — audited properly 2026-09-11 after
-> this file badly undersold it as "connectivity + a seed landmark."
-> **Deliberately still unmerged** — the user's explicit call, more than
-> once, to keep working with it rather than merge yet. On `main`: a labor-
-> management slice (`get_unit_status`/`set_labor`, `autolabor` enabled and
-> confirmed actually assigning jobs) and a second, authenticated
-> personal-control VNC channel (real mouse/keyboard for the user alone,
-> Cloudflare Access-gated, alongside the existing public view-only feed).
+> **Game-side code now exists, has been run for real, and all of it is on
+> `main`.** `perception-layer-experiments` (14 commits, deliberately kept
+> separate for three weeks on the user's own repeated call) merged into
+> `main` 2026-09-12 (`f078bf8`, six real conflicts resolved deliberately,
+> not auto-accepted; `decisions/DECISIONS.md`'s newest rows carry the
+> per-file reasoning), and the branch plus its worktree
+> (`../df-automation-perception`) are deleted: a fresh session should not
+> look for either. What it brought over **built and live-verified nearly
+> the entire spatial-perception build order** (`docs/PURPOSE.md` items 2-8:
+> connectivity, landmarks, `get_overview`, `get_diff_since`,
+> `find_open_area`, `find_chokepoints`, `get_stuck_jobs`), audited properly
+> 2026-09-11 after this file badly undersold it as "connectivity + a seed
+> landmark." `scripts/dfhack/` now holds 10 files, all live-deployed
+> on VM 103. Also on `main`: a labor-management slice
+> (`get_unit_status`/`set_labor`, `autolabor` enabled and confirmed
+> actually assigning jobs) and a second, authenticated personal-control
+> VNC channel (real mouse/keyboard for the user alone, Cloudflare
+> Access-gated, alongside the existing public view-only feed).
 >
 > **The actual milestone**: a bounded, tools-only autonomous-play
 > experiment used `find_open_area` to pick a real, ranked, named
 > construction candidate, then a new fused resolve-and-act primitive
 > (`build_open_area`/`build`) turned that pick into a real, independently-
-> verified fort mutation — a genuine second stockpile, "Stockpile #2,"
-> wired into the exits graph — **without the raw coordinate ever being
+> verified fort mutation: a genuine second stockpile, "Stockpile #2,"
+> wired into the exits graph, **without the raw coordinate ever being
 > visible to whatever made the decision.** First fully closed loop this
 > project has. The same experiment, and the correction pass right after,
 > found two real gaps. (1) Nothing found *diggable* rock/soil: **closed the
 > same day.** `find_diggable_area`/`dig_diggable_area`
-> (`df-overseer-diggable.lua`, `perception-layer-experiments`) mirror
-> `find_open_area`/`build_open_area` for solid terrain instead of walkable
-> space, live-verified and then live-tested end to end: a dwarf claimed a
-> real dig job and all 41 designated tiles were fully dug, the project's
-> second fully closed coordinate-free decision-to-mutation loop. Getting
-> there found a real, previously-unknown bug shared by both tools:
-> `quickfort`'s `-c` anchors a blueprint's *top-left* corner, not its
-> center, and both were silently passing the computed center (Stockpile #2
-> only worked anyway by luck). Fixed in both (`df-overseer-diggable.lua`'s
-> fix committed, `df-overseer-openarea.lua`'s left uncommitted matching
-> that file's own pre-existing state, with an inline comment explaining
-> why). (2) `unit-status hostile` is a known-unreliable signal (missed a
-> real kea attack entirely, flagged harmless demons instead) — an
-> event-driven prototype exists (`df-overseer-combat.lua`) but sits
-> deliberately uncommitted, pending reconciliation with an overlapping,
-> independently-built `df-overseer-diff.lua` on the perception branch.
-> Full trail: `decisions/DECISIONS.md`'s 2026-09-11 rows, `Working.md`'s
-> current handover. Everything in `docs/`/`research/` beyond what's cited
-> as verified above is still a design artifact or proposal.
+> (`df-overseer-diggable.lua`) mirror `find_open_area`/`build_open_area` for
+> solid terrain instead of walkable space, live-verified and then
+> live-tested end to end: a dwarf claimed a real dig job and all 41
+> designated tiles were fully dug, the project's second fully closed
+> coordinate-free decision-to-mutation loop. Getting there found a real,
+> previously-unknown bug shared by both tools: `quickfort`'s `-c` anchors a
+> blueprint's *top-left* corner, not its center, and both were silently
+> passing the computed center (Stockpile #2 only worked anyway by luck).
+> Fixed in both, both fixes now merged and pushed on `main`. (2)
+> `unit-status hostile` is a known-unreliable signal (missed a real kea
+> attack entirely, flagged harmless demons instead): the event-driven
+> prototype this used to describe as a separate, uncommitted
+> `df-overseer-combat.lua` has since been folded into
+> `df-overseer-diff.lua` instead (2026-09-12, `6dd92bb`), resolving the
+> overlap rather than leaving it pending.
+> Full trail: `decisions/DECISIONS.md`'s 2026-09-11 and 2026-09-12 rows,
+> `Working.md`'s current handover. Everything in `docs/`/`research/` beyond
+> what's cited as verified above is still a design artifact or proposal.
 
 This repo is managed with Claude Code using a structured memory system,
 following the pattern published as
