@@ -7,19 +7,46 @@ A language model plays the fort. It is never shown the map.
 
 ## Status
 
-**Design, plus infrastructure that is scripted, proven, and currently
-standing.** The Proxmox provisioning and the DF Classic plus DFHack install
-are both scripted here and were verified end to end against a real VM,
+**Infrastructure unchanged and still solid; a real fort is founded and
+running; and a bounded piece of it has now played itself, twice, end to
+end.** The Proxmox provisioning and the DF Classic plus DFHack install are
+both scripted here and were verified end to end against a real VM,
 `df-colony-01`, rebuilt from scratch on 2026-09-08 after an earlier VM and
 template (built 2026-08-27) were deleted on 2026-09-01 in a hypervisor
-rebuild. DF itself has not been started and no world exists yet, so the
-honest claim is that the stack is up and verified, not that a fort is
-running unattended.
+rebuild. **Uniboslan, "Ragwind,"** is the one fort (a first fort,
+Artobcatten, was founded and then unrecoverably lost as a side effect of
+founding Uniboslan, `decisions/DECISIONS.md` 2026-09-10); it has survived a
+real VM outage since.
 
-No game-side code exists yet: no perception layer, no agent, no toolkit.
-Everything in `docs/` and `research/` is a design artifact. Claims marked
-*verified* were checked against a DFHack install, a live API, or a primary
-source. The rest are proposals, and are labelled as such on purpose.
+Game-side code now exists, and much of it has run for real, not just been
+written. A spatial-perception layer (connectivity, landmarks, `get_overview`,
+`get_diff_since`, `find_open_area`, `find_chokepoints`, `get_stuck_jobs`,
+build order items 2-8 in `docs/PURPOSE.md`) is built and live-verified
+against Uniboslan, on its own branch and worktree,
+`perception-layer-experiments`. It stays unmerged deliberately, on the
+user's own repeated call to keep working with it rather than merge yet, not
+because it is unfinished or blocked. On `main`: a labor-management slice
+(`get_unit_status`/`set_labor`, with `autolabor` enabled and confirmed
+actually assigning jobs) and a second, authenticated personal-control VNC
+channel for the user, alongside the existing public view-only feed.
+
+The headline result: **two independently-verified, fully closed,
+coordinate-free decision-to-mutation loops**, the first real end-to-end
+evidence for the commitment below rather than eval-harness evidence alone.
+A bounded, tools-only autonomous-play experiment used `find_open_area` to
+pick a ranked, named construction candidate, then a fused resolve-and-act
+primitive (`build_open_area`/`build`) turned that pick into a real, verified
+fort mutation, a second stockpile, without the raw coordinate ever being
+visible to whatever made the decision. The same pattern was repeated for
+diggable terrain (`find_diggable_area`/`dig_diggable_area`): a dwarf claimed
+a real dig job and all 41 designated tiles were fully dug. Full trail:
+`decisions/DECISIONS.md`'s 2026-09-10 and 2026-09-11 entries, `Working.md`'s
+current handover.
+
+Claims marked *verified* were checked against a DFHack install, a live API,
+or a primary source. Everything in `docs/` and `research/` beyond what is
+cited above as verified is still a design artifact or a proposal, and is
+labelled as such on purpose.
 
 ## The commitment that shapes everything
 
@@ -60,8 +87,9 @@ order and the open questions.
 | [`docs/`](docs/) | Design artifacts: purpose, memory architecture |
 | [`research/`](research/) | Dated, cited research specs. Read the relevant one before designing in its area |
 | [`scripts/`](scripts/) | Proxmox provisioning and the DF + DFHack install, both driven over the API and SSH |
-| [`evals/`](evals/) | The perception eval harness, which needs no running game |
-| [`ledger/`](ledger/) | Structured record of fort outcomes |
+| [`evals/`](evals/) | Eval harnesses that need no running game: perception (`evals/perception/`) and doctrine-compliance at scale (`evals/compliance/`) |
+| [`learning/ledger/`](learning/ledger/) | Structured record of fort outcomes |
+| [`learning/predictions/`](learning/predictions/) | Mechanical prediction log: pre-registered decisions checked against ledger state, never against the model's own account |
 | [`memory/`](memory/) | Repo context not derivable from the code |
 
 ## Running it

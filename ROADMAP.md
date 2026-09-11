@@ -1,6 +1,6 @@
 # Roadmap
 
-**Last reviewed:** 2026-09-11 (ninth pass — perception-layer-experiments audited for real: build order items 2-8 are actually done, not just files; first autonomous-play attempt found the coordinate-resolution gap blocking it from closing the loop)
+**Last reviewed:** 2026-09-11 (tenth pass, documentation consistency check: confirmed the diggable-area items below are accurately marked DONE and already correctly placed, not still in progress; fixed a stale "main not yet pushed" claim elsewhere in this repo's docs. Ninth pass, same day: perception-layer-experiments audited for real, build order items 2-8 are actually done, not just files; first autonomous-play attempt found the coordinate-resolution gap blocking it from closing the loop, closed later the same day, see below)
 
 This file is df-overseer's forward-looking, priority-ordered plan: what's
 next and roughly when, across infrastructure, game-side engineering, and the
@@ -251,33 +251,83 @@ or `decisions/DECISIONS.md`, not here.
   not hard-code isolation as a validity failure. →
   `decisions/DECISIONS.md` 2026-09-11 ("Closed the coordinate-resolution
   gap..." correction), `research/2026-08-25-spatial-perception.md`.
+- **DONE 2026-09-11: `find_diggable_area` built and live-verified**
+  (`scripts/dfhack/df-overseer-diggable.lua`, `perception-layer-experiments`,
+  commit `f741cfc`, not pushed), closing the gap the row above found. Enum
+  names verified against the actual installed DFHack source, not memory; v1
+  scope matches the corrected spec exactly (adjacent-only candidates,
+  connector-cost scoring left for a fuller version). **Live-verified against
+  VM 103**: a correct negative near the surface embark site (only
+  TREE-material walls nearby, correctly excluded) and a correct positive
+  underground near Stockpile #1 (5 real ranked SOIL candidates). Still no
+  `designate_dig` action tool to actually act on a candidate — the natural
+  next piece. → `decisions/DECISIONS.md` 2026-09-11, `Working.md`.
+- **DONE 2026-09-11: `dig_diggable_area`/`dig` built, a real bug found live,
+  root-caused, fixed, and re-confirmed working end to end.** First live test
+  designated real tiles correctly but at an unreachable location — no dwarf
+  ever claimed the job. Root cause (confirmed against quickfort's own docs,
+  not guessed): `-c` anchors a blueprint's **top-left**, not center, but the
+  code was passing the candidate box's computed *center* — silently
+  shifting every real dig/build by `(floor((w-1)/2), floor((h-1)/2))` tiles
+  from the box actually validated as reachable. **The identical bug was in
+  `build_open_area` too** (Stockpile #2 worked anyway, only by luck — its
+  candidates sit inside broadly open space). Both fixed: pass the box's real
+  top-left to quickfort, not its center. Re-tested live after the fix:
+  designation landed at the correct spot, unpausing produced real claimed
+  `Dig` jobs almost immediately, and all 41 designated tiles (this run's 25
+  plus leftover from the buggy run) were fully dug by the next check — the
+  loop is genuinely closed now, not just mechanically plausible.
+  `df-overseer-diggable.lua`'s fix committed (`2d0eb7b`, not pushed);
+  `df-overseer-openarea.lua`'s fix applied but left uncommitted, matching
+  that file's own pre-existing uncommitted state, flagged in its own
+  comment for whoever reconciles it. →
+  `decisions/DECISIONS.md` 2026-09-11 ("Root cause found and fixed..."),
+  `Working.md`.
 - **Measure a running fort's memory over time**, now that one exists
   (`decisions/DECISIONS.md` 2026-09-10, "First fort founded"). Worldgen's
   peak (561 MB) is measured; a fort at year 5 with 100 dwarves is not, and
   this would also give a real number for `TimeoutStopSec`'s quicksave
   margin. → `docs/PURPOSE.md` open questions.
-- **DONE 2026-09-11: compliance eval harness built** (`evals/compliance/`),
-  mirroring `evals/perception/`'s structure — a ~170-rule synthetic doctrine
-  pool, nested by rule count, graded mechanically, no LLM judging another
-  model's compliance. Selftest caught two real pool-design bugs before any
-  live call; a small live smoke test (4 cells) confirmed the request/grading
-  path works end to end against the real API. **Not yet run at the paper's
-  full rule-count sweep or meaningful sample size** — that's the concrete
-  next step. → `decisions/DECISIONS.md` 2026-09-11, `Working.md`,
-  `evals/compliance/README.md`, `research/2026-08-25-learning-architecture.md`
-  §7 item 1.
+- **DONE 2026-09-11: compliance eval harness built and run at full scale
+  against two providers.** `evals/compliance/`, mirroring `evals/perception/`'s
+  structure — a ~170-rule synthetic doctrine pool, nested by rule count,
+  graded mechanically. `deepseek-chat`'s full sweep is a clean finding:
+  perfect-response rate collapses to 0% at n≥40, concentrated almost entirely
+  in `required_word` compliance (20.6% at n=160 vs. `banned_word`'s 100%).
+  `claude-opus-5`'s sweep found and fixed a real harness bug (`max_tokens`
+  too low for adaptive thinking at high N, producing empty responses) but
+  **cost $9-13 in the process** — the user's call afterward was to stop
+  further Opus spend and make DeepSeek the harness's default provider
+  (`--provider anthropic` is now opt-in only). → `decisions/DECISIONS.md`
+  2026-09-11 (three rows), `Working.md`, `evals/compliance/README.md`,
+  `research/2026-08-25-learning-architecture.md` §7 item 1.
+- **Next, deliberately not done without asking first**: a genuinely clean
+  `claude-opus-5` collapse curve (more `--repeats`, no empty-response
+  artifacts now that `max_tokens` is fixed) — real value, but the cost that
+  produced this session's finding is exactly why it needs explicit go-ahead,
+  not a default action.
 
 ## Later
 <!-- Real, worth tracking, but genuinely further out or gated on scale/decisions not yet made. -->
 
 - **`find_open_area` (cavern terrain).** Genuinely hard, deliberately last
   in the build order. → `docs/PURPOSE.md` build order item 9.
-- **Mechanical prediction grading.** Scripted comparison of a `signal` field
-  against recorded state at `check_at`; needed before any prediction-based
-  calibration metric means anything. → `research/2026-08-25-learning-architecture.md`
-  §7 item 3.
+- **DONE 2026-09-11: mechanical prediction grading built** (`learning/predictions/`,
+  grouped with `learning/ledger/` under one parent 2026-09-12 — real code
+  coupling, `predictions/grade.py` imports `ledger.schema`/`ledger.store`
+  directly, not just thematic — done while `predictions/` was still
+  untracked so it cost a `git mv` instead of a rename later).
+  A prediction's `signal` is a dotted path validated at write time against
+  `ledger.store.field_source` (refuses anything that doesn't resolve to a
+  `MECHANICAL`/`DERIVED` ledger field); grading reads only the ledger row and
+  a closed predicate-op vocabulary, never the prediction's own prose.
+  **Real, stated limitation**: only ledger-backed signals work — the fort
+  dossier (mid-fort state) the research spec also names is still uncoded, so
+  the design doc's own "food stores" example can't be expressed yet.
+  → `learning/predictions/README.md`, `decisions/DECISIONS.md` 2026-09-11,
+  `research/2026-08-25-learning-architecture.md` §7 item 3.
 - **The fort ledger's write path** for the remaining fields waits on the
-  perception layer existing. → `ledger/README.md`.
+  perception layer existing. → `learning/ledger/README.md`.
 - **Re-run the perception eval against real briefings** once `llm-brief.lua`
   exists, replacing today's hand-authored 15-landmark fixtures with the
   actual lossier generator. → `docs/PURPOSE.md` build order item 1's caveat.

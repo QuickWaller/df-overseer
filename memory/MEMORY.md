@@ -45,8 +45,9 @@ The main design artifacts live in `docs/`, not here:
   design (four stores, hypothesis promotion, the wiki as hypothesis source).
   Not to be confused with this file, which is the *repo's* memory index.
 
-- `ledger/README.md` - the fort ledger: the fifth store, and the only one
-  that is built. Explains why the fields are what they are and what the
-  schema deliberately cannot do.
+- `learning/ledger/README.md` - the fort ledger: the fifth store, and the
+  only one that is built. Explains why the fields are what they are and what
+  the schema deliberately cannot do. (Moved under `learning/` 2026-09-12,
+  grouped with `learning/predictions/` for their real code coupling.)
 
 Long-form research with citations lives in `research/`.
