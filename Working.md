@@ -24,17 +24,20 @@ anywhere until now. Recorded in the "Durable traps" list below and in
 `TOOLS.yaml` itself; not fixed yet, same as the labor leak — flagging, not
 silently patching, per this repo's own rule on docs/reality mismatches.
 
-**Both coordinate leaks fixed in the repo, not yet redeployed.**
+**Both coordinate leaks fixed, deployed, and live-verified.**
 `df-overseer-labor.lua`'s `unit-status` and `df-overseer-diff.lua`'s
 `recent-combat`/`since-report` all now resolve `near_landmark`/`direction`/
 `distance_tiles` via `nearest_landmark` (reqscript'd from
-`df-overseer-landmarks.lua`) instead of printing raw `pos=x,y,z`. Code-only
-change, committed; **VM 103 is still running the pre-fix files** — needs a
-real deploy (`install_df.py ui-install`) plus a live re-verify pass before
-trusting the new output shape, and per this repo's rules that's a live-infra
-touch: check in with any peer session and get explicit go-ahead before
-running it, not just committing locally. `TOOLS.yaml` reflects both
-commands as deployed-but-stale until that happens.
+`df-overseer-landmarks.lua`) instead of printing raw `pos=x,y,z`.
+`home-lab-29` heads-upped and confirmed no collision (code-only file
+overwrite in the guest's `hack/scripts/`, no VM lifecycle/pause/save touch),
+then both files deployed via `install_df.py script-install` and
+re-verified live against Uniboslan: `unit-status` (15 real citizens),
+`recent-combat 5` (the real kea fight, 99 reports in memory), and
+`since-report 0` (85 reports, cursor=99) all show `near_landmark=...`
+throughout with zero raw `pos=` anywhere. Fort itself confirmed untouched
+(same 15 citizens, all idle/healthy). `TOOLS.yaml` updated to
+`verified: "2026-09-12"` / `live_deployed: true` for all three commands.
 
 Also: `home-lab-29` (peer session, 20h uptime) corrected this file's carried-
 forward quorum note on check-in — `pvecm status` confirmed `Quorate: Yes`,
@@ -170,9 +173,9 @@ gotchas, and fresh findings without another doc home yet.
   raw `pos=x,y,z`** for every combat/threat report (both go through the
   shared `report_line()` helper) — a second, previously undocumented
   instance of the same design-commitment-#1 violation as the
-  `df-overseer-labor unit-status` leak below. Found 2026-09-12 building
-  `scripts/dfhack/TOOLS.yaml`'s coordinate-bearing audit; **fixed the same
-  session, not yet redeployed to VM 103.**
+  `df-overseer-labor unit-status` leak below. Found, fixed, deployed, and
+  live-verified all the same session (2026-09-12) building `scripts/dfhack/
+  TOOLS.yaml`'s coordinate-bearing audit.
 - **Directly changing a live fort's pause state
   (`dfhack.world.SetPauseState(false)`) is blocked by Claude Code's own
   auto-mode classifier by default**, not something a bare mid-conversation
@@ -262,19 +265,14 @@ gotchas, and fresh findings without another doc home yet.
 - **DONE 2026-09-12: the tool manifest built** (`scripts/dfhack/TOOLS.yaml`),
   see the "Tool manifest built" section above. Per-command (not per-file)
   metadata; doubles as a first draft of the still-missing MCP tool schema.
-- **DONE 2026-09-12 (code, not yet deployed): `df-overseer-labor
-  unit-status`'s raw coordinate leak fixed** — found 2026-09-11 setting up
-  the Haiku experiment; fixed via `nearest_landmark`, same session as the
-  manifest. VM 103 still runs the pre-fix file. See "Durable traps" above
-  and `TOOLS.yaml` for detail.
-- **DONE 2026-09-12 (code, not yet deployed): `df-overseer-diff`'s
-  `recent-combat`/`since-report` raw coordinate leak fixed** — found and
+- **DONE 2026-09-12: `df-overseer-labor unit-status`'s raw coordinate leak
+  fixed, deployed, and live-verified** — found 2026-09-11 setting up the
+  Haiku experiment; fixed via `nearest_landmark`, same session as the
+  manifest. See "Durable traps" above and `TOOLS.yaml` for detail.
+- **DONE 2026-09-12: `df-overseer-diff`'s `recent-combat`/`since-report`
+  raw coordinate leak fixed, deployed, and live-verified** — found and
   fixed the same session building the tool manifest's coordinate-bearing
-  audit. VM 103 still runs the pre-fix file.
-- **Next actual step: redeploy both fixed files to VM 103 and re-verify
-  live** (`install_df.py ui-install`, then re-run `unit-status`/
-  `recent-combat` and confirm `near_landmark=` appears with no raw `pos=`
-  anywhere). Needs a peer/live-infra heads-up first, per this repo's rules.
+  audit.
 
 **Style note:** the user does not want em dashes in prose. Commas, colons,
 semicolons or full stops instead. Fine as structural separators.

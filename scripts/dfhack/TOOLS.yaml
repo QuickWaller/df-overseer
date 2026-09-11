@@ -164,25 +164,23 @@ df-overseer-diff.lua:
       lua_function: recent_combat
       effect: read
       coordinate_bearing: false
-      live_deployed: "STALE -- see notes"
-      verified: "2026-09-11 (pre-fix code; VM 103's deployed copy is the pre-fix version)"
+      live_deployed: true
+      verified: "2026-09-12"
       notes: >
-        FIXED IN THE REPO 2026-09-12, NOT YET REDEPLOYED: report_line() used
-        to print a raw `pos=%d,%d,%d` for every combat/threat report --
-        flagged building this manifest, not previously documented anywhere
-        else in this repo. Now resolves near_landmark/direction/
+        FIXED 2026-09-12 (found building this manifest's coordinate-bearing
+        audit): report_line() used to print a raw `pos=%d,%d,%d` for every
+        combat/threat report. Now resolves near_landmark/direction/
         distance_tiles via nearest_landmark, same as every other perception
-        tool. VM 103 is still running the pre-fix file (last deployed
-        2026-09-12 before this fix); the "2026-09-11" verified date reflects
-        that OLD, leak-carrying behavior, not the new one -- needs a real
-        deploy + re-verify pass before trusting the new output shape live.
+        tool. Deployed and re-verified live against Uniboslan same day: 5
+        real reports (the kea fight, 99 total in memory), every row shows
+        near_landmark with zero raw pos= anywhere.
     "since-report REPORT_ID":
       lua_function: since_report
       effect: read
       coordinate_bearing: false
-      live_deployed: "STALE -- see notes"
-      verified: "2026-09-11 (pre-fix code; VM 103's deployed copy is the pre-fix version)"
-      notes: "Same fix, same function (report_line) as recent-combat above -- see its notes. Pre-fix, 21/34 real reports matched reconstructing the kea fight."
+      live_deployed: true
+      verified: "2026-09-12"
+      notes: "Same fix and function (report_line) as recent-combat above. Deployed and re-verified live same day: cursor=99, 85 reports, all clean."
 
 df-overseer-openarea.lua:
   build_order_item: 6
@@ -274,16 +272,17 @@ df-overseer-labor.lua:
       lua_function: unit_status
       effect: read
       coordinate_bearing: false
-      live_deployed: "STALE -- see notes"
-      verified: "2026-09-11 (pre-fix code; VM 103's deployed copy is the pre-fix version)"
+      live_deployed: true
+      verified: "2026-09-12"
       notes: >
-        FIXED IN THE REPO 2026-09-12: used to print raw `pos=x,y,z` for
-        every citizen/threat row -- a documented placeholder from before the
+        FIXED 2026-09-12: used to print raw `pos=x,y,z` for every
+        citizen/threat row -- a documented placeholder from before the
         landmark system was merged to main. Now resolves near_landmark/
         direction/distance_tiles via nearest_landmark, same as every other
-        perception tool. VM 103 is still running the pre-fix file; needs a
-        real deploy + re-verify pass. Separately, unaffected by this fix:
-        the `hostile` filter (dfhack.units.isDanger/isInvader) is proven
+        perception tool. Deployed and re-verified live same day against
+        Uniboslan's real 15 citizens: every row shows near_landmark, zero
+        raw pos= anywhere. Separately, unaffected by this fix: the
+        `hostile` filter (dfhack.units.isDanger/isInvader) is proven
         UNRELIABLE as a fort-defense signal -- missed a real kea attack
         entirely, flagged harmless demons instead. Treat its output as
         "worth a second look," never "confirmed safe/hostile" on its own.
