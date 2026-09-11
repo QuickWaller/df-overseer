@@ -329,9 +329,26 @@ function dig_diggable_area(w, h, z, near, blueprint_file, rank, radius_tiles)
   -- The one place a real coordinate exists in this file: assembled
   -- directly into quickfort's own argument list, never stored anywhere
   -- else and never returned.
+  --
+  -- BUG FOUND LIVE 2026-09-11, FIXED HERE: this used to pass cx,cy (the
+  -- box's computed CENTER) as quickfort's -c argument. quickfort's own docs
+  -- (hack/docs/docs/tools/quickfort.txt: "the blueprint start position...
+  -- is the upper left corner by default") say -c anchors the blueprint's
+  -- TOP-LEFT, not its center -- so the actual dig landed shifted by
+  -- (floor((w-1)/2), floor((h-1)/2)) tiles from the box ranked_candidates
+  -- and borders_walkable_network had actually validated, silently placing
+  -- it somewhere the adjacency check never checked. Confirmed live: a real
+  -- dig call designated a real 5x5 region with ZERO walkable neighbors on
+  -- its border (no dwarf ever claimed the job after ~14 in-game days
+  -- unpaused), while a direct re-scan of the box the algorithm actually
+  -- validated (c.x,c.y, before the center offset) showed real walkable
+  -- neighbors on its ring. `c.x,c.y` (the true, validated top-left) is the
+  -- correct argument here; cx,cy stays real and correct for
+  -- nearest_landmark's direction/distance reporting below, where "center"
+  -- is the right choice -- only the quickfort call was wrong.
   local ok_run, output, result = pcall(
     dfhack.run_command_silent, 'quickfort', 'run', blueprint_file, '-c',
-    string.format('%d,%d,%d', cx, cy, z))
+    string.format('%d,%d,%d', c.x, c.y, z))
 
   return {
     rank = rank,
