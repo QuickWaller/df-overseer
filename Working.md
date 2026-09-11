@@ -685,15 +685,19 @@ wired into the exits graph. Also produced a useful negative result: the
 same primitive against a `#dig` blueprint designated 0 tiles, because
 `find_open_area`'s candidates are already-walkable space, not diggable
 rock — confirming (empirically, not just by reasoning) that "dig a new
-room" is a distinct, still-open gap (build order item 9, cavern/diggable-
-terrain search), not something left unfinished by this fix. Full detail:
-`decisions/DECISIONS.md` 2026-09-11 ("Closed the coordinate-resolution
-gap..."). Still lives on `perception-layer-experiments`, uncommitted,
+room" is a distinct, still-open gap, not something left unfinished by this
+fix. **Corrected same day, user caught it**: not build order item 9
+(that's "find already-open space in irregular caverns," still walkable
+tiles only, a different problem) — a genuinely unspecified gap, nothing
+in the research spec finds solid/diggable terrain at all. See
+`ROADMAP.md`'s new item. Full detail: `decisions/DECISIONS.md` 2026-09-11
+("Closed the coordinate-resolution gap..."). Still lives on
+`perception-layer-experiments`, uncommitted,
 same branch-ownership/merge-timing question as the `diff.lua`/`combat.lua`
 overlap above — this is a real capability now, not just a proposal, but
 whether/how it lands anywhere permanent is still open.
 
-### Compliance eval harness built — selftested and live-smoke-tested, not yet run at full scale
+### Compliance eval harness built, gained a second provider, first full runs in flight
 
 Picked up as this session's task specifically because it touched neither VM
 103 nor `perception-layer-experiments` (both held by a concurrent peer
@@ -704,14 +708,46 @@ doctrine format and model, before any fort run depends on doctrine size being
 safe. Built `evals/compliance/`, mirroring `evals/perception/`'s structure and
 philosophy exactly: full detail, the two bugs the selftest caught before any
 live call, and the smoke-test numbers are in `decisions/DECISIONS.md`'s newest
-row and `evals/compliance/README.md`.
+rows and `evals/compliance/README.md`.
 
-**Next, not yet done:** a real run at the paper's full rule-count sweep
-(10/20/40/80/120/160 x 3 formats x 10 scenarios, `--repeats` above 1 for a
-real sample size) — the smoke test was 4 cells, enough to prove the harness
-works end to end, not enough to be a finding. `.env` has a working
-`ANTHROPIC_API_KEY`; the harness needs `evals/compliance/requirements.txt`
-(`anthropic>=1.0`) installed, which `.venv_perception` already satisfies.
+**Gained a second provider mid-session**: `harness/providers.py` now supports
+DeepSeek (and anything else speaking the OpenAI-compatible chat-completions
+API) alongside Anthropic's native Messages API, via `--provider`. Not a
+speculative feature — the user's own framing: df-overseer is heading toward
+multiple concurrent sessions/roles via `openclaw`, with model choice made
+*per role*, not one global model. "How does compliance degrade" only means
+something once asked of whichever model(s) actually end up running each role,
+which is the whole reason `providers.py` is a seam rather than a hardcoded
+Anthropic call.
+
+**Full sweeps run this session** (10/20/40/80/120/160 rules x 3 formats x 10
+scenarios, 180 cells each, `--repeats 1`):
+- `deepseek-chat`: **complete**, real finding —
+  perfect-response rate is 70-83% at n=10/20, then **craters to 0% from n=40
+  onward** (far earlier than the paper's own ~80 for other models), while
+  per-rule pass rate degrades far more gently (97% → 72% from n=10 to n=160).
+  The collapse is concentrated almost entirely in one category:
+  `required_word` pass rate is 20.6% at n=160 while `banned_word` stays at
+  100% — this model is much better at *not* doing something across many
+  simultaneous rules than at reliably inserting many specific required words.
+  Full numbers: `evals/compliance/results/deepseek-full-2026-09-11.jsonl`.
+- `claude-opus-5`: **in flight** at session's end, expected to complete
+  shortly after. Cost was raised as a live concern mid-run (Opus for a
+  180-cell sweep) — user's explicit call: let it finish rather than stop
+  partway, but **flagged model-cost-per-eval-run as a real open design
+  question**, not resolved here: once `openclaw`'s per-role model selection
+  is real, this harness's own default model (`claude-opus-5`) may not be the
+  right default to keep reaching for on every future run — a cheaper model
+  matching whichever role is actually being evaluated may be more honest
+  *and* cheaper. Not acted on this session, just named so it isn't silently
+  forgotten.
+
+**Next, not yet done**: once the Opus run lands, a combined report
+(`report.py` already splits by model when a file mixes them) is the
+Claude-vs-DeepSeek comparison this was building toward. Then: decide whether
+`DEFAULT_MODEL["anthropic"]` should move off Opus by default, and whether a
+third provider (whatever `openclaw` ends up routing non-Opus roles to) is
+worth wiring in before that decision is made blind.
 
 ### Other open items, carried forward
 
