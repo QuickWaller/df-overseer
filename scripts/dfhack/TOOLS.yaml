@@ -1,0 +1,367 @@
+# Tool manifest for df-overseer's DFHack scripts.
+#
+# Built 2026-09-12 per the take-stock/architecture pass's recommendation
+# (decisions/DECISIONS.md 2026-09-12, "Opus-authored take-stock/architecture
+# pass"): a small manifest instead of splitting the Lua tools into
+# perception/ and action/ directories, since every action tool here is
+# deliberately fused with its perception counterpart (build_open_area with
+# find_open_area, dig_diggable_area with find_diggable_area, build_at_landmark
+# with get_landmark_centroid) rather than kept separate. Doubles as a first
+# draft of the still-missing MCP tool schema (docs/PURPOSE.md design
+# commitment #5: "the brain lives outside this repo... this repo exposes DF
+# over MCP") -- when that server gets built, each command block below is
+# close to the shape one MCP tool definition needs (name, args, whether it
+# mutates, what it returns).
+#
+# This is metadata ABOUT scripts/dfhack/*.lua, not a substitute for reading
+# them -- each file's own header comment carries the full design rationale,
+# live-verification detail, and honest caveats. Keep this file to one entry
+# per CLI subcommand; if a subcommand's story needs more than a line or two,
+# that belongs in the .lua file's own comment or a decisions/DECISIONS.md row,
+# linked from here, not duplicated.
+#
+# Field meanings:
+#   effect
+#     read    -- queries fort state, never mutates it
+#     mutate  -- causes a real, persistent change (a designation, a labor
+#                flip, a UI-driven state change) -- gate live use the same
+#                way any fort-mutating action is gated (quicksave discipline,
+#                peer/user heads-up), not like a read command
+#   coordinate_bearing
+#     false           -- design commitment #1 (docs/PURPOSE.md): no raw x/y/z
+#                        ever appears in this command's output. Landmark
+#                        name/direction/distance_tiles instead.
+#     internal-only   -- a real coordinate IS resolved and used internally
+#                        (usually to drive `quickfort run -c x,y,z`), but
+#                        never printed, returned, or assigned outside the
+#                        function's own local scope.
+#     true            -- a raw coordinate DOES appear in this command's
+#                        output. Each true below is annotated with why: a
+#                        documented, spec-sanctioned exception; a known,
+#                        not-yet-fixed gap; or out-of-scope tooling (embark-
+#                        site-selection UI automation, which predates any
+#                        founded fort and isn't itself perception-layer code).
+#   live_deployed
+#     Whether the FILE is on VM 103's script-paths (per install_df.py
+#     ui-install / script-install). All 10 files are, confirmed
+#     2026-09-12 (Working.md handover) -- this field exists per-command
+#     anyway since a file being deployed doesn't mean every subcommand in it
+#     has been exercised for real.
+#   verified
+#     Last date this SPECIFIC command was confirmed against a real, running
+#     fort (not just "the file loads without error"). "unverified" is an
+#     honest label, not a bug -- per this repo's "mark verified vs proposed"
+#     rule (CLAUDE.md, memory/dfhack-environment.md).
+#   notes
+#     A pointer, not a re-narration. Long rationale lives in the .lua file's
+#     own header or a decisions/DECISIONS.md row.
+
+df-overseer-connectivity.lua:
+  build_order_item: 2
+  commands:
+    report:
+      lua_function: get_connectivity_report
+      effect: read
+      coordinate_bearing: false
+      live_deployed: true
+      verified: "2026-09-10"
+      notes: "Reuses warn-stranded.lua's getStrandedGroups() via reqscript. decisions/DECISIONS.md 2026-09-10."
+    "check FROM TO":
+      lua_function: check_reachable
+      effect: read
+      coordinate_bearing: false
+      live_deployed: true
+      verified: unverified
+      notes: >
+        Landmark-name form, added once the landmark system existed
+        (2026-09-10). The underlying dfhack.maps.canWalkBetween/
+        getWalkableGroup mechanism is verified via check-units below;
+        this specific FROM/TO-by-name wrapper has no separate live-test
+        claim on record.
+    "check-units UNIT_ID UNIT_ID":
+      lua_function: check_reachable_units
+      effect: read
+      coordinate_bearing: false
+      live_deployed: true
+      verified: "2026-09-10"
+      notes: "Original stopgap, kept for low-level debugging. decisions/DECISIONS.md 2026-09-10."
+
+df-overseer-landmarks.lua:
+  build_order_item: 3
+  commands:
+    list:
+      lua_function: list_landmarks
+      effect: read
+      coordinate_bearing: false
+      live_deployed: true
+      verified: "2026-09-11"
+      notes: "Seed + live buildings + live burrows, sorted by name for prefix-cache determinism. decisions/DECISIONS.md 2026-09-10/11."
+    "get NAME":
+      lua_function: get_landmark
+      effect: read
+      coordinate_bearing: false
+      live_deployed: true
+      verified: "2026-09-10"
+      notes: "Thin filter over list_landmarks."
+    "build NAME BLUEPRINT_FILE":
+      lua_function: build_at_landmark
+      effect: mutate
+      coordinate_bearing: internal-only
+      live_deployed: true
+      verified: unverified
+      notes: >
+        Added 2026-09-11, merged into main 2026-09-12. Same fused
+        resolve-and-act shape as build_open_area/dig_diggable_area (see
+        those for the mechanism and the top-left-vs-center quickfort bug
+        both of them had). No live-test claim on record for this one
+        specifically -- treat as needing verification before relying on it,
+        not as broken.
+
+df-overseer-overview.lua:
+  build_order_item: 4
+  commands:
+    "get (or no args)":
+      lua_function: get_overview
+      effect: read
+      coordinate_bearing: false
+      live_deployed: true
+      verified: unverified
+      notes: >
+        Composes list_landmarks (verified 2026-09-11) and
+        get_connectivity_report (verified 2026-09-10) plus tier0/tier2
+        fields computed here directly. No separate live-run of get_overview
+        itself is on record; the pieces it calls are each independently
+        verified. Three-tier shape (tier0 session-constant, tier1
+        slow-changing, tier2 volatile) relies on JSON's alphabetical key
+        order matching stable-to-volatile order -- confirmed live, see this
+        file's own header comment.
+
+df-overseer-diff.lua:
+  build_order_item: 5
+  commands:
+    "since CURSOR":
+      lua_function: drain_since
+      effect: read
+      coordinate_bearing: false
+      live_deployed: true
+      verified: "2026-09-12 (REPORT only)"
+      notes: >
+        JOB_COMPLETED/UNIT_DEATH: registration confirmed not erroring, and
+        the listener hand-called directly -- NOT a real trigger firing
+        (honest gap, carried forward from this file's original version).
+        REPORT: real eventful delivery genuinely confirmed live 2026-09-12
+        (registered listener fired for real newly-created reports while
+        unpaused, matched against world.status.reports' own new entries).
+        UNIT_ATTACK: registration/persistence mechanism confirmed via the
+        same proven _G-survival technique, but no real attack occurred
+        during a live test window -- verified only by mechanism, not by a
+        real trigger. decisions/DECISIONS.md 2026-09-12 ("Folded
+        df-overseer-combat.lua...").
+    "recent-combat [N]":
+      lua_function: recent_combat
+      effect: read
+      coordinate_bearing: true
+      live_deployed: true
+      verified: "2026-09-12"
+      notes: >
+        NEWLY FLAGGED building this manifest, not previously documented:
+        report_line() prints a raw `pos=%d,%d,%d` for every combat/threat
+        report -- this is a SECOND raw-coordinate leak alongside the
+        already-known df-overseer-labor unit-status one, not yet recorded
+        anywhere else in this repo. Real finding (99 combat/threat reports
+        reconstructed live, kea-fight blow-by-blow confirmed 2026-09-11/12),
+        but out of design-commitment-#1 compliance until fixed the same way
+        unit-status's leak is queued to be. See Working.md's known-exceptions
+        list.
+    "since-report REPORT_ID":
+      lua_function: since_report
+      effect: read
+      coordinate_bearing: true
+      live_deployed: true
+      verified: "2026-09-11"
+      notes: "Same pos=x,y,z leak as recent-combat above, same function (report_line). 21/34 real reports matched reconstructing the kea fight."
+
+df-overseer-openarea.lua:
+  build_order_item: 6
+  commands:
+    "find W H [Z] NEAR_LANDMARK [RADIUS_TILES]":
+      lua_function: find_open_area
+      effect: read
+      coordinate_bearing: false
+      live_deployed: true
+      verified: "2026-09-11"
+      notes: "Ranked candidates correctly judged by the first autonomous-play experiment. decisions/DECISIONS.md 2026-09-11."
+    "build W H [Z] NEAR_LANDMARK BLUEPRINT_FILE [RANK] [RADIUS_TILES]":
+      lua_function: build_open_area
+      effect: mutate
+      coordinate_bearing: internal-only
+      live_deployed: true
+      verified: "2026-09-12"
+      notes: >
+        Produced Stockpile #2, the project's first fully closed
+        coordinate-free decision-to-mutation loop. Had the top-left-vs-center
+        quickfort bug (worked anyway, by luck, per find_open_area's
+        candidates sitting in broadly open space) -- fixed and re-verified.
+        decisions/DECISIONS.md 2026-09-11/12.
+
+df-overseer-chokepoints.lua:
+  build_order_item: "7 (first half)"
+  commands:
+    "find Z NEAR_LANDMARK [RADIUS_TILES]":
+      lua_function: find_chokepoints
+      effect: read
+      coordinate_bearing: true
+      live_deployed: true
+      verified: "2026-09-11 (stair kind only)"
+      notes: >
+        `pos_for_action_tools` is a documented, spec-sanctioned exception
+        (research/2026-08-25-spatial-perception.md §5: "the one place a raw
+        coordinate is the point of the output -- a door/trap has to be built
+        somewhere specific"), not a gap. The "stair" chokepoint kind is
+        confirmed live (a real soil-stair-up/stone-stair-down pair on
+        Uniboslan). The "corridor" kind (1-wide-passage heuristic) has no
+        separate live-confirmation on record. rank_candidate_sites (the rest
+        of build order item 7) is still blocked on resource_summary/threat
+        data that don't exist yet.
+
+df-overseer-diggable.lua:
+  build_order_item: "gap found 2026-09-11, not in the original 0-9 order"
+  commands:
+    "find W H [Z] NEAR_LANDMARK [RADIUS_TILES]":
+      lua_function: find_diggable_area
+      effect: read
+      coordinate_bearing: false
+      live_deployed: true
+      verified: "2026-09-11"
+      notes: "Correct negative near the surface embark (TREE-material walls excluded) and a correct positive underground (5 ranked SOIL candidates). decisions/DECISIONS.md 2026-09-11."
+    "dig W H [Z] NEAR_LANDMARK BLUEPRINT_FILE [RANK] [RADIUS_TILES]":
+      lua_function: dig_diggable_area
+      effect: mutate
+      coordinate_bearing: internal-only
+      live_deployed: true
+      verified: "2026-09-11"
+      notes: >
+        Second fully closed coordinate-free decision-to-mutation loop. Had
+        the identical top-left-vs-center quickfort bug as build_open_area,
+        found here first (an unreachable real dig, zero walkable neighbors,
+        no dwarf ever claimed it) -- fixed in both files. Re-tested after the
+        fix: all 41 designated tiles fully dug. decisions/DECISIONS.md
+        2026-09-11.
+
+df-overseer-stuckjobs.lua:
+  build_order_item: 8
+  commands:
+    "find [MIN_IDLE_TICKS]":
+      lua_function: get_stuck_jobs
+      effect: read
+      coordinate_bearing: false
+      live_deployed: true
+      verified: "2026-09-11"
+      notes: >
+        Traversal idiom (utils.listpairs over world.jobs.list) confirmed
+        against three separate stock scripts on this install, stronger than
+        the research spec's own "unverified-locally-but-standard" flag.
+        idle_ticks is honestly null for any job that existed before this
+        script's first registration this process lifetime, never guessed.
+
+df-overseer-labor.lua:
+  build_order_item: "not in the 0-9 spatial build order -- a separate gap, decisions/DECISIONS.md 2026-09-11"
+  commands:
+    "unit-status [idle|injured|military|hostile]":
+      lua_function: unit_status
+      effect: read
+      coordinate_bearing: true
+      live_deployed: true
+      verified: "2026-09-11"
+      notes: >
+        KNOWN, ALREADY-DOCUMENTED EXCEPTION (Working.md): prints raw
+        `pos=x,y,z` for every citizen/threat row -- the landmark system
+        this repo's spec calls for wasn't merged to main yet when this file
+        was written. Out of design-commitment-#1 compliance until addressed;
+        not yet fixed. Separately: the `hostile` filter
+        (dfhack.units.isDanger/isInvader) is proven UNRELIABLE as a
+        fort-defense signal -- missed a real kea attack entirely, flagged
+        harmless demons instead. Treat its output as "worth a second look,"
+        never "confirmed safe/hostile" on its own.
+    "labors UNIT_ID":
+      lua_function: list_labors
+      effect: read
+      coordinate_bearing: false
+      live_deployed: true
+      verified: "2026-09-11"
+      notes: "df.unit_labor confirmed as an enum wrapper needing numeric iteration, not pairs()."
+    "set-labor UNIT_ID LABOR_NAME on|off":
+      lua_function: set_labor
+      effect: mutate
+      coordinate_bearing: false
+      live_deployed: true
+      verified: unverified
+      notes: >
+        unit.status.labors as a genuine indexable/settable bitfield is
+        confirmed live 2026-09-11. The direct set-labor CLI call itself has
+        no separate live-test claim on record -- autolabor's own
+        confirmed-live toggling exercises the same underlying field, not
+        this specific code path.
+
+df-overseer-ui.lua:
+  build_order_item: "infra-support (menu/UI automation), not a perception/action primitive"
+  commands:
+    type:
+      lua_function: screen_type
+      effect: read
+      coordinate_bearing: false
+      live_deployed: true
+      verified: "2026-09-09"
+      notes: "n/a for map coordinates -- reports a DF viewscreen type, not fort geometry."
+    "click TEXT":
+      lua_function: click_text
+      effect: mutate
+      coordinate_bearing: false
+      live_deployed: true
+      verified: "2026-09-09/10"
+      notes: "Buffer text scan + simulated click, never a guessed pixel coordinate, per design commitment #1's spirit even though this predates any founded fort."
+    dump:
+      lua_function: dump_screen
+      effect: read
+      coordinate_bearing: false
+      live_deployed: true
+      verified: "2026-09-09"
+      notes: "Diagnostic only. Does not see the map viewport's own texture-blit render path."
+    embark-mode:
+      lua_function: embark_mode
+      effect: mutate
+      coordinate_bearing: false
+      live_deployed: true
+      verified: "2026-09-10"
+      notes: "Clicks a known fixed screen position (row 57), not a text scan -- see this file's own comment for why."
+    leave-embark-mode:
+      lua_function: leave_embark_mode
+      effect: mutate
+      coordinate_bearing: false
+      live_deployed: true
+      verified: "2026-09-10"
+      notes: "Confirmed clean return to browsing, no confirm/abort prompt, as long as the local map itself was never clicked."
+    hover:
+      lua_function: hover_info
+      effect: read
+      coordinate_bearing: true
+      live_deployed: true
+      verified: "2026-09-10"
+      notes: >
+        Reports the live embark-rectangle corners (sx/sy/ex/ey) and biome/
+        aquifer/soil flags. OUT OF SCOPE for design commitment #1, not a
+        violation of it: this is one-off embark-SITE-SELECTION tooling that
+        runs before any fort exists, not perception-layer code describing a
+        running fort. Read-only -- the caller (xdotool over SSH) drives the
+        real cursor; this only reads hover state back.
+
+# Not yet built, flagged here rather than silently absent:
+#   - resource_summary (get_overview's remaining unbuilt field, needed to
+#     unblock chokepoints' rank_candidate_sites).
+#   - find_open_area terrain="cavern" (build order item 9, deliberately last).
+#   - A real WHY diagnosis for get_stuck_jobs (missing skill/material/idle
+#     unit) -- current output is an honest "no worker assigned", not a cause.
+#   - The learning/ledger and learning/predictions read/write surface --
+#     plain JSONL today, not exposed as a dfhack-run command at all. Belongs
+#     in a future MCP server, not here, per decisions/DECISIONS.md 2026-09-12
+#     ("Revisit when the brain choice and the MCP seam are both real").
