@@ -247,6 +247,16 @@ class FakeDFHackServer:
     on). A request with no queued action gets a default OK-with-no-text
     reply, so tests that don't care about a particular call's response
     don't need to queue one.
+
+    `received_requests` records the raw, still-undecoded request payload
+    for every RunCommand request across every connection, in arrival order
+    -- added for dfmcp/tests/test_server.py, which needs to prove a
+    specific argv actually reached this fake (test 4 of the transport
+    handoff's four load-bearing tests), not just that *some* call
+    succeeded. Decode an entry with `_encode_run_command_request` for
+    comparison, or dfmcp.dfhack_client's own field iterator. Purely
+    additive: nothing before this stream's addition read this list, so no
+    existing test's behaviour changes.
     """
 
     def __init__(self, handshake_ok: bool = True, handshake_bad_magic: bool = False):
@@ -257,6 +267,7 @@ class FakeDFHackServer:
         self.port = 0
         self._actions: List[Action] = []
         self.connections_accepted = 0
+        self.received_requests: List[bytes] = []
 
     def queue_actions(self, *actions: Action) -> None:
         self._actions.extend(actions)
@@ -303,7 +314,8 @@ class FakeDFHackServer:
                 msg_id, size = struct.unpack(_HEADER_FORMAT, header)
                 if msg_id == RPC_REQUEST_QUIT:
                     return
-                await reader.readexactly(size)  # the request payload, not decoded: not under test here
+                payload = await reader.readexactly(size)
+                self.received_requests.append(payload)
                 action = self._next_action()
                 if action is None:
                     await action_ok(reader, writer)
