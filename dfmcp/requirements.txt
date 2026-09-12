@@ -1,0 +1,34 @@
+# dfmcp/server.py's own dependency: the MCP Python SDK, exact-pinned.
+#
+# Pinned to the 2.x line deliberately, not "whatever mcp resolves to today":
+# research/2026-09-12-mcp-server-stack.md found 1.x is now security-fix-only
+# maintenance, and more concretely, dfmcp/server.py is built against 2.x's
+# low-level Server API (on_list_tools=/on_call_tool= constructor kwargs,
+# Server.streamable_http_app()) -- 1.x's equivalent is decorator-based
+# (@server.list_tools()) and does not expose the same shape, so this is not
+# a version this module degrades gracefully without.
+#
+# Convention: this repo pins nothing at its root (see dfmcp/README.md and
+# research/2026-09-12-mcp-server-stack.md §7); the existing precedent is a
+# per-component requirements.txt (evals/compliance/requirements.txt,
+# evals/perception/requirements.txt). This file follows that same pattern
+# for dfmcp rather than starting a root pyproject.toml, which was flagged
+# as a real but out-of-scope decision, not made here.
+#
+# A CONCRETE, VERIFIED CONFLICT if this is ever installed into a shared
+# Python environment rather than a dedicated venv: this exact machine
+# already has a third-party `fastmcp` package installed
+# (jlowin/fastmcp on PyPI, unrelated to this repo) that declares
+# `mcp<2.0,>=1.24.0` -- installing mcp==2.2.0 into that same environment
+# conflicts with fastmcp's own declared range (pip's resolver warns but
+# does not block it). Install this into an isolated venv
+# (`python -m venv --system-site-packages <path>` then
+# `pip install -r dfmcp/requirements.txt` inside it) rather than into
+# whatever ambient Python environment already runs the rest of this repo's
+# tests, unless and until a deliberate decision is made to upgrade that
+# shared environment (and confirm fastmcp, if still needed for anything
+# else on that host, tolerates it). dfmcp/tests/test_server.py's own
+# ImportError guard means the rest of this repo's test suite keeps passing
+# either way; only test_server.py itself needs this installed to run
+# rather than skip.
+mcp==2.2.0

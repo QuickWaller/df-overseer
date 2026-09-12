@@ -1,0 +1,63 @@
+# UNDEPLOYED. This file is not installed on VM 103 or anywhere else -- the
+# stream that wrote it (handoffs/2026-09-12-mcp-transport.md) was explicitly
+# barred from touching VM 103 or VM 106 and from running any deploy step.
+# It exists so the eventual deploy step is a review of a written unit, not
+# an improvised one typed against a live host.
+#
+# Copy to /etc/systemd/system/dfmcp-server.service on VM 103 (the fort's own
+# VM -- see docs/AGENT-ARCHITECTURE.md §13 for why the MCP server stays next
+# to DFHack rather than living on openclaw's VM), fill in the paths for that
+# host's actual venv and repo checkout, and never enable it before:
+#   1. dfmcp/requirements.txt is installed into a DEDICATED venv on that
+#      host, not the system Python (see dfmcp/requirements.txt's own
+#      comment on why: a real, verified dependency conflict with an
+#      unrelated pre-existing `fastmcp` package on at least one machine
+#      this project's sessions have used).
+#   2. .env on that host carries a real MCP_SERVER_BIND_HOST (the tailnet
+#      address, never 0.0.0.0 -- dfmcp/server.py's ServerConfig refuses to
+#      start without one) and a real MCP_ROLE_TOKEN_<ROLE> per enabled role
+#      (dfmcp/auth.py).
+#   3. The exact `systemctl start` command has been run past the user for
+#      explicit go-ahead, per this repo's CLAUDE.md rule that any change to
+#      live/VM state needs confirmation each time, regardless of what an
+#      earlier session was told.
+
+[Unit]
+Description=df-overseer MCP server (dfmcp.server)
+After=network-online.target
+Wants=network-online.target
+# Uncomment and name the actual DFHack-launching unit on this host, once one
+# exists, so systemd orders this after it -- this server has nothing to
+# serve until DFHack's RPC socket is up (dfmcp/dfhack_client.py's pool
+# self-heals across a DFHack restart, but not across "DFHack never started
+# yet").
+# After=dfhack.service
+
+[Service]
+Type=simple
+# The account already running DFHack on this host, per this repo's existing
+# convention -- research/2026-09-12-mcp-server-stack.md §7 flagged this as
+# not independently re-checked; confirm before filling in.
+User=CHANGEME
+Group=CHANGEME
+
+WorkingDirectory=/CHANGEME/df-automation
+EnvironmentFile=/CHANGEME/df-automation/.env
+ExecStart=/CHANGEME/df-automation/.venv-dfmcp/bin/python -m dfmcp.server
+
+Restart=on-failure
+RestartSec=5
+
+# Defence in depth beyond the application-level bind-address check
+# (dfmcp.server.ServerConfig refuses 0.0.0.0 and refuses to start with no
+# bind_host at all): this unit itself should never see a public interface,
+# since VM 103's own network posture is "tailnet-only for everything but
+# the relay" per docs/AGENT-ARCHITECTURE.md §13.
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/CHANGEME/df-automation
+
+[Install]
+WantedBy=multi-user.target
