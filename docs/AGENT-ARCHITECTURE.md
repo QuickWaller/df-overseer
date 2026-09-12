@@ -1020,6 +1020,19 @@ The boundary is the MCP HTTP endpoint between openclaw's VM and VM 103.
    tools, which would silently void the entire single-writer design. So: **one
    token per role**, issued at the seam and mapped to a role server-side.
 
+   **Confirmed buildable end to end, 2026-09-12, and this was an open blocker
+   until it was.** The scheme needs the client to send a fixed credential, and
+   the host's documented remote-MCP auth appeared to be OAuth and mTLS only.
+   It is not: a static header map per server entry is a first-class config
+   surface, and the token can come from an environment variable rather than
+   being written into a config file, which matters because this repo is public.
+   **The one-token-per-role part survives too**: declaring the same server URL
+   under one entry per role, each with its own token, works because the host
+   keys those entries by name rather than by URL. Reported from a source read
+   of both sides; **nothing has been run against anything yet**, and the cheap
+   experiment that would settle it is named in the brief.
+   → `research/2026-09-12-openclaw-mcp-auth.md`.
+
 Transport: MCP over HTTP on the tailnet, never publicly exposed. openclaw
 supports remote MCP servers with OAuth/TLS, so authentication does not need
 inventing.
@@ -1047,6 +1060,18 @@ hours with root cause open.
    plus per-server agent allowlists. **Principle 8 is therefore enforceable and
    §11 stands.** This was the design's biggest single risk and it cleared.
    → `research/2026-09-12-openclaw-primitives.md`
+
+   **CORRECTED 2026-09-12: one of those three named mechanisms was the wrong
+   one.** The "per-server agent allowlist" (`mcp.servers.<name>.codex.agents`)
+   is scoped to one particular harness by the host's own documentation and does
+   **not** apply to the plain agent entries this design uses. The general
+   mechanism is `agents.entries.<id>.tools.allow/deny`, matched against MCP tool
+   identities of the form `<server>__<tool>`. **The conclusion is unchanged and
+   principle 8 still holds** — per-agent scoping is real, it is simply held by a
+   different key than two briefs recorded. It matters only because it is
+   defence in depth (§13 requirement 1), so writing the wrong key into
+   openclaw's config would silently remove that second layer while looking
+   correct. → `research/2026-09-12-openclaw-mcp-auth.md`.
 2. **Is "no peer chat" well-founded? YES, and it survived review**, with one
    doctrine-backed relaxation identified for v2 (read-only cross-advisor
    visibility without authority). Folded into §4.
