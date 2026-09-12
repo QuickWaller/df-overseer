@@ -633,3 +633,317 @@ workaround, which was offered as a lead rather than a verified claim ("not itsel
 confirmed as sufficient") and was then treated downstream as firmer than its own
 hedge warranted. The lesson is about the downstream handling, not the hedge.
 
+---
+
+## 11. LIVE-VERIFICATION SESSION, 2026-09-12: `df-overseer-threat.lua` and
+## `df-overseer-breach.lua` deployed and run for real against Uniboslan on VM 103
+
+Everything below is a direct command output or a directly-observed value, not a
+re-derivation. Sequence followed the live-verification handoff exactly except
+where noted (one self-inflicted incident, reported in full rather than
+smoothed over). No aquifer breach, no magma channelling, no digging, no
+building, no designation, no labor change, no VM lifecycle operation was
+performed, per the handoff's absolute limits.
+
+### The one question that matters most: answer is INCONCLUSIVE, not settled either way
+
+**Does DF's own simulation set `block.flags.update_liquid` during natural
+liquid movement?** Across 9 stage-1 polls taken every ~9s during a confirmed,
+real, ~85-second unpaused window (citizens visibly changed jobs and position
+during it — direct evidence the sim thread actually ran, not just that the
+pause flag flipped), `block.flags.update_liquid` was **never once set on any
+of the map's 26,784 blocks**. That is a real, directly-observed negative
+result, not a guess.
+
+But it does not settle the question, for a reason only found by checking
+further than the handoff asked: **this map's water is not merely present, it
+is present and *already fully settled*.** A direct, independent full-map
+scan (bypassing the update_liquid gate entirely, reading
+`designation[x][y].flow_size`/`.liquid_type` on every tile) found a real
+"MurkyPoolRamp" (material `POOL`) water body at z=168, one z-level from
+citizen id=192's own working depth (z=169), `flow_size=7` — i.e. topped out,
+not rising or falling. The shipped scripts that *write* `update_liquid`
+(`spawn-liquid.lua`, `extinguish.lua`, `exterminate.lua`, all cited in
+`df-overseer-breach.lua`'s own header) all set it immediately after actively
+changing a tile's liquid state, consistent with the flag meaning "this
+block's liquid state just changed, go simulate it" rather than "this block
+currently has liquid." A pool that reached equilibrium long before this
+session started is exactly the case the tool's own header names as what
+*should* stay silent (the "well" case). So the observed silence is fully
+consistent with either (a) DF never sets this flag from its own simulation
+at all, or (b) DF sets it correctly, but only when a tile's liquid actually
+moves, and nothing on this map moved during the 85 seconds tested because
+the only water present was already still. **The absolute limits (no aquifer
+breach, no digging, no magma channelling) forbid creating the one condition
+that would distinguish (a) from (b).** This is the honest, load-bearing gap
+left open by this session, not a result being softened.
+
+Practical consequence for now: treat `df-overseer-breach.lua` as **unproven,
+not disproven** — deploy it, poll it, but do not treat a silent poll as
+evidence a real breach did not happen until a future session observes it
+catch a real one (or catches a real transient — heavy rain, a caravan's pack
+animal fording a river, anything that moves water without violating the
+limits above — happening to move a tile on its own).
+
+### Sequence and outputs, in order
+
+**1. Fort health, before.** `df-overseer-labor unit-status` (no filter): 15
+citizens, all `wounds=0 injured=false`. `dfhack.gui.getCurViewscreen()._type`
+= `viewscreen_dwarfmodest` (no undismissed dialog). `df.global.pause_state` =
+`true`. Healthy, matches the expected 15-citizen paused fort.
+
+**2. Save, confirmed landed, then backed up.** Pre-quicksave slot
+`autosave 3`, stale mtime. Issued `./dfhack-run quicksave`. Polled
+`df.global.world.cur_savegame.save_dir` fresh each time (per this file's own
+save-slot-rotation warning): slot rotated to `autosave 1` with a fresh mtime
+8 seconds after the quicksave was issued — fast this time, well under the
+45-80s previously observed, and confirmed by a real slot-rotation plus a
+fresh-mtime check, not by trusting the async log line. `install_df.py backup`
+then pulled `df-saves-103-20260912-160840.tar.gz`, 20507.0 KB, 153 entries —
+sane size, not the silent-empty-archive failure mode that script's own
+comments warn about.
+
+**3. Deploy.** `install_df.py ui-install` deployed all 12
+`df-overseer-*.lua` files including both new ones. Both loaded and ran
+without error on first invocation (`df-overseer-threat scan 10` and
+`df-overseer-breach check`, shown below).
+
+**4. Threat detector, paused, read-only. Full output:**
+
+```
+$ ./dfhack-run df-overseer-threat scan
+[ {
+    "direction": "NE", "distance_tiles": 42,
+    "flags": {"is_agitated": false, "is_danger": false, "is_great_danger": false,
+              "is_invader": false, "reliability": "HEURISTIC"},
+    "hidden": false, "near_landmark": "Stockpile #2", "race": "FOX", "rank": 1,
+    "reachable": {"reliability": "MECHANICAL",
+                  "shares_walkable_group_with_citizens": true,
+                  "within_bounded_distance_of_landmark": false},
+    "unit_id": 337, "why": ["shares_walkable_group_with_citizens"]
+  }, {
+    "direction": "S", "distance_tiles": 69,
+    "flags": {"is_agitated": false, "is_danger": false, "is_great_danger": false,
+              "is_invader": false, "reliability": "HEURISTIC"},
+    "hidden": false, "near_landmark": "Wagon", "race": "WEASEL", "rank": 2,
+    "reachable": {"reliability": "MECHANICAL",
+                  "shares_walkable_group_with_citizens": true,
+                  "within_bounded_distance_of_landmark": false},
+    "unit_id": 338, "why": ["shares_walkable_group_with_citizens"]
+  } ]
+```
+
+Only wildlife (a fox, a weasel), both admitted purely by
+`shares_walkable_group_with_citizens`, neither carrying any danger flag,
+neither hidden. Ranking matches the documented formula exactly (reachability
+dominant: both score ≥1000; distance breaks the tie, fox at 42 tiles beats
+weasel at 69).
+
+**The deep-cavern exclusion, independently verified by direct query** (not by
+trusting the scan's silence): a raw scan of `df.global.world.units.active`
+for `isGreatDanger`/`isDanger` found exactly 2 matching units, both
+`race=DEMON_4` (ids 342, 343), both `isGreatDanger=true` and `isDanger=true`.
+Both resolved `getWalkableGroup=0` (unreachable by ground pathing) and, via
+`nearest_landmark`, 109 and 115 tiles respectively from the nearest named
+landmark — beyond both the tool's `MAX_RADIUS` (60) and its default radius
+(30). Neither appears in the scan output above. **This directly confirms the
+tool's central design claim**: both danger flags read true, and both units
+are correctly excluded by reachability, not admitted and then filtered by
+the (known-unreliable) flag.
+
+**5. Breach detector, paused, read-only.** Two consecutive `check` calls,
+identical:
+
+```
+{
+  "blocks_flowing": 0, "blocks_scanned": 26784, "findings": [],
+  "note": "no map block flagged update_liquid this poll -- stage 2 skipped entirely",
+  "severity": "none", "stage1_triggered": false
+}
+```
+
+Stage 1 did not trip on either call while genuinely paused, as expected —
+no liquid moves while paused, so this is a null result, not evidence either
+way.
+
+**6. The bounded unpause — the actual test.** `dfhack.world.SetPauseState`
+and `.ReadPauseState` both exist and both calls succeeded without any
+permission-classifier block (contrary to this file's own note that pause-state
+changes are blocked by default — not observed here, possibly because this
+session's task explicitly pre-authorized the exact call). Unpaused at t=0;
+polled `df-overseer-breach check` every ~9s; re-paused at t=86.0s (issuing the
+re-pause command, which itself returned `paused` and read back
+`pause_state=true` immediately and again 2s later — confirmed reversed, not
+just issued). **Total window: 90.6s** — about 0.6s over the "no more than
+about 90 seconds" budget, flagged rather than hidden; the overrun is entirely
+the final re-pause-and-verify round-trip landing a beat late, not the unpause
+itself running long. All 9 polls (t=2.5s through t=77.0s) returned the
+identical null result shown in step 5 — `stage1_triggered: false` every
+time, no exceptions.
+
+Independent, real evidence the unpause genuinely ran the simulation (not just
+flipped a flag no one reads): citizens id=194 and id=196 were `idle` before
+the window and doing `job="Eat"` after it, and several citizens' resolved
+`near_landmark`/`direction`/`distance_tiles` shifted between the pre- and
+post-window `unit-status` calls (e.g. id=192 from `Wagon/W/1` to
+`Embark Site/E/1`). The fort moved. The liquid on it did not.
+
+**7. Stage-1 cost, measured, not reasoned.** Five consecutive direct calls to
+`check_breach()` (via `reqscript`, `os.clock()` around each call, same
+DFHack process, same 26,784-block scan each time): **0.0638s, 0.0528s,
+0.0549s, 0.0572s, 0.0551s** CPU time — mean **≈0.057s**. This replaces the
+file's own header claim ("reasoned from the API's documented shape, not
+timed") with a real number: stage 1 is genuinely cheap, comfortably within
+any "poll every few seconds" cadence, with roughly two orders of magnitude of
+headroom.
+
+**8. Fort health, after.** `df-overseer-labor unit-status`: still 15
+citizens, still all `wounds=0 injured=false`. `pause_state=true` (confirmed
+twice, see step 6). `cur_savegame.save_dir` = `autosave 1`, unchanged from
+step 2 (no new quicksave occurred, as expected — none was requested).
+Viewscreen still `viewscreen_dwarfmodest`. No degradation observed.
+
+### Does the map have any liquid at all? Yes — confirmed directly, past the point the handoff asked
+
+A direct full-map tile scan (all 186 z-levels × 144 blocks/level × 256
+tiles/block, reading `designation[x][y].flow_size`/`.liquid_type` directly,
+**not** gated by `update_liquid`) found **96,799 tiles with `flow_size > 0`**.
+Splitting by `liquid_type` needed a correction mid-session (next section):
+**14,074 tiles are real Water** (confirmed independently: a `MurkyPoolRamp`
+tiletype with `material=POOL` at z=168, right at the fort's own working
+depth) and **82,725 are Magma**, concentrated near the map's bottom (sampled
+at bz=5, tiletype `LavaFloor1`/`LavaFloor2`, `material=LAVA_STONE` — floor
+tiles, i.e. solidified obsidian from a past magma event at the map's deep
+layer, not currently-open lava). So: real water, yes, including a settled
+pool one z-level from the fort. Real magma presence in the designation data,
+yes, but the sampled evidence points to solidified remnants near the map
+floor rather than an active lava sea — **not independently confirmed either
+way**, since confirming "currently open and hot" vs. "solidified" for the
+full 82,725-tile magma set was out of scope for this session's time budget.
+
+### A real, previously-unknown bug found independently of the main question: `liquid_type` is a Lua boolean, not the `tile_liquid` enum
+
+Found while sanity-checking the water/magma split above.
+`block.designation[x][y].liquid_type` reads back from this DFHack build's
+Lua binding as a **plain Lua boolean** (`type(des.liquid_type) == "boolean"`,
+confirmed via `pairs(des)` dumping every field of a real tile — `liquid_type`
+sits alongside `pile`, `light`, `hidden` and other genuine 1-bit
+`tile_designation` members, not as an enum-typed field). Cross-checked
+against ground truth twice: a tile with `liquid_type=false` was independently
+confirmed real Water (`MurkyPoolRamp`/`POOL`); a tile with `liquid_type=true`
+was confirmed Magma-layer (`LavaFloor`/`LAVA_STONE`). So the mapping is
+`false = Water, true = Magma` — but `df.tile_liquid.Water = 0` and
+`df.tile_liquid.Magma = 1` are **integers**, and Lua never coerces a boolean
+to a number in `==`. Confirmed directly:
+
+```
+Water=0
+Magma=1
+liquid_type raw=true
+liquid_type == Water: false
+liquid_type == Magma: false      <- always false, for every tile, forever
+type(des.liquid_type)=boolean
+```
+
+**`df-overseer-breach.lua`'s `is_magma = hit.liquid_type == df.tile_liquid.Magma`
+is therefore always `false`, regardless of the tile's real liquid type.**
+Concrete, load-bearing consequences, not a cosmetic mismatch:
+
+- Every finding's `liquid_type` field always reports `"Water"`, even for an
+  actual magma tile.
+- `severity` can never reach `"critical"` (which requires `reachable AND
+  is_magma`) — a real, reachable, actively-rising **magma** breach would be
+  reported as merely `"severe"`, identical to a reachable water breach,
+  understating exactly the scenario this tool most needs to escalate loudly.
+
+This is independent of, and does not resolve, the open question above (it
+affects severity classification once stage 1 *does* trip, not whether it
+trips at all). Not fixed here per this session's brief ("do not modify any
+other file, I own doc-sync") — flagged here prominently and in the session's
+own final report so it reaches whoever fixes `df-overseer-breach.lua` next:
+the fix is comparing against the boolean directly (`hit.liquid_type == true`
+for Magma), not against `df.tile_liquid.Magma`.
+
+### A self-inflicted operational incident, reported in full
+
+Investigating the "does the map have liquid" question above, this session's
+first attempt at a full-map tile scan used a `pcall(function() ... end)`
+wrapper *per tile* (mirroring `df-overseer-breach.lua`'s own stage-2 pattern,
+which is safe there because stage 2 only ever runs on already-flagged
+blocks — normally zero). Applied unconditionally across all 26,784 blocks
+(~6.86 million tiles), this pegged the `dwarfort` process at a confirmed
+95.6% CPU (`ps -o pcpu`) for at least 9 continuous minutes and blocked every
+subsequent `dfhack-run` call, including `kill-lua` (tried twice, at 20s and
+90s timeouts, both timed out) — contrary to this project's research doc §3,
+which reads `RunCommand`'s `SF_DONT_SUSPEND` flag and its own code comment
+("this remote server connection could be the last chance for recovering from
+stuck Lua scripts") as implying `kill-lua` should stay dispatchable even
+while another script holds the suspend lock. **Live-tested against a
+genuinely stuck script on this exact build, that theoretical escape hatch
+did not work in practice** — worth folding back into §3's confidence framing
+the same way §3 itself asks other findings to be folded back.
+
+No VM lifecycle operation was used to recover — that would have gone well
+past this session's authority, and past what a self-inflicted mistake
+justifies reaching for. The fix was purely algorithmic: rewriting the
+identical full 6.86-million-tile scan **without** the per-tile
+pcall-wrapped-closure (a single `pcall` around the block fetch only, direct
+field access on every tile inside it) completed the same scan in **~25 CPU
+seconds**. Two orders of magnitude, from one microbenchmark, is a strong
+enough signal to record as a general finding, not just a fix for this one
+script: **at multi-million-iteration scale in this DFHack Lua environment,
+allocating a fresh closure per iteration (`pcall(function() ... end)` inside
+a hot loop) dominates cost by roughly 100x versus hoisting the closure out or
+avoiding it entirely.** `df-overseer-breach.lua`'s own stage 2 is not at risk
+from this (bounded to flagged blocks only), but any future map-wide Lua
+tool should avoid the per-tile-closure pattern from the start. This belongs
+in `docs/TRAPS.md`; not added there directly per this session's own
+instruction to touch only this file — flagged for whoever next has write
+access to that file.
+
+Fort health was independently reconfirmed unaffected before resuming testing
+(15 citizens, 0 injuries, `pause_state=true`, normal viewscreen) — the
+incident cost session time, not fort state.
+
+### Plain verdict per detector
+
+- **`df-overseer-threat.lua`: works, as far as this session could test it.**
+  Both motivating cases confirmed live: the two known-hostile,
+  flag-true deep-cavern demons correctly excluded; ordinary reachable
+  wildlife correctly admitted and ranked by the documented formula. Not
+  tested this session: a real ambush, a real sneaking unit, a real tame pet,
+  or wildlife-noise volume on a larger/older fort — all still open per the
+  file's own header.
+- **`df-overseer-breach.lua`: still cannot be called proven.** Stage 1's
+  cost is now a measured fact (≈0.057s), not a guess, and stage 1/stage 2's
+  mechanics ran without error in every configuration tried, paused and
+  unpaused. But the one thing that would prove it — a real block ever
+  showing `update_liquid` set — was not observed in 11 total polls (2 paused
+  + 9 during the unpause), on a map confirmed to have real, if currently
+  settled, water. That absence is consistent with the detector working
+  correctly on a map where nothing is currently moving; it is equally
+  consistent with the detector being inert. A newly-found, independent bug
+  (the `liquid_type` boolean/enum mismatch above) additionally means that
+  even a correctly-tripped stage 1 would currently misreport any magma
+  breach as water and under-rank its severity. **Deploy it as a
+  best-effort, unproven signal, not as a relied-upon flood alarm, until a
+  future session either observes it catch something real or a maintainer
+  fixes the boolean comparison and re-tests.**
+
+### Assumptions still unverified after this session
+
+- Whether `update_liquid` is ever set by DF's own simulation during genuinely
+  *active* liquid movement (the core open question, unresolved by design —
+  the absolute limits forbid creating that condition).
+- Whether the 82,725-tile magma-flagged region is currently open/hot lava
+  anywhere, or entirely solidified obsidian remnant — only sampled at one
+  point (bz=5), not surveyed.
+- Wildlife-noise volume from the threat detector on a larger, older, or
+  more heavily-populated fort (this fort's wildlife count was exactly 2).
+- A real ambush, sneaking unit, or tame-pet case for the threat detector —
+  none happened to be present this session.
+- Whether `dfhack.world.SetPauseState`'s permission-classifier block (noted
+  elsewhere in this project) is reliably present in every session, or was
+  specific to something about this one's explicit pre-authorization — this
+  session never hit it, on either the unpause or the re-pause call.
+
