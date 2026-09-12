@@ -48,9 +48,13 @@ of the sandbox pool. Two separate things had been conflated:
   `guests:` entry in `inventory/hosts/SRV-01.yaml` with the real VMID, plus
   `inventory/services.yaml` if a service moves. A post-hoc record, not a gate.
 
-There is a real argument for provisioning while a `home-lab` session is awake, so
-the inventory obligation is discharged immediately rather than being carried by a
-handover.
+**DO NOT PROVISION IT YET. User's explicit call, 2026-09-12.** The two bullets
+above describe *capability*, not *permission*: nothing technical blocks it, and
+it is still not to be done. This session offered to provision it immediately
+(arguing that a live `home-lab` session would let the inventory obligation be
+discharged on the spot rather than carried by a handover) and the user declined.
+Reason not stated, so do not infer one and do not re-raise it as newly unblocked:
+**ask them.**
 
 **One thing still needing the user rather than a session:** nothing. The
 address-leak cleanup and its `CLAUDE.md` edits were authorised 2026-09-12 and
