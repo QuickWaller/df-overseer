@@ -1001,6 +1001,29 @@ Not yet gated on anything, and needing a decision:
    first-draft schema, not a server. Everything here assumes the seam, and the
    seam needs per-role scoping designed in from the start, because retrofitting
    identity-aware allowlists later is painful.
+
+   **Three performance requirements, derived 2026-09-12 from the measured
+   round trips.** Today's 0.66-1.28s per call decomposes into per-call SSH
+   setup, a `dfhack-run` process spawn, an RPC connect, and only then the
+   ~200ms tick wait at `FPS_CAP:5`. **The tick wait is the smallest term**, so:
+
+   - **Hold one persistent DFHack RPC connection.** Do not shell out to
+     `dfhack-run` per call. This removes both dominant terms and leaves latency
+     roughly tick-bound (~200ms at `f=5`), a 3-5x improvement.
+   - **Persistence matters far more than locality.** Same-host and same-LAN are
+     within a millisecond or two of each other once the connection is held;
+     per-call SSH from anywhere is 0.5s+. So co-location is not the lever it
+     looks like, and the server may sit wherever lifecycle and resource
+     isolation argue for.
+   - **Batch a cycle's reads into one suspend window, deliberately.** Every
+     suspender pending at the same instant is serviced together (§6), so the
+     server should issue a snapshot's reads concurrently rather than in
+     sequence: ~1 tick instead of ~`k`. This is the implementation half of
+     §5's single-snapshot read pass.
+
+   Keep it in proportion: a model API call is seconds, so for a think-heavy
+   cycle 200ms versus 700ms per tool call is noise. It matters for call-heavy
+   cycles, where `k=20` is the difference between about 4s and about 14s.
 6. **The fort dossier is unbuilt**, and it gates per-cycle prediction grading
    (§10).
 7. **Several roster roles have no tool surface at all** (work orders, squads,
