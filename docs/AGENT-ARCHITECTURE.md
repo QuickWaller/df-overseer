@@ -398,6 +398,45 @@ Note that **the roster is itself a compression scheme**: six specialists reading
 Tier 1 in narrow domains and emitting a paragraph each is far cheaper than one
 brain reading everything. The org chart and the token budget want the same shape.
 
+**This, and not differentiated judgment, is the primary justification for a
+specialist role**, and the distinction changes what counts as evidence that a
+role is pulling its weight. **Doctrine, not tool output, is the dominant context
+cost**: tool output is transient, doctrine loads every cycle, and room-siting
+doctrine alone is substantial (keep the still near food, workshops need stockpile
+adjacency, bedrooms off the main thoroughfare, never dig below an aquifer, smooth
+before engraving). A decider holding that *plus* military posture *plus* stock
+thresholds *plus* arbitration rules walks into the cliff `evals/compliance/`
+measured at n≥40 simultaneous rules.
+
+There is a structural version of the same point too, enforced rather than hoped
+for. Check the allowlists: the Overseer holds `openarea.build`, `diggable.dig`
+and `landmarks.build` but **not** `openarea.find`, `diggable.find` or
+`chokepoints.find`. **So the Overseer can act on a candidate and cannot discover
+one.** The Architect is structurally necessary rather than merely convenient, and
+that division is held by the permission layer, not by convention.
+
+### How to tell whether a role is earning its place
+
+Recorded because the obvious test is wrong. "Are its proposals accepted without
+modification" measures redundancy of *judgment*, and a role accepted every time
+can still be earning its keep by keeping a large doctrine set out of the
+decider's prompt. Three better tests, in increasing order of how much to trust
+them:
+
+1. **Does the decider's context stay roughly flat as roles are added?** If adding
+   a role grows the Overseer's prompt, because it must re-read the detail to
+   evaluate the proposal, the partition is leaking and the role is not delivering
+   what it claims.
+2. **Is the role's doctrine large enough to be worth a round trip?** A role
+   carrying five rules saves nothing and is pure overhead. There is a floor below
+   which it should be folded into the Overseer, measurable straight from the
+   charter.
+3. **A/B one recorded snapshot through a monolithic Overseer versus the roster**,
+   comparing total tokens *and* decision quality. This is only affordable because
+   advisors are read-only and snapshots are replayable (§5): a property argued
+   for on consistency grounds turns out to be what makes the roster's own value
+   falsifiable.
+
 ### What the code layer owes the models
 
 Every number a model would otherwise compute, code computes. Specifically:
