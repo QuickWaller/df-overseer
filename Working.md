@@ -21,8 +21,9 @@ the Sentry, Triage, the queue, snapshots and playbooks are not started.
   architecture, graded urgency, write authority, reliability, recording and
   learning, modularity, explicit non-goals, and open questions. It is a design
   artifact and says so at the top.
-- **31 register rows** appended to `decisions/DECISIONS.md` by this session
-  (43 rows now carry today's date in total). The doc is the design; the rows
+- **Extensive new rows in `decisions/DECISIONS.md`, all dated 2026-09-12**
+  (`grep -c '^| 2026-09-12 |'` for the live count; a hand-maintained number
+  here drifted three times in one session, so it is deliberately not restated). The doc is the design; the rows
   are why each call was made, including the ones that were later corrected.
 - **`ROADMAP.md` updated**: two new Now items (the architecture, and the MCP
   server as the standing blocker), and three stale items corrected where the
