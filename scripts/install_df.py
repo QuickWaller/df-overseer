@@ -2330,7 +2330,8 @@ def main():
     tunnel = add("vnc-tunnel", help="reverse SSH tunnel from VM 103 to the"
                                      " public relay (VM 103 dials out)")
     tunnel.add_argument("--relay-ip", required=True,
-                        help="the relay's LAN IP, e.g. 192.168.2.202")
+                        help="the relay's LAN IP, e.g. 192.0.2.202"
+                             " (RFC 5737 doc address, not a real host)")
     tunnel.add_argument("--relay-user", default="relay",
                         help="login user on the relay, default 'relay'")
     tunnel.add_argument("--vnc-port", type=int, default=None,

@@ -1,7 +1,7 @@
 # Driving an Unattended Embark via `gui.simulateInput`: Screens, Keys, Verification
 
 Date: 2026-09-08
-Scope: what a DFHack Lua script would need to drive DF v0.53.16 / DFHack 53.16-r1.1 from the title screen to a running fort with no rendered output, on `df-colony-01` (VM 103, `192.168.2.201`).
+Scope: what a DFHack Lua script would need to drive DF v0.53.16 / DFHack 53.16-r1.1 from the title screen to a running fort with no rendered output, on `df-colony-01` (VM 103, `<df-vm-ip>`).
 Status: **read-only reconnaissance.** No key was simulated, no click was sent, and no screen was advanced. Everything below comes from (a) reading the installed DFHack Lua source under `/opt/df/game/hack/scripts/`, (b) reading `/opt/df/game/hack/docs/docs/dev/Lua API.txt` and `/opt/df/game/hack/news*.rst`, (c) reading `/opt/df/game/data/init/interface.txt`, and (d) a handful of read-only Lua queries against the live DFHack RPC server (`dfhack-run lua "print(...)"`, and one enum dump to a temp file) that only inspect state — `dfhack.gui.getCurViewscreen()`, global enum values, and one full dump of the `interface_key` enum names. None of these mutate game state; several are quoted verbatim below with their exact command.
 
 The single biggest finding: **the actual title→embark screen flow (Start → pick a region → new game vs. continue) could not be observed live**, because observing it means pressing keys, which was out of scope for this pass. Everything about that specific transition is inference from field names and script comments, not a confirmed trace. Section 8 flags this explicitly as the top follow-up.
