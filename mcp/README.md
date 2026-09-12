@@ -1,15 +1,20 @@
 # `mcp/`
 
-The permission seam: what a role is allowed to call. Not the MCP server
-itself, not a transport, not an RPC client. Those are out of scope here and
-come later, per `docs/AGENT-ARCHITECTURE.md` §13 item 5 ("the MCP server
-itself does not exist... the seam needs per-role scoping designed in from
-the start").
+The permission seam, plus (as of `dfhack_client.py`) the RPC client that
+actually talks to DFHack. Still not the MCP server itself and not a
+transport: no MCP SDK import anywhere in this package, no HTTP, no session
+handling. That is the one remaining missing half, blocked on an open
+question (`research/2026-09-12-mcp-server-stack.md`), per
+`docs/AGENT-ARCHITECTURE.md` §13 item 5 ("the MCP server itself does not
+exist... the seam needs per-role scoping designed in from the start").
 
-This package answers exactly one question, mechanically and at load time:
-**given a role and a tool id, is the call allowed, and why or why not.**
+Four of the five modules answer exactly one question, mechanically and at
+load time: **given a role and a tool id, is the call allowed, and why or why
+not.** The fifth, `dfhack_client.py`, answers a different one: **given an
+allowed call, how do you actually run it and get its output back**, without
+`dfhack-run` or any subprocess in between.
 
-## The four modules
+## The five modules
 
 | Module | Job |
 |---|---|
@@ -17,10 +22,15 @@ This package answers exactly one question, mechanically and at load time:
 | `roles.py` | Loads `agents/ROSTER.yaml` plus each enabled role's `tools.yaml`, resolves both against the registry, and exposes `Roster.check(role, tool_id)`. All of the strict validation lives here, because a role's permission set is the actual security boundary (`docs/AGENT-ARCHITECTURE.md` principle 8: "a role is defined by its tool allowlist"). |
 | `tools.py` | Turns a registry + roster + role into actual MCP tool definitions (`name`/`description`/`inputSchema`), and turns a validated call's arguments back into the exact DFHack argv. Transport-independent: no MCP SDK import, no notion of HTTP. |
 | `auth.py` | Maps a bearer token to a role, from a gitignored `.env`-shaped file. The credential half of the trust boundary in `docs/AGENT-ARCHITECTURE.md` §13: role identity must be a credential, not a claim. |
+| `dfhack_client.py` | A persistent-connection client for DFHack's RPC socket: hand-rolled handshake/framing/protobuf-subset codec, a `DFHackConnection`, and a `DFHackConnectionPool` for batching a cycle's reads into one suspend window. The only module in this package that opens a socket. |
 
-None of the four opens a socket, an SSH connection, or a DFHack RPC call.
-All are pure functions of files already in this repo (YAML, or a gitignored
-`.env`), which is what makes them fully unit-testable with no VM.
+`registry.py`, `roles.py`, `tools.py` and `auth.py` are pure functions of
+files already in this repo (YAML, or a gitignored `.env`) and open no
+socket, SSH connection, or DFHack RPC call -- which is what makes them
+fully unit-testable with no VM. `dfhack_client.py` breaks that pattern on
+purpose (something has to eventually open the socket), and stays
+unit-testable a different way: every test in `mcp/tests/test_dfhack_client.py`
+runs against a fake server written for that file, not a live DFHack.
 
 ## The canonical id scheme
 
@@ -291,12 +301,120 @@ reimplements the same small parsing logic verbatim instead of inventing a
 different one. If `load_env` ever changes, `auth.py`'s `_read_dotenv` needs
 the same fix by hand -- there is no shared import to keep them in sync.
 
+## What `dfhack_client.py` exposes
+
+The wire protocol behind every call here is not re-derived in this file --
+it is transcribed from `research/2026-09-12-dfhack-rpc-client.md`, written
+against the exact installed version (DFHack 53.16-r1.1) by reading its
+source at the pinned tag. That report is the citation for every magic
+number below; this section only restates what a caller of this module
+needs, not the evidence.
+
+`DFHackConnection(host="127.0.0.1", port=5000, timeout=10.0)` -- one
+persistent socket. `await conn.connect()` does the handshake (`"DFHack?\n"`
++ version 1, twelve bytes, little-endian); `await conn.run_command(command,
+arguments=None) -> str` runs one `df-overseer-*` console command over
+`RunCommand` (method id 1 -- `BindMethod` is never needed for this repo's
+use case, research doc §3) and returns its printed output, concatenated
+across every `RPC_REPLY_TEXT` message in wire order. `await conn.close()`
+sends `RPC_REQUEST_QUIT` and tears the socket down.
+
+**No output sanitising anywhere in this path.** Colour
+(`CoreTextFragment.color`) is a field this client never reads; `text` is
+never routed through anything resembling DFHack's own ANSI-rendering
+`Console::add_text`, so a `df-overseer-*` script's `print(json.encode(...))`
+comes back as clean JSON with nothing to strip. `docs/TRAPS.md`'s
+escape-sequence trap is specific to `dfhack-run`'s own rendering choice
+(research doc §5) and does not apply to a client that reads the raw
+protobuf field instead of shelling out to `dfhack-run`.
+
+**Errors, and what they mean:**
+
+- `DFHackConnectionError` -- an I/O failure: connection refused (DFHack is
+  down), a dropped socket mid-request, a read/write timeout, or a rejected
+  handshake. Research doc §1 found DFHack's own handshake rejection is not
+  a distinct wire message at all -- the server just returns without
+  replying -- so a bad handshake and a crashed peer and a firewall drop are
+  genuinely indistinguishable on the wire, and all three surface here as
+  the same exception. A connection that raises this is left closed; call
+  `connect()` again (or let a pool do it, see below) rather than reusing it.
+- `DFHackProtocolError` -- the peer replied, but not with something this
+  protocol recognises (wrong handshake magic, a reply id outside the four
+  reserved values, a length-delimited field whose declared size runs past
+  the buffer). Distinct from a connection error on purpose: this means "we
+  are talking to something, and it is not DFHack," which is a different
+  fact than "we could not talk to it at all."
+- `DFHackCallError` -- DFHack itself ran the request and replied
+  `RPC_REPLY_FAIL`. Carries the raw `command_result` (`CR_*`) code in
+  `.command_result`; per research doc §2, that reply's `size` header field
+  directly *is* the code, with no body following it at all -- a client that
+  tried to read a body after `RPC_REPLY_FAIL` would hang or desync the
+  connection, which is why `run_command` branches on the reply id before
+  ever touching a length.
+
+### `DFHackConnectionPool`, and why it exists rather than one connection
+
+**A single connection cannot carry more than one in-flight request.**
+Research doc §6 traced this directly in DFHack's own server loop: a
+connection's thread reads a request, replies, and only then reads the next
+one -- pipelining several `RunCommand` calls onto one socket without
+waiting for replies gains nothing, because the server drains and answers
+them one at a time regardless of send order. Batching a cycle's reads so
+they land in one DFHack suspend window (`docs/AGENT-ARCHITECTURE.md` §14
+item 5's third bullet -- corrected 2026-09-12 on this exact point) is
+therefore a property of **how many connections are open**, since each
+accepted connection gets its own OS thread server-side, not of how many
+requests are in flight on any one of them.
+
+`DFHackConnectionPool(host, port, size=4, timeout=10.0)` is a small,
+explicitly-sized set of persistent connections. `await pool.start()` opens
+all `size` of them up front (and raises `DFHackConnectionError`, closing
+anything it did manage to open, if any single one fails -- no half-open
+pool). `await pool.run_command(...)` runs one call on whichever pooled
+connection is free next. `await pool.run_many([(command, arguments), ...])
+-> list[str]` is the batching primitive itself: it fires every call
+concurrently (`asyncio.gather` over `size` pooled connections at once,
+queuing the rest if more calls are given than the pool has slots) so their
+suspend requests are pending at the same instant, in results-match-input
+order. **`size` is a cap on how much of a cycle's reads can land in one
+window, not a value with a universally correct default** -- it belongs in
+whatever config the eventual MCP server reads, sized to the largest batch
+of reads a single cycle actually wants to fire, not hardcoded here.
+
+**Self-healing, not just detection.** Per the handoff brief's own
+acceptance criterion: "a DF restart must not leave the pool full of dead
+sockets that fail every later call." A pooled connection that fails
+mid-request is marked closed and put back in the pool exactly as before;
+the *next* acquire (`run_command`/`run_many`) sees it is closed and
+reconnects it in place before use. Calls made while DFHack is actually
+down still fail (there is nothing else they can do), but nothing about a
+past failure lingers once DFHack is back up -- there is no separate "reset
+the pool" step to remember to call. `mcp/tests/test_dfhack_client.py`'s
+`test_pool_self_heals_after_a_dead_connection` is this behaviour end to
+end against a fake server that deliberately drops one connection.
+
+**What could not be verified offline, stated plainly (per the handoff
+brief):** every test for this module runs against `FakeDFHackServer`, a
+from-scratch asyncio TCP server written in `mcp/tests/test_dfhack_client.py`
+that speaks the handshake and framing bytes independently of this file's
+own encoder/decoder -- not a real DFHack process, and not VM 103, which
+this stream was barred from touching. Unverified against the genuine
+article: whether the VM's actual DFHack build behaves byte-for-byte as the
+pinned-tag source this was built against (research doc §10 flags the same
+gap); real dead-socket/DF-restart timing (the fake server's disconnect
+action closes cleanly, which is a reasonable model of a `recv()` returning
+`<=0` but is not the same event as an actual DF process dying under load);
+and whether a real multi-connection batch actually lands inside one
+DFHack-side suspend window in practice, as opposed to the fake server's
+`asyncio.Barrier`-based proof that the client-side requests are at least
+genuinely concurrent on the wire.
+
 ## What this package deliberately does not do
 
-- **No server, no transport, no RPC client.** Nothing here calls
-  `dfhack-run`, opens a socket, or knows what SSH is. That is explicitly
-  out of scope per the task brief and belongs to whatever builds the actual
-  MCP seam on top of this.
+- **No MCP server, no transport.** No MCP SDK import, no HTTP, no session
+  handling. That is explicitly out of scope per the task brief and belongs
+  to whatever builds the actual MCP seam on top of this -- and is blocked
+  on an open question (`research/2026-09-12-mcp-server-stack.md`).
 - **No mutation of `TOOLS.yaml`, `ROSTER.yaml`, any `role.md`, or any doc.**
   Read-only with respect to everything outside `mcp/` and the three
   `tools.yaml` files this task named for rewriting.
@@ -309,11 +427,18 @@ the same fix by hand -- there is no shared import to keep them in sync.
   server built on this needs to pick up an edited `tools.yaml` without a
   restart, that is its own concern to add.
 - **`tools.py` and `auth.py` add no new scope beyond the above.** No MCP SDK
-  import, no HTTP, no session handling, no DFHack RPC client, no socket, no
-  SSH, no VM, and no change to which tools any role has (`tool_definitions`
-  only ever narrows via `Roster.check`, never widens). `auth.py` mints no
-  tokens and rotates none -- they are pasted into `.env` by hand, the same
-  way `PVE_TOKEN_SECRET` already is.
+  import, no HTTP, no session handling, no socket, no SSH, no VM, and no
+  change to which tools any role has (`tool_definitions` only ever narrows
+  via `Roster.check`, never widens). `auth.py` mints no tokens and rotates
+  none -- they are pasted into `.env` by hand, the same way
+  `PVE_TOKEN_SECRET` already is.
+- **`dfhack_client.py` adds no scope beyond what its own section above
+  states.** No `BindMethod` (`RunCommand` is a hardcoded id on every
+  connection), no output sanitising (colour is a field this client never
+  reads, not something stripped from `text`), no heartbeat/keepalive (none
+  exists on the wire -- research doc §7 -- so this module does not
+  pretend to poll for one), no live verification against VM 103 or any
+  real DFHack process.
 
 ## Things found while doing this that are worth flagging back
 
