@@ -55,7 +55,20 @@ or `decisions/DECISIONS.md`, not here.
   the new VM and reported success. Address selection is now per guest
   (`--ip-var`) with a pre-clone collision check. → `decisions/DECISIONS.md`
   2026-09-12, `Working.md`.
-- **NOW, still the hard blocker: the MCP server itself does not exist.**
+- **DONE 2026-09-12: the MCP server exists. The project's one hard blocker is
+  cleared.** `dfmcp/` is six modules and 136 tests: the tool registry, the
+  role/permission seam, MCP tool definitions plus argv construction, bearer
+  token to role, a persistent DFHack RPC client with a connection pool, and the
+  streamable-HTTP transport tying them together. Built in four parallel Sonnet
+  streams against two research briefs. **Verified in the orchestrator session,
+  not taken on report: an advisor calling a write tool is refused through a
+  real SDK client with the exact reason string intact, and the call provably
+  never reaches DFHack.** **Not yet met reality**: no live DFHack, no bound
+  socket, no openclaw client. That smoke test is the next concrete step and
+  needs a go-ahead, because it touches VM 103. → `Working.md`,
+  `handoffs/INDEX.md`, `decisions/DECISIONS.md` 2026-09-12.
+- **Superseded, kept for the reasoning. NOW, still the hard blocker: the MCP
+  server itself does not exist.**
   `scripts/dfhack/TOOLS.yaml` is a schema, not a server. **Topology decided
   2026-09-12: openclaw gets its own VM (address pre-allocated in home-lab's
   registry); the MCP server and Sentry stay on VM 103 with DF**, because
