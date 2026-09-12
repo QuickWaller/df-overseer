@@ -45,6 +45,16 @@ or `decisions/DECISIONS.md`, not here.
   allowlists). **In progress, not yet on `main`:** the `mcp/` registry and
   role-scoping layer, plus the two safety detectors below.
   → `docs/AGENT-ARCHITECTURE.md` §14 for what remains open.
+- **DONE 2026-09-12: openclaw's VM is provisioned and live.**
+  `df-colony-openclaw-01`, vmid 106, static address, 2048 MB, onboot enabled,
+  linked clone on SRV-01; verified from inside the guest by SSH rather than
+  from the API's status field, and the `guests:` entry owed upstream was handed
+  to a live `home-lab` session immediately rather than carried by a handover.
+  Found and fixed on the way in: **`provision_vm.py clone` read `DF_VM_IP` and
+  nothing else, so it would have assigned the running fort's own address** to
+  the new VM and reported success. Address selection is now per guest
+  (`--ip-var`) with a pre-clone collision check. → `decisions/DECISIONS.md`
+  2026-09-12, `Working.md`.
 - **NOW, still the hard blocker: the MCP server itself does not exist.**
   `scripts/dfhack/TOOLS.yaml` is a schema, not a server. **Topology decided
   2026-09-12: openclaw gets its own VM (address pre-allocated in home-lab's
