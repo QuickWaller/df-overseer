@@ -106,3 +106,43 @@ findings without another doc home yet.
   trustworthy fort-defense signal** — proven wrong in both directions the
   same day it was tested. Treat its output as "worth a second look," never
   as "confirmed safe" or "confirmed hostile" on its own.
+
+---
+
+## Added 2026-09-12, from the detectors' live-verification session
+
+- **`kill-lua` does NOT rescue a DF process stuck in a long-running Lua loop,
+  despite what `SF_DONT_SUSPEND` suggests.** A runaway script pegged `dwarfort`
+  at 95.6% CPU for over nine minutes and blocked every subsequent `dfhack-run`
+  call. `kill-lua` was attempted at 20s and again at 90s; **both hung.** This
+  directly contradicts the expectation
+  `research/2026-09-12-dfhack-capability-checks.md` §3 drew from reading
+  `RemoteTools.cpp`, where `RunCommand` is registered `SF_DONT_SUSPEND`
+  specifically so that "this remote server connection could be the last chance
+  for recovering from stuck Lua scripts". The escape hatch exists in the source
+  and did not work in practice. **Do not rely on it.** Recovery was algorithmic,
+  not administrative: fix the script and wait. No VM operation was needed, and
+  none should be reached for first.
+- **Allocating a closure per iteration is catastrophic at map scale, roughly two
+  orders of magnitude.** A `pcall(function() ... end)` wrapped around each of
+  ~6.86M tiles took **9+ minutes**; the identical scan with the per-tile closure
+  removed took **~25 CPU-seconds**. Any full-map tile sweep must hoist the
+  function out of the loop, or avoid `pcall` per tile entirely. Relevant to any
+  future whole-map scan, which this project will keep wanting.
+- **A full 26,784-block scan reading one flag per block is genuinely cheap:
+  ~0.057s CPU, measured.** So block-level sweeps are affordable and tile-level
+  sweeps are not, by a factor of hundreds. Design polling around blocks.
+- **`designation[x][y].liquid_type` binds to a plain Lua boolean on this build**
+  (`false` = Water, `true` = Magma), **not** the `df.tile_liquid` enum integer.
+  Comparing it against `df.tile_liquid.Magma` is always false. This install's own
+  `modtools/spawn-liquid.lua:11` hedges by testing both forms of the same field,
+  so treat the binding as version-unsafe and check both. Cost a real bug in
+  `df-overseer-breach.lua`, found only by live verification.
+- **`block.flags.update_liquid` appears to mean "this block's liquid just
+  changed", not "this block contains liquid".** Zero of 26,784 blocks had it set
+  across 11 polls, including through an 85-second unpaused window, on a map that
+  demonstrably contains water. The water in question is fully settled
+  (`flow_size=7`, topped out). **Unresolved**: whether DF sets it during
+  genuinely active liquid movement. Anything built on this flag is unproven
+  until that is answered.
+

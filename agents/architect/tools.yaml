@@ -1,6 +1,8 @@
 # Architect tool allowlist. READ-ONLY plus one write: propose.
 #
-# Ids reference scripts/dfhack/TOOLS.yaml verbatim.
+# Ids are the canonical scheme resolved against scripts/dfhack/TOOLS.yaml by
+# mcp/registry.py: see mcp/README.md for the scheme (strip df-overseer-/.lua,
+# take the command's leading verb, join with a dot).
 # Scoping here is not only a permission boundary: a narrow read set keeps the
 # prompt small, which is cheaper AND keeps this role further under the
 # compliance cliff (§10).
@@ -10,48 +12,48 @@ role: architect
 write_authority: none      # enforced: this role has no action tool at all
 
 read:
-  - id: "df-overseer-openarea: find W H [Z] NEAR_LANDMARK [RADIUS_TILES]"
+  - id: "openarea.find"
     status: exists
     note: Ranked candidates in already-open, walkable space.
-  - id: "df-overseer-diggable: find W H [Z] NEAR_LANDMARK [RADIUS_TILES]"
+  - id: "diggable.find"
     status: exists
     note: >-
       Ranked candidates in solid rock or soil. v1 returns adjacent-only
       candidates; connector-tunnel cost scoring is not implemented, so
       non-adjacent options are simply absent rather than ranked low.
-  - id: "df-overseer-chokepoints: find Z NEAR_LANDMARK [RADIUS_TILES]"
+  - id: "chokepoints.find"
     status: exists
     note: >-
       Only the first half of build item 7 is built. `rank_candidate_sites` is
       genuinely blocked on resource and threat data that do not exist.
-  - id: "df-overseer-landmarks: list"
+  - id: "landmarks.list"
     status: exists
-  - id: "df-overseer-landmarks: get NAME"
+  - id: "landmarks.get"
     status: exists
-  - id: "df-overseer-connectivity: report"
+  - id: "connectivity.report"
     status: exists
-  - id: "df-overseer-connectivity: check FROM TO"
+  - id: "connectivity.check"
     status: exists
     note: TOOLS.yaml tags this unverified. Do not rest a proposal on it alone.
-  - id: "df-overseer-overview: get (or no args)"
+  - id: "overview.get"
     status: exists
-  - id: "df-overseer-stuckjobs: find [MIN_IDLE_TICKS]"
+  - id: "stuckjobs.find"
     status: exists
     note: A stalled dig is often a siting mistake, so this is your feedback loop.
 
 planned:
-  - id: "queue: propose"
+  - id: "queue.propose"
     status: planned
     note: The only write this role will ever have.
 
 deny:
-  - id: "df-overseer-openarea: build *"
+  - id: "openarea.build"
     reason: Advisors do not act. Propose it.
-  - id: "df-overseer-diggable: dig *"
+  - id: "diggable.dig"
     reason: Advisors do not act. Propose it.
-  - id: "df-overseer-landmarks: build *"
+  - id: "landmarks.build"
     reason: Advisors do not act. Propose it.
-  - id: "df-overseer-labor: set-labor *"
+  - id: "labor.set-labor"
     reason: Not this role's domain, and it races autolabor regardless.
-  - id: "df-overseer-ui: *"
+  - id: "ui.*"
     reason: Embark bootstrap only. No role should use this in steady-state play.

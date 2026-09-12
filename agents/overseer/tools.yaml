@@ -1,7 +1,13 @@
 # Overseer tool allowlist.
 #
 # A role IS its allowlist (principle 8). This file, not the charter, is the
-# enforced boundary. Ids reference scripts/dfhack/TOOLS.yaml verbatim.
+# enforced boundary. Ids are the canonical scheme resolved against
+# scripts/dfhack/TOOLS.yaml by mcp/registry.py: see mcp/README.md for the
+# scheme itself: strip the df-overseer- prefix and .lua suffix, take the
+# command's leading verb, join with a dot, e.g. "df-overseer-openarea.lua"
+# plus "build W H ..." becomes "openarea.build". mcp/roles.py resolves this
+# file against the registry and refuses to load if an id here does not
+# exist there.
 #
 # `status: exists`  -> deployed and live-verified on VM 103 today.
 # `status: planned` -> referenced by the design, not built. Must not be assumed.
@@ -11,59 +17,77 @@ role: overseer
 
 # The Overseer is the sole writer, so it is the only role with any write entry.
 read:
-  - id: "df-overseer-overview: get (or no args)"
+  - id: "overview.get"
     status: exists
-  - id: "df-overseer-landmarks: list"
+  - id: "landmarks.list"
     status: exists
-  - id: "df-overseer-landmarks: get NAME"
+  - id: "landmarks.get"
     status: exists
-  - id: "df-overseer-connectivity: report"
+  - id: "connectivity.report"
     status: exists
-  - id: "df-overseer-connectivity: check FROM TO"
+  - id: "connectivity.check"
     status: exists
     note: TOOLS.yaml tags this one unverified. Treat its output accordingly.
-  - id: "df-overseer-diff: since CURSOR"
+  - id: "diff.since"
     status: exists
     note: Primary input to Triage. Keep a per-role cursor, do not re-read history.
-  - id: "df-overseer-stuckjobs: find [MIN_IDLE_TICKS]"
+  - id: "stuckjobs.find"
     status: exists
-  - id: "df-overseer-labor: unit-status [idle|injured|military|hostile]"
+  - id: "labor.unit-status"
     status: exists
     reliability: HEURISTIC
     note: >-
       The `hostile` filter is verified wrong in both directions. Never treat it
       as confirmation in either direction.
+  - id: "threat.scan"
+    status: exists
+    reliability: HEURISTIC
+    note: >-
+      Added 2026-09-12. The purpose-built replacement for `labor.unit-status
+      hostile`: admits units by reachability rather than by a danger flag. Its
+      own output labels flag-derived fields HEURISTIC. **Never run against a
+      live fort as of writing**, so treat its silence as unproven rather than
+      as all-clear.
+  - id: "breach.check"
+    status: exists
+    reliability: HEURISTIC
+    note: >-
+      Added 2026-09-12. Water and magma detection, which has no DFHack event at
+      all. **May be inert**: its cheap first stage triggers off a map-block flag
+      that nothing in the shipped scripts ever reads, only sets, so whether DF
+      itself raises it during natural liquid movement is unverified. Until that
+      is settled, a `severity=none` result means nothing.
 
 write:
-  - id: "df-overseer-openarea: build W H [Z] NEAR_LANDMARK BLUEPRINT_FILE [RANK] [RADIUS_TILES]"
+  - id: "openarea.build"
     status: exists
     note: Resolves its own coordinate internally. Never pass one in.
-  - id: "df-overseer-diggable: dig W H [Z] NEAR_LANDMARK BLUEPRINT_FILE [RANK] [RADIUS_TILES]"
+  - id: "diggable.dig"
     status: exists
-  - id: "df-overseer-landmarks: build NAME BLUEPRINT_FILE"
+  - id: "landmarks.build"
     status: exists
-  - id: "df-overseer-labor: set-labor UNIT_ID LABOR_NAME on|off"
+  - id: "labor.set-labor"
     status: exists
     hazard: Races autolabor on ordinary citizens. See role.md.
 
 planned:
-  - id: "queue: propose"
+  - id: "queue.propose"
     status: planned
     note: Advisors write, the Overseer reads. Part of the unbuilt MCP seam.
-  - id: "queue: plan"
+  - id: "queue.plan"
     status: planned
     note: Write-ahead log for the ordered plan, then per-step completion marks.
-  - id: "playbook: write"
+  - id: "playbook.write"
     status: planned
-  - id: "sentry: status"
+  - id: "sentry.status"
     status: planned
 
 # Explicitly denied, not merely absent. Denial is the point.
 deny:
-  - id: "df-overseer-ui: *"
+  - id: "ui.*"
     reason: >-
       Embark-time bootstrap only. Depends on global focus and cursor state, is
       the least sliceable write path in the repo, and collides with any human on
       the admin VNC channel.
-  - id: "df-overseer-ui: embark-mode"
+  - id: "ui.embark-mode"
     reason: Would leave the live fort in a different game mode.
