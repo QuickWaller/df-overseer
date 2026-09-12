@@ -1,6 +1,6 @@
 # Roadmap
 
-**Last reviewed:** 2026-09-12 (eleventh pass, post-merge documentation
+**Last reviewed:** 2026-09-12 (twelfth pass, agent-architecture design phase: Now bucket rewritten after all four research briefs returned, the roster and deployment topology were decided, and the first code landed; added the two missing safety detectors, the set_labor/autolabor race and the address-leak cleanup as Now items. Eleventh pass, post-merge documentation
 consistency check: `perception-layer-experiments` merged into `main`
 (`f078bf8`) and its worktree deleted, so every bullet below that framed the
 branch-merge question as open, or cited the branch/worktree as separate
@@ -27,31 +27,68 @@ or `decisions/DECISIONS.md`, not here.
 ## Now
 <!-- Actively being worked, or the clear immediate next step. -->
 
-- **NOW, started 2026-09-12: the agent architecture is designed and written
-  down.** [`docs/AGENT-ARCHITECTURE.md`](docs/AGENT-ARCHITECTURE.md) is the
-  design: one actor (Overseer), read-only specialist advisors that propose
-  rather than act, two code-level components (Sentry, Triage), a single
-  append-only queue that is simultaneously the channel, the audit log and the
-  write-ahead log, graded urgency response with playbooks as data, one
-  snapshot per cycle with per-role projections at three information tiers,
-  and confidence that is tool-stated for facts and measured from graded
-  predictions for proposals. **Nothing is built.** Twelve register rows carry
-  the reasoning (`decisions/DECISIONS.md` 2026-09-12). Four research briefs
-  were sent the same day and are the gate on building any of it:
-  `research/2026-09-12-openclaw-primitives.md` (does openclaw support
-  per-agent models and tool scoping at all),
-  `research/2026-09-12-multi-agent-architecture-prior-art.md` (is "no peer
-  chat" well-founded), `research/2026-09-12-write-conflict-matrix.md` (**back
-  already**, see the two finding rows in the register), and
-  `research/2026-09-12-dfhack-capability-checks.md` (six unverified DFHack
-  capabilities the design leans on). → `docs/AGENT-ARCHITECTURE.md` §13 for
-  the open questions.
-- **NOW, unchanged and still the hard blocker: the MCP server does not
-  exist.** Every part of the architecture above assumes it, and it needs
-  per-role identity and scoping designed in from the start, because
-  retrofitting identity-aware tool allowlists later is painful.
-  `scripts/dfhack/TOOLS.yaml` is a first-draft schema, not a server.
-  → `docs/PURPOSE.md` commitment #5, `docs/AGENT-ARCHITECTURE.md` §13 item 5.
+- **NOW, 2026-09-12: the agent architecture is designed, all four research
+  briefs are back, and the first code exists.**
+  [`docs/AGENT-ARCHITECTURE.md`](docs/AGENT-ARCHITECTURE.md) is the design:
+  one actor (Overseer), read-only advisors that propose rather than act, two
+  code components (Sentry, Triage), one append-only queue that is channel,
+  audit log and write-ahead log at once, graded urgency with playbooks as
+  data, one snapshot per cycle with per-role projections at three tiers, and
+  confidence that is tool-stated for facts and measured from graded
+  predictions for proposals. 26 register rows carry the reasoning.
+  **Research outcome in one line: the central choices survived (single
+  writer, no peer chat, per-agent tool scoping is real), several assumptions
+  did not** (no host spend cap, lane-serialised fan-out, no breach signal at
+  all, a hostile signal blind by construction). **Roster decided, user's
+  call: three roles enabled**, Overseer, Architect, Consultant, being the
+  ones whose tools exist. **Built and landed:** `agents/` (roster, charters,
+  allowlists). **In progress, not yet on `main`:** the `mcp/` registry and
+  role-scoping layer, plus the two safety detectors below.
+  → `docs/AGENT-ARCHITECTURE.md` §14 for what remains open.
+- **NOW, still the hard blocker: the MCP server itself does not exist.**
+  `scripts/dfhack/TOOLS.yaml` is a schema, not a server. **Topology decided
+  2026-09-12: openclaw gets its own VM (address pre-allocated in home-lab's
+  registry); the MCP server and Sentry stay on VM 103 with DF**, because
+  DFHack's RPC socket is unauthenticated and must not cross the network.
+  **Two requirements locked in before building, because retrofitting them is
+  painful:** the tool allowlist is enforced **server-side** (openclaw's own
+  per-agent scoping is defence in depth, not the boundary), and **role
+  identity is a credential, one token per role**, never a self-declared
+  header, or an advisor could claim to be the Overseer and obtain write
+  tools. Performance requirements are also settled: hold one persistent
+  DFHack RPC connection rather than shelling out per call (3-5x), and batch a
+  cycle's reads into one suspend window.
+  → `docs/PURPOSE.md` commitment #5, `docs/AGENT-ARCHITECTURE.md` §13, §14.
+- **NOW, required work rather than polish: two safety detectors do not
+  exist.** Verified from DFHack source 2026-09-12. **Water or magma breach
+  has no event and no announcement type at all**, a checked negative, so
+  **flood response is currently covered by nothing**, and breach is among the
+  fastest fort-killers. **Hostile detection has only `INVASION`**, which
+  fires for registered invasions and not for ambushes, thieves or wildlife
+  turning aggressive, meaning the event layer shares the blind spot the
+  polling signal already had. Design insight to build on: **reachability, not
+  hostility, is the discriminating feature** (it would have correctly
+  excluded the unreachable deep-cavern demons and correctly included the kea).
+  → `research/2026-09-12-dfhack-capability-checks.md` §5,
+  `docs/AGENT-ARCHITECTURE.md` §4.
+- **NOW, a single-writer violation already in production: `set_labor` races
+  `autolabor`.** `set-labor` writes `unit.status.labors[code]` directly with
+  no coordination, and `autolabor` (live on this fort) exempts only
+  military-duty and burrow-restricted units, so a labor change on an ordinary
+  citizen will probably be reverted on autolabor's next pass. It is also the
+  **only** labor write that exists, and two unbuilt roles will want it.
+  **Fix not yet designed.** → `decisions/DECISIONS.md` 2026-09-12,
+  `research/2026-09-12-write-conflict-matrix.md`.
+- **NOW, this public repo leaks internal addresses contrary to its own
+  rule.** Four distinct private IPv4 addresses across roughly a dozen tracked
+  files, plus `.internal` hostnames, including in `CLAUDE.md` itself, which
+  is the file that states the rule. The `scripts/*.py` hits are fine (help
+  text and examples). **History is already public, so fixing forward does not
+  erase it**; the reason to act is that the rule is deliberate and the drift
+  keeps growing, including from this session. Recommended: redact the prose
+  and add a mechanical pre-commit guard, since a rule depending on every
+  session remembering it has demonstrably failed. Needs the user's call, and
+  `CLAUDE.md` is theirs to edit. → `Working.md`.
 
 > **Rewritten 2026-09-10 (sixth pass, end of session).** **Uniboslan,
 > "Ragwind," now has real structure**: a first room dug and a stockpile
