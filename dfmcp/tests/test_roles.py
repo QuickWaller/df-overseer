@@ -16,8 +16,8 @@ import textwrap
 import pytest
 import yaml
 
-from mcp.registry import load_registry
-from mcp.roles import RoleValidationError, load_roster
+from dfmcp.registry import load_registry
+from dfmcp.roles import RoleValidationError, load_roster
 
 
 @pytest.fixture(scope="module")

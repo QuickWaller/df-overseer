@@ -37,9 +37,9 @@ import textwrap
 
 import pytest
 
-from mcp.registry import RegistryError, load_registry
-from mcp.roles import load_roster
-from mcp.tools import (
+from dfmcp.registry import RegistryError, load_registry
+from dfmcp.roles import load_roster
+from dfmcp.tools import (
     ArgumentError,
     ToolSchemaError,
     _arg_specs_for_tool,
@@ -180,7 +180,7 @@ def test_sweep_every_real_argument_token_is_confidently_typed(registry):
     string) or one of the two known literal-choice tokens. If a future
     manifest edit adds a token shaped some third way, this test should be
     the thing that notices."""
-    from mcp.tools import _BRACKET_RE
+    from dfmcp.tools import _BRACKET_RE
 
     for tool in registry.all():
         for token in tool.args:

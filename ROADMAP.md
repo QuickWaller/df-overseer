@@ -42,7 +42,7 @@ or `decisions/DECISIONS.md`, not here.
   all, a hostile signal blind by construction). **Roster decided, user's
   call: three roles enabled**, Overseer, Architect, Consultant, being the
   ones whose tools exist. **Built and landed:** `agents/` (roster, charters,
-  allowlists). **In progress, not yet on `main`:** the `mcp/` registry and
+  allowlists). **In progress, not yet on `main`:** the `dfmcp/` registry and
   role-scoping layer, plus the two safety detectors below.
   → `docs/AGENT-ARCHITECTURE.md` §14 for what remains open.
 - **DONE 2026-09-12: openclaw's VM is provisioned and live.**

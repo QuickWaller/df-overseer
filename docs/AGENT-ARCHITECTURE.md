@@ -19,7 +19,7 @@ communicate, what they read, and how they learn.
 > `df-overseer-breach.lua`. **The detectors have never been run**: their API
 > surface is source-verified, they are not deployed, and the breach detector
 > carries a risk that may make it inert (§14). **In progress, not yet landed:**
-> the `mcp/` registry and role-scoping layer. **Not started:** the MCP server
+> the `dfmcp/` registry and role-scoping layer. **Not started:** the MCP server
 > itself, the Sentry, Triage, the queue, snapshots, and playbooks.
 
 Companion documents: [`PURPOSE.md`](PURPOSE.md) for the design commitments this
@@ -1013,7 +1013,7 @@ The boundary is the MCP HTTP endpoint between openclaw's VM and VM 103.
    openclaw's per-agent tool scoping is real and useful, but once the brain and
    the fort are separate hosts at different trust levels it is **defence in
    depth, not the boundary**. Client-side enforcement is not enforcement. So
-   `mcp/roles.py` is the authority; the host's `tools.allow/deny` is a second
+   `dfmcp/roles.py` is the authority; the host's `tools.allow/deny` is a second
    layer.
 2. **Role identity must be a credential, not a claim.** A self-declared role
    header means the Architect can assert it is the Overseer and obtain write

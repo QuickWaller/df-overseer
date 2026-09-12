@@ -33,7 +33,7 @@ from typing import Callable, List, Optional, Tuple
 import pytest
 import pytest_asyncio
 
-from mcp.dfhack_client import (
+from dfmcp.dfhack_client import (
     DFHackCallError,
     DFHackConnection,
     DFHackConnectionError,

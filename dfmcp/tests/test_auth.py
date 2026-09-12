@@ -15,9 +15,9 @@ from pathlib import Path
 
 import pytest
 
-from mcp.auth import AuthConfigError, load_role_tokens, resolve
-from mcp.registry import load_registry
-from mcp.roles import load_roster
+from dfmcp.auth import AuthConfigError, load_role_tokens, resolve
+from dfmcp.registry import load_registry
+from dfmcp.roles import load_roster
 
 GOOD_OVERSEER_TOKEN = "overseer-token-abcdefghij"  # 26 chars, well over the minimum
 GOOD_ARCHITECT_TOKEN = "architect-token-klmnopqrst"  # 26 chars

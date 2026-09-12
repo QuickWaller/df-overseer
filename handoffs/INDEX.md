@@ -21,8 +21,8 @@ here and their own handoff doc.
 
 | Stream | Doc | Status | Touched surfaces |
 |---|---|---|---|
-| MCP tool schema + auth | [2026-09-12-mcp-tool-schema.md](2026-09-12-mcp-tool-schema.md) | **DONE 2026-09-12**, merged, 45 tests to 86 | `mcp/tools.py`, `mcp/auth.py`, `mcp/tests/test_tools.py`, `mcp/tests/test_auth.py`, `mcp/README.md`, `infra/local.example.env` |
-| DFHack RPC client | [2026-09-12-dfhack-rpc-client.md](2026-09-12-dfhack-rpc-client.md) | **DONE 2026-09-12**, merged, 86 tests to 121. No live verification (barred from VM 103 by design); see handoff doc's closing note for the exact command to run that check. | `mcp/dfhack_client.py`, `mcp/tests/test_dfhack_client.py`, `mcp/README.md` |
+| MCP tool schema + auth | [2026-09-12-mcp-tool-schema.md](2026-09-12-mcp-tool-schema.md) | **DONE 2026-09-12**, merged, 45 tests to 86 | `dfmcp/tools.py`, `dfmcp/auth.py`, `dfmcp/tests/test_tools.py`, `dfmcp/tests/test_auth.py`, `dfmcp/README.md`, `infra/local.example.env` |
+| DFHack RPC client | [2026-09-12-dfhack-rpc-client.md](2026-09-12-dfhack-rpc-client.md) | **DONE 2026-09-12**, merged, 86 tests to 121. No live verification (barred from VM 103 by design); see handoff doc's closing note for the exact command to run that check. | `dfmcp/dfhack_client.py`, `dfmcp/tests/test_dfhack_client.py`, `dfmcp/README.md` |
 
 **One thing this first run proved, and it is the reason the commit-as-you-go
 rule in `.claude/agents/executor.md` exists:** the stream's session ended
