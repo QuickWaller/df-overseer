@@ -1,0 +1,81 @@
+# df-overseer agent roster
+#
+# THE ONLY FILE YOU EDIT TO ADD, REMOVE OR SWAP A ROLE.
+# Flip `enabled`, and that role joins or leaves the roster. No code change.
+#
+# Design: docs/AGENT-ARCHITECTURE.md (§3 roster, §11 modularity).
+# Decisions: decisions/DECISIONS.md 2026-09-12 rows.
+#
+# STATUS 2026-09-12: nothing here is running yet. The MCP server these
+# allowlists reference does not exist, so this file currently describes a
+# roster rather than driving one. Marked honestly rather than implied live.
+
+schema_version: 1
+fort: Uniboslan            # "Ragwind", VM 103. One roster per fort.
+
+# Exactly one role may hold write authority. See §7: DF has no transaction
+# boundary, and DFHack serialises every write through one tick-gated mutex, so
+# extra writers buy no throughput. This is settled, not a v1 simplification.
+sole_writer: overseer
+
+roles:
+
+  overseer:
+    enabled: true
+    dir: overseer
+    kind: actor
+    summary: Arbitrates proposals, sets priorities, owns the plan and the WIP limit, writes playbooks, and is the only component that mutates the fort.
+
+  architect:
+    enabled: true
+    dir: architect
+    kind: advisor
+    summary: Rooms, workshops, stockpile siting, smoothing, dig order. Proposes, never acts.
+
+  consultant:
+    enabled: true
+    dir: consultant
+    kind: advisor
+    summary: Dwarf Fortress domain knowledge on demand. Answers questions, never decides.
+
+  # ---- Defined but NOT enabled. Charters exist so enabling one later is a
+  # ---- config change, per §11. Each is blocked on tools, not on a decision.
+
+  quartermaster:
+    enabled: false
+    dir: quartermaster
+    kind: advisor
+    blocked_on: >-
+      No tool surface exists. Manager work orders and stockpile settings have no
+      tool in this repo, and DFHack's own `stocks`/`workflow` are unavailable on
+      this install. `workorder.lua` IS present and callable, so the path is real
+      but unbuilt.
+    summary: Food, drink, seeds, work orders, stock thresholds.
+
+  marshal:
+    enabled: false
+    dir: marshal
+    kind: advisor
+    blocked_on: >-
+      No trustworthy threat signal and no write tools. `unit-status hostile` is
+      verified unreliable in both directions, and the event layer has the same
+      blind spot by construction (`INVASION` fires only for registered
+      invasions, not ambushes, thieves or aggressive wildlife). A purpose-built
+      detector is required work first.
+    summary: Military posture, burrows, squads, equipment, training, post-fight triage. Deliverable is playbooks, not live orders.
+
+  chronicler:
+    enabled: false
+    dir: chronicler
+    kind: advisor
+    blocked_on: >-
+      No tool in this repo writes a chronicle entry. The nearest analogue,
+      `df-overseer-diff`'s event log, is deliberately ephemeral, which is the
+      opposite of what a chronicle needs.
+    summary: The history, written for humans. The project's public-facing output.
+
+# Roles rejected as agents and implemented as code instead, recorded here so
+# they are not re-proposed (§3, §12):
+#   efficiency_analysis -> a tool returning ranked findings. Deterministic.
+#   safety_veto         -> refusals in the tool layer. A guardrail that can be
+#                          forgotten is not a guardrail.

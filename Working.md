@@ -23,6 +23,15 @@ nothing is built.**
 - **`ROADMAP.md` updated**: two new Now items (the architecture, and the MCP
   server as the standing blocker), and three stale items corrected where the
   design closed them.
+- **`agents/` scaffolding built**, the first non-document artifact of this phase:
+  `ROSTER.yaml` (the single file you edit to change the roster), a `README.md`
+  stating the file contract, full three-file sets (`role.md`, `tools.yaml`,
+  `model.yaml`) for the three enabled roles, and charters for the three
+  disabled ones. **Tool allowlists reference real `TOOLS.yaml` ids**, each
+  tagged `exists` or `planned`, so the file cannot silently imply a capability
+  this project lacks. The disabled roles deliberately have **no** `tools.yaml`
+  or `model.yaml`, for the same reason, and each charter names exactly what
+  blocks it plus the traps for whoever builds it.
 
 ### The shape that was settled, in one paragraph
 

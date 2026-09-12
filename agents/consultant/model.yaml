@@ -1,0 +1,32 @@
+schema_version: 1
+role: consultant
+
+model: anthropic/claude-sonnet-5
+fallback:
+  - anthropic/claude-haiku-4-5-20251001
+
+rationale: >-
+  Knowledge recall and framing, invoked rarely. Note the honest caveat in
+  role.md: with no retrieval tool this role runs on model priors, so a larger
+  model buys better-recalled priors but NOT verified facts. Spending up here
+  would buy more confident wrongness about v50 mechanics, not more accuracy.
+  The fix is a retrieval tool, not a bigger model.
+
+cadence:
+  mode: on_demand            # the only role that is never woken by a schedule
+  woken_by: [overseer]
+  note: An unasked consultant costs money for nothing. Invoke it on a question.
+
+budget:
+  ceiling_usd_per_day: 1
+  enforcement: ours          # see overseer/model.yaml, the host has no hard cap
+
+selection:
+  method: eval
+  suite: agents/consultant/evals/
+  status: not built
+  note: >-
+    Evaluate this role on calibration, not on fluency: does it correctly label
+    a claim as mechanically certain, community practice, or uncertain? A
+    consultant that is confidently wrong about a v50 change is worse than one
+    that says it does not know.

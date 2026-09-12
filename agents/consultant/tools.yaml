@@ -1,0 +1,40 @@
+# Consultant tool allowlist. Deliberately the narrowest in the roster.
+#
+# This role's value is knowledge, not observation, so it gets just enough fort
+# context to answer in context and nothing more. A wide read set here would buy
+# nothing and cost tokens on every invocation.
+
+schema_version: 1
+role: consultant
+write_authority: none
+
+read:
+  - id: "df-overseer-overview: get (or no args)"
+    status: exists
+    note: Enough situational context to answer in context rather than abstractly.
+  - id: "df-overseer-landmarks: list"
+    status: exists
+    note: So advice can name real places in this fort.
+
+planned:
+  - id: "queue: propose"
+    status: planned
+    note: >-
+      Used for advisories, not build proposals. This role answers questions; it
+      does not put work into the plan.
+  - id: "knowledge: wiki_lookup"
+    status: planned
+    note: >-
+      THE MISSING PIECE OF THIS ROLE. Without it the Consultant runs on model
+      priors alone, which for v50-specific mechanics is exactly the kind of
+      confidently-wrong this project has already been burned by. See role.md.
+
+deny:
+  - id: "df-overseer-openarea: *"
+    reason: Not an observer of candidates. It advises on approach, not siting.
+  - id: "df-overseer-diggable: *"
+    reason: As above.
+  - id: "df-overseer-labor: *"
+    reason: Not this role's domain.
+  - id: "df-overseer-ui: *"
+    reason: Embark bootstrap only.

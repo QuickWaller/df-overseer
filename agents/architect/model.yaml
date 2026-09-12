@@ -1,0 +1,34 @@
+schema_version: 1
+role: architect
+
+model: anthropic/claude-sonnet-5
+fallback:
+  - anthropic/claude-haiku-4-5-20251001
+
+# A read-only advisor cannot hurt the fort: its only output is a proposal the
+# Overseer may ignore. That makes this seat the right place to experiment with
+# cheaper models aggressively, because the blast radius is zero and the question
+# becomes "is its advice any good", which an eval can answer offline.
+rationale: read-only advisor, zero blast radius, judgment over ranked candidates
+
+cadence:
+  mode: woken
+  woken_by: [triage]
+  scheduler_note: >-
+    Do not assume this role runs every cycle. openclaw's inter-agent send lane
+    serialises at roughly 30s per target, so the scheduler decides which one or
+    two advisors are worth their cost this cycle (§4).
+
+budget:
+  ceiling_usd_per_day: 2
+  enforcement: ours          # see overseer/model.yaml, the host has no hard cap
+
+selection:
+  method: eval
+  suite: agents/architect/evals/
+  status: not built
+  note: >-
+    This role is the easiest in the roster to evaluate properly, because it is
+    read-only and idempotent: replay one recorded snapshot, compare proposals.
+    Two models can be A/B'd on the identical situation, which is impossible for
+    an actor because an actor changes the world it is tested in.

@@ -1,0 +1,41 @@
+# Overseer model and budget.
+#
+# Model ids are in openclaw's "provider/model" form so this file maps directly
+# onto `agents.entries.<id>.model`. Provider credentials live OUTSIDE this repo
+# (design commitment #5); nothing here is a secret.
+
+schema_version: 1
+role: overseer
+
+model: anthropic/claude-opus-5
+fallback:
+  - anthropic/claude-sonnet-5
+
+# Why the strongest model sits here: this is the only seat doing cross-domain
+# judgment, conflict resolution and prioritisation. It is also the seat whose
+# outage is NOT fatal (§9: reliability is held by code under systemd), so it can
+# afford capability over reliability.
+rationale: sole actor, cross-domain arbitration, the one irreplaceable judgment
+
+cadence:
+  mode: woken            # never polls on its own
+  woken_by: [triage, sentry]
+  quiet_cycle_cost: 0    # Triage is code; a cycle with no diff wakes nobody
+
+budget:
+  ceiling_usd_per_day: 5
+  enforcement: ours
+  # IMPORTANT: openclaw has NO hard spend cap. Only context-size limits and
+  # cost visibility exist. So this ceiling is enforced by our own Triage gating
+  # plus provider-side billing caps, NOT by the host. Treat it as a design
+  # obligation, not a setting that protects itself.
+  # Precedent: this project spent $9-13 in one afternoon on an eval sweep.
+
+selection:
+  method: eval
+  suite: agents/overseer/evals/
+  status: not built
+  # Per-role model choice is meant to be an eval question, not a preference:
+  # replay a recorded snapshot, compare decisions against known-good answers.
+  # Until that suite exists, this model choice is a reasoned default, not a
+  # measured one. Said plainly rather than implied.
