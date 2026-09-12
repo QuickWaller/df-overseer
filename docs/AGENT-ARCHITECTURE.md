@@ -57,7 +57,7 @@ one of them invalidates the parts that rest on it.
 | **Triage** | code | every heartbeat | no |
 | **Projection** | code | per cycle | no |
 | **Overseer** | model, strongest | when woken | **yes, sole general writer** |
-| **Specialists** | models, per role | when woken, in parallel | no, propose only |
+| **Specialists** | models, per role | when woken, concurrently where the host allows (§13) | no, propose only |
 
 Two of the five are code with no model in them. That is deliberate: the
 components responsible for keeping the fortress alive and for keeping costs
@@ -106,8 +106,16 @@ place to spend capability rather than reliability.
 
 ### Specialists
 
-Read-only advisors, one per domain, run in parallel on a shared snapshot. Each
-gets a narrow projection and may call exactly one write tool: `propose`.
+Read-only advisors, one per domain, run concurrently against a shared snapshot.
+Each gets a narrow projection and may call exactly one write tool: `propose`.
+
+**Concurrency is a host constraint, not a free assumption.** openclaw's agent
+concurrency is lane-based and its inter-agent send lane is serialised, so
+waking five specialists may cost minutes rather than seconds (§13). Read-only
+advisors are *safe* to run concurrently, which is a correctness property and
+holds regardless; whether they are *cheap* to run concurrently depends on the
+host, and currently they may not be. This is what makes the scheduler in §4 a
+requirement rather than an optimisation.
 
 ---
 
@@ -146,13 +154,81 @@ communication is structurally impossible.
 
 ### No peer-to-peer chat in v1
 
-Specialists do not talk to each other. Free-form agent chat scales cost faster
-than value and propagates errors, because an LLM treats a peer's confident
-assertion as evidence. If a specialist needs another's input, it is routed as a
-request through the Overseer, which keeps it in the log.
+Specialists do not talk to each other. If a specialist needs another's input, it
+is routed as a request through the Overseer, which keeps it in the log.
 
-This is the single most likely thing in this document to be wrong, and it is the
-load-bearing question of `research/2026-09-12-multi-agent-architecture-prior-art.md`.
+**This was flagged as the design's most-likely-wrong call and it survived
+review** (`research/2026-09-12-multi-agent-architecture-prior-art.md`, 2026-09-12).
+Convergent multi-source evidence: two independent production postmortems both
+landed on hierarchical orchestrator-to-worker with no worker-to-worker channel;
+a failure taxonomy built on 1,600+ real multi-agent traces with validated
+inter-annotator agreement attributes roughly a third of multi-agent LLM failures
+to inter-agent misalignment, which is precisely the class peer chat enables; and
+a debate-failure paper supplies the mechanism, peers negotiating one shared
+answer drift toward conformity more often than toward correctness.
+
+The debate literature's apparent counter-evidence resolves in favour of this
+design rather than against it: debate helps for *many independent attempts,
+arbitrated afterward*, which is **what a single decider with advisors already
+is**, minus the advisors seeing each other's reasoning. It hurts for *peers
+jointly negotiating one answer*, which is the shape peer chat would add.
+
+**Two honest qualifications, both from the same brief.**
+
+First, the evidence says "not now, with today's models and coordination
+patterns," not "never." Do not read this as a permanent structural prohibition.
+
+Second, and this is a real correction to the flat ban: **incident command
+doctrine explicitly permits read-only information exchange between peers while
+keeping authority singular.** So the considered v2 relaxation is not peer chat,
+it is **read-only cross-advisor visibility without cross-advisor authority**: a
+specialist may *see* another's proposal, and still may not negotiate with it or
+act on the fort. That is doctrine-backed, cheap, and preserves everything the
+ban was protecting. Recorded as a deliberate option, not adopted yet.
+
+### This is a blackboard system, and we had rebuilt only a third of one
+
+The most useful correction the prior art produced. A modern multi-agent stack
+that gives agents a shared workspace has reimplemented one third of the classic
+blackboard architecture and discarded the other two:
+
+| Blackboard element | Our status |
+|---|---|
+| Shared workspace | the queue. **Have it** |
+| Credibility-weighted contributions | §10's tool reliability tags plus measured track record. **Have it, via measurement rather than self-report** |
+| Hierarchical, typed store: observation, interpretation, proposed action kept distinct rather than one undifferentiated transcript | §10's four record types. **Have it, corroborated rather than new** |
+| **An explicit, separately-engineered scheduler deciding who acts next** | **Was implicit. Now named below** |
+
+### Scheduling advisors is an explicit decision, not prompt order
+
+Which specialists are woken in a given cycle, and in what order their proposals
+are considered, deserves to be a deliberately designed and separately tuned
+component rather than an accident of prompt ordering. It lives in Triage.
+
+Two constraints shape it:
+
+- **The economics differ from a classical blackboard.** Its knowledge sources
+  were small deterministic experts that could cheaply ask "am I relevant?" many
+  times. An LLM advisor cannot be polled that cheaply, so the scheduling
+  question here is coarser: **which one or two advisors are worth their token
+  cost this cycle**, not which of fifty might contribute.
+- **A span-of-control ceiling.** Incident command uses roughly five reports per
+  supervisor. Our roster has exactly five specialists under one Overseer, which
+  is corroboration rather than design, and the number is a starting guess to
+  tune, not gospel. The operative rule is that the Overseer should rarely hear
+  from all five in one cycle.
+
+This matters more than it sounds, because a published multi-agent research
+system measured roughly **15x the token cost of single-agent**, with token usage
+explaining most of the performance variance, and reported the approach
+performing **worse on tightly interdependent tasks.** Fortress management is
+moderately interdependent. So the roster is not free and not obviously correct:
+the scheduler is the component that keeps it honest.
+
+One further transferable finding, from medical multidisciplinary teams:
+**arbitration quality is gated by advisor output quality at least as much as by
+the arbitrator.** That is the case for enforcing required proposal fields at
+write time rather than accepting whatever an advisor volunteers.
 
 ### Writes are tool calls; reads are XML
 
@@ -553,6 +629,27 @@ nothing to discover whether a given model's stated confidence predicts its own
 hit rate. If it turns out calibrated for some role, start using it then. That is
 a cheap experiment and publishable material for the report.
 
+### How calibration is actually scored
+
+From `research/2026-09-12-multi-agent-architecture-prior-art.md`, which asked
+which of these methods are affordable at the data scale one fortress produces:
+
+| Method | Verdict |
+|---|---|
+| **Brier score plus a coarse reliability diagram** | **Adopt now.** Cheap, and fits the planned ledger as it already exists |
+| **Track-record weighting**: an advisor's future influence scaled by its historical score | **Adopt next.** Cheap, and closer to the well-replicated basic-feedback-loop finding than to heavy aggregation machinery |
+| **Reference-class forecasting, formal recalibration curves** | **Explicitly deferred.** Strong in their home domains, but they need far more history than this project will have for a long time. Recorded as deferred rather than quietly built |
+
+This resolves what looks like a contradiction with the rule above. Brier scoring
+needs a **stated probability**, so advisors do attach one to each prediction.
+That is not a reversal: the probability is **scored, not obeyed**. Scoring it is
+precisely how we find out whether it deserves to be obeyed, which is what "a
+field to be graded" meant. Track-record weighting is then the mechanism by which
+*earned* confidence, and only earned confidence, influences a decision.
+
+Note also that this is the blackboard architecture's credibility-weighting
+element (§4), satisfied by measurement rather than by self-report.
+
 ### Scoping
 
 One shared ledger, because a fortress has one history. Lessons carry an owning
@@ -663,19 +760,72 @@ Recorded so they are not re-proposed without new evidence.
 
 ## 13. Open questions
 
-Gated on research already in flight:
+### Answered by research, 2026-09-12
 
-1. **Does openclaw support per-agent models and per-agent tool scoping?** If
-   not, principle 8 has no enforcement mechanism and §11 needs rework.
+1. **Does openclaw support per-agent models and per-agent tool scoping?
+   YES, both, as real features rather than workarounds.** Named agents under
+   `agents.entries.<id>`, each with its own model as `"provider/model"` and its
+   own workspace. Scoping comes from three mechanisms: `tools.allow/deny` per
+   agent, `sandbox.workspaceAccess`, and MCP-level `toolFilter.include/exclude`
+   plus per-server agent allowlists. **Principle 8 is therefore enforceable and
+   §11 stands.** This was the design's biggest single risk and it cleared.
    → `research/2026-09-12-openclaw-primitives.md`
-2. **Is "no peer chat" well-founded or superstition?**
+2. **Is "no peer chat" well-founded? YES, and it survived review**, with one
+   doctrine-backed relaxation identified for v2 (read-only cross-advisor
+   visibility without authority). Folded into §4.
    → `research/2026-09-12-multi-agent-architecture-prior-art.md`
-3. **Can write authority be partitioned at all, and is the Quartermaster
-   genuinely disjoint?** → `research/2026-09-12-write-conflict-matrix.md`
+3. **Can write authority be partitioned? Partly, and there is already a
+   violation in production.** `set_labor` races `autolabor` on ordinary
+   citizens today. The Quartermaster hypothesis is **untestable rather than
+   confirmed**, because work orders and stockpile settings have no tool surface
+   at all. Folded into §7 and §3.
+   → `research/2026-09-12-write-conflict-matrix.md`
+
+### Still open
+
 4. **Six unverified DFHack capabilities**: runtime frame cap, in-game overlay,
    `dfhack-run` concurrency, quickfort dig priorities and work-order APIs,
    `eventful` coverage for the wake vocabulary, `dfhack.persistent` under
    concurrent writes. → `research/2026-09-12-dfhack-capability-checks.md`
+
+### New constraints the openclaw brief imposed
+
+These are not open questions, they are facts the design must now accommodate.
+
+- **There is no hard spend cap in the host.** Only context-size limits and cost
+  visibility exist; the real backstop is provider-side billing caps. So the
+  per-role `model.yaml` budget ceiling in §11 **cannot be enforced by openclaw**
+  and must be enforced by our own Triage gating plus provider-side caps. Given
+  this project already overran $9-13 in one afternoon on an eval, this is the
+  single most important operational consequence in the brief.
+- **Fan-out is not free.** Agent concurrency is lane-based rather than
+  unlimited, and the inter-agent send lane is hardcoded to one concurrent
+  operation, so messaging several agents serialises at roughly 30 seconds per
+  target. So §2's and §5's "specialists run in parallel" is **conditional, not
+  free**: if specialist invocation goes through that path, five specialists cost
+  minutes rather than seconds. This makes the §4 scheduler load-bearing rather than an optimisation,
+  and it may force sequential consultation of one or two advisors per cycle.
+- **The only true external push wake is an authenticated HTTP hooks endpoint.**
+  Everything else is heartbeat or cron, with a 30-second floor on condition
+  watchers. So **the Sentry reaches the Overseer by calling that endpoint**,
+  which is the concrete mechanism §6 needed and did not have.
+- **Host crash recovery covers its own conversational state, not external side
+  effects.** Nothing found addresses whether a partially-applied fortress
+  mutation is detectable after a crash. So §9's write-ahead queue is not
+  belt-and-braces, it is **the actual mechanism**, and this project's existing
+  quicksave-checkpoint discipline remains the real safety net.
+- **Tool-call logs are machine-parseable JSONL** with correlating ids, so the
+  mechanical friction log in §10 is buildable without inventing capture. Caveat
+  that bears directly on §8: the host's own **log redaction is best-effort**,
+  which is exactly why the public feed allowlists fields and never renders host
+  logs.
+- **Correction to this repo's own prior claim.** The 2026-08-25 register row
+  asserting openclaw has exponential retry backoff **does not hold for the
+  heartbeat path**, per two issues the brief cites as closed-not-fixed
+  documenting linear or uncapped retry storms. Treat heartbeat retry as unsafe
+  by default. Recorded as reported-by-brief rather than independently confirmed
+  here. The sole-host decision does not turn on it: it turned on the structural
+  argument in §9, not on a scheduler comparison.
 
 Not yet gated on anything, and needing a decision:
 

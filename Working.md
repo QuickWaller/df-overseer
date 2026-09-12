@@ -39,23 +39,35 @@ projections, three information tiers. Confidence is **tool-stated for facts**
 (`MECHANICAL`/`DERIVED`/`HEURISTIC`) and **measured from graded predictions**
 for proposals; self-reported confidence is never a decision input.
 
-### In flight: four research briefs, all Sonnet, all read-only
+### Research: three of four briefs back, all folded into the doc and register
 
-1. `research/2026-09-12-write-conflict-matrix.md` — **back, see findings
-   below.**
-2. `research/2026-09-12-openclaw-primitives.md` — does openclaw actually
-   support per-agent models, per-agent tool scoping, external event wake,
-   parseable tool-call logs, crash journaling. **If per-agent tool scoping
-   does not exist, principle 8 has no enforcement mechanism and §11 needs
-   rework.**
-3. `research/2026-09-12-multi-agent-architecture-prior-art.md` — is "no peer
-   chat" well-founded or superstition. Deliberately framed as the design's
-   most-likely-wrong call.
-4. `research/2026-09-12-dfhack-capability-checks.md` — six unverified
-   capabilities: runtime frame cap (gates the throttle tier), in-game overlay,
-   `dfhack-run` concurrency (gates any multi-writer future), quickfort dig
-   priorities and work-order APIs, `eventful` coverage for the wake
-   vocabulary, `dfhack.persistent` under concurrent writes.
+1. `research/2026-09-12-write-conflict-matrix.md` — **back**, findings below.
+2. `research/2026-09-12-openclaw-primitives.md` — **back.** The design's
+   biggest risk cleared: **per-agent models and per-agent tool scoping are real
+   features**, so principle 8 is enforceable and §11 stands. But four
+   constraints landed: **no hard spend cap in the host** (budget enforcement is
+   ours plus provider-side caps), **fan-out is lane-serialised** at roughly 30s
+   per target so waking five specialists may cost minutes, **the only external
+   push wake is an authenticated HTTP hooks endpoint** (that is how the Sentry
+   reaches the Overseer), and **host crash recovery does not cover external
+   side effects**, which makes the write-ahead queue the actual recovery
+   mechanism. Also **corrected a 2026-08-25 register claim**: openclaw's
+   exponential retry backoff does not hold for heartbeat. Recorded as
+   reported-by-brief, not independently confirmed here.
+3. `research/2026-09-12-multi-agent-architecture-prior-art.md` — **back.**
+   No-peer-chat **survived review** on convergent multi-source evidence, with
+   one doctrine-backed v2 relaxation identified (read-only cross-advisor
+   visibility without authority). Produced the best reframe of the session:
+   **this is a blackboard system and we had rebuilt only a third of one**; the
+   missing piece is an **explicit advisor scheduler**, now named inside Triage.
+   Calibration method settled: Brier plus a coarse reliability diagram now,
+   track-record weighting next, reference-class forecasting explicitly
+   deferred.
+4. `research/2026-09-12-dfhack-capability-checks.md` — **still running.** Six
+   unverified capabilities: runtime frame cap (gates the throttle tier),
+   in-game overlay, `dfhack-run` concurrency (gates any multi-writer future),
+   quickfort dig priorities and work-order APIs, `eventful` coverage for the
+   wake vocabulary, `dfhack.persistent` under concurrent writes.
 
 ### Findings already in from the write-conflict audit
 
@@ -84,11 +96,24 @@ for proposals; self-reported confidence is never a decision input.
 
 ### Next concrete step
 
-Wait for the three outstanding briefs, then revise
-`docs/AGENT-ARCHITECTURE.md` against what they find (particularly §11 if
-openclaw lacks per-agent tool scoping, and §4 if the prior art contradicts the
-no-peer-chat call). **Do not start building before the openclaw brief lands**:
-the roster's enforcement mechanism depends on primitives nobody has verified.
+Three briefs are in and already folded into `docs/AGENT-ARCHITECTURE.md` and
+the register; the DFHack capability brief is still out. **The design is no
+longer the blocker: the tool surface is.** Two things gate any build, in this
+order.
+
+1. **The MCP server still does not exist**, and it needs per-role identity and
+   scoping designed in from the start. openclaw can scope tools per agent, so
+   the seam's job is to present role-scoped tool sets rather than one flat
+   surface.
+2. **Four of six roles have little or no tool surface.** A realistic v1 roster
+   is **Overseer plus Architect plus Consultant**, with Marshal read-only until
+   it has write tools, and Quartermaster and Chronicler as *build work* rather
+   than configuration. Anything that assumes a six-role roster on day one is
+   assuming tools that do not exist.
+
+Also now more urgent than it looked: the **`set_labor`/`autolabor` race**, since
+it is the only labor write that exists and two of the four unbuilt roles will
+want it.
 
 **Ruled out already, so nobody re-derives it:** one agent per squad (DF combat
 resolves faster than an agent round trip, and the threat sensor is verified
