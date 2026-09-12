@@ -145,10 +145,24 @@ Also now more urgent than it looked: the **`set_labor`/`autolabor` race**, since
 it is the only labor write that exists and two of the four unbuilt roles will
 want it.
 
-**Live checks.** The `Core::Update`-while-paused question (does pausing preserve
-fast tool calls, which decides whether pausing beats throttling) was approved by
-the user and **is being measured now**, read-only, fort stays paused, no
-unpause. **Two remain deliberately unrun, user's call to defer**: whether the
+**Live checks.** The `Core::Update`-while-paused question is **settled, from
+source and confirmed live, 2026-09-12: pausing does not stall tool calls.** Ten
+round trips against the paused fort all landed between 0.66s and 1.28s, no
+stall, tick counter correctly static, fort verified paused before and after and
+never unpaused. **Then the user corrected the conclusion drawn from it**, and the
+correction is the durable part: the unit is **game time elapsed per decision**,
+not wall-clock latency. Game time per cycle is roughly **`f·T + k` ticks** (`f`
+frame cap, `T` thinking seconds, `k` tool calls), so lowering `f` shrinks the
+thinking term linearly down to a `k`-tick floor. **Throttling does buy thinking
+time**; the wall-clock price is paid by the human watching, not the fort. Pause
+is the only lever reaching zero. **Choose on cycle shape, not urgency**:
+think-heavy cycles throttle well, call-heavy cycles should pause instead. And a
+free optimisation nobody had spotted: all suspenders pending at once are
+serviced in **one** window, so `k` concurrent calls cost ~1 tick versus ~`k`
+sequential, which is a game-time argument for the single-snapshot read pass on
+top of the consistency one.
+→ `research/2026-09-12-dfhack-capability-checks.md` §9,
+`docs/AGENT-ARCHITECTURE.md` §6. **Two remain deliberately unrun, user's call to defer**: whether the
 frame cap survives loading a different save in one process (needs a save load on
 the live fort, and this project has already lost one fort's save, so not done
 casually), and whether an overlay widget renders in the headless Xvfb/VNC
