@@ -68,6 +68,15 @@ before designing around any tool.
 `prospector`, `probe`, `pathable`, `burrow`, `eventful`, `unretire-anyone`,
 `bodyswap`, `lair`, `gui/embark-anywhere`, `gui/control-panel`.
 
+**ADDED 2026-09-12**, confirmed present by direct source read at the matching
+version tag (53.16-r1.1) while verifying capabilities the agent architecture
+depends on, and load-bearing enough to belong in this list:
+`overlay` (the widget framework, render-loop-gated so it needs no human input),
+`workorder` (a real callable Lua module with `create_orders()`, and currently
+the **only** route to manager work orders, since `stocks` and `workflow` are
+both unavailable), and `setfps` (writes `df.global.enabler.fps`, the runtime
+frame-cap control). → `research/2026-09-12-dfhack-capability-checks.md`.
+
 **Unavailable in 53.16 (present as docs/files, tagged unavailable):** `mode`,
 `gui/advfort`, `stocks`, `zone`, `workflow`, `follow`, `load-save`, `linger`,
 `embark-assistant`, `dwarfmonitor`, `labormanager`, and ~40 others.
