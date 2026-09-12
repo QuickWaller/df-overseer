@@ -335,52 +335,53 @@ Target host is SRV-01 deliberately: SRV-02 was crashing roughly every 2.5 hours
 as of 2026-09-12, root cause open, and a power-brick swap was confirmed not to
 be the fix.
 
-### OPEN: this public repo leaks internal addresses, contrary to its own rule
+### DONE 2026-09-12: the address leak is closed, with a test that keeps it closed
 
-**Found 2026-09-12**, prompted by the user pasting a router reservation row.
-`CLAUDE.md` states the rule twice: "never copy a hostname, address or subnet into
-this repo", and infrastructure specifics belong in gitignored `infra/local.*`.
-An audit of **tracked** files finds the rule is not being followed.
+`CLAUDE.md` states twice that hostnames, addresses and subnets must never be
+committed here. Tracked files broke it, including `CLAUDE.md` itself. Now fixed.
 
-- **Four distinct private IPv4 addresses** appear across roughly a dozen tracked
-  files, including `CLAUDE.md` itself, `ROADMAP.md`, this file,
-  `decisions/DECISIONS.md`, three `research/` specs, and
-  `working-archive/`.
-- **`.internal` hostnames** appear in tracked files too.
-- **This session added to the problem today**, copying an address out of
-  `CLAUDE.md` into this file's own text. Fixed in place, and the specific
-  address is deliberately not repeated in this note.
-- **The `scripts/*.py` hits are fine and need no change**: they are help text and
-  error-message examples (`provision_vm.py` even uses a different subnet), not
-  hardcoded defaults. The problem is entirely in prose.
+**Corrected on the way in:** there were **3** distinct real addresses, not the
+"roughly four" this section previously claimed, and one of them appeared only in
+a single research file. Loopback (`127.0.0.1`) appears dozens of times and is
+correctly **not** a leak: it is identical on every machine and reveals nothing.
 
-**Honest limitation of any fix: the history is already public.** These files are
-pushed, so scrubbing the working tree does not remove anything from git history,
-and rewriting a public repo's history is disruptive and incomplete (clones
-exist). The proportionate read is that these are RFC1918 addresses behind a
-tailnet, so the real-world value to an attacker is low, and the reason to fix is
-that the rule is deliberate and the drift will otherwise keep growing.
+**What changed.** `CLAUDE.md`'s own leaked address redacted, and its `docs/`
+bullet now lists all five docs rather than two. Five real-address occurrences
+across four `research/` files redacted to this repo's `<placeholder>`
+convention, no facts altered. **Two script help strings that used the REAL relay
+address as their example** replaced with RFC 5737 documentation addresses; an
+earlier note here wrongly cleared all the `scripts/*.py` hits as harmless, and
+two of three were genuine. `ROADMAP.md` and `decisions/DECISIONS.md` redacted
+too (15 literals), which had been deferred and would otherwise have left a
+permanent hole in the guard below.
 
-**Recommended, not yet done, needs the user's call:** fix forward (redact the
-prose, leave history alone) and add a mechanical guard so it cannot recur, for
-example a pre-commit check that fails on an IPv4 literal or `.internal` in a
-tracked non-example file. Editing `CLAUDE.md` itself is deliberately left to the
-user rather than done unilaterally, since it is the instruction file.
+**The guard: `tests/test_no_leaked_addresses.py`, a test rather than a git
+hook**, because hooks are per-clone and are not shared through git while a test
+runs in the suite that already exists. 45 tests pass. **Verified by injecting a
+real violation and watching it fail**, naming file, line and value, then
+reverting; the agent's own verification of this had been compromised (see below),
+so it was redone here.
 
-### Push authority: granted for one session only, 2026-09-12, now expired
+**Two instructive failures worth keeping:**
+- **The detector passed while untracked and failed the moment it was
+  committed**, because it scans `git ls-files`. Its own unit-test fixtures
+  necessarily contain matching strings.
+- It also **flagged itself for containing the real addresses** in its comments
+  and fixtures. A leak-detector holding the leaked values defeats its own
+  purpose. Fixed by making every value in that file synthetic and excluding the
+  file from its own scan, with the tradeoff stated in the code: because it is
+  not scanned, a real value pasted there would not be caught, so keep it
+  synthetic by convention.
 
-The user granted standing `git push` authority "until end of session" during the
-2026-09-12 agent-architecture session. **That grant was scoped to that session
-and does not carry forward.** `CLAUDE.md`'s rule stands by default: `git push`
-and any deploy need explicit go-ahead each time. A later session reading this
-must not treat the line above as inherited permission.
+**Deliberately still holding real addresses: `working-archive/`.** It is a
+historical record and rewriting it would falsify it. Excluded from the guard's
+scope with a comment saying why.
 
-Two boundaries were held under the grant, and are worth keeping if it is ever
-granted again: the sibling-commit check still ran before each push, because the
-grant covers this session's own work and not publishing a peer session's
-unpushed commits; and **deploying to VM 103 was treated as separate and still
-requiring a specific ask**, since that touches the live fort rather than the
-repo.
+**Not fixed and not fixable: git history.** These files were already pushed, so
+nothing above removes anything from history. That was a deliberate fix-forward,
+on the proportionate reading that RFC1918 addresses behind a tailnet are low
+value, and the reason to act was that the rule is deliberate and the drift kept
+growing, including from this session.
 
 ### Peer coordination notes
 

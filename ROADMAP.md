@@ -223,8 +223,8 @@ or `decisions/DECISIONS.md`, not here.
   relay VM's `websockify`/noVNC (`provision_relay.py webvnc`) → Cloudflare
   Tunnel (`provision_relay.py cloudflared`) → `https://dwarf-fortress.
   willsmith.nz` — confirmed live (`curl` returns HTTP 200, root redirects
-  straight into the viewer). Relay is `df-colony-relay-01.internal`
-  (`192.168.2.202`, Debian 12, home-lab's Proxmox pool). Feed is
+  straight into the viewer). Relay is `df-colony-relay-01`
+  (`<relay-vm-ip>`, Debian 12, home-lab's Proxmox pool). Feed is
   intentionally unauthenticated (`x11vnc -nopw`) but stays `-viewonly` —
   anyone with the link can watch, nobody can act. Linked live from
   `willsmith-portfolio/public/dwarf-fortress/index.html`.
