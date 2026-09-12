@@ -21,7 +21,15 @@ here and their own handoff doc.
 
 | Stream | Doc | Status | Touched surfaces |
 |---|---|---|---|
-| MCP tool schema + auth | [2026-09-12-mcp-tool-schema.md](2026-09-12-mcp-tool-schema.md) | dispatched 2026-09-12 | `mcp/tools.py`, `mcp/auth.py`, `mcp/tests/test_tools.py`, `mcp/tests/test_auth.py`, `infra/local.example.env` |
+| MCP tool schema + auth | [2026-09-12-mcp-tool-schema.md](2026-09-12-mcp-tool-schema.md) | **DONE 2026-09-12**, merged, 45 tests to 86 | `mcp/tools.py`, `mcp/auth.py`, `mcp/tests/test_tools.py`, `mcp/tests/test_auth.py`, `mcp/README.md`, `infra/local.example.env` |
+
+**One thing this first run proved, and it is the reason the commit-as-you-go
+rule in `.claude/agents/executor.md` exists:** the stream's session ended
+mid-run, for the second time in one day. Both deliverables were already
+committed to its branch and survived intact; only the final doc pass was lost,
+and it was finished from the orchestrator session rather than re-run. **Check
+the worktree branch before assuming a terminated stream lost anything** — the
+work is usually there.
 
 Research briefs are not streams and are not listed here: they are read-only,
 produce a `research/<date>-<slug>.md` file, and are dispatched to the
