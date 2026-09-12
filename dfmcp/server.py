@@ -400,6 +400,13 @@ def build_asgi_app(server: Server, tokens: Mapping[str, str], bind_host: str):
     auth_settings = AuthSettings(
         issuer_url=_PLACEHOLDER_ISSUER_URL,
         resource_server_url=_PLACEHOLDER_RESOURCE_URL,
+        # Explicit rather than left to default: this design has no resource
+        # indicator to check a token against (RoleTokenVerifier's
+        # AccessToken always carries resource=None), so audience validation
+        # has nothing to validate. The SDK warns that the unset default
+        # will itself change to True in 3.0 -- set explicitly so upgrading
+        # the pin later cannot silently start rejecting every token.
+        validate_token_resource=False,
     )
     return server.streamable_http_app(host=bind_host, auth=auth_settings, token_verifier=verifier)
 
