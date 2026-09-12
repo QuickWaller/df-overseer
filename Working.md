@@ -63,10 +63,30 @@ Everything below this block is detail and reasoning. This is the brief.
      identity**, since three roles with genuinely different allowlists must
      share one server. If the SDK cannot, the fallback (a server per role, or
      dropping to the low-level API) is a real design fork and comes back here.
-   - **Build, transport-independent half** → `handoffs/2026-09-12-mcp-tool-schema.md`
-     (`mcp/tools.py`, `mcp/auth.py`). Has no unknowns, so it does not wait:
-     registry entries to MCP tool definitions, a tool call back to the exact
-     DFHack argv, and bearer token to role. Worktree-isolated.
+   - **Build, transport-independent half: DONE and merged, 45 tests to 86** →
+     `handoffs/2026-09-12-mcp-tool-schema.md`. `mcp/tools.py` (registry plus
+     roster to MCP tool definitions, and a validated call back to the exact
+     DFHack argv) and `mcp/auth.py` (bearer token to role, `compare_digest`
+     against every configured token, never logs a token). `mcp/` is now four
+     modules and still opens no socket. **Its session ended mid-run**, the
+     second stream to die that way in one day; both deliverables were already
+     committed to its branch and survived, and only the final doc pass was
+     lost and finished by hand. **Check the branch before assuming a dead
+     stream lost work.**
+   - **Research, MCP server stack: BACK** →
+     `research/2026-09-12-mcp-server-stack.md`. **The crux answered yes**,
+     per-caller `tools/list` works, but **only at the low-level `Server` API**:
+     the high-level wrapper's `list_tools()` takes no arguments and returns one
+     static list for everyone. So build on the low-level API, on streamable
+     HTTP, with `TokenVerifier` mapping bearer token to role, and return an
+     allowlist denial as a tool result carrying `isError` rather than a
+     protocol-level error, which the client raises in its own calling code
+     instead of showing the model. **One blocking unknown, and it is on the
+     client side**: whether openclaw can send a **static bearer header** at
+     all, or requires a real OAuth handshake. The locked design is a static
+     per-role token, so if openclaw cannot send one, either the token scheme or
+     the client config has to change. **Settle that before building the
+     transport.**
 
    **`handoffs/` now exists** (`aba202b`), the template convention this repo had
    never needed until now. One deliberate departure from `.claude/agents/executor.md`'s
