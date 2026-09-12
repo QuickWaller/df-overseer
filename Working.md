@@ -266,6 +266,21 @@ example a pre-commit check that fails on an IPv4 literal or `.internal` in a
 tracked non-example file. Editing `CLAUDE.md` itself is deliberately left to the
 user rather than done unilaterally, since it is the instruction file.
 
+### Push authority: granted for one session only, 2026-09-12, now expired
+
+The user granted standing `git push` authority "until end of session" during the
+2026-09-12 agent-architecture session. **That grant was scoped to that session
+and does not carry forward.** `CLAUDE.md`'s rule stands by default: `git push`
+and any deploy need explicit go-ahead each time. A later session reading this
+must not treat the line above as inherited permission.
+
+Two boundaries were held under the grant, and are worth keeping if it is ever
+granted again: the sibling-commit check still ran before each push, because the
+grant covers this session's own work and not publishing a peer session's
+unpushed commits; and **deploying to VM 103 was treated as separate and still
+requiring a specific ask**, since that touches the live fort rather than the
+repo.
+
 ### Peer coordination notes
 
 - At the time of the live pause check there was **no peer session** (the
