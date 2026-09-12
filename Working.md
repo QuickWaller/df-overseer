@@ -63,11 +63,19 @@ for proposals; self-reported confidence is never a decision input.
    Calibration method settled: Brier plus a coarse reliability diagram now,
    track-record weighting next, reference-class forecasting explicitly
    deferred.
-4. `research/2026-09-12-dfhack-capability-checks.md` — **still running.** Six
-   unverified capabilities: runtime frame cap (gates the throttle tier),
-   in-game overlay, `dfhack-run` concurrency (gates any multi-writer future),
-   quickfort dig priorities and work-order APIs, `eventful` coverage for the
-   wake vocabulary, `dfhack.persistent` under concurrent writes.
+4. `research/2026-09-12-dfhack-capability-checks.md` — **back. All six settled
+   from source** at the matching version tag (53.16-r1.1), five with high
+   confidence. Frame cap: **yes**, but it slows agent tool calls too, because
+   DFHack's suspend window is tick-gated, so the throttle tier is a latency
+   trap and pausing may actually beat it (unmeasured). Overlay: **yes** and
+   headlessly drivable. **`dfhack-run` concurrency: safe, unordered,
+   tick-gated**, which **kills the throughput argument for partitioning write
+   authority** and also source-confirms the root cause of the previously
+   unexplained 45-80s command delay. Priorities: 1-7 for digs, **list position
+   for work orders** (no priority field exists). Wake vocabulary: **five of
+   nine real; `breach` has no signal at all, and `hostile_detected` only fires
+   on registered invasions**. `dfhack.persistent`: no internal locking, 7
+   integer slots per entry, whole-file rewrite per save.
 
 ### Findings already in from the write-conflict audit
 
@@ -96,10 +104,10 @@ for proposals; self-reported confidence is never a decision input.
 
 ### Next concrete step
 
-Three briefs are in and already folded into `docs/AGENT-ARCHITECTURE.md` and
-the register; the DFHack capability brief is still out. **The design is no
-longer the blocker: the tool surface is.** Two things gate any build, in this
-order.
+**All four briefs are in and fully folded into `docs/AGENT-ARCHITECTURE.md`,
+`decisions/DECISIONS.md` (25 rows today) and `memory/dfhack-environment.md`.
+The design is no longer the blocker: the tool surface is.** Three things gate
+any build, in this order.
 
 1. **The MCP server still does not exist**, and it needs per-role identity and
    scoping designed in from the start. openclaw can scope tools per agent, so
@@ -111,9 +119,25 @@ order.
    than configuration. Anything that assumes a six-role roster on day one is
    assuming tools that do not exist.
 
+3. **Two safety detectors do not exist and are required work, not polish.**
+   **A breach poller**: no DFHack event or announcement type exists for water
+   or magma breach at all (a checked negative), so **flood response is
+   currently covered by nothing**, and breach is among the fastest
+   fort-killers. **A real hostile detector**: `onInvasion` fires only for
+   registered invasions, not ambushes, thieves, or wildlife turning
+   aggressive, which is the *event layer* having the same blind spot as the
+   already-known-unreliable polling signal. Until both exist, the Marshal has
+   no trustworthy trigger to write playbooks against.
+
 Also now more urgent than it looked: the **`set_labor`/`autolabor` race**, since
 it is the only labor write that exists and two of the four unbuilt roles will
 want it.
+
+**Two live checks deliberately not run** (the briefs were read-only): whether
+the frame cap survives loading a different save in one process, and whether an
+overlay widget renders in this project's headless Xvfb/VNC pipeline. A third,
+cheap and worth doing: **whether `Core::Update` still runs while paused**,
+which decides whether pausing beats throttling for tool-call throughput.
 
 **Ruled out already, so nobody re-derives it:** one agent per squad (DF combat
 resolves faster than an agent round trip, and the threat sensor is verified

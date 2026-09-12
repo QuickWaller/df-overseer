@@ -130,6 +130,16 @@ requirement rather than an optimisation.
 | **Consultant** | DF domain knowledge, wiki and community practice, cited | Any fort-specific decision | On demand only |
 | **Chronicler** | The history, written for humans | Any decision at all | Cheap model, per cycle |
 
+**Tool-surface reality check, 2026-09-12.** Two briefs disagreed in emphasis and
+both were right. `research/2026-09-12-write-conflict-matrix.md` found that
+**this repo** has no work-order or stockpile-settings tools, and that DFHack's
+`stocks` and `workflow` are tagged unavailable on this install. But
+`research/2026-09-12-dfhack-capability-checks.md` found that **`workorder.lua`
+is present and callable**, with a real `create_orders()`. So the Quartermaster
+has a genuine path, it just has no tools *yet*. Net: a realistic v1 roster is
+**Overseer, Architect, Consultant**, with Marshal read-only until it has write
+tools, and Quartermaster and Chronicler as build work rather than configuration.
+
 Two roles that were proposed and **rejected as agents**, per principle 1:
 
 - **Efficiency analysis.** Idle counts, stalled jobs, hauling distances and
@@ -251,7 +261,7 @@ Proposal record:
   <prediction signal="hauling.still_to_food.tiles" op="lt" value="12"
               check_after_ticks="20000"/>
   <cost estimate="41" unit="dwarf_ticks"/>
-  <suggested_priority>4</suggested_priority>       <!-- DF 1-7 -->
+  <suggested_priority>4</suggested_priority>       <!-- see note below -->
   <preconditions>
     <requires landmark="Dining Hall" state="exists"/>
     <requires area="candidate_3" state="unclaimed"/>
@@ -271,6 +281,13 @@ Four fields earn their place:
   mechanism: `learning/predictions/` already validates signals against
   `ledger.store.field_source` and refuses anything not `MECHANICAL`/`DERIVED`).
 - **`preconditions`** are what the action tool re-checks at execution time (§9).
+- **`suggested_priority` means two different things**, verified 2026-09-12. For
+  dig designations, DF's 1-7 is real and `quickfort` exposes it (`#dig` accepts
+  `-p 1-7`). For manager work orders there is **no priority field at all**: the
+  `manager_order` struct has none, and priority is realised purely as position
+  in the ordered `world.manager_orders.all` vector. So the Overseer's "set the
+  priority" action is a number in one case and a list insertion in the other,
+  and the tool layer must not pretend otherwise.
 - **`public_rationale`** is written deliberately for an audience, and is the only
   reasoning field that reaches the public stream (§8).
 
@@ -282,8 +299,32 @@ event can arrive with nobody responsible for it:
 `hostile_detected`, `breach`, `cave_in`, `unit_critical`, `migrant_wave`,
 `caravan_arrived`, `job_stalled`, `stock_below_threshold`, `season_change`.
 
-Which of these have a real DFHack event and which need polling is an open
-question, being checked in `research/2026-09-12-dfhack-capability-checks.md`.
+**Checked 2026-09-12 against DFHack's real `EventType` enum and the live
+install's own enabled announcement types. Five of nine have a real signal, and
+the two that matter most for safety are the weakest:**
+
+| Signal | Reality |
+|---|---|
+| `cave_in`, `migrant_wave`, `caravan_arrived`, `season_change` | **Real**, via the generic `REPORT` event filtered by announcement type, each confirmed enabled by default in this install |
+| `unit_critical` | **Real event, no severity judgment.** `UNIT_ATTACK` hands back an actual wound struct; "badly" is our logic over it |
+| `job_stalled`, `stock_below_threshold` | Ours already, via `get_stuck_jobs` and threshold polling. Never were events |
+| **`hostile_detected`** | **Real but dangerously narrow.** `INVASION` fires only when DF registers an actual invasion. It does **not** fire for an ambush, a lone thief, a sneaking creature, or hostile wildlife turning aggressive |
+| **`breach`** | **No signal of any kind exists.** A checked negative, not an unexamined gap: no event type and no announcement type matches. Must be built as a poller from scratch |
+
+Two consequences worth stating plainly, because both are safety-relevant.
+
+**The hostile blind spot is structural, not a bad sensor.** This project already
+knows `unit-status hostile` missed a real kea attack. The event layer has the
+same blind spot **by construction**, so treating `onInvasion` as coverage for
+"a hostile appeared" would reproduce exactly that false-confidence failure. The
+Marshal's playbooks cannot rest on either signal as-is: a purpose-built detector
+is required work, not a recalibration of something that already exists.
+
+**`breach` is the one trigger with no substrate at all**, and it is also among
+the fastest fort-killers (§6). The nearest polling targets are
+`df.global.world.flows` and map-block liquid scanning, neither confirmed
+sufficient. Until that poller exists, flood response is not covered by anything
+in this design.
 
 **Only the Sentry and the Overseer may wake anyone.** Specialists cannot wake
 each other, which forecloses wake loops.
@@ -371,15 +412,31 @@ than one:
 | Level | Mechanism | Game time | Use |
 |---|---|---|---|
 | **Reflex** | Playbook, executed by code | runs normally | Anything precompilable: raise the bridge, forbid a breach, route to a burrow |
-| **Throttle** | Lower the frame cap | runs slowly | Thinking time needed, freeze not warranted. **Unverified**, see below |
+| **Throttle** | Lower the frame cap (`df.global.enabler.fps`, **verified**) | runs slowly | Thinking time needed, freeze not warranted. But see the tick-window warning below |
 | **Pause** | Stop the game | stopped | Urgent *and* not precompilable. Rare, budgeted, logged |
 | **Alert** | Notify the human | either | Beyond the roster's authority |
 
-Two notes on the mechanics. Throttling depends on the frame cap being settable
-at runtime, which is **unverified** and is question 1 of
-`research/2026-09-12-dfhack-capability-checks.md`. And pausing is the safe
-direction while **resuming is the sensitive one** (`Working.md` records that
-flipping pause state is gated here), so the asymmetry is deliberate.
+Three notes on the mechanics.
+
+**Throttling works** (**verified** from source: `setfps.lua` writes
+`df.global.enabler.fps` directly, and it persists in-process across map loads
+though not across a process restart).
+
+**But throttling is not free, and this is a trap worth naming.** DFHack opens
+its suspend window **once per simulation tick**, after the tick's own work
+finishes (§7). So lowering the frame cap slows the game *and* slows every tool
+call the agents make, because each call waits for a tick boundary that now
+arrives less often. Throttling therefore trades game speed for agent latency
+rather than buying thinking time outright. It may even be that **pausing is
+better than throttling for tool-call throughput**, if suspend windows keep
+opening at render rate while the simulation is halted, which would invert the
+intuition this tier was built on. That is reasoning, not a verified claim: the
+capability brief did not establish whether `Core::Update` still runs while
+paused. **Measure before relying on the throttle tier.**
+
+**Pausing is the safe direction while resuming is the sensitive one**
+(`Working.md` records that flipping pause state is gated here), so the asymmetry
+is deliberate.
 
 How few things are genuinely sub-minute urgent is worth stating, because it is
 the reason this tiering works: a siege takes many in-game minutes to cross the
@@ -488,11 +545,41 @@ frequent, and playbooks already gave the urgent path its own fast lane.** What
 remains is throughput, which has not been measured and should not be pre-solved.
 
 So: v1 single writer; Quartermaster designated first carve-out candidate;
-allowlists designed so that carve is a config change rather than a rewrite. The
-evidence to settle it is being gathered in
-`research/2026-09-12-write-conflict-matrix.md`, and mechanically gated on
-whether concurrent `dfhack-run` calls are even safe (question 3 of the
-capability checks).
+allowlists designed so that carve is a config change rather than a rewrite.
+
+### Resolved 2026-09-12: carving buys safety but no throughput
+
+`research/2026-09-12-dfhack-capability-checks.md` §3 settled the mechanics from
+DFHack's actual C++ synchronisation primitive at the matching version tag, and
+the answer reframes this whole section.
+
+**Concurrent `dfhack-run` calls are safe.** The RPC server really is
+multi-threaded (a thread per client connection), but every actual touch of game
+state passes through one `std::recursive_timed_mutex`
+(`Core::CoreSuspendMutex`) via `CoreSuspender`, so concurrent writers cannot
+corrupt fortress state. Memory safety was never the risk.
+
+**But it is a lock with cooperative hand-off, not a queue, and the suspend
+window opens only once per simulation tick.** Three consequences:
+
+- **No ordering guarantee.** `recursive_timed_mutex` offers no fairness, so
+  which of several waiting writers is serviced next is neither deterministic nor
+  priority-orderable from outside.
+- **No throughput win from carving.** Every writer's work serialises against
+  every other writer *and* against the tick itself, and the more writers there
+  are, the longer each waits. **So partitioning write authority cannot make the
+  fortress respond faster.** The throughput argument for carving, which was
+  already weak because playbooks handle urgency, is now **dead**: the only
+  remaining reasons to carve are organisational, and there are none worth the
+  costs listed above. Single writer should be treated as the settled design, not
+  as a v1 simplification.
+- **It explains an existing mystery.** This is the source-confirmed root cause of
+  the 45-80s command-to-effect delay `research/2026-09-11-quicksave-silent-noop.md`
+  measured live and could only call "the most parsimonious explanation, not
+  independently confirmed." That report's confidence framing should be upgraded.
+
+What source reading cannot settle is measured cycle time under a real roster.
+That still needs instrumenting (§13).
 
 Costs of carving, recorded so the trade is explicit: you lose the single
 coherent plan, the WIP limit fragments per role so the fort can again accumulate
@@ -781,12 +868,38 @@ Recorded so they are not re-proposed without new evidence.
    at all. Folded into §7 and §3.
    → `research/2026-09-12-write-conflict-matrix.md`
 
+4. **All six DFHack capabilities settled from source** at the matching version
+   tag (53.16-r1.1), five with high confidence.
+   → `research/2026-09-12-dfhack-capability-checks.md`
+   - **Runtime frame cap: yes** (§6), with a latency trap now documented.
+   - **In-game overlay: yes and headlessly drivable** (§8), though whether a
+     widget renders correctly in *our* Xvfb/VNC pipeline is the one live check
+     still outstanding.
+   - **`dfhack-run` concurrency: safe, not ordered, tick-gated** (§7). Killed
+     the throughput argument for carving write authority, and confirmed the
+     root cause of a previously-unexplained 45-80s command delay.
+   - **Priorities: two different mechanisms** (§4), 1-7 for digs, list position
+     for work orders.
+   - **Wake vocabulary: five of nine real**, `breach` has nothing at all and
+     `hostile_detected` is structurally blind to everything but registered
+     invasions (§4).
+   - **`dfhack.persistent`: no internal locking** (it borrows the same suspend
+     convention), a hard limit of **7 integer slots per entry**, and every save
+     rewrites an entity bucket's whole JSON file rather than updating
+     incrementally. Constrains the landmark store and anything else tempted to
+     use it as general state.
+
 ### Still open
 
-4. **Six unverified DFHack capabilities**: runtime frame cap, in-game overlay,
-   `dfhack-run` concurrency, quickfort dig priorities and work-order APIs,
-   `eventful` coverage for the wake vocabulary, `dfhack.persistent` under
-   concurrent writes. → `research/2026-09-12-dfhack-capability-checks.md`
+- **A breach poller does not exist and must be built** before flood response is
+  covered by anything here.
+- **A real hostile detector must be built.** Neither the polling signal nor the
+  event layer covers ambushes, thieves or aggressive wildlife.
+- **Two live checks** deliberately not executed by a read-only brief: whether
+  the frame cap survives loading a different save in one process, and whether an
+  overlay widget renders in this project's headless pipeline.
+- **Whether `Core::Update` still runs while paused**, which decides whether
+  pausing beats throttling for tool-call throughput (§6).
 
 ### New constraints the openclaw brief imposed
 
