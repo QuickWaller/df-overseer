@@ -290,12 +290,23 @@ because it cannot perturb the fort).
 
 ### CLOSED 2026-09-12: home-lab obligation for openclaw's VM, both halves
 
-**Fully discharged.** The IP was pre-allocated before assignment (the
-prerequisite half), and the real VMID plus name, address, host, memory, clone
-lineage and purpose were sent to `home-lab-03` for the `guests:` entry the
-moment the VM existed (the post-hoc half). No service moved, so
-`inventory/services.yaml` should not need touching; that reading was passed to
-them rather than assumed. Nothing outstanding upstream. **The address in `.env`
+**Fully discharged, and confirmed written on their side.** The IP was
+pre-allocated before assignment (the prerequisite half), and the real VMID plus
+name, address, host, memory, clone lineage and purpose were sent to
+`home-lab-03` for the `guests:` entry the moment the VM existed (the post-hoc
+half). They have since confirmed **VM 106 is in `SRV-01.yaml`'s `guests:` block
+and `.203` is marked built in `ips.yaml`**, both carrying `confidence: inferred`
+with a `second-hand-from` block pointing at this repo's SSH verification rather
+than their own observation, which is their rule for facts they have not seen
+directly and is the correct handling of anything we tell them.
+
+**ONE STANDING OBLIGATION, not yet due.** `inventory/services.yaml` needs an
+entry **once openclaw is actually running something**, which it is not yet: a
+provisioned VM is not a service. Agreed explicitly with `home-lab-03`, who will
+add it when told. **So whoever brings openclaw up is the one who owes that
+message.** This is the only thing still outstanding upstream, and it is
+deliberately recorded here because it will come due in a later session than the
+one that agreed it. **The address in `.env`
 was confirmed to match `ips.yaml` exactly before anything was created.** The
 history below is kept because the ordering it establishes is the reusable part.
 
