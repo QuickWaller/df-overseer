@@ -1,4 +1,4 @@
-# `mcp/`
+# `dfmcp/`
 
 The permission seam, plus (as of `dfhack_client.py`) the RPC client that
 actually talks to DFHack. Still not the MCP server itself and not a
@@ -29,7 +29,7 @@ files already in this repo (YAML, or a gitignored `.env`) and open no
 socket, SSH connection, or DFHack RPC call -- which is what makes them
 fully unit-testable with no VM. `dfhack_client.py` breaks that pattern on
 purpose (something has to eventually open the socket), and stays
-unit-testable a different way: every test in `mcp/tests/test_dfhack_client.py`
+unit-testable a different way: every test in `dfmcp/tests/test_dfhack_client.py`
 runs against a fake server written for that file, not a live DFHack.
 
 ## The canonical id scheme
@@ -153,7 +153,7 @@ versus the sole writer, when nothing more specific was written.
 ### Strict validation, all hard errors at load time
 
 Every one of these raises `RoleValidationError` and has a dedicated test in
-`mcp/tests/test_roles.py` proving it actually raises:
+`dfmcp/tests/test_roles.py` proving it actually raises:
 
 1. **An allowlist (`read` or `write`) references a tool id absent from the
    registry.** A typo must never silently grant nothing.
@@ -229,7 +229,7 @@ invalid enum choice, and the positional-optional trap below.
 `TOOLS.yaml` carries no argument types, only signature text. `tools.py`
 keeps one explicit table of integer-valued argument names
 (`_INTEGER_ARG_NAMES`), each entry confirmed by reading a real
-`tonumber(...)` call in the owning script (see `mcp/tests/test_tools.py`'s
+`tonumber(...)` call in the owning script (see `dfmcp/tests/test_tools.py`'s
 module docstring for the file:line list); everything else defaults to
 `"string"`. **Stated honestly, per the task brief: this is a heuristic that
 could be wrong for an argument name not yet seen**, and the module
@@ -275,7 +275,7 @@ Overseer and obtain write tools, silently voiding the single-writer design
 (§7).
 
 **Strict validation, all hard errors at load time** (mirroring `roles.py`'s
-own style), each with a dedicated test in `mcp/tests/test_auth.py`:
+own style), each with a dedicated test in `dfmcp/tests/test_auth.py`:
 
 1. Two roles sharing the same token.
 2. A token naming a role that is not enabled on the given roster (a typo,
@@ -285,7 +285,7 @@ own style), each with a dedicated test in `mcp/tests/test_auth.py`:
 
 **Never logs, prints, or returns a token value or any prefix of one.**
 Every error message names an env var, a role, or a length -- never the
-token itself; `mcp/tests/test_auth.py` asserts this directly for the two
+token itself; `dfmcp/tests/test_auth.py` asserts this directly for the two
 rules where a token value would be the obvious thing to quote (the
 collision and the too-short cases).
 
@@ -295,7 +295,7 @@ surrounding quotes stripped from the value -- needed there because the
 Proxmox password contains `$E`, which bash would otherwise expand away). A
 hand-rolled `.env` parser that skipped that quote-stripping step produced a
 false alarm in this repo on 2026-09-12 (`Working.md`). `scripts/` has no
-`__init__.py`, so it is not import-able as an ordinary package from `mcp/`;
+`__init__.py`, so it is not import-able as an ordinary package from `dfmcp/`;
 rather than reach across that boundary with a path hack, `auth.py`
 reimplements the same small parsing logic verbatim instead of inventing a
 different one. If `load_env` ever changes, `auth.py`'s `_read_dotenv` needs
@@ -389,13 +389,13 @@ the *next* acquire (`run_command`/`run_many`) sees it is closed and
 reconnects it in place before use. Calls made while DFHack is actually
 down still fail (there is nothing else they can do), but nothing about a
 past failure lingers once DFHack is back up -- there is no separate "reset
-the pool" step to remember to call. `mcp/tests/test_dfhack_client.py`'s
+the pool" step to remember to call. `dfmcp/tests/test_dfhack_client.py`'s
 `test_pool_self_heals_after_a_dead_connection` is this behaviour end to
 end against a fake server that deliberately drops one connection.
 
 **What could not be verified offline, stated plainly (per the handoff
 brief):** every test for this module runs against `FakeDFHackServer`, a
-from-scratch asyncio TCP server written in `mcp/tests/test_dfhack_client.py`
+from-scratch asyncio TCP server written in `dfmcp/tests/test_dfhack_client.py`
 that speaks the handshake and framing bytes independently of this file's
 own encoder/decoder -- not a real DFHack process, and not VM 103, which
 this stream was barred from touching. Unverified against the genuine
@@ -416,7 +416,7 @@ genuinely concurrent on the wire.
   to whatever builds the actual MCP seam on top of this -- and is blocked
   on an open question (`research/2026-09-12-mcp-server-stack.md`).
 - **No mutation of `TOOLS.yaml`, `ROSTER.yaml`, any `role.md`, or any doc.**
-  Read-only with respect to everything outside `mcp/` and the three
+  Read-only with respect to everything outside `dfmcp/` and the three
   `tools.yaml` files this task named for rewriting.
 - **No enforcement of `model.yaml`'s budget ceiling, cadence, or fallback
   model.** Those are real fields but a different concern (cost and
@@ -479,7 +479,7 @@ genuinely concurrent on the wire.
   than being mistaken for an identifier. Worth knowing before adding another
   command whose signature embeds its choices this way.
 - **`scripts/` has no `__init__.py`, so `scripts/pve.py`'s `load_env` is not
-  importable from `mcp/`.** `auth.py` reimplements the same small `.env`
+  importable from `dfmcp/`.** `auth.py` reimplements the same small `.env`
   parsing rather than reaching across that boundary with a path hack, which
   means **two copies now exist with no import keeping them in sync.** They
   agree today, including the quote-stripping step whose absence caused a false

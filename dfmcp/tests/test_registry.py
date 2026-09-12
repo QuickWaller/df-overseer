@@ -10,7 +10,7 @@ import textwrap
 
 import pytest
 
-from mcp.registry import Registry, RegistryError, load_registry
+from dfmcp.registry import Registry, RegistryError, load_registry
 
 
 # --------------------------------------------------------------------------

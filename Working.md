@@ -9,9 +9,13 @@ actually going on right now.
 
 The design/research phase the handover below anticipated, which then produced
 working code. **Current state: design written and revised against four research
-briefs; `agents/` and `mcp/` built with 26 passing tests; two safety detectors
-built, one live-verified working and one inconclusive.** The MCP server itself,
-the Sentry, Triage, the queue, snapshots and playbooks are not started.
+briefs; `agents/` and `dfmcp/` built with **121 passing tests**; two safety
+detectors built, one live-verified working and one inconclusive.** **The MCP
+server is three-quarters built**: the permission seam, the tool schema, the
+token-to-role map and the DFHack RPC client all exist, and only the transport
+is missing. The Sentry, Triage, the queue, snapshots and playbooks are not
+started. **Nothing in `dfmcp/` has met a real DFHack yet**, by design: every
+test runs against a fake server.
 
 ### START HERE next session, in priority order
 
@@ -32,9 +36,18 @@ Everything below this block is detail and reasoning. This is the brief.
    design requirement it must satisfy is already settled and written down
    (server-side allowlist enforcement, one token per role, one persistent DFHack
    RPC connection rather than shelling out per call, batch a cycle's reads into
-   one suspend window). `mcp/registry.py` and `mcp/roles.py` are the
-   authorisation half and are done and tested; what is missing is the transport
-   and the DFHack client.
+   one suspend window). **Four of the five modules are done and tested**
+   (`registry.py`, `roles.py`, `tools.py`, `auth.py`, `dfhack_client.py`);
+   **only the transport is missing**, and it is now unblocked.
+
+   **RENAMED 2026-09-12: the package is `dfmcp/`, not `mcp/`.** It had to be.
+   The Python MCP SDK is also imported as `mcp`, and a local `mcp/` directory
+   shadows it for anything running with the repo root on `sys.path`, which is
+   every test run and would have been the server itself. `import mcp.server`
+   resolved to *us*, so the transport could not have imported its own SDK.
+   Caught before the transport stream was dispatched rather than inside it.
+   Earlier `decisions/DECISIONS.md` rows and the dated `research/` briefs still
+   say `mcp/`; they are historical and were deliberately left alone.
 
    **Split on where the unknowns are**, which is the only reason three things
    can run at once:
@@ -58,16 +71,11 @@ Everything below this block is detail and reasoning. This is the brief.
      against the *installed* build's own protocol docs at
      `hack/docs/docs/dev/Remote.txt`, whose "Conversation flow" section shows
      the same strictly sequential request/text/result cycle.
-   - **Research, MCP server stack** → `research/2026-09-12-mcp-server-stack.md`.
-     **The crux is whether `tools/list` can return a different set per caller
-     identity**, since three roles with genuinely different allowlists must
-     share one server. If the SDK cannot, the fallback (a server per role, or
-     dropping to the low-level API) is a real design fork and comes back here.
    - **Build, transport-independent half: DONE and merged, 45 tests to 86** →
-     `handoffs/2026-09-12-mcp-tool-schema.md`. `mcp/tools.py` (registry plus
+     `handoffs/2026-09-12-mcp-tool-schema.md`. `dfmcp/tools.py` (registry plus
      roster to MCP tool definitions, and a validated call back to the exact
-     DFHack argv) and `mcp/auth.py` (bearer token to role, `compare_digest`
-     against every configured token, never logs a token). `mcp/` is now four
+     DFHack argv) and `dfmcp/auth.py` (bearer token to role, `compare_digest`
+     against every configured token, never logs a token). `dfmcp/` is now four
      modules and still opens no socket. **Its session ended mid-run**, the
      second stream to die that way in one day; both deliverables were already
      committed to its branch and survived, and only the final doc pass was
@@ -270,8 +278,8 @@ any build, in this order.
    §13.
 
    **IN PROGRESS:** the transport-independent half is being built now in an
-   isolated worktree: `mcp/registry.py` (loads `TOOLS.yaml`, canonical tool ids,
-   preserves each tool's own verified/unverified status) and `mcp/roles.py`
+   isolated worktree: `dfmcp/registry.py` (loads `TOOLS.yaml`, canonical tool ids,
+   preserves each tool's own verified/unverified status) and `dfmcp/roles.py`
    (resolves `ROSTER.yaml` plus per-role allowlists, with **hard load-time
    errors**, notably that any role other than `sole_writer` holding a mutating
    tool fails to load). Includes rewriting the three `tools.yaml` files from raw

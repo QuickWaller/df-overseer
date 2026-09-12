@@ -9,7 +9,7 @@ Full findings in this stream's executor report, not duplicated here.
 
 ## Scope
 
-Build `mcp/dfhack_client.py`: a persistent-connection client that runs this
+Build `dfmcp/dfhack_client.py`: a persistent-connection client that runs this
 repo's `df-overseer-*` commands over DFHack's RPC socket and returns their
 output. This is the second of the MCP server's two missing halves (the other
 is the transport, which is blocked on an open question and is not this
@@ -59,7 +59,7 @@ sockets that fail every later call.
 3. `tests/test_no_leaked_addresses.py` still passes. **This repo is public**:
    no address or hostname in any tracked file. Loopback is fine and is not a
    leak.
-4. `mcp/README.md` gains a section in the voice of the existing ones,
+4. `dfmcp/README.md` gains a section in the voice of the existing ones,
    including the pool rationale and anything you could not verify offline.
 
 ## Explicitly out of scope

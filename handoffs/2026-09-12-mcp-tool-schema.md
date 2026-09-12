@@ -16,19 +16,19 @@ you find yourself wanting to, stop and report instead.
 
 ## What already exists, and must not be changed
 
-- `mcp/registry.py` — loads `scripts/dfhack/TOOLS.yaml` into `Tool` objects
+- `dfmcp/registry.py` — loads `scripts/dfhack/TOOLS.yaml` into `Tool` objects
   under canonical ids (`openarea.build`, `labor.unit-status`, `overview.get`).
-  Read its docstring and `mcp/README.md` before writing anything.
-- `mcp/roles.py` — `Roster.check(role, tool_id) -> (allowed, reason)`. The
+  Read its docstring and `dfmcp/README.md` before writing anything.
+- `dfmcp/roles.py` — `Roster.check(role, tool_id) -> (allowed, reason)`. The
   enforced permission boundary.
-- `mcp/README.md` — the canonical id scheme and what this package
+- `dfmcp/README.md` — the canonical id scheme and what this package
   deliberately does not do.
 - `agents/ROSTER.yaml` and each enabled role's `tools.yaml`.
 
 **Do not modify any of those files, `TOOLS.yaml`, or any `agents/**` file.**
 If one of them is wrong, say so in your report; do not fix it here.
 
-## Deliverable 1: `mcp/tools.py`
+## Deliverable 1: `dfmcp/tools.py`
 
 Turns the registry into MCP tool definitions, and turns a tool call back into
 the exact DFHack command line. Transport-independent: it must not import any
@@ -115,7 +115,7 @@ Also validate: unknown argument names rejected, missing required arguments
 rejected, and no shell metacharacter smuggled through a string argument
 (these become arguments to a real command on a live game host).
 
-## Deliverable 2: `mcp/auth.py`
+## Deliverable 2: `dfmcp/auth.py`
 
 Maps a bearer token to a role. `docs/AGENT-ARCHITECTURE.md` §13: **role
 identity must be a credential, not a claim** — a self-declared role header
@@ -146,13 +146,13 @@ voiding the single-writer design.
 
 1. `pytest` passes from the repo root, and the total count is **higher** than
    the current 45 by the number of tests you added. Report both numbers.
-2. New tests live in `mcp/tests/test_tools.py` and `mcp/tests/test_auth.py`,
-   matching the existing `mcp/tests/` style.
+2. New tests live in `dfmcp/tests/test_tools.py` and `dfmcp/tests/test_auth.py`,
+   matching the existing `dfmcp/tests/` style.
 3. Every validation rule you add has a test that proves it actually raises.
-   (`mcp/README.md` records that as the existing standard for `roles.py`.)
+   (`dfmcp/README.md` records that as the existing standard for `roles.py`.)
 4. `tests/test_no_leaked_addresses.py` still passes — no address, hostname or
    token value in any tracked file.
-5. `mcp/README.md` gains a section for the two new modules in the voice of the
+5. `dfmcp/README.md` gains a section for the two new modules in the voice of the
    existing ones: what they do, what they deliberately do not do, and the
    limitation in 1c stated honestly rather than hidden.
 
