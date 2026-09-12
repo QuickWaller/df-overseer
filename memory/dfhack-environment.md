@@ -56,6 +56,19 @@ present, so structured map/unit reads work out of the box.
 extracted from the plugin DLL with `strings`. Message *names* are DLL-verified
 (high confidence); field layouts came from a single upstream source (moderate).
 
+**The field-level detail underneath this summary now exists and is
+implemented, 2026-09-12.** `research/2026-09-12-dfhack-rpc-client.md` settles
+the handshake bytes, the 8-byte header layout, the reply-id set and the
+message field numbers at this install's own version, and `dfmcp/dfhack_client.py`
+implements them with no `protobuf` dependency. Nothing there contradicts this
+section. Three things it adds that matter to anyone using this interface:
+**a connection carries one request at a time**, so concurrency needs a pool;
+**`BindMethod` is not needed** for running commands, since `RunCommand` is a
+hardcoded id on every connection; and **`RunCommand` is refused from any peer
+but loopback even when `allow_remote` is set** (reported by the brief, not
+independently confirmed), which if it holds means the remote config option
+does not open the path this project actually uses.
+
 ## Availability — check before assuming
 
 DFHack ships docs for tools that are **not available in this build**. They are

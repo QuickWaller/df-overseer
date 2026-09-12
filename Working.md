@@ -8,14 +8,21 @@ actually going on right now.
 ## Agent architecture design phase — started 2026-09-12
 
 The design/research phase the handover below anticipated, which then produced
-working code. **Current state: design written and revised against four research
-briefs; `agents/` and `dfmcp/` built with **121 passing tests**; two safety
-detectors built, one live-verified working and one inconclusive.** **The MCP
-server is three-quarters built**: the permission seam, the tool schema, the
-token-to-role map and the DFHack RPC client all exist, and only the transport
-is missing. The Sentry, Triage, the queue, snapshots and playbooks are not
-started. **Nothing in `dfmcp/` has met a real DFHack yet**, by design: every
-test runs against a fake server.
+working code.
+
+**Current state, end of 2026-09-12: the design is written and revised against
+six research briefs, and the MCP server is built.** `agents/` holds the roster;
+`dfmcp/` is six modules and 136 tests (121 without the pinned SDK, where the
+transport's own tests skip themselves by design). Two safety detectors exist,
+one live-verified working and one inconclusive.
+
+**Still not started:** the Sentry, Triage, the queue, snapshots and playbooks.
+
+**The limit that matters more than any of the above: nothing in `dfmcp/` has
+met a real DFHack, a bound socket, or a real agent host.** Every test runs
+against a fake server built from the same wire spec, so a divergence between
+the VM's actual binary and the source the research read would pass all 136.
+Read item 2 below before trusting the number.
 
 ### START HERE next session, in priority order
 
@@ -297,7 +304,13 @@ for proposals; self-reported confidence is never a decision input.
 The design is no longer the blocker: the tool surface is.** Three things gate
 any build, in this order.
 
-1. **The MCP server still does not exist**, and it needs per-role identity and
+1. **SUPERSEDED 2026-09-12: the MCP server exists** (`dfmcp/`, six modules,
+   136 tests), and it was built with per-role identity and scoping designed in
+   from the start, exactly as this item demanded. Both requirements below are
+   enforced in code. Kept because the requirements are what the build was held
+   to, and because the reasoning for the topology has not changed.
+
+   **The MCP server still does not exist**, and it needs per-role identity and
    scoping designed in from the start. **Topology decided 2026-09-12 (user
    confirmed both halves): openclaw gets its own new VM on SRV-01; the MCP
    server and the Sentry stay on VM 103 with DF**, because DFHack's RPC socket
@@ -309,6 +322,9 @@ any build, in this order.
    token per role**, never a self-declared header, or the Architect could
    assert it is the Overseer and obtain write tools. → `docs/AGENT-ARCHITECTURE.md`
    §13.
+
+   **DONE, all of it:** the transport-independent half described below landed,
+   and so did the three modules that did not exist when this was written.
 
    **IN PROGRESS:** the transport-independent half is being built now in an
    isolated worktree: `dfmcp/registry.py` (loads `TOOLS.yaml`, canonical tool ids,

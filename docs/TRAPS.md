@@ -146,3 +146,40 @@ findings without another doc home yet.
   genuinely active liquid movement. Anything built on this flag is unproven
   until that is answered.
 
+
+## Added 2026-09-12, from building the MCP server
+
+- **This repo's package is `dfmcp`, not `mcp`, and it cannot go back.** The
+  Python MCP SDK is imported as `mcp`, and a top-level `mcp/` directory in this
+  repo wins over site-packages for anything running with the repo root on
+  `sys.path`: every `pytest` run from the root, and the server process itself.
+  While it was named `mcp/`, `import mcp.server` resolved to **us**, so the
+  transport could not have imported its own SDK. Verified both before and after
+  the rename by running `import mcp` from the repo root and from elsewhere.
+  **If an SDK import ever appears to resolve into this repo, that is this
+  collision returning.** Do not fix it with a `sys.path` manipulation; the
+  collision is on the top-level name, so moving files does not help either.
+- **A test file that imports an optional dependency must guard its own import
+  at module scope**, or it takes the entire suite down with it. A bare
+  `ImportError` during collection is not one failing file, it is a pytest
+  *collection error* that aborts the run: adding `dfmcp/tests/test_server.py`
+  unguarded would have turned 121 passing tests into zero run and one error in
+  any environment lacking the pinned SDK. **So this repo's ambient baseline is
+  deliberately `121 passed, 1 skipped`, and that skip is correct rather than a
+  regression.** The full count (136) needs the pin installed.
+- **Install `dfmcp/requirements.txt` into a dedicated venv, never the shared
+  environment.** A verified conflict already exists on this machine: an
+  unrelated `fastmcp` package pins the SDK below the major version this repo
+  needs. `python -m venv --system-site-packages .venv-dfmcp` (gitignored).
+- **A DFHack RPC connection carries exactly one request at a time.** The
+  per-connection server thread is a strict read, process, reply, read-next
+  loop, and the protocol's own documented conversation flow agrees. So
+  concurrency, including the "batch a cycle's reads into one suspend window"
+  optimisation, needs a **pool of connections**, never several requests
+  pipelined down one. This corrected a design requirement that had said "one
+  persistent connection" (`docs/AGENT-ARCHITECTURE.md` §14 item 5).
+- **The `dfhack-run` colour-escape trap above does not apply over RPC.** A
+  tool's `print` arrives as one text fragment with colour in a separate
+  protobuf field, never embedded in the text, so JSON parses cleanly with no
+  sanitising. The escape sequences are `dfhack-run`'s own terminal rendering,
+  a property of that client and not of the wire.
