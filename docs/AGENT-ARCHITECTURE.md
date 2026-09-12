@@ -539,7 +539,10 @@ is serviced in one window.** So `k` *sequential* calls cost about `k` ticks,
 while `k` *concurrent* calls cost about **one**. Batching independent reads is
 therefore not just token-efficient, it is game-time-efficient, which is an
 argument for the single-snapshot read pass (§5) that has nothing to do with
-consistency.
+consistency. **What "concurrent" costs, added 2026-09-12: one RPC connection
+each.** A DFHack connection carries one request at a time, so the client must
+hold several to have several suspenders pending, and the pool size is the cap
+on this saving. See §14 item 5.
 
 Scale note, so this is not over-tuned: at `FPS_CAP:5` a tick is 200ms and the
 measured round trips were 0.66s to 1.28s, so **transport overhead currently
@@ -976,7 +979,16 @@ matters once a connection is held.
 
 **DFHack's RPC socket is unauthenticated.** Anything that can reach it has full
 scripting control of the game process, so moving the MCP server off VM 103 would
-mean exposing that socket across the network. Supporting reasons: the two hops
+mean exposing that socket across the network. **Confirmed 2026-09-12 and
+sharper than this section assumed**: the server carries no credential of any
+kind and binds loopback unless `remote-server.json` sets `allow_remote: true`
+(that default verified directly against the installed build's own protocol
+docs, which call the option insecure in the same breath). Reported by the
+brief and **not independently confirmed here**: `RunCommand` additionally
+refuses any peer address but literal loopback *even when* `allow_remote` is on,
+a second gate beyond the listen address. If that holds it means running the MCP
+server anywhere but VM 103 is not merely unwise, it does not work.
+→ `research/2026-09-12-dfhack-rpc-client.md`. Supporting reasons: the two hops
 have opposite traffic profiles (MCP↔DFHack is chatty and tick-gated, openclaw↔MCP
 is one batched snapshot per cycle, so keep the chatty hop local); separating them
 buys no availability, since if VM 103 is down the server has nothing to serve;
@@ -1133,9 +1145,12 @@ Not yet gated on anything, and needing a decision:
    setup, a `dfhack-run` process spawn, an RPC connect, and only then the
    ~200ms tick wait at `FPS_CAP:5`. **The tick wait is the smallest term**, so:
 
-   - **Hold one persistent DFHack RPC connection.** Do not shell out to
+   - **Hold a persistent DFHack RPC connection.** Do not shell out to
      `dfhack-run` per call. This removes both dominant terms and leaves latency
-     roughly tick-bound (~200ms at `f=5`), a 3-5x improvement.
+     roughly tick-bound (~200ms at `f=5`), a 3-5x improvement. (This said
+     "one persistent connection" until 2026-09-12; persistence is the win and
+     survives, but see the third bullet, one is the wrong number for the
+     batched case.)
    - **Persistence matters far more than locality.** Same-host and same-LAN are
      within a millisecond or two of each other once the connection is held;
      per-call SSH from anywhere is 0.5s+. So co-location is not the lever it
@@ -1146,6 +1161,18 @@ Not yet gated on anything, and needing a decision:
      server should issue a snapshot's reads concurrently rather than in
      sequence: ~1 tick instead of ~`k`. This is the implementation half of
      §5's single-snapshot read pass.
+     **CORRECTED 2026-09-12: this is not reachable from one connection, so
+     the first bullet's "one persistent connection" is wrong for this case
+     specifically.** DFHack's per-connection server thread is a strict
+     read-request, process, reply, read-next loop, so **at most one request is
+     ever in flight per socket**, and the protocol's own documented
+     conversation flow agrees (request, then zero or more text messages, then
+     result). Concurrency therefore comes from **a small pool of persistent
+     connections**, one accepted server thread each, not from pipelining
+     several requests down one. Persistence is still the whole latency win and
+     is unchanged; only the count is. Pool size caps how many suspenders can
+     be pending at once, so it is the real dial on the `~1 tick instead of ~k`
+     saving. → `research/2026-09-12-dfhack-rpc-client.md`.
 
    Keep it in proportion: a model API call is seconds, so for a think-heavy
    cycle 200ms versus 700ms per tool call is noise. It matters for call-heavy
