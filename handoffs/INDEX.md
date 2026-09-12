@@ -22,7 +22,7 @@ here and their own handoff doc.
 | Stream | Doc | Status | Touched surfaces |
 |---|---|---|---|
 | MCP tool schema + auth | [2026-09-12-mcp-tool-schema.md](2026-09-12-mcp-tool-schema.md) | **DONE 2026-09-12**, merged, 45 tests to 86 | `mcp/tools.py`, `mcp/auth.py`, `mcp/tests/test_tools.py`, `mcp/tests/test_auth.py`, `mcp/README.md`, `infra/local.example.env` |
-| DFHack RPC client | [2026-09-12-dfhack-rpc-client.md](2026-09-12-dfhack-rpc-client.md) | dispatched 2026-09-12 | `mcp/dfhack_client.py`, `mcp/tests/test_dfhack_client.py`, `mcp/README.md` |
+| DFHack RPC client | [2026-09-12-dfhack-rpc-client.md](2026-09-12-dfhack-rpc-client.md) | **DONE 2026-09-12** on branch `worktree-agent-a19b5b699fb5faba6`, not yet merged, 86 tests to 121. No live verification (barred from VM 103 by design); see handoff doc's closing note for the exact command to run that check. | `mcp/dfhack_client.py`, `mcp/tests/test_dfhack_client.py`, `mcp/README.md` |
 
 **One thing this first run proved, and it is the reason the commit-as-you-go
 rule in `.claude/agents/executor.md` exists:** the stream's session ended
