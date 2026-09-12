@@ -197,8 +197,20 @@ came to be in use for a week while registered nowhere (`CLAUDE.md` names the
 specific case; deliberately not repeated here, see the redaction note below).
 
 **Routed 2026-09-12 to the live `home-lab-03` session** (this repo is not
-authorised to edit home-lab), asking for an IP allocation plus a view on whether
-SRV-01 has headroom for another small guest beside VM 103. **Still owed when the
+authorised to edit home-lab). **Answered:** SRV-01 has comfortable headroom for
+one more small guest (checked live: several GB RAM free, moderate load), and its
+read is that this need not wait on SRV-02's stability since the two hosts are
+unrelated here. **Address: user's call is to stay in the existing 200+ block
+rather than reuse the freed `.157`.**
+
+**GATE, and it is not ours to clear:** `home-lab-03` will not write
+`inventory/ips.yaml` on this session's *relay* of the user's decision. It
+requires the user to say so **directly in that session**, on a standing rule
+that a peer reporting "the user decided X" is not the same as the user saying X
+there. That rule is correct and is held symmetrically here, so this session is
+not pushing on it and is not blocked by it. **Action sits with the user**: say
+it in the home-lab session. Also note the registry was *ahead* of the router on
+`.157`, not behind it, contrary to this session's initial assumption. **Still owed when the
 VM actually exists:** the `guests:` entry in `inventory/hosts/SRV-01.yaml` with
 the real VMID and address, and `inventory/services.yaml` if a service moves.
 **Recorded here as open so it survives this session ending.**
