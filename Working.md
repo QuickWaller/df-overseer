@@ -17,14 +17,16 @@ the Sentry, Triage, the queue, snapshots and playbooks are not started.
 
 Everything below this block is detail and reasoning. This is the brief.
 
-1. **Provision openclaw's VM.** The user asked for this specifically next
-   session. Roughly ten minutes and entirely ours: `provision_vm.py clone` into
-   the already-allocated address, set memory and onboot, verify it boots and is
-   reachable. **Then immediately send the real VMID to a live `home-lab`
-   session** for the `inventory/hosts/SRV-01.yaml` `guests:` entry, which is the
-   only thing owed upstream. Do it first because it is quick, and because
-   discharging that inventory obligation while a peer is awake is how it avoids
-   sitting unrecorded, which has happened before.
+1. **DONE 2026-09-12: openclaw's VM exists.** `df-colony-openclaw-01`, **vmid
+   106**, <openclaw-vm-ip>/24 static, 2048 MB ceiling / 1024 MB balloon, 4 cores,
+   onboot enabled, linked clone of template 102 on SRV-01. Verified by SSH, not
+   just by the API's "running": correct hostname and correct address from inside
+   the guest. `OPENCLAW_VMID` recorded in `.env`, placeholder added to
+   `infra/local.example.env`. **The upstream obligation is discharged**: full
+   details sent to the live `home-lab-03` session for the
+   `inventory/hosts/SRV-01.yaml` `guests:` entry. Nothing else owed. **It found
+   a real bug on the way in, see the section below: `clone` would have given it
+   the running fort's address.**
 2. **Build the MCP server.** It is the one hard blocker: nothing else can
    progress without it, and every design requirement it must satisfy is already
    settled and written down (server-side allowlist enforcement, one token per
@@ -56,12 +58,10 @@ of the sandbox pool. Two separate things had been conflated:
   `guests:` entry in `inventory/hosts/SRV-01.yaml` with the real VMID, plus
   `inventory/services.yaml` if a service moves. A post-hoc record, not a gate.
 
-**DEFERRED TO NEXT SESSION, and the user wants it done then.** Not a veto: this
-session offered to provision it immediately and the user chose to hold it over,
-so it is a queued action rather than a question to re-ask. It is item 1 in the
-START HERE list above. When it is done, send the real VMID to whichever
-`home-lab` session is live so the `guests:` entry lands promptly rather than
-being carried forward again.
+**DONE 2026-09-12, and the deferral discharged exactly as intended**: the VMID
+went to a live `home-lab` session the moment the VM existed, rather than being
+carried by a handover. Kept here only because the reasoning above is what made
+the distinction between provisioning (ours) and recording (theirs) clear.
 
 **One thing still needing the user rather than a session:** nothing. The
 address-leak cleanup and its `CLAUDE.md` edits were authorised 2026-09-12 and
@@ -288,7 +288,18 @@ pipeline (only matters if the status banner goes inside the game rather than
 beside the stream, and the outside-the-game route is recommended precisely
 because it cannot perturb the fort).
 
-### OPEN home-lab obligation: openclaw's VM needs an IP allocated first
+### CLOSED 2026-09-12: home-lab obligation for openclaw's VM, both halves
+
+**Fully discharged.** The IP was pre-allocated before assignment (the
+prerequisite half), and the real VMID plus name, address, host, memory, clone
+lineage and purpose were sent to `home-lab-03` for the `guests:` entry the
+moment the VM existed (the post-hoc half). No service moved, so
+`inventory/services.yaml` should not need touching; that reading was passed to
+them rather than assumed. Nothing outstanding upstream. **The address in `.env`
+was confirmed to match `ips.yaml` exactly before anything was created.** The
+history below is kept because the ordering it establishes is the reusable part.
+
+Original section follows.
 
 **Not yet triggered, deliberately raised early.** The decided topology needs
 **one new VM on SRV-01** for `openclaw`. Nothing is created yet, so nothing in
@@ -334,6 +345,38 @@ the real VMID and address, and `inventory/services.yaml` if a service moves.
 Target host is SRV-01 deliberately: SRV-02 was crashing roughly every 2.5 hours
 as of 2026-09-12, root cause open, and a power-brick swap was confirmed not to
 be the fix.
+
+### DONE 2026-09-12: `clone` would have handed openclaw the running fort's address
+
+Found by reading `cmd_clone` before running it, which is the only reason it was
+found at all. `guest_address()` read **`DF_VM_IP` and nothing else**, and the
+`clone` subcommand had no address flag, so provisioning openclaw's VM would have
+configured it with **VM 103's address**: a collision against the live fort, from
+a command that would have logged success. **Confirmed against the real host
+before fixing**, not argued from the code: `DF_VM_IP` resolved to a pool holder
+of `103`, `OPENCLAW_VM_IP` to `None`.
+
+The hardcoding was correct when written, with one guest in the pool. It became
+wrong the moment a second address was allocated, and nothing connected the two
+facts. **This is the shape to watch for in the rest of this repo**: single-guest
+assumptions baked in when the pool had one guest. `DF_VMID` defaulting is worth
+a look on the same grounds.
+
+**Fixed** in `scripts/provision_vm.py` (`d587ea1`): `guest_address(env, var)`
+plus `clone --ip-var`, a `pool_address_holder()` check that refuses **before**
+the clone API call so a rejection cannot strand a half-built VM, and `DF_GW`/
+`DF_DNS` deliberately left unparameterised because a gateway and a resolver are
+properties of the subnet, not of a guest. Guard's stated limit, in the code: it
+sees only our own pool, so `home-lab/inventory/ips.yaml` remains the authority
+for anything outside it and this does not reduce that.
+
+**One process lesson worth more than the bug.** Verifying that `.env` and
+home-lab's registry agreed, a hand-rolled parser reported a first-octet
+mismatch. It was wrong: it did not strip the single quotes `pve.load_env`
+strips. Re-running through the **real code path** showed exact agreement. The
+check that nearly raised a false alarm about another repo's registry was itself
+the broken thing, which is `CLAUDE.md`'s "verify the verification" rule biting
+in the direction of a false positive rather than a false all-clear.
 
 ### DONE 2026-09-12: the address leak is closed, with a test that keeps it closed
 
