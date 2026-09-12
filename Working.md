@@ -18,8 +18,9 @@ nothing is built.**
   architecture, graded urgency, write authority, reliability, recording and
   learning, modularity, explicit non-goals, and open questions. It is a design
   artifact and says so at the top.
-- **12 register rows** appended to `decisions/DECISIONS.md`, plus 2 finding
-  rows (below). The doc is the design; the rows are why each call was made.
+- **26 register rows** appended to `decisions/DECISIONS.md` by this session
+  (38 rows now carry today's date in total). The doc is the design; the rows
+  are why each call was made, including the ones that were later corrected.
 - **`ROADMAP.md` updated**: two new Now items (the architecture, and the MCP
   server as the standing blocker), and three stale items corrected where the
   design closed them.
@@ -48,7 +49,7 @@ projections, three information tiers. Confidence is **tool-stated for facts**
 (`MECHANICAL`/`DERIVED`/`HEURISTIC`) and **measured from graded predictions**
 for proposals; self-reported confidence is never a decision input.
 
-### Research: three of four briefs back, all folded into the doc and register
+### Research: all four briefs back, all folded into the doc and register
 
 1. `research/2026-09-12-write-conflict-matrix.md` — **back**, findings below.
 2. `research/2026-09-12-openclaw-primitives.md` — **back.** The design's
@@ -293,168 +294,13 @@ handover below claimed five; that claim was stale and is corrected there).
 Publishing the reasoning stream (§8) is designed but explicitly needs its own
 go-ahead, separately.
 
-## HANDOVER — 2026-09-12 (session end, written for a `/clear`)
+## HANDOVER — archived
 
-The entire prior session's content (tool manifest build, both coordinate-leak
-fixes, the quorum correction, and everything else since the last `/clear`) is
-archived wholesale —
-[`working-archive/Working_archive-2026-09-07.md`](working-archive/Working_archive-2026-09-07.md).
-**User's stated direction for the next session: a design and research phase**,
-likely opening with a fresh Opus conversation — nothing further is queued or
-assumed beyond that; this handover is deliberately just the state-at-a-glance
-a fresh session needs, not a prescribed next task.
-
-### State at a glance, verified fresh, not assumed
-
-- **Uniboslan, "Ragwind," is the one fort, healthy and untouched**: 15
-  citizens, all idle/healthy, confirmed by a live `unit-status` call at the
-  end of this session (also used to verify the coordinate-leak fix, below).
-- **CORRECTED 2026-09-12: the "5 unpushed local commits" this handover used to
-  claim were in fact already pushed.** Verified after a real `git fetch`:
-  `origin/main` is at `ecf591b`, the last of them. The five were `034f555`
-  (tool manifest), `809baaa` (leak fixes, code), `8ac539d` (leak fixes,
-  deployed + verified), `4108c1f` (live-view ingest shelved), `c5de471`
-  (openclaw brain decision). The only unpushed commit is now `500d8ce` (the
-  agent architecture design, see the section above). **Still needs explicit
-  go-ahead to push, and per this repo's own rule, re-check
-  `git log origin/main..HEAD` immediately before pushing in case another
-  session added commits of its own in the meantime.**
-- **`scripts/dfhack/` holds 10 files plus a new manifest, `TOOLS.yaml`,**
-  all live-deployed and live-verified on VM 103 as of this session (its own
-  per-command `verified` dates are the source of truth, not this paragraph).
-- **Both known raw-coordinate leaks are fixed, deployed, and live-verified**:
-  `df-overseer-labor unit-status` and `df-overseer-diff recent-combat`/
-  `since-report` all now resolve `near_landmark`/`direction`/`distance_tiles`
-  instead of printing raw `pos=x,y,z`. No known coordinate leak remains open.
-- **Quorum: resolved** (`pvecm status`: `Quorate: Yes`, 2/2, confirmed by
-  `home-lab-29` the morning of 2026-09-12). SRV-02's own crash-pattern
-  stability (76 reboots/8 days) is still genuinely open — not this repo's to
-  fix, just current context if anything relies on host uptime.
-- **Live-view ingest (screenshot-push to the portfolio page): explicitly
-  shelved, user's call** — not blocked on anything technical (an R2
-  bucket/token is still the only missing piece), just not a priority right
-  now. Not redundant with the two working VNC streams (public view-only +
-  authenticated admin) — it's a lighter-weight static-image embed meant to
-  sit alongside a "watch live via noVNC" link, just deprioritized.
-- **The driving-brain choice is decided: `openclaw`**, user's explicit call
-  (not the originally-planned empirical 30-day survival test), wanting a
-  multi-agent architecture — many agents, each a single responsibility, each
-  free to run a different model. **Not yet built**: the actual
-  multi-agent-by-task decomposition, and the MCP server/tool schema this
-  repo's design commitment #5 needs before any brain can actually drive the
-  fort (`scripts/dfhack/TOOLS.yaml` is a first draft of that schema, not the
-  server). → `decisions/DECISIONS.md` 2026-09-12 rows.
-
-### Durable traps, still true (carried forward from the archived handover, unchanged unless noted)
-
-Embark-screen automation mechanics (coordinate frames, `xdotool` calibration,
-dead input paths, dialog handling, the click tool's known flaws) are the
-permanent, living content of `docs/DF-UI-AUTOMATION.md` — not duplicated
-here. This list is everything else: infra, project-wide gotchas, and fresh
-findings without another doc home yet.
-
-- **`ranked_candidates()`-style helpers that resolve a named landmark's own
-  coordinate internally must actually use that resolved value everywhere,
-  not just to validate the caller's separately-supplied one.** If a function
-  already has the right answer internally, don't also ask the caller for it.
-- **DF gamelog/report text is not guaranteed to be safely printable through
-  a Windows console's default codepage.** Any tool that relays raw DF text
-  should encode defensively (`errors='replace'`).
-- **`dfhack.buildings.getSize()`'s `cx,cy` are local to the building's own
-  box, not absolute map coordinates** — add the building's own origin field
-  before using them as a real coordinate.
-- **`df.global.world.burrows.all` does not exist** — the correct path is
-  `df.global.plotinfo.burrows.list`.
-- **UPDATED 2026-09-12: no known raw-coordinate leak remains** in any
-  deployed `df-overseer-*.lua` command — both leaks found this session
-  (`df-overseer-labor unit-status`, `df-overseer-diff recent-combat`/
-  `since-report`) are fixed, deployed, and live-verified. If a future audit
-  finds another, it goes here the same way these did.
-- **Directly changing a live fort's pause state
-  (`dfhack.world.SetPauseState(false)`) is blocked by Claude Code's own
-  auto-mode classifier by default**, not something a bare mid-conversation
-  "go ahead" reliably satisfies. Ask right before the call, get an explicit
-  answer to that exact question; if still blocked, say so plainly rather
-  than routing around it with an equivalent raw struct write.
-- **`quickfort run <file>` resolves a plain filename relative to
-  `dfhack-config/blueprints/`, not the working directory or an absolute
-  path.** Write ad-hoc blueprints directly into that directory.
-- **`save/current` is transient staging, not itself an addressable save** —
-  a quicksave briefly writes there, then DF moves it into the real numbered
-  slot (`cur_savegame.save_dir`) within moments.
-- **`reqscript`-loading a `df-overseer-*.lua` file requires a
-  `--@module = true` directive as a leading comment line**, and a
-  module-loaded script's own CLI-dispatch code still runs during that load
-  unless guarded (`if dfhack_flags.module then return end`).
-- **VM 103 is running DF unattended with no network isolation boundary.**
-  home-lab's own structural gap (Tailscale ACL Phase 5 unchecked) — not this
-  repo's to fix.
-- **DF ignores SIGTERM.** Quicksave before stop is mandatory once a fort is
-  live; a bare stop takes the full timeout and ends in SIGKILL.
-- **`-gen` fails silently** roughly a quarter of the time. Success is the
-  region directory existing, never the exit code.
-- **Saves live at the XDG path**, not in the game directory.
-- **Never convert a booted VM to a template without sealing it.**
-- **The published hostname is exposed.** The user chose not to rename it;
-  `willsmith.nz` is deliberate, not a leak.
-- **Folder is still `df-automation` on disk** while the project is
-  `df-overseer`.
-- **DF replay determinism is unverified. `hypothesis_id` has no registry.**
-- **PVE's cloud-init takes only the first label of the VM `name`** —
-  `install_df.py`'s `step_hostname` is the only workable route to a suffixed
-  guest hostname.
-- **`dfhack-run lua -f script.lua ARG1 ARG2` passes arguments via Lua
-  varargs (`local x, y = ...`), not a global `arg` table.**
-- **DF's save-slot names (`autosave 1/2/3`, `current`) are a shared, generic
-  pool, not scoped per fort** — pull an `install_df.py backup` first,
-  always, before founding any further fort.
-- **A founded fort's own welcome dialog silently blocks all citizen activity
-  even when `pause_state` reads `false`.** Always check for an undismissed
-  dialog before concluding a fort is stuck.
-- **A downstair can't be designated on a grass tile**; a plain floor dig
-  beneath a completed stair never becomes a job unless the connecting tile
-  is itself a matching stair type — boundary connectivity, not just the
-  target tile's state, gates job creation.
-- **The fortress-wide job list is `df.global.world.jobs.list`** (linked
-  list, `.next`/`.item`), not `df.global.job_list`.
-- **`quicksave` is asynchronous and its own log line is not a reliable
-  signal in either direction.** Poll the save slot's mtime for up to ~90s.
-- **Quicksave rotates forward through the `autosave N` slot pool,
-  overwrite-oldest-first** — always re-read `cur_savegame.save_dir` fresh.
-- **VM 103's SSH host key changes across a full Proxmox stop/start cycle**
-  — expected, given documented intentional restarts; fix with
-  `ssh-keygen -R <ip>` then accept the new key.
-- **Every deployed perception-layer tool deliberately strips coordinates
-  before returning anything** — by design, matching commitment #1. Don't
-  expect a coordinate back from any perception query; an action tool has to
-  compute and consume one internally, never return it. No known exception
-  remains open (see above).
-- **`unit-status hostile` (`dfhack.units.isDanger`/`isInvader`) is not a
-  trustworthy fort-defense signal** — proven wrong in both directions the
-  same day it was tested. Treat its output as "worth a second look," never
-  as "confirmed safe" or "confirmed hostile" on its own.
-
-### Other open items, carried forward
-
-- **Design commitment #1's absolute wording vs. its actual evidence base**
-  — still queued for a `decisions/DECISIONS.md` entry, deliberately not
-  written yet (user's call on timing).
-- **Live-view ingest**: shelved, see above. Once revisited: wire
-  `DF_STREAM_INGEST_URL` in `.env`, convert `curl -F` to an S3-compatible
-  signed PUT, fill in `IMAGE_BASE` in
-  `willsmith-portfolio/public/dwarf-fortress/index.html`, commit, ask before
-  pushing/deploying either repo.
-- **The multi-agent-by-task decomposition and the MCP server/tool schema**
-  — both unbuilt, both now the concrete next step toward `openclaw` actually
-  driving the fort. Likely subject matter for the user's planned design/
-  research phase, not started this session.
-- **`infra/local.proxmox-access.md` is stale** — describes VM 104, node
-  `proxmox`, pool `df-overseer`, user `df-overseer@pve`, all superseded by
-  the live `.env` (VM 103, node `srv-01`, pool `df-overseer-sandbox`).
-  Noticed this session, not yet re-recorded.
-
-**Style note:** the user does not want em dashes in prose. Commas, colons,
-semicolons or full stops instead. Fine as structural separators.
+The 2026-09-12 session-end handover moved wholesale to
+[`working-archive/Working_archive-2026-09-07.md`](working-archive/Working_archive-2026-09-07.md)
+(file was past the ~400-line threshold). Its durable-traps list now lives
+permanently at [`docs/TRAPS.md`](docs/TRAPS.md) — **read it there, and add new
+traps there rather than here.** Current state is the section above.
 
 ## Archived
 
