@@ -14,10 +14,10 @@ communicate, what they read, and how they learn.
 > (no host spend cap, lane-serialised fan-out, no breach signal, a hostile
 > signal that is blind by construction). §14 lists what remains open.
 >
-> **What exists in code:** `agents/` (the roster, charters and allowlists) and
-> the `mcp/` registry and role-scoping layer. **What does not:** the MCP server
-> itself, the Sentry, Triage, the queue, snapshots, playbooks, and the two safety
-> detectors §14 names as required work.
+> **What exists in code on `main`:** `agents/` only, the roster, charters and
+> allowlists. **In progress, not yet landed:** the `mcp/` registry and
+> role-scoping layer, and the two safety detectors. **Not started:** the MCP
+> server itself, the Sentry, Triage, the queue, snapshots, and playbooks.
 
 Companion documents: [`PURPOSE.md`](PURPOSE.md) for the design commitments this
 must not break, [`MEMORY-ARCHITECTURE.md`](MEMORY-ARCHITECTURE.md) for the
