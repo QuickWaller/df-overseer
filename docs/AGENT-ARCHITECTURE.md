@@ -136,9 +136,18 @@ both were right. `research/2026-09-12-write-conflict-matrix.md` found that
 `stocks` and `workflow` are tagged unavailable on this install. But
 `research/2026-09-12-dfhack-capability-checks.md` found that **`workorder.lua`
 is present and callable**, with a real `create_orders()`. So the Quartermaster
-has a genuine path, it just has no tools *yet*. Net: a realistic v1 roster is
-**Overseer, Architect, Consultant**, with Marshal read-only until it has write
-tools, and Quartermaster and Chronicler as build work rather than configuration.
+has a genuine path, it just has no tools *yet*.
+
+**DECIDED 2026-09-12, user's call: v1 enables exactly three roles, Overseer,
+Architect and Consultant.** These are the three whose tools already exist, so
+all three can do real work rather than write proposals nothing can execute, and
+it exercises the propose-and-arbitrate loop for real instead of deferring the
+architecture's central mechanism. Quartermaster, Marshal and Chronicler keep
+their charters and directories but stay disabled, so enabling one later is a
+config change (§11). Accepted costs: roughly 3x single-agent token spend, and
+the lane-serialisation delay (§13) showing up from day one, **which makes the
+§4 scheduler load-bearing immediately rather than at some future scale.**
+→ `decisions/DECISIONS.md` 2026-09-12.
 
 Two roles that were proposed and **rejected as agents**, per principle 1:
 
