@@ -31,7 +31,40 @@ Everything below this block is detail and reasoning. This is the brief.
    `inventory/hosts/SRV-01.yaml` `guests:` entry. Nothing else owed. **It found
    a real bug on the way in, see the section below: `clone` would have given it
    the running fort's address.**
-2. **Build the MCP server. IN PROGRESS 2026-09-12, three parallel streams.**
+2. **DONE 2026-09-12: THE MCP SERVER EXISTS. The one hard blocker is cleared.**
+   `dfmcp/` is six modules and **136 tests** (121 in an environment without the
+   pinned SDK, where the transport's own tests skip themselves by design).
+   Built in four parallel Sonnet streams against two research briefs, in one
+   session.
+
+   **What the next session needs to know, in one paragraph.** Run the suite
+   from the repo root. To get all 136 you need the pinned SDK in a venv:
+   `python -m venv --system-site-packages .venv-dfmcp` then
+   `pip install -r dfmcp/requirements.txt` (**never install it into the shared
+   environment**, there is a verified `fastmcp<2.0` conflict on this machine).
+   Without it you get 121 passed and 1 skipped, which is correct, not a
+   failure: `dfmcp/tests/test_server.py` guards its own import, because a bare
+   collection error would take the other 121 from passing to not running at
+   all.
+
+   **NOTHING HAS MET REALITY.** No live DFHack, no bound socket, no openclaw
+   client. Every test runs against a fake DFHack server written from the same
+   wire spec, which means a place where the VM's actual binary diverges from
+   the source the research read would pass every test here. **The single
+   highest-value next action is the live smoke test**, and the exact commands
+   are in `handoffs/2026-09-12-mcp-transport.md`'s closing note. It touches
+   VM 103, which runs the live fort, so it needs the user's go-ahead and a
+   heads-up to a live `home-lab` session first.
+
+   **Verified in the orchestrator session rather than taken on an agent's
+   report**: the design's central claim, that an advisor calling a write tool
+   is refused with the reason string intact and the call never reaches DFHack,
+   run through a real SDK client. Also re-verified by hand: the DFHack wire
+   protocol's design-forking property, and the package-name collision below.
+
+   Superseded detail follows, kept because the reasoning is the reusable part.
+
+   **Build the MCP server. IN PROGRESS 2026-09-12, three parallel streams.**
    It is the one hard blocker: nothing else can progress without it, and every
    design requirement it must satisfy is already settled and written down
    (server-side allowlist enforcement, one token per role, one persistent DFHack

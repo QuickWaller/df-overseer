@@ -56,3 +56,4 @@ venv/
 .terraform.lock.hcl
 *.tfvars
 !*.tfvars.example
+.venv-dfmcp/
