@@ -4,6 +4,7 @@
     python scripts/provision_vm.py fetch-image
     python scripts/provision_vm.py build-template [--vmid N] [--memory 6144]
     python scripts/provision_vm.py clone [--name df-fortress] [--full]
+                                         [--ip-var DF_VM_IP]
     python scripts/provision_vm.py set-memory --vmid N --memory 6144
     python scripts/provision_vm.py set-onboot [--vmid N] --enable|--disable
     python scripts/provision_vm.py snapshot --name N [--vmid N] [--description D]
@@ -107,7 +108,7 @@ def read_pubkey(env):
         return quote(fh.read().strip(), safe="")
 
 
-def guest_address(env):
+def guest_address(env, var="DF_VM_IP"):
     """(ipconfig0 value, nameserver) for a clone, from .env.
 
     Static assignment replaces DHCP plus MAC pinning: the address is known
@@ -118,19 +119,29 @@ def guest_address(env):
     address lives in .env, which this repo already treats as the record of
     what a VM is.
 
-    DF_GW defaults to .1 of the same /24, which is right on essentially every
-    home network and wrong loudly rather than silently if it is not.
+    `var` names which .env key holds the address, because this pool now holds
+    more than one guest: DF_VM_IP is the fort, OPENCLAW_VM_IP is the agent
+    host. It was hardcoded until 2026-09-12, which meant cloning any second
+    VM would silently hand it the *running fort's* address. Nothing caught
+    that, so see the collision check in cmd_clone() as well -- a wrong .env
+    key should fail on the host, not on the network.
+
+    DF_GW and DF_DNS stay unparameterised on purpose: a gateway and a resolver
+    are properties of the subnet, not of a guest, and both VMs sit on the one
+    subnet. DF_GW defaults to .1 of the same /24, which is right on
+    essentially every home network and wrong loudly rather than silently if it
+    is not.
     """
-    cidr = env.get("DF_VM_IP")
+    cidr = env.get(var)
     if not cidr:
         raise PVEError(
-            "DF_VM_IP is not set in .env.\n"
+            "%s is not set in .env.\n"
             "  A clone needs a static address assigned before it boots.\n"
             "  Pick one outside the router's DHCP pool, e.g."
-            " DF_VM_IP=192.168.1.240/24"
+            " %s=192.168.1.240/24" % (var, var)
         )
     if "/" not in cidr:
-        raise PVEError("DF_VM_IP must include a prefix, e.g. %s/24" % cidr)
+        raise PVEError("%s must include a prefix, e.g. %s/24" % (var, cidr))
     ip = cidr.split("/")[0]
     gw = env.get("DF_GW") or ".".join(ip.split(".")[:3] + ["1"])
     # A DHCP guest is handed DNS by the router; a static one is not. Without an
@@ -380,11 +391,54 @@ def cmd_build_template(pve, args):
     return vmid
 
 
+def pool_address_holder(pve, ip, exclude_vmid=None):
+    """The vmid in our pool already configured with `ip`, or None.
+
+    Only sees our own pool: every other guest on the host is outside it and
+    invisible to this token (see pve.node_memory()'s note). So this catches
+    "two df-automation VMs, one address", which is the collision that nearly
+    happened on 2026-09-12, and cannot catch a clash with a guest we do not
+    own. home-lab's inventory/ips.yaml remains the authority for that, which
+    is why allocation there is a prerequisite rather than a formality.
+
+    Read errors are deliberately not swallowed: a check that quietly skips a
+    VM it could not read would report "free" without having looked.
+    """
+    for member in pve.pool_members():
+        if member.get("type") != "qemu":
+            continue
+        vmid = member.get("vmid")
+        if vmid is None or (exclude_vmid is not None
+                            and int(vmid) == int(exclude_vmid)):
+            continue
+        config = pve.get(pve.vm_path(vmid, "/config")) or {}
+        ipconfig = config.get("ipconfig0") or ""
+        for field in ipconfig.split(","):
+            field = field.strip()
+            if field.startswith("ip=") and field[3:].split("/")[0] == ip:
+                return vmid
+    return None
+
+
 def cmd_clone(pve, args):
     template_vmid = args.template or pve.env.get("DF_TEMPLATE_VMID")
     if not template_vmid:
         raise PVEError("no template vmid: pass --template or set "
                        "DF_TEMPLATE_VMID in .env")
+
+    # Resolve and check the address BEFORE the clone, not after it: a clone
+    # that succeeds and then refuses to configure leaves a half-made VM to
+    # clean up by hand.
+    ipconfig, dns = guest_address(pve.env, args.ip_var)
+    ip = ipconfig.split(",")[0][len("ip="):].split("/")[0]
+    holder = pool_address_holder(pve, ip)
+    if holder is not None:
+        raise PVEError(
+            "%s's address is already configured on vm %s in pool '%s'.\n"
+            "  Refusing to clone: two guests on one address takes down the\n"
+            "  one that already works. Check which .env key you meant."
+            % (args.ip_var, holder, pve.pool))
+
     newid = args.vmid or pve.next_vmid()
     log("cloning %s -> %s (%s)" % (template_vmid, newid,
                                    "full" if args.full else "linked"))
@@ -399,12 +453,12 @@ def cmd_clone(pve, args):
 
     # Assign the address now, before the VM is ever started, so it comes up
     # on it directly rather than taking a DHCP lease and switching later.
-    ipconfig, dns = guest_address(pve.env)
     log("assigning address: %s, dns %s" % (ipconfig, dns))
     pve.put(pve.vm_path(newid, "/config"),
             {"ipconfig0": ipconfig, "nameserver": dns})
 
-    log("done. record DF_VMID=%s in .env" % newid)
+    log("done. record the new vmid in .env (DF_VMID for the fort,"
+        " OPENCLAW_VMID for the agent host): %s" % newid)
     return newid
 
 
@@ -635,6 +689,10 @@ def main():
     clone.add_argument("--name", default="df-fortress")
     clone.add_argument("--full", action="store_true",
                        help="full clone -- no dependency on the template")
+    clone.add_argument("--ip-var", default="DF_VM_IP",
+                       help="which .env key holds this guest's static address"
+                            " (default DF_VM_IP, the fort; OPENCLAW_VM_IP is"
+                            " the agent host)")
 
     setmem = sub.add_parser("set-memory",
                             help="resize a stopped VM's memory ceiling")
