@@ -203,14 +203,28 @@ read is that this need not wait on SRV-02's stability since the two hosts are
 unrelated here. **Address: user's call is to stay in the existing 200+ block
 rather than reuse the freed `.157`.**
 
-**GATE, and it is not ours to clear:** `home-lab-03` will not write
-`inventory/ips.yaml` on this session's *relay* of the user's decision. It
-requires the user to say so **directly in that session**, on a standing rule
-that a peer reporting "the user decided X" is not the same as the user saying X
-there. That rule is correct and is held symmetrically here, so this session is
-not pushing on it and is not blocked by it. **Action sits with the user**: say
-it in the home-lab session. Also note the registry was *ahead* of the router on
-`.157`, not behind it, contrary to this session's initial assumption. **Still owed when the
+**CLEARED and ALLOCATED 2026-09-12.** The user confirmed directly to
+`home-lab-03`, which has written the pre-allocation into `inventory/ips.yaml`
+(committed there, not pushed). The address is recorded **only** in this repo's
+gitignored `.env` as `OPENCLAW_VM_IP`, per the never-in-a-tracked-file rule; a
+commented empty placeholder was added to the tracked
+`infra/local.example.env`.
+
+**Mechanism, and it is now a general pattern rather than a one-off:** the
+address is static via `ipconfig0` at clone time, **not** a MAC-keyed DHCP
+reservation, because df-automation's sandbox VMs do not hold a constant MAC
+across rebuilds, so the reservation mechanism home-lab's registry otherwise uses
+would not survive one. home-lab has recorded that as the standing pattern for
+df-automation-provisioned sandboxes.
+
+**Still owed to home-lab when the VM exists:** the real VMID, so they can add
+the `guests:` entry to `inventory/hosts/SRV-01.yaml`. Nothing else outstanding.
+
+Two notes from the episode: the gate was cleared by the user speaking in the
+other session, not by this one pushing, which is the correct shape (see the
+coordination note below); and the registry turned out to be *ahead* of the
+router on the freed address, not behind it, contrary to this session's initial
+assumption. **Still owed when the
 VM actually exists:** the `guests:` entry in `inventory/hosts/SRV-01.yaml` with
 the real VMID and address, and `inventory/services.yaml` if a service moves.
 **Recorded here as open so it survives this session ending.**
