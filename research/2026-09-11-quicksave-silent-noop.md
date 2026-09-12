@@ -281,7 +281,7 @@ concurrent unannounced access during normal working sessions**, which is exactly
    15-minutes-later window). Would need `df-automation-e6`'s and `df-automation-ca`'s direct confirmation
    (requested, not yet answered as of this report) to close out fully.
 4. **Something worse (unauthorized access, a race corrupting state)** — **no evidence found for this.** Nothing
-   in the auth log, journal, or VNC log suggests any connection from outside the expected `192.168.2.159`/relay
+   in the auth log, journal, or VNC log suggests any connection from outside the expected `<vnc-client-ip>`/relay
    path. Not ruled impossible in principle, but there is no positive evidence pointing toward it, and the far
    more mundane explanation (1) already accounts for the observed symptoms without needing it.
 

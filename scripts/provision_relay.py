@@ -151,7 +151,8 @@ def guest_address(env):
             "RELAY_VM_IP is not set in .env.\n"
             "  A clone needs a static address assigned before it boots.\n"
             "  home-lab allocates this -- see Working.md's relay thread.\n"
-            "  e.g. RELAY_VM_IP=192.168.2.202/24"
+            "  e.g. RELAY_VM_IP=192.0.2.202/24 (RFC 5737 doc address, not a"
+            " real host)"
         )
     if "/" not in cidr:
         raise PVEError("RELAY_VM_IP must include a prefix, e.g. %s/24" % cidr)

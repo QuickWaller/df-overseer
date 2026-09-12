@@ -524,7 +524,7 @@ the suspend window it opens (the `CoreWakeup.wait` call, per §3's mechanism) op
 source settles this cleanly**: nothing here makes the live measurement load-bearing, but it was run anyway per
 the task brief, as confirmation.
 
-**Live measurement.** Run against VM 103 (node `srv-01`, `192.168.2.201`, per the live `.env`;
+**Live measurement.** Run against VM 103 (node `srv-01`, `<df-vm-ip>`, per the live `.env`;
 `infra/local.proxmox-access.md` is stale and was not used) via `scripts/install_df.py lua` and
 `scripts/install_df.py run`, each call given a 30s timeout, no write/mutating command issued at any point.
 
