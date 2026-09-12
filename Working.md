@@ -27,13 +27,40 @@ Everything below this block is detail and reasoning. This is the brief.
    `inventory/hosts/SRV-01.yaml` `guests:` entry. Nothing else owed. **It found
    a real bug on the way in, see the section below: `clone` would have given it
    the running fort's address.**
-2. **Build the MCP server.** It is the one hard blocker: nothing else can
-   progress without it, and every design requirement it must satisfy is already
-   settled and written down (server-side allowlist enforcement, one token per
-   role, one persistent DFHack RPC connection rather than shelling out per call,
-   batch a cycle's reads into one suspend window). `mcp/registry.py` and
-   `mcp/roles.py` are the authorisation half and are done and tested; what is
-   missing is the transport and the DFHack client.
+2. **Build the MCP server. IN PROGRESS 2026-09-12, three parallel streams.**
+   It is the one hard blocker: nothing else can progress without it, and every
+   design requirement it must satisfy is already settled and written down
+   (server-side allowlist enforcement, one token per role, one persistent DFHack
+   RPC connection rather than shelling out per call, batch a cycle's reads into
+   one suspend window). `mcp/registry.py` and `mcp/roles.py` are the
+   authorisation half and are done and tested; what is missing is the transport
+   and the DFHack client.
+
+   **Split on where the unknowns are**, which is the only reason three things
+   can run at once:
+   - **Research, DFHack RPC wire protocol** → `research/2026-09-12-dfhack-rpc-client.md`.
+     Settles handshake, framing, whether a `protobuf` dependency is needed or
+     the two messages can be hand-rolled, whether an existing Python client
+     works at 53.16-r1.1, whether one connection can carry concurrent requests
+     (which decides whether the §6 one-suspend-window batching is reachable at
+     all), and whether the RPC path delivers clean JSON or colour escapes.
+   - **Research, MCP server stack** → `research/2026-09-12-mcp-server-stack.md`.
+     **The crux is whether `tools/list` can return a different set per caller
+     identity**, since three roles with genuinely different allowlists must
+     share one server. If the SDK cannot, the fallback (a server per role, or
+     dropping to the low-level API) is a real design fork and comes back here.
+   - **Build, transport-independent half** → `handoffs/2026-09-12-mcp-tool-schema.md`
+     (`mcp/tools.py`, `mcp/auth.py`). Has no unknowns, so it does not wait:
+     registry entries to MCP tool definitions, a tool call back to the exact
+     DFHack argv, and bearer token to role. Worktree-isolated.
+
+   **`handoffs/` now exists** (`aba202b`), the template convention this repo had
+   never needed until now. One deliberate departure from `.claude/agents/executor.md`'s
+   default, recorded in `handoffs/INDEX.md`: **executors do not write
+   `Working.md`, `decisions/DECISIONS.md` or `memory/`.** The orchestrator
+   session owns the register, so concurrent agents cannot conflict on this file
+   and it keeps one voice. They report findings; the register row is written
+   here.
 3. **Then one supervised end-to-end cycle**: the Overseer making a single real
    decision through the seam. **This is the first thing that would advance the
    project's actual thesis**, as opposed to its foundations. Nothing today did.
