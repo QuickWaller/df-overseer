@@ -71,7 +71,8 @@ also set, which it is not, by default, here. So: pass two syntactically
 valid but semantically inert placeholder URLs, get the SDK's own (correctly
 lifespan-safe) middleware composition for free, and never write a
 `sys.path`-adjacent, hand-rolled version of what the SDK already does
-correctly. See `_AUTH_SETTINGS` below.
+correctly. See `_PLACEHOLDER_ISSUER_URL`/`_PLACEHOLDER_RESOURCE_URL` and
+`build_asgi_app` below.
 
 ## Denials: an MCP tool result, not a protocol error
 
@@ -101,7 +102,6 @@ from __future__ import annotations
 
 import asyncio
 import json
-import logging
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, Mapping, Optional
@@ -126,10 +126,6 @@ from .dfhack_client import (
 from .registry import Registry, load_registry
 from .roles import Roster, load_roster
 from .tools import ArgumentError, argv_for_call, build_tool_names, tool_definitions
-
-logger = logging.getLogger(__name__)
-
-REPO_ROOT = Path(__file__).resolve().parent.parent
 
 # Never dereferenced as a real network address -- see this module's
 # docstring for exactly which code paths would need to read them (neither
