@@ -13,6 +13,34 @@ briefs; `agents/` and `mcp/` built with 26 passing tests; two safety detectors
 built, one live-verified working and one inconclusive.** The MCP server itself,
 the Sentry, Triage, the queue, snapshots and playbooks are not started.
 
+### START HERE next session, in priority order
+
+Everything below this block is detail and reasoning. This is the brief.
+
+1. **Build the MCP server.** It is the one hard blocker: nothing else can
+   progress without it, and every design requirement it must satisfy is already
+   settled and written down (server-side allowlist enforcement, one token per
+   role, one persistent DFHack RPC connection rather than shelling out per call,
+   batch a cycle's reads into one suspend window). `mcp/registry.py` and
+   `mcp/roles.py` are the authorisation half and are done and tested; what is
+   missing is the transport and the DFHack client.
+2. **Then one supervised end-to-end cycle**: the Overseer making a single real
+   decision through the seam. **This is the first thing that would advance the
+   project's actual thesis**, as opposed to its foundations. Nothing today did.
+3. **Fix the `set_labor`/`autolabor` race.** Small, and it is a single-writer
+   violation live in production right now.
+4. **The breach question**, opportunistically: wait for rain or an animal
+   fording water rather than deliberately flooding the fort.
+
+**Do not start by writing more design.** Today produced a great deal of it and
+the ratio is already uncomfortable: a 14-section architecture over a tool surface
+that is 18-of-25 read-only. The architecture doc is a target, not a plan.
+
+**Two things needing the user, not a session:** the address-leak cleanup and the
+`CLAUDE.md` edits it implies (that file states the rule it breaks, and its `docs/`
+list omits `TRAPS.md` and `DF-UI-AUTOMATION.md`); and telling the `home-lab`
+session directly when openclaw's VM should actually be provisioned.
+
 ### Done this session
 
 - **[`docs/AGENT-ARCHITECTURE.md`](docs/AGENT-ARCHITECTURE.md) written**, the
