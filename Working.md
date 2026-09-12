@@ -87,6 +87,24 @@ Everything below this block is detail and reasoning. This is the brief.
      per-role token, so if openclaw cannot send one, either the token scheme or
      the client config has to change. **Settle that before building the
      transport.**
+   - **CLOSED 2026-09-12, same day it was raised** →
+     `research/2026-09-12-openclaw-mcp-auth.md`. **A static per-role bearer
+     token works**, as a per-server header map whose value can come from an
+     environment variable rather than a config file, which this public repo
+     needs. **The one-token-per-role scheme survives**: the same URL declared
+     once per role, each entry with its own token, because entries are keyed by
+     name not by URL. Denial reasons returned as an `isError` tool result do
+     reach the model as readable text, so the reason strings `Roster.check`
+     already produces are not wasted. **So the transport is unblocked and gets
+     built exactly as the stack brief planned.** Honest limit: both sides were
+     read, neither was run against the other; the settling experiment is a
+     dummy verifier plus a throwaway agent, named in the brief.
+     **It also corrected §14 item 1**, which named a harness-specific key as
+     one of three per-agent scoping mechanisms. The general one is the
+     per-agent `tools.allow/deny` list. Conclusion unchanged, mechanism
+     different, and it matters only because that layer is defence in depth: the
+     wrong key would look correct and silently leave the enforced boundary as
+     the only one.
 
    **`handoffs/` now exists** (`aba202b`), the template convention this repo had
    never needed until now. One deliberate departure from `.claude/agents/executor.md`'s
