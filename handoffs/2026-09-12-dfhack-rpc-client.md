@@ -1,6 +1,11 @@
 # Stream: DFHack RPC client
 
-**Dispatched** 2026-09-12. **Status:** dispatched.
+**Dispatched** 2026-09-12. **Status: done 2026-09-12**, on branch
+`worktree-agent-a19b5b699fb5faba6`, not yet merged to `main`. All four
+acceptance criteria met against a fake server; no live DFHack was reached
+(see the closing note at the end of this file for the exact command that
+would close that gap, per this stream's explicit "stop and report" limit).
+Full findings in this stream's executor report, not duplicated here.
 
 ## Scope
 
@@ -73,3 +78,33 @@ sockets that fail every later call.
 Executor report shape, plus a **"Findings to record"** section. Say plainly
 what remains unproven until it runs against a real DFHack, since everything
 here is verified against a fake server of your own construction.
+
+## Closing note: the gated live-verification command
+
+Not run by this stream (hard line: do not touch VM 103). Once the user gives
+explicit go-ahead and `home-lab`'s live session has had its heads-up, the
+smallest real check is: from a host that can reach VM 103's DFHack RPC port
+over loopback (i.e. on the VM itself, or via an SSH tunnel to it — this
+client is not meant to be pointed at a non-loopback address, since
+`RunCommand` is loopback-gated regardless of `allow_remote`, research doc
+§8), with the fort running:
+
+```python
+import asyncio
+from mcp.dfhack_client import DFHackConnection
+
+async def main():
+    conn = DFHackConnection("127.0.0.1", 5000, timeout=10.0)
+    await conn.connect()
+    try:
+        print(await conn.run_command("df-overseer-overview", ["get"]))
+    finally:
+        await conn.close()
+
+asyncio.run(main())
+```
+
+Expected: valid JSON on stdout, no exception. That single call would confirm
+the one thing this stream could not: that the VM's actual installed DFHack
+53.16-r1.1 behaves byte-for-byte as the pinned-tag source this client was
+built against, not just as a hand-written fake speaking the same spec.
