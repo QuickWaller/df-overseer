@@ -1,5 +1,9 @@
 # Consultant tool allowlist. Deliberately the narrowest in the roster.
 #
+# Ids are the canonical scheme resolved against scripts/dfhack/TOOLS.yaml by
+# mcp/registry.py: see mcp/README.md for the scheme (strip df-overseer-/.lua,
+# take the command's leading verb, join with a dot).
+#
 # This role's value is knowledge, not observation, so it gets just enough fort
 # context to answer in context and nothing more. A wide read set here would buy
 # nothing and cost tokens on every invocation.
@@ -9,20 +13,20 @@ role: consultant
 write_authority: none
 
 read:
-  - id: "df-overseer-overview: get (or no args)"
+  - id: "overview.get"
     status: exists
     note: Enough situational context to answer in context rather than abstractly.
-  - id: "df-overseer-landmarks: list"
+  - id: "landmarks.list"
     status: exists
     note: So advice can name real places in this fort.
 
 planned:
-  - id: "queue: propose"
+  - id: "queue.propose"
     status: planned
     note: >-
       Used for advisories, not build proposals. This role answers questions; it
       does not put work into the plan.
-  - id: "knowledge: wiki_lookup"
+  - id: "knowledge.wiki_lookup"
     status: planned
     note: >-
       THE MISSING PIECE OF THIS ROLE. Without it the Consultant runs on model
@@ -30,11 +34,11 @@ planned:
       confidently-wrong this project has already been burned by. See role.md.
 
 deny:
-  - id: "df-overseer-openarea: *"
+  - id: "openarea.*"
     reason: Not an observer of candidates. It advises on approach, not siting.
-  - id: "df-overseer-diggable: *"
+  - id: "diggable.*"
     reason: As above.
-  - id: "df-overseer-labor: *"
+  - id: "labor.*"
     reason: Not this role's domain.
-  - id: "df-overseer-ui: *"
+  - id: "ui.*"
     reason: Embark bootstrap only.

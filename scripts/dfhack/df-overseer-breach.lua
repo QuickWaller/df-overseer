@@ -297,7 +297,18 @@ function check_breach(radius_tiles)
         if not reachable and near and near.distance_tiles <= radius then
           reachable = true
         end
-        local is_magma = hit.liquid_type == df.tile_liquid.Magma
+        -- FIXED 2026-09-12 by live verification. This used to be a bare
+        -- `hit.liquid_type == df.tile_liquid.Magma`, which is ALWAYS FALSE on
+        -- this build: `designation[x][y].liquid_type` binds to a plain Lua
+        -- boolean (false = Water, true = Magma), not the enum integer. The bug
+        -- reported every finding as Water even for real magma, and capped
+        -- severity at "severe" so a magma breach could never read "critical".
+        -- The dual check below is deliberate rather than belt-and-braces: this
+        -- install's own modtools/spawn-liquid.lua:11 tests both forms for the
+        -- same field (`== false or == df.tile_liquid.Water`), so the binding is
+        -- not safe to assume in either direction across versions.
+        local is_magma = (hit.liquid_type == true)
+            or (hit.liquid_type == df.tile_liquid.Magma)
 
         local severity
         if reachable and is_magma then

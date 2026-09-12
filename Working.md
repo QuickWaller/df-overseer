@@ -165,10 +165,30 @@ any build, in this order.
    `df.global.world.flows` does not exist, and this session had repeated that
    error into the design doc and a role charter; all corrected, with a §10
    correction appended to the research brief.
-   **Next step is a live-verification session** (needs VM go-ahead): the
-   detectors ship with a concrete test plan, including reproducing the kea miss
-   as a correct positive and the cavern-demon false positive as a correct
-   negative.
+   **LIVE VERIFICATION DONE 2026-09-12** (user granted VM authority; fort
+   saved and backed up first, health identical before and after, 15 citizens,
+   0 wounds, re-paused and confirmed).
+   **Threat detector: VERIFIED WORKING on both motivating failures.** `scan`
+   returned a fox and a weasel, both admitted purely by shared walkable group
+   with no danger flag; and the two `DEMON_4` units that DO have
+   `isDanger`/`isGreatDanger` set were correctly absent, confirmed by direct
+   raw query rather than by trusting the scan's silence (walkable group 0,
+   109-115 tiles from any landmark). Reachability gates admission, flags do
+   not. Both documented failures corrected in one tool.
+   **Breach detector: INCONCLUSIVE, so treat flood response as still covered
+   by nothing.** `update_liquid` was set on zero of 26,784 blocks on all 11
+   polls including through an 85s unpaused window, but the map's water is
+   fully settled (`flow_size=7`), so this cannot distinguish "DF never sets
+   it" from "DF sets it only on change, and nothing changed". The limits
+   (no breach, no dig, no magma) deliberately forbade creating the one
+   condition that would settle it. Stage-1 cost measured and cheap: ~0.057s
+   CPU for the full block scan. Future route that respects the limits: an
+   opportunistic test during rain or an animal fording water.
+   **One real bug found and fixed**: `designation.liquid_type` is a Lua
+   boolean, not the `df.tile_liquid` enum, so the magma comparison was always
+   false and severity could never reach `critical`. Fixed with a deliberate
+   dual check, because this install's own `spawn-liquid.lua` hedges the same
+   field both ways.
 
    Superseded text, kept for the reasoning: **two safety detectors did not
    exist and were required work, not polish.**
