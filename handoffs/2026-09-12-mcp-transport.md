@@ -109,3 +109,59 @@ Executor report shape, plus **"Findings to record"**. Be specific about
 anything in either research brief that turned out wrong when you built against
 it. That is the most valuable thing you can return, and both briefs were
 source reads that have never been run.
+
+## Closing note: status and the gated commands
+
+**Status: done**, on branch `worktree-agent-a486fc7777e25cf3d`, not yet
+merged. `pytest` from the repo root: **121 passed + 1 skipped** in this
+machine's ambient environment (`mcp` 1.27.1 — `dfmcp/tests/test_server.py`
+skips itself cleanly rather than erroring, see its own module docstring
+and `dfmcp/requirements.txt`), **136 passed** in a venv with
+`dfmcp/requirements.txt`'s `mcp==2.2.0` pin installed. No regression to the
+existing 121 either way. Full detail, including the one design correction
+found while building (the `AuthSettings`/`token_verifier` wiring), is in
+`dfmcp/README.md`'s new "What `server.py` exposes" section and this
+stream's executor report.
+
+**Not run by this stream, per the hard line (do not touch VM 103 or VM
+106, do not deploy):**
+
+1. **Install the pin into a dedicated venv** (never the ambient/shared
+   Python environment — `dfmcp/requirements.txt` records a real, verified
+   `fastmcp<2.0` conflict on at least one machine this project's sessions
+   have used):
+   ```
+   python -m venv --system-site-packages .venv-dfmcp
+   .venv-dfmcp/bin/pip install -r dfmcp/requirements.txt   # or Scripts\ on Windows
+   ```
+2. **Run the full suite inside that venv** to see all 136 (the command this
+   stream actually ran, not a guess):
+   ```
+   .venv-dfmcp/bin/python -m pytest -q
+   ```
+3. **The live-server smoke test** the research briefs both named as the one
+   thing nobody has run — needs explicit go-ahead, `home-lab`'s live session
+   given a heads-up first, and a real token in `.env` (never one pasted into
+   a command):
+   ```
+   MCP_SERVER_BIND_HOST=<VM 103's tailnet address> MCP_SERVER_DFHACK_HOST=127.0.0.1 \
+     .venv-dfmcp/bin/python -m dfmcp.server
+   ```
+   then, from a host that can reach that bind address on the tailnet:
+   ```
+   curl -H "Authorization: Bearer <a real MCP_ROLE_TOKEN_* value>" \
+        -H "Accept: application/json, text/event-stream" \
+        -H "Content-Type: application/json" \
+        -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"smoke","version":"0"}}}' \
+        http://<VM 103's tailnet address>:8443/mcp
+   ```
+   Expected: a 200 with an `InitializeResult` body, not a 401 or a
+   connection refusal. That single exchange would confirm the one thing
+   this stream could not: that the real MCP SDK's ASGI wiring behaves the
+   same when uvicorn actually binds a socket as it does over an in-process
+   `ASGITransport`, and that DFHack itself (not `FakeDFHackServer`) answers
+   a real `RunCommand` the way `dfmcp/dfhack_client.py` expects.
+4. **Installing and starting the systemd unit**
+   (`infra/dfmcp-server.service.example`) is a separate, later gate: fill in
+   its `CHANGEME` placeholders against VM 103's actual layout, get explicit
+   go-ahead for `systemctl start`, and only then enable it.
