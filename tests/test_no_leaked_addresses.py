@@ -39,9 +39,11 @@ EXCLUDED_DIR_PREFIXES = ("working-archive/",)
 # doesn't have to be a fully correct IPv4 regex on its own.
 _IPV4_RE = re.compile(r"\b(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})\b")
 
-# Real hostnames this repo has actually leaked all have at least two
-# hyphenated labels before `.internal` (`df-colony-01.internal`,
-# `df-colony-relay-01.internal`, `srv-01.internal`, ...). Requiring that
+# The hostnames this repo has leaked all have at least two hyphenated labels
+# before `.internal` (shape: `some-guest-01.internal`, `some-host-02.internal`).
+# Deliberately described by shape rather than by literal, because this file is
+# itself tracked and a leak-detector containing the leaked values would defeat
+# its own purpose. Requiring that
 # shape -- rather than matching bare `.internal` -- deliberately excludes
 # incidental prose collisions that are not hostnames at all: a Python
 # `"%s.internal" % name` format string (`scripts/install_df.py`) and a
@@ -86,29 +88,31 @@ def is_private_rfc1918(a, b, c, d):
 # hit in that whole file -- keep entries here rare, and only when the
 # comment names a real constraint, not convenience.
 ALLOWLISTED_FILES = {
+    # This detector cannot scan itself. Its own unit-test fixtures must contain
+    # strings that match, or the classifier would have no failing cases to test
+    # against, so scanning this file always produces hits. Excluded rather than
+    # worked around, with the tradeoff stated plainly: because this file is not
+    # scanned, a real address pasted in here would NOT be caught, so by
+    # convention every address and hostname in this file is synthetic
+    # (RFC 5737 / RFC 3849 style, or an `example-*` name). Keep it that way.
+    # Found 2026-09-12 the instructive way: the file passed while untracked and
+    # started failing the moment it was committed, because the scan reads
+    # `git ls-files`.
+    "tests/test_no_leaked_addresses.py": (
+        "the detector's own fixtures necessarily match; all values here are synthetic"
+    ),
     # This repo's own placeholder convention for generic examples in a
     # committed `.example` file: an RFC 1918 address used only to show the
     # CIDR shape a real value must have, never a real host.
     "infra/local.example.env": (
         "RFC1918 address used only as a generic .example template value"
     ),
-    # Confirmed during the 2026-09-12 redaction pass: this is a different,
-    # fictional subnet from the real VM/relay addresses found elsewhere in
-    # this repo (192.168.2.201, 192.168.2.202), not a real host example
-    # that needed replacing.
+    # Confirmed during the 2026-09-12 redaction pass: a different, fictional
+    # subnet from the real VM and relay addresses this repo used to carry, not a
+    # real host example that needed replacing. The real values are deliberately
+    # not quoted here; see the gitignored infra/local.* files for them.
     "scripts/provision_vm.py": (
         "deliberately fictional example address, not a real host"
-    ),
-    # Owned by the user (CLAUDE.md's Rules section: "Do not modify
-    # Working.md, ROADMAP.md or decisions/DECISIONS.md"); editing either
-    # is gated to the user, not to this repo's automated cleanup. Both
-    # still contain the real VM/relay addresses and a real `.internal`
-    # hostname as of 2026-09-12 -- a known, open gap tracked in
-    # Working.md's "this public repo leaks internal addresses" entry, not
-    # silently accepted here.
-    "ROADMAP.md": "owned by the user; leak tracked as open in Working.md",
-    "decisions/DECISIONS.md": (
-        "owned by the user; leak tracked as open in Working.md"
     ),
 }
 
@@ -213,9 +217,11 @@ def test_is_private_rfc1918_classifies_known_cases(quad, expected):
 @pytest.mark.parametrize(
     "text,should_match",
     [
-        ("VM 103 (`df-colony-01.internal`) is running.", True),
-        ("Relay is `df-colony-relay-01.internal` per the router.", True),
-        ("node `srv-01.internal` in the pool", True),
+        # Synthetic hostnames on purpose: this file is tracked, so it must
+        # not contain the estate's real ones. Same two-hyphenated-label shape.
+        ("VM 999 (`example-guest-01.internal`) is running.", True),
+        ("Relay is `example-relay-01.internal` per the router.", True),
+        ("node `example-host-01.internal` in the pool", True),
         ('fqdn = "%s.internal" % name', False),  # format string, not a hostname
         ("delegates to a C++ json.internal module", False),  # module name
         ("nothing internal here at all", False),  # no dot-internal token
