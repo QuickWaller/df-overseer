@@ -1,6 +1,11 @@
 # Roadmap
 
-**Last reviewed:** 2026-09-12 (twelfth pass, agent-architecture design phase: Now bucket rewritten after all four research briefs returned, the roster and deployment topology were decided, and the first code landed; added the two missing safety detectors, the set_labor/autolabor race and the address-leak cleanup as Now items. Eleventh pass, post-merge documentation
+**Last reviewed:** 2026-09-12 (thirteenth pass, end of the MCP-server session:
+the one hard blocker is cleared, so the Now bucket's central item is done and
+marked; the address-leak item and the openclaw-VM item are both closed; the
+`openclaw` row's "still unbuilt: the MCP seam" corrected. What is NOT done and
+is now the top of the list: nothing in `dfmcp/` has met a live DFHack, a bound
+socket, or a real agent host. Twelfth pass, agent-architecture design phase: Now bucket rewritten after all four research briefs returned, the roster and deployment topology were decided, and the first code landed; added the two missing safety detectors, the set_labor/autolabor race and the address-leak cleanup as Now items. Eleventh pass, post-merge documentation
 consistency check: `perception-layer-experiments` merged into `main`
 (`f078bf8`) and its worktree deleted, so every bullet below that framed the
 branch-merge question as open, or cited the branch/worktree as separate
@@ -42,8 +47,10 @@ or `decisions/DECISIONS.md`, not here.
   all, a hostile signal blind by construction). **Roster decided, user's
   call: three roles enabled**, Overseer, Architect, Consultant, being the
   ones whose tools exist. **Built and landed:** `agents/` (roster, charters,
-  allowlists). **In progress, not yet on `main`:** the `dfmcp/` registry and
-  role-scoping layer, plus the two safety detectors below.
+  allowlists). **UPDATED 2026-09-12: everything this row called "in progress,
+  not yet on `main`" is on `main`** -- the `dfmcp/` registry and role-scoping
+  layer, the two safety detectors, and three further modules that did not exist
+  when this was written.
   → `docs/AGENT-ARCHITECTURE.md` §14 for what remains open.
 - **DONE 2026-09-12: openclaw's VM is provisioned and live.**
   `df-colony-openclaw-01`, vmid 106, static address, 2048 MB, onboot enabled,
@@ -82,8 +89,21 @@ or `decisions/DECISIONS.md`, not here.
   DFHack RPC connection rather than shelling out per call (3-5x), and batch a
   cycle's reads into one suspend window.
   → `docs/PURPOSE.md` commitment #5, `docs/AGENT-ARCHITECTURE.md` §13, §14.
-- **NOW, required work rather than polish: two safety detectors do not
-  exist.** Verified from DFHack source 2026-09-12. **Water or magma breach
+- **UPDATED 2026-09-12: both safety detectors now exist and are deployed, but
+  only one is proven.** `df-overseer-threat.lua` is **verified working on both
+  of the failures that motivated it**: it admitted a fox and a weasel purely by
+  shared walkable group with no danger flag, and correctly excluded the two
+  demons that DO carry danger flags, confirmed by direct query rather than by
+  trusting the scan's silence. Reachability gates admission; flags do not.
+  `df-overseer-breach.lua` is **INCONCLUSIVE and must be treated as covering
+  nothing**: its cheap first stage keys off a block flag that was set on zero
+  of 26,784 blocks across 11 polls, on a map whose water is fully settled, so
+  that cannot distinguish "DF never sets it" from "nothing changed". **So flood
+  response is still covered by nothing**, exactly as before the detector
+  existed, and the opportunistic test (rain, or an animal fording water)
+  remains the way to settle it. Original text follows.
+- **Superseded. NOW, required work rather than polish: two safety detectors do
+  not exist.** Verified from DFHack source 2026-09-12. **Water or magma breach
   has no event and no announcement type at all**, a checked negative, so
   **flood response is currently covered by nothing**, and breach is among the
   fastest fort-killers. **Hostile detection has only `INVASION`**, which
@@ -102,8 +122,15 @@ or `decisions/DECISIONS.md`, not here.
   **only** labor write that exists, and two unbuilt roles will want it.
   **Fix not yet designed.** → `decisions/DECISIONS.md` 2026-09-12,
   `research/2026-09-12-write-conflict-matrix.md`.
-- **NOW, this public repo leaks internal addresses contrary to its own
-  rule.** Four distinct private IPv4 addresses across roughly a dozen tracked
+- **DONE 2026-09-12: the address leak is closed, with a mechanical guard that
+  keeps it closed.** `tests/test_no_leaked_addresses.py` runs in the ordinary
+  suite rather than as a per-clone git hook, and was proved by injecting a real
+  violation and watching it fail. `working-archive/` deliberately still holds
+  real addresses and is excluded, because rewriting a historical record would
+  falsify it. Corrected on the way in: there were **3** distinct real
+  addresses, not the "four" this row claimed. Original text follows.
+- **Superseded. NOW, this public repo leaks internal addresses contrary to its
+  own rule.** Four distinct private IPv4 addresses across roughly a dozen tracked
   files, plus `.internal` hostnames, including in `CLAUDE.md` itself, which
   is the file that states the rule. The `scripts/*.py` hits are fine (help
   text and examples). **History is already public, so fixing forward does not
@@ -483,7 +510,10 @@ or `decisions/DECISIONS.md`, not here.
   sketched: those became *advisory* roles with no write authority, because
   the same day settled on a single actor. Also settled the same day:
   `openclaw` is the **sole** host, `hermes-agent` is not used even for the
-  Overseer. Still unbuilt: the MCP seam, which remains the real blocker.
+  Overseer. **UPDATED 2026-09-12: the MCP seam is built** (`dfmcp/`, six
+  modules, 136 tests), so this row's "still unbuilt: the MCP seam, which
+  remains the real blocker" no longer holds. What openclaw now needs is
+  configuration against a real endpoint, not a missing dependency.
   → `decisions/DECISIONS.md` 2026-09-12 rows (also 2026-08-25, 2026-08-27).
 - **First display to build (game view vs. chronicle e-ink), and the
   time-sliced adventure-mode design.** → `docs/PURPOSE.md` Open Questions.

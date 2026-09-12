@@ -361,3 +361,14 @@ reappears.
   same MCP boundary, so it fits *any* MCP-speaking brain, `openclaw`
   included, rather than hand-fitting `openclaw`'s specific memory API before
   that boundary exists. Revisit once the MCP seam is real, not before.
+  **The condition is now met, 2026-09-12: the seam is real** (`dfmcp/`, six
+  modules, 136 tests, though it has not yet met a live DFHack). So this
+  question is genuinely open rather than deferred, and the answer the reasoning
+  above points at is unchanged: expose `learning/ledger` and
+  `learning/predictions` read/write through the same MCP boundary, so they fit
+  any MCP-speaking brain, rather than hand-fitting one host's memory API. What
+  is new is that there is now a concrete place to add those tools, and a
+  worked pattern for adding one: an entry in `scripts/dfhack/TOOLS.yaml` plus
+  an allowlist line per role. Note the seam currently assumes every tool is a
+  DFHack command; a ledger tool would be the first that is not, which is a real
+  design question rather than a formality.

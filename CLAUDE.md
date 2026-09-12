@@ -66,6 +66,27 @@ learning architecture.
 > Full trail: `decisions/DECISIONS.md`'s 2026-09-11 and 2026-09-12 rows,
 > `Working.md`'s current handover. Everything in `docs/`/`research/` beyond
 > what's cited as verified above is still a design artifact or proposal.
+>
+> **UPDATED 2026-09-12, end of day: the MCP server exists, and it was the one
+> thing everything else was waiting on.** `dfmcp/` is six modules and **136
+> tests**: the tool registry, the role/permission seam, MCP tool definitions
+> plus argv construction, bearer-token-to-role, a persistent DFHack RPC client
+> with a connection pool, and a streamable-HTTP transport. Two design
+> requirements are enforced in code rather than merely written down: the
+> allowlist is checked **server-side** on every call, and role identity comes
+> from a credential resolved at the transport, never from anything the caller
+> asserts. **Read this next line before trusting any of it: nothing in
+> `dfmcp/` has met a real DFHack, a bound socket, or a real agent host.** Every
+> test runs against a fake server built from the same wire spec, so a
+> divergence between the VM's actual binary and the source the research read
+> would pass all 136. The smoke test that closes that gap is written out in
+> `handoffs/2026-09-12-mcp-transport.md`, and it touches VM 103, so it needs
+> explicit go-ahead. **Two traps worth knowing before running the suite:** the
+> repo's ambient baseline is `121 passed, 1 skipped` and that is correct, not a
+> regression (the transport's tests guard their own import of a pinned SDK);
+> and this repo's package is `dfmcp`, deliberately **not** `mcp`, because a
+> local `mcp/` directory shadows the MCP SDK of the same name for anything
+> running from the repo root.
 
 This repo is managed with Claude Code using a structured memory system,
 following the pattern published as
@@ -114,6 +135,26 @@ file first in any session.
 - **`research/`** — dated research specs produced by `researcher` agents.
   Long, cited, and honest about what could not be verified. Read the relevant
   one before designing in its area rather than re-deriving it.
+
+- **`handoffs/`** — one written brief per dispatched work stream, plus
+  `INDEX.md`. Added 2026-09-12, when more than one stream first ran at once.
+  **Two rules live there and differ from `.claude/agents/executor.md`'s
+  defaults**: executors do **not** write `Working.md`, `decisions/DECISIONS.md`
+  or `memory/` (the orchestrating session owns those, so concurrent agents
+  cannot conflict on one long file and the register keeps one voice), and two
+  streams must never list the same file under "touched surfaces" — if they
+  would, they are one stream.
+
+- **`agents/`** — the roster: `ROSTER.yaml` plus one directory per role
+  (`role.md` charter, `tools.yaml` allowlist, `model.yaml`). Adding a role is a
+  directory and one line. The allowlist, not the charter, is the real boundary
+  (`docs/AGENT-ARCHITECTURE.md` principle 8).
+
+- **`dfmcp/`** — the MCP server: registry, roles, tool schema, auth, DFHack RPC
+  client, transport. **Named `dfmcp` and not `mcp` on purpose**: a local `mcp/`
+  directory shadows the MCP SDK for anything running with the repo root on
+  `sys.path`. If an import of the SDK ever seems to resolve to this repo, that
+  is the collision returning, not something to work around with `sys.path`.
 
 ## Upstream obligations
 

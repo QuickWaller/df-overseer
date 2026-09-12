@@ -18,9 +18,24 @@ communicate, what they read, and how they learn.
 > allowlists) and the two safety detectors, `df-overseer-threat.lua` and
 > `df-overseer-breach.lua`. **The detectors have never been run**: their API
 > surface is source-verified, they are not deployed, and the breach detector
-> carries a risk that may make it inert (§14). **In progress, not yet landed:**
-> the `dfmcp/` registry and role-scoping layer. **Not started:** the MCP server
-> itself, the Sentry, Triage, the queue, snapshots, and playbooks.
+> carries a risk that may make it inert (§14).
+>
+> **UPDATED 2026-09-12, later the same day: the MCP seam is no longer a
+> design.** `dfmcp/` is six modules and 136 tests, and §13's two locked
+> requirements are enforced in code rather than described here: the allowlist
+> is checked server-side on every call, and role identity comes from a
+> credential resolved at the transport, never from anything the caller asserts.
+> The design's central claim is now a passing test, verified in the
+> orchestrating session and not merely reported: an advisor calling a write
+> tool is refused with its reason string intact, and the call never reaches
+> DFHack. **What that does not mean:** nothing in `dfmcp/` has met a real
+> DFHack, a bound socket, or a real agent host. Every test runs against a fake
+> server built from the same wire spec, so any divergence between the VM's
+> actual binary and the source the research read would pass all 136.
+>
+> **Still not started:** the Sentry, Triage, the queue, snapshots, and
+> playbooks. Those remain design, and the rest of this document is still a
+> design artifact.
 
 Companion documents: [`PURPOSE.md`](PURPOSE.md) for the design commitments this
 must not break, [`MEMORY-ARCHITECTURE.md`](MEMORY-ARCHITECTURE.md) for the
@@ -1037,6 +1052,17 @@ Transport: MCP over HTTP on the tailnet, never publicly exposed. openclaw
 supports remote MCP servers with OAuth/TLS, so authentication does not need
 inventing.
 
+### Upstream obligation, DISCHARGED 2026-09-12
+
+**The VM exists and the records are written.** `df-colony-openclaw-01`, vmid
+106 on SRV-01, verified from inside the guest by SSH rather than from the API's
+status field, and both the address allocation (before assignment) and the
+`guests:` entry (immediately after) were routed to a live `home-lab` session
+rather than carried by a handover. **One obligation remains and is not yet
+due**: `inventory/services.yaml` wants an entry once openclaw is actually
+running something, which it is not. A provisioned VM is not a service, so
+**whoever brings openclaw up owes that message.** Original text follows.
+
 ### Upstream obligation, NOT yet discharged
 
 **Creating openclaw's VM makes `home-lab/inventory/` wrong**, per `CLAUDE.md`'s
@@ -1160,7 +1186,17 @@ These are not open questions, they are facts the design must now accommodate.
 
 Not yet gated on anything, and needing a decision:
 
-5. **The MCP server itself does not exist.** `scripts/dfhack/TOOLS.yaml` is a
+5. **CLOSED 2026-09-12: the MCP server exists**, `dfmcp/`, six modules and 136
+   tests, with per-role scoping designed in from the start exactly as this item
+   demanded rather than retrofitted. The three performance requirements below
+   are all implemented, the third in its corrected form (a pool). **What
+   replaces this as the open item: none of it has met a real DFHack, a bound
+   socket, or a real agent host.** The smoke test that would close that is
+   written out in `handoffs/2026-09-12-mcp-transport.md` and needs a go-ahead,
+   because it touches the VM running the live fort. Original text follows,
+   because the requirements it states are what the build was held to.
+
+   **The MCP server itself does not exist.** `scripts/dfhack/TOOLS.yaml` is a
    first-draft schema, not a server. Everything here assumes the seam, and the
    seam needs per-role scoping designed in from the start, because retrofitting
    identity-aware allowlists later is painful.
