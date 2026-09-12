@@ -108,7 +108,8 @@ file first in any session.
   remembering: **date**, **status**, **reason**. Entries running past ~300
   words get trimmed to a summary plus a pointer into `memory/`.
 
-- **`docs/`** — the design artifacts: `PURPOSE.md`, `MEMORY-ARCHITECTURE.md`.
+- **`docs/`** — the design artifacts: `PURPOSE.md`, `MEMORY-ARCHITECTURE.md`,
+  `DF-UI-AUTOMATION.md`, `TRAPS.md`, `AGENT-ARCHITECTURE.md`.
 
 - **`research/`** — dated research specs produced by `researcher` agents.
   Long, cited, and honest about what could not be verified. Read the relevant
@@ -126,7 +127,7 @@ file first in any session.
   makes `home-lab/inventory/` wrong.** In the same turn, not later:
   - allocate the IP through `home-lab/inventory/ips.yaml` *before* assigning
     it — that file is an allocation registry, "consult before assigning,
-    update on assignment", and skipping it is how `192.168.2.201` came to be
+    update on assignment", and skipping it is how `<df-vm-ip>` came to be
     in use for a week without being registered anywhere;
   - record the guest change in that host's `inventory/hosts/SRV-0x.yaml`
     `guests:` block, and in `inventory/services.yaml` if a service moved.
