@@ -40,8 +40,13 @@ would be confidently wrong on a schedule.
 
 - **Water and magma breach has no signal of any kind**, a checked negative
   across both the event enum and the announcement enum. Nearest polling target
-  is `df.global.world.flows` plus map-block liquid scanning, unconfirmed as
-  sufficient. Until that poller exists, flood response is covered by nothing.
+  is map-block liquid scanning (`flow_size`/`liquid_type`, triggered off
+  `flags.update_liquid`). **`df.global.world.flows`, which an earlier draft of
+  this charter named, does not exist under that name**; re-verified 2026-09-12.
+  A detector now exists (`df-overseer-breach.lua`) but has never been run, and
+  its cheap first stage depends on a flag that nothing in the shipped scripts
+  ever reads, only sets. Treat flood response as uncovered until that is
+  settled live.
 
 ## Traps to hand whoever builds this
 

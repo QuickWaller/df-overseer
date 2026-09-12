@@ -14,10 +14,13 @@ communicate, what they read, and how they learn.
 > (no host spend cap, lane-serialised fan-out, no breach signal, a hostile
 > signal that is blind by construction). §14 lists what remains open.
 >
-> **What exists in code on `main`:** `agents/` only, the roster, charters and
-> allowlists. **In progress, not yet landed:** the `mcp/` registry and
-> role-scoping layer, and the two safety detectors. **Not started:** the MCP
-> server itself, the Sentry, Triage, the queue, snapshots, and playbooks.
+> **What exists in code on `main`:** `agents/` (the roster, charters and
+> allowlists) and the two safety detectors, `df-overseer-threat.lua` and
+> `df-overseer-breach.lua`. **The detectors have never been run**: their API
+> surface is source-verified, they are not deployed, and the breach detector
+> carries a risk that may make it inert (§14). **In progress, not yet landed:**
+> the `mcp/` registry and role-scoping layer. **Not started:** the MCP server
+> itself, the Sentry, Triage, the queue, snapshots, and playbooks.
 
 Companion documents: [`PURPOSE.md`](PURPOSE.md) for the design commitments this
 must not break, [`MEMORY-ARCHITECTURE.md`](MEMORY-ARCHITECTURE.md) for the
@@ -339,8 +342,19 @@ is required work, not a recalibration of something that already exists.
 
 **`breach` is the one trigger with no substrate at all**, and it is also among
 the fastest fort-killers (§6). The nearest polling targets are
-`df.global.world.flows` and map-block liquid scanning, neither confirmed
-sufficient. Until that poller exists, flood response is not covered by anything
+map-block liquid scanning: `block.designation[x%16][y%16].flow_size`
+(0-7) and `.liquid_type`, triggered off `block.flags.update_liquid`.
+**Corrected 2026-09-12: `df.global.world.flows`, named as the candidate in the
+brief that commissioned this and repeated here, does not exist under that
+name**, and `flow_info`/`flow_type` is an airborne-cloud record (miasma, steam,
+mist, smoke, fire, web), not a liquid-volume signal. Independently re-verified
+on this machine: zero hits for `world.flows` in the installed build's shipped
+Lua. **A detector now exists but is unrun, and it carries a load-bearing risk:**
+every observed use of `flags.update_liquid` in shipped scripts *sets* it and
+nothing reads it, so whether DF's own simulation raises it during natural liquid
+movement is unverified. If it does not, the detector's cheap first stage never
+trips and it silently sees nothing. That is the first thing live verification
+must settle. Until that poller exists, flood response is not covered by anything
 in this design.
 
 **Only the Sentry and the Overseer may wake anyone.** Specialists cannot wake
