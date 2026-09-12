@@ -476,3 +476,116 @@ downstream effects worth the next design pass picking up:
 - `memory/dfhack-environment.md`: worth a follow-up edit adding `overlay` and `workorder` to the "available and
   load-bearing" list (both confirmed present, neither currently named there), and noting the `manager_order`
   struct has no priority field if this project ever builds a Quartermaster tool around it.
+
+---
+
+## 9. ADDED BY A LATER LIVE CHECK, 2026-09-12: does the suspend window still open while paused?
+
+This subsection was added by a separate live-measurement session run after the rest of this document, to close
+the exact gap §6 of `docs/AGENT-ARCHITECTURE.md` flagged: "the capability brief did not establish whether
+`Core::Update` still runs while paused." Nothing above this heading was changed.
+
+**Source-level answer first.** §3 above already quotes `Core::Update()`'s body from `library/Core.cpp` at the
+pinned tag `53.16-r1.1`; a supplementary read of the current DFHack `master` branch's `Core.cpp` (via GitHub, not
+re-pinned to that exact tag, so treat this as corroborating rather than identical-version-confirmed) gives the
+function's full body:
+
+```cpp
+{
+    if (shutdown) { MainThread::suspend().unlock(); return -1; }
+    if (errorstate) return -1;
+    color_ostream_proxy out(con);
+    {
+        if (!started) { InitSimulationThread(); if (errorstate) return -1; }
+        uint32_t start_ms = p->getTickCount();
+        unpaused_ms += perf_counters.registerTick(start_ms);
+        doUpdate(out);
+        perf_counters.incCounter(perf_counters.total_update_ms, start_ms);
+    }
+    CoreWakeup.wait(MainThread::suspend(),
+            [this]() -> bool {return this->toolCount.load() == 0;});
+    return 0;
+}
+```
+
+**There is no pause-state guard around `doUpdate(out)` or the `CoreWakeup.wait(...)` call.** The only pause-aware
+code in this function is inside `perf_counters.registerTick()`, which was separately fetched and reads (in
+`PerfCounters`, same file):
+
+```cpp
+if (!World::isFortressMode() || World::ReadPauseState()) {
+    last_tick_baseline_ms = 0; return 0;
+}
+```
+
+That guard changes what counts toward the `unpaused_ms` performance metric; it does not skip `doUpdate()` or the
+suspend-wait. Read plainly: `Core::Update()` runs every time DF's simulation thread calls it, paused or not, and
+the suspend window it opens (the `CoreWakeup.wait` call, per §3's mechanism) opens right along with it. **The
+source settles this cleanly**: nothing here makes the live measurement load-bearing, but it was run anyway per
+the task brief, as confirmation.
+
+**Live measurement.** Run against VM 103 (node `srv-01`, `192.168.2.201`, per the live `.env`;
+`infra/local.proxmox-access.md` is stale and was not used) via `scripts/install_df.py lua` and
+`scripts/install_df.py run`, each call given a 30s timeout, no write/mutating command issued at any point.
+
+Pause state before: `dfhack.world.ReadPauseState()` → `true`.
+Fort health before: `df-overseer-labor unit-status idle` → 14 citizens listed, all `idle=true injured=false
+wounds=0`; `df-overseer-labor unit-status injured` → 0 results. No dialog or stuck-fort symptom observed.
+
+Ten trivial read-only calls, alternating `df-overseer-landmarks list` and a one-line
+`dfhack.world.ReadCurrentTick()` Lua read, each timed individually as wall-clock round trip (includes this
+session's own SSH connection + Python process overhead each call, not a bare RPC time, per the task's own
+framing of "wall-clock round trip"):
+
+| # | command | elapsed (s) |
+|---|---|---|
+| 1 | landmarks list | 1.282 |
+| 2 | tick read | 0.863 |
+| 3 | landmarks list | 0.662 |
+| 4 | tick read | 0.778 |
+| 5 | landmarks list | 0.740 |
+| 6 | tick read | 0.700 |
+| 7 | landmarks list | 0.776 |
+| 8 | tick read | 0.861 |
+| 9 | landmarks list | 0.885 |
+| 10 | tick read | 0.757 |
+
+All ten completed well under one second, with no outlier. `dfhack.world.ReadCurrentTick()` read `170307` on all
+five of its calls (2, 4, 6, 8, 10): it did not advance, which is the expected sanity check for a genuinely paused
+fort.
+
+Pause state after: `true`. Fort health after: `df-overseer-labor unit-status injured` → 0 results again.
+
+**Verdict.** Both the source and the live measurement agree, and agree with `docs/AGENT-ARCHITECTURE.md` §6's own
+tentative reasoning: pausing does **not** stall tool calls. `Core::Update()` is not gated on pause state, so the
+suspend window keeps opening every simulation-thread tick regardless, and while paused those ticks are not slowed
+by the simulation's own per-tick work — consistent with all ten calls landing in under 1.3s with no multi-second
+wait. This inverts the naive intuition the Throttle tier was built on exactly as §6 flagged as possible: pausing
+looks like the *better* choice for preserving fast tool calls, not a tradeoff against them, since throttling the
+frame cap (lowering how often `Core::Update()` is called at all) would slow tool calls too, while pausing the
+simulation does not reduce how often `Core::Update()` itself runs.
+
+**What this did not verify**, stated plainly:
+- **No unpaused comparison was run.** Per the task's hard constraint, the fort's pause state was never changed
+  during this check, so there is no live-measured "same ten calls while unpaused" baseline from this session to
+  set against these numbers. The ten timings above are evidence that paused tool calls are fast in absolute
+  terms, not a measured before/after gap.
+- **The web-fetched `Core.cpp` was current `master`, not re-pinned to the `53.16-r1.1` tag** the rest of this
+  document cites. The specific lines quoted (the pause-free body of `Core::Update()`, and the pause-gated
+  `registerTick()`) are consistent with §3's earlier tag-pinned quote of the same function's `CoreWakeup.wait`
+  call and are extremely unlikely to have changed across point releases, but this was not independently
+  re-verified against the exact pinned tag the way §3's original material was.
+- **DF's own call site** (the hooked point in DF's binary/render loop that invokes `Core::Update()` each tick) was
+  not read this session; the evidence here is that `Core::Update()` itself contains no pause guard, not a direct
+  read of how often DF's own loop calls it.
+- **VM 103's actual installed DFHack build was not re-read over SSH**, consistent with §7's existing note that
+  this repo relies on `memory/dfhack-environment.md`'s documented version match rather than re-checking the
+  binary each time.
+- Ten calls at one point in time is not a statistical distribution; no attempt was made to characterize variance,
+  tail latency, or behavior under concurrent callers (that remains `research/2026-09-12-write-conflict-matrix.md`'s
+  territory, per §3 above).
+
+Relevant to `docs/AGENT-ARCHITECTURE.md` §6: the "Throttle is not free" trap it names is confirmed real and,
+per this check, worth restating more sharply — pausing, not throttling, looks like the better lever for buying
+an agent thinking time without a tool-call latency cost, though only an unpaused-vs-paused comparison (not run
+here, and not authorized by this check's constraints) would fully close that comparison.
