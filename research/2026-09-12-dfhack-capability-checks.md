@@ -589,3 +589,47 @@ Relevant to `docs/AGENT-ARCHITECTURE.md` §6: the "Throttle is not free" trap it
 per this check, worth restating more sharply — pausing, not throttling, looks like the better lever for buying
 an agent thinking time without a tool-call latency cost, though only an unpaused-vs-paused comparison (not run
 here, and not authorized by this check's constraints) would fully close that comparison.
+
+---
+
+## 10. CORRECTION TO SECTION 5, added 2026-09-12 by the build it commissioned
+
+Section 5's breach row named the nearest polling target as
+`df.global.world.flows` ("the active-liquid-flow list the `liquids` tool already
+reads"). **That is wrong on both counts, and the error was propagated into
+`docs/AGENT-ARCHITECTURE.md` and a role charter before being caught.**
+
+Found while building `scripts/dfhack/df-overseer-breach.lua`, then
+independently re-verified against this machine's own DFHack 53.16-r1.1 install
+rather than taken on the builder's word:
+
+- **There is no field named `world.flows`.** A grep of the installed build's
+  entire shipped Lua returns zero hits. The related real fields are
+  `world.orphaned_flows` and a separate per-block `flows` vector.
+- **`flow_info`/`flow_type` is an airborne-cloud record**, covering miasma,
+  steam, mist, magma mist, smoke, dragonfire, fire, web, gas, vapour, ocean
+  wave, foam and item clouds. It is not a liquid-volume signal at all.
+- **`plugins/liquids.cpp` never touches `world.flows` or `orphaned_flows`**, so
+  the parenthetical claim that the `liquids` tool reads such a list was also
+  wrong.
+- **The real per-tile signal** is `block.designation[x%16][y%16].flow_size`
+  (0-7) and `.liquid_type` (`df.tile_liquid.Water`/`Magma`), with
+  `block.flags.update_liquid` as a cheap per-block trigger. Confirmed in this
+  install's own `modtools/spawn-liquid.lua`, `deep-embark.lua`,
+  `extinguish.lua` and `exterminate.lua`.
+
+**A second finding, which matters more than the naming error.** Every observed
+use of `flags.update_liquid` in the shipped scripts **sets** it; nothing reads
+it. So whether DF's own simulation raises that flag during natural, unassisted
+liquid movement is **unverified**. The detector built on it may therefore detect
+nothing at all, and settling this is the first item in its live-verification
+plan. Recorded prominently because a detector that silently never fires is worse
+than no detector, since it invites false confidence.
+
+**Process note.** Section 5 was otherwise strong, source-read work, and this
+correction does not undermine its central negative finding: breach genuinely has
+no event and no announcement type. What it got wrong was the suggested
+workaround, which was offered as a lead rather than a verified claim ("not itself
+confirmed as sufficient") and was then treated downstream as firmer than its own
+hedge warranted. The lesson is about the downstream handling, not the hedge.
+

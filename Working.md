@@ -148,7 +148,30 @@ any build, in this order.
    because with three agents the host's ~30s-per-target send serialisation
    shows up immediately.
 
-3. **Two safety detectors do not exist and are required work, not polish.**
+3. **UPDATED: both safety detectors are now built and landed, and neither has
+   ever been run.** `scripts/dfhack/df-overseer-threat.lua` (`scan`) and
+   `scripts/dfhack/df-overseer-breach.lua` (`check`), plus their `TOOLS.yaml`
+   entries, both tagged `live_deployed: false` / `verified: unverified`.
+   Reviewed here rather than accepted on report: coordinate discipline is
+   correct and both carry the `--@module = true` guard.
+   **THE THING TO KNOW: the breach detector may be inert.** Every observed use
+   of `block.flags.update_liquid` in the installed build's shipped scripts
+   *sets* it and nothing reads it, so whether DF's own simulation raises it
+   during natural liquid movement is unverified. Its cheap stage-1 trigger
+   depends on that flag. **Until settled live, treat flood response as covered
+   by nothing, exactly as before the detector existed**, because a detector
+   that never fires invites the same false confidence `unit-status hostile`
+   already cost this project. Also corrected along the way:
+   `df.global.world.flows` does not exist, and this session had repeated that
+   error into the design doc and a role charter; all corrected, with a §10
+   correction appended to the research brief.
+   **Next step is a live-verification session** (needs VM go-ahead): the
+   detectors ship with a concrete test plan, including reproducing the kea miss
+   as a correct positive and the cavern-demon false positive as a correct
+   negative.
+
+   Superseded text, kept for the reasoning: **two safety detectors did not
+   exist and were required work, not polish.**
    **A breach poller**: no DFHack event or announcement type exists for water
    or magma breach at all (a checked negative), so **flood response is
    currently covered by nothing**, and breach is among the fastest

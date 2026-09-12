@@ -265,6 +265,75 @@ df-overseer-stuckjobs.lua:
         idle_ticks is honestly null for any job that existed before this
         script's first registration this process lifetime, never guessed.
 
+df-overseer-threat.lua:
+  build_order_item: "not in the 0-9 spatial build order -- a safety gap found 2026-09-12, research/2026-09-12-dfhack-capability-checks.md sec5"
+  commands:
+    "scan [RADIUS_TILES]":
+      lua_function: find_threats
+      effect: read
+      coordinate_bearing: false
+      live_deployed: false
+      verified: unverified
+      notes: >
+        NOT DEPLOYED AND NOT RUN. API surface verified by source reading only;
+        no command has been executed against any DF process. Exists because
+        the event layer has no usable hostile signal: INVASION fires only for
+        DF-registered invasions, not ambushes, thieves, or wildlife turning
+        aggressive, and the pre-existing df-overseer-labor unit-status hostile
+        filter is verified wrong in both directions.
+        DESIGN: admission is by REACHABILITY, never by a danger flag. A unit
+        qualifies if it shares a getWalkableGroup id with a living citizen OR
+        sits within a bounded distance of a named landmark; the two are OR'd
+        because each covers the other's blind spot (group-sharing models
+        ground pathing only, so a flyer reads group 0; landmark distance is
+        geometric and does not imply real reachability on a tall fort).
+        isDanger/isInvader/isAgitated/isGreatDanger are read, reported, and
+        labelled HEURISTIC in the tool's own output, and used only as a
+        ranking tiebreak. Consequence accepted deliberately: a harmless
+        songbird inside the walkable network WILL appear, ranked low. How much
+        wildlife noise that produces on a populated fort is unknown.
+        Ranking weights and MAX_RESULTS are untuned guesses.
+
+df-overseer-breach.lua:
+  build_order_item: "not in the 0-9 spatial build order -- a safety gap found 2026-09-12, research/2026-09-12-dfhack-capability-checks.md sec5"
+  commands:
+    "check [RADIUS_TILES]":
+      lua_function: check_breach
+      effect: read
+      coordinate_bearing: false
+      live_deployed: false
+      verified: unverified
+      notes: >
+        NOT DEPLOYED AND NOT RUN. Exists because water and magma breach has
+        NO DFHack event and NO announcement type at all, a checked negative,
+        so flood response was covered by nothing.
+        CORRECTS THE RESEARCH BRIEF THAT COMMISSIONED IT: df.global.world.flows
+        does not exist under that name, and flow_info/flow_type is an
+        airborne-cloud record (miasma, steam, mist, smoke, fire, web), not a
+        liquid-volume signal. Independently re-verified on this machine
+        2026-09-12: zero hits for world.flows anywhere in the installed
+        build's shipped Lua. The real per-tile signal is
+        block.designation[x%16][y%16].flow_size (0-7) and .liquid_type, plus
+        block.flags.update_liquid, all confirmed in this install's own
+        spawn-liquid.lua, deep-embark.lua, extinguish.lua and exterminate.lua.
+        DESIGN: two stage, because the Sentry polls this every few seconds.
+        Stage 1 reads one bool per map block (flags.update_liquid) across the
+        map's fixed block count, so its cost does NOT grow with dig progress.
+        Stage 2 scans only flagged blocks' 256 tiles. Severity comes from a
+        RISE against a session-scoped _G baseline, so a well's static water
+        alarms once on baseline-seed and never again, and escalates on
+        adjacency to the citizen walkable network and on magma.
+        THE LOAD-BEARING RISK, stated plainly: every observed use of
+        flags.update_liquid in the shipped scripts SETS it; nothing reads it.
+        Whether DF's own simulation raises it during natural, unassisted
+        liquid movement is UNVERIFIED, and if it does not, stage 1 never
+        trips and this tool silently detects nothing. That is the first thing
+        a live-verification session must settle.
+        Known blind spot by design: a breach already rising at the moment of
+        the first ever call, or right after a DFHack restart since _G does not
+        survive one, is silently baselined and reported as severity none for
+        that poll.
+
 df-overseer-labor.lua:
   build_order_item: "not in the 0-9 spatial build order -- a separate gap, decisions/DECISIONS.md 2026-09-11"
   commands:
