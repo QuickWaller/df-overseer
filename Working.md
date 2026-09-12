@@ -113,11 +113,14 @@ any build, in this order.
    scoping designed in from the start. openclaw can scope tools per agent, so
    the seam's job is to present role-scoped tool sets rather than one flat
    surface.
-2. **Four of six roles have little or no tool surface.** A realistic v1 roster
-   is **Overseer plus Architect plus Consultant**, with Marshal read-only until
-   it has write tools, and Quartermaster and Chronicler as *build work* rather
-   than configuration. Anything that assumes a six-role roster on day one is
-   assuming tools that do not exist.
+2. **DECIDED: v1 enables three roles, Overseer plus Architect plus Consultant**
+   (user's call 2026-09-12, over this session's narrower recommendation of
+   Overseer alone). These are the three whose tools exist. Quartermaster,
+   Marshal and Chronicler keep charters and directories but stay disabled, so
+   enabling one is a config change. **Consequence to carry forward: the
+   advisor scheduler is load-bearing from day one**, not at some future scale,
+   because with three agents the host's ~30s-per-target send serialisation
+   shows up immediately.
 
 3. **Two safety detectors do not exist and are required work, not polish.**
    **A breach poller**: no DFHack event or announcement type exists for water
@@ -133,11 +136,23 @@ Also now more urgent than it looked: the **`set_labor`/`autolabor` race**, since
 it is the only labor write that exists and two of the four unbuilt roles will
 want it.
 
-**Two live checks deliberately not run** (the briefs were read-only): whether
-the frame cap survives loading a different save in one process, and whether an
-overlay widget renders in this project's headless Xvfb/VNC pipeline. A third,
-cheap and worth doing: **whether `Core::Update` still runs while paused**,
-which decides whether pausing beats throttling for tool-call throughput.
+**Live checks.** The `Core::Update`-while-paused question (does pausing preserve
+fast tool calls, which decides whether pausing beats throttling) was approved by
+the user and **is being measured now**, read-only, fort stays paused, no
+unpause. **Two remain deliberately unrun, user's call to defer**: whether the
+frame cap survives loading a different save in one process (needs a save load on
+the live fort, and this project has already lost one fort's save, so not done
+casually), and whether an overlay widget renders in the headless Xvfb/VNC
+pipeline (only matters if the status banner goes inside the game rather than
+beside the stream, and the outside-the-game route is recommended precisely
+because it cannot perturb the fort).
+
+**Peer coordination note:** at the time of the live check there was **no other
+Claude session running on this machine** (the `home-lab` session present at this
+session's start had ended), so the pre-VM-work heads-up this repo's rules call
+for had no recipient. Recorded rather than skipped silently. No home-lab
+inventory obligation arises from this work: nothing was created, deleted,
+resized or re-addressed.
 
 **Ruled out already, so nobody re-derives it:** one agent per squad (DF combat
 resolves faster than an agent round trip, and the threat sensor is verified
