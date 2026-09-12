@@ -7,8 +7,11 @@ actually going on right now.
 
 ## Agent architecture design phase — started 2026-09-12
 
-The design/research phase the handover below anticipated. **Design is written,
-nothing is built.**
+The design/research phase the handover below anticipated, which then produced
+working code. **Current state: design written and revised against four research
+briefs; `agents/` and `mcp/` built with 26 passing tests; two safety detectors
+built, one live-verified working and one inconclusive.** The MCP server itself,
+the Sentry, Triage, the queue, snapshots and playbooks are not started.
 
 ### Done this session
 
@@ -18,8 +21,8 @@ nothing is built.**
   architecture, graded urgency, write authority, reliability, recording and
   learning, modularity, explicit non-goals, and open questions. It is a design
   artifact and says so at the top.
-- **26 register rows** appended to `decisions/DECISIONS.md` by this session
-  (38 rows now carry today's date in total). The doc is the design; the rows
+- **31 register rows** appended to `decisions/DECISIONS.md` by this session
+  (43 rows now carry today's date in total). The doc is the design; the rows
   are why each call was made, including the ones that were later corrected.
 - **`ROADMAP.md` updated**: two new Now items (the architecture, and the MCP
   server as the standing blocker), and three stale items corrected where the
