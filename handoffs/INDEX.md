@@ -31,6 +31,8 @@ and it was finished from the orchestrator session rather than re-run. **Check
 the worktree branch before assuming a terminated stream lost anything** — the
 work is usually there.
 
+| DFHack RPC client | [2026-09-12-dfhack-rpc-client.md](2026-09-12-dfhack-rpc-client.md) | dispatched 2026-09-12 | `mcp/dfhack_client.py`, `mcp/tests/test_dfhack_client.py`, `mcp/README.md` |
+
 Research briefs are not streams and are not listed here: they are read-only,
 produce a `research/<date>-<slug>.md` file, and are dispatched to the
 `researcher` agent directly.
