@@ -192,8 +192,9 @@ because it cannot perturb the fort).
 **one new VM on SRV-01** for `openclaw`. Nothing is created yet, so nothing in
 `home-lab/inventory/` is currently wrong, but per this repo's upstream
 obligation the IP must be allocated through `home-lab/inventory/ips.yaml`
-**before** it is assigned, and skipping that is exactly how `192.168.2.201` came
-to be in use for a week unregistered.
+**before** it is assigned. Skipping that step is exactly how a DF VM's address
+came to be in use for a week while registered nowhere (`CLAUDE.md` names the
+specific case; deliberately not repeated here, see the redaction note below).
 
 **Routed 2026-09-12 to the live `home-lab-03` session** (this repo is not
 authorised to edit home-lab), asking for an IP allocation plus a view on whether
@@ -205,6 +206,38 @@ the real VMID and address, and `inventory/services.yaml` if a service moves.
 Target host is SRV-01 deliberately: SRV-02 was crashing roughly every 2.5 hours
 as of 2026-09-12, root cause open, and a power-brick swap was confirmed not to
 be the fix.
+
+### OPEN: this public repo leaks internal addresses, contrary to its own rule
+
+**Found 2026-09-12**, prompted by the user pasting a router reservation row.
+`CLAUDE.md` states the rule twice: "never copy a hostname, address or subnet into
+this repo", and infrastructure specifics belong in gitignored `infra/local.*`.
+An audit of **tracked** files finds the rule is not being followed.
+
+- **Four distinct private IPv4 addresses** appear across roughly a dozen tracked
+  files, including `CLAUDE.md` itself, `ROADMAP.md`, this file,
+  `decisions/DECISIONS.md`, three `research/` specs, and
+  `working-archive/`.
+- **`.internal` hostnames** appear in tracked files too.
+- **This session added to the problem today**, copying an address out of
+  `CLAUDE.md` into this file's own text. Fixed in place, and the specific
+  address is deliberately not repeated in this note.
+- **The `scripts/*.py` hits are fine and need no change**: they are help text and
+  error-message examples (`provision_vm.py` even uses a different subnet), not
+  hardcoded defaults. The problem is entirely in prose.
+
+**Honest limitation of any fix: the history is already public.** These files are
+pushed, so scrubbing the working tree does not remove anything from git history,
+and rewriting a public repo's history is disruptive and incomplete (clones
+exist). The proportionate read is that these are RFC1918 addresses behind a
+tailnet, so the real-world value to an attacker is low, and the reason to fix is
+that the rule is deliberate and the drift will otherwise keep growing.
+
+**Recommended, not yet done, needs the user's call:** fix forward (redact the
+prose, leave history alone) and add a mechanical guard so it cannot recur, for
+example a pre-commit check that fails on an IPv4 literal or `.internal` in a
+tracked non-example file. Editing `CLAUDE.md` itself is deliberately left to the
+user rather than done unilaterally, since it is the instruction file.
 
 ### Peer coordination notes
 
