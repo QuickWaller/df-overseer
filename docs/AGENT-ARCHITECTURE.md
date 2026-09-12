@@ -436,12 +436,55 @@ its suspend window **once per simulation tick**, after the tick's own work
 finishes (§7). So lowering the frame cap slows the game *and* slows every tool
 call the agents make, because each call waits for a tick boundary that now
 arrives less often. Throttling therefore trades game speed for agent latency
-rather than buying thinking time outright. It may even be that **pausing is
-better than throttling for tool-call throughput**, if suspend windows keep
-opening at render rate while the simulation is halted, which would invert the
-intuition this tier was built on. That is reasoning, not a verified claim: the
-capability brief did not establish whether `Core::Update` still runs while
-paused. **Measure before relying on the throttle tier.**
+rather than buying thinking time outright.
+
+**Settled 2026-09-12, from source and confirmed live: pausing does NOT stall
+tool calls.** `Core::Update()` has no pause guard around either `doUpdate()` or
+the `CoreWakeup.wait()` suspend hand-off; the only pause-aware code on that path
+gates a performance metric, not the call. Confirmed live against VM 103 with the
+fort paused throughout: ten round trips, all between 0.66s and 1.28s, no stall
+and no outlier, with the tick counter correctly not advancing.
+→ `research/2026-09-12-dfhack-capability-checks.md` §9.
+
+**But wall-clock latency is the wrong thing to optimise. The currency that
+matters is game time elapsed per decision**, because that is what the fortress
+experiences. For a cycle that thinks for `T` seconds and makes `k` tool calls at
+frame cap `f`:
+
+- Thinking costs **`f·T` ticks**. The game runs while the model thinks.
+- Each tool call costs about **one tick**, regardless of `f`, since it waits for
+  the next suspend window.
+- **Game time per cycle ≈ `f·T + k` ticks.**
+
+Three things follow, and they matter more than a latency comparison:
+
+1. **Throttling really does buy thinking time.** Lowering `f` shrinks the `f·T`
+   term linearly, down to a floor of `k` ticks. The price is paid in wall-clock
+   by the human watching, not by the fortress. An earlier draft of this section
+   claimed throttling "trades game speed for agent latency rather than buying
+   thinking time outright", which was wrong, and the error came from measuring
+   in the wrong currency.
+2. **Pause is the only thing that reaches zero.** `f = 0` means no game time
+   passes however long deliberation takes, while tool calls stay fast because
+   suspend windows keep opening at render rate.
+3. **Choose on the shape of the cycle, not on urgency alone.** A *think-heavy*
+   cycle (long deliberation, few calls) benefits from throttling almost
+   linearly. A *call-heavy* cycle cannot get below the `k`-tick floor and gets
+   much worse in wall-clock (`k/f` seconds of waiting), so pause that instead.
+
+**A fourth consequence, and a real optimisation.** `CoreWakeup.wait()` waits
+until `toolCount` reaches zero, so **every suspender pending at the same moment
+is serviced in one window.** So `k` *sequential* calls cost about `k` ticks,
+while `k` *concurrent* calls cost about **one**. Batching independent reads is
+therefore not just token-efficient, it is game-time-efficient, which is an
+argument for the single-snapshot read pass (§5) that has nothing to do with
+consistency.
+
+Scale note, so this is not over-tuned: at `FPS_CAP:5` a tick is 200ms and the
+measured round trips were 0.66s to 1.28s, so **transport overhead currently
+dominates the tick wait.** Throttling to `f = 1` makes the tick wait 1s and
+flips which term dominates. The arithmetic above only bites at low `f` or high
+`k`.
 
 **Pausing is the safe direction while resuming is the sensitive one**
 (`Working.md` records that flipping pause state is gated here), so the asymmetry
@@ -907,8 +950,11 @@ Recorded so they are not re-proposed without new evidence.
 - **Two live checks** deliberately not executed by a read-only brief: whether
   the frame cap survives loading a different save in one process, and whether an
   overlay widget renders in this project's headless pipeline.
-- **Whether `Core::Update` still runs while paused**, which decides whether
-  pausing beats throttling for tool-call throughput (§6).
+- ~~Whether `Core::Update` still runs while paused~~ **ANSWERED 2026-09-12: it
+  does.** Pausing preserves fast tool calls; throttling does not. §6 revised.
+  One caveat recorded honestly: no unpaused comparison was run, so this is
+  "paused calls are fast in absolute terms", not a measured paused-versus-
+  unpaused gap. The absolute result is what the design needed.
 
 ### New constraints the openclaw brief imposed
 
