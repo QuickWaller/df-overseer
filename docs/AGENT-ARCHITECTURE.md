@@ -3,13 +3,21 @@
 How the overseer is actually built: what components exist, who may act, how they
 communicate, what they read, and how they learn.
 
-> **Status: design artifact, written 2026-09-12. None of this is built.**
-> It is the record of a design conversation, not a report on working code.
-> Anything below marked **(verified)** cites something this project has already
-> run and confirmed; everything else is **proposed** and may not survive contact
-> with the real primitives. Four research briefs are out as of writing
-> (`research/2026-09-12-*`) precisely because six mechanisms here rest on
-> capabilities nobody has checked. Read those before building.
+> **Status: design artifact, written 2026-09-12 and revised the same day
+> against research. Almost none of this is built.** It is the record of a design
+> conversation, not a report on working code. Anything marked **(verified)**
+> cites something this project has actually run; everything else is **proposed**.
+>
+> **All four research briefs are back** (`research/2026-09-12-*`) and are folded
+> in throughout rather than appended. They confirmed the central choices (single
+> writer, no peer chat, per-agent tool scoping) and broke several assumptions
+> (no host spend cap, lane-serialised fan-out, no breach signal, a hostile
+> signal that is blind by construction). §14 lists what remains open.
+>
+> **What exists in code:** `agents/` (the roster, charters and allowlists) and
+> the `mcp/` registry and role-scoping layer. **What does not:** the MCP server
+> itself, the Sentry, Triage, the queue, snapshots, playbooks, and the two safety
+> detectors §14 names as required work.
 
 Companion documents: [`PURPOSE.md`](PURPOSE.md) for the design commitments this
 must not break, [`MEMORY-ARCHITECTURE.md`](MEMORY-ARCHITECTURE.md) for the
@@ -57,7 +65,7 @@ one of them invalidates the parts that rest on it.
 | **Triage** | code | every heartbeat | no |
 | **Projection** | code | per cycle | no |
 | **Overseer** | model, strongest | when woken | **yes, sole general writer** |
-| **Specialists** | models, per role | when woken, concurrently where the host allows (§13) | no, propose only |
+| **Specialists** | models, per role | when woken, concurrently where the host allows (§14) | no, propose only |
 
 Two of the five are code with no model in them. That is deliberate: the
 components responsible for keeping the fortress alive and for keeping costs
@@ -111,7 +119,7 @@ Each gets a narrow projection and may call exactly one write tool: `propose`.
 
 **Concurrency is a host constraint, not a free assumption.** openclaw's agent
 concurrency is lane-based and its inter-agent send lane is serialised, so
-waking five specialists may cost minutes rather than seconds (§13). Read-only
+waking five specialists may cost minutes rather than seconds (§14). Read-only
 advisors are *safe* to run concurrently, which is a correctness property and
 holds regardless; whether they are *cheap* to run concurrently depends on the
 host, and currently they may not be. This is what makes the scheduler in §4 a
@@ -145,7 +153,7 @@ it exercises the propose-and-arbitrate loop for real instead of deferring the
 architecture's central mechanism. Quartermaster, Marshal and Chronicler keep
 their charters and directories but stay disabled, so enabling one later is a
 config change (§11). Accepted costs: roughly 3x single-agent token spend, and
-the lane-serialisation delay (§13) showing up from day one, **which makes the
+the lane-serialisation delay (§14) showing up from day one, **which makes the
 §4 scheduler load-bearing immediately rather than at some future scale.**
 → `decisions/DECISIONS.md` 2026-09-12.
 
@@ -631,7 +639,7 @@ window opens only once per simulation tick.** Three consequences:
   independently confirmed." That report's confidence framing should be upgraded.
 
 What source reading cannot settle is measured cycle time under a real roster.
-That still needs instrumenting (§13).
+That still needs instrumenting (§14).
 
 Costs of carving, recorded so the trade is explicit: you lose the single
 coherent plan, the WIP limit fragments per role so the fort can again accumulate
@@ -897,7 +905,72 @@ Recorded so they are not re-proposed without new evidence.
 
 ---
 
-## 13. Open questions
+## 13. Deployment topology
+
+Decided 2026-09-12. Three VMs, and the split is about trust boundaries rather
+than latency, because §14's persistence finding established that locality barely
+matters once a connection is held.
+
+| Component | Where | Why there |
+|---|---|---|
+| DF + DFHack | **VM 103** | Exists. The fort. |
+| **MCP server** | **VM 103**, alongside DF | DFHack's RPC socket is local and unauthenticated |
+| **Sentry** | **VM 103**, systemd | Polls and fires reflexes; needs to be close and to survive brain outages |
+| **openclaw** | **its own new VM** | Holds provider credentials and write authority. Restarted constantly during iteration |
+| Public view-only feed, admin VNC | relay VM, unchanged | Already there |
+
+### Why the MCP server stays on VM 103
+
+**DFHack's RPC socket is unauthenticated.** Anything that can reach it has full
+scripting control of the game process, so moving the MCP server off VM 103 would
+mean exposing that socket across the network. Supporting reasons: the two hops
+have opposite traffic profiles (MCP↔DFHack is chatty and tick-gated, openclaw↔MCP
+is one batched snapshot per cycle, so keep the chatty hop local); separating them
+buys no availability, since if VM 103 is down the server has nothing to serve;
+and blast radius does not improve, because an attacker who can reach DFHack's RPC
+directly already owns the game host.
+
+### Why openclaw gets its own VM rather than sharing the relay
+
+The relay is the most exposed surface in the estate: a public Cloudflare tunnel
+and an unauthenticated view-only feed. openclaw holds **provider API credentials
+and write authority over the fort**, so co-locating them would mean a relay
+compromise reaches the brain's keys. Also: its memory footprint is unmeasured
+(`research/2026-09-12-openclaw-primitives.md`), and it will be restarted
+constantly while roles are iterated on, which on the relay would drop the public
+feed every time.
+
+### The trust boundary, and two requirements that follow
+
+The boundary is the MCP HTTP endpoint between openclaw's VM and VM 103.
+
+1. **The allowlist is enforced by the MCP server, not by openclaw's config.**
+   openclaw's per-agent tool scoping is real and useful, but once the brain and
+   the fort are separate hosts at different trust levels it is **defence in
+   depth, not the boundary**. Client-side enforcement is not enforcement. So
+   `mcp/roles.py` is the authority; the host's `tools.allow/deny` is a second
+   layer.
+2. **Role identity must be a credential, not a claim.** A self-declared role
+   header means the Architect can assert it is the Overseer and obtain write
+   tools, which would silently void the entire single-writer design. So: **one
+   token per role**, issued at the seam and mapped to a role server-side.
+
+Transport: MCP over HTTP on the tailnet, never publicly exposed. openclaw
+supports remote MCP servers with OAuth/TLS, so authentication does not need
+inventing.
+
+### Upstream obligation, NOT yet discharged
+
+**Creating openclaw's VM makes `home-lab/inventory/` wrong**, per `CLAUDE.md`'s
+upstream obligation. Before it is assigned an address: allocate the IP through
+`home-lab/inventory/ips.yaml` (that file is an allocation registry, consult
+before assigning), record the guest in `inventory/hosts/SRV-0x.yaml`'s `guests:`
+block, and update `inventory/services.yaml` if a service moves. This repo is
+**not authorised to edit home-lab**, so it must be routed to a home-lab session.
+It should land on **SRV-01**: SRV-02 is currently crashing roughly every 2.5
+hours with root cause open.
+
+## 14. Open questions
 
 ### Answered by research, 2026-09-12
 
