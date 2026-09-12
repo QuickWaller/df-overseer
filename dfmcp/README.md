@@ -1,20 +1,22 @@
 # `dfmcp/`
 
-The permission seam, plus (as of `dfhack_client.py`) the RPC client that
-actually talks to DFHack. Still not the MCP server itself and not a
-transport: no MCP SDK import anywhere in this package, no HTTP, no session
-handling. That is the one remaining missing half, blocked on an open
-question (`research/2026-09-12-mcp-server-stack.md`), per
-`docs/AGENT-ARCHITECTURE.md` §13 item 5 ("the MCP server itself does not
-exist... the seam needs per-role scoping designed in from the start").
+The permission seam, the RPC client that talks to DFHack, and (as of
+`server.py`) the MCP server that ties both to an actual transport. This is
+the whole of `docs/AGENT-ARCHITECTURE.md` §13 item 5's "one remaining
+missing half" -- **built, per `handoffs/2026-09-12-mcp-transport.md`, but
+not deployed anywhere: nothing in this package has met a real DFHack or a
+real MCP client outside this repo's own test suite.** See `server.py`'s own
+section below for exactly what that leaves unproven.
 
-Four of the five modules answer exactly one question, mechanically and at
+Five of the six modules answer exactly one question, mechanically and at
 load time: **given a role and a tool id, is the call allowed, and why or why
-not.** The fifth, `dfhack_client.py`, answers a different one: **given an
+not.** The sixth, `dfhack_client.py`, answers a different one: **given an
 allowed call, how do you actually run it and get its output back**, without
-`dfhack-run` or any subprocess in between.
+`dfhack-run` or any subprocess in between. `server.py` is the seventh: it
+answers neither question itself, it just wires the six that do to an actual
+network endpoint.
 
-## The five modules
+## The six modules, plus the transport
 
 | Module | Job |
 |---|---|
@@ -23,6 +25,7 @@ allowed call, how do you actually run it and get its output back**, without
 | `tools.py` | Turns a registry + roster + role into actual MCP tool definitions (`name`/`description`/`inputSchema`), and turns a validated call's arguments back into the exact DFHack argv. Transport-independent: no MCP SDK import, no notion of HTTP. |
 | `auth.py` | Maps a bearer token to a role, from a gitignored `.env`-shaped file. The credential half of the trust boundary in `docs/AGENT-ARCHITECTURE.md` §13: role identity must be a credential, not a claim. |
 | `dfhack_client.py` | A persistent-connection client for DFHack's RPC socket: hand-rolled handshake/framing/protobuf-subset codec, a `DFHackConnection`, and a `DFHackConnectionPool` for batching a cycle's reads into one suspend window. The only module in this package that opens a socket. |
+| `server.py` | The MCP transport itself: the low-level `Server`, the streamable-HTTP ASGI app, and the `TokenVerifier` that resolves a bearer token to a role at the SDK's own auth seam. The only module that imports the MCP SDK. |
 
 `registry.py`, `roles.py`, `tools.py` and `auth.py` are pure functions of
 files already in this repo (YAML, or a gitignored `.env`) and open no
@@ -31,6 +34,10 @@ fully unit-testable with no VM. `dfhack_client.py` breaks that pattern on
 purpose (something has to eventually open the socket), and stays
 unit-testable a different way: every test in `dfmcp/tests/test_dfhack_client.py`
 runs against a fake server written for that file, not a live DFHack.
+`server.py` composes the other five and stays testable the same way one
+level up: `dfmcp/tests/test_server.py` drives the real ASGI app the module
+builds, over an in-process transport, against the same fake DFHack --
+never a real socket, never VM 103.
 
 ## The canonical id scheme
 
@@ -409,12 +416,131 @@ DFHack-side suspend window in practice, as opposed to the fake server's
 `asyncio.Barrier`-based proof that the client-side requests are at least
 genuinely concurrent on the wire.
 
+## What `server.py` exposes
+
+`build_mcp_server(registry, roster, pool) -> Server` -- the low-level MCP
+`Server`, wired with `on_list_tools`/`on_call_tool` callbacks that read the
+caller's role off the SDK's own per-request auth context
+(`mcp.server.auth.middleware.auth_context.get_access_token()`), never from
+anything the caller asserts about itself. `tools/list` calls
+`dfmcp.tools.tool_definitions(registry, roster, role)` for that role
+specifically -- never a static list filtered after the fact. `tools/call`
+runs, in order: a name-to-id lookup, `Roster.check(role, tool_id)`,
+`dfmcp.tools.argv_for_call`, `pool.run_command`, then `json.loads` on
+whatever DFHack printed. Every one of those four steps can fail on its own
+terms (unknown name, denied, bad arguments, DFHack itself failing, or
+DFHack printing something that isn't JSON), and every one of those failures
+becomes the identical wire shape: `types.CallToolResult(isError=True,
+content=[TextContent(text=reason)])`, never a raised protocol-level error
+-- see the module's own docstring ("Denials") for why, and
+`research/2026-09-12-mcp-server-stack.md` §5 for the citation.
+
+`build_asgi_app(server, tokens, bind_host) -> Starlette` -- the streamable
+HTTP ASGI app, with a `RoleTokenVerifier` (this module's `TokenVerifier`
+implementation, resolving a bearer token through `dfmcp.auth.resolve`)
+wired in via `auth=AuthSettings(...)` and `token_verifier=` together.
+**Both are required together, not `token_verifier` alone** -- see the
+"Findings to record" note in this stream's report, and the module's own
+docstring, for the mechanical reason: `Server.streamable_http_app()` only
+adds the `BearerAuthBackend`/`AuthContextMiddleware` pair when `auth:` is
+also truthy, so `token_verifier=` alone silently produces a server that
+401s every single request, with the auth code apparently configured. This
+is a corrected reading of `research/2026-09-12-mcp-server-stack.md` §2's
+own proposed workaround (skip `AuthSettings` and hand-assemble the
+middleware around the whole app), which this stream found would have
+introduced a worse, second bug: doing that naively breaks the ASGI
+`lifespan` protocol, since a hand-rolled wrap-the-whole-app version of
+`RequireAuthMiddleware` does not special-case `scope["type"] == "lifespan"`
+the way Starlette's own `AuthenticationMiddleware` does. The actual fix
+needs nothing hand-rolled: `AuthSettings` has a second required field
+(`resource_server_url`, not named by that research pass) alongside
+`issuer_url`, and passing two placeholder, never-dereferenced URLs for both
+gets the SDK's own (correct) composition for free.
+
+`load_config`/`config_from_env` -- bind host (**required, no default that
+could be `0.0.0.0` or accidentally public**), bind port, DFHack host/port,
+and pool size, from `MCP_SERVER_*` environment variables (`.env`-shaped,
+merged under real process env vars) or a plain dict (for tests).
+`ServerConfig.__post_init__` refuses an empty `bind_host` and refuses the
+literal string `"0.0.0.0"` -- both hard errors, matching every other
+module in this package's "strict validation, hard error, never a silent
+fallback" style.
+
+`main()` -- not run by anything in this repo or on any VM. Builds the
+config/registry/roster/tokens/pool, then serves the ASGI app under
+`uvicorn.Server` directly (no separate ASGI-server dependency: `uvicorn` is
+already a direct dependency of `mcp` itself, confirmed in
+`research/2026-09-12-mcp-server-stack.md` §7). The exact `python -m
+dfmcp.server` invocation this would run under, and the systemd unit it
+would run as (`infra/dfmcp-server.service.example`, explicitly marked
+undeployed), are both written but never executed by this stream -- see the
+stream's report for the precise commands.
+
+### What this stream verified, and how
+
+Everything below ran against `FakeDFHackServer`
+(`dfmcp/tests/test_dfhack_client.py`) and httpx2's `ASGITransport` --
+in-process, no socket, no uvicorn, no VM. `dfmcp/tests/test_server.py`
+drives the real ASGI app with the actual MCP Python SDK client
+(`mcp.client.streamable_http` + `mcp.client.session.ClientSession`), not
+hand-decoded raw HTTP, so a wire-shape bug on the server side would show up
+as a real client-side failure:
+
+- **An advisor's `tools/list` contains no mutating tool** (checked against
+  every mutating id in the real registry, not just spot-checked).
+- **An advisor calling a write tool is refused, with the exact reason
+  string from `agents/architect/tools.yaml`'s deny entry intact**, and the
+  call never reaches the fake DFHack at all (`received_requests == []`) --
+  the one test the handoff called load-bearing, since the design treats
+  client-side scoping as a thin second layer precisely because this holds.
+- **An unknown token, an empty bearer value, and no `Authorization` header
+  at all all produce the identical 401 response body** -- nothing
+  distinguishes which was wrong, and none of the three ever reaches a
+  handler as an anonymous caller.
+- **A permitted call's argv reaches the fake DFHack exactly** (asserted
+  against `_encode_run_command_request`'s own encoding of the expected
+  script/verb/args, not just "some request arrived"), **and the JSON it
+  printed comes back as `structuredContent`, parsed.**
+- The sole writer succeeding at the same tool the advisor was refused
+  (proving the refusal above is role-scoping, not a bug that denies
+  everyone), an unknown tool name, a missing required argument, a DFHack
+  `RPC_REPLY_FAIL`, and non-JSON DFHack output all produce a tool error
+  (`isError=True`) rather than an unhandled exception reaching the
+  transport.
+
+### What remains unproven, stated plainly
+
+- **Nothing here has met a real DFHack.** `FakeDFHackServer` speaks the
+  handshake and framing bytes independently of `dfhack_client.py`'s own
+  codec, but it is still a hand-written stand-in, not DFHack 53.16-r1.1
+  itself. `dfhack_client.py`'s own README section above already names this
+  gap for the RPC layer; `server.py` inherits it unchanged.
+- **Nothing here has run under `uvicorn`, or bound a real socket, or been
+  reached by a real HTTP client on another host.** ASGITransport calls the
+  ASGI app directly in the same process; it proves the app's own logic and
+  wire-shape handling, not that `uvicorn.Server(...)` serves it identically,
+  or that a real TCP round trip (TLS-less, tailnet-internal) behaves the
+  same as an in-memory function call.
+- **Nothing here has been reached by openclaw, or any MCP client other than
+  the reference Python SDK's own `ClientSession`.**
+  `research/2026-09-12-openclaw-mcp-auth.md`'s own "not verified" list
+  names the concrete follow-up (point a throwaway openclaw agent's
+  `mcp.servers.<name>` entry at a real running instance of this server) --
+  still not done, and out of scope for an in-process test by construction.
+- **The DNS-rebinding-protection auto-configuration path
+  (`Server.streamable_http_app`'s loopback-only branch) is deliberately
+  never exercised by this test suite** -- see `dfmcp/tests/test_server.py`'s
+  own module docstring for why (an in-process ASGI transport's arbitrary
+  Host header would just fail that check for reasons unrelated to the
+  behaviour under test). Binding a real loopback address in a real process
+  and confirming the Host-header check actually rejects a spoofed one is a
+  live-server test this stream did not run.
+- **The systemd unit (`infra/dfmcp-server.service.example`) has never been
+  installed or started.** Its `User=`/`Group=`/path placeholders are
+  unverified against VM 103's actual layout.
+
 ## What this package deliberately does not do
 
-- **No MCP server, no transport.** No MCP SDK import, no HTTP, no session
-  handling. That is explicitly out of scope per the task brief and belongs
-  to whatever builds the actual MCP seam on top of this -- and is blocked
-  on an open question (`research/2026-09-12-mcp-server-stack.md`).
 - **No mutation of `TOOLS.yaml`, `ROSTER.yaml`, any `role.md`, or any doc.**
   Read-only with respect to everything outside `dfmcp/` and the three
   `tools.yaml` files this task named for rewriting.
@@ -439,6 +565,15 @@ genuinely concurrent on the wire.
   exists on the wire -- research doc §7 -- so this module does not
   pretend to poll for one), no live verification against VM 103 or any
   real DFHack process.
+- **`server.py` adds no scope beyond what its own section above states.**
+  No token issuance, no OAuth authorization server (the two placeholder
+  URLs in `AuthSettings` are never dereferenced by anything this design
+  configures), no TLS termination (the tailnet's job, not this server's),
+  no caching or hot-reload of the registry/roster (both loaded once at
+  startup), no retry/backoff around DFHack calls beyond what
+  `DFHackConnectionPool` already does on its own, and -- per this stream's
+  explicit instruction -- no deployment: it was never run against VM 103
+  or VM 106, and nothing it produces was installed or started anywhere.
 
 ## Things found while doing this that are worth flagging back
 
