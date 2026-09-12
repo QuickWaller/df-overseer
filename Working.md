@@ -119,9 +119,25 @@ The design is no longer the blocker: the tool surface is.** Three things gate
 any build, in this order.
 
 1. **The MCP server still does not exist**, and it needs per-role identity and
-   scoping designed in from the start. openclaw can scope tools per agent, so
-   the seam's job is to present role-scoped tool sets rather than one flat
-   surface.
+   scoping designed in from the start. **Topology decided 2026-09-12 (user
+   confirmed both halves): openclaw gets its own new VM on SRV-01; the MCP
+   server and the Sentry stay on VM 103 with DF**, because DFHack's RPC socket
+   is unauthenticated and must not cross the network. MCP over HTTP on the
+   tailnet, never public. **Two requirements recorded before the server exists,
+   deliberately**: the allowlist is enforced **server-side** (openclaw's own
+   per-agent scoping is defence in depth, not the boundary, since client-side
+   enforcement is not enforcement), and **role identity is a credential, one
+   token per role**, never a self-declared header, or the Architect could
+   assert it is the Overseer and obtain write tools. → `docs/AGENT-ARCHITECTURE.md`
+   §13.
+
+   **IN PROGRESS:** the transport-independent half is being built now in an
+   isolated worktree: `mcp/registry.py` (loads `TOOLS.yaml`, canonical tool ids,
+   preserves each tool's own verified/unverified status) and `mcp/roles.py`
+   (resolves `ROSTER.yaml` plus per-role allowlists, with **hard load-time
+   errors**, notably that any role other than `sole_writer` holding a mutating
+   tool fails to load). Includes rewriting the three `tools.yaml` files from raw
+   signature strings to canonical ids.
 2. **DECIDED: v1 enables three roles, Overseer plus Architect plus Consultant**
    (user's call 2026-09-12, over this session's narrower recommendation of
    Overseer alone). These are the three whose tools exist. Quartermaster,
@@ -170,12 +186,41 @@ pipeline (only matters if the status banner goes inside the game rather than
 beside the stream, and the outside-the-game route is recommended precisely
 because it cannot perturb the fort).
 
-**Peer coordination note:** at the time of the live check there was **no other
-Claude session running on this machine** (the `home-lab` session present at this
-session's start had ended), so the pre-VM-work heads-up this repo's rules call
-for had no recipient. Recorded rather than skipped silently. No home-lab
-inventory obligation arises from this work: nothing was created, deleted,
-resized or re-addressed.
+### OPEN home-lab obligation: openclaw's VM needs an IP allocated first
+
+**Not yet triggered, deliberately raised early.** The decided topology needs
+**one new VM on SRV-01** for `openclaw`. Nothing is created yet, so nothing in
+`home-lab/inventory/` is currently wrong, but per this repo's upstream
+obligation the IP must be allocated through `home-lab/inventory/ips.yaml`
+**before** it is assigned, and skipping that is exactly how `192.168.2.201` came
+to be in use for a week unregistered.
+
+**Routed 2026-09-12 to the live `home-lab-03` session** (this repo is not
+authorised to edit home-lab), asking for an IP allocation plus a view on whether
+SRV-01 has headroom for another small guest beside VM 103. **Still owed when the
+VM actually exists:** the `guests:` entry in `inventory/hosts/SRV-01.yaml` with
+the real VMID and address, and `inventory/services.yaml` if a service moves.
+**Recorded here as open so it survives this session ending.**
+
+Target host is SRV-01 deliberately: SRV-02 was crashing roughly every 2.5 hours
+as of 2026-09-12, root cause open, and a power-brick swap was confirmed not to
+be the fix.
+
+### Peer coordination notes
+
+- At the time of the live pause check there was **no peer session** (the
+  `home-lab` session present at this session's start had ended), so the
+  pre-VM-work heads-up this repo's rules call for had no recipient. Recorded
+  rather than skipped silently.
+- A new peer, `home-lab-03`, appeared shortly after and **was** given the
+  heads-up. It confirmed VM 103 quiet and quorum healthy, and it **deferred an
+  outlet-swap test that would have power-cycled SRV-01** (and therefore VM 103
+  and the live fort) specifically to avoid disrupting this work. It will give
+  lead time before any future attempt, which this session asked for so the fort
+  can be quicksaved first. DF ignores SIGTERM, so an abrupt host power loss
+  means no save.
+- No home-lab inventory obligation arises from any work actually done today:
+  nothing was created, deleted, resized or re-addressed.
 
 **Ruled out already, so nobody re-derives it:** one agent per squad (DF combat
 resolves faster than an agent round trip, and the threat sensor is verified
