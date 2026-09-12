@@ -36,10 +36,25 @@ Everything below this block is detail and reasoning. This is the brief.
 the ratio is already uncomfortable: a 14-section architecture over a tool surface
 that is 18-of-25 read-only. The architecture doc is a target, not a plan.
 
-**Two things needing the user, not a session:** the address-leak cleanup and the
-`CLAUDE.md` edits it implies (that file states the rule it breaks, and its `docs/`
-list omits `TRAPS.md` and `DF-UI-AUTOMATION.md`); and telling the `home-lab`
-session directly when openclaw's VM should actually be provisioned.
+**CORRECTED 2026-09-12, user caught this:** an earlier version of this brief
+said openclaw's VM needed the `home-lab` session before it could be provisioned.
+**Wrong. Provisioning is entirely this repo's own.** `scripts/provision_vm.py
+clone` exists, the pool-scoped token holds `VM.Clone`, and `.env` carries
+`PVE_NODE`, `PVE_POOL`, `DF_TEMPLATE_VMID` and `DF_VMID`. That is the whole point
+of the sandbox pool. Two separate things had been conflated:
+- **Provisioning: ours, and unblocked right now.** The IP allocation that *was* a
+  genuine prerequisite is already done and written on home-lab's side.
+- **Recording it: theirs, and only AFTER the fact.** What is owed is the
+  `guests:` entry in `inventory/hosts/SRV-01.yaml` with the real VMID, plus
+  `inventory/services.yaml` if a service moves. A post-hoc record, not a gate.
+
+There is a real argument for provisioning while a `home-lab` session is awake, so
+the inventory obligation is discharged immediately rather than being carried by a
+handover.
+
+**One thing still needing the user rather than a session:** nothing. The
+address-leak cleanup and its `CLAUDE.md` edits were authorised 2026-09-12 and
+delegated.
 
 ### Done this session
 
