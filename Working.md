@@ -38,12 +38,26 @@ Everything below this block is detail and reasoning. This is the brief.
 
    **Split on where the unknowns are**, which is the only reason three things
    can run at once:
-   - **Research, DFHack RPC wire protocol** → `research/2026-09-12-dfhack-rpc-client.md`.
-     Settles handshake, framing, whether a `protobuf` dependency is needed or
-     the two messages can be hand-rolled, whether an existing Python client
-     works at 53.16-r1.1, whether one connection can carry concurrent requests
-     (which decides whether the §6 one-suspend-window batching is reachable at
-     all), and whether the RPC path delivers clean JSON or colour escapes.
+   - **Research, DFHack RPC wire protocol: BACK, and it corrected the design
+     doc** → `research/2026-09-12-dfhack-rpc-client.md`. Build against it
+     rather than re-deriving. Four things settled. **(1) A connection carries
+     one request at a time**, so the server needs a small **pool** of
+     persistent connections; `docs/AGENT-ARCHITECTURE.md` §14 item 5 said "one
+     persistent connection" and is now corrected in place, along with §6.
+     Persistence was always the latency win and survives; only the count was
+     wrong. **(2) Hand-roll the wire protocol**, no `protobuf` dependency: the
+     messages are flat, `BindMethod` is not even needed since `RunCommand` is a
+     hardcoded id, and the one existing Python client is unmaintained,
+     unlicensed and mis-frames replies over 16MiB. **(3) JSON comes back
+     clean**, one fragment per `print`, colour in a separate field, so no
+     sanitising and `docs/TRAPS.md`'s escape-sequence trap turns out to be
+     about `dfhack-run`'s own rendering rather than the wire. **(4) The socket
+     is unauthenticated and loopback by default**, confirming §13's premise.
+     **Verified here, not taken on the agent's word**: the design-forking claim
+     (1), plus the handshake, header layout and method ids, were re-checked
+     against the *installed* build's own protocol docs at
+     `hack/docs/docs/dev/Remote.txt`, whose "Conversation flow" section shows
+     the same strictly sequential request/text/result cycle.
    - **Research, MCP server stack** → `research/2026-09-12-mcp-server-stack.md`.
      **The crux is whether `tools/list` can return a different set per caller
      identity**, since three roles with genuinely different allowlists must
