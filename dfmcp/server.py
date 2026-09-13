@@ -355,11 +355,32 @@ def build_mcp_server(registry: Registry, roster: Roster, pool: DFHackConnectionP
         stripped = raw.strip()
         if stripped:
             try:
-                structured = json.loads(stripped)
+                parsed = json.loads(stripped)
             except json.JSONDecodeError:
                 return _tool_result_error(
                     f"{tool_id} printed output that is not valid JSON: {raw!r}"
                 )
+            # Bug found on VM 103's first live smoke test, 2026-09-14: most
+            # real read tools print a bare JSON array (confirmed live via
+            # `df-overseer-landmarks.lua list`; see dfmcp/README.md's "Call
+            # results" section for the full list), not an object. Passing
+            # a list straight through as structuredContent worked in this
+            # module's own tests, whose fake payloads all happened to be
+            # objects, but fails against a real client: mcp_types'
+            # CallToolResult.structured_content is `dict[str, Any] | None`
+            # through protocol 2025-11-25 (only 2026-07-28 allows any JSON
+            # value), so the SDK's runner rejects a bare list at
+            # serialization with a protocol-level MCPError, not a tool
+            # error -- exactly what this design exists to avoid. Rule,
+            # applied regardless of negotiated protocol version so every
+            # client sees the same shape: a parsed dict passes through
+            # unchanged; anything else (list, number, string, bool, null)
+            # is wrapped as {"result": <value>}. The text content block
+            # always keeps the raw JSON exactly as printed, either way.
+            if isinstance(parsed, dict):
+                structured = parsed
+            else:
+                structured = {"result": parsed}
 
         return types.CallToolResult(
             content=[types.TextContent(type="text", text=text)],
