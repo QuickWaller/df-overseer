@@ -91,6 +91,11 @@ PACKAGES = [
     # nothing needs the agent to exist before this install runs, and the
     # package can simply travel with the rest of the guest install.
     "qemu-guest-agent",
+    # Needed by the dfmcp MCP server, which runs from a Python venv on the
+    # guest. Ubuntu 24.04 cloud images ship python3 without ensurepip, so
+    # "python3 -m venv" fails until this package is installed. Found missing
+    # on VM 103 2026-09-14, the first time the MCP smoke test made a venv.
+    "python3.12-venv",
 ]
 
 # Xvfb display and geometry. 1280x800 for the framebuffer, 1280x720 for the
