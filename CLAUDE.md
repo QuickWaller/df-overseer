@@ -82,7 +82,7 @@ learning architecture.
 > SDK over a bound socket, opaque 401, per-role listing, the advisor refusal,
 > the pool against real DFHack), but every read tool that prints a JSON array
 > broke the result shape, which the fake server's object-shaped payload had
-> hidden. Fix in progress on `fix/dfmcp-array-results`; details in
+> hidden. Fixed and merged (`f37502c`); a live re-run of that check is owed. Details in
 > `handoffs/2026-09-14-mcp-live-smoke-test.md`. openclaw has still not called
 > it. The paragraph below is the 2026-09-12 state, kept for its traps.
 > **Read this next line before trusting any of it: nothing in
