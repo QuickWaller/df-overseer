@@ -32,3 +32,9 @@
 # either way; only test_server.py itself needs this installed to run
 # rather than skip.
 mcp==2.2.0
+
+# registry.py and roles.py both import yaml to load TOOLS.yaml/ROSTER.yaml/
+# tools.yaml, but nothing pulled it in here until VM 103's first live smoke
+# test found a clean venv could not even import dfmcp.server (2026-09-14).
+# Pinned to the version that installed and ran live on VM 103.
+pyyaml==6.0.3

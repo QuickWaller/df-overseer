@@ -435,6 +435,39 @@ content=[TextContent(text=reason)])`, never a raised protocol-level error
 -- see the module's own docstring ("Denials") for why, and
 `research/2026-09-12-mcp-server-stack.md` §5 for the citation.
 
+### Call results: what `structuredContent` actually carries
+
+**Bug found on VM 103's first live smoke test, 2026-09-14, fixed the same
+day.** Most real read tools print a bare JSON *array*, confirmed live via
+`df-overseer-landmarks.lua list`: of the current manifest,
+`landmarks.list`, `openarea.find`, `diggable.find`, `chokepoints.find`,
+`stuckjobs.find`, and `threat.scan` all print `results`/`candidates`/a
+similar Lua sequence table straight through `json.encode`, with no wrapping
+object. Everything else in the manifest prints an object.
+
+Passing a parsed array straight through as `structuredContent` (what this
+module did before the fix) works fine in-process against this package's own
+tests, because every fake DFHack payload in `dfmcp/tests/test_server.py`
+happened to be an object -- and fails against a real client: the MCP
+Python SDK's `mcp_types.CallToolResult.structured_content` is typed
+`dict[str, Any] | None` for every protocol version through 2025-11-25 (only
+2026-07-28 widens it to any JSON value), so `mcp/server/runner.py`'s own
+`_serialize` step rejects a bare list at serialization with
+`MCPError(-32603, "Handler returned an invalid result")` -- a
+protocol-level error, not a tool error, which is exactly what this
+package's "every failure is `isError=True`, never a raised protocol error"
+design (above) exists to avoid.
+
+**The rule, applied the same way regardless of the negotiated protocol
+version, so every client sees the same shape:** after `json.loads` on
+whatever DFHack printed, if the parsed value is a `dict`, it becomes
+`structuredContent` unchanged; for any other JSON value (a list, a number,
+a string, a bool, or `null`), `structuredContent` is `{"result": <value>}`
+instead. The `TextContent` block always keeps the raw JSON exactly as
+DFHack printed it, either way -- only `structuredContent`'s shape changes.
+Non-JSON output is unaffected by this change: it was, and remains, a tool
+error naming the raw text (see the four-step list above).
+
 `build_asgi_app(server, tokens, bind_host) -> Starlette` -- the streamable
 HTTP ASGI app, with a `RoleTokenVerifier` (this module's `TokenVerifier`
 implementation, resolving a bearer token through `dfmcp.auth.resolve`)
@@ -500,7 +533,10 @@ as a real client-side failure:
 - **A permitted call's argv reaches the fake DFHack exactly** (asserted
   against `_encode_run_command_request`'s own encoding of the expected
   script/verb/args, not just "some request arrived"), **and the JSON it
-  printed comes back as `structuredContent`, parsed.**
+  printed comes back as `structuredContent`, parsed** -- a dict unchanged,
+  and (added 2026-09-14, after VM 103's first live smoke test found this
+  case broken -- see "Call results" above) a bare array or scalar wrapped
+  as `{"result": <value>}`.
 - The sole writer succeeding at the same tool the advisor was refused
   (proving the refusal above is role-scoping, not a bug that denies
   everyone), an unknown tool name, a missing required argument, a DFHack
