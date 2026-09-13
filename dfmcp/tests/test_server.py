@@ -307,7 +307,17 @@ class TestServerScoping:
 
     async def test_permitted_call_round_trips_through_the_pool(self, registry, roster, pool, fake_dfhack):
         """Test 4: a permitted call's argv reaches the fake DFHack exactly,
-        and the JSON it prints comes back parsed."""
+        and the JSON it prints comes back parsed.
+
+        NOTE on this fixture's shape: `{"candidates": [...]}` is a dict, and
+        this test exists to prove the plain dict-passthrough path. It is
+        NOT what the real `df-overseer-openarea.lua find` command prints
+        (that script prints a bare `[...]` array -- see
+        `test_bare_json_array_output_is_wrapped_as_result` below). Every
+        fake payload in this file must match what its real script actually
+        prints, on pain of exactly the bug that hid behind this one: see
+        `dfmcp/README.md`'s "Call results" section.
+        """
         fake_dfhack.queue_actions(make_ok_action('{"candidates": [{"score": 7, "x": 10, "y": 20, "z": 1}]}'))
 
         app = _app(registry, roster, pool)
@@ -380,6 +390,64 @@ class TestServerCallEdgeCases:
         async with mcp_session(app, ARCHITECT_TOKEN) as session:
             result = await session.call_tool("openarea__find", {"w": 3, "h": 3, "near_landmark": "MainHall"})
         assert result.is_error is True
+
+    async def test_bare_json_array_output_is_wrapped_as_result(self, registry, roster, pool, fake_dfhack):
+        """Bug found on VM 103's first live smoke test, 2026-09-14: most
+        real read tools print a bare JSON array, not an object. This
+        payload is shaped like the real `df-overseer-landmarks.lua list`
+        output (confirmed live), which is the exact command the smoke test
+        used when it hit this. Before the fix, `_on_call_tool` passed the
+        parsed list straight through as `structuredContent`, which the
+        negotiated protocol version's `CallToolResult.structured_content`
+        (`dict[str, Any] | None` through 2025-11-25, per
+        `mcp_types._v2025_11_25`) rejects at serialization -- the SDK's own
+        `runner.py` catches that `ValidationError` and raises
+        `MCPError(-32603, "Handler returned an invalid result")`, a
+        protocol-level error this design exists to avoid. This test drives
+        the real SDK client/session, so that failure surfaces exactly the
+        way it did against the live client, not as a hand-checked value.
+        """
+        fake_dfhack.queue_actions(
+            make_ok_action(
+                '[{"name": "Wagon", "exits": [{"direction": "E", "distance_tiles": 1, '
+                '"to": "Embark Site", "walkable": true}]}]'
+            )
+        )
+        app = _app(registry, roster, pool)
+        async with mcp_session(app, ARCHITECT_TOKEN) as session:
+            result = await session.call_tool("landmarks__list", {})
+
+        assert result.is_error is False
+        assert result.structured_content == {
+            "result": [
+                {
+                    "name": "Wagon",
+                    "exits": [
+                        {"direction": "E", "distance_tiles": 1, "to": "Embark Site", "walkable": True}
+                    ],
+                }
+            ]
+        }
+        text = "".join(block.text for block in result.content if block.type == "text")
+        assert json.loads(text) == [
+            {
+                "name": "Wagon",
+                "exits": [{"direction": "E", "distance_tiles": 1, "to": "Embark Site", "walkable": True}],
+            }
+        ]
+
+    async def test_bare_json_scalar_output_is_wrapped_as_result(self, registry, roster, pool, fake_dfhack):
+        """Same rule, a scalar rather than a list: any parsed JSON value
+        that is not a dict gets the same {"result": ...} wrapping."""
+        fake_dfhack.queue_actions(make_ok_action("3"))
+        app = _app(registry, roster, pool)
+        async with mcp_session(app, ARCHITECT_TOKEN) as session:
+            result = await session.call_tool("landmarks__list", {})
+
+        assert result.is_error is False
+        assert result.structured_content == {"result": 3}
+        text = "".join(block.text for block in result.content if block.type == "text")
+        assert text == "3"
 
 
 # ==========================================================================
