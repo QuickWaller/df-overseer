@@ -205,3 +205,14 @@ findings without another doc home yet.
   local test run.** `pyyaml` was imported by `dfmcp` and missing from its
   requirements file for the whole build. A clean venv on a fresh host is the
   first place that shows up.
+- **This workstation's `ssh.exe` hangs when a remote command backgrounds a
+  long-running process**, even with `ssh -n` and
+  `setsid nohup ... > log 2>&1 < /dev/null &`. Seen twice on VM 103 while
+  starting the MCP server. The remote side was healthy both times, correctly
+  detached, serving requests; only the local `ssh` invocation refused to
+  return for 120s or more. Do not diagnose it as a server-side failure. Check
+  the remote state from a second connection instead.
+- **`pgrep -f <pattern>` run over SSH matches the wrapper shell running the
+  check itself**, so "is it still running?" answers 2 when the answer is
+  really 0. Use `ps -eo pid,etimes,cmd | grep "[p]attern"` and look at the
+  elapsed time, or check the listening port, which cannot match itself.
