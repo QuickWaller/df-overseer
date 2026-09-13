@@ -68,10 +68,27 @@ Everything below this block is detail and reasoning. This is the brief.
    on VM 103 the same day: all six checks plus an empty-array case passed**,
    so the fix is live-verified, not merely merged. `landmarks__list` returns
    `{"result": [...]}` with the real fort's landmarks and the text block still
-   byte-identical raw JSON; 4 concurrent reads all clean. **Next concrete
-   step: openclaw actually calling this server**, the last untested seam. A
-   VM-touching stream needs auto mode off: its classifier blocks remote
-   writes.
+   byte-identical raw JSON; 4 concurrent reads all clean.
+
+   **The last seam, openclaw calling it, split in two on 2026-09-14 after
+   recon found openclaw is not installed anywhere.** VM 106 is a bare Ubuntu
+   clone: no docker, no node, no openclaw, empty `/opt` (verified read-only
+   twice, once by the orchestrator). The workstation scaffold at
+   `../openclaw` is config-only, pulls `ghcr.io/openclaw/openclaw:latest`,
+   and its `agent.yaml` schema has **no `mcp` key at all**, so the
+   `mcp.servers`/`agents.entries` shape in
+   `research/2026-09-12-openclaw-mcp-auth.md` is unconfirmed against anything
+   that runs. Full recon: `research/2026-09-14-openclaw-mcp-wiring.md`.
+   - **IN FLIGHT: the server half.** `handoffs/2026-09-14-dfmcp-deploy.md`:
+     durable deploy under `/opt/df/` as `df`, systemd unit, **bound to VM
+     103's LAN address** (user's call: simple now, Tailscale another day, so
+     bearer tokens are the only guard), then proved from VM 106 with curl.
+   - **NOT STARTED: the client half.** Installing openclaw on VM 106 and
+     learning its real config schema from the running image. Its own project.
+   - **OWED once the unit is enabled**: a `home-lab` `inventory/services.yaml`
+     entry for the new service on VM 103. No live `home-lab` session existed
+     when this was dispatched, so it is recorded here as open, per
+     `CLAUDE.md`'s upstream-obligations rule.
    VM 103 got `python3.12-venv` (user go-ahead); `install_df.py` now installs
    it. Full table: `handoffs/2026-09-14-mcp-live-smoke-test.md`.
    **openclaw has still not called it**: that is the next reality gap.
