@@ -63,8 +63,11 @@ Everything below this block is detail and reasoning. This is the brief.
    `server.py` put them into `structuredContent`, which the SDK rejects as a
    protocol error. The fake DFHack's payload was an object, a shape no real
    script prints, which is how 136 tests missed it. Also `requirements.txt`
-   lacked `pyyaml`. **Fix in progress on branch `fix/dfmcp-array-results`**
-   (worktree `../df-automation-fix`), then re-run checks 4 and 6 on VM 103.
+   lacked `pyyaml`. **Both fixed and merged (`f37502c`, 138 tests in the
+   venv)**: non-object JSON is now wrapped as `{"result": ...}`. **Next
+   concrete step: re-run checks 4 and 6 on VM 103** (copy the new `dfmcp/`
+   into `/opt/df/dfmcp-smoke/`, fresh throwaway tokens, loopback, teardown).
+   Needs auto mode off: its classifier blocks remote writes.
    VM 103 got `python3.12-venv` (user go-ahead); `install_df.py` now installs
    it. Full table: `handoffs/2026-09-14-mcp-live-smoke-test.md`.
    **openclaw has still not called it**: that is the next reality gap.
