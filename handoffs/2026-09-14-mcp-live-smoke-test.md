@@ -1,9 +1,25 @@
 # Stream: MCP server live smoke test on VM 103
 
-**Written** 2026-09-14. **Status:** not yet dispatched; the first spawn was
-refused by the harness's permission layer (remote shell writes), pending the
-user's call. **User go-ahead:** given 2026-09-14 for this test. No other Claude session was running (ListAgents
+**Written** 2026-09-14. **Status:** dispatched 2026-09-14, after a first spawn
+was refused by auto mode's classifier (remote shell writes) and the user left
+auto mode to approve it. **User go-ahead:** given 2026-09-14 for this test. No other Claude session was running (ListAgents
 checked), so no peer heads-up was owed.
+
+## Run 1 result (2026-09-14): BLOCKED at step 2, before any dfmcp code ran
+
+- **Preflight passed:** DF running under `df-fortress`/`df-xvfb`, DFHack RPC
+  on `127.0.0.1:5000` only (owned by `dwarfort`), Python 3.12.3, 8443 free.
+- **Staged:** `dfmcp/`, `agents/`, `scripts/dfhack/TOOLS.yaml` are in
+  `/opt/df/dfmcp-smoke/` on VM 103 and left in place. No re-stage needed.
+- **Blocker:** `python3 -m venv` fails: `No module named ensurepip`.
+  `python3.12-venv` and `python3-pip` are not installed. The orchestrator
+  re-checked this directly over SSH, not just from the report.
+- **Preflight wording bug in this brief:** `python3 -m venv --help` exits 0
+  with no ensurepip. It does not prove venv works; only creating one does.
+- No server started, no tokens made, nothing DFHack-side touched. The failed
+  empty `.venv` was removed.
+- **Resume from step 2** once venv support exists (a package install on VM 103,
+  a separate gate from this test's go-ahead).
 
 ## Why
 
