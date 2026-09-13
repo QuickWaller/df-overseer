@@ -54,7 +54,23 @@ Everything below this block is detail and reasoning. This is the brief.
    collection error would take the other 121 from passing to not running at
    all.
 
-   **NOTHING HAS MET REALITY.** No live DFHack, no bound socket, no openclaw
+   **UPDATED 2026-09-14: the server HAS now met reality, and reality found a
+   real bug.** Live smoke test on VM 103 (loopback bind, throwaway tokens,
+   torn down after, fort untouched): the real SDK over a bound socket, 401
+   opacity, per-role `tools/list`, the advisor refusal before DFHack, and the
+   RPC client plus pool against real DFHack all held. **But calling
+   `landmarks__list` failed**: real scripts print bare JSON arrays, and
+   `server.py` put them into `structuredContent`, which the SDK rejects as a
+   protocol error. The fake DFHack's payload was an object, a shape no real
+   script prints, which is how 136 tests missed it. Also `requirements.txt`
+   lacked `pyyaml`. **Fix in progress on branch `fix/dfmcp-array-results`**
+   (worktree `../df-automation-fix`), then re-run checks 4 and 6 on VM 103.
+   VM 103 got `python3.12-venv` (user go-ahead); `install_df.py` now installs
+   it. Full table: `handoffs/2026-09-14-mcp-live-smoke-test.md`.
+   **openclaw has still not called it**: that is the next reality gap.
+
+   Superseded 2026-09-14, kept for the reasoning: **NOTHING HAS MET REALITY.**
+   No live DFHack, no bound socket, no openclaw
    client. Every test runs against a fake DFHack server written from the same
    wire spec, which means a place where the VM's actual binary diverges from
    the source the research read would pass every test here. **The single
