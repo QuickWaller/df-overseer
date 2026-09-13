@@ -21,6 +21,44 @@ checked), so no peer heads-up was owed.
 - **Resume from step 2** once venv support exists (a package install on VM 103,
   a separate gate from this test's go-ahead).
 
+## Run 2 result (2026-09-14): DONE, one real bug found
+
+After `python3.12-venv` was installed (user go-ahead, run by the orchestrator,
+venv creation then proven by actually making one). Server ran on
+`127.0.0.1:8443` only, throwaway tokens, torn down after. The orchestrator
+re-checked teardown over SSH: nothing on 8443, no token file, no token-length
+strings in `server.log`, `df-fortress` active.
+
+| Check | Result |
+|---|---|
+| 1. `initialize`, real token | **PASS**: 200, `serverInfo.name` `df-overseer` |
+| 2. `initialize`, bogus token | **PASS**: 401, `invalid_token` / `Authentication required`, no reason leaked |
+| 3. `tools/list` per role | **PASS**: architect 9 tools, 0 mutators; overseer 14 incl. the 4 mutators |
+| 4. overseer `landmarks__list` | **FAIL, real bug** (below) |
+| 5. architect `openarea__build` | **PASS**: `isError`, `Advisors do not act. Propose it.`, never reached DFHack |
+| 6. 4 concurrent reads | Pool held: 4 real `RunCommand` round-trips, all 4 hit bug 1 downstream, no connection errors |
+
+**Bug 1, load-bearing:** `server.py` passes `json.loads(output)` straight into
+`structuredContent`. Real scripts print bare JSON **arrays** (orchestrator
+re-ran `df-overseer-landmarks list` on VM 103: output starts `[ {`). The SDK
+rejects a non-object there only when serialising, so the client gets a
+protocol-level `-32603 Handler returned an invalid result` instead of a tool
+result. **Hidden because the fake DFHack's payload was `{"candidates": [...]}`,
+a shape no real script prints.** Affects most find/list read tools.
+
+**Bug 2:** `dfmcp/requirements.txt` has no `pyyaml`, which `registry.py` and
+`roles.py` import. A clean venv cannot import the server. Worked locally only
+because the ambient Python already had it. `pyyaml` was pip-installed into the
+VM's venv to proceed (no apt, no code change).
+
+**Confirmed live for the first time:** the real SDK over a bound socket, 401
+opacity, per-role listing, the pre-DFHack refusal, and the RPC client and pool
+against real DFHack.
+
+Staged copy, venv and check scripts remain in `/opt/df/dfmcp-smoke/` (no
+secrets). Fix dispatched to branch `fix/dfmcp-array-results`; checks 4 and 6
+need a re-run after it lands.
+
 ## Why
 
 Nothing in `dfmcp/` has met a real DFHack, a bound socket, or a real client.

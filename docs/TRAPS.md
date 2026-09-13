@@ -183,3 +183,25 @@ findings without another doc home yet.
   protobuf field, never embedded in the text, so JSON parses cleanly with no
   sanitising. The escape sequences are `dfhack-run`'s own terminal rendering,
   a property of that client and not of the wire.
+
+## Added 2026-09-14, from the first live MCP smoke test
+
+- **A fake server built from the wire spec verifies the wire, not the
+  payloads.** `dfmcp`'s fake DFHack spoke the protocol byte-for-byte, and all
+  136 tests passed, but its canned tool output was a JSON object while every
+  real find/list script prints a bare array. The server mishandled arrays and
+  nothing noticed until real DFHack answered. **Copy fake payloads from real
+  script output**, not from what the output "probably looks like".
+- **MCP `structuredContent` must be a JSON object on the protocol versions
+  clients negotiate today.** A list there is not rejected when the handler
+  returns, only when the SDK serialises the result, so it surfaces as an
+  opaque protocol error (`-32603 Handler returned an invalid result`), not a
+  tool error the model can read. Newer protocol revisions allow any JSON
+  value, so the failure depends on the client.
+- **`python3 -m venv --help` succeeding proves nothing.** It only parses
+  arguments and exits 0 even when `ensurepip` is missing, which Ubuntu 24.04
+  cloud images ship without. Only creating a venv proves venv works.
+- **A dependency the ambient environment happens to have is invisible to every
+  local test run.** `pyyaml` was imported by `dfmcp` and missing from its
+  requirements file for the whole build. A clean venv on a fresh host is the
+  first place that shows up.

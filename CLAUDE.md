@@ -75,7 +75,17 @@ learning architecture.
 > requirements are enforced in code rather than merely written down: the
 > allowlist is checked **server-side** on every call, and role identity comes
 > from a credential resolved at the transport, never from anything the caller
-> asserts. **Read this next line before trusting any of it: nothing in
+> asserts.
+>
+> **UPDATED 2026-09-14: it has now met real DFHack, and reality found a real
+> bug.** The first live smoke test on VM 103 passed five of six checks (real
+> SDK over a bound socket, opaque 401, per-role listing, the advisor refusal,
+> the pool against real DFHack), but every read tool that prints a JSON array
+> broke the result shape, which the fake server's object-shaped payload had
+> hidden. Fix in progress on `fix/dfmcp-array-results`; details in
+> `handoffs/2026-09-14-mcp-live-smoke-test.md`. openclaw has still not called
+> it. The paragraph below is the 2026-09-12 state, kept for its traps.
+> **Read this next line before trusting any of it: nothing in
 > `dfmcp/` has met a real DFHack, a bound socket, or a real agent host.** Every
 > test runs against a fake server built from the same wire spec, so a
 > divergence between the VM's actual binary and the source the research read
