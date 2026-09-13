@@ -1,6 +1,9 @@
 # Roadmap
 
-**Last reviewed:** 2026-09-12 (thirteenth pass, end of the MCP-server session:
+**Last reviewed:** 2026-09-14 (fourteenth pass, targeted not full: the MCP
+server's Now item flipped to DONE once the live smoke test on VM 103 passed
+all six checks and the two bugs it found were fixed and re-verified. The next
+seam is openclaw calling the server.) Previously: 2026-09-12 (thirteenth pass, end of the MCP-server session:
 the one hard blocker is cleared, so the Now bucket's central item is done and
 marked; the address-leak item and the openclaw-VM item are both closed; the
 `openclaw` row's "still unbuilt: the MCP seam" corrected. What is NOT done and
@@ -70,7 +73,15 @@ or `decisions/DECISIONS.md`, not here.
   streams against two research briefs. **Verified in the orchestrator session,
   not taken on report: an advisor calling a write tool is refused through a
   real SDK client with the exact reason string intact, and the call provably
-  never reaches DFHack.** **Not yet met reality**: no live DFHack, no bound
+  never reaches DFHack.** **DONE 2026-09-14: it has met reality.** The live
+  smoke test on VM 103 passed all six checks (after a fix, below), so the
+  bound socket, the real SDK, the auth, the per-role listing, the refusal path
+  and the DFHack pool are all proven against the running fort. It cost two
+  real bugs, both fixed and re-verified live: array tool output broke
+  `structuredContent`, and `pyyaml` was unpinned. **The one seam left is
+  openclaw actually calling it.** → `handoffs/2026-09-14-mcp-live-smoke-test.md`,
+  `Working.md`, `decisions/DECISIONS.md` 2026-09-14.
+  Superseded: **Not yet met reality**: no live DFHack, no bound
   socket, no openclaw client. That smoke test is the next concrete step and
   needs a go-ahead, because it touches VM 103. → `Working.md`,
   `handoffs/INDEX.md`, `decisions/DECISIONS.md` 2026-09-12.
