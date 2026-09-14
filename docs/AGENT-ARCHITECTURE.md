@@ -315,6 +315,14 @@ Four fields earn their place:
   dotted path validated against the ledger's own field registry (**verified**
   mechanism: `learning/predictions/` already validates signals against
   `ledger.store.field_source` and refuses anything not `MECHANICAL`/`DERIVED`).
+  **Built 2026-09-15, with one change from the text above:** end-of-fort
+  ledger fields cannot express a mid-fort effect, so proposal predictions use
+  **live-state signals** instead (`learning/live_signals.py`, for example
+  `landmark."Wagon".exit."Stockpile #2".distance_tiles`). Each is read through
+  an existing read tool, and `dfqueue/grade.py` grades them when due by game
+  tick, reusing `learning.predictions`' predicate logic. `check_after_ticks`
+  is relative to the game tick at write time. Fort-level claims stay in
+  `learning/predictions/`.
 - **`preconditions`** are what the action tool re-checks at execution time (§9).
 - **`suggested_priority` means two different things**, verified 2026-09-12. For
   dig designations, DF's 1-7 is real and `quickfort` exposes it (`#dig` accepts
@@ -747,7 +755,9 @@ Three conditions, all load-bearing:
    Published fields: `role`, `type`, `public_rationale`, the decision and its
    priority. Nothing else.
 2. **Delay it** by thirty to sixty seconds, so a filter can run and a kill
-   switch exists.
+   switch exists. **Waived for now by the user, 2026-09-14** ("no need to put
+   a delay on it for now"). The allowlist and a kill switch still stand;
+   revisit before the feed goes public.
 3. **Sentry state is published too**, so a throttle or pause reads as visible
    deliberation ("Overseer is deciding: siege response") rather than as a crash.
 

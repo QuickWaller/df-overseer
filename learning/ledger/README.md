@@ -134,6 +134,11 @@ a lesson is precisely the flat-counter mistake the register rejected on
 individually in `git log`, and the file stays readable with `cat`, which is
 what a public report needs. If queries ever outgrow it, build SQLite as a
 *derived read model* rebuilt from the JSONL, never as the system of record.
+**Still true for this ledger.** Live operational data (the proposal queue,
+live-state predictions and their grades) is different: many rows per cycle,
+with concurrent writers and real queries, so it lives in SQLite as its
+system of record (`dfqueue/`, `decisions/DECISIONS.md` 2026-09-15), exported
+to JSONL for the report.
 
 **No write path from the game.** Populating a row from a live fort is the piece
 that will actually test whether these fields are readable. It waits on the

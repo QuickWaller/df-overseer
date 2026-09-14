@@ -96,7 +96,27 @@ learning architecture.
 > against DFHack directly (`handoffs/2026-09-14-openclaw-first-agent-call.md`).
 > It is a one-shot CLI run, not a service: nothing listens on VM 106, and the
 > DeepSeek key sits there in plaintext in openclaw's own state DB, pending
-> the user's call. Details in
+> the user's call.
+>
+> **UPDATED 2026-09-15: the architect has done its real job, the tools it
+> exposed were fixed, and the channel it will write to exists.** Two
+> architect charter runs (DeepSeek, `role.md` as instructions; output kept in
+> `evals/live/`) produced one sound proposal, then one that found underground
+> space but dropped the proposal format. Along the way:
+> - the spatial tools take a **`level` relative to the landmark** instead of an
+>   absolute z, which a coordinate-free agent could never know;
+> - a script's `{"error": ...}` is now an MCP `isError`;
+> - `dfmcp` **logs every tool call** as JSON to journald.
+>
+> All three are deployed and verified live on VM 103. **`dfqueue/`** is the
+> §4 proposal queue: write-time validated, **SQLite** (the user's call, a
+> partial reversal of the 2026-08-27 no-database rule, for live data only),
+> with **live-state prediction signals** (`learning/live_signals.py`) and a
+> grader. It is local code, **not yet wired into dfmcp or deployed**. The user
+> wants a scrolling feed of proposals and rulings beside the live stream
+> (proposals and rulings, not peer chat; no publish delay for now). Wiring the
+> queue into dfmcp is the next step. Details: `Working.md`, the register's
+> 2026-09-14/15 rows. Details in
 > `handoffs/2026-09-14-mcp-live-smoke-test.md`. openclaw has still not called
 > it. The paragraph below is the 2026-09-12 state, kept for its traps.
 > **Read this next line before trusting any of it: nothing in
@@ -106,8 +126,12 @@ learning architecture.
 > would pass all 136. The smoke test that closes that gap is written out in
 > `handoffs/2026-09-12-mcp-transport.md`, and it touches VM 103, so it needs
 > explicit go-ahead. **Two traps worth knowing before running the suite:** the
-> repo's ambient baseline is `121 passed, 1 skipped` and that is correct, not a
-> regression (the transport's tests guard their own import of a pinned SDK);
+> repo's ambient baseline (`python -m pytest`, Python 3.12) is **`229 passed,
+> 1 skipped` as of 2026-09-15** (it was 121 before `dfqueue/` and the live
+> signals landed), and the one skip is correct, not a regression (the
+> transport's tests guard their own import of a pinned SDK; run
+> `dfmcp/tests` in `.venv-dfmcp` for the full 128). `py -3` on this
+> workstation is a 3.13 without pytest, so use `python`;
 > and this repo's package is `dfmcp`, deliberately **not** `mcp`, because a
 > local `mcp/` directory shadows the MCP SDK of the same name for anything
 > running from the repo root.
@@ -173,6 +197,17 @@ file first in any session.
   (`role.md` charter, `tools.yaml` allowlist, `model.yaml`). Adding a role is a
   directory and one line. The allowlist, not the charter, is the real boundary
   (`docs/AGENT-ARCHITECTURE.md` principle 8).
+
+- **`dfqueue/`** — the proposal queue (`docs/AGENT-ARCHITECTURE.md` §4):
+  proposal, pass and ruling records validated at write time, stored in
+  SQLite (`dfqueue/<fort>.sqlite3`, gitignored) with JSONL export, and a
+  grader for live-state predictions. **Named `dfqueue` and not `queue`**
+  because a local `queue/` would shadow Python's stdlib module, the same
+  trap as `dfmcp`.
+
+- **`evals/live/`** — output of real agent runs against the live fort, kept
+  for the public report (one directory per run, with a README and a charter
+  check).
 
 - **`dfmcp/`** — the MCP server: registry, roles, tool schema, auth, DFHack RPC
   client, transport. **Named `dfmcp` and not `mcp` on purpose**: a local `mcp/`
