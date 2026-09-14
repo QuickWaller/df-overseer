@@ -197,11 +197,13 @@ Everything below this block is detail and reasoning. This is the brief.
           - 61 tests; the ambient suite goes 127 to 188 (1 skipped).
           - `handoffs/2026-09-14-proposal-queue.md`.
 
-          **BLOCKER for the feed, the user's call:** `learning/predictions/`
-          only accepts end-of-fort ledger signals (`design.*`, `outcome.*`,
-          and so on). No spatial or mid-fort signal exists, so **no architect
-          proposal can pass today**: run #1's real proposal fails on its
-          signal alone and passes everything else.
+          **Blocker, now decided (2026-09-15):** `learning/predictions/`
+          only accepts end-of-fort ledger signals, so no architect proposal
+          can pass today. The user chose to add **live-state signals** (each
+          measured by an existing read tool and graded by calling it when due)
+          that build up into a ledger, stored in **SQLite on VM 103** with
+          dfmcp as the single writer. JSONL exports stay git-tracked for the
+          report; the fort ledger stays JSONL. Brief next.
 
           Also, `check_after_ticks` is passed as `check_at_year` purely to run
           the type check. That row is validation-only and never persisted
