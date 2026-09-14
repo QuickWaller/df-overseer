@@ -2,9 +2,16 @@
 the `final` field's fenced XML block) parsed into a dfqueue record and run
 through `schema.validate` for real.
 
-This is the brief's own honesty check: does not loosen
-`learning.predictions` to make a live proposal pass, and reports exactly
-which check refuses it if any do.
+This is the brief's own honesty check, run twice over. First, verbatim: does
+the raw XML `dfqueue` inherited from the first proposal-queue stream still
+fail, and on exactly the check the earlier stream documented? Second,
+corrected: `handoffs/2026-09-15-live-signals-sqlite.md` closed the actual gap
+(no mid-fort signal registry existed) by adding `learning.live_signals` — so
+this file also proves that swapping *only* the prediction's `signal` for the
+new registry's quoted-landmark shape, `landmark."<name>".exit."Wagon".
+distance_tiles`, makes the same real proposal validate and then grade for
+real, coordinate-free the whole way through. Nothing here was loosened to
+get that result: the real gap (no mid-fort signal store) is what got built.
 """
 
 from __future__ import annotations
@@ -16,8 +23,10 @@ from xml.etree import ElementTree as ET
 
 import pytest
 
+from dfqueue import grade as dfqueue_grade
 from dfqueue import schema, store
 from dfqueue.tests._helpers import make_ruling
+from learning.predictions.schema import GRADED_FALSE, GRADED_TRUE
 
 RUN1_PATH = (
     Path(__file__).resolve().parents[2]
@@ -87,13 +96,14 @@ def test_run1_fixture_parses_the_expected_shape():
 
 
 def test_run1_proposal_fails_write_time_validation_on_its_prediction_only():
-    """The brief's central question: does run #1's real proposal pass
-    dfqueue's write-time gate today? No — and exactly one check refuses it,
-    the prediction's `signal`, because `landmarks.*` has no matching
-    top-level field in `learning/ledger/schema.py`'s `FORT_FIELDS` (the
-    ledger is one row per fort, written mostly at embark and at the end, not
-    a live perception/landmarks store). Coordinates, cost, priority, role,
-    type and preconditions all pass; nothing here was loosened to get that
+    """Does run #1's real proposal, verbatim, pass dfqueue's write-time gate?
+    No — and exactly one check refuses it, the prediction's `signal`:
+    `landmarks.new_workshop.exit_to_Wagon.distance_tiles` is neither a known
+    live signal (`learning.live_signals`'s grammar requires a quoted
+    landmark name, `landmark."new_workshop".exit."Wagon".distance_tiles`)
+    nor a ledger field (`learning/ledger/schema.py`'s `FORT_FIELDS` has no
+    top-level `landmarks` at all). Coordinates, cost, priority, role, type
+    and preconditions all pass; nothing here was loosened to get that
     result.
     """
     record = _load_run1_proposal()
@@ -105,29 +115,111 @@ def test_run1_proposal_fails_write_time_validation_on_its_prediction_only():
     )
 
     assert len(errors) == 1, f"expected exactly one refusal, got: {errors}"
-    assert "does not resolve to a known ledger field" in errors[0]
+    assert "not a known live signal" in errors[0]
     assert "landmarks.new_workshop.exit_to_Wagon.distance_tiles" in errors[0]
 
 
 def test_run1_proposal_is_refused_by_append_and_writes_nothing(tmp_path):
     record = _load_run1_proposal()
-    path = tmp_path / "queue.jsonl"
+    path = tmp_path / "queue.sqlite3"
 
-    with pytest.raises(store.QueueError, match="does not resolve to a known ledger field"):
-        store.append(record, path)
+    with pytest.raises(store.QueueError, match="not a known live signal"):
+        store.append(record, path, game_tick=178877)
 
-    assert not path.exists()
+    assert store.load(path) == []
 
 
-def test_a_ledger_rooted_signal_in_the_same_shape_would_have_passed():
-    """Proof that the refusal is about the *signal*, not about run #1's
-    proposal in general: swap only `prediction.signal` for a real ledger
-    field of the same type and the whole record validates clean."""
+# ---- the corrected, quoted-landmark form: closes the real gap -----------------
+
+
+def _corrected_signal(workshop_name: str = "new_workshop") -> str:
+    """`handoffs/2026-09-15-live-signals-sqlite.md`'s own worked case: run
+    #1's proposal, unchanged except its prediction's `signal`, rewritten
+    into `learning.live_signals`'s quoted-landmark grammar. `new_workshop`
+    is a placeholder the fixture itself names (per the brief) — at proposal
+    time no such landmark exists yet, which is exactly the "unresolvable,
+    not an error" case `learning.live_signals` is built to allow."""
+    return f'landmark."{workshop_name}".exit."Wagon".distance_tiles'
+
+
+def test_run1_proposal_with_the_corrected_signal_validates_clean():
     record = _load_run1_proposal()
-    record["prediction"]["signal"] = "design.entrance_count"
-    record["prediction"]["op"] = "gte"
-    record["prediction"]["value"] = 1
+    record["prediction"]["signal"] = _corrected_signal()
     assert schema.validate(record) == []
+
+
+def test_run1_proposal_with_the_corrected_signal_is_appended_and_graded_true(tmp_path):
+    """End to end: append the corrected proposal (its prediction becomes a
+    pending row due at game_tick + 1200, matching the XML's own
+    `check_after_ticks="1200"`), then grade it once the workshop exists and
+    sits 7 tiles from the Wagon — `op="lte" value="7"` — and confirm it
+    grades true."""
+    record = _load_run1_proposal()
+    record["prediction"]["signal"] = _corrected_signal()
+
+    path = tmp_path / "queue.sqlite3"
+    written = store.append(record, path, game_tick=178877)
+    assert written["prediction"]["check_after_ticks"] == 1200
+
+    due_before = store.pending_due(path, 178877 + 1199)
+    assert due_before == []
+
+    def call_tool(tool_id, arguments):
+        if tool_id == "landmarks.get" and arguments == {"name": "new_workshop"}:
+            return {
+                "name": "new_workshop",
+                "kind": "Mason's Workshop",
+                "exits": [{"to": "Wagon", "direction": "N", "distance_tiles": 7, "walkable": True}],
+            }
+        raise AssertionError(f"unexpected call: {tool_id} {arguments}")
+
+    updates = dfqueue_grade.grade_due(
+        path, 178877 + 1200, call_tool, graded_at="2026-09-16T00:00:00+00:00",
+    )
+    assert len(updates) == 1
+    assert updates[0]["status"] == GRADED_TRUE
+    assert updates[0]["actual_value"] == 7
+
+    assert store.pending_due(path, 178877 + 1200) == []  # graded, no longer pending
+
+
+def test_run1_proposal_grades_false_if_the_workshop_lands_further_than_predicted(tmp_path):
+    record = _load_run1_proposal()
+    record["prediction"]["signal"] = _corrected_signal()
+
+    path = tmp_path / "queue.sqlite3"
+    store.append(record, path, game_tick=178877)
+
+    def call_tool(tool_id, arguments):
+        return {
+            "name": "new_workshop", "kind": "Mason's Workshop",
+            "exits": [{"to": "Wagon", "direction": "N", "distance_tiles": 12, "walkable": True}],
+        }
+
+    updates = dfqueue_grade.grade_due(
+        path, 178877 + 1200, call_tool, graded_at="2026-09-16T00:00:00+00:00",
+    )
+    assert updates[0]["status"] == GRADED_FALSE
+    assert updates[0]["actual_value"] == 12
+
+
+def test_run1_proposal_grades_unresolvable_if_the_workshop_still_does_not_exist(tmp_path):
+    record = _load_run1_proposal()
+    record["prediction"]["signal"] = _corrected_signal()
+
+    path = tmp_path / "queue.sqlite3"
+    store.append(record, path, game_tick=178877)
+
+    def call_tool(tool_id, arguments):
+        return {"error": "not found"}
+
+    from learning.predictions.schema import UNRESOLVABLE as UNRESOLVABLE_STATUS
+
+    updates = dfqueue_grade.grade_due(
+        path, 178877 + 1200, call_tool, graded_at="2026-09-16T00:00:00+00:00",
+    )
+    assert updates[0]["status"] == UNRESOLVABLE_STATUS
+    assert updates[0]["actual_value"] is None
 
 
 def test_a_ruling_could_reference_run1s_proposal_id_once_it_is_appendable():

@@ -83,7 +83,7 @@ def test_to_xml_proposal_is_well_formed_and_escapes_special_characters():
     assert root.get("id") == "proposal-0001"
     assert root.find("rationale").text == "Cost < benefit & the stair needs \"care\"."
     prediction = root.find("prediction")
-    assert prediction.get("signal") == "design.entrance_count"
+    assert prediction.get("signal") == "fort.population"
     assert prediction.get("check_after_ticks") == "1200"
     preconditions = root.find("preconditions").findall("requires")
     assert len(preconditions) == 2

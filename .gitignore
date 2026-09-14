@@ -57,3 +57,8 @@ venv/
 *.tfvars
 !*.tfvars.example
 .venv-dfmcp/
+
+# dfqueue's live SQLite database(s) -- real fort data, one per fort, default
+# dfqueue/<fort>.sqlite3 (handoffs/2026-09-15-live-signals-sqlite.md). WAL
+# mode also leaves -wal/-shm sidecar files alongside it.
+dfqueue/*.sqlite3*

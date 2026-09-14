@@ -23,9 +23,11 @@ def make_proposal(**overrides) -> dict:
             "already walkable ground."
         ),
         "prediction": {
-            # `design.entrance_count` is MECHANICAL in learning/ledger, so
-            # this signal actually resolves and the prediction validates.
-            "signal": "design.entrance_count",
+            # `fort.population` is a live signal (learning/live_signals.py),
+            # so this resolves against `overview.get` and the prediction
+            # validates. Live signals, not `learning/ledger` fields, are
+            # what a dfqueue proposal predicts against.
+            "signal": "fort.population",
             "op": "gte",
             "value": 1,
             "check_after_ticks": 1200,

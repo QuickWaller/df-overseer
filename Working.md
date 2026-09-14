@@ -203,7 +203,17 @@ Everything below this block is detail and reasoning. This is the brief.
           measured by an existing read tool and graded by calling it when due)
           that build up into a ledger, stored in **SQLite on VM 103** with
           dfmcp as the single writer. JSONL exports stay git-tracked for the
-          report; the fort ledger stays JSONL. Brief next.
+          report; the fort ledger stays JSONL.
+
+          **DONE 2026-09-15 (local code):** `learning/live_signals.py` (6
+          signals), `dfqueue/` on SQLite with a grader. Run #1's proposal now
+          passes with a live signal. Checked against real VM 103 JSON (see
+          the register). Ambient suite is 229 passed, 1 skipped.
+
+          **NEXT:** wire it into dfmcp as a `propose` / `pass` / `ruling`
+          tool for the roles, pass the current game tick at write time, run
+          the grader on a schedule, then build the feed publisher and page.
+          All of that touches VM 103, so it needs a go-ahead.
 
           Also, `check_after_ticks` is passed as `check_at_year` purely to run
           the type check. That row is validation-only and never persisted

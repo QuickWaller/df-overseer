@@ -225,26 +225,52 @@ def test_coordinate_free_phrases_all_pass():
 # ---- bad prediction --------------------------------------------------------------
 
 
-def test_prediction_signal_on_an_agent_field_is_refused():
+def test_prediction_signal_pointing_at_a_ledger_field_is_refused():
+    # `notes` is a real ledger field (AGENT-sourced), but ledger fields --
+    # gradeable or not -- are fort-level claims and belong in
+    # learning/predictions/, not a dfqueue proposal.
     record = make_proposal(prediction={
         "signal": "notes", "op": "eq", "value": "x", "check_after_ticks": 100,
     })
     errors = schema.validate(record)
-    assert _errors_mentioning(errors, "must never be graded")
+    assert _errors_mentioning(errors, "fort-level claims belong in learning/predictions/")
 
 
-def test_prediction_signal_that_does_not_resolve_is_refused():
+def test_prediction_signal_pointing_at_a_gradeable_ledger_field_is_also_refused():
+    # design.entrance_count is MECHANICAL (gradeable) in learning/ledger,
+    # but that is exactly the case dfqueue must still refuse: gradeable
+    # ledger fields belong to learning/predictions/, not to a proposal.
+    record = make_proposal(prediction={
+        "signal": "design.entrance_count", "op": "gte", "value": 1,
+        "check_after_ticks": 1200,
+    })
+    errors = schema.validate(record)
+    assert _errors_mentioning(errors, "fort-level claims belong in learning/predictions/")
+
+
+def test_prediction_signal_using_run1s_raw_unquoted_shape_is_refused():
+    # The exact string run #1's real proposal used, before this stream's
+    # quoting rule existed -- see dfqueue/tests/test_run1_fixture.py for the
+    # corrected, quoted form that now passes.
     record = make_proposal(prediction={
         "signal": "landmarks.new_workshop.exit_to_Wagon.distance_tiles",
         "op": "lte", "value": 7, "check_after_ticks": 1200,
     })
     errors = schema.validate(record)
-    assert _errors_mentioning(errors, "does not resolve to a known ledger field")
+    assert _errors_mentioning(errors, "not a known live signal")
+
+
+def test_prediction_live_signal_with_a_quoted_landmark_name_is_accepted():
+    record = make_proposal(prediction={
+        "signal": 'landmark."Stockpile #2".exit."Wagon".distance_tiles',
+        "op": "lte", "value": 7, "check_after_ticks": 1200,
+    })
+    assert schema.validate(record) == []
 
 
 def test_prediction_unknown_predicate_op_is_refused():
     record = make_proposal(prediction={
-        "signal": "design.entrance_count", "op": "roughly_equals",
+        "signal": "fort.population", "op": "roughly_equals",
         "value": 1, "check_after_ticks": 100,
     })
     errors = schema.validate(record)
@@ -253,7 +279,7 @@ def test_prediction_unknown_predicate_op_is_refused():
 
 def test_prediction_presence_op_with_a_value_is_refused():
     record = make_proposal(prediction={
-        "signal": "design.max_depth_z", "op": "exists",
+        "signal": "fort.stuck_jobs.count", "op": "exists",
         "value": "should be null", "check_after_ticks": 100,
     })
     errors = schema.validate(record)
@@ -262,7 +288,7 @@ def test_prediction_presence_op_with_a_value_is_refused():
 
 def test_prediction_presence_op_without_a_value_is_accepted():
     record = make_proposal(prediction={
-        "signal": "design.max_depth_z", "op": "exists",
+        "signal": "fort.stuck_jobs.count", "op": "exists",
         "check_after_ticks": 100,
     })
     assert schema.validate(record) == []
@@ -274,6 +300,50 @@ def test_prediction_missing_signal_is_refused():
     })
     errors = schema.validate(record)
     assert _errors_mentioning(errors, "record.prediction.signal: required field is missing")
+
+
+def test_prediction_check_after_ticks_zero_is_refused():
+    record = make_proposal(prediction={
+        "signal": "fort.population", "op": "gte", "value": 1,
+        "check_after_ticks": 0,
+    })
+    errors = schema.validate(record)
+    assert _errors_mentioning(errors, "record.prediction.check_after_ticks")
+
+
+def test_prediction_check_after_ticks_negative_is_refused():
+    record = make_proposal(prediction={
+        "signal": "fort.population", "op": "gte", "value": 1,
+        "check_after_ticks": -5,
+    })
+    errors = schema.validate(record)
+    assert _errors_mentioning(errors, "record.prediction.check_after_ticks")
+
+
+def test_prediction_value_type_mismatch_against_an_integer_signal_is_refused():
+    record = make_proposal(prediction={
+        "signal": "fort.population", "op": "gte", "value": "fifteen",
+        "check_after_ticks": 100,
+    })
+    errors = schema.validate(record)
+    assert _errors_mentioning(errors, "integer-valued")
+
+
+def test_prediction_value_type_mismatch_against_a_boolean_signal_is_refused():
+    record = make_proposal(prediction={
+        "signal": 'landmark."Wagon".exists', "op": "eq", "value": 1,
+        "check_after_ticks": 100,
+    })
+    errors = schema.validate(record)
+    assert _errors_mentioning(errors, "boolean-valued")
+
+
+def test_prediction_boolean_value_against_a_boolean_signal_is_accepted():
+    record = make_proposal(prediction={
+        "signal": 'landmark."Wagon".exists', "op": "eq", "value": True,
+        "check_after_ticks": 100,
+    })
+    assert schema.validate(record) == []
 
 
 # ---- role must be enabled in agents/ROSTER.yaml -------------------------------
