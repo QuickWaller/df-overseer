@@ -91,9 +91,10 @@ learning architecture.
 > architect's read-only tool list, live fort JSON, 401 on a bad token). Since
 > the LAN has no firewall, **the bearer tokens are the only guard**, a
 > deliberate and reversible trade pending Tailscale. **The one seam left is
-> openclaw itself, which is not installed anywhere**: VM 106 has Docker and nothing else, and the
-> `mcp.servers` schema in `research/2026-09-12-openclaw-mcp-auth.md` is
-> unconfirmed against anything that runs. Details in
+> openclaw itself, which has not run an agent yet**: its image is on VM 106 and
+> the `mcp.servers` schema in `research/2026-09-12-openclaw-mcp-auth.md` is
+> now confirmed against the real binary (`handoffs/2026-09-14-openclaw-install.md`),
+> but nothing listens there and no real token or model is wired. Details in
 > `handoffs/2026-09-14-mcp-live-smoke-test.md`. openclaw has still not called
 > it. The paragraph below is the 2026-09-12 state, kept for its traps.
 > **Read this next line before trusting any of it: nothing in
