@@ -227,3 +227,12 @@ findings without another doc home yet.
   there. Before trusting an absence claim, check the size of what was
   searched and search the whole tree (`grep -rlF <name> /app --include=*.js
   --include=*.mjs`).
+- **openclaw `agent exec` says `Unknown model` when the provider key is only
+  in the environment**, even though `models status` shows the key detected.
+  It is a local, pre-network failure, so it costs nothing but looks like a
+  wrong model id. What fixed it was `openclaw models auth paste-api-key
+  --provider <p>`, which stores the key plaintext in `state/openclaw.sqlite`.
+  Try `openclaw secrets store` before accepting that on a host that matters.
+- **`dfhack-run` output starts with an ANSI colour escape** (`\x1b[0m`), so
+  piping it straight into a JSON parser fails at char 0. Strip escapes first;
+  it is not a broken script.
