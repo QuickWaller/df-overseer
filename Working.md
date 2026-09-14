@@ -29,13 +29,13 @@ Everything below is what is still open.
 
 1. **Wire `dfqueue` into dfmcp.** **In progress 2026-09-15, user's go-ahead
    given (VM 103 included).** Phase A (local code, worktree executor,
-   `handoffs/2026-09-15-queue-into-dfmcp.md`) is **built and under review**:
-   both suites confirmed by the orchestrator (ambient 241 passed 1 skipped,
-   venv 146). Three review fixes sent back before merge: a `defer` ruling
-   hid the proposal from `pending` for good; a storage error escaped as a
-   protocol error; SQLite ran on the event loop (moving it off needs a write
-   lock, since record ids are `COUNT(*)`-based). Phase B brief drafted, not
-   dispatched: `handoffs/2026-09-15-queue-live-deploy.md`. Run #3 must
+   `handoffs/2026-09-15-queue-into-dfmcp.md`) is **merged to `main`
+   (`85826c3`), not deployed**, after three review fixes (defer hiding a
+   proposal, storage errors escaping `isError`, SQLite on the event loop plus
+   the id race it exposed). Suites on merged `main`: ambient 252 passed 1
+   skipped, venv 152. **Next concrete step: Phase B**, brief drafted, not
+   dispatched: `handoffs/2026-09-15-queue-live-deploy.md`. Before dispatch,
+   confirm with the user and check in with peer sessions (it changes VM 103). Run #3 must
    regenerate its `SOUL.md` from the new `role.md`; run #2's bootstrap says
    "no write tool".
    Design calls are in the register's 2026-09-15 "Wiring `dfqueue`" row.
@@ -90,9 +90,6 @@ Everything below is what is still open.
 
 - **The breach detector is inconclusive.** Settle it opportunistically (rain,
   or an animal fording water), never by flooding the fort.
-- **A stale locked worktree,** `.claude/worktrees/agent-a297451c62aa8a8a5`,
-  blocks agent worktree isolation. Clean it up once no Claude process holds
-  it.
 - **The `../openclaw` scaffold** reads `OPENCLAW_CONFIG_DIR` and
   `OPENCLAW_AUTH_PROFILE_SECRET_DIR`, which the image ignores; use
   `OPENCLAW_STATE_DIR` before running it durably.
