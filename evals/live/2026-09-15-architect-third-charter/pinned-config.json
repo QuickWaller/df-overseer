@@ -1,0 +1,48 @@
+{
+  "_note": "Pinned config used for this one agent exec run via a docker volume overlay onto /home/node/.openclaw/openclaw.json (the container's real config home for its non-root 'node' user, HOME=/home/node), with /opt/openclaw/config bind-mounted as /home/node/.openclaw so the run shares the same host-persisted state (DeepSeek auth profile, plugin registry) run #1/#2 left working, while the openclaw.json content itself is overridden read-only by this file. The df-overseer MCP URL below is the real VM 103 LAN address in the live file; redacted here per this repo's public/no-address rule. Content is otherwise byte-identical to run #2's pinned-config.json (same model, same MCP entry, same tool restriction, same workspace path) -- reused verbatim, since nothing about the connection shape needed to change for Phase B (only the charter-bootstrap.md content changed, see this run's README).",
+  "mcp": {
+    "servers": {
+      "df-overseer": {
+        "url": "http://<df-vm-lan-ip>:8443/mcp",
+        "transport": "streamable-http",
+        "headers": {
+          "Authorization": "Bearer ${DF_MCP_TOKEN_ARCHITECT}"
+        },
+        "requestTimeoutMs": 5000,
+        "connectionTimeoutMs": 5000
+      }
+    }
+  },
+  "plugins": {
+    "entries": {
+      "anthropic": { "config": { "sessionCatalog": { "enabled": false } } },
+      "codex": { "config": { "sessionCatalog": { "enabled": false } } },
+      "deepseek": { "enabled": true }
+    }
+  },
+  "meta": {
+    "migrations": { "modelPolicyAllowlist": true },
+    "lastTouchedVersion": "2026.9.4"
+  },
+  "agents": {
+    "defaults": {
+      "model": { "primary": "deepseek/deepseek-v4-flash" },
+      "models": { "deepseek/deepseek-v4-flash": {} }
+    },
+    "entries": {
+      "main": {
+        "workspace": "/home/node/.openclaw/architect-workspace",
+        "tools": {
+          "allow": [
+            "df-overseer__*"
+          ]
+        }
+      }
+    }
+  },
+  "auth": {
+    "profiles": {
+      "deepseek:manual": { "provider": "deepseek", "mode": "api_key" }
+    }
+  }
+}
