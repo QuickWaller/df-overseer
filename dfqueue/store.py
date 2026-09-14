@@ -298,6 +298,28 @@ def pending_due(path: str | Path, tick: int) -> list[dict]:
     return [_prediction_row(r) for r in rows]
 
 
+def pending_proposals(path: str | Path, limit: int | None = None) -> list[dict]:
+    """Every `proposal` record with no `ruling` naming it yet, oldest first --
+    added `handoffs/2026-09-15-queue-into-dfmcp.md` for `queue.pending`
+    (`dfmcp/queue_tools.py`). A proposal counts as pending until a `ruling`
+    record whose `proposal_id` names it exists; every ruling's `proposal_id`
+    is already its own indexed column (see `_insert_record`), so this is one
+    indexed `NOT EXISTS` query, not a re-implementation of `load()`'s
+    full-file scan filtered in Python."""
+    query = (
+        "SELECT r.payload FROM records r WHERE r.kind = ? AND NOT EXISTS ("
+        "SELECT 1 FROM records r2 WHERE r2.kind = ? AND r2.proposal_id = r.id"
+        ") ORDER BY r.ts ASC, r.rowid ASC"
+    )
+    params: list = [PROPOSAL, RULING]
+    if limit is not None:
+        query += " LIMIT ?"
+        params.append(limit)
+    with _connect(path) as conn:
+        rows = conn.execute(query, params).fetchall()
+    return [json.loads(r["payload"]) for r in rows]
+
+
 def apply_grades(path: str | Path, updates: list[dict]) -> None:
     """Persist a grading pass's results, all in one transaction. Each entry
     in `updates` is `{"id", "status", "actual_value", "graded_at",

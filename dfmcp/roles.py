@@ -178,6 +178,26 @@ def _load_role_permissions(
                         f"'{role_name}'. Advisors are read-only."
                     )
 
+    # Rule 6 (added `handoffs/2026-09-15-queue-into-dfmcp.md`): a tool the
+    # registry marks `sole_writer_only` may be granted only to the roster's
+    # sole_writer, regardless of section (read or write) or of `mutates`
+    # (queue.rule does not mutate fort state -- Tool.mutates/rule 2 stay
+    # about fort mutation only -- so rule 2 above would not catch this).
+    # This is the second, independent layer the brief asked for on top of
+    # `dfqueue.schema.validate`'s own sole-writer check at write time: a
+    # roster misconfiguration is refused at load time here, never silently
+    # granted and only later refused per-call.
+    if role_name != sole_writer:
+        for section_name, granted in (("read", read), ("write", write)):
+            for tool_id in granted:
+                tool = registry.get(tool_id)
+                if getattr(tool, "sole_writer_only", False):
+                    raise RoleValidationError(
+                        f"'{role_name}' is granted '{tool_id}' under {section_name}, and it is "
+                        f"restricted to the roster's sole_writer ('{sole_writer}'), not "
+                        f"'{role_name}'."
+                    )
+
     deny_raw = section("deny")
     deny = [_role_tool_from_entry(e) for e in deny_raw]
     for d in deny:

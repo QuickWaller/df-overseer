@@ -15,8 +15,13 @@
 #      this project's sessions have used).
 #   2. .env on that host carries a real MCP_SERVER_BIND_HOST (the tailnet
 #      address, never 0.0.0.0 -- dfmcp/server.py's ServerConfig refuses to
-#      start without one) and a real MCP_ROLE_TOKEN_<ROLE> per enabled role
-#      (dfmcp/auth.py).
+#      start without one), a real MCP_ROLE_TOKEN_<ROLE> per enabled role
+#      (dfmcp/auth.py), and (added handoffs/2026-09-15-queue-into-dfmcp.md)
+#      a real MCP_SERVER_QUEUE_DB pointing OUTSIDE this checkout -- dfqueue's
+#      SQLite file, which a redeploy of this WorkingDirectory must never be
+#      able to clobber. ReadWritePaths below covers only the checkout; the
+#      queue db's own directory needs its own entry once the real path is
+#      chosen.
 #   3. The exact `systemctl start` command has been run past the user for
 #      explicit go-ahead, per this repo's CLAUDE.md rule that any change to
 #      live/VM state needs confirmation each time, regardless of what an

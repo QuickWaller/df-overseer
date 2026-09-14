@@ -57,6 +57,12 @@ read:
       that nothing in the shipped scripts ever reads, only sets, so whether DF
       itself raises it during natural liquid movement is unverified. Until that
       is settled, a `severity=none` result means nothing.
+  - id: "queue.pending"
+    status: exists
+    note: >-
+      Every proposal with no ruling yet, rendered as XML. Read-only; no
+      cross-advisor visibility is granted here, only the Overseer's own view
+      of what is waiting on it.
 
 write:
   - id: "openarea.build"
@@ -69,11 +75,17 @@ write:
   - id: "labor.set-labor"
     status: exists
     hazard: Races autolabor on ordinary citizens. See role.md.
+  - id: "queue.rule"
+    status: exists
+    note: >-
+      Accept/reject/defer one proposal. Restricted to the roster's sole_writer
+      as a hard load-time rule (dfmcp/roles.py rule 6), on top of dfqueue.schema's
+      own sole-writer check at write time -- two independent layers. The
+      Overseer never holds queue.propose: its type vocabulary is empty by
+      design (it rules on proposals, it never writes one -- §3, "Specialists
+      propose, the Overseer decides").
 
 planned:
-  - id: "queue.propose"
-    status: planned
-    note: Advisors write, the Overseer reads. Part of the unbuilt MCP seam.
   - id: "queue.plan"
     status: planned
     note: Write-ahead log for the ordered plan, then per-step completion marks.

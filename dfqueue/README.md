@@ -235,17 +235,23 @@ this function's return value.
 ## What is deliberately not here yet
 
 - **A `plan` record kind** (see above).
-- **The `propose` MCP tool.** `dfmcp/roles.py` already reserves the shape
-  for it (its `planned` entries note "the queue, the sentry endpoint... not
-  checked against the registry"); this stream did not touch `dfmcp/` at all.
 - **A grader schedule.** `grade.grade_due()` exists and is tested end to
-  end, but nothing calls it on a timer or after a real DFHack poll yet — that
-  needs a live `call_tool` wired to `dfmcp` or a direct DFHack RPC call,
-  neither of which this stream touches (local code and tests only, no VM, no
-  deploy).
+  end, but nothing calls it on a timer or after a real DFHack poll yet: that
+  needs a live `call_tool` wired to `dfmcp` or a direct DFHack RPC call.
 - **The publisher** (step 2): an allowlisted-field publisher reading
   `render.public_view()` on a delay, per §8.
 - **The feed page** (step 3).
 - **A `plan`-aware write-ahead recovery reader.** §9's crash-consistency
   story ("a crash mid-plan is then recoverable and re-application is
   detectable") needs the `plan` kind above first.
+
+**The `propose`/`pass`/`rule`/`pending` MCP tools are now built**, as of
+`handoffs/2026-09-15-queue-into-dfmcp.md`: `dfmcp/queue_tools.py` is the
+tool layer, four native (non-DFHack) tools merged into `dfmcp`'s registry.
+`dfqueue/store.py` grew one additive query (`pending_proposals`) for
+`queue.pending`, and `agents/architect/tools.yaml` and
+`agents/overseer/tools.yaml` grant the real calls. **Phase A only: local
+code and tests, not deployed.** Nothing in `dfqueue/` runs on VM 103 yet;
+the deploy stream's own report covers shipping this package, `learning/`
+and `dfmcp/queue_tools.py` together, plus a new required env key,
+`MCP_SERVER_QUEUE_DB`, pointing outside the code checkout.

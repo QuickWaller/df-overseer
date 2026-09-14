@@ -149,3 +149,37 @@ def test_hyphenated_verbs_survive_whole(tmp_path):
     assert "labor.unit-status" in reg
     assert "labor.set-labor" in reg
     assert reg.get("labor.set-labor").mutates is True
+
+
+# --------------------------------------------------------------------------
+# native_tools: dfmcp/queue_tools.py's non-DFHack tools, merged additively
+# (handoffs/2026-09-15-queue-into-dfmcp.md)
+# --------------------------------------------------------------------------
+
+
+def test_load_registry_defaults_to_no_native_tools():
+    """The default, no-argument call stays exactly what every other test in
+    this file already assumes: the real DFHack manifest only. A caller must
+    opt in to native tools explicitly."""
+    reg = load_registry()
+    assert "queue.propose" not in reg
+
+
+def test_native_tools_are_merged_in_when_passed():
+    from dfmcp.queue_tools import NATIVE_TOOLS
+
+    reg = load_registry(native_tools=NATIVE_TOOLS)
+    for tool_id in NATIVE_TOOLS:
+        assert tool_id in reg
+        assert reg.get(tool_id) is NATIVE_TOOLS[tool_id]
+    # And the real manifest's own tools are still all there alongside them.
+    assert "overview.get" in reg
+
+
+def test_native_tool_id_colliding_with_a_real_id_raises():
+    class _Fake:
+        mutates = False
+
+    with pytest.raises(RegistryError) as exc:
+        load_registry(native_tools={"overview.get": _Fake()})
+    assert "overview.get" in str(exc.value)
