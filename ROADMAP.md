@@ -1,6 +1,10 @@
 # Roadmap
 
-**Last reviewed:** 2026-09-14 (fourteenth pass, targeted not full: the MCP
+**Last reviewed:** 2026-09-15 (fifteenth pass, targeted not full. It adds a
+Now item for the 2026-09-14/15 work: openclaw calling the fort, two architect
+charter runs, three live-verified dfmcp fixes, and the SQLite proposal queue
+with live-state signals. The feed beside the stream becomes the next visible
+goal.) Previously: 2026-09-14 (fourteenth pass, targeted not full: the MCP
 server's Now item flipped to DONE once the live smoke test on VM 103 passed
 all six checks and the two bugs it found were fixed and re-verified. The next
 seam is openclaw calling the server.) Previously: 2026-09-12 (thirteenth pass, end of the MCP-server session:
@@ -34,6 +38,27 @@ or `decisions/DECISIONS.md`, not here.
 
 ## Now
 <!-- Actively being worked, or the clear immediate next step. -->
+
+- **NOW, 2026-09-15: wire the proposal queue into dfmcp, then the feed.**
+  Done since the last pass:
+  - openclaw on VM 106 called the fort and answered correctly;
+  - two architect charter runs, with output in `evals/live/`;
+  - relative `level` args, `isError` for script errors, and a JSON tool-call
+    log, all deployed and verified live on VM 103;
+  - `dfqueue/`, a write-time validated proposal queue in SQLite with
+    live-state prediction signals and a grader (local code).
+
+  **Next, in order:**
+  1. `propose` / `pass` / `ruling` MCP tools with the game tick stamped at
+     write time;
+  2. a grader schedule;
+  3. a publisher of §8's allowlisted fields (no delay, user's call);
+  4. the stream page with the feed on the right (**public, so its own
+     go-ahead**).
+
+  **Also open:** run #2 dropped the proposal format and strayed into
+  defensibility, and the DeepSeek key is plaintext on VM 106.
+  → `Working.md`, `decisions/DECISIONS.md` 2026-09-14/15.
 
 - **NOW, 2026-09-12: the agent architecture is designed, all four research
   briefs are back, and the first code exists.**

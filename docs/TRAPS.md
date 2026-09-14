@@ -243,3 +243,36 @@ findings without another doc home yet.
 - **openclaw's config home in the image is `/home/node/.openclaw`**, not
   `/root/.config/openclaw`. Mounting the wrong one does not error: openclaw
   just starts with an empty config, and `secrets audit` reports "clean".
+
+## Added 2026-09-14/15, from the architect runs, the dfmcp fixes and the queue
+
+- **An optional absolute argument with a good default still leaks
+  coordinates.** 2026-09-11 made the spatial tools' `Z` default to the
+  landmark's own level, so the default was coordinate-free, but asking for
+  any other level needed an absolute DF z (the map runs 0-185 and the
+  landmarks sit at 168-169). The architect passed 0 to -4, got silent `[]`,
+  and concluded there was nothing underground; level -1 actually had 5 dig
+  candidates. Fixed with a relative `LEVEL`. An off-map value is now a named
+  error rather than an empty list, and every MCP argument has a description.
+- **In the mcp 2.x SDK, `CallToolResult` is built with `isError=` but read
+  as `result.is_error`.** Reading `result.isError` raises `AttributeError`;
+  the tests caught it.
+- **`dfhack.world.ReadCurrentTick()` is `df.global.cur_year_tick`** (ticks
+  within the current year, reset every year), **not
+  `world.frame_counter`**. Verified live 2026-09-15: 178877, 178877 and
+  44275 respectively. An executor cited docs saying `frame_counter`; the
+  live reading settled it. Absolute tick = year × 403200 + tick.
+- **`overview.get` output is nested**: `tier0.fortress`, `tier1.population`,
+  `tier1.landmarks`, `tier2.in_game_date`, `tier2.alerts`.
+  `landmarks.list` and `stuckjobs.find` print bare arrays. Copy fixtures
+  from real output (`dfhack-run ... | sed` to strip the ANSI prefix) rather
+  than from the script's name for a field.
+- **Executor "byte-for-byte identical" claims need a hash.** Architect run
+  #2's config differed from run #1's in a `_note` string despite that claim.
+  It was harmless, but only a `sha256sum` or `diff` showed it.
+- **A fake address used as a leak-scan positive control is still an address
+  in a public repo.** Use RFC 5737 documentation ranges (`192.0.2.x`), so
+  future scans can exclude it cleanly.
+- **`python3` does not exist on this workstation, and `py -3` is a 3.13
+  without pytest.** Use `python` (3.12) for the ambient suite and
+  `.venv-dfmcp/Scripts/python` for `dfmcp/tests`.
