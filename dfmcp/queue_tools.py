@@ -100,10 +100,69 @@ queue-write tool today also holds `overview.get` directly, so this
 distinction is not yet load-bearing -- but it would matter the day a role
 could write to the queue without also being allowed to read `overview.get`,
 and the design should not quietly depend on that coincidence.)
+
+## SQLite runs off the event loop, and writes are serialised
+
+Added Phase A review, 2026-09-15, closing a gap the first pass of this
+module left open: every `dfqueue.store` call here runs inside
+`asyncio.to_thread`, not directly on the event loop -- a synchronous
+SQLite call blocks whatever else that loop is doing (every other in-flight
+MCP session on this same server process) for its whole duration.
+
+Moving store calls onto a thread pool introduces a real race that a purely
+synchronous call never had a chance to hit: `dfqueue.store._next_id` is
+`COUNT(*)`-based and runs, along with the existing-id check, in a separate
+read *before* the row it names is actually inserted -- fine when nothing
+ever yields between the two, which is exactly what made the original
+synchronous version accidentally safe. Once `append()` can run
+concurrently on different threads, two proposals racing through
+`_next_id` at the same moment can compute the same id, and the second
+`INSERT` then fails on the `records.id` primary key -- a real,
+reproducible collision, not a theoretical one (see
+`dfmcp/tests/test_queue_tools.py`'s `test_concurrent_raw_appends_without_serialization_can_collide`,
+which forces exactly this with a monkeypatched slow `_next_id`).
+
+The fix: `call()` below takes a `write_lock: asyncio.Lock`, supplied by
+the caller (`dfmcp/server.py`'s `build_mcp_server` creates exactly one per
+running server and passes it down, matching how `pool`/`registry`/`roster`
+are already scoped one per server build rather than a process-wide
+global -- deliberately NOT a module-level lock here, since an
+`asyncio.Lock` binds to whichever event loop first acquires it and raises
+if reused from a different one, which a module-level singleton would be
+the moment more than one event loop -- one real server process, or one
+test after another -- ever touched it). It is held **only** around the
+`asyncio.to_thread(store.append, ...)` call itself, in `_append_locked`
+below. It is deliberately **not** held around `_stamp_cycle_snapshot`'s
+`overview.get` call: DFHack latency under load has been observed in the
+40-80 second range (this project's own operational history), and holding
+a write lock across that would serialise every queue write in the fort
+behind whichever one happens to be waiting on DFHack, turning an
+occasional slow call into a pile-up. `queue.pending`'s read
+(`store.pending_proposals`) also moves onto `asyncio.to_thread` for the
+same off-loop reason, but takes no lock: it is a plain read, and the race
+above is specific to the `_next_id`/insert sequence inside `append()`.
+
+## Storage errors are refusals too, not crashes
+
+Added the same review pass: a `sqlite3.Error` (a locked or corrupt
+database, a schema mismatch) or `OSError` (an unwritable or missing queue
+directory -- exactly the `ProtectSystem=strict`/`ReadWritePaths` gotcha
+this stream's own Phase B checklist flags) raised by `dfqueue.store` used
+to propagate straight out of `dfmcp.server._handle_call_tool` as an
+unhandled exception -- a protocol-level failure, not the `isError=True`
+tool result every other refusal in this package already is. Every store
+call below is now wrapped to catch `(sqlite3.Error, OSError)` alongside
+`store.QueueError` and re-raise as `QueueToolError`, via `_storage_error`.
+The message names the tool id and the exception's own text, never the
+`db_path` value itself in isolation as anything resembling a secret (it
+is a local filesystem path, not a credential) -- but it also never echoes
+`arguments`, which the caller already knows, so nothing new leaks either.
 """
 
 from __future__ import annotations
 
+import asyncio
+import sqlite3
 from dataclasses import dataclass
 from typing import Any, Awaitable, Callable, Dict, Mapping, Optional, Tuple
 
@@ -127,12 +186,16 @@ NATIVE_TOOL_IDS = (QUEUE_PROPOSE, QUEUE_PASS, QUEUE_RULE, QUEUE_PENDING)
 
 class QueueToolError(Exception):
     """A queue tool call is refused: bad arguments, a `dfqueue.store.QueueError`
-    (write-time validation, a duplicate id, a dangling `proposal_id`), or
-    DFHack being unreachable while stamping `cycle`/`snapshot`. Always caught
-    by `dfmcp.server` and turned into an MCP tool result with `isError=True`
-    carrying this exception's message -- never raised past that boundary,
-    matching how `dfmcp.tools.ArgumentError` and `dfmcp.roles.Roster.check`
-    denials are already handled (`dfmcp/server.py`'s "Denials" note)."""
+    (write-time validation, a duplicate id, a dangling `proposal_id`, a
+    second final ruling), DFHack being unreachable while stamping
+    `cycle`/`snapshot`, or a `sqlite3.Error`/`OSError` from the queue
+    database itself (an unwritable directory, a locked or corrupt file --
+    see this module's docstring, "Storage errors are refusals too, not
+    crashes"). Always caught by `dfmcp.server` and turned into an MCP tool
+    result with `isError=True` carrying this exception's message -- never
+    raised past that boundary, matching how `dfmcp.tools.ArgumentError` and
+    `dfmcp.roles.Roster.check` denials are already handled
+    (`dfmcp/server.py`'s "Denials" note)."""
 
 
 # --------------------------------------------------------------------------
@@ -446,8 +509,33 @@ def _write_error(tool_id: str, exc: store.QueueError) -> QueueToolError:
     return QueueToolError(f"{tool_id}: {exc}")
 
 
+def _storage_error(tool_id: str, exc: BaseException) -> QueueToolError:
+    """A `sqlite3.Error`/`OSError` from `dfqueue.store`, wrapped the same
+    way a write-time validation refusal already is -- see this module's
+    docstring, "Storage errors are refusals too, not crashes"."""
+    return QueueToolError(f"{tool_id}: the queue database is unavailable: {exc}")
+
+
+async def _append_locked(
+    tool_id: str, record: dict, db_path, game_tick: Optional[int], write_lock: "asyncio.Lock",
+) -> dict:
+    """`store.append`, off the event loop and serialised against every
+    other write this server makes, per this module's docstring. Raises
+    `QueueToolError` (never a raw `store.QueueError`/`sqlite3.Error`/
+    `OSError`) so every caller below can `await` this directly with no
+    try/except of its own."""
+    try:
+        async with write_lock:
+            return await asyncio.to_thread(store.append, record, db_path, game_tick=game_tick)
+    except store.QueueError as exc:
+        raise _write_error(tool_id, exc) from exc
+    except (sqlite3.Error, OSError) as exc:
+        raise _storage_error(tool_id, exc) from exc
+
+
 async def _propose(
     role: str, arguments: Mapping[str, Any], *, db_path, call_dfhack: CallDFHack,
+    write_lock: "asyncio.Lock",
 ) -> Tuple[str, dict]:
     _reject_unknown_arguments(QUEUE_PROPOSE, arguments, _PROPOSE_FIELDS)
     tick, snapshot = await _stamp_cycle_snapshot(call_dfhack)
@@ -455,15 +543,13 @@ async def _propose(
         "kind": schema.PROPOSAL, "role": role, "cycle": tick, "snapshot": snapshot,
         **{k: arguments[k] for k in _PROPOSE_FIELDS if k in arguments},
     }
-    try:
-        written = store.append(record, db_path, game_tick=tick)
-    except store.QueueError as exc:
-        raise _write_error(QUEUE_PROPOSE, exc) from exc
+    written = await _append_locked(QUEUE_PROPOSE, record, db_path, tick, write_lock)
     return render.to_xml(written), written
 
 
 async def _pass_(
     role: str, arguments: Mapping[str, Any], *, db_path, call_dfhack: CallDFHack,
+    write_lock: "asyncio.Lock",
 ) -> Tuple[str, dict]:
     _reject_unknown_arguments(QUEUE_PASS, arguments, _PASS_FIELDS)
     tick, snapshot = await _stamp_cycle_snapshot(call_dfhack)
@@ -471,15 +557,13 @@ async def _pass_(
         "kind": schema.PASS, "role": role, "cycle": tick, "snapshot": snapshot,
         **{k: arguments[k] for k in _PASS_FIELDS if k in arguments},
     }
-    try:
-        written = store.append(record, db_path, game_tick=tick)
-    except store.QueueError as exc:
-        raise _write_error(QUEUE_PASS, exc) from exc
+    written = await _append_locked(QUEUE_PASS, record, db_path, tick, write_lock)
     return render.to_xml(written), written
 
 
 async def _rule(
     role: str, arguments: Mapping[str, Any], *, db_path, call_dfhack: CallDFHack,
+    write_lock: "asyncio.Lock",
 ) -> Tuple[str, dict]:
     _reject_unknown_arguments(QUEUE_RULE, arguments, _RULE_FIELDS)
     tick, snapshot = await _stamp_cycle_snapshot(call_dfhack)
@@ -487,22 +571,25 @@ async def _rule(
         "kind": schema.RULING, "role": role, "cycle": tick, "snapshot": snapshot,
         **{k: arguments[k] for k in _RULE_FIELDS if k in arguments},
     }
-    try:
-        written = store.append(record, db_path, game_tick=tick)
-    except store.QueueError as exc:
-        raise _write_error(QUEUE_RULE, exc) from exc
+    written = await _append_locked(QUEUE_RULE, record, db_path, tick, write_lock)
     return render.to_xml(written), written
 
 
 async def _pending(
     role: str, arguments: Mapping[str, Any], *, db_path, call_dfhack: CallDFHack,
+    write_lock: "asyncio.Lock",
 ) -> Tuple[str, dict]:
     _reject_unknown_arguments(QUEUE_PENDING, arguments, _PENDING_FIELDS)
     limit = arguments.get("limit")
     if limit is not None:
         if isinstance(limit, bool) or not isinstance(limit, int) or limit <= 0:
             raise QueueToolError(f"{QUEUE_PENDING}: 'limit' must be a positive integer, got {limit!r}")
-    records = store.pending_proposals(db_path, limit=limit)
+    # No write_lock here on purpose: a plain read, not part of the
+    # _next_id/insert race the lock exists to serialise (module docstring).
+    try:
+        records = await asyncio.to_thread(store.pending_proposals, db_path, limit=limit)
+    except (sqlite3.Error, OSError) as exc:
+        raise _storage_error(QUEUE_PENDING, exc) from exc
     xml = "\n\n".join(render.to_xml(r) for r in records) if records else "<pending/>"
     structured = {"count": len(records), "proposal_ids": [r["id"] for r in records]}
     return xml, structured
@@ -518,14 +605,22 @@ _HANDLERS = {
 
 async def call(
     tool_id: str, role: str, arguments: Mapping[str, Any], *, db_path, call_dfhack: CallDFHack,
+    write_lock: "asyncio.Lock",
 ) -> Tuple[str, Optional[dict]]:
     """Dispatch one native tool call. Returns `(text, structured)` for
     `dfmcp.server` to wrap into a `CallToolResult(isError=False, ...)`, or
     raises `QueueToolError` for `dfmcp.server` to turn into
     `isError=True`. Never called for an id outside `NATIVE_TOOL_IDS` --
     `dfmcp.server` only reaches this after confirming `registry.get(tool_id)`
-    is a native tool."""
+    is a native tool.
+
+    `write_lock`: one `asyncio.Lock` per running server, supplied by the
+    caller (never constructed here -- see this module's docstring on why a
+    module-level lock would be wrong). Only `_propose`/`_pass_`/`_rule`
+    actually acquire it (inside `_append_locked`); `_pending` accepts and
+    ignores it so every handler shares one call signature.
+    """
     handler = _HANDLERS.get(tool_id)
     if handler is None:  # pragma: no cover -- server.py only routes known native ids here
         raise AssertionError(f"queue_tools.call: unknown native tool id {tool_id!r}")
-    return await handler(role, arguments, db_path=db_path, call_dfhack=call_dfhack)
+    return await handler(role, arguments, db_path=db_path, call_dfhack=call_dfhack, write_lock=write_lock)
