@@ -110,14 +110,36 @@ Everything below this block is detail and reasoning. This is the brief.
        is recreated.
      - Reversal: `docker rmi ghcr.io/openclaw/openclaw:latest; sudo rm -rf
        /opt/openclaw`.
-   - **NEXT JOB, first one that costs money, needs go-ahead:**
-     1. Mint a real role token (architect: read-only) into VM 106 via
-        `openclaw secrets` or an env var, never as a literal in config.
-     2. Configure a model provider.
-     3. Run one agent turn that calls one read tool on the fort.
-     4. Look at `openclaw secrets store/audit` before step 1.
-     5. Decide whether the durable gateway runs from a fixed scaffold or from
-        the CLI recipe.
+   - **DONE 2026-09-14: an agent has called the fort.**
+     `handoffs/2026-09-14-openclaw-first-agent-call.md`.
+     - `openclaw agent exec` on VM 106, model `deepseek/deepseek-v4-flash`,
+       architect token, called `df-overseer__landmarks__list` once and
+       answered correctly. It cost $0.0032, and 4 of its 5 attempts failed
+       locally for free.
+     - Verified by the orchestrator:
+       - every MCP 200 since 09:30 on VM 103 came from VM 106;
+       - `dfhack-run df-overseer-landmarks list` on VM 103 gives the same 4
+         landmarks;
+       - the probe shows the 9 read-only tools from
+         `agents/architect/tools.yaml`.
+     - **State left on VM 106:**
+       - `/opt/openclaw/secrets/openclaw_secrets.env` (0600) holds the
+         architect token and the DeepSeek key;
+       - **the DeepSeek key is also plaintext in
+         `/opt/openclaw/config/state/openclaw.sqlite`** (openclaw's
+         `models auth paste-api-key`, needed because an env var alone gave
+         `Unknown model`);
+       - the architect token is in the env file only;
+       - the `@openclaw/deepseek-provider` plugin is installed.
+       Nothing listens.
+     - Reversal: `sudo rm -rf /opt/openclaw` removes both secrets.
+   - **NEXT (needs the user's call):**
+     - whether the DeepSeek key stays on VM 106;
+     - trying `openclaw secrets store` to get it out of plaintext;
+     - then a durable gateway, from a fixed scaffold (`OPENCLAW_STATE_DIR`)
+       or the CLI recipe, which would owe a home-lab `services.yaml` entry;
+     - then an agent with a real charter (`agents/*/role.md`) instead of a
+       one-shot question.
    - **OWED once the unit is enabled**: a `home-lab` `inventory/services.yaml`
      entry for the new service on VM 103. No live `home-lab` session existed
      when this was dispatched, so it is recorded here as open, per
