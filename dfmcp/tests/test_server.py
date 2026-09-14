@@ -48,12 +48,17 @@ import asyncio
 import contextlib
 import json
 import logging
+import tempfile
+from pathlib import Path
 from typing import AsyncIterator, Dict, Optional
 
 import pytest
 import pytest_asyncio
 
+from dfqueue import store as _dfqueue_store
+
 from dfmcp.dfhack_client import DFHackConnectionPool, _encode_run_command_request
+from dfmcp.queue_tools import NATIVE_TOOLS
 from dfmcp.registry import load_registry
 from dfmcp.roles import load_roster
 from dfmcp.tests.test_dfhack_client import FakeDFHackServer, make_fail_action, make_ok_action
@@ -114,7 +119,12 @@ TOKENS: Dict[str, str] = {
 
 @pytest.fixture(scope="module")
 def registry():
-    return load_registry()
+    # native_tools=NATIVE_TOOLS: the real agents/architect/tools.yaml and
+    # agents/overseer/tools.yaml now grant real queue.* ids
+    # (handoffs/2026-09-15-queue-into-dfmcp.md), which roles.py rule 1
+    # requires to exist in the registry -- load_roster(registry) below would
+    # otherwise fail to load the real roster for every test in this file.
+    return load_registry(native_tools=NATIVE_TOOLS)
 
 
 @pytest.fixture(scope="module")
@@ -136,10 +146,19 @@ async def pool(fake_dfhack):
     await p.close()
 
 
-def _app(registry, roster, pool):
+def _app(registry, roster, pool, queue_db_path=None):
     """A fresh Server + ASGI app. See module docstring for why this is
-    called once per session rather than shared across a test."""
-    server = build_mcp_server(registry, roster, pool)
+    called once per session rather than shared across a test.
+
+    `queue_db_path` defaults to a fresh throwaway SQLite path per call
+    (added `handoffs/2026-09-15-queue-into-dfmcp.md`), so every existing
+    call site in this file that does not care about queue tools keeps
+    working unchanged. Tests that DO care (TestQueueTools below) pass an
+    explicit path so they can inspect what was written afterward via
+    dfqueue.store directly."""
+    if queue_db_path is None:
+        queue_db_path = Path(tempfile.mkdtemp()) / "test-queue.sqlite3"
+    server = build_mcp_server(registry, roster, pool, Path(queue_db_path))
     return build_asgi_app(server, TOKENS, bind_host=_BIND_HOST)
 
 
@@ -526,6 +545,263 @@ class TestServerCallEdgeCases:
 
 
 # ==========================================================================
+# Native queue.* tools (handoffs/2026-09-15-queue-into-dfmcp.md): the four
+# tests this stream's brief names explicitly, plus the edge cases the same
+# brief's "Tests (required, not optional)" section lists. These are the
+# first tests to exercise dfmcp.queue_tools end to end, through the real
+# ASGI app, against FakeDFHackServer for the one DFHack call the native
+# handlers make (overview.get, to stamp cycle/snapshot).
+# ==========================================================================
+
+# A minimal but real-shaped `overview.get` payload: `tier1.population` and
+# `tier2.in_game_date`/`tier2.alerts` are exactly what
+# `dfqueue.grade.game_tick_from_overview` and `learning.live_signals.read`
+# read (see df-overseer-overview.lua / learning/live_signals.py). year 1,
+# tick 500 -> game_tick 1*403200 + 500 = 403700.
+_OVERVIEW_JSON = (
+    '{"tier1": {"population": 7}, '
+    '"tier2": {"in_game_date": "year 1, month 1, day 1, tick 500", "alerts": []}}'
+)
+_EXPECTED_GAME_TICK = 1 * 403200 + 500
+
+_VALID_PROPOSE_ARGS = {
+    "type": "workshop_siting",  # a real agents/architect/tools.yaml-granted TYPE_VOCAB_BY_ROLE entry
+    "summary": "Site the next workshop on open ground near the Wagon.",
+    "rationale": "Shortest hauling path of the candidates offered.",
+    "prediction": {"signal": "fort.population", "op": "gte", "value": 1, "check_after_ticks": 1200},
+    "cost": {"estimate": 10, "unit": "dwarf_ticks"},
+    "suggested_priority": 3,
+    "preconditions": [{"landmark": "Wagon", "state": "exists"}],
+    "public_rationale": "Puts the workshop near the wagon.",
+}
+
+_VALID_RULE_ARGS = {
+    "decision": "accept", "reason": "Shortest hauling path.", "public_rationale": "Approved.",
+}
+
+
+class TestQueueTools:
+    pytestmark = pytest.mark.asyncio
+
+    async def test_queue_tools_list_is_role_scoped(self, registry, roster, pool):
+        """Test named in the brief: per-role tools/list shows exactly the
+        right queue tools. Architect gets propose+pass only, overseer gets
+        rule+pending only, consultant (whose type vocabulary is empty and
+        whose tools.yaml keeps queue.propose `planned`, per the brief) gets
+        none of the four."""
+        # A fresh app per session: Server.streamable_http_app()'s session
+        # manager can only run its lifespan once per instance (module
+        # docstring, "Why every test builds a fresh Server/app").
+        async with mcp_session(_app(registry, roster, pool), ARCHITECT_TOKEN) as session:
+            architect_names = {t.name for t in (await session.list_tools()).tools}
+        async with mcp_session(_app(registry, roster, pool), OVERSEER_TOKEN) as session:
+            overseer_names = {t.name for t in (await session.list_tools()).tools}
+        async with mcp_session(_app(registry, roster, pool), CONSULTANT_TOKEN) as session:
+            consultant_names = {t.name for t in (await session.list_tools()).tools}
+
+        assert {"queue__propose", "queue__pass"} <= architect_names
+        assert not ({"queue__rule", "queue__pending"} & architect_names)
+
+        assert {"queue__rule", "queue__pending"} <= overseer_names
+        assert not ({"queue__propose", "queue__pass"} & overseer_names)
+
+        assert not (
+            {"queue__propose", "queue__pass", "queue__rule", "queue__pending"} & consultant_names
+        )
+
+    async def test_propose_writes_a_record_stamped_with_the_live_game_tick(
+        self, registry, roster, pool, fake_dfhack, tmp_path
+    ):
+        """Test named in the brief: a valid proposal is written with the
+        tick taken from a fake overview.get."""
+        queue_db = tmp_path / "queue.sqlite3"
+        fake_dfhack.queue_actions(make_ok_action(_OVERVIEW_JSON))
+        app = _app(registry, roster, pool, queue_db)
+
+        async with mcp_session(app, ARCHITECT_TOKEN) as session:
+            result = await session.call_tool("queue__propose", _VALID_PROPOSE_ARGS)
+
+        assert result.is_error is False
+        assert result.structured_content["role"] == "architect"
+        assert result.structured_content["cycle"] == _EXPECTED_GAME_TICK
+        assert result.structured_content["snapshot"] == f"tick-{_EXPECTED_GAME_TICK}"
+        text = "".join(b.text for b in result.content if b.type == "text")
+        assert text.startswith("<proposal ")
+
+        written = _dfqueue_store.load(queue_db)
+        assert len(written) == 1
+        assert written[0]["id"] == result.structured_content["id"]
+        assert written[0]["role"] == "architect"
+
+        assert len(fake_dfhack.received_requests) == 1
+        expected = _encode_run_command_request("df-overseer-overview", ["get"])
+        assert fake_dfhack.received_requests[0] == expected
+
+    async def test_propose_with_a_supplied_role_argument_is_refused_and_writes_nothing(
+        self, registry, roster, pool, fake_dfhack, tmp_path
+    ):
+        """Test named in the brief: a supplied `role` argument is refused,
+        not silently ignored, and nothing is written. Never even reaches
+        DFHack: the argument check runs before cycle/snapshot stamping."""
+        queue_db = tmp_path / "queue.sqlite3"
+        app = _app(registry, roster, pool, queue_db)
+
+        args = dict(_VALID_PROPOSE_ARGS)
+        args["role"] = "overseer"  # attempting to assert an identity other than the caller's own
+
+        async with mcp_session(app, ARCHITECT_TOKEN) as session:
+            result = await session.call_tool("queue__propose", args)
+
+        assert result.is_error is True
+        text = "".join(b.text for b in result.content if b.type == "text")
+        assert "role" in text
+        assert _dfqueue_store.load(queue_db) == []
+        assert fake_dfhack.received_requests == []
+
+    async def test_propose_with_extra_stray_fields_is_also_refused(
+        self, registry, roster, pool, fake_dfhack, tmp_path
+    ):
+        """The same refusal, for id/ts/cycle/snapshot too, not just role --
+        none of the five may ever be supplied."""
+        queue_db = tmp_path / "queue.sqlite3"
+        for stray in ("id", "ts", "cycle", "snapshot"):
+            args = dict(_VALID_PROPOSE_ARGS)
+            args[stray] = "attempted-override"
+            app = _app(registry, roster, pool, queue_db)  # fresh: see module docstring
+            async with mcp_session(app, ARCHITECT_TOKEN) as session:
+                result = await session.call_tool("queue__propose", args)
+            assert result.is_error is True, stray
+        assert _dfqueue_store.load(queue_db) == []
+        assert fake_dfhack.received_requests == []
+
+    async def test_propose_with_a_malformed_record_is_refused_with_reasons_and_writes_nothing(
+        self, registry, roster, pool, fake_dfhack, tmp_path
+    ):
+        """Test named in the brief: a malformed proposal returns isError
+        listing the errors and writes nothing. Reaches DFHack (the argument
+        shape is fine; only a value inside it is invalid), so an
+        overview.get action must be queued."""
+        queue_db = tmp_path / "queue.sqlite3"
+        fake_dfhack.queue_actions(make_ok_action(_OVERVIEW_JSON))
+        app = _app(registry, roster, pool, queue_db)
+
+        args = dict(_VALID_PROPOSE_ARGS)
+        args["suggested_priority"] = 99  # out of the valid 1-7 range
+
+        async with mcp_session(app, ARCHITECT_TOKEN) as session:
+            result = await session.call_tool("queue__propose", args)
+
+        assert result.is_error is True
+        text = "".join(b.text for b in result.content if b.type == "text")
+        assert "suggested_priority" in text
+        assert _dfqueue_store.load(queue_db) == []
+
+    async def test_propose_when_dfhack_is_unreachable_is_refused_and_writes_nothing(
+        self, registry, roster, pool, fake_dfhack, tmp_path
+    ):
+        """Test named in the brief: DFHack unreachable at propose time means
+        refused and nothing written."""
+        queue_db = tmp_path / "queue.sqlite3"
+        fake_dfhack.queue_actions(make_fail_action(1))  # CR_FAILURE on the overview.get call
+        app = _app(registry, roster, pool, queue_db)
+
+        async with mcp_session(app, ARCHITECT_TOKEN) as session:
+            result = await session.call_tool("queue__propose", _VALID_PROPOSE_ARGS)
+
+        assert result.is_error is True
+        text = "".join(b.text for b in result.content if b.type == "text")
+        assert "DFHack" in text
+        assert _dfqueue_store.load(queue_db) == []
+
+    async def test_architect_calling_queue_rule_is_refused_by_roster_check(
+        self, registry, roster, pool, fake_dfhack
+    ):
+        """Test named in the brief: architect calling queue.rule is refused
+        by Roster.check -- before the native handler ever runs, so no
+        DFHack call happens either, matching test 2's DFHack-side-effect
+        proof for the DFHack-tool case."""
+        app = _app(registry, roster, pool)
+        async with mcp_session(app, ARCHITECT_TOKEN) as session:
+            result = await session.call_tool("queue__rule", _VALID_RULE_ARGS | {"proposal_id": "proposal-0001"})
+        assert result.is_error is True
+        assert fake_dfhack.received_requests == []
+
+    async def test_rule_on_a_nonexistent_proposal_is_refused(
+        self, registry, roster, pool, fake_dfhack, tmp_path
+    ):
+        """Test named in the brief: a ruling on a nonexistent proposal is
+        refused."""
+        queue_db = tmp_path / "queue.sqlite3"
+        fake_dfhack.queue_actions(make_ok_action(_OVERVIEW_JSON))
+        app = _app(registry, roster, pool, queue_db)
+
+        async with mcp_session(app, OVERSEER_TOKEN) as session:
+            result = await session.call_tool(
+                "queue__rule", _VALID_RULE_ARGS | {"proposal_id": "proposal-9999"}
+            )
+
+        assert result.is_error is True
+        text = "".join(b.text for b in result.content if b.type == "text")
+        assert "does not refer to an existing proposal" in text
+        assert _dfqueue_store.load(queue_db) == []
+
+    async def test_pending_returns_xml_and_drops_a_proposal_once_ruled(
+        self, registry, roster, pool, fake_dfhack, tmp_path
+    ):
+        """Test named in the brief: queue.pending returns XML and drops a
+        proposal once ruled."""
+        queue_db = tmp_path / "queue.sqlite3"
+        fake_dfhack.queue_actions(
+            make_ok_action(_OVERVIEW_JSON),  # the propose call's own stamping
+            make_ok_action(_OVERVIEW_JSON),  # the rule call's own stamping
+        )
+        # A fresh app per session throughout (module docstring, "Why every
+        # test builds a fresh Server/app"); state persists across them via
+        # the shared queue_db SQLite file, not via the app object.
+        async with mcp_session(_app(registry, roster, pool, queue_db), ARCHITECT_TOKEN) as session:
+            propose_result = await session.call_tool("queue__propose", _VALID_PROPOSE_ARGS)
+        proposal_id = propose_result.structured_content["id"]
+
+        async with mcp_session(_app(registry, roster, pool, queue_db), OVERSEER_TOKEN) as session:
+            pending_before = await session.call_tool("queue__pending", {})
+        text_before = "".join(b.text for b in pending_before.content if b.type == "text")
+        assert proposal_id in text_before
+        assert text_before.startswith("<proposal ")
+        assert pending_before.structured_content == {"count": 1, "proposal_ids": [proposal_id]}
+
+        async with mcp_session(_app(registry, roster, pool, queue_db), OVERSEER_TOKEN) as session:
+            rule_result = await session.call_tool(
+                "queue__rule", _VALID_RULE_ARGS | {"proposal_id": proposal_id}
+            )
+            assert rule_result.is_error is False
+            pending_after = await session.call_tool("queue__pending", {})
+
+        assert pending_after.structured_content == {"count": 0, "proposal_ids": []}
+        text_after = "".join(b.text for b in pending_after.content if b.type == "text")
+        assert proposal_id not in text_after
+
+    async def test_queue_call_is_logged(self, registry, roster, pool, fake_dfhack, tmp_path, caplog):
+        """Test named in the brief: the queue call is logged, through the
+        same _on_call_tool wrapper as every other tool, and never with the
+        bearer token."""
+        caplog.set_level(logging.INFO, logger="dfmcp.calls")
+        queue_db = tmp_path / "queue.sqlite3"
+        fake_dfhack.queue_actions(make_ok_action(_OVERVIEW_JSON))
+        app = _app(registry, roster, pool, queue_db)
+
+        async with mcp_session(app, ARCHITECT_TOKEN) as session:
+            await session.call_tool("queue__propose", _VALID_PROPOSE_ARGS)
+
+        records = [r for r in caplog.records if r.name == "dfmcp.calls"]
+        assert len(records) == 1
+        assert ARCHITECT_TOKEN not in records[0].getMessage()
+        line = json.loads(records[0].getMessage())
+        assert line["tool"] == "queue__propose" and line["tool_id"] == "queue.propose"
+        assert line["is_error"] is False
+        assert line["role"] == "architect"
+
+
+# ==========================================================================
 # Config
 # ==========================================================================
 
@@ -537,12 +813,21 @@ class TestServerConfig:
 
     def test_bind_host_must_not_be_0_0_0_0(self):
         with pytest.raises(ConfigError):
-            ServerConfig(bind_host="0.0.0.0")
+            ServerConfig(bind_host="0.0.0.0", queue_db="test.sqlite3")
+
+    def test_queue_db_is_required(self):
+        """Added handoffs/2026-09-15-queue-into-dfmcp.md: same treatment as
+        bind_host -- no default, because the in-tree default
+        (dfqueue/<fort>.sqlite3) must never be clobberable by a code
+        redeploy."""
+        with pytest.raises(ConfigError):
+            config_from_env({"MCP_SERVER_BIND_HOST": "100.64.0.9"})
 
     def test_valid_env_produces_expected_config(self):
         config = config_from_env(
             {
                 "MCP_SERVER_BIND_HOST": "100.64.0.9",
+                "MCP_SERVER_QUEUE_DB": "/var/lib/dfmcp/uniboslan.sqlite3",
                 "MCP_SERVER_BIND_PORT": "9443",
                 "MCP_SERVER_DFHACK_HOST": "127.0.0.1",
                 "MCP_SERVER_DFHACK_PORT": "5001",
@@ -551,6 +836,7 @@ class TestServerConfig:
         )
         assert config == ServerConfig(
             bind_host="100.64.0.9",
+            queue_db="/var/lib/dfmcp/uniboslan.sqlite3",
             bind_port=9443,
             dfhack_host="127.0.0.1",
             dfhack_port=5001,
@@ -558,13 +844,26 @@ class TestServerConfig:
         )
 
     def test_missing_optional_fields_fall_back_to_defaults(self):
-        config = config_from_env({"MCP_SERVER_BIND_HOST": "100.64.0.9"})
-        assert config == ServerConfig(bind_host="100.64.0.9")
+        config = config_from_env({
+            "MCP_SERVER_BIND_HOST": "100.64.0.9",
+            "MCP_SERVER_QUEUE_DB": "/var/lib/dfmcp/uniboslan.sqlite3",
+        })
+        assert config == ServerConfig(
+            bind_host="100.64.0.9", queue_db="/var/lib/dfmcp/uniboslan.sqlite3",
+        )
 
     def test_non_integer_port_is_a_config_error(self):
         with pytest.raises(ConfigError):
-            config_from_env({"MCP_SERVER_BIND_HOST": "100.64.0.9", "MCP_SERVER_BIND_PORT": "not-a-port"})
+            config_from_env({
+                "MCP_SERVER_BIND_HOST": "100.64.0.9",
+                "MCP_SERVER_QUEUE_DB": "test.sqlite3",
+                "MCP_SERVER_BIND_PORT": "not-a-port",
+            })
 
     def test_zero_pool_size_is_a_config_error(self):
         with pytest.raises(ConfigError):
-            config_from_env({"MCP_SERVER_BIND_HOST": "100.64.0.9", "MCP_SERVER_POOL_SIZE": "0"})
+            config_from_env({
+                "MCP_SERVER_BIND_HOST": "100.64.0.9",
+                "MCP_SERVER_QUEUE_DB": "test.sqlite3",
+                "MCP_SERVER_POOL_SIZE": "0",
+            })

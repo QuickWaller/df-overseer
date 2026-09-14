@@ -50,11 +50,35 @@ Two tables:
 (a proposal requires `game_tick`; `pass`/`ruling` don't), `load(path)` (every
 record, append order), `latest(path, n)` (the `n` most recent, newest
 first — the feed's own query), `pending_due(path, tick)` (the grader's own
-query), `apply_grades(path, updates)` (one transaction per grading pass), and
-`export_jsonl(path, out_dir)` — a deterministic dump of both tables to
-`records.jsonl`/`predictions.jsonl`, regenerated from SQLite rather than
-hand-maintained, keeping the git-trackable, `cat`-able, public-report form
-the 2026-08-27 no-database decision cared about.
+query), `pending_proposals(path, limit=...)` (added `handoffs/
+2026-09-15-queue-into-dfmcp.md` for `queue.pending`; every proposal with no
+**final** ruling yet — see "A ruling closes a proposal, but a defer does
+not" below), `apply_grades(path, updates)` (one transaction per grading
+pass), and `export_jsonl(path, out_dir)` — a deterministic dump of both
+tables to `records.jsonl`/`predictions.jsonl`, regenerated from SQLite
+rather than hand-maintained, keeping the git-trackable, `cat`-able,
+public-report form the 2026-08-27 no-database decision cared about.
+
+### A ruling closes a proposal, but a defer does not
+
+Revised Phase A review, 2026-09-15, after the first cut of `pending_proposals`
+made a proposal vanish from the Overseer's own view the moment it got
+**any** ruling, `defer` included — wrong, because `defer` means "decide
+later," not "done." `append()` and `pending_proposals()` now agree on the
+same rule: `RULING_DECISIONS` splits into `store.FINAL_DECISIONS`
+(`accept`, `reject` — closes the proposal for good) and `defer` (leaves it
+open). `pending_proposals()` excludes a proposal once any ruling naming it
+has a **final** decision; `append()` refuses a *second* ruling on a
+proposal that already has a final one (a repeat accept/reject, or any
+ruling — even another defer — after one), but allows a ruling, including
+another `defer`, after a `defer`. Both read the decision via
+`json_extract(payload, '$.decision')` rather than a new column, so this
+needed no `SCHEMA_VERSION` bump; confirmed working against SQLite 3.45.3
+in both interpreters this project runs from (ambient `python` and
+`.venv-dfmcp`) — see this stream's report for how, and for the Phase B
+note that VM 103's own SQLite (Ubuntu noble, Python 3.12) still wants a
+live re-check before this is trusted there, not assumed from a local
+match.
 
 ## What this is
 
@@ -235,17 +259,23 @@ this function's return value.
 ## What is deliberately not here yet
 
 - **A `plan` record kind** (see above).
-- **The `propose` MCP tool.** `dfmcp/roles.py` already reserves the shape
-  for it (its `planned` entries note "the queue, the sentry endpoint... not
-  checked against the registry"); this stream did not touch `dfmcp/` at all.
 - **A grader schedule.** `grade.grade_due()` exists and is tested end to
-  end, but nothing calls it on a timer or after a real DFHack poll yet — that
-  needs a live `call_tool` wired to `dfmcp` or a direct DFHack RPC call,
-  neither of which this stream touches (local code and tests only, no VM, no
-  deploy).
+  end, but nothing calls it on a timer or after a real DFHack poll yet: that
+  needs a live `call_tool` wired to `dfmcp` or a direct DFHack RPC call.
 - **The publisher** (step 2): an allowlisted-field publisher reading
   `render.public_view()` on a delay, per §8.
 - **The feed page** (step 3).
 - **A `plan`-aware write-ahead recovery reader.** §9's crash-consistency
   story ("a crash mid-plan is then recoverable and re-application is
   detectable") needs the `plan` kind above first.
+
+**The `propose`/`pass`/`rule`/`pending` MCP tools are now built**, as of
+`handoffs/2026-09-15-queue-into-dfmcp.md`: `dfmcp/queue_tools.py` is the
+tool layer, four native (non-DFHack) tools merged into `dfmcp`'s registry.
+`dfqueue/store.py` grew one additive query (`pending_proposals`) for
+`queue.pending`, and `agents/architect/tools.yaml` and
+`agents/overseer/tools.yaml` grant the real calls. **Phase A only: local
+code and tests, not deployed.** Nothing in `dfqueue/` runs on VM 103 yet;
+the deploy stream's own report covers shipping this package, `learning/`
+and `dfmcp/queue_tools.py` together, plus a new required env key,
+`MCP_SERVER_QUEUE_DB`, pointing outside the code checkout.

@@ -246,6 +246,110 @@ def test_pending_due_excludes_a_graded_prediction(tmp_path):
     assert store.pending_due(path, 1200) == []
 
 
+# ---- pending_proposals() -- added handoffs/2026-09-15-queue-into-dfmcp.md,
+# for queue.pending (dfmcp/queue_tools.py) -----------------------------------------
+
+
+def test_pending_proposals_excludes_a_ruled_one_and_keeps_an_unruled_one(tmp_path):
+    path = _db(tmp_path)
+    ruled = store.append(make_proposal(), path, game_tick=100)
+    unruled = store.append(make_proposal(), path, game_tick=100)
+    store.append(make_ruling(proposal_id=ruled["id"]), path)  # decision="accept" by default
+
+    pending = store.pending_proposals(path)
+    assert [r["id"] for r in pending] == [unruled["id"]]
+
+
+def test_pending_proposals_keeps_a_deferred_proposal(tmp_path):
+    """Phase A review, 2026-09-15: a proposal ruled only `defer` ("decide
+    later") must stay visible to the Overseer, not vanish the way any
+    ruling used to make it vanish before this fix."""
+    path = _db(tmp_path)
+    proposal = store.append(make_proposal(), path, game_tick=100)
+    store.append(make_ruling(proposal_id=proposal["id"], decision="defer"), path)
+
+    pending = store.pending_proposals(path)
+    assert [r["id"] for r in pending] == [proposal["id"]]
+
+
+def test_pending_proposals_excludes_a_rejected_one(tmp_path):
+    path = _db(tmp_path)
+    proposal = store.append(make_proposal(), path, game_tick=100)
+    store.append(make_ruling(proposal_id=proposal["id"], decision="reject"), path)
+
+    assert store.pending_proposals(path) == []
+
+
+def test_a_ruling_after_a_defer_is_allowed_and_a_second_defer_keeps_it_pending(tmp_path):
+    path = _db(tmp_path)
+    proposal = store.append(make_proposal(), path, game_tick=100)
+    store.append(make_ruling(proposal_id=proposal["id"], decision="defer"), path)
+    # A second ruling on the same proposal, after a defer, is not refused.
+    second = store.append(make_ruling(proposal_id=proposal["id"], decision="defer"), path)
+    assert second["decision"] == "defer"
+    assert [r["id"] for r in store.pending_proposals(path)] == [proposal["id"]]
+
+    # And a final ruling after a defer is allowed too, and does close it.
+    store.append(make_ruling(proposal_id=proposal["id"], decision="accept"), path)
+    assert store.pending_proposals(path) == []
+
+
+def test_a_second_final_ruling_is_refused_and_writes_nothing(tmp_path):
+    path = _db(tmp_path)
+    proposal = store.append(make_proposal(), path, game_tick=100)
+    store.append(make_ruling(proposal_id=proposal["id"], decision="accept"), path)
+
+    before = store.load(path)
+    with pytest.raises(store.QueueError, match="already has a final ruling"):
+        store.append(make_ruling(proposal_id=proposal["id"], decision="reject"), path)
+
+    assert store.load(path) == before  # nothing written by the refused second ruling
+
+
+def test_a_defer_after_a_reject_is_also_refused(tmp_path):
+    """The refusal is about the EXISTING ruling being final, not about what
+    the new one is trying to say: even a further defer is refused once the
+    proposal already has a final ruling."""
+    path = _db(tmp_path)
+    proposal = store.append(make_proposal(), path, game_tick=100)
+    store.append(make_ruling(proposal_id=proposal["id"], decision="reject"), path)
+
+    with pytest.raises(store.QueueError, match="already has a final ruling"):
+        store.append(make_ruling(proposal_id=proposal["id"], decision="defer"), path)
+
+
+def test_pending_proposals_is_oldest_first(tmp_path):
+    path = _db(tmp_path)
+    first = store.append(make_proposal(), path, game_tick=100)
+    second = store.append(make_proposal(), path, game_tick=100)
+    third = store.append(make_proposal(), path, game_tick=100)
+
+    assert [r["id"] for r in store.pending_proposals(path)] == [
+        first["id"], second["id"], third["id"],
+    ]
+
+
+def test_pending_proposals_respects_limit(tmp_path):
+    path = _db(tmp_path)
+    first = store.append(make_proposal(), path, game_tick=100)
+    store.append(make_proposal(), path, game_tick=100)
+
+    assert [r["id"] for r in store.pending_proposals(path, limit=1)] == [first["id"]]
+
+
+def test_pending_proposals_never_returns_a_pass_record(tmp_path):
+    path = _db(tmp_path)
+    proposal = store.append(make_proposal(), path, game_tick=100)
+    store.append(make_pass(), path)
+
+    assert [r["id"] for r in store.pending_proposals(path)] == [proposal["id"]]
+
+
+def test_pending_proposals_of_an_empty_queue_is_empty(tmp_path):
+    path = _db(tmp_path)
+    assert store.pending_proposals(path) == []
+
+
 # ---- export_jsonl -----------------------------------------------------------------
 
 

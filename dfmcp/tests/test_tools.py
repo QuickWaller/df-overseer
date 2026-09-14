@@ -38,6 +38,7 @@ import textwrap
 
 import pytest
 
+from dfmcp.queue_tools import NATIVE_TOOLS
 from dfmcp.registry import RegistryError, load_registry
 from dfmcp.roles import load_roster
 from dfmcp.tools import (
@@ -52,7 +53,13 @@ from dfmcp.tools import (
 
 @pytest.fixture(scope="module")
 def registry():
-    return load_registry()
+    # native_tools=NATIVE_TOOLS: the real roster now grants queue.* ids
+    # (handoffs/2026-09-15-queue-into-dfmcp.md); see test_roles.py's
+    # registry fixture for the full explanation. NativeTool.args = () keeps
+    # test_sweep_every_real_argument_token_is_confidently_typed below happy:
+    # it iterates registry.all() generically and expects every tool to have
+    # an .args to sweep, even if (as here) there is nothing in it.
+    return load_registry(native_tools=NATIVE_TOOLS)
 
 
 @pytest.fixture(scope="module")
@@ -320,6 +327,33 @@ def test_description_states_mutation_and_verification_status(registry, roster):
 
 def test_unknown_role_yields_no_tools_not_an_error(registry, roster):
     assert tool_definitions(registry, roster, "nobody") == []
+
+
+def test_native_queue_tools_use_describe_and_are_role_scoped(registry, roster):
+    """dfmcp.tools.tool_definitions' native-tool branch
+    (handoffs/2026-09-15-queue-into-dfmcp.md): a tool exposing `.describe`
+    is described through it, never through the DFHack-shaped
+    _tool_description/_input_schema pair, and queue.propose's schema is
+    built fresh per calling role."""
+    from dfqueue.schema import TYPE_VOCAB_BY_ROLE
+
+    architect_defs = {d["name"]: d for d in tool_definitions(registry, roster, "architect")}
+    overseer_defs = {d["name"]: d for d in tool_definitions(registry, roster, "overseer")}
+
+    assert {"queue__propose", "queue__pass"} <= set(architect_defs)
+    assert "queue__rule" not in architect_defs
+    assert "queue__pending" not in architect_defs
+
+    assert {"queue__rule", "queue__pending"} <= set(overseer_defs)
+    assert "queue__propose" not in overseer_defs
+    assert "queue__pass" not in overseer_defs
+
+    propose_schema = architect_defs["queue__propose"]["inputSchema"]
+    assert propose_schema["additionalProperties"] is False
+    assert propose_schema["properties"]["type"]["enum"] == list(TYPE_VOCAB_BY_ROLE["architect"])
+    assert "role" not in propose_schema["properties"]
+    assert "id" not in propose_schema["properties"]
+    assert "cycle" not in propose_schema["properties"]
 
 
 # --------------------------------------------------------------------------
