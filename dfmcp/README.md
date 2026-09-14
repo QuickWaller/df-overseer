@@ -562,6 +562,34 @@ as a real client-side failure:
   error-like field alongside real data (`dig`/`build`'s `quickfort_error`)
   is still an ordinary result.
 
+### Call log: one JSON line per `tools/call`
+
+Added 2026-09-14. The second architect charter run made 14 calls, 3 of which
+errored, and nothing recorded which calls or with what arguments. Every
+`tools/call` now logs one JSON object to the `dfmcp.calls` logger. `main()`
+sends that logger to stderr, which journald captures under systemd. Every
+return path goes through one wrapper, so no call can leave the server
+unlogged: results, refusals, argument errors, DFHack failures, script
+errors, and unhandled exceptions (logged, then re-raised). Each line carries:
+
+- `event`, `ts` (UTC)
+- `session_id` (the MCP session id header) and `request_id` (JSON-RPC id),
+  which correlate calls within one agent session
+- `client` (the calling host), `role`, `tool`, `tool_id`
+- `arguments` as given
+- `is_error`, `error` (the first 500 characters of the error text), `result_chars`,
+  `duration_ms`
+
+It records the role, never the token, and no tool argument carries a
+secret. Read it back as JSONL:
+
+```
+journalctl -u dfmcp-server.service -o cat | grep '"event": "tools/call"'
+```
+
+This is the mechanical input `docs/AGENT-ARCHITECTURE.md` §10 expects for
+`friction.jsonl`. Nothing consumes it yet.
+
 ### What remains unproven, stated plainly
 
 - **Nothing here has met a real DFHack.** `FakeDFHackServer` speaks the
