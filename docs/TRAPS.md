@@ -216,3 +216,14 @@ findings without another doc home yet.
   check itself**, so "is it still running?" answers 2 when the answer is
   really 0. Use `ps -eo pid,etimes,cmd | grep "[p]attern"` and look at the
   elapsed time, or check the listening port, which cannot match itself.
+
+## Added 2026-09-14, from the openclaw schema stream
+
+- **A "not found anywhere" search of a bundled app is only as wide as the
+  files it read.** `/app/openclaw.mjs` in the openclaw image looks like the
+  bundle and is a 22 KB launcher; the code is in thousands of chunk files.
+  An executor searched only that file and reported five config variables and
+  a `/healthz` route as nonexistent; four of the variables and the route were
+  there. Before trusting an absence claim, check the size of what was
+  searched and search the whole tree (`grep -rlF <name> /app --include=*.js
+  --include=*.mjs`).
