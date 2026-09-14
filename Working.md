@@ -133,9 +133,39 @@ Everything below this block is detail and reasoning. This is the brief.
        - the `@openclaw/deepseek-provider` plugin is installed.
        Nothing listens.
      - Reversal: `sudo rm -rf /opt/openclaw` removes both secrets.
+   - **DONE 2026-09-14: first architect charter run.**
+     `evals/live/2026-09-14-architect-first-charter/` (README has the
+     charter check), `handoffs/2026-09-14-openclaw-architect-charter-run.md`.
+     - `role.md` was delivered as openclaw's `SOUL.md` bootstrap file. Tools
+       were restricted to `df-overseer__*` via a pinned config overlay.
+     - DeepSeek v4-flash made 26 read calls and produced **one well-formed
+       `workshop_siting` proposal**: the 5x5 open ground 5 tiles S of the
+       Embark Site. It used no raw coordinates, gave a falsifiable prediction
+       and a cost, flagged the SE stair chokepoint for the Overseer, and
+       declined a blind dig. It cost $0.0043.
+     - Orchestrator checks:
+       - every non-empty `.env` secret and address was scanned against the
+         new files, with a positive control;
+       - the two VM 106 secrets were compared by hash;
+       - nothing listens on VM 106.
+     - **Open, unverified: its underground search may have been meaningless.**
+       It called `diggable.find` with z = 0, -1 ... -4 and found nothing,
+       yet this fort had 41 tiles dug on 2026-09-11.
+       `df-overseer-diggable.lua`'s header says z defaults to the landmark's
+       own z, which implies an absolute DF z-level. Negative values would
+       then be off-map. If true, the tool gives a coordinate-free caller **no
+       way to say "one level down"**, a design gap against commitment #1.
+       Next step: check what z the script receives and returns for a
+       negative value, then consider a relative `levels_below` argument.
+     - **Part A found no headless way to un-plaintext the key.**
+       `auth.profiles.<id>` has no key or SecretRef field in the config
+       schema, and `secrets configure`, the command that advertises SecretRef
+       mapping, requires an interactive TTY. The user could try it by hand
+       over `ssh -t`.
    - **NEXT (needs the user's call):**
      - whether the DeepSeek key stays on VM 106;
-     - trying `openclaw secrets store` to get it out of plaintext;
+     - trying `openclaw secrets configure` interactively to get it out of
+       plaintext;
      - then a durable gateway, from a fixed scaffold (`OPENCLAW_STATE_DIR`)
        or the CLI recipe, which would owe a home-lab `services.yaml` entry;
      - then an agent with a real charter (`agents/*/role.md`) instead of a

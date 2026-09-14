@@ -1,0 +1,13 @@
+{
+  "ok": false,
+  "status": "error",
+  "final": "",
+  "payloads": [],
+  "model": null,
+  "provider": null,
+  "sessionId": "6dab33d9-bea7-4096-bf91-b33508c6c180",
+  "error": {
+    "message": "Unknown model: deepseek/deepseek-v4-flash. Found agents.defaults.models[\"deepseek/deepseek-v4-flash\"], but no matching models.providers[\"deepseek\"].models[] entry. Add { \"id\": \"deepseek-v4-flash\", \"name\": \"deepseek-v4-flash\" } to models.providers[\"deepseek\"].models[] to register this provider model. For custom or proxy providers, also set api and baseUrl so requests route to the intended endpoint. See https://docs.openclaw.ai/concepts/model-providers.",
+    "kind": "exception"
+  }
+}

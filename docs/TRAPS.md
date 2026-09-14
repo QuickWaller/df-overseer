@@ -236,3 +236,10 @@ findings without another doc home yet.
 - **`dfhack-run` output starts with an ANSI colour escape** (`\x1b[0m`), so
   piping it straight into a JSON parser fails at char 0. Strip escapes first;
   it is not a broken script.
+- **A secret-scan loop that writes its pattern file to `$TMPDIR` checks
+  nothing when `$TMPDIR` is unset in Git Bash.** The writes fail, the loop
+  keeps going and prints "done". Give every scan a positive control (a string
+  you know is present) so a broken scan cannot pass as a clean one.
+- **openclaw's config home in the image is `/home/node/.openclaw`**, not
+  `/root/.config/openclaw`. Mounting the wrong one does not error: openclaw
+  just starts with an empty config, and `secrets audit` reports "clean".

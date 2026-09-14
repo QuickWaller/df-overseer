@@ -1,0 +1,48 @@
+{
+  "_note": "Pinned config used for this one agent exec run via a docker volume overlay onto /home/node/.openclaw/openclaw.json (the container's real config home for its non-root 'node' user, HOME=/home/node -- NOT /root/.config/openclaw, which was this run's own first wrong guess). The df-overseer MCP URL below is the real VM 103 LAN address in the live file; redacted here per this repo's public/no-address rule.",
+  "mcp": {
+    "servers": {
+      "df-overseer": {
+        "url": "http://<df-vm-lan-ip>:8443/mcp",
+        "transport": "streamable-http",
+        "headers": {
+          "Authorization": "Bearer ${DF_MCP_TOKEN_ARCHITECT}"
+        },
+        "requestTimeoutMs": 5000,
+        "connectionTimeoutMs": 5000
+      }
+    }
+  },
+  "plugins": {
+    "entries": {
+      "anthropic": { "config": { "sessionCatalog": { "enabled": false } } },
+      "codex": { "config": { "sessionCatalog": { "enabled": false } } },
+      "deepseek": { "enabled": true }
+    }
+  },
+  "meta": {
+    "migrations": { "modelPolicyAllowlist": true },
+    "lastTouchedVersion": "2026.9.4"
+  },
+  "agents": {
+    "defaults": {
+      "model": { "primary": "deepseek/deepseek-v4-flash" },
+      "models": { "deepseek/deepseek-v4-flash": {} }
+    },
+    "entries": {
+      "main": {
+        "workspace": "/home/node/.openclaw/architect-workspace",
+        "tools": {
+          "allow": [
+            "df-overseer__*"
+          ]
+        }
+      }
+    }
+  },
+  "auth": {
+    "profiles": {
+      "deepseek:manual": { "provider": "deepseek", "mode": "api_key" }
+    }
+  }
+}
