@@ -28,9 +28,16 @@ Everything below is what is still open.
 ### START HERE, in priority order
 
 1. **Wire `dfqueue` into dfmcp.** **In progress 2026-09-15, user's go-ahead
-   given (VM 103 included).** Phase A (local code, worktree executor) is
-   dispatched: `handoffs/2026-09-15-queue-into-dfmcp.md`. Phase B (deploy,
-   live verify, architect run) follows the orchestrator's review and merge.
+   given (VM 103 included).** Phase A (local code, worktree executor,
+   `handoffs/2026-09-15-queue-into-dfmcp.md`) is **built and under review**:
+   both suites confirmed by the orchestrator (ambient 241 passed 1 skipped,
+   venv 146). Three review fixes sent back before merge: a `defer` ruling
+   hid the proposal from `pending` for good; a storage error escaped as a
+   protocol error; SQLite ran on the event loop (moving it off needs a write
+   lock, since record ids are `COUNT(*)`-based). Phase B brief drafted, not
+   dispatched: `handoffs/2026-09-15-queue-live-deploy.md`. Run #3 must
+   regenerate its `SOUL.md` from the new `role.md`; run #2's bootstrap says
+   "no write tool".
    Design calls are in the register's 2026-09-15 "Wiring `dfqueue`" row.
    - `propose` / `pass` / `ruling` as MCP tools, scoped by role (only the
      Overseer may rule);
