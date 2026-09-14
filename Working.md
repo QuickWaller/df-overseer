@@ -27,7 +27,11 @@ Everything below is what is still open.
 
 ### START HERE, in priority order
 
-1. **Wire `dfqueue` into dfmcp** (touches VM 103, needs a go-ahead):
+1. **Wire `dfqueue` into dfmcp.** **In progress 2026-09-15, user's go-ahead
+   given (VM 103 included).** Phase A (local code, worktree executor) is
+   dispatched: `handoffs/2026-09-15-queue-into-dfmcp.md`. Phase B (deploy,
+   live verify, architect run) follows the orchestrator's review and merge.
+   Design calls are in the register's 2026-09-15 "Wiring `dfqueue`" row.
    - `propose` / `pass` / `ruling` as MCP tools, scoped by role (only the
      Overseer may rule);
    - the game tick read from `overview.get` and stamped at write time;
