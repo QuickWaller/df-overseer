@@ -33,9 +33,10 @@ Everything below is what is still open.
    (`85826c3`), not deployed**, after three review fixes (defer hiding a
    proposal, storage errors escaping `isError`, SQLite on the event loop plus
    the id race it exposed). Suites on merged `main`: ambient 252 passed 1
-   skipped, venv 152. **Next concrete step: Phase B**, brief drafted, not
-   dispatched: `handoffs/2026-09-15-queue-live-deploy.md`. Before dispatch,
-   confirm with the user and check in with peer sessions (it changes VM 103). Run #3 must
+   skipped, venv 152. **Phase B dispatched 2026-09-15** (user re-confirmed,
+   no peer sessions): `handoffs/2026-09-15-queue-live-deploy.md`. It changes
+   VM 103 (backup first, `dfmcp-server` restart, `/var/lib/dfmcp`) and runs
+   architect run #3 on VM 106. Rollback steps will be in its Result section. Run #3 must
    regenerate its `SOUL.md` from the new `role.md`; run #2's bootstrap says
    "no write tool".
    Design calls are in the register's 2026-09-15 "Wiring `dfqueue`" row.

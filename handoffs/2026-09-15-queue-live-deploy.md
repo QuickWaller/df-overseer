@@ -1,10 +1,9 @@
 # Stream: deploy the queue tools to VM 103, verify live, architect run #3 (Phase B)
 
-**Written** 2026-09-15. **Status:** DRAFT, not dispatched. Dispatch only after
-Phase A (`handoffs/2026-09-15-queue-into-dfmcp.md`, including its review fixes)
-is merged to `main`, and after the orchestrator has confirmed with the user and
-checked in with peer sessions. **User go-ahead:** given 2026-09-15 for Working.md
-item 1, which includes deploying to VM 103 and one live architect run.
+**Written** 2026-09-15. **Status:** dispatched 2026-09-15. Phase A merged to
+`main` as `85826c3`. **User go-ahead:** given 2026-09-15 for Working.md item 1,
+and **re-confirmed at dispatch time** ("go for it") for this deploy and run.
+Peer check-in done at dispatch: no other session on this repo.
 
 ## Why
 
