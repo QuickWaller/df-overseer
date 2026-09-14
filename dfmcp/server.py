@@ -102,7 +102,11 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
+import sys
+import time
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, Mapping, Optional
 
@@ -288,6 +292,66 @@ def _tool_result_error(reason: str) -> types.CallToolResult:
     return types.CallToolResult(content=[types.TextContent(type="text", text=reason)], isError=True)
 
 
+# --------------------------------------------------------------------------
+# The call log: one JSON object per tools/call
+# --------------------------------------------------------------------------
+
+# Added 2026-09-14 after the second architect charter run: 3 of its 14 calls
+# came back isError and nothing anywhere recorded which ones or with what
+# arguments (headless `openclaw agent exec` keeps no transcript; uvicorn's
+# access log has HTTP status only). docs/AGENT-ARCHITECTURE.md §10 already
+# assumes this exists: friction.jsonl is "mechanical, from the tool-call
+# log". One line per call, correlatable by MCP session id and JSON-RPC
+# request id. It records the role, never the token; arguments are logged
+# as given because no tool argument carries a secret (they are landmark
+# names, sizes, levels and blueprint filenames).
+CALL_LOG = logging.getLogger("dfmcp.calls")
+_CALL_LOG_ERROR_CHARS = 500
+
+
+def _call_log_line(
+    ctx: ServerRequestContext,
+    params: types.CallToolRequestParams,
+    tool_id: Optional[str],
+    started: float,
+    *,
+    is_error: bool,
+    error: Optional[str],
+    result_chars: Optional[int],
+) -> Dict[str, Any]:
+    request = getattr(ctx, "request", None)
+    headers = getattr(request, "headers", None)
+    client = getattr(request, "client", None)
+    return {
+        "event": "tools/call",
+        "ts": datetime.now(timezone.utc).isoformat(timespec="milliseconds"),
+        "session_id": headers.get("mcp-session-id") if headers is not None else None,
+        "request_id": ctx.request_id,
+        "client": client.host if client is not None else None,
+        "role": _current_role(),
+        "tool": params.name,
+        "tool_id": tool_id,
+        "arguments": dict(params.arguments or {}),
+        "is_error": is_error,
+        "error": error[:_CALL_LOG_ERROR_CHARS] if error else None,
+        "result_chars": result_chars,
+        "duration_ms": round((time.monotonic() - started) * 1000, 1),
+    }
+
+
+def _configure_call_log() -> None:
+    """Send the call log to stderr as bare JSON lines. Under systemd that is
+    journald, so the log reads back as JSONL with
+    `journalctl -u dfmcp-server.service -o cat | grep '"event": "tools/call"'`.
+    Only `main()` calls this, so tests see the records through pytest's own
+    capture instead."""
+    handler = logging.StreamHandler(sys.stderr)
+    handler.setFormatter(logging.Formatter("%(message)s"))
+    CALL_LOG.addHandler(handler)
+    CALL_LOG.setLevel(logging.INFO)
+    CALL_LOG.propagate = False
+
+
 def build_mcp_server(registry: Registry, roster: Roster, pool: DFHackConnectionPool) -> Server:
     """Build the low-level Server, wired to this registry/roster/pool.
 
@@ -313,7 +377,7 @@ def build_mcp_server(registry: Registry, roster: Roster, pool: DFHackConnectionP
         ]
         return types.ListToolsResult(tools=tools)
 
-    async def _on_call_tool(
+    async def _handle_call_tool(
         ctx: ServerRequestContext, params: types.CallToolRequestParams
     ) -> types.CallToolResult:
         role = _current_role()
@@ -402,6 +466,31 @@ def build_mcp_server(registry: Registry, roster: Roster, pool: DFHackConnectionP
             isError=False,
         )
 
+    async def _on_call_tool(
+        ctx: ServerRequestContext, params: types.CallToolRequestParams
+    ) -> types.CallToolResult:
+        # Wraps every return path of _handle_call_tool (refusals, argument
+        # errors, DFHack failures, script errors, results), so no call can
+        # leave the server without a log line.
+        started = time.monotonic()
+        tool_id = name_to_id.get(params.name)
+        try:
+            result = await _handle_call_tool(ctx, params)
+        except BaseException as exc:
+            line = _call_log_line(
+                ctx, params, tool_id, started,
+                is_error=True, error=f"unhandled {type(exc).__name__}: {exc}", result_chars=None,
+            )
+            CALL_LOG.info(json.dumps(line, default=str, sort_keys=True))
+            raise
+        text = "".join(block.text for block in result.content if getattr(block, "type", None) == "text")
+        line = _call_log_line(
+            ctx, params, tool_id, started,
+            is_error=bool(result.is_error), error=text if result.is_error else None, result_chars=len(text),
+        )
+        CALL_LOG.info(json.dumps(line, default=str, sort_keys=True))
+        return result
+
     return Server(
         name="df-overseer",
         version="0.1.0",
@@ -469,6 +558,7 @@ def main() -> None:
     stream was barred from deploying. See the report for the exact
     `python -m dfmcp.server` invocation and the undeployed systemd unit
     this would run under."""
+    _configure_call_log()
     config = load_config()
     registry = load_registry()
     roster = load_roster(registry)

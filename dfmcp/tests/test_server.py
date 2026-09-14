@@ -47,6 +47,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import json
+import logging
 from typing import AsyncIterator, Dict, Optional
 
 import pytest
@@ -421,6 +422,49 @@ class TestServerCallEdgeCases:
             result = await session.call_tool("landmarks__list", {})
         assert result.is_error is False
         assert result.structured_content == {"error": "partial", "near_landmark": "Wagon"}
+
+    async def test_every_call_writes_one_json_log_line(self, registry, roster, pool, fake_dfhack, caplog):
+        """A result, a refusal and a script error each leave exactly one
+        parseable line with the correlating ids, and the token never
+        appears in any of them."""
+        caplog.set_level(logging.INFO, logger="dfmcp.calls")
+        fake_dfhack.queue_actions(
+            make_ok_action('[{"name": "Wagon", "exits": []}]'),
+            make_ok_action('{"error": "level -500 from Embark Site is outside the map"}'),
+        )
+        app = _app(registry, roster, pool)
+        async with mcp_session(app, ARCHITECT_TOKEN) as session:
+            await session.call_tool("landmarks__list", {})
+            await session.call_tool(
+                "openarea__build",
+                {"w": 3, "h": 3, "near_landmark": "MainHall", "blueprint_file": "stockpile.csv"},
+            )
+            await session.call_tool(
+                "diggable__find", {"w": 3, "h": 3, "level": -500, "near_landmark": "Embark Site"}
+            )
+
+        records = [r for r in caplog.records if r.name == "dfmcp.calls"]
+        assert len(records) == 3
+        assert all(ARCHITECT_TOKEN not in r.getMessage() for r in records)
+        ok, refused, script_error = (json.loads(r.getMessage()) for r in records)
+
+        for line in (ok, refused, script_error):
+            assert line["event"] == "tools/call"
+            assert line["role"] == "architect"
+            assert line["session_id"]
+            assert line["request_id"] is not None
+            assert line["duration_ms"] >= 0
+        assert ok["session_id"] == refused["session_id"] == script_error["session_id"]
+
+        assert ok["tool"] == "landmarks__list" and ok["tool_id"] == "landmarks.list"
+        assert ok["is_error"] is False and ok["error"] is None and ok["result_chars"] > 0
+
+        assert refused["tool"] == "openarea__build" and refused["is_error"] is True
+        assert refused["error"]
+
+        assert script_error["arguments"]["level"] == -500
+        assert script_error["is_error"] is True
+        assert script_error["error"] == "level -500 from Embark Site is outside the map"
 
     async def test_bare_json_array_output_is_wrapped_as_result(self, registry, roster, pool, fake_dfhack):
         """Bug found on VM 103's first live smoke test, 2026-09-14: most
