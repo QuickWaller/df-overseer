@@ -189,10 +189,23 @@ Everything below this block is detail and reasoning. This is the brief.
      - **USER WANTS: a scrolling feed on the right of the live stream**
        showing proposals and Overseer rulings (not agent-to-agent chat; the
        user chose this 2026-09-14, see the register). Build order:
-       1. **IN FLIGHT:** `dfqueue/` with write-time proposal validation
-          (typed fields, malformed proposals refused), which also fixes run
-          #2's missing record. Brief:
-          `handoffs/2026-09-14-proposal-queue.md`;
+       1. **DONE 2026-09-14 (local code, not an MCP tool yet): `dfqueue/`.**
+          - Record kinds `proposal`, `pass` and `ruling`, validated at write
+            time with every error listed; refused records write nothing.
+          - Type vocabulary keyed by role, a coordinate filter, and a
+            `public_view` allowlist.
+          - 61 tests; the ambient suite goes 127 to 188 (1 skipped).
+          - `handoffs/2026-09-14-proposal-queue.md`.
+
+          **BLOCKER for the feed, the user's call:** `learning/predictions/`
+          only accepts end-of-fort ledger signals (`design.*`, `outcome.*`,
+          and so on). No spatial or mid-fort signal exists, so **no architect
+          proposal can pass today**: run #1's real proposal fails on its
+          signal alone and passes everything else.
+
+          Also, `check_after_ticks` is passed as `check_at_year` purely to run
+          the type check. That row is validation-only and never persisted
+          (verified: no `register` call in `dfqueue`).
        2. a publisher of §8's allowlisted fields only, with a kill switch.
           **No delay for now**, the user's call on 2026-09-14;
        3. the stream page, noVNC left and feed right. **Going public needs
