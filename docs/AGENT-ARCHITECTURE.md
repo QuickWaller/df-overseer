@@ -231,6 +231,14 @@ specialist may *see* another's proposal, and still may not negotiate with it or
 act on the fort. That is doctrine-backed, cheap, and preserves everything the
 ban was protecting. Recorded as a deliberate option, not adopted yet.
 
+**One exception accepted 2026-09-15 (user's call, not built): any advisor may
+ask the Consultant.** The Consultant holds no authority, so a question to it is
+a lookup, not a negotiation. Its purpose is to keep domain knowledge out of
+other roles' context windows and to let that knowledge be a specialism. Shape:
+one `ask` record and one `answer` record in the queue, no threads, visible to
+the Overseer, answered on the Consultant's next wake. Answers are hypotheses and
+never override a graded prediction. See `decisions/DECISIONS.md` 2026-09-15.
+
 ### This is a blackboard system, and we had rebuilt only a third of one
 
 The most useful correction the prior art produced. A modern multi-agent stack

@@ -340,11 +340,14 @@ or `decisions/DECISIONS.md`, not here.
 ## Next
 <!-- Clearly in line, not yet started. -->
 
-- **DF wiki lookup as a `dfmcp` tool for the Consultant**, served from a local
-  snapshot, not the open web (user's call 2026-09-15). Fills the Consultant's
+- **DF wiki lookup as a `dfmcp` tool for the Consultant and the Architect**,
+  served from a local snapshot, not the open web, returning capped
+  section-level excerpts (user's calls 2026-09-15). Fills the Consultant's
   `planned` `knowledge.wiki_lookup`. Follows the queue wiring, which
-  establishes server-side (non-DFHack) tools. → `decisions/DECISIONS.md`
-  2026-09-15 "DF wiki access" row.
+  establishes server-side (non-DFHack) tools. Then **`ask`/`answer` records**
+  so advisors can consult the Consultant without spending their own context.
+  → `decisions/DECISIONS.md` 2026-09-15 "DF wiki access" and "Advisors may ask
+  the Consultant" rows.
 
 - **Live-view ingest: explicitly shelved, user's call 2026-09-12** (moved
   here from "explicitly not priority right now," distinct from "blocked" —
