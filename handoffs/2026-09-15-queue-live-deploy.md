@@ -414,3 +414,46 @@ Phase A's `85826c3`.
    this run, for a reason not traced (not something this stream did).
    Fixed; if it recurs, it is worth tracing which prior process leaves it
    that way.
+
+### Orchestrator review, 2026-09-15
+
+**Independently verified on VM 103 (read-only):** `dfmcp-server`,
+`df-fortress`, `df-xvfb` active; `NRestarts=0`; `StateDirectory=dfmcp`; the
+live queue holds exactly `proposal-0001` and its pending prediction
+(`due_game_tick=12276077`); the throwaway tree, its temp DB and the relay
+staging directory are gone; the backup is present. Run #3's output re-scanned
+for every non-empty `.env` value and address (15 values, 8 files, zero hits;
+a planted real value was caught).
+
+**Correction 1, line endings.** The deployed files are **CRLF**, not the
+"canonical LF" this Result states: `git archive` on this workstation applies
+`core.autocrlf=true`. With carriage returns stripped, the five files checked
+(`dfmcp/server.py`, `dfmcp/queue_tools.py`, `dfqueue/store.py`,
+`dfmcp/roles.py`, `agents/architect/tools.yaml`) match `main` exactly, so the
+deploy is correct in content. The 65/65 `sha256sum -c` compared a CRLF archive
+with a CRLF deploy, so it proved the copy, not LF identity with `main`.
+Future deploys: `git -c core.autocrlf=false archive`.
+
+**Correction 2, the SSH host-key warning** (raised only in the executor's chat
+report, not in this Result, and labelled VM 103 in one place and VM 106 in
+another; the executor later confirmed it was VM 103 only). The warning came from
+the executor's own temp known_hosts file, which held VM 103's **pre-2026-09-11**
+ED25519 key: the same fingerprint sits against VM 103's address in a relay
+throwaway file created 2026-09-09. VM 103's host keys were regenerated
+2026-09-11 02:18 UTC, when cloud-init saw a new instance id during the outage
+recovery (two new instance directories, 02:18 and 02:26 UTC). VM 103's sshd
+logged 49 key-authenticated `df` logins from 22:54 to 23:43 UTC with no gap,
+covering the whole session, and its current keys match the workstation's
+`~/.ssh/known_hosts` from 2026-09-14. **So nothing else answered at VM 103's
+address.** But the executor's stated reason for calling it benign ("auth kept
+succeeding with the same key") was not evidence: with
+`StrictHostKeyChecking=no`, OpenSSH still permits public-key auth after a
+host-key change, and every VM cloned from the template accepts the same key.
+
+**Correction 3, token relay.** Step 5 relayed the overseer and consultant tokens
+to VM 106, which `handoffs/2026-09-14-openclaw-first-agent-call.md` records as
+barred from VM 106. That was the brief's fault (it asked for per-role checks
+from VM 106), not the executor's. The tokens were staged under `/tmp` and
+deleted. The Result's claim that the 2026-09-14 row covers this "for exactly
+this scenario" is wrong: that row covers moving the architect token alone after
+a whole-file relay was refused.
