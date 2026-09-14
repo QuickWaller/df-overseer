@@ -105,6 +105,27 @@ whether something happened at all, use `exists`/`not_exists`; only use a
 value comparison once the field is expected to hold a real value regardless
 of outcome.**
 
+## Mid-fort predictions: `learning/live_signals.py`, not this module
+
+Added 2026-09-15 (`handoffs/2026-09-15-live-signals-sqlite.md`), directly
+against the gap the previous section names ("food stores stop falling"-shaped
+predictions have no matching ledger field). Rather than growing a fort
+dossier into *this* module's `signal` resolution, mid-fort predictions moved
+to `dfqueue/` instead: `learning/live_signals.py` is a small, separate,
+closed registry of signals read mechanically from an existing DFHack read
+tool (`fort.population`, `landmark."NAME".exit."TO".distance_tiles`, ...),
+graded by `dfqueue/grade.py` against a live SQLite ledger
+(`dfqueue/store.py`), never by this module. This module is unchanged by that
+work — it still resolves only against `learning/ledger`'s `FORT_FIELDS`, and
+still covers exactly what its own "scope this is deliberately built at"
+section above says it does. The one thing shared between the two is
+`grade.py`'s predicate-comparison logic (`_apply`, exposed as the public
+`apply_predicate` alias so `dfqueue/grade.py` can reuse it instead of copying
+it) — everything else (the signal grammar, the store, the schema) is
+separate on purpose: a `dfqueue` proposal's mid-fort claim and an end-of-fort
+ledger claim are different kinds of claim, checked against different data,
+and conflating them was exactly the gap this section used to describe.
+
 ## What this deliberately does not do
 
 **No calibration score.** Build order item 6 (a Brier score, or hit-rate on

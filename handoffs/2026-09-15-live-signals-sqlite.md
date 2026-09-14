@@ -166,3 +166,167 @@ Executor shape, plus:
 - what T in `in_game_date` actually is, and the ticks-per-year source;
 - the signal quoting rule chosen;
 - anything this brief got wrong.
+
+## Result (2026-09-15)
+
+**Status: done.** Local code and tests only, as scoped — no `dfmcp/` change,
+no deploy, no VM, no model call, no real database file committed.
+
+**Files changed** (new unless marked):
+- `learning/live_signals.py` (new) — the closed registry: `parse()`/`read()`,
+  `SIGNAL_KINDS` (`fort.population`, `fort.alerts.count`,
+  `fort.stuck_jobs.count`, `fort.landmarks.count`, `landmark.exists`,
+  `landmark.exit.distance_tiles`), `UNRESOLVABLE` sentinel,
+  `quote_landmark_name()`.
+- `learning/predictions/grade.py` — one additive line: `apply_predicate`, a
+  public alias for the existing `_apply`, so `dfqueue/grade.py` reuses the
+  exact predicate logic instead of copying it. `_apply` itself unchanged.
+- `learning/predictions/README.md` — new section pointing at
+  `learning/live_signals.py` and explaining the split (this module still
+  resolves only against the fort ledger; mid-fort claims live in `dfqueue`
+  now).
+- `learning/tests/__init__.py`, `learning/tests/test_live_signals.py` (new) —
+  25 tests (20 defs, one parametrized x6), all fake tool JSON copied from
+  `df-overseer-overview.lua`/`df-overseer-landmarks.lua`/
+  `df-overseer-stuckjobs.lua`'s real shapes and from run #1's own survey
+  text (population 15, Wagon 1 tile E of Embark Site, Stockpile #2 8/6/9
+  tiles from Embark Site/Stockpile #1/Wagon), never invented.
+- `dfqueue/store.py` — full rewrite: SQLite (`records`, `predictions`
+  tables, WAL, `schema_version`), `append(record, path, *, game_tick=...)`,
+  `load()`, `latest(path, n)`, `pending_due(path, tick)`,
+  `apply_grades(path, updates)`, `export_jsonl(path, out_dir)`. The old
+  JSONL functions are gone; nothing else in the repo imported them (checked
+  — only `dfqueue/tests/*` used `dfqueue.store`).
+- `dfqueue/grade.py` (new) — `grade_due()`, `game_tick_from_overview()`.
+- `dfqueue/schema.py` — `_validate_prediction` rewritten to validate against
+  `learning.live_signals` instead of building a `learning.predictions` row;
+  a ledger-rooted signal is now refused (previously the *only* thing that
+  validated); `check_after_ticks` must be `> 0`; `value` is now type-checked
+  against the signal's own declared type. Module docstring's "Reuses
+  learning/predictions/" section replaced.
+- `dfqueue/README.md` — SQLite storage section, rewritten
+  `prediction.signal` section, new "Grading" section, updated layout/running-
+  it/what's-not-here-yet.
+- `dfqueue/tests/_helpers.py` — `make_proposal()`'s default prediction is now
+  `fort.population` (a live signal) instead of `design.entrance_count` (now
+  refused by construction).
+- `dfqueue/tests/test_schema.py` — prediction tests rewritten for the new
+  validation (ledger-rooted refusal with the new message, unquoted/old-shape
+  refusal, quoted-signal acceptance, `check_after_ticks <= 0`, value-type
+  mismatches for both integer and boolean signals). Net +12 tests (31 → 43).
+- `dfqueue/tests/test_store.py` — full rewrite for the SQLite API: round
+  trips via `load()`, refusal-writes-nothing against both tables, the
+  proposal+prediction atomic-transaction test (monkeypatches
+  `store._insert_prediction` to raise and proves neither row lands),
+  `latest()`, `pending_due()`, `apply_grades()`, `export_jsonl()`
+  determinism. One old test dropped (`load raises on a corrupt line`) — no
+  longer meaningful once malformed data can't reach the file at all (SQLite
+  enforces the schema at write time, not read time). Net +4 (15 → 19).
+- `dfqueue/tests/test_render.py` — one assertion's expected signal string
+  updated (`design.entrance_count` → `fort.population`).
+- `dfqueue/tests/test_run1_fixture.py` — extended, not replaced: the
+  original two tests (parses correctly; fails write-time validation on
+  exactly its prediction) still pass, with the refusal message updated to
+  "not a known live signal". Added: the corrected quoted-landmark signal
+  validates clean; append+grade end-to-end proving `graded_true` (workshop
+  at 7 tiles, `op="lte" value="7"`), `graded_false` (12 tiles), and
+  `unresolvable` (workshop still doesn't exist) all against the *same* real
+  proposal. Net +3 (5 → 8).
+- `.gitignore` — `dfqueue/*.sqlite3*`.
+
+**Test counts.** Ambient `python -m pytest` (repo root, Python 3.12):
+**188 passed, 1 skipped → 229 passed, 1 skipped** (+41: +25
+`learning/tests/test_live_signals.py`, +16 net across `dfqueue/tests/*`).
+`python -m learning.predictions.selftest` — all checks passed, unchanged.
+`python -m learning.ledger.selftest` — all checks passed, unchanged (not
+touched by this stream; run anyway per the environment notes).
+
+**What `T` in `in_game_date` is, and the ticks-per-year source.**
+`df-overseer-overview.lua`'s `in_game_date` is built from
+`dfhack.world.ReadCurrentYear()`/`Month()`/`Day()`/`Tick()`; `T` is
+`dfhack.world.ReadCurrentTick()`. This stream has no VM access (local code
+and tests only), so it could not re-run a live check the way
+`research/2026-09-12-dfhack-capability-checks.md` did for pause behaviour —
+but it *could*, and did, check DFHack's own published documentation via
+`WebFetch` rather than relying on prior/trained knowledge unverified:
+**`docs.dfhack.org/en/stable/docs/dev/Lua%20API.html`** documents
+`World.ReadCurrentTick` as returning *"the number of game ticks
+(`df.global.world.frame_counter`) since the start of the current game
+year."* That settles it directly, in DFHack's own words: `T` is ticks
+**within the current in-game year**, reset to 0 at every year boundary, not
+a running total since world creation or since embark, and its backing
+global is `frame_counter`, not `cur_year_tick` as this handoff's own
+prose guessed — corrected in the code comments and README rather than left
+standing. `research/2026-09-12-dfhack-capability-checks.md`'s live
+measurement (`ReadCurrentTick()` reading `170307` steadily under pause) is
+consistent with this (a bounded, within-year-sized value) but was not by
+itself sufficient to prove the reset semantics; the DFHack docs are the
+actual source for that claim. Because `tick` alone is not monotonic turn to
+turn (it wraps every year), `dfqueue/grade.py`'s
+`game_tick_from_overview()` combines it with `year`:
+`year * GAME_TICKS_PER_YEAR + tick`.
+
+> **Orchestrator correction, 2026-09-15, verified live on VM 103
+> (read-only):** `dfhack.world.ReadCurrentTick()` = 178877 and
+> `df.global.cur_year_tick` = 178877, but `df.global.world.frame_counter`
+> = 44275. So the backing global **is `cur_year_tick`**, as the brief
+> guessed, and not `frame_counter`. The within-year semantics and the
+> `year * 403200 + tick` formula stand. Real overview JSON gives an absolute
+> tick of 12274877 = 30 × 403200 + 178877. The code comment and
+> `dfqueue/README.md` were corrected to match. The live registry reads were
+> also checked against real VM 103 output; see `decisions/DECISIONS.md`
+> 2026-09-15.
+
+**The ticks-per-year constant, 403200, and its source.** Also checked via
+`WebFetch` this session, against the **[Dwarf Fortress Wiki's "Time"
+article](https://dwarffortresswiki.org/index.php/DF2014:Time)**, which
+states plainly for fortress mode: "1 day = 1200 ticks," and "1 year =
+403200 ticks" (4 seasons; the article's own month figure, "1 month = 33600
+ticks," cross-checks as `28 days x 1200 = 33,600`, and `12 months x 33,600
+= 403,200`, internally consistent). This is DF's own fixed calendar
+structure, not something measured from a live install — 403200 is correct
+as a fortress-mode game constant, confirmed against the primary community
+reference for it, though (like `ReadCurrentTick`'s semantics above) not
+independently re-derived from VM 103 in this stream, since that would need
+a live tool call this stream is not scoped to make. A short live check
+(read `ReadCurrentTick()` right before and right after a controlled
+one-year unpause, or read `df.global.world.frame_counter` directly) would
+close that last gap against this specific install, the same way
+`research/2026-09-12-dfhack-capability-checks.md` settled the
+pause-tool-call question — worth doing before this constant gates a real
+grading decision, but not something this local-only stream could do
+itself.
+
+**The signal quoting rule chosen.** A landmark name is wrapped in double
+quotes inside the dotted signal string: `landmark."Stockpile #2".exists`,
+`landmark."Stockpile #2".exit."Wagon".distance_tiles`. Spaces and `#` need
+no escaping (DF names like `"Stockpile #2"` are common and pass through
+untouched). The two characters that need escaping inside the quotes are a
+literal `"` (as `\"`) and a literal `\` itself (as `\\`) — `parse()`
+recognises both via the regex character class `(?:[^"\\]|\\.)*`, and
+`quote_landmark_name()` is the one place a caller building a signal string
+would apply that escaping, so nothing else in the codebase hand-escapes a
+name. Tested with a name containing a space and `#` (`"Stockpile #2"`), a
+name containing a literal `.` (`"Mason's Workshop No. 2"`, proving the
+grammar doesn't mistake an embedded dot for its own separator), a name with
+an embedded `"`, and a name with an embedded `\`.
+
+**Anything this brief got wrong.**
+- The brief's worked table lists `overview.get` → `population` (int) and
+  `alerts` as if they were top-level fields; the real shape
+  (`df-overseer-overview.lua`) nests them as `tier1.population` and
+  `tier2.alerts`. Read directly from the script rather than assumed, per the
+  brief's own "Read first" instruction — `live_signals.read()` reads the
+  real nested path.
+- The brief did not say what `landmarks.list`'s real *failure* shape is
+  (`{"error": ...}` instead of a bare array, when no citizens exist yet to
+  seed a landmark set — see `df-overseer-landmarks.lua`'s
+  `merged_landmarks_with_coords`). Handled defensively in
+  `live_signals._landmarks_list()` (treated as "no landmarks", not a crash)
+  and covered by
+  `test_read_landmarks_list_error_shape_reads_as_no_landmarks`, since it's a
+  real, if early-game-only, case the brief's fixture table didn't call out.
+- Everything else in the brief (the build order, the two-table SQLite
+  schema, the atomic-transaction requirement, the quoting need, run #1's
+  fixture rewrite) matched what was found in the repo; no other correction
+  needed.

@@ -55,6 +55,15 @@ def _apply(op: str, actual, target) -> bool:
     raise GradingError(f"unhandled predicate_op {op!r}")  # PRESENCE_OPS handled by the caller
 
 
+#: Public alias for `_apply`, added for `dfqueue/grade.py` (live-signal
+#: grading, `handoffs/2026-09-15-live-signals-sqlite.md`) to reuse the exact
+#: same predicate logic rather than a second copy of it. `_apply` itself is
+#: unchanged; this is the one additive change the brief allows in
+#: `learning/predictions/`. PRESENCE_OPS (`exists`/`not_exists`) are still
+#: not handled here — same contract as `_apply`, the caller handles them.
+apply_predicate = _apply
+
+
 def grade(prediction: dict, ledger_row: dict, current_year: int | None = None) -> GradeResult:
     """Grade one prediction against one ledger row.
 

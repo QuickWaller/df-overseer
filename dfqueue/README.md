@@ -13,9 +13,52 @@ would shadow Python's own stdlib `queue` module for anything run from the
 repo root — the exact trap `dfmcp/` is named to avoid (see the root
 `CLAUDE.md`'s note on `dfmcp/` and the stdlib `mcp` package).
 
+## Storage: SQLite, one database per fort
+
+Built 2026-09-14 as append-only JSONL; rebuilt 2026-09-15
+(`handoffs/2026-09-15-live-signals-sqlite.md`) onto **SQLite** — the fort
+ledger and the prediction log (both in `learning/`) stay JSONL, unchanged;
+this reversal is scoped to live operational data only
+(`decisions/DECISIONS.md` 2026-09-15). Two things JSONL doesn't give this
+queue for free: concurrent writers (dfmcp, eventually, alongside this queue,
+without a full-file rewrite race) and two real queries — the latest N
+records for a feed, and every pending prediction whose `due_game_tick` has
+arrived, both backed by a real index instead of a full scan.
+
+Default path: `dfqueue/<fort>.sqlite3` (gitignored, along with SQLite's own
+`-wal`/`-shm` sidecar files — no real database file is ever committed).
+Every write goes through one transaction (`with conn:` — commits on success,
+rolls back on any exception), proven in `dfqueue/tests/test_store.py` by
+monkeypatching a failure between a proposal's two inserts.
+
+Two tables:
+
+- **`records`** — one row per queue record, keyed by the record's own
+  string `id` (`"proposal-0001"`, same scheme as before): `ts`, `kind`,
+  `role`, `cycle`, `type` (nullable — only proposals have one),
+  `proposal_id` (nullable — only rulings have one), `payload` (the full
+  validated record, as JSON).
+- **`predictions`** — one row per **proposal's** prediction, `record_id`
+  referencing `records.id`, inserted in the *same transaction* as the
+  proposal itself: `signal`, `op`, `value`, `registered_game_tick`,
+  `due_game_tick` (`registered_game_tick + check_after_ticks`), `status`
+  (`learning.predictions.schema`'s own `pending`/`graded_true`/
+  `graded_false`/`unresolvable` constants, reused rather than a second
+  vocabulary), `actual_value`, `graded_at`, `grade_note`.
+
+`store.py`'s public surface: `append(record, path, *, game_tick=...)`
+(a proposal requires `game_tick`; `pass`/`ruling` don't), `load(path)` (every
+record, append order), `latest(path, n)` (the `n` most recent, newest
+first — the feed's own query), `pending_due(path, tick)` (the grader's own
+query), `apply_grades(path, updates)` (one transaction per grading pass), and
+`export_jsonl(path, out_dir)` — a deterministic dump of both tables to
+`records.jsonl`/`predictions.jsonl`, regenerated from SQLite rather than
+hand-maintained, keeping the git-trackable, `cat`-able, public-report form
+the 2026-08-27 no-database decision cared about.
+
 ## What this is
 
-Three record kinds, one append-only JSONL file per fort:
+Three record kinds, one append-only SQLite database per fort:
 
 - **`proposal`** — an advisor's proposed action: `id`, `role`, `cycle`,
   `snapshot`, `type` (closed vocabulary, see below), `summary`, `rationale`,
@@ -40,20 +83,27 @@ anything. Recorded here so it isn't lost, not designed.
 ```bash
 python -m pytest dfqueue          # this package's own tests
 python -m pytest                  # the whole repo's ambient suite
+python -m pytest learning/tests   # learning.live_signals's own tests
 ```
 
 There is no `selftest.py`/`report.py` pair like `learning/predictions/` and
-`learning/ledger/` have — this brief asked for pytest tests instead, and
-there is no grading loop yet for a report to summarise.
+`learning/ledger/` have — this brief asked for pytest tests instead. There is
+now a grading loop (`grade.py`), but no scheduler that calls it yet — see
+"What is deliberately not here yet" below.
 
 ## Layout
 
 ```
 schema.py       record kinds, the closed vocabularies, write-time validation
-store.py        append-only JSONL, one file per fort, load()/append()
+store.py        SQLite, one database per fort, append()/load()/latest()/pending_due()/export_jsonl()
+grade.py        grade_due() -- mechanical live-signal grading, game_tick_from_overview()
 render.py       to_xml() (the §4 prompt form) and public_view() (the §8 allowlist)
 tests/          pytest, including run #1's real proposal as a fixture
 ```
+
+`learning/live_signals.py` (outside this package, see the section above)
+is the signal registry both `schema.py` and `grade.py` depend on; its own
+tests live in `learning/tests/test_live_signals.py`.
 
 ## The closed `type` vocabulary, keyed by role
 
@@ -74,62 +124,88 @@ stale, and it is a one-line edit when it does. This is what makes a
 per-role, per-type hit rate (§10) meaningful instead of accidental — a
 bespoke or borrowed type would never accumulate a comparable sample.
 
-## `prediction`: validated through `learning/predictions/`, not a copy
+## `prediction.signal`: a **live signal**, never a ledger field
 
-A proposal's `prediction` field (`signal`, `op`, `value`, `check_after_ticks`
-— the §4 XML shape) is built into a real `learning.predictions.schema` row
-(via that module's own `new_prediction()`) and run through that module's own
-`validate()`. **dfqueue does not maintain a second falsifiability gate.**
-That means dfqueue inherits exactly what that module currently accepts —
-and, deliberately, exactly what it currently refuses.
+Rebuilt 2026-09-15 (`handoffs/2026-09-15-live-signals-sqlite.md`). A
+proposal's `prediction` field (`signal`, `op`, `value`, `check_after_ticks`
+— the §4 XML shape) is **no longer** built into a `learning.predictions` row.
+`learning/predictions/` can only grade against the fort ledger, which is one
+row per fort written mostly at embark and at the end — it has no
+`landmarks`, no live perception state, no mid-fort signal at all, and run #1's
+real proposal (`landmarks.new_workshop.exit_to_Wagon.distance_tiles`) proved
+that gap for real (see the previous version of this section, and
+`dfqueue/tests/test_run1_fixture.py`'s first two tests, which still document
+the exact old refusal).
 
-**What it currently accepts.** `learning.predictions.schema.validate()`
-resolves `signal` as a dotted path against
-`learning/ledger/schema.py`'s `FORT_FIELDS` and only accepts a signal whose
-declared `source` is `MECHANICAL` or `DERIVED`. Concretely, that means the
-top-level path segment must be one of: `embark`, `design`, `milestones`,
-`threat_log`, `outcome`, `observations`, `experiment` (the ledger's
-one-row-per-fort schema), and the leaf field it names must not be `HUMAN`- or
-`AGENT`-sourced (e.g. `notes`, or any `observation`/`contributing_factor`
-prose field). `predicate_op` is the same small closed vocabulary as that
-module's (`eq`/`ne`/`gte`/`lte`/`gt`/`lt`/`in`/`contains`/`exists`/
-`not_exists`).
+`dfqueue/schema.py` now validates `prediction.signal` against
+**`learning/live_signals.py`**, a small, closed registry of mid-fort signals
+each read mechanically from an existing DFHack read tool (`fort.population`,
+`fort.alerts.count`, `fort.stuck_jobs.count`, `fort.landmarks.count`,
+`landmark."NAME".exists`, `landmark."NAME".exit."TO".distance_tiles` — see
+that module's own docstring for the quoting rule, `#`/space-safe, needed
+because a landmark name is a live DF string like `"Stockpile #2"`). `op` is
+still checked against `learning.predictions.schema.PREDICATE_OPS` (the same
+closed vocabulary, reused rather than duplicated), and `value` is now
+type-checked against the *signal's own* declared type (integer or boolean),
+which `learning.predictions.schema.validate()` never did since it doesn't
+know what any given ledger field's type is meant to be beyond its own
+generic "any" typing for `predicate_value`.
 
-**What it currently refuses, and why this matters right now.** The ledger is
-one row per fort, written mostly at embark and at the end — it has **no
-`landmarks`, no live perception state, no mid-fort hauling/distance
-signals.** A prediction like `landmarks.<name>.exit_to_<name>.distance_tiles`
-or `hauling.still_to_food.tiles` (§4's own worked example!) does not resolve
-to *any* top-level ledger field, and is refused with "does not resolve to a
-known ledger field" — the exact same refusal an unrelated typo would get.
-**This is not a bug in dfqueue and was not loosened to make anything pass**:
-`learning/predictions/README.md` already documents this as the known,
-deliberate gap ("The scope this is deliberately built at... Not yet
-expressible: the design doc's own headline example"), gated on a **fort
-dossier** module that does not exist yet (`ROADMAP.md`).
+**A ledger-rooted (end-of-fort) signal is refused, on purpose, with a
+message naming the right module.** `design.entrance_count`, `outcome.status`
+and the like are real, gradeable `learning/ledger` fields — they are simply
+not what a `dfqueue` *proposal* may predict about: those are fort-level
+claims, and belong in `learning/predictions/`. `dfqueue` detects this
+specifically (`learning.ledger.store.field_source(signal) is not None`) so
+the refusal reads as "wrong module for this claim," not as an unexplained
+typo — see `dfqueue/tests/test_schema.py`'s
+`test_prediction_signal_pointing_at_a_ledger_field_is_refused` and its
+`_also_refused` sibling (proving even a *gradeable* ledger field is still
+refused here).
 
-**Concretely, today, a real architect proposal (run #1,
-`evals/live/2026-09-14-architect-first-charter/run.json`) cannot pass
-write-time validation**, because its only falsifiable claim is spatial
-(`landmarks.new_workshop.exit_to_Wagon.distance_tiles`). `dfqueue/tests/
-test_run1_fixture.py` parses that real proposal into a record and proves
-this is the *only* thing wrong with it: role, type, cost, priority,
-preconditions and every text field (no raw coordinates leaked) all pass
-clean. Until a dossier exists and a ledger/dossier field carries something
-like exit distance, no architect proposal whose prediction is spatial can be
-recorded — only proposals predicting against `design`/`outcome`/`threat_log`
-fields (e.g. "seal the caverns by year 3") can.
+**The old check_after_ticks/check_at_year translation gap this section used
+to flag no longer exists.** `dfqueue`'s prediction never becomes a
+`learning.predictions` row now, so there is nothing to translate: a
+proposal's `check_after_ticks` is added straight to the fort's current
+absolute tick (`dfqueue/grade.py`'s `game_tick_from_overview`) to get
+`due_game_tick`, stored and compared in the very same unit throughout.
 
-**A known translation gap, honestly flagged rather than papered over:** the
-§4 wire shape carries `check_after_ticks` (a tick count), but
-`learning.predictions` grades against `check_at_year` (an in-game year).
-There is no tick-to-year conversion available here — that needs the fort
-dossier's current-year context, which doesn't exist yet either
-(`docs/AGENT-ARCHITECTURE.md` §14 item 6). `schema._validate_prediction`
-currently reuses the tick count as the year integer purely so the
-underlying validator's *type* and *falsifiability* checks actually run; it
-is not a claim that tick 1200 means year 1200. Fix properly once the
-dossier exists and a real conversion is possible.
+**Concretely, today, run #1's real proposal (`evals/live/
+2026-09-14-architect-first-charter/run.json`) fails verbatim** (its raw,
+unquoted signal string predates this grammar) **but passes once its signal
+is rewritten into the quoted-landmark form**,
+`landmark."new_workshop".exit."Wagon".distance_tiles` — and then grades
+`graded_true`/`graded_false`/`unresolvable` correctly depending on what a
+later `landmarks.get` call reports, all proven in `dfqueue/tests/
+test_run1_fixture.py`.
+
+## Grading: `dfqueue/grade.py`
+
+`grade_due(db, current_game_tick, call_tool, graded_at)` reads every pending
+prediction whose `due_game_tick` has arrived (`store.pending_due`), reads its
+signal through `learning.live_signals.read()` (via the same injected
+`call_tool` the registry itself takes — no DFHack/MCP import in this
+package either), applies the exact same predicate logic
+`learning/predictions/grade.py` uses (`apply_predicate`, a public alias for
+that module's own `_apply`, the brief's one allowed additive change to
+`learning/`), and writes every result — `status`, `actual_value`,
+`graded_at`, `grade_note` — in one transaction (`store.apply_grades`).
+Idempotent by construction: a graded row is no longer `pending`, so
+`pending_due` never hands it back on a later call.
+
+`game_tick_from_overview(overview_json)` turns `overview.get`'s
+`tier2.in_game_date` string into one absolute, monotonic tick: `T` in that
+string is `dfhack.world.ReadCurrentTick()`, which reads
+`df.global.cur_year_tick` (verified live on VM 103 2026-09-15: both 178877
+at year 30, while `world.frame_counter` was 44275), so ticks **within the
+current in-game year**, resetting to 0 every
+year boundary, not a running total since world creation. So
+`year * 403200 + tick` (DF's fortress-mode calendar is fixed: 1200
+ticks/day x 28 days/month x 12 months/year = 403,200 ticks/year, per the
+[DF Wiki's "Time" article](https://dwarffortresswiki.org/index.php/DF2014:Time))
+is what actually stays comparable turn to turn. Both figures were checked
+this session against DFHack's published docs and the DF Wiki via WebFetch,
+not against a live VM — see the handoff report for the exact citations.
 
 ## Coordinates
 
@@ -162,6 +238,11 @@ this function's return value.
 - **The `propose` MCP tool.** `dfmcp/roles.py` already reserves the shape
   for it (its `planned` entries note "the queue, the sentry endpoint... not
   checked against the registry"); this stream did not touch `dfmcp/` at all.
+- **A grader schedule.** `grade.grade_due()` exists and is tested end to
+  end, but nothing calls it on a timer or after a real DFHack poll yet — that
+  needs a live `call_tool` wired to `dfmcp` or a direct DFHack RPC call,
+  neither of which this stream touches (local code and tests only, no VM, no
+  deploy).
 - **The publisher** (step 2): an allowlisted-field publisher reading
   `render.public_view()` on a delay, per §8.
 - **The feed page** (step 3).

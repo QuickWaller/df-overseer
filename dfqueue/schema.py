@@ -25,19 +25,26 @@ Three record kinds, per §4 and `agents/*/role.md`:
 No `plan` record yet (§9's write-ahead-log record, "writes its ordered plan
 to the queue before executing"). See `dfqueue/README.md`.
 
-## Reuses `learning/predictions/`, does not re-implement it
+## `prediction.signal` must be a live signal, not a ledger field
 
-A proposal's `prediction` field is validated **through
-`learning.predictions.schema`'s own `validate()`**, not a second copy of the
-falsifiability gate. That module only resolves `signal` against the **fort
-ledger** (`learning/ledger/schema.py`'s `FORT_FIELDS` — `embark`, `design`,
-`milestones`, `threat_log`, `outcome`, `observations`, `experiment`), because
-that is the only mechanical store that exists in code (see that module's own
-README, "The scope this is deliberately built at"). A spatial/mid-fort signal
-such as `landmarks.<name>.exit_to_<name>.distance_tiles` has no top-level
-match there at all and is refused, same as any other unresolvable path. This
-module does **not** loosen that check to let such signals through — see the
-handoff report for what that means for run #1's real proposal.
+A proposal's `prediction.signal` is validated against
+**`learning.live_signals`'s** closed registry of mid-fort signals
+(`handoffs/2026-09-15-live-signals-sqlite.md`), never against
+`learning/ledger/schema.py`'s `FORT_FIELDS`. `op` is checked against
+`learning.predictions.schema.PREDICATE_OPS` (the same small closed
+vocabulary predictions use) and `value` against the signal's own declared
+type; `learning.predictions.schema.validate()` itself is not called here —
+this module builds no `learning.predictions` row at all, because a
+`dfqueue` proposal's prediction is graded against a live SQLite ledger
+(`dfqueue/store.py`, `dfqueue/grade.py`), not the fort ledger.
+
+**A ledger-rooted (end-of-fort) signal is refused, on purpose, with a
+message pointing at the right module.** `design.entrance_count`,
+`outcome.status` and the like are real, gradeable ledger fields — just not
+ones a *proposal* may predict against: those are fort-level claims, and
+`learning/predictions/` is where they belong. `dfqueue` detects this case
+specifically (via `learning.ledger.store.field_source`) so the refusal reads
+as "wrong module for this claim," not as an unexplained typo.
 
 ## Coordinates
 
@@ -61,8 +68,9 @@ from pathlib import Path
 
 import yaml
 
-from learning.predictions.schema import new_prediction
-from learning.predictions.schema import validate as validate_prediction_row
+from learning import live_signals
+from learning.ledger.store import field_source as ledger_field_source
+from learning.predictions.schema import PREDICATE_OPS, PRESENCE_OPS
 
 SCHEMA_VERSION = 1
 
@@ -259,13 +267,12 @@ def _validate_preconditions(preconditions, errors: list[str], prefix: str) -> No
                 errors.append(f"{p}.state: expected a non-empty string")
 
 
-def _validate_prediction(prediction, errors: list[str], prefix: str, *, record: dict) -> None:
-    """Build a `learning.predictions` row from the wire shape and validate
-    it through that module's own `validate()` — never a copy of its logic.
-
-    Wire shape (matching §4's `<prediction signal=... op=... value=...
-    check_after_ticks=.../>`): `signal`, `op`, `value` (omitted/null for a
-    presence op), `check_after_ticks`.
+def _validate_prediction(prediction, errors: list[str], prefix: str) -> None:
+    """Validate the wire shape (matching §4's `<prediction signal=... op=...
+    value=... check_after_ticks=.../>`) against `learning.live_signals` —
+    never a `learning.predictions` row, and never `learning/ledger`'s
+    `FORT_FIELDS`. See this module's docstring, "`prediction.signal` must
+    be a live signal, not a ledger field."
     """
     if not isinstance(prediction, dict):
         errors.append(f"{prefix}: expected an object")
@@ -281,33 +288,57 @@ def _validate_prediction(prediction, errors: list[str], prefix: str, *, record: 
     for k in missing:
         errors.append(f"{prefix}.{k}: required field is missing")
     if missing or any(k not in known for k in prediction):
-        return  # can't safely build a row from a malformed prediction
+        return  # can't safely validate the rest of a malformed prediction
 
     check_after_ticks = prediction["check_after_ticks"]
     if isinstance(check_after_ticks, bool) or not isinstance(check_after_ticks, int):
         errors.append(f"{prefix}.check_after_ticks: expected an integer")
-        return
+    elif check_after_ticks <= 0:
+        errors.append(
+            f"{prefix}.check_after_ticks: must be > 0, got {check_after_ticks!r}"
+        )
 
-    # `learning.predictions` grades against an in-game *year*
-    # (`check_at_year`), not a tick count; there is no ticks -> year
-    # conversion available here (no fort dossier / current-year context
-    # exists yet, docs/AGENT-ARCHITECTURE.md §14 item 6 / ROADMAP.md). This
-    # reuses the same integer purely so the underlying validator's type and
-    # falsifiability checks actually run; it is not a claim that tick 1200
-    # means year 1200. Flagged in dfqueue/README.md as a known gap.
-    row = new_prediction(
-        prediction_id=record.get("id") or "unassigned",
-        fort_id=fort_name(),
-        decision=record.get("summary") or "unassigned",
-        expectation=record.get("rationale") or "unassigned",
-        signal=prediction["signal"],
-        predicate_op=prediction["op"],
-        predicate_value=prediction.get("value"),
-        check_at_year=check_after_ticks,
-        registered_at=record.get("ts") or "1970-01-01T00:00:00+00:00",
-    )
-    for e in validate_prediction_row(row):
-        errors.append(f"{prefix} -> learning.predictions: {e}")
+    op = prediction["op"]
+    if op not in PREDICATE_OPS:
+        errors.append(f"{prefix}.op: {op!r} is not in {PREDICATE_OPS}")
+
+    signal = prediction["signal"]
+    parsed = None
+    if not isinstance(signal, str) or not signal:
+        errors.append(f"{prefix}.signal: expected a non-empty string")
+    else:
+        try:
+            parsed = live_signals.parse(signal)
+        except live_signals.SignalError as exc:
+            if ledger_field_source(signal) is not None:
+                errors.append(
+                    f"{prefix}.signal: {signal!r} is an end-of-fort ledger field; "
+                    "fort-level claims belong in learning/predictions/, not a "
+                    "dfqueue proposal"
+                )
+            else:
+                errors.append(f"{prefix}.signal: {exc}")
+
+    value = prediction.get("value")
+    is_presence_op = op in PRESENCE_OPS
+    if is_presence_op and value is not None:
+        errors.append(f"{prefix}.value: must be null when op is {op!r}")
+    if not is_presence_op and value is None:
+        errors.append(f"{prefix}.value: required (non-null) when op is {op!r}")
+
+    if parsed is not None and not is_presence_op and value is not None:
+        if parsed.value_type == live_signals.INTEGER:
+            if isinstance(value, bool) or not isinstance(value, int):
+                errors.append(
+                    f"{prefix}.value: signal {signal!r} is integer-valued, "
+                    f"got {value!r}"
+                )
+        elif parsed.value_type == live_signals.BOOLEAN:
+            if not isinstance(value, bool):
+                errors.append(
+                    f"{prefix}.value: signal {signal!r} is boolean-valued, "
+                    f"got {value!r}"
+                )
 
 
 def _validate_proposal_fields(record: dict, role, errors: list[str]) -> None:
@@ -355,7 +386,7 @@ def _validate_proposal_fields(record: dict, role, errors: list[str]) -> None:
     if "prediction" not in record:
         errors.append("record.prediction: required field is missing")
     else:
-        _validate_prediction(record["prediction"], errors, "record.prediction", record=record)
+        _validate_prediction(record["prediction"], errors, "record.prediction")
 
 
 def _validate_ruling_fields(record: dict, errors: list[str]) -> None:
