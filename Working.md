@@ -167,10 +167,28 @@ Everything below this block is detail and reasoning. This is the brief.
          `isError: true`; a normal `level: -1` call is still a result.
        - Venv suite 125 to 127. The new test fails against the old
          `server.py`.
-     - **IN FLIGHT:** architect charter run #2 (same model, charter and
-       prompt; the only change is the tool interface),
-       `handoffs/2026-09-14-architect-second-charter-run.md`. Output goes to
-       `evals/live/2026-09-14-architect-second-charter/`.
+     - **DONE 2026-09-14: architect charter run #2.**
+       `evals/live/2026-09-14-architect-second-charter/`. Same model,
+       charter (hash-identical) and prompt; $0.0037, 1 turn, 14 calls, 3 of
+       them `isError`.
+       - **The interface fix worked:** it named the 5 SOIL pockets one level
+         down and reasoned about the stair linking the two levels.
+       - **But the proposal regressed.** There is no `<proposal>` record at
+         all: no prediction, no cost, no `public_rationale`. And its one
+         proposal, a door or trap at the vertical chokepoint, is
+         defensibility, which `role.md` says to flag for the Overseer rather
+         than propose.
+       - This is one sample per run, so it can't be pinned on the interface
+         change.
+       - Per-call arguments were unrecoverable, because neither
+         openclaw's headless `exec` nor the server logs them.
+     - **Next worth doing (user's call):**
+       - enforce the proposal record in code (typed fields validated at
+         write time, `docs/AGENT-ARCHITECTURE.md` "a malformed proposal is
+         refused") rather than trusting the prompt;
+       - log per-call tool name, arguments and `isError` in `dfmcp`, so runs
+         can be audited;
+       - only then spend on more samples per run.
      - **Part A found no headless way to un-plaintext the key.**
        `auth.profiles.<id>` has no key or SecretRef field in the config
        schema, and `secrets configure`, the command that advertises SecretRef
