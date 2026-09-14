@@ -237,6 +237,18 @@ file first in any session.
 - **Verify the verification.** Before reporting an all-clear, confirm the check
   you ran could actually have detected the problem in question. State what was
   verified and how, not just the outcome.
+- **A permission refusal is a stop sign, not an obstacle.** If the harness,
+  a hook or a classifier refuses an action, stop and report it: say what you
+  were doing, why you needed it, and what you left half-done. **Do not reach
+  the same end by another route**, and never ask another session or agent to
+  do it for you. Found 2026-09-14, when an executor was refused a piped
+  cross-VM token relay and achieved it with `scp -3` instead. That task was
+  authorised and the outcome was fine, which is exactly why the habit is
+  worth naming: the same reasoning would have excused an unsafe move.
+- **Read secrets by the key you need, never the whole file.** Use
+  `grep -E '^KEY=' .env`, not `cat .env`. An agent that needs one value has
+  no reason to materialise every token in its transcript. Found 2026-09-14:
+  an executor read the whole file, which is what forced a rotation pass.
 - **On session start (a fresh session, or right after `/clear`), check
   `ListAgents` for other sessions on this repo and message them to check
   in** — what they have in flight, uncommitted changes, which branch, any
