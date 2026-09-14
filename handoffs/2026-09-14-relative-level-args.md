@@ -374,3 +374,31 @@ never exercised the MCP layer's own error-passthrough path for this
 specific new error shape, only `argv_for_call`'s argument validation (which
 never sees the Lua-side error at all -- that error comes back from DFHack
 at call time, not from `dfmcp` itself).
+
+## Deployed and live-verified, 2026-09-14 (orchestrator)
+
+**Deploy.** User go-ahead given. Peer heads-up sent first. Nothing uncommitted was overwritten: before deploying, the three live game scripts differed from `HEAD~1` only by the installer's trailing blank line, and `/opt/df/dfmcp-smoke` matched `HEAD~1` exactly once line endings were normalised.
+- `install_df.py script-install` deployed `df-overseer-{openarea,diggable,chokepoints}`.
+- `dfmcp/tools.py`, `dfmcp/README.md` and `scripts/dfhack/TOOLS.yaml` were copied to `/opt/df/dfmcp-smoke/`, then `dfmcp-server.service` was restarted: active, 0 restarts.
+- All six deployed files hash-match `HEAD` (CR and trailing blank lines stripped).
+
+**Live, DFHack level (read-only), 3x3 searches:**
+
+| | diggable (omitted / 0 / -1) | openarea (omitted / 0 / -1) | chokepoints (omitted / 0 / -1) |
+|---|---|---|---|
+| Embark Site | 0 / 0 / **5** | 5 / 5 / 2 | 10 / 10 / 1 |
+| Wagon | 0 / 0 / **5** | 5 / 5 / 2 | 10 / 10 / 1 |
+| Stockpile #1 | 5 / 5 / 0 | 2 / 2 / 0 | 1 / 1 / 0 |
+
+- **Omitted equals 0 everywhere**, so behaviour is unchanged for existing callers.
+- Stockpile #1 already sits one level below the others, which explains its row.
+- Off-map levels (9999, -9999, -200) return `{"error": "level N from Embark Site is outside the map"}` in all three tools.
+- An unknown landmark still errors.
+- No `x`, `y`, `z` or `pos` keys appear in diggable or openarea output.
+
+**Live, MCP level, from VM 106 with the architect token:**
+- `tools/list` shows `diggable__find` args `w, h, level, near_landmark, radius_tiles`, with the relative-level description.
+- `chokepoints__find` now requires only `near_landmark`.
+- `tools/call diggable__find {level: -1, near_landmark: "Embark Site"}` returns 5 candidates.
+
+**Follow-up found:** a script-level `{"error": ...}` reaches the MCP client with `isError: false`. The off-map error does this, and so does the pre-existing "landmark not found". A model may treat such errors as data. It's a small `dfmcp/server.py` change, not done here.

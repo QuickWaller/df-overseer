@@ -148,15 +148,23 @@ Everything below this block is detail and reasoning. This is the brief.
          new files, with a positive control;
        - the two VM 106 secrets were compared by hash;
        - nothing listens on VM 106.
-     - **Open, unverified: its underground search may have been meaningless.**
-       It called `diggable.find` with z = 0, -1 ... -4 and found nothing,
-       yet this fort had 41 tiles dug on 2026-09-11.
-       `df-overseer-diggable.lua`'s header says z defaults to the landmark's
-       own z, which implies an absolute DF z-level. Negative values would
-       then be off-map. If true, the tool gives a coordinate-free caller **no
-       way to say "one level down"**, a design gap against commitment #1.
-       Next step: check what z the script receives and returns for a
-       negative value, then consider a relative `levels_below` argument.
+     - **Its underground search was meaningless, and that is now fixed.**
+       `diggable.find` took an absolute z (the map runs 0-185, landmarks sit
+       at 168-169), so the architect's z 0 to -4 silently returned `[]`.
+     - **DONE and DEPLOYED 2026-09-14:**
+       - `openarea.find/build`, `diggable.find/dig` and `chokepoints.find`
+         take an optional `LEVEL` relative to the landmark;
+       - an off-map level is a named error;
+       - MCP arguments carry descriptions;
+       - live-verified on VM 103 at the DFHack and MCP levels, where level -1
+         finds 5 dig candidates.
+
+       `handoffs/2026-09-14-relative-level-args.md`.
+     - **Small follow-up, not started:** script `{"error": ...}` results
+       reach MCP clients with `isError: false`, including "landmark not
+       found". `dfmcp/server.py` could map them to `isError: true`.
+     - **Next worth doing:** re-run the architect charter now that it can
+       search underground, and compare it with the first run in `evals/live/`.
      - **Part A found no headless way to un-plaintext the key.**
        `auth.profiles.<id>` has no key or SecretRef field in the config
        schema, and `secrets configure`, the command that advertises SecretRef
