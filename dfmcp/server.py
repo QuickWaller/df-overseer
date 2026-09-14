@@ -384,8 +384,21 @@ def build_mcp_server(
     read and write, via `dfqueue.store`. Passed through from
     `ServerConfig.queue_db` (`main()`/`_serve()` below); a test builds the
     server with its own throwaway path (`dfmcp/tests/test_server.py`).
+
+    Also builds this server's one `queue_write_lock` (Phase A review,
+    2026-09-15): an `asyncio.Lock`, created fresh here rather than as a
+    `dfmcp.queue_tools` module-level global, because an `asyncio.Lock`
+    binds to whichever event loop first acquires it and raises if reused
+    from a different one -- a module-level singleton would break the
+    moment more than one event loop (a real server restart, or one test
+    after another) ever touched it. One lock per built `Server`, matching
+    how `pool`/`registry`/`roster` are already scoped. See
+    `dfmcp/queue_tools.py`'s own docstring, "SQLite runs off the event
+    loop, and writes are serialised", for why this exists and why it is
+    held only around `store.append`, never around the DFHack stamping call.
     """
     id_to_name, name_to_id = build_tool_names(registry)
+    queue_write_lock = asyncio.Lock()
 
     async def _call_dfhack(tool_id: str, arguments: Mapping[str, Any]) -> Any:
         """The one DFHack call `dfmcp.queue_tools` needs (`overview.get`, to
@@ -458,6 +471,7 @@ def build_mcp_server(
                 text, structured = await queue_tools.call(
                     tool_id, role, params.arguments or {},
                     db_path=queue_db_path, call_dfhack=_call_dfhack,
+                    write_lock=queue_write_lock,
                 )
             except queue_tools.QueueToolError as exc:
                 return _tool_result_error(str(exc))
