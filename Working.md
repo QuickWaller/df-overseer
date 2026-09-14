@@ -160,11 +160,17 @@ Everything below this block is detail and reasoning. This is the brief.
          finds 5 dig candidates.
 
        `handoffs/2026-09-14-relative-level-args.md`.
-     - **Small follow-up, not started:** script `{"error": ...}` results
-       reach MCP clients with `isError: false`, including "landmark not
-       found". `dfmcp/server.py` could map them to `isError: true`.
-     - **Next worth doing:** re-run the architect charter now that it can
-       search underground, and compare it with the first run in `evals/live/`.
+     - **DONE and DEPLOYED 2026-09-14 (`0557415`):** a script's exact
+       `{"error": "<msg>"}` output now reaches MCP clients as
+       `isError: true`.
+       - Live-verified from VM 106: off-map level and unknown landmark give
+         `isError: true`; a normal `level: -1` call is still a result.
+       - Venv suite 125 to 127. The new test fails against the old
+         `server.py`.
+     - **IN FLIGHT:** architect charter run #2 (same model, charter and
+       prompt; the only change is the tool interface),
+       `handoffs/2026-09-14-architect-second-charter-run.md`. Output goes to
+       `evals/live/2026-09-14-architect-second-charter/`.
      - **Part A found no headless way to un-plaintext the key.**
        `auth.profiles.<id>` has no key or SecretRef field in the config
        schema, and `secrets configure`, the command that advertises SecretRef
