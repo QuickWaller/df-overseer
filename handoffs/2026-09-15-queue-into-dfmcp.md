@@ -179,12 +179,16 @@ new env key).
 ## Result
 
 **DONE 2026-09-15, Phase A only.** Branch `worktree-agent-a6fda7335003292d0`
-(this stream's worktree branch, based on `main`'s `6105612`), two commits:
-`28bb3ee` (registry/roles/tools/server wiring, dfqueue/store.py's additive
-`pending_proposals`, the real agents/*.yaml grants and role.md update) and
-`13a3b94` (the `TestQueueTools` end-to-end coverage in
-`dfmcp/tests/test_server.py`). No VM access, no SSH, no deploy, no model
-call, as scoped.
+(this stream's worktree branch, based on `main`'s `6105612`). No VM access,
+no SSH, no deploy, no model call, as scoped.
+
+First pass, two commits: `28bb3ee` (registry/roles/tools/server wiring,
+dfqueue/store.py's additive `pending_proposals`, the real agents/*.yaml
+grants and role.md update) and `13a3b94` (the `TestQueueTools` end-to-end
+coverage in `dfmcp/tests/test_server.py`), then `33975a5` (this Result
+section, first draft). After coordinator review (three fixes required
+before merge): `a16c930`, `10c7f61`, `4a5c866` -- see "Review fixes,
+2026-09-15" below for what each one closed.
 
 ### Baselines, confirmed before any change
 
@@ -380,3 +384,110 @@ a stand-in to revisit once a real Projection component exists.
 7. This is its own dispatched stream (VM access, live writes to a running
    fort's MCP server), not something this Phase A executor runs -- per this
    repo's explicit-confirmation-each-time rule.
+
+### Review fixes, 2026-09-15 (same stream, same branch/worktree)
+
+The coordinator's Phase A review confirmed both suite counts above
+independently and found three real gaps before merge. All three fixed on
+this same branch, three more commits: `a16c930` (defer semantics),
+`10c7f61` (storage errors and write serialisation), `4a5c866` (docs).
+
+**1. Defer no longer makes a proposal vanish.** `dfqueue/store.py`'s
+`pending_proposals()` used to exclude a proposal once *any* ruling existed
+against it, so a `defer` ("decide later") silently removed it from the
+Overseer's own view for good. Fixed: a new `FINAL_DECISIONS = (ACCEPT,
+REJECT)`; `pending_proposals()` excludes a proposal only once a ruling
+with a *final* decision exists (via `json_extract(payload,
+'$.decision')`, no `schema_version` bump); `append()` refuses a second
+ruling on a proposal that already has a final one (a repeat accept/reject,
+or any ruling, even another defer, after one), but allows a ruling
+(including another defer) after a defer. **JSON1 confirmed working in
+both interpreters this project runs SQLite from**: ambient `python` and
+`.venv-dfmcp` both report `sqlite3.sqlite_version == "3.45.3"`, and a
+direct `SELECT json_extract('{"decision":"accept"}', '$.decision')`
+against an in-memory database returned `('accept',)` in both -- SQLite's
+JSON functions moved into core (no longer a loadable extension) at 3.38.0
+(2022-02-22), so 3.45.3 has them unconditionally. **Not assumed for VM
+103**: flagged in the "not built yet"/Phase B section above as a live
+fact to re-confirm (Ubuntu noble ships Python 3.12, whose stdlib
+`sqlite3` links against a recent-enough system SQLite in every noble
+build this project has seen, but "seen elsewhere" is not "checked on VM
+103"). Five new tests in `dfqueue/tests/test_store.py`: defer keeps a
+proposal pending, reject removes it, a ruling (including a second defer)
+after a defer is allowed, a second final ruling is refused and writes
+nothing, and a defer after a reject is refused too (proving the rule is
+about the *existing* ruling being final, not about what the new one says).
+
+**2. Storage errors are refusals now, not crashes.** Only
+`store.QueueError` used to become a `QueueToolError`; a `sqlite3.Error` or
+`OSError` from the store (the exact `ProtectSystem=strict`/read-only-queue-
+directory scenario this stream's own Phase B checklist flags) would have
+propagated out of `_handle_call_tool` as an unhandled exception, not an
+`isError=True` tool result. Fixed: every `dfqueue.store` call in
+`dfmcp/queue_tools.py` now goes through `_append_locked` (writes) or a
+direct `try/except` (the read in `_pending`), both catching
+`(sqlite3.Error, OSError)` alongside `store.QueueError` and wrapping into
+`QueueToolError` via a new `_storage_error` helper. Tested with a real
+`NotADirectoryError` (a file placed where `store._connect`'s own
+`mkdir(parents=True)` expects a directory -- no mocking needed, this
+reproduces the real failure class directly) for both `queue.propose` and
+`queue.pending`, plus one monkeypatched `sqlite3.OperationalError`
+("database is locked") to prove a genuine `sqlite3.Error`, not only
+`OSError`, is caught.
+
+**3. SQLite moved off the event loop, and writes are serialised.** The
+original brief's own decision ("SQLite calls are synchronous: run them
+off the event loop, asyncio.to_thread") was missed in the first pass --
+every store call ran synchronously, directly on the event loop, blocking
+every other in-flight MCP session for its duration. Moving them onto
+`asyncio.to_thread` alone would have introduced a real, previously-latent
+race: `store._next_id` is `COUNT(*)`-based and runs, along with the
+existing-id check, *before* the row it names is inserted -- safe only
+because a purely synchronous call never yields between the two. Fixed
+with one `asyncio.Lock` per running server (`build_mcp_server` creates it
+fresh and passes it to every `queue_tools.call`; deliberately not a
+`queue_tools`-module-level singleton, since an `asyncio.Lock` binds to
+whichever event loop first acquires it and raises if reused from a
+different one -- a real hazard for a module-level object touched by more
+than one event loop across a server restart, or one test after another),
+held only around the `store.append` call itself (`_append_locked`), never
+around `_stamp_cycle_snapshot`'s `overview.get` call: DFHack latency has
+been observed at 40-80s under load elsewhere in this project, and
+serialising every queue write behind whichever one is waiting on that
+would be a worse failure mode than the race it replaces.
+
+New `dfmcp/tests/test_queue_tools.py` (imports nothing from the `mcp`
+SDK, so it runs under ambient `python` too, not only `.venv-dfmcp`):
+storage-error tests as described above, plus the concurrency pair --
+`test_concurrent_raw_appends_without_serialization_can_collide` (direct
+`asyncio.to_thread(store.append, ...)` calls, no lock, with `_next_id`
+monkeypatched to `time.sleep(0.05)` so the race is deterministic rather
+than occasional) and
+`test_concurrent_proposes_through_queue_tools_get_distinct_ids_and_all_land`
+(the same forced slowdown, through the real `queue_tools.call` path,
+which does hold the lock) -- and a third test proving the lock is never
+held across the DFHack call (two concurrent proposes' `call_dfhack`
+calls must both start before either can finish, or the test hangs to its
+own timeout).
+
+**Verified the verification, as asked, not just asserted it.** Backed up
+`dfmcp/queue_tools.py`, temporarily made `_append_locked` skip the
+`async with write_lock:` block entirely (an `if True: return ...` before
+it), and re-ran
+`test_concurrent_proposes_through_queue_tools_get_distinct_ids_and_all_land`
+alone: it failed, with a real `sqlite3.IntegrityError: UNIQUE constraint
+failed: records.id` (now surfaced through fix 2's own `QueueToolError`
+wrapping, a nice confirmation the two fixes compose correctly) raised
+from inside `_append_locked`. Reverted the edit, confirmed the file was
+byte-identical to the pre-edit backup via `diff`, and re-ran the same
+test: it passed again, and the full suite (`dfmcp/tests/test_queue_tools.py`,
+6 tests) passed clean immediately after.
+
+**Counts after all three fixes**: ambient `python -m pytest`:
+**241 -> 252 passed, 1 skipped** (+11: +5 `dfqueue/tests/test_store.py`
+defer/final-ruling tests, +6 `dfmcp/tests/test_queue_tools.py`, all
+collected under ambient since neither file imports the `mcp` SDK).
+`.venv-dfmcp`'s `dfmcp/tests`: **146 -> 152 passed** (+6,
+`test_queue_tools.py` only -- `dfqueue/tests` is not part of
+`dfmcp/tests`). Skip count unchanged throughout (still `test_server.py`'s
+own guarded SDK-version skip).
