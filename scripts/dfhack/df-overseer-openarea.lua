@@ -79,17 +79,37 @@
 -- for the parallel primitive when the target is a named landmark directly,
 -- not a ranked open-area search.
 --
--- Z defaults to NEAR_LANDMARK's own z (found live 2026-09-11, a Haiku-driven
+-- Z defaulted to NEAR_LANDMARK's own z (found live 2026-09-11, a Haiku-driven
 -- run: ranked_candidates already resolves the landmark's real az internally
 -- via get_landmark_centroid and was discarding it in favor of this argument,
 -- forcing every caller to supply a bare level number with no coordinate-free
 -- way to learn the right one -- the model-facing failure mode this produced
 -- was worse than "can't find a value," it was "guess 0, get a real but
--- unrelated walkable_group back, and silently no-op a build there." Pass an
--- explicit Z only to search a different level than the landmark's own.
+-- unrelated walkable_group back, and silently no-op a build there."
 --
--- Usage: ./dfhack-run df-overseer-openarea find W H [Z] NEAR_LANDMARK [RADIUS_TILES]
--- Usage: ./dfhack-run df-overseer-openarea build W H [Z] NEAR_LANDMARK BLUEPRINT_FILE [RANK] [RADIUS_TILES]
+-- Z REPLACED WITH LEVEL, an offset relative to NEAR_LANDMARK's own z, not an
+-- absolute DF coordinate (gap found live 2026-09-14, handoffs/2026-09-14-
+-- relative-level-args.md): defaulting Z to the landmark's own level (above)
+-- closed the "no coordinate-free way to learn the value" gap, but a caller
+-- that DID want a different level still had to know an absolute DF
+-- z-coordinate to pass -- and DF's z axis is absolute per-map (Uniboslan's
+-- own map runs z 0-185, landmarks sit at z 168-169), so "one level down"
+-- had no coordinate-free expression at all. A first live probe against
+-- Uniboslan called find_diggable_area with z=0/-1/-2/-3/-4 (all nowhere
+-- near the fort) and got `[]` every time -- an empty list, not an error --
+-- and the caller concluded there was nothing diggable underground, which
+-- was wrong. LEVEL fixes this the way the earlier default fixed Z: 0 means
+-- the landmark's own level (unchanged behavior for every caller that omits
+-- it), -1 means one level below, 1 means one above. `resolve_level` below
+-- adds az + LEVEL and validates the result against the real map bounds
+-- (dfhack.maps.getSize()'s z_count_block, confirmed live to run 0 to
+-- z_count_block-1 by df-overseer-breach.lua's own getSize() usage) --
+-- a level outside the map is now a returned error naming LEVEL and the
+-- landmark, never the resolved absolute z (design commitment #1), instead
+-- of a silent empty result indistinguishable from "nothing is there."
+--
+-- Usage: ./dfhack-run df-overseer-openarea find W H [LEVEL] NEAR_LANDMARK [RADIUS_TILES]
+-- Usage: ./dfhack-run df-overseer-openarea build W H [LEVEL] NEAR_LANDMARK BLUEPRINT_FILE [RANK] [RADIUS_TILES]
 
 local json = require('json')
 local landmarks_mod = reqscript('df-overseer-landmarks')
@@ -145,6 +165,25 @@ local function overlaps(a, b, w, h)
   return a.x < b.x + w and b.x < a.x + w and a.y < b.y + h and b.y < a.y + h
 end
 
+-- LEVEL is an offset relative to a landmark's own level (0/nil = same level,
+-- negative = below, positive = above), never an absolute DF z-coordinate --
+-- see the file header for why. Returns the resolved absolute z, or nil plus
+-- an error naming LEVEL and landmark_name (never the resolved absolute
+-- value, per design commitment #1) if that level doesn't exist on this map.
+-- Duplicated identically in df-overseer-diggable.lua and
+-- df-overseer-chokepoints.lua rather than shared, same rationale this file
+-- already uses for parse_quickfort_stats: a small, self-contained, pure
+-- function with no openarea-specific state.
+local function resolve_level(az, level, landmark_name)
+  level = level or 0
+  local z = az + level
+  local _, _, z_count = dfhack.maps.getSize()
+  if z < 0 or z >= z_count then
+    return nil, string.format("level %d from %s is outside the map", level, landmark_name)
+  end
+  return z
+end
+
 -- Server-side only: ranked, deduplicated, non-overlapping top-left corners
 -- (real x,y coordinates, never stripped here) for a WxH window near `near`,
 -- closest-to-anchor first. Shared by find_open_area (which strips
@@ -152,14 +191,15 @@ end
 -- needs the real coordinate to anchor quickfort) -- one ranking
 -- implementation, so "candidate rank 1" can never mean two different tiles
 -- depending which entry point asked.
-local function ranked_candidates(w, h, z, near, radius_tiles)
+local function ranked_candidates(w, h, level, near, radius_tiles)
   local ax, ay, az = landmarks_mod.get_landmark_centroid(near)
   if not ax then
     return nil, "landmark not found: " .. near
   end
-  -- Default to the landmark's own level rather than requiring the caller
-  -- to supply one -- see the file header for why this matters.
-  z = z or az
+  local z, level_err = resolve_level(az, level, near)
+  if level_err then
+    return nil, level_err
+  end
   local radius = math.min(radius_tiles or DEFAULT_RADIUS, MAX_RADIUS)
 
   local candidates = find_candidates(
@@ -192,12 +232,12 @@ local function ranked_candidates(w, h, z, near, radius_tiles)
   return chosen, nil, z
 end
 
-function find_open_area(w, h, z, near, radius_tiles)
-  local chosen, err, resolved_z = ranked_candidates(w, h, z, near, radius_tiles)
+function find_open_area(w, h, level, near, radius_tiles)
+  local chosen, err, resolved_z = ranked_candidates(w, h, level, near, radius_tiles)
   if err then
     return nil, err
   end
-  z = resolved_z
+  local z = resolved_z
 
   local results = {}
   for _, c in ipairs(chosen) do
@@ -248,13 +288,13 @@ end
 -- relative to dfhack-config/blueprints/, not the working directory or an
 -- absolute path (Working.md's own documented trap) -- pass a bare filename
 -- for a blueprint already deployed there.
-function build_open_area(w, h, z, near, blueprint_file, rank, radius_tiles)
+function build_open_area(w, h, level, near, blueprint_file, rank, radius_tiles)
   rank = rank or 1
-  local chosen, err, resolved_z = ranked_candidates(w, h, z, near, radius_tiles)
+  local chosen, err, resolved_z = ranked_candidates(w, h, level, near, radius_tiles)
   if err then
     return nil, err
   end
-  z = resolved_z
+  local z = resolved_z
   if rank < 1 or rank > #chosen then
     return nil, string.format(
       "no candidate at rank %d (found %d near %s)", rank, #chosen, near)
@@ -317,43 +357,43 @@ end
 local args = {...}
 local cmd = args[1]
 
--- Z is optional in both subcommands (see file header): args[4] is read as Z
--- only when it parses as a number, otherwise it's NEAR_LANDMARK and every
--- argument after it shifts left by one, with z left nil so ranked_candidates
--- defaults it to the landmark's own level.
+-- LEVEL is optional in both subcommands (see file header): args[4] is read
+-- as LEVEL only when it parses as a number, otherwise it's NEAR_LANDMARK and
+-- every argument after it shifts left by one, with level left nil so
+-- ranked_candidates defaults it to 0 (the landmark's own level).
 if cmd == "find" then
   local w, h = tonumber(args[2]), tonumber(args[3])
-  local z, near, radius
+  local level, near, radius
   if tonumber(args[4]) then
-    z, near, radius = tonumber(args[4]), args[5], tonumber(args[6])
+    level, near, radius = tonumber(args[4]), args[5], tonumber(args[6])
   else
     near, radius = args[4], tonumber(args[5])
   end
   if not (w and h and near) then
-    print("usage: df-overseer-openarea find W H [Z] NEAR_LANDMARK [RADIUS_TILES]")
+    print("usage: df-overseer-openarea find W H [LEVEL] NEAR_LANDMARK [RADIUS_TILES]")
   else
-    local results, err = find_open_area(w, h, z, near, radius)
+    local results, err = find_open_area(w, h, level, near, radius)
     print(json.encode(err and {error = err} or results))
   end
 elseif cmd == "build" then
   local w, h = tonumber(args[2]), tonumber(args[3])
-  local z, near, blueprint, rank, radius
+  local level, near, blueprint, rank, radius
   if tonumber(args[4]) then
-    z, near, blueprint, rank, radius =
+    level, near, blueprint, rank, radius =
       tonumber(args[4]), args[5], args[6], tonumber(args[7]), tonumber(args[8])
   else
     near, blueprint, rank, radius =
       args[4], args[5], tonumber(args[6]), tonumber(args[7])
   end
   if not (w and h and near and blueprint) then
-    print("usage: df-overseer-openarea build W H [Z] NEAR_LANDMARK"
+    print("usage: df-overseer-openarea build W H [LEVEL] NEAR_LANDMARK"
       .. " BLUEPRINT_FILE [RANK] [RADIUS_TILES]")
   else
-    local result, err = build_open_area(w, h, z, near, blueprint, rank, radius)
+    local result, err = build_open_area(w, h, level, near, blueprint, rank, radius)
     print(json.encode(err and {error = err} or result))
   end
 else
-  print("usage: df-overseer-openarea find W H [Z] NEAR_LANDMARK [RADIUS_TILES]")
-  print("usage: df-overseer-openarea build W H [Z] NEAR_LANDMARK"
+  print("usage: df-overseer-openarea find W H [LEVEL] NEAR_LANDMARK [RADIUS_TILES]")
+  print("usage: df-overseer-openarea build W H [LEVEL] NEAR_LANDMARK"
     .. " BLUEPRINT_FILE [RANK] [RADIUS_TILES]")
 end

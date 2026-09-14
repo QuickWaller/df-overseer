@@ -185,14 +185,14 @@ df-overseer-diff.lua:
 df-overseer-openarea.lua:
   build_order_item: 6
   commands:
-    "find W H [Z] NEAR_LANDMARK [RADIUS_TILES]":
+    "find W H [LEVEL] NEAR_LANDMARK [RADIUS_TILES]":
       lua_function: find_open_area
       effect: read
       coordinate_bearing: false
       live_deployed: true
       verified: "2026-09-11"
       notes: "Ranked candidates correctly judged by the first autonomous-play experiment. decisions/DECISIONS.md 2026-09-11."
-    "build W H [Z] NEAR_LANDMARK BLUEPRINT_FILE [RANK] [RADIUS_TILES]":
+    "build W H [LEVEL] NEAR_LANDMARK BLUEPRINT_FILE [RANK] [RADIUS_TILES]":
       lua_function: build_open_area
       effect: mutate
       coordinate_bearing: internal-only
@@ -208,7 +208,7 @@ df-overseer-openarea.lua:
 df-overseer-chokepoints.lua:
   build_order_item: "7 (first half)"
   commands:
-    "find Z NEAR_LANDMARK [RADIUS_TILES]":
+    "find [LEVEL] NEAR_LANDMARK [RADIUS_TILES]":
       lua_function: find_chokepoints
       effect: read
       coordinate_bearing: true
@@ -228,14 +228,14 @@ df-overseer-chokepoints.lua:
 df-overseer-diggable.lua:
   build_order_item: "gap found 2026-09-11, not in the original 0-9 order"
   commands:
-    "find W H [Z] NEAR_LANDMARK [RADIUS_TILES]":
+    "find W H [LEVEL] NEAR_LANDMARK [RADIUS_TILES]":
       lua_function: find_diggable_area
       effect: read
       coordinate_bearing: false
       live_deployed: true
       verified: "2026-09-11"
       notes: "Correct negative near the surface embark (TREE-material walls excluded) and a correct positive underground (5 ranked SOIL candidates). decisions/DECISIONS.md 2026-09-11."
-    "dig W H [Z] NEAR_LANDMARK BLUEPRINT_FILE [RANK] [RADIUS_TILES]":
+    "dig W H [LEVEL] NEAR_LANDMARK BLUEPRINT_FILE [RANK] [RADIUS_TILES]":
       lua_function: dig_diggable_area
       effect: mutate
       coordinate_bearing: internal-only

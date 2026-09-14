@@ -1379,8 +1379,11 @@ def cmd_lua(pve, args):
 
 def cmd_run(pve, args):
     """Call one already-deployed named dfhack script directly, e.g.
-    'df-overseer-openarea find 5 5 169 "Embark Site"', without hand-rolling
-    an ssh command or going through cmd_lua's raw-Lua path.
+    'df-overseer-openarea find 5 5 -1 "Embark Site"' (LEVEL is relative to
+    the landmark, not an absolute DF z-coordinate -- see the script's own
+    file header, or handoffs/2026-09-14-relative-level-args.md for why),
+    without hand-rolling an ssh command or going through cmd_lua's raw-Lua
+    path.
 
     This is the gap between cmd_lua (arbitrary Lua, full raw access) and
     the single-purpose subcommands like ui-install/script-install: a way to
@@ -2264,9 +2267,11 @@ def main():
     lua.add_argument("--timeout", type=int, default=60)
 
     run = add("run", help="call one already-deployed named dfhack script"
-                          " directly, e.g. df-overseer-openarea find 5 5 169"
-                          " \"Embark Site\" -- see docs/DF-UI-AUTOMATION.md"
-                          " or the script's own file header for its CLI")
+                          " directly, e.g. df-overseer-openarea find 5 5 -1"
+                          " \"Embark Site\" (that -1 is a LEVEL relative to"
+                          " the landmark, not an absolute z) -- see"
+                          " docs/DF-UI-AUTOMATION.md or the script's own"
+                          " file header for its CLI")
     run.add_argument("script_name",
                      help="script name without .lua, e.g. df-overseer-openarea")
     run.add_argument("script_args", nargs=argparse.REMAINDER,

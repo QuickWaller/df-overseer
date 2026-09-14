@@ -48,7 +48,26 @@
 -- violated by this -- the model is handed a short, bounded, pre-computed
 -- list, never asked to derive the coordinate itself from geometry.
 --
--- Usage: ./dfhack-run df-overseer-chokepoints find Z NEAR_LANDMARK [RADIUS_TILES]
+-- Z REPLACED WITH LEVEL, now optional, an offset relative to NEAR_LANDMARK's
+-- own z rather than a required absolute DF coordinate (gap found live
+-- 2026-09-14, handoffs/2026-09-14-relative-level-args.md -- see
+-- df-overseer-openarea.lua's header for the full story of the same change
+-- there). This file's `find` was the one command in the three-file gap that
+-- required an absolute Z at all, with no default -- every caller had to
+-- already know a real DF z-coordinate just to call it, the same problem the
+-- other two files had already closed by defaulting. LEVEL keeps the same
+-- argument position (still the first argument after the verb) so the
+-- CLI stays parseable the same way as find_open_area/find_diggable_area:
+-- a numeric first argument is LEVEL, otherwise it's NEAR_LANDMARK and LEVEL
+-- defaults to 0 (the landmark's own level). `resolve_level` (duplicated from
+-- df-overseer-openarea.lua/df-overseer-diggable.lua) adds az + LEVEL and
+-- validates against the real map bounds (dfhack.maps.getSize()'s
+-- z_count_block) -- a level outside the map is a returned error naming
+-- LEVEL and the landmark, never the resolved absolute z, instead of
+-- whatever find_chokepoints would have done with a nonsense absolute z
+-- (an empty or garbage result, never tested against an out-of-range value).
+--
+-- Usage: ./dfhack-run df-overseer-chokepoints find [LEVEL] NEAR_LANDMARK [RADIUS_TILES]
 
 local json = require('json')
 local landmarks_mod = reqscript('df-overseer-landmarks')
@@ -94,10 +113,32 @@ local function is_corridor_chokepoint(x, y, z)
   return (not n and not s and e and w) or (not e and not w and n and s)
 end
 
-function find_chokepoints(z, near, radius_tiles)
+-- LEVEL is an offset relative to a landmark's own level (0/nil = same level,
+-- negative = below, positive = above), never an absolute DF z-coordinate --
+-- see the file header for why. Returns the resolved absolute z, or nil plus
+-- an error naming LEVEL and landmark_name (never the resolved absolute
+-- value, per design commitment #1) if that level doesn't exist on this map.
+-- Duplicated identically in df-overseer-openarea.lua and
+-- df-overseer-diggable.lua rather than shared -- a small, self-contained,
+-- pure function with no chokepoints-specific state.
+local function resolve_level(az, level, landmark_name)
+  level = level or 0
+  local z = az + level
+  local _, _, z_count = dfhack.maps.getSize()
+  if z < 0 or z >= z_count then
+    return nil, string.format("level %d from %s is outside the map", level, landmark_name)
+  end
+  return z
+end
+
+function find_chokepoints(level, near, radius_tiles)
   local ax, ay, az = landmarks_mod.get_landmark_centroid(near)
   if not ax then
     return nil, "landmark not found: " .. near
+  end
+  local z, level_err = resolve_level(az, level, near)
+  if level_err then
+    return nil, level_err
   end
   local radius = math.min(radius_tiles or DEFAULT_RADIUS, MAX_RADIUS)
   local min_x, max_x, min_y, max_y = ax - radius, ax + radius, ay - radius, ay + radius
@@ -146,16 +187,25 @@ end
 local args = {...}
 local cmd = args[1]
 
+-- LEVEL is optional (see file header): args[2] is read as LEVEL only when
+-- it parses as a number, otherwise it's NEAR_LANDMARK and RADIUS_TILES
+-- shifts left by one, with level left nil so find_chokepoints defaults it
+-- to 0 (the landmark's own level). Same sniff-the-next-token technique
+-- df-overseer-openarea.lua/df-overseer-diggable.lua use, just starting one
+-- slot earlier since this command has no W/H ahead of LEVEL.
 if cmd == "find" then
-  local z = tonumber(args[2])
-  local near = args[3]
-  local radius = tonumber(args[4])
-  if not (z and near) then
-    print("usage: df-overseer-chokepoints find Z NEAR_LANDMARK [RADIUS_TILES]")
+  local level, near, radius
+  if tonumber(args[2]) then
+    level, near, radius = tonumber(args[2]), args[3], tonumber(args[4])
   else
-    local results, err = find_chokepoints(z, near, radius)
+    near, radius = args[2], tonumber(args[3])
+  end
+  if not near then
+    print("usage: df-overseer-chokepoints find [LEVEL] NEAR_LANDMARK [RADIUS_TILES]")
+  else
+    local results, err = find_chokepoints(level, near, radius)
     print(json.encode(err and {error = err} or results))
   end
 else
-  print("usage: df-overseer-chokepoints find Z NEAR_LANDMARK [RADIUS_TILES]")
+  print("usage: df-overseer-chokepoints find [LEVEL] NEAR_LANDMARK [RADIUS_TILES]")
 end

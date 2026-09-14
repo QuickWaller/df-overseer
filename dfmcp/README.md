@@ -42,7 +42,7 @@ never a real socket, never VM 103.
 ## The canonical id scheme
 
 `TOOLS.yaml` keys commands by their human-readable CLI signature, for
-example `df-overseer-openarea.lua` colon `"build W H [Z] NEAR_LANDMARK
+example `df-overseer-openarea.lua` colon `"build W H [LEVEL] NEAR_LANDMARK
 BLUEPRINT_FILE [RANK] [RADIUS_TILES]"`. That is a good label for a person
 reading the manifest and a bad identifier for code: it embeds argument
 names, optional-argument brackets, and punctuation that has no business
@@ -54,7 +54,7 @@ signature (everything up to the first whitespace or `(`, lowercased), and
 join the two with a dot.
 
 ```
-df-overseer-openarea.lua  ->  "build W H [Z] ..."   ->  openarea.build
+df-overseer-openarea.lua  ->  "build W H [LEVEL] ..."   ->  openarea.build
 df-overseer-overview.lua  ->  "get (or no args)"     ->  overview.get
 df-overseer-labor.lua     ->  "unit-status [idle|..." -> labor.unit-status
 df-overseer-diff.lua      ->  "since-report REPORT_ID" -> diff.since-report
@@ -251,15 +251,25 @@ confidently cover.
 
 **The positional-optional trap.** DFHack's CLI is positional, so if a
 caller supplies a later optional argument (e.g. `RANK`) while omitting an
-earlier one (e.g. `Z`), there is no way to express that without silently
+earlier one (e.g. `LEVEL`), there is no way to express that without silently
 shifting every later argument into the wrong slot -- the exact class of bug
 this project has already shipped twice (the `quickfort -c`
 top-left-vs-centre bug, `decisions/DECISIONS.md` 2026-09-11).
 `argv_for_call` refuses this with a named `ArgumentError` rather than
 guessing a shift. The check only concerns optional arguments relative to
 each other; a required argument positioned after an optional one (as
-`NEAR_LANDMARK` sits after `[Z]` in `openarea.build`) is validated
+`NEAR_LANDMARK` sits after `[LEVEL]` in `openarea.build`) is validated
 independently and never participates in the gap.
+
+**Argument descriptions.** Added 2026-09-14
+(`handoffs/2026-09-14-relative-level-args.md`): `_ARG_DESCRIPTIONS` in
+`tools.py`, one table keyed by the raw manifest token (`"LEVEL"`,
+`"NEAR_LANDMARK"`, ...), feeds a `description` into each schema property
+that has an entry -- closing a real gap a live probe found, where the model
+saw an argument named `z` with no description at all and had no way to know
+it was an absolute DF map coordinate rather than something small and
+relative. A token with no entry gets no `description` key, same honest-gap
+default the type heuristic uses.
 
 ## What `auth.py` exposes
 
