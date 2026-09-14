@@ -182,13 +182,24 @@ Everything below this block is detail and reasoning. This is the brief.
          change.
        - Per-call arguments were unrecoverable, because neither
          openclaw's headless `exec` nor the server logs them.
-     - **Next worth doing (user's call):**
-       - enforce the proposal record in code (typed fields validated at
-         write time, `docs/AGENT-ARCHITECTURE.md` "a malformed proposal is
-         refused") rather than trusting the prompt;
-       - log per-call tool name, arguments and `isError` in `dfmcp`, so runs
-         can be audited;
-       - only then spend on more samples per run.
+     - **DONE 2026-09-14 (`2472cdf`): `dfmcp` logs every `tools/call`** as
+       one JSON line to journald: role, tool, arguments, `is_error`, error,
+       session and request ids, duration.
+       Read back with `journalctl -u dfmcp-server.service -o cat | grep '"event": "tools/call"'`.
+     - **USER WANTS: a scrolling feed on the right of the live stream**
+       showing proposals and Overseer rulings (not agent-to-agent chat; the
+       user chose this 2026-09-14, see the register). Build order:
+       1. `queue.jsonl` with write-time proposal validation (typed fields,
+          malformed proposals refused), which also fixes run #2's missing
+          record;
+       2. a publisher of §8's allowlisted fields only, delayed 30-60s, with
+          a kill switch;
+       3. the stream page, noVNC left and feed right. **Going public needs
+          its own go-ahead.**
+
+       Nothing produces a feed today: no queue, no Overseer, one-shot
+       architect runs only.
+     - Only after step 1: spend on more architect samples per run.
      - **Part A found no headless way to un-plaintext the key.**
        `auth.profiles.<id>` has no key or SecretRef field in the config
        schema, and `secrets configure`, the command that advertises SecretRef
