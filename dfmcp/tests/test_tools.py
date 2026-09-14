@@ -16,11 +16,12 @@ Two things matter most here, per the task brief:
 
 Ground truth for which argument names are integer-valued was read from each
 owning .lua script's dispatch code, not guessed from the name. File:line
-references (as of this stream, 2026-09-12):
+references (as of this stream, 2026-09-12; LEVEL/its line numbers updated
+2026-09-14 when Z became LEVEL, handoffs/2026-09-14-relative-level-args.md):
 
-  W, H            scripts/dfhack/df-overseer-openarea.lua:325 (tonumber(args[2]), tonumber(args[3]))
-  Z               scripts/dfhack/df-overseer-openarea.lua:327 (tonumber(args[4]) sniff)
-  RANK, RADIUS_TILES  scripts/dfhack/df-overseer-openarea.lua:343 (tonumber(args[7]), tonumber(args[8]))
+  W, H            scripts/dfhack/df-overseer-openarea.lua:365 (tonumber(args[2]), tonumber(args[3]))
+  LEVEL           scripts/dfhack/df-overseer-openarea.lua:367 (tonumber(args[4]) sniff; was Z until 2026-09-14)
+  RANK, RADIUS_TILES  scripts/dfhack/df-overseer-openarea.lua:383 (tonumber(args[7]), tonumber(args[8]))
   UNIT_ID         scripts/dfhack/df-overseer-connectivity.lua:152 (check-units); df-overseer-labor.lua find_citizen (tonumber(id_str))
   REPORT_ID       scripts/dfhack/df-overseer-diff.lua since_report (tonumber(id_str))
   CURSOR          scripts/dfhack/df-overseer-diff.lua:298 (tonumber(args[2]))
@@ -130,7 +131,7 @@ def test_integer_args_by_name(registry):
     specs = {s.name: s for s in _arg_specs_for_tool(build)}
     assert specs["w"].json_type == "integer" and specs["w"].required
     assert specs["h"].json_type == "integer" and specs["h"].required
-    assert specs["z"].json_type == "integer" and not specs["z"].required
+    assert specs["level"].json_type == "integer" and not specs["level"].required
     assert specs["rank"].json_type == "integer" and not specs["rank"].required
     assert specs["radius_tiles"].json_type == "integer" and not specs["radius_tiles"].required
     assert specs["near_landmark"].json_type == "string" and specs["near_landmark"].required
@@ -196,6 +197,73 @@ def test_sweep_every_real_argument_token_is_confidently_typed(registry):
                 "placeholder nor a literal-choice token -- the heuristic table does "
                 "not confidently cover this, see mcp/tools.py's module docstring"
             )
+
+
+def test_chokepoints_level_is_optional_integer(registry):
+    """chokepoints.find's Z argument was REQUIRED (no default at all) until
+    2026-09-14 (handoffs/2026-09-14-relative-level-args.md) -- the one
+    command among the three this stream touched where a caller had no
+    coordinate-free way to call it at all. LEVEL keeps the same position
+    (first argument) but is now optional, matching openarea.find/
+    diggable.find."""
+    find = registry.get("chokepoints.find")
+    (level,) = [s for s in _arg_specs_for_tool(find) if s.name == "level"]
+    assert level.json_type == "integer"
+    assert level.required is False
+
+
+# --------------------------------------------------------------------------
+# Argument descriptions
+# --------------------------------------------------------------------------
+
+
+def test_level_description_states_relative_meaning_and_never_a_coordinate(registry):
+    """The gap this stream closed: the schema used to give the model an
+    argument named z with no description at all, so nothing told a caller
+    it was an absolute DF map coordinate rather than something small and
+    relative. LEVEL's description must say what 0/-1/1 mean and must say
+    plainly it is not a coordinate."""
+    build = registry.get("openarea.build")
+    (level,) = [s for s in _arg_specs_for_tool(build) if s.name == "level"]
+    assert level.description is not None
+    text = level.description.lower()
+    assert "relative" in text
+    assert "not" in text and "coordinate" in text
+    assert "-1" in level.description and "1" in level.description
+
+
+def test_near_landmark_description_says_never_a_coordinate(registry):
+    build = registry.get("openarea.build")
+    (near_landmark,) = [s for s in _arg_specs_for_tool(build) if s.name == "near_landmark"]
+    assert near_landmark.description is not None
+    assert "coordinate" in near_landmark.description.lower()
+
+
+def test_documented_argument_tokens_all_have_descriptions(registry):
+    """Every token the task brief named explicitly (LEVEL, NEAR_LANDMARK,
+    RADIUS_TILES, W, H, RANK, BLUEPRINT_FILE) must carry a description on
+    every tool that uses it, not just openarea.build."""
+    build = registry.get("openarea.build")
+    specs = {s.name: s for s in _arg_specs_for_tool(build)}
+    for name in ("level", "near_landmark", "radius_tiles", "w", "h", "rank", "blueprint_file"):
+        assert specs[name].description, f"{name!r} has no description"
+
+
+def test_input_schema_carries_description_when_present(registry, roster):
+    defs = {d["name"]: d for d in tool_definitions(registry, roster, "overseer")}
+    props = defs["openarea__build"]["inputSchema"]["properties"]
+    assert "description" in props["level"]
+    assert "description" in props["near_landmark"]
+    assert "description" in props["blueprint_file"]
+
+
+def test_input_schema_omits_description_key_when_none_documented(registry, roster):
+    """An argument token this stream did not add a description for (e.g.
+    UNIT_ID) must not get a synthesised or empty description -- the same
+    honest-gap default _INTEGER_ARG_NAMES uses for type."""
+    defs = {d["name"]: d for d in tool_definitions(registry, roster, "overseer")}
+    props = defs["labor__set-labor"]["inputSchema"]["properties"]
+    assert "description" not in props["unit_id"]
 
 
 # --------------------------------------------------------------------------
@@ -273,9 +341,9 @@ def test_required_only(registry):
 def test_leading_optional_supplied(registry):
     tool = registry.get("openarea.find")
     argv = argv_for_call(
-        tool, {"w": 5, "h": 4, "z": 12, "near_landmark": "MainHall", "radius_tiles": 30}
+        tool, {"w": 5, "h": 4, "level": -1, "near_landmark": "MainHall", "radius_tiles": 30}
     )
-    assert argv == ["df-overseer-openarea", "find", "5", "4", "12", "MainHall", "30"]
+    assert argv == ["df-overseer-openarea", "find", "5", "4", "-1", "MainHall", "30"]
 
 
 def test_repeated_name_args_map_to_disambiguated_positions(registry):
@@ -298,7 +366,9 @@ def test_enum_argument_accepts_a_valid_choice(registry):
 
 
 def test_supplying_a_later_optional_without_an_earlier_one_raises(registry):
-    """The exact scenario named in the task brief: RANK supplied, Z omitted."""
+    """The exact scenario named in the task brief: RANK supplied, LEVEL
+    omitted (this argument was named Z until 2026-09-14, see
+    handoffs/2026-09-14-relative-level-args.md)."""
     tool = registry.get("openarea.build")
     with pytest.raises(ArgumentError) as exc:
         argv_for_call(
@@ -312,11 +382,11 @@ def test_supplying_a_later_optional_without_an_earlier_one_raises(registry):
             },
         )
     msg = str(exc.value)
-    assert "rank" in msg and "z" in msg
+    assert "rank" in msg and "level" in msg
 
 
 def test_trailing_optionals_cannot_skip_a_middle_slot(registry):
-    """RADIUS_TILES supplied while RANK (and Z) are omitted -- same trap,
+    """RADIUS_TILES supplied while RANK (and LEVEL) are omitted -- same trap,
     entirely among trailing optionals this time."""
     tool = registry.get("openarea.build")
     with pytest.raises(ArgumentError):
@@ -348,7 +418,7 @@ def test_supplying_every_optional_in_order_is_fine(registry):
         {
             "w": 5,
             "h": 4,
-            "z": 3,
+            "level": -3,
             "near_landmark": "MainHall",
             "blueprint_file": "stock.csv",
             "rank": 1,
@@ -360,7 +430,7 @@ def test_supplying_every_optional_in_order_is_fine(registry):
         "build",
         "5",
         "4",
-        "3",
+        "-3",
         "MainHall",
         "stock.csv",
         "1",

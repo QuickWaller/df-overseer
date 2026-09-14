@@ -52,7 +52,7 @@ directly -- so the returned list is exactly what that role may actually call.
 ## Input schemas: a documented heuristic, not knowledge
 
 `TOOLS.yaml` carries no argument types, only signature text like
-`"build W H [Z] NEAR_LANDMARK BLUEPRINT_FILE [RANK] [RADIUS_TILES]"`.
+`"build W H [LEVEL] NEAR_LANDMARK BLUEPRINT_FILE [RANK] [RADIUS_TILES]"`.
 `Tool.args` already tokenises the part after the verb; this module turns
 each token into a JSON-Schema property:
 
@@ -89,6 +89,32 @@ token is one of a plain `UPPER_CASE` placeholder, or one of the two
 literal-choice tokens named above. Nothing else was found that this table
 does not confidently cover.
 
+## Argument descriptions: another table, not per-tool YAML
+
+Added 2026-09-14 (`handoffs/2026-09-14-relative-level-args.md`), closing a
+gap the same stream found live: the schema gave the model an argument named
+`z` with **no description at all**, so nothing told a caller it was an
+absolute DF map coordinate (Uniboslan's own map runs z 0-185) rather than
+something small and relative -- a live probe called `diggable.find` with
+`z=0/-1/-2/-3/-4`, all nowhere near the fort, got `[]` every time, and wrongly
+concluded there was nothing to dig. `z` is now `LEVEL`, an offset relative to
+the landmark's own level (see the Lua scripts' own headers), but the deeper
+problem -- a schema with no per-argument descriptions at all -- would have
+undersold ANY renamed argument the same way. `_ARG_DESCRIPTIONS` is one
+table, keyed by the same raw manifest token `_parse_arg_token` already
+reads (`"LEVEL"`, `"NEAR_LANDMARK"`, `"W"`, ...), living right next to it
+rather than in `TOOLS.yaml` -- adding a `description:` field per command
+there would mean re-typing near-identical prose once per tool instead of
+once per argument shape, and would drift the way a copy-pasted comment
+always does. A token with no entry gets no `"description"` key in its
+schema property (never an empty string) -- the same "harmless, honest gap"
+default `_INTEGER_ARG_NAMES` uses for type. Covered as of this stream:
+`LEVEL`, `NEAR_LANDMARK`, `RADIUS_TILES`, `W`, `H`, `RANK`, `BLUEPRINT_FILE`
+-- every argument name in `openarea.*`/`diggable.*`/`chokepoints.find`, the
+three tools this stream touched, plus the ones shared widely enough
+(`W`/`H`/`RANK`) to be worth describing once. Every entry states plainly
+that the argument is never a raw coordinate, where that's true.
+
 ## Turning a call back into argv: the one real trap
 
 Ground truth for the shape, confirmed by reading the dispatch code of every
@@ -102,7 +128,7 @@ signature order.
 
 **Positional optionals cannot be skipped out of order.** If a caller
 supplies a later optional argument (e.g. `RANK`) while omitting an earlier
-one in the signature (e.g. `Z`), there is no way to express that on a
+one in the signature (e.g. `LEVEL`), there is no way to express that on a
 positional command line without silently shifting every argument after it
 into the wrong slot -- which is exactly the class of bug this project has
 already paid for twice (the `quickfort -c` top-left-vs-centre bug,
@@ -110,8 +136,9 @@ already paid for twice (the `quickfort -c` top-left-vs-centre bug,
 `ArgumentError` naming both the blocking (omitted) and the triggering
 (supplied) argument, rather than guessing a shift. This check only concerns
 optional arguments relative to each other: a required argument positioned
-after an optional one (e.g. `NEAR_LANDMARK` after `[Z]` in `openarea.build`)
-is validated independently and does not interact with the gap check.
+after an optional one (e.g. `NEAR_LANDMARK` after `[LEVEL]` in
+`openarea.build`) is validated independently and does not interact with the
+gap check.
 
 `argv_for_call` also rejects: any argument name not in the tool's schema,
 any missing required argument, and any string-typed value containing a
@@ -195,7 +222,7 @@ _INTEGER_ARG_NAMES = frozenset(
     {
         "W",
         "H",
-        "Z",
+        "LEVEL",
         "RANK",
         "RADIUS_TILES",
         "UNIT_ID",
@@ -207,6 +234,44 @@ _INTEGER_ARG_NAMES = frozenset(
 )
 
 _BRACKET_RE = re.compile(r"^\[(.+)\]$")
+
+# One table, keyed by the raw manifest token (upper-case, brackets already
+# stripped by the time _parse_arg_token looks it up) -- see the module
+# docstring's "Argument descriptions" section for why this lives here rather
+# than as a per-command TOOLS.yaml field. A token with no entry here gets no
+# "description" key in its schema property at all (never an empty string):
+# the same honest-gap default _INTEGER_ARG_NAMES uses for type.
+_ARG_DESCRIPTIONS: Dict[str, str] = {
+    "LEVEL": (
+        "An offset relative to NEAR_LANDMARK's own level, NOT an absolute DF "
+        "map coordinate: 0 (the default when omitted) is the landmark's own "
+        "level, -1 is one level below it, 1 is one level above it. A level "
+        "below the dug-out fort returns nothing until something walkable "
+        "exists there -- v1 only returns candidates that border the "
+        "existing walkable network."
+    ),
+    "NEAR_LANDMARK": (
+        "The name of an existing landmark to search or act near (see "
+        "landmarks.list / landmarks.get for real names). Never a raw "
+        "coordinate."
+    ),
+    "RADIUS_TILES": (
+        "How far from NEAR_LANDMARK to search, in tiles. Clamped to a hard "
+        "cap of 60 tiles server-side regardless of the value passed."
+    ),
+    "W": "Width, in tiles, of the region to search or build.",
+    "H": "Height, in tiles, of the region to search or build.",
+    "RANK": (
+        "Which ranked candidate to act on: 1 is the candidate closest to "
+        "NEAR_LANDMARK. Defaults to 1 when omitted."
+    ),
+    "BLUEPRINT_FILE": (
+        "A quickfort blueprint filename already deployed under "
+        "dfhack-config/blueprints/ on the DF host, e.g. "
+        "\"starter-room-5x5.csv\" -- not a path on this repo's own "
+        "filesystem, and not a coordinate."
+    ),
+}
 
 # Conservative and deliberately wide: these values become literal words on a
 # command line run against a live game host (see module docstring). Blocks
@@ -223,6 +288,7 @@ class ArgSpec:
     required: bool
     json_type: str  # "integer" or "string"
     enum: Optional[Tuple[str, ...]] = None
+    description: Optional[str] = None  # from _ARG_DESCRIPTIONS, keyed by the raw token
 
 
 def _parse_arg_token(token: str) -> ArgSpec:
@@ -243,7 +309,10 @@ def _parse_arg_token(token: str) -> ArgSpec:
 
     name = inner.lower()
     json_type = "integer" if inner in _INTEGER_ARG_NAMES else "string"
-    return ArgSpec(name=name, raw=token, required=required, json_type=json_type)
+    description = _ARG_DESCRIPTIONS.get(inner)
+    return ArgSpec(
+        name=name, raw=token, required=required, json_type=json_type, description=description
+    )
 
 
 def _arg_specs_for_tool(tool: Tool) -> List[ArgSpec]:
@@ -292,6 +361,8 @@ def _input_schema(tool: Tool) -> dict:
         prop: Dict[str, Any] = {"type": spec.json_type}
         if spec.enum is not None:
             prop["enum"] = list(spec.enum)
+        if spec.description:
+            prop["description"] = spec.description
         properties[spec.name] = prop
         if spec.required:
             required.append(spec.name)
