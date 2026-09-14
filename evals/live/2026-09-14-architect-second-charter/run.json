@@ -1,0 +1,43 @@
+{
+  "ok": true,
+  "status": "ok",
+  "final": "## Survey (Uniboslan, year 30, month 6, day 10)\n\n**Settlement.** Fifteen dwarves, one connected walkable group. Four landmarks, all surface: **Embark Site**, **Wagon** (1 tile E of Embark Site), **Stockpile #1** (3 tiles SW of Embark Site), **Stockpile #2** (8 tiles SW of Embark Site). Every inter-landmark exit is walkable.\n\n**Health.** Connectivity report: no stranded groups. Stuck jobs: none. Alerts: none. All pairs I checked (Embark Site \u00e2\u2020\u2019 Stockpile #2) resolve to the same walkable group, so nothing is cut off.\n\n**Ground, Embark Site's own level.** Diggable find returns nothing within 12 tiles \u00e2\u20ac\u201d a correct negative (no mineable walls near the surface embark). Open-area find finds only 5\u00c3\u20145 spaces that are already walkable (i.e. the existing stockpile/surface clearings), so no new surface chamber is needed or available.\n\n**One level below Embark Site.** Five ranked 3\u00c3\u20143 **SOIL** pockets border the existing walkable network, the nearest being **2 tiles SE of Embark Site**. This is the only genuine new-space opportunity the survey exposes.\n\n**Choke points.** At the surface: a **stair 3 tiles NW of Stockpile #1**, a stair 8 tiles SW of Embark Site, and a 1-tile-wide corridor 6 tiles NE of Stockpile #2. One level below: **the same stair, 3 tiles NW of Stockpile #1** \u00e2\u20ac\u201d the only choke point that appears on *both* levels, i.e. the fort's single confirmed vertical link between the surface settlement and the underground.\n\n## Proposal (exactly one)\n\n**Action:** Build a door (or trap) at the one confirmed vertical choke point.\n**Site:** the stair **3 tiles NW of Stockpile #1**, at the **surface level** of that stair.\n**Why now:** everything the fort owns \u00e2\u20ac\u201d both stockpiles, the wagon, and the embark supplies \u00e2\u20ac\u201d sits on the surface, and the only two-level connection into the underground is currently wide open. It is the sole choke point the survey confirms at both levels, so it is the single decisive control point available. It is cheap, reversible, and needs no threat model to justify.\n**Not proposed:** the SE-of-Embark-Site soil pocket (2 tiles SE, one level below) \u00e2\u20ac\u201d real new space, but nothing in the survey shows the fort needs it yet; the corridor 6 tiles NE of Stockpile #2 \u00e2\u20ac\u201d its 1-wide heuristic has no live confirmation; and any ranked larger build site \u00e2\u20ac\u201d that ranking is still blocked on resource/threat data that does not exist here.\n**Risk:** low. One building, one tile, removable at will; no job or connectivity is disturbed (no stuck jobs, no stranded groups before or after).\n\nNo second proposal this cycle.",
+  "payloads": [
+    {
+      "text": "## Survey (Uniboslan, year 30, month 6, day 10)\n\n**Settlement.** Fifteen dwarves, one connected walkable group. Four landmarks, all surface: **Embark Site**, **Wagon** (1 tile E of Embark Site), **Stockpile #1** (3 tiles SW of Embark Site), **Stockpile #2** (8 tiles SW of Embark Site). Every inter-landmark exit is walkable.\n\n**Health.** Connectivity report: no stranded groups. Stuck jobs: none. Alerts: none. All pairs I checked (Embark Site \u00e2\u2020\u2019 Stockpile #2) resolve to the same walkable group, so nothing is cut off.\n\n**Ground, Embark Site's own level.** Diggable find returns nothing within 12 tiles \u00e2\u20ac\u201d a correct negative (no mineable walls near the surface embark). Open-area find finds only 5\u00c3\u20145 spaces that are already walkable (i.e. the existing stockpile/surface clearings), so no new surface chamber is needed or available.\n\n**One level below Embark Site.** Five ranked 3\u00c3\u20143 **SOIL** pockets border the existing walkable network, the nearest being **2 tiles SE of Embark Site**. This is the only genuine new-space opportunity the survey exposes.\n\n**Choke points.** At the surface: a **stair 3 tiles NW of Stockpile #1**, a stair 8 tiles SW of Embark Site, and a 1-tile-wide corridor 6 tiles NE of Stockpile #2. One level below: **the same stair, 3 tiles NW of Stockpile #1** \u00e2\u20ac\u201d the only choke point that appears on *both* levels, i.e. the fort's single confirmed vertical link between the surface settlement and the underground.\n\n## Proposal (exactly one)\n\n**Action:** Build a door (or trap) at the one confirmed vertical choke point.\n**Site:** the stair **3 tiles NW of Stockpile #1**, at the **surface level** of that stair.\n**Why now:** everything the fort owns \u00e2\u20ac\u201d both stockpiles, the wagon, and the embark supplies \u00e2\u20ac\u201d sits on the surface, and the only two-level connection into the underground is currently wide open. It is the sole choke point the survey confirms at both levels, so it is the single decisive control point available. It is cheap, reversible, and needs no threat model to justify.\n**Not proposed:** the SE-of-Embark-Site soil pocket (2 tiles SE, one level below) \u00e2\u20ac\u201d real new space, but nothing in the survey shows the fort needs it yet; the corridor 6 tiles NE of Stockpile #2 \u00e2\u20ac\u201d its 1-wide heuristic has no live confirmation; and any ranked larger build site \u00e2\u20ac\u201d that ranking is still blocked on resource/threat data that does not exist here.\n**Risk:** low. One building, one tile, removable at will; no job or connectivity is disturbed (no stuck jobs, no stranded groups before or after).\n\nNo second proposal this cycle.",
+      "mediaUrl": null
+    }
+  ],
+  "usage": {
+    "input": 8116,
+    "output": 8824,
+    "cacheRead": 20608,
+    "cacheWrite": 0,
+    "reasoningTokens": 7233,
+    "total": 37548,
+    "cost": {
+      "total": 0.0036646624
+    }
+  },
+  "costUsd": 0.0036646624,
+  "codeModeEngaged": false,
+  "assistantTurns": 4,
+  "toolSummary": {
+    "calls": 14,
+    "tools": [
+      "df-overseer__overview__get",
+      "df-overseer__landmarks__list",
+      "df-overseer__connectivity__report",
+      "df-overseer__stuckjobs__find",
+      "df-overseer__diggable__find",
+      "df-overseer__openarea__find",
+      "df-overseer__chokepoints__find",
+      "df-overseer__landmarks__get",
+      "df-overseer__connectivity__check"
+    ],
+    "failures": 3
+  },
+  "model": "deepseek-v4-flash",
+  "provider": "deepseek",
+  "sessionId": "a545f1de-e39b-42d3-8733-0c27abc5718e"
+}
