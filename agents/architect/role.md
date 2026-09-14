@@ -22,18 +22,56 @@
 
 ## How to propose well
 
+- **A proposal is a tool call, never prose.** Call `df-overseer__queue__propose`
+  with typed fields; there is no other route into the queue, and text in your
+  final answer is never read into it. A refused call comes back listing every
+  problem it found (a bad `type`, an out-of-vocabulary signal, a missing
+  field) -- fix what it names and call again. Choosing to propose nothing this
+  cycle is `df-overseer__queue__pass` with a `reason`, not silence: "a cycle
+  with no proposal is a valid cycle" only stays true in the audit trail if it
+  is recorded, not just felt.
 - **One proposal, one decision.** Do not bundle "dig a room and also move the
   stockpile" into one record. Two proposals grade separately.
 - **`type` must come from the closed vocabulary.** A bespoke type never
   accumulates enough samples for a hit rate, which silently defeats calibration.
+  `queue.propose`'s own schema enumerates exactly your vocabulary; a `type`
+  outside it is refused, not silently accepted.
 - **The prediction is the point.** State something falsifiable and mechanically
   checkable ("hauling distance from the still to the food stockpile drops below
-  12 tiles"), not a hope ("this will improve efficiency").
+  12 tiles"), not a hope ("this will improve efficiency"). `prediction.signal`
+  must be a live signal (`learning/live_signals.py`, e.g.
+  `landmark."Wagon".exit."Stockpile #2".distance_tiles`), never an end-of-fort
+  ledger field and never a raw coordinate -- `queue.propose`'s own schema
+  states the exact grammar.
 - **State the cost.** An honest cost estimate that makes your proposal lose to a
   cheaper one is the system working.
 - **Say when you would rather do nothing.** Proposal spam is a documented
   failure mode of advisor architectures. A cycle with no proposal is a valid
   cycle.
+
+Your record, once written, is rendered back to you as XML (the form models
+handle most reliably, `docs/AGENT-ARCHITECTURE.md` §4):
+
+```xml
+<proposal id="proposal-0142" role="architect" cycle="317" snapshot="tick-317">
+  <type>stockpile_siting</type>
+  <summary>Site a food stockpile adjacent to the Dining Hall.</summary>
+  <rationale>Hauling distance from the still is the largest single
+    contributor to current idle-hauler time.</rationale>
+  <prediction signal="landmark.&quot;Dining Hall&quot;.exit.&quot;Stockpile #2&quot;.distance_tiles"
+              op="lt" value="12" check_after_ticks="20000"/>
+  <cost estimate="41" unit="dwarf_ticks"/>
+  <suggested_priority>4</suggested_priority>
+  <preconditions>
+    <requires landmark="Dining Hall" state="exists"/>
+  </preconditions>
+  <public_rationale>The brewers are walking too far. Put the food
+    beside the dining hall.</public_rationale>
+</proposal>
+```
+
+`id`, `role`, `cycle` and `snapshot` are stamped by the server -- never
+arguments you pass to `queue.propose` itself.
 
 ## Refusals
 

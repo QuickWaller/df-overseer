@@ -246,6 +246,52 @@ def test_pending_due_excludes_a_graded_prediction(tmp_path):
     assert store.pending_due(path, 1200) == []
 
 
+# ---- pending_proposals() -- added handoffs/2026-09-15-queue-into-dfmcp.md,
+# for queue.pending (dfmcp/queue_tools.py) -----------------------------------------
+
+
+def test_pending_proposals_excludes_a_ruled_one_and_keeps_an_unruled_one(tmp_path):
+    path = _db(tmp_path)
+    ruled = store.append(make_proposal(), path, game_tick=100)
+    unruled = store.append(make_proposal(), path, game_tick=100)
+    store.append(make_ruling(proposal_id=ruled["id"]), path)
+
+    pending = store.pending_proposals(path)
+    assert [r["id"] for r in pending] == [unruled["id"]]
+
+
+def test_pending_proposals_is_oldest_first(tmp_path):
+    path = _db(tmp_path)
+    first = store.append(make_proposal(), path, game_tick=100)
+    second = store.append(make_proposal(), path, game_tick=100)
+    third = store.append(make_proposal(), path, game_tick=100)
+
+    assert [r["id"] for r in store.pending_proposals(path)] == [
+        first["id"], second["id"], third["id"],
+    ]
+
+
+def test_pending_proposals_respects_limit(tmp_path):
+    path = _db(tmp_path)
+    first = store.append(make_proposal(), path, game_tick=100)
+    store.append(make_proposal(), path, game_tick=100)
+
+    assert [r["id"] for r in store.pending_proposals(path, limit=1)] == [first["id"]]
+
+
+def test_pending_proposals_never_returns_a_pass_record(tmp_path):
+    path = _db(tmp_path)
+    proposal = store.append(make_proposal(), path, game_tick=100)
+    store.append(make_pass(), path)
+
+    assert [r["id"] for r in store.pending_proposals(path)] == [proposal["id"]]
+
+
+def test_pending_proposals_of_an_empty_queue_is_empty(tmp_path):
+    path = _db(tmp_path)
+    assert store.pending_proposals(path) == []
+
+
 # ---- export_jsonl -----------------------------------------------------------------
 
 

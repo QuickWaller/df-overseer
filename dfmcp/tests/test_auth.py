@@ -16,6 +16,7 @@ from pathlib import Path
 import pytest
 
 from dfmcp.auth import AuthConfigError, load_role_tokens, resolve
+from dfmcp.queue_tools import NATIVE_TOOLS
 from dfmcp.registry import load_registry
 from dfmcp.roles import load_roster
 
@@ -26,7 +27,10 @@ GOOD_CONSULTANT_TOKEN = "consultant-token-uvwxyz1234"  # 27 chars
 
 @pytest.fixture(scope="module")
 def registry():
-    return load_registry()
+    # native_tools=NATIVE_TOOLS: the real roster now grants queue.* ids
+    # (handoffs/2026-09-15-queue-into-dfmcp.md); see test_roles.py's
+    # registry fixture for the full explanation.
+    return load_registry(native_tools=NATIVE_TOOLS)
 
 
 @pytest.fixture(scope="module")

@@ -127,6 +127,7 @@ from .dfhack_client import (
     DFHackConnectionPool,
     DFHackProtocolError,
 )
+from . import queue_tools
 from .registry import Registry, load_registry
 from .roles import Roster, load_roster
 from .tools import ArgumentError, argv_for_call, build_tool_names, tool_definitions
@@ -164,9 +165,18 @@ class ServerConfig:
     default that could accidentally be public." A missing value is a
     ConfigError, never a silent fall-through to "0.0.0.0" or any other
     default.
+
+    `queue_db` also has **no default**, added
+    `handoffs/2026-09-15-queue-into-dfmcp.md`, same style and same reason:
+    `dfqueue.store`'s own `default_path()` sits inside the code tree
+    (`dfqueue/<fort>.sqlite3`), and a code redeploy on VM 103 must never be
+    able to clobber live queue data by resolving to a path relative to
+    wherever the checkout happens to be. A missing value is a ConfigError,
+    never a silent fall-through to that in-tree default.
     """
 
     bind_host: str
+    queue_db: str
     bind_port: int = 8443
     dfhack_host: str = "127.0.0.1"
     dfhack_port: int = 5000
@@ -183,10 +193,17 @@ class ServerConfig:
                 "bind_host must not be 0.0.0.0 -- the MCP server binds the tailnet "
                 "interface's own address only, per docs/AGENT-ARCHITECTURE.md §13."
             )
+        if not self.queue_db or not self.queue_db.strip():
+            raise ConfigError(
+                "queue_db must be set explicitly -- there is no default, because the "
+                "in-tree default (dfqueue/<fort>.sqlite3) must never be clobberable by a "
+                "code redeploy. Set MCP_SERVER_QUEUE_DB."
+            )
 
 
 _ENV_KEYS = {
     "bind_host": "MCP_SERVER_BIND_HOST",
+    "queue_db": "MCP_SERVER_QUEUE_DB",
     "bind_port": "MCP_SERVER_BIND_PORT",
     "dfhack_host": "MCP_SERVER_DFHACK_HOST",
     "dfhack_port": "MCP_SERVER_DFHACK_PORT",
@@ -194,6 +211,7 @@ _ENV_KEYS = {
 }
 
 _INT_FIELDS = {"bind_port", "dfhack_port", "pool_size"}
+_REQUIRED_FIELDS = {"bind_host", "queue_db"}
 
 
 def config_from_env(env: Mapping[str, str]) -> ServerConfig:
@@ -210,7 +228,7 @@ def config_from_env(env: Mapping[str, str]) -> ServerConfig:
     for field_name, env_key in _ENV_KEYS.items():
         raw = env.get(env_key)
         if raw is None or raw.strip() == "":
-            if field_name == "bind_host":
+            if field_name in _REQUIRED_FIELDS:
                 raise ConfigError(f"{env_key} is required and was not set")
             continue
         if field_name in _INT_FIELDS:
@@ -352,14 +370,45 @@ def _configure_call_log() -> None:
     CALL_LOG.propagate = False
 
 
-def build_mcp_server(registry: Registry, roster: Roster, pool: DFHackConnectionPool) -> Server:
+def build_mcp_server(
+    registry: Registry, roster: Roster, pool: DFHackConnectionPool, queue_db_path: Path,
+) -> Server:
     """Build the low-level Server, wired to this registry/roster/pool.
 
     `tools/list` and `tools/call` are the only two request kinds this
     server answers; everything else is the SDK's own default handling
     (ping, etc).
+
+    `queue_db_path`, added `handoffs/2026-09-15-queue-into-dfmcp.md`: the
+    SQLite file `dfmcp.queue_tools`' native tools (`queue.propose` etc.)
+    read and write, via `dfqueue.store`. Passed through from
+    `ServerConfig.queue_db` (`main()`/`_serve()` below); a test builds the
+    server with its own throwaway path (`dfmcp/tests/test_server.py`).
     """
     id_to_name, name_to_id = build_tool_names(registry)
+
+    async def _call_dfhack(tool_id: str, arguments: Mapping[str, Any]) -> Any:
+        """The one DFHack call `dfmcp.queue_tools` needs (`overview.get`, to
+        stamp a queue record's `cycle`/`snapshot`), reusing this same
+        registry/pool rather than a second RPC path. Deliberately bypasses
+        `Roster.check` -- see `dfmcp/queue_tools.py`'s module docstring,
+        "The internal DFHack call bypasses Roster.check", for why that is
+        the server's own bookkeeping rather than a call made on the
+        caller's behalf. Raises DFHackCallError/DFHackConnectionError/
+        DFHackProtocolError/json.JSONDecodeError -- queue_tools.py catches
+        all of those generically via `except Exception`, matching how it is
+        already agnostic about dfhack_client's specific exception types.
+        """
+        tool = registry.get(tool_id)
+        argv = argv_for_call(tool, arguments)
+        raw = await pool.run_command(argv[0], argv[1:])
+        stripped = raw.strip()
+        if not stripped:
+            return None
+        parsed = json.loads(stripped)
+        if isinstance(parsed, dict) and set(parsed) == {"error"} and isinstance(parsed["error"], str):
+            raise DFHackCallError(parsed["error"])
+        return parsed
 
     async def _on_list_tools(
         ctx: ServerRequestContext, params: Optional[types.PaginatedRequestParams]
@@ -399,6 +448,25 @@ def build_mcp_server(registry: Registry, roster: Roster, pool: DFHackConnectionP
             return _tool_result_error(reason)
 
         tool = registry.get(tool_id)
+
+        if getattr(tool, "native", False):
+            # dfmcp.queue_tools's queue.propose/pass/rule/pending: not a
+            # DFHack command at all, so argv_for_call/pool.run_command below
+            # (built for a positional CLI signature) do not apply. See
+            # dfmcp/queue_tools.py's module docstring.
+            try:
+                text, structured = await queue_tools.call(
+                    tool_id, role, params.arguments or {},
+                    db_path=queue_db_path, call_dfhack=_call_dfhack,
+                )
+            except queue_tools.QueueToolError as exc:
+                return _tool_result_error(str(exc))
+            return types.CallToolResult(
+                content=[types.TextContent(type="text", text=text)],
+                structuredContent=structured,
+                isError=False,
+            )
+
         try:
             argv = argv_for_call(tool, params.arguments or {})
         except ArgumentError as exc:
@@ -544,7 +612,7 @@ async def _serve(config: ServerConfig, registry: Registry, roster: Roster, token
     pool = DFHackConnectionPool(host=config.dfhack_host, port=config.dfhack_port, size=config.pool_size)
     await pool.start()
     try:
-        server = build_mcp_server(registry, roster, pool)
+        server = build_mcp_server(registry, roster, pool, Path(config.queue_db))
         app = build_asgi_app(server, tokens, config.bind_host)
         uvicorn_config = uvicorn.Config(app, host=config.bind_host, port=config.bind_port, log_level="info")
         uvicorn_server = uvicorn.Server(uvicorn_config)
@@ -560,7 +628,7 @@ def main() -> None:
     this would run under."""
     _configure_call_log()
     config = load_config()
-    registry = load_registry()
+    registry = load_registry(native_tools=queue_tools.NATIVE_TOOLS)
     roster = load_roster(registry)
     tokens = load_role_tokens(roster)
     asyncio.run(_serve(config, registry, roster, tokens))
