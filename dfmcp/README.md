@@ -372,11 +372,37 @@ text content -- "reads are XML," and now "writes echo back as XML" too, so
 a caller always sees confirmation in the same form it will later be handed
 back in a prompt -- plus a JSON-shaped `structuredContent` for programmatic
 use. A refusal (bad arguments, a `dfqueue.store.QueueError` -- write-time
-validation, a duplicate id, a dangling `proposal_id` -- or DFHack
-unreachable while stamping `cycle`/`snapshot`) is `queue_tools.QueueToolError`,
-caught in `dfmcp/server.py` and turned into the same `isError=True` shape
-every other refusal in this package already uses (`server.py`'s
-"Denials" note).
+validation, a duplicate id, a dangling `proposal_id`, a second final
+ruling -- DFHack unreachable while stamping `cycle`/`snapshot`, or a
+`sqlite3.Error`/`OSError` from the store itself) is
+`queue_tools.QueueToolError`, caught in `dfmcp/server.py` and turned into
+the same `isError=True` shape every other refusal in this package already
+uses (`server.py`'s "Denials" note).
+
+**Off the event loop, and writes are serialised.** Added Phase A review,
+2026-09-15: every `dfqueue.store` call runs inside `asyncio.to_thread`
+rather than synchronously on the event loop (a synchronous SQLite call
+would otherwise block every other in-flight MCP session on this same
+server for its duration -- the brief's own original requirement, missed
+in the first pass). That alone opens a real race: `store._next_id` is
+`COUNT(*)`-based and runs before its row is inserted, so two `append()`
+calls running concurrently on different threads can compute the same id
+and collide on `records.id`'s primary key. Fixed with one `asyncio.Lock`
+per running server (`build_mcp_server` creates it and passes it to every
+`queue_tools.call`, never a `queue_tools`-module-level global -- an
+`asyncio.Lock` binds to whichever event loop first acquires it and raises
+if reused from a different one, which a shared module-level lock would
+hit the moment more than one event loop, a real restart or one test after
+another, ever touched it), held only around the `store.append` call
+itself, never around the `overview.get` stamping call: DFHack latency has
+been observed at 40-80s under load, and serialising every write behind
+whichever one is waiting on that would be worse than the race it fixes.
+`dfmcp/tests/test_queue_tools.py` (new, and the one test file in this
+package that needs no MCP SDK import at all) proves the race exists with
+a monkeypatched slow `_next_id` and a lock-free direct call to
+`dfqueue.store.append`, then proves the real `queue_tools.call` path
+(with the lock) does not reproduce it under the same forced slowdown, and
+separately proves the lock is never held across the DFHack call.
 
 ## What `auth.py` exposes
 
