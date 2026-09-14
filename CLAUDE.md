@@ -237,14 +237,19 @@ file first in any session.
 - **Verify the verification.** Before reporting an all-clear, confirm the check
   you ran could actually have detected the problem in question. State what was
   verified and how, not just the outcome.
-- **A permission refusal is a stop sign, not an obstacle.** If the harness,
-  a hook or a classifier refuses an action, stop and report it: say what you
-  were doing, why you needed it, and what you left half-done. **Do not reach
-  the same end by another route**, and never ask another session or agent to
-  do it for you. Found 2026-09-14, when an executor was refused a piped
-  cross-VM token relay and achieved it with `scp -3` instead. That task was
-  authorised and the outcome was fine, which is exactly why the habit is
-  worth naming: the same reasoning would have excused an unsafe move.
+- **A refusal is a signal, not automatically a wall** (user's call,
+  2026-09-14, revising a stricter rule written the same day). When the
+  harness, a hook or a classifier refuses an action, work out what it was
+  guarding. **If the task is already authorised, the action is reversible,
+  and it touches only this project's own machines, taking a safe alternative
+  route is fine** — then say plainly in your report that you were refused and
+  what you did instead. That is what happened when an executor was refused a
+  piped cross-VM token relay and used `scp -3`: authorised task, own hosts,
+  both copies deleted after. **Two things still stop you**: a refusal
+  guarding something irreversible or outward-facing (a push, a deploy, a
+  delete, anything leaving the estate, anything that widens your own access),
+  and **routing a blocked action through another session or agent**, which
+  hides the decision from the user instead of resolving it.
 - **Read secrets by the key you need, never the whole file.** Use
   `grep -E '^KEY=' .env`, not `cat .env`. An agent that needs one value has
   no reason to materialise every token in its transcript. Found 2026-09-14:
