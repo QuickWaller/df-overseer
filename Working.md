@@ -189,11 +189,12 @@ Everything below this block is detail and reasoning. This is the brief.
      - **USER WANTS: a scrolling feed on the right of the live stream**
        showing proposals and Overseer rulings (not agent-to-agent chat; the
        user chose this 2026-09-14, see the register). Build order:
-       1. `queue.jsonl` with write-time proposal validation (typed fields,
-          malformed proposals refused), which also fixes run #2's missing
-          record;
-       2. a publisher of §8's allowlisted fields only, delayed 30-60s, with
-          a kill switch;
+       1. **IN FLIGHT:** `dfqueue/` with write-time proposal validation
+          (typed fields, malformed proposals refused), which also fixes run
+          #2's missing record. Brief:
+          `handoffs/2026-09-14-proposal-queue.md`;
+       2. a publisher of §8's allowlisted fields only, with a kill switch.
+          **No delay for now**, the user's call on 2026-09-14;
        3. the stream page, noVNC left and feed right. **Going public needs
           its own go-ahead.**
 
