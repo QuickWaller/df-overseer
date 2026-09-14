@@ -388,8 +388,10 @@ stream's own):
 - this handoff doc's Result section
 - `handoffs/INDEX.md`'s Phase B row
 
-(Exact commit SHAs: see `git log` on this branch after this Result section
-is committed -- this paragraph is written before that commit.)
+Single commit, `5119bd0` ("Phase B: deploy queue tools to VM 103,
+live-verify, run architect run #3"), on top of the fast-forwarded `1fb00d8`
+(this stream's own dispatch commit, not authored by this stream) on top of
+Phase A's `85826c3`.
 
 ### Findings worth carrying forward
 
