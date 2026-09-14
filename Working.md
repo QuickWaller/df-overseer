@@ -88,8 +88,24 @@ Everything below this block is detail and reasoning. This is the brief.
      architect's 9 read-only tools, `landmarks__list` returning live fort
      JSON, bogus token 401. Re-verified by the orchestrator. Reversal steps:
      `handoffs/2026-09-14-dfmcp-deploy.md`.
-   - **NOT STARTED: the client half.** Installing openclaw on VM 106 and
-     learning its real config schema from the running image. Its own project.
+   - **NOT STARTED: the client half. THIS IS THE NEXT JOB.** Brief already
+     written: `handoffs/2026-09-14-openclaw-install.md`. A stream was
+     dispatched 2026-09-14 and **stopped early, for session context, not for
+     any problem**. **It got further than its last message suggested: Docker
+     29.1.3 is installed and running on VM 106** (distro packages,
+     `/opt/containerd`), **with no images pulled and no containers**, so step
+     1 of the brief is done and step 2 onward is not. Verified directly after
+     the stop, which is the only reason this is recorded correctly: the
+     agent's final words were about reading connection details. Nothing needs
+     reversing unless openclaw is abandoned entirely (`apt remove docker.io
+     containerd`). **Re-dispatch the brief, skipping step 1.** Its deliverable is **knowledge,
+     not a wired client**: what config the running image actually reads, since
+     `research/2026-09-12-openclaw-mcp-auth.md`'s schema was read from
+     upstream source and has never been confirmed against a running build.
+     It deliberately spends nothing: no API key on VM 106, no model call, a
+     placeholder token, and "config accepted, auth refused" counts as a pass.
+     **Wiring a real token and letting an agent call the fort is the step
+     after, and it is the first one that costs money.**
    - **OWED once the unit is enabled**: a `home-lab` `inventory/services.yaml`
      entry for the new service on VM 103. No live `home-lab` session existed
      when this was dispatched, so it is recorded here as open, per
