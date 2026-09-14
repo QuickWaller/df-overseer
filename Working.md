@@ -79,10 +79,15 @@ Everything below this block is detail and reasoning. This is the brief.
    `mcp.servers`/`agents.entries` shape in
    `research/2026-09-12-openclaw-mcp-auth.md` is unconfirmed against anything
    that runs. Full recon: `research/2026-09-14-openclaw-mcp-wiring.md`.
-   - **IN FLIGHT: the server half.** `handoffs/2026-09-14-dfmcp-deploy.md`:
-     durable deploy under `/opt/df/` as `df`, systemd unit, **bound to VM
-     103's LAN address** (user's call: simple now, Tailscale another day, so
-     bearer tokens are the only guard), then proved from VM 106 with curl.
+   - **DONE 2026-09-14: the server half.** `dfmcp-server.service` is active
+     and **enabled** on VM 103 as `df`, from `/opt/df/dfmcp-smoke` (promoted
+     in place, sha256-identical to `main`), **bound to the LAN address**
+     (user's call: simple now, Tailscale another day, so **bearer tokens are
+     the only guard**), tokens in a mode-600 `.env`, survives restart.
+     **VM 106 has called it for real, with curl alone**: initialize, the
+     architect's 9 read-only tools, `landmarks__list` returning live fort
+     JSON, bogus token 401. Re-verified by the orchestrator. Reversal steps:
+     `handoffs/2026-09-14-dfmcp-deploy.md`.
    - **NOT STARTED: the client half.** Installing openclaw on VM 106 and
      learning its real config schema from the running image. Its own project.
    - **OWED once the unit is enabled**: a `home-lab` `inventory/services.yaml`

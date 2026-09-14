@@ -582,3 +582,18 @@ openclaw-side `mcp/` config referenced by
 `research/2026-09-12-openclaw-mcp-auth.md`'s closing section; and
 `handoffs/2026-09-14-mcp-live-smoke-test.md`, whose staged tree and fix this
 report confirms is still live and current on VM 103.
+
+---
+
+## Correction, added 2026-09-14 after the deploy stream ran
+
+**This report's "could not be verified" section was wrong about sudo.** It
+inferred from a failing `sudo -n ufw status` that `df` has no passwordless
+sudo. Checked directly during the deploy: `sudo -n whoami` returns `root` and
+`sudo -n -l` reports `(ALL) NOPASSWD: ALL`. The `ufw` call failed for its own
+reasons, not a sudo restriction. The orchestrator had already confirmed the
+same thing independently before the package install earlier that day.
+
+Everything else in this report held up in practice. Q1's "promote the staged
+tree in place" turned out to need no restaging at all: the tree was
+sha256-identical to `main` across every file `dfmcp` imports.

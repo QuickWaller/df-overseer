@@ -85,8 +85,15 @@ learning architecture.
 > hidden. **Fixed, merged (`f37502c`) and then re-verified live the same day:
 > all six checks plus an empty-array case passed against the real fort.** So
 > the server, its auth, its per-role listing, its refusals and its DFHack pool
-> are proven against reality; **openclaw calling it is the one seam left**.
-> Details in
+> are proven against reality. **It then became a real service the same day:**
+> `dfmcp-server.service` is active and enabled on VM 103, LAN-bound, and
+> **VM 106 has called it across the network** (curl alone: initialize, the
+> architect's read-only tool list, live fort JSON, 401 on a bad token). Since
+> the LAN has no firewall, **the bearer tokens are the only guard**, a
+> deliberate and reversible trade pending Tailscale. **The one seam left is
+> openclaw itself, which is not installed anywhere**: VM 106 is bare, and the
+> `mcp.servers` schema in `research/2026-09-12-openclaw-mcp-auth.md` is
+> unconfirmed against anything that runs. Details in
 > `handoffs/2026-09-14-mcp-live-smoke-test.md`. openclaw has still not called
 > it. The paragraph below is the 2026-09-12 state, kept for its traps.
 > **Read this next line before trusting any of it: nothing in

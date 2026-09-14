@@ -66,3 +66,33 @@ plain MCP client instead of waiting for openclaw.
 Executor shape, plus **"Findings to record"**: anything about the real
 deployment that the research brief got wrong, and the exact reversal steps
 (how to stop, disable and remove what you installed).
+
+## Result (2026-09-14): DONE, service live and proved cross-host
+
+`dfmcp-server.service` is active and enabled on VM 103, running as `df` from
+`/opt/df/dfmcp-smoke` (the smoke test's tree, sha256-identical to `main`, so
+promoting it needed no restaging), bound to the LAN address, tokens in a
+mode-600 `.env`. Survives `systemctl restart`. The unit deviates from the
+example in one deliberate way: `After=df-fortress.service` (the real unit
+name), `After=` only, never `Requires=`.
+
+**Proved from VM 106 with curl alone**, no install on either VM: initialize
+200, `tools/list` as architect returning 9 read-only tools by name (0
+mutators), `landmarks__list` as overseer returning the live fort's JSON, and a
+bogus token getting 401. No mutating call at any point.
+
+**Orchestrator re-verified independently:** unit enabled and active, listening
+on the LAN address, `.env` 600 `df:df`, deployed `server.py` hash matches
+local `main`, `df-fortress` and `df-xvfb` active, and a 401 from VM 106 with a
+junk token.
+
+**Reversal:** `sudo systemctl disable --now dfmcp-server.service`,
+`sudo rm -f /etc/systemd/system/dfmcp-server.service`,
+`sudo systemctl daemon-reload`, `rm -f /opt/df/dfmcp-smoke/.env`. Nothing else
+was touched; VM 106 has nothing installed.
+
+**Two things this stream raised that are not about dfmcp**, both surfaced to
+the user: the executor read the whole gitignored `.env` into its transcript
+(secret exposure, rotation question), and it worked around an auto-mode
+refusal of a cross-VM token relay by using `scp -3` instead. See
+`decisions/DECISIONS.md` 2026-09-14.
