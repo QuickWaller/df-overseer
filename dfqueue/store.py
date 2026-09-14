@@ -53,7 +53,14 @@ from typing import Iterator
 
 from learning.predictions.schema import PENDING
 
-from .schema import PROPOSAL, RULING, fort_name, validate
+from .schema import ACCEPT, PROPOSAL, REJECT, RULING, fort_name, validate
+
+#: A ruling's `decision` values that close a proposal for good. `defer`
+#: ("decide later") is deliberately excluded: a proposal ruled only `defer`
+#: must stay visible to `queue.pending`, and a further ruling on it (even
+#: another `defer`, or now an accept/reject) is still allowed. Once a
+#: FINAL ruling lands, no further ruling on that proposal is accepted.
+FINAL_DECISIONS = (ACCEPT, REJECT)
 
 SCHEMA_VERSION = 1
 
@@ -221,6 +228,26 @@ def append(record: dict, path: str | Path, *, game_tick: int | None = None) -> d
                     f"record.proposal_id: {proposal_id!r} does not refer to an "
                     "existing proposal in this queue"
                 )
+            else:
+                # A defer ("decide later") never closes a proposal, so a
+                # ruling after a defer is fine; a second FINAL ruling
+                # (accept/reject after an accept/reject, or a defer after
+                # one) is refused -- the proposal is already closed. Uses
+                # json_extract over the stored payload rather than a new
+                # column, so this needs no schema_version bump; see this
+                # module's own docstring, "Atomicity", for why payload is
+                # already the single source of truth for a record's fields.
+                already_final = conn.execute(
+                    "SELECT 1 FROM records WHERE kind = ? AND proposal_id = ? "
+                    "AND json_extract(payload, '$.decision') IN (?, ?)",
+                    (RULING, proposal_id, *FINAL_DECISIONS),
+                ).fetchone()
+                if already_final is not None:
+                    errors.append(
+                        f"record.proposal_id: {proposal_id!r} already has a final "
+                        "ruling (accept or reject); a proposal may be ruled on "
+                        "again only if its only ruling(s) so far were defer"
+                    )
 
         if record.get("kind") == PROPOSAL:
             if isinstance(game_tick, bool) or not isinstance(game_tick, int):
@@ -296,6 +323,40 @@ def pending_due(path: str | Path, tick: int) -> list[dict]:
             (PENDING, tick),
         ).fetchall()
     return [_prediction_row(r) for r in rows]
+
+
+def pending_proposals(path: str | Path, limit: int | None = None) -> list[dict]:
+    """Every `proposal` record with no FINAL ruling yet, oldest first --
+    added `handoffs/2026-09-15-queue-into-dfmcp.md` for `queue.pending`
+    (`dfmcp/queue_tools.py`), revised the same day (Phase A review) once a
+    `defer`-only proposal was found to vanish from this query for good.
+
+    "Pending" means: no `ruling` naming this proposal has `decision` in
+    `FINAL_DECISIONS` (accept/reject). A proposal ruled only `defer` --
+    "decide later" -- stays pending, exactly as `append()`'s own
+    second-final-ruling refusal above treats it: still open to a further
+    ruling. Every ruling's `proposal_id` is already its own indexed column
+    (see `_insert_record`), and `json_extract(payload, '$.decision')` reads
+    the decision straight out of the stored record rather than a second
+    column -- no schema_version bump needed. json1 is confirmed available
+    in every interpreter this project runs SQLite from (see this stream's
+    report for how); VM 103 (Ubuntu noble, Python 3.12) ships a SQLite new
+    enough for it too, but that is a Phase B fact to re-confirm live, not
+    assumed here.
+    """
+    query = (
+        "SELECT r.payload FROM records r WHERE r.kind = ? AND NOT EXISTS ("
+        "SELECT 1 FROM records r2 WHERE r2.kind = ? AND r2.proposal_id = r.id "
+        "AND json_extract(r2.payload, '$.decision') IN (?, ?)"
+        ") ORDER BY r.ts ASC, r.rowid ASC"
+    )
+    params: list = [PROPOSAL, RULING, *FINAL_DECISIONS]
+    if limit is not None:
+        query += " LIMIT ?"
+        params.append(limit)
+    with _connect(path) as conn:
+        rows = conn.execute(query, params).fetchall()
+    return [json.loads(r["payload"]) for r in rows]
 
 
 def apply_grades(path: str | Path, updates: list[dict]) -> None:

@@ -20,7 +20,7 @@ import re
 from collections import defaultdict
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, Mapping, Optional
 
 import yaml
 
@@ -160,12 +160,23 @@ def _parse_args(command_signature: str, verb: str) -> list:
     return rest.split()
 
 
-def load_registry(path=DEFAULT_TOOLS_YAML) -> Registry:
+def load_registry(path=DEFAULT_TOOLS_YAML, *, native_tools: Optional[Mapping[str, Any]] = None) -> Registry:
     """Load and validate scripts/dfhack/TOOLS.yaml.
 
     Raises RegistryError for any structural problem: a command signature no
     verb can be extracted from, an `effect` that is not read/mutate, or two
     commands normalising to the same canonical id.
+
+    `native_tools`, added `handoffs/2026-09-15-queue-into-dfmcp.md`: an
+    optional {id: tool} mapping of server-side ("native") tools that are
+    not DFHack commands at all -- `dfmcp/queue_tools.py`'s `queue.propose`
+    etc. This module stays a pure, generic id->tool table: it does not know
+    what a "native" tool is, does not import dfqueue, and does not default
+    this to anything. The caller (`dfmcp/server.py`'s `main()`, or a test
+    fixture that needs the real roster to resolve) opts in explicitly by
+    passing `queue_tools.NATIVE_TOOLS`. A native id colliding with a real
+    TOOLS.yaml id is a load-time RegistryError, same severity as any other
+    id collision this module already refuses.
     """
     path = Path(path)
     with path.open(encoding="utf-8") as fh:
@@ -234,5 +245,13 @@ def load_registry(path=DEFAULT_TOOLS_YAML) -> Registry:
 
     if not tools:
         raise RegistryError(f"{path}: no tools parsed; manifest is empty or malformed")
+
+    if native_tools:
+        collisions = sorted(set(tools) & set(native_tools))
+        if collisions:
+            raise RegistryError(
+                f"native tool id(s) collide with {path}'s own ids, refusing to load: {collisions}"
+            )
+        tools = {**tools, **native_tools}
 
     return Registry(tools)

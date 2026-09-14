@@ -25,6 +25,7 @@ network endpoint.
 | `tools.py` | Turns a registry + roster + role into actual MCP tool definitions (`name`/`description`/`inputSchema`), and turns a validated call's arguments back into the exact DFHack argv. Transport-independent: no MCP SDK import, no notion of HTTP. |
 | `auth.py` | Maps a bearer token to a role, from a gitignored `.env`-shaped file. The credential half of the trust boundary in `docs/AGENT-ARCHITECTURE.md` §13: role identity must be a credential, not a claim. |
 | `dfhack_client.py` | A persistent-connection client for DFHack's RPC socket: hand-rolled handshake/framing/protobuf-subset codec, a `DFHackConnection`, and a `DFHackConnectionPool` for batching a cycle's reads into one suspend window. The only module in this package that opens a socket. |
+| `queue_tools.py` | Four "native" (non-DFHack) MCP tools -- `queue.propose`/`pass`/`rule`/`pending` -- that read and write `dfqueue`'s own SQLite queue instead of running a DFHack command. Merged into `registry.py`'s table additively (`load_registry(native_tools=...)`), so `roles.py`/`tools.py` enforce and describe them through the exact same seam as every DFHack tool. Added `handoffs/2026-09-15-queue-into-dfmcp.md`. |
 | `server.py` | The MCP transport itself: the low-level `Server`, the streamable-HTTP ASGI app, and the `TokenVerifier` that resolves a bearer token to a role at the SDK's own auth seam. The only module that imports the MCP SDK. |
 
 `registry.py`, `roles.py`, `tools.py` and `auth.py` are pure functions of
@@ -146,6 +147,19 @@ as unverified, never as a clean pass, per CLAUDE.md's "mark verified vs
 proposed" rule. Nothing in this package upgrades a manifest caveat into a
 clean bill of health.
 
+**`native_tools`, added `handoffs/2026-09-15-queue-into-dfmcp.md`:**
+`load_registry(native_tools={id: tool})` merges an extra {id: tool} mapping
+into the same table additively, after the normal `TOOLS.yaml` parse and its
+own collision check, refusing to load (`RegistryError`) if a native id
+collides with a real one. `registry.py` does not know what a "native" tool
+is and never defaults this to anything; the one caller that passes it is
+`dfmcp/server.py`'s `main()`, with `queue_tools.NATIVE_TOOLS`. Every test
+fixture that loads the real `agents/` roster does the same, because
+`agents/architect/tools.yaml`/`agents/overseer/tools.yaml` now grant real
+`queue.*` ids that `roles.py` rule 1 requires to exist in the registry --
+see `dfmcp/tests/test_roles.py`, `test_tools.py`, `test_auth.py` and
+`test_server.py`'s shared `registry` fixtures.
+
 ## What `roles.py` exposes
 
 `load_roster(registry, agents_dir=agents/) -> Roster`, and
@@ -175,6 +189,15 @@ Every one of these raises `RoleValidationError` and has a dedicated test in
 4. **`ROSTER.yaml` names an enabled role whose directory or `role.md` is
    missing.**
 5. **An enabled role's `tools.yaml` or `model.yaml` is absent.**
+6. **Added `handoffs/2026-09-15-queue-into-dfmcp.md`: a role other than
+   `sole_writer` is granted (via `read` or `write`) a tool the registry marks
+   `sole_writer_only`.** Independent of rule 2 above: `queue.rule`
+   (`dfmcp/queue_tools.py`) does not mutate fort state (`Tool.mutates` stays
+   `False`, keeping that flag meaning exactly "mutates fort state," never
+   widened), so rule 2 would not catch it granted to the wrong role.
+   `dfqueue.schema.validate` independently refuses a `ruling` record whose
+   `role` is not the roster's `sole_writer` at write time -- this is a
+   second, load-time layer on top of that, not a replacement for it.
 
 `planned` entries (`queue: propose`, `sentry: status`, and so on) are
 **not** validated against the registry. They name capabilities that do not
@@ -270,6 +293,116 @@ saw an argument named `z` with no description at all and had no way to know
 it was an absolute DF map coordinate rather than something small and
 relative. A token with no entry gets no `description` key, same honest-gap
 default the type heuristic uses.
+
+## What `queue_tools.py` exposes
+
+Four MCP tools, none of them a DFHack command: `queue.propose`
+(`queue__propose`), `queue.pass` (`queue__pass`), `queue.rule`
+(`queue__rule`), `queue.pending` (`queue__pending`). Added
+`handoffs/2026-09-15-queue-into-dfmcp.md` to make
+`docs/AGENT-ARCHITECTURE.md` §4's "a specialist cannot emit prose into the
+queue" actually true: before this stream, `dfqueue/` validated and stored a
+proposal, but nothing could call it except a test.
+
+**Why a fourth kind of "tool" and not a `TOOLS.yaml` entry.**
+`registry.py`'s canonical-id scheme and `tools.py`'s argv-construction
+heuristic both exist to turn a DFHack CLI signature into a JSON schema;
+none of the four queue tools has one, so forcing them through that path
+would mean either inventing a fake CLI signature or growing a second
+heuristic table for zero real DFHack commands. Instead: `NativeTool`, a
+small frozen dataclass carrying only what `roles.py`/`tools.py` actually
+read off a registry entry (`.mutates`, `.sole_writer_only`, `.args` = `()`
+so a generic DFHack-shaped sweep degrades to "nothing to check" rather than
+crashing, `.native = True`, and a `.describe(role) -> (description,
+input_schema)` method) -- duck-typed against `registry.Tool`, never an
+`isinstance` check, so `tools.py` stays what its own docstring says it is:
+a pure function of the registry and the roster with no `dfqueue`-specific
+knowledge. Merged into the registry via `load_registry(native_tools=
+queue_tools.NATIVE_TOOLS)`, so `Roster.check` is the one and only
+enforcement boundary for these calls too -- "one boundary, not a second
+permission path," per this stream's brief.
+
+**Schemas are hand-written, not derived from a token heuristic**, per the
+brief: each of the four is a real JSON Schema object with
+`additionalProperties: false` and a `description` per property, built to
+teach the §4 record format directly, since a tool description is now the
+only place a model learns it (a prompt-only format rule already failed
+once, architect charter run #2, `evals/live/2026-09-14-architect-second-
+charter/`). `queue.propose`'s schema is **role-dependent**: its `type`
+enum is that calling role's own `dfqueue.schema.TYPE_VOCAB_BY_ROLE` entry,
+built fresh per `tool_definitions(registry, roster, role)` call (already
+per-role, so this was free); `prediction.signal`'s description is built
+from `learning.live_signals`'s own constants (`SIGNAL_KINDS`/`VALUE_TYPE`),
+not a hand-copied list that could silently drift out of sync with that
+module.
+
+**`role`/`id`/`ts`/`cycle`/`snapshot` are never tool arguments**, per the
+brief. `additionalProperties: false` is defence in depth only; the real
+enforcement is `queue_tools._reject_unknown_arguments`, which every handler
+calls before touching `dfqueue.store` -- a supplied `role` (or any other
+stray key) is refused, nothing is written, and a test proves it
+(`test_supplied_role_argument_is_refused_and_nothing_is_written`).
+
+**`cycle`/`snapshot`: a stand-in, not the scheduler.** Both are required on
+every queue record (`dfqueue.schema.COMMON_FIELDS`), and
+`docs/AGENT-ARCHITECTURE.md` §5 describes them as belonging to a shared,
+immutable, game-tick-stamped snapshot a Projection component produces --
+which does not exist yet (§2 still marks it "not started"). Building that
+scheduler was explicitly out of scope for this stream, so `cycle` is
+stamped as the fort's current absolute game tick
+(`dfqueue.grade.game_tick_from_overview`, read live through the same
+`overview.get` call `queue.propose`'s prediction already needs) and
+`snapshot` as `f"tick-{cycle}"`. Honest in the sense the brief asked --
+real, monotonic, mechanically read, never a guess or a wall-clock
+stand-in -- but a real behavioural consequence worth stating plainly: every
+queue write, not only `queue.propose`, now needs DFHack reachable to
+succeed at all, because `queue.pass` and `queue.rule` stamp the same way.
+Revisit both fields' meaning once Projection exists.
+
+**The internal `overview.get` call bypasses `Roster.check` on purpose.**
+It is `dfmcp.server`'s own bookkeeping to produce a valid record, not a
+call made on the caller's behalf under the caller's own grant -- the caller
+never sees it or its result. Every role that can reach a queue-write tool
+today also holds `overview.get` directly, so this is not yet load-bearing,
+but the design should not quietly depend on that coincidence continuing.
+
+**Result shape.** Every successful call returns `dfqueue.render.to_xml` of
+the written (or, for `queue.pending`, each matching) record as the tool's
+text content -- "reads are XML," and now "writes echo back as XML" too, so
+a caller always sees confirmation in the same form it will later be handed
+back in a prompt -- plus a JSON-shaped `structuredContent` for programmatic
+use. A refusal (bad arguments, a `dfqueue.store.QueueError` -- write-time
+validation, a duplicate id, a dangling `proposal_id`, a second final
+ruling -- DFHack unreachable while stamping `cycle`/`snapshot`, or a
+`sqlite3.Error`/`OSError` from the store itself) is
+`queue_tools.QueueToolError`, caught in `dfmcp/server.py` and turned into
+the same `isError=True` shape every other refusal in this package already
+uses (`server.py`'s "Denials" note).
+
+**Off the event loop, and writes are serialised.** Added Phase A review,
+2026-09-15: every `dfqueue.store` call runs inside `asyncio.to_thread`
+rather than synchronously on the event loop (a synchronous SQLite call
+would otherwise block every other in-flight MCP session on this same
+server for its duration -- the brief's own original requirement, missed
+in the first pass). That alone opens a real race: `store._next_id` is
+`COUNT(*)`-based and runs before its row is inserted, so two `append()`
+calls running concurrently on different threads can compute the same id
+and collide on `records.id`'s primary key. Fixed with one `asyncio.Lock`
+per running server (`build_mcp_server` creates it and passes it to every
+`queue_tools.call`, never a `queue_tools`-module-level global -- an
+`asyncio.Lock` binds to whichever event loop first acquires it and raises
+if reused from a different one, which a shared module-level lock would
+hit the moment more than one event loop, a real restart or one test after
+another, ever touched it), held only around the `store.append` call
+itself, never around the `overview.get` stamping call: DFHack latency has
+been observed at 40-80s under load, and serialising every write behind
+whichever one is waiting on that would be worse than the race it fixes.
+`dfmcp/tests/test_queue_tools.py` (new, and the one test file in this
+package that needs no MCP SDK import at all) proves the race exists with
+a monkeypatched slow `_next_id` and a lock-free direct call to
+`dfqueue.store.append`, then proves the real `queue_tools.call` path
+(with the lock) does not reproduce it under the same forced slowdown, and
+separately proves the lock is never held across the DFHack call.
 
 ## What `auth.py` exposes
 

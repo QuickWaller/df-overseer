@@ -9,7 +9,12 @@
 
 schema_version: 1
 role: architect
-write_authority: none      # enforced: this role has no action tool at all
+write_authority: none      # enforced: this role has no FORT-mutating action tool
+                            # at all (Tool.mutates stays strictly "mutates fort
+                            # state" -- roles.py rule 2). queue.propose/queue.pass
+                            # below ARE writes, but to dfqueue's own ledger, never
+                            # to the fort, so they do not contradict this line
+                            # (handoffs/2026-09-15-queue-into-dfmcp.md).
 
 read:
   - id: "openarea.find"
@@ -41,10 +46,18 @@ read:
     status: exists
     note: A stalled dig is often a siting mistake, so this is your feedback loop.
 
-planned:
+write:
   - id: "queue.propose"
-    status: planned
-    note: The only write this role will ever have.
+    status: exists
+    note: >-
+      The only route into the queue: a specialist cannot emit prose into it
+      (docs/AGENT-ARCHITECTURE.md §4). Writes to dfqueue's own SQLite ledger,
+      never to the fort; role/id/ts/cycle/snapshot are stamped server-side.
+  - id: "queue.pass"
+    status: exists
+    note: >-
+      An explicit decline, recorded rather than silently doing nothing --
+      role.md: "a cycle with no proposal is a valid cycle."
 
 deny:
   - id: "openarea.build"

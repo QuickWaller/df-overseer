@@ -389,11 +389,27 @@ def tool_definitions(registry: Registry, roster: Roster, role: str) -> List[dict
         if not allowed:
             continue
         tool = registry.get(tool_id)
+        # A "native" (server-side, non-DFHack) tool -- dfmcp/queue_tools.py's
+        # queue.propose/pass/rule/pending -- describes itself via `describe`
+        # rather than TOOLS.yaml's token heuristic (`_tool_description`/
+        # `_input_schema` below assume a DFHack Tool's `.args`/`.notes`/
+        # `.verified` shape, which a native tool does not have). Duck-typed
+        # on `hasattr` rather than an isinstance/import of dfmcp.queue_tools,
+        # so this module stays what its own docstring says it is: a pure
+        # function of the registry and the roster, with no dfqueue-specific
+        # knowledge of its own. `describe` also takes `role`, because a
+        # native tool's schema can depend on the calling role (queue.propose's
+        # `type` enum is that role's own closed vocabulary).
+        describe = getattr(tool, "describe", None)
+        if describe is not None:
+            description, input_schema = describe(role)
+        else:
+            description, input_schema = _tool_description(tool), _input_schema(tool)
         defs.append(
             {
                 "name": id_to_name[tool_id],
-                "description": _tool_description(tool),
-                "inputSchema": _input_schema(tool),
+                "description": description,
+                "inputSchema": input_schema,
             }
         )
     return defs

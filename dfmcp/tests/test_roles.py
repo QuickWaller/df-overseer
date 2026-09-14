@@ -16,13 +16,19 @@ import textwrap
 import pytest
 import yaml
 
+from dfmcp.queue_tools import NATIVE_TOOLS
 from dfmcp.registry import load_registry
 from dfmcp.roles import RoleValidationError, load_roster
 
 
 @pytest.fixture(scope="module")
 def registry():
-    return load_registry()
+    # native_tools=NATIVE_TOOLS: the real agents/architect/tools.yaml and
+    # agents/overseer/tools.yaml now grant real queue.* ids
+    # (handoffs/2026-09-15-queue-into-dfmcp.md), which roles.py rule 1
+    # requires to exist in the registry -- load_roster(registry) below would
+    # otherwise fail to load the real roster for every test in this file.
+    return load_registry(native_tools=NATIVE_TOOLS)
 
 
 # --------------------------------------------------------------------------
@@ -36,10 +42,20 @@ def test_real_roster_loads(registry):
     assert set(roster.roles) == {"overseer", "architect", "consultant"}
 
 
-def test_only_the_sole_writer_has_write_entries(registry):
+def test_only_the_sole_writer_has_fort_mutating_write_entries(registry):
+    """Updated `handoffs/2026-09-15-queue-into-dfmcp.md`: architect now
+    legitimately holds `write` entries too (`queue.propose`/`queue.pass`),
+    but only to dfqueue's own ledger, never the fort -- none of them
+    `mutates`. `test_no_advisor_holds_a_mutating_tool_by_any_route` below is
+    the generic version of this same property; this test pins the specific,
+    concrete shape so a future edit that quietly grants architect a
+    fort-mutating write is still caught even if that generic sweep were
+    ever loosened."""
     roster = load_roster(registry)
     assert roster.roles["overseer"].write
-    assert not roster.roles["architect"].write
+    assert set(roster.roles["architect"].write) == {"queue.propose", "queue.pass"}
+    for tool_id in roster.roles["architect"].write:
+        assert not registry.get(tool_id).mutates
     assert not roster.roles["consultant"].write
 
 
@@ -264,6 +280,63 @@ def test_disabled_role_with_no_tools_yaml_is_fine(registry, tmp_path):
 
     roster = load_roster(registry, agents_dir=agents)
     assert "marshal" not in roster.roles
+
+
+def test_rule6_sole_writer_only_tool_granted_to_non_sole_writer_refuses_to_load(registry, tmp_path):
+    """New rule, `handoffs/2026-09-15-queue-into-dfmcp.md`: queue.rule may
+    only be granted to the roster's sole_writer, independent of `mutates`
+    (queue.rule does not mutate fort state -- Tool.mutates stays "mutates
+    fort state" only -- so rule 2 would not catch this on its own)."""
+    agents = _roster(tmp_path, """
+        overseer:
+          enabled: true
+          dir: overseer
+          kind: actor
+        architect:
+          enabled: true
+          dir: architect
+          kind: advisor
+        """)
+    _role_dir(agents, "overseer", "read:\n  - id: \"overview.get\"\n")
+    _role_dir(agents, "architect", """
+        write:
+          - id: "queue.rule"
+        """)
+    with pytest.raises(RoleValidationError) as exc:
+        load_roster(registry, agents_dir=agents)
+    msg = str(exc.value)
+    assert "architect" in msg and "queue.rule" in msg
+
+
+def test_rule6_also_catches_the_sole_writer_only_tool_hidden_under_read(registry, tmp_path):
+    agents = _roster(tmp_path, """
+        overseer:
+          enabled: true
+          dir: overseer
+          kind: actor
+        architect:
+          enabled: true
+          dir: architect
+          kind: advisor
+        """)
+    _role_dir(agents, "overseer", "read:\n  - id: \"overview.get\"\n")
+    _role_dir(agents, "architect", """
+        read:
+          - id: "queue.rule"
+        """)
+    with pytest.raises(RoleValidationError) as exc:
+        load_roster(registry, agents_dir=agents)
+    assert "queue.rule" in str(exc.value)
+
+
+def test_rule6_sole_writer_may_hold_the_sole_writer_only_tool(registry, tmp_path):
+    agents = _roster(tmp_path, BASIC_ROLES)
+    _role_dir(agents, "overseer", """
+        write:
+          - id: "queue.rule"
+        """)
+    roster = load_roster(registry, agents_dir=agents)
+    assert "queue.rule" in roster.roles["overseer"].write
 
 
 def test_missing_sole_writer_refuses(registry, tmp_path):
