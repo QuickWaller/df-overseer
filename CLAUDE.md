@@ -112,13 +112,16 @@ learning architecture.
 > §4 proposal queue: write-time validated, **SQLite** (the user's call, a
 > partial reversal of the 2026-08-27 no-database rule, for live data only),
 > with **live-state prediction signals** (`learning/live_signals.py`) and a
-> grader. It is local code, **not yet wired into dfmcp or deployed**. The user
-> wants a scrolling feed of proposals and rulings beside the live stream
-> (proposals and rulings, not peer chat; no publish delay for now). Wiring the
-> queue into dfmcp is the next step. Details: `Working.md`, the register's
-> 2026-09-14/15 rows. Details in
-> `handoffs/2026-09-14-mcp-live-smoke-test.md`. openclaw has still not called
-> it. The paragraph below is the 2026-09-12 state, kept for its traps.
+> grader. **Wired into dfmcp and deployed to VM 103 on 2026-09-15**:
+> `queue.propose`/`pass` (architect) and `queue.rule`/`pending` (Overseer),
+> role from the credential, live DB under `/var/lib/dfmcp`. **Architect run #3
+> wrote the first real proposal through it on its first try**
+> (`evals/live/2026-09-15-architect-third-charter/`). Nothing has ruled on it
+> yet and no grader runs on a schedule. The user wants a scrolling feed of
+> proposals and rulings beside the live stream (proposals and rulings, not
+> peer chat; no publish delay for now). Details: `Working.md`, the register's
+> 2026-09-14/15 rows, `handoffs/2026-09-15-queue-live-deploy.md`. The
+> paragraph below is the 2026-09-12 state, kept for its traps.
 > **Read this next line before trusting any of it: nothing in
 > `dfmcp/` has met a real DFHack, a bound socket, or a real agent host.** Every
 > test runs against a fake server built from the same wire spec, so a

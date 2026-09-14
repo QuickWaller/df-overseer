@@ -18,55 +18,54 @@ Everything below is what is still open.
   bearer tokens as the only guard until Tailscale. It is live-verified with
   relative `level` args, `isError` for script errors, and a JSON tool-call
   log in journald.
-- **The agent host:** openclaw on VM 106 has run the architect twice as a
-  one-shot `agent exec` on DeepSeek. Nothing is left running there.
-- **The queue:** `dfqueue/` (SQLite, write-time validated, live-state
-  prediction signals, a grader) exists as local code only.
-- **Tests:** ambient `python -m pytest` gives 229 passed, 1 skipped;
-  `.venv-dfmcp` gives 128 for `dfmcp/tests`.
+- **The agent host:** openclaw on VM 106 has run the architect three times as
+  a one-shot `agent exec` on DeepSeek. **VM 106 has been unreachable since
+  run #3** (see "Open, waiting on the user").
+- **The queue is live** (2026-09-15): `queue.propose`/`pass` (architect) and
+  `queue.rule`/`pending` (Overseer) on VM 103, DB under `/var/lib/dfmcp`.
+  It holds one real record, `proposal-0001` from architect run #3, with a
+  pending prediction (`due_game_tick` 12276077). Nothing has ruled on it and
+  no grader runs on a schedule. → register 2026-09-15 rows,
+  `handoffs/2026-09-15-queue-live-deploy.md`.
+- **Tests:** ambient `python -m pytest` gives 252 passed, 1 skipped;
+  `.venv-dfmcp` gives 152 for `dfmcp/tests`.
 
 ### START HERE, in priority order
 
-1. **Wire `dfqueue` into dfmcp.** **In progress 2026-09-15, user's go-ahead
-   given (VM 103 included).** Phase A (local code, worktree executor,
-   `handoffs/2026-09-15-queue-into-dfmcp.md`) is **merged to `main`
-   (`85826c3`), not deployed**, after three review fixes (defer hiding a
-   proposal, storage errors escaping `isError`, SQLite on the event loop plus
-   the id race it exposed). Suites on merged `main`: ambient 252 passed 1
-   skipped, venv 152. **Phase B dispatched 2026-09-15** (user re-confirmed,
-   no peer sessions): `handoffs/2026-09-15-queue-live-deploy.md`. It changes
-   VM 103 (backup first, `dfmcp-server` restart, `/var/lib/dfmcp`) and runs
-   architect run #3 on VM 106. Rollback steps will be in its Result section. Run #3 must
-   regenerate its `SOUL.md` from the new `role.md`; run #2's bootstrap says
-   "no write tool".
-   Design calls are in the register's 2026-09-15 "Wiring `dfqueue`" row.
-   - `propose` / `pass` / `ruling` as MCP tools, scoped by role (only the
-     Overseer may rule);
-   - the game tick read from `overview.get` and stamped at write time;
-   - the SQLite file on VM 103 with dfmcp as its single writer;
-   - one live proposal from the architect through the tool, graded later.
-
-   Designs: `docs/AGENT-ARCHITECTURE.md` §4, `dfqueue/README.md`.
-2. **The feed the user wants, in order:**
-   1. a grader schedule;
-   2. a publisher of `dfqueue.render.public_view` only (allowlist and kill
+1. **One supervised end-to-end cycle: the Overseer rules on `proposal-0001`.**
+   The first test of the project's thesis. Any execution needs the user's
+   approval. **Open question first:** where the Overseer runs, since the
+   2026-09-14 handoff bars its token from VM 106.
+2. **A grader schedule**, so `proposal-0001`'s prediction actually grades (it
+   is probably due already). Then the rest of the feed:
+   1. a publisher of `dfqueue.render.public_view` only (allowlist and kill
       switch; **no delay, user's call 2026-09-14**);
-   3. the stream page, noVNC left and a scrolling feed right. **Public, so
+   2. the stream page, noVNC left and a scrolling feed right. **Public, so
       it needs its own go-ahead.**
 
    It shows proposals and rulings, not agent-to-agent chat (user's call; §4
    kept).
-3. **Architect run #2's regressions:** it dropped the proposal record and
-   proposed a defensibility measure that `role.md` assigns to the Overseer.
-   Item 1 enforces the format mechanically; the scope slip is still open.
-   Only then spend on more samples per run. → `evals/live/2026-09-14-architect-second-charter/`.
-4. **One supervised end-to-end cycle:** the Overseer ruling on a real
-   proposal through the seam. This is the first thing that tests the
-   project's actual thesis.
-5. **The `set_labor`/`autolabor` race**, a live single-writer violation that
+3. **Architect quality, with several samples per configuration.** Run #3
+   fixed the dropped record, but n=1 each: its prediction
+   (`fort.landmarks.count gt 4` in one day) cannot attribute an outcome, it
+   judged "nothing to dig" from level 0 only, and run #2's scope slip
+   (a defensibility proposal) is untested since. →
+   `evals/live/2026-09-15-architect-third-charter/README.md` review section.
+4. **The `set_labor`/`autolabor` race**, a live single-writer violation that
    is small to fix.
 
 ### Open, waiting on the user
+
+- **VM 106 is unreachable.** Proxmox reports it running (no reboot since
+  2026-09-12) but the QEMU guest agent does not answer, and ping, port 22 and
+  `ssh-keyscan` all fail; the same probes succeed against VM 103 (control).
+  It was reachable during run #3 (network activity 23:17-23:35 UTC,
+  2026-09-14). Needs a console look or a reset, both VM changes. Nothing
+  depends on it until the next agent run.
+- **Overseer and consultant tokens were briefly on VM 106** during Phase B's
+  live checks (staged under `/tmp`, deleted and confirmed gone by the
+  executor), which the 2026-09-14 handoff bars. The brief's fault. Rotate
+  them or not: the user's call.
 
 - **DeepSeek key in plaintext on VM 106** in
   `/opt/openclaw/config/state/openclaw.sqlite`. openclaw 2026.9.4 has no
@@ -88,6 +87,20 @@ Everything below is what is still open.
   (nothing listens today).
 
 ### Background, not urgent
+
+- **Project SSH never verifies host identity.** `scripts/provision_vm.py` and
+  `scripts/install_df.py` use `StrictHostKeyChecking=no` with throwaway
+  known_hosts files. VM 103's host keys were regenerated 2026-09-11 when
+  cloud-init saw a new instance id during the outage recovery, which is what
+  made a stale entry look like a changed host in Phase B. Worth pinning the
+  estate's real keys.
+- **Deploy with `git -c core.autocrlf=false archive`.** Phase B's deploy is
+  CRLF on VM 103 (content correct), so naive sha256 checks against `main`
+  fail. Also from Phase B: `dfmcp.auth` reads only `REPO_ROOT/.env`, so a
+  throwaway instance needs its own code copy; openclaw's schema now rejects
+  `pinned-config.json`'s `_note` key.
+- **`/opt/df/dfmcp-smoke-backup-2026-09-15` on VM 103** is Phase B's
+  rollback copy. Remove once the new deploy has settled.
 
 - **The breach detector is inconclusive.** Settle it opportunistically (rain,
   or an animal fording water), never by flooding the fort.

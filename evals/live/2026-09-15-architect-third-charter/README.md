@@ -239,3 +239,30 @@ files: zero matches in any of `run.json`, `run-stderr.txt`,
   prediction row, which is the point -- it is real data, not test data, per
   the brief's own framing that a real architect proposal belongs in the
   live queue).
+
+## Orchestrator review, 2026-09-15
+
+**The headline holds.** The live queue on VM 103 was read directly: exactly one
+record, `proposal-0001` (`workshop_siting`, `role=architect`), with its
+prediction pending. Every file here was re-scanned for every non-empty `.env`
+value and address (zero hits, with a planted real value caught as a positive
+control).
+
+**Two weaknesses in the proposal itself**, worth tracking across runs rather
+than treating as failures of the tool:
+
+1. **The prediction cannot attribute its outcome.** `fort.landmarks.count gt 4`
+   after 1200 ticks (one in-game day) is falsifiable, but it is not specific to
+   this proposal. Nothing executes proposals yet, and a built workshop is not
+   necessarily a landmark, so it will very likely grade false. It would grade
+   true if any unrelated landmark appeared. A signal naming the proposed thing
+   (for example `landmark."NAME".exists`) with a realistic horizon would test
+   the proposal. The schema accepts both, so this is prompt and charter
+   material, not a validation bug.
+2. **The survey only looked at the landmarks' own level.** The rationale says
+   there is "no interior to site anything in yet" because `diggable.find` found
+   nothing at level 0. Run #2 found 5 soil candidates one level below the Embark
+   Site. The conclusion rests on an incomplete search.
+
+Both are n=1 observations. They argue for running several samples per
+configuration before drawing conclusions about the model or the charter.
