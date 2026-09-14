@@ -340,6 +340,12 @@ or `decisions/DECISIONS.md`, not here.
 ## Next
 <!-- Clearly in line, not yet started. -->
 
+- **DF wiki lookup as a `dfmcp` tool for the Consultant**, served from a local
+  snapshot, not the open web (user's call 2026-09-15). Fills the Consultant's
+  `planned` `knowledge.wiki_lookup`. Follows the queue wiring, which
+  establishes server-side (non-DFHack) tools. → `decisions/DECISIONS.md`
+  2026-09-15 "DF wiki access" row.
+
 - **Live-view ingest: explicitly shelved, user's call 2026-09-12** (moved
   here from "explicitly not priority right now," distinct from "blocked" —
   it's not waiting on anything technical, the user chose not to prioritize
@@ -501,6 +507,12 @@ or `decisions/DECISIONS.md`, not here.
 
 ## Later
 <!-- Real, worth tracking, but genuinely further out or gated on scale/decisions not yet made. -->
+
+- **Resource claims, proposal variants and computed bundles** for arbitrating
+  competing proposals (user's call 2026-09-15). Research brief first
+  (resource-constrained scheduling, portfolio selection, inventory and
+  logistics); gated on stock and labor reads existing.
+  → `decisions/DECISIONS.md` 2026-09-15 "Resource claims" row.
 
 - **`find_open_area` (cavern terrain).** Genuinely hard, deliberately last
   in the build order. → `docs/PURPOSE.md` build order item 9.
