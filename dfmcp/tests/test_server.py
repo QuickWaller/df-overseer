@@ -391,6 +391,37 @@ class TestServerCallEdgeCases:
             result = await session.call_tool("openarea__find", {"w": 3, "h": 3, "near_landmark": "MainHall"})
         assert result.is_error is True
 
+    async def test_script_error_object_is_a_tool_error(self, registry, roster, pool, fake_dfhack):
+        """Found live on VM 103, 2026-09-14: a script's own failure report,
+        exactly {"error": "<message>"}, used to come back isError=False.
+        The payload is the real off-map message the deployed
+        df-overseer-diggable.lua prints."""
+        fake_dfhack.queue_actions(
+            make_ok_action('{"error": "level -500 from Embark Site is outside the map"}')
+        )
+        app = _app(registry, roster, pool)
+        async with mcp_session(app, ARCHITECT_TOKEN) as session:
+            result = await session.call_tool(
+                "diggable__find", {"w": 3, "h": 3, "level": -500, "near_landmark": "Embark Site"}
+            )
+        assert result.is_error is True
+        text = "".join(block.text for block in result.content if block.type == "text")
+        assert text == "level -500 from Embark Site is outside the map"
+
+    async def test_object_with_error_field_beside_data_is_still_a_result(
+        self, registry, roster, pool, fake_dfhack
+    ):
+        """Only the exact {"error": str} shape is a failure. A result that
+        carries an error-ish field next to real data (the shape of `dig`'s
+        `quickfort_error`) must stay a normal result."""
+        payload = '{"error": "partial", "near_landmark": "Wagon"}'
+        fake_dfhack.queue_actions(make_ok_action(payload))
+        app = _app(registry, roster, pool)
+        async with mcp_session(app, ARCHITECT_TOKEN) as session:
+            result = await session.call_tool("landmarks__list", {})
+        assert result.is_error is False
+        assert result.structured_content == {"error": "partial", "near_landmark": "Wagon"}
+
     async def test_bare_json_array_output_is_wrapped_as_result(self, registry, roster, pool, fake_dfhack):
         """Bug found on VM 103's first live smoke test, 2026-09-14: most
         real read tools print a bare JSON array, not an object. This

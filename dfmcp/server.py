@@ -377,6 +377,20 @@ def build_mcp_server(registry: Registry, roster: Roster, pool: DFHackConnectionP
             # unchanged; anything else (list, number, string, bool, null)
             # is wrapped as {"result": <value>}. The text content block
             # always keeps the raw JSON exactly as printed, either way.
+            # A script reporting its own failure prints exactly
+            # {"error": "<message>"} (every df-overseer-*.lua uses that one
+            # shape: landmark not found, a level off the map). Found live on
+            # VM 103 2026-09-14: those used to reach the client as a normal
+            # isError=False result, so a model could read "outside the map"
+            # as data rather than as a failed call. Only that exact shape
+            # counts; an object that merely has an error-ish field alongside
+            # real data (e.g. `dig`'s `quickfort_error`) is still a result.
+            if (
+                isinstance(parsed, dict)
+                and set(parsed) == {"error"}
+                and isinstance(parsed["error"], str)
+            ):
+                return _tool_result_error(parsed["error"])
             if isinstance(parsed, dict):
                 structured = parsed
             else:

@@ -553,6 +553,14 @@ as a real client-side failure:
   `RPC_REPLY_FAIL`, and non-JSON DFHack output all produce a tool error
   (`isError=True`) rather than an unhandled exception reaching the
   transport.
+- **A script's own failure report is a tool error too** (added
+  2026-09-14, found live). Every `df-overseer-*.lua` reports a failure as
+  exactly `{"error": "<message>"}`, e.g. "landmark not found" or "level N
+  from <landmark> is outside the map". That exact shape now returns
+  `isError=True` with the message as its text. Before this, it came back as
+  a normal result a model could read as data. An object carrying an
+  error-like field alongside real data (`dig`/`build`'s `quickfort_error`)
+  is still an ordinary result.
 
 ### What remains unproven, stated plainly
 
