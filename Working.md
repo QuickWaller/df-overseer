@@ -88,24 +88,36 @@ Everything below this block is detail and reasoning. This is the brief.
      architect's 9 read-only tools, `landmarks__list` returning live fort
      JSON, bogus token 401. Re-verified by the orchestrator. Reversal steps:
      `handoffs/2026-09-14-dfmcp-deploy.md`.
-   - **NOT STARTED: the client half. THIS IS THE NEXT JOB.** Brief already
-     written: `handoffs/2026-09-14-openclaw-install.md`. A stream was
-     dispatched 2026-09-14 and **stopped early, for session context, not for
-     any problem**. **It got further than its last message suggested: Docker
-     29.1.3 is installed and running on VM 106** (distro packages,
-     `/opt/containerd`), **with no images pulled and no containers**, so step
-     1 of the brief is done and step 2 onward is not. Verified directly after
-     the stop, which is the only reason this is recorded correctly: the
-     agent's final words were about reading connection details. Nothing needs
-     reversing unless openclaw is abandoned entirely (`apt remove docker.io
-     containerd`). **Re-dispatch the brief, skipping step 1.** Its deliverable is **knowledge,
-     not a wired client**: what config the running image actually reads, since
-     `research/2026-09-12-openclaw-mcp-auth.md`'s schema was read from
-     upstream source and has never been confirmed against a running build.
-     It deliberately spends nothing: no API key on VM 106, no model call, a
-     placeholder token, and "config accepted, auth refused" counts as a pass.
-     **Wiring a real token and letting an agent call the fort is the step
-     after, and it is the first one that costs money.**
+   - **DONE 2026-09-14: the client half's knowledge step.**
+     `handoffs/2026-09-14-openclaw-install.md` (Result plus Orchestrator
+     correction sections).
+     - OpenClaw 2026.9.4 (`3a9d69d`) is pulled on VM 106 and was run only as
+       throwaway CLI containers. Nothing listens and nothing is running, so no
+       `services.yaml` entry is owed for VM 106 yet.
+     - The research brief's `mcp.servers` schema is **confirmed against the
+       real binary's `config schema`**: `url`, `transport:
+       streamable-http`, `headers.Authorization`, `toolFilter`, and
+       per-agent `agents.entries.<id>.tools.allow/deny`.
+     - `${VAR}` substitution in headers works live.
+     - A `df-overseer` entry with a placeholder token reached VM 103 and got
+       401.
+     - `/opt/openclaw/config/openclaw.json` holds that entry with an
+       unresolved `${DF_MCP_TOKEN_PLACEHOLDER}` reference, and is kept for
+       the next step.
+     - **Scaffold gap:** `../openclaw`'s compose uses `OPENCLAW_CONFIG_DIR`
+       and `OPENCLAW_AUTH_PROFILE_SECRET_DIR`, which the image never reads.
+       Use `OPENCLAW_STATE_DIR`, or config is silently lost when the container
+       is recreated.
+     - Reversal: `docker rmi ghcr.io/openclaw/openclaw:latest; sudo rm -rf
+       /opt/openclaw`.
+   - **NEXT JOB, first one that costs money, needs go-ahead:**
+     1. Mint a real role token (architect: read-only) into VM 106 via
+        `openclaw secrets` or an env var, never as a literal in config.
+     2. Configure a model provider.
+     3. Run one agent turn that calls one read tool on the fort.
+     4. Look at `openclaw secrets store/audit` before step 1.
+     5. Decide whether the durable gateway runs from a fixed scaffold or from
+        the CLI recipe.
    - **OWED once the unit is enabled**: a `home-lab` `inventory/services.yaml`
      entry for the new service on VM 103. No live `home-lab` session existed
      when this was dispatched, so it is recorded here as open, per
