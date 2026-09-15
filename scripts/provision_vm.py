@@ -7,9 +7,12 @@
                                          [--ip-var DF_VM_IP]
     python scripts/provision_vm.py set-memory --vmid N --memory 6144
     python scripts/provision_vm.py set-onboot [--vmid N] --enable|--disable
+    python scripts/provision_vm.py set-disk-opts --vmid N --disk scsi0 --opts discard=on,ssd=1
     python scripts/provision_vm.py snapshot --name N [--vmid N] [--description D]
     python scripts/provision_vm.py rollback --name N [--vmid N]
     python scripts/provision_vm.py start [--vmid N] [--force]
+    python scripts/provision_vm.py setup-capture --vmid N [--dry-run]
+    python scripts/provision_vm.py forensic-attach --vmid N [--execute]
 
 The template is built from scratch out of a cloud image we downloaded, on
 purpose: an earlier VM here was a linked clone of a template outside our pool,
@@ -22,6 +25,7 @@ Nothing host-specific is hardcoded -- it all comes from .env (gitignored).
 """
 
 import argparse
+import base64
 import os
 import subprocess
 import sys
@@ -208,6 +212,324 @@ def ssh_guest(env, ip, command, timeout=120, check=True, input_data=None):
         raise PVEError("ssh failed (%s): %s"
                        % (proc.returncode, (proc.stderr or proc.stdout).strip()))
     return proc
+
+
+def remote(env, ip, script, label="remote", timeout=600, check=True,
+          sudo=False, dry_run=False):
+    """Run a multi-line bash script in the guest, base64-on-stdin.
+
+    A near-verbatim copy of install_df.remote() -- not imported from there
+    because install_df.py already imports ssh_guest FROM this module, and
+    importing back the other way would be circular. Same reasons apply here:
+    two shells parse an ssh command string, so the payload goes over stdin
+    base64-encoded rather than embedded in the command line (see
+    ssh_guest's input_data docstring for the ~8182-char native-Win32-parent
+    truncation this avoids), and 'set -euo pipefail' is prepended so a
+    failing step stops the script instead of reporting the last command's
+    exit status.
+    """
+    body = "set -euo pipefail\n" + script
+    if dry_run:
+        log("--- %s (dry run, not executed) ---" % label)
+        log(body)
+        log("--- end %s ---" % label)
+        return None
+    payload = base64.b64encode(body.encode("utf-8")).decode("ascii")
+    shell = "sudo -H bash -s" if sudo else "bash -s"
+    proc = ssh_guest(env, ip, "base64 -d | %s" % shell,
+                     timeout=timeout, check=False, input_data=payload)
+    if check and proc.returncode != 0:
+        raise PVEError("%s failed (exit %s):\n%s"
+                       % (label, proc.returncode,
+                          (proc.stdout + proc.stderr).strip()))
+    return proc
+
+
+def read_local_file(*parts):
+    """Read a file under this scripts/ directory by relative path parts.
+
+    Used to push scripts/guest-capture/df_netwatch.py to a guest byte-for-
+    byte: one source of truth, both run locally by tests/test_df_netwatch.py
+    and pushed live by cmd_setup_capture below.
+    """
+    path = os.path.join(os.path.dirname(os.path.abspath(__file__)), *parts)
+    with open(path, encoding="utf-8") as fh:
+        return fh.read()
+
+
+def parse_ipconfig_ip(ipconfig0):
+    """The bare address out of an ipconfig0 field, e.g. 'ip=192.0.2.5/24,gw=...'
+    -> '192.0.2.5'. None for a DHCP guest ('ip=dhcp') or a missing field --
+    this project's clones are always static (guest_address() above), and a
+    caller that gets None back has no live address to act on regardless of
+    which case caused it.
+    """
+    if not ipconfig0:
+        return None
+    for field in ipconfig0.split(","):
+        field = field.strip()
+        if field.startswith("ip=") and field[3:].strip().lower() != "dhcp":
+            return field[3:].split("/")[0]
+    return None
+
+
+def resolve_guest_ip(pve, vmid):
+    """A guest's address, read live from its own PVE config -- never from
+    which .env variable name happens to match, so this works for any vmid
+    the caller names (setup-capture takes a bare --vmid, not an --ip-var).
+    """
+    cfg = pve.get(pve.vm_path(vmid, "/config"))
+    ip = parse_ipconfig_ip(cfg.get("ipconfig0"))
+    if not ip:
+        raise PVEError(
+            "vm %s has no static ipconfig0 address to read (found: %r). "
+            "This repo's guests are assigned a static address at clone "
+            "time -- see guest_address()." % (vmid, cfg.get("ipconfig0")))
+    return ip
+
+
+# --- guest-side incident capture (handoffs/2026-09-15-incident-capture.md) -
+
+NETWATCH_REMOTE_PATH = "/usr/local/sbin/df-netwatch.py"
+
+NETWATCH_SERVICE_UNIT = '''[Unit]
+Description=df-overseer netwatch: gateway-loss capture (run by the timer)
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/python3 %s
+''' % NETWATCH_REMOTE_PATH
+
+# Per-minute, edge-triggered inside the script itself (see df_netwatch.py's
+# decide_transition) -- the timer just samples; it is the script that
+# decides whether a minute was worth writing anything about.
+NETWATCH_TIMER_UNIT = '''[Unit]
+Description=df-overseer netwatch: per-minute gateway check
+
+[Timer]
+OnBootSec=1min
+OnUnitActiveSec=1min
+AccuracySec=5s
+Persistent=true
+
+[Install]
+WantedBy=timers.target
+'''
+
+# Storage=persistent takes effect the next time journald itself (re)starts --
+# a reboot, or a manual `systemctl restart systemd-journald` -- neither of
+# which cmd_setup_capture forces. VM 106's deploy plan includes a full
+# stop/start anyway (docs/RUNBOOK-DARK-GUEST.md step 1), which applies it;
+# VM 103's plan explicitly excludes any restart, so there this takes effect
+# at VM 103's next natural reboot, exactly like the guest-agent virtio-serial
+# channel already does (see handoffs/2026-09-15-vm106-rebuild.md's Result).
+JOURNALD_PERSISTENT_CONF = '''[Journal]
+# Set by scripts/provision_vm.py setup-capture. Effective on journald's next
+# start (see the comment above this constant in provision_vm.py).
+Storage=persistent
+SystemMaxUse=200M
+'''
+
+
+def cmd_setup_capture(pve, args):
+    """Install (or update) guest-side incident capture on any clone of
+    template 102: qemu-guest-agent, a persistent journal, and the
+    edge-triggered netwatch timer (df_netwatch.py). Idempotent: every step
+    below is safe to re-run on an already-set-up guest.
+    """
+    vmid = args.vmid
+    if not vmid:
+        raise PVEError("no vmid: pass --vmid")
+    ip = resolve_guest_ip(pve, vmid)
+    log("vm %s: installing incident capture" % vmid)
+
+    netwatch_py = read_local_file("guest-capture", "df_netwatch.py")
+
+    script = '''
+export DEBIAN_FRONTEND=noninteractive
+export NEEDRESTART_MODE=l
+apt-get update -qq
+apt-get install -y -qq qemu-guest-agent arping
+systemctl enable --now qemu-guest-agent \\
+  || echo "qemu-guest-agent enable/start reported non-zero (may need the next boot -- virtio-serial channel not yet present at this VM's current run)"
+
+install -d -m755 /var/lib/df-netwatch /var/log/netwatch
+cat > %(netwatch_path)s <<'DF_NETWATCH_PY_EOF'
+%(netwatch_py)s
+DF_NETWATCH_PY_EOF
+chmod +x %(netwatch_path)s
+
+cat > /etc/systemd/system/df-netwatch.service <<'DF_NETWATCH_SERVICE_EOF'
+%(service_unit)s
+DF_NETWATCH_SERVICE_EOF
+
+cat > /etc/systemd/system/df-netwatch.timer <<'DF_NETWATCH_TIMER_EOF'
+%(timer_unit)s
+DF_NETWATCH_TIMER_EOF
+
+install -d -m755 /etc/systemd/journald.conf.d
+cat > /etc/systemd/journald.conf.d/99-df-overseer-persistent.conf <<'DF_JOURNALD_EOF'
+%(journald_conf)s
+DF_JOURNALD_EOF
+
+systemctl daemon-reload
+systemctl enable --now df-netwatch.timer
+
+echo "SETUP_CAPTURE_OK"
+echo "timer: enabled=$(systemctl is-enabled df-netwatch.timer) active=$(systemctl is-active df-netwatch.timer)"
+echo "guest-agent: enabled=$(systemctl is-enabled qemu-guest-agent 2>&1) active=$(systemctl is-active qemu-guest-agent 2>&1)"
+''' % {
+        "netwatch_path": NETWATCH_REMOTE_PATH,
+        "netwatch_py": netwatch_py,
+        "service_unit": NETWATCH_SERVICE_UNIT,
+        "timer_unit": NETWATCH_TIMER_UNIT,
+        "journald_conf": JOURNALD_PERSISTENT_CONF,
+    }
+    proc = remote(pve.env, ip, script, "setup-capture", timeout=600, sudo=True,
+                 dry_run=args.dry_run)
+    if proc:
+        for line in proc.stdout.strip().splitlines():
+            log("  " + line)
+
+
+# --- forensic attach-and-read (handoffs/2026-09-15-incident-capture.md) ----
+
+def build_forensic_plan(dark_vmid, template_vmid, temp_vmid, boot_order,
+                        disk_opts):
+    """The ordered list of API calls the forensic attach-and-read route
+    makes, as (method, path, description) tuples. Pure and vmid-parametric
+    on purpose: printed for --dry-run/no --execute, and unit tested in
+    tests/test_provision_vm_capture.py without any live PVE call. Mirrors
+    the sequence the VM 106 rebuild proved live
+    (handoffs/2026-09-15-vm106-rebuild.md's Result), including the two
+    findings recorded in docs/TRAPS.md from that stream: move_disk clears
+    boot order and discard/ssd, and the old disk must never be attached
+    before the fresh disk's first boot.
+    """
+    return [
+        ("POST", "/qemu/%s/status/shutdown" % dark_vmid,
+         "graceful ACPI shutdown of the dark vm %s" % dark_vmid),
+        ("POST", "/qemu/%s/clone" % template_vmid,
+         "full clone template %s -> temp vmid %s, never started, no "
+         "cloud-init address" % (template_vmid, temp_vmid)),
+        ("PUT", "/qemu/%s/config" % dark_vmid,
+         "delete: scsi0 (detach the dark vm's disk to unused0; "
+         "non-destructive, the volume stays in storage)"),
+        ("POST", "/qemu/%s/move_disk" % temp_vmid,
+         "move temp vmid %s's disk -> target vmid %s as scsi0"
+         % (temp_vmid, dark_vmid)),
+        ("PUT", "/qemu/%s/config" % dark_vmid,
+         "restore boot=%s and scsi0 disk options %s (move_disk clears "
+         "both -- TRAPS.md)" % (boot_order, disk_opts)),
+        ("DELETE", "/qemu/%s" % temp_vmid,
+         "delete the now-diskless temp vmid %s, confirm gone" % temp_vmid),
+        ("POST", "/qemu/%s/status/start" % dark_vmid,
+         "start vm %s on the fresh disk, wait for 'running'" % dark_vmid),
+        ("PUT", "/qemu/%s/config" % dark_vmid,
+         "hot-attach the old disk (the unused0 from the detach step) as "
+         "scsi1, ro=1 -- only now, after the fresh disk's first boot has "
+         "completed, never before (TRAPS.md: attaching a lineage-cloned "
+         "disk before first boot can make the guest root off the wrong "
+         "one)"),
+    ]
+
+
+def cmd_forensic_attach(pve, args):
+    """Forensic attach-and-read for a dark guest.
+
+    Without --execute (the default, and true even if --dry-run is also
+    passed), this only reads the target vm's current config and prints the
+    plan -- no write, no live call beyond the read. handoffs/2026-09-15-
+    incident-capture.md's own instruction is explicit: 'Do not run it for
+    real in this stream beyond a --dry-run that prints the planned API
+    calls against VM 106's real config' -- so --execute exists for a future
+    incident to use, never invoked by the stream that wrote this.
+    """
+    vmid = args.vmid
+    if not vmid:
+        raise PVEError("no vmid: pass --vmid")
+    template_vmid = args.template or pve.env.get("DF_TEMPLATE_VMID")
+    if not template_vmid:
+        raise PVEError("no template vmid: pass --template or set "
+                       "DF_TEMPLATE_VMID in .env")
+    template_vmid = int(template_vmid)
+
+    cfg = pve.get(pve.vm_path(vmid, "/config"))
+    boot_order = cfg.get("boot", "order=scsi0")
+    scsi0 = cfg.get("scsi0", "")
+    opts = ",".join(p for p in scsi0.split(",")
+                    if p.strip().startswith(("discard=", "ssd=")))
+    disk_opts = opts or "discard=on,ssd=1"
+
+    temp_vmid = args.temp_vmid or pve.next_vmid()
+
+    plan = build_forensic_plan(vmid, template_vmid, temp_vmid, boot_order,
+                               disk_opts)
+    log("forensic attach-and-read PLAN for vm %s (template %s, temp vmid %s):"
+        % (vmid, template_vmid, temp_vmid))
+    for i, (method, path, desc) in enumerate(plan, 1):
+        log("  %d. %-6s %-28s -- %s" % (i, method, path, desc))
+
+    if not args.execute:
+        log("\n(plan only -- pass --execute to run this for real. Not run "
+            "for real by handoffs/2026-09-15-incident-capture.md's own "
+            "stream; see its Hard lines and its Report's 'Built' section.)")
+        return plan
+
+    log("\nEXECUTING for real.")
+    log("1/8 shutting down vm %s" % vmid)
+    status = pve.get(pve.vm_path(vmid, "/status/current"))
+    if status.get("status") != "stopped":
+        pve.wait_task(pve.post(pve.vm_path(vmid, "/status/shutdown"),
+                               {"timeout": 60}), "shutdown", timeout=120)
+
+    log("2/8 cloning template %s -> temp vmid %s" % (template_vmid, temp_vmid))
+    upid = pve.post(pve.vm_path(template_vmid, "/clone"), {
+        "newid": temp_vmid, "name": "df-overseer-forensic-temp",
+        "pool": pve.pool, "full": 1, "storage": pve.storage,
+    })
+    pve.wait_task(upid, "clone", timeout=3600)
+    pve.put(pve.vm_path(temp_vmid, "/config"), {"delete": "ipconfig0"})
+
+    log("3/8 detaching vm %s's disk to unused0" % vmid)
+    pve.put(pve.vm_path(vmid, "/config"), {"delete": "scsi0"})
+
+    log("4/8 moving temp vmid %s's disk onto vm %s as scsi0"
+        % (temp_vmid, vmid))
+    pve.wait_task(pve.post(pve.vm_path(temp_vmid, "/move_disk"),
+                           {"disk": "scsi0", "target-vmid": vmid,
+                            "target-disk": "scsi0"}),
+                 "move_disk", timeout=600)
+
+    log("5/8 restoring boot order and disk options")
+    fresh_cfg = pve.get(pve.vm_path(vmid, "/config"))
+    fresh_scsi0 = fresh_cfg.get("scsi0", "")
+    if disk_opts not in fresh_scsi0:
+        pve.put(pve.vm_path(vmid, "/config"),
+               {"scsi0": fresh_scsi0 + "," + disk_opts})
+    pve.put(pve.vm_path(vmid, "/config"), {"boot": boot_order})
+
+    log("6/8 deleting temp vmid %s" % temp_vmid)
+    pve.wait_task(pve.delete(pve.vm_path(temp_vmid)), "destroy temp vm")
+
+    log("7/8 starting vm %s" % vmid)
+    pve.wait_task(pve.post(pve.vm_path(vmid, "/status/start"), {}),
+                 "start", timeout=300)
+    wait_for_status(pve, vmid, "running", timeout=180)
+
+    log("8/8 hot-attaching the old disk as scsi1 (ro=1)")
+    cfg_now = pve.get(pve.vm_path(vmid, "/config"))
+    unused_key = next((k for k in cfg_now if k.startswith("unused")), None)
+    if not unused_key:
+        raise PVEError("no unused disk found on vm %s to hot-attach -- the "
+                       "old disk may already be attached, or the detach in "
+                       "step 3 did not leave one" % vmid)
+    pve.put(pve.vm_path(vmid, "/config"),
+           {"scsi1": "%s,ro=1" % cfg_now[unused_key]})
+
+    log("\ndone. On the guest: mount -o ro,noload <old-root-partition> "
+        "/mnt/olddisk (lsblk to find it; it is the second disk, ro=1).")
+    return plan
 
 
 def wait_for_status(pve, vmid, want, timeout=300, poll=3):
@@ -525,6 +847,62 @@ def cmd_set_onboot(pve, args):
     log("confirmed by read-back: onboot=%s" % after.get("onboot"))
 
 
+def cmd_set_disk_opts(pve, args):
+    """Add or restore one or more comma-separated options (e.g.
+    'discard=on,ssd=1') on a disk's drive string, keeping everything else in
+    it identical. Applies live -- PVE accepts a disk-option change on a
+    running VM as a pending change; it is not exercised until the VM's next
+    cold stop/start, same as cmd_set_cpu above.
+
+    Written for VM 106's rebuild losing scsi0's discard/ssd
+    (docs/TRAPS.md, "Added 2026-09-15, from the VM 106 rebuild": "the
+    rebuild also lost the root disk's discard=on,ssd=1"), as a named,
+    reviewable command rather than an ad hoc config write -- see
+    handoffs/2026-09-15-incident-capture.md's Report for why this exists as
+    its own subcommand instead of an inline PUT.
+    """
+    vmid = args.vmid or pve.env.get("DF_VMID")
+    if not vmid:
+        raise PVEError("no vmid: pass --vmid or set DF_VMID in .env")
+
+    cfg = pve.get(pve.vm_path(vmid, "/config"))
+    current = cfg.get(args.disk)
+    if not current:
+        raise PVEError("vm %s has no %s to modify" % (vmid, args.disk))
+
+    wanted = [o.strip() for o in args.opts.split(",") if o.strip()]
+    present = [p.strip() for p in current.split(",")]
+    missing = [o for o in wanted
+              if o.split("=")[0] not in (p.split("=")[0] for p in present)]
+    if not missing:
+        log("vm %s: %s already has %s, nothing to do"
+            % (vmid, args.disk, args.opts))
+        return
+
+    new_value = current + "," + ",".join(missing)
+    log("vm %s: %s options %s -> adding %s"
+        % (vmid, args.disk, args.opts, ",".join(missing)))
+
+    pve.put(pve.vm_path(vmid, "/config"), {args.disk: new_value})
+
+    after = pve.get(pve.vm_path(vmid, "/config"))
+    after_value = after.get(args.disk, "")
+    still_missing = [o for o in wanted
+                     if o not in after_value.split(",")]
+    if still_missing:
+        raise PVEError("config still missing %s on %s after the write: %s"
+                       % (still_missing, args.disk, after_value))
+    log("confirmed by read-back: %s = <storage/volume masked>,%s"
+        % (args.disk, ",".join(p for p in after_value.split(",")
+                               if "=" in p or p.startswith("size="))))
+
+    pending = pve.get(pve.vm_path(vmid, "/pending")) or []
+    is_pending = any(p.get("key") == args.disk and "pending" in p
+                    for p in pending)
+    log("pending change on %s: %s (needs a stop/start to fully apply)"
+        % (args.disk, is_pending))
+
+
 def cmd_set_cpu(pve, args):
     """Change a VM's configured CPU type. Like onboot, this applies live (no
     stopped-VM requirement) but the guest only actually sees the new CPUID
@@ -716,6 +1094,16 @@ def main():
     setcpu.add_argument("--cpu-type", default=DEFAULT_CPU,
                         help="default %r" % DEFAULT_CPU)
 
+    setdisk = sub.add_parser("set-disk-opts",
+                             help="add/restore options on a disk's drive "
+                                  "string (e.g. discard=on,ssd=1), keeping "
+                                  "everything else in it identical")
+    setdisk.add_argument("--vmid", type=int)
+    setdisk.add_argument("--disk", default="scsi0")
+    setdisk.add_argument("--opts", required=True,
+                         help="comma-separated key=value options to ensure "
+                              "are present, e.g. discard=on,ssd=1")
+
     snap = sub.add_parser("snapshot", help="create a named snapshot")
     snap.add_argument("--vmid", type=int)
     snap.add_argument("--name", required=True)
@@ -738,6 +1126,36 @@ def main():
     start.add_argument("--force", action="store_true",
                        help="start even if the headroom gate fails")
 
+    setup_capture = sub.add_parser(
+        "setup-capture",
+        help="install guest-side incident capture (qemu-guest-agent, "
+             "persistent journal, edge-triggered netwatch timer) -- "
+             "handoffs/2026-09-15-incident-capture.md")
+    setup_capture.add_argument("--vmid", type=int, required=True)
+    setup_capture.add_argument("--dry-run", action="store_true",
+                               help="print the remote script instead of "
+                                    "running it")
+
+    forensic = sub.add_parser(
+        "forensic-attach",
+        help="forensic attach-and-read for a dark guest: clone the "
+             "template, swap its disk in, boot clean, hot-attach the old "
+             "disk read-only. Without --execute, only reads the target's "
+             "config and prints the plan. docs/RUNBOOK-DARK-GUEST.md")
+    forensic.add_argument("--vmid", type=int, required=True,
+                          help="the dark VM to rebuild")
+    forensic.add_argument("--template", type=int,
+                          help="template vmid (default DF_TEMPLATE_VMID)")
+    forensic.add_argument("--temp-vmid", type=int,
+                          help="vmid for the temporary clone (default: "
+                               "next free)")
+    forensic.add_argument("--execute", action="store_true",
+                          help="actually run the plan, not just print it")
+    forensic.add_argument("--dry-run", action="store_true",
+                          help="synonym for the default (no --execute) "
+                               "behaviour, accepted for parity with other "
+                               "subcommands")
+
     args = parser.parse_args()
     pve = PVE()
     handler = {
@@ -748,10 +1166,13 @@ def main():
         "set-memory": cmd_set_memory,
         "set-onboot": cmd_set_onboot,
         "set-cpu": cmd_set_cpu,
+        "set-disk-opts": cmd_set_disk_opts,
         "snapshot": cmd_snapshot,
         "rollback": cmd_rollback,
         "shutdown": cmd_shutdown,
         "start": cmd_start,
+        "setup-capture": cmd_setup_capture,
+        "forensic-attach": cmd_forensic_attach,
     }[args.command]
     try:
         handler(pve, args)
