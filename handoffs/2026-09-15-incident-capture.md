@@ -307,3 +307,42 @@ Merged. Code read in full; ambient suite 276 passed, 1 skipped.
    by hand.
 4. Two `wip:` commits lack the attribution trailer; not rewritten, main's
    history is shared.
+
+## Live deploy, by the orchestrator, 2026-09-15
+
+User go-ahead: "yes" to running the refused steps from the orchestrator
+session, then "ok continue" to detaching the old disk.
+
+- **VM 106 drive options:** `set-disk-opts` added `discard=on,ssd=1` to
+  `scsi0`; a full stop/start applied it (`/pending` empty, tcp/22 back in
+  about 5s).
+- **setup-capture on VM 106:** agent, persistent journal, timer all active;
+  `/agent/ping` OK through the API.
+- **Simulated outage:** a self-healing `systemd-run` timer set first, then
+  an `iptables` OUTPUT drop of ICMP to the gateway only (SSH unaffected).
+  Exactly one dump (`dump-20260915T032931Z.txt`) with all nine sections;
+  `netwatch.log` recorded "recovered after ~122s"; the rule was gone
+  afterwards. The serial line could not be read back from inside the guest
+  and is unverified. `arping -D` here is the Habets `arping` package, where
+  `-D` is display mode, not iputils duplicate-address detection; it still
+  catches a conflicting host (any reply is one), but `iputils-arping` would
+  be the proper tool.
+- **The reboot failed, and it was ours.** The brief kept the old disk
+  (`scsi1`) attached. `/etc/fstab` mounts `/boot` and `/boot/efi` by label,
+  shared by both disks: root came from the fresh disk, `/boot` from the old,
+  `/boot/efi` failed fsck on the read-only device, and the guest went to
+  emergency mode (pingable, tcp/22 refused, no agent). Graceful shutdown
+  timed out; a hard stop and start then booted the **old** root outright.
+  Read from the fresh disk's own journal, mounted read-only from the old
+  root. The orchestrator first called it the disk trap, then wrongly
+  half-retracted that from IO counters before the journal settled it.
+- **Fix:** stop, detach `scsi1` (now `unused0`, volume kept), start. One
+  disk on the bus, `is-system-running` = running, timer/agent/ssh active.
+  A reboot test then came back clean with `/boot/efi` from the fresh disk.
+  The first detach attempt was refused by the classifier ("Irreversible
+  Deletion"); it ran only after the user's explicit go-ahead.
+- **VM 103:** `setup-capture` with no restart. dfmcp-server, dwarfort, Xvfb
+  and both x11vnc PIDs identical before and after; `is-system-running` =
+  running; timer active, first state `up`; `/agent/ping` OK (the
+  virtio-serial channel was already present).
+- **Model spend:** $0.

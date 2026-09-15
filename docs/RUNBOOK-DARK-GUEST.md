@@ -70,9 +70,14 @@ Once attached, mount it read-only on the now-running guest
 confirm which device it landed as) and read
 `journalctl --directory=/mnt/olddisk/var/log/journal` for the outage
 window, plus `/mnt/olddisk/var/log/netwatch/` if the capture unit had
-already been installed on the old disk. `umount` it when done; leave it
-attached (unmounted) rather than detaching it -- deleting an old disk is
-the user's call, not an automated step's.
+already been installed on the old disk. `umount` it when done, then
+**detach it before the guest boots again** (stop the VM, config `delete`
+of that `scsiN`, which moves it to `unusedN` and keeps the volume). The
+guest's `/etc/fstab` mounts `/boot` and `/boot/efi` by label, and both
+disks carry the same labels, so any boot with it attached can mount parts
+of the wrong disk (VM 106, 2026-09-15: `/boot/efi` failed its fsck on the
+read-only old disk and the guest sat in emergency mode, pingable, no SSH).
+Deleting the detached volume is the user's call, not an automated step's.
 
 ## 4. What to hand `home-lab`
 
