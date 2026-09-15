@@ -42,6 +42,89 @@ Everything below is what is still open.
 - **Tests:** ambient `python -m pytest` gives 276 passed, 1 skipped;
   `.venv-dfmcp` gives 152 for `dfmcp/tests`.
 
+## HANDOVER 2026-09-16 (read this first after a /clear)
+
+**The fort is in trouble and frozen, which is the safe state.** Uniboslan sits
+at tick 12309480 with `pause_state` false but the clock not moving, because one
+undismissed popup blocks everything (a documented trap: a dialog freezes the
+fort even when the flag reads false). Verified live from inside:
+
+- **fort-owned food 0, fort-owned drink 0.** The 234 food and 50 drink items on
+  the map are all `flags.foreign`: the merchant caravan's, in their wagons. The
+  user spotted this from the screen before the orchestrator did, whose first
+  count wrongly included merchant goods.
+- 15 citizens, 119 seeds, **zero farm plots, zero stills, zero workshops of any
+  kind, no trade depot**. A caravan and the outpost liaison are waiting and
+  cannot unload without a depot.
+- The fort produces nothing. Stores are not the problem; production is.
+
+**The gap that matters: our agents cannot fix any of this.** The whole write
+surface is dig, open-area build, landmark build and labor set. There is no tool
+to build a workshop, farm plot, trade depot or typed stockpile, none to create
+manager work orders, and none to trade. `proposal-0001` (accepted by the
+Overseer 2026-09-16) could not be executed even with the execution tools
+switched on.
+
+**In flight right now:** a Sonnet `researcher` on DF food and drink logistics
+and the tool list this repo would need, committing
+`research/2026-09-16-food-and-drink-logistics.md` on its own worktree branch
+(`git branch --list 'worktree-agent-*'` to find it, then merge and review).
+It was dispatched because the user asked for research first, then an agent to
+build the tools: "it would be good to learn how to build the tools as we do
+it".
+
+**The user's framing:** losing this fort is acceptable ("we can always delete
+the fort and restart"), so nothing here is an emergency. Learning the tool
+layer is the point.
+
+### Next steps, in order
+
+1. Merge and review the research branch when it lands.
+2. Decide the rescue path with the user: trade with the caravan present (needs
+   a depot), or rush a farm and still, or restart the fort. Time is frozen
+   until the popup is dismissed, and dismissing it needs the user on the VNC
+   control channel (the UI automation path is barred for agents, `role.md`).
+3. Brief and dispatch the **building tools** stream from the research's tool
+   list: workshops, farm plots, trade depot, typed stockpiles, manager orders,
+   all landmark-relative with no coordinate crossing the boundary.
+4. Only then revisit executing a proposal end to end.
+
+### Facts established 2026-09-15/16 that contradict older docs
+
+- **The sim frame cap is 100, not 5** (`enabler.fps` 100, graphics 50, about
+  100 ticks per wall second). Cost and latency reasoning built on `FPS_CAP:5`
+  is wrong by 20x; the doc pass corrected the number and deliberately did not
+  rewrite the conclusions. Still open: the 45-80s command-latency explanation
+  in `agents/overseer/role.md` and `docs/AGENT-ARCHITECTURE.md` §14 item 5.
+- **Saves are at the XDG path**, not the game directory: slots `autosave 1..3`,
+  `current`, `region1`, `region2` under the `df` user's data dir. Already in
+  TRAPS.md; rediscovered the hard way.
+- **`proposal-0001`'s prediction window is blown.** 1200 ticks elapsed within a
+  minute of unpausing with nobody acting, because ruling and execution are
+  separate supervised steps hours apart. Grading it now records a latency miss,
+  not a verdict on the proposal. Left ungraded on purpose.
+- The Overseer's first ruling was charter-clean but called an unattributable
+  prediction sound, and did not notice the fort was paused. One sample, cheap
+  model.
+
+### Live state as of this handover
+
+- **VM 103:** dfmcp-server active, queue DB at `/var/lib/dfmcp`, incident
+  capture installed, DF running under the frozen popup. Overseer and consultant
+  tokens rotated 2026-09-15; the architect token was not.
+- **VM 106:** openclaw with two agents (`architect`, `overseer`), one MCP entry
+  and token each in `/opt/openclaw/secrets/openclaw_secrets.env` (mode 600,
+  placed by the user, since sessions are refused writes there). Incident
+  capture installed. Its old disk is deleted.
+- **DeepSeek key is still plaintext** in openclaw's state DB; the env SecretRef
+  is configured but shadowed by the `deepseek:manual` auth profile, and
+  removing that profile was refused by the classifier. A user-run script could
+  do it, like the token placement one
+  (`scripts/`-worthy, currently only in a session scratchpad).
+- **Classifier refusals seen repeatedly:** writes to secret stores, disk
+  detach, and ad-hoc Proxmox config writes. Named `provision_vm.py` subcommands
+  were fine. Route these back to the user, never through another agent.
+
 ### START HERE, in priority order
 
 1. **Next cycle step: execute `proposal-0001`, which the Overseer accepted
