@@ -362,7 +362,8 @@ reappears.
   included, rather than hand-fitting `openclaw`'s specific memory API before
   that boundary exists. Revisit once the MCP seam is real, not before.
   **The condition is now met, 2026-09-12: the seam is real** (`dfmcp/`, six
-  modules, 136 tests, though it has not yet met a live DFHack). So this
+  modules, 136 tests; it has since met a live DFHack, is deployed as a durable
+  service on VM 103, and openclaw has called it for real, 2026-09-14/15). So this
   question is genuinely open rather than deferred, and the answer the reasoning
   above points at is unchanged: expose `learning/ledger` and
   `learning/predictions` read/write through the same MCP boundary, so they fit
