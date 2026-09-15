@@ -49,6 +49,8 @@ here and their own handoff doc.
 
 | Overseer first ruling (second openclaw agent, DeepSeek) | [2026-09-15-overseer-first-ruling.md](2026-09-15-overseer-first-ruling.md) | **DONE 2026-09-16, $0.006843014 spent.** User placed both MCP role tokens; this continuation ran steps 4-7. `proposal-0001` **accepted** (`ruling-0001`, verified in the live queue DB and VM 103's own tool-call journal, not just the model's claim). Probes matched exactly (architect 11 tools, overseer 16). Found and fixed two new requirements: `agents.defaults.systemAgent.agentId` (multi-agent `agent exec` needs an explicit owner) and a DeepSeek plugin re-link lost in VM 106's rebuild. Charter check: no re-derivation, no reinterpretation, no action, no self-derived coordinate. Three classifier refusals recorded, none routed around. | VM 106 `/opt/openclaw/` (config, secrets, workspaces); VM 103 read-only; `evals/live/2026-09-15-overseer-first-ruling/` (new files + updates); this doc |
 
+| Doc drift pass (queue, rebuild, first ruling) | [2026-09-16-doc-drift-pass.md](2026-09-16-doc-drift-pass.md) | **Dispatched 2026-09-16.** Docs-only audit and fix after four days of live work: ROSTER/dfmcp/AGENT-ARCHITECTURE status lines, overseer model deviation, ROADMAP Now bucket, CLAUDE.md, plus four new openclaw traps. | `CLAUDE.md`, `ROADMAP.md`, `docs/*.md`, `dfmcp/README.md`, `dfqueue/README.md`, `agents/**`, this doc |
+
 **One thing this first run proved, and it is the reason the commit-as-you-go
 rule in `.claude/agents/executor.md` exists:** the stream's session ended
 mid-run, for the second time in one day. Both deliverables were already
