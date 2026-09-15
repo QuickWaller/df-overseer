@@ -1,5 +1,4 @@
 {
-  "_note": "PREPARED, NOT RUN. This is the pinned config this stream built and validated syntactically (openclaw config validate returns valid: true against it), but the paid agent exec was never executed: placing the two MCP role tokens into /opt/openclaw/secrets/openclaw_secrets.env was refused by the auto-mode classifier as a Secret-Store Write (see README.md). Mounted via docker volume overlay onto /home/node/.openclaw/openclaw.json exactly as run #3's pinned-config.json was, with /opt/openclaw/config bind-mounted read-write as /home/node/.openclaw so both agents share the host-persisted DeepSeek auth state and plugin registry. MCP URL below is the real VM 103 LAN address in the live file; redacted here per this repo's public/no-address rule.",
   "mcp": {
     "servers": {
       "df-architect": {
@@ -37,7 +36,8 @@
     "ownership": "explicit",
     "defaults": {
       "model": { "primary": "deepseek/deepseek-v4-flash" },
-      "models": { "deepseek/deepseek-v4-flash": {}, "deepseek/deepseek-v4-pro": {} }
+      "models": { "deepseek/deepseek-v4-flash": {}, "deepseek/deepseek-v4-pro": {} },
+      "systemAgent": { "agentId": "overseer" }
     },
     "entries": {
       "architect": {

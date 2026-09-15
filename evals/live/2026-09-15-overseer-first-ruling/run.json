@@ -1,0 +1,42 @@
+{
+  "ok": true,
+  "status": "ok",
+  "final": "Ruled on the single pending proposal.\n\n**proposal-0001** (`workshop_siting`) → **accept**\n\nPreconditions verified against the live fort:\n- **Embark Site** is still a walkable seed landmark, with a walkable 1-tile exit east to the **Wagon** and a walkable 3-tile exit southwest to **Stockpile #1**.\n- **Wagon** still exists and is walkable.\n- **Stockpile #1** still exists and is walkable, with walkable exits to **Embark Site** (NE, 3 tiles) and **Wagon** (NE, 4 tiles) intact.\n\nSupporting state: all four landmarks sit in the main walkable group 11, zero stranded groups, population 15, no alerts, no stuck jobs, and no workshops exist yet.\n\nPrediction `fort.landmarks.count > 4` is sound: the count is exactly 4 now, and building the workshop adds a building landmark, raising it above 4.\n\nPer your instruction, I did not act on the accepted proposal — execution tools remain withheld. No further queue items are pending.",
+  "payloads": [
+    {
+      "text": "Ruled on the single pending proposal.\n\n**proposal-0001** (`workshop_siting`) → **accept**\n\nPreconditions verified against the live fort:\n- **Embark Site** is still a walkable seed landmark, with a walkable 1-tile exit east to the **Wagon** and a walkable 3-tile exit southwest to **Stockpile #1**.\n- **Wagon** still exists and is walkable.\n- **Stockpile #1** still exists and is walkable, with walkable exits to **Embark Site** (NE, 3 tiles) and **Wagon** (NE, 4 tiles) intact.\n\nSupporting state: all four landmarks sit in the main walkable group 11, zero stranded groups, population 15, no alerts, no stuck jobs, and no workshops exist yet.\n\nPrediction `fort.landmarks.count > 4` is sound: the count is exactly 4 now, and building the workshop adds a building landmark, raising it above 4.\n\nPer your instruction, I did not act on the accepted proposal — execution tools remain withheld. No further queue items are pending.",
+      "mediaUrl": null
+    }
+  ],
+  "usage": {
+    "input": 10212,
+    "output": 2639,
+    "cacheRead": 28928,
+    "cacheWrite": 0,
+    "reasoningTokens": 1595,
+    "total": 41779,
+    "cost": {
+      "total": 0.006843014
+    }
+  },
+  "costUsd": 0.006843014,
+  "codeModeEngaged": false,
+  "assistantTurns": 5,
+  "toolSummary": {
+    "calls": 12,
+    "tools": [
+      "df-overseer__queue__pending",
+      "df-overseer__landmarks__list",
+      "df-overseer__connectivity__report",
+      "df-overseer__connectivity__check",
+      "df-overseer__landmarks__get",
+      "df-overseer__stuckjobs__find",
+      "df-overseer__overview__get",
+      "df-overseer__queue__rule"
+    ],
+    "failures": 0
+  },
+  "model": "deepseek-v4-pro",
+  "provider": "deepseek",
+  "sessionId": "5b55b527-0dab-497d-86c5-84c9a2cec38f"
+}
