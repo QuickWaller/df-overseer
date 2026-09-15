@@ -28,7 +28,7 @@ Everything below is what is still open.
   pending prediction (`due_game_tick` 12276077). Nothing has ruled on it and
   no grader runs on a schedule. → register 2026-09-15 rows,
   `handoffs/2026-09-15-queue-live-deploy.md`.
-- **Tests:** ambient `python -m pytest` gives 252 passed, 1 skipped;
+- **Tests:** ambient `python -m pytest` gives 276 passed, 1 skipped;
   `.venv-dfmcp` gives 152 for `dfmcp/tests`.
 
 ### START HERE, in priority order

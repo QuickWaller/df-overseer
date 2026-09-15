@@ -30,7 +30,7 @@ learning architecture.
 >   above is design or proposal unless marked verified.
 >
 > **Traps before running anything:**
-> - Ambient `python -m pytest` gives **252 passed, 1 skipped**; the skip is
+> - Ambient `python -m pytest` gives **276 passed, 1 skipped**; the skip is
 >   correct (transport tests guard their pinned SDK import). Run `dfmcp/tests`
 >   in `.venv-dfmcp` for all **152**. `py -3` here is a 3.13 without pytest:
 >   use `python`.
