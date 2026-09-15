@@ -63,11 +63,15 @@ roles:
     dir: marshal
     kind: advisor
     blocked_on: >-
-      No trustworthy threat signal and no write tools. `unit-status hostile` is
-      verified unreliable in both directions, and the event layer has the same
-      blind spot by construction (`INVASION` fires only for registered
-      invasions, not ambushes, thieves or aggressive wildlife). A purpose-built
-      detector is required work first.
+      No write tools. `unit-status hostile` is still verified unreliable in
+      both directions and the event layer has the same blind spot by
+      construction (`INVASION` fires only for registered invasions, not
+      ambushes, thieves or aggressive wildlife) -- but the purpose-built
+      detector this used to say was required work first now exists and is
+      live-verified (`threat.scan`, 2026-09-12, admits by reachability not by
+      danger flag; currently granted to the Overseer only). What still blocks
+      this role is the write-tool half: no military posture/squad/burrow
+      action tools exist yet.
     summary: Military posture, burrows, squads, equipment, training, post-fight triage. Deliverable is playbooks, not live orders.
 
   chronicler:

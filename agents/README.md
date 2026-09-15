@@ -2,9 +2,14 @@
 
 The roster. One directory per role, one file you edit to change who is on it.
 
-**Status 2026-09-12: this describes a roster, it does not yet drive one.** The
-MCP server these allowlists reference does not exist, so nothing here is
-running. Said plainly so a fresh session does not assume otherwise.
+**Status 2026-09-16: the MCP server these allowlists reference is live on
+VM 103, and two of the three enabled roles have run against it for real** --
+architect and overseer, each as a one-shot openclaw `agent exec` on VM 106,
+never as a resident service. Architect wrote the first real queue proposal
+(`proposal-0001`, 2026-09-15); overseer ruled on it (`ruling-0001`, accepted,
+2026-09-16). Consultant has not yet made a real call. So this still describes
+a roster rather than a running loop, but "nothing here is running" is no
+longer true. → `decisions/DECISIONS.md` 2026-09-14 to 2026-09-16 rows.
 
 ## The contract
 
