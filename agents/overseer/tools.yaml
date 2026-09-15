@@ -2,12 +2,14 @@
 #
 # A role IS its allowlist (principle 8). This file, not the charter, is the
 # enforced boundary. Ids are the canonical scheme resolved against
-# scripts/dfhack/TOOLS.yaml by mcp/registry.py: see mcp/README.md for the
+# scripts/dfhack/TOOLS.yaml by dfmcp/registry.py: see dfmcp/README.md for the
 # scheme itself: strip the df-overseer- prefix and .lua suffix, take the
 # command's leading verb, join with a dot, e.g. "df-overseer-openarea.lua"
-# plus "build W H ..." becomes "openarea.build". mcp/roles.py resolves this
+# plus "build W H ..." becomes "openarea.build". dfmcp/roles.py resolves this
 # file against the registry and refuses to load if an id here does not
-# exist there.
+# exist there. Package renamed mcp/ -> dfmcp/ 2026-09-12
+# (decisions/DECISIONS.md); this comment predated the rename and was
+# corrected 2026-09-16.
 #
 # `status: exists`  -> deployed and live-verified on VM 103 today.
 # `status: planned` -> referenced by the design, not built. Must not be assumed.
@@ -45,9 +47,13 @@ read:
     note: >-
       Added 2026-09-12. The purpose-built replacement for `labor.unit-status
       hostile`: admits units by reachability rather than by a danger flag. Its
-      own output labels flag-derived fields HEURISTIC. **Never run against a
-      live fort as of writing**, so treat its silence as unproven rather than
-      as all-clear.
+      own output labels flag-derived fields HEURISTIC. **Live-verified
+      2026-09-12** against both failures that motivated it: correctly
+      admitted a fox and a weasel by shared walkable group with no danger
+      flag, correctly excluded two demons that do carry danger flags
+      (decisions/DECISIONS.md 2026-09-12, "Threat detector LIVE-VERIFIED").
+      Remaining unknowns: wildlife-noise volume on a larger fort, no ambush
+      or sneaking-creature case tested.
   - id: "breach.check"
     status: exists
     reliability: HEURISTIC

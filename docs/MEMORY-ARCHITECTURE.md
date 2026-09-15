@@ -190,6 +190,12 @@ hypothesis/evidence model above is preferred over anything statistical.
 Raising the FPS cap buys more forts per month at the cost of watchability. That
 trade is worth making deliberately, not by accident.
 
+**Finding, 2026-09-15 (orchestrator, measured live):** the deployed fort runs
+at `FPS_CAP` 100, not 5 (`docs/PURPOSE.md` "Operating parameters"), so the
+~3-forts-per-month estimate above is a design-time figure at a cap that was
+never actually applied, not a measurement of the live fort's pace. Not
+re-derived here.
+
 ### The ambitious version: deliberate experimentation
 
 Passive learning waits for variation to occur. The stronger version has the

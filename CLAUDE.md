@@ -5,7 +5,7 @@ story without you. See **[docs/PURPOSE.md](docs/PURPOSE.md)** for what this is
 and why, and **[docs/MEMORY-ARCHITECTURE.md](docs/MEMORY-ARCHITECTURE.md)** for the overseer's memory and
 learning architecture.
 
-> **Status, 2026-09-15.** Current work and next steps: `Working.md` ("START
+> **Status, 2026-09-16.** Current work and next steps: `Working.md` ("START
 > HERE"). History: `decisions/DECISIONS.md`, `working-archive/`, `evals/live/`.
 >
 > - **The fort.** VM 103 (`df-colony-01`) runs **Uniboslan, "Ragwind,"** the
@@ -24,13 +24,22 @@ learning architecture.
 > - **`dfqueue/`**, the proposal queue: SQLite, validated at write time, live
 >   since 2026-09-15 (`queue.propose`/`pass` for the architect,
 >   `queue.rule`/`pending` for the Overseer). Architect run #3 wrote the first
->   real proposal; nothing has ruled on it and no grader runs on a schedule.
+>   real proposal; the Overseer accepted it 2026-09-16 (`ruling-0001`, one
+>   sample on a cheap model, not evidence of good arbitration). The fort was
+>   kept paused at tick 12274877 under the user's standing rule until
+>   2026-09-15 23:03 UTC, then unpaused and left running unattended with no
+>   Sentry (register). At the fort's real cap (`FPS_CAP` 100, not the 5
+>   several docs assumed) `proposal-0001`'s 1200-tick prediction window
+>   elapsed within about a minute, unexecuted, so grading it now would record
+>   a miss caused by wall-clock latency between ruling and execution, not a
+>   bad proposal. No grader runs on a schedule regardless.
 > - **Incident capture** on VMs 103 and 106 (guest agent, persistent journal,
 >   a netwatch dump on gateway loss), with `docs/RUNBOOK-DARK-GUEST.md`. VM 106
 >   went dark on 2026-09-14, cause unknown; it was rebuilt in place.
-> - **Agents.** openclaw on VM 106 runs one-shot `agent exec` on DeepSeek; no
->   agent runs as a service. Everything in `docs/` and `research/` beyond the
->   above is design or proposal unless marked verified.
+> - **Agents.** openclaw on VM 106 has run two agents one-shot via `agent
+>   exec` on DeepSeek: architect (proposals) and overseer (rulings). No agent
+>   runs as a service. Everything in `docs/` and `research/` beyond the above
+>   is design or proposal unless marked verified.
 >
 > **Traps before running anything:**
 > - Ambient `python -m pytest` gives **276 passed, 1 skipped**; the skip is

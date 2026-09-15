@@ -6,9 +6,15 @@
 # Design: docs/AGENT-ARCHITECTURE.md (§3 roster, §11 modularity).
 # Decisions: decisions/DECISIONS.md 2026-09-12 rows.
 #
-# STATUS 2026-09-12: nothing here is running yet. The MCP server these
-# allowlists reference does not exist, so this file currently describes a
-# roster rather than driving one. Marked honestly rather than implied live.
+# STATUS 2026-09-16: the MCP server these allowlists reference is live on
+# VM 103 (dfmcp-server.service), and two of the three enabled roles have
+# actually run against it: architect and overseer, each as a one-shot
+# openclaw `agent exec` on VM 106, not as a resident service. architect
+# wrote the first real queue proposal (proposal-0001, 2026-09-15) and
+# overseer ruled on it (ruling-0001, accepted, 2026-09-16). consultant has
+# not yet made a real call. No role runs continuously; this file still
+# describes a roster, not a running loop. → decisions/DECISIONS.md
+# 2026-09-14 to 2026-09-16 rows.
 
 schema_version: 1
 fort: Uniboslan            # "Ragwind", VM 103. One roster per fort.
@@ -57,11 +63,15 @@ roles:
     dir: marshal
     kind: advisor
     blocked_on: >-
-      No trustworthy threat signal and no write tools. `unit-status hostile` is
-      verified unreliable in both directions, and the event layer has the same
-      blind spot by construction (`INVASION` fires only for registered
-      invasions, not ambushes, thieves or aggressive wildlife). A purpose-built
-      detector is required work first.
+      No write tools. `unit-status hostile` is still verified unreliable in
+      both directions and the event layer has the same blind spot by
+      construction (`INVASION` fires only for registered invasions, not
+      ambushes, thieves or aggressive wildlife) -- but the purpose-built
+      detector this used to say was required work first now exists and is
+      live-verified (`threat.scan`, 2026-09-12, admits by reachability not by
+      danger flag; currently granted to the Overseer only). What still blocks
+      this role is the write-tool half: no military posture/squad/burrow
+      action tools exist yet.
     summary: Military posture, burrows, squads, equipment, training, post-fight triage. Deliverable is playbooks, not live orders.
 
   chronicler:

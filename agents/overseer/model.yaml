@@ -39,3 +39,11 @@ selection:
   # replay a recorded snapshot, compare decisions against known-good answers.
   # Until that suite exists, this model choice is a reasoned default, not a
   # measured one. Said plainly rather than implied.
+
+# NOTE 2026-09-16: the first real ruling (ruling-0001, proposal-0001 accepted)
+# ran on deepseek/deepseek-v4-pro, not this file's anthropic/claude-opus-5 --
+# a deliberate, recorded deviation for budget on a first live test, not a
+# change to the design default above. One sample, charter-clean but not
+# evidence of good arbitration (it judged an unattributable prediction
+# sound). → decisions/DECISIONS.md 2026-09-16,
+# handoffs/2026-09-15-overseer-first-ruling.md.

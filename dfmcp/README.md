@@ -3,10 +3,13 @@
 The permission seam, the RPC client that talks to DFHack, and (as of
 `server.py`) the MCP server that ties both to an actual transport. This is
 the whole of `docs/AGENT-ARCHITECTURE.md` §13 item 5's "one remaining
-missing half" -- **built, per `handoffs/2026-09-12-mcp-transport.md`, but
-not deployed anywhere: nothing in this package has met a real DFHack or a
-real MCP client outside this repo's own test suite.** See `server.py`'s own
-section below for exactly what that leaves unproven.
+missing half" -- **built, per `handoffs/2026-09-12-mcp-transport.md`, and
+since deployed: `dfmcp-server.service` runs as a durable, enabled systemd
+unit on VM 103 (LAN-bound, bearer tokens the only guard until Tailscale),
+live-verified against real DFHack (2026-09-14) and called for real by
+openclaw on VM 106 (2026-09-14/15), including the queue tools below.** See
+`server.py`'s own section below, and "What remains unproven" further down,
+for exactly what is still not covered.
 
 Five of the six modules answer exactly one question, mechanically and at
 load time: **given a role and a tool id, is the call allowed, and why or why
@@ -725,34 +728,53 @@ This is the mechanical input `docs/AGENT-ARCHITECTURE.md` §10 expects for
 
 ### What remains unproven, stated plainly
 
-- **Nothing here has met a real DFHack.** `FakeDFHackServer` speaks the
-  handshake and framing bytes independently of `dfhack_client.py`'s own
-  codec, but it is still a hand-written stand-in, not DFHack 53.16-r1.1
-  itself. `dfhack_client.py`'s own README section above already names this
-  gap for the RPC layer; `server.py` inherits it unchanged.
-- **Nothing here has run under `uvicorn`, or bound a real socket, or been
-  reached by a real HTTP client on another host.** ASGITransport calls the
-  ASGI app directly in the same process; it proves the app's own logic and
-  wire-shape handling, not that `uvicorn.Server(...)` serves it identically,
-  or that a real TCP round trip (TLS-less, tailnet-internal) behaves the
-  same as an in-memory function call.
-- **Nothing here has been reached by openclaw, or any MCP client other than
-  the reference Python SDK's own `ClientSession`.**
-  `research/2026-09-12-openclaw-mcp-auth.md`'s own "not verified" list
-  names the concrete follow-up (point a throwaway openclaw agent's
-  `mcp.servers.<name>` entry at a real running instance of this server) --
-  still not done, and out of scope for an in-process test by construction.
+- **UPDATED 2026-09-14/15: most of this section is resolved.** `FakeDFHackServer`
+  in-process testing is still how the ordinary suite runs (unchanged, see
+  below), but the gaps this section used to describe are now closed against
+  the real thing: real DFHack (smoke test, both ways below), a real bound
+  socket under `uvicorn` on VM 103, and a real caller on another host
+  (openclaw on VM 106, over curl and over a real MCP client). What is left
+  open is narrower, listed after the superseded text.
+- ~~Nothing here has met a real DFHack.~~ **RESOLVED 2026-09-14.** The live
+  smoke test on VM 103 ran the real `mcp==2.2.0` SDK over a bound socket
+  against the real fort: init, per-role `tools/list`, the advisor refusal
+  path, and the DFHack pool doing concurrent real `RunCommand` round trips.
+  One real bug this found (array `structuredContent`, see "Call results"
+  above) was fixed and re-verified live the same day. `FakeDFHackServer`
+  still speaks the handshake and framing bytes independently of
+  `dfhack_client.py`'s own codec for the ordinary unit-test suite, which is
+  fine for what that suite is for; it is no longer the only thing that has
+  exercised this code.
+- ~~Nothing here has run under `uvicorn`, or bound a real socket, or been
+  reached by a real HTTP client on another host.~~ **RESOLVED 2026-09-14.**
+  `dfmcp-server.service` runs `python -m dfmcp.server` under `uvicorn` as a
+  durable, enabled systemd unit on VM 103's LAN address, survives restart,
+  and has been reached by curl and by a real SDK client from VM 106 across
+  the network, not just in-process.
+- ~~Nothing here has been reached by openclaw, or any MCP client other than
+  the reference Python SDK's own `ClientSession`.~~ **RESOLVED 2026-09-14/15.**
+  openclaw on VM 106 has called this server for real, one-shot via
+  `agent exec`, as both the architect (read tools, then `queue.propose`,
+  writing `proposal-0001`) and the Overseer (`queue.rule`, accepting it as
+  `ruling-0001`). Both roles are one-shot calls, not a running service.
 - **The DNS-rebinding-protection auto-configuration path
   (`Server.streamable_http_app`'s loopback-only branch) is deliberately
   never exercised by this test suite** -- see `dfmcp/tests/test_server.py`'s
   own module docstring for why (an in-process ASGI transport's arbitrary
   Host header would just fail that check for reasons unrelated to the
-  behaviour under test). Binding a real loopback address in a real process
-  and confirming the Host-header check actually rejects a spoofed one is a
-  live-server test this stream did not run.
-- **The systemd unit (`infra/dfmcp-server.service.example`) has never been
-  installed or started.** Its `User=`/`Group=`/path placeholders are
-  unverified against VM 103's actual layout.
+  behaviour under test). Still not separately proven live, though it is now
+  moot for the current bind: the server binds VM 103's real LAN address, not
+  loopback, so this branch does not apply as deployed today.
+- ~~The systemd unit (`infra/dfmcp-server.service.example`) has never been
+  installed or started.~~ **RESOLVED 2026-09-14.** The real unit differs
+  from the example on purpose (`After=df-fortress.service`, never
+  `Requires=`); deployed, enabled, active, `NRestarts=0` at last check.
+- **Still genuinely open:** whether the deployed code is byte-identical to
+  `main` depends on the deploy method -- an earlier plain `scp` left the VM's
+  copy CRLF (harmless to Python/SQLite, but breaks a naive sha256 check;
+  deploy with `git -c core.autocrlf=false archive`, `docs/TRAPS.md`). Load
+  under many concurrent real agents is untested (every live run so far has
+  been one `agent exec` at a time).
 
 ## What this package deliberately does not do
 
@@ -778,17 +800,22 @@ This is the mechanical input `docs/AGENT-ARCHITECTURE.md` §10 expects for
   connection), no output sanitising (colour is a field this client never
   reads, not something stripped from `text`), no heartbeat/keepalive (none
   exists on the wire -- research doc §7 -- so this module does not
-  pretend to poll for one), no live verification against VM 103 or any
-  real DFHack process.
+  pretend to poll for one). **As of this original build stream: no live
+  verification against VM 103 or any real DFHack process** -- since
+  superseded, see "What remains unproven" above (RESOLVED 2026-09-14).
 - **`server.py` adds no scope beyond what its own section above states.**
   No token issuance, no OAuth authorization server (the two placeholder
   URLs in `AuthSettings` are never dereferenced by anything this design
-  configures), no TLS termination (the tailnet's job, not this server's),
-  no caching or hot-reload of the registry/roster (both loaded once at
-  startup), no retry/backoff around DFHack calls beyond what
-  `DFHackConnectionPool` already does on its own, and -- per this stream's
-  explicit instruction -- no deployment: it was never run against VM 103
-  or VM 106, and nothing it produces was installed or started anywhere.
+  configures), no TLS termination (this server binds VM 103's LAN address
+  directly, no TLS in front of it -- Tailscale is deferred, see
+  `docs/AGENT-ARCHITECTURE.md` §13), no caching or hot-reload of the
+  registry/roster (both loaded once at startup), no retry/backoff around
+  DFHack calls beyond what `DFHackConnectionPool` already does on its own.
+  **As of this original build stream, per its explicit instruction -- no
+  deployment: it was never run against VM 103 or VM 106, and nothing it
+  produces was installed or started anywhere.** That has since changed: see
+  the file header and "What remains unproven" above. `dfmcp-server.service`
+  has run continuously on VM 103 since 2026-09-14.
 
 ## Things found while doing this that are worth flagging back
 
