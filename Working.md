@@ -65,13 +65,28 @@ manager work orders, and none to trade. `proposal-0001` (accepted by the
 Overseer 2026-09-16) could not be executed even with the execution tools
 switched on.
 
-**In flight right now:** a Sonnet `researcher` on DF food and drink logistics
-and the tool list this repo would need, committing
-`research/2026-09-16-food-and-drink-logistics.md` on its own worktree branch
-(`git branch --list 'worktree-agent-*'` to find it, then merge and review).
-It was dispatched because the user asked for research first, then an agent to
-build the tools: "it would be good to learn how to build the tools as we do
-it".
+**Research landed and is merged on `main`:**
+`research/2026-09-16-food-and-drink-logistics.md`, dispatched because the user
+asked for research first, then an agent to build the tools ("it would be good
+to learn how to build the tools as we do it"). Its findings, orchestrator
+spot-checked against `memory/dfhack-environment.md`:
+- **Trade is buildable but not closeable.** A depot can be built (quickfort),
+  and `logistics add trade` can stage goods, but no struct-level API was found
+  for executing the trade itself, only the trade viewscreen, which this repo
+  bars outside embark bootstrap.
+- **Gathering needs activity zones, and the `zone` plugin is unavailable on
+  this install** (confirmed in `memory/dfhack-environment.md`'s unavailable
+  list, alongside `stocks` and `workflow`). No zone tooling exists here.
+- **A farm is the sound long-term path and the slowest**: dig, build, a season,
+  a harvest, then a still or kitchen linked before anything is edible.
+- **The cheapest real win is manager orders**: `workorder` is available and is
+  the only route to them; `orders import library/basic` brings a DFHack-authored
+  food and drink standing-order set with no new Lua.
+- **Biggest missing read tool:** nothing can distinguish fort-owned stores from
+  foreign goods, which is exactly the mistake made today.
+- **Genuinely unknown on this install:** `seedwatch`, `buildingplan`,
+  `autofarm`. Check these before building against them.
+- **Unresolved:** how long the caravan waits.
 
 **The user's framing:** losing this fort is acceptable ("we can always delete
 the fort and restart"), so nothing here is an emergency. Learning the tool
