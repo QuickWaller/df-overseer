@@ -20,8 +20,8 @@ Everything below is what is still open.
   log in journald.
 - **The agent host:** openclaw on VM 106 has run the architect three times as
   a one-shot `agent exec` on DeepSeek. VM 106 went dark after run #3 and was
-  rebuilt in place 2026-09-15. openclaw is reinstalled; its architect MCP token
-  must be relayed again before the next run.
+  rebuilt in place 2026-09-15. openclaw is reinstalled and now hosts two agents,
+  architect and overseer, with both MCP tokens in place (2026-09-16).
 - **Incident capture** (guest agent, persistent journal, per-minute netwatch
   dump on gateway loss) is live on VMs 103 and 106 since 2026-09-15. A new
   clone needs `provision_vm.py setup-capture --vmid N` run by hand. **Why
@@ -30,31 +30,26 @@ Everything below is what is still open.
 - **The queue is live** (2026-09-15): `queue.propose`/`pass` (architect) and
   `queue.rule`/`pending` (Overseer) on VM 103, DB under `/var/lib/dfmcp`.
   It holds one real record, `proposal-0001` from architect run #3, with a
-  pending prediction (`due_game_tick` 12276077). Nothing has ruled on it and
-  no grader runs on a schedule. → register 2026-09-15 rows,
+  pending prediction (`due_game_tick` 12276077), accepted by the Overseer
+  2026-09-16. No grader runs on a schedule, and the paused fort means nothing
+  comes due. → register 2026-09-15 rows,
   `handoffs/2026-09-15-queue-live-deploy.md`.
 - **Tests:** ambient `python -m pytest` gives 276 passed, 1 skipped;
   `.venv-dfmcp` gives 152 for `dfmcp/tests`.
 
 ### START HERE, in priority order
 
-1. **One supervised end-to-end cycle: the Overseer rules on `proposal-0001`.**
-   The first test of the project's thesis. Any execution needs the user's
-   approval. **Dispatched 2026-09-15** (`handoffs/2026-09-15-overseer-first-ruling.md`):
-   decided with the user, the Overseer is a second agent in VM 106's openclaw
-   (own workspace, own MCP entry and token, openclaw-side tool scoping plus
-   dfmcp's per-token roles), on `deepseek-v4-pro` for budget rather than Opus,
-   ruling only (no execution tools), $0.10 cap. Secrets out of config and
-   state per `research/2026-09-15-openclaw-secret-storage.md`.
-   **Blocked 2026-09-16 at token placement:** the auto-mode classifier refuses
-   any session write to VM 106's openclaw secrets file ("Secret-Store
-   Writes"). Config and charter are built and schema-valid
-   (`evals/live/2026-09-15-overseer-first-ruling/`; multi-agent rosters need
-   `agents.ownership: "explicit"`). **Next step: the user runs the token
-   placement script, then resume at the brief's steps 4-7.** Also found: the
-   DeepSeek env SecretRef resolves but is shadowed by the plaintext
-   `deepseek:manual` auth profile (`REF_SHADOWED`); removing that profile was
-   refused too.
+1. **Next cycle step: execute `proposal-0001`, which the Overseer accepted
+   2026-09-16** (`ruling-0001`, `deepseek-v4-pro`, $0.0068;
+   `evals/live/2026-09-15-overseer-first-ruling/` and the handoff's orchestrator
+   review). **The fort is paused** at tick 12274877 (the user's standing rule),
+   so executing and grading both need the fort to run: **the user's call on
+   unpausing.** Execution also needs the Overseer's execution tools allowed and
+   the user's go-ahead. The ruling judged an unattributable prediction "sound"
+   (n=1); worth a second sample before trusting arbitration.
+   Setup now on VM 106: two openclaw agents (`architect`, `overseer`), one MCP
+   entry and token each in the secrets env file (placed by the user), the
+   DeepSeek env SecretRef configured but shadowed by the plaintext profile.
 2. **A grader schedule**, so `proposal-0001`'s prediction actually grades (it
    is probably due already). Then the rest of the feed:
    1. a publisher of `dfqueue.render.public_view` only (allowlist and kill

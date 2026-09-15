@@ -269,3 +269,28 @@ requirement.
 
 **Docs updated by this continuation**: this section, and this stream's row
 in `handoffs/INDEX.md`.
+
+## Orchestrator review, 2026-09-16
+
+Merged. Checked against primary sources, not the report:
+- **The ruling is real.** VM 103's queue DB (read-only) holds `ruling-0001`,
+  `role=overseer`, `decision=accept`, `proposal_id=proposal-0001`; the
+  server's call log shows the `queue.rule` call under role `overseer`. The
+  prediction row is still `pending`.
+- **Not stale, because the fort is paused.** `dfhack-run` reads absolute tick
+  12274877 with `pause_state` true, twice 20 seconds apart: the same tick the
+  proposal was written at on 2026-09-14. The pause is the user's standing
+  rule (register). So the ruling's `cycle` is correct, and **nothing can
+  execute or grade until the fort runs**: `proposal-0001`'s prediction is due
+  1200 ticks after a clock that is not moving. The grader schedule does not
+  help on its own.
+- **Judgment, n=1.** Charter-clean: no action, no coordinate, no
+  reinterpretation, preconditions re-checked with its own tools. Weaker on
+  the prediction: it called `fort.landmarks.count gt 4` "sound" and said the
+  workshop "will raise the landmark count", but building a workshop only
+  changes that count if a landmark is registered for it, and any other new
+  landmark satisfies it too. The architect run #3 review already flagged the
+  prediction as unattributable; the Overseer did not catch it. It also did not
+  mention the pause. A plumbing pass, not evidence of good arbitration.
+- $0.0068 on `deepseek-v4-pro`. The DeepSeek plaintext profile still shadows
+  the env SecretRef.
