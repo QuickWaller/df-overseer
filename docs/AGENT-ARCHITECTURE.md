@@ -33,9 +33,30 @@ communicate, what they read, and how they learn.
 > server built from the same wire spec, so any divergence between the VM's
 > actual binary and the source the research read would pass all 136.
 >
-> **Still not started:** the Sentry, Triage, the queue, snapshots, and
-> playbooks. Those remain design, and the rest of this document is still a
-> design artifact.
+> **Still not started:** the Sentry, Triage, snapshots, and playbooks. Those
+> remain design, and the rest of this document is still a design artifact for
+> the parts it covers that are not listed below as built.
+>
+> **UPDATED 2026-09-15/16: the queue exists and two agents have called the
+> fort for real, no longer a design.** `dfqueue/` (§4) is a write-time
+> validated SQLite queue, live on VM 103 since 2026-09-15 as MCP tools
+> (`queue.propose`/`pass` for the architect, `queue.rule`/`pending` for the
+> Overseer, role read from the credential per §13). openclaw on VM 106 has run
+> both roles as one-shot `agent exec` calls, not as services: architect run #3
+> wrote the first real proposal (`proposal-0001`, a `workshop_siting` record
+> with a falsifiable prediction), and a second openclaw agent as the Overseer
+> ruled on it 2026-09-16 (`ruling-0001`, accepted, `deepseek/deepseek-v4-pro`
+> for budget rather than the roster's `anthropic/claude-opus-5` default, a
+> deliberate deviation). **This is one ruling on a cheap model, charter-clean
+> but not evidence of good arbitration**: it judged an unattributable
+> prediction sound and did not mention that the fort was paused. The live fort
+> was paused at tick 12274877 under the user's standing rule through
+> 2026-09-16 (register), so neither the proposal's execution nor its
+> prediction's grading could run yet, and no grader runs on a schedule.
+> §8's public feed (a publisher plus the stream page) is not built. →
+> `decisions/DECISIONS.md` 2026-09-14 to 2026-09-16 rows,
+> `handoffs/2026-09-15-queue-live-deploy.md`,
+> `handoffs/2026-09-15-overseer-first-ruling.md`.
 
 Companion documents: [`PURPOSE.md`](PURPOSE.md) for the design commitments this
 must not break, [`MEMORY-ARCHITECTURE.md`](MEMORY-ARCHITECTURE.md) for the
@@ -1066,9 +1087,13 @@ The boundary is the MCP HTTP endpoint between openclaw's VM and VM 103.
    experiment that would settle it is named in the brief.
    → `research/2026-09-12-openclaw-mcp-auth.md`.
 
-Transport: MCP over HTTP on the tailnet, never publicly exposed. openclaw
-supports remote MCP servers with OAuth/TLS, so authentication does not need
-inventing.
+Transport: MCP over HTTP, never publicly exposed. openclaw supports remote MCP
+servers with OAuth/TLS, so authentication does not need inventing. **As
+actually deployed, 2026-09-14:** `dfmcp-server.service` binds VM 103's LAN
+address, not a tailnet; Tailscale is deferred, so the LAN has no firewall on
+either guest and **the bearer tokens are the only guard on this endpoint** — a
+deliberate, reversible trade the user made, not an oversight. → register
+2026-09-14.
 
 ### Upstream obligation, DISCHARGED 2026-09-12
 
