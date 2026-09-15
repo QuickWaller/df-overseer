@@ -19,8 +19,9 @@ Everything below is what is still open.
   relative `level` args, `isError` for script errors, and a JSON tool-call
   log in journald.
 - **The agent host:** openclaw on VM 106 has run the architect three times as
-  a one-shot `agent exec` on DeepSeek. **VM 106 has been unreachable since
-  run #3** (see "Open, waiting on the user").
+  a one-shot `agent exec` on DeepSeek. VM 106 went dark after run #3 and was
+  rebuilt in place 2026-09-15. openclaw is reinstalled; its architect MCP token
+  must be relayed again before the next run.
 - **The queue is live** (2026-09-15): `queue.propose`/`pass` (architect) and
   `queue.rule`/`pending` (Overseer) on VM 103, DB under `/var/lib/dfmcp`.
   It holds one real record, `proposal-0001` from architect run #3, with a
@@ -53,27 +54,32 @@ Everything below is what is still open.
    `evals/live/2026-09-15-architect-third-charter/README.md` review section.
 4. **The `set_labor`/`autolabor` race**, a live single-writer violation that
    is small to fix.
+5. **Incident capture for project VMs**, so a guest going dark leaves a
+   record (VM 106 on 2026-09-14 left none). Discussed with the user
+   2026-09-15, not yet briefed. It goes into `scripts/provision_vm.py` so
+   VM 103 gets it too.
+   - Install `qemu-guest-agent` (never installed, TRAPS.md).
+   - Keep the journal on disk.
+   - A per-minute timer that, on first loss of the gateway, dumps `ip addr`,
+     `ip route`, `ip neigh` (does the gateway resolve, and to which MAC),
+     `arping -D` on its own address (another host claiming it), docker
+     networks, failed units, disk, memory and the last 15 minutes of journal,
+     to a file and a summary to the serial console.
+   - A script for the attach-and-read route, proven by the rebuild. Its
+     token needed no new rights, so **no guest-agent rights for the token**
+     for now.
+   - The runbook's first step: a full stop/start, not a reset.
 
 ### Open, waiting on the user
 
-- **VM 106 is unreachable, and a reset did not fix it.** It went dark after
-  run #3 (reachable 23:17-23:35 UTC 2026-09-14, then zero CPU and no outbound
-  traffic with 1.3 GB in use). **Reset via the Proxmox API 2026-09-15 00:36
-  UTC, user's go-ahead:** it booted for about a minute (CPU, disk reads and
-  traffic rose, memory 525 MB) then went idle again, with no ping, no port 22
-  and no guest agent through 00:40. Config looks normal (`net0` on `vmbr0`, not
-  link-down; `agent: enabled=1`; console on `serial0`). The user read the
-  serial console: it reaches a login prompt, so the guest is up and its
-  networking is what is gone. **home-lab-fe checked (2026-09-15):** no estate
-  network change on record in that window (though its records stop at
-  2026-09-12), no address collision in its IP registry, VMs 100/101/150/151/156
-  untouched since 2026-09-06, and no console or host access of its own.
-  **Rebuild dispatched 2026-09-15** (user's go-ahead) to a Sonnet executor:
-  in place with the same VMID, name, memory and address, the old disk kept
-  readable to find the cause, a reachability check after each install step.
-  → `handoffs/2026-09-15-vm106-rebuild.md`. **When it reports:** ask the user
-  before deleting the old disk; tell home-lab-fe "no diff" if VMID, name and
-  address held.
+- **VM 106's old disk: delete it?** VM 106 was rebuilt in place 2026-09-15
+  and is reachable, with openclaw reinstalled and no MCP token. Its old disk
+  is still attached read-only as `scsi1` (25G on the sandbox storage), kept
+  in case the incident needs another read. **Why it went dark is not
+  established**: the old journal shows a healthy guest, and the rebuild
+  changed disk and host-side tap together. Register 2026-09-15 row and
+  `handoffs/2026-09-15-vm106-rebuild.md` (orchestrator review). Also set
+  `discard=on,ssd=1` back on `scsi0` (lost in the swap).
 - **Overseer and consultant tokens were briefly on VM 106** during Phase B's
   live checks (staged under `/tmp`, deleted and confirmed gone by the
   executor), which the 2026-09-14 handoff bars. The brief's fault. Rotate

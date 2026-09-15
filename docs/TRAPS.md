@@ -276,3 +276,22 @@ findings without another doc home yet.
 - **`python3` does not exist on this workstation, and `py -3` is a 3.13
   without pytest.** Use `python` (3.12) for the ambient suite and
   `.venv-dfmcp/Scripts/python` for `dfmcp/tests`.
+
+## Added 2026-09-15, from the VM 106 rebuild
+
+- **Never attach a lineage-cloned disk before a guest's first boot.** Every
+  clone of template 102 shares filesystem UUIDs and `/etc/machine-id`, so with
+  two such disks on the bus the initramfs can mount the wrong one as root.
+  Attaching VM 106's old disk before the fresh disk's first boot booted the
+  hardware-read-only old disk, which looked exactly like a dead network for
+  about 20 minutes. Hot-attach the second disk after boot.
+- **`move_disk` into another VM clears its `boot:` order**, and the rebuild
+  also lost the root disk's `discard=on,ssd=1`. Re-read and restore the full
+  config after any disk swap.
+- **`POST /agent/ping` saying "QEMU guest agent is not running" means nothing
+  on our VMs.** `provision_vm.py build-template` sets `agent: enabled=1` but
+  never installs `qemu-guest-agent`, so the agent has never run.
+- **A PVE reset is not a stop/start.** A reset keeps the QEMU process and its
+  tap device; a stop/start recreates both. On a guest that is healthy inside
+  but unreachable, try a full stop/start before a rebuild. VM 106's cause was
+  never found, partly because the rebuild changed both at once.
