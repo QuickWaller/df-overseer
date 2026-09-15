@@ -221,3 +221,51 @@ happened at all in this stream, since no `agent exec` ever ran.
 **Docs updated by this stream itself** (executors do not own `Working.md`,
 `decisions/DECISIONS.md` or `memory/`; the orchestrator owns those): this
 section, and this stream's row in `handoffs/INDEX.md`.
+
+## Result (steps 4-7), 2026-09-16
+
+**Status: done.** Continued from the prior stream's blocker: the user placed
+both MCP role tokens on VM 106 directly. This stream ran steps 4-7 without
+touching the secrets env-file at all (only ever passed it as `--env-file`,
+per the hard line).
+
+**proposal-0001 is accepted.** `ruling-0001` now exists in
+`/var/lib/dfmcp/Uniboslan.sqlite3` on VM 103 (`role=overseer`,
+`decision=accept`, `cycle=12274877`), verified by direct read-only query,
+not the model's own claim. Full detail, including the two
+previously-undocumented schema/runtime requirements found before spending
+anything (`agents.defaults.systemAgent.agentId`, required for `agent exec`
+in a multi-agent config; the external DeepSeek plugin needing a re-link
+after VM 106's rebuild), the probe results (architect 11 tools, overseer 16,
+both matching the brief exactly), per-agent tool visibility at $0, the run
+itself ($0.006843014 of the $0.10 cap, 1 of 2 allowed attempts, 12 tool
+calls across 8 tools, 0 failures), independent server-side verification
+(the queue database and VM 103's own `dfmcp-server.service` journal, not
+just `run.json`), three refusals (Credential Exploration on a bare
+connectivity test, Credential Materialization on reading the secrets
+file's own key names, Safety Bypass Flag on
+`--acknowledge-install-policy-warning`; none retried through a wrapper),
+and the charter check (no re-derivation, no reinterpretation, no action, no
+self-derived coordinate) is in
+`evals/live/2026-09-15-overseer-first-ruling/README.md`.
+
+**Files in that directory**: `README.md` (rewritten for the completed run),
+`pinned-config.json` (now also carries `agents.defaults.systemAgent.
+agentId`, found this session), `charter-bootstrap.md` (unchanged, reused
+as-is), `run.json`, `run-stderr.txt`, `tool-calls.jsonl` (all new), and
+`queue-export/records.jsonl` / `predictions.jsonl` (updated to the
+post-ruling state). Every new or changed file was scanned for addresses,
+keys and tokens with a positive control (a planted `192.0.2.50` /
+`sk-...` / `Bearer ...` line matched; the real files did not) before this
+commit.
+
+**Cleanup verified**: VM 106's working config copy and workspace `SOUL.md`
+deleted; VM 103's `/tmp` export scratch directory deleted; `docker ps -a`
+empty on VM 106; `ss -tlnp` unchanged from baseline on both hosts. The
+`@openclaw/deepseek-provider` plugin re-link and the `systemAgent.agentId`
+config field are left in place as durable fixes, matching this eval
+series' established precedent of not reversing a discovered-and-fixed
+requirement.
+
+**Docs updated by this continuation**: this section, and this stream's row
+in `handoffs/INDEX.md`.
