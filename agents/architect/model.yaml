@@ -32,3 +32,9 @@ selection:
     read-only and idempotent: replay one recorded snapshot, compare proposals.
     Two models can be A/B'd on the identical situation, which is impossible for
     an actor because an actor changes the world it is tested in.
+
+# NOTE 2026-09-14/15: every real run so far (three charter runs, including
+# the one that wrote proposal-0001) used deepseek/deepseek-v4-flash, not this
+# file's anthropic/claude-sonnet-5 -- a deliberate, recorded deviation for
+# testing budget, not a change to the design default above. → evals/live/,
+# decisions/DECISIONS.md 2026-09-14/15 rows.

@@ -304,3 +304,36 @@ findings without another doc home yet.
   tap device; a stop/start recreates both. On a guest that is healthy inside
   but unreachable, try a full stop/start before a rebuild. VM 106's cause was
   never found, partly because the rebuild changed both at once.
+
+## Added 2026-09-15/16, from the queue live deploy and the Overseer's first ruling
+
+- **A multi-agent openclaw config needs `agents.ownership: "explicit"`,
+  undocumented until this ran into it.** `openclaw config validate` refuses a
+  roster with more than one entry under `agents.entries` unless this field is
+  set at the top level. Found live-validating the architect+overseer roster
+  before either token existed, so it cost nothing, but it will block any
+  future third agent the same way.
+- **`agent exec` in a multi-agent config also needs
+  `agents.defaults.systemAgent.agentId` set**, or the run fails before any
+  network call. Found the same way, on the Overseer's first real run: the
+  schema and `config validate` are silent about this until an actual
+  `agent exec` is attempted, so validating config alone does not catch it.
+- **A pinned config's `_note` documentation key is rejected by the live
+  openclaw config schema** (`Unrecognized key: "_note"`), even though earlier
+  runs' saved `pinned-config.json` copies both carry it. Fails locally,
+  before any network call, so it costs $0, but strip it from the VM's working
+  copy before reuse; keeping it in the repo copy for readability is fine.
+- **An externally-linked openclaw plugin is lost across a VM rebuild.** VM
+  106's `@openclaw/deepseek-provider` plugin needed re-linking after the
+  2026-09-15 rebuild before the Overseer's `agent exec` could resolve the
+  DeepSeek model again -- a rebuild that preserves openclaw's own config
+  directory does not preserve an externally-linked plugin's link.
+- **A `models.providers.<id>.apiKey` SecretRef can resolve cleanly and still
+  never be used, silently.** `openclaw secrets audit` reported the DeepSeek
+  key's env-file SecretRef as resolved (`unresolvedRefCount: 0`), but the key
+  actually used at call time was still the plaintext value in
+  `state/openclaw.sqlite`'s auth profile, because **an auth profile takes
+  precedence over a config-level SecretRef, unconditionally** (`REF_SHADOWED`
+  in the audit output, whose own text says so). A clean secrets audit is not
+  proof a secret is only stored the way you think it is; check which one is
+  actually shadowing the other.

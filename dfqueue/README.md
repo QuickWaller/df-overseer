@@ -4,9 +4,14 @@ The proposal queue: `docs/AGENT-ARCHITECTURE.md` §4's "one append-only record
 per fort... Specialists write proposals to it; the Overseer writes plans and
 decisions to it." Step 1 of the live-stream side panel
 (`decisions/DECISIONS.md` 2026-09-14, "Live-stream side panel"; the fuller
-build order is `handoffs/2026-09-14-proposal-queue.md`). **Local code and
-tests only: no MCP tool, no publisher, no feed page, no model call.** Those
-are steps 2 and 3, not built here.
+build order is `handoffs/2026-09-14-proposal-queue.md`). **UPDATED
+2026-09-15/16: step 1's MCP tools are built and live.** `dfmcp/queue_tools.py`
+exposes `queue.propose`/`pass`/`rule`/`pending` as real MCP tools, deployed on
+VM 103 since 2026-09-15; the architect has written a real proposal through it
+(`proposal-0001`) and the Overseer has ruled on it (`ruling-0001`, accepted,
+2026-09-16). **Still not built: the publisher and the feed page** (§8's steps
+2 and 3) — no model call happens on a schedule, and nothing publishes to a
+public page yet.
 
 **Package name is `dfqueue`, never `queue`.** A local `queue/` directory
 would shadow Python's own stdlib `queue` module for anything run from the
@@ -274,8 +279,21 @@ this function's return value.
 tool layer, four native (non-DFHack) tools merged into `dfmcp`'s registry.
 `dfqueue/store.py` grew one additive query (`pending_proposals`) for
 `queue.pending`, and `agents/architect/tools.yaml` and
-`agents/overseer/tools.yaml` grant the real calls. **Phase A only: local
-code and tests, not deployed.** Nothing in `dfqueue/` runs on VM 103 yet;
-the deploy stream's own report covers shipping this package, `learning/`
-and `dfmcp/queue_tools.py` together, plus a new required env key,
-`MCP_SERVER_QUEUE_DB`, pointing outside the code checkout.
+`agents/overseer/tools.yaml` grant the real calls.
+
+**UPDATED 2026-09-15: Phase B deployed this to VM 103, no longer local-only.**
+The queue DB lives at `/var/lib/dfmcp/Uniboslan.sqlite3`
+(`MCP_SERVER_QUEUE_DB`, a `StateDirectory=dfmcp` path outside the code
+checkout, per Phase B's design). Architect run #3 called `queue.propose`
+through the live service and wrote the first real record, `proposal-0001`
+(`handoffs/2026-09-15-queue-live-deploy.md`). **UPDATED 2026-09-16:** a
+second openclaw agent, the Overseer, called `queue.rule` and accepted it as
+`ruling-0001` (`handoffs/2026-09-15-overseer-first-ruling.md`). **The fort
+was kept paused at tick 12274877 under the user's standing rule until
+2026-09-15 23:03 UTC, then unpaused and left running unattended with no
+Sentry (register).** At the fort's real cap (`FPS_CAP` 100, not the 5 several
+docs assumed), `proposal-0001`'s 1200-tick prediction window elapsed within
+about a minute of that, unexecuted — grading it now would record a miss
+caused by wall-clock latency between ruling and execution, not a verdict on
+the proposal. No grader schedule exists yet regardless (see "What is
+deliberately not here yet").

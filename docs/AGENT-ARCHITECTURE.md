@@ -33,9 +33,35 @@ communicate, what they read, and how they learn.
 > server built from the same wire spec, so any divergence between the VM's
 > actual binary and the source the research read would pass all 136.
 >
-> **Still not started:** the Sentry, Triage, the queue, snapshots, and
-> playbooks. Those remain design, and the rest of this document is still a
-> design artifact.
+> **Still not started:** the Sentry, Triage, snapshots, and playbooks. Those
+> remain design, and the rest of this document is still a design artifact for
+> the parts it covers that are not listed below as built.
+>
+> **UPDATED 2026-09-15/16: the queue exists and two agents have called the
+> fort for real, no longer a design.** `dfqueue/` (§4) is a write-time
+> validated SQLite queue, live on VM 103 since 2026-09-15 as MCP tools
+> (`queue.propose`/`pass` for the architect, `queue.rule`/`pending` for the
+> Overseer, role read from the credential per §13). openclaw on VM 106 has run
+> both roles as one-shot `agent exec` calls, not as services: architect run #3
+> wrote the first real proposal (`proposal-0001`, a `workshop_siting` record
+> with a falsifiable prediction), and a second openclaw agent as the Overseer
+> ruled on it 2026-09-16 (`ruling-0001`, accepted, `deepseek/deepseek-v4-pro`
+> for budget rather than the roster's `anthropic/claude-opus-5` default, a
+> deliberate deviation). **This is one ruling on a cheap model, charter-clean
+> but not evidence of good arbitration**: it judged an unattributable
+> prediction sound and did not mention that the fort was paused. The live fort
+> was kept paused at tick 12274877 under the user's standing rule until
+> 2026-09-15 23:03 UTC, then unpaused and left running unattended with no
+> Sentry (register). At the fort's real simulation cap (`FPS_CAP` 100, not
+> the 5 elsewhere in this document, see §14) `proposal-0001`'s 1200-tick
+> prediction window elapsed within about a minute, unexecuted, so grading it
+> now would record a miss caused by wall-clock latency between ruling and
+> execution, not a verdict on the proposal. No grader runs on a schedule
+> regardless.
+> §8's public feed (a publisher plus the stream page) is not built. →
+> `decisions/DECISIONS.md` 2026-09-14 to 2026-09-16 rows,
+> `handoffs/2026-09-15-queue-live-deploy.md`,
+> `handoffs/2026-09-15-overseer-first-ruling.md`.
 
 Companion documents: [`PURPOSE.md`](PURPOSE.md) for the design commitments this
 must not break, [`MEMORY-ARCHITECTURE.md`](MEMORY-ARCHITECTURE.md) for the
@@ -110,7 +136,8 @@ Code, one call per heartbeat: read the diff since the last cycle, apply
 thresholds, decide whether to wake anyone. **A quiet cycle costs zero tokens.**
 Given how little changes in a minute at `FPS_CAP:5`, most cycles should be
 quiet. This single component is the main defence against the cost profile that
-makes a resident roster unaffordable.
+makes a resident roster unaffordable. **The `FPS_CAP:5` figure is wrong; see
+§14's "Still open" finding, 2026-09-15 (measured live: 100).**
 
 Built on `get_diff_since` (**verified**: live `eventful` callback firing
 confirmed, `decisions/DECISIONS.md` 2026-09-11).
@@ -579,7 +606,8 @@ Scale note, so this is not over-tuned: at `FPS_CAP:5` a tick is 200ms and the
 measured round trips were 0.66s to 1.28s, so **transport overhead currently
 dominates the tick wait.** Throttling to `f = 1` makes the tick wait 1s and
 flips which term dominates. The arithmetic above only bites at low `f` or high
-`k`.
+`k`. **`FPS_CAP:5` is wrong; see §14's "Still open" finding, 2026-09-15
+(measured live: 100, so a tick is ~10ms, not 200ms). Not re-derived here.**
 
 **Pausing is the safe direction while resuming is the sensitive one**
 (`Working.md` records that flipping pause state is gated here), so the asymmetry
@@ -1066,9 +1094,13 @@ The boundary is the MCP HTTP endpoint between openclaw's VM and VM 103.
    experiment that would settle it is named in the brief.
    → `research/2026-09-12-openclaw-mcp-auth.md`.
 
-Transport: MCP over HTTP on the tailnet, never publicly exposed. openclaw
-supports remote MCP servers with OAuth/TLS, so authentication does not need
-inventing.
+Transport: MCP over HTTP, never publicly exposed. openclaw supports remote MCP
+servers with OAuth/TLS, so authentication does not need inventing. **As
+actually deployed, 2026-09-14:** `dfmcp-server.service` binds VM 103's LAN
+address, not a tailnet; Tailscale is deferred, so the LAN has no firewall on
+either guest and **the bearer tokens are the only guard on this endpoint** — a
+deliberate, reversible trade the user made, not an oversight. → register
+2026-09-14.
 
 ### Upstream obligation, DISCHARGED 2026-09-12
 
@@ -1157,6 +1189,18 @@ hours with root cause open.
 - **Two live checks** deliberately not executed by a read-only brief: whether
   the frame cap survives loading a different save in one process, and whether an
   overlay widget renders in this project's headless pipeline.
+- **NEW FINDING, 2026-09-15 (orchestrator, verified live on VM 103 via
+  `dfhack-run` and `stat`): the live fort's actual simulation cap is
+  `FPS_CAP` 100, not 5.** `df.global.enabler.fps = 100.0`, graphics fps 50.0,
+  and the tick clock advances roughly 100 ticks per second of wall time.
+  Every "`FPS_CAP:5`" figure elsewhere in this document (§2 Triage, §6's
+  scale note and §14 item 5's tick-wait arithmetic) is a design-time
+  assumption resting on the wrong number, not a re-measurement — flagged
+  here as a factual correction only. **The reasoning built on top of it
+  (quiet-cycle cost, which term dominates the round trip, the 3-5x
+  persistent-connection estimate) is not rewritten here**; whether any of
+  those conclusions still hold at the real cap is the orchestrator's call,
+  not resolved by this pass.
 - ~~Whether `Core::Update` still runs while paused~~ **ANSWERED 2026-09-12: it
   does.** Pausing preserves fast tool calls; throttling does not. §6 revised.
   One caveat recorded honestly: no unpaused comparison was run, so this is
@@ -1223,6 +1267,9 @@ Not yet gated on anything, and needing a decision:
    round trips.** Today's 0.66-1.28s per call decomposes into per-call SSH
    setup, a `dfhack-run` process spawn, an RPC connect, and only then the
    ~200ms tick wait at `FPS_CAP:5`. **The tick wait is the smallest term**, so:
+   **`FPS_CAP:5` is wrong; see §14's "Still open" finding, 2026-09-15
+   (measured live: 100). Not re-derived here — this stream flags the number,
+   not the conclusion it feeds.**
 
    - **Hold a persistent DFHack RPC connection.** Do not shell out to
      `dfhack-run` per call. This removes both dominant terms and leaves latency

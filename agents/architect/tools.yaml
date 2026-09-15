@@ -1,8 +1,10 @@
 # Architect tool allowlist. READ-ONLY plus one write: propose.
 #
 # Ids are the canonical scheme resolved against scripts/dfhack/TOOLS.yaml by
-# mcp/registry.py: see mcp/README.md for the scheme (strip df-overseer-/.lua,
-# take the command's leading verb, join with a dot).
+# dfmcp/registry.py: see dfmcp/README.md for the scheme (strip df-overseer-/.lua,
+# take the command's leading verb, join with a dot). Package renamed mcp/ ->
+# dfmcp/ 2026-09-12 (decisions/DECISIONS.md); this comment predated the
+# rename and was corrected 2026-09-16.
 # Scoping here is not only a permission boundary: a narrow read set keeps the
 # prompt small, which is cheaper AND keeps this role further under the
 # compliance cliff (§10).
