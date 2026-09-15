@@ -34,6 +34,11 @@ Everything below is what is still open.
   2026-09-16. No grader runs on a schedule, and the paused fort means nothing
   comes due. → register 2026-09-15 rows,
   `handoffs/2026-09-15-queue-live-deploy.md`.
+- **Saves:** under the `df` user's XDG data dir on VM 103 (`Bay 12 Games/
+  Dwarf Fortress/save`), **not** the game directory: slots `autosave 1..3`,
+  `current`, `region1`, `region2`. Two quicksaves wrote `autosave 2` and
+  `autosave 3` on 2026-09-15; `quicksave` rotates slots and needs a render
+  pass, so it can silently do nothing (memory/fort-operations-and-incidents).
 - **Tests:** ambient `python -m pytest` gives 276 passed, 1 skipped;
   `.venv-dfmcp` gives 152 for `dfmcp/tests`.
 
@@ -42,10 +47,14 @@ Everything below is what is still open.
 1. **Next cycle step: execute `proposal-0001`, which the Overseer accepted
    2026-09-16** (`ruling-0001`, `deepseek-v4-pro`, $0.0068;
    `evals/live/2026-09-15-overseer-first-ruling/` and the handoff's orchestrator
-   review). **The fort is paused** at tick 12274877 (the user's standing rule),
-   so executing and grading both need the fort to run: **the user's call on
-   unpausing.** Execution also needs the Overseer's execution tools allowed and
-   the user's go-ahead. The ruling judged an unattributable prediction "sound"
+   review). **The fort was unpaused 2026-09-15 23:03 UTC on the user's say-so**
+   ("and then let the fort run") and is running unattended with no Sentry.
+   It advances about 100 ticks per wall second (`enabler.fps` is 100, not the 5
+   several docs assume), so `proposal-0001`'s 1200-tick prediction window
+   elapsed within a minute, unexecuted: grading it now can only record a miss
+   caused by no one acting, which is a finding about the loop's wall-clock
+   latency, not about the architect. Execution still needs the Overseer's write
+   tools allowed and the user's go-ahead. The ruling judged an unattributable prediction "sound"
    (n=1); worth a second sample before trusting arbitration.
    Setup now on VM 106: two openclaw agents (`architect`, `overseer`), one MCP
    entry and token each in the secrets env file (placed by the user), the
