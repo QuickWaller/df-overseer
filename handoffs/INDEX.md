@@ -45,6 +45,8 @@ here and their own handoff doc.
 
 | VM 106 rebuild + dark-guest diagnosis | [2026-09-15-vm106-rebuild.md](2026-09-15-vm106-rebuild.md) | **DONE 2026-09-15.** Rebuilt in place (config matches original except scsi0 lost `discard=on,ssd=1`; the executor's "exactly" was wrong, see the doc's orchestrator review), old disk preserved (attached, unmounted) and read forensically; nothing in the guest's own logs explains the external-reachability loss, but the guest's own clean ACPI poweroff at 01:31:44 UTC is fully traced to this stream's own opening shutdown call, not a mystery. Openclaw reinstalled and soak-tested reachable at every step; no architect token, no paid model call ($0). One self-caused incident (a root-disk UUID collision from attaching the old disk before first boot) found and fixed within the stream. | VM 106 (whole guest); one temporary never-booted VMID (107, created and deleted); this doc |
 
+| Incident capture for project VMs | [2026-09-15-incident-capture.md](2026-09-15-incident-capture.md) | **Dispatched 2026-09-15.** Guest agent, persistent journal, edge-triggered netwatch dump; attach-and-read script (dry-run only); dark-guest runbook. VM 106 first (plus discard/ssd restore and a simulated outage), then VM 103 with no restarts. | `scripts/provision_vm.py`, new `scripts/` guest unit files, new tests, `docs/RUNBOOK-DARK-GUEST.md` (new), `docs/TRAPS.md` (append), this doc; live VM 106 (`scsi0` config, guest units), VM 103 (guest units only) |
+
 **One thing this first run proved, and it is the reason the commit-as-you-go
 rule in `.claude/agents/executor.md` exists:** the stream's session ended
 mid-run, for the second time in one day. Both deliverables were already
