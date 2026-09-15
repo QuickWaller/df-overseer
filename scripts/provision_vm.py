@@ -7,6 +7,7 @@
                                          [--ip-var DF_VM_IP]
     python scripts/provision_vm.py set-memory --vmid N --memory 6144
     python scripts/provision_vm.py set-onboot [--vmid N] --enable|--disable
+    python scripts/provision_vm.py set-disk-opts --vmid N --disk scsi0 --opts discard=on,ssd=1
     python scripts/provision_vm.py snapshot --name N [--vmid N] [--description D]
     python scripts/provision_vm.py rollback --name N [--vmid N]
     python scripts/provision_vm.py start [--vmid N] [--force]
@@ -846,6 +847,62 @@ def cmd_set_onboot(pve, args):
     log("confirmed by read-back: onboot=%s" % after.get("onboot"))
 
 
+def cmd_set_disk_opts(pve, args):
+    """Add or restore one or more comma-separated options (e.g.
+    'discard=on,ssd=1') on a disk's drive string, keeping everything else in
+    it identical. Applies live -- PVE accepts a disk-option change on a
+    running VM as a pending change; it is not exercised until the VM's next
+    cold stop/start, same as cmd_set_cpu above.
+
+    Written for VM 106's rebuild losing scsi0's discard/ssd
+    (docs/TRAPS.md, "Added 2026-09-15, from the VM 106 rebuild": "the
+    rebuild also lost the root disk's discard=on,ssd=1"), as a named,
+    reviewable command rather than an ad hoc config write -- see
+    handoffs/2026-09-15-incident-capture.md's Report for why this exists as
+    its own subcommand instead of an inline PUT.
+    """
+    vmid = args.vmid or pve.env.get("DF_VMID")
+    if not vmid:
+        raise PVEError("no vmid: pass --vmid or set DF_VMID in .env")
+
+    cfg = pve.get(pve.vm_path(vmid, "/config"))
+    current = cfg.get(args.disk)
+    if not current:
+        raise PVEError("vm %s has no %s to modify" % (vmid, args.disk))
+
+    wanted = [o.strip() for o in args.opts.split(",") if o.strip()]
+    present = [p.strip() for p in current.split(",")]
+    missing = [o for o in wanted
+              if o.split("=")[0] not in (p.split("=")[0] for p in present)]
+    if not missing:
+        log("vm %s: %s already has %s, nothing to do"
+            % (vmid, args.disk, args.opts))
+        return
+
+    new_value = current + "," + ",".join(missing)
+    log("vm %s: %s options %s -> adding %s"
+        % (vmid, args.disk, args.opts, ",".join(missing)))
+
+    pve.put(pve.vm_path(vmid, "/config"), {args.disk: new_value})
+
+    after = pve.get(pve.vm_path(vmid, "/config"))
+    after_value = after.get(args.disk, "")
+    still_missing = [o for o in wanted
+                     if o not in after_value.split(",")]
+    if still_missing:
+        raise PVEError("config still missing %s on %s after the write: %s"
+                       % (still_missing, args.disk, after_value))
+    log("confirmed by read-back: %s = <storage/volume masked>,%s"
+        % (args.disk, ",".join(p for p in after_value.split(",")
+                               if "=" in p or p.startswith("size="))))
+
+    pending = pve.get(pve.vm_path(vmid, "/pending")) or []
+    is_pending = any(p.get("key") == args.disk and "pending" in p
+                    for p in pending)
+    log("pending change on %s: %s (needs a stop/start to fully apply)"
+        % (args.disk, is_pending))
+
+
 def cmd_set_cpu(pve, args):
     """Change a VM's configured CPU type. Like onboot, this applies live (no
     stopped-VM requirement) but the guest only actually sees the new CPUID
@@ -1037,6 +1094,16 @@ def main():
     setcpu.add_argument("--cpu-type", default=DEFAULT_CPU,
                         help="default %r" % DEFAULT_CPU)
 
+    setdisk = sub.add_parser("set-disk-opts",
+                             help="add/restore options on a disk's drive "
+                                  "string (e.g. discard=on,ssd=1), keeping "
+                                  "everything else in it identical")
+    setdisk.add_argument("--vmid", type=int)
+    setdisk.add_argument("--disk", default="scsi0")
+    setdisk.add_argument("--opts", required=True,
+                         help="comma-separated key=value options to ensure "
+                              "are present, e.g. discard=on,ssd=1")
+
     snap = sub.add_parser("snapshot", help="create a named snapshot")
     snap.add_argument("--vmid", type=int)
     snap.add_argument("--name", required=True)
@@ -1099,6 +1166,7 @@ def main():
         "set-memory": cmd_set_memory,
         "set-onboot": cmd_set_onboot,
         "set-cpu": cmd_set_cpu,
+        "set-disk-opts": cmd_set_disk_opts,
         "snapshot": cmd_snapshot,
         "rollback": cmd_rollback,
         "shutdown": cmd_shutdown,
