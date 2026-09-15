@@ -168,6 +168,13 @@ smooth.
 At `FPS_CAP:5`, a 60-second model turn is ~¼ game day — so the loop can be
 **non-blocking**; no pausing to think.
 
+**Finding, 2026-09-15 (orchestrator, measured live on VM 103):** the deployed
+fort actually runs at the table's **default row, 100, not 5**
+(`df.global.enabler.fps = 100.0`, ~100 ticks/second of wall time). The `5`
+figure above was never applied to the live fort; several other documents'
+cost/latency reasoning assumed it was. Not re-derived here — flagged as a
+factual correction, not a redesign.
+
 **VM:** 4 vCPU, **4096 MB** RAM with a 2048 MB balloon floor (DF is
 single-threaded except line-of-sight, so extra cores do nothing and
 single-core clock is everything), 25 GB disk, plus a 4 GB swapfile at

@@ -61,9 +61,10 @@ or `decisions/DECISIONS.md`, not here.
      charter-clean but one sample judging an unattributable prediction sound,
      not evidence of good arbitration;
   3. execute `proposal-0001` and run the grader against its prediction — both
-     were blocked through 2026-09-16 on the fort being **paused** at tick
-     12274877 under the user's standing rule (register), since neither can
-     act on a clock that isn't moving; also no grader schedule exists yet;
+     were blocked while the fort was **kept paused** at tick 12274877 under
+     the user's standing rule until 2026-09-15 23:03 UTC (register), since
+     neither could act on a clock that wasn't moving; also no grader
+     schedule exists yet;
   4. a publisher of §8's allowlisted fields (no delay, user's call);
   5. the stream page with the feed on the right (**public, so its own
      go-ahead**).
