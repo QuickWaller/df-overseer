@@ -33,10 +33,16 @@ stating bluntly because it would otherwise be discovered by losing a fort.
   aggressive (`research/2026-09-12-dfhack-capability-checks.md` §5, read from
   DFHack's own EventManager source).
 
-So the problem is not one unreliable sensor to be recalibrated. **There is no
-trustworthy hostile signal at either layer, and building one is required work
-before this role means anything.** A command hierarchy resting on either signal
-would be confidently wrong on a schedule.
+So the problem is not one unreliable sensor to be recalibrated: neither
+`unit-status hostile` nor the event layer is trustworthy on its own. **UPDATED
+2026-09-16: a purpose-built replacement now exists and is live-verified**,
+`threat.scan` (`decisions/DECISIONS.md` 2026-09-12, "Threat detector
+LIVE-VERIFIED") -- reachability-gated, not flag-gated, currently granted to
+the Overseer's `tools.yaml` only, not yet to this role. What still blocks
+Marshal being enabled is the other half: **no write tools exist for military
+posture, squads or burrows**, so even with a trustworthy read signal this
+role would have nothing to act through, and its deliverable stays playbooks
+until that changes.
 
 - **Water and magma breach has no signal of any kind**, a checked negative
   across both the event enum and the announcement enum. Nearest polling target
