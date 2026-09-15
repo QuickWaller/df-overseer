@@ -55,9 +55,10 @@ Everything below is what is still open.
 4. **The `set_labor`/`autolabor` race**, a live single-writer violation that
    is small to fix.
 5. **Incident capture for project VMs**, so a guest going dark leaves a
-   record (VM 106 on 2026-09-14 left none). Discussed with the user
-   2026-09-15, not yet briefed. It goes into `scripts/provision_vm.py` so
-   VM 103 gets it too.
+   record (VM 106 on 2026-09-14 left none). **Dispatched 2026-09-15** to a
+   Sonnet executor, `handoffs/2026-09-15-incident-capture.md`; it also
+   restores `discard=on,ssd=1` on VM 106. It goes into
+   `scripts/provision_vm.py` so VM 103 gets it too.
    - Install `qemu-guest-agent` (never installed, TRAPS.md).
    - Keep the journal on disk.
    - A per-minute timer that, on first loss of the gateway, dumps `ip addr`,
