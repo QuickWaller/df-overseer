@@ -62,10 +62,18 @@ Everything below is what is still open.
   UTC, user's go-ahead:** it booted for about a minute (CPU, disk reads and
   traffic rose, memory 525 MB) then went idle again, with no ping, no port 22
   and no guest agent through 00:40. Config looks normal (`net0` on `vmbr0`, not
-  link-down; `agent: enabled=1`; console on `serial0`). **Next step: read the
-  serial console in the Proxmox web UI** to see where boot stops; the API cannot
-  show it. Do not reset again blind. Nothing depends on VM 106 until the next
-  agent run.
+  link-down; `agent: enabled=1`; console on `serial0`). The user read the
+  serial console: it reaches a login prompt, so the guest is up and its
+  networking is what is gone. **home-lab-fe checked (2026-09-15):** no estate
+  network change on record in that window (though its records stop at
+  2026-09-12), no address collision in its IP registry, VMs 100/101/150/151/156
+  untouched since 2026-09-06, and no console or host access of its own.
+  **Rebuild dispatched 2026-09-15** (user's go-ahead) to a Sonnet executor:
+  in place with the same VMID, name, memory and address, the old disk kept
+  readable to find the cause, a reachability check after each install step.
+  → `handoffs/2026-09-15-vm106-rebuild.md`. **When it reports:** ask the user
+  before deleting the old disk; tell home-lab-fe "no diff" if VMID, name and
+  address held.
 - **Overseer and consultant tokens were briefly on VM 106** during Phase B's
   live checks (staged under `/tmp`, deleted and confirmed gone by the
   executor), which the 2026-09-14 handoff bars. The brief's fault. Rotate
@@ -84,10 +92,10 @@ Everything below is what is still open.
 
 ### Owed elsewhere
 
-- **`home-lab` `inventory/services.yaml`: an entry for `dfmcp-server.service`
-  on VM 103**, owed since the unit was enabled on 2026-09-14. No live
-  `home-lab` session has been available to take it, so the user needs to
-  route it. VM 106 owes an entry only once openclaw runs as a service
+- **`home-lab` `inventory/services.yaml`: the `dfmcp-server.service` entry is
+  written, not committed.** home-lab-fe added it 2026-09-15, marked
+  `inferred`, and validated it. It is left in that checkout for the user to
+  review and commit. VM 106 owes an entry only once openclaw runs as a service
   (nothing listens today).
 
 ### Background, not urgent
