@@ -40,8 +40,12 @@ Everything below is what is still open.
 
 1. **One supervised end-to-end cycle: the Overseer rules on `proposal-0001`.**
    The first test of the project's thesis. Any execution needs the user's
-   approval. **Open question first:** where the Overseer runs, since the
-   2026-09-14 handoff bars its token from VM 106.
+   approval. **Dispatched 2026-09-15** (`handoffs/2026-09-15-overseer-first-ruling.md`):
+   decided with the user, the Overseer is a second agent in VM 106's openclaw
+   (own workspace, own MCP entry and token, openclaw-side tool scoping plus
+   dfmcp's per-token roles), on `deepseek-v4-pro` for budget rather than Opus,
+   ruling only (no execution tools), $0.10 cap. Secrets out of config and
+   state per `research/2026-09-15-openclaw-secret-storage.md`.
 2. **A grader schedule**, so `proposal-0001`'s prediction actually grades (it
    is probably due already). Then the rest of the feed:
    1. a publisher of `dfqueue.render.public_view` only (allowlist and kill
