@@ -47,6 +47,8 @@ here and their own handoff doc.
 
 | Incident capture for project VMs | [2026-09-15-incident-capture.md](2026-09-15-incident-capture.md) | **DONE 2026-09-15.** Built by the executor (tests 252 to 276); its live writes were refused, and the orchestrator ran the deploy with the user's go-ahead. Live on VMs 106 and 103; simulated outage wrote one dump. A VM 106 reboot hit emergency mode from the rebuild's still-attached old disk (shared fstab labels); disk detached, reboot clean. | `scripts/provision_vm.py`, `scripts/guest-capture/df_netwatch.py` (new), `tests/test_df_netwatch.py` (new), `tests/test_provision_vm_capture.py` (new), `docs/RUNBOOK-DARK-GUEST.md` (new), this doc; no live VM was changed (VM 106 read-only config reads only) |
 
+| Overseer first ruling (second openclaw agent, DeepSeek) | [2026-09-15-overseer-first-ruling.md](2026-09-15-overseer-first-ruling.md) | **Dispatched 2026-09-15.** Overseer as a second agent in VM 106's openclaw, own workspace, `deepseek-v4-pro`, read tools plus `queue.pending`/`queue.rule` only; rules on `proposal-0001`. Two MCP entries, one token each. Secrets out of config and state; target zero plaintext in `secrets audit`. $0.10 cap. | VM 106 `/opt/openclaw/` (config, secrets, workspaces); VM 103 read-only; `evals/live/2026-09-15-overseer-first-ruling/` (new); this doc |
+
 **One thing this first run proved, and it is the reason the commit-as-you-go
 rule in `.claude/agents/executor.md` exists:** the stream's session ended
 mid-run, for the second time in one day. Both deliverables were already
