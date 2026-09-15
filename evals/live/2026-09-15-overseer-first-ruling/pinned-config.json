@@ -34,6 +34,7 @@
     "lastTouchedVersion": "2026.9.4"
   },
   "agents": {
+    "ownership": "explicit",
     "defaults": {
       "model": { "primary": "deepseek/deepseek-v4-flash" },
       "models": { "deepseek/deepseek-v4-flash": {}, "deepseek/deepseek-v4-pro": {} }
