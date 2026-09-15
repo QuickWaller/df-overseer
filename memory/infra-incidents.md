@@ -1,6 +1,6 @@
 # Infra incidents
 
-Infra incidents in df-overseer's own scope: a systemd crash loop and a VM-clone IP collision, both root-caused and fixed. Long register rows moved here 2026-09-15.
+Infra incidents in df-overseer's own scope: a systemd crash loop and a VM-clone IP collision, both root-caused and fixed; VM 106 going dark (cause unknown) and its rebuild's reboot trap (root-caused). Long register rows moved here 2026-09-15.
 
 ### 2026-09-08: df-xvfb.service crash loop (orphaned Xvfb process)
 
@@ -21,3 +21,9 @@ Infra incidents in df-overseer's own scope: a systemd crash loop and a VM-clone 
 **Reason:** Found by reading `cmd_clone` before running it, not by running it. `guest_address()` read **`DF_VM_IP` and nothing else**, and the `clone` subcommand had no address flag, so the documented "roughly ten minutes and entirely ours" provisioning step would have configured VM 106 with VM 103's address: an address collision against the live fort, on a running production guest, from a command whose own log line would have reported success. **Confirmed live rather than argued**: against the real host, `DF_VM_IP` resolves to a holder of `103` and `OPENCLAW_VM_IP` to `None`. The hardcoding was correct when written, since the pool held one guest; it became wrong when `OPENCLAW_VM_IP` was allocated, and nothing connected the two. **Fix in three parts.** (1) `guest_address(env, var="DF_VM_IP")` takes the key name, and `clone --ip-var` selects it, so the default behaviour for the fort is unchanged. (2) `DF_GW`/`DF_DNS` are deliberately **not** parameterised: a gateway and a resolver are properties of the subnet, not of a guest, and both VMs sit on one subnet. (3) A `pool_address_holder()` check runs **before** the clone API call rather than after, because a clone that succeeds and then refuses to configure leaves a half-built VM to clean up by hand. **Stated limit of that guard, in the code**: it can only see our own pool, so it catches "two df-automation VMs, one address" and cannot catch a clash with a guest outside the pool. That is precisely why allocation through `home-lab/inventory/ips.yaml` stays a real prerequisite rather than a formality, and the guard is not a substitute for it. Read errors are not swallowed, since a check that quietly skips a VM it could not read would report "free" without having looked.
 
 ---
+
+### 2026-09-14/15: VM 106 went dark, rebuilt; a reboot trap from the rebuild
+
+**Status:** dark-guest cause **not established**; reboot trap root-caused and fixed.
+
+VM 106 lost external reachability at about 23:35 UTC 2026-09-14, a minute after our last SSH session ended normally, while its own journal stayed healthy; a PVE reset did not help. It was rebuilt in place 2026-09-15 by swapping in a fresh disk from template 102 and reading the old one (`handoffs/2026-09-15-vm106-rebuild.md`). Later that day a reboot with the old disk still attached went to emergency mode: both disks share the `BOOT`/`UEFI` labels `/etc/fstab` mounts by, so `/boot/efi` came from the read-only old disk and failed fsck. Detached, then deleted with the user's go-ahead. Incident capture now runs on VMs 103 and 106 so a recurrence leaves a record (`handoffs/2026-09-15-incident-capture.md`, `docs/RUNBOOK-DARK-GUEST.md`, TRAPS.md). Register rows 2026-09-15.

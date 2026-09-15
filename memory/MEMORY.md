@@ -38,7 +38,8 @@ short summary pointing here.**
   pause-vs-throttle game-time argument, why a specialist role's value is
   context partitioning, and the two safety detectors built but not yet run.
 - [Infra incidents](infra-incidents.md): a systemd crash loop and a VM-clone
-  IP collision, both in this project's own scope, root-caused and fixed.
+  IP collision, both root-caused and fixed; VM 106 going dark (cause unknown)
+  and its rebuild's reboot trap (root-caused).
 
 ## Local only, not in this repo
 

@@ -1,6 +1,8 @@
 # Roadmap
 
-**Last reviewed:** 2026-09-15 (fifteenth pass, targeted not full. It adds a
+**Last reviewed:** 2026-09-15 (sixteenth pass, targeted not full: the queue
+tools went live, VM 106 went dark and was rebuilt, and incident capture shipped;
+the Now item's next steps are renumbered.) Previously: 2026-09-15 (fifteenth pass, targeted not full. It adds a
 Now item for the 2026-09-14/15 work: openclaw calling the fort, two architect
 charter runs, three live-verified dfmcp fixes, and the SQLite proposal queue
 with live-state signals. The feed beside the stream becomes the next visible
@@ -49,15 +51,19 @@ or `decisions/DECISIONS.md`, not here.
     live-state prediction signals and a grader (local code).
 
   **Next, in order:**
-  1. `propose` / `pass` / `ruling` MCP tools with the game tick stamped at
-     write time;
-  2. a grader schedule;
-  3. a publisher of §8's allowlisted fields (no delay, user's call);
-  4. the stream page with the feed on the right (**public, so its own
+  1. ~~`propose` / `pass` / `ruling` MCP tools~~ **DONE 2026-09-15**, live on
+     VM 103; architect run #3 wrote the first real proposal;
+  2. the Overseer rules on it (where the Overseer runs is still open);
+  3. a grader schedule;
+  4. a publisher of §8's allowlisted fields (no delay, user's call);
+  5. the stream page with the feed on the right (**public, so its own
      go-ahead**).
 
   **Also open:** run #2 dropped the proposal format and strayed into
   defensibility, and the DeepSeek key is plaintext on VM 106.
+  **Done alongside, 2026-09-15:** VM 106 went dark (cause unknown), was rebuilt
+  in place, and incident capture now runs on VMs 103 and 106
+  (`docs/RUNBOOK-DARK-GUEST.md`); overseer and consultant MCP tokens rotated.
   → `Working.md`, `decisions/DECISIONS.md` 2026-09-14/15.
 
 - **NOW, 2026-09-12: the agent architecture is designed, all four research

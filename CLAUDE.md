@@ -25,6 +25,9 @@ learning architecture.
 >   since 2026-09-15 (`queue.propose`/`pass` for the architect,
 >   `queue.rule`/`pending` for the Overseer). Architect run #3 wrote the first
 >   real proposal; nothing has ruled on it and no grader runs on a schedule.
+> - **Incident capture** on VMs 103 and 106 (guest agent, persistent journal,
+>   a netwatch dump on gateway loss), with `docs/RUNBOOK-DARK-GUEST.md`. VM 106
+>   went dark on 2026-09-14, cause unknown; it was rebuilt in place.
 > - **Agents.** openclaw on VM 106 runs one-shot `agent exec` on DeepSeek; no
 >   agent runs as a service. Everything in `docs/` and `research/` beyond the
 >   above is design or proposal unless marked verified.

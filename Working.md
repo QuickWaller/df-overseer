@@ -24,7 +24,9 @@ Everything below is what is still open.
   must be relayed again before the next run.
 - **Incident capture** (guest agent, persistent journal, per-minute netwatch
   dump on gateway loss) is live on VMs 103 and 106 since 2026-09-15. A new
-  clone needs `provision_vm.py setup-capture --vmid N` run by hand.
+  clone needs `provision_vm.py setup-capture --vmid N` run by hand. **Why
+  VM 106 went dark on 2026-09-14 is still not established**; the capture is
+  there to record it if it recurs (`docs/RUNBOOK-DARK-GUEST.md`).
 - **The queue is live** (2026-09-15): `queue.propose`/`pass` (architect) and
   `queue.rule`/`pending` (Overseer) on VM 103, DB under `/var/lib/dfmcp`.
   It holds one real record, `proposal-0001` from architect run #3, with a
@@ -58,18 +60,6 @@ Everything below is what is still open.
 4. **The `set_labor`/`autolabor` race**, a live single-writer violation that
    is small to fix.
 ### Open, waiting on the user
-
-- **VM 106's old disk: delete it?** Detached 2026-09-15 to `unused0` (25G on
-  the sandbox storage, volume kept) after a reboot with it attached sent the
-  guest to emergency mode (TRAPS.md). Its forensic read is done and cannot
-  settle the cause, so the orchestrator recommends deleting it. **Why VM 106
-  went dark on 2026-09-14 is still not established**; incident capture is now
-  live on VMs 103 and 106 to record it if it recurs
-  (`docs/RUNBOOK-DARK-GUEST.md`, register 2026-09-15 rows).
-- **Overseer and consultant tokens were briefly on VM 106** during Phase B's
-  live checks (staged under `/tmp`, deleted and confirmed gone by the
-  executor), which the 2026-09-14 handoff bars. The brief's fault. Rotate
-  them or not: the user's call.
 
 - **DeepSeek key in plaintext on VM 106** in
   `/opt/openclaw/config/state/openclaw.sqlite`. openclaw 2026.9.4 has no
