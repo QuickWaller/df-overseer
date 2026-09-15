@@ -1,0 +1,77 @@
+{
+  "_note": "PREPARED, NOT RUN. This is the pinned config this stream built and validated syntactically (openclaw config validate returns valid: true against it), but the paid agent exec was never executed: placing the two MCP role tokens into /opt/openclaw/secrets/openclaw_secrets.env was refused by the auto-mode classifier as a Secret-Store Write (see README.md). Mounted via docker volume overlay onto /home/node/.openclaw/openclaw.json exactly as run #3's pinned-config.json was, with /opt/openclaw/config bind-mounted read-write as /home/node/.openclaw so both agents share the host-persisted DeepSeek auth state and plugin registry. MCP URL below is the real VM 103 LAN address in the live file; redacted here per this repo's public/no-address rule.",
+  "mcp": {
+    "servers": {
+      "df-architect": {
+        "url": "http://<df-vm-lan-ip>:8443/mcp",
+        "transport": "streamable-http",
+        "headers": {
+          "Authorization": "Bearer ${DF_MCP_TOKEN_ARCHITECT}"
+        },
+        "requestTimeoutMs": 5000,
+        "connectionTimeoutMs": 5000
+      },
+      "df-overseer": {
+        "url": "http://<df-vm-lan-ip>:8443/mcp",
+        "transport": "streamable-http",
+        "headers": {
+          "Authorization": "Bearer ${DF_MCP_TOKEN_OVERSEER}"
+        },
+        "requestTimeoutMs": 5000,
+        "connectionTimeoutMs": 5000
+      }
+    }
+  },
+  "plugins": {
+    "entries": {
+      "anthropic": { "config": { "sessionCatalog": { "enabled": false } } },
+      "codex": { "config": { "sessionCatalog": { "enabled": false } } },
+      "deepseek": { "enabled": true }
+    }
+  },
+  "meta": {
+    "migrations": { "modelPolicyAllowlist": true },
+    "lastTouchedVersion": "2026.9.4"
+  },
+  "agents": {
+    "defaults": {
+      "model": { "primary": "deepseek/deepseek-v4-flash" },
+      "models": { "deepseek/deepseek-v4-flash": {}, "deepseek/deepseek-v4-pro": {} }
+    },
+    "entries": {
+      "architect": {
+        "workspace": "/home/node/.openclaw/architect-workspace",
+        "tools": {
+          "allow": [
+            "df-architect__*"
+          ]
+        }
+      },
+      "overseer": {
+        "workspace": "/home/node/.openclaw/overseer-workspace",
+        "model": { "primary": "deepseek/deepseek-v4-pro" },
+        "tools": {
+          "allow": [
+            "df-overseer__overview__get",
+            "df-overseer__landmarks__list",
+            "df-overseer__landmarks__get",
+            "df-overseer__connectivity__report",
+            "df-overseer__connectivity__check",
+            "df-overseer__diff__since",
+            "df-overseer__stuckjobs__find",
+            "df-overseer__labor__unit-status",
+            "df-overseer__threat__scan",
+            "df-overseer__breach__check",
+            "df-overseer__queue__pending",
+            "df-overseer__queue__rule"
+          ]
+        }
+      }
+    }
+  },
+  "auth": {
+    "profiles": {
+      "deepseek:manual": { "provider": "deepseek", "mode": "api_key" }
+    }
+  }
+}
