@@ -1,6 +1,9 @@
 # Roadmap
 
-**Last reviewed:** 2026-09-15 (sixteenth pass, targeted not full: the queue
+**Last reviewed:** 2026-09-16 (seventeenth pass, targeted doc-drift pass: the
+Overseer's first ruling landed (`ruling-0001`, `proposal-0001` accepted) and
+the Now item's next-steps list updated to mark it done and note the paused
+fort as the blocker for execution and grading.) Previously: 2026-09-15 (sixteenth pass, targeted not full: the queue
 tools went live, VM 106 went dark and was rebuilt, and incident capture shipped;
 the Now item's next steps are renumbered.) Previously: 2026-09-15 (fifteenth pass, targeted not full. It adds a
 Now item for the 2026-09-14/15 work: openclaw calling the fort, two architect
@@ -53,8 +56,14 @@ or `decisions/DECISIONS.md`, not here.
   **Next, in order:**
   1. ~~`propose` / `pass` / `ruling` MCP tools~~ **DONE 2026-09-15**, live on
      VM 103; architect run #3 wrote the first real proposal;
-  2. the Overseer rules on it (where the Overseer runs is still open);
-  3. a grader schedule;
+  2. ~~the Overseer rules on it~~ **DONE 2026-09-16**: a second openclaw agent
+     (Overseer, `deepseek-v4-pro`) accepted `proposal-0001` as `ruling-0001`,
+     charter-clean but one sample judging an unattributable prediction sound,
+     not evidence of good arbitration;
+  3. execute `proposal-0001` and run the grader against its prediction — both
+     were blocked through 2026-09-16 on the fort being **paused** at tick
+     12274877 under the user's standing rule (register), since neither can
+     act on a clock that isn't moving; also no grader schedule exists yet;
   4. a publisher of §8's allowlisted fields (no delay, user's call);
   5. the stream page with the feed on the right (**public, so its own
      go-ahead**).
@@ -64,7 +73,7 @@ or `decisions/DECISIONS.md`, not here.
   **Done alongside, 2026-09-15:** VM 106 went dark (cause unknown), was rebuilt
   in place, and incident capture now runs on VMs 103 and 106
   (`docs/RUNBOOK-DARK-GUEST.md`); overseer and consultant MCP tokens rotated.
-  → `Working.md`, `decisions/DECISIONS.md` 2026-09-14/15.
+  → `Working.md`, `decisions/DECISIONS.md` 2026-09-14/15/16.
 
 - **NOW, 2026-09-12: the agent architecture is designed, all four research
   briefs are back, and the first code exists.**
