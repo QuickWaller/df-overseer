@@ -125,3 +125,14 @@ real SDK behaved differently from the fake server, the research briefs, or
 `dfmcp/README.md`. Quote actual output (tokens and addresses redacted) for
 each check, not just pass/fail. If a check fails, capture enough to diagnose,
 stop, tear down, and report; do not patch `dfmcp/` code to make it pass.
+
+## Index notes (moved 2026-09-15)
+
+Facts that were recorded only in `handoffs/INDEX.md`'s Status cell, not
+written into this doc at the time, moved here verbatim before that cell was
+trimmed:
+
+- The bug 1 fix was merged as commit `f37502c`.
+- The fix was re-run live the same day: all six checks plus an empty-array
+  case passed.
+- Stream closed.

@@ -402,3 +402,11 @@ at call time, not from `dfmcp` itself).
 - `tools/call diggable__find {level: -1, near_landmark: "Embark Site"}` returns 5 candidates.
 
 **Follow-up found:** a script-level `{"error": ...}` reaches the MCP client with `isError: false`. The off-map error does this, and so does the pre-existing "landmark not found". A model may treat such errors as data. It's a small `dfmcp/server.py` change, not done here.
+
+## Index notes (moved 2026-09-15)
+
+A fact that was recorded only in `handoffs/INDEX.md`'s Status cell, not
+written into this doc at the time, moved here verbatim before that cell was
+trimmed: tests, orchestrator re-run: ambient `python -m pytest` 121 to 127
+passed, 1 skipped; `.venv-dfmcp` `dfmcp/tests` 125 passed. The executor's
+"102" baseline above came from a different interpreter; 121 is correct.
