@@ -41,7 +41,7 @@ here and their own handoff doc.
 
 | Queue tools live deploy + architect run #3 (Phase B) | [2026-09-15-queue-live-deploy.md](2026-09-15-queue-live-deploy.md) | **DONE 2026-09-15.** Deployed and sha256-verified on VM 103; StateDirectory added, service restarted clean. Live checks from VM 106 confirmed per-role tool lists and all three refusal cases. Architect run #3: queue.propose succeeded first try, verified against the live queue DB. $0.0033. | VM 103 `/opt/df/dfmcp-smoke/` (+ backup at `dfmcp-smoke-backup-2026-09-15`), `dfmcp-server.service` unit, `/var/lib/dfmcp/`, service `.env` (one key); VM 106 `/opt/openclaw/config/architect-workspace/SOUL.md` (deleted after), `/home/df/architect-run-3/` (deleted after); `evals/live/2026-09-15-architect-third-charter/` (new) |
 
-| Register and index trim | [2026-09-15-register-trim.md](2026-09-15-register-trim.md) | **DISPATCHED 2026-09-15.** Docs only. Moves over-long register rows verbatim into `memory/`, cuts index Status cells; nothing deleted. | `decisions/DECISIONS.md`, `memory/`, `handoffs/INDEX.md`, `handoffs/*.md` (append-only index notes) |
+| Register and index trim | [2026-09-15-register-trim.md](2026-09-15-register-trim.md) | **DONE 2026-09-15.** 45 register rows moved verbatim into eight new `memory/*.md` files; 10 index Status cells cut to about 40 words. Nothing lost: a verification script proves it and fails on a forced deletion. Two facts existed only in the index; appended verbatim to their docs. | `decisions/DECISIONS.md`, `memory/`, `handoffs/INDEX.md`, `handoffs/*.md` (append-only index notes) |
 
 **One thing this first run proved, and it is the reason the commit-as-you-go
 rule in `.claude/agents/executor.md` exists:** the stream's session ended
