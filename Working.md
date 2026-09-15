@@ -56,12 +56,16 @@ Everything below is what is still open.
 
 ### Open, waiting on the user
 
-- **VM 106 is unreachable.** Proxmox reports it running (no reboot since
-  2026-09-12) but the QEMU guest agent does not answer, and ping, port 22 and
-  `ssh-keyscan` all fail; the same probes succeed against VM 103 (control).
-  It was reachable during run #3 (network activity 23:17-23:35 UTC,
-  2026-09-14). Needs a console look or a reset, both VM changes. Nothing
-  depends on it until the next agent run.
+- **VM 106 is unreachable, and a reset did not fix it.** It went dark after
+  run #3 (reachable 23:17-23:35 UTC 2026-09-14, then zero CPU and no outbound
+  traffic with 1.3 GB in use). **Reset via the Proxmox API 2026-09-15 00:36
+  UTC, user's go-ahead:** it booted for about a minute (CPU, disk reads and
+  traffic rose, memory 525 MB) then went idle again, with no ping, no port 22
+  and no guest agent through 00:40. Config looks normal (`net0` on `vmbr0`, not
+  link-down; `agent: enabled=1`; console on `serial0`). **Next step: read the
+  serial console in the Proxmox web UI** to see where boot stops; the API cannot
+  show it. Do not reset again blind. Nothing depends on VM 106 until the next
+  agent run.
 - **Overseer and consultant tokens were briefly on VM 106** during Phase B's
   live checks (staged under `/tmp`, deleted and confirmed gone by the
   executor), which the 2026-09-14 handoff bars. The brief's fault. Rotate
@@ -99,8 +103,6 @@ Everything below is what is still open.
   fail. Also from Phase B: `dfmcp.auth` reads only `REPO_ROOT/.env`, so a
   throwaway instance needs its own code copy; openclaw's schema now rejects
   `pinned-config.json`'s `_note` key.
-- **`/opt/df/dfmcp-smoke-backup-2026-09-15` on VM 103** is Phase B's
-  rollback copy. Remove once the new deploy has settled.
 
 - **The breach detector is inconclusive.** Settle it opportunistically (rain,
   or an animal fording water), never by flooding the fort.
