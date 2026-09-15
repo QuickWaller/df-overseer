@@ -43,6 +43,8 @@ here and their own handoff doc.
 
 | Register and index trim | [2026-09-15-register-trim.md](2026-09-15-register-trim.md) | **DONE 2026-09-15.** 45 register rows moved verbatim into eight new `memory/*.md` files; 10 index Status cells cut to about 40 words. Nothing lost: a verification script proves it and fails on a forced deletion. Two facts existed only in the index; appended verbatim to their docs. | `decisions/DECISIONS.md`, `memory/`, `handoffs/INDEX.md`, `handoffs/*.md` (append-only index notes) |
 
+| VM 106 rebuild + dark-guest diagnosis | [2026-09-15-vm106-rebuild.md](2026-09-15-vm106-rebuild.md) | **DISPATCHED 2026-09-15.** Rebuild in place (same VMID, name, memory, address), old disk kept readable for forensics, openclaw reinstalled with a reachability check per step. No paid call, no token relay. | VM 106 (whole guest); one temporary never-booted VMID; this doc |
+
 **One thing this first run proved, and it is the reason the commit-as-you-go
 rule in `.claude/agents/executor.md` exists:** the stream's session ended
 mid-run, for the second time in one day. Both deliverables were already
