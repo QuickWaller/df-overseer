@@ -51,9 +51,13 @@ communicate, what they read, and how they learn.
 > but not evidence of good arbitration**: it judged an unattributable
 > prediction sound and did not mention that the fort was paused. The live fort
 > was kept paused at tick 12274877 under the user's standing rule until
-> 2026-09-15 23:03 UTC (register), so neither the proposal's execution nor
-> its prediction's grading could run during that window, and no grader runs
-> on a schedule regardless.
+> 2026-09-15 23:03 UTC, then unpaused and left running unattended with no
+> Sentry (register). At the fort's real simulation cap (`FPS_CAP` 100, not
+> the 5 elsewhere in this document, see §14) `proposal-0001`'s 1200-tick
+> prediction window elapsed within about a minute, unexecuted, so grading it
+> now would record a miss caused by wall-clock latency between ruling and
+> execution, not a verdict on the proposal. No grader runs on a schedule
+> regardless.
 > §8's public feed (a publisher plus the stream page) is not built. →
 > `decisions/DECISIONS.md` 2026-09-14 to 2026-09-16 rows,
 > `handoffs/2026-09-15-queue-live-deploy.md`,

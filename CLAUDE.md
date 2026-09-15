@@ -27,8 +27,12 @@ learning architecture.
 >   real proposal; the Overseer accepted it 2026-09-16 (`ruling-0001`, one
 >   sample on a cheap model, not evidence of good arbitration). The fort was
 >   kept paused at tick 12274877 under the user's standing rule until
->   2026-09-15 23:03 UTC (register), so neither execution nor grading could
->   run during that window, and no grader runs on a schedule regardless.
+>   2026-09-15 23:03 UTC, then unpaused and left running unattended with no
+>   Sentry (register). At the fort's real cap (`FPS_CAP` 100, not the 5
+>   several docs assumed) `proposal-0001`'s 1200-tick prediction window
+>   elapsed within about a minute, unexecuted, so grading it now would record
+>   a miss caused by wall-clock latency between ruling and execution, not a
+>   bad proposal. No grader runs on a schedule regardless.
 > - **Incident capture** on VMs 103 and 106 (guest agent, persistent journal,
 >   a netwatch dump on gateway loss), with `docs/RUNBOOK-DARK-GUEST.md`. VM 106
 >   went dark on 2026-09-14, cause unknown; it was rebuilt in place.

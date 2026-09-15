@@ -62,9 +62,13 @@ or `decisions/DECISIONS.md`, not here.
      not evidence of good arbitration;
   3. execute `proposal-0001` and run the grader against its prediction — both
      were blocked while the fort was **kept paused** at tick 12274877 under
-     the user's standing rule until 2026-09-15 23:03 UTC (register), since
-     neither could act on a clock that wasn't moving; also no grader
-     schedule exists yet;
+     the user's standing rule until 2026-09-15 23:03 UTC, since neither could
+     act on a clock that wasn't moving. **Since unpaused, the fort runs
+     unattended with no Sentry, at the real cap (`FPS_CAP` 100, not the 5
+     several docs assumed), and `proposal-0001`'s 1200-tick prediction window
+     elapsed within about a minute — unexecuted.** Grading it now would
+     record a latency miss, not a verdict on the proposal (register); no
+     grader schedule exists yet regardless;
   4. a publisher of §8's allowlisted fields (no delay, user's call);
   5. the stream page with the feed on the right (**public, so its own
      go-ahead**).

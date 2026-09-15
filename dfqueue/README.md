@@ -290,6 +290,10 @@ through the live service and wrote the first real record, `proposal-0001`
 second openclaw agent, the Overseer, called `queue.rule` and accepted it as
 `ruling-0001` (`handoffs/2026-09-15-overseer-first-ruling.md`). **The fort
 was kept paused at tick 12274877 under the user's standing rule until
-2026-09-15 23:03 UTC (register)**, so neither executing the proposal nor
-grading its prediction could happen during that window, and no grader
-schedule exists yet regardless (see "What is deliberately not here yet").
+2026-09-15 23:03 UTC, then unpaused and left running unattended with no
+Sentry (register).** At the fort's real cap (`FPS_CAP` 100, not the 5 several
+docs assumed), `proposal-0001`'s 1200-tick prediction window elapsed within
+about a minute of that, unexecuted — grading it now would record a miss
+caused by wall-clock latency between ruling and execution, not a verdict on
+the proposal. No grader schedule exists yet regardless (see "What is
+deliberately not here yet").
