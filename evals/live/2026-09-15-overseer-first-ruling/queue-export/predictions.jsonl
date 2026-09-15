@@ -1,0 +1,1 @@
+{"actual_value": null, "due_game_tick": 12276077, "grade_note": null, "graded_at": null, "id": 1, "op": "gt", "record_id": "proposal-0001", "registered_game_tick": 12274877, "signal": "fort.landmarks.count", "status": "pending", "value": 4}
