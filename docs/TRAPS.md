@@ -284,13 +284,22 @@ findings without another doc home yet.
   two such disks on the bus the initramfs can mount the wrong one as root.
   Attaching VM 106's old disk before the fresh disk's first boot booted the
   hardware-read-only old disk, which looked exactly like a dead network for
-  about 20 minutes. Hot-attach the second disk after boot.
+  about 20 minutes. Hot-attach the second disk after boot. **And detach it
+  before any later boot, not just the first:** `/etc/fstab` mounts `/boot`
+  and `/boot/efi` by label (`BOOT`, `UEFI`), shared by both disks. On
+  2026-09-15 VM 106 rebooted with its old disk still attached: root came from
+  the fresh disk, `/boot` from the old one, `/boot/efi` failed fsck on the
+  read-only device, and the guest sat in emergency mode (pingable, tcp/22
+  refused, no agent). The next stop/start booted the old root outright.
+  "Pingable but SSH refused and agent dead" on a two-disk guest means this.
 - **`move_disk` into another VM clears its `boot:` order**, and the rebuild
   also lost the root disk's `discard=on,ssd=1`. Re-read and restore the full
   config after any disk swap.
 - **`POST /agent/ping` saying "QEMU guest agent is not running" means nothing
   on our VMs.** `provision_vm.py build-template` sets `agent: enabled=1` but
   never installs `qemu-guest-agent`, so the agent has never run.
+  (`provision_vm.py setup-capture` installs it; done on VMs 103 and 106
+  2026-09-15, both answer. A new clone still needs it run.)
 - **A PVE reset is not a stop/start.** A reset keeps the QEMU process and its
   tap device; a stop/start recreates both. On a guest that is healthy inside
   but unreachable, try a full stop/start before a rebuild. VM 106's cause was

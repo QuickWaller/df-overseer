@@ -22,6 +22,9 @@ Everything below is what is still open.
   a one-shot `agent exec` on DeepSeek. VM 106 went dark after run #3 and was
   rebuilt in place 2026-09-15. openclaw is reinstalled; its architect MCP token
   must be relayed again before the next run.
+- **Incident capture** (guest agent, persistent journal, per-minute netwatch
+  dump on gateway loss) is live on VMs 103 and 106 since 2026-09-15. A new
+  clone needs `provision_vm.py setup-capture --vmid N` run by hand.
 - **The queue is live** (2026-09-15): `queue.propose`/`pass` (architect) and
   `queue.rule`/`pending` (Overseer) on VM 103, DB under `/var/lib/dfmcp`.
   It holds one real record, `proposal-0001` from architect run #3, with a
@@ -54,38 +57,15 @@ Everything below is what is still open.
    `evals/live/2026-09-15-architect-third-charter/README.md` review section.
 4. **The `set_labor`/`autolabor` race**, a live single-writer violation that
    is small to fix.
-5. **Incident capture for project VMs**, so a guest going dark leaves a
-   record (VM 106 on 2026-09-14 left none). **Built and merged 2026-09-15, not deployed**
-   (`handoffs/2026-09-15-incident-capture.md`): `provision_vm.py
-   setup-capture`, `forensic-attach` (plan-only unless `--execute`),
-   `set-disk-opts`, `docs/RUNBOOK-DARK-GUEST.md`. The executor's live writes
-   were refused by the auto-mode classifier, so nothing changed on VM 106 or
-   VM 103. **Next step: user go-ahead to run, from the orchestrator session,
-   `set-disk-opts --vmid 106`, shutdown/start 106, `setup-capture --vmid 106`,
-   a simulated outage, then `setup-capture --vmid 103`.** It goes into
-   `scripts/provision_vm.py` so VM 103 gets it too.
-   - Install `qemu-guest-agent` (never installed, TRAPS.md).
-   - Keep the journal on disk.
-   - A per-minute timer that, on first loss of the gateway, dumps `ip addr`,
-     `ip route`, `ip neigh` (does the gateway resolve, and to which MAC),
-     `arping -D` on its own address (another host claiming it), docker
-     networks, failed units, disk, memory and the last 15 minutes of journal,
-     to a file and a summary to the serial console.
-   - A script for the attach-and-read route, proven by the rebuild. Its
-     token needed no new rights, so **no guest-agent rights for the token**
-     for now.
-   - The runbook's first step: a full stop/start, not a reset.
-
 ### Open, waiting on the user
 
-- **VM 106's old disk: delete it?** VM 106 was rebuilt in place 2026-09-15
-  and is reachable, with openclaw reinstalled and no MCP token. Its old disk
-  is still attached read-only as `scsi1` (25G on the sandbox storage), kept
-  in case the incident needs another read. **Why it went dark is not
-  established**: the old journal shows a healthy guest, and the rebuild
-  changed disk and host-side tap together. Register 2026-09-15 row and
-  `handoffs/2026-09-15-vm106-rebuild.md` (orchestrator review). Also set
-  `discard=on,ssd=1` back on `scsi0` (lost in the swap).
+- **VM 106's old disk: delete it?** Detached 2026-09-15 to `unused0` (25G on
+  the sandbox storage, volume kept) after a reboot with it attached sent the
+  guest to emergency mode (TRAPS.md). Its forensic read is done and cannot
+  settle the cause, so the orchestrator recommends deleting it. **Why VM 106
+  went dark on 2026-09-14 is still not established**; incident capture is now
+  live on VMs 103 and 106 to record it if it recurs
+  (`docs/RUNBOOK-DARK-GUEST.md`, register 2026-09-15 rows).
 - **Overseer and consultant tokens were briefly on VM 106** during Phase B's
   live checks (staged under `/tmp`, deleted and confirmed gone by the
   executor), which the 2026-09-14 handoff bars. The brief's fault. Rotate
