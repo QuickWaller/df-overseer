@@ -90,3 +90,193 @@ get wrong:
 
 Per file: what was stale, what you changed, and what you left alone and why.
 Then the new traps added, and the drift you could not settle.
+
+## Result, 2026-09-16
+
+**Status: done.** Merged local `main` twice (once at dispatch to pick up this
+doc, once mid-stream to pick up the orchestrator's own "fort unpaused, frame
+cap is 100 not 5, real save location" record) rather than diverging from it.
+Docs only, no code/config/tests/VM/model call touched. Ambient
+`python -m pytest` run twice (before and after folding in the orchestrator's
+update): **276 passed, 1 skipped** both times.
+
+### Per file
+
+**`CLAUDE.md`.** Stale: status date 2026-09-15; the `dfqueue/` bullet said
+"nothing has ruled on it"; the Agents bullet described only one-shot
+architect calls. Changed: date to 2026-09-16; `dfqueue/` bullet now records
+`ruling-0001` (accepted, 2026-09-16), the pause window (kept paused at tick
+12274877 until 2026-09-15 23:03 UTC, then unpaused and left running
+unattended with no Sentry), and that `proposal-0001`'s 1200-tick prediction
+window elapsed within about a minute at the real `FPS_CAP` (100, not 5) --
+so grading it now would record a latency miss, not a verdict on the
+proposal; Agents bullet now names both architect and overseer as one-shot
+callers. Left alone: everything else was already accurate.
+
+**`ROADMAP.md`.** Stale: the Now bucket's numbered next-steps list had "the
+Overseer rules on it" as still open, and a grader-schedule item with no pause
+annotation. Changed: step 2 marked DONE 2026-09-16 with the ruling detail;
+step 3 annotated with the pause-then-unpause-then-window-elapsed finding;
+`Last reviewed` header bumped to a 17th, targeted pass. Left alone: the deep
+history below the Now bucket (2026-09-08 through 2026-09-11 entries,
+Next/Later/Explicitly-not-doing) -- out of this week's scope, no drift found
+there on inspection.
+
+**`docs/AGENT-ARCHITECTURE.md`.** Stale: the file-level status block still
+said the queue was "not started"; §13 called the transport "MCP over HTTP on
+the tailnet" when it is actually LAN-bound with Tailscale deferred (bearer
+tokens the only guard); §14 and two other sections state `FPS_CAP:5`, which
+cost/latency reasoning rests on, when the live fort actually runs at 100.
+Changed: appended a dated status paragraph (queue live, two agents have
+called the fort, one ruling, the pause/unpause/window-elapsed finding);
+corrected the tailnet claim to LAN; added a new "Still open" finding in §14
+recording the real `FPS_CAP` and flagged the three affected passages (§2, §6,
+§14) inline **without rewriting the reasoning that depends on the wrong
+number** -- per the orchestrator's explicit instruction, correcting the
+number is this stream's job, revisiting the conclusions it feeds is not.
+Left alone: §14's other "Still open" items (breach poller, hostile detector)
+-- still accurate, unchanged.
+
+**`docs/PURPOSE.md`.** Stale: a parenthetical said the MCP seam "has not yet
+met a live DFHack" (it has, repeatedly, since 2026-09-14, and is deployed as
+a durable service). Changed: corrected that parenthetical; added a dated
+finding under the `FPS_CAP` table noting the live fort actually runs at the
+table's own default row (100), not the 5 the surrounding paragraph reasons
+from -- not re-derived. Left alone: the save-path claim
+(`~/.local/share/Bay 12 Games/Dwarf Fortress/save/`) was already correct and
+matches the orchestrator's live-verified fact exactly, so nothing to fix
+there; the "still-unbuilt MCP seam" phrase inside preserved historical
+reasoning a few lines up is immediately superseded by the doc's own next
+paragraph, per this repo's convention of not rewriting history in place.
+
+**`docs/MEMORY-ARCHITECTURE.md`.** Stale: a sample-size estimate ("~3 forts
+per month") built on `FPS_CAP:5`. Changed: added a dated finding noting the
+live cap is 100, so the estimate is a design-time figure at a cap that was
+never actually applied, not a measurement -- not re-derived.
+
+**`dfmcp/README.md`.** Stale, and the sharpest drift found: the header
+claimed "not deployed anywhere: nothing in this package has met a real
+DFHack or a real MCP client outside this repo's own test suite," and the
+"What remains unproven" section's four bullets (never met real DFHack, never
+run under uvicorn/bound a socket, never reached by openclaw, systemd unit
+never installed) were all resolved between 2026-09-14 and 2026-09-15 but
+still read as open. The "What this package deliberately does not do"
+section repeated the same "never deployed" claim for `server.py`. Changed:
+rewrote the header to state it is deployed, live-verified, and called by
+openclaw; struck through each of the four unproven bullets with a dated
+RESOLVED note and evidence, keeping one genuinely-still-open item (deploy
+byte-identity depends on the deploy method -- CRLF trap -- and no
+many-concurrent-agent load test exists); corrected the "deliberately does
+not do" section's TLS/tailnet claim (it binds LAN directly, no TLS, no
+tailnet) and its deployment claim. Left alone: the rest of this very long,
+module-by-module README (canonical id scheme, `roles.py`/`tools.py`/
+`auth.py`/`dfhack_client.py`/`queue_tools.py` sections) -- read in full,
+verified accurate against `decisions/DECISIONS.md`, no drift found.
+
+**`dfqueue/README.md`.** Stale: the header said "Local code and tests only:
+no MCP tool ... not built here," and a later section said "Phase A only:
+local code and tests, not deployed. Nothing in `dfqueue/` runs on VM 103
+yet." Both predate Phase B's live deploy. Changed: both updated to record
+the live deploy, the architect's real proposal, the Overseer's ruling, and
+the pause/unpause/window-elapsed finding. Left alone: "What is deliberately
+not here yet" (grader schedule, publisher, feed page, `plan` record kind) --
+still accurate, unchanged.
+
+**`agents/ROSTER.yaml`.** Stale: header said "STATUS 2026-09-12: nothing
+here is running yet. The MCP server these allowlists reference does not
+exist." Also stale: the `marshal` role's `blocked_on` field cited "no
+trustworthy threat signal ... a purpose-built detector is required work
+first" -- that detector (`threat.scan`) was built and live-verified
+2026-09-12, before this file was last touched, so the premise was already
+wrong independent of this week's work. Changed: rewrote the header to state
+the MCP server is live and which two roles have actually called it;
+corrected `marshal`'s `blocked_on` to say the detector exists and the real
+blocker is the missing write tools.
+
+**`agents/README.md`.** Same stale "Status 2026-09-12 ... nothing here is
+running" claim as `ROSTER.yaml`. Corrected the same way.
+
+**`agents/overseer/model.yaml`.** Stale by omission: names
+`anthropic/claude-opus-5` with no note that the one real ruling ran on
+`deepseek/deepseek-v4-pro` for budget. Added a dated note recording the
+deviation without changing the design default, per the brief's instruction.
+
+**`agents/architect/model.yaml`.** Same class of drift, not named in the
+brief's examples but found by the same audit: names
+`anthropic/claude-sonnet-5`, but all three real charter runs used
+`deepseek/deepseek-v4-flash`. Added the same kind of dated note.
+
+**`agents/architect/tools.yaml`, `agents/overseer/tools.yaml`,
+`agents/consultant/tools.yaml`.** Stale, found by the audit rather than
+named in the brief: all three headers still referenced `mcp/registry.py`,
+`mcp/README.md` and `mcp/roles.py` -- the package was renamed `mcp/` ->
+`dfmcp/` on 2026-09-12 specifically because a local `mcp/` directory shadows
+the MCP SDK, and that day's documentation sweep
+(`decisions/DECISIONS.md` 2026-09-12, "six files corrected") missed these
+three. Changed: all three headers now say `dfmcp/`. Also in
+`agents/overseer/tools.yaml`: the `threat.scan` entry said "Never run
+against a live fort as of writing," which was true when written but is now
+false -- it was live-verified the same day (`decisions/DECISIONS.md`
+2026-09-12, "Threat detector LIVE-VERIFIED"). Corrected with the real
+verification detail.
+
+**`agents/marshal/role.md`.** Same stale premise as `ROSTER.yaml`'s
+`blocked_on`: "There is no trustworthy hostile signal at either layer, and
+building one is required work before this role means anything." Corrected:
+`threat.scan` exists and is live-verified; the real blocker is the missing
+write tools for military posture, squads and burrows.
+
+**Audited and left alone, no drift found:** `docs/DF-UI-AUTOMATION.md`,
+`docs/PROXMOX-SETUP.md`, `docs/RUNBOOK-DARK-GUEST.md` (created 2026-09-15,
+already current), `agents/architect/role.md`, `agents/overseer/role.md`
+(except the `tools.yaml` fix above), `agents/consultant/role.md`,
+`agents/quartermaster/role.md`, `agents/chronicler/role.md`. No
+`scripts/README.md` exists.
+
+### New traps added to `docs/TRAPS.md` (append only)
+
+A new "Added 2026-09-15/16, from the queue live deploy and the Overseer's
+first ruling" section, exactly the four named in the brief: multi-agent
+openclaw configs need `agents.ownership: "explicit"`; `agent exec` in a
+multi-agent config separately needs `agents.defaults.systemAgent.agentId`,
+undetected by `config validate` alone; a pinned config's `_note` key is
+rejected by the live schema; an externally-linked openclaw plugin
+(`@openclaw/deepseek-provider`) is lost across a VM rebuild and needs
+re-linking; and a `models.providers.<id>.apiKey` SecretRef can resolve
+cleanly in a secrets audit while still being shadowed, unconditionally, by
+an existing plaintext auth profile (`REF_SHADOWED`).
+
+### Drift not settled, reported rather than picked
+
+- **`agents/overseer/role.md`'s "Command latency is bounded below by the
+  simulation tick ... commands have been observed taking 45-80 seconds"** and
+  `docs/AGENT-ARCHITECTURE.md` §14 item 5's attribution of that same 45-80s
+  figure partly to tick-gating both predate the `FPS_CAP` correction. The
+  45-80s figure itself is an independent live observation, not derived from
+  `FPS_CAP:5`, so it is not obviously wrong -- but the tick-wait *share* of
+  that explanation (previously reasoned as ~200ms at cap 5) would be ~10ms at
+  the real cap of 100, which changes which term the explanation says
+  dominates. Not touched here: per the orchestrator's instruction, correcting
+  the `FPS_CAP` number was this stream's job, not re-deriving what depends on
+  it, and this specific passage is reasoning rather than a bare restated
+  number, so it did not fit the narrow inline-correction pattern used
+  elsewhere. Flagged for the orchestrator's call.
+- **No genuine two-doc contradiction was found** that this stream judged not
+  its place to settle -- the drift found was uniformly "doc says X, register/
+  live-fact says not-X," not two docs disagreeing with each other.
+
+### Live facts folded in mid-stream
+
+The orchestrator sent three verified-live facts partway through (fort
+unpaused 2026-09-15 23:03 UTC; `FPS_CAP` is 100 not 5; saves are under the
+`df` user's XDG data dir, not the game directory) and, separately, committed
+its own `Working.md`/`decisions/DECISIONS.md` record of the same plus the
+finding that `proposal-0001`'s prediction window elapsed unexecuted once the
+fort resumed. Both were merged into this branch (two merges from `main`, see
+commits below) and folded into every doc this stream touched that described
+the pause or cited `FPS_CAP:5`, rather than left half-corrected.
+
+### Commits on this branch (`worktree-agent-ac8f4ce560b6658d4`)
+
+Fourteen commits, one per logical chunk (`wip:` prefix) plus two merges from
+`main`; see `git log` for the full list. No push.
