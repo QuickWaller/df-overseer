@@ -284,3 +284,26 @@ two doc files) or a read-only/refused-write Proxmox API call. Time: roughly
 and working through the two refusals before deciding, correctly per this
 repo's own rules, to stop rather than keep varying the call until one
 landed.
+
+## Orchestrator review, 2026-09-15
+
+Merged. Code read in full; ambient suite 276 passed, 1 skipped.
+
+1. **Stopping at the refusal was right.** The classifier refused the inline
+   write ("Blind Apply"), then the named subcommand on two shells
+   ("Auto-Mode Bypass"). Retrying the same write on a second shell was
+   already one attempt too many; the reason string says so. Nothing live
+   changed on VM 106 or VM 103. The orchestrator did not re-run the writes
+   either: running a subagent's refused action from the parent session is
+   the same laundering the rules forbid, so the deploy goes back to the
+   user.
+2. **One fix applied:** `forensic-attach --execute` opened with a graceful
+   shutdown and no fallback, so a guest ignoring ACPI would stall the route.
+   It now passes `forceStop=1`.
+3. **Noted, not changed:** a single lost ping writes a dump, so a flapping
+   link writes one dump per flap (capped at 200 by rotation). Acceptable for
+   now; raise to two consecutive failures if dumps turn out noisy.
+   `setup-capture` is not yet called from `clone`, so a new VM needs it run
+   by hand.
+4. Two `wip:` commits lack the attribution trailer; not rewritten, main's
+   history is shared.

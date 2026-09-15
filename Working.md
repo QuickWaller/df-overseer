@@ -55,9 +55,14 @@ Everything below is what is still open.
 4. **The `set_labor`/`autolabor` race**, a live single-writer violation that
    is small to fix.
 5. **Incident capture for project VMs**, so a guest going dark leaves a
-   record (VM 106 on 2026-09-14 left none). **Dispatched 2026-09-15** to a
-   Sonnet executor, `handoffs/2026-09-15-incident-capture.md`; it also
-   restores `discard=on,ssd=1` on VM 106. It goes into
+   record (VM 106 on 2026-09-14 left none). **Built and merged 2026-09-15, not deployed**
+   (`handoffs/2026-09-15-incident-capture.md`): `provision_vm.py
+   setup-capture`, `forensic-attach` (plan-only unless `--execute`),
+   `set-disk-opts`, `docs/RUNBOOK-DARK-GUEST.md`. The executor's live writes
+   were refused by the auto-mode classifier, so nothing changed on VM 106 or
+   VM 103. **Next step: user go-ahead to run, from the orchestrator session,
+   `set-disk-opts --vmid 106`, shutdown/start 106, `setup-capture --vmid 106`,
+   a simulated outage, then `setup-capture --vmid 103`.** It goes into
    `scripts/provision_vm.py` so VM 103 gets it too.
    - Install `qemu-guest-agent` (never installed, TRAPS.md).
    - Keep the journal on disk.
