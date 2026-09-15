@@ -800,17 +800,22 @@ This is the mechanical input `docs/AGENT-ARCHITECTURE.md` §10 expects for
   connection), no output sanitising (colour is a field this client never
   reads, not something stripped from `text`), no heartbeat/keepalive (none
   exists on the wire -- research doc §7 -- so this module does not
-  pretend to poll for one), no live verification against VM 103 or any
-  real DFHack process.
+  pretend to poll for one). **As of this original build stream: no live
+  verification against VM 103 or any real DFHack process** -- since
+  superseded, see "What remains unproven" above (RESOLVED 2026-09-14).
 - **`server.py` adds no scope beyond what its own section above states.**
   No token issuance, no OAuth authorization server (the two placeholder
   URLs in `AuthSettings` are never dereferenced by anything this design
-  configures), no TLS termination (the tailnet's job, not this server's),
-  no caching or hot-reload of the registry/roster (both loaded once at
-  startup), no retry/backoff around DFHack calls beyond what
-  `DFHackConnectionPool` already does on its own, and -- per this stream's
-  explicit instruction -- no deployment: it was never run against VM 103
-  or VM 106, and nothing it produces was installed or started anywhere.
+  configures), no TLS termination (this server binds VM 103's LAN address
+  directly, no TLS in front of it -- Tailscale is deferred, see
+  `docs/AGENT-ARCHITECTURE.md` §13), no caching or hot-reload of the
+  registry/roster (both loaded once at startup), no retry/backoff around
+  DFHack calls beyond what `DFHackConnectionPool` already does on its own.
+  **As of this original build stream, per its explicit instruction -- no
+  deployment: it was never run against VM 103 or VM 106, and nothing it
+  produces was installed or started anywhere.** That has since changed: see
+  the file header and "What remains unproven" above. `dfmcp-server.service`
+  has run continuously on VM 103 since 2026-09-14.
 
 ## Things found while doing this that are worth flagging back
 
