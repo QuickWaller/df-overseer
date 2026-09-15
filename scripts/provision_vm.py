@@ -481,7 +481,10 @@ def cmd_forensic_attach(pve, args):
     status = pve.get(pve.vm_path(vmid, "/status/current"))
     if status.get("status") != "stopped":
         pve.wait_task(pve.post(pve.vm_path(vmid, "/status/shutdown"),
-                               {"timeout": 60}), "shutdown", timeout=120)
+                               # a dark guest may ignore ACPI; fall back
+                               # to a hard stop rather than stall the route
+                               {"timeout": 60, "forceStop": 1}),
+                      "shutdown", timeout=120)
 
     log("2/8 cloning template %s -> temp vmid %s" % (template_vmid, temp_vmid))
     upid = pve.post(pve.vm_path(template_vmid, "/clone"), {
