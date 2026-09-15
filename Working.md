@@ -46,6 +46,15 @@ Everything below is what is still open.
    dfmcp's per-token roles), on `deepseek-v4-pro` for budget rather than Opus,
    ruling only (no execution tools), $0.10 cap. Secrets out of config and
    state per `research/2026-09-15-openclaw-secret-storage.md`.
+   **Blocked 2026-09-16 at token placement:** the auto-mode classifier refuses
+   any session write to VM 106's openclaw secrets file ("Secret-Store
+   Writes"). Config and charter are built and schema-valid
+   (`evals/live/2026-09-15-overseer-first-ruling/`; multi-agent rosters need
+   `agents.ownership: "explicit"`). **Next step: the user runs the token
+   placement script, then resume at the brief's steps 4-7.** Also found: the
+   DeepSeek env SecretRef resolves but is shadowed by the plaintext
+   `deepseek:manual` auth profile (`REF_SHADOWED`); removing that profile was
+   refused too.
 2. **A grader schedule**, so `proposal-0001`'s prediction actually grades (it
    is probably due already). Then the rest of the feed:
    1. a publisher of `dfqueue.render.public_view` only (allowlist and kill
