@@ -5,139 +5,39 @@ story without you. See **[docs/PURPOSE.md](docs/PURPOSE.md)** for what this is
 and why, and **[docs/MEMORY-ARCHITECTURE.md](docs/MEMORY-ARCHITECTURE.md)** for the overseer's memory and
 learning architecture.
 
-> **Status, rewritten 2026-09-12: the fort is not just standing anymore.**
-> **Something has actually decided what it does, at least once, end to
-> end, and the codebase that got it there is no longer split across two
-> branches.** Infra layer unchanged and still solid: `scripts/provision_vm.py`
-> built VM `df-colony-01` (vmid 103, rebuilt 2026-09-08 after an earlier
-> estate rebuild deleted the original), `scripts/install_df.py`
-> installs/runs DF Classic + DFHack on it, verified end to end. **Uniboslan,
-> "Ragwind," is the one fort** (a first fort, Artobcatten, was founded and
-> then unrecoverably lost as a side effect of founding Uniboslan, see
-> `decisions/DECISIONS.md` 2026-09-10). It survived a real VM outage
-> 2026-09-11 (cluster quorum loss blocked start/stop entirely, not just
-> snapshots, resolved by the user directly, not this repo) and now runs on
-> `cpu: x86-64-v2-AES` (applied for real, not just accepted).
+> **Status, 2026-09-15.** Current work and next steps: `Working.md` ("START
+> HERE"). History: `decisions/DECISIONS.md`, `working-archive/`, `evals/live/`.
 >
-> **Game-side code now exists, has been run for real, and all of it is on
-> `main`.** `perception-layer-experiments` (14 commits, deliberately kept
-> separate for three weeks on the user's own repeated call) merged into
-> `main` 2026-09-12 (`f078bf8`, six real conflicts resolved deliberately,
-> not auto-accepted; `decisions/DECISIONS.md`'s newest rows carry the
-> per-file reasoning), and the branch plus its worktree
-> (`../df-automation-perception`) are deleted: a fresh session should not
-> look for either. What it brought over **built and live-verified nearly
-> the entire spatial-perception build order** (`docs/PURPOSE.md` items 2-8:
-> connectivity, landmarks, `get_overview`, `get_diff_since`,
-> `find_open_area`, `find_chokepoints`, `get_stuck_jobs`), audited properly
-> 2026-09-11 after this file badly undersold it as "connectivity + a seed
-> landmark." `scripts/dfhack/` now holds 10 files, all live-deployed
-> on VM 103. Also on `main`: a labor-management slice
-> (`get_unit_status`/`set_labor`, `autolabor` enabled and confirmed
-> actually assigning jobs) and a second, authenticated personal-control
-> VNC channel (real mouse/keyboard for the user alone, Cloudflare
-> Access-gated, alongside the existing public view-only feed).
+> - **The fort.** VM 103 (`df-colony-01`) runs **Uniboslan, "Ragwind,"** the
+>   one fort, on DF Classic plus DFHack under Xvfb, built by
+>   `scripts/provision_vm.py` and `scripts/install_df.py`. A first fort,
+>   Artobcatten, was lost founding it (register 2026-09-10).
+> - **Perception and action.** `scripts/dfhack/` holds the coordinate-free
+>   tools (connectivity, landmarks, overview, diff, open-area and diggable
+>   find/build, chokepoints, stuck jobs, labor), live on VM 103.
+>   Two closed loops ran for real: Stockpile #2 was built, and a 41-tile dig
+>   was completed, both without a raw coordinate reaching the decision-maker.
+> - **`dfmcp/`**, the MCP server: `dfmcp-server.service` on VM 103,
+>   LAN-bound, **bearer tokens the only guard until Tailscale**. Per-role
+>   allowlists enforced server-side, role from the credential, every call
+>   logged to journald.
+> - **`dfqueue/`**, the proposal queue: SQLite, validated at write time, live
+>   since 2026-09-15 (`queue.propose`/`pass` for the architect,
+>   `queue.rule`/`pending` for the Overseer). Architect run #3 wrote the first
+>   real proposal; nothing has ruled on it and no grader runs on a schedule.
+> - **Agents.** openclaw on VM 106 runs one-shot `agent exec` on DeepSeek; no
+>   agent runs as a service. Everything in `docs/` and `research/` beyond the
+>   above is design or proposal unless marked verified.
 >
-> **The actual milestone**: a bounded, tools-only autonomous-play
-> experiment used `find_open_area` to pick a real, ranked, named
-> construction candidate, then a new fused resolve-and-act primitive
-> (`build_open_area`/`build`) turned that pick into a real, independently-
-> verified fort mutation: a genuine second stockpile, "Stockpile #2,"
-> wired into the exits graph, **without the raw coordinate ever being
-> visible to whatever made the decision.** First fully closed loop this
-> project has. The same experiment, and the correction pass right after,
-> found two real gaps. (1) Nothing found *diggable* rock/soil: **closed the
-> same day.** `find_diggable_area`/`dig_diggable_area`
-> (`df-overseer-diggable.lua`) mirror `find_open_area`/`build_open_area` for
-> solid terrain instead of walkable space, live-verified and then
-> live-tested end to end: a dwarf claimed a real dig job and all 41
-> designated tiles were fully dug, the project's second fully closed
-> coordinate-free decision-to-mutation loop. Getting there found a real,
-> previously-unknown bug shared by both tools: `quickfort`'s `-c` anchors a
-> blueprint's *top-left* corner, not its center, and both were silently
-> passing the computed center (Stockpile #2 only worked anyway by luck).
-> Fixed in both, both fixes now merged and pushed on `main`. (2)
-> `unit-status hostile` is a known-unreliable signal (missed a real kea
-> attack entirely, flagged harmless demons instead): the event-driven
-> prototype this used to describe as a separate, uncommitted
-> `df-overseer-combat.lua` has since been folded into
-> `df-overseer-diff.lua` instead (2026-09-12, `6dd92bb`), resolving the
-> overlap rather than leaving it pending.
-> Full trail: `decisions/DECISIONS.md`'s 2026-09-11 and 2026-09-12 rows,
-> `Working.md`'s current handover. Everything in `docs/`/`research/` beyond
-> what's cited as verified above is still a design artifact or proposal.
->
-> **UPDATED 2026-09-12, end of day: the MCP server exists, and it was the one
-> thing everything else was waiting on.** `dfmcp/` is six modules and **136
-> tests**: the tool registry, the role/permission seam, MCP tool definitions
-> plus argv construction, bearer-token-to-role, a persistent DFHack RPC client
-> with a connection pool, and a streamable-HTTP transport. Two design
-> requirements are enforced in code rather than merely written down: the
-> allowlist is checked **server-side** on every call, and role identity comes
-> from a credential resolved at the transport, never from anything the caller
-> asserts.
->
-> **UPDATED 2026-09-14: it has now met real DFHack, and reality found a real
-> bug.** The first live smoke test on VM 103 passed five of six checks (real
-> SDK over a bound socket, opaque 401, per-role listing, the advisor refusal,
-> the pool against real DFHack), but every read tool that prints a JSON array
-> broke the result shape, which the fake server's object-shaped payload had
-> hidden. **Fixed, merged (`f37502c`) and then re-verified live the same day:
-> all six checks plus an empty-array case passed against the real fort.** So
-> the server, its auth, its per-role listing, its refusals and its DFHack pool
-> are proven against reality. **It then became a real service the same day:**
-> `dfmcp-server.service` is active and enabled on VM 103, LAN-bound, and
-> **VM 106 has called it across the network** (curl alone: initialize, the
-> architect's read-only tool list, live fort JSON, 401 on a bad token). Since
-> the LAN has no firewall, **the bearer tokens are the only guard**, a
-> deliberate and reversible trade pending Tailscale. **And an agent has now
-> called it:** openclaw on VM 106 (`agent exec`, DeepSeek, architect role)
-> listed the fort's landmarks through `dfmcp` and answered correctly, checked
-> against DFHack directly (`handoffs/2026-09-14-openclaw-first-agent-call.md`).
-> It is a one-shot CLI run, not a service: nothing listens on VM 106, and the
-> DeepSeek key sits there in plaintext in openclaw's own state DB, pending
-> the user's call.
->
-> **UPDATED 2026-09-15: the architect has done its real job, the tools it
-> exposed were fixed, and the channel it will write to exists.** Two
-> architect charter runs (DeepSeek, `role.md` as instructions; output kept in
-> `evals/live/`) produced one sound proposal, then one that found underground
-> space but dropped the proposal format. Along the way:
-> - the spatial tools take a **`level` relative to the landmark** instead of an
->   absolute z, which a coordinate-free agent could never know;
-> - a script's `{"error": ...}` is now an MCP `isError`;
-> - `dfmcp` **logs every tool call** as JSON to journald.
->
-> All three are deployed and verified live on VM 103. **`dfqueue/`** is the
-> §4 proposal queue: write-time validated, **SQLite** (the user's call, a
-> partial reversal of the 2026-08-27 no-database rule, for live data only),
-> with **live-state prediction signals** (`learning/live_signals.py`) and a
-> grader. **Wired into dfmcp and deployed to VM 103 on 2026-09-15**:
-> `queue.propose`/`pass` (architect) and `queue.rule`/`pending` (Overseer),
-> role from the credential, live DB under `/var/lib/dfmcp`. **Architect run #3
-> wrote the first real proposal through it on its first try**
-> (`evals/live/2026-09-15-architect-third-charter/`). Nothing has ruled on it
-> yet and no grader runs on a schedule. The user wants a scrolling feed of
-> proposals and rulings beside the live stream (proposals and rulings, not
-> peer chat; no publish delay for now). Details: `Working.md`, the register's
-> 2026-09-14/15 rows, `handoffs/2026-09-15-queue-live-deploy.md`. The
-> paragraph below is the 2026-09-12 state, kept for its traps.
-> **Read this next line before trusting any of it: nothing in
-> `dfmcp/` has met a real DFHack, a bound socket, or a real agent host.** Every
-> test runs against a fake server built from the same wire spec, so a
-> divergence between the VM's actual binary and the source the research read
-> would pass all 136. The smoke test that closes that gap is written out in
-> `handoffs/2026-09-12-mcp-transport.md`, and it touches VM 103, so it needs
-> explicit go-ahead. **Two traps worth knowing before running the suite:** the
-> repo's ambient baseline (`python -m pytest`, Python 3.12) is **`229 passed,
-> 1 skipped` as of 2026-09-15** (it was 121 before `dfqueue/` and the live
-> signals landed), and the one skip is correct, not a regression (the
-> transport's tests guard their own import of a pinned SDK; run
-> `dfmcp/tests` in `.venv-dfmcp` for the full 128). `py -3` on this
-> workstation is a 3.13 without pytest, so use `python`;
-> and this repo's package is `dfmcp`, deliberately **not** `mcp`, because a
-> local `mcp/` directory shadows the MCP SDK of the same name for anything
-> running from the repo root.
+> **Traps before running anything:**
+> - Ambient `python -m pytest` gives **252 passed, 1 skipped**; the skip is
+>   correct (transport tests guard their pinned SDK import). Run `dfmcp/tests`
+>   in `.venv-dfmcp` for all **152**. `py -3` here is a 3.13 without pytest:
+>   use `python`.
+> - Packages are `dfmcp` and `dfqueue`, never `mcp` or `queue`: a local
+>   directory of either name shadows the MCP SDK or the stdlib module.
+> - Deploy with `git -c core.autocrlf=false archive`; this workstation's
+>   `core.autocrlf=true` otherwise ships CRLF and breaks hash checks.
 
 This repo is managed with Claude Code using a structured memory system,
 following the pattern published as
