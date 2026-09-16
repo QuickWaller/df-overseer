@@ -1,6 +1,9 @@
 # Roadmap
 
-**Last reviewed:** 2026-09-16 (seventeenth pass, targeted doc-drift pass: the
+**Last reviewed:** 2026-09-16 (eighteenth pass, targeted: a new top Now item
+for the production gap and the building-tools stream, after the fort was found
+stopped with no fort-owned food or drink and no tool able to fix it;
+`proposal-0001`'s execution demoted behind it.) Previously: 2026-09-16 (seventeenth pass, targeted doc-drift pass: the
 Overseer's first ruling landed (`ruling-0001`, `proposal-0001` accepted) and
 the Now item's next-steps list updated to mark it done and note the paused
 fort as the blocker for execution and grading.) Previously: 2026-09-15 (sixteenth pass, targeted not full: the queue
@@ -44,6 +47,19 @@ or `decisions/DECISIONS.md`, not here.
 ## Now
 <!-- Actively being worked, or the clear immediate next step. -->
 
+- **NOW, 2026-09-16: build the tools that make a fort produce anything.**
+  Uniboslan is stopped behind a popup with zero fort-owned food or drink and
+  no farm plot, still, workshop or depot, and **the agents' write surface (dig,
+  open-area build, landmark build, labor set) cannot fix any of it** — which is
+  the finding, not the fort. Next: decide the rescue path with the user (depot
+  and trade, farm and still, or restart — the fort is expendable, the tools are
+  the point), then dispatch the building-tools stream from the research's list:
+  workshops, farm plots, trade depot, typed stockpiles, manager orders, plus
+  the missing read tool that separates fort-owned stores from foreign goods.
+  `workorder` is available and `orders import library/basic` is the cheapest
+  real win; the `zone` plugin is not available here.
+  → `research/2026-09-16-food-and-drink-logistics.md`, `Working.md` handover.
+
 - **NOW, 2026-09-15: wire the proposal queue into dfmcp, then the feed.**
   Done since the last pass:
   - openclaw on VM 106 called the fort and answered correctly;
@@ -60,15 +76,13 @@ or `decisions/DECISIONS.md`, not here.
      (Overseer, `deepseek-v4-pro`) accepted `proposal-0001` as `ruling-0001`,
      charter-clean but one sample judging an unattributable prediction sound,
      not evidence of good arbitration;
-  3. execute `proposal-0001` and run the grader against its prediction — both
-     were blocked while the fort was **kept paused** at tick 12274877 under
-     the user's standing rule until 2026-09-15 23:03 UTC, since neither could
-     act on a clock that wasn't moving. **Since unpaused, the fort runs
-     unattended with no Sentry, at the real cap (`FPS_CAP` 100, not the 5
-     several docs assumed), and `proposal-0001`'s 1200-tick prediction window
-     elapsed within about a minute — unexecuted.** Grading it now would
-     record a latency miss, not a verdict on the proposal (register); no
-     grader schedule exists yet regardless;
+  3. execute `proposal-0001` and run the grader against its prediction — now
+     **deferred behind the building-tools item above**: its 1200-tick window
+     elapsed within about a minute of unpausing (real cap `FPS_CAP` 100, not
+     the 5 several docs assumed), so grading it records a latency miss rather
+     than a verdict (register), and no tool exists that could execute it
+     anyway. Left ungraded on purpose; a grader **schedule** is still owed for
+     the predictions that follow;
   4. a publisher of §8's allowlisted fields (no delay, user's call);
   5. the stream page with the feed on the right (**public, so its own
      go-ahead**).
