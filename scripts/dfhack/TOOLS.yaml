@@ -365,6 +365,20 @@ df-overseer-stocks.lua:
         this stream's no-deploy constraint. Treat as verified-by-mechanism,
         not verified-by-the-actual-shipped-command, until the next deploy pass
         re-confirms it as this file, not a copy of its logic.
+
+        SECOND FIX, same day: the first version of this tool counted item
+        ENTITIES, not stack units -- "5 raw edible items" on Uniboslan was
+        really 24 units of food (the user reading the screen caught it:
+        "~20 food and 5 meat" visible; a fisherdwarf's or hunter's catch
+        commonly stacks 4-5 units per item entity). Each bucket now returns
+        `units` (the `item.stack_size` sum -- the PRIMARY field, what "how
+        much food" means) alongside `item_count` (the distinct-entity
+        count, still real and useful for hauling/container reasoning, never
+        silently dropped), plus `foreign_units`/`foreign_item_count` on the
+        caravan's side and unit-summed `rotten_units`/`unreachable_units`.
+        Re-verified live via the same throwaway-script method: drink
+        units=0/foreign_units=50, raw_edibles units=24/foreign_units=245,
+        matching the user's on-screen count exactly.
     seeds:
       lua_function: get_seeds
       effect: read
@@ -378,6 +392,16 @@ df-overseer-stocks.lua:
         current caravan offering seed varieties for sale) -- so even reading
         the raw SEEDS vector count without this filter already overstates
         fort-owned seed stock by roughly half on this exact fort today.
+
+        Returns `total_units`/`total_item_count` and `by_plant_units`/
+        `by_plant_item_count`, same units-vs-item_count split as food-drink
+        above (see that entry's SECOND FIX and the .lua file's own header).
+        SEEDS items on this fort happen to always carry stack_size == 1
+        (confirmed live: sum of stack_size == item count, both 59), so the
+        two numbers are equal here -- an observed fact about this fort
+        today, not a property of the SEEDS item type in general, which is
+        exactly why this tool reports both rather than assuming the
+        equality holds.
 
 df-overseer-labor.lua:
   build_order_item: "not in the 0-9 spatial build order -- a separate gap, decisions/DECISIONS.md 2026-09-11"
