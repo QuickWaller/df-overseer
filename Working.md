@@ -286,26 +286,47 @@ touches `Working.md`, the register or `memory/`.
   be the **required-reads list** — every fact the ladder must branch on, marked
   readable-today or not, which is the requirements list for the tool stream.
 
-### Farm and water, state 2026-09-17
+### Farm and water, state 2026-09-17 (evening)
 
 **Terrain and crops (verified):** z169 surface over one SOIL level at z168 over
 stone; all six fort seed types are subterranean crops, so the farm is a room
 dug into z168. Dwarves need both food and drink (no `NO_EAT`/`NO_DRINK` flag).
 
-- **Farm and still tools: MERGED, not deployed.** `farm.find`/`build`/
-  `set-crop`, `workshop.find`/`build` (still, kitchen), and the dig finder's
-  act/sense fix (z168 5x5 candidates 0 → 5). Suites 291/1 and 162.
-  **Owed:** deploy (3 scripts, `openarea` export, 3 blueprints into
-  `dfhack-config/blueprints/`), then real mutation tests with the user aware.
-- **Kitchen:** vanilla already excludes all six seed items from cooking.
-  Cooking the plants still yields no seed.
-- **Drink test at 10 FPS, done:** 5 of 11 thirsty dwarves drank (migrants);
-  **6 founders (193-198) did not, cause unknown.** Ruled out: location (all in
-  one walkable group on the surface) and carried containers. Highest thirst
-  35,906, about 14,000 ticks below the dire threshold. Fort paused, **sim left
-  at 10 FPS**. The mid-test diplomacy screen was the user.
-- **Next concrete step:** find out why the founders will not drink (read their
-  needs, thoughts and job history read-only first), before any unattended run.
+- **DRINK IS SOLVED, for now.** Each pond is a basin of 6-7/7 water in ramps at
+  z168 with open air above at z169 and undug soil around it: nowhere to stand at
+  the water's level, which is why nobody drank unaided. On the user's call, one
+  `WaterSource` zone was placed **on the water at z168** (quickfort `#zone` `w`,
+  27 tiles, stagnant). One supervised 10 FPS unpause later (tick 217948 to
+  222477, re-paused clean, 15 citizens): founders 193/195/197 went **down to
+  z168** and are at 2349/2744/635 thirst, 197 with no giver at all (first
+  self-serve drinking recorded here); 194/196/198 drank at the very end of the
+  window. Register 2026-09-17. **Zone left in place. Not isolated** (no zoneless
+  control run), but decisive enough to act on.
+- **Two open risks from that fix:** dwarves stand in 6-7/7 water (drowning), and
+  the water is stagnant (`NastyWater` thoughts; health effect unverified). A
+  well removes both; it is no longer urgent.
+- **Farm and still tools: DEPLOYED 2026-09-17** and verified (hashes, per-role
+  tool lists 13/18/4 to 15/23/4, dry runs of farm/still/kitchen builds, fort
+  untouched). Five older scripts were found stale by one trailing newline and
+  corrected. **Not yet run for real:** `farm.build`, `farm.set-crop`,
+  `workshop.build`, each needing the user's go-ahead.
+- **Seed economics researched** (`research/2026-09-17-seed-ratios.md`, figures
+  table ready for a database): brewing gives 5 drinks + exactly 1 seed per
+  unrotten plant and needs an empty barrel or pot; cooking gives none; caps are
+  200 per crop and 3000 total; seeds do not rot. Break-even: at least 1/Y of a
+  harvest must be brewed, Y = plants per tile, so an unskilled unfertilized
+  farm (Y about 1) can cook nothing. Doctrine lives in `doctrine/seed.yaml`.
+- **Doctrine file started** (`doctrine/seed.yaml`), the tier from
+  `docs/MEMORY-ARCHITECTURE.md`: game knowledge no longer goes in the register.
+  Nothing reads it yet.
+- **Well, verified requirements** (for when it is wanted): buildable on an
+  `EMPTY` or `RAMP_TOP` tile that borders floor, so a pond-edge well needs no
+  bridge; needs BLOCKS, BUCKET, CHAIN, TRAPPARTS. Fort has 3 buckets, 3 chains,
+  3 logs, about 1,593 visible trees, **0 boulders, 0 blocks, 0 mechanisms**, so
+  stone must be dug before a well or a mechanism exists.
+- **Next concrete step:** land the water and industry tools stream (zones, tree
+  felling, mason/mechanic/carpenter, work orders, well), then with the user:
+  dig the z168 farm room, build farm plot and still, plant plump helmets.
 
 ### Agents know only what a player could know (decided 2026-09-16)
 
