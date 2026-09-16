@@ -200,8 +200,34 @@ touches `Working.md`, the register or `memory/`.
   food and drink predictions gradeable at all, and the `set_labor`/`autolabor`
   race. One stream because they share `scripts/dfhack/`. **Local only: no
   deploy to VM 103, and the fort stays paused.**
-- **`research/2026-09-16-trade-execution-api.md`** (`researcher`) — settle
-  whether an agent
+- ~~**`research/2026-09-16-trade-execution-api.md`**~~ **LANDED and merged to
+  `main` 2026-09-16.** The previous pass's negative conclusion survives, but
+  the picture underneath is much richer than "only the viewscreen", and it
+  corrects a struct-level error the older docs still carry.
+  **Orchestrator-verified live, not relayed:** `df.viewscreen_tradegoodsst` is
+  **nil in this build** (trade moved into `df.global.game.main_interface.trade`
+  with the v50 rewrite), `dfhack.items.markForTrade` exists,
+  `main_interface.trade.goodflag` is present, and `caravan`, `diplomacy`,
+  `force`, `logistics` and `workorder` all answer `help`. So **staging goods
+  and selecting exactly which items change hands are real, code-level,
+  zero-screen operations.** The *only* missing step is the final commit: no
+  struct-level equivalent exists anywhere in the build, the vanilla button is
+  engine-dispatched, and `A_BARTER_TRADE` is adventure-mode bartering,
+  confirmed absent from `df.interface_key`. The exact input that fires the
+  fortress-mode Trade button is **unknown and untested** (it needs a real depot
+  and a caravan at it).
+  **The policy question, for the user, not for an agent:** driving that last
+  step via `gui.simulateInput`/`screen:feed()` needs no X11, no xdotool and no
+  window focus, so it is *not* the `df-overseer-ui`/`xdotool` mechanism §7
+  bars, though it is arguably the same category. Undecided on purpose.
+  **Two concrete side-findings.** The caravan dwell question the previous pass
+  left open is settled: `caravan_state.time_remaining` is in 1/120-day units
+  (verified at source, `caravan.lua:68` divides by 120) and Uniboslan's caravan
+  reads **3133, about 26 days left** — the orchestrator re-derived this after
+  initially doubting the arithmetic, and the researcher was right. And
+  **`caravan extend` is a real, available, zero-UI-automation write** with no
+  cap found, so the clock on the depot is extendable if we want it.
+  Original brief: settle whether an agent
   can complete a trade at all. The user did not accept the previous pass's "no
   struct-level API found" as final. Covers the whole `caravan`/`trade`/
   `logistics`/`force`/`diplomacy` surface, the struct level, and the one that
