@@ -11,7 +11,13 @@ learning architecture.
 > - **The fort.** VM 103 (`df-colony-01`) runs **Uniboslan, "Ragwind,"** the
 >   one fort, on DF Classic plus DFHack under Xvfb, built by
 >   `scripts/provision_vm.py` and `scripts/install_df.py`. A first fort,
->   Artobcatten, was lost founding it (register 2026-09-10).
+>   Artobcatten, was lost founding it (register 2026-09-10). **As of
+>   2026-09-16 it is stopped at tick 12309480 behind an undismissed popup**
+>   (`pause_state` reads false; the dialog freezes it anyway) with **zero
+>   fort-owned food or drink** and no farm plot, still, workshop or depot. The
+>   agents' write surface cannot fix any of that. The fort is expendable by the
+>   user's call; rescuing it is worth trying for the tools it forces us to
+>   build. → `Working.md` handover 2026-09-16.
 > - **Perception and action.** `scripts/dfhack/` holds the coordinate-free
 >   tools (connectivity, landmarks, overview, diff, open-area and diggable
 >   find/build, chokepoints, stuck jobs, labor), live on VM 103.
@@ -28,11 +34,14 @@ learning architecture.
 >   sample on a cheap model, not evidence of good arbitration). The fort was
 >   kept paused at tick 12274877 under the user's standing rule until
 >   2026-09-15 23:03 UTC, then unpaused and left running unattended with no
->   Sentry (register). At the fort's real cap (`FPS_CAP` 100, not the 5
->   several docs assumed) `proposal-0001`'s 1200-tick prediction window
->   elapsed within about a minute, unexecuted, so grading it now would record
->   a miss caused by wall-clock latency between ruling and execution, not a
->   bad proposal. No grader runs on a schedule regardless.
+>   Sentry (register), before stopping behind the popup above. At the fort's
+>   real cap (`FPS_CAP` 100, not the 5 several docs assumed)
+>   `proposal-0001`'s 1200-tick prediction window elapsed within about a
+>   minute, unexecuted, so grading it now would record a miss caused by
+>   wall-clock latency between ruling and execution, not a bad proposal. It is
+>   left ungraded on purpose; no grader runs on a schedule regardless. It also
+>   could not be executed today even with write tools switched on, because no
+>   tool builds what it asks for.
 > - **Incident capture** on VMs 103 and 106 (guest agent, persistent journal,
 >   a netwatch dump on gateway loss), with `docs/RUNBOOK-DARK-GUEST.md`. VM 106
 >   went dark on 2026-09-14, cause unknown; it was rebuilt in place.

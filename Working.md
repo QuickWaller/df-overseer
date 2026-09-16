@@ -31,8 +31,10 @@ Everything below is what is still open.
   `queue.rule`/`pending` (Overseer) on VM 103, DB under `/var/lib/dfmcp`.
   It holds one real record, `proposal-0001` from architect run #3, with a
   pending prediction (`due_game_tick` 12276077), accepted by the Overseer
-  2026-09-16. No grader runs on a schedule, and the paused fort means nothing
-  comes due. → register 2026-09-15 rows,
+  2026-09-16. No grader runs on a schedule; its window is blown regardless
+  (see the facts section below) and it is left ungraded on purpose. The clock
+  is not moving while the fort is frozen behind its popup.
+  → register 2026-09-15 rows,
   `handoffs/2026-09-15-queue-live-deploy.md`.
 - **Saves:** under the `df` user's XDG data dir on VM 103 (`Bay 12 Games/
   Dwarf Fortress/save`), **not** the game directory: slots `autosave 1..3`,
@@ -88,21 +90,55 @@ spot-checked against `memory/dfhack-environment.md`:
   `autofarm`. Check these before building against them.
 - **Unresolved:** how long the caravan waits.
 
-**The user's framing:** losing this fort is acceptable ("we can always delete
-the fort and restart"), so nothing here is an emergency. Learning the tool
-layer is the point.
+**The user's framing (restated 2026-09-16):** the fort is an experiment and is
+expendable, "we can always delete the fort and restart". Rescuing it is worth
+trying **because the tools get built along the way**, not because the fort
+matters. Nothing here is an emergency; the tool layer is the point.
 
-### Next steps, in order
+### START HERE, in priority order
 
-1. Merge and review the research branch when it lands.
-2. Decide the rescue path with the user: trade with the caravan present (needs
-   a depot), or rush a farm and still, or restart the fort. Time is frozen
+This is the single current priority list. It supersedes the 2026-09-15 list
+that used to sit lower in this file, whose item 1 ("execute `proposal-0001`")
+assumed a running fort and a write surface that could carry it; neither holds.
+
+1. ~~Merge and review the research branch~~ **DONE 2026-09-16**, on `main`
+   (`eb9e83d`, `research/2026-09-16-food-and-drink-logistics.md`).
+2. **Decide the rescue path with the user**: trade with the caravan present
+   (needs a depot), rush a farm and still, or restart the fort. Time is frozen
    until the popup is dismissed, and dismissing it needs the user on the VNC
    control channel (the UI automation path is barred for agents, `role.md`).
-3. Brief and dispatch the **building tools** stream from the research's tool
+   Restarting is an acceptable outcome, not a failure.
+3. **Brief and dispatch the building tools stream** from the research's tool
    list: workshops, farm plots, trade depot, typed stockpiles, manager orders,
-   all landmark-relative with no coordinate crossing the boundary.
-4. Only then revisit executing a proposal end to end.
+   all landmark-relative with no coordinate crossing the boundary. Two things
+   the research singled out: `workorder` is available and `orders import
+   library/basic` is the cheapest real win with no new Lua, and the biggest
+   missing **read** tool is one that separates fort-owned stores from foreign
+   goods, which is exactly the mistake made on 2026-09-16.
+4. **A grader schedule**, so live predictions actually grade. Then the rest of
+   the feed:
+   1. a publisher of `dfqueue.render.public_view` only (allowlist and kill
+      switch; **no delay, user's call 2026-09-14**);
+   2. the stream page, noVNC left and a scrolling feed right. **Public, so it
+      needs its own go-ahead.**
+
+   It shows proposals and rulings, not agent-to-agent chat (user's call; §4
+   kept). Note `proposal-0001` is deliberately left ungraded, see the facts
+   section below.
+5. **Architect quality, with several samples per configuration.** Run #3 fixed
+   the dropped record, but n=1 each: its prediction (`fort.landmarks.count gt
+   4` in one day) cannot attribute an outcome, it judged "nothing to dig" from
+   level 0 only, and run #2's scope slip (a defensibility proposal) is untested
+   since. → `evals/live/2026-09-15-architect-third-charter/README.md` review
+   section. Same for the Overseer: `ruling-0001` was charter-clean but called
+   an unattributable prediction sound and did not notice the fort was stopped.
+6. **The `set_labor`/`autolabor` race**, a live single-writer violation that is
+   small to fix.
+7. **Only then** execute a proposal end to end. `proposal-0001` (accepted
+   2026-09-16, `ruling-0001`, `deepseek-v4-pro`, $0.0068) could not be executed
+   even with the Overseer's write tools switched on, because no tool builds
+   what it asks for. Execution still needs those tools allowed and the user's
+   go-ahead.
 
 ### Facts established 2026-09-15/16 that contradict older docs
 
@@ -140,40 +176,6 @@ layer is the point.
   detach, and ad-hoc Proxmox config writes. Named `provision_vm.py` subcommands
   were fine. Route these back to the user, never through another agent.
 
-### START HERE, in priority order
-
-1. **Next cycle step: execute `proposal-0001`, which the Overseer accepted
-   2026-09-16** (`ruling-0001`, `deepseek-v4-pro`, $0.0068;
-   `evals/live/2026-09-15-overseer-first-ruling/` and the handoff's orchestrator
-   review). **The fort was unpaused 2026-09-15 23:03 UTC on the user's say-so**
-   ("and then let the fort run") and is running unattended with no Sentry.
-   It advances about 100 ticks per wall second (`enabler.fps` is 100, not the 5
-   several docs assume), so `proposal-0001`'s 1200-tick prediction window
-   elapsed within a minute, unexecuted: grading it now can only record a miss
-   caused by no one acting, which is a finding about the loop's wall-clock
-   latency, not about the architect. Execution still needs the Overseer's write
-   tools allowed and the user's go-ahead. The ruling judged an unattributable prediction "sound"
-   (n=1); worth a second sample before trusting arbitration.
-   Setup now on VM 106: two openclaw agents (`architect`, `overseer`), one MCP
-   entry and token each in the secrets env file (placed by the user), the
-   DeepSeek env SecretRef configured but shadowed by the plaintext profile.
-2. **A grader schedule**, so `proposal-0001`'s prediction actually grades (it
-   is probably due already). Then the rest of the feed:
-   1. a publisher of `dfqueue.render.public_view` only (allowlist and kill
-      switch; **no delay, user's call 2026-09-14**);
-   2. the stream page, noVNC left and a scrolling feed right. **Public, so
-      it needs its own go-ahead.**
-
-   It shows proposals and rulings, not agent-to-agent chat (user's call; §4
-   kept).
-3. **Architect quality, with several samples per configuration.** Run #3
-   fixed the dropped record, but n=1 each: its prediction
-   (`fort.landmarks.count gt 4` in one day) cannot attribute an outcome, it
-   judged "nothing to dig" from level 0 only, and run #2's scope slip
-   (a defensibility proposal) is untested since. →
-   `evals/live/2026-09-15-architect-third-charter/README.md` review section.
-4. **The `set_labor`/`autolabor` race**, a live single-writer violation that
-   is small to fix.
 ### Open, waiting on the user
 
 - **DeepSeek key in plaintext on VM 106** in
