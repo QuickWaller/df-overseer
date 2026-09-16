@@ -35,6 +35,16 @@ read:
     note: Primary input to Triage. Keep a per-role cursor, do not re-read history.
   - id: "stuckjobs.find"
     status: exists
+  - id: "stocks.food-drink"
+    status: exists
+    note: >-
+      Added handoffs/2026-09-16-stocks-read-and-labor-race.md. Fort-owned
+      (never caravan-owned) drink/prepared-meal/raw-edible counts plus
+      rotten/unreachable flags per bucket. Not yet deployed to VM 103 -- see
+      TOOLS.yaml's own notes.
+  - id: "stocks.seeds"
+    status: exists
+    note: Same file, same deploy caveat as stocks.food-drink above.
   - id: "labor.unit-status"
     status: exists
     reliability: HEURISTIC
