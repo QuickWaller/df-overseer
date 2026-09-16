@@ -6,7 +6,13 @@
 -- helmet, pig tail, cave wheat, sweet pod -- into drink) and no kitchen.
 -- This file finds and builds workshops, landmark-relative, no raw
 -- coordinates ever crossing the model boundary (design commitment #1).
--- Only `still` and `kitchen` are covered -- the two the handoff names.
+-- Originally `still`/`kitchen` only, the two that handoff named.
+--
+-- EXTENDED handoffs/2026-09-17-water-and-industry-tools.md item 3: `mason`,
+-- `mechanic`, `carpenter` -- see KIND_INFO below for their own #build
+-- symbols/labors and `building_material_report` for the generic
+-- boulder/log/block requirement all five kinds share (live-verified this
+-- session to be identical across all five, not assumed).
 --
 -- REUSES df-overseer-openarea.lua's `is_free` directly (reqscript'd,
 -- exported there 2026-09-16 for exactly this), per the handoff's own
@@ -125,6 +131,16 @@ local MAX_RESULTS = 5
 
 -- workshop_type read directly from hack/scripts/internal/quickfort/build.lua
 -- on this install (its `wl`/`wz` #build symbol entries), not guessed.
+--
+-- ADDED handoffs/2026-09-17-water-and-industry-tools.md item 3: `mason`,
+-- `mechanic`, `carpenter` -- the three workshops the well/orders tools
+-- depend on (blocks, mechanisms, and this project's own building-material
+-- reporting need all three). Their own #build symbols (`wm`/`wt`/`wc`) and
+-- labors (`MASON`/`MECHANIC`/`CARPENTER`) were each read directly from this
+-- install's own build.lua/df.unit_labor this session, matching the exact
+-- verification standard still/kitchen already set. None needs a container
+-- (mason/mechanic/carpenter output blocks/mechanisms/finished goods
+-- directly, never into a barrel).
 local KIND_INFO = {
   still = {label = "Still", subtype = df.workshop_type.Still,
     labor = "BREWER", needs_container = "BARREL"},
@@ -132,6 +148,12 @@ local KIND_INFO = {
     labor = "COOK", needs_container = nil,
     named_requirement = "restrict cooking of plants and seeds needed for "
       .. "replanting, or the farm loses its seed stock"},
+  mason = {label = "Mason's Workshop", subtype = df.workshop_type.Masons,
+    labor = "MASON", needs_container = nil},
+  mechanic = {label = "Mechanic's Workshop", subtype = df.workshop_type.Mechanics,
+    labor = "MECHANIC", needs_container = nil},
+  carpenter = {label = "Carpenter's Workshop", subtype = df.workshop_type.Carpenters,
+    labor = "CARPENTER", needs_container = nil},
 }
 
 -- Same is_fort_owned test as df-overseer-stocks.lua (not flags.trader, not
@@ -239,10 +261,33 @@ local function seed_protection_report()
   return {protected = protected, unprotected = unprotected, unknown = unknown}
 end
 
+-- ADDED handoffs/2026-09-17-water-and-industry-tools.md item 3: every one
+-- of these five workshop kinds is a basic, zero-frills workshop, and
+-- `dfhack.buildings.getFiltersByType({}, df.building_type.Workshop,
+-- <subtype>, -1)` returns, for ALL FIVE (live-verified this session, not
+-- assumed to generalise from mason/mechanic/carpenter alone -- still and
+-- kitchen were checked too), a single filter with no item_type/mat_type at
+-- all, just `flags2.building_material = true` -- DF's generic "any boulder,
+-- log, or block" construction-material class, not a specific item type.
+-- This answers the still/kitchen stream's own open question ("logs or
+-- boulders, whichever the game accepts") for real: it is BOTH, plus
+-- blocks, interchangeably. Reported fresh on every call, never cached.
+local function building_material_report()
+  return {
+    accepts = {"BOULDER", "WOOD", "BLOCKS"},
+    fort_owned = {
+      BOULDER = count_fort_owned("BOULDER"),
+      WOOD = count_fort_owned("WOOD"),
+      BLOCKS = count_fort_owned("BLOCKS"),
+    },
+  }
+end
+
 local function requirements_for(kind_info)
   local req = {
     labor = kind_info.labor,
     citizens_with_labor = labor_enabled_count(kind_info.labor),
+    building_material = building_material_report(),
   }
   if kind_info.needs_container then
     req.needs_container = kind_info.needs_container
@@ -369,7 +414,7 @@ end
 function find_workshop_area(w, h, level, near, kind, radius_tiles)
   local kind_info = KIND_INFO[tostring(kind):lower()]
   if not kind_info then
-    return nil, "unknown workshop kind: " .. tostring(kind) .. " (expected still/kitchen)"
+    return nil, "unknown workshop kind: " .. tostring(kind) .. " (expected still/kitchen/mason/mechanic/carpenter)"
   end
   local chosen, err, resolved_z = ranked_candidates(w, h, level, near, radius_tiles)
   if err then
@@ -402,7 +447,7 @@ end
 function build_workshop(w, h, level, near, kind, blueprint_file, rank, radius_tiles, dry_run)
   local kind_info = KIND_INFO[tostring(kind):lower()]
   if not kind_info then
-    return nil, "unknown workshop kind: " .. tostring(kind) .. " (expected still/kitchen)"
+    return nil, "unknown workshop kind: " .. tostring(kind) .. " (expected still/kitchen/mason/mechanic/carpenter)"
   end
   rank = rank or 1
   local dry = truthy_dry_run(dry_run)
