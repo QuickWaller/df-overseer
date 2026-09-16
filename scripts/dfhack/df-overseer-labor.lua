@@ -68,6 +68,21 @@
 -- documented, present-on-this-install functions -- no raw flag reading was
 -- needed at all.
 --
+-- KNOWLEDGE-SCOPE FIX, 2026-09-16 (handoffs/2026-09-16-knowledge-scope-audit.md,
+-- decisions/DECISIONS.md 2026-09-16 "Agents may only know what a vanilla
+-- player could know"): the `hostile` filter was OMNISCIENT before this fix --
+-- it scanned world.units.active with no reachability check and no
+-- dfhack.units.isHidden check at all, which is exactly how it surfaced the 4
+-- demons 40 z-levels down behind solid rock (decisions/DECISIONS.md
+-- 2026-09-11) that motivated df-overseer-threat.lua's build in the first
+-- place. Fixed by excluding any unit dfhack.units.isHidden reports true for
+-- (research/2026-09-16-player-visibility.md §5: isHidden is the correct
+-- composite predicate -- tile-hidden OR ambushing-and-not-fort-controlled --
+-- not isVisible, whose own doc admits "doesn't account for sneaking").
+-- Expected, and confirmed live (see the handoff's report): the same 5
+-- isHidden units this fort's own demons/deep-cavern units already
+-- represent should now disappear from `hostile`'s output entirely.
+--
 -- Caveat, not yet resolved: dfhack.units.isDanger() is broader than
 -- "hostile invader" -- its own doc lists night creatures, semi-megabeasts,
 -- agitated wildlife, and crazed units alongside invaders/marauders. The
@@ -132,7 +147,13 @@ local function unit_status(filter)
     end
   else
     for _, unit in ipairs(df.global.world.units.active) do
-      if dfhack.units.isDanger(unit) and not dfhack.units.isOwnCiv(unit) then
+      local ok_hidden, hidden = pcall(dfhack.units.isHidden, unit)
+      -- ok_hidden false (isHidden itself errored) is treated as hidden --
+      -- the safe default when visibility can't be determined at all, never
+      -- the permissive one. See the KNOWLEDGE-SCOPE FIX note above.
+      local is_hidden = (not ok_hidden) or hidden
+      if dfhack.units.isDanger(unit) and not dfhack.units.isOwnCiv(unit)
+          and not is_hidden then
         local x, y, z = dfhack.units.getPosition(unit)
         local near, direction, distance = describe_position(x, y, z)
         print(string.format(

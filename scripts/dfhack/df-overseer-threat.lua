@@ -72,16 +72,48 @@
 -- which should ever appear as a "threat". NOT independently live-tested
 -- against a real tame pet on the map this session -- flagged below.
 --
--- Sneaking/ambush visibility: dfhack.units.isHidden(unit) ("hidden to the
--- player, accounting for sneaking... works for any game mode") is read and
--- reported as an informational field, not a filter. DFHack's unit list
--- (df.global.world.units.active) is a direct memory read, unlike the
--- announcement/UI layer INVASION depends on -- the same reveal-plugin-style
--- visibility gap this project has relied on elsewhere. This is *why* this
--- tool can plausibly see an ambusher or sneaking creature the moment it's on
--- the map, structurally addressing the exact blind spot named in the task.
--- NOT independently live-tested against a real ambush this session --
--- flagged below.
+-- KNOWLEDGE-SCOPE FIX, 2026-09-16 (handoffs/2026-09-16-knowledge-scope-audit.md,
+-- decisions/DECISIONS.md 2026-09-16 "Agents may only know what a vanilla
+-- player could know"; research/2026-09-16-player-visibility.md's bottom
+-- line names this file as "the single hardest grey zone" and this exact
+-- tension by name). dfhack.units.isHidden(unit) ("hidden to the player,
+-- accounting for sneaking... works for any game mode") used to be read and
+-- REPORTED as an informational field, never a filter -- and this tool's own
+-- stated purpose is catching ambush/sneaking units precisely BECAUSE
+-- isHidden says a vanilla player cannot see them. That is a real,
+-- structural OMNISCIENCE, not an edge case: reading world.units.active
+-- directly bypasses the announcement/UI layer entirely, the same
+-- reveal-plugin-style gap this project has otherwise relied on for good
+-- reasons. The user's ruling (register, 2026-09-16) is that sneaking
+-- ambushers are not allowed, full stop -- so isHidden units are now
+-- EXCLUDED from the candidate list outright (added to the same `excluded`
+-- check as isDead/isOwnCiv/isFortControlled below), not merely relabeled.
+--
+-- COVERAGE LOST, stated plainly, per the handoff's own instruction: this
+-- tool's whole reason for existing was catching exactly what it now
+-- excludes. An ambusher or a sneaking creature standing on a revealed tile,
+-- not yet fort-controlled, will no longer appear in `scan`'s results at all
+-- until it stops sneaking/steps onto a tile isHidden reads false for (an
+-- ambush that reveals itself by attacking, a sneak that gets spotted) or the
+-- game's own announcement layer tells the player something happened. The
+-- reachable-but-unflagged failure mode this file was built to fix (the kea
+-- attack unit-status hostile missed) is UNCHANGED by this fix -- ordinary
+-- visible wildlife/hostiles reachable via shares_walkable_group/
+-- near_a_landmark are still caught, this only removes the isHidden branch.
+--
+-- THE VANILLA-LEGAL EQUIVALENT, per the handoff's instruction to check
+-- rather than build a new tool here: DF's own announcement layer sometimes
+-- tells a player "something happened" without revealing the still-hidden
+-- actor. df-overseer-diff.lua's REPORT_CATEGORY already tags exactly this
+-- family, confirmed present in this build's live announcement_type enum
+-- (research doc §9, live-confirmed ids): "ambush" (ids 53-66, 95, 322),
+-- "night_attack" (136-138), "undead_or_ghost" (139, 150), plus the
+-- separately-noted CREATURE_STEALS_OBJECT case (seen live in this fort's
+-- own announcement log, research doc §9) where a theft is announced without
+-- naming the still-hidden thief. `df-overseer-diff.lua since`'s REPORT
+-- branch is the correct, already-built, player-visible route to "something
+-- is wrong, unspecified" -- not built fresh here, per the handoff's
+-- instruction not to build a new announcements tool in this stream.
 --
 -- Design commitment #1: never a raw coordinate. Every result carries
 -- near_landmark/direction/distance_tiles (via nearest_landmark, reqscript'd)
@@ -167,9 +199,16 @@ function find_threats(radius_tiles)
     local ok_dead, dead = pcall(dfhack.units.isDead, unit)
     local ok_own, own = pcall(dfhack.units.isOwnCiv, unit)
     local ok_fc, fort_controlled = pcall(dfhack.units.isFortControlled, unit)
+    local ok_hidden, hidden = pcall(dfhack.units.isHidden, unit)
+    -- KNOWLEDGE-SCOPE FIX, 2026-09-16: isHidden is now an exclusion, not an
+    -- informational field -- see header. ok_hidden false (isHidden itself
+    -- errored) is treated as hidden, the safe default, never the permissive
+    -- one.
+    local is_hidden = (not ok_hidden) or hidden
     local excluded = (ok_dead and dead)
       or (ok_own and own)
       or (ok_fc and fort_controlled)
+      or is_hidden
 
     if not excluded then
       local x, y, z = dfhack.units.getPosition(unit)
@@ -181,7 +220,6 @@ function find_threats(radius_tiles)
         local within_radius = near ~= nil and near.distance_tiles <= radius
 
         if shares_group or within_radius then
-          local ok_hidden, hidden = pcall(dfhack.units.isHidden, unit)
           local flags = danger_flags(unit)
 
           local why = {}
@@ -196,7 +234,9 @@ function find_threats(radius_tiles)
           if flags.is_invader then table.insert(why, "flagged_isInvader (HEURISTIC)") end
           if flags.is_danger then table.insert(why, "flagged_isDanger (HEURISTIC)") end
           if flags.is_agitated then table.insert(why, "flagged_isAgitated (HEURISTIC)") end
-          if ok_hidden and hidden then table.insert(why, "unit_is_hidden_or_sneaking") end
+          -- No "unit_is_hidden_or_sneaking" entry: any such unit is now
+          -- excluded above, before reaching this point, per the
+          -- KNOWLEDGE-SCOPE FIX -- see header.
 
           -- Ranking score: reachability dominates (it's the filter, so it
           -- should also dominate the order), flags are a real but secondary
@@ -223,7 +263,6 @@ function find_threats(radius_tiles)
               reliability = "MECHANICAL",
             },
             flags = flags,
-            hidden = ok_hidden and hidden or false,
             why = why,
             _score = score,
           })
