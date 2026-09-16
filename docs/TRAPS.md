@@ -353,3 +353,15 @@ findings without another doc home yet.
   counted merchant goods *as* the fort's ("234 food, 50 drink") and the
   correction over-swung to `not foreign`, reporting 0 fort-owned food when the
   fort actually owns 5 raw edibles. Drink really is 0 under either test.
+- **`designation.liquid_type` is a BOOLEAN in this build, not the
+  `df.tile_liquid` enum. Comparing it to `df.tile_liquid.Magma` silently
+  counts every magma tile as water.** Verified live 2026-09-16: the field
+  prints as `false`/`true` (false = water, true = magma) while
+  `df.tile_liquid.Water == 0` and `df.tile_liquid.Magma == 1`. In Lua
+  `true == 1` is **false**, so the comparison never matches, no error is
+  raised, and the magma sea is silently reclassified as an underground lake.
+  This produced a confident report of an "82,437-tile underground water body"
+  that was the magma sea. Use `if d.liquid_type then --[[magma]] else
+  --[[water]] end`, and cross-check any whole-map liquid count against
+  `dfhack-run prospect all`, which reports WATER and MAGMA separately and
+  agreed to the tile (14,074 + 82,725 = 96,799).
