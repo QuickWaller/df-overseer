@@ -132,7 +132,14 @@ local MAX_RADIUS = 60
 local DEFAULT_RADIUS = 30
 local MAX_RESULTS = 5
 
-local function is_free(x, y, z)
+-- Exported (deliberately global, no `local`) 2026-09-16
+-- (handoffs/2026-09-16-farm-and-still-tools.md Part 3): df-overseer-workshop.lua
+-- reuses this exact free-floor test via reqscript rather than duplicating
+-- it, the same "one implementation, multiple callers" pattern
+-- get_landmark_centroid/nearest_landmark already use in
+-- df-overseer-landmarks.lua. No change to this function's own behavior or
+-- any call site in this file.
+function is_free(x, y, z)
   local pos = xyz2pos(x, y, z)
   local ok_walk, group = pcall(dfhack.maps.getWalkableGroup, pos)
   if not ok_walk or group == 0 then

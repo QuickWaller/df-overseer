@@ -59,6 +59,18 @@ read:
     note: >-
       Fort-owned seed counts by plant. Same file, same deploy caveat as
       stocks.food-drink above.
+  - id: "farm.find"
+    status: exists
+    note: >-
+      Added handoffs/2026-09-16-farm-and-still-tools.md. Candidate farm-plot
+      floor near a landmark, tagged outside/inside and the fort-owned seeds
+      actually valid there. Not yet deployed to VM 103 -- see TOOLS.yaml.
+  - id: "workshop.find"
+    status: exists
+    note: >-
+      Same handoff. Candidate 3x3 still/kitchen sites, each with what the
+      workshop needs to operate (labor, and for a still, containers). Not
+      yet deployed.
 
 write:
   - id: "queue.propose"
@@ -79,6 +91,12 @@ deny:
   - id: "diggable.dig"
     reason: Advisors do not act. Propose it.
   - id: "landmarks.build"
+    reason: Advisors do not act. Propose it.
+  - id: "farm.build"
+    reason: Advisors do not act. Propose it.
+  - id: "farm.set-crop"
+    reason: Advisors do not act. Propose it.
+  - id: "workshop.build"
     reason: Advisors do not act. Propose it.
   - id: "labor.set-labor"
     reason: Not this role's domain, and it races autolabor regardless.
