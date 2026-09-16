@@ -90,6 +90,21 @@ the **only** route to manager work orders, since `stocks` and `workflow` are
 both unavailable), and `setfps` (writes `df.global.enabler.fps`, the runtime
 frame-cap control). → `research/2026-09-12-dfhack-capability-checks.md`.
 
+**ADDED 2026-09-16**, each confirmed available by `dfhack-run help <tool>`
+against the live paused fort by the orchestrating session, not taken on a
+subagent's report: `caravan` (adjust caravans on the map; `caravan list` and
+`caravan extend` are pure-read and headless-write respectively), `diplomacy`,
+`force`, and `logistics` was already listed above but had never been checked
+live. The trade research found all four while answering whether an agent can
+close a trade. → `research/2026-09-16-trade-execution-api.md`.
+
+**Also corrected 2026-09-16, and it invalidates older docs:**
+**`viewscreen_tradegoodsst` does not exist in this build.** Confirmed live
+(`df.viewscreen_tradegoodsst == nil`). Trade moved into
+`df.global.game.main_interface.trade` with the v50 rewrite. Anything in this
+repo that reasons about "the trade viewscreen" by that name is reasoning about
+a struct that is not there.
+
 **Unavailable in 53.16 (present as docs/files, tagged unavailable):** `mode`,
 `gui/advfort`, `stocks`, `zone`, `workflow`, `follow`, `load-save`, `linger`,
 `embark-assistant`, `dwarfmonitor`, `labormanager`, and ~40 others.
