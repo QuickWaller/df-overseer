@@ -108,6 +108,20 @@
 -- landmark, never the resolved absolute z (design commitment #1), instead
 -- of a silent empty result indistinguishable from "nothing is there."
 --
+-- KNOWLEDGE-SCOPE FIX, 2026-09-16 (handoffs/2026-09-16-knowledge-scope-audit.md,
+-- decisions/DECISIONS.md 2026-09-16 "Agents may only know what a vanilla
+-- player could know"): research/2026-09-16-player-visibility.md tags this
+-- tool `player_derivable` -- "in practice low risk... but not structurally
+-- guarded". `is_free` checked only walkable + building-free, with no
+-- `designation.hidden` check -- a walkable-but-hidden tile (a natural
+-- cavern floor not yet dug into/revealed, per §1's "all subterranean tiles
+-- must be revealed by digging into them") could in principle be admitted.
+-- Fixed by adding a `dfhack.maps.isTileVisible` check to `is_free`. Measured
+-- live against Uniboslan (see the knowledge-scope handoff's report): this
+-- fort's real open-area candidates are dug/built space that is, in every
+-- case checked, already revealed, so the fix is not expected to change any
+-- result today -- it closes the structural gap rather than a live leak.
+--
 -- Usage: ./dfhack-run df-overseer-openarea find W H [LEVEL] NEAR_LANDMARK [RADIUS_TILES]
 -- Usage: ./dfhack-run df-overseer-openarea build W H [LEVEL] NEAR_LANDMARK BLUEPRINT_FILE [RANK] [RADIUS_TILES]
 
@@ -122,6 +136,12 @@ local function is_free(x, y, z)
   local pos = xyz2pos(x, y, z)
   local ok_walk, group = pcall(dfhack.maps.getWalkableGroup, pos)
   if not ok_walk or group == 0 then
+    return false
+  end
+  -- KNOWLEDGE-SCOPE FIX, 2026-09-16: also require the tile to be revealed
+  -- to a vanilla player -- see header.
+  local ok_vis, visible = pcall(dfhack.maps.isTileVisible, x, y, z)
+  if not ok_vis or not visible then
     return false
   end
   local ok_bld, bld = pcall(dfhack.buildings.findAtTile, pos)
