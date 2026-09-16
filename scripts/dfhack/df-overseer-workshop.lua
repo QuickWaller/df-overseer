@@ -54,6 +54,42 @@
 --     computed fresh on every call, never cached. A kitchen's output
 --     (prepared meals) does not strictly need a container to be produced,
 --     so `needs_container` is nil for kitchen.
+--   - `named_requirement` (kitchen only, added 2026-09-16 per the user's
+--     own real-world input): "restrict cooking of plants and seeds needed
+--     for replanting, or the farm loses its seed stock" -- cooking a plant
+--     or its seed consumes it with no seed returned, unlike eating it raw
+--     or brewing it, which does return a seed; an unrestricted kitchen can
+--     cook through the exact seed stock a farm depends on. **No
+--     cooking-restriction tool is built in this stream** (out of scope,
+--     per the user's own instruction) -- this is read-only investigation,
+--     reported as data.
+--   - `seed_protection` (kitchen only): where this setting actually lives
+--     on this install, investigated read-only, not by designating or
+--     toggling anything: `df.global.plotinfo.kitchen` is the vanilla
+--     Kitchen-tab exclusion list -- five parallel arrays
+--     (`exc_types`/`item_types`/`item_subtypes`/`mat_types`/`mat_indices`),
+--     confirmed live this session (110 entries, all `item_type == SEEDS`).
+--     **This install's own DEFAULT kitchen settings already exclude every
+--     known plant's SEEDS item-type from cooking**, including all six of
+--     this fort's owned crops -- MUSHROOM_HELMET_PLUMP, GRASS_TAIL_PIG,
+--     GRASS_WHEAT_CAVE, POD_SWEET, BUSH_QUARRY and MUSHROOM_CUP_DIMPLE
+--     were each found present in the live exclusion list by mat_index,
+--     cross-checked against df.global.world.raws.plants.all the same way
+--     df-overseer-stocks.lua resolves a SEEDS item's plant name. So the
+--     vanilla safeguard the user described is already active for this
+--     fort's own seeds, by DF's own default, before this project ever
+--     touches a kitchen -- not something this stream added or needs to.
+--     No entry with `item_type == PLANT` (the harvested crop, as opposed
+--     to its seed) was found for any of the six; not investigated further
+--     since replanting only ever consumes SEEDS, never the harvested
+--     PLANT item, in the mechanism df-overseer-farm.lua's set_farm_crop
+--     already relies on. `seed_protection` reports, per fort-owned seed
+--     (from df-overseer-stocks.lua's get_seeds(), reqscript'd -- reading
+--     that file, not editing it, so it stays outside this stream's
+--     touched-surfaces list), whether it is currently in this exclusion
+--     list -- computed fresh on every call, never cached, so a later
+--     change to the setting (in-game or otherwise) is reflected
+--     immediately rather than baked into this file's own assumption.
 --
 -- Dry-run mode (same contract as df-overseer-farm.lua's write commands):
 -- `build_workshop` defaults DRY_RUN to true. A dry run resolves the
@@ -77,6 +113,11 @@
 local json = require('json')
 local landmarks_mod = reqscript('df-overseer-landmarks')
 local openarea_mod = reqscript('df-overseer-openarea')
+-- Read-only use of df-overseer-stocks.lua's get_seeds() (fort-owned seed
+-- ids), for the kitchen seed_protection check below -- reqscript reads
+-- that file, it does not edit it, so this stays outside this stream's
+-- touched-surfaces list (see header).
+local stocks_mod = reqscript('df-overseer-stocks')
 
 local MAX_RADIUS = 60
 local DEFAULT_RADIUS = 30
@@ -88,7 +129,9 @@ local KIND_INFO = {
   still = {label = "Still", subtype = df.workshop_type.Still,
     labor = "BREWER", needs_container = "BARREL"},
   kitchen = {label = "Kitchen", subtype = df.workshop_type.Kitchen,
-    labor = "COOK", needs_container = nil},
+    labor = "COOK", needs_container = nil,
+    named_requirement = "restrict cooking of plants and seeds needed for "
+      .. "replanting, or the farm loses its seed stock"},
 }
 
 -- Same is_fort_owned test as df-overseer-stocks.lua (not flags.trader, not
@@ -139,6 +182,63 @@ local function labor_enabled_count(labor_name)
   return n
 end
 
+local function find_plant_by_id(id)
+  local plants = df.global.world.raws.plants.all
+  for i = 0, #plants - 1 do
+    if plants[i].id == id then
+      return i
+    end
+  end
+  return nil
+end
+
+-- Read-only: is plant_index already in df.global.plotinfo.kitchen's
+-- exclusion list for item_type SEEDS? See header -- this is the vanilla
+-- Kitchen-tab "don't cook this" setting, investigated live this session,
+-- never written to here.
+local function kitchen_excludes_seed(plant_index)
+  local ok_k, kitchen = pcall(function() return df.global.plotinfo.kitchen end)
+  if not ok_k or not kitchen then
+    return nil
+  end
+  local ok_n, n = pcall(function() return #kitchen.exc_types end)
+  if not ok_n then
+    return nil
+  end
+  for i = 0, n - 1 do
+    local ok_it, it = pcall(function() return kitchen.item_types[i] end)
+    local ok_mi, mi = pcall(function() return kitchen.mat_indices[i] end)
+    if ok_it and ok_mi and it == df.item_type.SEEDS and mi == plant_index then
+      return true
+    end
+  end
+  return false
+end
+
+-- Per fort-owned seed (df-overseer-stocks.lua's get_seeds(), read-only),
+-- whether it is currently protected from kitchen cooking. Kitchen only.
+local function seed_protection_report()
+  local seeds = stocks_mod.get_seeds()
+  local protected, unprotected, unknown = {}, {}, {}
+  for crop_id, units in pairs(seeds.by_plant_units or {}) do
+    if units > 0 then
+      local idx = find_plant_by_id(crop_id)
+      local excluded = idx and kitchen_excludes_seed(idx)
+      if excluded == nil then
+        table.insert(unknown, crop_id)
+      elseif excluded then
+        table.insert(protected, crop_id)
+      else
+        table.insert(unprotected, crop_id)
+      end
+    end
+  end
+  table.sort(protected)
+  table.sort(unprotected)
+  table.sort(unknown)
+  return {protected = protected, unprotected = unprotected, unknown = unknown}
+end
+
 local function requirements_for(kind_info)
   local req = {
     labor = kind_info.labor,
@@ -147,6 +247,10 @@ local function requirements_for(kind_info)
   if kind_info.needs_container then
     req.needs_container = kind_info.needs_container
     req.fort_owned_containers = count_fort_owned(kind_info.needs_container)
+  end
+  if kind_info.named_requirement then
+    req.named_requirement = kind_info.named_requirement
+    req.seed_protection = seed_protection_report()
   end
   return req
 end
