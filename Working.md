@@ -32,8 +32,8 @@ Everything below is what is still open.
   It holds one real record, `proposal-0001` from architect run #3, with a
   pending prediction (`due_game_tick` 12276077), accepted by the Overseer
   2026-09-16. No grader runs on a schedule; its window is blown regardless
-  (see the facts section below) and it is left ungraded on purpose. The clock
-  is not moving while the fort is frozen behind its popup.
+  (see the facts section below) and it is left ungraded on purpose. The fort
+  is paused (the popup was dismissed 2026-09-16), so the clock is not moving.
   → register 2026-09-15 rows,
   `handoffs/2026-09-15-queue-live-deploy.md`.
 - **Saves:** under the `df` user's XDG data dir on VM 103 (`Bay 12 Games/
@@ -50,25 +50,29 @@ Everything below is what is still open.
 dismissed the popup and re-paused on 2026-09-16; **the orchestrator then
 verified it live, read-only**: `pause_state` genuinely true, focus
 `dwarfmode/Default` (no dialog up), year 30, `cur_year_tick` 213622,
-`frame_counter` 79020, 15 citizens, **fort-owned food 0 and drink 0 still**.
+`frame_counter` 79020, 15 citizens. (Food at that reading was miscounted as 0;
+the corrected figure is below.)
 About 140 ticks passed between the earlier reading and the pause, nothing more.
 The earlier "frozen behind a popup at tick 12309480" state is resolved; the
 count below stands. Verified live from inside:
 
-- **fort-owned drink 0; fort-owned food 5 raw edibles, for 15 dwarves.**
-  **Corrected 2026-09-16 (third count, and the numbers above it were both
-  wrong).** The first count said 234 food and 50 drink and included the
+- **fort-owned drink 0; fort-owned food 24 units (5 items: 10 fish, 9 plant,
+  5 meat), for 15 dwarves.** Deployed `df-overseer-stocks food-drink` returns
+  exactly this, matching the user's own screen reading.
+  **Corrected three times on 2026-09-16.** The first count said 234 food and 50 drink and included the
   caravan's goods. The second filtered on `not flags.foreign` and said 0 and 0.
   Both are wrong: **`flags.foreign` is an origin flag, not an ownership flag**,
   true for the fort's own embark supplies too, so it erases the starting
   stores. `flags.trader` is the real fort-vs-caravan test, verified live and
   independently by two sessions (a strict subset of `foreign`: 565 foreign, 292
   trader, zero trader-but-not-foreign, cross-checked through `UNIT_HOLDER` →
-  `isMerchant()`). Under the correct test the fort owns 5 raw edibles, 59
-  seeds, and no drink at all. → `docs/TRAPS.md`.
+  `isMerchant()`). The third error: the first stocks tool counted item
+  entities, not stack units, and reported 5 where the fort has 24; the user
+  caught that one from the screen too. → `docs/TRAPS.md`.
   The user spotted the original error from the screen before the orchestrator
   did.
-- 15 citizens, 119 seeds, **zero farm plots, zero stills, zero workshops of any
+- 15 citizens, 59 fort-owned seeds (34 plump helmet; the earlier 119 included
+  foreign ones), **zero farm plots, zero stills, zero workshops of any
   kind, no trade depot**. A caravan and the outpost liaison are waiting and
   cannot unload without a depot.
 - The fort produces nothing. Stores are not the problem; production is.
