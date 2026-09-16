@@ -404,33 +404,50 @@ df-overseer-workshop.lua:
       effect: read
       coordinate_bearing: false
       live_deployed: false
-      verified: "2026-09-16 (dry-run/read-only, via dfhack.internal.addScriptPath to a /tmp copy, reversed after)"
+      verified: "2026-09-17 (dry-run/read-only, via dfhack.internal.addScriptPath to a /tmp copy, reversed after)"
       knowledge_scope: player_derivable
       notes: >
-        KIND is "still" or "kitchen". Reuses df-overseer-openarea.lua's
-        is_free (exported 2026-09-16 for this) rather than duplicating it
-        -- per the handoff's own instruction, unlike df-overseer-farm.lua
-        above, whose ground rule genuinely differs. Each candidate carries
-        a `requirements` block: the df.unit_labor code needed (BREWER for
-        still, COOK for kitchen -- both confirmed live), how many citizens
-        already have it enabled, and (still only) fort-owned BARREL count,
-        using the same is_fort_owned test df-overseer-stocks.lua uses,
-        duplicated here rather than reqscript'd because stocks.lua is not
-        a touched surface this stream (get_seeds() IS reqscript'd for the
-        kitchen check below -- reading it, not editing it). Kitchen also
-        carries `named_requirement` ("restrict cooking of plants and seeds
-        needed for replanting, or the farm loses its seed stock" -- the
-        user's own 2026-09-16 input) and `seed_protection`: a read-only
-        check of df.global.plotinfo.kitchen's real exclusion list against
-        this fort's owned seeds. Measured live on Uniboslan near
-        "Embark Site" LEVEL -1: 2 candidates for both kinds; still reports
-        (at time of check) 1-3 citizens with BREWER/COOK (fluctuating --
-        the fort was briefly unpaused for an unrelated supervised test
-        during this session) and 15 fort-owned barrels (of 23 total in
-        play); kitchen's seed_protection reports all 6 of this fort's owned
-        crops already `protected` -- DF's own DEFAULT kitchen settings
-        already exclude every known plant's SEEDS from cooking, confirmed
-        live, not something this project added.
+        KIND is "still", "kitchen", "mason", "mechanic" or "carpenter" --
+        the last three added handoffs/2026-09-17-water-and-industry-tools.md
+        item 3 (#build symbols wm/wt/wc and labors MASON/MECHANIC/CARPENTER,
+        all read directly from this install's own build.lua/df.unit_labor).
+        Reuses df-overseer-openarea.lua's is_free (exported 2026-09-16 for
+        this) rather than duplicating it -- per the handoff's own
+        instruction, unlike df-overseer-farm.lua above, whose ground rule
+        genuinely differs. Each candidate carries a `requirements` block:
+        the df.unit_labor code needed, how many citizens already have it
+        enabled, (still only) fort-owned BARREL count using the same
+        is_fort_owned test df-overseer-stocks.lua uses (duplicated rather
+        than reqscript'd, stocks.lua not a touched surface), and (2026-09-17,
+        all five kinds) `building_material`: BOULDER/WOOD/BLOCKS fort-owned
+        counts, since `dfhack.buildings.getFiltersByType` was live-verified
+        this session to return an identical generic
+        `flags2.building_material` filter (no item_type/mat_type) for ALL
+        FIVE kinds, not just the three new ones -- answers this project's
+        own earlier "logs or boulders, whichever the game accepts" question:
+        both, plus blocks, interchangeably. Kitchen also carries
+        `named_requirement` and `seed_protection` (unchanged, see
+        df-overseer-farm.lua's neighboring entry for detail). RE-MEASURED
+        live 2026-09-17 under a moving fort (a sibling stream was
+        concurrently building a farm plot and still): still/mason/mechanic/
+        carpenter all returned `[]` at LEVEL -1 near "Embark Site" because
+        that stream's new 5x5 farm plot now occupies the free floor those
+        candidates used to sit on -- not a regression, a real-time
+        occupancy change. `mason` at LEVEL 0 (surface) near the same
+        landmark returned 5 real candidates with a correct
+        `building_material`/`labor`/`citizens_with_labor` (MASON: 3) report,
+        confirming the extension end to end. Found the same session: this
+        install's DFHack process caches `reqscript` results BY NAME across
+        separate `dfhack-run` invocations -- shadowing
+        `df-overseer-workshop` via `addScriptPath` silently returned the
+        REAL, already-cached (pre-extension) module, because the sibling
+        stream had already reqscript'd it for real earlier the same
+        session, before this file's own extension could be seen; verifying
+        under a throwaway, never-before-used module name
+        (`df-overseer-workshoptest`) sidestepped this and is what actually
+        produced the confirming result above. A durable trap for any future
+        "verify via a /tmp shadow copy" session once the real script has
+        already loaded once.
     "build W H [LEVEL] NEAR_LANDMARK KIND BLUEPRINT_FILE [RANK] [RADIUS_TILES] [DRY_RUN]":
       lua_function: build_workshop
       effect: mutate
@@ -444,7 +461,216 @@ df-overseer-workshop.lua:
         (unlike farm.build) -- a workshop's DF-default name was not
         verified here; flagged rather than assumed sensible. Blueprint
         files not yet deployed to the guest's dfhack-config/blueprints/ --
-        see blueprints/README.md.
+        see blueprints/README.md. KIND set extended 2026-09-17 to include
+        mason/mechanic/carpenter (see the neighboring `find` entry); the
+        build path itself was not re-exercised live this session beyond
+        what find already confirms about candidate resolution -- the real
+        quickfort call for these three kinds remains UNTESTED live, same
+        as still/kitchen already were.
+
+df-overseer-zone.lua:
+  build_order_item: "gap named 2026-09-17, handoffs/2026-09-17-water-and-industry-tools.md item 1"
+  commands:
+    "find KIND [LEVEL] NEAR_LANDMARK [RADIUS_TILES]":
+      lua_function: find_zone_area
+      effect: read
+      coordinate_bearing: false
+      live_deployed: false
+      verified: "2026-09-17 (live, via a /tmp shadow load under a fresh module name -- df-overseer-zone had never been reqscript'd before, so no cache trap applied here)"
+      knowledge_scope: player_derivable
+      notes: >
+        KIND is "water_source" only this stream (structured so a later
+        kind is a new KIND_INFO entry, not a rewrite). Runs its own scoped
+        4-connected flood fill over tiles that are revealed, not magma, and
+        carry real water (flow_size >= 1) -- this project's own domain rule
+        layered on top of quickfort's own much looser is_valid_zone_tile
+        (hidden-only), read directly from this install's own
+        hack/scripts/internal/quickfort/zone.lua. Reports each water
+        body's bounding box, real tile count, depth min/max, and
+        stagnant/salt. LIVE-VERIFIED 2026-09-17 near "Embark Site": found
+        5 real water bodies matching research/2026-09-17-pool-
+        reachability.md's own independently-derived figures exactly (27,
+        31, 4, 13, 24 tiles), including the pond the sibling
+        water-source-zone-test stream had already zoned that same day
+        (reported as nearest, near_landmark "Activity Zone #1" -- a live,
+        moving-target confirmation, not a coincidence).
+    "place KIND [LEVEL] NEAR_LANDMARK [RANK] [RADIUS_TILES] [DRY_RUN]":
+      lua_function: place_zone
+      effect: mutate
+      coordinate_bearing: internal-only
+      live_deployed: false
+      verified: "2026-09-17 (DRY_RUN=true path only; the real quickfort path -- a dynamically generated throwaway #zone blueprint -- is UNTESTED live, mutation forbidden this session)"
+      knowledge_scope: player_derivable
+      notes: >
+        DRY_RUN defaults to true, same contract as every other write tool
+        here. The real path writes a throwaway `#zone` blueprint CSV
+        shaped to the chosen water body's own membership (a `w` cell only
+        on its actual water tiles, blank elsewhere -- confirmed from source
+        that quickfort's own zone_template has_extents/is_valid_zone_extent
+        supports this, requiring only at least one true cell, the standard
+        mechanism every non-rectangular quickfort blueprint already uses),
+        runs quickfort against it, then deletes it. `io` library
+        availability inside a DFHack script context, and relative-path
+        resolution against dfhack-config/blueprints/, were BOTH confirmed
+        live this session with a READ-ONLY open of an existing blueprint
+        file (no write) -- the write-and-delete path itself was not
+        exercised.
+
+df-overseer-trees.lua:
+  build_order_item: "gap named 2026-09-17, handoffs/2026-09-17-water-and-industry-tools.md item 2"
+  commands:
+    "find [LEVEL] NEAR_LANDMARK [RADIUS_TILES]":
+      lua_function: find_trees
+      effect: read
+      coordinate_bearing: false
+      live_deployed: false
+      verified: "2026-09-17 (live, via a /tmp shadow load, fresh module name)"
+      knowledge_scope: player_derivable
+      notes: >
+        Revealed TREE-material tiles only (do_chop, the quickfort action
+        this tool's own fell command mirrors, refuses a hidden tile
+        outright with no blind-designate case -- unlike mining, so no
+        act/sense asymmetry applies here). Returns fixed 10-tile distance
+        bands (count/reachable_count per band), not a per-tree list --
+        ~1,593 visible trees exist on this map, and a per-tree entry would
+        both be unwieldy and (per design commitment #1) have nowhere
+        coordinate-free to put a "which tree" identity anyway.
+        `reachable` is a single tile's own 4-orthogonal-neighbour
+        walkability check (mining-a-wall style, not landmark-group-scoped
+        the way df-overseer-diggable.lua's ring check is, since a lone
+        tree far from the fort can still be validly reachable via a
+        different part of the walkable network). LIVE-VERIFIED near
+        "Embark Site", radius 30: 154 trees found (12/34/108 across the
+        three 10-tile bands), all 154 reachable, CUTWOOD labor held by 1
+        citizen, 2 fort-owned axe-family weapons (this install's itemdefs
+        contain only ITEM_WEAPON_AXE_BATTLE/_GREAT/_TRAINING, no plain
+        "AXE" -- reported as an "any id containing AXE" count, not a
+        single canonical subtype, flagged rather than assumed).
+    "fell N [LEVEL] NEAR_LANDMARK [RADIUS_TILES] [DRY_RUN]":
+      lua_function: fell_trees
+      effect: mutate
+      coordinate_bearing: internal-only
+      live_deployed: false
+      verified: "2026-09-17 (DRY_RUN=true path only; the real dfhack.designations.markPlant call is UNTESTED live, mutation forbidden this session)"
+      knowledge_scope: player_derivable
+      notes: >
+        DRY_RUN defaults to true. The real path calls
+        `dfhack.designations.markPlant` directly on each of the nearest N
+        reachable trees' own plant object (via
+        `dfhack.maps.getPlantAtTile`) -- confirmed from source to be the
+        EXACT primitive quickfort's own `#dig` `t` (chop) symbol calls,
+        not a struct write this project invented, and not routed through a
+        dynamically generated quickfort blueprint the way
+        df-overseer-zone.lua's place_zone is (scattered single tiles vs.
+        one connected shape -- a deliberate difference, not an
+        inconsistency, see the .lua file's own header). Coordinates exist
+        only inside the marking loop's own local scope.
+
+df-overseer-well.lua:
+  build_order_item: "gap named 2026-09-17, handoffs/2026-09-17-water-and-industry-tools.md item 5"
+  commands:
+    "find [LEVEL] NEAR_LANDMARK [RADIUS_TILES]":
+      lua_function: find_well
+      effect: read
+      coordinate_bearing: false
+      live_deployed: false
+      verified: "2026-09-17 (live, via a /tmp shadow load, fresh module name)"
+      knowledge_scope: player_derivable
+      notes: >
+        Mirrors quickfort's own is_tile_empty_and_floor_adjacent
+        (build.lua: shape EMPTY or RAMP_TOP, valid_tile_base, floor-
+        adjacent) read directly from source, PLUS this project's own
+        domain rule layered on top (matching df-overseer-zone.lua/
+        df-overseer-farm.lua's own precedent for the same kind of layering):
+        the tile directly below must be revealed, not magma, and at least
+        3/7 deep (the wiki's own well minimum, version-matched to this
+        exact install, research/2026-09-17-pool-reachability.md §4).
+        Reports BLOCKS/BUCKET/CHAIN/TRAPPARTS fort-owned counts
+        (`dfhack.buildings.getFiltersByType({}, df.building_type.Well, -1,
+        -1)`, re-confirmed live this session to be exactly these four,
+        matching the handoff's own figures). LIVE-VERIFIED near "Embark
+        Site": 5 real candidates, all near "Activity Zone #1" (the
+        sibling stream's own water-source zone), depth 7/7, stagnant true,
+        salt false, fort_owned BUCKET 3 / CHAIN 3 / BLOCKS 0 / TRAPPARTS 0
+        -- matching the handoff's own live figures exactly.
+    "build [LEVEL] NEAR_LANDMARK BLUEPRINT_FILE [RANK] [RADIUS_TILES] [DRY_RUN]":
+      lua_function: build_well
+      effect: mutate
+      coordinate_bearing: internal-only
+      live_deployed: false
+      verified: "2026-09-17 (DRY_RUN=true path only; the real quickfort path is UNTESTED live)"
+      knowledge_scope: player_derivable
+      notes: >
+        DRY_RUN defaults to true, same contract as every other write tool
+        here. Needs a BLUEPRINT_FILE, e.g. a 1x1 `#build` `l` (Well)
+        blueprint, deployed to dfhack-config/blueprints/ -- see
+        blueprints/README.md. Real path not exercised (mutation forbidden
+        this session); the underlying quickfort `l` symbol/its
+        is_valid_tile_fn are the same mechanism find above already
+        confirms candidates satisfy.
+
+df-overseer-orders.lua:
+  build_order_item: "gap named 2026-09-17, handoffs/2026-09-17-water-and-industry-tools.md item 4"
+  commands:
+    list:
+      lua_function: list_orders
+      effect: read
+      coordinate_bearing: false
+      live_deployed: false
+      verified: "2026-09-17 (live)"
+      knowledge_scope: player_visible
+      notes: >
+        Reads `df.global.world.manager_orders.all` directly (a plain
+        exposed vector, per research/2026-09-12-dfhack-capability-checks.md
+        §4). Reports `manager_appointed` (see the neighboring `create`
+        entry) alongside the order list so a caller can see the
+        precondition rather than assume it. LIVE-VERIFIED: 0 orders
+        queued, manager_appointed false, on this fort today.
+    "create JOB AMOUNT [DRY_RUN]":
+      lua_function: create_order
+      effect: mutate
+      coordinate_bearing: false
+      live_deployed: false
+      verified: "2026-09-17 (DRY_RUN=true path only; the real create_orders call is UNTESTED live, mutation forbidden this session)"
+      knowledge_scope: player_visible
+      notes: >
+        JOB is one of blocks/mechanisms/barrels/brew_drink (JOB_INFO,
+        structured for more later). Wraps workorder.lua's own
+        create_orders/preprocess_orders/fillin_defaults (reqscript'd,
+        confirmed live to load and expose the right function types),
+        reproducing its CLI default_action's own exact call sequence
+        rather than hand-building a df.manager_order struct. Job types
+        each live-verified against the real df.job_type enum: blocks=80
+        ConstructBlocks, mechanisms=139 ConstructMechanisms, barrels=125
+        MakeBarrel, brew_drink=209 CustomReaction +
+        reaction_name=BREW_DRINK_FROM_PLANT (live-confirmed present in
+        world.raws.reactions.reactions' own code field -- no job_type
+        named "Brew*" exists on this build; brewing is a reaction, not its
+        own job type). MANAGER PREREQUISITE, checked live and genuinely
+        unresolved both ways: create_orders itself has no code-level
+        manager check at all, but dfhack.units.getNoblePositions over
+        every active unit found ZERO citizens holding the MANAGER
+        position on this fort today (a world.entities.all scan DID find a
+        filled MANAGER assignment elsewhere, but its histfig did not
+        resolve to a live unit via getUnitByHistfigId -- an unrelated
+        site, not Uniboslan). Whether DF's own engine then validates an
+        order into a real job with no Manager appointed is NOT verified
+        (would need an unpause, out of scope). Reports `manager_appointed`
+        and `workshop_exists` (a live count of the matching workshop
+        subtype, informational only, never a refusal) on every call.
+    "cancel ID [DRY_RUN]":
+      lua_function: cancel_order
+      effect: mutate
+      coordinate_bearing: false
+      live_deployed: false
+      verified: "2026-09-17 (dry-run path live-verified against a nonexistent id -- refused correctly; the real erase+delete path is UNTESTED live, inferred by convention from workorder.lua's own cleanup code and research/2026-09-16-food-and-drink-logistics.md's own :erase(idx) finding, not independently proven)"
+      knowledge_scope: player_visible
+      notes: >
+        `world.manager_orders.all:erase(idx)` plus `order:delete()`, the
+        latter matching workorder.lua's own with_onerror rollback pattern
+        for a df.manager_order object. Reversibility is the point (the
+        handoff's own "orders.cancel ID for reversibility"), but the
+        mechanism itself was never exercised on a real order this session.
 
 df-overseer-stuckjobs.lua:
   build_order_item: 8
