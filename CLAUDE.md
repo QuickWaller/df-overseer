@@ -12,12 +12,13 @@ learning architecture.
 >   one fort, on DF Classic plus DFHack under Xvfb, built by
 >   `scripts/provision_vm.py` and `scripts/install_df.py`. A first fort,
 >   Artobcatten, was lost founding it (register 2026-09-10). **As of
->   2026-09-16 it is stopped at tick 12309480 behind an undismissed popup**
->   (`pause_state` reads false; the dialog freezes it anyway) with **zero
->   fort-owned food or drink** and no farm plot, still, workshop or depot. The
->   agents' write surface cannot fix any of that. The fort is expendable by the
->   user's call; rescuing it is worth trying for the tools it forces us to
->   build. → `Working.md` handover 2026-09-16.
+>   2026-09-16 it is genuinely paused** (the user dismissed the blocking popup),
+>   with **24 units of fort-owned food, zero drink**, 59 seeds (34 plump
+>   helmet), and no farm plot, still, workshop or depot. Food was miscounted
+>   three times that day; `df-overseer-stocks` now counts it right (see
+>   `docs/TRAPS.md` on `flags.trader` and stack units). The user chose to
+>   continue on this fort; it is expendable, and rescuing it is worth trying
+>   for the tools it forces us to build. → `Working.md` handover 2026-09-16.
 > - **Perception and action.** `scripts/dfhack/` holds the coordinate-free
 >   tools (connectivity, landmarks, overview, diff, open-area and diggable
 >   find/build, chokepoints, stuck jobs, labor), live on VM 103.
