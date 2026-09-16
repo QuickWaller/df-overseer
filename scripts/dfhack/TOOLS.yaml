@@ -227,7 +227,7 @@ df-overseer-openarea.lua:
       lua_function: find_open_area
       effect: read
       coordinate_bearing: false
-      live_deployed: true
+      live_deployed: STALE
       verified: "2026-09-11"
       knowledge_scope: player_derivable
       notes: >
@@ -235,12 +235,16 @@ df-overseer-openarea.lua:
         experiment. decisions/DECISIONS.md 2026-09-11. KNOWLEDGE-SCOPE FIX
         2026-09-16: is_free now also requires dfhack.maps.isTileVisible --
         see the .lua file's own header. Measured live: no change to this
-        fort's current results.
+        fort's current results. STALE 2026-09-16 (handoffs/2026-09-16-
+        farm-and-still-tools.md Part 3): `is_free` made global (exported
+        via reqscript) so df-overseer-workshop.lua can reuse it -- pure
+        naming change, no behavior change, but VM 103 is still running the
+        pre-export file. Not deployed this stream (no deploy).
     "build W H [LEVEL] NEAR_LANDMARK BLUEPRINT_FILE [RANK] [RADIUS_TILES]":
       lua_function: build_open_area
       effect: mutate
       coordinate_bearing: internal-only
-      live_deployed: true
+      live_deployed: STALE
       verified: "2026-09-12"
       knowledge_scope: player_derivable
       notes: >
@@ -250,7 +254,8 @@ df-overseer-openarea.lua:
         candidates sitting in broadly open space) -- fixed and re-verified.
         decisions/DECISIONS.md 2026-09-11/12. Shares ranked_candidates/
         is_free with find_open_area above, so the same 2026-09-16
-        knowledge-scope fix applies here too.
+        knowledge-scope fix applies here too. STALE for the same
+        is_free-export reason as find above -- same file, same deploy gap.
 
 df-overseer-chokepoints.lua:
   build_order_item: "7 (first half)"
@@ -293,9 +298,22 @@ df-overseer-diggable.lua:
         2026-09-16: was OMNISCIENT before this fix -- no revealed/hidden
         check at all, and `material` could name an undiscovered vein. Fixed
         by requiring dfhack.maps.isTileVisible on every tile is_diggable
-        checks (so the whole candidate interior, not just the ring). See the
-        .lua file's own header for the measured live before/after candidate
-        count.
+        checks (so the whole candidate interior, not just the ring). That
+        over-corrected: zeroed every candidate near this fort's small
+        revealed footprint. ACT/SENSE FIX 2026-09-16
+        (handoffs/2026-09-16-farm-and-still-tools.md): a hidden tile is now
+        admitted unconditionally (no material/shape/walkable read used to
+        decide it), matching DFHack's own quickfort dig.lua, which designates
+        blind exactly this way; a revealed tile keeps the original checks.
+        `material` stays nil/omitted for a hidden top-left tile; a new
+        `interior_fully_revealed` flag is an aggregate, not a per-tile leak.
+        Measured live on Uniboslan: `find 5 5 LEVEL "Embark Site"` returned
+        `[]` at LEVEL 0/-1/-2/-3 with the over-corrected code; after this
+        fix, LEVEL -1 (z168, one level below the surface) returns 5 ranked
+        candidates, LEVEL 0/-2/-3 still `[]`. See the .lua file's own header
+        for the full before/after and the grass-tile-stair investigation
+        (source-read, not live-designated; unresolved against the recorded
+        trap, documented rather than guessed at).
     "dig W H [LEVEL] NEAR_LANDMARK BLUEPRINT_FILE [RANK] [RADIUS_TILES]":
       lua_function: dig_diggable_area
       effect: mutate
@@ -310,8 +328,123 @@ df-overseer-diggable.lua:
         no dwarf ever claimed it) -- fixed in both files. Re-tested after the
         fix: all 41 designated tiles fully dug. decisions/DECISIONS.md
         2026-09-11. Shares ranked_candidates/is_diggable with find above, so
-        the same 2026-09-16 knowledge-scope fix (was omniscient) applies
-        here too.
+        the same 2026-09-16 knowledge-scope fix (was omniscient) and its
+        follow-up act/sense fix (same day) both apply here too. Not
+        re-exercised live this session (mutation forbidden); the shared
+        `is_diggable`/`ranked_candidates` code path is what find above
+        verified.
+
+df-overseer-farm.lua:
+  build_order_item: "gap named 2026-09-16, handoffs/2026-09-16-farm-and-still-tools.md Part 2"
+  commands:
+    "find W H [LEVEL] NEAR_LANDMARK [RADIUS_TILES]":
+      lua_function: find_farm_plot_area
+      effect: read
+      coordinate_bearing: false
+      live_deployed: false
+      verified: "2026-09-16 (dry-run/read-only, via a /tmp copy, never deployed)"
+      knowledge_scope: player_derivable
+      notes: >
+        Candidates are revealed, dug, soil/grass/plant or muddied-stone
+        floor -- mirrors quickfort's own is_valid_tile_farm
+        (hack/scripts/internal/quickfort/build.lua on this install), which
+        already excludes hidden tiles itself, so no separate visibility
+        check was needed the way df-overseer-diggable.lua/
+        df-overseer-openarea.lua needed one added. Reports `outside`
+        (dfhack.maps.getTileFlags(pos).outside, directly player-visible)
+        and `valid_crops` (fort-owned seeds whose plant_raw.flags BIOME_*
+        bits match that inside/outside-ness -- see the .lua file's own
+        header). Measured live on Uniboslan: near "Embark Site", LEVEL -1
+        (z168, inside) found 2 candidates (3x3) / 1 candidate (5x5), each
+        listing all 6 fort-owned seeds as valid; LEVEL 0 (surface, outside)
+        found 5 candidates, each with an empty valid_crops list -- correct,
+        since every seed this fort owns is subterranean-only.
+    "build W H [LEVEL] NEAR_LANDMARK BLUEPRINT_FILE [RANK] [RADIUS_TILES] [DRY_RUN]":
+      lua_function: build_farm_plot
+      effect: mutate
+      coordinate_bearing: internal-only
+      live_deployed: false
+      verified: "2026-09-16 (DRY_RUN=true path only; the real quickfort/setName path is UNTESTED live)"
+      knowledge_scope: player_derivable
+      notes: >
+        DRY_RUN defaults to true; only an explicit false performs the real
+        mutation (handoff's "verification without mutating the fort").
+        Dry-run tested live: resolves the same candidate find above found,
+        returns would_run_blueprint/would_be_named without calling
+        quickfort. Blueprint file not yet deployed to the guest's
+        dfhack-config/blueprints/ -- see blueprints/README.md.
+    "set-crop NAME SEASON CROP [DRY_RUN]":
+      lua_function: set_farm_crop
+      effect: mutate
+      coordinate_bearing: false
+      live_deployed: false
+      verified: "2026-09-16 (DRY_RUN=true path only, against a nonexistent plot -- the real plant_id write is UNTESTED live)"
+      knowledge_scope: player_derivable
+      notes: >
+        Resolves NAME via the same non-empty-getName() convention
+        df-overseer-landmarks.lua's building enumeration uses, refuses
+        anything not building_type.FarmPlot, then validates season and
+        crop (fort owns the seed; plant's BIOME_* flags match the plot's
+        own outside-ness) before writing `plant_id[season]` directly, the
+        same struct-write pattern as df-overseer-labor.lua's set_labor.
+        `plant_id` (length-4 array) and df.season (Spring=0..Winter=3) are
+        both confirmed live this session; the index convention (a
+        plant-raw index, matching item.mat_index) is inferred by
+        convention, not independently proven. Live-tested only the
+        plot-not-found refusal path (zero farm plots exist on this fort
+        today); the full validation chain was exercised in
+        find_farm_plot_area's valid_crops/outside logic instead, which is
+        shared.
+
+df-overseer-workshop.lua:
+  build_order_item: "gap named 2026-09-16, handoffs/2026-09-16-farm-and-still-tools.md Part 3"
+  commands:
+    "find W H [LEVEL] NEAR_LANDMARK KIND [RADIUS_TILES]":
+      lua_function: find_workshop_area
+      effect: read
+      coordinate_bearing: false
+      live_deployed: false
+      verified: "2026-09-16 (dry-run/read-only, via dfhack.internal.addScriptPath to a /tmp copy, reversed after)"
+      knowledge_scope: player_derivable
+      notes: >
+        KIND is "still" or "kitchen". Reuses df-overseer-openarea.lua's
+        is_free (exported 2026-09-16 for this) rather than duplicating it
+        -- per the handoff's own instruction, unlike df-overseer-farm.lua
+        above, whose ground rule genuinely differs. Each candidate carries
+        a `requirements` block: the df.unit_labor code needed (BREWER for
+        still, COOK for kitchen -- both confirmed live), how many citizens
+        already have it enabled, and (still only) fort-owned BARREL count,
+        using the same is_fort_owned test df-overseer-stocks.lua uses,
+        duplicated here rather than reqscript'd because stocks.lua is not
+        a touched surface this stream (get_seeds() IS reqscript'd for the
+        kitchen check below -- reading it, not editing it). Kitchen also
+        carries `named_requirement` ("restrict cooking of plants and seeds
+        needed for replanting, or the farm loses its seed stock" -- the
+        user's own 2026-09-16 input) and `seed_protection`: a read-only
+        check of df.global.plotinfo.kitchen's real exclusion list against
+        this fort's owned seeds. Measured live on Uniboslan near
+        "Embark Site" LEVEL -1: 2 candidates for both kinds; still reports
+        (at time of check) 1-3 citizens with BREWER/COOK (fluctuating --
+        the fort was briefly unpaused for an unrelated supervised test
+        during this session) and 15 fort-owned barrels (of 23 total in
+        play); kitchen's seed_protection reports all 6 of this fort's owned
+        crops already `protected` -- DF's own DEFAULT kitchen settings
+        already exclude every known plant's SEEDS from cooking, confirmed
+        live, not something this project added.
+    "build W H [LEVEL] NEAR_LANDMARK KIND BLUEPRINT_FILE [RANK] [RADIUS_TILES] [DRY_RUN]":
+      lua_function: build_workshop
+      effect: mutate
+      coordinate_bearing: internal-only
+      live_deployed: false
+      verified: "2026-09-16 (DRY_RUN=true path only; the real quickfort path is UNTESTED live)"
+      knowledge_scope: player_derivable
+      notes: >
+        DRY_RUN defaults to true, same contract as farm.build. Dry-run
+        tested live for KIND=still. Does not name the building it creates
+        (unlike farm.build) -- a workshop's DF-default name was not
+        verified here; flagged rather than assumed sensible. Blueprint
+        files not yet deployed to the guest's dfhack-config/blueprints/ --
+        see blueprints/README.md.
 
 df-overseer-stuckjobs.lua:
   build_order_item: 8

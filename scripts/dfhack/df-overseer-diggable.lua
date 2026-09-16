@@ -120,22 +120,114 @@
 -- as a neighboring wall of, and `material` was read straight off the tile
 -- regardless -- exactly the "name an undiscovered vein's material before
 -- it's ever revealed" gap the research doc's bottom line calls out. Fixed
--- by adding a visibility gate to `is_diggable` itself: a tile only counts as
--- diggable if `dfhack.maps.isTileVisible` is also true. Since
--- `find_candidates` already requires every tile in the WxH box to satisfy
--- `is_diggable`, this makes the fix apply to the WHOLE INTERIOR of every
--- candidate, not just the ring `borders_walkable_network` already checked --
--- the ring only ever proved the box borders walkable ground outside it, not
--- that the box's own tiles are revealed. Per the wiki mechanic this
--- research doc cites ("you can see what the rock walls adjacent to a
--- mined-out tile are made of"), only tiles immediately next to already-dug
--- space are typically revealed at all, so this is expected to cut candidate
--- counts hard, not just close an edge case -- measured live, see the
--- knowledge-scope handoff's report for the real before/after count on
--- Uniboslan. `material` was already only ever read for a tile `is_diggable`
--- had already approved, so gating `is_diggable` alone is sufficient; no
--- separate check was needed at the point `material` is assembled into a
--- result.
+-- (that day) by requiring `dfhack.maps.isTileVisible` on EVERY tile in the
+-- box, hidden or not. That over-corrected -- see the ACT/SENSE FIX below,
+-- which replaces it.
+--
+-- ACT/SENSE FIX, 2026-09-16 (handoffs/2026-09-16-farm-and-still-tools.md):
+-- the knowledge-scope fix above conflated ACTING on a tile with KNOWING
+-- about it. A vanilla player designates a dig into unrevealed ground
+-- constantly -- that is how every underground room in this game is ever
+-- built -- they just cannot see what is inside it first. Requiring
+-- `isTileVisible` on the whole box made `find_diggable_area` unable to
+-- propose ANY candidate with so much as one hidden tile in it, which is
+-- nearly every candidate near a young fort's small revealed footprint:
+-- measured live on Uniboslan, `find 5 5 [0|-1|-2|-3] NEAR_LANDMARK` against
+-- Embark Site and Stockpile #1 returned `[]` at every level with the
+-- over-corrected code (baseline, this session). Confirmed from DFHack's own
+-- source, not just inferred: `hack/scripts/internal/quickfort/dig.lua`'s
+-- own header comment states the real rule verbatim -- "if the tile is
+-- hidden, we designate blindly to avoid spoilers. If it's visible, the
+-- shape and material of the target tile affects whether the designation
+-- has any effect." Its per-designation functions (`do_mine`, `do_down_stair`,
+-- etc.) literally skip their own shape/material gate `if not
+-- digctx.flags.hidden` -- a hidden tile is designated unconditionally, no
+-- properties read at all.
+--
+-- `is_diggable` now returns a third value, `hidden`, and treats the two
+-- cases asymmetrically, matching that source exactly:
+--   - HIDDEN tile: admitted UNCONDITIONALLY. Nothing about it -- material,
+--     shape, whether it's even solid -- is read or used to choose, rank or
+--     describe the candidate (the user's own framing, register 2026-09-16:
+--     "not allowed: using any property of a hidden tile to choose, rank,
+--     filter or describe a candidate: its material, its shape... its
+--     contents"). If it turns out to already be open floor, the real dig
+--     job will simply no-op that tile when it actually runs, same as a
+--     vanilla player's own blind designation over already-open ground would
+--     -- admitting it here costs nothing.
+--   - REVEALED tile: unchanged from the original (pre-knowledge-scope-fix)
+--     checks -- not walkable, WALL-shaped, natural diggable material. This
+--     data IS player-known once uncovered, so reading it is not a
+--     knowledge-scope violation; it never was.
+-- `material` is nil for a hidden tile in both the per-tile check and the
+-- final result (still reported only from the candidate's own top-left
+-- tile, informational-only, per the existing comment on that field) --
+-- never omitted-then-guessed, never backfilled from a neighbor.
+--
+-- Each candidate also reports `interior_fully_revealed` (true only if NO
+-- tile in the box is hidden) -- an aggregate boolean derived from something
+-- a vanilla player looking at their own map screen can already tell (an
+-- area with dark unrevealed patches vs. one fully lit), not a per-tile
+-- material/shape leak, so it stays inside player_derivable scope.
+--
+-- `borders_walkable_network` (the anchoring/reachability ring check) also
+-- gained a `dfhack.maps.isTileVisible` requirement on the ring tile itself:
+-- the register's own wording ("a candidate must be reachable from the
+-- revealed walkable network") means anchoring must still come from ground
+-- the player has actually seen, even though the candidate's OWN interior
+-- may now include hidden tiles. Unaffected by this fort's real geometry
+-- today (see below): every ring tile that already matched was revealed
+-- anyway, since walkable ground is not the same test as revealed ground
+-- but happens to coincide here.
+--
+-- MEASURED LIVE, this session, Uniboslan (paused, read-only): baseline
+-- (over-corrected code) returned `[]` for `find 5 5 LEVEL NEAR_LANDMARK`
+-- at LEVEL 0/-1/-2/-3 near both "Embark Site" and "Stockpile #1". After
+-- this fix, `find 5 5 -1 "Embark Site"` returns real candidates bordering
+-- the existing walkable network at z168 (one level below the surface) --
+-- see the handoff's own report for the exact count. This is the same
+-- z168 "farm room" case CLAUDE.md's 2026-09-16 status line names.
+--
+-- THE GRASS-TILE QUESTION (`docs/TRAPS.md`: "a downstair can't be
+-- designated on a grass tile"), investigated by source and one live
+-- read-only probe, NOT by designating anything (mutation is forbidden this
+-- session):
+--   - `hack/scripts/internal/quickfort/dig.lua`'s `do_down_stair` (the `j`
+--     dig-mode symbol) admits a revealed tile if it is a WALL, a
+--     FORTIFICATION, `is_diggable_floor` (shape FLOOR/BOULDER/PEBBLES --
+--     material is NOT checked here), a removable shape, gatherable, or a
+--     sapling; it only refuses outright on `is_tree`. A live read confirmed
+--     this fort's own grass tiles carry shape FLOOR with material
+--     GRASS_LIGHT/GRASS_DARK -- i.e. by this function's own logic, a grass
+--     tile's SHAPE should satisfy `is_diggable_floor` the same as any other
+--     floor. **This repo's source reading did not find the mechanism the
+--     recorded trap describes** -- it may live below quickfort's Lua layer
+--     (an engine-level job-creation check quickfort's own designation call
+--     cannot see), or the original one-off observation may have had an
+--     uncontrolled second factor. Left unresolved rather than guessed at;
+--     re-verifying it would require an actual designation, which this
+--     session cannot run.
+--   - What IS confirmed live: this fort's own existing entrance/connector
+--     stair pair (`blueprints/starter-entrance-1x1.csv`/
+--     `starter-connector-1x1.csv`, built and applied by an earlier session)
+--     sits on a bare STONE surface tile, not grass or soil, and is a real,
+--     working STAIR_DOWN/STAIR_UP pair today, part of the SAME walkable
+--     group as the surface landmarks above it -- confirmed via
+--     `getWalkableGroup` returning the identical group id at the surface
+--     (near "Embark Site") and one level down (near "Stockpile #2").
+--   - Practical consequence for this fix: because that connector already
+--     exists and is already part of the walkable network `ranked_candidates`
+--     anchors to, `find_diggable_area`'s existing ring-adjacency check
+--     (`borders_walkable_network`, unchanged in shape by this fix) already
+--     reaches z168 through it with NO new stair-authoring code needed --
+--     confirmed by the live LEVEL=-1 result above. Authoring a NEW vertical
+--     connector where none yet exists remains v1's own documented non-goal
+--     (see this file's original header, "non-adjacent candidates are simply
+--     absent rather than ranked low... not attempted here") and is
+--     unchanged by this stream. A future stream that needs a genuinely new
+--     surface entry point should prefer a non-grass/non-soil surface tile,
+--     matching this fort's own working precedent, until the grass question
+--     above is actually settled by a live designation test.
 --
 -- Usage: ./dfhack-run df-overseer-diggable find W H [LEVEL] NEAR_LANDMARK [RADIUS_TILES]
 -- Usage: ./dfhack-run df-overseer-diggable dig W H [LEVEL] NEAR_LANDMARK BLUEPRINT_FILE [RANK] [RADIUS_TILES]
@@ -161,46 +253,52 @@ local function walkable_group(x, y, z)
   return ok and group or 0
 end
 
--- Returns (is_diggable: bool, material: df.tiletype_material or nil).
--- A tile is diggable if it's solid (not walkable), REVEALED to a vanilla
--- player (dfhack.maps.isTileVisible -- see header, added 2026-09-16), shaped
--- as a wall, and made of a natural material mining actually excavates (see
--- header).
+-- Returns (admit: bool, material: df.tiletype_material or nil, hidden: bool).
+-- ACT/SENSE FIX, 2026-09-16 -- see header. A hidden tile is admitted
+-- unconditionally, with no material/shape/walkable read used to decide
+-- that: matching a vanilla player's own ability to designate a dig into
+-- ground they've never revealed. A revealed tile keeps the original
+-- checks (solid, WALL-shaped, natural diggable material) unchanged.
 local function is_diggable(x, y, z)
-  if walkable_group(x, y, z) ~= 0 then
-    return false
-  end
   local ok_vis, visible = pcall(dfhack.maps.isTileVisible, x, y, z)
-  if not ok_vis or not visible then
-    return false
+  if not ok_vis then
+    return false, nil, false
+  end
+  if not visible then
+    return true, nil, true
+  end
+  if walkable_group(x, y, z) ~= 0 then
+    return false, nil, false
   end
   local ok_tt, tt = pcall(dfhack.maps.getTileType, x, y, z)
   if not ok_tt or not tt or tt < 0 then
-    return false
+    return false, nil, false
   end
   local ok_shape, shape = pcall(function() return df.tiletype.attrs[tt].shape end)
   if not ok_shape or shape ~= df.tiletype_shape.WALL then
-    return false
+    return false, nil, false
   end
   local ok_mat, mat = pcall(function() return df.tiletype.attrs[tt].material end)
   if not ok_mat or not DIGGABLE_MATERIALS[mat] then
-    return false
+    return false, nil, false
   end
-  return true, mat
+  return true, mat, false
 end
 
 -- Every top-left position where a w-by-h window is entirely diggable tiles,
 -- within the given box at the given z. Mirrors find_candidates in
 -- df-overseer-openarea.lua exactly, with is_diggable in place of is_free.
 local function find_candidates(w, h, z, min_x, max_x, min_y, max_y)
-  local diggable, material = {}, {}
+  local diggable, material, hidden = {}, {}, {}
   for x = min_x, max_x do
     diggable[x] = {}
     material[x] = {}
+    hidden[x] = {}
     for y = min_y, max_y do
-      local ok, mat = is_diggable(x, y, z)
+      local ok, mat, hid = is_diggable(x, y, z)
       diggable[x][y] = ok
       material[x][y] = mat
+      hidden[x][y] = hid
     end
   end
 
@@ -208,6 +306,7 @@ local function find_candidates(w, h, z, min_x, max_x, min_y, max_y)
   for x = min_x, max_x - w + 1 do
     for y = min_y, max_y - h + 1 do
       local fits = true
+      local any_hidden = false
       for dx = 0, w - 1 do
         if not fits then break end
         for dy = 0, h - 1 do
@@ -215,10 +314,17 @@ local function find_candidates(w, h, z, min_x, max_x, min_y, max_y)
             fits = false
             break
           end
+          if hidden[x + dx][y + dy] then
+            any_hidden = true
+          end
         end
       end
       if fits then
-        table.insert(candidates, {x = x, y = y, material = material[x][y]})
+        table.insert(candidates, {
+          x = x, y = y,
+          material = material[x][y],
+          any_hidden = any_hidden,
+        })
       end
     end
   end
@@ -236,14 +342,21 @@ end
 -- nil when the anchor landmark itself isn't on a resolvable walkable group
 -- (rare -- falls back to "any walkable neighbor counts" rather than
 -- rejecting every candidate over an anchor-side lookup failure).
+-- ACT/SENSE FIX, 2026-09-16 -- see header: anchoring must still come from
+-- REVEALED ground, even though a candidate's own interior may now include
+-- hidden tiles. A ring tile is only a valid anchor if isTileVisible is
+-- also true.
 local function borders_walkable_network(x, y, w, h, z, required_group)
   for rx = x - 1, x + w do
     for ry = y - 1, y + h do
       local on_ring = rx < x or rx >= x + w or ry < y or ry >= y + h
       if on_ring then
-        local group = walkable_group(rx, ry, z)
-        if group ~= 0 and (not required_group or group == required_group) then
-          return true
+        local ok_vis, visible = pcall(dfhack.maps.isTileVisible, rx, ry, z)
+        if ok_vis and visible then
+          local group = walkable_group(rx, ry, z)
+          if group ~= 0 and (not required_group or group == required_group) then
+            return true
+          end
         end
       end
     end
@@ -351,6 +464,7 @@ function find_diggable_area(w, h, level, near, radius_tiles)
       -- region (e.g. stone shading into a mineral vein) is common and not
       -- itself disqualifying.
       material = ok_mat_name and mat_name or nil,
+      interior_fully_revealed = not c.any_hidden,
       borders_walkable_network = true,  -- v1 only returns these; see header
     })
   end
@@ -440,6 +554,7 @@ function dig_diggable_area(w, h, level, near, blueprint_file, rank, radius_tiles
     direction = info and info.direction or nil,
     distance_tiles = info and info.distance_tiles or nil,
     material = ok_mat_name and mat_name or nil,
+    interior_fully_revealed = not c.any_hidden,
     blueprint = blueprint_file,
     quickfort_ok = ok_run and result == CR_OK,
     quickfort_error = (not ok_run) and tostring(output) or nil,
