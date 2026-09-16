@@ -426,8 +426,13 @@ df-overseer-stocks.lua:
       lua_function: get_food_drink
       effect: read
       coordinate_bearing: false
-      live_deployed: false
-      verified: "2026-09-16 (mechanism only, via an ad hoc /tmp script over dfhack-run lua, not the deployed file -- see notes)"
+      live_deployed: true
+      verified: "2026-09-16 (deployed to VM 103 and run as the shipped command: raw_edibles 24 units, drink 0, matching the user's screen; hidden-tile guard added after, measured no change on this fort, redeploy owed)"
+      knowledge_scope: player_derivable
+      # player_derivable, not player_visible: fort-owned counts are what the
+      # vanilla stocks screen shows, but foreign_units itemizes caravan goods,
+      # which a player sees only via the trade screen or an explicit look at
+      # the wagon. Items on hidden tiles are excluded (is_on_hidden_tile).
       notes: >
         NOT DEPLOYED. This tool's whole reason for existing is a corrected
         ownership test: `not item.flags.trader`, NEVER `not item.flags.foreign`
@@ -468,8 +473,9 @@ df-overseer-stocks.lua:
       lua_function: get_seeds
       effect: read
       coordinate_bearing: false
-      live_deployed: false
-      verified: "2026-09-16 (mechanism only, same caveat as food-drink above)"
+      live_deployed: true
+      verified: "2026-09-16 (deployed to VM 103 and run as the shipped command: 59 fort-owned, 34 plump helmet; hidden-tile guard added after, measured no change, redeploy owed)"
+      knowledge_scope: player_visible
       notes: >
         Per-plant fort-owned seed counts, same ownership test as food-drink.
         Live-verified this session (same throwaway-script method): of 119
