@@ -286,6 +286,24 @@ touches `Working.md`, the register or `memory/`.
   be the **required-reads list** — every fact the ladder must branch on, marked
   readable-today or not, which is the requirements list for the tool stream.
 
+### Farm and food clock, in flight 2026-09-16
+
+**Verified live first:** all six fort seed types are subterranean crops (none
+grows outdoors), and the terrain is **z169 surface over a single SOIL level
+at z168 over stone**. So the farm is a room dug into z168: underground,
+soil-floored, valid for every crop held. A surface farm would grow nothing.
+
+- **`handoffs/2026-09-16-farm-and-still-tools.md`** (Sonnet executor): correct
+  the dig finder to "acting on hidden tiles is allowed, sensing them is not"
+  (the audit made it refuse hidden tiles, so it cannot propose the z168 room);
+  `farm.find`/`build`/`set-crop`; `workshop.find`/`build` for a still. Dry-run
+  modes verified live, no fort mutation; the orchestrator runs real builds.
+- **`research/2026-09-16-food-clock-and-farm-lead-time.md`** (Sonnet
+  researcher): days of food left against days to a first harvest, whether
+  dwarves drink from the sunk pools unaided, and what bridges any gap.
+- **Waiting on the user:** confirm the act/sense reading of the knowledge
+  policy; and the unpause decision, which this research feeds.
+
 ### Agents know only what a player could know (decided 2026-09-16)
 
 User's call: agent tools limited to `player_visible` and `player_derivable`.
