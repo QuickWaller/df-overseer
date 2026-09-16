@@ -301,8 +301,9 @@ soil-floored, valid for every crop held. A surface farm would grow nothing.
 - **`research/2026-09-16-food-clock-and-farm-lead-time.md`** (Sonnet
   researcher): days of food left against days to a first harvest, whether
   dwarves drink from the sunk pools unaided, and what bridges any gap.
-- **Waiting on the user:** confirm the act/sense reading of the knowledge
-  policy; and the unpause decision, which this research feeds.
+- **Act/sense reading confirmed by the user** ("yeah"): acting on hidden
+  tiles is allowed, sensing them is not. Applies to all tools.
+- **Waiting on the user:** the unpause decision, which the research feeds.
 
 ### Agents know only what a player could know (decided 2026-09-16)
 
