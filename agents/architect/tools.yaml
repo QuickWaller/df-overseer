@@ -68,9 +68,36 @@ read:
   - id: "workshop.find"
     status: exists
     note: >-
-      Same handoff. Candidate 3x3 still/kitchen sites, each with what the
-      workshop needs to operate (labor, and for a still, containers). Not
-      yet deployed.
+      Same handoff, extended handoffs/2026-09-17-water-and-industry-tools.md
+      item 3 with mason/mechanic/carpenter KIND values and a
+      building_material report shared by all five kinds. Not yet deployed.
+  - id: "zone.find"
+    status: exists
+    note: >-
+      Added handoffs/2026-09-17-water-and-industry-tools.md item 1. Ranked
+      revealed water bodies near a landmark (bounding box, real tile
+      count, depth, stagnant/salt) -- the discovery half of placing a
+      Water Source zone. Not yet deployed.
+  - id: "trees.find"
+    status: exists
+    note: >-
+      Same handoff, item 2. Distance-banded tree counts/reachability near
+      a landmark, plus CUTWOOD labor and fort-owned axe counts -- never a
+      per-tree list (design commitment #1, and ~1,593 visible trees on
+      this map). Not yet deployed.
+  - id: "well.find"
+    status: exists
+    note: >-
+      Same handoff, item 5. Ranked pond-edge well sites (quickfort's own
+      empty/ramp-top + floor-adjacent rule, plus this project's own
+      >=3/7-deep-revealed-water rule), with BLOCKS/BUCKET/CHAIN/TRAPPARTS
+      fort-owned counts. Not yet deployed.
+  - id: "orders.list"
+    status: exists
+    note: >-
+      Same handoff, item 4. Pending manager orders plus whether a Manager
+      is currently appointed (live-verified false on this fort). Not yet
+      deployed.
 
 write:
   - id: "queue.propose"
@@ -97,6 +124,16 @@ deny:
   - id: "farm.set-crop"
     reason: Advisors do not act. Propose it.
   - id: "workshop.build"
+    reason: Advisors do not act. Propose it.
+  - id: "zone.place"
+    reason: Advisors do not act. Propose it.
+  - id: "trees.fell"
+    reason: Advisors do not act. Propose it.
+  - id: "well.build"
+    reason: Advisors do not act. Propose it.
+  - id: "orders.create"
+    reason: Advisors do not act. Propose it.
+  - id: "orders.cancel"
     reason: Advisors do not act. Propose it.
   - id: "labor.set-labor"
     reason: Not this role's domain, and it races autolabor regardless.
