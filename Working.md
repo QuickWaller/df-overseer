@@ -298,9 +298,15 @@ reasoning in the register.
   75 active units, all 5 demons, orchestrator-verified live), and feature
   `Announced` flags plus discovery announcements (caverns, veins). Hardest grey
   zone: `threat.lua` exists to catch ambushers, exactly what a player cannot see.
-- **In flight:** `handoffs/2026-09-16-knowledge-scope-audit.md` (Sonnet
-  executor): `knowledge_scope` tag enforced at load time in the `dfmcp`
-  registry, then the leak fixes, each cost measured live. Local only.
+- ~~**In flight:** knowledge-scope audit~~ **DONE, merged and DEPLOYED to VM
+  103 2026-09-16.** No agent tool is `omniscient`; `dfmcp` refuses to load if
+  one is granted. Verified live: role tool lists 16/11/2 before, 18/13/4 after
+  (exactly as computed from merged code), `unit-status hostile` demons 5 → 0,
+  stocks 24 food / 0 drink. Backup at `/opt/df/deploy-backup-2026-09-16`.
+- **OWED BEFORE UNPAUSING: restart DF** so `diff.since`'s new visibility gate
+  on `UNIT_DEATH`/`UNIT_ATTACK` takes effect. It lives inside event listeners,
+  and the running DFHack still holds the old ungated ones from days ago.
+  Nothing leaks while paused (no events fire). Mind the quicksave traps.
 - Original research brief: `research/2026-09-16-player-visibility.md` (Sonnet
   `researcher`, read-only, worktree-isolated): what a vanilla v50 player can
   see, when it becomes visible, which struct fields gate it, the exact
@@ -309,8 +315,9 @@ reasoning in the register.
 - **Next, once it lands:** an executor audit that tags every tool, adds a
   discovery check to `find_diggable_area`, gates hidden-unit reporting in
   `df-overseer-threat.lua`, and **measures** what each change costs.
-- **Known leaks already, before the audit:** `find_diggable_area` (no
-  discovery check), `df-overseer-threat.lua` (reports sneaking units).
+- **Accepted cost, now real:** the threat scan no longer reports ambushers or
+  sneaking units at all. The player-equivalent signal is the ambush
+  announcement family already tagged in `diff.since`'s REPORT branch.
 
 ### Open, waiting on the user
 
