@@ -28,18 +28,36 @@
     Never cook the seed items themselves. The vanilla kitchen settings already
     exclude every SEEDS item, including all six seed types Uniboslan owns.
 
+- id: seed-stock-never-falls
+  scope: universal
+  status: prior
+  source: user, 2026-09-17
+  statement: >-
+    Never run out of seed. Across each harvest cycle a crop's seed stock should
+    end level with, or slightly above, where it started. Seed return varies by
+    processing method and has some randomness, so manage the split between
+    methods to hold that line.
+  note: >-
+    Ratios per method are being researched
+    (research/2026-09-17-seed-ratios.md). No tool can write kitchen
+    restrictions yet; plants are cookable by default.
+
 - id: cooking-plants-costs-seeds
   scope: universal
   status: prior
   source: DF wiki, Plump helmet
   statement: >-
-    Brewing a plant returns its seed and cooking it does not. While seed stock
-    for a crop is below a reserve, restrict cooking that plant; lift the
-    restriction once brewing has rebuilt the stock. The reserve size is
-    undecided, for the opening-ladder session with the user.
-  note: >-
-    No tool can write kitchen restrictions yet. The kitchen does not exclude
-    plants by default, so plump helmets are cookable out of the box.
+    Brewing a plant returns its seed and cooking it does not, so cooking is
+    the lever that draws seed stock down.
+
+- id: dispose-of-surplus-seed
+  scope: universal
+  status: prior
+  source: user, 2026-09-17
+  statement: >-
+    Surplus seed is not harmless clutter to keep forever. Once stock is well
+    above what replanting needs, destroy the excess by burning it or with a
+    dwarven atom smasher (a drawbridge).
 
 - id: brew-only-refuted
   scope: universal
