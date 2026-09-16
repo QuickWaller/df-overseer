@@ -303,10 +303,12 @@ reasoning in the register.
   one is granted. Verified live: role tool lists 16/11/2 before, 18/13/4 after
   (exactly as computed from merged code), `unit-status hostile` demons 5 → 0,
   stocks 24 food / 0 drink. Backup at `/opt/df/deploy-backup-2026-09-16`.
-- **OWED BEFORE UNPAUSING: restart DF** so `diff.since`'s new visibility gate
-  on `UNIT_DEATH`/`UNIT_ATTACK` takes effect. It lives inside event listeners,
-  and the running DFHack still holds the old ungated ones from days ago.
-  Nothing leaks while paused (no events fire). Mind the quicksave traps.
+- ~~Owed before unpausing: restart DF~~ **DONE 2026-09-16 10:43-10:44 UTC.**
+  Save verified on disk first (`autosave 2`, 10:42:50), backed up, DF
+  restarted, reloaded via "Continue active game", identity matched exactly
+  (tick 213622, 15 citizens, the day's FISH labor still set), still paused.
+  The `diff.since` visibility gate is live. Backups of both saves at
+  `/opt/df/deploy-backup-2026-09-16/`.
 - Original research brief: `research/2026-09-16-player-visibility.md` (Sonnet
   `researcher`, read-only, worktree-isolated): what a vanilla v50 player can
   see, when it becomes visible, which struct fields gate it, the exact
