@@ -411,14 +411,35 @@ df-overseer-labor.lua:
       lua_function: set_labor
       effect: mutate
       coordinate_bearing: false
-      live_deployed: true
+      live_deployed: STALE
       verified: unverified
       notes: >
-        unit.status.labors as a genuine indexable/settable bitfield is
-        confirmed live 2026-09-11. The direct set-labor CLI call itself has
-        no separate live-test claim on record -- autolabor's own
-        confirmed-live toggling exercises the same underlying field, not
-        this specific code path.
+        STALE: the file IS present on VM 103, but still runs the OLD, racy
+        code as of this note -- this fix has not been redeployed.
+        unit.status.labors as a genuine
+        indexable/settable bitfield is confirmed live 2026-09-11, but the
+        deployed VM 103 file still has the OLD, racy code as of this note.
+        FIXED 2026-09-16 (handoffs/2026-09-16-stocks-read-and-labor-race.md
+        item 3, closing decisions/DECISIONS.md 2026-09-12's "set_labor
+        already races autolabor" finding): set_labor now checks
+        plugins.autolabor.isEnabled() (confirmed live: a real, present Lua
+        API, returns true on this fort today) and, for any non-military
+        unit while autolabor is enabled, calls `autolabor LABOR disable`
+        BEFORE writing the bitfield -- taking that one labor out of
+        autolabor's management FORT-WIDE (not per-unit; no per-unit
+        exemption exists short of military duty or a burrow restriction,
+        neither used here for this purpose) rather than racing it. The
+        return message says this side effect plainly every time it fires.
+        If autolabor's enabled state cannot be determined at all, set_labor
+        now REFUSES with a clear reason instead of guessing. See the .lua
+        file's own header comment for the full reasoning and the exact
+        verification boundary: isEnabled()/CR_OK/the FISH-code-name mapping
+        were each confirmed live (read-only) this session; the actual
+        `autolabor LABOR disable` command was deliberately NOT executed
+        live this session (a real, persistent change to the running fort's
+        automation config, out of scope for a read-only, no-deploy stream)
+        -- verified-by-mechanism, not verified-by-execution, until a future
+        session with go-ahead re-confirms it.
 
 df-overseer-ui.lua:
   build_order_item: "infra-support (menu/UI automation), not a perception/action primitive"

@@ -90,7 +90,16 @@ write:
     status: exists
   - id: "labor.set-labor"
     status: exists
-    hazard: Races autolabor on ordinary citizens. See role.md.
+    hazard: >-
+      FIXED 2026-09-16 (handoffs/2026-09-16-stocks-read-and-labor-race.md
+      item 3), not yet redeployed to VM 103 (TOOLS.yaml marks this command
+      STALE). No longer races autolabor by default: it now disables
+      autolabor's management of that ONE LABOR, fort-wide, before writing,
+      or refuses outright if it cannot tell whether autolabor is even
+      enabled. The fort-wide (not per-unit) side effect is real and is
+      named in the tool's own return message every time it fires -- treat
+      any set-labor call as "this labor is now hand-managed for everyone,
+      not just this citizen," not as a narrow, single-unit action.
   - id: "queue.rule"
     status: exists
     note: >-
