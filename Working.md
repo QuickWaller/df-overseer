@@ -46,10 +46,14 @@ Everything below is what is still open.
 
 ## HANDOVER 2026-09-16 (read this first after a /clear)
 
-**The fort is in trouble and frozen, which is the safe state.** Uniboslan sits
-at tick 12309480 with `pause_state` false but the clock not moving, because one
-undismissed popup blocks everything (a documented trap: a dialog freezes the
-fort even when the flag reads false). Verified live from inside:
+**The fort is in trouble and paused, which is the safe state.** The user
+dismissed the popup and re-paused on 2026-09-16; **the orchestrator then
+verified it live, read-only**: `pause_state` genuinely true, focus
+`dwarfmode/Default` (no dialog up), year 30, `cur_year_tick` 213622,
+`frame_counter` 79020, 15 citizens, **fort-owned food 0 and drink 0 still**.
+About 140 ticks passed between the earlier reading and the pause, nothing more.
+The earlier "frozen behind a popup at tick 12309480" state is resolved; the
+count below stands. Verified live from inside:
 
 - **fort-owned food 0, fort-owned drink 0.** The 234 food and 50 drink items on
   the map are all `flags.foreign`: the merchant caravan's, in their wagons. The
@@ -103,18 +107,28 @@ assumed a running fort and a write surface that could carry it; neither holds.
 
 1. ~~Merge and review the research branch~~ **DONE 2026-09-16**, on `main`
    (`eb9e83d`, `research/2026-09-16-food-and-drink-logistics.md`).
-2. **Decide the rescue path with the user**: trade with the caravan present
-   (needs a depot), rush a farm and still, or restart the fort. Time is frozen
-   until the popup is dismissed, and dismissing it needs the user on the VNC
-   control channel (the UI automation path is barred for agents, `role.md`).
-   Restarting is an acceptable outcome, not a failure.
-3. **Brief and dispatch the building tools stream** from the research's tool
-   list: workshops, farm plots, trade depot, typed stockpiles, manager orders,
-   all landmark-relative with no coordinate crossing the boundary. Two things
-   the research singled out: `workorder` is available and `orders import
-   library/basic` is the cheapest real win with no new Lua, and the biggest
-   missing **read** tool is one that separates fort-owned stores from foreign
-   goods, which is exactly the mistake made on 2026-09-16.
+2. ~~Decide the rescue path~~ **DECIDED 2026-09-16: continue on this fort.**
+   The user dismissed the popup, re-paused, and said "I think we should
+   continue on this fort for now". Restarting on an embark chosen to exercise
+   an opening ladder was raised by the orchestrator and is **deferred, not
+   rejected** — worth revisiting once the tools exist, since a mid-game fort
+   with a caravan parked outside cannot exercise an opening policy.
+3. **The building tools, in the order the user agreed 2026-09-16.** The whole
+   list is still workshops, farm plots, trade depot, typed stockpiles and
+   manager orders, landmark-relative with no coordinate crossing the boundary
+   (`workorder` is available; `orders import library/basic` is the cheapest
+   real win with no new Lua). But three things come first, agreed explicitly:
+   1. **The fort-owned vs foreign stocks read**, because every other tool and
+      every ladder branch is downstream of a question that answers wrong
+      today. **Dispatched** (see below).
+   2. **Something that runs on a schedule.** Nothing does: no grader schedule,
+      no Sentry, agents are one-shot `agent exec`. A ladder is inert without
+      a loop that wakes, checks preconditions and acts, and the "timing" half
+      of the problem (season, caravan departure, winter freeze) needs a
+      clock-aware trigger. **Not yet designed** — the biggest structural gap.
+   3. **The `set_labor`/`autolabor` race**, before anything writes labors.
+      The ladder's first rung is fishing, which assigns a fisherdwarf labor,
+      which is the losing side of that race. **Dispatched** (see below).
 4. **A grader schedule**, so live predictions actually grade. Then the rest of
    the feed:
    1. a publisher of `dfqueue.render.public_view` only (allowlist and kill
@@ -175,6 +189,55 @@ assumed a running fort and a write surface that could carry it; neither holds.
 - **Classifier refusals seen repeatedly:** writes to secret stores, disk
   detach, and ad-hoc Proxmox config writes. Named `provision_vm.py` subcommands
   were fine. Route these back to the user, never through another agent.
+
+### In flight, dispatched 2026-09-16
+
+All Sonnet, worktree-isolated, committing on their own branches. None of them
+touches `Working.md`, the register or `memory/`.
+
+- **`handoffs/2026-09-16-stocks-read-and-labor-race.md`** (`executor`) — the
+  fort-owned vs foreign stocks read tool, the `stocks.*` live signal that makes
+  food and drink predictions gradeable at all, and the `set_labor`/`autolabor`
+  race. One stream because they share `scripts/dfhack/`. **Local only: no
+  deploy to VM 103, and the fort stays paused.**
+- **`research/2026-09-16-trade-execution-api.md`** (`researcher`) — settle
+  whether an agent
+  can complete a trade at all. The user did not accept the previous pass's "no
+  struct-level API found" as final. Covers the whole `caravan`/`trade`/
+  `logistics`/`force`/`diplomacy` surface, the struct level, and the one that
+  actually matters: whether driving the trade viewscreen **from Lua**
+  (`screen:feed()`, no X11) counts as the UI automation this repo bars, which
+  is a policy question for the user, not the researcher. Also chases the
+  unresolved "how long does the caravan wait".
+- ~~**`research/2026-09-16-opening-priority-ladder.md`**~~ **LANDED and merged
+  to `main` 2026-09-16.** Recommends the ladder as a versioned data file
+  (`playbooks/opening-ladder.yaml` — the directory `docs/AGENT-ARCHITECTURE.md`
+  §969 already reserves and that does not exist yet): rungs with closed types,
+  coordinate-free preconditions, ranked branches where real judgment exists,
+  and a prediction in `dfqueue`'s existing grammar. A new `ladder.next` read
+  tool evaluates preconditions and returns ranked eligible rungs, the same
+  "code narrows, model chooses" shape as `find_open_area`. Adjustment is never
+  a silent edit: graded outcomes per rung, threshold revision queued and ruled.
+  **Its own stated biggest risk, orchestrator-verified at source:** the
+  ladder's most valuable predictions are unwritable today, because
+  `learning/live_signals.py`'s closed registry has exactly six signal kinds and
+  no `stocks.*` — which is why the stream above exists. **Of 16 branch-facts,
+  5 are readable today and 11 are gaps.** Farm methods: only digging to a soil
+  layer survives the no-coordinates rule; flooding rock needs hydraulics
+  tooling that does not exist, and the water-dump-and-cancel trick is
+  zone-gated and structurally close to the barred UI path. Fishing needs no
+  workshop to catch and no zone, so a minimal fishing rung may be buildable
+  today; fish stocks do deplete permanently. **Not verified:** stagnant vs
+  flowing water, checked twice independently and still unestablished.
+  Original brief: an
+  opening priority order the Overseer can adjust, adapt and learn from, given
+  stocks, map and timing (their own opening: fishing, then drinking from open
+  water, then farms by flooding rock, the water-dump-and-cancel trick, or
+  digging to soil). Cross-domain prior art first, then a **data** format under
+  three existing constraints: no coordinates, the model does not edit its own
+  memory, and doctrine has a measured size budget. Its most useful output will
+  be the **required-reads list** — every fact the ladder must branch on, marked
+  readable-today or not, which is the requirements list for the tool stream.
 
 ### Open, waiting on the user
 
