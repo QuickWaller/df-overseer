@@ -226,3 +226,34 @@ verified-by-execution.
 
 Branch: `worktree-agent-a18dd0bd0667ad108`. Commits: `19652eb` (stocks
 tool), `1350b2e` (live signals), `337f74a` (labor race fix).
+
+## Correction (2026-09-16, same day, after merge to main)
+
+The Result section above's own numbers for `raw_edibles` (`own=5`) were
+**wrong in the same way item 1 exists to fix a wrong number**: `count_bucket`
+in `df-overseer-stocks.lua` counted item ENTITIES (`own = own + 1` per
+item), not `item.stack_size` units. The user read the fort's own screen
+("~20 food and 5 meat") and caught that the tool's "5 raw edible items"
+understated real food by roughly 5x — a fisherdwarf's or hunter's catch
+commonly stacks several units per item entity. `SEEDS` items happened to
+carry `stack_size == 1` on this fort, which is exactly why comparing this
+tool's seed count against the real seed count that same day did not catch
+the bug.
+
+Fixed on a fresh branch off `main` (`fix-stocks-units-not-items`, commit
+`6d398ef`), since the branch above was already merged: every bucket in
+`stocks.food-drink` now reports both `units` (the `stack_size` sum, now
+the primary field) and `item_count` (the distinct-entity count), with the
+same split on `foreign_*`/`rotten_*`/`unreachable_*`, and `stocks.seeds`
+gets the identical `total_units`/`total_item_count` split. The corrected,
+re-verified live number: `raw_edibles.units = 24` (10 fish + 9 plant + 5
+meat), matching the user's on-screen count exactly. `drink` is unaffected
+(both real DRINK items are caravan-held either way, `units = 0`).
+
+The `stocks.*` live signals in `learning/live_signals.py` are renamed from
+`.count` to `.units` and repointed at the corrected fields, not left under
+the old name pointed at a renamed value — `count` is the exact word that
+hid this bug (item-count vs stack-unit count), and a closed signal
+registry's whole point is that one name means exactly one thing. Ambient
+suite unchanged at 281 passed, 1 skipped (the same 5 tests, corrected in
+place, not added). Branch: `fix-stocks-units-not-items`, commit `6d398ef`.

@@ -66,12 +66,24 @@ header comment carries the live-verified reason its ownership test is
 origin flag, true on the fort's OWN unclaimed embark supplies too, not a
 fort-vs-caravan ownership test.
 
+**Named `*.units`, deliberately never `*.count`.** The tool underneath these
+signals was itself fixed, same day, for exactly this ambiguity: its first
+version counted item ENTITIES (`item_count`), not `item.stack_size` units,
+and reported "5 raw edible items" on a fort the user could see on screen
+held "~20 food and 5 meat" — a fisherdwarf's catch commonly stacks several
+units per item entity. `stocks.food-drink`/`stocks.seeds` now return BOTH
+`units` and `item_count` per bucket precisely so this signal registry is
+never left to guess which one a caller meant; these four signals are wired
+to `units` (the one that answers "how much food do we have"), and the name
+says so, on purpose, so the ambiguity that caused the bug cannot quietly
+come back through a signal string that only says `.count`.
+
 | signal | tool | value |
 |---|---|---|
-| `stocks.drink.count` | `stocks.food-drink` | `drink.count` (int) |
-| `stocks.prepared_meals.count` | `stocks.food-drink` | `prepared_meals.count` (int) |
-| `stocks.raw_edibles.count` | `stocks.food-drink` | `raw_edibles.count` (int) |
-| `stocks.seeds.count` | `stocks.seeds` | `total` (int) |
+| `stocks.drink.units` | `stocks.food-drink` | `drink.units` (int) |
+| `stocks.prepared_meals.units` | `stocks.food-drink` | `prepared_meals.units` (int) |
+| `stocks.raw_edibles.units` | `stocks.food-drink` | `raw_edibles.units` (int) |
+| `stocks.seeds.units` | `stocks.seeds` | `total_units` (int) |
 
 Each of these is a fixed signal name, exactly like `fort.population` — none
 of them take a landmark argument, since a stock count has no spatial
@@ -115,16 +127,16 @@ LANDMARK_EXIT_DISTANCE = "landmark.exit.distance_tiles"
 #: `stocks.food-drink` / `stocks.seeds` (`scripts/dfhack/df-overseer-stocks.lua`).
 #: See this module's docstring, "The `stocks.*` signals", for why these read
 #: `not item.flags.trader` under the hood rather than `not item.flags.foreign`.
-STOCKS_DRINK_COUNT = "stocks.drink.count"
-STOCKS_PREPARED_MEALS_COUNT = "stocks.prepared_meals.count"
-STOCKS_RAW_EDIBLES_COUNT = "stocks.raw_edibles.count"
-STOCKS_SEEDS_COUNT = "stocks.seeds.count"
+STOCKS_DRINK_UNITS = "stocks.drink.units"
+STOCKS_PREPARED_MEALS_UNITS = "stocks.prepared_meals.units"
+STOCKS_RAW_EDIBLES_UNITS = "stocks.raw_edibles.units"
+STOCKS_SEEDS_UNITS = "stocks.seeds.units"
 
 SIGNAL_KINDS = (
     FORT_POPULATION, FORT_ALERTS_COUNT, FORT_STUCK_JOBS_COUNT,
     FORT_LANDMARKS_COUNT, LANDMARK_EXISTS, LANDMARK_EXIT_DISTANCE,
-    STOCKS_DRINK_COUNT, STOCKS_PREPARED_MEALS_COUNT, STOCKS_RAW_EDIBLES_COUNT,
-    STOCKS_SEEDS_COUNT,
+    STOCKS_DRINK_UNITS, STOCKS_PREPARED_MEALS_UNITS, STOCKS_RAW_EDIBLES_UNITS,
+    STOCKS_SEEDS_UNITS,
 )
 
 VALUE_TYPE = {
@@ -134,10 +146,10 @@ VALUE_TYPE = {
     FORT_LANDMARKS_COUNT: INTEGER,
     LANDMARK_EXISTS: BOOLEAN,
     LANDMARK_EXIT_DISTANCE: INTEGER,
-    STOCKS_DRINK_COUNT: INTEGER,
-    STOCKS_PREPARED_MEALS_COUNT: INTEGER,
-    STOCKS_RAW_EDIBLES_COUNT: INTEGER,
-    STOCKS_SEEDS_COUNT: INTEGER,
+    STOCKS_DRINK_UNITS: INTEGER,
+    STOCKS_PREPARED_MEALS_UNITS: INTEGER,
+    STOCKS_RAW_EDIBLES_UNITS: INTEGER,
+    STOCKS_SEEDS_UNITS: INTEGER,
 }
 
 #: Every live signal is MECHANICAL: read straight off a read tool's own
@@ -180,10 +192,10 @@ _FIXED_SIGNALS = {
     FORT_ALERTS_COUNT: FORT_ALERTS_COUNT,
     FORT_STUCK_JOBS_COUNT: FORT_STUCK_JOBS_COUNT,
     FORT_LANDMARKS_COUNT: FORT_LANDMARKS_COUNT,
-    STOCKS_DRINK_COUNT: STOCKS_DRINK_COUNT,
-    STOCKS_PREPARED_MEALS_COUNT: STOCKS_PREPARED_MEALS_COUNT,
-    STOCKS_RAW_EDIBLES_COUNT: STOCKS_RAW_EDIBLES_COUNT,
-    STOCKS_SEEDS_COUNT: STOCKS_SEEDS_COUNT,
+    STOCKS_DRINK_UNITS: STOCKS_DRINK_UNITS,
+    STOCKS_PREPARED_MEALS_UNITS: STOCKS_PREPARED_MEALS_UNITS,
+    STOCKS_RAW_EDIBLES_UNITS: STOCKS_RAW_EDIBLES_UNITS,
+    STOCKS_SEEDS_UNITS: STOCKS_SEEDS_UNITS,
 }
 
 
@@ -226,8 +238,8 @@ def parse(signal: Any) -> ParsedSignal:
         f"signal {signal!r} is not a known live signal (fort.population, "
         "fort.alerts.count, fort.stuck_jobs.count, fort.landmarks.count, "
         'landmark."NAME".exists, landmark."NAME".exit."TO".distance_tiles, '
-        "stocks.drink.count, stocks.prepared_meals.count, "
-        "stocks.raw_edibles.count, stocks.seeds.count)"
+        "stocks.drink.units, stocks.prepared_meals.units, "
+        "stocks.raw_edibles.units, stocks.seeds.units)"
     )
 
 
@@ -283,21 +295,21 @@ def read(parsed: ParsedSignal, call_tool: CallTool):
     if parsed.kind == FORT_LANDMARKS_COUNT:
         return len(_landmarks_list(call_tool))
 
-    if parsed.kind == STOCKS_DRINK_COUNT:
+    if parsed.kind == STOCKS_DRINK_UNITS:
         food_drink = call_tool("stocks.food-drink", {})
-        return food_drink["drink"]["count"]
+        return food_drink["drink"]["units"]
 
-    if parsed.kind == STOCKS_PREPARED_MEALS_COUNT:
+    if parsed.kind == STOCKS_PREPARED_MEALS_UNITS:
         food_drink = call_tool("stocks.food-drink", {})
-        return food_drink["prepared_meals"]["count"]
+        return food_drink["prepared_meals"]["units"]
 
-    if parsed.kind == STOCKS_RAW_EDIBLES_COUNT:
+    if parsed.kind == STOCKS_RAW_EDIBLES_UNITS:
         food_drink = call_tool("stocks.food-drink", {})
-        return food_drink["raw_edibles"]["count"]
+        return food_drink["raw_edibles"]["units"]
 
-    if parsed.kind == STOCKS_SEEDS_COUNT:
+    if parsed.kind == STOCKS_SEEDS_UNITS:
         seeds = call_tool("stocks.seeds", {})
-        return seeds["total"]
+        return seeds["total_units"]
 
     if parsed.kind == LANDMARK_EXISTS:
         return any(lm.get("name") == parsed.landmark for lm in _landmarks_list(call_tool))
