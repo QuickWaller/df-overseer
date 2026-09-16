@@ -13,7 +13,9 @@ import pytest
 from learning.live_signals import (
     BOOLEAN, FORT_ALERTS_COUNT, FORT_LANDMARKS_COUNT, FORT_POPULATION,
     FORT_STUCK_JOBS_COUNT, INTEGER, LANDMARK_EXISTS, LANDMARK_EXIT_DISTANCE,
-    SignalError, UNRESOLVABLE, parse, quote_landmark_name, read,
+    STOCKS_DRINK_COUNT, STOCKS_PREPARED_MEALS_COUNT, STOCKS_RAW_EDIBLES_COUNT,
+    STOCKS_SEEDS_COUNT, SignalError, UNRESOLVABLE, parse, quote_landmark_name,
+    read,
 )
 
 # ---- fixtures: real output shapes, not invented --------------------------------
@@ -83,6 +85,30 @@ LANDMARKS_LIST_JSON = [
 LANDMARK_GET_STOCKPILE_2_JSON = LANDMARKS_LIST_JSON[1]
 LANDMARK_GET_NOT_FOUND_JSON = {"error": "not found"}
 
+# df-overseer-stocks.lua's get_food_drink()/get_seeds(): real shapes,
+# live-verified against Uniboslan 2026-09-16 (handoffs/2026-09-16-
+# stocks-read-and-labor-race.md) via a throwaway /tmp script over
+# dfhack-run lua -- these exact numbers (0 fort-owned drink, 5 fort-owned
+# raw edibles, 59 fort-owned seeds of 119 total) are the real live counts
+# that session read, not invented.
+STOCKS_FOOD_DRINK_JSON = {
+    "drink": {"count": 0, "foreign_total": 2, "rotten_count": 0, "unreachable_count": 0},
+    "prepared_meals": {"count": 0, "foreign_total": 0, "rotten_count": 0, "unreachable_count": 0},
+    "raw_edibles": {"count": 5, "foreign_total": 49, "rotten_count": 0, "unreachable_count": 0},
+}
+
+STOCKS_SEEDS_JSON = {
+    "total": 59,
+    "by_plant": {
+        "MUSHROOM_HELMET_PLUMP": 34,
+        "POD_SWEET": 5,
+        "GRASS_TAIL_PIG": 5,
+        "MUSHROOM_CUP_DIMPLE": 5,
+        "GRASS_WHEAT_CAVE": 5,
+        "BUSH_QUARRY": 5,
+    },
+}
+
 # df-overseer-stuckjobs.lua's get_stuck_jobs(): a bare array.
 STUCK_JOBS_JSON = [
     {
@@ -113,6 +139,10 @@ def _call_tool(tool_id: str, arguments: dict):
         return LANDMARK_GET_NOT_FOUND_JSON
     if tool_id == "stuckjobs.find":
         return STUCK_JOBS_JSON
+    if tool_id == "stocks.food-drink":
+        return STOCKS_FOOD_DRINK_JSON
+    if tool_id == "stocks.seeds":
+        return STOCKS_SEEDS_JSON
     raise AssertionError(f"unexpected tool_id in test double: {tool_id!r}")
 
 
@@ -125,6 +155,19 @@ def test_parse_each_fixed_signal():
         ("fort.alerts.count", FORT_ALERTS_COUNT),
         ("fort.stuck_jobs.count", FORT_STUCK_JOBS_COUNT),
         ("fort.landmarks.count", FORT_LANDMARKS_COUNT),
+    ):
+        parsed = parse(signal)
+        assert parsed.kind == kind
+        assert parsed.signal == signal
+        assert parsed.value_type == INTEGER
+
+
+def test_parse_each_stocks_signal():
+    for signal, kind in (
+        ("stocks.drink.count", STOCKS_DRINK_COUNT),
+        ("stocks.prepared_meals.count", STOCKS_PREPARED_MEALS_COUNT),
+        ("stocks.raw_edibles.count", STOCKS_RAW_EDIBLES_COUNT),
+        ("stocks.seeds.count", STOCKS_SEEDS_COUNT),
     ):
         parsed = parse(signal)
         assert parsed.kind == kind
@@ -224,6 +267,26 @@ def test_read_fort_stuck_jobs_count():
 
 def test_read_fort_landmarks_count():
     assert read(parse("fort.landmarks.count"), _call_tool) == 3
+
+
+def test_read_stocks_drink_count_zero():
+    # Uniboslan's real, live-verified state 2026-09-16: 2 DRINK items in
+    # play, both flags.trader (caravan-held) -- zero fort-owned.
+    assert read(parse("stocks.drink.count"), _call_tool) == 0
+
+
+def test_read_stocks_prepared_meals_count():
+    assert read(parse("stocks.prepared_meals.count"), _call_tool) == 0
+
+
+def test_read_stocks_raw_edibles_count():
+    assert read(parse("stocks.raw_edibles.count"), _call_tool) == 5
+
+
+def test_read_stocks_seeds_count():
+    # Of 119 SEEDS items live on this fort, only 59 are fort-owned -- the
+    # other 60 are the current caravan's own seed-variety trade goods.
+    assert read(parse("stocks.seeds.count"), _call_tool) == 59
 
 
 def test_read_landmark_exists_true():
