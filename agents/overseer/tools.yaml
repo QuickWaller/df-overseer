@@ -45,6 +45,17 @@ read:
   - id: "stocks.seeds"
     status: exists
     note: Same file, same deploy caveat as stocks.food-drink above.
+  - id: "farm.find"
+    status: exists
+    note: >-
+      Added handoffs/2026-09-16-farm-and-still-tools.md. Candidate farm-plot
+      floor, tagged outside/inside and the fort-owned seeds actually valid
+      there. Not yet deployed to VM 103.
+  - id: "workshop.find"
+    status: exists
+    note: >-
+      Same handoff. Candidate 3x3 still/kitchen sites with operating
+      requirements (labor, containers). Not yet deployed.
   - id: "labor.unit-status"
     status: exists
     reliability: HEURISTIC
@@ -88,6 +99,27 @@ write:
     status: exists
   - id: "landmarks.build"
     status: exists
+  - id: "farm.build"
+    status: exists
+    note: >-
+      Added handoffs/2026-09-16-farm-and-still-tools.md. DRY_RUN defaults
+      to true -- an explicit false is required to actually mutate. Only the
+      dry-run path is live-verified; the real quickfort/setName path is
+      UNTESTED live. Blueprint not yet deployed to VM 103's
+      dfhack-config/blueprints/ -- see blueprints/README.md.
+  - id: "farm.set-crop"
+    status: exists
+    note: >-
+      Same handoff. DRY_RUN defaults to true. Writes
+      building_farmplotst.plant_id[season] directly, by the same pattern
+      as set_labor below. UNTESTED live for the real write (this fort has
+      no farm plot to test against yet); only the plot-not-found refusal
+      path was exercised.
+  - id: "workshop.build"
+    status: exists
+    note: >-
+      Same handoff. DRY_RUN defaults to true. Only the dry-run path is
+      live-verified. Blueprints not yet deployed.
   - id: "labor.set-labor"
     status: exists
     hazard: >-
