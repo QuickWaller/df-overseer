@@ -88,7 +88,8 @@
 --                     meat/fish/plant/cheese/etc, verified non-empty and
 --                     non-trivial on this fort)
 --
--- `rotten`/`unreachable` per bucket, per the handoff's own minimum bar:
+-- `rotten`/`unreachable` per bucket, per the handoff's own minimum bar,
+-- counted in UNITS -- see the "units vs item_count" section below for why:
 --   rotten       -- `flags.rotten` on a fort-owned item in that bucket.
 --                    Verified real and currently non-zero fort-wide (16 in
 --                    play across the whole map this session), though this
@@ -106,6 +107,57 @@
 --                    unreachable -- an honest gap, not a guess, matching
 --                    this repo's idle_ticks=null idiom in
 --                    df-overseer-stuckjobs.lua.
+--
+-- ============================================================================
+-- FIXED 2026-09-16, same day, found by the user reading the screen a THIRD
+-- time: "count" IS THE TRAP WORD IN THIS FILE. Read this before touching
+-- any field below.
+--
+-- Three separate miscounts of this exact fort's food happened in one day,
+-- every one caught by the user looking at the actual screen, none caught by
+-- this project's own tools first:
+--   1. Counting the caravan's goods as the fort's own (the bug that started
+--      this whole handoff -- 234 food/50 drink items, all foreign).
+--   2. Over-correcting with `flags.foreign` as the ownership test (see this
+--      file's header above) -- would have zeroed the fort's own embark
+--      supplies, a DIFFERENT wrong number, not a fix for the first one.
+--   3. THIS bug: `count_bucket` counted ITEM ENTITIES (`own = own + 1` per
+--      item), not stack units. DF's own stocks screen -- and every human
+--      reading it -- counts units. A fisherdwarf's catch sits in the item
+--      vector as a handful of item entities, each with `item.stack_size`
+--      possibly >1 (confirmed live this session: FISH/MEAT/PLANT items on
+--      this exact fort carry stack_size 4-5, not 1). Reporting "5 raw
+--      edible items" when the real number is 24 units of food is exactly
+--      as wrong as reporting 0 was -- both are confident, specific, and
+--      false. **This bug hid inside the very SEEDS bucket this file used
+--      as its own worked example above**, because SEEDS items on this
+--      fort happen to carry `stack_size == 1` always (confirmed live,
+--      59 items, sum of stack_size also 59) -- a coincidence, not a
+--      property of the mechanism, and the reason a same-day dry-run
+--      comparison against real seed counts did not catch this.
+--
+-- `stack_size` was checked live, per type, before trusting it, not assumed
+-- present or sane: DRINK (25 units/item, 2 items -> 50 units total),
+-- ANY_EDIBLE_RAW/MEAT/FISH/PLANT/CHEESE (4-5 units/item, matches the DF
+-- wiki's ordinary butchering/fishing/harvest yield), SEEDS and BARREL
+-- (always exactly 1 -- neither actually stacks on this fort). FOOD (the
+-- prepared-meals bucket) has zero items on this fort right now, so its own
+-- `stack_size` could not be directly sampled -- inferred, not verified, to
+-- carry the field too, since it is a base `item` struct field observed
+-- present and well-formed on every OTHER type tested here, never type-
+-- specific in df-structures. Flagged rather than silently assumed.
+--
+-- THE FIX: every bucket below now reports BOTH `units` (the `stack_size`
+-- sum -- what "how much food do we have" means, and now the PRIMARY field)
+-- and `item_count` (the distinct-entity count -- what a hauling job or a
+-- container slot actually deals with; a real, different, still-useful
+-- number, never silently discarded in favor of `units`). `foreign_units`/
+-- `foreign_item_count` mirror the same split on the caravan's side, so the
+-- exact same ambiguity cannot quietly reappear there later. `rotten`/
+-- `unreachable` are unit sums too, for the identical reason: "1 rotten
+-- item" that is actually 5 rotten units of food understates the problem
+-- the same way item-counting understated the fort's food.
+-- ============================================================================
 --
 -- Usage: ./dfhack-run df-overseer-stocks food-drink
 -- Usage: ./dfhack-run df-overseer-stocks seeds
@@ -134,26 +186,49 @@ local function is_unreachable(item, main_group_id)
   return group ~= main_group_id
 end
 
+-- `item.stack_size` is a plain integer field on every item type this file
+-- touches (checked live, per type, see this file's "count is the trap
+-- word" section). A read failure has never been observed live -- the
+-- fallback of 1 unit exists so an unexpected miss degrades to
+-- under-by-a-little (still counts the item) rather than silently vanishing
+-- the item from every total, which would be the worse failure mode of the
+-- two.
+local function item_units(item)
+  local ok, stack_size = pcall(function() return item.stack_size end)
+  if ok and type(stack_size) == "number" and stack_size > 0 then
+    return stack_size
+  end
+  return 1
+end
+
 local function count_bucket(vec, main_group_id)
-  local total, own, rotten, unreachable = 0, 0, 0, 0
+  local own_units, own_items = 0, 0
+  local foreign_units, foreign_items = 0, 0
+  local rotten_units, unreachable_units = 0, 0
   for i = 0, #vec - 1 do
     local item = vec[i]
-    total = total + 1
+    local units = item_units(item)
     if is_fort_owned(item) then
-      own = own + 1
+      own_units = own_units + units
+      own_items = own_items + 1
       if item.flags.rotten then
-        rotten = rotten + 1
+        rotten_units = rotten_units + units
       end
       if is_unreachable(item, main_group_id) then
-        unreachable = unreachable + 1
+        unreachable_units = unreachable_units + units
       end
+    else
+      foreign_units = foreign_units + units
+      foreign_items = foreign_items + 1
     end
   end
   return {
-    count = own,
-    foreign_total = total - own,
-    rotten_count = rotten,
-    unreachable_count = unreachable,
+    units = own_units,
+    item_count = own_items,
+    foreign_units = foreign_units,
+    foreign_item_count = foreign_items,
+    rotten_units = rotten_units,
+    unreachable_units = unreachable_units,
   }
 end
 
@@ -173,22 +248,41 @@ end
 -- MUSHROOM_HELMET_PLUMP, the standard dwarven plump helmet). A resolution
 -- failure (a mat_index this repo has not seen) falls back to an honest
 -- "mat_index_<N>" label rather than a guessed name.
+--
+-- units vs item_count, same split as get_food_drink() and for the same
+-- reason (see this file's "count is the trap word" section) -- confirmed
+-- live this session that SEEDS items on THIS fort always carry
+-- stack_size == 1 (119 items, sum of stack_size also 119), so `total_units`
+-- and `total_item_count` happen to be numerically equal here. That
+-- equality is an observed fact about this fort right now, not a property
+-- of the SEEDS item type verified in general -- reporting only one number
+-- would silently repeat the exact assumption that hid this bug in the
+-- food-drink buckets, so both are reported here too.
 function get_seeds()
-  local by_plant = {}
-  local total = 0
+  local units_by_plant = {}
+  local item_count_by_plant = {}
+  local total_units, total_items = 0, 0
   local vec = df.global.world.items.other.SEEDS
   for i = 0, #vec - 1 do
     local item = vec[i]
     if is_fort_owned(item) then
-      total = total + 1
+      local units = item_units(item)
       local ok, plant = pcall(function()
         return df.global.world.raws.plants.all[item.mat_index]
       end)
       local name = (ok and plant and plant.id) or ("mat_index_" .. tostring(item.mat_index))
-      by_plant[name] = (by_plant[name] or 0) + 1
+      units_by_plant[name] = (units_by_plant[name] or 0) + units
+      item_count_by_plant[name] = (item_count_by_plant[name] or 0) + 1
+      total_units = total_units + units
+      total_items = total_items + 1
     end
   end
-  return { total = total, by_plant = by_plant }
+  return {
+    total_units = total_units,
+    total_item_count = total_items,
+    by_plant_units = units_by_plant,
+    by_plant_item_count = item_count_by_plant,
+  }
 end
 
 -- Same module-load guard as every other df-overseer-*.lua script.
