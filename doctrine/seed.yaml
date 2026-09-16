@@ -109,3 +109,17 @@
   statement: >-
     A dwarf resting in bed does not fetch its own drink. Someone must bring
     water in a bucket, so keep an empty bucket available.
+
+- id: water-source-zone-for-ponds
+  scope: universal
+  status: verified
+  source: Uniboslan, 2026-09-17 supervised test (correlational, not isolated)
+  statement: >-
+    A fort whose only water is a sunken pond may have dwarves that never
+    drink. Marking the water itself as a Water Source zone, on the level the
+    water is on, got dwarves down to the water and drinking within about four
+    game days. Place the zone on the water, not on the open space above it.
+  note: >-
+    Risks seen: dwarves then stand in 6-7/7 water, deep enough to drown a poor
+    swimmer, and stagnant water gives a NastyWater thought whose health effect
+    is unverified. A well avoids both.
