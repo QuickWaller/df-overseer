@@ -55,6 +55,28 @@ assumed — `overview.get` nests `population` under `tier1` and `alerts`
 under `tier2`; `stuckjobs.find` and `landmarks.list` both print a **bare
 JSON array**, not an object with a `result` key.
 
+## The `stocks.*` signals — added `handoffs/2026-09-16-stocks-read-and-labor-race.md`
+
+Added to close the exact gap that stream's own brief names: without these,
+a proposal cannot predict "fort-owned drink rises above zero", because
+nothing in this closed registry read the fort's actual (not caravan-owned)
+stores. Backed by the new `scripts/dfhack/df-overseer-stocks.lua`, whose own
+header comment carries the live-verified reason its ownership test is
+`not item.flags.trader`, never `not item.flags.foreign` — `foreign` is an
+origin flag, true on the fort's OWN unclaimed embark supplies too, not a
+fort-vs-caravan ownership test.
+
+| signal | tool | value |
+|---|---|---|
+| `stocks.drink.count` | `stocks.food-drink` | `drink.count` (int) |
+| `stocks.prepared_meals.count` | `stocks.food-drink` | `prepared_meals.count` (int) |
+| `stocks.raw_edibles.count` | `stocks.food-drink` | `raw_edibles.count` (int) |
+| `stocks.seeds.count` | `stocks.seeds` | `total` (int) |
+
+Each of these is a fixed signal name, exactly like `fort.population` — none
+of them take a landmark argument, since a stock count has no spatial
+component at all.
+
 ## Quoting a landmark name
 
 Landmark names come straight from the game (`"Stockpile #2"`) and may
@@ -89,9 +111,20 @@ FORT_LANDMARKS_COUNT = "fort.landmarks.count"
 LANDMARK_EXISTS = "landmark.exists"
 LANDMARK_EXIT_DISTANCE = "landmark.exit.distance_tiles"
 
+#: `handoffs/2026-09-16-stocks-read-and-labor-race.md` item 2. Backed by
+#: `stocks.food-drink` / `stocks.seeds` (`scripts/dfhack/df-overseer-stocks.lua`).
+#: See this module's docstring, "The `stocks.*` signals", for why these read
+#: `not item.flags.trader` under the hood rather than `not item.flags.foreign`.
+STOCKS_DRINK_COUNT = "stocks.drink.count"
+STOCKS_PREPARED_MEALS_COUNT = "stocks.prepared_meals.count"
+STOCKS_RAW_EDIBLES_COUNT = "stocks.raw_edibles.count"
+STOCKS_SEEDS_COUNT = "stocks.seeds.count"
+
 SIGNAL_KINDS = (
     FORT_POPULATION, FORT_ALERTS_COUNT, FORT_STUCK_JOBS_COUNT,
     FORT_LANDMARKS_COUNT, LANDMARK_EXISTS, LANDMARK_EXIT_DISTANCE,
+    STOCKS_DRINK_COUNT, STOCKS_PREPARED_MEALS_COUNT, STOCKS_RAW_EDIBLES_COUNT,
+    STOCKS_SEEDS_COUNT,
 )
 
 VALUE_TYPE = {
@@ -101,6 +134,10 @@ VALUE_TYPE = {
     FORT_LANDMARKS_COUNT: INTEGER,
     LANDMARK_EXISTS: BOOLEAN,
     LANDMARK_EXIT_DISTANCE: INTEGER,
+    STOCKS_DRINK_COUNT: INTEGER,
+    STOCKS_PREPARED_MEALS_COUNT: INTEGER,
+    STOCKS_RAW_EDIBLES_COUNT: INTEGER,
+    STOCKS_SEEDS_COUNT: INTEGER,
 }
 
 #: Every live signal is MECHANICAL: read straight off a read tool's own
@@ -143,6 +180,10 @@ _FIXED_SIGNALS = {
     FORT_ALERTS_COUNT: FORT_ALERTS_COUNT,
     FORT_STUCK_JOBS_COUNT: FORT_STUCK_JOBS_COUNT,
     FORT_LANDMARKS_COUNT: FORT_LANDMARKS_COUNT,
+    STOCKS_DRINK_COUNT: STOCKS_DRINK_COUNT,
+    STOCKS_PREPARED_MEALS_COUNT: STOCKS_PREPARED_MEALS_COUNT,
+    STOCKS_RAW_EDIBLES_COUNT: STOCKS_RAW_EDIBLES_COUNT,
+    STOCKS_SEEDS_COUNT: STOCKS_SEEDS_COUNT,
 }
 
 
@@ -184,7 +225,9 @@ def parse(signal: Any) -> ParsedSignal:
     raise SignalError(
         f"signal {signal!r} is not a known live signal (fort.population, "
         "fort.alerts.count, fort.stuck_jobs.count, fort.landmarks.count, "
-        'landmark."NAME".exists, landmark."NAME".exit."TO".distance_tiles)'
+        'landmark."NAME".exists, landmark."NAME".exit."TO".distance_tiles, '
+        "stocks.drink.count, stocks.prepared_meals.count, "
+        "stocks.raw_edibles.count, stocks.seeds.count)"
     )
 
 
@@ -239,6 +282,22 @@ def read(parsed: ParsedSignal, call_tool: CallTool):
 
     if parsed.kind == FORT_LANDMARKS_COUNT:
         return len(_landmarks_list(call_tool))
+
+    if parsed.kind == STOCKS_DRINK_COUNT:
+        food_drink = call_tool("stocks.food-drink", {})
+        return food_drink["drink"]["count"]
+
+    if parsed.kind == STOCKS_PREPARED_MEALS_COUNT:
+        food_drink = call_tool("stocks.food-drink", {})
+        return food_drink["prepared_meals"]["count"]
+
+    if parsed.kind == STOCKS_RAW_EDIBLES_COUNT:
+        food_drink = call_tool("stocks.food-drink", {})
+        return food_drink["raw_edibles"]["count"]
+
+    if parsed.kind == STOCKS_SEEDS_COUNT:
+        seeds = call_tool("stocks.seeds", {})
+        return seeds["total"]
 
     if parsed.kind == LANDMARK_EXISTS:
         return any(lm.get("name") == parsed.landmark for lm in _landmarks_list(call_tool))

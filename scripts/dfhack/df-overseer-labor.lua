@@ -78,6 +78,57 @@
 -- `invader=`/`danger=` fields precisely so a caller can tell those apart
 -- instead of treating every row as a confirmed siege -- cross-check against
 -- isInvader specifically once a real siege happens.
+--
+-- FIXED 2026-09-16 (handoffs/2026-09-16-stocks-read-and-labor-race.md item
+-- 3, closing the race found and recorded 2026-09-12,
+-- decisions/DECISIONS.md same date, "Found and verified: set_labor already
+-- races autolabor on ordinary citizens"): `set_labor` used to write
+-- `unit.status.labors[code]` directly with zero coordination, an
+-- unprotected single-writer violation against `autolabor`'s own reassignment
+-- cycle (enabled and confirmed actually assigning jobs on this fort,
+-- decisions/DECISIONS.md 2026-09-11).
+--
+-- THE FIX, verified live piece by piece before being written, not assumed:
+--   - `plugins.autolabor.isEnabled()` is a real, present Lua API
+--     (`require('plugins.autolabor')` succeeds on this install and exposes
+--     `isEnabled`/`setEnabled`, confirmed live) -- used to detect whether
+--     the race can even happen right now, rather than assuming autolabor is
+--     always on. Confirmed live this session: `isEnabled()` returns `true`
+--     on Uniboslan today.
+--   - autolabor's own shipped doc (`hack/docs/docs/tools/autolabor.txt`,
+--     read directly this session, not recalled) documents a real per-LABOR
+--     exemption: `autolabor <LABOR> disable` takes autolabor out of
+--     managing that one labor. **THE LOAD-BEARING CAVEAT, stated plainly
+--     rather than glossed over: this is FORT-WIDE, not per-unit.** There is
+--     no per-citizen exemption from autolabor short of active military duty
+--     (already exempt by autolabor's own design, confirmed via
+--     `unit.military.squad_id`) or a burrow restriction (not used here --
+--     it has its own heavy side effects on movement and was not verified
+--     as a clean alternative). So calling `set-labor` on a labor autolabor
+--     is actively managing means: from that point on, autolabor will never
+--     again auto-assign OR auto-unassign that labor for ANY citizen, not
+--     just the one this call targeted. `set_labor`'s own return message
+--     says this plainly every time it happens -- never a silent side
+--     effect.
+--   - `autolabor <LABOR> disable`'s exact command line, and `df.unit_labor`
+--     code names matching autolabor's own labor names 1:1 (confirmed live:
+--     `df.unit_labor.FISH == 41`, and `autolabor list` prints a `FISH:`
+--     row using that same name), were both confirmed this session.
+--     **NOT live-executed this session**: the `disable` call itself was
+--     never actually run against Uniboslan -- it is a real change to the
+--     running fort's automation config, not a read, and this stream's own
+--     constraint is read-only live access with no deploy and no write to
+--     the game. So the mechanism is verified by documentation and by every
+--     read-only piece around it (isEnabled, CR_OK, the labor-name mapping),
+--     never by watching the actual `disable` call succeed live. Treat this
+--     exact code path as verified-by-mechanism, not verified-by-execution,
+--     until a future session with go-ahead to touch autolabor's live config
+--     re-confirms it.
+--   - If autolabor's enabled-state genuinely cannot be determined (the
+--     plugin fails to load, or `isEnabled()` itself errors), `set_labor`
+--     now REFUSES with a clear reason instead of guessing either way --
+--     per this stream's own instruction: an honest refusal beats a silent
+--     race, and beats a silent over-caution just as much.
 
 local landmarks_mod = reqscript('df-overseer-landmarks')
 
@@ -188,11 +239,76 @@ local function list_labors(unit)
     #on > 0 and table.concat(on, ",") or "(none)"))
 end
 
+-- Returns enabled(bool), err(string or nil). `err` set (enabled == nil)
+-- means "genuinely could not tell" -- the plugin failed to load, or its own
+-- isEnabled() call errored -- never guessed as either true or false.
+local function autolabor_enabled()
+  local ok_req, mod = pcall(require, 'plugins.autolabor')
+  if not ok_req then
+    return nil, "plugins.autolabor could not be loaded: " .. tostring(mod)
+  end
+  local ok_call, enabled = pcall(mod.isEnabled)
+  if not ok_call then
+    return nil, "plugins.autolabor.isEnabled() failed: " .. tostring(enabled)
+  end
+  return enabled, nil
+end
+
+-- Takes ONE labor out of autolabor's management, FORT-WIDE (see this file's
+-- header comment for why this is not per-unit). Returns ok(bool), err.
+local function autolabor_disable_labor(labor_name)
+  local ok_run, output, result = pcall(
+    dfhack.run_command_silent, 'autolabor', labor_name, 'disable')
+  if not ok_run then
+    return false, tostring(output)
+  end
+  if result ~= CR_OK then
+    return false, string.format(
+      "autolabor %s disable returned a non-OK result: %s",
+      labor_name, tostring(output))
+  end
+  return true, nil
+end
+
 local function set_labor(unit, labor_name, state)
   local code = df.unit_labor[labor_name]
   if code == nil or code < 0 then
     return false, "unknown labor: " .. tostring(labor_name)
   end
+
+  -- Already exempt by autolabor's own design (its own doc, confirmed live
+  -- this session): no need to touch autolabor's fort-wide config for a
+  -- unit it was never going to reassign anyway.
+  local is_military = unit.military.squad_id ~= -1
+
+  if not is_military then
+    local enabled, status_err = autolabor_enabled()
+    if enabled == nil then
+      return false, string.format(
+        "refusing to set %s on id=%d: could not determine whether "
+          .. "autolabor is enabled (%s), and writing the labor bit "
+          .. "directly without knowing is exactly the unverified race "
+          .. "this check exists to prevent",
+        labor_name, unit.id, status_err)
+    end
+    if enabled then
+      local ok, disable_err = autolabor_disable_labor(labor_name)
+      if not ok then
+        return false, string.format(
+          "refusing to set %s on id=%d: could not take it out of "
+            .. "autolabor's management first (%s), and writing it "
+            .. "directly while autolabor still manages it would silently "
+            .. "lose to autolabor's next reassignment cycle",
+          labor_name, unit.id, disable_err)
+      end
+      unit.status.labors[code] = state
+      return true, string.format(
+        "id=%d %s -> %s (autolabor no longer manages %s for ANY citizen, "
+          .. "fort-wide, from now on)",
+        unit.id, labor_name, tostring(state), labor_name)
+    end
+  end
+
   unit.status.labors[code] = state
   return true, string.format("id=%d %s -> %s", unit.id, labor_name,
     tostring(state))
