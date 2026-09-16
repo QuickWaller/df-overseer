@@ -43,6 +43,16 @@ def test_known_ids_resolve_as_expected():
         "diggable.dig",
         "labor.set-labor",
         "stuckjobs.find",
+        # handoffs/2026-09-17-water-and-industry-tools.md
+        "zone.find",
+        "zone.place",
+        "trees.find",
+        "trees.fell",
+        "well.find",
+        "well.build",
+        "orders.list",
+        "orders.create",
+        "orders.cancel",
     ):
         assert expected in reg, f"{expected} missing from the registry"
 
@@ -55,6 +65,44 @@ def test_mutating_tools_are_flagged_and_reads_are_not():
     assert reg.get("labor.set-labor").mutates is True
     assert reg.get("overview.get").mutates is False
     assert reg.get("stuckjobs.find").mutates is False
+
+
+def test_water_and_industry_tools_are_flagged_and_scoped_correctly():
+    """handoffs/2026-09-17-water-and-industry-tools.md: finds are read,
+    places/fells/builds/create/cancel are mutate, and every one carries a
+    valid knowledge_scope (player_derivable for the spatial tools,
+    player_visible for orders.*, which reads/writes a manager order list a
+    player sees on the Jobs/Work Orders screen, not fort geometry)."""
+    reg = load_registry()
+    assert reg.get("zone.find").mutates is False
+    assert reg.get("zone.place").mutates is True
+    assert reg.get("trees.find").mutates is False
+    assert reg.get("trees.fell").mutates is True
+    assert reg.get("well.find").mutates is False
+    assert reg.get("well.build").mutates is True
+    assert reg.get("orders.list").mutates is False
+    assert reg.get("orders.create").mutates is True
+    assert reg.get("orders.cancel").mutates is True
+    for tool_id in (
+        "zone.find", "zone.place", "trees.find", "trees.fell",
+        "well.find", "well.build",
+    ):
+        assert reg.get(tool_id).knowledge_scope == "player_derivable", tool_id
+    for tool_id in ("orders.list", "orders.create", "orders.cancel"):
+        assert reg.get(tool_id).knowledge_scope == "player_visible", tool_id
+
+
+def test_workshop_kind_extension_did_not_remove_the_old_kinds():
+    """handoffs/2026-09-17-water-and-industry-tools.md item 3 extended
+    workshop.find/build's KIND with mason/mechanic/carpenter -- the
+    command signature (and so the canonical id) is unchanged, but this
+    pins that the still/kitchen-era ids the farm-and-still-tools stream
+    already depended on are still exactly these two ids, not renamed."""
+    reg = load_registry()
+    assert "workshop.find" in reg
+    assert "workshop.build" in reg
+    assert reg.get("workshop.find").mutates is False
+    assert reg.get("workshop.build").mutates is True
 
 
 def test_the_two_safety_detectors_are_present_and_not_verified():
