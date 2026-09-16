@@ -10,7 +10,7 @@ learning architecture.
 > Game knowledge (crop and water rules the agents should use) goes in
 > `doctrine/seed.yaml`, not the register.
 >
-> - **The fort drinks again.** Uniboslan is paused at tick 222948 (sim at
+> - **The fort drinks again.** Uniboslan is paused at tick 222477 (sim at
 >   **10 FPS**, deliberate) with 15 citizens. Its ponds are sunken basins of
 >   6-7/7 water one level below the surface, which is why no dwarf drank
 >   unaided; a `WaterSource` zone placed on the water at z168, plus one
