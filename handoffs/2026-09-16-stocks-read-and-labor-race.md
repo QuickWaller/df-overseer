@@ -129,3 +129,100 @@ this doc.
 What you verified live and how, what you could not verify, whether
 `flags.foreign` is really the right ownership test, the labor-race mechanism
 you found and whether it is clean, and your branch name.
+
+## Result (2026-09-16)
+
+**Status: done.** All three items built, tested, and committed on
+`worktree-agent-a18dd0bd0667ad108`. Fort left paused throughout (checked
+before, during, and after); nothing deployed to VM 103; no fort mutation
+issued.
+
+**`flags.foreign` is NOT the right ownership test — a load-bearing
+correction, not a minor caveat.** Live-verified against Uniboslan (SSH,
+read-only `dfhack-run lua`/ad hoc `/tmp` scripts, never a file under DF's
+own script paths until committed here): `flags.foreign` is an *origin* flag
+(embark-outfitted or caravan-brought), not a *current-ownership* one. The
+fort's own unclaimed starting barrels (on the ground, never in any wagon),
+all 119 starting SEEDS items, and the fort's own already-built starting
+wood all carry `foreign=true`. Using `not flags.foreign` would have zeroed
+out the fort's own embark supplies, a worse bug than the one this tool
+exists to fix. `flags.trader` is the real signal: confirmed a strict subset
+of `foreign` in a full 1344-item sweep (565 foreign, 292 trader, 0
+trader-without-foreign), and confirmed via each item's own `UNIT_HOLDER`
+general_ref resolving to a real unit for which `dfhack.units.isMerchant()`
+is true (checked on a caravan-held boulder). Concretely, of the 119 SEEDS
+items, only 59 are fort-owned; the other 60 are the current caravan's own
+seed varieties for sale — so even the earlier "119 seeds recorded" framing
+already overcounted by roughly half. `df-overseer-stocks.lua`'s ownership
+test is `not item.flags.trader`, and both the file and `TOOLS.yaml` say
+why, loudly, per the brief's instruction.
+
+**Item 1**: `scripts/dfhack/df-overseer-stocks.lua` (new) —
+`stocks.food-drink` (drink/prepared_meals/raw_edibles buckets, each with
+`count`, `foreign_total`, `rotten_count`, `unreachable_count`) and
+`stocks.seeds` (`total` + `by_plant`). Mechanism live-verified via a
+throwaway `/tmp` script over `dfhack-run lua` (deleted after); the file
+itself was never placed on VM 103, per the no-deploy constraint. Registered
+in `TOOLS.yaml` and granted to all three enabled roles (architect,
+consultant, overseer) — it is read-only. Real counts read this session:
+drink own=0/foreign=2, raw_edibles own=5/foreign=49, prepared_meals
+own=0/foreign=0, seeds own=59/foreign=60.
+
+**Item 2**: `learning/live_signals.py` gains `stocks.drink.count` /
+`stocks.prepared_meals.count` / `stocks.raw_edibles.count` /
+`stocks.seeds.count`, all `INTEGER`, following `FORT_POPULATION`'s shape.
+Unit-tested in `learning/tests/test_live_signals.py` with fixture JSON
+matching the real live counts above. Confirmed end to end against
+`dfqueue.schema.validate()`: a proposal predicting `stocks.drink.count gt 0`
+validates cleanly; a wrong-typed value is refused with a clear message.
+
+**Item 3**: `df-overseer-labor.lua`'s `set_labor` no longer races
+`autolabor` by default. It checks `plugins.autolabor.isEnabled()` (a real,
+confirmed-live Lua API — returns `true` on Uniboslan today) and, for any
+non-military unit while autolabor is enabled, runs `autolabor LABOR
+disable` *before* writing the bitfield directly; if autolabor's enabled
+state can't be determined at all, it now refuses with a clear reason
+rather than guessing. **Mechanism is clean but not fully clean-per-unit**:
+`autolabor <LABOR> disable` is fort-wide per labor, confirmed from
+`autolabor`'s own shipped doc — there is no per-citizen exemption short of
+military duty (already exempt by autolabor's own design) or a burrow
+restriction (not used here, unverified as a clean alternative). Every
+`set_labor` call says this plainly in its own return message when it
+fires — never a silent side effect. **Verification boundary, stated
+plainly**: `isEnabled()`, `CR_OK`, and the `df.unit_labor.FISH` == autolabor
+`FISH:` name mapping were each confirmed live (read-only) this session. The
+actual `autolabor LABOR disable` command was deliberately never executed
+live — a real, persistent change to the running fort's automation config,
+out of scope for a read-only, no-deploy stream. `TOOLS.yaml` marks
+`labor.set-labor` `STALE` (old, racy code still on VM 103) rather than
+claiming this fix is deployed.
+
+**Tests**: ambient `python -m pytest` baseline was reproduced exactly (276
+passed, 1 skipped) before any change; after all three items, 281 passed, 1
+skipped (+5, the new live-signals tests). `dfmcp/tests` needed a fresh
+`.venv-dfmcp` in this worktree (`python -m venv --system-site-packages
+.venv-dfmcp` + `pip install -r dfmcp/requirements.txt`, the documented
+fastmcp/mcp version-conflict warning appeared and is expected); it gives
+152 passed, matching `CLAUDE.md`'s baseline exactly, and still 152 after
+the new `stocks.*` tool ids were added to the registry (registry/roster
+loading was re-checked directly, not just left to the test count).
+
+**Not verified, named rather than hidden**: whether `flags.foreign` is ever
+cleared later in a fort's life (this session only observed a first-year
+fort); the exact text `autolabor list` prints for an already-disabled
+labor (not needed, since the fix never parses that text); whether
+`flags.owned` matters for anything here (checked, found false on every
+sampled item, believed unrelated to fort-vs-caravan ownership but not
+exhaustively confirmed).
+
+**Open item for the orchestrator, not this stream's to resolve**: the
+`stocks.*` tools and the labor fix are code-complete and test-covered but
+**not deployed** — a future deploy pass needs to (a) place
+`df-overseer-stocks.lua` on VM 103 and run `stocks.food-drink`/`stocks.seeds`
+for real, (b) redeploy the fixed `df-overseer-labor.lua`, and (c) with
+explicit go-ahead, actually exercise `autolabor LABOR disable` live at
+least once to move item 3 from verified-by-mechanism to
+verified-by-execution.
+
+Branch: `worktree-agent-a18dd0bd0667ad108`. Commits: `19652eb` (stocks
+tool), `1350b2e` (live signals), `337f74a` (labor race fix).
