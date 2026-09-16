@@ -282,6 +282,24 @@ touches `Working.md`, the register or `memory/`.
   be the **required-reads list** — every fact the ladder must branch on, marked
   readable-today or not, which is the requirements list for the tool stream.
 
+### Agents know only what a player could know (decided 2026-09-16)
+
+User's call: agent tools limited to `player_visible` and `player_derivable`.
+Existence may be known from the embark screen; **location only once
+uncovered**. Binds the role allowlists, not developer diagnostics. Full
+reasoning in the register.
+
+- **In flight:** `research/2026-09-16-player-visibility.md` (Sonnet
+  `researcher`, read-only, worktree-isolated): what a vanilla v50 player can
+  see, when it becomes visible, which struct fields gate it, the exact
+  embark-screen list, game-AI prior art (BWAPI's `CompleteMapInformation`),
+  and a **preliminary** `knowledge_scope` tag for every tool in `TOOLS.yaml`.
+- **Next, once it lands:** an executor audit that tags every tool, adds a
+  discovery check to `find_diggable_area`, gates hidden-unit reporting in
+  `df-overseer-threat.lua`, and **measures** what each change costs.
+- **Known leaks already, before the audit:** `find_diggable_area` (no
+  discovery check), `df-overseer-threat.lua` (reports sneaking units).
+
 ### Open, waiting on the user
 
 - **DeepSeek key in plaintext on VM 106** in
