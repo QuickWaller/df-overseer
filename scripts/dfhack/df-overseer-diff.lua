@@ -82,6 +82,47 @@
 -- get_diff_since row for the full trail. REPORT's real delivery is now
 -- independently confirmed (above); UNIT_DEATH's is not.
 --
+-- KNOWLEDGE-SCOPE FIX, 2026-09-16 (handoffs/2026-09-16-knowledge-scope-audit.md,
+-- decisions/DECISIONS.md 2026-09-16 "Agents may only know what a vanilla
+-- player could know"): research/2026-09-16-player-visibility.md tags
+-- UNIT_DEATH omniscient outright -- it "fires engine-wide for ANY unit's
+-- death", and this file's own long-standing honest gap note already admits
+-- "the kea's own death generated no report at all", i.e. this raw event is
+-- broader than the announcement layer and was never gated by visibility at
+-- all. UNIT_ATTACK is flagged "player_derivable, leaning omniscient" --
+-- structured attacker/defender/wound data with no stated visibility
+-- condition, not independently confirmed either way.
+--
+-- FIXED by gating both listeners on dfhack.units.isHidden of the unit(s)
+-- involved, at the moment the event fires: a dead/attacked unit that
+-- isHidden reports true for (tile-hidden, or ambushing and not
+-- fort-controlled -- research doc §5) is not logged. UNIT_DEATH checks the
+-- one unit; UNIT_ATTACK checks BOTH attacker and defender and requires
+-- BOTH visible, since a vanilla player witnessing a fight needs the whole
+-- scene visible, not just one side -- an ambusher striking a visible
+-- citizen is exactly the case a vanilla player would NOT get to see (the
+-- ambush is the point of being hidden). A unit lookup failure (already dead
+-- and deallocated by the time the listener runs, or any pcall failure) is
+-- treated as hidden, the safe default, never the permissive one. JOB_COMPLETED
+-- and the REPORT branch are UNCHANGED -- both are already player-visible by
+-- construction (a player's own dwarf's job; an entry DF already put in the
+-- player's own gamelog), per the research doc's own classification.
+--
+-- VERIFIED ONLY BY SOURCE READING, stated plainly per the handoff's own
+-- instruction: live event firing needs the clock running, and the fort
+-- stays paused for this whole audit (constraint, this handoff), so neither
+-- gate was exercised against a real death or a real attack this session.
+-- dfhack.units.isHidden itself is already live-verified elsewhere in this
+-- project (df-overseer-threat.lua, df-overseer-labor.lua, both fixed the
+-- same day) -- what is NOT verified here is that a real UNIT_DEATH/
+-- UNIT_ATTACK event still carries a resolvable df.unit.find(id) at the
+-- instant the listener runs (a dead unit could plausibly already be
+-- deallocated) -- if it does not, the pcall failure path above excludes it,
+-- which is safe (favors under- over over-reporting) but unverified as to
+-- whether it silently excludes MORE than intended, e.g. every death, not
+-- just hidden ones. Flagged as an open question for the next live-verification
+-- session with the fort actually running.
+--
 -- Usage: ./dfhack-run df-overseer-diff since CURSOR   -- CURSOR: integer, 0 for everything
 --        ./dfhack-run df-overseer-diff recent-combat [N]
 --          -- last N combat/threat-family reports (default 20), oldest
@@ -148,8 +189,23 @@ if not _G.__df_overseer_diff_registered then
     log_event({type = "JOB_COMPLETED", detail = ok and name or "unknown job"})
   end
 
+  -- KNOWLEDGE-SCOPE FIX, 2026-09-16: excludes any death dfhack.units.isHidden
+  -- reports true for, or where the unit can't even be resolved (safe
+  -- default) -- see header.
+  local function unit_is_hidden(unit_id)
+    local unit = df.unit.find(unit_id)
+    if not unit then
+      return true
+    end
+    local ok, hidden = pcall(dfhack.units.isHidden, unit)
+    return (not ok) or hidden
+  end
+
   eventful.enableEvent(eventful.eventType.UNIT_DEATH, 10)
   eventful.onUnitDeath.df_overseer_diff = function(unit_id)
+    if unit_is_hidden(unit_id) then
+      return
+    end
     local ok, name = pcall(function()
       return dfhack.translation.translateName(
         dfhack.units.getVisibleName(df.unit.find(unit_id)))
@@ -183,6 +239,12 @@ if not _G.__df_overseer_diff_registered then
 
   eventful.enableEvent(eventful.eventType.UNIT_ATTACK, 1)
   eventful.onUnitAttack.df_overseer_diff = function(attacker_id, defender_id, wound_id)
+    -- KNOWLEDGE-SCOPE FIX, 2026-09-16: logged only if BOTH participants are
+    -- visible -- a vanilla player witnessing a fight needs the whole scene
+    -- visible, not just one side. See header.
+    if unit_is_hidden(attacker_id) or unit_is_hidden(defender_id) then
+      return
+    end
     local function unit_desc(id)
       local u = df.unit.find(id)
       if not u then return "unit " .. tostring(id) end

@@ -38,6 +38,16 @@ _VERB_RE = re.compile(r"^([A-Za-z][A-Za-z0-9_-]*)")
 
 _VALID_EFFECTS = ("read", "mutate")
 
+# The user's 2026-09-16 register decision ("Agents may only know what a
+# vanilla player could know") made this the third required field alongside
+# effect: player_visible (a raw screen a vanilla player already sees),
+# player_derivable (a safe computation over player-visible facts, not itself
+# a screen), or omniscient (reads something no vanilla player has a way to
+# know -- forbidden from every role's allowlist, see roles.py). Definitions
+# and the live-verified struct/API fields behind this boundary are in
+# research/2026-09-16-player-visibility.md.
+_VALID_KNOWLEDGE_SCOPES = ("player_visible", "player_derivable", "omniscient")
+
 
 class RegistryError(Exception):
     """A structural problem in TOOLS.yaml itself.
@@ -61,6 +71,7 @@ class Tool:
     coordinate_bearing: Any          # False / True / "internal-only", as written
     live_deployed: bool
     verified: str                    # the manifest's raw string, "unverified" included
+    knowledge_scope: str             # "player_visible" / "player_derivable" / "omniscient"
     notes: Optional[str] = None
     args: list = field(default_factory=list)
     build_order_item: Any = None
@@ -81,6 +92,13 @@ class Tool:
         if not self.verified:
             return False
         return self.verified.strip().lower() != "unverified"
+
+    @property
+    def is_omniscient(self) -> bool:
+        """True only for the exact tag "omniscient". Never true for a
+        missing/blank value -- that is caught as a load error instead
+        (see load_registry), so this property is never asked to guess."""
+        return self.knowledge_scope == "omniscient"
 
     @property
     def description(self) -> str:
@@ -220,6 +238,15 @@ def load_registry(path=DEFAULT_TOOLS_YAML, *, native_tools: Optional[Mapping[str
             if not lua_function:
                 raise RegistryError(f"{script_name} {command_sig!r}: missing lua_function")
 
+            knowledge_scope = spec.get("knowledge_scope")
+            if knowledge_scope not in _VALID_KNOWLEDGE_SCOPES:
+                raise RegistryError(
+                    f"{script_name} {command_sig!r}: knowledge_scope must be one of "
+                    f"{_VALID_KNOWLEDGE_SCOPES}, got {knowledge_scope!r} -- every command "
+                    "must be tagged (decisions/DECISIONS.md 2026-09-16, 'agents may only "
+                    "know what a vanilla player could know')"
+                )
+
             tools[tool_id] = Tool(
                 id=tool_id,
                 script=script_name,
@@ -229,6 +256,7 @@ def load_registry(path=DEFAULT_TOOLS_YAML, *, native_tools: Optional[Mapping[str
                 coordinate_bearing=spec.get("coordinate_bearing"),
                 live_deployed=bool(spec.get("live_deployed", False)),
                 verified=str(spec.get("verified", "unverified")),
+                knowledge_scope=knowledge_scope,
                 notes=spec.get("notes"),
                 args=_parse_args(command_sig, verb),
                 build_order_item=build_order_item,

@@ -72,6 +72,78 @@ def test_the_two_safety_detectors_are_present_and_not_verified():
 
 
 # --------------------------------------------------------------------------
+# knowledge_scope: added 2026-09-16 (handoffs/2026-09-16-knowledge-scope-audit.md,
+# decisions/DECISIONS.md 2026-09-16 "Agents may only know what a vanilla
+# player could know"). Every command in the real manifest must carry a valid
+# tag; a missing or invalid one is a hard load-time error, same severity as
+# a bad `effect`.
+# --------------------------------------------------------------------------
+
+def test_every_real_tool_has_a_valid_knowledge_scope():
+    reg = load_registry()
+    valid = {"player_visible", "player_derivable", "omniscient"}
+    for tool in reg.all():
+        assert tool.knowledge_scope in valid, (
+            f"{tool.id} has knowledge_scope={tool.knowledge_scope!r}"
+        )
+
+
+def test_no_real_tool_is_tagged_omniscient():
+    """The whole point of this stream: every tool this manifest could not
+    honestly call omniscient was fixed, not merely relabeled. If this ever
+    fails, either a tool needs the same fix the others got, or the fix
+    regressed and the tool must leave every role's allowlist
+    (roles.py rule 7 enforces the second half of that at load time)."""
+    reg = load_registry()
+    omniscient = [t.id for t in reg.all() if t.is_omniscient]
+    assert omniscient == []
+
+
+def test_missing_knowledge_scope_raises(tmp_path):
+    path = _write(tmp_path, """
+        df-overseer-thing.lua:
+          commands:
+            "find A":
+              lua_function: find_a
+              effect: read
+        """)
+    with pytest.raises(RegistryError) as exc:
+        load_registry(path)
+    assert "knowledge_scope" in str(exc.value)
+
+
+def test_invalid_knowledge_scope_raises(tmp_path):
+    path = _write(tmp_path, """
+        df-overseer-thing.lua:
+          commands:
+            "find A":
+              lua_function: find_a
+              effect: read
+              knowledge_scope: mostly_fine
+        """)
+    with pytest.raises(RegistryError) as exc:
+        load_registry(path)
+    assert "knowledge_scope" in str(exc.value)
+
+
+def test_omniscient_tag_is_valid_and_flagged_by_is_omniscient(tmp_path):
+    """omniscient is a legal tag for load_registry to accept -- it's roles.py's
+    job to refuse granting it to anyone, not registry.py's job to refuse
+    loading it (a manifest needs to be able to name the problem before the
+    tool is fixed or removed)."""
+    path = _write(tmp_path, """
+        df-overseer-thing.lua:
+          commands:
+            "find A":
+              lua_function: find_a
+              effect: read
+              knowledge_scope: omniscient
+        """)
+    reg = load_registry(path)
+    assert reg.get("thing.find").is_omniscient is True
+
+
+# --------------------------------------------------------------------------
 # Structural rules, each with a failing case
 # --------------------------------------------------------------------------
 
@@ -89,9 +161,11 @@ def test_canonical_id_collision_raises(tmp_path):
             "find A":
               lua_function: find_a
               effect: read
+              knowledge_scope: player_visible
             "find B":
               lua_function: find_b
               effect: read
+              knowledge_scope: player_visible
         """)
     with pytest.raises(RegistryError) as exc:
         load_registry(path)
@@ -141,9 +215,11 @@ def test_hyphenated_verbs_survive_whole(tmp_path):
             "unit-status [idle]":
               lua_function: unit_status
               effect: read
+              knowledge_scope: player_visible
             "set-labor UNIT_ID LABOR on|off":
               lua_function: set_labor
               effect: mutate
+              knowledge_scope: player_visible
         """)
     reg = load_registry(path)
     assert "labor.unit-status" in reg

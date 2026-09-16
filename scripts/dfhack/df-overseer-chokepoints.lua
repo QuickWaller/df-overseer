@@ -67,6 +67,23 @@
 -- whatever find_chokepoints would have done with a nonsense absolute z
 -- (an empty or garbage result, never tested against an out-of-range value).
 --
+-- KNOWLEDGE-SCOPE FIX, 2026-09-16 (handoffs/2026-09-16-knowledge-scope-audit.md,
+-- decisions/DECISIONS.md 2026-09-16 "Agents may only know what a vanilla
+-- player could know"): same gap and same fix as df-overseer-openarea.lua's
+-- `is_free` -- `free()` here checked only walkable + building-free, with no
+-- `designation.hidden` check, so `free()` (used by `is_corridor_chokepoint`)
+-- gets the same `dfhack.maps.isTileVisible` gate. `is_stair_or_ramp` is left
+-- unchanged deliberately: it is always paired with an explicit `walkable(x,
+-- y, z)` check at its one call site below, and that walkable check now
+-- transitively implies nothing about visibility either -- so the "stair"
+-- kind gets its own explicit visibility check at the call site instead of
+-- inside `walkable`, since `walkable` is also used, unchanged, for the
+-- neighbor-probing inside `is_corridor_chokepoint` where requiring
+-- visibility on the NEIGHBOR (not the candidate tile itself) would be a
+-- different, unasked-for change. Measured live against Uniboslan (see the
+-- knowledge-scope handoff's report): expected not to change any result
+-- today, same reasoning as openarea.lua's identical fix.
+--
 -- Usage: ./dfhack-run df-overseer-chokepoints find [LEVEL] NEAR_LANDMARK [RADIUS_TILES]
 
 local json = require('json')
@@ -81,8 +98,18 @@ local function walkable(x, y, z)
   return ok and group ~= 0
 end
 
+local function is_revealed(x, y, z)
+  local ok, visible = pcall(dfhack.maps.isTileVisible, x, y, z)
+  return ok and visible
+end
+
 local function free(x, y, z)
   if not walkable(x, y, z) then
+    return false
+  end
+  -- KNOWLEDGE-SCOPE FIX, 2026-09-16: also require the tile to be revealed
+  -- to a vanilla player -- see header.
+  if not is_revealed(x, y, z) then
     return false
   end
   local ok, bld = pcall(dfhack.buildings.findAtTile, xyz2pos(x, y, z))
@@ -148,7 +175,8 @@ function find_chokepoints(level, near, radius_tiles)
     for y = min_y, max_y do
       if is_corridor_chokepoint(x, y, z) then
         table.insert(hits, {x = x, y = y, z = z, kind = "corridor"})
-      elseif is_stair_or_ramp(x, y, z) and walkable(x, y, z) then
+      elseif is_stair_or_ramp(x, y, z) and walkable(x, y, z)
+          and is_revealed(x, y, z) then
         table.insert(hits, {x = x, y = y, z = z, kind = "stair"})
       end
     end

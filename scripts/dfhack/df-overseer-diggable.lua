@@ -111,6 +111,32 @@
 -- the walkable network" filter rejects everything, by design -- see the
 -- header above, not a bug this change touches).
 --
+-- KNOWLEDGE-SCOPE FIX, 2026-09-16 (handoffs/2026-09-16-knowledge-scope-audit.md,
+-- following decisions/DECISIONS.md 2026-09-16 "Agents may only know what a
+-- vanilla player could know" and research/2026-09-16-player-visibility.md):
+-- this tool was OMNISCIENT before this fix. `is_diggable` never checked
+-- `designation.hidden`/`dfhack.maps.isTileVisible`, so a WxH candidate box
+-- could sit entirely in undug rock a vanilla player has never seen so much
+-- as a neighboring wall of, and `material` was read straight off the tile
+-- regardless -- exactly the "name an undiscovered vein's material before
+-- it's ever revealed" gap the research doc's bottom line calls out. Fixed
+-- by adding a visibility gate to `is_diggable` itself: a tile only counts as
+-- diggable if `dfhack.maps.isTileVisible` is also true. Since
+-- `find_candidates` already requires every tile in the WxH box to satisfy
+-- `is_diggable`, this makes the fix apply to the WHOLE INTERIOR of every
+-- candidate, not just the ring `borders_walkable_network` already checked --
+-- the ring only ever proved the box borders walkable ground outside it, not
+-- that the box's own tiles are revealed. Per the wiki mechanic this
+-- research doc cites ("you can see what the rock walls adjacent to a
+-- mined-out tile are made of"), only tiles immediately next to already-dug
+-- space are typically revealed at all, so this is expected to cut candidate
+-- counts hard, not just close an edge case -- measured live, see the
+-- knowledge-scope handoff's report for the real before/after count on
+-- Uniboslan. `material` was already only ever read for a tile `is_diggable`
+-- had already approved, so gating `is_diggable` alone is sufficient; no
+-- separate check was needed at the point `material` is assembled into a
+-- result.
+--
 -- Usage: ./dfhack-run df-overseer-diggable find W H [LEVEL] NEAR_LANDMARK [RADIUS_TILES]
 -- Usage: ./dfhack-run df-overseer-diggable dig W H [LEVEL] NEAR_LANDMARK BLUEPRINT_FILE [RANK] [RADIUS_TILES]
 
@@ -136,10 +162,16 @@ local function walkable_group(x, y, z)
 end
 
 -- Returns (is_diggable: bool, material: df.tiletype_material or nil).
--- A tile is diggable if it's solid (not walkable), shaped as a wall, and
--- made of a natural material mining actually excavates (see header).
+-- A tile is diggable if it's solid (not walkable), REVEALED to a vanilla
+-- player (dfhack.maps.isTileVisible -- see header, added 2026-09-16), shaped
+-- as a wall, and made of a natural material mining actually excavates (see
+-- header).
 local function is_diggable(x, y, z)
   if walkable_group(x, y, z) ~= 0 then
+    return false
+  end
+  local ok_vis, visible = pcall(dfhack.maps.isTileVisible, x, y, z)
+  if not ok_vis or not visible then
     return false
   end
   local ok_tt, tt = pcall(dfhack.maps.getTileType, x, y, z)
