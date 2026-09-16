@@ -298,12 +298,18 @@ soil-floored, valid for every crop held. A surface farm would grow nothing.
   (the audit made it refuse hidden tiles, so it cannot propose the z168 room);
   `farm.find`/`build`/`set-crop`; `workshop.find`/`build` for a still. Dry-run
   modes verified live, no fort mutation; the orchestrator runs real builds.
-- **`research/2026-09-16-food-clock-and-farm-lead-time.md`** (Sonnet
-  researcher): days of food left against days to a first harvest, whether
-  dwarves drink from the sunk pools unaided, and what bridges any gap.
+- ~~Food clock research~~ **LANDED and merged.** Food is not binding (raw
+  plump helmets close it); **drink is**, and turns on whether dwarves can
+  reach the pools. Verified live: 11/15 dwarves thirsty, worst ~18,400 ticks
+  from dire (the install's own notify threshold, 50,000); pool edges are
+  ramps under full-depth water with no dry standing tile. Counter-evidence: 4
+  dwarves drank ~9,700 ticks ago with no drink stocked. **At 100 FPS the race
+  is minutes of wall time.** `setfps` is available and is the lever.
 - **Act/sense reading confirmed by the user** ("yeah"): acting on hidden
   tiles is allowed, sensing them is not. Applies to all tools.
-- **Waiting on the user:** the unpause decision, which the research feeds.
+- **Waiting on the user:** lower the frame cap and run a short supervised
+  unpause to see whether thirsty dwarves drink from the pools. Everything
+  (farm urgency, whether water access must be built first) depends on it.
 
 ### Agents know only what a player could know (decided 2026-09-16)
 
