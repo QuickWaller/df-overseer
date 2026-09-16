@@ -111,11 +111,13 @@ def test_name_collision_raises(tmp_path):
             "c D":
               lua_function: f1
               effect: read
+              knowledge_scope: player_visible
         df-overseer-a.lua:
           commands:
             "b__c D":
               lua_function: f2
               effect: read
+              knowledge_scope: player_visible
         """,
     )
     reg = load_registry(path)

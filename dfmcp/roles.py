@@ -198,6 +198,31 @@ def _load_role_permissions(
                         f"'{role_name}'."
                     )
 
+    # Rule 7 (added 2026-09-16, decisions/DECISIONS.md "Agents may only know
+    # what a vanilla player could know"): NO role -- including the sole
+    # writer -- may be granted (via read or write) any tool the registry
+    # tags `knowledge_scope: omniscient`. Unlike rule 2 (mutation), this is
+    # not conditional on which role is being checked: an omniscient tool has
+    # no legitimate holder at all, so it is refused unconditionally, the
+    # same way a mutating tool filed under `read` is refused regardless of
+    # which section named it. A tool the registry cannot tag anything but
+    # omniscient belongs in no allowlist; fix the tool, not this check.
+    # getattr(..., None): a native (non-DFHack) tool such as queue.propose
+    # (dfmcp/queue_tools.py) carries no knowledge_scope at all -- it reads
+    # and writes dfqueue's own ledger, never fort/world state, so it is not
+    # this rule's concern and a missing attribute is not treated as omniscient.
+    for section_name, granted in (("read", read), ("write", write)):
+        for tool_id in granted:
+            tool = registry.get(tool_id)
+            if getattr(tool, "knowledge_scope", None) == "omniscient":
+                raise RoleValidationError(
+                    f"'{role_name}' is granted '{tool_id}' under {section_name}, but the "
+                    "registry tags it knowledge_scope: omniscient -- it reads something no "
+                    "vanilla player has a way to know. No role, including the sole writer, "
+                    "may hold an omniscient tool; fix the tool (or remove it from every "
+                    "allowlist) rather than granting it here."
+                )
+
     deny_raw = section("deny")
     deny = [_role_tool_from_entry(e) for e in deny_raw]
     for d in deny:
