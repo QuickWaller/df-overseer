@@ -337,3 +337,19 @@ findings without another doc home yet.
   in the audit output, whose own text says so). A clean secrets audit is not
   proof a secret is only stored the way you think it is; check which one is
   actually shadowing the other.
+- **`item.flags.foreign` is an ORIGIN flag, not an ownership flag. Use
+  `flags.trader` to tell fort goods from caravan goods.** `foreign` is true for
+  anything that did not originate in this fort's own production, which includes
+  **the fort's own embark supplies**: the starting barrels on the ground, all
+  119 starting seeds, the already-built starting wood. Filtering on
+  `not flags.foreign` therefore erases the fort's own starting stores, which is
+  a worse bug than the miscount it was introduced to fix. Verified live on
+  Uniboslan, fort paused: of 1642 items, 565 are `foreign` but only 292 are
+  `trader`, and `trader` is a **strict subset** of `foreign`
+  (`trader_not_foreign == 0`), cross-checked by resolving an item's
+  `UNIT_HOLDER` to `dfhack.units.isMerchant()`. Both counts were run by two
+  separate sessions against the live fort and agree.
+  **This bit both directions in one day**: the original 2026-09-16 alarm
+  counted merchant goods *as* the fort's ("234 food, 50 drink") and the
+  correction over-swung to `not foreign`, reporting 0 fort-owned food when the
+  fort actually owns 5 raw edibles. Drink really is 0 under either test.
