@@ -293,9 +293,22 @@ df-overseer-diggable.lua:
         2026-09-16: was OMNISCIENT before this fix -- no revealed/hidden
         check at all, and `material` could name an undiscovered vein. Fixed
         by requiring dfhack.maps.isTileVisible on every tile is_diggable
-        checks (so the whole candidate interior, not just the ring). See the
-        .lua file's own header for the measured live before/after candidate
-        count.
+        checks (so the whole candidate interior, not just the ring). That
+        over-corrected: zeroed every candidate near this fort's small
+        revealed footprint. ACT/SENSE FIX 2026-09-16
+        (handoffs/2026-09-16-farm-and-still-tools.md): a hidden tile is now
+        admitted unconditionally (no material/shape/walkable read used to
+        decide it), matching DFHack's own quickfort dig.lua, which designates
+        blind exactly this way; a revealed tile keeps the original checks.
+        `material` stays nil/omitted for a hidden top-left tile; a new
+        `interior_fully_revealed` flag is an aggregate, not a per-tile leak.
+        Measured live on Uniboslan: `find 5 5 LEVEL "Embark Site"` returned
+        `[]` at LEVEL 0/-1/-2/-3 with the over-corrected code; after this
+        fix, LEVEL -1 (z168, one level below the surface) returns 5 ranked
+        candidates, LEVEL 0/-2/-3 still `[]`. See the .lua file's own header
+        for the full before/after and the grass-tile-stair investigation
+        (source-read, not live-designated; unresolved against the recorded
+        trap, documented rather than guessed at).
     "dig W H [LEVEL] NEAR_LANDMARK BLUEPRINT_FILE [RANK] [RADIUS_TILES]":
       lua_function: dig_diggable_area
       effect: mutate
@@ -310,8 +323,11 @@ df-overseer-diggable.lua:
         no dwarf ever claimed it) -- fixed in both files. Re-tested after the
         fix: all 41 designated tiles fully dug. decisions/DECISIONS.md
         2026-09-11. Shares ranked_candidates/is_diggable with find above, so
-        the same 2026-09-16 knowledge-scope fix (was omniscient) applies
-        here too.
+        the same 2026-09-16 knowledge-scope fix (was omniscient) and its
+        follow-up act/sense fix (same day) both apply here too. Not
+        re-exercised live this session (mutation forbidden); the shared
+        `is_diggable`/`ranked_candidates` code path is what find above
+        verified.
 
 df-overseer-stuckjobs.lua:
   build_order_item: 8
