@@ -167,9 +167,30 @@ local connectivity_mod = reqscript('df-overseer-connectivity')
 
 -- See this file's header for the live verification behind this test.
 -- Deliberately NOT `not item.flags.foreign` -- see above.
+-- Knowledge scope (decisions/DECISIONS.md 2026-09-16, "agents may only know
+-- what a vanilla player could know"). `not flags.trader` alone would count an
+-- item lying in an unopened cavern as the fort's own food -- wrong as
+-- ownership, and a leak, since the agent would learn the item exists before
+-- anyone uncovered it. So an item whose position resolves to a hidden tile is
+-- excluded. An item whose position cannot be resolved at all is kept: that is
+-- overwhelmingly an item held or stored inside the fort, and excluding it
+-- would undercount real stores, the failure this file exists to prevent.
+local function is_on_hidden_tile(item)
+  local ok_pos, x, y, z = pcall(dfhack.items.getPosition, item)
+  if not ok_pos or not x then
+    return false
+  end
+  local ok_vis, visible = pcall(dfhack.maps.isTileVisible, x, y, z)
+  if not ok_vis then
+    return false
+  end
+  return not visible
+end
+
 local function is_fort_owned(item)
   local f = item.flags
   return not f.trader and not f.garbage_collect and not f.removed
+    and not is_on_hidden_tile(item)
 end
 
 -- Returns true/false, or nil if the item's position could not be resolved
