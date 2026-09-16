@@ -383,6 +383,16 @@ or `decisions/DECISIONS.md`, not here.
   → `decisions/DECISIONS.md` 2026-09-15 "DF wiki access" and "Advisors may ask
   the Consultant" rows.
 
+- **Game figures database and calculators** (user's call 2026-09-17): the
+  numbers the wiki lookup would only quote as prose (growth times, seed
+  return per processing method, drinks per plant) kept as structured rows,
+  each with its source, game version and a prior/verified status, plus pure,
+  unit-tested calculators served as `dfmcp` read tools (e.g. how much of a
+  crop can be cooked without seed stock falling). Seeded first from the
+  install's own raws (version-exact), then from research, then from the
+  fort's own measurements. Complements the wiki lookup, does not replace it.
+  → `decisions/DECISIONS.md` 2026-09-17 "Game figures belong in a database".
+
 - **Live-view ingest: explicitly shelved, user's call 2026-09-12** (moved
   here from "explicitly not priority right now," distinct from "blocked" —
   it's not waiting on anything technical, the user chose not to prioritize
