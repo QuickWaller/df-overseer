@@ -1,3 +1,31 @@
+> **CORRECTION, 2026-09-16, by the orchestrating session, before this spec was
+> acted on.** This report's central factual claim is **wrong**. It states that
+> the embark has "exactly one surface water feature", a single murky pool of
+> 1,239 tiles. The 1,239-tile figure is right; the "single feature" reading of
+> it is not. The user said the fort's own map showed many water features and
+> supplied a screenshot; a re-scan of the live map confirms them.
+>
+> Verified live, fort paused, by iterating block designations directly and
+> running a connected-component pass:
+>
+> - The 1,239 surface tiles at z=168 are **43 separate water bodies**, sizes
+>   116, 61, 54, 54, 53, 53, 51, 51, 49, 48, 48, 45, 45, 44, 41, 38, 37, 35,
+>   32, 32, 31, 30, 27, 27, 24, 19, 19, 17, 13, 13, 6, 5, 5, 4, 2, 2, 2 and
+>   six single tiles.
+> - The map holds **96,799 liquid tiles and 325 distinct water bodies** in
+>   total, including one of **82,437 tiles spanning z5-z19** and cavern lakes
+>   of 4,682 and 2,386 tiles around z60.
+>
+> **What this does and does not change.** It does not automatically revive
+> fishing: the fort's message names *"the central swamps"*, a biome, not a
+> pool, so a shared per-biome fish population would cover all 43 pools at once
+> and the report's verdict would still hold. That reading is **unverified** and
+> is now the open question. It does change the water-access picture, which the
+> report treated as settled: this fort has abundant water, and its real problem
+> is reachable water, not water.
+>
+> Everything below is the report as delivered, unedited.
+
 # Fishing and water food on Uniboslan: is the user's opening move dead here?
 
 Date: 2026-09-16. Read-only research against the live, paused fort (VM 103,
