@@ -286,30 +286,26 @@ touches `Working.md`, the register or `memory/`.
   be the **required-reads list** — every fact the ladder must branch on, marked
   readable-today or not, which is the requirements list for the tool stream.
 
-### Farm and food clock, in flight 2026-09-16
+### Farm and water, state 2026-09-17
 
-**Verified live first:** all six fort seed types are subterranean crops (none
-grows outdoors), and the terrain is **z169 surface over a single SOIL level
-at z168 over stone**. So the farm is a room dug into z168: underground,
-soil-floored, valid for every crop held. A surface farm would grow nothing.
+**Terrain and crops (verified):** z169 surface over one SOIL level at z168 over
+stone; all six fort seed types are subterranean crops, so the farm is a room
+dug into z168. Dwarves need both food and drink (no `NO_EAT`/`NO_DRINK` flag).
 
-- **`handoffs/2026-09-16-farm-and-still-tools.md`** (Sonnet executor): correct
-  the dig finder to "acting on hidden tiles is allowed, sensing them is not"
-  (the audit made it refuse hidden tiles, so it cannot propose the z168 room);
-  `farm.find`/`build`/`set-crop`; `workshop.find`/`build` for a still. Dry-run
-  modes verified live, no fort mutation; the orchestrator runs real builds.
-- ~~Food clock research~~ **LANDED and merged.** Food is not binding (raw
-  plump helmets close it); **drink is**, and turns on whether dwarves can
-  reach the pools. Verified live: 11/15 dwarves thirsty, worst ~18,400 ticks
-  from dire (the install's own notify threshold, 50,000); pool edges are
-  ramps under full-depth water with no dry standing tile. Counter-evidence: 4
-  dwarves drank ~9,700 ticks ago with no drink stocked. **At 100 FPS the race
-  is minutes of wall time.** `setfps` is available and is the lever.
-- **Act/sense reading confirmed by the user** ("yeah"): acting on hidden
-  tiles is allowed, sensing them is not. Applies to all tools.
-- **Waiting on the user:** lower the frame cap and run a short supervised
-  unpause to see whether thirsty dwarves drink from the pools. Everything
-  (farm urgency, whether water access must be built first) depends on it.
+- **Farm and still tools: MERGED, not deployed.** `farm.find`/`build`/
+  `set-crop`, `workshop.find`/`build` (still, kitchen), and the dig finder's
+  act/sense fix (z168 5x5 candidates 0 → 5). Suites 291/1 and 162.
+  **Owed:** deploy (3 scripts, `openarea` export, 3 blueprints into
+  `dfhack-config/blueprints/`), then real mutation tests with the user aware.
+- **Kitchen:** vanilla already excludes all six seed items from cooking.
+  Cooking the plants still yields no seed.
+- **Drink test at 10 FPS, done:** 5 of 11 thirsty dwarves drank (migrants);
+  **6 founders (193-198) did not, cause unknown.** Ruled out: location (all in
+  one walkable group on the surface) and carried containers. Highest thirst
+  35,906, about 14,000 ticks below the dire threshold. Fort paused, **sim left
+  at 10 FPS**. The mid-test diplomacy screen was the user.
+- **Next concrete step:** find out why the founders will not drink (read their
+  needs, thoughts and job history read-only first), before any unattended run.
 
 ### Agents know only what a player could know (decided 2026-09-16)
 
