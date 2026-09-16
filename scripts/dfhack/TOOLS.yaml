@@ -55,6 +55,30 @@
 #     fort (not just "the file loads without error"). "unverified" is an
 #     honest label, not a bug -- per this repo's "mark verified vs proposed"
 #     rule (CLAUDE.md, memory/dfhack-environment.md).
+#   knowledge_scope
+#     Added 2026-09-16 (handoffs/2026-09-16-knowledge-scope-audit.md, per
+#     decisions/DECISIONS.md 2026-09-16 "Agents may only know what a vanilla
+#     player could know"): dfmcp/registry.py REQUIRES this field on every
+#     command and refuses to load without it. Values, from
+#     research/2026-09-16-player-visibility.md:
+#       player_visible   -- reads only things a vanilla player already sees
+#                            on some real game screen (own citizens, own
+#                            gamelog/announcements, own job list).
+#       player_derivable -- a safe computation over player-visible facts
+#                            (a candidate search, a reachability graph), not
+#                            itself a screen, structurally guarded against
+#                            reading anything designation.hidden/isHidden
+#                            would say a vanilla player cannot know.
+#       omniscient        -- reads something no vanilla player has any way
+#                            to know. dfmcp/roles.py refuses at LOAD TIME to
+#                            let ANY role's allowlist -- including the sole
+#                            writer's -- grant a tool tagged omniscient. A
+#                            tool this manifest cannot honestly tag anything
+#                            but omniscient belongs in no allowlist at all;
+#                            fix the tool, don't grant it.
+#     The tag describes each command AFTER its own fix, where one was made
+#     this session -- see the .lua file's own KNOWLEDGE-SCOPE FIX header
+#     comment for what changed and why, never re-narrated here.
 #   notes
 #     A pointer, not a re-narration. Long rationale lives in the .lua file's
 #     own header or a decisions/DECISIONS.md row.
@@ -68,6 +92,7 @@ df-overseer-connectivity.lua:
       coordinate_bearing: false
       live_deployed: true
       verified: "2026-09-10"
+      knowledge_scope: player_derivable
       notes: "Reuses warn-stranded.lua's getStrandedGroups() via reqscript. decisions/DECISIONS.md 2026-09-10."
     "check FROM TO":
       lua_function: check_reachable
@@ -75,6 +100,7 @@ df-overseer-connectivity.lua:
       coordinate_bearing: false
       live_deployed: true
       verified: unverified
+      knowledge_scope: player_derivable
       notes: >
         Landmark-name form, added once the landmark system existed
         (2026-09-10). The underlying dfhack.maps.canWalkBetween/
@@ -87,6 +113,7 @@ df-overseer-connectivity.lua:
       coordinate_bearing: false
       live_deployed: true
       verified: "2026-09-10"
+      knowledge_scope: player_derivable
       notes: "Original stopgap, kept for low-level debugging. decisions/DECISIONS.md 2026-09-10."
 
 df-overseer-landmarks.lua:
@@ -98,6 +125,7 @@ df-overseer-landmarks.lua:
       coordinate_bearing: false
       live_deployed: true
       verified: "2026-09-11"
+      knowledge_scope: player_visible
       notes: "Seed + live buildings + live burrows, sorted by name for prefix-cache determinism. decisions/DECISIONS.md 2026-09-10/11."
     "get NAME":
       lua_function: get_landmark
@@ -105,6 +133,7 @@ df-overseer-landmarks.lua:
       coordinate_bearing: false
       live_deployed: true
       verified: "2026-09-10"
+      knowledge_scope: player_visible
       notes: "Thin filter over list_landmarks."
     "build NAME BLUEPRINT_FILE":
       lua_function: build_at_landmark
@@ -112,6 +141,7 @@ df-overseer-landmarks.lua:
       coordinate_bearing: internal-only
       live_deployed: true
       verified: unverified
+      knowledge_scope: player_visible
       notes: >
         Added 2026-09-11, merged into main 2026-09-12. Same fused
         resolve-and-act shape as build_open_area/dig_diggable_area (see
@@ -129,6 +159,7 @@ df-overseer-overview.lua:
       coordinate_bearing: false
       live_deployed: true
       verified: unverified
+      knowledge_scope: player_visible
       notes: >
         Composes list_landmarks (verified 2026-09-11) and
         get_connectivity_report (verified 2026-09-10) plus tier0/tier2
@@ -148,6 +179,7 @@ df-overseer-diff.lua:
       coordinate_bearing: false
       live_deployed: true
       verified: "2026-09-12 (REPORT only)"
+      knowledge_scope: player_visible
       notes: >
         JOB_COMPLETED/UNIT_DEATH: registration confirmed not erroring, and
         the listener hand-called directly -- NOT a real trigger firing
@@ -159,13 +191,18 @@ df-overseer-diff.lua:
         same proven _G-survival technique, but no real attack occurred
         during a live test window -- verified only by mechanism, not by a
         real trigger. decisions/DECISIONS.md 2026-09-12 ("Folded
-        df-overseer-combat.lua...").
+        df-overseer-combat.lua..."). KNOWLEDGE-SCOPE FIX 2026-09-16: UNIT_DEATH
+        (was omniscient) and UNIT_ATTACK (was leaning omniscient) are now
+        gated on dfhack.units.isHidden of the unit(s) involved -- see the
+        .lua file's own header. Not live-fired against a real death/attack
+        this session (fort stays paused); verified by source reading only.
     "recent-combat [N]":
       lua_function: recent_combat
       effect: read
       coordinate_bearing: false
       live_deployed: true
       verified: "2026-09-12"
+      knowledge_scope: player_visible
       notes: >
         FIXED 2026-09-12 (found building this manifest's coordinate-bearing
         audit): report_line() used to print a raw `pos=%d,%d,%d` for every
@@ -180,6 +217,7 @@ df-overseer-diff.lua:
       coordinate_bearing: false
       live_deployed: true
       verified: "2026-09-12"
+      knowledge_scope: player_visible
       notes: "Same fix and function (report_line) as recent-combat above. Deployed and re-verified live same day: cursor=99, 85 reports, all clean."
 
 df-overseer-openarea.lua:
@@ -191,19 +229,28 @@ df-overseer-openarea.lua:
       coordinate_bearing: false
       live_deployed: true
       verified: "2026-09-11"
-      notes: "Ranked candidates correctly judged by the first autonomous-play experiment. decisions/DECISIONS.md 2026-09-11."
+      knowledge_scope: player_derivable
+      notes: >
+        Ranked candidates correctly judged by the first autonomous-play
+        experiment. decisions/DECISIONS.md 2026-09-11. KNOWLEDGE-SCOPE FIX
+        2026-09-16: is_free now also requires dfhack.maps.isTileVisible --
+        see the .lua file's own header. Measured live: no change to this
+        fort's current results.
     "build W H [LEVEL] NEAR_LANDMARK BLUEPRINT_FILE [RANK] [RADIUS_TILES]":
       lua_function: build_open_area
       effect: mutate
       coordinate_bearing: internal-only
       live_deployed: true
       verified: "2026-09-12"
+      knowledge_scope: player_derivable
       notes: >
         Produced Stockpile #2, the project's first fully closed
         coordinate-free decision-to-mutation loop. Had the top-left-vs-center
         quickfort bug (worked anyway, by luck, per find_open_area's
         candidates sitting in broadly open space) -- fixed and re-verified.
-        decisions/DECISIONS.md 2026-09-11/12.
+        decisions/DECISIONS.md 2026-09-11/12. Shares ranked_candidates/
+        is_free with find_open_area above, so the same 2026-09-16
+        knowledge-scope fix applies here too.
 
 df-overseer-chokepoints.lua:
   build_order_item: "7 (first half)"
@@ -214,6 +261,7 @@ df-overseer-chokepoints.lua:
       coordinate_bearing: true
       live_deployed: true
       verified: "2026-09-11 (stair kind only)"
+      knowledge_scope: player_derivable
       notes: >
         `pos_for_action_tools` is a documented, spec-sanctioned exception
         (research/2026-08-25-spatial-perception.md §5: "the one place a raw
@@ -223,7 +271,10 @@ df-overseer-chokepoints.lua:
         Uniboslan). The "corridor" kind (1-wide-passage heuristic) has no
         separate live-confirmation on record. rank_candidate_sites (the rest
         of build order item 7) is still blocked on resource_summary/threat
-        data that don't exist yet.
+        data that don't exist yet. KNOWLEDGE-SCOPE FIX 2026-09-16: free()
+        (corridor kind) and the stair-kind call site now also require
+        dfhack.maps.isTileVisible -- see the .lua file's own header.
+        Measured live: no change to this fort's current results.
 
 df-overseer-diggable.lua:
   build_order_item: "gap found 2026-09-11, not in the original 0-9 order"
@@ -234,20 +285,33 @@ df-overseer-diggable.lua:
       coordinate_bearing: false
       live_deployed: true
       verified: "2026-09-11"
-      notes: "Correct negative near the surface embark (TREE-material walls excluded) and a correct positive underground (5 ranked SOIL candidates). decisions/DECISIONS.md 2026-09-11."
+      knowledge_scope: player_derivable
+      notes: >
+        Correct negative near the surface embark (TREE-material walls
+        excluded) and a correct positive underground (5 ranked SOIL
+        candidates). decisions/DECISIONS.md 2026-09-11. KNOWLEDGE-SCOPE FIX
+        2026-09-16: was OMNISCIENT before this fix -- no revealed/hidden
+        check at all, and `material` could name an undiscovered vein. Fixed
+        by requiring dfhack.maps.isTileVisible on every tile is_diggable
+        checks (so the whole candidate interior, not just the ring). See the
+        .lua file's own header for the measured live before/after candidate
+        count.
     "dig W H [LEVEL] NEAR_LANDMARK BLUEPRINT_FILE [RANK] [RADIUS_TILES]":
       lua_function: dig_diggable_area
       effect: mutate
       coordinate_bearing: internal-only
       live_deployed: true
       verified: "2026-09-11"
+      knowledge_scope: player_derivable
       notes: >
         Second fully closed coordinate-free decision-to-mutation loop. Had
         the identical top-left-vs-center quickfort bug as build_open_area,
         found here first (an unreachable real dig, zero walkable neighbors,
         no dwarf ever claimed it) -- fixed in both files. Re-tested after the
         fix: all 41 designated tiles fully dug. decisions/DECISIONS.md
-        2026-09-11.
+        2026-09-11. Shares ranked_candidates/is_diggable with find above, so
+        the same 2026-09-16 knowledge-scope fix (was omniscient) applies
+        here too.
 
 df-overseer-stuckjobs.lua:
   build_order_item: 8
@@ -258,6 +322,7 @@ df-overseer-stuckjobs.lua:
       coordinate_bearing: false
       live_deployed: true
       verified: "2026-09-11"
+      knowledge_scope: player_visible
       notes: >
         Traversal idiom (utils.listpairs over world.jobs.list) confirmed
         against three separate stock scripts on this install, stronger than
@@ -274,8 +339,21 @@ df-overseer-threat.lua:
       coordinate_bearing: false
       live_deployed: false
       verified: unverified
+      knowledge_scope: player_derivable
       notes: >
-        NOT DEPLOYED AND NOT RUN. API surface verified by source reading only;
+        KNOWLEDGE-SCOPE FIX 2026-09-16: was OMNISCIENT before this fix --
+        isHidden units were reported as informational, not excluded, and
+        this tool's own stated purpose is catching exactly what isHidden says
+        a vanilla player cannot see. Now excludes any isHidden unit outright
+        (decisions/DECISIONS.md 2026-09-16: sneaking ambushers are not
+        allowed). COVERAGE LOST, stated plainly: an ambusher/sneaking
+        creature no longer appears in `scan` at all until it stops
+        sneaking or the announcement layer names an unspecified event
+        (df-overseer-diff.lua's REPORT ambush/night_attack/undead_or_ghost
+        categories -- see the .lua file's own header for the live-confirmed
+        announcement ids). The reachable-but-unflagged case this tool was
+        built for (the kea attack) is unaffected. NOT DEPLOYED AND NOT RUN
+        as a live service. API surface verified by source reading only;
         no command has been executed against any DF process. Exists because
         the event layer has no usable hostile signal: INVASION fires only for
         DF-registered invasions, not ambushes, thieves, or wildlife turning
@@ -303,8 +381,15 @@ df-overseer-breach.lua:
       coordinate_bearing: false
       live_deployed: false
       verified: unverified
+      knowledge_scope: player_derivable
       notes: >
-        NOT DEPLOYED AND NOT RUN. Exists because water and magma breach has
+        KNOWLEDGE-SCOPE FIX 2026-09-16: was "player_derivable, leaning
+        omniscient on mechanism" -- stage 2 read flow_size/liquid_type on any
+        flagged block's tiles with no designation.hidden check, relying only
+        on the reachability proxy. Fixed by checking designation.hidden per
+        tile inside scan_block_tiles itself before a hidden tile can ever
+        become a `hit` -- see the .lua file's own header. NOT DEPLOYED AND
+        NOT RUN. Exists because water and magma breach has
         NO DFHack event and NO announcement type at all, a checked negative,
         so flood response was covered by nothing.
         CORRECTS THE RESEARCH BRIEF THAT COMMISSIONED IT: df.global.world.flows
@@ -412,6 +497,7 @@ df-overseer-labor.lua:
       coordinate_bearing: false
       live_deployed: true
       verified: "2026-09-12"
+      knowledge_scope: player_derivable
       notes: >
         FIXED 2026-09-12: used to print raw `pos=x,y,z` for every
         citizen/threat row -- a documented placeholder from before the
@@ -424,12 +510,22 @@ df-overseer-labor.lua:
         UNRELIABLE as a fort-defense signal -- missed a real kea attack
         entirely, flagged harmless demons instead. Treat its output as
         "worth a second look," never "confirmed safe/hostile" on its own.
+        KNOWLEDGE-SCOPE FIX 2026-09-16: the `hostile` filter was OMNISCIENT
+        before this fix -- no reachability, no isHidden check at all,
+        already empirically shown to surface 4 demons 40 z-levels down
+        behind solid rock (decisions/DECISIONS.md 2026-09-11). Now excludes
+        any dfhack.units.isHidden unit -- see the .lua file's own header for
+        the measured live before/after. idle/injured/military (unaffected
+        by this fix, always the player's own citizens) stay player_visible
+        in effect; this one id covers both, tagged at the id's own worst
+        case per the audit's own granularity rule.
     "labors UNIT_ID":
       lua_function: list_labors
       effect: read
       coordinate_bearing: false
       live_deployed: true
       verified: "2026-09-11"
+      knowledge_scope: player_visible
       notes: "df.unit_labor confirmed as an enum wrapper needing numeric iteration, not pairs()."
     "set-labor UNIT_ID LABOR_NAME on|off":
       lua_function: set_labor
@@ -437,6 +533,7 @@ df-overseer-labor.lua:
       coordinate_bearing: false
       live_deployed: STALE
       verified: unverified
+      knowledge_scope: player_visible
       notes: >
         STALE: the file IS present on VM 103, but still runs the OLD, racy
         code as of this note -- this fix has not been redeployed.
@@ -474,6 +571,7 @@ df-overseer-ui.lua:
       coordinate_bearing: false
       live_deployed: true
       verified: "2026-09-09"
+      knowledge_scope: player_visible
       notes: "n/a for map coordinates -- reports a DF viewscreen type, not fort geometry."
     "click TEXT":
       lua_function: click_text
@@ -481,6 +579,7 @@ df-overseer-ui.lua:
       coordinate_bearing: false
       live_deployed: true
       verified: "2026-09-09/10"
+      knowledge_scope: player_visible
       notes: "Buffer text scan + simulated click, never a guessed pixel coordinate, per design commitment #1's spirit even though this predates any founded fort."
     dump:
       lua_function: dump_screen
@@ -488,6 +587,7 @@ df-overseer-ui.lua:
       coordinate_bearing: false
       live_deployed: true
       verified: "2026-09-09"
+      knowledge_scope: player_visible
       notes: "Diagnostic only. Does not see the map viewport's own texture-blit render path."
     embark-mode:
       lua_function: embark_mode
@@ -495,6 +595,7 @@ df-overseer-ui.lua:
       coordinate_bearing: false
       live_deployed: true
       verified: "2026-09-10"
+      knowledge_scope: player_visible
       notes: "Clicks a known fixed screen position (row 57), not a text scan -- see this file's own comment for why."
     leave-embark-mode:
       lua_function: leave_embark_mode
@@ -502,6 +603,7 @@ df-overseer-ui.lua:
       coordinate_bearing: false
       live_deployed: true
       verified: "2026-09-10"
+      knowledge_scope: player_visible
       notes: "Confirmed clean return to browsing, no confirm/abort prompt, as long as the local map itself was never clicked."
     hover:
       lua_function: hover_info
@@ -509,6 +611,7 @@ df-overseer-ui.lua:
       coordinate_bearing: true
       live_deployed: true
       verified: "2026-09-10"
+      knowledge_scope: player_visible
       notes: >
         Reports the live embark-rectangle corners (sx/sy/ex/ey) and biome/
         aquifer/soil flags. OUT OF SCOPE for design commitment #1, not a

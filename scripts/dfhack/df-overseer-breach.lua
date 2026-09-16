@@ -154,6 +154,33 @@
 -- at the scale this project has tested anything at; worth instrumenting if
 -- it ever matters, not solved here.
 --
+-- KNOWLEDGE-SCOPE FIX, 2026-09-16 (handoffs/2026-09-16-knowledge-scope-audit.md,
+-- decisions/DECISIONS.md 2026-09-16 "Agents may only know what a vanilla
+-- player could know"): research/2026-09-16-player-visibility.md tags this
+-- tool "player_derivable, leaning omniscient on mechanism" -- stage 1 scans
+-- every map block regardless of visibility, and stage 2 read flow_size/
+-- liquid_type on any flagged block's tiles with no `designation.hidden`
+-- check at all, relying only on the reachability proxy (adjacency to the
+-- citizen network / landmark radius) to keep reported findings looking
+-- player-plausible. That correlation is not the same as checking the field.
+-- Fixed by reading each tile's own `designation.hidden` (a flat bool on
+-- this build -- see docs/TRAPS.md's liquid_type entry for the same category
+-- of trap, and research doc §1's live confirmation that this field is flat,
+-- not nested under `.bits`, on this exact install) inside scan_block_tiles
+-- itself and skipping any hidden tile before it ever becomes a `hit`, so a
+-- hidden tile can never reach the baseline/severity logic or the returned
+-- findings at all, structurally, not just via the reachability proxy.
+-- Stage 1's own block-level scan (`flags.update_liquid`) is unaffected --
+-- that flag names a whole 16x16 block, not a single tile's visibility, and
+-- stage 1's own cost property (bounded by block count, not by what's
+-- revealed) does not depend on this fix.
+--
+-- Also checked per the handoff's explicit instruction: whether this file
+-- has docs/TRAPS.md's `liquid_type` boolean-vs-enum bug. It does NOT --
+-- `is_magma` below already tests both `hit.liquid_type == true` and
+-- `hit.liquid_type == df.tile_liquid.Magma`, fixed live 2026-09-12 per this
+-- file's own pre-existing comment a few lines down. No change needed there.
+--
 -- Usage: ./dfhack-run df-overseer-breach check [RADIUS_TILES]
 
 local json = require('json')
@@ -242,7 +269,12 @@ local function scan_block_tiles(entry)
   for tx = 0, 15 do
     for ty = 0, 15 do
       local ok, des = pcall(function() return entry.block.designation[tx][ty] end)
-      if ok and des and des.flow_size and des.flow_size > 0 then
+      -- KNOWLEDGE-SCOPE FIX, 2026-09-16: `des.hidden` excludes any tile a
+      -- vanilla player has never revealed, structurally -- see header.
+      -- `hidden` is flat on this build (not `.bits.hidden`); `ok`/`des` also
+      -- guards the (unexpected) case where the field lookup itself fails,
+      -- treated as hidden, the safe default.
+      if ok and des and not des.hidden and des.flow_size and des.flow_size > 0 then
         table.insert(hits, {
           x = base_x + tx, y = base_y + ty, z = base_z,
           flow_size = des.flow_size, liquid_type = des.liquid_type,

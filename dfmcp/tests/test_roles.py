@@ -339,6 +339,104 @@ def test_rule6_sole_writer_may_hold_the_sole_writer_only_tool(registry, tmp_path
     assert "queue.rule" in roster.roles["overseer"].write
 
 
+def _registry_with_omniscient_tool(tmp_path):
+    """A throwaway registry with one omniscient tool alongside a real
+    tool, for rule 7's tests -- the real manifest has none by design
+    (test_registry.py's test_no_real_tool_is_tagged_omniscient), so rule 7
+    needs a synthetic fixture to exercise at all."""
+    tools_yaml = tmp_path / "TOOLS.yaml"
+    tools_yaml.write_text(textwrap.dedent("""
+        df-overseer-safe.lua:
+          commands:
+            "get NAME":
+              lua_function: get_safe
+              effect: read
+              knowledge_scope: player_visible
+        df-overseer-leaky.lua:
+          commands:
+            "scan":
+              lua_function: scan_leaky
+              effect: read
+              knowledge_scope: omniscient
+        """), encoding="utf-8")
+    return load_registry(tools_yaml)
+
+
+def test_rule7_omniscient_tool_granted_to_an_advisor_refuses_to_load(tmp_path):
+    reg = _registry_with_omniscient_tool(tmp_path)
+    agents = _roster(tmp_path, """
+        overseer:
+          enabled: true
+          dir: overseer
+          kind: actor
+        architect:
+          enabled: true
+          dir: architect
+          kind: advisor
+        """)
+    _role_dir(agents, "overseer", "read:\n  - id: \"safe.get\"\n")
+    _role_dir(agents, "architect", """
+        read:
+          - id: "leaky.scan"
+        """)
+    with pytest.raises(RoleValidationError) as exc:
+        load_roster(reg, agents_dir=agents)
+    msg = str(exc.value)
+    assert "architect" in msg and "leaky.scan" in msg and "omniscient" in msg
+
+
+def test_rule7_omniscient_tool_granted_to_the_sole_writer_also_refuses_to_load(tmp_path):
+    """Unlike rule 2 (mutation), rule 7 has no sole-writer exception: an
+    omniscient tool has no legitimate holder at all, not even the sole
+    writer."""
+    reg = _registry_with_omniscient_tool(tmp_path)
+    agents = _roster(tmp_path, BASIC_ROLES)
+    _role_dir(agents, "overseer", """
+        read:
+          - id: "safe.get"
+          - id: "leaky.scan"
+        """)
+    with pytest.raises(RoleValidationError) as exc:
+        load_roster(reg, agents_dir=agents)
+    msg = str(exc.value)
+    assert "overseer" in msg and "leaky.scan" in msg and "omniscient" in msg
+
+
+def test_rule7_omniscient_tool_granted_under_write_also_refuses_to_load(tmp_path):
+    reg = _registry_with_omniscient_tool(tmp_path)
+    agents = _roster(tmp_path, BASIC_ROLES)
+    _role_dir(agents, "overseer", """
+        write:
+          - id: "leaky.scan"
+        """)
+    with pytest.raises(RoleValidationError) as exc:
+        load_roster(reg, agents_dir=agents)
+    assert "leaky.scan" in str(exc.value)
+
+
+def test_rule7_a_non_omniscient_tool_loads_fine(tmp_path):
+    """The negative case: rule 7 must not false-positive on player_visible/
+    player_derivable tools."""
+    reg = _registry_with_omniscient_tool(tmp_path)
+    agents = _roster(tmp_path, BASIC_ROLES)
+    _role_dir(agents, "overseer", "read:\n  - id: \"safe.get\"\n")
+    roster = load_roster(reg, agents_dir=agents)
+    assert "safe.get" in roster.roles["overseer"].read
+
+
+def test_no_role_in_the_real_roster_holds_an_omniscient_tool(registry):
+    """Belt-and-braces over the loader's own rule 7: re-derive it from the
+    real roster and registry rather than trusting that the loader checked,
+    matching this file's own style for rule 2's equivalent test."""
+    roster = load_roster(registry)
+    for name, perms in roster.roles.items():
+        for tool_id in list(perms.read) + list(perms.write):
+            tool = registry.get(tool_id)
+            assert not getattr(tool, "knowledge_scope", None) == "omniscient", (
+                f"{name} holds omniscient {tool_id}"
+            )
+
+
 def test_missing_sole_writer_refuses(registry, tmp_path):
     agents = tmp_path / "agents"
     agents.mkdir()
