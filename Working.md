@@ -55,10 +55,19 @@ About 140 ticks passed between the earlier reading and the pause, nothing more.
 The earlier "frozen behind a popup at tick 12309480" state is resolved; the
 count below stands. Verified live from inside:
 
-- **fort-owned food 0, fort-owned drink 0.** The 234 food and 50 drink items on
-  the map are all `flags.foreign`: the merchant caravan's, in their wagons. The
-  user spotted this from the screen before the orchestrator did, whose first
-  count wrongly included merchant goods.
+- **fort-owned drink 0; fort-owned food 5 raw edibles, for 15 dwarves.**
+  **Corrected 2026-09-16 (third count, and the numbers above it were both
+  wrong).** The first count said 234 food and 50 drink and included the
+  caravan's goods. The second filtered on `not flags.foreign` and said 0 and 0.
+  Both are wrong: **`flags.foreign` is an origin flag, not an ownership flag**,
+  true for the fort's own embark supplies too, so it erases the starting
+  stores. `flags.trader` is the real fort-vs-caravan test, verified live and
+  independently by two sessions (a strict subset of `foreign`: 565 foreign, 292
+  trader, zero trader-but-not-foreign, cross-checked through `UNIT_HOLDER` →
+  `isMerchant()`). Under the correct test the fort owns 5 raw edibles, 59
+  seeds, and no drink at all. → `docs/TRAPS.md`.
+  The user spotted the original error from the screen before the orchestrator
+  did.
 - 15 citizens, 119 seeds, **zero farm plots, zero stills, zero workshops of any
   kind, no trade depot**. A caravan and the outpost liaison are waiting and
   cannot unload without a depot.
@@ -195,11 +204,19 @@ assumed a running fort and a write surface that could carry it; neither holds.
 All Sonnet, worktree-isolated, committing on their own branches. None of them
 touches `Working.md`, the register or `memory/`.
 
-- **`handoffs/2026-09-16-stocks-read-and-labor-race.md`** (`executor`) — the
-  fort-owned vs foreign stocks read tool, the `stocks.*` live signal that makes
-  food and drink predictions gradeable at all, and the `set_labor`/`autolabor`
-  race. One stream because they share `scripts/dfhack/`. **Local only: no
-  deploy to VM 103, and the fort stays paused.**
+- ~~**`handoffs/2026-09-16-stocks-read-and-labor-race.md`**~~ **DONE and merged
+  to `main` 2026-09-16.** `scripts/dfhack/df-overseer-stocks.lua` (new:
+  `food-drink`, `seeds`) registered in `TOOLS.yaml` and granted to all three
+  enabled roles; four `stocks.*` signals added to `learning/live_signals.py`'s
+  closed registry, so a food or drink prediction is writable and gradeable for
+  the first time; and the `set_labor`/`autolabor` race fixed by excluding the
+  targeted labor from autolabor's management before writing, or **refusing with
+  a reason** when it cannot tell. Ambient suite 276→**281 passed, 1 skipped**,
+  re-run by the orchestrator; `dfmcp/tests` 152. Fort left paused throughout,
+  nothing deployed. Its load-bearing correction is the `flags.foreign` trap
+  above. **Still owed: a deploy pass** (orchestrator, needs a go-ahead) to
+  place both scripts on VM 103 and exercise `autolabor LABOR disable` live
+  once, which moves item 3 from verified-by-mechanism to verified-by-execution.
 - ~~**`research/2026-09-16-trade-execution-api.md`**~~ **LANDED and merged to
   `main` 2026-09-16.** The previous pass's negative conclusion survives, but
   the picture underneath is much richer than "only the viewscreen", and it
