@@ -38,17 +38,29 @@
     processing method and has some randomness, so manage the split between
     methods to hold that line.
   note: >-
-    Ratios per method are being researched
-    (research/2026-09-17-seed-ratios.md). No tool can write kitchen
-    restrictions yet; plants are cookable by default.
+    Figures in research/2026-09-17-seed-ratios.md. Recommended floor: 30 seeds
+    per crop (the default of DFHack's seedwatch and autofarm). No tool can
+    write kitchen restrictions yet; plants are cookable by default.
 
 - id: cooking-plants-costs-seeds
   scope: universal
-  status: prior
-  source: DF wiki, Plump helmet
+  status: verified
+  source: reaction_other.txt BREW_DRINK_FROM_PLANT on this install (read by the orchestrator); research/2026-09-17-seed-ratios.md
   statement: >-
-    Brewing a plant returns its seed and cooking it does not, so cooking is
-    the lever that draws seed stock down.
+    Brewing one unrotten plant always gives 5 drinks and exactly 1 seed, and
+    needs an empty barrel or pot. Cooking gives no seed, so cooking is the
+    lever that draws seed stock down. A rotted plant returns no seed by any
+    method. Milling, thread and extract returns are hardcoded and unverified.
+
+- id: seed-break-even
+  scope: universal
+  status: prior
+  source: research/2026-09-17-seed-ratios.md (formula is arithmetic; yield figures are wiki)
+  statement: >-
+    Each planted tile uses 1 seed. If a tile yields Y plants, at least 1/Y of
+    the harvest must go to a seed-returning use (brewing) for stock to hold;
+    the rest may be cooked. Unskilled and unfertilized (Y about 1) means
+    nothing can be cooked without losing seed.
 
 - id: dispose-of-surplus-seed
   scope: universal
@@ -58,6 +70,12 @@
     Surplus seed is not harmless clutter to keep forever. Once stock is well
     above what replanting needs, destroy the excess by burning it or with a
     dwarven atom smasher (a drawbridge).
+  note: >-
+    This install caps seed itself (d_init.txt, verified): 200 per crop and
+    3000 in total; the shipped comment says seed over the global cap is
+    periodically removed, oldest first. Manual disposal may matter less than
+    in older versions. Whether an atom smasher destroys bagged seed is
+    unverified.
 
 - id: brew-only-refuted
   scope: universal
