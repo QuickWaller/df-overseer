@@ -334,6 +334,51 @@ df-overseer-breach.lua:
         survive one, is silently baselined and reported as severity none for
         that poll.
 
+df-overseer-stocks.lua:
+  build_order_item: "not in the 0-9 spatial build order -- the food/drink ownership gap, handoffs/2026-09-16-stocks-read-and-labor-race.md item 1"
+  commands:
+    "food-drink":
+      lua_function: get_food_drink
+      effect: read
+      coordinate_bearing: false
+      live_deployed: false
+      verified: "2026-09-16 (mechanism only, via an ad hoc /tmp script over dfhack-run lua, not the deployed file -- see notes)"
+      notes: >
+        NOT DEPLOYED. This tool's whole reason for existing is a corrected
+        ownership test: `not item.flags.trader`, NEVER `not item.flags.foreign`
+        -- flags.foreign is an origin flag (embark-outfitted OR caravan-brought),
+        not a current-ownership one, and live-verified this session to be TRUE
+        on the fort's own unclaimed embark barrels/seeds/wood, which would have
+        zeroed out the fort's own supply if used naively. flags.trader was
+        confirmed, live, to be a strict subset of flags.foreign (0 of 1344
+        in-play items were trader-without-foreign) and to track a real
+        merchant's current holding (checked via each item's own UNIT_HOLDER ref
+        resolving to a unit for which dfhack.units.isMerchant() is true). Full
+        reasoning and the exact live counts (e.g. 60 of 119 SEEDS items are
+        actually trader-held) are in the .lua file's own header comment, not
+        duplicated here. The mechanism (bucket counting over DRINK/FOOD/
+        ANY_EDIBLE_RAW, reusing connectivity.report's main_group_id for the
+        unreachable check) was exercised live against Uniboslan via a
+        throwaway /tmp script over dfhack-run lua, matching every ad hoc probe
+        this stream ran independently -- but the FILE itself has never been
+        placed on VM 103 or invoked as `df-overseer-stocks food-drink`, per
+        this stream's no-deploy constraint. Treat as verified-by-mechanism,
+        not verified-by-the-actual-shipped-command, until the next deploy pass
+        re-confirms it as this file, not a copy of its logic.
+    seeds:
+      lua_function: get_seeds
+      effect: read
+      coordinate_bearing: false
+      live_deployed: false
+      verified: "2026-09-16 (mechanism only, same caveat as food-drink above)"
+      notes: >
+        Per-plant fort-owned seed counts, same ownership test as food-drink.
+        Live-verified this session (same throwaway-script method): of 119
+        SEEDS items on Uniboslan, only 59 are fort-owned (the other 60 are the
+        current caravan offering seed varieties for sale) -- so even reading
+        the raw SEEDS vector count without this filter already overstates
+        fort-owned seed stock by roughly half on this exact fort today.
+
 df-overseer-labor.lua:
   build_order_item: "not in the 0-9 spatial build order -- a separate gap, decisions/DECISIONS.md 2026-09-11"
   commands:

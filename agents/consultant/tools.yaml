@@ -21,6 +21,15 @@ read:
   - id: "landmarks.list"
     status: exists
     note: So advice can name real places in this fort.
+  - id: "stocks.food-drink"
+    status: exists
+    note: >-
+      Added handoffs/2026-09-16-stocks-read-and-labor-race.md. So food/drink
+      advice is grounded in the fort's actual (not caravan) stores. Not yet
+      deployed to VM 103 -- see TOOLS.yaml's own notes.
+  - id: "stocks.seeds"
+    status: exists
+    note: Same file, same deploy caveat as stocks.food-drink above.
 
 planned:
   - id: "queue.propose"
