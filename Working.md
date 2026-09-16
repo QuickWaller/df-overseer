@@ -293,7 +293,15 @@ Existence may be known from the embark screen; **location only once
 uncovered**. Binds the role allowlists, not developer diagnostics. Full
 reasoning in the register.
 
-- **In flight:** `research/2026-09-16-player-visibility.md` (Sonnet
+- ~~**In flight:** research~~ **LANDED and merged 2026-09-16.** Visibility is
+  gated by `designation.hidden` (terrain), `dfhack.units.isHidden` (units; 29 of
+  75 active units, all 5 demons, orchestrator-verified live), and feature
+  `Announced` flags plus discovery announcements (caverns, veins). Hardest grey
+  zone: `threat.lua` exists to catch ambushers, exactly what a player cannot see.
+- **In flight:** `handoffs/2026-09-16-knowledge-scope-audit.md` (Sonnet
+  executor): `knowledge_scope` tag enforced at load time in the `dfmcp`
+  registry, then the leak fixes, each cost measured live. Local only.
+- Original research brief: `research/2026-09-16-player-visibility.md` (Sonnet
   `researcher`, read-only, worktree-isolated): what a vanilla v50 player can
   see, when it becomes visible, which struct fields gate it, the exact
   embark-screen list, game-AI prior art (BWAPI's `CompleteMapInformation`),
