@@ -1,0 +1,75 @@
+# Seed doctrine: game knowledge for the agents, not repo decisions.
+#
+# The doctrine tier from docs/MEMORY-ARCHITECTURE.md, which is designed but not
+# built: there is no get_doctrine tool yet and no agent reads this file. It is
+# a holding place so game knowledge stops landing in decisions/DECISIONS.md.
+#
+# scope:  universal (Dwarf Fortress itself) | world | site (dies with the fort)
+# status: prior     - received knowledge (the user as an experienced player,
+#                     or the wiki), not yet confirmed by this project's play
+#         verified  - confirmed from this install's game data or live state
+#         refuted   - kept so the mistake is not remade
+# Wiki claims are hypotheses, never doctrine on their own (MEMORY-ARCHITECTURE,
+# "the wiki produces hypotheses, not doctrine").
+
+- id: plump-helmet-use
+  scope: universal
+  status: prior
+  source: user, 2026-09-17
+  statement: >-
+    Plump helmets feed and water the fort. Send the harvest to both the still
+    (drink) and the kitchen (cooked meals). Never let dwarves eat them raw.
+
+- id: never-cook-seed-items
+  scope: universal
+  status: verified
+  source: user, 2026-09-17; plotinfo.kitchen read live on Uniboslan
+  statement: >-
+    Never cook the seed items themselves. The vanilla kitchen settings already
+    exclude every SEEDS item, including all six seed types Uniboslan owns.
+
+- id: cooking-plants-costs-seeds
+  scope: universal
+  status: prior
+  source: DF wiki, Plump helmet
+  statement: >-
+    Brewing a plant returns its seed and cooking it does not. While seed stock
+    for a crop is below a reserve, restrict cooking that plant; lift the
+    restriction once brewing has rebuilt the stock. The reserve size is
+    undecided, for the opening-ladder session with the user.
+  note: >-
+    No tool can write kitchen restrictions yet. The kitchen does not exclude
+    plants by default, so plump helmets are cookable out of the box.
+
+- id: brew-only-refuted
+  scope: universal
+  status: refuted
+  source: orchestrator error, corrected by the user 2026-09-17
+  statement: >-
+    "Brew plump helmets, never cook them" is wrong. Alcohol satisfies thirst,
+    not hunger, so a brew-only fort has drink and nothing to eat.
+
+- id: alcohol-is-not-food
+  scope: universal
+  status: prior
+  source: DF wiki, Alcohol
+  statement: >-
+    Drink satisfies thirst only. Without alcohol, dwarves drink water but work
+    more slowly.
+
+- id: dwarves-must-drink
+  scope: universal
+  status: verified
+  source: game data on this install
+  statement: >-
+    Dwarves die of thirst. df.death_type includes THIRST, and neither dwarf
+    caste has NO_DRINK. The death threshold (the wiki says 75,000 ticks) is
+    unverified.
+
+- id: bedridden-need-water-brought
+  scope: universal
+  status: prior
+  source: DF wiki, Thirst
+  statement: >-
+    A dwarf resting in bed does not fetch its own drink. Someone must bring
+    water in a bucket, so keep an empty bucket available.
