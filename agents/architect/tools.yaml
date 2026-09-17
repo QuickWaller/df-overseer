@@ -74,6 +74,11 @@ read:
       Added handoffs/2026-09-16-farm-and-still-tools.md. Candidate farm-plot
       floor near a landmark, tagged outside/inside and the fort-owned seeds
       actually valid there. Not yet deployed to VM 103 -- see TOOLS.yaml.
+  - id: "farm.list"
+    status: exists
+    note: >-
+      Added handoffs/2026-09-17-farm-tool-fixes.md. Every built farm plot
+      with its id and per-season crop. Not yet deployed to VM 103.
   - id: "workshop.find"
     status: exists
     note: >-

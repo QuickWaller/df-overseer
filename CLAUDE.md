@@ -33,7 +33,7 @@ learning architecture.
 >   tools: connectivity, landmarks, overview, diff, open-area and diggable
 >   find/build, chokepoints, stuck jobs, labor, farm, workshop, zone, trees,
 >   well, and manager work orders, all live on VM 103. Role tool lists:
->   architect 19, overseer 32, consultant 4. Closed loops ran for real:
+>   architect 21, overseer 34, consultant 4 (2026-09-17, after the farm-list and stair tools; not yet deployed). Closed loops ran for real:
 >   Stockpile #2 built, a 41-tile dig completed, a farm plot built and its crop
 >   set,
 >   and a `WaterSource` zone placed, none needing a raw coordinate to reach
