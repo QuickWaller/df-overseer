@@ -93,9 +93,10 @@ it relied on; an empty list is valid ("relied on none"), a missing field is
 not. When a proposal's prediction misses, the entries it cited come under
 suspicion. **Not yet confirmed by the user**: the orchestrator's proposed
 split has code tallying misses per entry and flagging an entry `disputed`
-once misses accumulate, leaving the learning role
+on its first miss, leaving the learning role
 (`docs/AGENT-ARCHITECTURE.md` §4) to judge whether a disputed entry's
-statement is actually wrong and to draft the revision.
+statement is actually wrong (a pattern, not bad luck) and to draft the
+revision.
 
 **Reconciling earlier text.** Two passages below predate this design and
 read as if a single mechanism edits doctrine directly: the learning loop's
