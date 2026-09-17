@@ -33,6 +33,10 @@ with the user.
 - Every proposal must list the doctrine entries it relied on. An empty list
   is valid ("relied on none"); a missing field is not. A miss puts the cited
   entries under suspicion, which is what links grading to revision.
+- **A grader limited to code and a closed signal list is too narrow** (user,
+  2026-09-17). Candidate under discussion: plain-language predictions written
+  before acting, facts gathered by code, and a small jury of different model
+  families that sees only the prediction and the facts. Not decided.
 - **The Overseer hands proposals to the consultant for fact-checking** (the
   "wiki nerd and researcher" role) before ruling.
 - **A new learning role, separate from but related to the consultant**, name
