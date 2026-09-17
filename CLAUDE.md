@@ -17,9 +17,9 @@ learning architecture.
 >   on the water at z168, plus one supervised unpause, got founders down to
 >   the water and self-serving (register 2026-09-17). A first farm plot is
 >   built at z168 and sown to plump helmet in all four seasons. **Still not
->   built:** the still (designated, material on hand, no worker took the job
->   yet). Fort-owned food is 17 units, drink still 0, 60 seeds (35 plump
->   helmet). → `Working.md` HANDOVER 2026-09-17.
+>   built:** the still (designated; the fort owns only 3 logs, no worker took
+>   the job yet either way). Fort-owned food is 17 units, drink still 0, 60
+>   seeds (35 plump helmet). → `Working.md` HANDOVER 2026-09-17.
 >
 > - **The fort.** VM 103 (`df-colony-01`) runs **Uniboslan, "Ragwind,"** the
 >   one fort, on DF Classic plus DFHack under Xvfb, built by
