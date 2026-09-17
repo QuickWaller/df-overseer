@@ -52,10 +52,12 @@ and there are two graders (`dfqueue/grade.py`, `learning/predictions/`), but
 neither has graded a real proposal. There is no evidence model, no doctrine
 reader or revision type, no chronicle, no ledger rows and no scheduler.
 
-**Still open:** who proposes doctrine (consultant for research, chronicler for
-play?); how a referral to another role works; what turns graded predictions
-into a revision proposal; the background ground-truth audit idea (below,
-under HANDOVER); what ROADMAP.md should say, deliberately not written until the
+**Still open:** how the discussion requirement is enforced; the learning
+role's name; how roles call each other (referral to the consultant, calls to
+and from the learning role); how the learning role decides a run of misses
+is a pattern without an arbitrary threshold (research 2026-08-25 already
+rejected one); the background ground-truth audit idea (below, under
+HANDOVER); what ROADMAP.md should say, deliberately not written until the
 design settles.
 
 **Next concrete step:** continue the design conversation with the user from
@@ -99,7 +101,7 @@ Everything below is what is still open.
   `current`, `region1`, `region2`. Two quicksaves wrote `autosave 2` and
   `autosave 3` on 2026-09-15; `quicksave` rotates slots and needs a render
   pass, so it can silently do nothing (memory/fort-operations-and-incidents).
-- **Tests:** ambient `python -m pytest` gives 294 passed, 1 skipped;
+- **Tests:** ambient `python -m pytest` gives 306 passed, 1 skipped;
   `.venv-dfmcp` gives 165 for `dfmcp/tests` (register 2026-09-17 figures).
 
 ## HANDOVER 2026-09-17 (read this first after a /clear)
