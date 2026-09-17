@@ -4,6 +4,14 @@ What's currently in progress. Remove an item once it's done, tabled, or
 shelved, don't mark it paused. Any session should read this and know what's
 actually going on right now.
 
+## Open: rotate leaked keys (2026-09-17)
+
+A session ran `cat .env | grep -v SECRET` while looking up the VM 103 SSH
+user, breaking the "read secrets by the key you need" rule — it printed
+`ANTHROPIC_API_KEY`, `DEEPSEEK_API_KEY`, `CLOUDFLARE_TUNNEL_TOKEN`, and
+`CLOUDFLARE_TUNNEL_TOKEN_ADMIN` into the session transcript in full. User's
+call: rotate later, not urgent, but don't lose the item. → decisions/DECISIONS.md
+2026-09-17.
 
 ## Current state, 2026-09-15: the agent loop is reaching the fort, and the channel exists
 
@@ -159,19 +167,24 @@ live before touching anything. Nothing is running right now.
    the plot only finished construction partway through today's window) and
    the still, once 1-3 are done.
 
-5. **Research the fishing gotchas** (user's call, 2026-09-17, not yet
-   dispatched): the user sets up fishing early in their own forts and says it
-   has its own traps. Worth a researcher brief covering what a fishery needs,
-   why "there is nothing to catch" appears, whether a pond's fish are per
-   biome or per body, whether fish stocks recover or are finite (the user:
-   "you dont want to overfish", and this fort may already have emptied its
-   nearest pond), and the standard early mistakes. Note the fort's 43
-   ponds are 6-7/7 stagnant basins with a WaterSource zone on one of them.
-6. **Harvest the community's known gotchas as priors.** The seed and pond
-   traps we hit today are ones players write about constantly, so a pass over
-   the wiki and forums for the common early-fort mistakes would seed
-   `doctrine/` cheaply. They enter as priors, never as doctrine, per
-   `docs/MEMORY-ARCHITECTURE.md` ("the wiki produces hypotheses").
+**Fishing research: done 2026-09-17, and its first conclusions reversed.**
+A same-day audit found that the "overfishing may not be a real risk" swing
+rested on a wiki line its own cited bug contradicts, and that the
+"live-verified untouched" population read most likely read the clipping
+river's fish, not the pools'. Current position: flowing water restocks,
+still water may not (moderate confidence); whether this fort's pools hold
+fish at all is open. The original two paragraphs moved wholesale to
+`working-archive/Working_archive-2026-09-14.md`. → `doctrine/seed.yaml`
+`do-not-overfish` and `uniboslan-pool-fish-unknown`, `decisions/DECISIONS.md`
+2026-09-17.
+
+**Open idea, not started:** the user proposed background ground-truth
+audits (like the `region-pops` check above) running at fort start and
+periodically, compared against agent beliefs/predictions after the fact,
+but never exposed to the agents themselves except via player-derivable
+signals — the same shape `dfqueue`'s grader already has for predictions.
+Blocked on the same "no scheduler exists" gap already on record
+(2026-09-16). Not yet placed in `ROADMAP.md`; ask before starting.
 
 ### Founders-not-drinking: answered in practice, not in full
 

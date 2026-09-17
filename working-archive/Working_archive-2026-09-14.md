@@ -1156,3 +1156,39 @@ reasoning in the register.
 - **The `../openclaw` scaffold** reads `OPENCLAW_CONFIG_DIR` and
   `OPENCLAW_AUTH_PROFILE_SECRET_DIR`, which the image ignores; use
   `OPENCLAW_STATE_DIR` before running it durably.
+
+## Moved wholesale from Working.md on 2026-09-17 (fishing paragraphs from HANDOVER 2026-09-17, finished; superseded by the same-day audit)
+
+Not edited. Both paragraphs' conclusions were later reversed: see `doctrine/seed.yaml` `do-not-overfish` and `uniboslan-pool-fish-unknown`.
+
+**Fishing gotchas and community priors: done, 2026-09-17** (light pass, Steam
+Community discussions searched rather than deep-fetched, per the user's
+"don't go crazy on token usage"). Folded into `doctrine/seed.yaml`:
+`do-not-overfish` updated with the two-state exhaustion mechanic (seasonal
+reset vs true permanent) and community corroboration that ponds are the
+risky, fast-depleting case while rivers are more sustainable; two new
+entries, `fishery-needs-two-labors` (Fish Cleaning, not just Fishing, is
+needed to turn a catch into food) and `fisherdwarf-stockpile-distance`
+(keep the fish stockpile near the water worked, not just near the fort).
+**Correction folded in same day:** the wiki's own `Fishing_industry` page
+states non-flowing water fish stocks "are now renewable, unlike in the past
+(Bug:2780)," and that bug's history shows the general fish fix landed by
+the DF2014 version line, a decade before this project's 0.53.16 — so the
+"ponds are fragile, one-shot" framing above may itself be player folklore
+that outlived the patch. `do-not-overfish` rewritten to carry this conflict
+explicitly at low confidence rather than presenting either side as settled.
+
+**Uniboslan's own "may have already fished out its pond" question: resolved,
+live-verified.** A read-only DFHack `region-pops` check (fort confirmed
+paused before and after) found every surface fish population at this
+fort's world region sitting at `quantity == quantity_max` across all eight
+species present (FISH_GAR_LONGNOSE, FISH_STURGEON, FISH_CHAR, FISH_PERCH,
+FISH_LAMPREY_BROOK, FISH_SALMON, FISH_SHAD, FISH_MOLLY_SAILFIN; 550 to
+10,802 individuals each), every one `discovered=false` — meaning not one
+fish has ever actually been removed from any of them. This fort's fishing
+was never depleted; the one "nothing to catch" message was a miss, not
+evidence of exhaustion. Separately confirmed the fort's 10 units of
+fort-owned `FISH` (flagged `foreign=true`) are the vanilla default "Play
+Now!" embark ration (wiki: 15 units, 3 stacks of 5, one barrel) minus one
+eaten stack — not evidence of a past catch. → `doctrine/seed.yaml`
+`uniboslan-fishing-untouched`, `decisions/DECISIONS.md` 2026-09-17.

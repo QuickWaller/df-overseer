@@ -528,6 +528,12 @@ directly this session, not recalled or assumed; not independently
 cross-checked against `0.53.16`'s own patch notes, same caveat the food-drink
 report already carried for mechanics of this vintage.)
 
+> **Correction, 2026-09-17.** "Verified" above means only that the wiki was
+> fetched and quoted accurately. Neither gotcha was tested on this install.
+> The permanent-exhaustion claim now reads as specific to still water (Bug
+> 2780, reopened 2014 for ponds and never closed) rather than applying to
+> "pond/river/ocean" alike. See `doctrine/seed.yaml` `do-not-overfish`.
+
 **Buildability with this repo's tools**: assigning the Fishing labor uses the
 same mechanism `set-labor` already exercises live (`unit.status.labors`
 confirmed indexable/settable, `TOOLS.yaml`), though this specific labor code
