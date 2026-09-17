@@ -377,3 +377,21 @@ findings without another doc home yet.
   different name, or restart DF**, and after any deploy **prove the running
   code is the deployed code** (check a string or behaviour only the new
   version has) rather than inferring it from a matching file hash on disk.
+
+- **`dfhack-run lua -e '<code>'` is not accepted by this build; use the
+  positional form `dfhack-run lua "<code>"`, or better, put multi-line Lua in a
+  file and run `dfhack-run lua -f /tmp/x.lua`.** A supervised-unpause wrapper
+  built on `-e` silently did nothing for its whole 450-second window on
+  2026-09-17: the fort never unpaused and no error was surfaced.
+- **Every line `dfhack-run` prints carries its own `\x1b[0m` prefix, not just
+  the first.** Any `grep`, equality check or numeric parse against its output
+  must strip ANSI escapes first, or stop conditions silently never match.
+- **A farm plot's `plant_id` write does not survive the plot's own construction
+  completing**: set before completion, all four seasons read back as -1.
+  Verified live 2026-09-17 by reading before and after (the mechanism was not
+  read from source). Order of operations: build, wait for `flags.exists`, then
+  set the crop, then read it back.
+- **`dfhack.buildings.setName` does not exist on this install.** A `pcall` with
+  an unchecked result hid that: `df-overseer-farm.lua` believed it had named
+  the plot "Farm Plot #1" while the game kept the default "Farm Plot". Check
+  what a `pcall` returned before reporting success.
