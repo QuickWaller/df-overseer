@@ -121,6 +121,18 @@ write:
     note: Resolves its own coordinate internally. Never pass one in.
   - id: "diggable.dig"
     status: exists
+  - id: "diggable.dig-stair"
+    status: exists
+    note: >-
+      Added handoffs/2026-09-17-dig-down-to-stone.md. Designates a
+      downstair/upstair pair to extend the walkable network down one level
+      -- never one half without the other. No paired diggable.find-stair
+      read here, matching diggable.find/diggable.dig's own established
+      pairing (the Overseer acts on the Architect's discovery, it does not
+      discover for itself -- dfmcp/tests/test_roles.py
+      test_the_overseer_can_act_but_cannot_discover), not the newer farm/
+      zone/trees/well read-before-write pattern. NOT live-tested this
+      session (mutation forbidden).
   - id: "landmarks.build"
     status: exists
   - id: "farm.build"

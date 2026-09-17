@@ -80,7 +80,8 @@ def test_the_overseer_can_act_but_cannot_discover(registry):
     overseer = roster.roles["overseer"]
     assert "openarea.build" in overseer.write
     assert "diggable.dig" in overseer.write
-    for discovery in ("openarea.find", "diggable.find", "chokepoints.find"):
+    assert "diggable.dig-stair" in overseer.write
+    for discovery in ("openarea.find", "diggable.find", "diggable.find-stair", "chokepoints.find"):
         assert not overseer.allows(discovery), (
             f"the Overseer now holds {discovery}; that removes its dependency on "
             "the Architect and should be a deliberate, recorded decision"
