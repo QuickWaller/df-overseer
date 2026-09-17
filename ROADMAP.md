@@ -2,7 +2,7 @@
 
 **Last reviewed:** 2026-09-17 (nineteenth pass, targeted: the production-gap
 Now item updated to say it is partly closed, since the fort now drinks and has
-a sown farm plot and 19/32/4 deployed tools; the still, a trade depot, typed
+a farm plot with its crop set (nothing planted yet) and 19/32/4 deployed tools; the still, a trade depot, typed
 stockpiles and deeper digging remain unbuilt. Checked and left as-is: the
 game-figures-database and wiki-lookup Next items still read correctly.)
 Previously: 2026-09-16 (eighteenth pass, targeted: a new top Now item
@@ -55,7 +55,7 @@ or `decisions/DECISIONS.md`, not here.
 - **UPDATED 2026-09-17: the production gap is partly closed.** Uniboslan now
   drinks (a `WaterSource` zone placed on a pond fixed a real terrain problem,
   not proven as the sole cause but decisive enough to keep) and has its first
-  farm plot, sown to plump helmet in all four seasons. Water and industry
+  farm plot, with plump helmet set for all four seasons but nothing planted yet. Water and industry
   tools shipped and deployed the same day: zones, tree felling, manager work
   orders, a well builder, and mason/mechanic/carpenter workshops. Role tool
   lists moved 13/18/4 to **19/32/4**. **Still not built or unblocked:** the

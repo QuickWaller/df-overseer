@@ -16,7 +16,8 @@ learning architecture.
 >   surface, which is why no dwarf drank unaided; a `WaterSource` zone placed
 >   on the water at z168, plus one supervised unpause, got founders down to
 >   the water and self-serving (register 2026-09-17). A first farm plot is
->   built at z168 and sown to plump helmet in all four seasons. **Still not
+>   built at z168 with plump helmet set for all four seasons, but **nothing is
+>   planted yet**. **Still not
 >   built:** the still (designated; the fort owns only 3 logs, no worker took
 >   the job yet either way). Fort-owned food is 17 units, drink still 0, 60
 >   seeds (35 plump helmet). → `Working.md` HANDOVER 2026-09-17.
@@ -33,7 +34,8 @@ learning architecture.
 >   find/build, chokepoints, stuck jobs, labor, farm, workshop, zone, trees,
 >   well, and manager work orders, all live on VM 103. Role tool lists:
 >   architect 19, overseer 32, consultant 4. Closed loops ran for real:
->   Stockpile #2 built, a 41-tile dig completed, a farm plot built and sown,
+>   Stockpile #2 built, a 41-tile dig completed, a farm plot built and its crop
+>   set,
 >   and a `WaterSource` zone placed, none needing a raw coordinate to reach
 >   the decision-maker. **`doctrine/`** holds game knowledge (crop and water
 >   rules) the agents should eventually read; nothing reads it yet, and it is
