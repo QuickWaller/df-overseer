@@ -45,15 +45,18 @@ with the user.
   Agents cannot call each other today (one-shot runs, queue as the only
   channel), so the calling mechanism is undesigned.
 - **Other roles may propose doctrine revisions too, but must discuss them
-  with the learning role first.** How "must" is enforced is open.
+  with the learning role first.** Enforced by the queue: such a proposal
+  must reference the discussion record, which carries the learning role's
+  view to the Overseer. **Scope: doctrinal and learning revisions only**, not
+  every revision (tactical and strategy amendments never need it).
 
 **Built today vs missing, checked against code:** predictions are recorded
 and there are two graders (`dfqueue/grade.py`, `learning/predictions/`), but
 neither has graded a real proposal. There is no evidence model, no doctrine
 reader or revision type, no chronicle, no ledger rows and no scheduler.
 
-**Still open:** how the discussion requirement is enforced; the learning
-role's name; how roles call each other (referral to the consultant, calls to
+**Still open:** exactly which revisions count as "learning" (playbook
+thresholds? evidence rules?); the learning role's name; how roles call each other (referral to the consultant, calls to
 and from the learning role); how the learning role decides a run of misses
 is a pattern without an arbitrary threshold (research 2026-08-25 already
 rejected one); the background ground-truth audit idea (below, under
@@ -61,8 +64,7 @@ HANDOVER); what ROADMAP.md should say, deliberately not written until the
 design settles.
 
 **Next concrete step:** continue the design conversation with the user from
-"is the discussion with the learning role enforced by the queue, and does
-its view travel with the proposal to the Overseer".
+"which revisions count as learning revisions".
 
 ## Current state, 2026-09-15: the agent loop is reaching the fort, and the channel exists
 
