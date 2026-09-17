@@ -131,8 +131,9 @@ write:
       pairing (the Overseer acts on the Architect's discovery, it does not
       discover for itself -- dfmcp/tests/test_roles.py
       test_the_overseer_can_act_but_cannot_discover), not the newer farm/
-      zone/trees/well read-before-write pattern. NOT live-tested this
-      session (mutation forbidden).
+      zone/trees/well read-before-write pattern. DRY_RUN defaults to true;
+      only the dry-run path is live-verified this session (real mutation
+      was forbidden).
   - id: "landmarks.build"
     status: exists
   - id: "farm.build"
