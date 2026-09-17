@@ -30,6 +30,9 @@ with the user.
   Applied doctrine changes go in a user digest for now.
 - The quartermaster probably becomes necessary, owning strategy from
   inventory and production trends.
+- Every proposal must list the doctrine entries it relied on. An empty list
+  is valid ("relied on none"); a missing field is not. A miss puts the cited
+  entries under suspicion, which is what links grading to revision.
 
 **Built today vs missing, checked against code:** predictions are recorded
 and there are two graders (`dfqueue/grade.py`, `learning/predictions/`), but
@@ -43,7 +46,7 @@ under HANDOVER); what ROADMAP.md should say, deliberately not written until the
 design settles.
 
 **Next concrete step:** continue the design conversation with the user from
-"what turns graded predictions into a proposed revision".
+"does one miss trigger a revision proposal, or does it wait for a pattern".
 
 ## Current state, 2026-09-15: the agent loop is reaching the fort, and the channel exists
 
