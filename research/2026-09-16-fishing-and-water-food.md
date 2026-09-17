@@ -1,3 +1,23 @@
+> **THIRD CORRECTION, 2026-09-17, after an audit of every fishing claim in
+> the repo.** Two things below need reading differently.
+>
+> - **The two-state mechanic in §3 (seasonal reset, then permanent) is still
+>   the best-supported reading, and for still water specifically.** Bug 2780
+>   ("Pond/pool populations ... do not replenish") was reopened in 2014 after
+>   a pond failed to recover over five in-game years and has never been
+>   closed. A same-day swing in `doctrine/` to "overfishing may not be a real
+>   risk" was wrong and has been reversed. See `doctrine/seed.yaml`
+>   `do-not-overfish`.
+> - **§3 mis-cites `research/2026-09-16-food-and-drink-logistics.md` §1 item
+>   6** as quoting "eventually... permanently empty". It does not: that item
+>   is about the Fishery workshop, and the file contains no such text. Only
+>   `research/2026-09-16-opening-priority-ladder.md` §6.1 quotes it, so that
+>   quote is one source, not two agreeing.
+>
+> Whether this fort's pools hold fish at all is still open: the population
+> records read on 2026-09-17 are most likely the clipping river's, not the
+> pools' (`doctrine/seed.yaml` `uniboslan-pool-fish-unknown`).
+
 > **SECOND CORRECTION, 2026-09-17.** This report reads the fort's "nothing to
 > catch" message as evidence about the *map* (a biome with no fish). The user
 > raised the other reading: **fish stocks are finite and can be fished out**

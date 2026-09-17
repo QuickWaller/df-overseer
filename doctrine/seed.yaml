@@ -4,18 +4,46 @@
 # built: there is no get_doctrine tool yet and no agent reads this file. It is
 # a holding place so game knowledge stops landing in decisions/DECISIONS.md.
 #
-# scope:  universal (Dwarf Fortress itself) | world | site (dies with the fort)
-# status: prior     - received knowledge (the user as an experienced player,
-#                     or the wiki), not yet confirmed by this project's play
-#         verified  - confirmed from this install's game data or live state
-#         refuted   - kept so the mistake is not remade
-# Wiki claims are hypotheses, never doctrine on their own (MEMORY-ARCHITECTURE,
-# "the wiki produces hypotheses, not doctrine").
+# Fields
+#   id       stable; referenced from the register and other entries
+#   scope    universal (Dwarf Fortress itself) | world | site (dies with the fort)
+#   status   prior    - received knowledge, not yet confirmed by this project's play
+#            verified - confirmed from this install's game data or live state
+#            refuted  - kept so the mistake is not remade
+#   topics   what get_doctrine will index on: one or more of
+#            food, drink, water, farming, seeds, fishing, labor, health
+#   sources  one item per source, never a single blob:
+#     kind      live-read | game-data | devlog | bugtracker | wiki | forum |
+#               user | research (a repo research doc, which carries its own
+#               citations)
+#     ref       what exactly: page, bug number, file, struct, command
+#     describes the game version the source is about, as stated or as dated.
+#               This install is 53.16 (DFHack 53.16-r1.1). "unknown" is
+#               allowed and is a warning, not a pass.
+#     read      opened (the text itself was read) | search-summary (only a
+#               search engine's summary was seen) | recalled (someone's memory)
+#               | unrecorded (the entry predates provenance tracking)
+#     accessed  date the source was read, where known
+#   statement  the rule itself
+#   note       open questions, risks, what would settle it
+#
+# Rule: `verified` needs at least one live-read or game-data source that
+# describes 53.16. Wiki, forum and user sources can make a prior, never a
+# verification (MEMORY-ARCHITECTURE, "the wiki produces hypotheses, not
+# doctrine"; its version-namespace trap is why `describes` exists).
+# Provenance format adopted 2026-09-17 after the fishing entries were built on
+# undated, unopened sources (decisions/DECISIONS.md, same date).
 
 - id: plump-helmet-use
   scope: universal
   status: prior
-  source: user, 2026-09-17
+  topics: [food, drink, farming]
+  sources:
+    - kind: user
+      ref: own play
+      describes: unknown
+      read: recalled
+      accessed: 2026-09-17
   statement: >-
     Plump helmets feed and water the fort. Send the harvest to both the still
     (drink) and the kitchen (cooked meals). Never let dwarves eat them raw.
@@ -23,7 +51,18 @@
 - id: never-cook-seed-items
   scope: universal
   status: verified
-  source: user, 2026-09-17; plotinfo.kitchen read live on Uniboslan
+  topics: [seeds, food]
+  sources:
+    - kind: user
+      ref: own play
+      describes: unknown
+      read: recalled
+      accessed: 2026-09-17
+    - kind: live-read
+      ref: plotinfo.kitchen, Uniboslan
+      describes: "53.16"
+      read: opened
+      accessed: 2026-09-17
   statement: >-
     Never cook the seed items themselves. The vanilla kitchen settings already
     exclude every SEEDS item, including all six seed types Uniboslan owns.
@@ -31,7 +70,13 @@
 - id: seed-stock-never-falls
   scope: universal
   status: prior
-  source: user, 2026-09-17
+  topics: [seeds, farming]
+  sources:
+    - kind: user
+      ref: own play
+      describes: unknown
+      read: recalled
+      accessed: 2026-09-17
   statement: >-
     Never run out of seed. Across each harvest cycle a crop's seed stock should
     end level with, or slightly above, where it started. Seed return varies by
@@ -45,7 +90,18 @@
 - id: cooking-plants-costs-seeds
   scope: universal
   status: verified
-  source: reaction_other.txt BREW_DRINK_FROM_PLANT on this install (read by the orchestrator); research/2026-09-17-seed-ratios.md
+  topics: [seeds, food, drink]
+  sources:
+    - kind: game-data
+      ref: raw/objects/reaction_other.txt, BREW_DRINK_FROM_PLANT, this install
+      describes: "53.16"
+      read: opened
+      accessed: 2026-09-17
+    - kind: research
+      ref: research/2026-09-17-seed-ratios.md
+      describes: "53.16"
+      read: opened
+      accessed: 2026-09-17
   statement: >-
     Brewing one unrotten plant always gives 5 drinks and exactly 1 seed, and
     needs an empty barrel or pot. Cooking gives no seed, so cooking is the
@@ -55,7 +111,15 @@
 - id: seed-break-even
   scope: universal
   status: prior
-  source: research/2026-09-17-seed-ratios.md (formula is arithmetic; yield figures are wiki)
+  topics: [seeds, farming]
+  sources:
+    - kind: research
+      ref: >-
+        research/2026-09-17-seed-ratios.md (the formula is arithmetic; the
+        yield figures are wiki)
+      describes: unknown
+      read: opened
+      accessed: 2026-09-17
   statement: >-
     Each planted tile uses 1 seed. If a tile yields Y plants, at least 1/Y of
     the harvest must go to a seed-returning use (brewing) for stock to hold;
@@ -65,7 +129,18 @@
 - id: dispose-of-surplus-seed
   scope: universal
   status: prior
-  source: user, 2026-09-17
+  topics: [seeds]
+  sources:
+    - kind: user
+      ref: own play
+      describes: unknown
+      read: recalled
+      accessed: 2026-09-17
+    - kind: game-data
+      ref: data/init/d_init.txt seed caps, this install
+      describes: "53.16"
+      read: opened
+      accessed: 2026-09-17
   statement: >-
     Surplus seed is not harmless clutter to keep forever. Once stock is well
     above what replanting needs, destroy the excess by burning it or with a
@@ -80,7 +155,13 @@
 - id: brew-only-refuted
   scope: universal
   status: refuted
-  source: orchestrator error, corrected by the user 2026-09-17
+  topics: [food, drink]
+  sources:
+    - kind: user
+      ref: correction of an orchestrator error
+      describes: unknown
+      read: recalled
+      accessed: 2026-09-17
   statement: >-
     "Brew plump helmets, never cook them" is wrong. Alcohol satisfies thirst,
     not hunger, so a brew-only fort has drink and nothing to eat.
@@ -88,7 +169,12 @@
 - id: alcohol-is-not-food
   scope: universal
   status: prior
-  source: DF wiki, Alcohol
+  topics: [drink, food]
+  sources:
+    - kind: wiki
+      ref: Alcohol
+      describes: unknown
+      read: unrecorded
   statement: >-
     Drink satisfies thirst only. Without alcohol, dwarves drink water but work
     more slowly.
@@ -96,7 +182,12 @@
 - id: dwarves-must-drink
   scope: universal
   status: verified
-  source: game data on this install
+  topics: [drink, water, health]
+  sources:
+    - kind: game-data
+      ref: df.death_type (THIRST); dwarf caste tokens (no NO_DRINK), this install
+      describes: "53.16"
+      read: opened
   statement: >-
     Dwarves die of thirst. df.death_type includes THIRST, and neither dwarf
     caste has NO_DRINK. The death threshold (the wiki says 75,000 ticks) is
@@ -105,7 +196,12 @@
 - id: bedridden-need-water-brought
   scope: universal
   status: prior
-  source: DF wiki, Thirst
+  topics: [water, health]
+  sources:
+    - kind: wiki
+      ref: Thirst
+      describes: unknown
+      read: unrecorded
   statement: >-
     A dwarf resting in bed does not fetch its own drink. Someone must bring
     water in a bucket, so keep an empty bucket available.
@@ -113,9 +209,19 @@
 - id: water-source-zone-for-ponds
   scope: universal
   status: verified
-  source: >-
-    Uniboslan, 2026-09-17 supervised test (correlational, not isolated), and
-    the user, who had hit the same thing in their own games before this fort
+  topics: [water, drink]
+  sources:
+    - kind: live-read
+      ref: >-
+        Uniboslan supervised test, 2026-09-17 (correlational, not isolated)
+      describes: "53.16"
+      read: opened
+      accessed: 2026-09-17
+    - kind: user
+      ref: own play, the same fix used before this fort
+      describes: unknown
+      read: recalled
+      accessed: 2026-09-17
   statement: >-
     A fort whose only water is a sunken pond may have dwarves that never
     drink. Marking the water itself as a Water Source zone, on the level the
@@ -129,16 +235,163 @@
 - id: do-not-overfish
   scope: universal
   status: prior
-  source: user, 2026-09-17
+  topics: [fishing, food]
+  sources:
+    - kind: devlog
+      ref: Bay 12 dev log, 2013-11-09 (Toady One)
+      describes: "0.40.01"
+      read: opened
+      accessed: 2026-09-17
+    - kind: bugtracker
+      ref: >-
+        Bug 2780, "Pond/pool populations (e.g. pond turtles) do not replenish,
+        gradually become extinct"; read on the dwarffortressbugtracker.com
+        mirror because the Bay 12 tracker returned a database error
+      describes: "0.31.08 to 0.40.xx"
+      read: opened
+      accessed: 2026-09-17
+    - kind: wiki
+      ref: >-
+        Fishing_industry ("now renewable, unlike in the past"), sentence added
+        2014-08-22, carried into the v50 namespace unchanged
+      describes: "0.40.xx"
+      read: opened
+      accessed: 2026-09-17
+    - kind: wiki
+      ref: >-
+        Fisherdwarf (Fishing redirects here): permanent-depletion passage
+        re-added 2024-03-11 by an anonymous editor, edit summary "still
+        applies to current version of DF"
+      describes: v50 (asserted, unsourced)
+      read: opened
+      accessed: 2026-09-17
+    - kind: user
+      ref: own forts
+      describes: 2014 to 2026, versions unrecorded
+      read: recalled
+      accessed: 2026-09-17
+    - kind: forum
+      ref: Steam Community discussion threads
+      describes: unknown
+      read: search-summary
+      accessed: 2026-09-17
   statement: >-
-    Fish in a given body of water are a finite stock, not a renewing one.
-    Fishing a pond or lake hard enough empties it, and "there is nothing to
-    catch" can mean depleted rather than never stocked. Treat fishing as a
-    limited opening resource, cap how many dwarves hold the labor, and do not
-    plan the fort's food around it.
+    Assume flowing water (rivers, brooks) restocks and still water (ponds,
+    pools) may not. Do not plan a fort's food around pond fish; fishing a river
+    or brook is not a known risk. Nobody gives a restock rate or a catch
+    threshold, so there is no number to police, only a choice of water.
   note: >-
-    Unverified here. It bears directly on Uniboslan: its own "nothing to
-    catch" popups appeared after a founder held the fishing labor, so this
-    fort may already have fished out its nearest pond. The fishing research
-    queued in Working.md should settle whether stocks are per body of water or
-    per biome, and whether they ever recover.
+    The case, weakest link first. Toady's dev log for 0.40 made animal
+    populations "restore themselves slowly (including the local populations
+    in fort mode)", which is the fix. Bug 2780 was then resolved on
+    2014-07-24 and reopened on 2014-08-07 after a player fished a pond for
+    five in-game years without recovery; that pond held only turtles, and the
+    manager's comment was "it could be that only river populations were
+    fixed". The bug is still open. The wiki's "now renewable" line is another
+    player's claim, added two weeks after the reopening. The 2024 anonymous
+    wiki edit and the user's own memory (ponds empty for good, rivers fine)
+    both point the same way as the open bug. None of this is game source or
+    patch notes, so confidence is moderate.
+    History: on 2026-09-17 this entry said overfishing "may not be a real
+    risk at all", leaning on the "now renewable" line and on a cavern fish
+    record reading quantity 399 over quantity_max 395. Both leaned the wrong
+    way: the line is contradicted by the bug it cites, and quantity_max is
+    not shown to be a ceiling, so exceeding it is not evidence of
+    regeneration. What would settle it: a pond's own population record read
+    before and after sustained fishing, which first needs the record found
+    (see uniboslan-pool-fish-unknown).
+
+- id: uniboslan-pool-fish-unknown
+  scope: site
+  status: prior
+  topics: [fishing, water]
+  sources:
+    - kind: live-read
+      ref: >-
+        df.global.world.populations.all at region (5,6), full records
+        including the nested population ref; fort paused throughout
+      describes: "53.16"
+      read: opened
+      accessed: 2026-09-17
+    - kind: game-data
+      ref: >-
+        df-structures df.regionpop.xml, world_population_ref code-helper
+        (GitHub master, not pinned to 53.16-r1.1)
+      describes: unknown
+      read: opened
+      accessed: 2026-09-17
+    - kind: game-data
+      ref: DFHack docs, region-pops
+      describes: unknown
+      read: opened
+      accessed: 2026-09-17
+    - kind: wiki
+      ref: Embark (default supplies)
+      describes: v50
+      read: opened
+      accessed: 2026-09-17
+  statement: >-
+    Whether Uniboslan's swamp pools hold any fish at all is unknown. The eight
+    surface fish populations read at this fort's world region (longnose gar,
+    sturgeon, char, perch, brook lamprey, salmon, shad, sailfin molly) all sit
+    at quantity equal to quantity_max, but every one has feature_idx 0, and
+    by df-structures a population with feature_idx other than -1 belongs to
+    one local map feature, not the region. That feature is most plausibly the
+    world river that clips this region without reaching the local map, so
+    these records likely say nothing about the pools. Their discovered=false
+    does not show that nobody fished: region-pops documents the flag as what
+    "your civilization knows about".
+  note: >-
+    Solid, separately: the fort's 10 FISH (flags.foreign) match the default
+    embark ration minus one eaten stack, and FISH_RAW is 0, so no catch has
+    ever been processed. Open: the one NOTHING_TO_CATCH_IN_WATER ("central
+    swamps", year 30 tick 19990, a pool tile at z168) is unexplained; the
+    only citizen with Fishing is founder unit 196 (FISHERMAN, skill 5), and
+    nothing read says whether that skill came from embark or from fishing.
+    Next step: read feature index 0's type in
+    world_data.feature_map at this region (attempted 2026-09-17, the
+    indexing was wrong), then look for a population record tied to the
+    pools. Formerly `uniboslan-fishing-untouched`, which overclaimed.
+
+- id: fishery-needs-two-labors
+  scope: universal
+  status: prior
+  topics: [fishing, labor, food]
+  sources:
+    - kind: forum
+      ref: Steam Community discussion threads
+      describes: unknown
+      read: search-summary
+      accessed: 2026-09-17
+    - kind: research
+      ref: >-
+        research/2026-09-16-food-and-drink-logistics.md section 1 item 6 (a
+        Fishery turns raw fish into food; wiki Fishery)
+      describes: unknown
+      read: opened
+      accessed: 2026-09-17
+  statement: >-
+    Turning a catch into food needs both labors covered, not just Fishing:
+    Fish Cleaning is a separate labor that processes the raw catch
+    (FISH_RAW) into the edible item (FISH) at a Fishery, and a fort that
+    assigns only the Fishing labor can end up with an uncleaned catch
+    backlog or a Fishery nobody works.
+  note: >-
+    Unverified against this project's own live state. Uniboslan has 0
+    FISH_RAW and no Fishery built, so this has not been exercised here.
+
+- id: fisherdwarf-stockpile-distance
+  scope: universal
+  status: prior
+  topics: [fishing, labor]
+  sources:
+    - kind: forum
+      ref: Steam Community discussion threads
+      describes: unknown
+      read: search-summary
+      accessed: 2026-09-17
+  statement: >-
+    Keep the fish stockpile close to the water a fisherdwarf actually works,
+    not just close to the fort center. A long round trip between the water
+    and the stockpile is a cited productivity drag independent of whether
+    fish are available at all.
