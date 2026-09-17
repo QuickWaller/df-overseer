@@ -159,6 +159,18 @@ live before touching anything. Nothing is running right now.
    the plot only finished construction partway through today's window) and
    the still, once 1-3 are done.
 
+5. **Research the fishing gotchas** (user's call, 2026-09-17, not yet
+   dispatched): the user sets up fishing early in their own forts and says it
+   has its own traps. Worth a researcher brief covering what a fishery needs,
+   why "there is nothing to catch" appears, whether a pond's fish are per
+   biome or per body, and the standard early mistakes. Note the fort's 43
+   ponds are 6-7/7 stagnant basins with a WaterSource zone on one of them.
+6. **Harvest the community's known gotchas as priors.** The seed and pond
+   traps we hit today are ones players write about constantly, so a pass over
+   the wiki and forums for the common early-fort mistakes would seed
+   `doctrine/` cheaply. They enter as priors, never as doctrine, per
+   `docs/MEMORY-ARCHITECTURE.md` ("the wiki produces hypotheses").
+
 ### Founders-not-drinking: answered in practice, not in full
 
 The zone fix (above) resolved the symptom. The deeper "why job-assignment
