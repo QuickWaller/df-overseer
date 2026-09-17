@@ -197,19 +197,21 @@ live before touching anything. Nothing is running right now.
    available; nobody has worked it across a full unpause window. Check
    whether it is actually DF's `suspended` flag or just never assigned a
    worker before deciding how to unstick it.
-2. **Farm and stair fixes: merged to `main` 2026-09-17, NOT deployed.**
-   `df-overseer-farm.lua` now identifies plots by building id (new
-   `farm.list`), refuses `set-crop` before construction finishes, and reads
-   the crop back after writing. `df-overseer-diggable.lua` gained
-   `find-stair`/`dig-stair`, which designate both halves of a stair pair down
-   to z167. Only read-only and dry-run paths were verified live; `set-crop`'s
-   argument changed from NAME to ID. → `handoffs/2026-09-17-farm-tool-fixes.md`,
-   `handoffs/2026-09-17-dig-down-to-stone.md` (each has a test plan for the
-   real write).
-3. **Next: deploy both, then prove the real writes in one supervised
-   session** (needs the user's go-ahead): `farm.list`, a real `set-crop` on
-   plot 4 with read-back, and a real `dig-stair` followed by a short
-   unpause to see a dwarf dig it and `diggable.find` succeed at z167.
+2. **Farm and stair tools: deployed and live-tested 2026-09-17.** Tool lists
+   live at 21/34/4. `farm.set-crop` real write and restore on plot 4 worked,
+   read back through `farm.list` (plot 4 ends plump helmet, all seasons).
+   **The stair did not work: it is half-designated.** `dig-stair` returned ok
+   for both halves, but its rank-1 spot sits under the fort's Stockpile, and
+   quickfort silently skips occupied tiles: z167 holds an orphan UpStair
+   designation with no DownStair above it (orchestrator-verified live, tick
+   227160, paused). The unpause stopped after 151 ticks on a false alarm in
+   the test's own sampler, so nothing was dug.
+3. **Next:** (a) fix `dig-stair`: skip candidates with a building on the
+   upper tile, treat 0 tiles designated as failure, and never leave one half
+   (designate the upper first, undo it if the lower fails); (b) with the user's
+   go-ahead, remove the orphan z167 designation, deploy the fix, designate a
+   clear spot and run the supervised dig again with a fixed focus check.
+   → `handoffs/2026-09-17-farm-stair-live-test.md` Result.
 4. **Then a longer supervised run** for planting (nothing has sprouted yet;
    the plot only finished construction partway through today's window) and
    the still, once 1-3 are done.
