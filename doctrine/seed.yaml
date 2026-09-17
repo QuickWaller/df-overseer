@@ -113,7 +113,9 @@
 - id: water-source-zone-for-ponds
   scope: universal
   status: verified
-  source: Uniboslan, 2026-09-17 supervised test (correlational, not isolated)
+  source: >-
+    Uniboslan, 2026-09-17 supervised test (correlational, not isolated), and
+    the user, who had hit the same thing in their own games before this fort
   statement: >-
     A fort whose only water is a sunken pond may have dwarves that never
     drink. Marking the water itself as a Water Source zone, on the level the
