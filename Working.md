@@ -78,7 +78,7 @@ live before touching anything. Nothing is running right now.
   before that doc was committed) found this was wrong: the ramps really are
   underwater, not miscategorised. Read the correction note, not the body, if
   citing that doc.
-- **First real food production: the farm plot is built and sown.** A 5x5
+- **First real food production: the farm plot is built and its crop set.** A 5x5
   `building_farmplotst` at z168 (x100-104, y101-105), `flags.exists=true`,
   all four seasons carry plump helmet (`plant_id=173`), orchestrator-verified
   by direct struct read. **The still is not built.** It is designated at the
