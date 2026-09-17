@@ -83,9 +83,13 @@ live before touching anything. Nothing is running right now.
   all four seasons carry plump helmet (`plant_id=173`), orchestrator-verified
   by direct struct read. **The still is not built.** It is designated at the
   surface (z169, x96-98, y97-99; no free 3x3 floor exists underground once
-  the farm plot took the only one), material is not the blocker (15 wood / 3
-  boulders / 4 blocks free and unreserved, up from the 0 boulders/blocks a
-  same-day research pass had found earlier, not chased), but its
+  the farm plot took the only one). **Material is genuinely thin, not
+  clearly ruled out as the blocker**: the build stream's own live read
+  claimed 15 wood / 3 boulders / 4 blocks free, but the register's own
+  correction (checking `flags.trader`) found the 3 boulders, 4 blocks and 12
+  of that wood belong to the caravan, not the fort. Uniboslan actually owns
+  **3 logs and nothing else** buildable, which the still's one-generic-item
+  requirement can still be met from, but there is no real cushion. Its
   `ConstructBuilding` job (id 366) never got a worker across a full 453s
   unpause (30 samples, every idle citizen instead cycled through
   Drink/Eat/Sleep). `decisions/DECISIONS.md` frames this as the job "reading
@@ -146,9 +150,11 @@ live before touching anything. Nothing is running right now.
    returns nothing today, because its ring-adjacency check only looks at
    the *same* z-level and z167 has no walkable network yet: a structural
    gap the tool's own header already names as v1's scope limit. This
-   blocks blocks, mechanisms and the well long-term, even though the still
-   and well both currently have just enough material on hand without it.
-   → `handoffs/2026-09-17-water-and-industry-tools.md` ("Stone access").
+   blocks blocks and mechanisms directly, which in turn blocks the well
+   (needs BLOCKS and a TRAPPARTS mechanism; the fort has 0 of each, only the
+   BUCKET and CHAIN halves) and leaves the still's own material thin (see
+   above). → `handoffs/2026-09-17-water-and-industry-tools.md` ("Stone
+   access").
 4. **Then a longer supervised run** for planting (nothing has sprouted yet;
    the plot only finished construction partway through today's window) and
    the still, once 1-3 are done.
