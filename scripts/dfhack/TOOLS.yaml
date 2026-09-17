@@ -338,7 +338,7 @@ df-overseer-diggable.lua:
       effect: read
       coordinate_bearing: false
       live_deployed: false
-      verified: "2026-09-17"
+      verified: "2026-09-17; occupancy fix verified 2026-09-17"
       knowledge_scope: player_derivable
       notes: >
         Added handoffs/2026-09-17-dig-down-to-stone.md, the "vertical,
@@ -354,12 +354,32 @@ df-overseer-diggable.lua:
         header) and `lower_tile_material`/`lower_tile_hidden`. Measured live
         on Uniboslan (paused, read-only): see this handoff's own report for
         the exact command and candidate count.
+
+        OCCUPANCY FIX, handoffs/2026-09-17-dig-stair-fix.md (root cause and
+        recommendation in research/2026-09-17-stairs.md, "dig-mode-occupied-
+        tile-silently-skipped" and the Recommendation section): the live
+        test (handoffs/2026-09-17-farm-stair-live-test.md) found rank 1 sat
+        exactly on this fort's own Stockpile, a tile `#dig` mode silently
+        skips while still reporting success. `ranked_stair_candidates` now
+        rejects any candidate whose upper (and, defensively, lower) tile
+        carries a building (`occupancy.building ~= 0`) before ranking, so a
+        caller never sees a candidate that would silently fail for real.
+        Each result now reports `tiles_unoccupied: true` (selection
+        requires it, same convention as `borders_walkable_network`).
+        Re-verified live 2026-09-17 from a uniquely named script-path copy
+        (docs/TRAPS.md's addScriptPath method, fort left paused throughout):
+        the old deployed script's rank 1 was still the occupied tile
+        (distance_tiles:0, direction:S, matching the live test exactly);
+        the fixed copy's rank 1 became a different, unoccupied tile
+        (distance_tiles:1, direction:NW) with the occupied tile absent from
+        all 5 results. A direct read confirmed why: `occupancy.building == 2`
+        at the old rank-1 tile.
     "dig-stair [LEVEL] NEAR_LANDMARK [RANK] [RADIUS_TILES] [DRY_RUN]":
       lua_function: dig_stair_down
       effect: mutate
       coordinate_bearing: internal-only
       live_deployed: false
-      verified: "2026-09-17 (dry-run path only)"
+      verified: "2026-09-17 (dry-run path, including the occupancy fix, live-verified; the real dry_run=false path -- both the honest-success and the rollback-on-partial-failure branches -- is UNTESTED live, real mutation forbidden every session so far)"
       knowledge_scope: player_derivable
       notes: >
         Added handoffs/2026-09-17-dig-down-to-stone.md. Designates BOTH
@@ -368,19 +388,40 @@ df-overseer-diggable.lua:
         beneath it, reusing this fort's own already-working
         starter-entrance-1x1.csv/starter-connector-1x1.csv blueprints
         rather than a caller-supplied BLUEPRINT_FILE (a stair connector is
-        always exactly this one pair). Never designates one half without
-        the other, closing the boundary-connectivity gap
-        (decisions/DECISIONS.md 2026-09-10) by construction. DRY_RUN
-        defaults to true (added after this stream's own live find-stair
-        test, matching the farm/workshop/zone/trees/well precedent, unlike
-        diggable.dig above which has no such switch) -- a dry run resolves
+        always exactly this one pair). DRY_RUN defaults to true, matching
+        the farm/workshop/zone/trees/well precedent -- a dry run resolves
         and ranks the same candidate the real path would and returns
-        exactly what it would designate, without calling quickfort. The
-        dry-run path is live-verified this session; the real
-        (dry_run=false) double-designation is NOT -- real mutation was
-        forbidden (read-only checks only, fort left paused). See this
-        handoff's report for the exact command and what a real designation
-        would still need to prove.
+        exactly what it would designate, without calling quickfort.
+
+        HONESTY FIX, handoffs/2026-09-17-dig-stair-fix.md (root cause and
+        Recommendation in research/2026-09-17-stairs.md): the live test
+        found `dig-stair` reported `downstair_ok:true` with the upper tile
+        actually left undesignated (the Stockpile-occupancy skip above),
+        leaving an orphan upstair on z167 with no matching downstair --
+        "never designates one half without the other" was false in
+        practice, quickfort's own CR_OK says nothing about whether a tile
+        actually got designated. Now: candidates whose upper tile is
+        occupied are ranked out entirely (see find-stair above); the real
+        path designates the upper half first and judges it by reading the
+        tile's own `dig` designation flag back directly (the one thing a
+        quickfort-side accounting bug can't fool), not by `*_ok`/CR_OK
+        alone; the lower half is only ever attempted once the upper half is
+        confirmed real; and if the lower half then fails, the upper half is
+        rolled back via `quickfort undo` (read back and confirmed, not just
+        assumed to have worked) rather than left standing alone. Any
+        failure now returns `nil, message` (the same convention every other
+        tool in this file uses on failure) instead of an ok-looking result
+        with a buried `*_ok:false` -- dfmcp/server.py's exact-shape
+        `{"error": ...}` rule surfaces it to the caller as `isError`.
+        Live-verified 2026-09-17: the dry-run path (including the new
+        `tiles_unoccupied` field and the new rank-1 candidate) from a
+        uniquely named script-path copy, fort left paused throughout
+        (year 30, tick 227160, unchanged before and after); the orphan
+        z167 upstair designation was read, not touched. The real
+        (dry_run=false) path -- both the honest-success shape and the
+        undo-on-partial-failure branch -- remains UNTESTED live; see this
+        handoff's Report for the exact test plan a real designation would
+        still need to run.
 
 df-overseer-farm.lua:
   build_order_item: "gap named 2026-09-16, handoffs/2026-09-16-farm-and-still-tools.md Part 2"
@@ -445,7 +486,7 @@ df-overseer-farm.lua:
       effect: mutate
       coordinate_bearing: false
       live_deployed: false
-      verified: "2026-09-17 (DRY_RUN=true path against real plot id 4, plus refusal paths; the real plant_id write and the construction-gate refusal are UNTESTED live)"
+      verified: "2026-09-17 (DRY_RUN=true path and refusal paths against real plot id 4); real (DRY_RUN=false) write live-verified 2026-09-17, handoffs/2026-09-17-farm-stair-live-test.md Result section 3 (BUSH_QUARRY written to plot 4 spring, read back correctly, then restored to MUSHROOM_HELMET_PLUMP) -- correcting this line's own earlier claim that the real write was untested, caught while updating this entry for the dig-stair-fix handoff. The construction-gate refusal itself (writing before flags.exists) is still UNTESTED live -- Uniboslan's own plot was already built by the time this tool existed."
       knowledge_scope: player_derivable
       notes: >
         Resolves ID (a building id, from farm.build's real result or
@@ -454,8 +495,6 @@ df-overseer-farm.lua:
         fallback ("Farm Plot") is not unique across plots. Refuses a plot
         whose flags.exists is false (construction not finished) before
         touching plant_id, since a pre-construction write was lost live.
-        After a real write it reads plant_id back and reports
-        write_ok=false with an explicit error if the value did not stick.
         Refuses anything not building_type.FarmPlot, then validates season and
         crop (fort owns the seed; plant's BIOME_* flags match the plot's
         own outside-ness) before writing `plant_id[season]` directly, the
@@ -466,6 +505,21 @@ df-overseer-farm.lua:
         convention, not independently proven, though farm.list decoding
         plot 4's four seasons back to MUSHROOM_HELMET_PLUMP (2026-09-17)
         is consistent with it.
+
+        HONESTY FIX, handoffs/2026-09-17-dig-stair-fix.md: after a real
+        write it reads plant_id back, same as before, but a write that
+        doesn't stick now returns `nil, message` instead of a normal-
+        looking result with `write_ok=false` buried inside it -- a caller
+        skimming the result for a top-level error field could miss that
+        flag. Matches every other refusal in this file's own `nil, message`
+        convention; dfmcp/server.py's exact-shape `{"error": ...}` rule
+        surfaces it to the caller as `isError`. The success shape is
+        unchanged (`write_ok=true`, `read_back_plant_index`); only the
+        failure shape changed. Not re-exercised live this stream (a live
+        write was already proven by the predecessor live-test handoff
+        above, and this session was read-only/dry-run only) -- a real
+        forced-failure write (e.g. destroying the plot mid-write) is the
+        only thing that could exercise the new error-return path itself.
 
 df-overseer-workshop.lua:
   build_order_item: "gap named 2026-09-16, handoffs/2026-09-16-farm-and-still-tools.md Part 3"

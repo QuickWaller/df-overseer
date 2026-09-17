@@ -703,23 +703,33 @@ function set_farm_crop(id, season, crop, dry_run)
   -- back immediately rather than trusting the pcall alone -- a struct
   -- write can report success (no Lua error) while not actually sticking,
   -- which is exactly how the original plant_id loss went unnoticed live.
-  -- UNTESTED live -- this session never performs a real write, see header.
+  -- Live-verified 2026-09-17 (handoffs/2026-09-17-farm-stair-live-test.md,
+  -- plot 4: BUSH_QUARRY written then restored to MUSHROOM_HELMET_PLUMP) --
+  -- the write stuck both times.
+  --
+  -- DIG-STAIR FIX, 2026-09-17 (handoffs/2026-09-17-dig-stair-fix.md): a
+  -- failed write used to come back as a normal-looking result with
+  -- write_ok=false buried inside it -- a caller skimming the result for a
+  -- top-level error field could miss that flag entirely. Now fails the
+  -- same way every other refusal in this file does (return nil, message),
+  -- so dfmcp/server.py's exact-shape {"error": ...} rule surfaces it as
+  -- isError instead of an ok-looking result.
   local ok_write = pcall(function() bld.plant_id[season_idx] = plant_idx end)
   local ok_read, read_back = pcall(function() return bld.plant_id[season_idx] end)
   local stuck = ok_write and ok_read and read_back == plant_idx
+  if not stuck then
+    return nil, "write did not stick -- plant_id read back as "
+      .. tostring(ok_read and read_back or "<unreadable>")
+      .. ", expected " .. tostring(plant_idx)
+  end
   return {
     dry_run = false,
     plot_id = plot_id,
     season = season,
     crop = crop,
     outside = plot_outside,
-    write_ok = stuck,
-    read_back_plant_index = ok_read and read_back or nil,
-    error = (not stuck)
-      and ("write did not stick -- plant_id read back as "
-        .. tostring(ok_read and read_back or "<unreadable>")
-        .. ", expected " .. tostring(plant_idx))
-      or nil,
+    write_ok = true,
+    read_back_plant_index = read_back,
   }
 end
 
