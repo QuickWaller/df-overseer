@@ -10,30 +10,34 @@ learning architecture.
 > Game knowledge (crop and water rules the agents should use) goes in
 > `doctrine/seed.yaml`, not the register.
 >
-> - **The fort drinks again.** Uniboslan is paused at tick 222477 (sim at
->   **10 FPS**, deliberate) with 15 citizens. Its ponds are sunken basins of
->   6-7/7 water one level below the surface, which is why no dwarf drank
->   unaided; a `WaterSource` zone placed on the water at z168, plus one
->   supervised unpause, got founders down to the water and drinking
->   (register 2026-09-17). Still owed: food. 24 units, no farm plot yet, farm
->   and still tools deployed but never run for real.
+> - **The fort drinks and grows food for the first time.** Uniboslan is
+>   paused at tick 227008 (sim at **10 FPS**, deliberate) with 15 citizens, no
+>   deaths. Its ponds are sunken basins of 6-7/7 water one level below the
+>   surface, which is why no dwarf drank unaided; a `WaterSource` zone placed
+>   on the water at z168, plus one supervised unpause, got founders down to
+>   the water and self-serving (register 2026-09-17). A first farm plot is
+>   built at z168 and sown to plump helmet in all four seasons. **Still not
+>   built:** the still (designated, material on hand, no worker took the job
+>   yet). Fort-owned food is 17 units, drink still 0, 60 seeds (35 plump
+>   helmet). → `Working.md` HANDOVER 2026-09-17.
 >
 > - **The fort.** VM 103 (`df-colony-01`) runs **Uniboslan, "Ragwind,"** the
 >   one fort, on DF Classic plus DFHack under Xvfb, built by
 >   `scripts/provision_vm.py` and `scripts/install_df.py`. A first fort,
->   Artobcatten, was lost founding it (register 2026-09-10). **As of
->   2026-09-16 it is genuinely paused** (the user dismissed the blocking popup),
->   with **24 units of fort-owned food, zero drink**, 59 seeds (34 plump
->   helmet), and no farm plot, still, workshop or depot. Food was miscounted
->   three times that day; `df-overseer-stocks` now counts it right (see
->   `docs/TRAPS.md` on `flags.trader` and stack units). The user chose to
->   continue on this fort; it is expendable, and rescuing it is worth trying
->   for the tools it forces us to build. → `Working.md` handover 2026-09-16.
+>   Artobcatten, was lost founding it (register 2026-09-10). It is genuinely
+>   paused, the safe state. The user chose to continue on this fort; it is
+>   expendable, and rescuing it is worth trying for the tools it forces us to
+>   build. → `Working.md` HANDOVER 2026-09-17.
 > - **Perception and action.** `scripts/dfhack/` holds the coordinate-free
->   tools (connectivity, landmarks, overview, diff, open-area and diggable
->   find/build, chokepoints, stuck jobs, labor), live on VM 103.
->   Two closed loops ran for real: Stockpile #2 was built, and a 41-tile dig
->   was completed, both without a raw coordinate reaching the decision-maker.
+>   tools: connectivity, landmarks, overview, diff, open-area and diggable
+>   find/build, chokepoints, stuck jobs, labor, farm, workshop, zone, trees,
+>   well, and manager work orders, all live on VM 103. Role tool lists:
+>   architect 19, overseer 32, consultant 4. Closed loops ran for real:
+>   Stockpile #2 built, a 41-tile dig completed, a farm plot built and sown,
+>   and a `WaterSource` zone placed, none needing a raw coordinate to reach
+>   the decision-maker. **`doctrine/`** holds game knowledge (crop and water
+>   rules) the agents should eventually read; nothing reads it yet, and it is
+>   never a repo decision, so it never goes in the register.
 > - **`dfmcp/`**, the MCP server: `dfmcp-server.service` on VM 103,
 >   LAN-bound, **bearer tokens the only guard until Tailscale**. Per-role
 >   allowlists enforced server-side, role from the credential, every call
@@ -45,7 +49,8 @@ learning architecture.
 >   sample on a cheap model, not evidence of good arbitration). The fort was
 >   kept paused at tick 12274877 under the user's standing rule until
 >   2026-09-15 23:03 UTC, then unpaused and left running unattended with no
->   Sentry (register), before stopping behind the popup above. At the fort's
+>   Sentry (register), before stopping paused behind a dialog the user
+>   dismissed the same day. At the fort's
 >   real cap (`FPS_CAP` 100, not the 5 several docs assumed)
 >   `proposal-0001`'s 1200-tick prediction window elapsed within about a
 >   minute, unexecuted, so grading it now would record a miss caused by
@@ -62,9 +67,9 @@ learning architecture.
 >   is design or proposal unless marked verified.
 >
 > **Traps before running anything:**
-> - Ambient `python -m pytest` gives **276 passed, 1 skipped**; the skip is
+> - Ambient `python -m pytest` gives **294 passed, 1 skipped**; the skip is
 >   correct (transport tests guard their pinned SDK import). Run `dfmcp/tests`
->   in `.venv-dfmcp` for all **152**. `py -3` here is a 3.13 without pytest:
+>   in `.venv-dfmcp` for all **165**. `py -3` here is a 3.13 without pytest:
 >   use `python`.
 > - Packages are `dfmcp` and `dfqueue`, never `mcp` or `queue`: a local
 >   directory of either name shadows the MCP SDK or the stdlib module.
