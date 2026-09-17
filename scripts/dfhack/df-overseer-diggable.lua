@@ -315,6 +315,45 @@ local function walkable_group(x, y, z)
   return ok and group or 0
 end
 
+-- DIG-STAIR FIX, 2026-09-17 (handoffs/2026-09-17-dig-stair-fix.md,
+-- research/2026-09-17-stairs.md's Recommendation item 3): true only if a
+-- direct read confirms occupancy.building == 0. Fails closed (false) on
+-- any read error, same as every other tile predicate in this file -- an
+-- unreadable tile is never treated as safe. Mirrors df-overseer-farm.lua's
+-- and df-overseer-well.lua's identical `occupancy.building == 0` check
+-- (getTileFlags returns designation, occupancy), not shared, per this
+-- file's own existing call to duplicate a few lines over reqscript
+-- coupling (see parse_quickfort_stats' comment below).
+local function tile_unoccupied(x, y, z)
+  local ok, _, occupancy = pcall(dfhack.maps.getTileFlags, xyz2pos(x, y, z))
+  return ok and occupancy ~= nil and occupancy.building == 0
+end
+
+-- DIG-STAIR FIX, 2026-09-17: the only read that can't be fooled by a
+-- quickfort-side accounting bug (research doc item 2) -- the real
+-- designation flag on the tile itself, not quickfort's own stats or CR_OK.
+-- Returns the df.tile_dig_designation value, or nil on any read failure
+-- (never guessed as "No").
+local function read_dig_designation(x, y, z)
+  local ok, flags = pcall(dfhack.maps.getTileFlags, xyz2pos(x, y, z))
+  if not ok or not flags then
+    return nil
+  end
+  return flags.dig
+end
+
+-- Reverse-lookup a df.tile_dig_designation value to its name, defensively
+-- (same pcall discipline this file already uses for df.tiletype_material
+-- lookups) -- used only inside diagnostic error text, never as a filter or
+-- rank input.
+local function dig_designation_name(v)
+  if v == nil then
+    return "<unreadable>"
+  end
+  local ok, name = pcall(function() return df.tile_dig_designation[v] end)
+  return (ok and name) or ("<unknown:" .. tostring(v) .. ">")
+end
+
 -- Returns (admit: bool, material: df.tiletype_material or nil, hidden: bool).
 -- ACT/SENSE FIX, 2026-09-16 -- see header. A hidden tile is admitted
 -- unconditionally, with no material/shape/walkable read used to decide
@@ -660,9 +699,21 @@ local function ranked_stair_candidates(level, near, radius_tiles)
       local ok_vis, visible = pcall(dfhack.maps.isTileVisible, x, y, upper_z)
       if ok_vis and visible then
         local group = walkable_group(x, y, upper_z)
-        if group ~= 0 and (not anchor_group or group == anchor_group) then
+        -- DIG-STAIR FIX, 2026-09-17: rank out any candidate whose upper
+        -- tile already carries a building -- quickfort's own #dig mode
+        -- silently skips a designation there and still reports success
+        -- (research/2026-09-17-stairs.md, confirmed live: this fort's own
+        -- Stockpile sat exactly on the rank-1 candidate and absorbed a
+        -- downstair designation this way). Checking here, before any
+        -- designation call, means a dry run never shows a candidate that
+        -- would silently fail for real. The lower tile gets the same cheap
+        -- check even though a building cannot sit on undug rock (is_diggable
+        -- already requires WALL-shaped or hidden) -- defense in depth, not
+        -- because the research found a live mechanism for it.
+        if group ~= 0 and (not anchor_group or group == anchor_group)
+            and tile_unoccupied(x, y, upper_z) then
           local admit, lower_mat, lower_hidden = is_diggable(x, y, lower_z)
-          if admit then
+          if admit and tile_unoccupied(x, y, lower_z) then
             local ok_ut, upper_tt = pcall(dfhack.maps.getTileType, x, y, upper_z)
             local upper_mat
             if ok_ut and upper_tt and upper_tt >= 0 then
@@ -720,6 +771,7 @@ local function describe_stair_candidate(c, upper_z)
     lower_tile_material = ok_lm and lm_name or nil,
     lower_tile_hidden = c.lower_hidden,
     borders_walkable_network = true,  -- selection requires it; see above
+    tiles_unoccupied = true,  -- selection requires it; see ranked_stair_candidates
   }
 end
 
@@ -785,22 +837,92 @@ function dig_stair_down(level, near, rank, radius_tiles, dry_run)
     return described
   end
 
+  -- DIG-STAIR FIX, 2026-09-17 (handoffs/2026-09-17-dig-stair-fix.md,
+  -- research/2026-09-17-stairs.md's Recommendation items 1-2 and 4). The
+  -- two designation calls used to fire together and both get trusted on
+  -- CR_OK alone -- exactly how the live test got downstair_ok:true with
+  -- ZERO tiles actually designated under this fort's own Stockpile, an
+  -- orphan upstair left behind with no matching downstair. Now: designate
+  -- the upper half first, judge it by a real read-back of the tile's own
+  -- designation flag (the one thing that can't be fooled by a quickfort-
+  -- side accounting bug), and only ever attempt the lower half once the
+  -- upper half is confirmed real. If the lower half then fails, undo the
+  -- upper half rather than leave it standing alone -- never one half
+  -- without the other, in either direction.
+  described.dry_run = false
+
   local ok_down, out_down, res_down = pcall(
     dfhack.run_command_silent, 'quickfort', 'run', DOWNSTAIR_BLUEPRINT, '-c',
     string.format('%d,%d,%d', c.x, c.y, upper_z))
+  local down_stats = ok_down and parse_quickfort_stats(out_down) or nil
+  local down_tiles = (down_stats and down_stats["Tiles designated for digging"]) or 0
+  local down_dig = read_dig_designation(c.x, c.y, upper_z)
+  local down_designated = down_dig ~= nil and down_dig ~= df.tile_dig_designation.No
+
+  described.downstair_blueprint = DOWNSTAIR_BLUEPRINT
+  described.downstair_quickfort_ok = ok_down and res_down == CR_OK
+  described.downstair_quickfort_error = (not ok_down) and tostring(out_down) or nil
+  described.downstair_stats = down_stats
+  described.downstair_tiles_designated = down_tiles
+  described.downstair_designated = down_designated
+
+  if not down_designated then
+    -- Fail as an error (item 5): a caller skimming a normal-looking result
+    -- for an *_ok field could miss exactly what happened live. Upstair is
+    -- never attempted -- no half left behind.
+    return nil, string.format(
+      "dig-stair: downstair designation at rank %d (near %s) did not take"
+        .. " (quickfort reported ok=%s, %d tile(s) designated, but the real"
+        .. " designation flag reads back as %s, not a stair) -- the tile is"
+        .. " most likely occupied by a building; upstair was never"
+        .. " attempted, no half designated",
+      rank, tostring(near), tostring(described.downstair_quickfort_ok),
+      down_tiles, dig_designation_name(down_dig))
+  end
+
   local ok_up, out_up, res_up = pcall(
     dfhack.run_command_silent, 'quickfort', 'run', UPSTAIR_BLUEPRINT, '-c',
     string.format('%d,%d,%d', c.x, c.y, lower_z))
+  local up_stats = ok_up and parse_quickfort_stats(out_up) or nil
+  local up_tiles = (up_stats and up_stats["Tiles designated for digging"]) or 0
+  local up_dig = read_dig_designation(c.x, c.y, lower_z)
+  local up_designated = up_dig ~= nil and up_dig ~= df.tile_dig_designation.No
 
-  described.dry_run = false
-  described.downstair_blueprint = DOWNSTAIR_BLUEPRINT
-  described.downstair_ok = ok_down and res_down == CR_OK
-  described.downstair_error = (not ok_down) and tostring(out_down) or nil
-  described.downstair_stats = ok_down and parse_quickfort_stats(out_down) or nil
   described.upstair_blueprint = UPSTAIR_BLUEPRINT
-  described.upstair_ok = ok_up and res_up == CR_OK
-  described.upstair_error = (not ok_up) and tostring(out_up) or nil
-  described.upstair_stats = ok_up and parse_quickfort_stats(out_up) or nil
+  described.upstair_quickfort_ok = ok_up and res_up == CR_OK
+  described.upstair_quickfort_error = (not ok_up) and tostring(out_up) or nil
+  described.upstair_stats = up_stats
+  described.upstair_tiles_designated = up_tiles
+  described.upstair_designated = up_designated
+
+  if not up_designated then
+    -- Undo the upper half via quickfort's own inverse ("undo: applies the
+    -- inverse of the specified blueprint... dig tiles are undesignated"),
+    -- then read back to confirm the undo itself actually took rather than
+    -- assume it worked -- this project's own "verify the verification"
+    -- rule, applied to its own rollback.
+    local ok_undo, out_undo, res_undo = pcall(
+      dfhack.run_command_silent, 'quickfort', 'undo', DOWNSTAIR_BLUEPRINT,
+      '-c', string.format('%d,%d,%d', c.x, c.y, upper_z))
+    local undo_dig = read_dig_designation(c.x, c.y, upper_z)
+    local undo_confirmed = ok_undo and res_undo == CR_OK
+      and (undo_dig == nil or undo_dig == df.tile_dig_designation.No)
+    -- `described` (and its downstair_designated:true) is discarded here --
+    -- the function returns nil, err (item 5), so nothing about this half-
+    -- attempted, rolled-back state is ever mistaken for a normal result.
+    return nil, string.format(
+      "dig-stair: upstair designation at rank %d (near %s) did not take"
+        .. " (quickfort reported ok=%s, %d tile(s) designated, but the real"
+        .. " designation flag reads back as %s, not a stair) -- the"
+        .. " downstair half was %s rather than left standing alone",
+      rank, tostring(near), tostring(described.upstair_quickfort_ok),
+      up_tiles, dig_designation_name(up_dig),
+      undo_confirmed and "rolled back (confirmed)"
+        or "SUPPOSEDLY rolled back but NOT confirmed -- an operator must"
+          .. " check the rank " .. rank .. " candidate's upper tile"
+          .. " directly, this tool never returns its coordinate")
+  end
+
   return described
 end
 
