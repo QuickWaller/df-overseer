@@ -33,6 +33,17 @@ with the user.
 - Every proposal must list the doctrine entries it relied on. An empty list
   is valid ("relied on none"); a missing field is not. A miss puts the cited
   entries under suspicion, which is what links grading to revision.
+- **The Overseer hands proposals to the consultant for fact-checking** (the
+  "wiki nerd and researcher" role) before ruling.
+- **A new learning role, separate from but related to the consultant**, name
+  TBD: its job is identifying patterns (for example across graded misses
+  against cited doctrine) and proposing doctrine revisions. It is both a
+  helper and a proposer, callable by other roles and able to call them
+  (for example the consultant, to check a source). Not the chronicler, whose
+  charter forbids influencing what the fort does. Mechanical parts stay code:
+  grading, tallying misses, flagging an entry disputed, applying changes.
+  Agents cannot call each other today (one-shot runs, queue as the only
+  channel), so the calling mechanism is undesigned.
 
 **Built today vs missing, checked against code:** predictions are recorded
 and there are two graders (`dfqueue/grade.py`, `learning/predictions/`), but
@@ -46,7 +57,8 @@ under HANDOVER); what ROADMAP.md should say, deliberately not written until the
 design settles.
 
 **Next concrete step:** continue the design conversation with the user from
-"does one miss trigger a revision proposal, or does it wait for a pattern".
+"may other roles still propose doctrine revisions directly, or only through
+the learning role".
 
 ## Current state, 2026-09-15: the agent loop is reaching the fort, and the channel exists
 
