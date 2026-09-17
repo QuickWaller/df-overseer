@@ -36,7 +36,7 @@ Retrieval is tool-based, not context-stuffing:
 
 ```
 search_chronicle(query, limit)      -- FTS over prose
-get_doctrine(topic?)                -- small; often just loaded whole
+get_doctrine(topic?)                -- topic-indexed: see "Doctrine store" below
 get_playbook(name)                  -- full text of one procedure
 list_playbooks()                    -- names + one-line summaries
 recall_similar(situation)           -- "have I faced this before?"
@@ -44,6 +44,66 @@ recall_similar(situation)           -- "have I faced this before?"
 
 Doctrine is always resident. Everything else is fetched on demand and lands in
 the volatile tail of the context, per the caching rules in `PURPOSE.md`.
+
+**Revised 2026-09-17**: `get_doctrine` turned out topic-indexed rather than
+loaded whole, for reasons the "Doctrine store" section below explains. The
+"always resident" framing above and the "Always loaded" row in "Four stores"
+describe the pre-2026-09-17 assumption; treat this note as the correction
+rather than rewriting those passages.
+
+## Doctrine store: format and revision (2026-09-17)
+
+**Entry format, built.** Each doctrine entry carries per-source provenance:
+`kind` (live-read, game-data, devlog, bugtracker, wiki, forum, user,
+research), `ref`, `describes` (the game version the source is about), `read`
+(opened, search-summary, recalled, unrecorded) and `accessed`, plus a
+`topics` list. `status: verified` needs at least one source whose `kind` is
+`live-read` or `game-data` and whose `describes` names this install's
+version, 53.16; wiki, forum and user sources can only ever support `prior`.
+A pytest validator, `doctrine/validate.py`, enforces the rule. Full field
+list and definitions: `doctrine/seed.yaml`'s header, not duplicated here.
+
+**`get_doctrine`, agreed, read-only, not built.** Called with no argument it
+returns the topic index; called with a topic it returns that topic's
+entries, with any source not describing 53.16 flagged to the model. It is
+topic-indexed rather than loaded whole because of the 2026-09-11 compliance
+result (perfect-response rate collapsing well past a few dozen simultaneous
+rules, "Compliance" below): doctrine cannot simply be handed to the model
+whole and stay obeyed, so retrieval has to scale by what is relevant to the
+current topic, not by everything that exists.
+
+**How doctrine changes, agreed direction, not built.** Doctrine is never
+edited directly, not by a model and not by any single mechanism. Changes are
+**revision proposals through the queue** (`docs/AGENT-ARCHITECTURE.md` §4,
+the same queue tactical and strategy proposals use). The Overseer may
+**accept, reject, defer, or amend** a doctrine revision. An amended doctrine
+revision goes back to the proposer once; if still contested after that, the
+Overseer's ruling is final and the case is flagged to the user. Research
+alone, a source read but not corroborated in this project's own play, can
+only ever produce a `prior`, never a `verified`, the same rule the validator
+already enforces on the entry format above. Once accepted or amended, a
+change is applied by a **mechanical step that runs the validator**, never by
+the proposing or ruling agent writing the file directly. Every applied
+doctrine change goes into a user digest, for now, until graded rulings show
+the Overseer arbitrates doctrine well (one ruling exists on record, on a
+cheap model, not yet evidence either way).
+
+**Citation and disputed entries.** A proposal must cite the doctrine entries
+it relied on; an empty list is valid ("relied on none"), a missing field is
+not. When a proposal's prediction misses, the entries it cited come under
+suspicion. **Not yet confirmed by the user**: the orchestrator's proposed
+split has code tallying misses per entry and flagging an entry `disputed`
+once misses accumulate, leaving the learning role
+(`docs/AGENT-ARCHITECTURE.md` §4) to judge whether a disputed entry's
+statement is actually wrong and to draft the revision.
+
+**Reconciling earlier text.** Two passages below predate this design and
+read as if a single mechanism edits doctrine directly: the learning loop's
+"a failure ... writes ... a doctrine edit," and "Human input"'s "the agent
+folds new entries into doctrine and marks them applied." Both now mean: the
+failure or the guidance becomes a **proposed** doctrine revision, ruled on
+by the Overseer as above, and applied by the mechanical step, not written
+directly by the agent that noticed it.
 
 ## Learning: outcome tracking, not self-critique
 
@@ -69,7 +129,9 @@ highest-value learning signal in the system, and they are objective.
 The learning loop, in order of frequency:
 
 1. **Prediction check** (per season) — did what I expected happen? A failure
-   writes a chronicle entry and, if it generalises, a doctrine edit.
+   writes a chronicle entry and, if it generalises, a doctrine edit (as a
+   proposed revision, ruled on by the Overseer; see "Doctrine store" above,
+   2026-09-17).
 2. **Playbook revision** (on use) — a procedure that didn't work gets rewritten,
    not appended to.
 3. **Fort epitaph** (on death) — what killed it, what I'd do differently.
@@ -360,13 +422,16 @@ Channels, in order of reliability:
 
 - **`GUIDANCE.md` in the repo** — git-tracked, survives everything, works with
   no infrastructure. Read every turn; the agent folds new entries into doctrine
-  and marks them applied.
+  and marks them applied (as a proposed revision now, not a direct edit; see
+  "Doctrine store" above, 2026-09-17).
 - **Telegram** — conversational, already wired in openclaw. Good for "stop
   digging so deep" in the moment.
 - **Dashboard comments** — lowest priority, needs the dashboard first.
 
 Whatever the channel, the same rule holds: the agent must *write it down* into
-doctrine and say that it has, or the instruction did not really land.
+doctrine and say that it has, or the instruction did not really land. As of
+2026-09-17 "write it down" means proposing the revision, not applying it
+directly; see "Doctrine store" above.
 
 ## Open questions
 

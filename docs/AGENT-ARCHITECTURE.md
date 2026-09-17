@@ -369,6 +369,69 @@ Four fields earn their place:
 - **`public_rationale`** is written deliberately for an audience, and is the only
   reasoning field that reaches the public stream (§8).
 
+### Three proposal layers: tactical, strategy, doctrine (agreed 2026-09-17, not built beyond tactical)
+
+Three layers of proposal, distinguished by what they change and who owns them
+today. → `decisions/DECISIONS.md` 2026-09-17.
+
+- **Tactical.** Built: the Architect's proposal types above, drawn from the
+  closed vocabulary (siting, dig order and the like).
+- **Strategy.** No type, no owner. Labor, priorities, which resource to
+  exploit (which water to fish, when to build a second still). The
+  Quartermaster "probably becomes necessary" (user's words) to own this
+  layer, drawing on manufacturing, inventory and stockpile-flow trends, but
+  is not started: today only point-in-time stock reads exist
+  (`stocks.food-drink`, `stocks.seeds`), and trends need history, which ties
+  this to the still-missing scheduler (2026-09-16).
+- **Doctrine.** No type, no owner. Revisions to `doctrine/seed.yaml` entries.
+  See `docs/MEMORY-ARCHITECTURE.md`, "Doctrine store", for the entry format
+  and the revision path.
+
+### A new ruling outcome: amend (agreed 2026-09-17, not built)
+
+Rulings gain **`amend`** beside accept, reject and defer. **Tactical and
+strategy amendments apply directly**: the ruling stores the original proposal
+and the amendment side by side, and grading scores what was actually
+executed. **Doctrine amendments return to the proposer once**; if the
+proposer still contests the amendment, the Overseer's ruling is final and the
+case is flagged to the user. → `decisions/DECISIONS.md` 2026-09-17.
+
+### Consultant fact-check before ruling (agreed 2026-09-17, not built)
+
+The Overseer may hand a proposal to the Consultant for fact-checking before
+ruling on it. This is distinct from the 2026-09-15 exception above (any
+advisor may `ask` the Consultant a lookup question mid-work): this one is the
+Overseer routing a specific proposal for verification as part of arbitration,
+not an advisor's own question. → `decisions/DECISIONS.md` 2026-09-17.
+
+### A new learning role: patterns and doctrine revisions (agreed 2026-09-17, not built, role unnamed)
+
+Separate from the Consultant and from the Chronicler. Its job is to identify
+patterns (for example, across graded misses against cited doctrine entries,
+see `docs/MEMORY-ARCHITECTURE.md`, "Doctrine store") and to propose doctrinal
+and learning revisions. It is both **callable by other roles and able to
+call them in turn** (for example, the Consultant, to check a source), unlike
+every other specialist in §3, none of which can call another. It is not the
+Chronicler: the Chronicler's charter forbids influencing what the fort does,
+and this role exists specifically to influence doctrine and learning rules.
+
+**Any role may propose a doctrinal or learning revision, but must first
+discuss it with the learning role.** The queue enforces this: such a
+proposal must reference a discussion record that carries the learning role's
+view to the Overseer, or the queue refuses it. Scope: doctrinal and learning
+revisions only. Tactical and strategy proposals, and their amendments, never
+need this.
+
+**Open** (`decisions/DECISIONS.md` 2026-09-17; `Working.md`, "In discussion:
+designing the learning loop"):
+
+- Which revisions count as "learning": the orchestrator suggested that
+  changes to learning rules and to charters or allowlists count, and that
+  playbook threshold changes do not; the user has not answered this.
+- The role's name.
+- The call mechanism: agents run one-shot today, and the queue is the only
+  channel between them.
+
 ### Wake events
 
 A **closed** vocabulary, each with a severity and a named owning role, so that no
@@ -1182,6 +1245,9 @@ hours with root cause open.
 
 ### Still open
 
+- **The learning loop design is still open**: which revisions count as
+  "learning", the learning role's name, and how roles call each other. See
+  §4, "A new learning role: patterns and doctrine revisions."
 - **A breach poller does not exist and must be built** before flood response is
   covered by anything here.
 - **A real hostile detector must be built.** Neither the polling signal nor the
