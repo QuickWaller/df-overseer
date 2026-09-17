@@ -210,12 +210,14 @@ live before touching anything. Nothing is running right now.
    designation with no DownStair above it (orchestrator-verified live, tick
    227160, paused). The unpause stopped after 151 ticks on a false alarm in
    the test's own sampler, so nothing was dug.
-3. **Next:** (a) fix `dig-stair`: skip candidates with a building on the
-   upper tile, treat 0 tiles designated as failure, and never leave one half
-   (designate the upper first, undo it if the lower fails); (b) with the user's
-   go-ahead, remove the orphan z167 designation, deploy the fix, designate a
-   clear spot and run the supervised dig again with a fixed focus check.
-   → `handoffs/2026-09-17-farm-stair-live-test.md` Result.
+3. **`dig-stair` fixed in code 2026-09-17, merged, NOT deployed.** Candidates
+   with a building on either tile are ranked out (verified live: the
+   Stockpile tile no longer ranks first), success is judged by reading the
+   designation back, the upper half goes first and is undone if the lower
+   fails, and failures are real errors (also `farm.set-crop`). **Next, needs
+   the user's go-ahead:** deploy, remove the orphan z167 UpStair, designate
+   the new rank-1 spot for real, and rerun the supervised dig with a fixed
+   focus check. → `handoffs/2026-09-17-dig-stair-fix.md` Result.
 4. **Then a longer supervised run** for planting (nothing has sprouted yet;
    the plot only finished construction partway through today's window) and
    the still, once 1-3 are done.
