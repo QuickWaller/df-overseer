@@ -13,6 +13,38 @@ user, breaking the "read secrets by the key you need" rule — it printed
 call: rotate later, not urgent, but don't lose the item. → decisions/DECISIONS.md
 2026-09-17.
 
+## In discussion: designing the learning loop (2026-09-17)
+
+**Not designed yet, by the user's own assessment.** No code; do not start
+building from this section. The design is being settled one question at a time
+with the user.
+
+**Agreed so far** (→ `decisions/DECISIONS.md` 2026-09-17):
+- Doctrine sources carry per-source provenance; `verified` needs a 53.16 live
+  or game-data source; a pytest validator enforces it (built).
+- `get_doctrine`, read-only, with a topic index (agreed, not built).
+- Doctrine revisions are proposals; the Overseer can accept, reject, defer,
+  **amend**, or hand the proposal to another role for querying first.
+  Amendments apply directly for tactical and strategy proposals and return to
+  the proposer once for doctrine. Research alone can only yield `prior`.
+  Applied doctrine changes go in a user digest for now.
+- The quartermaster probably becomes necessary, owning strategy from
+  inventory and production trends.
+
+**Built today vs missing, checked against code:** predictions are recorded
+and there are two graders (`dfqueue/grade.py`, `learning/predictions/`), but
+neither has graded a real proposal. There is no evidence model, no doctrine
+reader or revision type, no chronicle, no ledger rows and no scheduler.
+
+**Still open:** who proposes doctrine (consultant for research, chronicler for
+play?); how a referral to another role works; what turns graded predictions
+into a revision proposal; the background ground-truth audit idea (below,
+under HANDOVER); what ROADMAP.md should say, deliberately not written until the
+design settles.
+
+**Next concrete step:** continue the design conversation with the user from
+"what turns graded predictions into a proposed revision".
+
 ## Current state, 2026-09-15: the agent loop is reaching the fort, and the channel exists
 
 The 2026-09-12 to 09-14 section (the agent architecture design phase, the
