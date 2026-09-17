@@ -229,8 +229,61 @@
 --     matching this fort's own working precedent, until the grass question
 --     above is actually settled by a live designation test.
 --
+-- STAIR-DOWN CANDIDATE KIND, 2026-09-17 (handoffs/2026-09-17-dig-down-to-
+-- stone.md): the gap named in that handoff's "Why" section -- `find W H
+-- LEVEL NEAR_LANDMARK` above can never return a candidate at a level with
+-- no walkable tile yet (v1's own `borders_walkable_network` scope limit,
+-- see this file's original header), which is exactly Uniboslan's situation
+-- at z167 (stone) under z168 (the walkable farm room): nothing there can
+-- ever border a network that does not exist yet at that z. That is not a
+-- bug in the box-scan primitive; a box scan is the wrong shape for "the one
+-- tile where a NEW vertical connector should go." This adds a second,
+-- narrower candidate kind to the SAME file (per the handoff's own
+-- preference for extending diggable.find/dig over a new tool id) instead
+-- of a box: `find-stair`/`dig-stair` look for a single WALKABLE column at
+-- the landmark's own level (LEVEL, default 0, same convention as `find`
+-- above) whose tile directly one level below is diggable -- i.e. a valid
+-- anchor for the same downstair/upstair pair this fort's own original
+-- entrance+connector already used (blueprints/starter-entrance-1x1.csv,
+-- blueprints/starter-connector-1x1.csv -- both fixed 1x1 #dig blueprints
+-- already in this repo, reused as-is rather than invented new; a stair
+-- connector is always exactly this one pair, so there is nothing for a
+-- caller to usefully choose in a BLUEPRINT_FILE argument the way
+-- dig_diggable_area's room shape needs one).
+--
+-- Boundary-connectivity lesson (2026-09-10, restated in this file's
+-- original header) applies here by construction, not by a caller's care:
+-- `dig_stair_down` always designates BOTH the downstair (upper level) and
+-- the matching upstair (lower level, same x,y) in one call, exactly the
+-- pair that lesson says must both exist for a job to ever form -- there is
+-- no way to call this tool and get only one half of the pair.
+--
+-- "Plus room to dig from there" (the handoff's Goal): deliberately NOT this
+-- kind's job. Once `dig-stair` designates the pair and a dwarf carves it,
+-- the upstair tile itself becomes walkable, which is exactly the missing
+-- ingredient `find`/`dig` above need to succeed at the lower level on a
+-- later call -- the existing box-scan primitive already does "room to dig"
+-- once this kind has extended the network down to it. Chaining two
+-- existing-shaped primitives instead of building one primitive that does
+-- both keeps this addition narrow and reuses code that is already
+-- live-verified.
+--
+-- THE GRASS-TILE QUESTION (see this file's original header): left
+-- unresolved there by source reading, not settled either way. This kind
+-- does NOT filter or exclude a walkable upper-level candidate by its
+-- surface material (grass or otherwise) -- source reading found no
+-- confirming mechanism for the recorded trap, so silently excluding grass
+-- tiles here would be guessing in the opposite, equally unverified,
+-- direction. Instead each candidate reports its own upper-level tile
+-- material (`upper_tile_material`), a player-visible fact (the tile is
+-- walkable, hence revealed), so a caller can choose to avoid grass until
+-- the question is actually settled by a live designation test, without
+-- this tool asserting either answer for them.
+--
 -- Usage: ./dfhack-run df-overseer-diggable find W H [LEVEL] NEAR_LANDMARK [RADIUS_TILES]
 -- Usage: ./dfhack-run df-overseer-diggable dig W H [LEVEL] NEAR_LANDMARK BLUEPRINT_FILE [RANK] [RADIUS_TILES]
+-- Usage: ./dfhack-run df-overseer-diggable find-stair [LEVEL] NEAR_LANDMARK [RADIUS_TILES]
+-- Usage: ./dfhack-run df-overseer-diggable dig-stair [LEVEL] NEAR_LANDMARK [RANK] [RADIUS_TILES]
 
 local json = require('json')
 local landmarks_mod = reqscript('df-overseer-landmarks')
@@ -247,6 +300,15 @@ local DIGGABLE_MATERIALS = {
   [df.tiletype_material.LAVA_STONE] = true,
   [df.tiletype_material.FROZEN_LIQUID] = true,
 }
+
+-- Fixed 1x1 #dig blueprints for find-stair/dig-stair below -- this fort's
+-- own original entrance/connector pair, already in blueprints/ and already
+-- the live-working precedent for a stair connector (see the STAIR-DOWN
+-- CANDIDATE KIND header comment above). Not a caller-supplied
+-- BLUEPRINT_FILE argument: a stair connector is always exactly this one
+-- pair.
+local DOWNSTAIR_BLUEPRINT = "starter-entrance-1x1.csv"
+local UPSTAIR_BLUEPRINT = "starter-connector-1x1.csv"
 
 local function walkable_group(x, y, z)
   local ok, group = pcall(dfhack.maps.getWalkableGroup, xyz2pos(x, y, z))
@@ -562,6 +624,155 @@ function dig_diggable_area(w, h, level, near, blueprint_file, rank, radius_tiles
   }
 end
 
+-- Ranked, single-tile stair-anchor candidates near `near`: a WALKABLE
+-- column on the network at LEVEL (default 0, same landmark-relative
+-- convention as `find`/`dig` above) whose tile directly one level below is
+-- diggable. Each candidate is where a downstair (upper) + upstair (lower)
+-- pair could be designated to extend the walkable network down one level.
+-- Unlike ranked_candidates above, this returns single points, not WxH
+-- rectangles -- a stair connector is inherently a column, not an area --
+-- so there is no overlap-dedup pass (distinct points cannot overlap).
+-- Server-side only: real x,y coordinates never leave this function.
+local function ranked_stair_candidates(level, near, radius_tiles)
+  local ax, ay, az = landmarks_mod.get_landmark_centroid(near)
+  if not ax then
+    return nil, "landmark not found: " .. near
+  end
+  local upper_z, level_err = resolve_level(az, level, near)
+  if level_err then
+    return nil, level_err
+  end
+  local lower_z = upper_z - 1
+  if lower_z < 0 then
+    return nil, string.format(
+      "no level below level %d from %s to place an upstair", level or 0, near)
+  end
+  local radius = math.min(radius_tiles or DEFAULT_RADIUS, MAX_RADIUS)
+
+  local anchor_group = walkable_group(ax, ay, upper_z)
+  if anchor_group == 0 then
+    anchor_group = nil
+  end
+
+  local candidates = {}
+  for x = ax - radius, ax + radius do
+    for y = ay - radius, ay + radius do
+      local ok_vis, visible = pcall(dfhack.maps.isTileVisible, x, y, upper_z)
+      if ok_vis and visible then
+        local group = walkable_group(x, y, upper_z)
+        if group ~= 0 and (not anchor_group or group == anchor_group) then
+          local admit, lower_mat, lower_hidden = is_diggable(x, y, lower_z)
+          if admit then
+            local ok_ut, upper_tt = pcall(dfhack.maps.getTileType, x, y, upper_z)
+            local upper_mat
+            if ok_ut and upper_tt and upper_tt >= 0 then
+              local ok_um, um = pcall(function() return df.tiletype.attrs[upper_tt].material end)
+              upper_mat = ok_um and um or nil
+            end
+            table.insert(candidates, {
+              x = x, y = y,
+              lower_material = lower_mat,
+              lower_hidden = lower_hidden,
+              upper_material = upper_mat,
+            })
+          end
+        end
+      end
+    end
+  end
+
+  for _, c in ipairs(candidates) do
+    local dx, dy = c.x - ax, c.y - ay
+    c.dist_to_anchor = math.sqrt(dx * dx + dy * dy)
+  end
+  table.sort(candidates, function(a, b) return a.dist_to_anchor < b.dist_to_anchor end)
+
+  local chosen = {}
+  for _, c in ipairs(candidates) do
+    table.insert(chosen, c)
+    if #chosen >= MAX_RESULTS then
+      break
+    end
+  end
+  return chosen, nil, upper_z, lower_z
+end
+
+-- Builds one candidate's reported fields (near_landmark/direction/distance
+-- from its own point, plus both tiles' informational material/hidden
+-- state) -- shared between find_stair_down and dig_stair_down so the two
+-- can never report the ranking differently.
+local function describe_stair_candidate(c, upper_z)
+  local ok_near, near_info = pcall(landmarks_mod.nearest_landmark, c.x, c.y, upper_z)
+  local info = ok_near and near_info
+  local ok_um, um_name = pcall(function()
+    return c.upper_material and df.tiletype_material[c.upper_material] or nil
+  end)
+  local ok_lm, lm_name = pcall(function()
+    return c.lower_material and df.tiletype_material[c.lower_material] or nil
+  end)
+  return {
+    near_landmark = info and info.name or nil,
+    direction = info and info.direction or nil,
+    distance_tiles = info and info.distance_tiles or nil,
+    -- Informational only, per the STAIR-DOWN CANDIDATE KIND header comment
+    -- above (the grass-tile question): never used here to filter or rank.
+    upper_tile_material = ok_um and um_name or nil,
+    lower_tile_material = ok_lm and lm_name or nil,
+    lower_tile_hidden = c.lower_hidden,
+    borders_walkable_network = true,  -- selection requires it; see above
+  }
+end
+
+function find_stair_down(level, near, radius_tiles)
+  local chosen, err, upper_z = ranked_stair_candidates(level, near, radius_tiles)
+  if err then
+    return nil, err
+  end
+  local results = {}
+  for _, c in ipairs(chosen) do
+    table.insert(results, describe_stair_candidate(c, upper_z))
+  end
+  return results
+end
+
+-- Designates BOTH halves of one stair pair in a single call: a downstair
+-- at the candidate's own (walkable) level, and the matching upstair
+-- directly beneath it. Never one without the other -- see the
+-- boundary-connectivity note in the header comment above. Real coordinates
+-- exist only in this function's own local scope, same discipline as
+-- dig_diggable_area above.
+function dig_stair_down(level, near, rank, radius_tiles)
+  rank = rank or 1
+  local chosen, err, upper_z, lower_z = ranked_stair_candidates(level, near, radius_tiles)
+  if err then
+    return nil, err
+  end
+  if rank < 1 or rank > #chosen then
+    return nil, string.format(
+      "no candidate at rank %d (found %d near %s)", rank, #chosen, near)
+  end
+  local c = chosen[rank]
+  local described = describe_stair_candidate(c, upper_z)
+
+  local ok_down, out_down, res_down = pcall(
+    dfhack.run_command_silent, 'quickfort', 'run', DOWNSTAIR_BLUEPRINT, '-c',
+    string.format('%d,%d,%d', c.x, c.y, upper_z))
+  local ok_up, out_up, res_up = pcall(
+    dfhack.run_command_silent, 'quickfort', 'run', UPSTAIR_BLUEPRINT, '-c',
+    string.format('%d,%d,%d', c.x, c.y, lower_z))
+
+  described.rank = rank
+  described.downstair_blueprint = DOWNSTAIR_BLUEPRINT
+  described.downstair_ok = ok_down and res_down == CR_OK
+  described.downstair_error = (not ok_down) and tostring(out_down) or nil
+  described.downstair_stats = ok_down and parse_quickfort_stats(out_down) or nil
+  described.upstair_blueprint = UPSTAIR_BLUEPRINT
+  described.upstair_ok = ok_up and res_up == CR_OK
+  described.upstair_error = (not ok_up) and tostring(out_up) or nil
+  described.upstair_stats = ok_up and parse_quickfort_stats(out_up) or nil
+  return described
+end
+
 -- Same module-load guard as the other df-overseer-*.lua scripts.
 if dfhack_flags.module then
   return
@@ -605,8 +816,37 @@ elseif cmd == "dig" then
     local result, err = dig_diggable_area(w, h, level, near, blueprint, rank, radius)
     print(json.encode(err and {error = err} or result))
   end
+elseif cmd == "find-stair" then
+  local level, near, radius
+  if tonumber(args[2]) then
+    level, near, radius = tonumber(args[2]), args[3], tonumber(args[4])
+  else
+    near, radius = args[2], tonumber(args[3])
+  end
+  if not near then
+    print("usage: df-overseer-diggable find-stair [LEVEL] NEAR_LANDMARK [RADIUS_TILES]")
+  else
+    local results, err = find_stair_down(level, near, radius)
+    print(json.encode(err and {error = err} or results))
+  end
+elseif cmd == "dig-stair" then
+  local level, near, rank, radius
+  if tonumber(args[2]) then
+    level, near, rank, radius = tonumber(args[2]), args[3], tonumber(args[4]), tonumber(args[5])
+  else
+    near, rank, radius = args[2], tonumber(args[3]), tonumber(args[4])
+  end
+  if not near then
+    print("usage: df-overseer-diggable dig-stair [LEVEL] NEAR_LANDMARK [RANK] [RADIUS_TILES]")
+  else
+    local result, err = dig_stair_down(level, near, rank, radius)
+    print(json.encode(err and {error = err} or result))
+  end
 else
   print("usage: df-overseer-diggable find W H [LEVEL] NEAR_LANDMARK [RADIUS_TILES]")
   print("usage: df-overseer-diggable dig W H [LEVEL] NEAR_LANDMARK"
     .. " BLUEPRINT_FILE [RANK] [RADIUS_TILES]")
+  print("usage: df-overseer-diggable find-stair [LEVEL] NEAR_LANDMARK [RADIUS_TILES]")
+  print("usage: df-overseer-diggable dig-stair [LEVEL] NEAR_LANDMARK"
+    .. " [RANK] [RADIUS_TILES]")
 end

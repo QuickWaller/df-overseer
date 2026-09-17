@@ -333,6 +333,47 @@ df-overseer-diggable.lua:
         re-exercised live this session (mutation forbidden); the shared
         `is_diggable`/`ranked_candidates` code path is what find above
         verified.
+    "find-stair [LEVEL] NEAR_LANDMARK [RADIUS_TILES]":
+      lua_function: find_stair_down
+      effect: read
+      coordinate_bearing: false
+      live_deployed: false
+      verified: "2026-09-17"
+      knowledge_scope: player_derivable
+      notes: >
+        Added handoffs/2026-09-17-dig-down-to-stone.md, the "vertical,
+        stair-down candidate kind" the handoff asked for: `find` above can
+        never return a candidate at a level with no walkable tile yet
+        (v1's own borders_walkable_network scope limit), which is exactly
+        Uniboslan's z167 (stone) under z168 (walkable farm room). Returns
+        single-tile candidates -- a WALKABLE column on the network whose
+        directly-below tile is diggable -- not WxH rectangles. Reuses
+        is_diggable unchanged, so the same 2026-09-16 knowledge-scope/
+        act-sense fixes apply. Reports `upper_tile_material` (informational,
+        the grass-tile question is left unresolved, see the .lua file's own
+        header) and `lower_tile_material`/`lower_tile_hidden`. Measured live
+        on Uniboslan (paused, read-only): see this handoff's own report for
+        the exact command and candidate count.
+    "dig-stair [LEVEL] NEAR_LANDMARK [RANK] [RADIUS_TILES]":
+      lua_function: dig_stair_down
+      effect: mutate
+      coordinate_bearing: internal-only
+      live_deployed: false
+      verified: unverified
+      knowledge_scope: player_derivable
+      notes: >
+        Added handoffs/2026-09-17-dig-down-to-stone.md. Designates BOTH
+        halves of one stair pair in a single call -- a downstair at the
+        candidate's own walkable level and the matching upstair directly
+        beneath it, reusing this fort's own already-working
+        starter-entrance-1x1.csv/starter-connector-1x1.csv blueprints
+        rather than a caller-supplied BLUEPRINT_FILE (a stair connector is
+        always exactly this one pair). Never designates one half without
+        the other, closing the boundary-connectivity gap
+        (decisions/DECISIONS.md 2026-09-10) by construction. NOT live-tested
+        this session: real designation was forbidden (read-only checks
+        only, fort left paused) -- see this handoff's report for what a
+        real designation would still need to prove.
 
 df-overseer-farm.lua:
   build_order_item: "gap named 2026-09-16, handoffs/2026-09-16-farm-and-still-tools.md Part 2"

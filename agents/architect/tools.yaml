@@ -28,6 +28,15 @@ read:
       Ranked candidates in solid rock or soil. v1 returns adjacent-only
       candidates; connector-tunnel cost scoring is not implemented, so
       non-adjacent options are simply absent rather than ranked low.
+  - id: "diggable.find-stair"
+    status: exists
+    note: >-
+      Added handoffs/2026-09-17-dig-down-to-stone.md. Single-tile
+      stair-anchor candidates (a walkable column with diggable rock/soil
+      directly below it), for extending the walkable network down one
+      level where `diggable.find`'s box scan can never return anything
+      (no walkable tile exists yet at that level for it to border). Not
+      yet deployed.
   - id: "chokepoints.find"
     status: exists
     note: >-
@@ -116,6 +125,8 @@ deny:
   - id: "openarea.build"
     reason: Advisors do not act. Propose it.
   - id: "diggable.dig"
+    reason: Advisors do not act. Propose it.
+  - id: "diggable.dig-stair"
     reason: Advisors do not act. Propose it.
   - id: "landmarks.build"
     reason: Advisors do not act. Propose it.
