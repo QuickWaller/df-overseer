@@ -411,3 +411,14 @@ findings without another doc home yet.
   `main`.** With unpushed commits, the agent's checkout lacks them (both
   2026-09-17 executors found no handoff file). Tell the agent to check for the
   commit it needs and to `git merge --ff-only main` if it is missing.
+- **quickfort silently skips dig designation on a tile occupied by a building**
+  (a stockpile included) and still reports success. Read the designation back;
+  never trust the call. `dig-stair` left an orphan UpStair this way.
+- **`dfhack.gui.getCurFocus()` returns a table on this build**, not a string.
+  A focus check that string-matches it fires falsely (it ended a supervised
+  unpause after 151 ticks).
+- **MCP tool arguments are strings**: `dry_run` must be `"false"`, not JSON
+  `false`. Argument names are lowercase and exact, and a positional CLI cannot
+  skip an optional slot once a later one is given.
+- **`mcp==2.2.0`'s `streamable_http_client`** takes `http_client=` (a built
+  client), not `headers=`, and yields a 2-tuple.
