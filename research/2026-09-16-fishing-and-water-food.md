@@ -1,3 +1,17 @@
+> **SECOND CORRECTION, 2026-09-17.** This report reads the fort's "nothing to
+> catch" message as evidence about the *map* (a biome with no fish). The user
+> raised the other reading: **fish stocks are finite and can be fished out**
+> ("you dont want to overfish"). That matters here because Uniboslan's own
+> popups appeared after a founder had been working as a fisherdwarf, so the
+> fort may have emptied its nearest pond rather than started with nothing. This
+> report contains no evidence either way: it never checked whether a stock
+> existed before fishing began, nor whether fishing had occurred. Treat its
+> "fishing is dead for planning" conclusion as still standing on the practical
+> level (there is nothing to catch now) but **unexplained as to cause**. The
+> queued fishing research (`Working.md`) settles it: are stocks per body of
+> water or per biome, do they recover, and did this fort deplete its own.
+> Doctrine entry: `doctrine/seed.yaml`, `do-not-overfish` (prior, unverified).
+
 > **CORRECTION, 2026-09-16, by the orchestrating session, before this spec was
 > acted on.** This report's central factual claim is **wrong**. It states that
 > the embark has "exactly one surface water feature", a single murky pool of
