@@ -283,7 +283,7 @@
 -- Usage: ./dfhack-run df-overseer-diggable find W H [LEVEL] NEAR_LANDMARK [RADIUS_TILES]
 -- Usage: ./dfhack-run df-overseer-diggable dig W H [LEVEL] NEAR_LANDMARK BLUEPRINT_FILE [RANK] [RADIUS_TILES]
 -- Usage: ./dfhack-run df-overseer-diggable find-stair [LEVEL] NEAR_LANDMARK [RADIUS_TILES]
--- Usage: ./dfhack-run df-overseer-diggable dig-stair [LEVEL] NEAR_LANDMARK [RANK] [RADIUS_TILES]
+-- Usage: ./dfhack-run df-overseer-diggable dig-stair [LEVEL] NEAR_LANDMARK [RANK] [RADIUS_TILES] [DRY_RUN]
 
 local json = require('json')
 local landmarks_mod = reqscript('df-overseer-landmarks')
@@ -735,14 +735,37 @@ function find_stair_down(level, near, radius_tiles)
   return results
 end
 
+-- True unless the string is exactly "false"/"0"/"no" (case-insensitive).
+-- DRY_RUN defaults to true -- only an explicit false-ish value performs a
+-- real mutation. Duplicated from df-overseer-farm.lua's identical helper
+-- (added 2026-09-16, handoffs/2026-09-16-farm-and-still-tools.md) rather
+-- than shared, same reuse-vs-coupling call this file already makes for
+-- parse_quickfort_stats above.
+local function truthy_dry_run(v)
+  if v == nil then
+    return true
+  end
+  local s = tostring(v):lower()
+  return not (s == "false" or s == "0" or s == "no")
+end
+
 -- Designates BOTH halves of one stair pair in a single call: a downstair
 -- at the candidate's own (walkable) level, and the matching upstair
 -- directly beneath it. Never one without the other -- see the
 -- boundary-connectivity note in the header comment above. Real coordinates
 -- exist only in this function's own local scope, same discipline as
 -- dig_diggable_area above.
-function dig_stair_down(level, near, rank, radius_tiles)
+--
+-- DRY_RUN defaults to true (added after this stream's own live find-stair
+-- test, matching the farm/workshop/zone/trees/well precedent this file
+-- predates -- diggable.dig itself has no such switch, only "never call it
+-- live this session" as the guard). A dry run resolves and ranks the
+-- candidate exactly as the real path would, and returns exactly what it
+-- would designate, without calling quickfort at all. Only an explicit
+-- dry_run=false performs the real double designation.
+function dig_stair_down(level, near, rank, radius_tiles, dry_run)
   rank = rank or 1
+  local dry = truthy_dry_run(dry_run)
   local chosen, err, upper_z, lower_z = ranked_stair_candidates(level, near, radius_tiles)
   if err then
     return nil, err
@@ -753,6 +776,14 @@ function dig_stair_down(level, near, rank, radius_tiles)
   end
   local c = chosen[rank]
   local described = describe_stair_candidate(c, upper_z)
+  described.rank = rank
+
+  if dry then
+    described.dry_run = true
+    described.would_run_downstair_blueprint = DOWNSTAIR_BLUEPRINT
+    described.would_run_upstair_blueprint = UPSTAIR_BLUEPRINT
+    return described
+  end
 
   local ok_down, out_down, res_down = pcall(
     dfhack.run_command_silent, 'quickfort', 'run', DOWNSTAIR_BLUEPRINT, '-c',
@@ -761,7 +792,7 @@ function dig_stair_down(level, near, rank, radius_tiles)
     dfhack.run_command_silent, 'quickfort', 'run', UPSTAIR_BLUEPRINT, '-c',
     string.format('%d,%d,%d', c.x, c.y, lower_z))
 
-  described.rank = rank
+  described.dry_run = false
   described.downstair_blueprint = DOWNSTAIR_BLUEPRINT
   described.downstair_ok = ok_down and res_down == CR_OK
   described.downstair_error = (not ok_down) and tostring(out_down) or nil
@@ -830,16 +861,18 @@ elseif cmd == "find-stair" then
     print(json.encode(err and {error = err} or results))
   end
 elseif cmd == "dig-stair" then
-  local level, near, rank, radius
+  local level, near, rank, radius, dry_run
   if tonumber(args[2]) then
-    level, near, rank, radius = tonumber(args[2]), args[3], tonumber(args[4]), tonumber(args[5])
+    level, near, rank, radius, dry_run =
+      tonumber(args[2]), args[3], tonumber(args[4]), tonumber(args[5]), args[6]
   else
-    near, rank, radius = args[2], tonumber(args[3]), tonumber(args[4])
+    near, rank, radius, dry_run = args[2], tonumber(args[3]), tonumber(args[4]), args[5]
   end
   if not near then
-    print("usage: df-overseer-diggable dig-stair [LEVEL] NEAR_LANDMARK [RANK] [RADIUS_TILES]")
+    print("usage: df-overseer-diggable dig-stair [LEVEL] NEAR_LANDMARK"
+      .. " [RANK] [RADIUS_TILES] [DRY_RUN]")
   else
-    local result, err = dig_stair_down(level, near, rank, radius)
+    local result, err = dig_stair_down(level, near, rank, radius, dry_run)
     print(json.encode(err and {error = err} or result))
   end
 else
@@ -848,5 +881,5 @@ else
     .. " BLUEPRINT_FILE [RANK] [RADIUS_TILES]")
   print("usage: df-overseer-diggable find-stair [LEVEL] NEAR_LANDMARK [RADIUS_TILES]")
   print("usage: df-overseer-diggable dig-stair [LEVEL] NEAR_LANDMARK"
-    .. " [RANK] [RADIUS_TILES]")
+    .. " [RANK] [RADIUS_TILES] [DRY_RUN]")
 end

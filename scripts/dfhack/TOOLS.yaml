@@ -354,12 +354,12 @@ df-overseer-diggable.lua:
         header) and `lower_tile_material`/`lower_tile_hidden`. Measured live
         on Uniboslan (paused, read-only): see this handoff's own report for
         the exact command and candidate count.
-    "dig-stair [LEVEL] NEAR_LANDMARK [RANK] [RADIUS_TILES]":
+    "dig-stair [LEVEL] NEAR_LANDMARK [RANK] [RADIUS_TILES] [DRY_RUN]":
       lua_function: dig_stair_down
       effect: mutate
       coordinate_bearing: internal-only
       live_deployed: false
-      verified: unverified
+      verified: "2026-09-17 (dry-run path only)"
       knowledge_scope: player_derivable
       notes: >
         Added handoffs/2026-09-17-dig-down-to-stone.md. Designates BOTH
@@ -370,10 +370,17 @@ df-overseer-diggable.lua:
         rather than a caller-supplied BLUEPRINT_FILE (a stair connector is
         always exactly this one pair). Never designates one half without
         the other, closing the boundary-connectivity gap
-        (decisions/DECISIONS.md 2026-09-10) by construction. NOT live-tested
-        this session: real designation was forbidden (read-only checks
-        only, fort left paused) -- see this handoff's report for what a
-        real designation would still need to prove.
+        (decisions/DECISIONS.md 2026-09-10) by construction. DRY_RUN
+        defaults to true (added after this stream's own live find-stair
+        test, matching the farm/workshop/zone/trees/well precedent, unlike
+        diggable.dig above which has no such switch) -- a dry run resolves
+        and ranks the same candidate the real path would and returns
+        exactly what it would designate, without calling quickfort. The
+        dry-run path is live-verified this session; the real
+        (dry_run=false) double-designation is NOT -- real mutation was
+        forbidden (read-only checks only, fort left paused). See this
+        handoff's report for the exact command and what a real designation
+        would still need to prove.
 
 df-overseer-farm.lua:
   build_order_item: "gap named 2026-09-16, handoffs/2026-09-16-farm-and-still-tools.md Part 2"
