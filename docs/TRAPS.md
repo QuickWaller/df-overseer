@@ -365,3 +365,15 @@ findings without another doc home yet.
   --[[water]] end`, and cross-check any whole-map liquid count against
   `dfhack-run prospect all`, which reports WATER and MAGMA separately and
   agreed to the tile (14,074 + 82,725 = 96,799).
+
+- **`reqscript` caches a script by name for the life of the DFHack process, so
+  a file you just copied may not be the code that answers you.** Found
+  2026-09-17 by the water-and-industry-tools executor: it copied a modified
+  `df-overseer-workshop.lua` into a scratch directory and put that directory
+  on the script path, but a sibling stream had already loaded the real module
+  earlier the same day, so every call kept returning the stale one, silently
+  and with no error. It worked around this by loading its copy under a
+  throwaway module name. Two consequences: **test a changed script under a
+  different name, or restart DF**, and after any deploy **prove the running
+  code is the deployed code** (check a string or behaviour only the new
+  version has) rather than inferring it from a matching file hash on disk.
