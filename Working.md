@@ -44,6 +44,8 @@ with the user.
   grading, tallying misses, flagging an entry disputed, applying changes.
   Agents cannot call each other today (one-shot runs, queue as the only
   channel), so the calling mechanism is undesigned.
+- **Other roles may propose doctrine revisions too, but must discuss them
+  with the learning role first.** How "must" is enforced is open.
 
 **Built today vs missing, checked against code:** predictions are recorded
 and there are two graders (`dfqueue/grade.py`, `learning/predictions/`), but
@@ -57,8 +59,8 @@ under HANDOVER); what ROADMAP.md should say, deliberately not written until the
 design settles.
 
 **Next concrete step:** continue the design conversation with the user from
-"may other roles still propose doctrine revisions directly, or only through
-the learning role".
+"is the discussion with the learning role enforced by the queue, and does
+its view travel with the proposal to the Overseer".
 
 ## Current state, 2026-09-15: the agent loop is reaching the fort, and the channel exists
 
