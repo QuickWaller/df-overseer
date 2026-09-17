@@ -54,8 +54,32 @@ read:
   - id: "workshop.find"
     status: exists
     note: >-
-      Same handoff. Candidate 3x3 still/kitchen sites with operating
-      requirements (labor, containers). Not yet deployed.
+      Same handoff, extended handoffs/2026-09-17-water-and-industry-tools.md
+      item 3 with mason/mechanic/carpenter and a building_material report
+      shared by all five kinds. Not yet deployed.
+  - id: "zone.find"
+    status: exists
+    note: >-
+      Added handoffs/2026-09-17-water-and-industry-tools.md item 1. Ranked
+      revealed water bodies (bounding box, tile count, depth, stagnant/
+      salt) -- read this before zone.place, same pairing as farm.find/
+      workshop.find above. Not yet deployed.
+  - id: "trees.find"
+    status: exists
+    note: >-
+      Same handoff, item 2. Distance-banded counts/reachability, CUTWOOD
+      labor and axe counts -- read before trees.fell. Not yet deployed.
+  - id: "well.find"
+    status: exists
+    note: >-
+      Same handoff, item 5. Ranked pond-edge well sites with
+      BLOCKS/BUCKET/CHAIN/TRAPPARTS fort-owned counts -- read before
+      well.build. Not yet deployed.
+  - id: "orders.list"
+    status: exists
+    note: >-
+      Same handoff, item 4. Pending manager orders and whether a Manager
+      is appointed. Not yet deployed.
   - id: "labor.unit-status"
     status: exists
     reliability: HEURISTIC
@@ -119,7 +143,47 @@ write:
     status: exists
     note: >-
       Same handoff. DRY_RUN defaults to true. Only the dry-run path is
-      live-verified. Blueprints not yet deployed.
+      live-verified. Blueprints not yet deployed. KIND now also accepts
+      mason/mechanic/carpenter (handoffs/2026-09-17-water-and-industry-
+      tools.md item 3) -- the real quickfort path for these three is
+      UNTESTED live, same as still/kitchen already were.
+  - id: "zone.place"
+    status: exists
+    note: >-
+      Added handoffs/2026-09-17-water-and-industry-tools.md item 1.
+      DRY_RUN defaults to true. The real path writes a throwaway #zone
+      blueprint shaped to the chosen water body and deletes it after --
+      UNTESTED live (mutation forbidden that stream); io availability and
+      dfhack-config/blueprints/ resolution were confirmed live with a
+      read-only open, the write itself was not exercised.
+  - id: "trees.fell"
+    status: exists
+    note: >-
+      Same handoff, item 2. DRY_RUN defaults to true. Real path calls
+      dfhack.designations.markPlant directly (the same primitive
+      quickfort's own chop symbol uses) -- UNTESTED live.
+  - id: "well.build"
+    status: exists
+    note: >-
+      Same handoff, item 5. DRY_RUN defaults to true. Needs a matching
+      BLUEPRINT_FILE (a 1x1 #build `l` Well cell) deployed to
+      dfhack-config/blueprints/ -- see blueprints/README.md. UNTESTED live.
+  - id: "orders.create"
+    status: exists
+    note: >-
+      Same handoff, item 4. DRY_RUN defaults to true. JOB is one of
+      blocks/mechanisms/barrels/brew_drink. No citizen currently holds the
+      MANAGER noble position on this fort (live-verified) -- whether an
+      order queues into a real job without one is unverified; reported as
+      `manager_appointed` on every call, not enforced as a refusal.
+      UNTESTED live for the real create_orders call.
+  - id: "orders.cancel"
+    status: exists
+    note: >-
+      Same handoff. DRY_RUN defaults to true. erase(idx)+delete() on the
+      matching df.manager_order, inferred by convention (workorder.lua's
+      own rollback pattern) and not independently proven by a real
+      removal.
   - id: "labor.set-labor"
     status: exists
     hazard: >-

@@ -88,6 +88,30 @@ def test_the_overseer_can_act_but_cannot_discover(registry):
         assert roster.roles["architect"].allows(discovery)
 
 
+def test_water_and_industry_tools_follow_the_farm_find_pairing(registry):
+    """handoffs/2026-09-17-water-and-industry-tools.md: unlike
+    openarea.find/diggable.find/chokepoints.find (Architect-only, see the
+    test above), zone.find/trees.find/well.find/orders.list follow the
+    farm.find/workshop.find precedent instead -- granted to BOTH roles,
+    since the Overseer needs to read its own build's own precondition, not
+    just act on an Architect's say-so. The four new writes
+    (zone.place/trees.fell/well.build/orders.create/orders.cancel) are
+    Overseer-only, denied to the Architect exactly like every other write
+    in this project."""
+    roster = load_roster(registry)
+    overseer = roster.roles["overseer"]
+    architect = roster.roles["architect"]
+
+    for discovery in ("zone.find", "trees.find", "well.find", "orders.list"):
+        assert overseer.allows(discovery), f"overseer should hold {discovery}"
+        assert architect.allows(discovery), f"architect should hold {discovery}"
+
+    for write_id in ("zone.place", "trees.fell", "well.build", "orders.create", "orders.cancel"):
+        assert write_id in overseer.write, f"overseer should hold write {write_id}"
+        assert registry.get(write_id).mutates is True
+        assert not architect.allows(write_id), f"architect must not hold {write_id}"
+
+
 def test_check_returns_legible_reasons(registry):
     roster = load_roster(registry)
 
