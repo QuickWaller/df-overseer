@@ -125,3 +125,20 @@
     Risks seen: dwarves then stand in 6-7/7 water, deep enough to drown a poor
     swimmer, and stagnant water gives a NastyWater thought whose health effect
     is unverified. A well avoids both.
+
+- id: do-not-overfish
+  scope: universal
+  status: prior
+  source: user, 2026-09-17
+  statement: >-
+    Fish in a given body of water are a finite stock, not a renewing one.
+    Fishing a pond or lake hard enough empties it, and "there is nothing to
+    catch" can mean depleted rather than never stocked. Treat fishing as a
+    limited opening resource, cap how many dwarves hold the labor, and do not
+    plan the fort's food around it.
+  note: >-
+    Unverified here. It bears directly on Uniboslan: its own "nothing to
+    catch" popups appeared after a founder held the fishing labor, so this
+    fort may already have fished out its nearest pond. The fishing research
+    queued in Working.md should settle whether stocks are per body of water or
+    per biome, and whether they ever recover.

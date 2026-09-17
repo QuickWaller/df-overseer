@@ -163,7 +163,9 @@ live before touching anything. Nothing is running right now.
    dispatched): the user sets up fishing early in their own forts and says it
    has its own traps. Worth a researcher brief covering what a fishery needs,
    why "there is nothing to catch" appears, whether a pond's fish are per
-   biome or per body, and the standard early mistakes. Note the fort's 43
+   biome or per body, whether fish stocks recover or are finite (the user:
+   "you dont want to overfish", and this fort may already have emptied its
+   nearest pond), and the standard early mistakes. Note the fort's 43
    ponds are 6-7/7 stagnant basins with a WaterSource zone on one of them.
 6. **Harvest the community's known gotchas as priors.** The seed and pond
    traps we hit today are ones players write about constantly, so a pass over
