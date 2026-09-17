@@ -395,3 +395,19 @@ findings without another doc home yet.
   an unchecked result hid that: `df-overseer-farm.lua` believed it had named
   the plot "Farm Plot #1" while the game kept the default "Farm Plot". Check
   what a `pcall` returned before reporting success.
+
+## Added 2026-09-17, from the farm-fix and stair streams
+
+- **`dfhack-run lua -f FILE` does not set `dfhack_flags`**, so any
+  `--@module = true` script crashes on its own `if dfhack_flags.module` guard
+  when run that way. To test a changed df-overseer script without replacing the
+  deployed one, put a uniquely named copy in its own `/tmp` directory, call
+  `dfhack.internal.addScriptPath` on that directory, run it as a named command,
+  then `removeScriptPath` and delete the copy.
+- **`dfhack.buildings.getName` returns a type default ("Farm Plot") when a
+  building's own name is empty**, so it is never unique and never safe for
+  looking a building up. Identify buildings by `building.id`.
+- **A worktree for a subagent starts from the last pushed commit, not local
+  `main`.** With unpushed commits, the agent's checkout lacks them (both
+  2026-09-17 executors found no handoff file). Tell the agent to check for the
+  commit it needs and to `git merge --ff-only main` if it is missing.

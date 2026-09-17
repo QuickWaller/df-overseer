@@ -197,25 +197,19 @@ live before touching anything. Nothing is running right now.
    available; nobody has worked it across a full unpause window. Check
    whether it is actually DF's `suspended` flag or just never assigned a
    worker before deciding how to unstick it.
-2. **Fix `df-overseer-farm.lua`'s two live bugs**, both found and worked
-   around live today but not fixed in code:
-   - a farm plot's `plant_id` write does not survive the plot's own
-     construction completing (order matters: build, wait for
-     `flags.exists`, *then* set the crop);
-   - `build_farm_plot` calls `dfhack.buildings.setName`, which does not
-     exist on this install, through an unchecked `pcall`, so it silently
-     fails and the tool reports a name that was never actually set.
-   → `docs/TRAPS.md`'s two 2026-09-17 entries on this file.
-3. **Teach `df-overseer-diggable.lua` to propose a dig two levels down.**
-   At z167 (one level under the farm room, where the fort's stone is) it
-   returns nothing today, because its ring-adjacency check only looks at
-   the *same* z-level and z167 has no walkable network yet: a structural
-   gap the tool's own header already names as v1's scope limit. This
-   blocks blocks and mechanisms directly, which in turn blocks the well
-   (needs BLOCKS and a TRAPPARTS mechanism; the fort has 0 of each, only the
-   BUCKET and CHAIN halves) and leaves the still's own material thin (see
-   above). → `handoffs/2026-09-17-water-and-industry-tools.md` ("Stone
-   access").
+2. **Farm and stair fixes: merged to `main` 2026-09-17, NOT deployed.**
+   `df-overseer-farm.lua` now identifies plots by building id (new
+   `farm.list`), refuses `set-crop` before construction finishes, and reads
+   the crop back after writing. `df-overseer-diggable.lua` gained
+   `find-stair`/`dig-stair`, which designate both halves of a stair pair down
+   to z167. Only read-only and dry-run paths were verified live; `set-crop`'s
+   argument changed from NAME to ID. → `handoffs/2026-09-17-farm-tool-fixes.md`,
+   `handoffs/2026-09-17-dig-down-to-stone.md` (each has a test plan for the
+   real write).
+3. **Next: deploy both, then prove the real writes in one supervised
+   session** (needs the user's go-ahead): `farm.list`, a real `set-crop` on
+   plot 4 with read-back, and a real `dig-stair` followed by a short
+   unpause to see a dwarf dig it and `diggable.find` succeed at z167.
 4. **Then a longer supervised run** for planting (nothing has sprouted yet;
    the plot only finished construction partway through today's window) and
    the still, once 1-3 are done.
