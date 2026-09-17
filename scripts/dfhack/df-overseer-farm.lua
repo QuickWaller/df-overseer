@@ -92,13 +92,27 @@
 -- flagged. `set_farm_crop` is a real Quartermaster-shaped tool where
 -- autofarm is not.
 --
--- Plots are made addressable the same way df-overseer-landmarks.lua
--- already names buildings (a non-empty dfhack.buildings.getName()) --
--- `build_farm_plot` explicitly names the plot it just built (a farm plot's
--- own DF-default name was not verified to be non-empty, so this tool never
--- relies on it) via `dfhack.buildings.setName`, "Farm Plot #<n>" with n
--- one past the count of existing landmarks already matching that pattern.
--- UNTESTED live for the same reason as the plant_id write above.
+-- ADDRESSABILITY, fixed 2026-09-17 (handoffs/2026-09-17-farm-tool-fixes.md):
+-- `dfhack.buildings.setName` does NOT exist on this install -- confirmed
+-- live by enumerating every key in `dfhack.buildings` (30 members, no
+-- setName). The earlier design ("name the plot 'Farm Plot #<n>' via
+-- setName") never actually wrote anything; the unchecked `pcall` around it
+-- silently no-opped every time, while the tool still reported the name as
+-- if it had stuck. `dfhack.buildings.getName` DOES exist and, confirmed
+-- live against Uniboslan's real (never-named) plot, returns a non-empty
+-- type default ("Farm Plot") even though the building's own `.name` field
+-- reads back as "" -- so that default is NOT unique across multiple plots
+-- and can never be used to look one up. Plots are identified by
+-- `building.id` instead: always present, confirmed live and readable,
+-- unique per building, and not a coordinate (design commitment #1 still
+-- holds -- an id is an opaque handle, not a position). `build_farm_plot`
+-- no longer calls setName or claims a name it set; its real-build result
+-- carries the true `id` plus `default_name` (DF's own default, reported as
+-- informational only, never as something this tool assigned). `list`
+-- (new, read-only) enumerates every built plot's id, default_name,
+-- outside-ness, construction state and current per-season crop, so a
+-- caller can find the id of a plot whose name was never set -- including
+-- Uniboslan's existing one.
 --
 -- Dry-run mode (handoffs/2026-09-16-farm-and-still-tools.md, "Verification
 -- without mutating the fort"): both `build_farm_plot` and `set_farm_crop`
@@ -112,7 +126,8 @@
 --
 -- Usage: ./dfhack-run df-overseer-farm find W H [LEVEL] NEAR_LANDMARK [RADIUS_TILES]
 -- Usage: ./dfhack-run df-overseer-farm build W H [LEVEL] NEAR_LANDMARK BLUEPRINT_FILE [RANK] [RADIUS_TILES] [DRY_RUN]
--- Usage: ./dfhack-run df-overseer-farm set-crop NAME SEASON CROP [DRY_RUN]
+-- Usage: ./dfhack-run df-overseer-farm list
+-- Usage: ./dfhack-run df-overseer-farm set-crop ID SEASON CROP [DRY_RUN]
 
 local json = require('json')
 local landmarks_mod = reqscript('df-overseer-landmarks')
@@ -460,23 +475,6 @@ local function truthy_dry_run(v)
   return not (s == "false" or s == "0" or s == "no")
 end
 
--- Stable landmark name for a newly built plot: "Farm Plot #<n>", n one
--- past however many existing landmarks already match that pattern. Only
--- called from the real (non-dry-run) path -- UNTESTED live, see header.
-local function next_farm_plot_name()
-  local landmarks, err = landmarks_mod.list_landmarks()
-  local max_n = 0
-  if not err then
-    for _, lm in ipairs(landmarks) do
-      local n = tostring(lm.name or ""):match('^Farm Plot #(%d+)$')
-      if n and tonumber(n) > max_n then
-        max_n = tonumber(n)
-      end
-    end
-  end
-  return string.format("Farm Plot #%d", max_n + 1)
-end
-
 -- DRY_RUN defaults to true. A dry run resolves the candidate and returns
 -- exactly what would be built, without calling quickfort. See header.
 function build_farm_plot(w, h, level, near, blueprint_file, rank, radius_tiles, dry_run)
@@ -509,7 +507,9 @@ function build_farm_plot(w, h, level, near, blueprint_file, rank, radius_tiles, 
       outside = c.outside,
       valid_crops = valid_crops_for(c.outside),
       would_run_blueprint = blueprint_file,
-      would_be_named = next_farm_plot_name(),
+      identified_by = "building id, reported in the real result's `id`"
+        .. " field once built, or discoverable via the `list` command --"
+        .. " setName does not exist on this install, see header",
     }
   end
 
@@ -521,12 +521,19 @@ function build_farm_plot(w, h, level, near, blueprint_file, rank, radius_tiles, 
     dfhack.run_command_silent, 'quickfort', 'run', blueprint_file, '-c',
     string.format('%d,%d,%d', c.x, c.y, z))
 
-  local name = nil
+  -- No setName call: that API does not exist on this install (see header).
+  -- `id` is the real, unique identifier a caller must use with `set-crop`;
+  -- `default_name` is reported purely informationally (DF's own default
+  -- for an unnamed plot, e.g. "Farm Plot" -- NOT unique, NEVER usable to
+  -- look this plot back up).
+  local plot_id, default_name = nil, nil
   if ok_run and result == CR_OK then
     local ok_bld, bld = pcall(dfhack.buildings.findAtTile, xyz2pos(c.x, c.y, z))
     if ok_bld and bld then
-      name = next_farm_plot_name()
-      pcall(dfhack.buildings.setName, bld, name)
+      local ok_id, id = pcall(function() return bld.id end)
+      plot_id = ok_id and id or nil
+      local ok_name, gname = pcall(dfhack.buildings.getName, bld)
+      default_name = ok_name and gname or nil
     end
   end
 
@@ -542,22 +549,28 @@ function build_farm_plot(w, h, level, near, blueprint_file, rank, radius_tiles, 
     quickfort_ok = ok_run and result == CR_OK,
     quickfort_error = (not ok_run) and tostring(output) or nil,
     quickfort_stats = ok_run and parse_quickfort_stats(output) or nil,
-    named = name,
+    id = plot_id,
+    default_name = default_name,
   }
 end
 
--- Finds a named, built farm plot the same way df-overseer-landmarks.lua's
--- own building enumeration does (a non-empty dfhack.buildings.getName()),
--- but returns the building pointer itself (server-side only, never
--- returned to any caller) since set_farm_crop needs to read its outside-
--- ness and, in the real path, write its plant_id field -- landmarks.lua
--- deliberately never hands out anything but a bare coordinate.
-local function find_farm_plot_by_name(name)
+-- Finds a built farm plot by its building id -- the only identifier this
+-- install actually supports (see header: dfhack.buildings.setName does not
+-- exist here, and getName's own type-default fallback, "Farm Plot", is not
+-- unique across multiple plots so name-matching would find the wrong
+-- plot as soon as a second one exists). Works for a plot whose name was
+-- never set, including Uniboslan's existing one, because it never looks
+-- at the name at all. Returns the building pointer itself (server-side
+-- only, never returned to any caller) since set_farm_crop needs to read
+-- its outside-ness and, in the real path, write its plant_id field --
+-- landmarks.lua deliberately never hands out anything but a bare
+-- coordinate.
+local function find_farm_plot_by_id(id)
   for _, bld in ipairs(df.global.world.buildings.all) do
     local ok_type, btype = pcall(function() return bld:getType() end)
     if ok_type and btype == df.building_type.FarmPlot then
-      local ok_name, bname = pcall(dfhack.buildings.getName, bld)
-      if ok_name and bname ~= "" and bname == name then
+      local ok_id, bid = pcall(function() return bld.id end)
+      if ok_id and bid == id then
         return bld
       end
     end
@@ -567,15 +580,92 @@ end
 
 local SEASON_INDEX = {spring = 0, summer = 1, autumn = 2, winter = 3}
 
+-- idx is a plant-raw array index (the same convention plant_id[season]
+-- stores, and item.mat_index uses for SEEDS items -- see header). Returns
+-- the plant's string id (e.g. "PLUMP_HELMET"), or nil for an unset slot
+-- (-1) or an index this install's raws don't resolve -- never guessed.
+local function plant_index_to_crop_id(idx)
+  if not idx or idx < 0 then
+    return nil
+  end
+  local plants = df.global.world.raws.plants.all
+  local ok, plant = pcall(function() return plants[idx] end)
+  if not ok or not plant then
+    return nil
+  end
+  return plant.id
+end
+
+-- Read-only. Every built farm plot's id, DF's own default display name
+-- (informational only -- see header, never unique, never a lookup key),
+-- outside-ness, construction state (flags.exists), and current per-season
+-- crop decoded back to a plant id where the stored index resolves.
+-- Exists so a caller can find the id of an existing plot -- e.g.
+-- Uniboslan's -- without a raw coordinate and without relying on a name
+-- this tool never actually set.
+function list_farm_plots()
+  local results = {}
+  for _, bld in ipairs(df.global.world.buildings.all) do
+    local ok_type, btype = pcall(function() return bld:getType() end)
+    if ok_type and btype == df.building_type.FarmPlot then
+      local ok_id, id = pcall(function() return bld.id end)
+      local ok_name, name = pcall(dfhack.buildings.getName, bld)
+      local ok_exists, exists = pcall(function() return bld.flags.exists end)
+      local ok_pos, x, y, z = pcall(function() return bld.x1, bld.y1, bld.z end)
+      local outside = nil
+      if ok_pos then
+        local ok_flags, flags = pcall(dfhack.maps.getTileFlags, xyz2pos(x, y, z))
+        outside = (ok_flags and flags) and flags.outside or nil
+      end
+      local crops = {}
+      for season_name, idx in pairs(SEASON_INDEX) do
+        local ok_pid, pid = pcall(function() return bld.plant_id[idx] end)
+        crops[season_name] = ok_pid and plant_index_to_crop_id(pid) or nil
+      end
+      table.insert(results, {
+        id = ok_id and id or nil,
+        default_name = ok_name and name or nil,
+        exists = ok_exists and exists or nil,
+        outside = outside,
+        crops = crops,
+      })
+    end
+  end
+  table.sort(results, function(a, b) return (a.id or 0) < (b.id or 0) end)
+  return results
+end
+
 -- DRY_RUN defaults to true. A dry run resolves the plot, validates the
 -- season and crop, and returns exactly what would be written, without
 -- touching plant_id. See header -- the real write is UNTESTED live.
-function set_farm_crop(name, season, crop, dry_run)
+function set_farm_crop(id, season, crop, dry_run)
   local dry = truthy_dry_run(dry_run)
-  local bld = find_farm_plot_by_name(name)
-  if not bld then
-    return nil, "no farm plot named " .. tostring(name)
+  local plot_id = tonumber(id)
+  if not plot_id then
+    return nil, "invalid plot id: " .. tostring(id) .. " -- use the `id`"
+      .. " from a real farm.build or from farm.list, not a name"
+      .. " (dfhack.buildings.setName does not exist on this install, see"
+      .. " header)"
   end
+  local bld = find_farm_plot_by_id(plot_id)
+  if not bld then
+    return nil, "no farm plot with id " .. tostring(plot_id)
+      .. " -- see the `list` command for existing plots"
+  end
+
+  -- Construction gate, added 2026-09-17
+  -- (handoffs/2026-09-17-farm-tool-fixes.md): a plant_id written before
+  -- the plot finishes building is lost -- verified live building
+  -- Uniboslan's first plot, all four seasons read back as -1 after being
+  -- set before flags.exists went true. Refuse rather than silently losing
+  -- the write.
+  local ok_exists, exists = pcall(function() return bld.flags.exists end)
+  if not ok_exists or not exists then
+    return nil, "plot " .. plot_id .. " has not finished construction yet"
+      .. " (flags.exists is false) -- wait for construction to finish,"
+      .. " then retry"
+  end
+
   local season_idx = SEASON_INDEX[tostring(season):lower()]
   if not season_idx then
     return nil, "unknown season " .. tostring(season)
@@ -599,7 +689,7 @@ function set_farm_crop(name, season, crop, dry_run)
   if dry then
     return {
       dry_run = true,
-      plot = name,
+      plot_id = plot_id,
       season = season,
       crop = crop,
       outside = plot_outside,
@@ -608,16 +698,28 @@ function set_farm_crop(name, season, crop, dry_run)
   end
 
   -- Real mutation: a direct struct write, by the same pattern as
-  -- df-overseer-labor.lua's set_labor (unit.status.labors[code]).
-  -- UNTESTED live -- see header.
+  -- df-overseer-labor.lua's set_labor (unit.status.labors[code]). Added
+  -- 2026-09-17 (handoffs/2026-09-17-farm-tool-fixes.md): read the value
+  -- back immediately rather than trusting the pcall alone -- a struct
+  -- write can report success (no Lua error) while not actually sticking,
+  -- which is exactly how the original plant_id loss went unnoticed live.
+  -- UNTESTED live -- this session never performs a real write, see header.
   local ok_write = pcall(function() bld.plant_id[season_idx] = plant_idx end)
+  local ok_read, read_back = pcall(function() return bld.plant_id[season_idx] end)
+  local stuck = ok_write and ok_read and read_back == plant_idx
   return {
     dry_run = false,
-    plot = name,
+    plot_id = plot_id,
     season = season,
     crop = crop,
     outside = plot_outside,
-    write_ok = ok_write,
+    write_ok = stuck,
+    read_back_plant_index = ok_read and read_back or nil,
+    error = (not stuck)
+      and ("write did not stick -- plant_id read back as "
+        .. tostring(ok_read and read_back or "<unreadable>")
+        .. ", expected " .. tostring(plant_idx))
+      or nil,
   }
 end
 
@@ -660,17 +762,20 @@ elseif cmd == "build" then
     local result, err = build_farm_plot(w, h, level, near, blueprint, rank, radius, dry_run)
     print(json.encode(err and {error = err} or result))
   end
+elseif cmd == "list" then
+  print(json.encode(list_farm_plots()))
 elseif cmd == "set-crop" then
-  local name, season, crop, dry_run = args[2], args[3], args[4], args[5]
-  if not (name and season and crop) then
-    print("usage: df-overseer-farm set-crop NAME SEASON CROP [DRY_RUN]")
+  local id, season, crop, dry_run = args[2], args[3], args[4], args[5]
+  if not (id and season and crop) then
+    print("usage: df-overseer-farm set-crop ID SEASON CROP [DRY_RUN]")
   else
-    local result, err = set_farm_crop(name, season, crop, dry_run)
+    local result, err = set_farm_crop(id, season, crop, dry_run)
     print(json.encode(err and {error = err} or result))
   end
 else
   print("usage: df-overseer-farm find W H [LEVEL] NEAR_LANDMARK [RADIUS_TILES]")
   print("usage: df-overseer-farm build W H [LEVEL] NEAR_LANDMARK"
     .. " BLUEPRINT_FILE [RANK] [RADIUS_TILES] [DRY_RUN]")
-  print("usage: df-overseer-farm set-crop NAME SEASON CROP [DRY_RUN]")
+  print("usage: df-overseer-farm list")
+  print("usage: df-overseer-farm set-crop ID SEASON CROP [DRY_RUN]")
 end
