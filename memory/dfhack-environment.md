@@ -165,3 +165,53 @@ Lua API. `mode`'s own doc also warns that most mode combinations corrupt saves.
 - **`df.global.world.burrows.all` does not exist.** The correct path on
   this install is `df.global.plotinfo.burrows.list` — confirmed live, not
   guessed from a naming pattern.
+
+**ADDED 2026-09-17**, from the water-source-zone test and the water/industry
+tool builds:
+
+- **`quickfort`'s `is_valid_zone_tile` checks only `getTileFlags(pos).hidden`,
+  nothing about water, walls or floor**, so a `#zone` blueprint can be placed
+  directly on a deep-water tile and `quickfort` will accept it without
+  complaint. This is what let a `WaterSource` zone be placed *on* a pond at
+  z168 rather than beside it, and it is why the fort's own founders then
+  walked down to the water's own level to drink, the first self-serve
+  drinking this project recorded. Read from `zone.lua` source, confirmed by
+  the live placement succeeding.
+- **A well needs BLOCKS, a BUCKET, a CHAIN (or rope), and TRAPPARTS
+  (a mechanism), and is buildable on an `EMPTY` or `RAMP_TOP` tile that
+  borders floor**, per quickfort's own `is_tile_empty_and_floor_adjacent`
+  (`l` symbol) plus this project's own added rule that the tile directly
+  below must be revealed water at least 3/7 deep (the wiki's stated minimum,
+  version-matched). So a pond-edge well needs no bridge or dig to the
+  water's own level, just those four items and a bordering dry tile.
+- **A cautionary tale on trusting a partial live-adjacency check**: the same
+  day, a first pass concluded `dfhack.maps.getWalkableGroup` was
+  miscategorizing RAMP/RAMP_TOP tiles near a pond (74 of 98 checked read
+  group 0 while directly touching group 11). A second, more careful
+  full-box re-scan found this was wrong: every one of those tiles was
+  genuinely underwater, and group 0 was the correct answer all along. The
+  first pass's own adjacency check just hadn't looked at what the ramps
+  actually held. Re-verify a surprising `getWalkableGroup` finding against
+  the tiles themselves before trusting it, the same lesson as the
+  `flags.foreign`/`flags.trader` mixup a day earlier.
+- **The water/drink `df.job_type` values on this install**: `Drink` (19),
+  `DrinkItem` (20), `FillWaterskin` (21), `FillWaterskinItem` (22),
+  `GiveWater` (176), `GiveWaterPet` (178), `DrinkBlood` (221).
+- **`dfhack.units.getNoblePositions` is how to check whether any citizen
+  holds the Manager position** (needed before `workorder.lua`'s
+  `create_orders` can matter in practice). Uniboslan has nobody in that
+  role; `create_orders` itself has no manager check in its own source, so
+  whether the engine will actually turn a manager order into a job with
+  nobody appointed is unverified, not enforced by any tool here.
+- **`dfhack.buildings.getFiltersByType` returns an identical generic
+  `flags2.building_material` filter for every workshop kind**, mason,
+  carpenter, mechanic, still and kitchen alike, no `item_type`/`mat_type`
+  restriction at all. In practice this means boulder, wood and blocks are
+  all interchangeable building material for any workshop, not something to
+  special-case per kind.
+- **Manager work-order `df.job_type` values used by `orders.lua`**:
+  `blocks` = 80 (`ConstructBlocks`), `mechanisms` = 139
+  (`ConstructMechanisms`), `barrels` = 125 (`MakeBarrel`), `brew_drink` = 209
+  (`CustomReaction` with `reaction_name = BREW_DRINK_FROM_PLANT`; brewing is
+  a reaction, not its own job type, so no job type literally named "Brew*"
+  exists).
