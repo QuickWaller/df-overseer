@@ -26,8 +26,10 @@ that do not exist would imply a capability this project does not have.
 Verified 2026-09-12 (`research/2026-09-12-write-conflict-matrix.md`,
 `research/2026-09-12-dfhack-capability-checks.md`):
 
-- **No tool in this repo touches manager work orders or stockpile settings**
-  (filters, thresholds, links). Not one.
+- **`df-overseer-orders.lua` now exists and is deployed** (`orders.list`/
+  `create`/`cancel`, 2026-09-17), so manager work orders are no longer
+  untouched. No tool in this repo still touches stockpile settings (filters,
+  thresholds, links).
 - **DFHack's own `stocks` and `workflow` are tagged unavailable** on this
   install, as part of the same v50 breakage `memory/dfhack-environment.md`
   tracks. So there is nothing to wrap.
