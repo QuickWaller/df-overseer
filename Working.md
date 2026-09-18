@@ -324,11 +324,11 @@ the fort at a time. Two `production/**` streams are also mutually exclusive.
    still's job 366 as part of it: **the suspension question is answered**, it
    is genuinely DF's `suspend` flag (`susp=true`, verified live today), not an
    unassigned job.
-2. **`ban-cooking all`**, one command, fort can stay paused. Protects seeds,
-   booze and brewables from the kitchen including types not yet in stock, and
-   `seed-stock-never-falls` has no other enforcement. Sequence it **after the
-   deploy and before the run**, so the run cannot cook the seed stock. Note
-   the ordering against item 1 despite the numbering.
+2. **`ban-cooking all`: DONE 2026-09-18.** Kitchen exclusions went 110 to
+   1279 (1169 types banned), fort paused at tick 227160 before and after.
+   First enforcement `seed-stock-never-falls` has ever had. Note for the
+   record: 110 exclusions already existed before today and nobody had
+   recorded why.
 3. **The stair, after the run.** Remove the orphan z167 UpStair designation,
    then designate the new rank-1 spot for real and dig it. The code fix is
    merged and rides along with the deploy in item 0.
