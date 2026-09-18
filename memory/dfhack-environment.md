@@ -231,15 +231,15 @@ tool builds:
 (`research/2026-09-18-schema-extraction-live.md`), read-only, fort paused
 throughout, `ReadCurrentTick()` unchanged before and after:
 
-- **`item.flags.in_job` is the exact, cheap job-claim signal for an item** —
-  a real per-item bool, live-matched to a real job's `job.items[i].item`
+- **`item.flags.in_job` is the exact, cheap job-claim signal for an item.**
+  A real per-item bool, live-matched to a real job's `job.items[i].item`
   (job 372's `job.items[0].item.id` resolved to item 67, which itself read
   `flags.in_job == true`). No job-table scan is needed to ask "is this item
   claimed": check the item directly.
 - **`item.flags.owned` plus the item's `UNIT_HOLDER` general_ref is
   confirmed exact for dwarf ownership**, not just believed. 5 sampled
   `owned=true` items all resolved via `UNIT_HOLDER` to unit 192, and
-  `dfhack.units.isMerchant(unit)` read `false` for that unit — a real
+  `dfhack.units.isMerchant(unit)` read `false` for that unit, a real
   citizen, not a trader. This closes `df-overseer-stocks.lua`'s own
   previously-open question on this field.
 - **A live plant instance carries its own growth counter**,
