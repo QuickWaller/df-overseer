@@ -63,3 +63,60 @@ def test_cli_reports_no_data(tmp_path, capsys):
     rc = cli.main(["latest", str(db), "fort", "population"])
     assert rc == 0
     assert "no data" in capsys.readouterr().out
+
+
+def _thirst_record(abs_tick, value):
+    return {
+        "v": 1, "timeline_id": "t1", "timeline_start_abs_tick": 0, "abs_tick": abs_tick,
+        "cur_year": 0, "cur_year_tick": abs_tick, "wall_utc": "2026-09-19T08:00:00Z",
+        "sampler_version": "test",
+        "metrics": [{"subject": "unit:192", "metric": "thirst_timer", "value": value, "unit": "ticks"}],
+    }
+
+
+def test_cli_resets_reports_an_exact_tick_reset(tmp_path, capsys):
+    db = tmp_path / "cli.series.sqlite3"
+    jsonl = tmp_path / "thirst.jsonl"
+    _write(jsonl, [_thirst_record(12373406, 33722), _thirst_record(12374606, 1085)])
+
+    rc = cli.main(["import", str(db), str(jsonl)])
+    assert rc == 0
+    capsys.readouterr()
+
+    rc = cli.main(["resets", str(db), "unit:192", "thirst_timer"])
+    assert rc == 0
+    out = capsys.readouterr().out
+    assert "resetting_counter" in out
+    assert "reset at abs_tick 12373521" in out
+
+
+def test_cli_rate_refuses_to_straddle_a_reset(tmp_path, capsys):
+    db = tmp_path / "cli.series.sqlite3"
+    jsonl = tmp_path / "thirst.jsonl"
+    _write(jsonl, [_thirst_record(12373406, 33722), _thirst_record(12374606, 1085)])
+
+    rc = cli.main(["import", str(db), str(jsonl)])
+    assert rc == 0
+    capsys.readouterr()
+
+    rc = cli.main(["rate", str(db), "unit:192", "thirst_timer"])
+    assert rc == 0
+    out = capsys.readouterr().out
+    assert "unavailable" in out
+    assert "12373521" in out
+
+
+def test_cli_dwarf_day_reports_drinking_events_label(tmp_path, capsys):
+    db = tmp_path / "cli.series.sqlite3"
+    jsonl = tmp_path / "thirst.jsonl"
+    _write(jsonl, [_thirst_record(12373406, 33722), _thirst_record(12374606, 1085)])
+
+    rc = cli.main(["import", str(db), str(jsonl)])
+    assert rc == 0
+    capsys.readouterr()
+
+    rc = cli.main(["dwarf-day", str(db), "thirst_timer"])
+    assert rc == 0
+    out = capsys.readouterr().out
+    assert "drinking events per dwarf-day" in out
+    assert "1 event(s) (1 exact-tick" in out

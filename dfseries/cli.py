@@ -9,6 +9,8 @@ Usage:
     python -m dfseries.cli series <db-path> <subject> <metric> [--all] [--start N] [--end N]
     python -m dfseries.cli latest <db-path> <subject> <metric> [--all]
     python -m dfseries.cli rate <db-path> <subject> <metric> [--all] [--start N] [--end N]
+    python -m dfseries.cli resets <db-path> <subject> <metric> [--all] [--start N] [--end N]
+    python -m dfseries.cli dwarf-day <db-path> <metric> [--all] [--start N] [--end N]
 """
 
 from __future__ import annotations
@@ -16,7 +18,7 @@ from __future__ import annotations
 import argparse
 import sys
 
-from . import importer, store, timeline, trend
+from . import aggregate, importer, store, timeline, trend
 
 
 def _lineage(args: argparse.Namespace) -> str:
@@ -91,9 +93,51 @@ def cmd_rate(args: argparse.Namespace) -> int:
     if result.status != trend.MEASURED:
         print(f"unavailable: {result.reason}")
         return 0
+    segment_note = f" [{result.segment}]" if result.segment else ""
     print(
-        f"{result.value:+.6f} per tick, over {result.tick_span} ticks, "
-        f"{result.sample_count} sample(s) used, {result.skipped_nulls} null reading(s) skipped"
+        f"{result.value:+.6f} per tick{segment_note}, over {result.tick_span} ticks, "
+        f"{result.sample_count} sample(s) used, {result.skipped_nulls} null reading(s) skipped "
+        f"(metric_kind={result.metric_kind})"
+    )
+    if result.reason:
+        print(f"  note: {result.reason}")
+    return 0
+
+
+def cmd_resets(args: argparse.Namespace) -> int:
+    with store.connect(args.db) as conn:
+        result = trend.resets(
+            conn, args.subject, args.metric,
+            start_abs_tick=args.start, end_abs_tick=args.end, lineage=_lineage(args),
+        )
+    print(f"metric_kind={result.metric_kind} rate_per_tick={result.rate_per_tick} evidence={result.rate_evidence}")
+    if not result.events and not result.anomalies:
+        print("no reset events or anomalies in this window")
+        return 0
+    for e in result.events:
+        if e.kind == trend.EXACT_TICK:
+            print(f"  reset at abs_tick {e.abs_tick} (between {e.window_start_abs_tick} and {e.window_end_abs_tick}: {e.from_value} -> {e.to_value})")
+        else:
+            print(f"  reset somewhere in ({e.window_start_abs_tick}, {e.window_end_abs_tick}] (interval-bounded: {e.from_value} -> {e.to_value})")
+    for a in result.anomalies:
+        print(f"  ANOMALY between {a.window_start_abs_tick} and {a.window_end_abs_tick}: {a.from_value} -> {a.to_value} ({a.reason})")
+    return 0
+
+
+def cmd_dwarf_day(args: argparse.Namespace) -> int:
+    with store.connect(args.db) as conn:
+        result = aggregate.dwarf_day_reset_rate(
+            conn, args.metric,
+            start_abs_tick=args.start, end_abs_tick=args.end, lineage=_lineage(args),
+        )
+    print(
+        f"{result.label}: "
+        f"{'n/a (0 dwarf-days observed)' if result.events_per_dwarf_day is None else f'{result.events_per_dwarf_day:.6f}'}"
+    )
+    print(
+        f"  {result.event_count} event(s) ({result.exact_tick_events} exact-tick, "
+        f"{result.interval_bounded_events} interval-bounded), {result.anomaly_count} anomaly(ies), "
+        f"{result.subjects_observed} subject(s) observed, {result.dwarf_days_observed:.4f} dwarf-day(s)"
     )
     return 0
 
@@ -135,6 +179,23 @@ def build_parser() -> argparse.ArgumentParser:
     p_rate.add_argument("--end", type=int, default=None, dest="end")
     p_rate.add_argument("--all", action="store_true", help="include superseded samples")
     p_rate.set_defaults(func=cmd_rate)
+
+    p_resets = sub.add_parser("resets", help="print reset events and anomalies for a subject's metric")
+    p_resets.add_argument("db")
+    p_resets.add_argument("subject")
+    p_resets.add_argument("metric")
+    p_resets.add_argument("--start", type=int, default=None, dest="start")
+    p_resets.add_argument("--end", type=int, default=None, dest="end")
+    p_resets.add_argument("--all", action="store_true", help="include superseded samples")
+    p_resets.set_defaults(func=cmd_resets)
+
+    p_dwarf_day = sub.add_parser("dwarf-day", help="print fort-level reset events per dwarf-day for a metric")
+    p_dwarf_day.add_argument("db")
+    p_dwarf_day.add_argument("metric")
+    p_dwarf_day.add_argument("--start", type=int, default=None, dest="start")
+    p_dwarf_day.add_argument("--end", type=int, default=None, dest="end")
+    p_dwarf_day.add_argument("--all", action="store_true", help="include superseded samples")
+    p_dwarf_day.set_defaults(func=cmd_dwarf_day)
 
     return parser
 
