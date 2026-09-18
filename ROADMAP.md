@@ -599,10 +599,13 @@ or `decisions/DECISIONS.md`, not here.
 - **Re-run the perception eval against real briefings** once `llm-brief.lua`
   exists, replacing today's hand-authored 15-landmark fixtures with the
   actual lossier generator. → `docs/PURPOSE.md` build order item 1's caveat.
-- **Seeded counterfactual rerun harness**, the only real answer to the
-  control-arm problem for "doctrine improved outcomes" claims. Rests on DF
-  replay determinism, which is unverified. → `research/2026-08-25-learning-architecture.md`
-  §7 item 7, `Working.md` handover ("DF replay determinism is unverified").
+- **NOT DOING 2026-09-18: seeded counterfactual rerun harness.** The user's
+  call: "i'm not planning on reusing the same seed over and over", so DF
+  replay determinism also stays unverified on purpose. It was the only real
+  control arm for "doctrine improved outcomes", so those claims stay
+  correlational, and the retrospective court plus per-type acceptance
+  criteria carry the weight instead. → `decisions/DECISIONS.md` 2026-09-18,
+  `research/2026-08-25-learning-architecture.md` §7 item 7.
 - **Host-reboot survival test**, re-scoped to whichever VMID the current
   rebuild produces (VM 104 no longer exists). Complicated now by `citadel`'s
   missing QDevice: a reboot of `SRV-01` while `SRV-02` is also down would be
