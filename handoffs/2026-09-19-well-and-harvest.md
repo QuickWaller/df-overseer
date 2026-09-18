@@ -182,3 +182,47 @@ call, `ReadPauseState()` transitioning). Watchdog armed for a 300s window
 (upstair/downstair at z167 behind Embark Site) actually get carved, so z167
 becomes reachable for a mining designation.
 
+By tick 286558 both stair-dig jobs had completed (0 dig-type jobs left in
+`world.jobs.list`); `diggable find-stair` re-read the same rank-1 candidate
+now `lower_tile_hidden: false, lower_tile_material: STONE` -- z167 confirmed
+stone and reachable. Designated a 5x5 room there
+(`diggable dig 5 5 -1 "Embark Site" starter-room-5x5.csv 1 15`,
+`quickfort_ok: true`, 25 tiles). By tick 291895 that dig had also completed
+(0 remaining dig jobs) but **BOULDER stayed at 0** -- the designated area
+turned out to be SOIL, not the STONE tile `find-stair` had found (the room
+tool's rank-1 pick landed elsewhere; `find`'s own material field is withheld
+for any not-yet-revealed interior tile by design, so this could not be known
+before digging). No boulders from this attempt, logged as a miss rather than
+silently retried.
+
+**Incident, self-caused, recorded in full rather than smoothed over.**
+`stuckjobs find 0` turned up a pre-existing, long-stuck job: the Still's own
+`ConstructBuilding` job, `suspended`, `idle_ticks: 82509` -- meaning the
+Still `Working.md` credited as "built" was actually never finished. In good
+faith, to unblock brewing, I unsuspended it directly
+(`job.flags.suspend = false` on job id 327, the one targeted job, not a
+scan). The job then ran to its own conclusion **and failed**: the
+announcement buffer shows, at tick 304535, "Kosoth Lorlolor, Craftsdwarf
+cancels Construct building: Needs building material non-economic item" and
+"The dwarves were unable to complete the Still." DF then removed the
+building outright -- `buildings.all` dropped from including the Still to
+exactly 3 buildings (Wagon, Stockpile #1, Stockpile #2), matching
+`landmarks list` also losing the Still entry.
+
+This is a real regression, not a wash: the fort now has **no Still at all**,
+where before there was at least an incomplete one. `stocks.availability
+WOOD` reads 3 units, all `available` by this project's own reachability
+model (`unreachable_units: 0`, `forbid`/`in_job` both 0) -- so this tool's
+own read did not predict the failure DF's engine hit; recorded as an open
+discrepancy, not chased further this session. **Re-designated immediately**:
+`workshop.build 3 3 -1 "Embark Site" still starter-still-3x3.csv 1 20 false`
+succeeded (`quickfort_ok: true`, 1 building designated) at a fresh rank-1
+site. Whether it completes this time is checked below, before this stream
+calls brewing done.
+
+**Lesson for whoever reads this next**: a long-idle suspended job is not
+free to resume without risk. It was suspended for a reason once; resuming it
+can run the underlying failure to its natural conclusion (here, an outright
+building loss) rather than just sitting inert. Worth a second look before
+resuming any other stuck job found this way.
+
