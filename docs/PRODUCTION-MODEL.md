@@ -452,11 +452,39 @@ Water has no reaction, so a raws-derived graph will never contain it. It is a
 **source node**, an external input, the same shape the audit found for lye and
 potash.
 
-For an able dwarf the chain is solved: the `WaterSource` zone got the founders
-drinking. For an **immobile** dwarf it is a different chain and the first
-design had no representation of it at all: a bucket that exists and is neither
-forbidden nor claimed, a dwarf with the water-carrying labour enabled, and a
-reachable source.
+### Thirst is the goal; water is only one of its two routes
+
+**Added 2026-09-19, and it is the clearest vindication the AND-OR design has
+had.** The section below spends its length on water because the fort's crisis
+presented as a water problem. That framing was too narrow, and the graph would
+have caught it before a human did.
+
+The real goal node is **thirst satisfied**, and it has **two producing
+hyperedges**:
+
+1. **Water**, a source node with no reaction, reachable only by pathing.
+2. **`DRINK`**, a class produced by `BREW_DRINK_FROM_PLANT` at a still, from
+   one plant plus one occupied container, yielding five drinks and one seed
+   (`brewing-chain-from-raws`, verified from this install's own raws).
+
+A blocker walk rooted at thirst explores both and returns whichever is
+actually completable. Rooted at *water*, it can only ever tell you the pond is
+unreachable, which is true, useless, and exactly the answer that had a session
+designating ramps into a flooded basin. **Choosing the goal node correctly is
+therefore not a modelling detail; it is most of the diagnosis.** A goal stated
+one level too specific silently deletes every alternative route from the
+search.
+
+This is also why processes consume **classes** and produce **specifics** (§4).
+`DRINK` as a class is what lets a second route exist at all without anyone
+authoring it.
+
+For an able dwarf the chain is **not** solved. An earlier version of this
+section said the `WaterSource` zone got the founders drinking; that claim is
+wrong and is corrected below. For an **immobile** dwarf it is a different
+chain and the first design had no representation of it at all: a bucket that
+exists and is neither forbidden nor claimed, a dwarf with the water-carrying
+labour enabled, and a reachable source.
 
 - **A triggered check, not a standing query.** Whenever any citizen reads
   unconscious or hospitalised, run that three-link walk. It is the blocker
@@ -499,6 +527,44 @@ author:** two true facts (a cancellation message, a nonzero unconscious count)
 were combined into a false conclusion without a read. The design says detect,
 do not infer, and treat a residual as unattributed rather than explained. That
 applies to whoever writes the reports, not only to the code.
+
+**"The chain is solved" was also wrong, corrected 2026-09-19, and this is the
+one worth keeping.** Measured across two exact reads at tick 227160 and tick
+233463: delta tick 6,303 equalled delta thirst 6,303 across all 15 citizens,
+so `thirst_timer` incremented exactly 1 per tick over that window and
+**nobody drank at all**. The `WaterSource` zone read `spec_sub_flag.active =
+true` the whole time. Active is not reachable.
+
+- **Why.** Uniboslan's pond is a sunken basin, not open water. At z168 (the
+  water's own level): 142 WALL, 26 RAMP, 1 FLOOR, **zero walkable tiles**,
+  and all 27 wet tiles have **zero walkable neighbours**. At z169 (directly
+  above): 134 walkable tiles, 100 FLOOR, 26 RAMP_TOP, zero wet. So the water
+  sits in a bowl ringed by wall, with the only dry standing ground a level
+  above it. A `WaterSource` zone placed on the water cannot make a dwarf
+  path to a tile no dwarf can stand next to.
+- **Digging into it does not fix it, proven by digging, not by argument.** A
+  Channel was designated at z169 on a FLOOR tile with 3 walkable neighbours,
+  directly above a waterline wall, adjacent to 6/7 water. One supervised
+  unpause dug it. Result: z168 wet went **27 to 28**; z168 walkable **stayed
+  0**. The newly opened tile filled with water and became more basin, not a
+  standing spot. The generalisable version: opening a tile at a full basin's
+  own water level converts that tile into more water, so you cannot dig a
+  standing spot *into* a full basin this way.
+- **The remedy is a well**, which draws upward from a dry tile above rather
+  than requiring a standing spot at the water's own level. Folded into
+  doctrine as `water-source-needs-walkable-neighbour`,
+  `sunken-basin-recognition` and `do-not-dig-into-full-basin`
+  (`doctrine/seed.yaml`), which supersede the now-`refuted`
+  `water-source-zone-for-ponds`.
+- **The limit of this evidence, stated plainly so it is not overclaimed
+  later:** this proves *this* pond is unreachable by the tested means, and
+  that *one* channel dig into it flooded rather than opened a stand. It does
+  not prove no dig anywhere could ever reach a basin like this, for example a
+  stairway or a cut that lands beside the water rather than opening straight
+  into it was never tried. Nor does it prove a `WaterSource` zone never
+  works: on water that already has a walkable neighbour at its own level,
+  nothing measured here says it would fail. → `Working.md`, "The fort cannot
+  drink, and the pond cannot be dug to"; `handoffs/2026-09-18-well-unblock.md`.
 
 ## 13. Levers: what the fort can actually change
 

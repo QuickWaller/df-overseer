@@ -10,6 +10,24 @@ learning architecture.
 > Game knowledge (crop and water rules the agents should use) goes in
 > `doctrine/seed.yaml`, not the register.
 >
+> - **The fort cannot drink.** This corrects the entry below it, written
+>   2026-09-17, which said Uniboslan drinks. Measured 2026-09-19 across two
+>   exact reads: delta tick 6,303 equalled delta thirst 6,303 across all 15
+>   citizens, so `thirst_timer` increments 1 per tick and **nobody drank at
+>   all**. The `WaterSource` zone is active but unreachable, because **zero
+>   water tiles have any walkable neighbour**, and digging to the water was
+>   disproven by digging: a channel at z169 flooded and left z168 walkable at
+>   0. The fort needs a **well**, blocked on BLOCKS 0 and TRAPPARTS 0 against
+>   3 logs and 0 boulders. → `handoffs/2026-09-19-well-unblock.md`.
+> - **The production model is built, green and empty.** `production/` is
+>   2,182 lines across five modules at **364 passed / 1 skipped**, covering
+>   steps 1 to 5 of the spec's build order. Two gaps, both found by audit
+>   rather than by failure: the extractor has **never seen real data** (6
+>   hand-assembled fixture reactions, not the real 159), and **nobody wrote
+>   the caller** that assembles a snapshot for `blocker.py` and `cover.py`,
+>   so the graph has never been pointed at this fort. Two streams are on
+>   both. → `handoffs/2026-09-19-real-corpus-extraction.md`,
+>   `handoffs/2026-09-19-snapshot-assembler.md`.
 > - **The production and logistics model is designed in full, nothing
 >   built.** `docs/PRODUCTION-MODEL.md` is the build spec: a directed
 >   hypergraph in plain SQLite, corrected by two feasibility audits against
@@ -20,7 +38,7 @@ learning architecture.
 >   material-side join before a concrete item id exists; no job-duration
 >   figure exists anywhere on this install, in DFHack's docs, or on the
 >   wiki, confirmed a third independent time. → `ROADMAP.md` Now bucket.
-> - **The fort drinks and grows food for the first time.** Uniboslan is
+> - **Superseded 2026-09-19, kept for the record: "the fort drinks and grows food for the first time."** Uniboslan is
 >   paused at tick 227160 (sim at **10 FPS**, deliberate) with 15 citizens, no
 >   deaths. Its ponds are sunken basins of 6-7/7 water one level below the
 >   surface, which is why no dwarf drank unaided; a `WaterSource` zone placed
@@ -30,7 +48,7 @@ learning architecture.
 >   planted yet**. **Still not
 >   built:** the still (designated; the fort owns only 3 logs, no worker took
 >   the job yet either way). Fort-owned food is 17 units, drink still 0, 60
->   seeds (35 plump helmet). → `Working.md` HANDOVER 2026-09-17.
+>   seeds (35 plump helmet). → `Working.md` HANDOVER 2026-09-19 (the 2026-09-17 one is archived).
 >
 > - **The fort.** VM 103 (`df-colony-01`) runs **Uniboslan, "Ragwind,"** the
 >   one fort, on DF Classic plus DFHack under Xvfb, built by
@@ -38,7 +56,7 @@ learning architecture.
 >   Artobcatten, was lost founding it (register 2026-09-10). It is genuinely
 >   paused, the safe state. The user chose to continue on this fort; it is
 >   expendable, and rescuing it is worth trying for the tools it forces us to
->   build. → `Working.md` HANDOVER 2026-09-17.
+>   build. → `Working.md` HANDOVER 2026-09-19 (the 2026-09-17 one is archived).
 > - **Perception and action.** `scripts/dfhack/` holds the coordinate-free
 >   tools: connectivity, landmarks, overview, diff, open-area and diggable
 >   find/build, chokepoints, stuck jobs, labor, farm, workshop, zone, trees,

@@ -175,10 +175,18 @@ local function is_fort_owned_item(item)
   return true
 end
 
+-- SILENT-ZERO FIX (handoffs/2026-09-19-silent-zero-fix.md,
+-- research/2026-09-19-unverified-claims-audit.md finding 3): this used to
+-- `return 0` when `item_type_other_id` did not resolve into a vector --
+-- the same shape as the FEED_WATER_WOUNDED incident recorded in
+-- docs/PRODUCTION-MODEL.md §13 (a name that does not exist, silently
+-- reported as a genuine zero). Returns count(number or nil), err(string or
+-- nil) -- err set means count is nil, not zero. Mirrors df-overseer-
+-- labor.lua's `set_labor`, the fix already made once for the write path.
 local function count_fort_owned(item_type_other_id)
   local ok, vec = pcall(function() return df.global.world.items.other[item_type_other_id] end)
   if not ok or not vec then
-    return 0
+    return nil, "unknown item type: " .. tostring(item_type_other_id)
   end
   local n = 0
   for i = 0, #vec - 1 do
@@ -186,13 +194,14 @@ local function count_fort_owned(item_type_other_id)
       n = n + 1
     end
   end
-  return n
+  return n, nil
 end
 
+-- Same fix, same reason, as count_fort_owned above.
 local function labor_enabled_count(labor_name)
   local code = df.unit_labor[labor_name]
-  if not code then
-    return 0
+  if code == nil or code < 0 then
+    return nil, "unknown labor: " .. tostring(labor_name)
   end
   local n = 0
   for _, unit in ipairs(df.global.world.units.active) do
@@ -201,7 +210,7 @@ local function labor_enabled_count(labor_name)
       n = n + 1
     end
   end
-  return n
+  return n, nil
 end
 
 local function find_plant_by_id(id)
@@ -272,26 +281,41 @@ end
 -- This answers the still/kitchen stream's own open question ("logs or
 -- boulders, whichever the game accepts") for real: it is BOTH, plus
 -- blocks, interchangeably. Reported fresh on every call, never cached.
+-- Each of BOULDER/WOOD/BLOCKS is looked up independently, so one bad name
+-- reports only its own miss, never masks the other two's real counts.
+-- `fort_owned_errors` carries only the entries that actually failed (see
+-- count_fort_owned's own header) -- omitted entirely when all three
+-- resolve, so a caller can check `fort_owned_errors == nil` as "clean".
 local function building_material_report()
+  local boulder, boulder_err = count_fort_owned("BOULDER")
+  local wood, wood_err = count_fort_owned("WOOD")
+  local blocks, blocks_err = count_fort_owned("BLOCKS")
+  local errors = {BOULDER = boulder_err, WOOD = wood_err, BLOCKS = blocks_err}
+  local has_error = boulder_err or wood_err or blocks_err
   return {
     accepts = {"BOULDER", "WOOD", "BLOCKS"},
     fort_owned = {
-      BOULDER = count_fort_owned("BOULDER"),
-      WOOD = count_fort_owned("WOOD"),
-      BLOCKS = count_fort_owned("BLOCKS"),
+      BOULDER = boulder,
+      WOOD = wood,
+      BLOCKS = blocks,
     },
+    fort_owned_errors = has_error and errors or nil,
   }
 end
 
 local function requirements_for(kind_info)
+  local labor_count, labor_err = labor_enabled_count(kind_info.labor)
   local req = {
     labor = kind_info.labor,
-    citizens_with_labor = labor_enabled_count(kind_info.labor),
+    citizens_with_labor = labor_count,
+    citizens_with_labor_error = labor_err,
     building_material = building_material_report(),
   }
   if kind_info.needs_container then
+    local container_count, container_err = count_fort_owned(kind_info.needs_container)
     req.needs_container = kind_info.needs_container
-    req.fort_owned_containers = count_fort_owned(kind_info.needs_container)
+    req.fort_owned_containers = container_count
+    req.fort_owned_containers_error = container_err
   end
   if kind_info.named_requirement then
     req.named_requirement = kind_info.named_requirement
