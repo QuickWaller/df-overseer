@@ -271,3 +271,22 @@ throughout, `ReadCurrentTick()` unchanged before and after:
   *designation* is a live-readable per-tile field; the four cost weights
   themselves (1/2/5/25) are compiled into the binary, not raw-derivable,
   and are also a configurable default in-game, not a hardcoded constant.
+- **A full vanilla raws set exists on the workstation, not only on the VM**
+  (found 2026-09-19 by a background search that had been scoped to the repo
+  and missed it): `C:\Program Files (x86)\Steam\steamapps\common\Dwarf
+  Fortress\data\vanilla\`, with real `reaction_{other,dyes,smelter,
+  adv_carpenter}.txt` and the `vanilla_{plants,materials,items,buildings}`
+  directories. **Important caveat, and the reason this is a convenience
+  rather than a source of truth: that is a Steam build, and the fort runs DF
+  Classic plus DFHack on VM 103.** The version is unverified against the
+  fort's. Anything claimed about Uniboslan must come from the VM's own raws;
+  check `describes:` against the install version before citing a figure
+  taken from the local copy.
+- **The VM's raws are the authoritative copy and are cheap to pull**:
+  `/opt/df/game/data/vanilla/` over SSH as user `df` (not `root`, which
+  refuses with a login banner). The four reaction files hold **159
+  reactions** total (adv_carpenter 22, dyes 68, other 46, smelter 23),
+  matching `research/2026-09-18-schema-extraction-static.md` exactly, which
+  is a useful integrity check that you pulled the same corpus the audit read.
+  **Do not commit them**: this repo is public and they are game data. Stage
+  them in a scratchpad and read in place.
