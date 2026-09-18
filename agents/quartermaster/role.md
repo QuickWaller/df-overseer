@@ -1,8 +1,12 @@
 # Quartermaster
 
 **Kind:** advisor. **NOT ENABLED.** Blocked on tools, not on a decision.
-No `tools.yaml` or `model.yaml` yet, deliberately: writing an allowlist of tools
-that do not exist would imply a capability this project does not have.
+A `tools.yaml` now exists (added 2026-09-18 with the `stockpile.*` reads, which
+are the first tools this role would actually want); the role itself stays
+`enabled: false` in `ROSTER.yaml` and holds no `model.yaml`. The earlier note
+here said no allowlist existed on purpose, because writing one for tools that
+did not exist would imply a capability the project did not have. That reason is
+now partly spent: some of those tools exist.
 
 ## Would own
 
