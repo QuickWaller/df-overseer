@@ -22,7 +22,7 @@ with the user.
 **Agreed so far** (→ `decisions/DECISIONS.md` 2026-09-17):
 - Doctrine sources carry per-source provenance; `verified` needs a 53.16 live
   or game-data source; a pytest validator enforces it (built).
-- `get_doctrine`, read-only, with a topic index (agreed, not built).
+- `get_doctrine`, read-only, with a topic index (agreed; **built 2026-09-19** as `doctrine.get`, consultant only, not yet deployed).
 - Doctrine revisions are proposals; the Overseer can accept, reject, defer,
   **amend**, or hand the proposal to another role for querying first.
   Amendments apply directly for tactical and strategy proposals and return to
@@ -391,20 +391,66 @@ at the artifact URL recorded above.
 
 ### Open, waiting on the user
 
-- **home-lab owes a `services.yaml` entry for `dfseries-import`** on VM 103
-  (not writable from here). Suggested entry in
-  `handoffs/2026-09-19-dfseries-auto-import.md`, "What home-lab needs to know".
-- **The loop architecture** (dispatcher plus queue?) and **whether to scrub
-  the old leaked LAN addresses from public history** in
-  `working-archive/Working_archive-2026-09-07.md`.
-
+- **The loop architecture**: dispatcher plus queue (independent one-shot
+  runs, our scheduler wakes them, roles talk only through the queue)? This
+  blocks the biggest gap, "nothing runs on its own".
 - **Key rotation** for four exposed secrets, deferred by the user ("ill rotate
   them another day"). See the section at the top of this file.
-- **home-lab obligation**: guest changes made here must be reflected in
-  `../home-lab/inventory/`, and this session is not authorised to edit that
-  repo. Route it rather than writing into its declared layer.
+
+### Owed to home-lab (noted 2026-09-19, user-directed; not writable from here)
+
+This repo may not edit `../home-lab`; route these to a session there or to the
+user. Anything sent must carry the command actually run against the live
+system, per `CLAUDE.md`'s upstream obligations.
+
+- **`inventory/services.yaml`: add `dfseries-import` on VM 103**
+  (`df-colony-01`), beside the existing `dfmcp-server` entry. A systemd
+  oneshot service plus a 60s timer, **enabled 2026-09-19 on the user's
+  go-ahead, so boot-persistent**. Code at `/opt/df/dfmcp-smoke/dfseries/`,
+  database at `/var/lib/dfseries/uniboslan.series.sqlite3`, reads the sampler's
+  JSONL under `/opt/df/game/dfhack-config/timeseries/`. Verify with
+  `systemctl is-enabled dfseries-import.timer` and `systemctl is-active
+  dfseries-import.timer` on VM 103. Full suggested entry in
+  `handoffs/2026-09-19-dfseries-auto-import.md`, "What home-lab needs to know".
+- **No IP changes**: nothing today allocated or changed an address, so
+  `inventory/ips.yaml` is untouched.
+
+### LAN addresses already public in git history (noted 2026-09-19, user-directed)
+
+**Found 2026-09-19** while checking a new write-up for leaks: 
+`working-archive/Working_archive-2026-09-07.md` has carried VM 103's and the
+relay VM's LAN addresses, plus a VNC port and a noVNC URL, **on GitHub for
+weeks**, against this repo's own rule. RFC1918 private addresses, so reachable
+only from the home LAN or via the relay: low severity, but a real breach of
+the rule, and the kind of detail a public repo exists not to hold.
+
+- **Not yet decided by the user**, deliberately. Two options:
+  1. **Redact from here on**: replace them in the current file with
+     `<df-vm-ip>`-style placeholders. Cheap and safe, but the addresses remain
+     readable in history forever.
+  2. **Rewrite history** (`git filter-repo` over those strings, then a force
+     push). Actually removes them, but rewrites every commit hash after the
+     first occurrence, breaks every existing clone and worktree, and cannot be
+     undone once pushed. Needs the user's explicit go-ahead, and every other
+     session on this repo stopped first.
+- Worth doing alongside either: a pre-commit or CI check that refuses an IPv4
+  literal outside `infra/local.*`, since three leaks were caught by hand on
+  2026-09-19 alone and one was already public.
+- `infra/local.example.env` and `scripts/provision_vm.py` contain
+  `192.168.1.240/24` as an **illustrative example value**, not a real address;
+  those are fine and must not be swept up by a filter.
 
 ### Background, not urgent
+
+- **Deferred by the user 2026-09-19: trigger import on each sample, not a 60s
+  clock.** The 60s timer is correct (records carry their own `abs_tick`; import
+  timing only affects freshness) but it lags up to a minute at 100 FPS and
+  fires uselessly while paused. The better trigger is a systemd `.path` unit
+  fired by the sampler's writes. Catch: a directory watch sees new files, not
+  appends, and the file name changes per timeline, so the sampler would touch
+  a fixed marker file (`.last_sample`) after each write. Keep the timer as a
+  slow fallback. **Not** a DFHack-side hook: that would put external work back
+  on the game loop.
 
 - Two unguarded `items.other.*` access patterns (`trees.lua`'s
   `count_fort_owned_axes`, four in `stocks.lua`) **crash loudly** rather than
