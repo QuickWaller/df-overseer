@@ -174,3 +174,11 @@ true` dry-run correctly reports `would_gather: 40, would_gather_brewable:
   `dfhack-run lua -f` pause call, backgrounded with `setsid nohup ... &
   disown`.
 
+### 3. UNPAUSE WINDOW 1: tick 283992 -> in progress
+
+**Unpaused at tick 283992** (confirmed by direct read immediately after the
+call, `ReadPauseState()` transitioning). Watchdog armed for a 300s window
+(re-pause fallback). Goal of this window: let the two stair-designation jobs
+(upstair/downstair at z167 behind Embark Site) actually get carved, so z167
+becomes reachable for a mining designation.
+
