@@ -312,6 +312,32 @@ its own, which would make the whole pond question moot. The fort has 8 raw
 plants and 3 logs; the still is designated but unbuilt with its job **366**
 reported suspended twice.
 
+### Update, 2026-09-19 morning (read before the list below)
+
+**The fort survived and drinks.** Live read at tick **272606**, paused: **23
+citizens alive, 0 dead** (eight migrants arrived), a still exists, drink stock
+0. All 15 original citizens (ids 192-198 and 344-353) have thirst at or below
+28,922 after roughly 59,000 elapsed ticks, which is only possible if each
+drank. The newest eight (453-460) sit at 1,737-2,377 in exact steps of 100,
+consistent with arrival, so they are not counted as evidence. **What they drank
+is unknown and deliberately not being chased** (user, "idrc"): 2 plants brew at
+most 10 drinks, which cannot cover it alone.
+
+**Autosave is fixed** (register 2026-09-19): an in-game `repeat` quicksaves
+every 7 game days, persisted in `onMapLoad.init`. Registered, **not yet seen
+firing**. A manual quicksave was taken at 272606 and confirmed by slot mtime.
+
+**The well stream and the extraction stream both died on a Sonnet session
+limit.** The extraction work was preserved on its branch and the stream has
+been resumed. Three streams now running: extraction (resumed), deploy and
+live-verify (VM 103), and `get_doctrine`.
+
+**User directions:** blocks come from mining plus a mason's workshop;
+drinks must be kept ahead of the plants (`brew-before-plants-run-out`); neither
+is the current focus. **The loop itself ("nothing runs on its own") is not
+being built unilaterally**: its core architecture is pending the user's
+decision, per the learning-loop section above.
+
 ### START HERE, in priority order
 
 **Sequencing rule while streams are live:** only one stream touches VM 103 or

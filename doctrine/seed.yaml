@@ -991,3 +991,29 @@
     valid reagent, and the failure would have shown up as a job that never
     starts rather than as an error. Recorded so the next reader does not have
     to re-derive it. See `brewing-chain-from-raws`.
+
+- id: brew-before-plants-run-out
+  scope: universal
+  status: prior
+  topics: [drink, food]
+  sources:
+    - kind: user
+      ref: >-
+        The user, 2026-09-19, on Uniboslan's drink position: "they need
+        drinks ready before the plants go"
+      describes: unknown
+      read: opened
+      accessed: 2026-09-19
+  statement: >-
+    Keep a drink stock brewed ahead of need, rather than brewing only once
+    the fort is already thirsty and the plant stock is nearly spent.
+  note: >-
+    Recorded as the user stated it, deliberately not sharpened into a
+    number: no cover target exists yet (`cover-target-not-yet-settable`),
+    because the harvest clock is not computable. What makes the rule bite
+    on this install is `brewing-chain-from-raws`: one plant brews to five
+    drinks and returns a seed, so a plant lost to rot before brewing costs
+    five drinks. What eating a plant raw yields (and whether it returns a
+    seed) is **not checked here** and should not be assumed either way; an
+    earlier draft of this note asserted "no seed" without evidence and was
+    corrected before commit.
