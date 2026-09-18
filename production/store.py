@@ -73,15 +73,26 @@ def write_all(
 ) -> dict:
     """Validate and write a full extraction in one transaction.
 
-    `reset=True` (the default) clears every table first, so re-running the
-    extractor against a fixture set is idempotent rather than accumulating
-    duplicate rows across runs -- this module has no notion of "already
-    extracted this reaction," unlike dfqueue's id-collision check, because
-    there is exactly one writer (the extractor) and no append-only audit
-    trail requirement here.
+    `reset=True` (the default) clears the **static graph tables** first, so
+    re-running the extractor against a fixture set is idempotent rather than
+    accumulating duplicate rows across runs -- this module has no notion of
+    "already extracted this reaction," unlike dfqueue's id-collision check,
+    because there is exactly one writer (the extractor) and no append-only
+    audit trail requirement here.
+
+    `production_observation` is deliberately **not** one of the tables reset
+    clears (`docs/TIMESERIES.md` "Open": "Until decided, `production.store`
+    must at least stop deleting it on reset"; `handoffs/
+    2026-09-19-dfseries-store.md`). The static graph and the observation
+    history have different lifecycles: re-extracting the graph (a raws
+    change, a new pass) must never erase history that took real fort time to
+    collect. If `observations` rows are passed here, they are inserted
+    alongside whatever is already in the table, not used to replace it.
 
     Returns a dict of row counts per table, the same shape `extract.py`'s
-    caller (and the handoff's coverage table) wants.
+    caller (and the handoff's coverage table) wants. The `production_
+    observation` count is the number of rows this call inserted, not the
+    table's new total.
     """
     nodes = nodes or []
     classes = classes or []
@@ -105,9 +116,12 @@ def write_all(
     with connect(path) as conn:
         with conn:
             if reset:
+                # production_observation is deliberately excluded: it is
+                # history, not part of the static graph a re-extraction
+                # regenerates. See this function's docstring.
                 for table in (
                     "production_flow", "production_class", "material_reaction_product",
-                    "production_attribute", "production_observation",
+                    "production_attribute",
                     "production_process", "production_node",
                 ):
                     conn.execute(f"DELETE FROM {table}")
