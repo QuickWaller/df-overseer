@@ -261,7 +261,7 @@
 
 - id: water-source-needs-walkable-neighbour
   scope: universal
-  status: verified
+  status: prior
   topics: [water, drink]
   sources:
     - kind: live-read
@@ -300,9 +300,17 @@
     able to stand adjacent to a tile to interact with it) is ordinary
     pathing logic, not something this project verified from source.
 
+    Status downgraded from `verified` to `prior` by the orchestrator on
+    2026-09-19: the measurements cited are real and stand, but the statement
+    is `scope: universal` while the evidence is one pond at one site, and
+    this entry's own note says it does not establish a general DF mechanic.
+    A universal claim marked verified on single-site evidence is the exact
+    pattern this project keeps catching itself in. The Uniboslan measurement
+    is not in doubt; its generality is.
+
 - id: sunken-basin-recognition
   scope: universal
-  status: verified
+  status: prior
   topics: [water, drink]
   sources:
     - kind: live-read
@@ -328,9 +336,14 @@
     every sunken-looking pond elsewhere reproduces this exact signature,
     only that this is what to check for and what it looked like here.
 
+    Status downgraded from `verified` to `prior` by the orchestrator on
+    2026-09-19, for the same reason as `water-source-needs-walkable-
+    neighbour`: one basin observed, universal claim stated. The tile-shape
+    signature is real at Uniboslan and untested anywhere else.
+
 - id: do-not-dig-into-full-basin
   scope: universal
-  status: verified
+  status: prior
   topics: [water, drink]
   sources:
     - kind: live-read
@@ -359,6 +372,14 @@
     tried. It only establishes that this specific approach (open the tile
     that touches the water, at the water's level) fails, and fails by
     becoming more water rather than by simply not completing.
+
+    Status downgraded from `verified` to `prior` by the orchestrator on
+    2026-09-19. This one rests on **a single dig of a single shape**, and
+    the stream that wrote it said so plainly in its own report: only one dig
+    shape was tested, so no conclusion follows about digs in general. The
+    observation (channel dug, wet 27 to 28, walkable still 0) is exact and
+    stands as evidence; the universal prohibition does not follow from it
+    yet.
 
 - id: do-not-overfish
   scope: universal
