@@ -225,6 +225,11 @@ live before touching anything. Nothing is running right now.
    the user's go-ahead:** deploy, remove the orphan z167 UpStair, designate
    the new rank-1 spot for real, and rerun the supervised dig with a fixed
    focus check. → `handoffs/2026-09-17-dig-stair-fix.md` Result.
+4. **Run `ban-cooking all` on Uniboslan** (a write, needs the user's
+   go-ahead; fort can stay paused). Protects seeds, booze and brewables
+   from the kitchen in one command, including types not yet in stock. The
+   fort has never had it run, and `seed-stock-never-falls` doctrine has no
+   other enforcement. → `memory/dfhack-environment.md`.
 4. **Then a longer supervised run** for planting (nothing has sprouted yet;
    the plot only finished construction partway through today's window) and
    the still, once 1-3 are done.

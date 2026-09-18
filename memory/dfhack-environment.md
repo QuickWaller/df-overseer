@@ -215,3 +215,14 @@ tool builds:
   (`CustomReaction` with `reaction_name = BREW_DRINK_FROM_PLANT`; brewing is
   a reaction, not its own job type, so no job type literally named "Brew*"
   exists).
+
+- **Kitchen restrictions need no UI automation** (verified 2026-09-18, live
+  read of the install). `ban-cooking.lua` ships with this DFHack and writes
+  `df.global.plotinfo.kitchen` directly, the same struct the
+  `never-cook-seed-items` doctrine entry was verified against. Usage:
+  `ban-cooking <type|all>`, with types including `seeds`, `brew`, `booze`
+  and `fruit`, plus `--unban`. Its own docs call `ban-cooking all` a
+  sensible first action in a new fort, and it bans types not yet in stock,
+  which clicking the Kitchen screen cannot do. **Uniboslan has never run
+  it.** So "protect the seed stock" is a one-command write, not a settings
+  screen, and doctrine's seed rules are actionable today.
