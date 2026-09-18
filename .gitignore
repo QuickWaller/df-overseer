@@ -62,3 +62,5 @@ venv/
 # dfqueue/<fort>.sqlite3 (handoffs/2026-09-15-live-signals-sqlite.md). WAL
 # mode also leaves -wal/-shm sidecar files alongside it.
 dfqueue/*.sqlite3*
+# production/<fort>.sqlite3, same pattern (handoffs/2026-09-18-production-package.md).
+production/*.sqlite3*

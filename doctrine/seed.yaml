@@ -447,7 +447,13 @@
     reservation rule ("available for discretionary work equals stock minus
     reserve floor, minus par, minus consumption commitment, minus
     job-claimed") live in docs/PRODUCTION-MODEL.md §10 itself and are not
-    restated here, to avoid two copies drifting apart.
+    restated here, to avoid two copies drifting apart. Worth recording that the
+    band model was not invented from nothing: seed-stock-never-falls (a hard
+    floor, never run out of seed) and dispose-of-surplus-seed (surplus seed is
+    not harmless clutter to keep forever) already described a floor and a
+    surplus band for the same good, written earlier and without the
+    vocabulary. The bands named here generalise what those two were already
+    doing.
 
 - id: bucket-par-and-labor-redundancy
   scope: universal
@@ -531,7 +537,11 @@
     which stands regardless of the answer. Whether the hospital-zone
     reservation still behaves as recalled in 53.16 is a separate open
     question; settling either needs a live test this offline stream cannot
-    run.
+    run. Extends bedridden-need-water-brought (pre-dating this
+    entry, prior, same topics), which already said a resting dwarf does not
+    fetch its own drink and an empty bucket must be kept available. This entry
+    adds the par level, the labour redundancy, the placement rule and the
+    existence-versus-availability check; it does not replace it.
 
 - id: cover-target-migration-headroom
   scope: universal
