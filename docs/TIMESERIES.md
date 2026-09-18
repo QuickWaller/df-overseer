@@ -52,8 +52,8 @@ single append is one atomic sample and a torn final line is detectable.
 {
   "v": 1,
   "timeline_id": "string, see Timelines",
-  "timeline_start_abs_tick": 272606,
-  "abs_tick": 273806,
+  "timeline_start_abs_tick": 12368606,
+  "abs_tick": 12369806,
   "cur_year": 30,
   "cur_year_tick": 273806,
   "wall_utc": "2026-09-19T09:30:00Z",
@@ -122,6 +122,19 @@ reachable with an explicit all-timelines query. Found by the `dfseries` stream
 while writing its rollback test and implemented that way in `trend.series()`;
 recorded here so a second implementation cannot choose differently.
 
+## Timers reset: a rate across a reset is meaningless
+
+**Found 2026-09-19, on the first real data.** `thirst_timer`, `hunger_timer` and
+`sleepiness_timer` are **counters that reset** when the dwarf drinks, eats or
+sleeps. They are not levels. Over the first real 9-game-day run, `unit:193`
+never drank and correctly shows +1.000000 per tick, but `unit:192` drank
+mid-run (33,722 to 1,085), and the store's endpoint rate reported
+**-2.133056 per tick over 10 samples**, which looks authoritative and means
+nothing. For a resetting counter the meaningful outputs are the **reset events**
+(a drink, bounded to the sampling interval) and the slope **between** resets.
+Until the store knows a metric's kind, a rate on a `*_timer` metric must not be
+trusted across a reset.
+
 ## Where files live
 
 On VM 103, append-only, **one file per timeline**, in a configurable
@@ -132,7 +145,7 @@ parsed as a partial sample.
 
 ## Open, to be settled by the streams and reported back
 
-- Sample interval. **Start at 1 game day (1,200 ticks)**, about two minutes of
+- Sample interval. **1 game day (1,200 ticks), settled and live.** The fort runs at **100 FPS** (`enabler.fps`, read live 2026-09-19; several docs wrongly say 10), so a game day is about 12 real seconds at full pace, not two minutes; the first run sampled 9 times with no visible cost. Originally written as: about two minutes of
   real time at the fort's 10 FPS; raise it if the cost is noticeable.
 - Whether the store's database lives on the VM (next to the MCP server that
   will eventually serve trends) or is pulled to the workstation. Default: on
