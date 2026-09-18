@@ -137,10 +137,20 @@ local function scan_trees(z, ax, ay, min_x, max_x, min_y, max_y)
   return trees
 end
 
+-- SILENT-ZERO FIX (handoffs/2026-09-19-silent-zero-fix.md,
+-- research/2026-09-19-unverified-claims-audit.md finding 3): this used to
+-- `return 0` when `labor_name` did not resolve -- character for character
+-- the FEED_WATER_WOUNDED incident recorded in docs/PRODUCTION-MODEL.md §13
+-- (a labor token that does not exist, silently reported as a genuine zero).
+-- Mirrors df-overseer-labor.lua's `set_labor`, the same fix already made
+-- once for the write path: a name that does not resolve is a distinct
+-- outcome from "resolved, and zero citizens have it", never collapsed into
+-- the same number. Returns count(number or nil), err(string or nil) -- err
+-- set means count is nil, not zero.
 local function labor_enabled_count(labor_name)
   local code = df.unit_labor[labor_name]
-  if not code then
-    return 0
+  if code == nil or code < 0 then
+    return nil, "unknown labor: " .. tostring(labor_name)
   end
   local n = 0
   for _, unit in ipairs(df.global.world.units.active) do
@@ -149,7 +159,7 @@ local function labor_enabled_count(labor_name)
       n = n + 1
     end
   end
-  return n
+  return n, nil
 end
 
 -- Fort-owned count of any WEAPON item whose itemdef id contains "AXE" --
@@ -219,6 +229,7 @@ function find_trees(level, near, radius_tiles)
     end
   end
 
+  local citizens_with_labor, labor_err = labor_enabled_count(CUTWOOD_LABOR)
   return {
     near_landmark = near,
     radius_tiles = radius,
@@ -226,7 +237,8 @@ function find_trees(level, near, radius_tiles)
     total_reachable = total_reachable,
     bands = bands,
     labor = CUTWOOD_LABOR,
-    citizens_with_labor = labor_enabled_count(CUTWOOD_LABOR),
+    citizens_with_labor = citizens_with_labor,
+    citizens_with_labor_error = labor_err,
     fort_owned_axes = count_fort_owned_axes(),
   }
 end
@@ -276,6 +288,7 @@ function fell_trees(n, level, near, radius_tiles, dry_run)
     table.insert(chosen, reachable[i])
   end
 
+  local citizens_with_labor, labor_err = labor_enabled_count(CUTWOOD_LABOR)
   local result = {
     dry_run = dry,
     requested = n,
@@ -284,7 +297,8 @@ function fell_trees(n, level, near, radius_tiles, dry_run)
     nearest_distance_tiles = chosen_n > 0 and chosen[1].dist or nil,
     farthest_distance_tiles = chosen_n > 0 and chosen[chosen_n].dist or nil,
     labor = CUTWOOD_LABOR,
-    citizens_with_labor = labor_enabled_count(CUTWOOD_LABOR),
+    citizens_with_labor = citizens_with_labor,
+    citizens_with_labor_error = labor_err,
     fort_owned_axes = count_fort_owned_axes(),
   }
 
