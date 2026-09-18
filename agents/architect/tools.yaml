@@ -193,3 +193,16 @@ deny:
       in dfqueue.schema yet, so granting read access now would be an
       unenforced convention, not a wired requirement. Revisit when that
       field exists.
+  - id: "series.*"
+    reason: >-
+      Withheld handoffs/2026-09-19-series-mcp-tools.md. The fort's own
+      recorded history (dfseries/) bears on siting less directly than on
+      arbitration or fact-checking: docs/TIMESERIES.md's design explicitly
+      names quartermaster (inventory/production trends), the overseer
+      (arbitration) and the consultant (fact-checking) as the three roles
+      concerned with this data; the Architect is not one of them. This
+      role's proposals are spatial (where things go), not about whether the
+      fort is drinking or producing enough -- that judgment belongs to
+      whichever role actually decides what to do about it. Revisit if a
+      proposal type ever needs to cite a measured trend directly rather
+      than a Quartermaster/Overseer assessment of one.
