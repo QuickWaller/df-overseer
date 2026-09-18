@@ -398,3 +398,313 @@
     not just close to the fort center. A long round trip between the water
     and the stockpile is a cited productivity drag independent of whether
     fish are available at all.
+
+# ---- Material policy, from docs/PRODUCTION-MODEL.md (2026-09-18) --------
+# The production model moved every target out of code into doctrine so a par
+# level or a cover margin can be argued with rather than sitting buried in a
+# constant. These six entries are that move's first content. All `prior`:
+# policy judgements and community figures, never game facts this project can
+# confirm live, so none of them may be `verified` regardless of how solid
+# the underlying source is (decisions/handoffs/2026-09-18-doctrine-material-
+# policy.md, the stream's own hard rule).
+
+- id: material-policy-bands
+  scope: universal
+  status: prior
+  topics: [material]
+  sources:
+    - kind: research
+      ref: >-
+        docs/PRODUCTION-MODEL.md §10, "Material policy: bands, held in
+        doctrine"
+      describes: unknown
+      read: opened
+      accessed: 2026-09-18
+  statement: >-
+    Material policy is bands on one quantity axis, not a weighted objective:
+    a weight vector trading dwarf-time against barrels against seeds gives a
+    different answer from identical data and is unreviewable, targets are.
+    Bands, low to high: below the reserve floor is a hard stop that
+    overrides even survival; floor to par is kept on hand and produced
+    toward, par may be per-capita; par to the cover target is working stock,
+    expressed in days for consumed goods; above the cover target is surplus,
+    and doctrine says whether that is discretionary value or a liability to
+    dispose of. Class is a property of intended use, not of the item: stone
+    below the block reserve is a resource, the same stone above it is
+    clutter occupying tiles that drink needs, which is why bands beat fixed
+    item categories. Bands are lexicographic, not weighted, so no cost
+    vector is needed for a cross-class decision; a seed floor is never
+    traded off against a crafts surplus. Derived demand gets no cover target
+    of its own: charcoal is needed only if smelting is planned, so it is
+    netted from that plan instead. Give a derived good a cover target and
+    the fort stockpiles fuel for a furnace nobody built.
+  note: >-
+    Reference entry: later doctrine entries (buckets, migration headroom,
+    the seed/breeding-pair reserve, clothing wear, durability) are instances
+    of these band shapes and should cite this entry rather than restate the
+    vocabulary. The full shape table (irreplaceable reserve, consumed, keep
+    on hand, insurance, capital, discretionary, liability) and the
+    reservation rule ("available for discretionary work equals stock minus
+    reserve floor, minus par, minus consumption commitment, minus
+    job-claimed") live in docs/PRODUCTION-MODEL.md §10 itself and are not
+    restated here, to avoid two copies drifting apart.
+
+- id: bucket-par-and-labor-redundancy
+  scope: universal
+  status: prior
+  topics: [water, health, labor]
+  sources:
+    - kind: research
+      ref: docs/PRODUCTION-MODEL.md §12, "Water, which no reaction produces"
+      describes: unknown
+      read: opened
+      accessed: 2026-09-18
+    - kind: research
+      ref: >-
+        research/2026-09-18-schema-extraction-live.md: item.flags.in_job
+        read exact against item 67 matched to job 372's job.items[0];
+        CANCEL_JOB announcement "Ral Identeshkad, Metalcrafter cancels Give
+        water: Need empty bucket." at tick 214135
+      describes: "53.16"
+      read: opened
+      accessed: 2026-09-18
+    - kind: live-read
+      ref: >-
+        Uniboslan re-read at tick 227160 (fort paused throughout), run by
+        the orchestrating session, not this offline stream, and relayed
+        here: 5 buckets total. Three (item ids 81, 149, 150) are fort-owned,
+        empty, not forbidden, not job-claimed, no holder. Two (1680, 1788)
+        are trader=true, held by the visiting caravan's own pack yaks, not
+        the fort's stock. The "1 of 15 citizens unconscious" figure traced
+        to a sleeping miner (unconscious=2, pain=0, wounds=0,
+        current_job=Sleep), not an injury
+      describes: "53.16"
+      read: opened
+      accessed: 2026-09-18
+    - kind: user
+      ref: >-
+        recollection of the v50 hospital-zone reserved-item mechanic,
+        carried into docs/PRODUCTION-MODEL.md §12 without its own citation
+      describes: unknown
+      read: recalled
+      accessed: 2026-09-18
+  statement: >-
+    Buckets are an Insurance-band good (a level held against a threat model,
+    reviewable only after the threat fires), not a Consumed or Keep-on-hand
+    good: hold a par level of at least two, permanently, and never let it
+    draw down to zero even when nothing is currently drinking from one.
+    Enable the water-carrying labor on more than one dwarf; a single point
+    of failure here is worth guarding against regardless of current
+    urgency. Placement: near the route, not at the water itself. Uniboslan's
+    ponds sit one level below the surface and are likely open to the sky, so
+    a bucket left at the waterside is exposed to theft by wildlife; a store
+    inside the secured area on the way down gives the same travel saving
+    without that exposure. **Existence is not availability**: checking "does
+    the fort own a bucket" is not the same question as "can a dwarf get one
+    right now", and doctrine should check the second. Three deductions can
+    hide stock that raw counts show as present: job-claimed
+    (item.flags.in_job, exact and cheap to read), forbidden, and
+    caravan-owned (a visiting trader's own animals and goods read as
+    present-on-site but are never the fort's). A par-level check that counts
+    raw item totals without subtracting all three will read "fine" when a
+    dwarf can still fail to get water. The remaining internal-theft risk is
+    another fort job claiming the bucket before the water-carrying job
+    reaches it; DF's own answer is the hospital zone, which reserves its own
+    supplies. Record that as prior and flag it as needing verification,
+    since it is recollection of v50 mechanics that nothing in this project
+    has tested.
+  note: >-
+    Corrected 2026-09-18: this entry's first draft, and the handoff that
+    requested it, both stated the fort owned no bucket and that a citizen
+    was at risk from thirst. Both were wrong. A live re-read after dispatch
+    found three fort-owned buckets, empty and unclaimed, and found the
+    "unconscious" citizen to be a sleeping miner, not an injury or a medical
+    emergency. The honest justification is the more useful one anyway: with
+    three buckets sitting available, the fort's own Give Water job still
+    cancelled with "Need empty bucket" at tick 214135, which is exactly the
+    available-versus-total distinction docs/PRODUCTION-MODEL.md §7 names,
+    demonstrated live rather than asserted. Left open: why that job failed
+    to find any of the three at that moment (reachability? a race with
+    another job that released its claim afterward? a stale read?) is not
+    settled by anything read so far, and would need a live trace of that
+    specific job to explain rather than this doctrine's par-level guidance,
+    which stands regardless of the answer. Whether the hospital-zone
+    reservation still behaves as recalled in 53.16 is a separate open
+    question; settling either needs a live test this offline stream cannot
+    run.
+
+- id: cover-target-migration-headroom
+  scope: universal
+  status: prior
+  topics: [material, food, drink]
+  sources:
+    - kind: research
+      ref: >-
+        docs/PRODUCTION-MODEL.md §3 (Q4 table: "migration ... never a
+        formula term") and §15 ("Migration headroom | Q4, must not enter a
+        formula | never as code; a stated margin in doctrine")
+      describes: unknown
+      read: opened
+      accessed: 2026-09-18
+    - kind: wiki
+      ref: >-
+        Migrant, version banner "v53.16 · v0.47.05" at the page top; wave
+        size and wealth/population-cap passages
+      describes: "53.16"
+      read: opened
+      accessed: 2026-09-18
+  statement: >-
+    Cover targets for consumed goods (food, drink, and any future consumed
+    class) carry a stated margin above bare per-dwarf demand, and the reason
+    is recorded here so nobody later "corrects" the padding as arbitrary:
+    migration waves are exogenous and can be large relative to a small fort,
+    and population is Q4 (docs/PRODUCTION-MODEL.md §3), so it must never
+    enter a live formula computing the margin. The wiki's current Migrant
+    page grounds the margin's size in real numbers rather than an invented
+    one: each of the first two migrant waves is capped between 1 and 10
+    arrivals; the third wave on scales with the fort's created wealth; wave
+    size is then capped down as local population rises (limited to 10 from a
+    local population of 1000) until migrants stop entirely at a local
+    population of 3000; and wave size also depends on how far the fort sits
+    below its population cap. Doctrinal judgement, stated as such: pad every
+    consumed-good cover target by at least 50% above bare demand at the
+    fort's current population. On a 15-citizen fort such as Uniboslan, a
+    single wave capped at 10 is nearly two-thirds of the current census, so
+    50% is a floor, not a comfortable margin. Express cover in dwarf-days,
+    not days, so a population jump rescales the target automatically without
+    the formula itself ever reading population; the 50% margin is a
+    doctrine constant to revise by hand whenever the census changes
+    materially, never a computed term.
+  note: >-
+    The 50% figure is this entry's own judgement call, not a cited number;
+    flagged here exactly so it reads as a judgement rather than a
+    derivation. The wiki page's wave-size numbers describe the general
+    mechanic, not this specific fort's wealth level, so they bound the
+    problem rather than predict Uniboslan's next wave.
+
+- id: irreplaceable-reserve-inherited-by-future-classes
+  scope: universal
+  status: prior
+  topics: [seeds, material]
+  sources:
+    - kind: research
+      ref: >-
+        docs/PRODUCTION-MODEL.md §10 (shape table row "Irreplaceable reserve
+        (seeds, breeding pairs) | hard floor | never, the point is that
+        nothing happens") and §15 ("Animals | demand is measured anyway, and
+        breeding pairs inherit the reserve band automatically | the fort's
+        first livestock")
+      describes: unknown
+      read: opened
+      accessed: 2026-09-18
+  statement: >-
+    The irreplaceable-reserve band that seed-stock-never-falls establishes
+    for seeds (a hard floor overriding even survival, because zero is
+    unrecoverable without a caravan) is a property of the band shape, not of
+    seeds specifically: anything whose loss is similarly unrecoverable
+    inherits the same treatment automatically, with no new policy entry
+    required to cover it. The design names the first concrete case: a
+    future breeding pair. When the fort acquires its first livestock, the
+    pair's hard floor exists the moment the shape applies to it, not after
+    someone remembers to write a rule for animals.
+  note: >-
+    Read alongside seed-stock-never-falls, which this entry generalises
+    rather than replaces. Nothing yet forces this to be exercised: Uniboslan
+    owns no livestock as of the 2026-09-17 handover, so this is a standing
+    rule with no live case yet.
+
+- id: clothing-wear-parked-with-trigger
+  scope: universal
+  status: prior
+  topics: [material]
+  sources:
+    - kind: research
+      ref: >-
+        docs/PRODUCTION-MODEL.md §15, parked table row "Wear and clothing |
+        takes ~2 years to bite; this fort is in year 1 | the first tattered
+        item, or year 2"
+      describes: unknown
+      read: opened
+      accessed: 2026-09-18
+    - kind: wiki
+      ref: >-
+        Clothing, version banner "v53.16"; wear-rate and storage passages
+      describes: "53.16"
+      read: opened
+      accessed: 2026-09-18
+  statement: >-
+    Clothing wear is a Liability-band concern, with a real unhappiness cost
+    once a garment reads tattered, but it is genuinely slow and safe to park
+    while Uniboslan is in its first year. Parked with the trigger written
+    down rather than left as an unstated "later": revisit at the first item
+    that reads tattered (X or XX wear; lowercase x does not trigger the
+    negative thought), or at the start of year two, whichever comes first.
+    Method, so this is not rediscovered from scratch: count the state (the
+    item's own wear symbol), do not model the rate, the same approach
+    doctrine takes for food and drink durability. This corrects the design
+    doc's own stated reason rather than just repeating it: the current wiki
+    page says a worn item gains one wear level every ten years, not two
+    ("This is a change from previous versions, where worn clothing gained
+    one level of wear every two years"), and properly stored clothing
+    degrades far slower still, about a century in a stockpile or personal
+    quarters, or twenty years under DFHack. Reaching "tattered" needs more
+    than one wear level on top of that. So the real time-to-bite is at least
+    a decade, not two years; the design's year-2 trigger is still a fine,
+    deliberately early conservative check, just not literally when damage
+    starts.
+  note: >-
+    The wiki does not state how many wear levels reach X versus XX, so the
+    exact time to the unhappy thought stays unpinned beyond "at least ten
+    years while worn, likely more". Not worth chasing further while this
+    stays parked; revisit if the trigger ever fires for real. Flagged for
+    the orchestrator: docs/PRODUCTION-MODEL.md §15's "~2 years" figure
+    should probably be corrected there too, since it is now the stale
+    pre-change number rather than this install's behaviour.
+
+- id: durability-splits-cover-target
+  scope: universal
+  status: prior
+  topics: [material, food, drink]
+  sources:
+    - kind: research
+      ref: >-
+        docs/PRODUCTION-MODEL.md §11, "Spoilage without a decay constant":
+        classify durability (Q1), use the rot flags df-overseer-stocks.lua
+        already reports as the live check, cover splits into durable
+        (barrelled drink, prepared meals) and perishable (raw edibles,
+        especially outside)
+      describes: unknown
+      read: opened
+      accessed: 2026-09-18
+    - kind: research
+      ref: >-
+        research/2026-09-18-schema-extraction-static.md §6: [ROTS]
+        raw-confirmed present on STRUCTURAL_PLANT_TEMPLATE (raw harvested
+        plant matter) and confirmed absent, full block read, from
+        PLANT_ALCOHOL_TEMPLATE (drink) and PLANT_POWDER_TEMPLATE (milled
+        powder), against material_template_default.txt on this install
+      describes: "53.16"
+      read: opened
+      accessed: 2026-09-18
+  statement: >-
+    Days of cover for food and drink should be reported split, not blended:
+    durable stock (barrelled drink, prepared meals) versus perishable stock
+    (raw edibles, especially anything sitting outside a container).
+    "Eleven days of cover, of which three are raw edibles already flagged
+    rotten" is honest in a way one blended number cannot be. The split is a
+    doctrinal classification, not a derived one, because the raws only
+    carry a rot token ([ROTS]) on the material template, never on an item
+    or plant definition directly, and the static schema audit raw-confirmed
+    it present on raw harvested plant matter (STRUCTURAL_PLANT_TEMPLATE) and
+    absent on both the drink template (PLANT_ALCOHOL_TEMPLATE) and the
+    milled-powder template (PLANT_POWDER_TEMPLATE) for this install. That
+    settles drink and powder as durable by raw definition; everything else
+    needs this doctrine's classification plus a live rot-flag read (already
+    surfaced by df-overseer-stocks.lua) as the actual per-item check, since
+    no single token gives spoilage as a rate.
+  note: >-
+    Prepared meals are asserted durable by the design doc's own framing
+    (barrelled or contained, akin to drink), but this entry has not
+    independently traced a rot token for cooked-meal items the way it has
+    for drink and powder. Flagged as the one unconfirmed half of the
+    statement rather than silently folded in with the confirmed half.
