@@ -741,8 +741,8 @@ df-overseer-orders.lua:
       lua_function: list_orders
       effect: read
       coordinate_bearing: false
-      live_deployed: false
-      verified: "2026-09-17 (live)"
+      live_deployed: true
+      verified: "2026-09-18 (live, post-redeploy: manager_appointed false, orders [])"
       knowledge_scope: player_visible
       notes: >
         Reads `df.global.world.manager_orders.all` directly (a plain
@@ -755,8 +755,8 @@ df-overseer-orders.lua:
       lua_function: create_order
       effect: mutate
       coordinate_bearing: false
-      live_deployed: false
-      verified: "2026-09-18 (DRY_RUN=true path only, all 12 jobs individually dry-run verified live; the real create_orders call is still UNTESTED live, mutation forbidden this session)"
+      live_deployed: true
+      verified: "2026-09-18 (DRY_RUN=true path only, all 12 jobs individually dry-run verified live via dfhack-run, each returning the expected job/reaction and a sane workshop_exists count -- 1 for brew_drink (the fort's one Still), 0 for the other 11; an unknown job name correctly refused, listing all 12 known jobs; the real create_orders call is still UNTESTED live, mutation forbidden this session)"
       knowledge_scope: player_visible
       notes: >
         JOB is one of blocks/mechanisms/barrels/brew_drink/bucket/bed/
@@ -801,8 +801,8 @@ df-overseer-orders.lua:
       lua_function: cancel_order
       effect: mutate
       coordinate_bearing: false
-      live_deployed: false
-      verified: "2026-09-17 (dry-run path live-verified against a nonexistent id -- refused correctly; the real erase+delete path is UNTESTED live, inferred by convention from workorder.lua's own cleanup code and research/2026-09-16-food-and-drink-logistics.md's own :erase(idx) finding, not independently proven)"
+      live_deployed: true
+      verified: "2026-09-17 (dry-run path live-verified against a nonexistent id -- refused correctly; the real erase+delete path is UNTESTED live, inferred by convention from workorder.lua's own cleanup code and research/2026-09-16-food-and-drink-logistics.md's own :erase(idx) finding, not independently proven). Redeployed 2026-09-18 unchanged (only create_order's JOB_INFO/workshop_exists_count changed this stream), not re-exercised."
       knowledge_scope: player_visible
       notes: >
         `world.manager_orders.all:erase(idx)` plus `order:delete()`, the
@@ -818,8 +818,8 @@ df-overseer-stockpile.lua:
       lua_function: list_stockpiles
       effect: read
       coordinate_bearing: false
-      live_deployed: false
-      verified: "PENDING-LIVE-VERIFICATION-THIS-SESSION"
+      live_deployed: true
+      verified: "2026-09-18 (live): Stockpile #1 (id 1) occupied_tiles 24/25, accepts [food, furniture, stone, wood, finished_goods, bars_blocks]; Stockpile #2 (id 2) occupied_tiles 7/25, same accepts list. Both total_tiles_exact true, both near_landmark self (direction S, distance 0)."
       knowledge_scope: player_visible
       notes: >
         Every stockpile: id, landmark-relative name (df-overseer-landmarks.lua's
@@ -838,8 +838,8 @@ df-overseer-stockpile.lua:
       lua_function: stockpile_links
       effect: read
       coordinate_bearing: false
-      live_deployed: false
-      verified: "PENDING-LIVE-VERIFICATION-THIS-SESSION"
+      live_deployed: true
+      verified: "2026-09-18 (live): stockpile ids 1 and 2 both resolved kind=stockpile, all four link vectors count 0 resolved true; workshop id 5 (the Still) resolved kind=workshop, same empty-links result via building.profile.links; a nonexistent id (99999) refused 'no building with id 99999'; a real building id of the wrong kind (id 4, the fort's one FarmPlot) refused 'id 4 is not a stockpile or workshop (FarmPlot)'."
       knowledge_scope: player_visible
       notes: >
         Give/take links for one stockpile OR workshop building id --
