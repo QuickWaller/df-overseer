@@ -112,6 +112,20 @@ read:
       Same handoff, item 4. Pending manager orders plus whether a Manager
       is currently appointed (live-verified false on this fort). Not yet
       deployed.
+  - id: "stockpile.list"
+    status: exists
+    note: >-
+      Added handoffs/2026-09-18-lever-gap-tools.md. Every stockpile:
+      landmark-relative name, occupied/total tiles (a leading indicator --
+      docs/PRODUCTION-MODEL.md sec8), coarse accept categories. Read this
+      before proposing a new stockpile or a site change.
+  - id: "stockpile.links"
+    status: exists
+    note: >-
+      Same handoff. Give/take links for one stockpile or workshop id.
+      Both of Uniboslan's stockpiles are unlinked today, live-verified --
+      a misconfigured/absent link is one of the six diagnoses
+      docs/PRODUCTION-MODEL.md sec13 names with no prior tool to see it.
 
 write:
   - id: "queue.propose"
