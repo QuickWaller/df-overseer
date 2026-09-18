@@ -1,0 +1,39 @@
+item_tool.txt fixture -- see PROVENANCE.md.
+
+ITEM_TOOL_WHEELBARROW and ITEM_TOOL_MINECART blocks below are QUOTED
+verbatim from the audit sec8, which read item_tool.txt lines 213-223
+(wheelbarrow) and 200-211 (minecart) on the real install and reproduced
+them as a code block, matching research/2026-09-18-production-figures.md's
+wiki-sourced figures digit-for-digit. ITEM_TOOL_JUG and ITEM_TOOL_LARGE_POT
+are RECONSTRUCTED: the audit quotes the individual SIZE (300/5000) and
+CONTAINER_CAPACITY (10000/60000) values in prose (sec8) but not as full
+blocks, so the block form here is this stream's assembly of those verified
+numbers. MATERIAL_SIZE is carried over from the quoted wheelbarrow/minecart
+blocks; the audit did not report a MATERIAL_SIZE for jug/large pot, so it
+is omitted there rather than guessed.
+
+[OBJECT:ITEM]
+
+wheelbarrow and minecart -- QUOTED verbatim, audit sec8:
+
+[ITEM_TOOL:ITEM_TOOL_WHEELBARROW]
+[VALUE:50]
+[SIZE:30000]
+[MATERIAL_SIZE:6]
+[CONTAINER_CAPACITY:100000]
+
+[ITEM_TOOL:ITEM_TOOL_MINECART]
+[VALUE:50]
+[SIZE:40000]
+[MATERIAL_SIZE:6]
+[CONTAINER_CAPACITY:500000]
+
+jug and large pot -- RECONSTRUCTED block form, QUOTED individual values:
+
+[ITEM_TOOL:ITEM_TOOL_JUG]
+[SIZE:300]
+[CONTAINER_CAPACITY:10000]
+
+[ITEM_TOOL:ITEM_TOOL_LARGE_POT]
+[SIZE:5000]
+[CONTAINER_CAPACITY:60000]

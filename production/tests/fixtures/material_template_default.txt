@@ -1,0 +1,30 @@
+material_template_default.txt fixture -- see PROVENANCE.md.
+
+QUOTED findings (audit sec6): ROTS is present on STRUCTURAL_PLANT_TEMPLATE
+(the real file's line ~2129) and confirmed absent from PLANT_ALCOHOL_
+TEMPLATE (a 60-line block in the real file), PLANT_POWDER_TEMPLATE (a
+41-line block) and SEED_TEMPLATE. Each template here is abbreviated to the
+handful of tokens this project's extractor reads; the real blocks are much
+longer (heatdam/ignite points, solid/liquid density, and dozens of other
+material properties not modelled by this schema).
+
+[OBJECT:MATERIAL_TEMPLATE]
+
+[MATERIAL_TEMPLATE:STRUCTURAL_PLANT_TEMPLATE]
+	[STATE_NAME_ADJ:ALL_SOLID:plant]
+	[ROTS]
+	[ITEMS_HARD]
+
+[MATERIAL_TEMPLATE:PLANT_ALCOHOL_TEMPLATE]
+	[STATE_NAME_ADJ:ALL_LIQUID:drink]
+	[ALCOHOL]
+	[ITEMS_SCALED][ITEMS_SOFT]
+
+[MATERIAL_TEMPLATE:PLANT_POWDER_TEMPLATE]
+	[STATE_NAME_ADJ:ALL_SOLID:powder]
+	[POWDER_MISC_PLANT]
+	[ITEMS_SCALED]
+
+[MATERIAL_TEMPLATE:SEED_TEMPLATE]
+	[STATE_NAME_ADJ:ALL_SOLID:seed]
+	[ITEMS_HARD]

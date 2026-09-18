@@ -1,0 +1,24 @@
+reaction_smelter.txt fixture -- see PROVENANCE.md.
+
+The flux boulder reagent line below is QUOTED verbatim, cited by the audit
+to reaction_smelter.txt line 143 on the real install: REAGENT:B:1:BOULDER:
+NO_SUBTYPE:NONE:NONE followed by REACTION_CLASS:FLUX. The reaction it sits
+in, and the hematite reagent and iron bar product around it, are
+ILLUSTRATIVE -- the audit describes the smelter alloy set (metals consumed:
+IRON, SILVER, TIN, ZINC, COPPER, NICKEL, GOLD, BISMUTH, LEAD; alloys
+produced: ADAMANTINE, BILLON, BRASS, BRONZE, ELECTRUM, STEEL) without
+naming one specific reaction. This is the fixture set's one wholly-fixed
+(non-parametric) product, for contrast against the brewing case.
+
+[OBJECT:REACTION]
+
+[REACTION:SMELT_HEMATITE_TO_IRON]
+	[NAME:smelt hematite]
+	[BUILDING:SMELTER:NONE]
+	[SKILL:SMELT]
+	[REAGENT:A:1:BOULDER:NO_SUBTYPE:INORGANIC:HEMATITE]
+	flux reagent line -- QUOTED, reaction_smelter.txt:143 in the audit:
+	[REAGENT:B:1:BOULDER:NO_SUBTYPE:NONE:NONE]
+		[REACTION_CLASS:FLUX]
+	[PRODUCT:100:4:BAR:NONE:METAL:IRON]
+		[PRODUCT_DIMENSION:150]

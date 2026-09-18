@@ -1,0 +1,19 @@
+reaction_dyes.txt fixture -- see PROVENANCE.md.
+
+ILLUSTRATIVE. The audit reports this file's aggregate shape (68 REACTION
+blocks, each product sourced PLANT_MAT:species:part, fixed and non-
+parametric) and a count, never a single literal example line, so nothing
+below is a verbatim quote. Included only to give the extractor a second
+wholly-fixed product case from a different mechanism (PLANT_MAT rather
+than METAL) and to keep the fixture set naming all four shipped reaction
+files, per the handoff's minimum.
+
+[OBJECT:REACTION]
+
+[REACTION:DYE_THREAD_WITH_PIG_TAIL]
+	[NAME:dye thread]
+	[BUILDING:DYERS:NONE]
+	[SKILL:DYER]
+	[REAGENT:dye:1:POWDER_MISC:NONE:PLANT_MAT:PIG_TAIL:MILL]
+	[REAGENT:thread:1:THREAD:NONE:NONE:NONE]
+	[PRODUCT:100:1:THREAD:NONE:PLANT_MAT:PIG_TAIL:MILL]
