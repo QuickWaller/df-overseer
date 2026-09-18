@@ -324,9 +324,17 @@ their file ownership is strictly disjoint and each handoff names the other's
 files as forbidden; the blocker-walk and days-of-cover pair had to be
 serialised because both simply claimed `production/**`.
 
-**Three streams are live as of 2026-09-19.** One owns the VM and the fort
-(the well), two are offline and own strictly non-overlapping files under
-`production/`. Do not dispatch a fourth that touches either surface.
+**Five streams are live as of 2026-09-19.** One owns the VM and the fort (the
+well); two are offline under `production/` with strictly non-overlapping
+files; one owns `doctrine/` and `docs/`; one is read-only and writes a single
+research file. Before dispatching another, check it collides with none of
+those five surfaces.
+
+**The worktree trap, learned the hard way today:** a worktree agent is cut
+from a **commit**, so a handoff written and dispatched in the same breath is
+**not in its checkout**. Two streams were dispatched blind before this was
+spotted and had to be told to run `git checkout main -- <their handoff>`.
+**Commit the handoff before dispatching.**
 
 0. **The well, and with it the fort's water.** Running:
    `handoffs/2026-09-19-well-unblock.md`. Gated on settling from this
@@ -334,6 +342,12 @@ serialised because both simply claimed `production/**`.
    one fact chooses between the 3-log route and the stone route. **Done means
    thirst falling across two reads**, not a well existing. This stream owns
    VM 103 until it reports.
+0b. **Correct the water doctrine** (running,
+   `handoffs/2026-09-19-water-doctrine-correction.md`) and **audit the repo
+   for claims presented as measured** (running, read-only,
+   `handoffs/2026-09-19-unverified-claims-audit.md`). The first records what
+   the pond actually taught us; the second exists because four instances of
+   one error class in two weeks is a pattern.
 1. **Fill the graph and connect it.** Running, both offline, both
    worktree-isolated:
    `handoffs/2026-09-19-real-corpus-extraction.md` (the extractor has never
