@@ -97,3 +97,41 @@ timer, each timer's rate is stated with its evidence or marked not
 established, the per-dwarf-day aggregate works, the full suite passes (**446
 passed / 1 skipped** right now, report before and after), and the write-up
 says what the contract should now say.
+
+## Write-up (executor, in progress)
+
+Baseline confirmed before any change: `python -m pytest -q` at the repo root
+gives **446 passed, 1 skipped**, matching the handoff.
+
+**Read-only analysis of the real file** (a standalone script over
+`tl-20260918T213057Z-688464.jsonl`, 10 samples, 9 intervals, 23 citizens per
+metric = 207 citizen-intervals per metric), before writing any code, to
+measure what to put in the registry rather than guess:
+
+- `thirst_timer`: 206/207 intervals rose by exactly the tick gap. The one
+  exception is `unit:192`, 33722 at `abs_tick` 12373406 to 1085 at
+  `abs_tick` 12374606 -- reset dates to `12374606 - 1085 = 12373521`, exactly
+  matching the handoff's required answer. No other citizen has a thirst
+  reset. No anomalies (no interval rose more than the tick gap).
+- `hunger_timer`: 207/207 intervals rose by exactly the tick gap. **Zero
+  resets occurred for anyone in this window** -- nobody ate. So the
+  between-reset rate (1/tick) has the same evidential weight as thirst's,
+  but the reset-*dating* formula itself has never fired on a real hunger
+  reset in this data. Registered as established by analogy; flagged in the
+  registry evidence for a future run to confirm against a real hunger reset.
+- `sleepiness_timer`: only 186/207 intervals matched "rose by exactly the
+  tick gap". The other 21 are not stray noise, they are a real dynamic:
+  while a citizen is awake the timer rises by exactly the tick gap (same
+  signature as thirst/hunger), but during what is presumably sleep it
+  *decreases* over one or more consecutive intervals, and not at a constant
+  rate. `unit:192`: 49168 -> 46048 -> 23248 -> 448 across three consecutive
+  1200-tick gaps, i.e. -2.6/tick, then -19.0/tick, then -19.0/tick. This
+  confirms the handoff's suspicion exactly: it drains during sleep rather
+  than snapping to zero, so there is no single between-reset rate and no
+  exact-tick dating for it. Registered `rate_per_tick=None`, "not
+  established".
+
+**Milestone 1 committed**: `dfseries/metrics.py`, the metric-kind registry
+(`kind_of`, `MetricKind`, `REGISTRY`), with the three timers' evidence
+written up as above and unknown metrics defaulting to `LEVEL`. Tests in
+`dfseries/tests/test_metrics.py`, 5 passed.
