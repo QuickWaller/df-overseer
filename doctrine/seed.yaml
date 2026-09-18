@@ -728,3 +728,57 @@
     independently traced a rot token for cooked-meal items the way it has
     for drink and powder. Flagged as the one unconfirmed half of the
     statement rather than silently folded in with the confirmed half.
+
+- id: cover-target-not-yet-settable
+  scope: universal
+  status: prior
+  topics:
+    - material
+    - food
+    - drink
+  sources:
+    - kind: research
+      ref: >-
+        docs/PRODUCTION-MODEL.md §11: growdur reads 300 for
+        MUSHROOM_HELMET_PLUMP while live grow_counter values on real plants
+        sit in the tens of thousands (18480, 18481, 18482 on consecutive
+        instances, 21036 on another), so the two are not the same unit and
+        the candidate conversions give a quarter of a day, two and a half
+        days, or 250 days
+      describes: "53.16"
+      read: opened
+      accessed: 2026-09-18
+    - kind: research
+      ref: >-
+        production/cover.py: resupply_lead_time_days returns unavailable
+        unconditionally, verified by an independent call handing it the real
+        growdur=300 and grow_counter=18480 figures, which still refused
+      describes: "53.16"
+      read: opened
+      accessed: 2026-09-18
+  statement: >-
+    A cover target is not a number to be picked. It is derived: cover must
+    exceed the time to resupply, plus the migration margin from
+    cover-target-migration-headroom, or the fort starves before more food can
+    arrive. That makes the target a function of resupply lead time, and
+    resupply lead time for a crop is currently not computable on this install,
+    because the unit relating growdur to grow_counter is unsettled. Therefore
+    **no cover target is set here, deliberately, and none should be invented
+    elsewhere.** A calculator asked for a verdict without a target must report
+    that no target exists rather than defaulting to one, exactly as
+    production/cover.py already refuses to convert the lead time itself. The
+    rule to apply once the unit is settled: target equals measured resupply
+    lead time in dwarf-days, times one plus the migration margin, and a
+    reserve floor set below it at the point where acting later would no longer
+    leave time to act at all.
+  note: >-
+    Written because a build stream correctly flagged that the band vocabulary
+    exists with no day-count behind it, and asked whether to invent one. The
+    answer is no, and the reason is worth keeping: a fabricated target would
+    be the same failure the calculator was deliberately built to refuse one
+    layer up, and it would be quoted back later as though it had been
+    measured. This project has already had an illustrative figure (an
+    invented "11 days" in a draft of the spec) come back as apparent data
+    within a day. The one observation that unblocks this is cheap: read a
+    planted crop's grow_counter at two known ticks and watch when it becomes
+    harvestable.
