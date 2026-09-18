@@ -253,16 +253,48 @@ itself) still stops and reports.
 
 ### The fort, and the one thing that is actually wrong
 
-**Uniboslan does not drink.** Paused at tick **235668**, year 30, 15 citizens,
-zero deaths. Fort-owned: **drink 0, prepared meals 0**, raw plants 8, seeds 60,
-logs 3, boulders 0.
+**ROLLED BACK 2026-09-19. Paused at tick 213622, not 235668.** An unbounded
+live DFHack query wedged the command pipe and recovery needed `kill -9`, which
+discarded roughly **22,000 ticks** back to a three-day-old quicksave. **Lost:
+the 2026-09-17 `WaterSource` zone, the first farm plot, and a stair
+designation.** Two standing rules came out of it and are now in
+`docs/TRAPS.md`: never run an unbounded query against a live DFHack process,
+and **quicksave immediately before any live fort action**, because the cost of
+an incident is set by the age of the last save.
+
+**Uniboslan does not drink.** Paused at tick **213622**, year 30, 15 citizens,
+zero deaths. Fort-owned after the rollback: **drink 0, prepared meals 0**,
+**raw plants 2** (was 8), seeds 60, logs 3, boulders 0, and **15 empty
+barrels**.
+
+**The route is brewing, not a well.** Settled from the install's own data:
+**no reaction anywhere produces `TRAPPARTS` from wood**, and DFHack's
+`stockflow.lua` offers `ConstructMechanisms` only under rock and metal, so the
+well needs stone the fort does not have. Brewing needs only a still (1 log of
+3) and an empty `FOOD_STORAGE` container, and **the fort already owns 15
+barrels**, so the container is free. 2 plants brew to up to 10 drinks
+(`brewing-chain-from-raws`, `plump-helmet-is-brewable`, both verified).
+
+**The deliverable is not the drink, it is the two thirst reads.** Whether
+alcohol satisfies thirst on this install is still only `prior`, on an
+unrecorded wiki read.
 
 Measured across two exact reads: **delta tick 6,303 equalled delta thirst
 6,303** across all 15 citizens, so `thirst_timer` rises 1 per tick and nobody
 drank in that window. Top thirst 31,899.
 
-**But the diagnosis is under suspicion, and this is the single most important
-open item.** An audit found that the 2026-09-17 record has three founders
+**The measurement method is now cleared, but the contradiction is still open.**
+`getWalkableGroup` was compared against tile shape and the two **agree** at 0
+walkable neighbours, sanity-checked first against all 15 citizens' own
+known-walkable positions. So the suspicion below was unfounded and the reading
+was sound. **What remains unexplained:** the offered explanation (that a
+41-tile dig bridged the network and was lost in the rollback) **does not fit
+the dates**, because the rollback happened *after* the zero-walkable
+measurement was taken. Either something else removed reachability between
+2026-09-17 and 2026-09-19, or that dig never reached the water, or the
+2026-09-17 drinking happened elsewhere. Left open deliberately.
+
+**The original suspicion, kept for the record:** An audit found that the 2026-09-17 record has three founders
 demonstrably drinking at that pond with `NastyWater` thoughts, while the
 2026-09-19 reading says zero water tiles have a walkable neighbour, which
 would make that impossible. **Leading hypothesis: the 2026-09-19 reading is
