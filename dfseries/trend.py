@@ -34,6 +34,8 @@ from __future__ import annotations
 import sqlite3
 from dataclasses import dataclass
 
+from . import metrics as metric_kinds
+
 
 def _lineage_clause(lineage: str) -> str:
     if lineage == "current":
@@ -114,6 +116,148 @@ def latest(conn: sqlite3.Connection, subject: str, metric: str, *, lineage: str 
 UNAVAILABLE = "unavailable"
 MEASURED = "measured"
 
+EXACT_TICK = "exact_tick"
+INTERVAL_BOUNDED = "interval_bounded"
+
+
+@dataclass(frozen=True)
+class ResetEvent:
+    """One reset detected between two consecutive readings `(t0, v0)` and
+    `(t1, v1)`. `kind`: `EXACT_TICK` when the metric's established
+    `rate_per_tick` lets the reset be dated to one tick (`abs_tick` set), or
+    `INTERVAL_BOUNDED` when only "a reset happened somewhere in `(t0, t1]`"
+    can be said (`abs_tick` is `None`; use `window_start_abs_tick` /
+    `window_end_abs_tick`). Per the handoff: "the last one happened at
+    exactly `t1 - v1`" for an exact-tick metric -- a gap can contain more
+    than one reset, and only the last is dated; earlier ones in the same gap
+    are not separately reported, since nothing in a two-point reading can
+    distinguish them."""
+
+    subject: str
+    metric: str
+    kind: str
+    abs_tick: int | None
+    window_start_abs_tick: int
+    window_end_abs_tick: int
+    from_value: float
+    to_value: float
+
+
+@dataclass(frozen=True)
+class Anomaly:
+    """A reading that is impossible for an established resetting counter:
+    it rose by *more* than its established rate over the gap, which a
+    reset-only counter can never do. Reported, never absorbed into a
+    reset event or silently dropped -- only possible when the metric's rate
+    is established, since without a known rate nothing is "impossible"."""
+
+    subject: str
+    metric: str
+    window_start_abs_tick: int
+    window_end_abs_tick: int
+    from_value: float
+    to_value: float
+    reason: str
+
+
+@dataclass(frozen=True)
+class ResetsResult:
+    """`docs/TIMESERIES.md`-facing states-its-assumption output: every field
+    needed to know what was assumed about `metric` before trusting
+    `events`. `metric_kind`: `metrics.LEVEL` or `metrics.RESETTING_COUNTER`
+    (a `LEVEL` metric always returns empty `events`/`anomalies` -- resets
+    are not a concept that applies to it). `rate_per_tick` /
+    `rate_evidence`: carried straight from the registry so a caller never
+    has to look it up separately."""
+
+    metric_kind: str
+    rate_per_tick: float | None
+    rate_evidence: str
+    events: list[ResetEvent]
+    anomalies: list[Anomaly]
+
+
+def resets(
+    conn: sqlite3.Connection, subject: str, metric: str, *,
+    start_abs_tick: int | None = None, end_abs_tick: int | None = None,
+    lineage: str = "current",
+) -> ResetsResult:
+    """Reset events for one subject's metric over a window, per
+    `docs/TIMESERIES.md` "Timers reset" and the handoff's key fact:
+
+    - `v1 == v0 + rate*(t1-t0)`: no reset (only checked when `rate` is
+      established).
+    - `v1 < v0 + rate*(t1-t0)`: at least one reset, the last dated to
+      exactly `t1 - v1/rate` (an `EXACT_TICK` event).
+    - `v1 > v0 + rate*(t1-t0)`: impossible for the counter; reported as an
+      `Anomaly`, never absorbed into `events`.
+
+    When the metric's rate is **not established** (`metrics.kind_of(...)
+    .rate_per_tick is None`), none of the above can be computed -- there is
+    no "expected" value to compare against. The only signal available
+    without a known rate is an outright decrease (`v1 < v0`), which is
+    reported as an `INTERVAL_BOUNDED` event ("a reset somewhere in
+    `(t0, t1]`"), never dated to a tick. A rise, even a slow one, says
+    nothing either way for an unestablished metric and produces neither an
+    event nor an anomaly -- there is no basis to call it either.
+
+    Null readings are excluded first (a null is not a point on this line,
+    same rule as `rate()`). A `LEVEL` metric always returns empty
+    `events`/`anomalies`: resets are not a concept that applies to it."""
+    mk = metric_kinds.kind_of(metric)
+    if mk.kind == metric_kinds.LEVEL:
+        return ResetsResult(
+            metric_kind=mk.kind, rate_per_tick=mk.rate_per_tick, rate_evidence=mk.evidence,
+            events=[], anomalies=[],
+        )
+
+    rows = series(conn, subject, metric, start_abs_tick=start_abs_tick, end_abs_tick=end_abs_tick, lineage=lineage)
+    usable = sorted((r for r in rows if r["value"] is not None), key=lambda r: r["abs_tick"])
+
+    events: list[ResetEvent] = []
+    anomalies: list[Anomaly] = []
+
+    for a, b in zip(usable, usable[1:]):
+        t0, v0 = a["abs_tick"], a["value"]
+        t1, v1 = b["abs_tick"], b["value"]
+        dt = t1 - t0
+        if dt == 0:
+            continue  # two readings at the same tick (a lineage-boundary tie already resolved by series()) is not a gap to reason over
+
+        if mk.rate_per_tick is not None:
+            expected = v0 + mk.rate_per_tick * dt
+            if v1 == expected:
+                continue
+            if v1 < expected:
+                reset_tick = round(t1 - v1 / mk.rate_per_tick)
+                events.append(ResetEvent(
+                    subject=subject, metric=metric, kind=EXACT_TICK, abs_tick=reset_tick,
+                    window_start_abs_tick=t0, window_end_abs_tick=t1, from_value=v0, to_value=v1,
+                ))
+            else:
+                anomalies.append(Anomaly(
+                    subject=subject, metric=metric,
+                    window_start_abs_tick=t0, window_end_abs_tick=t1, from_value=v0, to_value=v1,
+                    reason=(
+                        f"value rose from {v0} to {v1} over {dt} tick(s), more than the "
+                        f"established rate of {mk.rate_per_tick}/tick allows without a reset -- "
+                        f"impossible for a resetting counter, never absorbed as a reset"
+                    ),
+                ))
+        else:
+            if v1 < v0:
+                events.append(ResetEvent(
+                    subject=subject, metric=metric, kind=INTERVAL_BOUNDED, abs_tick=None,
+                    window_start_abs_tick=t0, window_end_abs_tick=t1, from_value=v0, to_value=v1,
+                ))
+            # v1 >= v0 with no established rate: no basis to call this a
+            # reset or rule one out, so neither an event nor an anomaly.
+
+    return ResetsResult(
+        metric_kind=mk.kind, rate_per_tick=mk.rate_per_tick, rate_evidence=mk.evidence,
+        events=events, anomalies=anomalies,
+    )
+
 
 @dataclass(frozen=True)
 class RateResult:
@@ -123,7 +267,19 @@ class RateResult:
     two-point rate visibly weaker than a forty-point one. `tick_span`: the
     number of ticks between the first and last reading actually used.
     `skipped_nulls`: readings in the window excluded because their value was
-    `None`. `reason`: required when `status` is `unavailable`."""
+    `None`. `reason`: required when `status` is `unavailable`.
+
+    `metric_kind`: `metrics.LEVEL` or `metrics.RESETTING_COUNTER` -- every
+    result states which kind it assumed, per the handoff. `segment`: `None`
+    for a `LEVEL` metric or an unavailable result; for a resetting counter,
+    `"endpoint"` when the window contained no reset (the endpoint slope
+    *is* the between-reset slope there) or `"between_reset"` when a reset
+    was found and the value was recomputed from after the last one --
+    `rate()` never returns the raw endpoint slope across a reset, per the
+    handoff's "never the endpoint slope". `used_start_abs_tick`: the
+    `abs_tick` the returned slope actually starts from, which differs from
+    the window's own `start_abs_tick` exactly when `segment ==
+    "between_reset"`."""
 
     status: str
     value: float | None
@@ -131,6 +287,9 @@ class RateResult:
     tick_span: int | None
     skipped_nulls: int
     reason: str | None = None
+    metric_kind: str = metric_kinds.LEVEL
+    segment: str | None = None
+    used_start_abs_tick: int | None = None
 
 
 def rate(
@@ -144,7 +303,21 @@ def rate(
     Needs at least two readings at distinct `abs_tick` with a non-null
     value; with fewer, returns `UNAVAILABLE`, same rule
     `production/cover.py.depletion_rate_per_day` already applies: one
-    reading gives unknown, never a guess."""
+    reading gives unknown, never a guess.
+
+    **For a `resetting_counter` metric** (`metrics.kind_of(metric).kind`),
+    this refuses to let the endpoint slope straddle a reset
+    (`docs/TIMESERIES.md` "Timers reset: a rate across a reset is
+    meaningless"). If `resets()` finds no reset in the window, the endpoint
+    slope is safe and is returned as-is (`segment="endpoint"`). If it finds
+    one or more, the raw endpoint slope is never returned: this recomputes
+    the slope using only the readings from the last reset's `abs_tick`
+    onward (`segment="between_reset"`), or, if fewer than two such readings
+    remain, returns `UNAVAILABLE` with a reason naming the reset and
+    pointing at `resets()`. `LEVEL` metrics (and any not in the registry)
+    keep the original endpoint-slope behaviour unchanged, `segment=
+    "endpoint"`."""
+    mk = metric_kinds.kind_of(metric)
     rows = series(conn, subject, metric, start_abs_tick=start_abs_tick, end_abs_tick=end_abs_tick, lineage=lineage)
     skipped_nulls = sum(1 for r in rows if r["value"] is None)
     usable = [r for r in rows if r["value"] is not None]
@@ -159,15 +332,68 @@ def rate(
                 f"in this window; a rate needs two at different abs_tick "
                 f"({skipped_nulls} null reading(s) skipped)."
             ),
+            metric_kind=mk.kind,
         )
 
+    if mk.kind != metric_kinds.RESETTING_COUNTER:
+        ordered = sorted(usable, key=lambda r: r["abs_tick"])
+        first, last = ordered[0], ordered[-1]
+        tick_span = last["abs_tick"] - first["abs_tick"]
+        value = (last["value"] - first["value"]) / tick_span
+        return RateResult(
+            status=MEASURED, value=value, sample_count=len(usable), tick_span=tick_span,
+            skipped_nulls=skipped_nulls, reason=None,
+            metric_kind=mk.kind, segment="endpoint", used_start_abs_tick=first["abs_tick"],
+        )
+
+    # resetting_counter: refuse to straddle a reset.
+    reset_result = resets(conn, subject, metric, start_abs_tick=start_abs_tick, end_abs_tick=end_abs_tick, lineage=lineage)
     ordered = sorted(usable, key=lambda r: r["abs_tick"])
     first, last = ordered[0], ordered[-1]
-    tick_span = last["abs_tick"] - first["abs_tick"]
-    value = (last["value"] - first["value"]) / tick_span
+
+    if not reset_result.events:
+        tick_span = last["abs_tick"] - first["abs_tick"]
+        value = (last["value"] - first["value"]) / tick_span
+        return RateResult(
+            status=MEASURED, value=value, sample_count=len(usable), tick_span=tick_span,
+            skipped_nulls=skipped_nulls, reason=None,
+            metric_kind=mk.kind, segment="endpoint", used_start_abs_tick=first["abs_tick"],
+        )
+
+    last_event = reset_result.events[-1]
+    if last_event.kind == EXACT_TICK:
+        where = f"a reset at abs_tick {last_event.abs_tick}"
+        segment_start = last_event.abs_tick
+    else:
+        where = f"a reset somewhere between abs_tick {last_event.window_start_abs_tick} and {last_event.window_end_abs_tick}"
+        segment_start = last_event.window_end_abs_tick
+
+    segment_rows = [r for r in ordered if r["abs_tick"] >= segment_start]
+    segment_ticks = sorted({r["abs_tick"] for r in segment_rows})
+
+    if len(segment_ticks) < 2:
+        return RateResult(
+            status=UNAVAILABLE, value=None, sample_count=len(usable), tick_span=None,
+            skipped_nulls=skipped_nulls,
+            reason=(
+                f"window contains {where}; the endpoint slope would straddle it "
+                f"(never returned for a resetting counter -- see resets()), and too few "
+                f"readings remain after the reset for a between-reset slope instead."
+            ),
+            metric_kind=mk.kind,
+        )
+
+    seg_first, seg_last = segment_rows[0], segment_rows[-1]
+    tick_span = seg_last["abs_tick"] - seg_first["abs_tick"]
+    value = (seg_last["value"] - seg_first["value"]) / tick_span
     return RateResult(
-        status=MEASURED, value=value, sample_count=len(usable), tick_span=tick_span,
-        skipped_nulls=skipped_nulls, reason=None,
+        status=MEASURED, value=value, sample_count=len(segment_rows), tick_span=tick_span,
+        skipped_nulls=skipped_nulls,
+        reason=(
+            f"window contains {where}; this is the between-reset slope from abs_tick "
+            f"{seg_first['abs_tick']} onward, not the endpoint slope (see resets())."
+        ),
+        metric_kind=mk.kind, segment="between_reset", used_start_abs_tick=seg_first["abs_tick"],
     )
 
 
