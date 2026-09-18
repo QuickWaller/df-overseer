@@ -452,6 +452,33 @@ Water has no reaction, so a raws-derived graph will never contain it. It is a
 **source node**, an external input, the same shape the audit found for lye and
 potash.
 
+### Thirst is the goal; water is only one of its two routes
+
+**Added 2026-09-19, and it is the clearest vindication the AND-OR design has
+had.** The section below spends its length on water because the fort's crisis
+presented as a water problem. That framing was too narrow, and the graph would
+have caught it before a human did.
+
+The real goal node is **thirst satisfied**, and it has **two producing
+hyperedges**:
+
+1. **Water**, a source node with no reaction, reachable only by pathing.
+2. **`DRINK`**, a class produced by `BREW_DRINK_FROM_PLANT` at a still, from
+   one plant plus one occupied container, yielding five drinks and one seed
+   (`brewing-chain-from-raws`, verified from this install's own raws).
+
+A blocker walk rooted at thirst explores both and returns whichever is
+actually completable. Rooted at *water*, it can only ever tell you the pond is
+unreachable, which is true, useless, and exactly the answer that had a session
+designating ramps into a flooded basin. **Choosing the goal node correctly is
+therefore not a modelling detail; it is most of the diagnosis.** A goal stated
+one level too specific silently deletes every alternative route from the
+search.
+
+This is also why processes consume **classes** and produce **specifics** (§4).
+`DRINK` as a class is what lets a second route exist at all without anyone
+authoring it.
+
 For an able dwarf the chain is **not** solved. An earlier version of this
 section said the `WaterSource` zone got the founders drinking; that claim is
 wrong and is corrected below. For an **immobile** dwarf it is a different
