@@ -5,13 +5,23 @@ story without you. See **[docs/PURPOSE.md](docs/PURPOSE.md)** for what this is
 and why, and **[docs/MEMORY-ARCHITECTURE.md](docs/MEMORY-ARCHITECTURE.md)** for the overseer's memory and
 learning architecture.
 
-> **Status, 2026-09-17.** Current work and next steps: `Working.md` ("START
+> **Status, 2026-09-18.** Current work and next steps: `Working.md` ("START
 > HERE"). History: `decisions/DECISIONS.md`, `working-archive/`, `evals/live/`.
 > Game knowledge (crop and water rules the agents should use) goes in
 > `doctrine/seed.yaml`, not the register.
 >
+> - **The production and logistics model is designed in full, nothing
+>   built.** `docs/PRODUCTION-MODEL.md` is the build spec: a directed
+>   hypergraph in plain SQLite, corrected by two feasibility audits against
+>   this install's own raws and live state
+>   (`research/2026-09-18-schema-extraction-static.md`,
+>   `research/2026-09-18-schema-extraction-live.md`). Consumption has
+>   **four** outcomes, not three; 42% of reaction product lines need a
+>   material-side join before a concrete item id exists; no job-duration
+>   figure exists anywhere on this install, in DFHack's docs, or on the
+>   wiki, confirmed a third independent time. → `ROADMAP.md` Now bucket.
 > - **The fort drinks and grows food for the first time.** Uniboslan is
->   paused at tick 227008 (sim at **10 FPS**, deliberate) with 15 citizens, no
+>   paused at tick 227160 (sim at **10 FPS**, deliberate) with 15 citizens, no
 >   deaths. Its ponds are sunken basins of 6-7/7 water one level below the
 >   surface, which is why no dwarf drank unaided; a `WaterSource` zone placed
 >   on the water at z168, plus one supervised unpause, got founders down to

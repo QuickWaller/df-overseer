@@ -226,3 +226,48 @@ tool builds:
   which clicking the Kitchen screen cannot do. **Uniboslan has never run
   it.** So "protect the seed stock" is a one-command write, not a settings
   screen, and doctrine's seed rules are actionable today.
+
+**ADDED 2026-09-18**, from the production-model live-state audit
+(`research/2026-09-18-schema-extraction-live.md`), read-only, fort paused
+throughout, `ReadCurrentTick()` unchanged before and after:
+
+- **`item.flags.in_job` is the exact, cheap job-claim signal for an item.**
+  A real per-item bool, live-matched to a real job's `job.items[i].item`
+  (job 372's `job.items[0].item.id` resolved to item 67, which itself read
+  `flags.in_job == true`). No job-table scan is needed to ask "is this item
+  claimed": check the item directly.
+- **`item.flags.owned` plus the item's `UNIT_HOLDER` general_ref is
+  confirmed exact for dwarf ownership**, not just believed. 5 sampled
+  `owned=true` items all resolved via `UNIT_HOLDER` to unit 192, and
+  `dfhack.units.isMerchant(unit)` read `false` for that unit, a real
+  citizen, not a trader. This closes `df-overseer-stocks.lua`'s own
+  previously-open question on this field.
+- **A live plant instance carries its own growth counter**,
+  `grow_counter` on `df.global.world.plants.all[i]`, a materially better
+  harvest-clock anchor than catching a `PlantSeeds` job's completion,
+  because it works even if nobody was watching the planting. Its exact
+  direction and post-maturity behaviour are **unconfirmed**, since nothing
+  is planted on Uniboslan to observe (9,100 live plant instances exist
+  map-wide, all wild). Any tool reading `world.plants.all` needs the same
+  `dfhack.maps.isTileVisible` guard this project already applies elsewhere,
+  since the vector is naively omniscient.
+- **`df.global.cur_season` is exact and already the convention this
+  project's other tools use** (Spring=0..Winter=3); `cur_season_tick`
+  reads as `cur_year_tick` minus the season's start tick, divided by 10.
+- **The 1,200 / 33,600 / 403,200 tick conversions (day/month/year) are
+  confirmed live, not just cited**: two real `SEASON_*` announcement `time`
+  fields landed at exactly `403200/4` and `403200/2`. The per-month figure
+  (33,600) stays arithmetic-only; DF does not announce month boundaries the
+  same way.
+- **Stockpile give/take links are a real struct on both sides**:
+  `building_stockpilest.links.{give,take}_{to,from}_{pile,workshop}` on the
+  stockpile, and the mirrored `building.profile.links` on a workshop. Both
+  read empty (0) on Uniboslan today (nothing configured), a real "not
+  configured" rather than a read failure.
+- **`dfhack.maps.getTileFlags(pos).traffic` decodes via the real
+  `df.tile_traffic` enum** (`0=Normal, 1=Low, 2=High, 3=Restricted`,
+  decoded live by direct numeric probing), the same call every other tool
+  in `scripts/dfhack/` already uses for tile flags generally. The traffic
+  *designation* is a live-readable per-tile field; the four cost weights
+  themselves (1/2/5/25) are compiled into the binary, not raw-derivable,
+  and are also a configurable default in-game, not a hardcoded constant.
