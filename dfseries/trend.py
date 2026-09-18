@@ -229,11 +229,20 @@ def resets(
             if v1 == expected:
                 continue
             if v1 < expected:
-                reset_tick = round(t1 - v1 / mk.rate_per_tick)
-                events.append(ResetEvent(
-                    subject=subject, metric=metric, kind=EXACT_TICK, abs_tick=reset_tick,
-                    window_start_abs_tick=t0, window_end_abs_tick=t1, from_value=v0, to_value=v1,
-                ))
+                # Detection uses the established rate. Dating to one tick
+                # also needs reset-to-zero verified for this metric; without
+                # it the event is honestly bounded to the interval.
+                if mk.reset_to_zero_verified:
+                    reset_tick = round(t1 - v1 / mk.rate_per_tick)
+                    events.append(ResetEvent(
+                        subject=subject, metric=metric, kind=EXACT_TICK, abs_tick=reset_tick,
+                        window_start_abs_tick=t0, window_end_abs_tick=t1, from_value=v0, to_value=v1,
+                    ))
+                else:
+                    events.append(ResetEvent(
+                        subject=subject, metric=metric, kind=INTERVAL_BOUNDED, abs_tick=None,
+                        window_start_abs_tick=t0, window_end_abs_tick=t1, from_value=v0, to_value=v1,
+                    ))
             else:
                 anomalies.append(Anomaly(
                     subject=subject, metric=metric,
