@@ -203,10 +203,18 @@ local function is_fort_owned_item(item)
     and not is_on_hidden_tile(item)
 end
 
+-- SILENT-ZERO FIX (handoffs/2026-09-19-silent-zero-fix.md,
+-- research/2026-09-19-unverified-claims-audit.md finding 3): this used to
+-- `return 0` when `item_type_other_id` did not resolve into a vector --
+-- the same shape as the FEED_WATER_WOUNDED incident recorded in
+-- docs/PRODUCTION-MODEL.md §13 (a name that does not exist, silently
+-- reported as a genuine zero). Returns count(number or nil), err(string or
+-- nil) -- err set means count is nil, not zero. Mirrors df-overseer-
+-- labor.lua's `set_labor`, the fix already made once for the write path.
 local function count_fort_owned(item_type_other_id)
   local ok, vec = pcall(function() return df.global.world.items.other[item_type_other_id] end)
   if not ok or not vec then
-    return 0
+    return nil, "unknown item type: " .. tostring(item_type_other_id)
   end
   local n = 0
   for i = 0, #vec - 1 do
@@ -214,26 +222,39 @@ local function count_fort_owned(item_type_other_id)
       n = n + 1
     end
   end
-  return n
+  return n, nil
 end
 
 -- BLOCKS, BUCKET, CHAIN, TRAPPARTS (mechanism) -- live-confirmed this
 -- session via dfhack.buildings.getFiltersByType({}, df.building_type.Well,
 -- -1, -1), matching the handoff's own figures exactly. Reported fresh on
--- every call, never cached.
+-- every call, never cached. Each of the four is looked up independently, so
+-- one bad name reports only its own miss, never masks the other three's
+-- real counts -- `fort_owned_errors` carries only the entries that actually
+-- failed, omitted entirely when all four resolve.
 local function requirements()
+  local blocks, blocks_err = count_fort_owned("BLOCKS")
+  local bucket, bucket_err = count_fort_owned("BUCKET")
+  local chain, chain_err = count_fort_owned("CHAIN")
+  -- "Mechanism" items are the TRAPPARTS item type on this install
+  -- (df-overseer-well.lua's own live check, same enum name the handoff
+  -- cites) -- reported under both keys so a caller matching either name
+  -- finds it.
+  local trapparts, trapparts_err = count_fort_owned("TRAPPARTS")
+  local errors = {
+    BLOCKS = blocks_err, BUCKET = bucket_err, CHAIN = chain_err,
+    TRAPPARTS = trapparts_err,
+  }
+  local has_error = blocks_err or bucket_err or chain_err or trapparts_err
   return {
     materials = {"BLOCKS", "BUCKET", "CHAIN", "TRAPPARTS"},
     fort_owned = {
-      BLOCKS = count_fort_owned("BLOCKS"),
-      BUCKET = count_fort_owned("BUCKET"),
-      CHAIN = count_fort_owned("CHAIN"),
-      -- "Mechanism" items are the TRAPPARTS item type on this install
-      -- (df-overseer-well.lua's own live check, same enum name the
-      -- handoff cites) -- reported under both keys so a caller matching
-      -- either name finds it.
-      TRAPPARTS = count_fort_owned("TRAPPARTS"),
+      BLOCKS = blocks,
+      BUCKET = bucket,
+      CHAIN = chain,
+      TRAPPARTS = trapparts,
     },
+    fort_owned_errors = has_error and errors or nil,
   }
 end
 
