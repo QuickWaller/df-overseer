@@ -80,12 +80,40 @@ and there are two graders (`dfqueue/grade.py`, `learning/predictions/`), but
 neither has graded a real proposal. There is no evidence model, no doctrine
 reader or revision type, no chronicle, no ledger rows and no scheduler.
 
+**Two of this section's open questions were answered by the production-model
+work on 2026-09-18, not by this conversation.** Recorded here because they
+were listed as open and no longer are:
+
+- **"Who sets the review horizons"** for the retrospective court. **Material
+  class does.** A decision about a consumed good (food, drink) is reviewable
+  in days, a keep-on-hand par level in weeks, an insurance level only after
+  the threat fires, a reserve floor never, because the whole point of a floor
+  is that nothing happens. So the horizon is a property of what the proposal
+  was about, derived from the band, rather than a number the proposer picks or
+  the court negotiates. → `docs/PRODUCTION-MODEL.md` §10.
+- **How an outcome gets attributed** when a proposal misses. The
+  four-quadrant rule gives the court a mechanism it did not have: build the
+  expectation from Q1 and Q3 (raws and exact reads), and the gap is a
+  **residual, reported as unattributed** rather than explained. That splits a
+  miss three ways cleanly: the plan was not executed, the plan executed and
+  the figures behind it were wrong, or the plan executed on sound figures and
+  the objective itself was the wrong choice. Only the third is a
+  decision-quality question, and only the third is worth an adversarial
+  sitting. → `docs/PRODUCTION-MODEL.md` §3.
+
+**Also relevant, and uncomfortable:** the lever catalogue found that only
+four of ten named diagnoses have a tool that can act on them. A court that
+reviews proposals the fort could never have executed is grading the wrong
+thing, so the catalogue is a prerequisite for the court rather than a
+side-quest. → `docs/PRODUCTION-MODEL.md` §13.
+
 **Still open:** exactly which revisions count as "learning" (playbook
-thresholds? evidence rules?); the learning role's name; how roles call each other (referral to the consultant, calls to
-and from the learning role); how the learning role decides a run of misses
-is a pattern without an arbitrary threshold (research 2026-08-25 already
-rejected one); the background ground-truth audit idea (below, under
-HANDOVER); what ROADMAP.md should say, deliberately not written until the
+thresholds? evidence rules?); the learning role's name; how roles call each
+other (referral to the consultant, calls to and from the learning role); how
+the learning role decides a run of misses is a pattern without an arbitrary
+threshold (research 2026-08-25 already rejected one); the background
+ground-truth audit idea (below, under HANDOVER); what `ROADMAP.md` should say
+about the learning loop specifically, deliberately not written until the
 design settles.
 
 **Next concrete step:** continue the design conversation with the user from
