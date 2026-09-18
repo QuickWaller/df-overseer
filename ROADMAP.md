@@ -1,6 +1,13 @@
 # Roadmap
 
-**Last reviewed:** 2026-09-17 (nineteenth pass, targeted: the production-gap
+**Last reviewed:** 2026-09-18 (twentieth pass, targeted doc-drift pass: added
+a new top Now item for the production and logistics model design (settled on
+paper, nothing built, two feasibility audits and a figures pass landed the
+same day) and pointed the "Game figures database and calculators" Next item
+at it. Re-scanned the rest of the Now and Next buckets for anything quietly
+finished or stalled: nothing found to change beyond the two items above;
+tool counts (21/34/4) deliberately left untouched, another stream owns that
+number today.) Previously: 2026-09-17 (nineteenth pass, targeted: the production-gap
 Now item updated to say it is partly closed, since the fort now drinks and has
 a farm plot with its crop set (nothing planted yet) and 19/32/4 deployed tools; the still, a trade depot, typed
 stockpiles and deeper digging remain unbuilt. Checked and left as-is: the
@@ -52,6 +59,23 @@ or `decisions/DECISIONS.md`, not here.
 ## Now
 <!-- Actively being worked, or the clear immediate next step. -->
 
+- **NEW 2026-09-18: the production and logistics model is designed in full,
+  nothing built.** `docs/PRODUCTION-MODEL.md` is the build spec (a directed
+  hypergraph in plain SQLite, seven tables), corrected by two feasibility
+  audits (`research/2026-09-18-schema-extraction-static.md`,
+  `research/2026-09-18-schema-extraction-live.md`) and a figures pass
+  (`research/2026-09-18-production-figures.md`). Real corrections the audits
+  forced: consumption has **four** outcomes, not the three the first design
+  named (a fourth, `modified_in_place`, covers the `GLAZE_*` reactions);
+  42% of reaction product lines need a material-side join before a node id
+  exists, not a straight per-line read; no job-duration figure exists in
+  any raw, DFHack doc, or wiki page checked, confirmed a third independent
+  time. Supersedes the "Game figures database and calculators" item below
+  as the actual design; that item's own text is left as-is beneath this
+  note per this file's convention, since the design work it called for now
+  has a real spec. → `decisions/DECISIONS.md` 2026-09-18 (six rows),
+  `Working.md` (pre-audit summary, now stale on table/consumption counts;
+  not rewritten here, out of this pass's touched surfaces).
 - **UPDATED 2026-09-17: the production gap is partly closed.** Uniboslan now
   drinks (a `WaterSource` zone placed on a pond fixed a real terrain problem,
   not proven as the sole cause but decisive enough to keep) and has its first
@@ -408,7 +432,11 @@ or `decisions/DECISIONS.md`, not here.
   crop can be cooked without seed stock falling). Seeded first from the
   install's own raws (version-exact), then from research, then from the
   fort's own measurements. Complements the wiki lookup, does not replace it.
-  → `decisions/DECISIONS.md` 2026-09-17 "Game figures belong in a database".
+  **UPDATED 2026-09-18: this is now a real design, not a sketch**, see the
+  Now-bucket production-model item above; the design's own `status`/
+  `source_ref` columns are this item's prior/verified vocabulary, made
+  concrete. → `decisions/DECISIONS.md` 2026-09-17 "Game figures belong in a
+  database", 2026-09-18 rows.
 
 - **Live-view ingest: explicitly shelved, user's call 2026-09-12** (moved
   here from "explicitly not priority right now," distinct from "blocked" —

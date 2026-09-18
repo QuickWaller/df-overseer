@@ -383,6 +383,19 @@ today. → `decisions/DECISIONS.md` 2026-09-17.
   is not started: today only point-in-time stock reads exist
   (`stocks.food-drink`, `stocks.seeds`), and trends need history, which ties
   this to the still-missing scheduler (2026-09-16).
+
+  **UPDATED 2026-09-18: this layer's underlying data model is now designed**
+  (nothing built), `docs/PRODUCTION-MODEL.md`, corrected by two feasibility
+  audits (`research/2026-09-18-schema-extraction-static.md`,
+  `research/2026-09-18-schema-extraction-live.md`). It sharpens principle 1
+  rather than restating it: the design's own division of labour is that
+  **code produces the priced choice set** (the blocker walk, the diagnostic
+  ladder, route pricing where figures exist) **while an agent supplies
+  judgement about targets** (the material-policy bands in
+  `doctrine/seed.yaml`, §10 there: reserve floors, par levels, cover days,
+  which is discretionary versus liability). The Quartermaster's strategy
+  proposals are exactly the target-setting half; the priced choice set is
+  never something an agent computes by hand.
 - **Doctrine.** No type, no owner. Revisions to `doctrine/seed.yaml` entries.
   See `docs/MEMORY-ARCHITECTURE.md`, "Doctrine store", for the entry format
   and the revision path.
