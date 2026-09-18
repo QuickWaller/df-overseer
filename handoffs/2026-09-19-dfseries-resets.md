@@ -135,3 +135,45 @@ measure what to put in the registry rather than guess:
 (`kind_of`, `MetricKind`, `REGISTRY`), with the three timers' evidence
 written up as above and unknown metrics defaulting to `LEVEL`. Tests in
 `dfseries/tests/test_metrics.py`, 5 passed.
+
+**Milestone 2 committed**: `trend.resets()` (dataclasses `ResetEvent`,
+`Anomaly`, `ResetsResult`) and `trend.rate()`'s refusal to straddle a
+reset.
+
+- `resets()` walks consecutive non-null readings. For an established-rate
+  metric it applies the handoff's three-way test (`v1 == expected`: no
+  reset; `v1 < expected`: an `EXACT_TICK` event dated to `t1 - v1/rate`;
+  `v1 > expected`: an `Anomaly`, never folded into `events`). For an
+  unestablished metric there is no "expected" to compare against, so only
+  an outright decrease (`v1 < v0`) is reported, as `INTERVAL_BOUNDED`
+  (`abs_tick=None`); a rise produces neither an event nor an anomaly --
+  there is no basis to call it either way. A `LEVEL` metric always returns
+  empty `events`/`anomalies`.
+- `rate()` now branches on `metrics.kind_of(metric).kind`. `LEVEL` (and
+  anything unregistered) is byte-for-byte the old behaviour, now labelled
+  `segment="endpoint"`. For `RESETTING_COUNTER`, it calls `resets()` over
+  the same window first: no reset found means the endpoint slope is safe
+  and returned as-is (`segment="endpoint"`); a reset found means the raw
+  endpoint slope is **never** returned -- instead it recomputes from the
+  last reset's tick (or its interval's end, for an interval-bounded event)
+  onward, labelled `segment="between_reset"`, or `UNAVAILABLE` with a
+  reason naming the reset and pointing at `resets()` if fewer than two
+  readings remain after it.
+- One design note worth flagging back to the contract: a gap can contain
+  more than one reset (e.g. two drinks between two samples 1,200 ticks
+  apart); the three-way test only ever dates **the last** reset in a gap,
+  because two points cannot distinguish multiple resets within them. This
+  matches the handoff's own wording ("the last one happened at exactly
+  `t1 - v1`") but is worth stating explicitly in `docs/TIMESERIES.md` if
+  it does not already say so -- see "What the contract should now say"
+  below.
+- Tests: `dfseries/tests/test_resets.py`, 11 new tests, hand-written
+  fixtures for each of the three named dynamics (an exact-tick thirst
+  reset dated to 12373521 exactly as the real data will confirm, a
+  no-reset thirst citizen, an established-rate anomaly, an
+  interval-bounded sleepiness decrease, a sleepiness rise that is neither
+  event nor anomaly, a resets()-on-level no-op, and four rate() cases:
+  refused-across-a-reset, between-reset-slope-returned,
+  no-reset-endpoint-labelled, level-unchanged).
+- Full suite: **462 passed / 1 skipped** (was 446/1 before this stream;
+  +5 registry tests, +11 resets/rate tests).
