@@ -99,31 +99,70 @@ session, not committed). Read `research/2026-09-18-production-graph.md` for
 the formalism and `research/2026-09-18-production-figures.md` for the figures
 before touching any of it.
 
-**The short version:** a directed hypergraph in plain SQLite, six tables
-(`production_node`, `_class`, `_process`, `_flow`, `_attribute`,
-`_observation`). A node is an item type crossed with a material; processes
-consume classes and produce specifics, so routes are generated rather than
-authored. Three consumption semantics (consumed, occupied for the job,
-occupied until released), because a barrel is freed by drinking, not by
-brewing. The static graph is placeless: move, install and trade are all
-generated at query time. Material policy is banded and lives in **doctrine**,
-not in the graph, which is what removes the need for a solver cost vector.
+**The short version:** a directed hypergraph in plain SQLite, **seven** tables
+(`production_node`, `_class`, `material_reaction_product`, `_process`,
+`_flow`, `_attribute`, `_observation`). A node is an item type crossed with a
+material; processes consume classes and produce specifics, so routes are
+generated rather than authored, and the join table plus a two-pass extraction
+exist because 42% of product lines inherit their material at job time.
+**Four** consumption semantics (consumed, occupied for the job, occupied until
+released, modified in place), because a barrel is freed by drinking rather
+than by brewing, and the glaze reactions have no product row at all. The
+static graph is placeless: move, install and trade are all generated at query
+time. Material policy is banded and lives in **doctrine**, not in the graph,
+which is what removes the need for a solver cost vector.
 
 **The rule that governs all of it:** four quadrants, and quadrant 4
 (happiness effects, interruption behaviour, time lost to needs) never enters a
 formula, only appears as an unattributed residual. Demand is exact, supply
 capacity is not, so every question is posed from the demand side.
 
-**Two researchers in flight as of this entry**, both read-only, both reading
-VM 103 with the fort paused:
-- `research/2026-09-18-schema-extraction-static.md` — column-by-column audit
-  of the five static tables against the real raws. The column I trust least
-  and asked them to attack first is `production_flow.consumption`.
-- `research/2026-09-18-schema-extraction-live.md` — whether the live-layer
-  facts are actually exactly readable: available-versus-total stock, job claim
-  state, cancellation announcements, stockpile links, installed-versus-item
-  furniture, the plant tick behind the harvest clock, whether item `age` is a
-  reliable creation clock.
+**Both feasibility audits are in** (`research/2026-09-18-schema-extraction-
+static.md`, `-live.md`) and the spec is corrected from them. Headlines: node
+identity needed a material join table and a two-pass extraction because 42% of
+product lines inherit their material; `consumption` needed a fourth value;
+the observation key had to become an absolute tick because
+`ReadCurrentTick()` resets annually. Nine of twelve live facts are exactly
+readable, job claims are a plain flag, and cancellation announcements turned
+out to be a lossy hint rather than a shortcut.
+
+**Four build streams dispatched 2026-09-18**, no two sharing a file:
+- **Doctrine** — **DONE and merged.** Six `prior` entries, new `material`
+  topic, 307 passed / 1 skipped.
+- **Lever-gap tools** — `orders.create` learns a `bucket` job and friends;
+  new `stockpile list`/`links`. Deploys to VM 103, dry runs only.
+- **`production/` package** — seven tables, two-pass extraction, offline.
+- **Doc drift pass** — seven new traps from the audits, plus `ROADMAP.md`,
+  `AGENT-ARCHITECTURE.md`, `MEMORY-ARCHITECTURE.md`, `CLAUDE.md` status.
+
+### Live fort state, read-only, 2026-09-18 at tick 227160 (paused)
+
+Read directly this session. **This corrects two claims I made earlier today.**
+
+- **The fort owns three usable buckets** (ids 81, 149, 150: empty,
+  unforbidden, unclaimed, no holder). Two more are `trader=true`, held by the
+  caravan's yak pack animals. There is no bucket shortage.
+- **Nobody is injured.** The "1 of 15 unconscious" from the live audit is a
+  **sleeping miner**: `pain=0`, `wounds=0`, `current_job=Sleep`.
+- **Fort-owned stock**: logs 3, seeds 60, **drink 0, prepared meals 0**, raw
+  plants 8, boulders 0. Food is 8 raw plants for 15 citizens.
+- **Thirst** is staggered across three bands, worst 23,391 against a roughly
+  three-week (~25,200 tick) drink interval, consistent with the `WaterSource`
+  zone working. Not in danger.
+- **Farm plot 4 exists**, plump helmet set for all four seasons, and **25
+  `PlantSeeds` jobs are queued**, 2 claimed. Claim state is uninformative:
+  the fort has run 151 ticks since they appeared.
+- **The still (workshop 5) is still `exists=false`** with its
+  `ConstructBuilding` job 366 **suspended**, and the fort owns 3 logs.
+- `autolabor` is **enabled**, so labour counts (PLANT 2, BREWER 1, COOK 1,
+  CARPENTER 1, DIAGNOSE 1, `FEED_WATER_WOUNDED` 0) are its live allocation,
+  not a configuration. Hand-setting a labour takes it off autolabor fort-wide
+  and permanently, so that lever is contested. → `docs/PRODUCTION-MODEL.md`
+  §13.
+- **`growdur` for plump helmet is 300** and live `grow_counter` values are in
+  the tens of thousands, so they are not the same unit and **the harvest clock
+  is not computable until the unit is settled**. One observation of a planted
+  crop settles it.
 
 **Parked by the user, deliberately:** trade (a transient hyperedge inserted
 when a caravan is present, so it needs nothing now); rooms and
