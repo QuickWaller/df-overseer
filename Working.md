@@ -391,9 +391,11 @@ at the artifact URL recorded above.
 
 ### Open, waiting on the user
 
-- **The loop architecture**: dispatcher plus queue (independent one-shot
-  runs, our scheduler wakes them, roles talk only through the queue)? This
-  blocks the biggest gap, "nothing runs on its own".
+- **The loop architecture, including openclaw: TABLED by the user
+  2026-09-19** ("excited to get my teeth into it later"). Next in line once
+  the user picks it up; do not start designing it without them. Open question
+  to resume from: dispatcher plus queue (independent one-shot runs, our
+  scheduler wakes them, roles talk only through the queue)?
 - **Key rotation** for four exposed secrets, deferred by the user ("ill rotate
   them another day"). See the section at the top of this file.
 
