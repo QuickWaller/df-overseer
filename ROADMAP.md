@@ -11,7 +11,7 @@ same day) and pointed the "Game figures database and calculators" Next item
 at it. Re-scanned the rest of the Now and Next buckets for anything quietly
 finished or stalled: nothing found to change beyond the two items above;
 tool counts left to the stream that owned them, now reconciled by the
-orchestrator: **23/36/4 deployed and live-verified per role** on 2026-09-18,
+orchestrator: **24/37/4 deployed and live-verified per role** on 2026-09-19 (was 23/36/4 on 2026-09-18; `stocks.availability` added),
 after the bucket-order and stockpile tools. The stale 19/32/4 in the
 2026-09-17 entry below is left as written, since that entry records what was
 true that day.) Previously: 2026-09-17 (nineteenth pass, targeted: the production-gap
