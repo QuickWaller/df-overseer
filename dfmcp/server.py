@@ -127,7 +127,7 @@ from .dfhack_client import (
     DFHackConnectionPool,
     DFHackProtocolError,
 )
-from . import queue_tools
+from . import doctrine_tools, queue_tools
 from .registry import Registry, load_registry
 from .roles import Roster, load_roster
 from .tools import ArgumentError, argv_for_call, build_tool_names, tool_definitions
@@ -173,6 +173,14 @@ class ServerConfig:
     able to clobber live queue data by resolving to a path relative to
     wherever the checkout happens to be. A missing value is a ConfigError,
     never a silent fall-through to that in-tree default.
+
+    `doctrine_path`, added `handoffs/2026-09-19-get-doctrine-tool.md`, is
+    the opposite case from `queue_db`: `doctrine/seed.yaml` is checked into
+    this repo (read-only from the server's point of view) and travels with
+    the code on every deploy, so an in-tree default is safe here the same
+    way `registry.DEFAULT_TOOLS_YAML` already is -- see
+    `dfmcp/doctrine_tools.py`'s module docstring, "Where the file lives at
+    runtime".
     """
 
     bind_host: str
@@ -181,6 +189,7 @@ class ServerConfig:
     dfhack_host: str = "127.0.0.1"
     dfhack_port: int = 5000
     pool_size: int = 4
+    doctrine_path: str = str(doctrine_tools.DEFAULT_DOCTRINE_PATH)
 
     def __post_init__(self) -> None:
         if not self.bind_host or not self.bind_host.strip():
@@ -208,6 +217,7 @@ _ENV_KEYS = {
     "dfhack_host": "MCP_SERVER_DFHACK_HOST",
     "dfhack_port": "MCP_SERVER_DFHACK_PORT",
     "pool_size": "MCP_SERVER_POOL_SIZE",
+    "doctrine_path": "MCP_SERVER_DOCTRINE_PATH",
 }
 
 _INT_FIELDS = {"bind_port", "dfhack_port", "pool_size"}
@@ -372,6 +382,7 @@ def _configure_call_log() -> None:
 
 def build_mcp_server(
     registry: Registry, roster: Roster, pool: DFHackConnectionPool, queue_db_path: Path,
+    doctrine_path: Path = doctrine_tools.DEFAULT_DOCTRINE_PATH,
 ) -> Server:
     """Build the low-level Server, wired to this registry/roster/pool.
 
@@ -384,6 +395,12 @@ def build_mcp_server(
     read and write, via `dfqueue.store`. Passed through from
     `ServerConfig.queue_db` (`main()`/`_serve()` below); a test builds the
     server with its own throwaway path (`dfmcp/tests/test_server.py`).
+
+    `doctrine_path`, added `handoffs/2026-09-19-get-doctrine-tool.md`: the
+    YAML file `dfmcp.doctrine_tools`'s native `doctrine.get` reads.
+    Defaults to the in-tree `doctrine/seed.yaml` (see that module's
+    docstring for why a default is safe here unlike `queue_db_path` above);
+    passed through from `ServerConfig.doctrine_path` in real use.
 
     Also builds this server's one `queue_write_lock` (Phase A review,
     2026-09-15): an `asyncio.Lock`, created fresh here rather than as a
@@ -463,17 +480,30 @@ def build_mcp_server(
         tool = registry.get(tool_id)
 
         if getattr(tool, "native", False):
-            # dfmcp.queue_tools's queue.propose/pass/rule/pending: not a
-            # DFHack command at all, so argv_for_call/pool.run_command below
-            # (built for a positional CLI signature) do not apply. See
-            # dfmcp/queue_tools.py's module docstring.
+            # Not a DFHack command at all, so argv_for_call/pool.run_command
+            # below (built for a positional CLI signature) do not apply.
+            # Routed by which native module actually owns this id -- added
+            # handoffs/2026-09-19-get-doctrine-tool.md alongside
+            # dfmcp.queue_tools's own queue.propose/pass/rule/pending, which
+            # this branch served exclusively before. See dfmcp/queue_tools.py
+            # and dfmcp/doctrine_tools.py's own module docstrings.
             try:
-                text, structured = await queue_tools.call(
-                    tool_id, role, params.arguments or {},
-                    db_path=queue_db_path, call_dfhack=_call_dfhack,
-                    write_lock=queue_write_lock,
-                )
+                if tool_id in queue_tools.NATIVE_TOOL_IDS:
+                    text, structured = await queue_tools.call(
+                        tool_id, role, params.arguments or {},
+                        db_path=queue_db_path, call_dfhack=_call_dfhack,
+                        write_lock=queue_write_lock,
+                    )
+                elif tool_id in doctrine_tools.NATIVE_TOOL_IDS:
+                    text, structured = await doctrine_tools.call(
+                        tool_id, role, params.arguments or {},
+                        doctrine_path=doctrine_path,
+                    )
+                else:  # pragma: no cover -- every native id belongs to one of the above
+                    raise AssertionError(f"native tool id {tool_id!r} has no owning module")
             except queue_tools.QueueToolError as exc:
+                return _tool_result_error(str(exc))
+            except doctrine_tools.DoctrineToolError as exc:
                 return _tool_result_error(str(exc))
             return types.CallToolResult(
                 content=[types.TextContent(type="text", text=text)],
@@ -626,7 +656,9 @@ async def _serve(config: ServerConfig, registry: Registry, roster: Roster, token
     pool = DFHackConnectionPool(host=config.dfhack_host, port=config.dfhack_port, size=config.pool_size)
     await pool.start()
     try:
-        server = build_mcp_server(registry, roster, pool, Path(config.queue_db))
+        server = build_mcp_server(
+            registry, roster, pool, Path(config.queue_db), Path(config.doctrine_path),
+        )
         app = build_asgi_app(server, tokens, config.bind_host)
         uvicorn_config = uvicorn.Config(app, host=config.bind_host, port=config.bind_port, log_level="info")
         uvicorn_server = uvicorn.Server(uvicorn_config)
@@ -642,7 +674,7 @@ def main() -> None:
     this would run under."""
     _configure_call_log()
     config = load_config()
-    registry = load_registry(native_tools=queue_tools.NATIVE_TOOLS)
+    registry = load_registry(native_tools={**queue_tools.NATIVE_TOOLS, **doctrine_tools.NATIVE_TOOLS})
     roster = load_roster(registry)
     tokens = load_role_tokens(roster)
     asyncio.run(_serve(config, registry, roster, tokens))
