@@ -36,6 +36,26 @@ PRODUCT_DIMENSION, GET_MATERIAL_FROM_REAGENT/GET_ITEM_DATA_FROM_REAGENT,
 MATERIAL_REACTION_PRODUCT/ITEM_REACTION_PRODUCT, ROTS, SIZE,
 CONTAINER_CAPACITY) and does not claim to parse every token family DF's raw
 format supports.
+
+## 2026-09-19: run against the real 159-reaction corpus for the first time
+
+The above was all true of this file until 2026-09-19: fully tested, never
+run against real data. That stream (`handoffs/2026-09-19-real-corpus-
+extraction.md`) had the real corpus (read-only, pulled from VM 103 into a
+session scratchpad, never committed here) and found several real token
+shapes the fixture subset had no way to exercise -- a second "no value"
+sentinel (`NO_SUBTYPE` alongside `NONE`), a DF reagent shorthand that
+collapses distinct ore/material reagents into one class if read naively
+(`METAL_ORE:<material>`), `GET_ITEM_DATA_FROM_REAGENT` sitting in the item-
+type position instead of the material-source position, the *real*
+`MATERIAL_REACTION_PRODUCT` argument shape (no item type at all -- pass2
+now supplies it from the reaction's own PRODUCT line), and reaction-level
+tokens (`NAME`, `CATEGORY*`) that were being silently misattributed rather
+than dropped or captured. All fixed here; see `research/2026-09-19-real-
+corpus-extraction.md` for the full findings and the real coverage table.
+The fixtures and the tests built on them are untouched and still pass --
+this section is the honesty update the file above asked for once real data
+became available.
 """
 
 from __future__ import annotations
@@ -74,6 +94,23 @@ def _to_int(v) -> int | None:
         return None
 
 
+# Real-corpus finding, 2026-09-19: the fixtures (all effectively drawn from
+# reaction_other.txt) only ever used "NONE" as the no-value sentinel for a
+# subtype/mat-category slot. reaction_smelter.txt uses a SECOND, different
+# sentinel, "NO_SUBTYPE", for the identical purpose (e.g. real
+# `[REAGENT:A:1:BOULDER:NO_SUBTYPE:INORGANIC:COAL_BITUMINOUS]`,
+# `[PRODUCT:100:9:BAR:NO_SUBTYPE:COAL:COKE]`). Before this fix, every one of
+# the 23 smelter-file product node ids carried a spurious literal
+# ":NO_SUBTYPE:" segment (e.g. "BAR:NO_SUBTYPE:COAL" instead of "BAR:COAL"),
+# silently marked verified_raws. Treat both sentinels, and a bare None,
+# as "no value" everywhere a "no value" check is made.
+_NONE_TOKENS = (None, "NONE", "NO_SUBTYPE")
+
+
+def _is_none(v) -> bool:
+    return v in _NONE_TOKENS
+
+
 # ---- pass 1a: reaction files -----------------------------------------------------
 
 _SEASON_FLAGS = {"SPRING", "SUMMER", "AUTUMN", "WINTER"}
@@ -102,8 +139,13 @@ def parse_reactions(text: str, source_path: str) -> list[dict]:
                 "buildings": [],
                 "labor": None,
                 "adventure_mode": False,
+                "name": None,
+                "category": None,
+                "category_name": None,
+                "category_description": None,
                 "reagents": [],
                 "products": [],
+                "unparsed": [],
             }
             cur_reagent = cur_product = None
             continue
@@ -116,6 +158,36 @@ def parse_reactions(text: str, source_path: str) -> list[dict]:
             cur["labor"] = args[0] if args else None
         elif name == "ADVENTURE_MODE_ENABLED":
             cur["adventure_mode"] = True
+        elif name == "NAME":
+            # Present on every one of the 159 real reactions, always before
+            # any REAGENT/PRODUCT opens. Before this fix it fell into the
+            # generic catch-all with no reagent/product yet open, so it was
+            # silently dropped every single time -- the highest-volume
+            # instance of exactly the "parser silently ignored a line"
+            # failure mode this stream was asked to hunt for. Captured as
+            # an attribute now, same treatment as CATEGORY below.
+            cur["name"] = ":".join(args) if args else None
+        elif name == "CATEGORY":
+            # Real-corpus finding, 2026-09-19: CATEGORY/CATEGORY_NAME/
+            # CATEGORY_DESCRIPTION are reaction-level UI-grouping tokens
+            # (98/159 real reactions carry one, e.g. reaction_dyes.txt's
+            # `[CATEGORY:MAKE_DYE]`), but they sit textually AFTER the last
+            # [REAGENT:...]/[PRODUCT:...] block, once SKILL has already run.
+            # Before this fix, the catch-all "attach to whichever
+            # reagent/product is currently open" branch below silently
+            # misattributed every one of them onto the LAST-parsed
+            # product's (or reagent's) own flags list -- never corrupting a
+            # read field, since nothing else reads a "CATEGORY" flag, but
+            # real per-reaction metadata was being lost/mislabelled rather
+            # than captured. Recognised explicitly here instead.
+            cur["category"] = args[0] if args else None
+        elif name == "CATEGORY_NAME":
+            cur["category_name"] = ":".join(args) if args else None
+        elif name == "CATEGORY_DESCRIPTION":
+            # Free prose; rejoin on ':' in case the description text itself
+            # contains one (none do in the 2026-09-19 corpus, verified, but
+            # a bare args[0] would silently truncate one that did).
+            cur["category_description"] = ":".join(args) if args else None
         elif name == "REAGENT":
             cur_reagent = {
                 "name": args[0] if len(args) > 0 else None,
@@ -160,6 +232,17 @@ def parse_reactions(text: str, source_path: str) -> list[dict]:
             target = cur_product if cur_product is not None else cur_reagent
             if target is not None:
                 target["flags"].append((name, args))
+            else:
+                # Orphaned: a bare token with neither a reagent nor a
+                # product currently open to attach to (and not one of the
+                # reaction-level tokens recognised above). Before this fix
+                # nothing recorded this case at all -- it just vanished.
+                # Report it rather than silently dropping it; a caller can
+                # decide whether it matters.
+                cur["unparsed"].append({
+                    "reaction_id": cur["id"], "token": name, "args": args,
+                    "line": line_no, "reason": "no open reagent/product to attach to",
+                })
     if cur is not None:
         reactions.append(cur)
     return reactions
@@ -169,15 +252,48 @@ def parse_reactions(text: str, source_path: str) -> list[dict]:
 
 
 def parse_plants(text: str, source_path: str) -> list[dict]:
-    """One dict per `[PLANT:...]` block. `mrp`/`irp` entries use this
-    stream's own simplified 3-arg fixture form (`token:item_type:
-    node_suffix`) rather than DF's real nested `[USE_MATERIAL_TEMPLATE...]`
-    material structure -- see `PROVENANCE.md`: the *token names* and
-    *which crops carry `DRINK_MAT`/`SEED_MAT`* are audit-verified
-    (`research/2026-09-18-schema-extraction-static.md` §2, citing
-    `plant_standard.txt` lines 13-14/69-71/117-118/164-165/282-283); the
-    exact argument list DF uses internally was not quoted in the audit and
-    is not reproduced here."""
+    """One dict per `[PLANT:...]` block.
+
+    Real-corpus finding, 2026-09-19: `mrp` (`MATERIAL_REACTION_PRODUCT`)
+    entries do NOT carry an item type at all. The real shape, confirmed
+    across all 179 real occurrences in `vanilla_plants/objects/`, is
+    exactly 3 args, `token:mat_type:mat_name`
+    (e.g. `[MATERIAL_REACTION_PRODUCT:DRINK_MAT:LOCAL_PLANT_MAT:DRINK]`,
+    `plant_standard.txt:13`) -- `mat_type` is a material-lookup family
+    (`LOCAL_PLANT_MAT` in every real occurrence read this session: "look
+    at this plant's own material list"), and `mat_name` is the *name of a
+    material local to this same plant* (here, the one declared by this
+    plant's own `[USE_MATERIAL_TEMPLATE:DRINK:PLANT_ALCOHOL_TEMPLATE]`),
+    not an item type and not a fabricated node suffix. This stream's
+    predecessor (offline, no VM) never saw a real MRP line and used its own
+    invented 3-arg form, `token:item_type:node_suffix`
+    (`production/tests/fixtures/plant_standard.txt`, e.g.
+    `DRINK_MAT:DRINK:PLUMP_HELMET_WINE`) -- coincidentally also 3 args, so
+    the shape looked plausible, but positions 2 and 3 meant something else
+    entirely. The concrete item a token resolves to is only known once a
+    *reaction's own* `[PRODUCT:...]` line is read (its item type, e.g.
+    `DRINK` vs `SEEDS`, is NOT reproduced by the MRP line: compare
+    `MATERIAL_REACTION_PRODUCT:SEED_MAT:LOCAL_PLANT_MAT:SEED` (mat_name
+    "SEED", singular) against the real product line's own item type
+    `SEEDS` (plural) -- proof the two are different vocabularies, not the
+    same string reused). See `pass2` for where the item type actually gets
+    combined with what this function resolves.
+
+    `irp` (`ITEM_REACTION_PRODUCT`) is a different token family with a
+    different, longer real shape: `token:item_type:item_subtype:mat_type:
+    mat_name` (5 args -- confirmed by the corpus's one real occurrence,
+    quarry bush's `[ITEM_REACTION_PRODUCT:BAG_ITEM:PLANT_GROWTH:LEAVES:
+    LOCAL_PLANT_MAT:LEAF]`, `plant_standard.txt:223`). Unlike MRP, IRP DOES
+    carry its own item type, so its result node is fully knowable right
+    here, needing no reaction. The committed fixture
+    (`production/tests/fixtures/plant_standard.txt`) still encodes the
+    predecessor stream's invented 3-arg IRP form
+    (`token:item_type:node_suffix`); fixtures are frozen (this handoff:
+    "do not modify `production/tests/fixtures/**` at all"), so both the
+    3-arg legacy shape and the 5-arg real shape are accepted here, tagged
+    by which one fired. A shape matching neither is recorded as unparsed
+    rather than silently guessed at.
+    """
     plants: list[dict] = []
     cur: dict | None = None
     for line_no, name, args in _iter_tokens(text):
@@ -194,6 +310,7 @@ def parse_plants(text: str, source_path: str) -> list[dict]:
                 "material_value": None,
                 "mrp": [],
                 "irp": [],
+                "unparsed": [],
             }
             continue
         if cur is None:
@@ -207,15 +324,35 @@ def parse_plants(text: str, source_path: str) -> list[dict]:
         elif name == "MATERIAL_VALUE":
             cur["material_value"] = args[0] if args else None
         elif name == "MATERIAL_REACTION_PRODUCT":
-            if len(args) >= 3:
-                cur["mrp"].append(
-                    {"token": args[0], "item_type": args[1], "node_suffix": args[2], "line": line_no}
-                )
+            if len(args) == 3:
+                cur["mrp"].append({
+                    "token": args[0], "mat_type": args[1], "mat_name": args[2],
+                    "line": line_no,
+                })
+            else:
+                cur["unparsed"].append({
+                    "plant_id": cur["id"], "token": name, "args": args, "line": line_no,
+                    "reason": f"expected exactly 3 args (token:mat_type:mat_name), got {len(args)}",
+                })
         elif name == "ITEM_REACTION_PRODUCT":
-            if len(args) >= 3:
-                cur["irp"].append(
-                    {"token": args[0], "item_type": args[1], "node_suffix": args[2], "line": line_no}
-                )
+            if len(args) == 5:
+                cur["irp"].append({
+                    "token": args[0], "item_type": args[1], "item_subtype": args[2],
+                    "mat_type": args[3], "mat_name": args[4], "line": line_no, "shape": "real_5arg",
+                })
+            elif len(args) == 3:
+                # Legacy fixture-only shape (token:item_type:node_suffix) --
+                # kept solely because the committed, frozen fixture still
+                # uses it. No real corpus line has 3 args for this token.
+                cur["irp"].append({
+                    "token": args[0], "item_type": args[1], "item_subtype": None,
+                    "mat_type": None, "mat_name": args[2], "line": line_no, "shape": "legacy_3arg",
+                })
+            else:
+                cur["unparsed"].append({
+                    "plant_id": cur["id"], "token": name, "args": args, "line": line_no,
+                    "reason": f"expected 3 (legacy) or 5 (real) args, got {len(args)}",
+                })
     if cur is not None:
         plants.append(cur)
     return plants
@@ -300,10 +437,29 @@ def _reagent_class(reagent: dict) -> tuple[str | None, str | None, str | None]:
     the three-plus-more raw mechanisms audit sec3 found: `REACTION_CLASS`,
     `HAS_MATERIAL_REACTION_PRODUCT`, the hardcoded `ANY_PLANT_MATERIAL`/
     `ANY_BONE_MATERIAL` flags, the ad hoc `FOOD_STORAGE_CONTAINER` flag,
-    `HAS_TOOL_USE:...`, and finally a bare item type narrow enough on its
-    own (bag, bucket). Returns `(None, None, None)` for a reagent naming a
-    fixed material directly (e.g. `lye`) -- not exercised by this stream's
-    fixtures; see the coverage write-up."""
+    `HAS_TOOL_USE:...`, and finally a bare item type (bag, bucket) or a
+    fixed material named directly (e.g. `lye`, an ore).
+
+    Real-corpus finding, 2026-09-19: the "fixed material named directly"
+    case does NOT return `(None, None, None)` as this docstring originally
+    claimed (untested, since no fixture exercised it) -- it falls into the
+    bare-item-type branch below and DID return a value, just a lossy,
+    material-blind one. Two real shapes collapse every reagent of a given
+    item type into the same class string, losing the material entirely:
+      - `[REAGENT:B:1:METAL_ORE:COPPER]` (12 occurrences, reaction_smelter.
+        txt): DF's short form for an ore reagent. `METAL_ORE` has no
+        subtype/mat-category slots of its own; the material lands directly
+        in the subtype position. Before this fix every metal-ore reagent
+        of every smelting reaction extracted as the identical class
+        "METAL_ORE", indistinguishable from each other.
+      - `[REAGENT:lye:150:LIQUID_MISC:NONE:LYE]` (2 occurrences): the
+        standard 5/6/7-arg shape with a bare material name (not a
+        PLANT_MAT/METAL/INORGANIC family) in the mat-category slot. Before
+        this fix this extracted as the bare class "LIQUID_MISC".
+    Both are fixed here by qualifying the class with whatever material can
+    be read off the reagent's own remaining fields, reusing `_fixed_node_id`
+    for the standard-shape case since its family/bare-material handling is
+    already correct."""
     flags = {f[0]: f[1] for f in reagent["flags"]}
     if "REACTION_CLASS" in flags:
         args = flags["REACTION_CLASS"]
@@ -322,9 +478,20 @@ def _reagent_class(reagent: dict) -> tuple[str | None, str | None, str | None]:
         cls = args[0] if args else None
         return cls, schema.MECH_TOOL_USE_FLAG, cls
     item_type = reagent.get("item_type")
-    if item_type not in (None, "NONE"):
-        container_class = item_type if "EMPTY" in flags else None
-        return item_type, schema.MECH_ITEM_TYPE_ONLY, container_class
+    if item_type == "METAL_ORE" and not _is_none(reagent.get("subtype")):
+        class_name = f"METAL_ORE:{reagent['subtype']}"
+        container_class = class_name if "EMPTY" in flags else None
+        return class_name, schema.MECH_ITEM_TYPE_ONLY, container_class
+    if not _is_none(item_type):
+        # Qualify with a material when the standard shape's mat-category/
+        # mat-args slots actually carry one; falls back to the bare item
+        # type when they don't (e.g. NONE/NONE, or a genuine class-filter
+        # reagent already handled above).
+        class_name = _fixed_node_id(
+            item_type, None, reagent.get("mat_category"), reagent.get("mat_args") or [],
+        )
+        container_class = class_name if "EMPTY" in flags else None
+        return class_name, schema.MECH_ITEM_TYPE_ONLY, container_class
     return None, None, None
 
 
@@ -338,18 +505,18 @@ def _fixed_node_id(item_type, subtype, mat_source_type, mat_args) -> str | None:
     (`PLANT_MAT:<species>:<part>`, `METAL:<alloy>`, `INORGANIC:<mat>` --
     audit sec2) or a bare material name used directly (`COAL`, `PEARLASH`,
     `LYE`)."""
-    if item_type in (None, "NONE"):
+    if _is_none(item_type):
         return None
-    if mat_source_type in (None, "NONE"):
+    if _is_none(mat_source_type):
         material_id = None
     elif mat_source_type in ("PLANT_MAT", "METAL", "INORGANIC") and mat_args:
         material_id = mat_args[0]
     else:
         material_id = mat_source_type
     parts = [item_type]
-    if subtype not in (None, "NONE"):
+    if not _is_none(subtype):
         parts.append(subtype)
-    if material_id not in (None, "NONE"):
+    if not _is_none(material_id):
         parts.append(material_id)
     return ":".join(parts)
 
@@ -451,7 +618,10 @@ def pass1(
                 })
 
     # ---- plants: the plant itself, its attributes, and its MRP/IRP entries ----
+    unparsed: list[dict] = []
     for plant in plants:
+        for entry in plant["unparsed"]:
+            unparsed.append({**entry, "source_path": plant["source_path"]})
         plant_node_id = f"PLANT:{plant['id']}"
         plant_source = f"{plant['source_path']}:{plant['line']}"
         add_node({
@@ -489,30 +659,48 @@ def pass1(
             })
 
         for entry in plant["mrp"]:
-            result_node = f"{entry['item_type']}:{entry['node_suffix']}"
+            # Real shape (see parse_plants' docstring): token, mat_type,
+            # mat_name -- no item type. What this row "yields" (the DDL's
+            # own words) is therefore a MATERIAL local to this plant (e.g.
+            # "this plant's own DRINK material"), not an item; the concrete
+            # ITEM only exists once a reaction's PRODUCT line supplies an
+            # item type, which is pass2's job, not this loop's. Building an
+            # item-shaped node_id straight from this entry (as the
+            # predecessor stream's fixture-only format assumed) is exactly
+            # the bug this fix removes.
+            result_node = f"MATERIAL:{plant['id']}:{entry['mat_name']}"
             src = f"{plant['source_path']}:{entry['line']}"
             add_node({
-                "id": result_node, "kind": schema.KIND_ITEM_TYPE,
-                "display_name": entry["node_suffix"],
-                "durability": _durability(entry["item_type"], material_templates),
-                "status": schema.VERIFIED_RAWS, "source_ref": src,
+                "id": result_node, "kind": schema.KIND_MATERIAL,
+                "display_name": f"{plant['id']} {entry['mat_name']}",
+                "durability": None, "status": schema.VERIFIED_RAWS, "source_ref": src,
             })
             mrp_rows.append({
                 "material_id": f"PLANT:{plant['id']}", "token": entry["token"],
                 "result_node": result_node, "token_family": schema.FAMILY_MATERIAL_REACTION_PRODUCT,
                 "source_ref": src,
+                # Bookkeeping for pass2's join, stripped before any row is
+                # ever written (store.write_all only reads the DDL columns).
+                "_plant_id": plant["id"],
             })
-            if entry["item_type"] == "DRINK":
-                classes.append({
-                    "node_id": result_node, "class": "DRINK",
-                    "mechanism": schema.MECH_MATERIAL_REACTION_PRODUCT, "source_ref": src,
-                })
         for entry in plant["irp"]:
-            result_node = f"{entry['item_type']}:{entry['node_suffix']}"
+            # Unlike MRP, ITEM_REACTION_PRODUCT DOES carry its own item
+            # type (real 5-arg shape) or did in this stream's legacy 3-arg
+            # fixture form (parse_plants normalises both) -- so the
+            # concrete node is fully knowable right here, no reaction
+            # needed. Material (mat_type/mat_name) is recorded on the mrp
+            # row's source data but deliberately not folded into the node
+            # id: this is the spec's own flagged "do not resolve" BAG_ITEM
+            # case (docs/PRODUCTION-MODEL.md §6), so a coarser, honestly-
+            # partial id is preferable to inventing a false precision.
+            result_node = _fixed_node_id(entry["item_type"], entry["item_subtype"], None, [])
+            if result_node is None:
+                continue
             src = f"{plant['source_path']}:{entry['line']}"
             add_node({
                 "id": result_node, "kind": schema.KIND_ITEM_TYPE,
-                "display_name": entry["node_suffix"], "durability": None,
+                "display_name": result_node,
+                "durability": _durability(entry["item_type"], material_templates),
                 "status": schema.VERIFIED_RAWS, "source_ref": src,
             })
             mrp_rows.append({
@@ -524,6 +712,8 @@ def pass1(
     # ---- reactions ----
     for text, source_path in reaction_texts:
         for reaction in parse_reactions(text, source_path):
+            for entry in reaction["unparsed"]:
+                unparsed.append({**entry, "source_path": source_path})
             if reaction["adventure_mode"] and not reaction["buildings"]:
                 continue  # audit sec5: adventurer-mode craft, not a fortress process
 
@@ -552,6 +742,25 @@ def pass1(
                 "labor": reaction["labor"], "is_hardcoded": 0,
                 "source_ref": reaction_source,
             })
+
+            # CATEGORY/CATEGORY_NAME/CATEGORY_DESCRIPTION: real per-reaction
+            # UI-grouping metadata (98/159 reactions carry one), now
+            # correctly attributed to the reaction itself (parse_reactions)
+            # instead of silently landing on whatever reagent/product
+            # happened to be open last. Recorded via production_attribute,
+            # the table this schema already uses for this kind of overflow
+            # fact (see workshop_alt above) -- no schema change needed.
+            for attr_name, value in (
+                ("display_name", reaction["name"]),
+                ("category", reaction["category"]),
+                ("category_name", reaction["category_name"]),
+                ("category_description", reaction["category_description"]),
+            ):
+                if value is not None:
+                    attributes.append({
+                        "subject_id": reaction["id"], "name": attr_name, "value": value,
+                        "unit": None, "status": schema.VERIFIED_RAWS, "source_ref": reaction_source,
+                    })
 
             product_to_container_targets = {
                 p["container_target"] for p in reaction["products"] if p["container_target"]
@@ -585,22 +794,56 @@ def pass1(
             for product in reaction["products"]:
                 mat_source_type = product["mat_source_type"]
                 mat_args = product["mat_args"]
-                parametric = mat_source_type in ("GET_MATERIAL_FROM_REAGENT", "GET_ITEM_DATA_FROM_REAGENT")
+
+                # Real-corpus finding, 2026-09-19: GET_ITEM_DATA_FROM_REAGENT
+                # can sit in the ITEM TYPE position instead of the material-
+                # source position this extractor previously assumed for
+                # both GET_*_FROM_REAGENT tokens. The one real occurrence
+                # (reaction_other.txt:328, PROCESS_PLANT_TO_BAG) is a 5-arg
+                # product line with NO item_type/subtype/mat_source_type/
+                # mat_args in the usual 7-arg sense at all:
+                # `[PRODUCT:100:5:GET_ITEM_DATA_FROM_REAGENT:plant:
+                # BAG_ITEM]` parses (by this file's own positional fields)
+                # as item_type="GET_ITEM_DATA_FROM_REAGENT", subtype=
+                # "plant", mat_source_type="BAG_ITEM". Before this fix the
+                # `mat_source_type in (...)` check below never matched
+                # (mat_source_type here is "BAG_ITEM", not the marker), so
+                # `_fixed_node_id` built a node id straight out of the
+                # literal token text ("GET_ITEM_DATA_FROM_REAGENT:plant:
+                # BAG_ITEM") and marked it verified_raws: silently WRONG,
+                # not merely unavailable, and worse than the already-known
+                # BAG_ITEM token-family mismatch (docs/PRODUCTION-MODEL.md
+                # §6) it was supposed to be one instance of. This is the
+                # ONLY occurrence of this shape across all 159 real
+                # reactions (measured); the original mat_source_type-
+                # position check is kept too, belt and suspenders, in case
+                # a modded raw ever uses the position this file originally
+                # assumed.
+                item_data_in_item_type_slot = product["item_type"] == "GET_ITEM_DATA_FROM_REAGENT"
+                parametric = (
+                    item_data_in_item_type_slot
+                    or mat_source_type in ("GET_MATERIAL_FROM_REAGENT", "GET_ITEM_DATA_FROM_REAGENT")
+                )
+                # DF's own item type is unresolved until the reagent's
+                # matched material/item is known -- not derivable from this
+                # product line alone when it's in this shape.
+                effective_item_type = None if item_data_in_item_type_slot else product["item_type"]
+
                 node_id = None
                 if not parametric:
                     node_id = _fixed_node_id(
-                        product["item_type"], product["subtype"], mat_source_type, mat_args,
+                        effective_item_type, product["subtype"], mat_source_type, mat_args,
                     )
                     if node_id is not None:
                         add_node({
                             "id": node_id, "kind": schema.KIND_ITEM_TYPE,
                             "display_name": node_id,
-                            "durability": _durability(product["item_type"], material_templates),
+                            "durability": _durability(effective_item_type, material_templates),
                             "status": schema.VERIFIED_RAWS,
                             "source_ref": f"{source_path}:{product['line']}",
                         })
                 unit, unit_source, _raw_unit_value = _determine_unit(
-                    product["item_type"], product["subtype"], product["dimension"], item_tools,
+                    effective_item_type, product["subtype"], product["dimension"], item_tools,
                 )
                 flow = {
                     "process_id": reaction["id"], "direction": schema.PRODUCT,
@@ -613,15 +856,20 @@ def pass1(
                 }
                 if parametric:
                     flow["_parametric"] = True
-                    flow["_mat_source_reagent"] = mat_args[0] if mat_args else None
-                    flow["_mat_source_token"] = mat_args[1] if len(mat_args) > 1 else None
-                    flow["_item_type"] = product["item_type"]
-                    flow["_subtype"] = product["subtype"]
+                    if item_data_in_item_type_slot:
+                        flow["_mat_source_reagent"] = product["subtype"]
+                        flow["_mat_source_token"] = mat_source_type
+                    else:
+                        flow["_mat_source_reagent"] = mat_args[0] if mat_args else None
+                        flow["_mat_source_token"] = mat_args[1] if len(mat_args) > 1 else None
+                    flow["_item_type"] = effective_item_type
+                    flow["_subtype"] = None if item_data_in_item_type_slot else product["subtype"]
                 flows.append(flow)
 
     return {
         "nodes": nodes, "classes": classes, "material_reaction_products": mrp_rows,
         "processes": processes, "flows": flows, "attributes": attributes,
+        "unparsed": unparsed, "material_templates": material_templates,
     }
 
 
@@ -632,24 +880,35 @@ def pass2(pass1_result: dict) -> dict:
     """Resolve every parametric flow (`node_id is None`, `_parametric`)
     against `material_reaction_products`, expanding one row into N.
 
-    Matching is **strict on `token_family`**: a parametric product whose
-    reagent filter came from `HAS_MATERIAL_REACTION_PRODUCT` (family
-    `material_reaction_product`) is only matched against
-    `material_reaction_product` rows of that same family. This is
-    deliberate, per the handoff and `docs/PRODUCTION-MODEL.md` §6: "One
-    unresolved inconsistency, do not paper over it" -- `PROCESS_PLANT_TO_BAG`
-    filters via `HAS_MATERIAL_REACTION_PRODUCT:BAG_ITEM` while quarry bush
-    declares `ITEM_REACTION_PRODUCT:BAG_ITEM`, a different family with the
-    same name, and whether the engine actually matches across families is
-    not knowable from text files. Strict matching means that flow's rows
-    stay `node_id=NULL, status='unavailable'` rather than silently
-    resolving (wrong) or silently vanishing (worse) -- the gap is visible
-    in the coverage table, which is the whole point of recording
-    `token_family` on the join table in the first place.
+    Matching is **strict on `token_family`**: a parametric product is only
+    matched against `material_reaction_product`-family rows, never
+    `item_reaction_product`-family ones, regardless of which family the
+    reagent's own class filter came from. This is deliberate, per the
+    handoff and `docs/PRODUCTION-MODEL.md` §6: "One unresolved
+    inconsistency, do not paper over it" -- `PROCESS_PLANT_TO_BAG` filters
+    via `HAS_MATERIAL_REACTION_PRODUCT:BAG_ITEM` while quarry bush declares
+    `ITEM_REACTION_PRODUCT:BAG_ITEM`, a different family with the same
+    name, and whether the engine actually matches across families is not
+    knowable from text files. Strict matching means that flow's rows stay
+    `node_id=NULL, status='unavailable'` rather than silently resolving
+    (wrong) or silently vanishing (worse) -- the gap is visible in the
+    coverage table, which is the whole point of recording `token_family` on
+    the join table in the first place.
+
+    Real-corpus finding, 2026-09-19: a `material_reaction_product` row's
+    own `result_node` (built in `pass1`) is now a MATERIAL node (this
+    plant's own named local material -- see `pass1`'s plant loop), because
+    that is genuinely all a bare MRP line states. The concrete ITEM node a
+    parametric flow resolves to needs the flow's own `_item_type` (read off
+    the *reaction's* `[PRODUCT:...]` line, e.g. `DRINK` vs `SEEDS`)
+    combined with the matched material's plant -- both only come together
+    here, in pass 2, which is the actual reason this design needs two
+    passes, not merely that *a* join happens somewhere.
     """
     nodes = dict(pass1_result["nodes"])
     mrp_rows = pass1_result["material_reaction_products"]
     classes = list(pass1_result["classes"])
+    material_templates = pass1_result.get("material_templates", {})
 
     resolved_flows: list[dict] = []
     for flow in pass1_result["flows"]:
@@ -664,17 +923,51 @@ def pass2(pass1_result: dict) -> dict:
         ] if token else []
 
         clean = {k: v for k, v in flow.items() if not k.startswith("_")}
+        item_type = flow.get("_item_type")
+
         if not matches:
             # Unresolved on purpose -- see docstring. Leave exactly one row,
             # honestly marked, rather than 0 (silently vanished) or a guess.
             resolved_flows.append(clean)
             continue
 
+        if item_type is None:
+            # A real match exists (we know which material), but DF's own
+            # item type for this flow isn't derivable from the product line
+            # alone (the GET_ITEM_DATA_FROM_REAGENT-in-item-type-slot shape
+            # -- see pass1). Building "<None>:<plant>" would be a guess with
+            # a status='verified_raws' label on it; stay unresolved instead.
+            # Not exercised by the 2026-09-19 corpus (its one such flow,
+            # PROCESS_PLANT_TO_BAG's bag, has zero material_reaction_product
+            # -family matches for token BAG_ITEM to begin with -- this
+            # branch is defensive, for a shape this stream hasn't seen).
+            resolved_flows.append(clean)
+            continue
+
         for m in matches:
             row = dict(clean)
-            row["node_id"] = m["result_node"]
+            plant_id = m.get("_plant_id")
+            item_node_id = f"{item_type}:{plant_id}" if plant_id is not None else None
+            if item_node_id is None:
+                resolved_flows.append(clean)
+                continue
+            join_source = f"{clean['source_ref']} + {m['source_ref']} (pass 2 join on {token!r})"
+            if item_node_id not in nodes:
+                nodes[item_node_id] = {
+                    "id": item_node_id, "kind": schema.KIND_ITEM_TYPE,
+                    "display_name": item_node_id,
+                    "durability": _durability(item_type, material_templates),
+                    "status": schema.VERIFIED_RAWS, "source_ref": join_source,
+                }
+            if item_type == "DRINK":
+                classes.append({
+                    "node_id": item_node_id, "class": "DRINK",
+                    "mechanism": schema.MECH_MATERIAL_REACTION_PRODUCT,
+                    "source_ref": join_source,
+                })
+            row["node_id"] = item_node_id
             row["status"] = schema.VERIFIED_RAWS
-            row["source_ref"] = f"{clean['source_ref']} + {m['source_ref']} (pass 2 join on {token!r})"
+            row["source_ref"] = join_source
             resolved_flows.append(row)
 
     return {
@@ -683,6 +976,7 @@ def pass2(pass1_result: dict) -> dict:
         "processes": pass1_result["processes"],
         "flows": resolved_flows,
         "attributes": pass1_result["attributes"],
+        "unparsed": pass1_result.get("unparsed", []),
     }
 
 
@@ -766,15 +1060,20 @@ DEFAULT_REACTION_FILES = (
 )
 
 
-def extract(fixtures_dir: Path = FIXTURES_DIR) -> dict:
-    """Run both passes against the fixture files in `fixtures_dir` and
-    return the table->rows dict `store.write_all` expects (minus the
-    `_bookkeeping`, already stripped by pass 2)."""
-    reaction_texts = [_read(fixtures_dir / name) for name in DEFAULT_REACTION_FILES]
-    plant_text = _read(fixtures_dir / "plant_standard.txt")
-    material_template_text = _read(fixtures_dir / "material_template_default.txt")
-    item_tool_text = _read(fixtures_dir / "item_tool.txt")
-
+def extract_from_sources(
+    reaction_texts: list[tuple[str, str]],
+    plant_text: tuple[str, str],
+    material_template_text: tuple[str, str],
+    item_tool_text: tuple[str, str],
+) -> dict:
+    """Run both passes against arbitrary `(text, source_path)` sources and
+    return the table->rows dict, plus an `unparsed` list (NOT one of
+    `store.write_all`'s kwargs -- pop it before splatting this dict at
+    `write_all`, same as `main` below does). Factored out of `extract` so a
+    caller with a real, differently-laid-out raws directory (not this
+    package's flat `tests/fixtures/`) can run the identical pipeline; see
+    `research/2026-09-19-real-corpus-extraction.md` for the one-off script
+    that did exactly this against the real 159-reaction corpus."""
     p1 = pass1(reaction_texts, plant_text, material_template_text, item_tool_text)
     p2 = pass2(p1)
     return {
@@ -785,14 +1084,28 @@ def extract(fixtures_dir: Path = FIXTURES_DIR) -> dict:
         "flows": p2["flows"],
         "attributes": p2["attributes"],
         "observations": [],
+        "unparsed": p2["unparsed"],
     }
+
+
+def extract(fixtures_dir: Path = FIXTURES_DIR) -> dict:
+    """Run both passes against the fixture files in `fixtures_dir` and
+    return the table->rows dict `store.write_all` expects (plus `unparsed`,
+    which isn't one of its kwargs -- see `extract_from_sources`)."""
+    reaction_texts = [_read(fixtures_dir / name) for name in DEFAULT_REACTION_FILES]
+    plant_text = _read(fixtures_dir / "plant_standard.txt")
+    material_template_text = _read(fixtures_dir / "material_template_default.txt")
+    item_tool_text = _read(fixtures_dir / "item_tool.txt")
+    return extract_from_sources(reaction_texts, plant_text, material_template_text, item_tool_text)
 
 
 def main() -> None:
     rows = extract()
+    unparsed = rows.pop("unparsed", [])
     counts = store.write_all(store.default_path(), **rows)
     for table, n in counts.items():
         print(f"{table}: {n}")
+    print(f"unparsed: {len(unparsed)}")
 
 
 if __name__ == "__main__":
