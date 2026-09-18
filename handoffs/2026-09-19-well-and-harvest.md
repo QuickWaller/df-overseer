@@ -234,3 +234,32 @@ stone confirmed), a 5x5 mining room dug but it landed on soil (0 boulders),
 the Still workshop lost to a resumed-but-failed job and re-designated
 (unbuilt, pending the next window).
 
+### 4. While paused: harvest designated, a deeper stone room found and designated
+
+- `diggable find-stair -2 "Embark Site"` (one level below the room just
+  dug) reports its own upper tile `upper_tile_material: STONE`; `diggable
+  find 5 5 -2 "Embark Site" 20` returned a rank-1 candidate with
+  `material: STONE` **already known** (not withheld), because the level -1
+  room dug in window 1 revealed enough of the boundary for the ring-
+  adjacency check to pass. Designated it:
+  `diggable dig 5 5 -2 "Embark Site" starter-room-5x5.csv 1 20`,
+  `quickfort_ok: true`, 25 tiles, confirmed stone.
+- **Deliberately did not yet spend wood on the mason's/mechanic's
+  workshops.** Given the still's own wood-funded build just failed for a
+  reason this project's own reachability model did not predict (section 3),
+  spending the fort's only 3 logs on two more wood-funded builds before
+  confirming wood construction works at all felt like compounding an
+  unproven risk. Holding those two builds until either the re-designated
+  still completes, or boulders exist to fund them without touching wood.
+- `df-overseer-harvest gather 80 "Embark Site" 40 false`: **80 wild plants
+  marked for real** (`marked: 80`, all brewable species, nearest 6.08 tiles,
+  farthest 22.85 tiles). Designation only, no unpause needed for marking
+  itself; gathering jobs run once the fort is moving.
+
+### 5. UNPAUSE WINDOW 2: tick 311346 -> in progress
+
+**Unpaused at tick 311346**, confirmed by direct read. Watchdog re-armed for
+a 300s window. Goal: let the z166 stone dig run (real boulders, this time),
+the re-designated Still complete, and the 80 marked plants start getting
+gathered.
+
