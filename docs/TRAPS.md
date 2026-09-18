@@ -106,6 +106,17 @@ findings without another doc home yet.
   trustworthy fort-defense signal** — proven wrong in both directions the
   same day it was tested. Treat its output as "worth a second look," never
   as "confirmed safe" or "confirmed hostile" on its own.
+- **A `WaterSource` zone reading `spec_sub_flag.active = true` says nothing
+  about whether any dwarf can actually reach the water.** Uniboslan's zone
+  read active the whole time while `thirst_timer` rose in exact lockstep
+  with tick across all 15 citizens (delta tick 6,303 = delta thirst 6,303),
+  meaning zero drinks. The pond is a sunken basin: zero walkable tiles at
+  the water's own z-level, and all wet tiles there have zero walkable
+  neighbours. Active tells you the zone exists on water, not that a dwarf
+  can stand next to it. The real check is a thirst-timer delta across two
+  reads, not the zone's own flag. See `doctrine/seed.yaml`
+  (`water-source-needs-walkable-neighbour`) and `docs/PRODUCTION-MODEL.md`
+  §12.
 
 ---
 
