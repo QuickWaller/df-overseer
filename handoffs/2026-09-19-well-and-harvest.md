@@ -105,3 +105,72 @@ batch of plants has been gathered and brewing is queued or done; the fort is
 paused again; and the write-up records the stock before and after (stone,
 blocks, mechanisms, plants, drink), every unpause window with its ticks, and
 any lever gap found.
+
+## Write-up (2026-09-19, executed live)
+
+### 0. Baseline, before any action
+
+Read live, paused, tick **283992**, `ReadPauseState() == true`:
+
+- Stock (`df-overseer-stocks availability`): **BOULDER 0, BLOCKS 0,
+  TRAPPARTS 0, WOOD 3**. `food-drink`: **drink 0, prepared_meals 0,
+  raw_edibles 1 item / 2 units** (the 2 MUSHROOM_HELMET_PLUMP from the
+  2026-09-19 rollback state, unchanged).
+- `df-overseer-landmarks list`: Embark Site, Still, Stockpile #1,
+  Stockpile #2, Wagon. No Farm Plot, no WaterSource zone, matching
+  `Working.md`.
+- `df-overseer-diggable find-stair -1 "Embark Site"` returns real
+  unoccupied candidates (the orphan stair from 2026-09-18 is gone with the
+  rollback; this is a fresh find). `df-overseer-well find "Embark Site" 20`
+  returns real sites, `requirements.fort_owned` BLOCKS 0 / TRAPPARTS 0 /
+  BUCKET 3 / CHAIN 3, matching the settled well-unblock finding exactly.
+- Labour check (bounded, 23 citizens, no map scan): **MINE 2, MASON 2,
+  MECHANIC 1, HERBALIST 1, BREWER 1, STONECUTTER 1**, all already assigned
+  by autolabor (`autolabor_enabled=true`). No hand-set needed for any of
+  this stream's jobs.
+
+### 1. Lever gap: wild plant gathering, closed with a new tool
+
+No existing `df-overseer-*.lua` tool designates gathering wild plants.
+Checked this install's own source (`hack/scripts/internal/quickfort/dig.lua`):
+quickfort's `p` (Gather Plants) symbol is `do_gather`, which refuses hidden
+tiles outright and requires `tiletype_shape.SHRUB`, then just sets
+`digctx.flags.dig = values.dig_default` -- the same field mining uses,
+read by the engine as a gather job because the tile shape is SHRUB. The
+generic primitive `dfhack.designations.markPlant` (the same one
+`df-overseer-trees.lua` already uses for felling) works on shrub-type
+plants too: live-tested, `canMarkPlant` returned true for 200/200 sampled
+wild `DRY_PLANT`/`WET_PLANT` entries from `df.global.world.plants.all`
+(9,642 total on this map, none already marked).
+
+Built `scripts/dfhack/df-overseer-harvest.lua` (`find`, `gather`), modelled
+on `trees.lua`'s find/fell shape, deployed to
+`/opt/df/game/hack/scripts/df-overseer-harvest.lua`. **Candidate-finding
+uses `df.global.world.plants.all` exclusively, never a tile scan**, per
+this stream's hard rule. Live-tested read-only: `find "Embark Site" 40`
+returns 510 gatherable wild plants within 40 tiles, 509 reachable, 252
+brewable (species checked against this install's own raws for
+`MATERIAL_REACTION_PRODUCT:DRINK_MAT`: BERRIES_FISHER, BERRY_SUN,
+BLACKBERRY, CRANBERRY, GRASS_TAIL_PIG, GRASS_WHEAT_CAVE, KANIWA,
+MUSHROOM_HELMET_PLUMP, POD_SWEET, REED_ROPE, WEED_RAT, WILD_CARROT are
+brewable on this install; BUSH_QUARRY, LETTUCE, MUSHROOM_CUP_DIMPLE,
+MUSKMELON, OATS, RED_SPINACH, SPINACH are not). `gather 40 "Embark Site" 40
+true` dry-run correctly reports `would_gather: 40, would_gather_brewable:
+40`. Committed to `main` (`109ba3c`) before any live mutation.
+
+### 2. Stair designated, quicksave confirmed
+
+- `df-overseer-diggable dig-stair -1 "Embark Site" 1 "" false`: both halves
+  designated for real (`upstair_designated`/`downstair_designated` both
+  true, each with `quickfort_ok` true and 1 tile in its own stats), read
+  back from the tile's own designation, not inferred from `CR_OK` alone.
+- Quicksave issued (`dfhack-run quicksave`), then polled. **Confirmed
+  written**: save dir rotated to `autosave 3`, `world.sav` mtime
+  2026-09-18T22:22:23Z (VM clock), stable across a further 80s of polling,
+  landing within ~2 minutes of issuing the command. Tick unchanged at
+  283992, still paused.
+- Built a detached watchdog (`/tmp/pause_watchdog.sh`, `/tmp/pause_now.lua`
+  on the VM) for the supervised unpause windows below: `sleep N` then a
+  `dfhack-run lua -f` pause call, backgrounded with `setsid nohup ... &
+  disown`.
+
