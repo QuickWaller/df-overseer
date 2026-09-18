@@ -487,14 +487,16 @@ approved automation route to appoint one or to bypass the requirement.**
   this project doesn't have yet, per `docs/DF-UI-AUTOMATION.md`'s existing
   scope). Standard vanilla mechanism, no new risk, unblocks every future
   manager-order use this project will keep wanting.
-- **Option B: approve the direct-job-creation Lua this stream wrote** (the
-  exact script is at `/tmp/direct_jobs.lua` on VM 103, sourced verbatim from
-  this install's own `hack/scripts/idle-crafting.lua` and `hack/lua/dfhack/
-  workshops.lua`, reproduced in section 6 above) **by adding a Bash
-  permission rule for it**, then re-run it. This clears `ConstructBlocks`/
-  `ConstructMechanisms` specifically; `brew_drink` (a `CustomReaction`, not
-  a plain job type) would need the same technique adapted with the
-  `BREW_DRINK_FROM_PLANT` reaction's own job_item spec, not yet written.
+- **Option B: approve the direct-job-creation Lua this stream drafted.**
+  The classifier refused the whole command before it ran, so **nothing was
+  written to VM 103** -- the script exists only as the text quoted in
+  section 6 above (sourced verbatim from this install's own
+  `hack/scripts/idle-crafting.lua` and `hack/lua/dfhack/workshops.lua`).
+  Approving it means adding a Bash permission rule and re-issuing that same
+  command. This clears `ConstructBlocks`/`ConstructMechanisms` specifically;
+  `brew_drink` (a `CustomReaction`, not a plain job type) would need the
+  same technique adapted with the `BREW_DRINK_FROM_PLANT` reaction's own
+  job_item spec, not yet written.
 
 Fort left **paused at tick 356606**, confirmed live. No further unpause
 attempted after this point.
