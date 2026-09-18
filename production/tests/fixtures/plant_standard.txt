@@ -1,0 +1,74 @@
+plant_standard.txt fixture -- see PROVENANCE.md.
+
+MATERIAL_REACTION_PRODUCT below uses this stream's own simplified 3-arg
+fixture form (token:item_type:node_suffix), not DF's real nested material
+structure -- the audit verified token names and which crops carry them
+(sec2, citing plant_standard.txt lines 13-14, 69-71, 117-118, 164-165,
+282-283 for DRINK_MAT/SEED_MAT on plump helmet, pig tail, cave wheat, sweet
+pod, dimple cup), not the internal argument syntax, which was not quoted.
+GROWDUR and season-flag values are QUOTED for plump helmet, pig tail, cave
+wheat and sweet pod (audit sec7, citing plant_standard.txt lines 28/53,
+74/91, 121/147, 168/206). Dimple cup's own season flags were not quoted by
+the audit; marked RECONSTRUCTED below.
+
+[OBJECT:PLANT]
+
+[PLANT:PLUMP_HELMET]
+	[NAME:plump helmet]
+	[GROWDUR:300]
+	[SPRING][SUMMER][AUTUMN][WINTER]
+	[VALUE:2]
+	[MATERIAL_VALUE:2]
+	[MATERIAL_REACTION_PRODUCT:DRINK_MAT:DRINK:PLUMP_HELMET_WINE]
+	[MATERIAL_REACTION_PRODUCT:SEED_MAT:SEEDS:PLUMP_HELMET_SEED]
+
+[PLANT:PIG_TAIL]
+	[NAME:pig tail]
+	[GROWDUR:300]
+	[SUMMER][AUTUMN]
+	[VALUE:2]
+	[MATERIAL_VALUE:2]
+	[MATERIAL_REACTION_PRODUCT:DRINK_MAT:DRINK:PIG_TAIL_ALE]
+	[MATERIAL_REACTION_PRODUCT:SEED_MAT:SEEDS:PIG_TAIL_SEED]
+
+[PLANT:CAVE_WHEAT]
+	[NAME:cave wheat]
+	[GROWDUR:500]
+	[SUMMER][AUTUMN]
+	[VALUE:2]
+	[MATERIAL_VALUE:2]
+	[MATERIAL_REACTION_PRODUCT:DRINK_MAT:DRINK:CAVE_WHEAT_BEER]
+	[MATERIAL_REACTION_PRODUCT:SEED_MAT:SEEDS:CAVE_WHEAT_SEED]
+
+[PLANT:SWEET_POD]
+	[NAME:sweet pod]
+	[GROWDUR:500]
+	[SPRING][SUMMER]
+	[VALUE:2]
+	[MATERIAL_VALUE:2]
+	[MATERIAL_REACTION_PRODUCT:DRINK_MAT:DRINK:SWEET_POD_WINE]
+	[MATERIAL_REACTION_PRODUCT:SEED_MAT:SEEDS:SWEET_POD_SEED]
+
+dimple cup -- season flags RECONSTRUCTED (not quoted by the audit for this
+crop specifically; all-season is a placeholder, not verified):
+
+[PLANT:DIMPLE_CUP]
+	[NAME:dimple cup]
+	[GROWDUR:500]
+	[SPRING][SUMMER][AUTUMN][WINTER]
+	[VALUE:2]
+	[MATERIAL_VALUE:2]
+	[MATERIAL_REACTION_PRODUCT:DRINK_MAT:DRINK:DIMPLE_CUP_WINE]
+	[MATERIAL_REACTION_PRODUCT:SEED_MAT:SEEDS:DIMPLE_CUP_SEED]
+
+quarry bush -- ITEM_REACTION_PRODUCT:BAG_ITEM presence is QUOTED, audit
+sec3, citing plant_standard.txt:223; the full line and GROWDUR/season
+values here are RECONSTRUCTED (not this project's crop, no brew chain):
+
+[PLANT:QUARRY_BUSH]
+	[NAME:quarry bush]
+	[GROWDUR:300]
+	[SPRING][SUMMER][AUTUMN][WINTER]
+	[VALUE:2]
+	[MATERIAL_VALUE:2]
+	[ITEM_REACTION_PRODUCT:BAG_ITEM:BAG:QUARRY_LEAF_BAG]

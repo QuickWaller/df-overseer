@@ -1,0 +1,24 @@
+reaction_adv_carpenter.txt fixture -- see PROVENANCE.md.
+
+RECONSTRUCTED reaction. The audit verifies two real patterns from this
+file: the tool reagent uses PRESERVE_REAGENT plus HAS_EDGE (audit sec1,
+"tool in nearly every carpenter reaction"), and every product in this file
+inherits its material from the log reagent with no fixed material anywhere
+(audit sec2, "22/22 reagent-inherited... every piece of furniture/tool made
+from log inherits whatever wood the carpenter used"). Because the log
+reagent itself names no fixed material (WOOD covers any species, chosen
+at the job), this reaction's product has nothing in material_reaction_
+products to join against in pass 2 -- a genuinely unresolved case distinct
+from the BAG_ITEM family mismatch, not a lookup gap.
+
+[OBJECT:REACTION]
+
+[REACTION:MAKE_WOODEN_CHAIR]
+	[NAME:make wooden chair]
+	[BUILDING:CARPENTERS:NONE]
+	[SKILL:CARPENTRY]
+	[REAGENT:log:1:WOOD:NONE:NONE:NONE]
+	[REAGENT:tool:1:NONE:NONE:NONE:NONE]
+		[PRESERVE_REAGENT]
+		[HAS_EDGE]
+	[PRODUCT:100:1:CHAIR:NONE:GET_MATERIAL_FROM_REAGENT:log:NONE]

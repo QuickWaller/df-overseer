@@ -1,0 +1,70 @@
+reaction_other.txt fixture -- see PROVENANCE.md for exactly which lines
+below are QUOTED (verbatim, cited to the real install by
+research/2026-09-18-schema-extraction-static.md), which are STRUCTURAL
+(required DF raw syntax, not raw-authored content), and which are
+RECONSTRUCTED (a verified token/pattern, assembled into a full line this
+stream authored). Free text outside [] brackets, like this header, is
+ignored by the tokenizer -- confirmed real DF behaviour, per the audit's
+own note on reaction_other.txt:273's inline human comment.
+
+[OBJECT:REACTION]
+
+[REACTION:BREW_DRINK_FROM_PLANT]
+	[NAME:brew drink]
+	[BUILDING:STILL:NONE]
+	[SKILL:BREWING]
+	[REAGENT:plant:1:PLANT:NONE:NONE:NONE]
+		[HAS_MATERIAL_REACTION_PRODUCT:DRINK_MAT]
+	barrel/pot reagent -- QUOTED, reaction_other.txt:273 in the audit:
+	[REAGENT:barrel/pot:1:NONE:NONE:NONE:NONE]
+		[EMPTY]
+		[FOOD_STORAGE_CONTAINER]
+		[PRESERVE_REAGENT]
+	barrel or any non-absorbing tool with FOOD_STORAGE -- the audit's own
+	cited inline comment from the real file, reaction_other.txt:273.
+	drink product -- QUOTED, reaction_other.txt:277 in the audit:
+	[PRODUCT:100:5:DRINK:NONE:GET_MATERIAL_FROM_REAGENT:plant:DRINK_MAT]
+		[PRODUCT_TO_CONTAINER:barrel/pot]
+	PRODUCT_DIMENSION presence on DRINK products is QUOTED (audit sec4,
+	3/3); this specific figure is RECONSTRUCTED, not independently verified:
+		[PRODUCT_DIMENSION:150]
+	seed product -- RECONSTRUCTED. Token DRINK_MAT/SEED_MAT pairing on
+	brewable crops is QUOTED (audit sec2); the 5-drink/1-seed ratio is
+	corroborated by research/2026-09-17-seed-ratios.md, cited by the audit
+	as already settled, not by a literal quoted raw line this session:
+	[PRODUCT:100:1:SEEDS:NONE:GET_MATERIAL_FROM_REAGENT:plant:SEED_MAT]
+
+RECONSTRUCTED reaction below. The audit verifies the pattern -- PRESERVE_
+REAGENT plus NOT_IMPROVED plus no PRODUCT line at all, for the four GLAZE_*
+reactions, and that IMPROVEMENT is the real token used (audit sec1
+table, row 4) -- but does not quote a complete GLAZE_* block. Named after
+one of the real four (glaze jug/pot/statue/craft).
+
+[REACTION:GLAZE_STATUE]
+	[NAME:glaze statue]
+	[BUILDING:KILN:NONE]
+	[SKILL:POTTERY]
+	[REAGENT:statue:1:STATUE:NONE:NONE:NONE]
+		[PRESERVE_REAGENT]
+		[NOT_IMPROVED]
+	[REAGENT:glaze material:150:POWDER_MISC:NONE:NONE:NONE]
+		[REACTION_CLASS:GLAZE_MAT]
+	[IMPROVEMENT:GLAZED]
+
+RECONSTRUCTED reaction below. The audit verifies that PROCESS_PLANT_TO_BAG
+filters its plant reagent on HAS_MATERIAL_REACTION_PRODUCT:BAG_ITEM (audit
+sec3, the BAG_ITEM inconsistency finding) and that this reaction is in the
+GET_MATERIAL_FROM_REAGENT-inherited bucket (audit sec2). The bag reagent
+and the exact product line are this stream's construction.
+
+[REACTION:PROCESS_PLANT_TO_BAG]
+	[NAME:process plants to bag]
+	[BUILDING:FARMERS:NONE]
+	[SKILL:PROCESSPLANTS]
+	[REAGENT:plant:1:PLANT:NONE:NONE:NONE]
+		[HAS_MATERIAL_REACTION_PRODUCT:BAG_ITEM]
+	[REAGENT:bag:1:BAG:NONE:NONE:NONE]
+		[EMPTY]
+		[PRESERVE_REAGENT]
+	[PRODUCT:100:1:BAG:NONE:GET_MATERIAL_FROM_REAGENT:plant:BAG_ITEM]
+		[PRODUCT_TO_CONTAINER:bag]
