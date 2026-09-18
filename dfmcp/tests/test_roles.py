@@ -20,6 +20,7 @@ from dfmcp.doctrine_tools import NATIVE_TOOLS as DOCTRINE_NATIVE_TOOLS
 from dfmcp.queue_tools import NATIVE_TOOLS
 from dfmcp.registry import load_registry
 from dfmcp.roles import RoleValidationError, load_roster
+from dfmcp.series_tools import NATIVE_TOOLS as SERIES_NATIVE_TOOLS
 
 
 @pytest.fixture(scope="module")
@@ -31,8 +32,12 @@ def registry():
     # otherwise fail to load the real roster for every test in this file.
     # DOCTRINE_NATIVE_TOOLS merged in too, added
     # handoffs/2026-09-19-get-doctrine-tool.md: agents/consultant/tools.yaml
-    # now grants doctrine.get, same rule-1 requirement.
-    return load_registry(native_tools={**NATIVE_TOOLS, **DOCTRINE_NATIVE_TOOLS})
+    # now grants doctrine.get, same rule-1 requirement. SERIES_NATIVE_TOOLS
+    # merged in too, added handoffs/2026-09-19-series-mcp-tools.md:
+    # agents/overseer/tools.yaml and agents/consultant/tools.yaml now grant
+    # series.* ids and agents/architect/tools.yaml denies them, same rule-1
+    # requirement for the two enabled grantee roles.
+    return load_registry(native_tools={**NATIVE_TOOLS, **DOCTRINE_NATIVE_TOOLS, **SERIES_NATIVE_TOOLS})
 
 
 # --------------------------------------------------------------------------
