@@ -125,3 +125,134 @@ The new traps are recorded with evidence, the memory file carries the new
 capability facts, the standing docs no longer contradict today's findings, and
 your write-up at the bottom of this file lists every contradiction you found,
 including any you deliberately left alone.
+
+## Result
+
+**Status: done.** Documentation only; no VM, no SSH, no DFHack, no fort, no
+code. Branch already contained `bd6bddc` (worktrees here branch from the last
+pushed commit, so checked first per the known trap; no merge needed). Read
+`CLAUDE.md`, this handoff, `docs/PRODUCTION-MODEL.md`,
+`research/2026-09-18-schema-extraction-static.md`,
+`research/2026-09-18-schema-extraction-live.md`,
+`research/2026-09-18-production-figures.md`, `decisions/DECISIONS.md`'s
+2026-09-18 rows (twelve total that date; the six on the production
+model/audits are rows for "Production graph designed in full", "Three
+consumption semantics, not one" (title now stale, see contradiction below),
+"The four-quadrant rule", "Capacity shortage is the diagnosis of last
+resort", "Material policy is banded", "An observations table was the
+missing piece"; the other six that date are unrelated topics, not this
+pass's brief), and `handoffs/2026-09-17-doc-drift-pass.md` for the standard.
+
+**Per file:**
+- `docs/TRAPS.md`: added a dated `## Added 2026-09-18` section, all seven
+  traps from Deliverable 1, each with its evidence and source.
+- `memory/dfhack-environment.md`: added a dated block under "Game-side
+  facts" with the six capability facts from Deliverable 2
+  (`item.flags.in_job`, `item.flags.owned`/`UNIT_HOLDER`, `grow_counter`,
+  `cur_season`/`cur_season_tick`, the tick-conversion confirmation, stockpile
+  link fields, `getTileFlags(pos).traffic` via `df.tile_traffic`).
+- `docs/AGENT-ARCHITECTURE.md`: added a dated note to §4's Strategy-layer
+  bullet pointing at `docs/PRODUCTION-MODEL.md` and stating the design's
+  division of labour (code prices the choice set, an agent sets the
+  target), framed as sharpening principle 1.
+- `docs/MEMORY-ARCHITECTURE.md`: added a paragraph to the doctrine store
+  section noting material-policy targets (bands, par levels, cover days,
+  reserve floors) as a new class of doctrine entry, same format and
+  revision path as before.
+- `ROADMAP.md`: added a new top Now item for the production model
+  (designed, nothing built, pointer to `docs/PRODUCTION-MODEL.md`),
+  pointed the existing "Game figures database and calculators" Next item
+  at it, bumped `Last reviewed` to 2026-09-18 with a note, and re-scanned
+  the rest of the Now/Next buckets. Nothing else found quietly finished or
+  stalled. Left the 19/32/4 tool-count figure in the 2026-09-17 Now item
+  untouched (see contradiction below, deliberately not fixed).
+- `CLAUDE.md`: added a new top status bullet for the production model
+  (designed-not-built, the two figures worth knowing up front: four
+  consumption outcomes not three, no job-duration figure found anywhere)
+  and bumped the status date to 2026-09-18. Fixed the fort's tick (227008
+  to 227160, see contradiction below). Role tool counts left untouched
+  (21/34/4), as instructed.
+
+**Contradictions found, and what was done about each:**
+
+1. **`Working.md`'s "In flight" section (lines 94-139) is now stale against
+   the audits it itself commissioned, and I could not fix it: `Working.md`
+   is explicitly off my touched surfaces.** It says "six tables" (now
+   seven, `material_reaction_product` was added as a correction) and
+   "Three consumption semantics" (now four, `modified_in_place` for the
+   `GLAZE_*` reactions). This is exactly the shape of contradiction the
+   brief asked me to hunt for, and I traced it precisely
+   (`docs/PRODUCTION-MODEL.md` §4 and §5 are the corrected versions), but
+   left the file untouched per this handoff's own rule and flagged it here
+   plus with a pointer note in the new `ROADMAP.md` Now item. **Whoever
+   owns `Working.md` next should rewrite that section from
+   `docs/PRODUCTION-MODEL.md` directly rather than patch the old numbers.**
+2. **The fort's tick in `CLAUDE.md` (227008) was stale against two live
+   reads from today's live-state audit** (`ReadCurrentTick()` read 227160
+   at the start and end of that session's probes, independently corroborated
+   by `docs/PRODUCTION-MODEL.md` §3 stating the same figure). Fixed in
+   `CLAUDE.md`.
+3. **`ROADMAP.md`'s 2026-09-17 Now item states tool counts as 19/32/4,
+   while `CLAUDE.md`'s current status block (also dated 2026-09-17, until
+   this pass) states 21/34/4** "after the farm-list and stair tools; not
+   yet deployed". This predates today's audits, is not one of the four
+   things this brief named, and fixing it means touching a tool count,
+   which this handoff explicitly forbids in both directions ("a parallel
+   stream is adding tools and the orchestrator applies those numbers
+   afterwards"). **Left alone on purpose, flagged here for whoever
+   reconciles tool counts once that stream lands.**
+
+**The four specific checks the brief named, each run against every file I
+read or touched:**
+- Three tables / `capacity_theoretical` / three consumption semantics:
+  none of my six touched files made either claim before this pass (they
+  predate the production model entirely). The one real hit was
+  `Working.md` (contradiction 1 above), outside my surfaces.
+- Announcement channel useful for counts or short-circuiting diagnosis:
+  checked `docs/AGENT-ARCHITECTURE.md`'s wake-events table (§4) and
+  `docs/TRAPS.md`; neither makes this claim. `docs/AGENT-ARCHITECTURE.md`
+  already correctly scopes `CANCEL_JOB`-style announcements to the real,
+  narrow event types it lists; today's audit's finding (unlinked fields,
+  pruned buffer) doesn't contradict anything there, it only adds detail,
+  now recorded in `docs/TRAPS.md`.
+- Wiki container capacities or traffic weights as settled fact rather than
+  `prior`, or traffic weights as a hardcoded constant: grepped the whole
+  repo for capacity/traffic figures; every hit outside `research/` and
+  `decisions/` was in files outside my touched surfaces
+  (`research/2026-09-09-reverse-vnc-relay.md` is an unrelated VNC
+  bandwidth figure, not a DF container). None of my six files made this
+  claim. `memory/dfhack-environment.md`'s new traffic entry states the
+  weights are compiled-in and configurable, not a constant, matching
+  today's figures pass.
+- A job-time figure asserted anywhere: grepped the whole repo for
+  `job.?time`/`job_time`; every hit is in `research/2026-09-18-*`,
+  `decisions/DECISIONS.md`, or other streams' handoffs, all of which
+  already state it as `unavailable`/not found. None of my six files
+  asserted one before or after this pass.
+
+**Traps recorded:** the seven listed in Deliverable 1, in `docs/TRAPS.md`'s
+new `## Added 2026-09-18` section (forbid-not-forbidden, `unit.counters`
+not `counters2`, year-relative `ReadCurrentTick()`, the pruned announcement
+buffer, unlinked cancellation fields, the `max_general_orders` discrepancy,
+the 42% reagent-inherited material problem).
+
+**Test counts:** ambient `python -m pytest`, run three times across this
+pass (baseline, mid-pass, and after the em-dash fix): **306 passed, 1
+skipped** every time, unchanged throughout. `.venv-dfmcp/dfmcp/tests` not
+run (documentation changes touch nothing that suite reads; the ambient
+baseline this pass was actually verified against is the one CLAUDE.md
+names).
+
+**Commits, all on this branch, none pushed:**
+- `aac6cf2` docs: record production-model audit traps and capability facts
+- `19dd3ad` docs: add production-model Now item, point calculators item at it
+- `db116ed` docs: refresh CLAUDE.md status block for 2026-09-18
+- `f47d1bd` docs: remove em dashes from today's additions, house style
+- (this doc's own Result, committed after)
+
+**Not done, deliberately:** no `Working.md`, `decisions/DECISIONS.md`,
+`handoffs/INDEX.md`, `doctrine/**`, `production/**`, `scripts/dfhack/**` or
+`agents/**` write, per the handoff's rules. No new `decisions/DECISIONS.md`
+row is owed by this stream (nothing here is a new decision, only
+documentation brought into line with decisions already recorded today by
+other streams). No harness or hook refusal encountered.
