@@ -928,3 +928,66 @@
     within a day. The one observation that unblocks this is cheap: read a
     planted crop's grow_counter at two known ticks and watch when it becomes
     harvestable.
+
+- id: brewing-chain-from-raws
+  scope: universal
+  status: verified
+  topics: [drink, food, material]
+  sources:
+    - kind: game-data
+      ref: >-
+        data/vanilla/vanilla_reactions/objects/reaction_other.txt lines
+        265-281, REACTION:BREW_DRINK_FROM_PLANT, pulled read-only from VM 103
+        on 2026-09-19 and read in full
+      describes: "53.16"
+      read: opened
+      accessed: 2026-09-19
+  statement: >-
+    Brewing on this install is one plant plus one container, giving **five
+    drinks and one seed**. The reaction is `BREW_DRINK_FROM_PLANT` at the
+    STILL, skill BREWING. The plant reagent must carry
+    `HAS_MATERIAL_REACTION_PRODUCT:DRINK_MAT` and must be `UNROTTEN`. The
+    container reagent is `EMPTY` plus `FOOD_STORAGE_CONTAINER`, described in
+    the raws as "barrel or any non-absorbing tool with FOOD_STORAGE", so **it
+    need not be a wooden barrel**: a rock pot qualifies. The container carries
+    `PRESERVE_REAGENT`, so it is occupied rather than consumed, and is freed
+    when the drink is drunk rather than when brewing finishes. Products are
+    `5 DRINK` (with `PRODUCT_TO_CONTAINER` and `PRODUCT_DIMENSION:150`) and
+    `1 SEEDS`.
+  note: >-
+    Two consequences worth acting on. **Brewing returns a seed**, so it does
+    not draw down seed stock the way cooking does, which makes it strictly
+    preferable to cooking under `seed-stock-never-falls` and
+    `never-cook-seed-items`. And the **five-to-one yield** means a small plant
+    stock goes much further than a raw count suggests: eight plants is up to
+    forty drinks, not eight. This entry records the reaction only. Whether a
+    brewed drink satisfies thirst is a separate claim and is **not** verified
+    here; see `alcohol-is-not-food`, which is still `prior` on an unrecorded
+    wiki read.
+
+- id: plump-helmet-is-brewable
+  scope: universal
+  status: verified
+  topics: [drink, food, farming]
+  sources:
+    - kind: game-data
+      ref: >-
+        data/vanilla/vanilla_plants/objects/plant_standard.txt, the
+        MUSHROOM_HELMET_PLUMP block, line 13:
+        [MATERIAL_REACTION_PRODUCT:DRINK_MAT:LOCAL_PLANT_MAT:DRINK], and line
+        14 the matching SEED_MAT
+      describes: "53.16"
+      read: opened
+      accessed: 2026-09-19
+  statement: >-
+    Plump helmet carries `MATERIAL_REACTION_PRODUCT:DRINK_MAT`, so it
+    satisfies the one reagent condition `BREW_DRINK_FROM_PLANT` imposes on its
+    plant, and is brewable on this install. It also carries `SEED_MAT`, which
+    is what the reaction's seed product resolves through.
+  note: >-
+    Checked because the brew route for Uniboslan's thirst crisis rests
+    entirely on it and it was one grep. This is the specific condition that
+    could have failed silently: a plant without `DRINK_MAT` is simply not a
+    valid reagent, and the failure would have shown up as a job that never
+    starts rather than as an error. Recorded so the next reader does not have
+    to re-derive it. See `brewing-chain-from-raws`.
