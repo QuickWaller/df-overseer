@@ -505,3 +505,14 @@ restart.
 If DFHack stops responding, **attempt a quicksave before escalating** to stop
 or kill. If that is impossible, escalate anyway, because regaining control is
 correct, but say so in the report.
+
+## A doc-only edit can fail the test suite
+
+`tests/test_no_leaked_addresses.py` (since 2026-09-12) scans **every tracked
+file, prose included**, for private IPv4 addresses and `.internal` hostnames,
+and excludes only `working-archive/` and an explicit allowlist. So a note in
+`Working.md` or a handoff that quotes an address, **even an illustrative one
+while writing about leaks**, fails the suite. Found 2026-09-19, when exactly
+that happened to a note about the leaked addresses. **Run the full suite before
+committing doc edits too**, and write addresses as placeholders
+(`<df-vm-ip>`, `<relay-vm-ip>`, `<pve-host>`).
