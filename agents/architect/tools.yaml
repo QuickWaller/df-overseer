@@ -68,6 +68,18 @@ read:
     note: >-
       Fort-owned seed counts by plant. Same file, same deploy caveat as
       stocks.food-drink above.
+  - id: "stocks.availability"
+    status: exists
+    note: >-
+      Added handoffs/2026-09-19-per-item-flags-tool.md, offline build --
+      never run against a live DFHack process. Per-item-type netting
+      (docs/PRODUCTION-MODEL.md sec7's four deductions: in_job/owned+
+      UNIT_HOLDER/forbid/trader), not just a total, so a proposal can tell
+      "0 buckets exist" apart from "3 exist but all job-claimed/forbidden/
+      dwarf-owned" -- four different fixes. `owned_ref_check.
+      verified_offline` is always false until a live run confirms the
+      UNIT_HOLDER lookup; treat owned_units as "flagged owned," not a
+      confirmed claim, until then. TOOLS.yaml carries the full reasoning.
   - id: "farm.find"
     status: exists
     note: >-

@@ -159,8 +159,70 @@
 -- the same way item-counting understated the fort's food.
 -- ============================================================================
 --
+-- ADDED handoffs/2026-09-19-per-item-flags-tool.md, offline build stream (no
+-- VM, no DFHack process, no deploy). docs/PRODUCTION-MODEL.md sec7: "Available
+-- stock is never total stock", four exact deductions --
+--   claimed by a pending job  -- item.flags.in_job
+--   owned by a dwarf          -- item.flags.owned, plus the UNIT_HOLDER ref
+--   forbidden                 -- item.flags.forbid (NOT `forbidden`)
+--   caravan-owned              -- flags.trader, ALREADY netted above by
+--                                 is_fort_owned/count_bucket/get_seeds
+-- handoffs/2026-09-19-snapshot-assembler.md's write-up grepped every
+-- committed tool and found only `trader` reachable: `count_bucket` above
+-- folds straight to `units`/`item_count` sums with no per-item record
+-- surviving, so nothing downstream could net in_job/owned/forbid even in
+-- principle. `production/snapshot.py` already has the fully-netted code
+-- path built and tested against fixtures; it has nothing real to consume.
+-- `get_availability` below is what feeds it: one DF item-type name in
+-- (e.g. "BUCKET", the motivating case -- 3 fort-owned, unforbidden,
+-- unclaimed buckets and the fort still logged "Give water: Need empty
+-- bucket" at tick 214135, because a totals-only read cannot see the
+-- difference between "0 exist" and "3 exist, all claimed/forbidden/owned"),
+-- a per-flag-netted breakdown out.
+--
+-- THE ASSERT-DON'T-TRUST RULE THIS FILE IS BUILT AROUND (docs/TRAPS.md,
+-- "Added 2026-09-18": `item.flags.forbidden` "errors outright" live on this
+-- install -- `forbidden` is not a field, `forbid` is). A plain
+-- `item.flags.<name>` read is exactly the trap: if a name is wrong OR a
+-- field is genuinely absent on some future DFHack version and access
+-- degrades to a silent nil instead of an error, nil is falsy, so the
+-- deduction would read as "never true" and available_units would overcount
+-- -- reproducing the exact bug this tool exists to fix, silently. So every
+-- read of in_job/forbid/owned below goes through `checked_flag`, which
+-- treats "the pcall raised" AND "the pcall returned something that isn't a
+-- real boolean" as the SAME honest failure (`ok=false`), never as `false`.
+-- An item whose flag couldn't be checked is counted in neither
+-- `available` nor a false "unavailable due to X" bucket -- it goes to
+-- `unnetted_units`/`unnetted_item_count`, and the flag's name is added to
+-- the result's own `flag_read_errors` list, once per distinct name, so a
+-- caller can never mistake a silently-broken netting for a clean zero (the
+-- project's own prior "0 of 15 for a token that does not exist" incident).
+--
+-- `owned` NEEDS ITS OTHER HALF, PER SPEC, AND THAT HALF IS UNVERIFIED
+-- OFFLINE. This file's own header above already establishes `flags.owned`
+-- as a real, distinct field (checked live, found false on every DRINK/
+-- BOULDER/SEED item sampled, believed personal not fort ownership --
+-- "believed", not proven, since no citizen-owned item was in that sample).
+-- docs/PRODUCTION-MODEL.md sec7 is explicit that `owned` alone is not the
+-- deduction: it needs the item's own UNIT_HOLDER general_ref as
+-- confirmation. `checked_unit_holder_ref` below calls
+-- `dfhack.items.getGeneralRef(item, df.general_ref_type.UNIT_HOLDER)`,
+-- the same class of call this file's OWN header already describes using
+-- to confirm `flags.trader` against a live merchant unit -- but that
+-- specific call, for UNIT_HOLDER specifically, has never been run by any
+-- COMMITTED code in this repo. The only precedent is an uncommitted, ad
+-- hoc `dfhack-run lua` probe in a chat session
+-- (df-overseer-orders.lua's own header, tick 227160: "3 fort-owned ...
+-- unclaimed, no holder", read by hand, not by this file). So every result
+-- this tool returns carries `owned_ref_check.verified_offline = false`,
+-- unconditionally -- this stream cannot make that true, only a live run
+-- against a real DFHack process can, and until then `owned_units` should
+-- be read as "flagged owned", not as an independently confirmed dwarf
+-- claim.
+--
 -- Usage: ./dfhack-run df-overseer-stocks food-drink
 -- Usage: ./dfhack-run df-overseer-stocks seeds
+-- Usage: ./dfhack-run df-overseer-stocks availability BUCKET
 
 local json = require('json')
 local connectivity_mod = reqscript('df-overseer-connectivity')
@@ -306,6 +368,193 @@ function get_seeds()
   }
 end
 
+-- ============================================================================
+-- get_availability: the per-item-flags tool. See this file's header above
+-- (handoffs/2026-09-19-per-item-flags-tool.md) for why this exists and the
+-- honesty rules it is built around.
+
+-- Returns (ok, value). ok is false if this specific named flag could not be
+-- read as a real boolean from item.flags on THIS DFHack version -- whether
+-- because the read raised (docs/TRAPS.md: `item.flags.forbidden` "errors
+-- outright" on this install) or because it silently returned something
+-- that is not `true`/`false` (a hypothetical, not observed, but the whole
+-- point of this function is to never assume it can't happen). Callers MUST
+-- branch on `ok` before trusting `value` -- treating a failed read as
+-- `false` is the exact bug (docs/PRODUCTION-MODEL.md sec7, `forbid` not
+-- `forbidden`) this tool exists to stop reproducing.
+local function checked_flag(item, flag_name)
+  local ok, value = pcall(function() return item.flags[flag_name] end)
+  if not ok or type(value) ~= "boolean" then
+    return false, nil
+  end
+  return true, value
+end
+
+-- Returns (ok, has_ref). ok is false if the UNIT_HOLDER general_ref lookup
+-- itself could not be performed (df.general_ref_type.UNIT_HOLDER missing on
+-- this build, dfhack.items.getGeneralRef erroring, etc.) -- distinct from
+-- has_ref=false, which means the lookup ran cleanly and found no holder.
+-- UNVERIFIED OFFLINE (see this file's header): this exact call has never
+-- run against a live DFHack process from committed code. Every caller of
+-- this function must surface that caveat, not just the count.
+local function checked_unit_holder_ref(item)
+  local ok, ref = pcall(function()
+    return dfhack.items.getGeneralRef(item, df.general_ref_type.UNIT_HOLDER)
+  end)
+  if not ok then
+    return false, nil
+  end
+  return true, (ref ~= nil)
+end
+
+-- Walks ONE df.global.world.items.other[type_name] vector and nets it by
+-- all four deduction flags docs/PRODUCTION-MODEL.md sec7 names. Trader (and
+-- the same garbage_collect/removed/hidden-tile guard every other function
+-- in this file already uses) is netted via the existing, already-verified
+-- `is_fort_owned` -- unchanged, not touched by this addition, so
+-- food-drink/seeds' own verified behavior cannot regress. in_job/forbid/
+-- owned are the marginal three this stream adds, each read through
+-- `checked_flag` so a bad field name degrades to an honest "unnetted" tally
+-- instead of a silent false-negative.
+local function count_availability(vec, main_group_id)
+  local total_units, total_items = 0, 0
+  local avail_units, avail_items = 0, 0
+  local in_job_units, in_job_items = 0, 0
+  local forbid_units, forbid_items = 0, 0
+  local owned_units, owned_items = 0, 0
+  local owned_with_holder_ref, owned_without_holder_ref, owned_ref_lookup_errors = 0, 0, 0
+  local trader_units, trader_items = 0, 0
+  local rotten_units, unreachable_units = 0, 0
+  local unnetted_units, unnetted_items = 0, 0
+  local flag_read_errors = {}
+  local flag_read_errors_seen = {}
+
+  local function note_error(name)
+    if not flag_read_errors_seen[name] then
+      flag_read_errors_seen[name] = true
+      table.insert(flag_read_errors, name)
+    end
+  end
+
+  for i = 0, #vec - 1 do
+    local item = vec[i]
+    local units = item_units(item)
+
+    if item.flags.trader then
+      trader_units = trader_units + units
+      trader_items = trader_items + 1
+    end
+
+    if is_fort_owned(item) then
+      total_units = total_units + units
+      total_items = total_items + 1
+
+      if item.flags.rotten then
+        rotten_units = rotten_units + units
+      end
+      if is_unreachable(item, main_group_id) then
+        unreachable_units = unreachable_units + units
+      end
+
+      local in_job_ok, in_job_val = checked_flag(item, "in_job")
+      local forbid_ok, forbid_val = checked_flag(item, "forbid")
+      local owned_ok, owned_val = checked_flag(item, "owned")
+      if not in_job_ok then note_error("in_job") end
+      if not forbid_ok then note_error("forbid") end
+      if not owned_ok then note_error("owned") end
+
+      if in_job_ok and in_job_val then
+        in_job_units = in_job_units + units
+        in_job_items = in_job_items + 1
+      end
+      if forbid_ok and forbid_val then
+        forbid_units = forbid_units + units
+        forbid_items = forbid_items + 1
+      end
+      if owned_ok and owned_val then
+        owned_units = owned_units + units
+        owned_items = owned_items + 1
+        local ref_ok, has_ref = checked_unit_holder_ref(item)
+        if not ref_ok then
+          owned_ref_lookup_errors = owned_ref_lookup_errors + 1
+        elseif has_ref then
+          owned_with_holder_ref = owned_with_holder_ref + 1
+        else
+          owned_without_holder_ref = owned_without_holder_ref + 1
+        end
+      end
+
+      -- Available requires all three marginal flags to have been readable
+      -- AND all false. A read failure on ANY of them means this item's
+      -- true availability is unknown, not available -- it goes to
+      -- `unnetted`, never silently into `avail`.
+      if in_job_ok and forbid_ok and owned_ok then
+        if (not in_job_val) and (not forbid_val) and (not owned_val) then
+          avail_units = avail_units + units
+          avail_items = avail_items + 1
+        end
+      else
+        unnetted_units = unnetted_units + units
+        unnetted_items = unnetted_items + 1
+      end
+    end
+  end
+
+  return {
+    total_units = total_units,
+    total_item_count = total_items,
+    available_units = avail_units,
+    available_item_count = avail_items,
+    unnetted_units = unnetted_units,
+    unnetted_item_count = unnetted_items,
+    in_job_units = in_job_units,
+    in_job_item_count = in_job_items,
+    forbid_units = forbid_units,
+    forbid_item_count = forbid_items,
+    owned_units = owned_units,
+    owned_item_count = owned_items,
+    owned_ref_check = {
+      with_unit_holder_ref = owned_with_holder_ref,
+      without_unit_holder_ref = owned_without_holder_ref,
+      lookup_errors = owned_ref_lookup_errors,
+      -- Always false: see this file's header, "UNVERIFIED OFFLINE". Never
+      -- flip this to true from inside this file -- it can only become
+      -- true from an actual live-run write-up, by a session that ran this
+      -- exact command against a real DFHack process.
+      verified_offline = false,
+    },
+    trader_units = trader_units,
+    trader_item_count = trader_items,
+    rotten_units = rotten_units,
+    unreachable_units = unreachable_units,
+    flag_read_errors = flag_read_errors,
+  }
+end
+
+-- type_name: a df.global.world.items.other key, e.g. "BUCKET" (the
+-- motivating case -- see this file's header), "DRINK", "SEEDS", "CHAIN",
+-- "BLOCKS", "TRAPPARTS", "ANY_EDIBLE_RAW". Returns (nil, message) for an
+-- unknown type rather than a silently-empty result -- matching
+-- production/snapshot.py's own UnknownNodeError convention, per this
+-- stream's handoff: "Unknown node ids are an error, not a silent skip."
+function get_availability(type_name)
+  if not type_name or type_name == "" then
+    return nil, "usage: df-overseer-stocks availability ITEM_TYPE (e.g. BUCKET, DRINK, SEEDS, ANY_EDIBLE_RAW, CHAIN, BLOCKS, TRAPPARTS)"
+  end
+  local ok_vec, vec = pcall(function() return df.global.world.items.other[type_name] end)
+  if not ok_vec or not vec then
+    return nil, "unknown item type: " .. tostring(type_name)
+      .. " (not a df.global.world.items.other key on this install)"
+  end
+
+  local report = connectivity_mod.get_connectivity_report()
+  local main_group_id = report.main_group_id
+
+  local result = count_availability(vec, main_group_id)
+  result.type = type_name
+  return result
+end
+
 -- Same module-load guard as every other df-overseer-*.lua script.
 if dfhack_flags.module then
   return
@@ -318,6 +567,13 @@ if cmd == "food-drink" then
   print(json.encode(get_food_drink()))
 elseif cmd == "seeds" then
   print(json.encode(get_seeds()))
+elseif cmd == "availability" then
+  local result, err = get_availability(args[2])
+  if err then
+    print(json.encode({error = err}))
+  else
+    print(json.encode(result))
+  end
 else
-  print("usage: df-overseer-stocks <food-drink|seeds>")
+  print("usage: df-overseer-stocks <food-drink|seeds|availability ITEM_TYPE>")
 end

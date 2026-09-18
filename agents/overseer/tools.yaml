@@ -45,6 +45,16 @@ read:
   - id: "stocks.seeds"
     status: exists
     note: Same file, same deploy caveat as stocks.food-drink above.
+  - id: "stocks.availability"
+    status: exists
+    note: >-
+      Added handoffs/2026-09-19-per-item-flags-tool.md, offline build --
+      never run against a live DFHack process. Per-item-type netting
+      (in_job/owned+UNIT_HOLDER/forbid/trader), so 3 empty buckets that are
+      all job-claimed reads differently from all forbidden or all
+      dwarf-owned -- three different actions, not one "need bucket" alarm.
+      owned_ref_check.verified_offline is always false until a live run;
+      TOOLS.yaml carries the full reasoning.
   - id: "farm.find"
     status: exists
     note: >-
