@@ -410,16 +410,34 @@ spoilage, residency and queue growth.
 Conversions, confirmed live against announcement timestamps: **1,200 ticks a
 day, 33,600 a month, 403,200 a year.**
 
-**Harvest arrival is exact arithmetic** and is the most valuable single output
-here: `GROWDUR` from raws plus the plant's own `grow_counter`, which exists on
-live plant instances and is a better anchor than catching a `PlantSeeds` job
-completion, because it works even if nobody was watching. Its exact direction
-and post-maturity behaviour are **unconfirmed**, since nothing is planted on
-Uniboslan to observe. Confirm before relying on it.
+**Harvest arrival is arithmetic over two exact reads**, and is the most
+valuable single output here: `GROWDUR` from raws plus the plant's own
+`grow_counter`, which exists on live plant instances and is a better anchor
+than catching a `PlantSeeds` job completion, because it works even if nobody
+was watching.
 
-That yields a sentence with no estimate anywhere in it: *drink cover is 9
-days; a plump helmet crop needs 11 days to grow before it can even be brewed;
-planting no longer fixes this.*
+**But it is not computable yet, and the reason is a unit.** Live reads on
+2026-09-18 give `MUSHROOM_HELMET_PLUMP` a `growdur` of **300**, and
+`grow_counter` values on real plants in the tens of thousands (18480, 18481,
+18482 on consecutive-looking instances, 21036 on another). Those two numbers
+cannot both be in game ticks. Candidate conversions put plump helmet's growth
+at a quarter of a day, two and a half days, or 250 days, and **nothing read so
+far settles which.** `grow_counter` does appear to count *up* rather than
+down, on the evidence of consecutive values and of wild plants sitting far
+above 300, but that is inference from a sample, not a confirmed semantic.
+
+So the target sentence is the right shape and its number is not yet earned:
+
+> *drink cover is N days; a plump helmet crop needs M days to grow before it
+> can even be brewed; planting no longer fixes this.*
+
+**M is unknown until the unit is settled**, and the way to settle it is one
+observation: note a crop's `grow_counter` at two known ticks and watch when it
+becomes harvestable. That is a Q2 measurement, cheap, and it needs a planted
+crop, which Uniboslan now has jobs queued for. Until then, any figure in that
+slot is illustrative and must be labelled as such: an earlier draft of this
+document asserted 11 days, which was invented for the example and is exactly
+the kind of number that gets quoted back as data.
 
 **Spoilage without a decay constant.** Classify durability (Q1) and use the
 rot flags `df-overseer-stocks.lua` already reports as the live check. Cover
@@ -491,7 +509,7 @@ until this table existed nobody had checked that a tool exists for each fix.
 |---|---|---|---|
 | Material shortage | produce it | `orders.create`, `workshop.build`, `farm.*` | **yes** |
 | Not reachable, or hidden | dig or connect | `diggable.dig`, `dig-stair`, `openarea.build` | **yes** |
-| No labourer enabled | labour flag | `labor.set-labor` | **yes**, fort-wide side effect |
+| No labourer enabled | labour flag | `labor.set-labor` | **yes, but contested: see below** |
 | Capacity shortage | build another workshop | `workshop.build` | **yes** |
 | Stockpile link misconfigured | set take-from / give-to | — | **no** |
 | Output backed up | new stockpile, or disposal | partial | **no** |
@@ -504,6 +522,39 @@ until this table existed nobody had checked that a tool exists for each fix.
 produce are ones nobody can act on. That is the sharper form of "nothing
 executes", and it reorders the work: two small tool builds convert two dead
 diagnoses into live ones, and they are worth more than the solver.
+
+### The labour lever is contested, which changes how rung 4 is read
+
+Live on 2026-09-18, with `autolabor` **enabled**: PLANT on 2 citizens of 15,
+BREWER 1, COOK 1, CARPENTER 1, DIAGNOSE 1, `FEED_WATER_WOUNDED` **0**, and the
+two hauling labours on all 15.
+
+Those counts are **autolabor's live allocation, not a configuration**, so a
+low number is not by itself a misconfiguration to correct. And
+`labor.set-labor`'s own documented hazard is that writing a labour disables
+autolabor's management of that labour **fort-wide**, permanently, for
+everyone. So the obvious fix to "nobody is planting" trades a transient
+allocation for a permanent manual one.
+
+Two consequences for the design:
+
+- **Rung 4's "nobody has it enabled" branch must check whether autolabor owns
+  the flags before recommending a write.** With autolabor running, the honest
+  branches are "let it rebalance" and "take this labour off autolabor
+  deliberately, and own it from now on", which are different decisions with
+  different costs.
+- **A paused fort cannot be read for claim state at all.** 25 `PlantSeeds`
+  jobs were queued with 2 claimed, which looks like a labour shortage and is
+  not evidence of one: the fort has run 151 ticks since those jobs appeared.
+  Claim state is only meaningful over a running interval, which makes it the
+  one rung of the ladder that a snapshot cannot answer.
+
+`FEED_WATER_WOUNDED` at zero is worth its own note: nobody currently has the
+labour that carries water to an incapacitated dwarf. Whether DF still gates
+"Give water" on that specific labour in 53.16 is **not established**, and a
+real `GiveWater` job did get taken and cancelled by a metalcrafter at tick
+214135, which is weak evidence against a hard gate. Unresolved on purpose
+rather than assumed either way.
 
 ## 14. Build order
 
@@ -526,7 +577,7 @@ live medical reason to happen first.
 |---|---|---|
 | Rooms, and room-dependent furniture | a layer above installation | when bedrooms or a dining room are built |
 | Quality levels | breaks only discretionary value ranking | when crafts are produced for trade |
-| Wear and clothing | takes ~2 years to bite; this fort is in year 1 | the first tattered item, or year 2 |
+| Wear and clothing | **safe to park much longer than first written.** The doctrine stream checked the current wiki (version banner 53.16, matching this install) and worn clothing decays **1 level per 10 years**, with 2 years cited there as the *previous* version's rate. My "~2 years to bite" was a stale figure | the first item that reads tattered, whenever that is. Not a calendar trigger |
 | Animals | demand is measured anyway, and breeding pairs inherit the reserve band automatically | the fort's first livestock |
 | Migration headroom | Q4, must not enter a formula | never as code; a stated margin in doctrine |
 | Trade | a transient hyperedge, generated when a caravan is present | a caravan arriving |
