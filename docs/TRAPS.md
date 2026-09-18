@@ -109,6 +109,51 @@ findings without another doc home yet.
 
 ---
 
+## Added 2026-09-18, from the production-model schema audits
+
+Verified live against VM 103 (`research/2026-09-18-schema-extraction-live.md`)
+or against this install's own raw files
+(`research/2026-09-18-schema-extraction-static.md`); the fort stayed paused
+throughout, no file was written, no designation or struct write happened.
+
+- **The forbidden-item flag is `item.flags.forbid`, not `forbidden`** —
+  guessing the obvious name errors outright (`forbidden` is not a field on
+  this build). 218 of 1325 items on Uniboslan carry it.
+- **Unconsciousness lives in `unit.counters`, not `counters2`.** `counters2`
+  holds the timers (`hunger_timer`, `thirst_timer`, `sleepiness_timer`,
+  `paralysis`, `numbness`, `fever`, `exhaustion`, ...). There is no single
+  "injured" bitflag anywhere: a caller has to build that test from several
+  `unit.counters` fields (`pain`, `stunned`, `unconscious`, ...) or a wound
+  count, not one guessed field name.
+- **`dfhack.world.ReadCurrentTick()` is year-relative, not a monotonic game
+  clock.** It returns `cur_year_tick`, which resets to (near) zero each
+  spring, so any key or rate built on the bare tick silently corrupts across
+  a year boundary. Absolute time is `cur_year * 403200 + cur_year_tick`.
+- **The announcement buffer is pruned, not a log.** Only 12 entries survived
+  this session out of ids running to 104. An infrequent reader misses events
+  permanently; do not rely on the buffer as a complete history of anything.
+- **Cancellation announcements carry no linkage fields.** `speaker_id`,
+  `activity_id` and `activity_event_id` were all `-1` on a real `CANCEL_JOB`
+  entry, so the message cannot be joined to a job or a unit struct, only
+  parsed as text. A cancelled job itself is removed from `world.jobs.list`
+  entirely and leaves nothing structural behind.
+- **`building.profile.max_general_orders` read 5 on this install**, not the
+  wiki's widely-repeated 10. One incomplete sample (the fort's only
+  workshop, never finished construction) — record as a discrepancy to
+  re-check against a completed or different workshop kind, not as a settled
+  figure.
+- **42% of reaction product lines inherit their material from a reagent**
+  (`GET_MATERIAL_FROM_REAGENT`, 67 of 163 `[PRODUCT:...]` lines across the
+  four shipped reaction files, plus one line inheriting the item type too
+  via `GET_ITEM_DATA_FROM_REAGENT`), so a concrete item id cannot be read
+  off a reaction line alone — this covers every food/drink/seed reaction
+  this project's doctrine cares about (brewing, mead, plant-to-bag).
+  Anyone parsing raws for a specific output needs the material-side join
+  (the reagent's class filter against every material declaring a matching
+  `MATERIAL_REACTION_PRODUCT`), not a straight per-line read.
+
+---
+
 ## Added 2026-09-12, from the detectors' live-verification session
 
 - **`kill-lua` does NOT rescue a DF process stuck in a long-running Lua loop,
