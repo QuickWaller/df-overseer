@@ -64,3 +64,5 @@ venv/
 dfqueue/*.sqlite3*
 # production/<fort>.sqlite3, same pattern (handoffs/2026-09-18-production-package.md).
 production/*.sqlite3*
+# dfseries/<fort>.series.sqlite3, same pattern again (handoffs/2026-09-19-dfseries-store.md).
+dfseries/*.sqlite3*
