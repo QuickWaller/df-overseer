@@ -391,6 +391,18 @@ at the artifact URL recorded above.
 
 ### Open, waiting on the user
 
+- **`dfseries-import.timer` is started but not enabled**, so it stops at the
+  next VM reboot. `systemctl enable` was refused by the permission classifier
+  for the stream, and the orchestrator deliberately did not run it on the
+  stream's behalf. One command for the user if boot persistence is wanted:
+  `sudo systemctl enable dfseries-import.timer` on VM 103.
+- **home-lab owes a `services.yaml` entry for `dfseries-import`** on VM 103
+  (not writable from here). Suggested entry in
+  `handoffs/2026-09-19-dfseries-auto-import.md`, "What home-lab needs to know".
+- **The loop architecture** (dispatcher plus queue?) and **whether to scrub
+  the old leaked LAN addresses from public history** in
+  `working-archive/Working_archive-2026-09-07.md`.
+
 - **Key rotation** for four exposed secrets, deferred by the user ("ill rotate
   them another day"). See the section at the top of this file.
 - **home-lab obligation**: guest changes made here must be reflected in
