@@ -37,6 +37,13 @@ with the user.
   2026-09-17). Candidate under discussion: plain-language predictions written
   before acting, facts gathered by code, and a small jury of different model
   families that sees only the prediction and the facts. Not decided.
+- **A retrospective court, not a gatekeeper** (user, 2026-09-17/18): a
+  prosecutor and a defence argue whether past proposals succeeded, at
+  per-proposal review horizons, batched into sessions. Code grades what a
+  signal settles; the court handles what it cannot; "unclear" must be an
+  allowed verdict. Adversarial review of a proposal *before* execution was
+  judged overkill. Open: who sets the horizons, who judges, what a verdict
+  attaches to, and what wakes a session (no scheduler exists).
 - **The Overseer hands proposals to the consultant for fact-checking** (the
   "wiki nerd and researcher" role) before ruling.
 - **A new learning role, separate from but related to the consultant**, name
