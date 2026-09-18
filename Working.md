@@ -91,6 +91,57 @@ design settles.
 **Next concrete step:** continue the design conversation with the user from
 "which revisions count as learning revisions".
 
+## In flight: production graph design settled, feasibility out to research (2026-09-18)
+
+**Design is settled on paper and nothing is built.** Six register rows dated
+2026-09-18 carry the decisions; the diagrams are in an artifact (URL in the
+session, not committed). Read `research/2026-09-18-production-graph.md` for
+the formalism and `research/2026-09-18-production-figures.md` for the figures
+before touching any of it.
+
+**The short version:** a directed hypergraph in plain SQLite, six tables
+(`production_node`, `_class`, `_process`, `_flow`, `_attribute`,
+`_observation`). A node is an item type crossed with a material; processes
+consume classes and produce specifics, so routes are generated rather than
+authored. Three consumption semantics (consumed, occupied for the job,
+occupied until released), because a barrel is freed by drinking, not by
+brewing. The static graph is placeless: move, install and trade are all
+generated at query time. Material policy is banded and lives in **doctrine**,
+not in the graph, which is what removes the need for a solver cost vector.
+
+**The rule that governs all of it:** four quadrants, and quadrant 4
+(happiness effects, interruption behaviour, time lost to needs) never enters a
+formula, only appears as an unattributed residual. Demand is exact, supply
+capacity is not, so every question is posed from the demand side.
+
+**Two researchers in flight as of this entry**, both read-only, both reading
+VM 103 with the fort paused:
+- `research/2026-09-18-schema-extraction-static.md` — column-by-column audit
+  of the five static tables against the real raws. The column I trust least
+  and asked them to attack first is `production_flow.consumption`.
+- `research/2026-09-18-schema-extraction-live.md` — whether the live-layer
+  facts are actually exactly readable: available-versus-total stock, job claim
+  state, cancellation announcements, stockpile links, installed-versus-item
+  furniture, the plant tick behind the harvest clock, whether item `age` is a
+  reliable creation clock.
+
+**Parked by the user, deliberately:** trade (a transient hyperedge inserted
+when a caravan is present, so it needs nothing now); rooms and
+room-dependent furniture requirements; per-stockpile sites (coarse areas
+first); the solver itself, pending a sensitivity check that may show we never
+needed it; the mixed-integer question (build a rail line or not), which is
+the only thing the missing haul-tier figures block.
+
+**The uncomfortable gap:** nothing in this design executes anything. Work
+orders carry standing conditions, so the keep-on-hand band is expressible in
+DF's own mechanism today, but the rest has no hands. `proposal-0001` was
+accepted and never executed; better diagnosis on an unexecuted loop widens
+that gap rather than closing it.
+
+**Next concrete step:** read both research reports when they land, fix the
+schema on paper where they say it cannot be populated, then decide whether
+extraction is worth building before execution exists.
+
 ## Current state, 2026-09-15: the agent loop is reaching the fort, and the channel exists
 
 The 2026-09-12 to 09-14 section (the agent architecture design phase, the
