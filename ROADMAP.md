@@ -1,6 +1,10 @@
 # Roadmap
 
-**Last reviewed:** 2026-09-18 (twentieth pass, targeted doc-drift pass: added
+**Last reviewed:** 2026-09-19 (twenty-first pass, targeted: the drinking
+crisis corrects the 2026-09-17 "now drinks" claim, and the production graph
+moves from "nothing built" to "built, green and empty" with two streams live.)
+
+**Previously reviewed:** 2026-09-18 (twentieth pass, targeted doc-drift pass: added
 a new top Now item for the production and logistics model design (settled on
 paper, nothing built, two feasibility audits and a figures pass landed the
 same day) and pointed the "Game figures database and calculators" Next item
@@ -62,6 +66,34 @@ or `decisions/DECISIONS.md`, not here.
 ## Now
 <!-- Actively being worked, or the clear immediate next step. -->
 
+- **NEW 2026-09-19: the fort cannot drink, and the well is blocked three
+  levels down.** This corrects the 2026-09-17 item below, which says
+  Uniboslan "now drinks". It does not. Measured exactly across two reads:
+  delta tick 6,303 equalled delta thirst 6,303 across all 15 citizens, so
+  `thirst_timer` increments 1 per tick and **nobody had drunk at all**. The
+  `WaterSource` zone is active but unreachable: the pond is a sunken bowl in
+  which **zero water tiles have any walkable neighbour**. Digging to it was
+  disproven rather than assumed, by digging: a channel at z169 flooded and
+  left z168 walkable at 0. The fort needs a **well**, which is blocked on
+  BLOCKS 0 and TRAPPARTS 0 against 3 logs and 0 boulders, with stone at z167
+  behind the half-designated stair. → `handoffs/2026-09-19-well-unblock.md`,
+  `decisions/DECISIONS.md` 2026-09-19, `Working.md`.
+- **NEW 2026-09-19: the production graph is built, green and empty, and two
+  streams are filling and connecting it.** This supersedes the "designed in
+  full, nothing built" item below: `production/` is now 2,182 lines across
+  five modules at 364 passed / 1 skipped, covering steps 1 to 5 of the spec's
+  build order. Two gaps were then found by auditing the package rather than
+  by anything failing. **The extractor has never seen real data** (its stream
+  was offline by design and ran against 6 hand-assembled fixture reactions;
+  its own write-up says the row counts "are not a coverage claim about the
+  real install"), and **nobody wrote the caller**: `blocker.py` and `cover.py`
+  are pure functions over a caller-assembled snapshot, but no code assembles
+  one, so the graph has never been pointed at this fort. The live proof is
+  that the well chain above was walked **by hand**, in exactly the shape
+  `blocker.py` returns. The real 159-reaction corpus is now staged out of
+  tree, deliberately uncommitted since this repo is public. →
+  `handoffs/2026-09-19-real-corpus-extraction.md`,
+  `handoffs/2026-09-19-snapshot-assembler.md`.
 - **NEW 2026-09-18: the production and logistics model is designed in full,
   nothing built.** `docs/PRODUCTION-MODEL.md` is the build spec (a directed
   hypergraph in plain SQLite, seven tables), corrected by two feasibility
