@@ -9,6 +9,23 @@ Read `CLAUDE.md` (including the deploy trap in its status block), then
 `handoffs/2026-09-19-silent-zero-fix.md`, both including their write-ups, then
 this.
 
+## Update 2026-09-19, read this before starting
+
+**A partial deploy already happened.** The well stream ran
+`install_df.py ui-install` (20 scripts) mid-run, which carried the
+**`dig-stair` occupancy fix live for the first time**. So item 3 below is
+done.
+
+**What that deploy almost certainly did NOT carry**, because both merged
+after it ran: **`stocks.availability`** and the **silent-zero fixes**.
+**Verify which is actually on the VM before deploying again** rather than
+assuming either way; a file-hash or a grep for `checked_flag` on the deployed
+`df-overseer-stocks.lua` settles it in one command.
+
+Also note the fort was **rolled back to tick 213622** by an incident during
+that stream (see `docs/TRAPS.md`, the DFHack concurrency entry). **Quicksave
+before anything, and verify it wrote.**
+
 ## What is undeployed
 
 Three separate pieces of work are merged to `main` and **have never run on the
