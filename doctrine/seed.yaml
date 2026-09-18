@@ -211,7 +211,7 @@
 
 - id: water-source-zone-for-ponds
   scope: universal
-  status: verified
+  status: refuted
   topics: [water, drink]
   sources:
     - kind: live-read
@@ -225,15 +225,140 @@
       describes: unknown
       read: recalled
       accessed: 2026-09-17
+    - kind: live-read
+      ref: >-
+        Uniboslan, two exact tick/thirst reads (tick 227160 thirst 23,391;
+        tick 233463 thirst 29,694), all 15 citizens
+      describes: "53.16"
+      read: opened
+      accessed: 2026-09-19
   statement: >-
     A fort whose only water is a sunken pond may have dwarves that never
     drink. Marking the water itself as a Water Source zone, on the level the
     water is on, got dwarves down to the water and drinking within about four
     game days. Place the zone on the water, not on the open space above it.
   note: >-
-    Risks seen: dwarves then stand in 6-7/7 water, deep enough to drown a poor
-    swimmer, and stagnant water gives a NastyWater thought whose health effect
-    is unverified. A well avoids both.
+    Refuted 2026-09-19, kept so the mistake is not remade. The 2026-09-17
+    read that this entry was built on was itself flagged correlational, not
+    isolated, and the correlation did not hold up: measured across two exact
+    reads at Uniboslan, delta tick equalled delta thirst exactly (6,303 =
+    6,303) across all 15 citizens, meaning zero drinks occurred in that
+    window, while the zone still read active
+    (`spec_sub_flag.active = true`). The zone being active proves nothing
+    about reachability. This install's pond is a sunken basin: at the
+    water's own z-level (z168) all 27 wet tiles have zero walkable
+    neighbours, so no dwarf can path adjacent to the water to drink from it.
+    Whatever produced the three founders' apparent self-serve drinking on
+    2026-09-17 was not the zone reliably solving this pond; that reading is
+    superseded. The replacement rules are water-source-needs-walkable-
+    neighbour, sunken-basin-recognition and do-not-dig-into-full-basin below.
+    Risks noted at the time still stand as a caution for a pond that IS
+    reachable: dwarves would stand in 6-7/7 water, deep enough to drown a
+    poor swimmer, and stagnant water gives a NastyWater thought whose health
+    effect is unverified. A well avoids both, and is now the fort's own
+    plan (Working.md, "The fort cannot drink, and the pond cannot be dug
+    to").
+
+- id: water-source-needs-walkable-neighbour
+  scope: universal
+  status: verified
+  topics: [water, drink]
+  sources:
+    - kind: live-read
+      ref: >-
+        Uniboslan tile-shape read, z168 (142 WALL, 26 RAMP, 1 FLOOR, 0
+        walkable; 27 wet tiles, 0 with a walkable neighbour) and z169 (134
+        walkable, 100 FLOOR, 26 RAMP_TOP, 0 wet)
+      describes: "53.16"
+      read: opened
+      accessed: 2026-09-19
+    - kind: live-read
+      ref: >-
+        Uniboslan, two exact tick/thirst reads (tick 227160 thirst 23,391;
+        tick 233463 thirst 29,694), all 15 citizens
+      describes: "53.16"
+      read: opened
+      accessed: 2026-09-19
+  statement: >-
+    A `WaterSource` zone reading `spec_sub_flag.active = true` says only that
+    the zone exists on water; it says nothing about whether any dwarf can
+    reach that water. Reachability needs a walkable tile adjacent to the
+    water at the water's own z-level. Check tile shapes at the water's
+    z-level before placing a zone, not after: if every wet tile there has
+    zero walkable neighbours, no dwarf can path to it regardless of the
+    zone.
+  note: >-
+    What this proves: at Uniboslan, the zone was active, all 27 wet tiles at
+    z168 had zero walkable neighbours, and thirst_timer rose in exact
+    lockstep with tick across all 15 citizens over a 6,303-tick window, so
+    zero drinks happened in that window. That supports the necessary
+    direction (no walkable neighbour, no drinking observed) at this one
+    site. It does not prove the converse, that a walkable neighbour is
+    sufficient for drinking to happen: no reachable-water case was measured
+    this way for comparison. It also does not establish this as a general
+    DF mechanic beyond this install; the underlying idea (a unit must be
+    able to stand adjacent to a tile to interact with it) is ordinary
+    pathing logic, not something this project verified from source.
+
+- id: sunken-basin-recognition
+  scope: universal
+  status: verified
+  topics: [water, drink]
+  sources:
+    - kind: live-read
+      ref: >-
+        Uniboslan tile-shape read, z168 (142 WALL, 26 RAMP, 1 FLOOR, 0
+        walkable; 27 wet tiles) and z169 (134 walkable, 100 FLOOR, 26
+        RAMP_TOP, 0 wet)
+      describes: "53.16"
+      read: opened
+      accessed: 2026-09-19
+  statement: >-
+    Recognise a sunken basin before trying to fix it: at the water's own
+    z-level, every wet tile's shape is WALL or RAMP (no FLOOR), the walkable
+    count at that level is 0, and the z-level directly above has walkable
+    floor with zero wet tiles. That shape means the pond is a submerged bowl
+    ringed by wall with dry ground only one level up. Treat it as a well
+    case from the start, not a digging case: see
+    do-not-dig-into-full-basin.
+  note: >-
+    Measured for Uniboslan's one pond only. The tile-shape signature
+    (WALL/RAMP wet tiles, 0 walkable at the water level, walkable dry floor
+    one z above) is what was actually read there; this entry does not claim
+    every sunken-looking pond elsewhere reproduces this exact signature,
+    only that this is what to check for and what it looked like here.
+
+- id: do-not-dig-into-full-basin
+  scope: universal
+  status: verified
+  topics: [water, drink]
+  sources:
+    - kind: live-read
+      ref: >-
+        Uniboslan, one supervised unpause: Channel designated at z169 on a
+        FLOOR tile with 3 walkable neighbours, above a waterline wall,
+        adjacent to 6/7 water. Before: z168 wet 27, walkable 0. After: z168
+        wet 28, walkable 0.
+      describes: "53.16"
+      read: opened
+      accessed: 2026-09-19
+  statement: >-
+    Opening a tile immediately adjacent to a full body of water at the
+    water's own z-level does not create a standing spot there; the newly
+    opened tile fills with water and becomes wet, not walkable. Do not dig a
+    channel or ramp directly into a full basin to make a place to stand at
+    water level. If a basin has no walkable neighbour tile (see
+    sunken-basin-recognition), the remedy is a well, which draws water
+    upward from a dry tile above, not a dig at the water's own level.
+  note: >-
+    What this proves: one channel dig, at one site, into one full basin,
+    produced more water and no new walkable tile (wet 27 to 28, walkable
+    unchanged at 0). It does not prove no dig anywhere could ever reach this
+    basin or one like it, for example a stairway or a differently shaped cut
+    landing beside the water rather than opening straight into it was not
+    tried. It only establishes that this specific approach (open the tile
+    that touches the water, at the water's level) fails, and fails by
+    becoming more water rather than by simply not completing.
 
 - id: do-not-overfish
   scope: universal
