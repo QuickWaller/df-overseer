@@ -111,3 +111,69 @@ reachability rule and the sunken-basin case with honest statuses, the doctrine
 tests pass, the full suite still passes (364 passed / 1 skipped right now,
 report before and after), and the write-up at the bottom of this file states
 exactly what was proven versus inferred.
+
+## Write-up
+
+**Tests: 364 passed / 1 skipped before, 364 passed / 1 skipped after.**
+`python -m doctrine.validate` reports `ok` both before and after (it also
+reported `ok` before this stream touched anything, since the existing entry
+was internally well-formed; the problem was its content, not its shape). No
+format change to `doctrine/validate.py` or `doctrine/tests/` was needed or
+made.
+
+**`docs/PRODUCTION-MODEL.md` §12.** Removed the "for an able dwarf the chain
+is solved" claim and replaced it with a correction block in the same voice
+and structure as the existing buckets/sleeping-miner correction already in
+that section (kept verbatim, not touched). The new block states the tick
+6,303-equals-thirst-6,303 measurement, the z168/z169 tile-shape read, the
+channel-dig result, and an explicit "limit of this evidence" paragraph.
+
+**`doctrine/seed.yaml`.**
+
+- `water-source-zone-for-ponds`: status changed `verified` to `refuted`, kept
+  in place (not deleted) with a `note` explaining the correction and a second
+  `live-read` source added for the 2026-09-19 measurement, following the same
+  "keep the mistake visible" pattern already used for
+  `bedridden-need-water-brought`'s companion entry in this file.
+- Three new entries added, all `status: verified` because each cites a
+  `live-read` source describing `53.16` (satisfies `validate.py`'s
+  `_verifies_install` check):
+  - `water-source-needs-walkable-neighbour`: the zone-active-is-not-
+    reachable rule.
+  - `sunken-basin-recognition`: the tile-shape signature of a sunken basin
+    (wet tiles WALL/RAMP, 0 walkable at water level, walkable dry floor one
+    z above) and that it is a well case.
+  - `do-not-dig-into-full-basin`: opening a tile at a full basin's own water
+    level produces more water, not a stand.
+
+**What each new entry's evidence actually proves, versus what it does not**
+(the point the handoff flagged as the one to get right):
+
+- Proven: this specific pond, at this specific tick window, was unreachable
+  (zero drinks over 6,303 ticks while the zone read active); the z168 tile
+  shapes measured exactly as stated; one channel dig at one site into this
+  basin produced wet 27→28, walkable unchanged at 0.
+- Not proven, and each entry's `note` says so explicitly: that a walkable
+  neighbour is *sufficient* for drinking (no reachable-water case was
+  measured for comparison); that the tile-shape signature generalises to
+  every sunken-looking pond elsewhere; that no dig of any shape, anywhere,
+  could ever reach a full basin (only the one tested approach, opening the
+  tile that touches the water at the water's level, was shown to fail, and
+  a stairway or an offset cut landing beside the water was never tried);
+  that a `WaterSource` zone never works (nothing measured here concerns
+  water that already has a walkable neighbour).
+- No number was invented. Well depth limits and bucket-travel figures were
+  not touched; where the handoff's own well-blocker data already exists
+  (`Working.md`'s well-find output) it was cited by reference, not
+  restated as new doctrine.
+
+`docs/TRAPS.md` got one new entry: a `WaterSource` zone's `active` flag is
+not a reachability signal; the real check is a thirst-timer delta across two
+reads.
+
+**Files touched:** `doctrine/seed.yaml`, `docs/PRODUCTION-MODEL.md`,
+`docs/TRAPS.md`, this handoff. `doctrine/validate.py` and `doctrine/tests/`
+were read but not changed, since no format change was needed.
+`production/`, `scripts/`, `CLAUDE.md`, `ROADMAP.md`, `Working.md`,
+`decisions/DECISIONS.md`, `memory/` and `handoffs/INDEX.md` were not
+touched, per the handoff's boundary.
