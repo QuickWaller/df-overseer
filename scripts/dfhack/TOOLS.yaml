@@ -741,8 +741,8 @@ df-overseer-orders.lua:
       lua_function: list_orders
       effect: read
       coordinate_bearing: false
-      live_deployed: false
-      verified: "2026-09-17 (live)"
+      live_deployed: true
+      verified: "2026-09-18 (live, post-redeploy: manager_appointed false, orders [])"
       knowledge_scope: player_visible
       notes: >
         Reads `df.global.world.manager_orders.all` directly (a plain
@@ -755,26 +755,29 @@ df-overseer-orders.lua:
       lua_function: create_order
       effect: mutate
       coordinate_bearing: false
-      live_deployed: false
-      verified: "2026-09-17 (DRY_RUN=true path only; the real create_orders call is UNTESTED live, mutation forbidden this session)"
+      live_deployed: true
+      verified: "2026-09-18 (DRY_RUN=true path only, all 12 jobs individually dry-run verified live via dfhack-run, each returning the expected job/reaction and a sane workshop_exists count -- 1 for brew_drink (the fort's one Still), 0 for the other 11; an unknown job name correctly refused, listing all 12 known jobs; the real create_orders call is still UNTESTED live, mutation forbidden this session)"
       knowledge_scope: player_visible
       notes: >
-        JOB is one of blocks/mechanisms/barrels/brew_drink (JOB_INFO,
-        structured for more later). Wraps workorder.lua's own
-        create_orders/preprocess_orders/fillin_defaults (reqscript'd,
-        confirmed live to load and expose the right function types),
-        reproducing its CLI default_action's own exact call sequence
-        rather than hand-building a df.manager_order struct. Job types
-        each live-verified against the real df.job_type enum: blocks=80
-        ConstructBlocks, mechanisms=139 ConstructMechanisms, barrels=125
-        MakeBarrel, brew_drink=209 CustomReaction +
-        reaction_name=BREW_DRINK_FROM_PLANT (live-confirmed present in
-        world.raws.reactions.reactions' own code field -- no job_type
-        named "Brew*" exists on this build; brewing is a reaction, not its
-        own job type). MANAGER PREREQUISITE, checked live and genuinely
-        unresolved both ways: create_orders itself has no code-level
-        manager check at all, but dfhack.units.getNoblePositions over
-        every active unit found ZERO citizens holding the MANAGER
+        JOB is one of blocks/mechanisms/barrels/brew_drink/bucket/bed/
+        door/table/chair/splint/crutch/soap (JOB_INFO, structured for
+        more later). handoffs/2026-09-18-lever-gap-tools.md added the last
+        eight: bucket=126 MakeBucket, bed=69 ConstructBed, door=67
+        ConstructDoor, table=72 ConstructTable, chair=70 ConstructThrone
+        (DF's own internal name for the chair job/item pair), splint=203
+        ConstructSplint, crutch=204 ConstructCrutch, soap=209
+        CustomReaction + reaction_name=MAKE_SOAP_FROM_TALLOW (a second
+        reaction, MAKE_SOAP_FROM_OIL, exists and was deliberately left
+        out -- see the .lua file's own header). Every job id was read live
+        off this install's own df.job_type enum, not guessed. Wraps
+        workorder.lua's own create_orders/preprocess_orders/
+        fillin_defaults (reqscript'd, confirmed live to load and expose
+        the right function types), reproducing its CLI default_action's
+        own exact call sequence rather than hand-building a
+        df.manager_order struct. MANAGER PREREQUISITE, checked live and
+        genuinely unresolved both ways: create_orders itself has no
+        code-level manager check at all, but dfhack.units.getNoblePositions
+        over every active unit found ZERO citizens holding the MANAGER
         position on this fort today (a world.entities.all scan DID find a
         filled MANAGER assignment elsewhere, but its histfig did not
         resolve to a live unit via getUnitByHistfigId -- an unrelated
@@ -782,13 +785,24 @@ df-overseer-orders.lua:
         order into a real job with no Manager appointed is NOT verified
         (would need an unpause, out of scope). Reports `manager_appointed`
         and `workshop_exists` (a live count of the matching workshop
-        subtype, informational only, never a refusal) on every call.
+        subtype -- for soap, a Custom/SOAP_MAKER building resolved live by
+        raws code, not a hardcoded index -- informational only, never a
+        refusal) on every call. WORKSHOP_SUBTYPE confidence varies per
+        job: bed is verified (wood-only in vanilla DF) and soap's Custom
+        workshop is live-confirmed present; door/table/chair/bucket
+        default to Carpenters as a single informational value though
+        vanilla DF allows building them of stone or metal too (an
+        alternate-material build is invisible to this count);
+        splint/crutch's workshop could not be found in any live-queryable
+        table and Carpenters there is wiki-level domain knowledge, not a
+        live read -- none of this affects order creation itself, which
+        never depends on workshop_subtype.
     "cancel ID [DRY_RUN]":
       lua_function: cancel_order
       effect: mutate
       coordinate_bearing: false
-      live_deployed: false
-      verified: "2026-09-17 (dry-run path live-verified against a nonexistent id -- refused correctly; the real erase+delete path is UNTESTED live, inferred by convention from workorder.lua's own cleanup code and research/2026-09-16-food-and-drink-logistics.md's own :erase(idx) finding, not independently proven)"
+      live_deployed: true
+      verified: "2026-09-17 (dry-run path live-verified against a nonexistent id -- refused correctly; the real erase+delete path is UNTESTED live, inferred by convention from workorder.lua's own cleanup code and research/2026-09-16-food-and-drink-logistics.md's own :erase(idx) finding, not independently proven). Redeployed 2026-09-18 unchanged (only create_order's JOB_INFO/workshop_exists_count changed this stream), not re-exercised."
       knowledge_scope: player_visible
       notes: >
         `world.manager_orders.all:erase(idx)` plus `order:delete()`, the
@@ -796,6 +810,52 @@ df-overseer-orders.lua:
         for a df.manager_order object. Reversibility is the point (the
         handoff's own "orders.cancel ID for reversibility"), but the
         mechanism itself was never exercised on a real order this session.
+
+df-overseer-stockpile.lua:
+  build_order_item: "handoffs/2026-09-18-lever-gap-tools.md deliverable 2, docs/PRODUCTION-MODEL.md sec8/sec13 (leading indicator, stockpile-link lever gap)"
+  commands:
+    list:
+      lua_function: list_stockpiles
+      effect: read
+      coordinate_bearing: false
+      live_deployed: true
+      verified: "2026-09-18 (live): Stockpile #1 (id 1) occupied_tiles 24/25, accepts [food, furniture, stone, wood, finished_goods, bars_blocks]; Stockpile #2 (id 2) occupied_tiles 7/25, same accepts list. Both total_tiles_exact true, both near_landmark self (direction S, distance 0)."
+      knowledge_scope: player_visible
+      notes: >
+        Every stockpile: id, landmark-relative name (df-overseer-landmarks.lua's
+        nearest_landmark, reused not reinvented), occupied_tiles/total_tiles
+        (NOT percent-full -- per-tile capacity is unestablished, see the
+        .lua file's own header), and accepts (DF's own 17 top-level
+        stockpile category toggles, coarse level only). total_tiles walks
+        dfhack.buildings.containsTile per tile so each tile also gets the
+        hidden-tile filter (mirrors df-overseer-stocks.lua's
+        is_on_hidden_tile); occupied_tiles deduplicates
+        dfhack.buildings.getStockpileContents' item positions by (x,y,z),
+        deliberately NOT the raw item count (a bin or a stack puts several
+        items on one tile). Live-verified against Uniboslan's two real
+        stockpiles.
+    "links ID":
+      lua_function: stockpile_links
+      effect: read
+      coordinate_bearing: false
+      live_deployed: true
+      verified: "2026-09-18 (live): stockpile ids 1 and 2 both resolved kind=stockpile, all four link vectors count 0 resolved true; workshop id 5 (the Still) resolved kind=workshop, same empty-links result via building.profile.links; a nonexistent id (99999) refused 'no building with id 99999'; a real building id of the wrong kind (id 4, the fort's one FarmPlot) refused 'id 4 is not a stockpile or workshop (FarmPlot)'."
+      knowledge_scope: player_visible
+      notes: >
+        Give/take links for one stockpile OR workshop building id --
+        `building_stockpilest.links.{give,take}_{to,from}_{pile,workshop}`
+        for a stockpile, `building.profile.links` (same four field names)
+        for a workshop, both confirmed live this session to be real
+        struct fields, matching
+        research/2026-09-18-schema-extraction-live.md sec5. All four
+        vectors read empty on Uniboslan's two stockpiles and one workshop
+        today -- real "not configured," not a read failure. What a
+        non-empty vector's entries resolve to (a usable building pointer,
+        per that same research doc's own working assumption) is NOT
+        independently exercised live, since nothing on this fort is
+        linked; resolve_link_target is defensive (pcall throughout) and
+        marks an entry unresolved rather than guessing if this assumption
+        is ever wrong.
 
 df-overseer-stuckjobs.lua:
   build_order_item: 8

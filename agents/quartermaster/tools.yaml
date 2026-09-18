@@ -1,0 +1,46 @@
+# Quartermaster tool allowlist. Deliberately minimal.
+#
+# Ids are the canonical scheme resolved against scripts/dfhack/TOOLS.yaml by
+# dfmcp/registry.py: see dfmcp/README.md for the scheme (strip df-overseer-/.lua,
+# take the command's leading verb, join with a dot).
+#
+# NOTE (handoffs/2026-09-18-lever-gap-tools.md): this file did not exist
+# before this stream -- role.md line 4 still says "No tools.yaml... yet,
+# deliberately: writing an allowlist of tools that do not exist would imply
+# a capability this project does not have." That reasoning holds; this file
+# does not contradict it, since stockpile.list/stockpile.links are now real,
+# deployed tools, not aspirational ones. But role.md's own line is now
+# stale and needs a human/orchestrator fix -- not done here, since role.md
+# is outside this stream's touched surfaces.
+#
+# This role stays `enabled: false` in agents/ROSTER.yaml (unchanged by this
+# stream -- that is a bigger decision than one tool grant). Everything else
+# this role would need (work-order priority, stock thresholds, the
+# autolabor race) is still unbuilt, per role.md's own "Would own"/"Traps"
+# sections -- this file grants only what now genuinely exists.
+
+schema_version: 1
+role: quartermaster
+write_authority: none
+
+read:
+  - id: "stockpile.list"
+    status: exists
+    note: >-
+      Added handoffs/2026-09-18-lever-gap-tools.md. Every stockpile:
+      landmark-relative name, occupied/total tiles (a leading indicator --
+      docs/PRODUCTION-MODEL.md sec8), coarse accept categories. The first
+      real tool surface this role has ever had.
+  - id: "stockpile.links"
+    status: exists
+    note: >-
+      Same handoff. Give/take links for one stockpile or workshop id.
+
+deny:
+  - id: "orders.create"
+    reason: >-
+      This role is not enabled and holds no write authority regardless
+      (see ROSTER.yaml). Listed explicitly, not left implicit, since
+      work orders are squarely this role's future domain per role.md.
+  - id: "orders.cancel"
+    reason: Same as orders.create above.

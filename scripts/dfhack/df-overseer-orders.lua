@@ -89,6 +89,84 @@
 local json = require('json')
 local workorder_mod = reqscript('workorder')
 
+-- 2026-09-18 (handoffs/2026-09-18-lever-gap-tools.md): added bucket, bed,
+-- door, table, chair, splint, crutch, soap.
+--
+-- CORRECTED MOTIVATION, per the orchestrator mid-stream: the handoff's own
+-- framing ("the fort owns no bucket, a citizen is unconscious") is WRONG,
+-- found after this stream was dispatched. Live, fort paused at tick 227160:
+-- 5 buckets exist, 3 fort-owned (ids 81, 149, 150), empty, unforbidden,
+-- unclaimed, no holder (2 more are `trader=true`, held by caravan pack
+-- animals). The "unconscious citizen" is a sleeping miner
+-- (`unconscious=2, pain=0, wounds=0, job=Sleep`), not an injury -- no
+-- medical emergency exists. A metalcrafter DID cancel "Give water: Need
+-- empty bucket" at tick 214135 (docs/PRODUCTION-MODEL.md §12 cites this),
+-- but with 3 owned buckets sitting unclaimed, the sharper read is an
+-- availability or reachability failure (the bucket that existed was not
+-- where/when the job needed it), not an absence -- exactly what the
+-- stockpile-links half of this stream (df-overseer-stockpile.lua) helps
+-- diagnose, not something this tool alone fixes.
+--
+-- The build itself does not change on this correction: `orders.create`'s
+-- job vocabulary being four items long (blocks/mechanisms/barrels/
+-- brew_drink) was a real gap regardless of the bucket incident, and
+-- docs/PRODUCTION-MODEL.md §13's lever catalogue names it independently
+-- ("Water to an immobile dwarf | make a bucket | orders.create lacks the
+-- job | no"). Built as briefed; only the incident narrative above is
+-- corrected.
+--
+-- Every job NAME and ID below was read live this session off THIS install's
+-- own df.job_type enum (same _first_item/_last_item walk documented in the
+-- header above), not guessed or taken from the wiki:
+--   bucket  -> job_type 126 MakeBucket
+--   bed     -> job_type 69  ConstructBed
+--   door    -> job_type 67  ConstructDoor
+--   table   -> job_type 72  ConstructTable
+--   chair   -> job_type 70  ConstructThrone (DF's own internal name for the
+--              "Chair" item/job pair -- verified by position, sitting
+--              between ConstructBed/ConstructCoffin in the enum, and no
+--              job_type name contains "Chair" at all on this install)
+--   splint  -> job_type 203 ConstructSplint
+--   crutch  -> job_type 204 ConstructCrutch (both sit among the other
+--              manufacturing "Construct*" jobs, e.g. ConstructTractionBench;
+--              the separate hospital-use jobs BringCrutch/ApplyCast are
+--              distinct job types (207/208) and out of scope here)
+--   soap    -> job_type 209 CustomReaction, reaction_name
+--              MAKE_SOAP_FROM_TALLOW, live-confirmed present in
+--              world.raws.reactions.reactions' own `code` field, same
+--              mechanism as brew_drink. MAKE_SOAP_FROM_OIL also exists and
+--              is deliberately left out: tallow is a byproduct this fort's
+--              existing butchering already produces, oil needs a press
+--              workflow that does not exist yet, and one soap job is enough
+--              to close the doctrine gap (§10 "Insurance" band) without
+--              adding a variant nothing asks for.
+--
+-- WORKSHOP_SUBTYPE for the four added in the original 2026-09-17 stream
+-- (blocks/mechanisms/barrels/brew_drink) was domain knowledge hardcoded
+-- into this table, not a live read -- these eight follow the same
+-- precedent, at two confidence levels:
+--   verified: bed is wood-only in vanilla DF (Carpenters is the only
+--     legal workshop); soap's workshop is `Custom`, live-confirmed this
+--     session as the SOAP_MAKER entry in
+--     world.raws.buildings.all/.workshops (custom index resolved by code
+--     at call time in workshop_exists_count, not hardcoded, so it survives
+--     raws reordering).
+--   best-guess, informational only: door/table/chair/bucket can each be
+--     built of wood, stone or metal in vanilla DF depending on the material
+--     reagent chosen when the order is fulfilled -- Carpenters is recorded
+--     here as the single default subtype (matching barrels' own precedent)
+--     purely so `workshop_exists_count` has something to count; it is NOT
+--     read live per-order and a Masons or MetalsmithsForge build of the
+--     same job is invisible to this count. splint/crutch's workshop was not
+--     found in any live-queryable table (no `permitted_reaction_id` exists
+--     for vanilla, non-custom workshops; that field is only populated for
+--     the two custom buildings, checked live this session and confirmed
+--     empty of splint/crutch entries) so Carpenters here is wiki-level
+--     domain knowledge (wood item), not a live read, same honesty flag as
+--     the door/table/chair guess.
+-- None of this affects order creation: `workshop_subtype` is informational
+-- only (see workshop_exists_count below), never gates create_order.
+--
 -- Structured for a later job name to be a new table entry, matching
 -- df-overseer-zone.lua's KIND_INFO/df-overseer-workshop.lua's KIND_INFO
 -- extensibility precedent.
@@ -98,6 +176,15 @@ local JOB_INFO = {
   barrels = {job = "MakeBarrel", workshop_subtype = "Carpenters"},
   brew_drink = {job = "CustomReaction", reaction = "BREW_DRINK_FROM_PLANT",
     workshop_subtype = "Still"},
+  bucket = {job = "MakeBucket", workshop_subtype = "Carpenters"},
+  bed = {job = "ConstructBed", workshop_subtype = "Carpenters"},
+  door = {job = "ConstructDoor", workshop_subtype = "Carpenters"},
+  table = {job = "ConstructTable", workshop_subtype = "Carpenters"},
+  chair = {job = "ConstructThrone", workshop_subtype = "Carpenters"},
+  splint = {job = "ConstructSplint", workshop_subtype = "Carpenters"},
+  crutch = {job = "ConstructCrutch", workshop_subtype = "Carpenters"},
+  soap = {job = "CustomReaction", reaction = "MAKE_SOAP_FROM_TALLOW",
+    workshop_subtype = "Custom", workshop_custom_code = "SOAP_MAKER"},
 }
 
 -- See header: unit-scoped, live-verified this session to find nobody. Not
@@ -121,10 +208,28 @@ end
 -- Live count of built workshops whose subtype matches the job's own
 -- workshop_subtype (a Workshop building of the right kind, however built
 -- -- not limited to ones this project's own workshop.build created).
-local function workshop_exists_count(subtype_name)
-  local subtype = df.workshop_type[subtype_name]
+--
+-- Custom workshops (soap's SOAP_MAKER) have no df.workshop_type entry of
+-- their own -- every custom workshop shares subtype `Custom` (23) and is
+-- distinguished by `building.custom_type`, an index into
+-- world.raws.buildings.workshops. That index is resolved here by matching
+-- `info.workshop_custom_code` against each entry's own `.code` field, live,
+-- every call -- never hardcoded as a number, so it cannot drift if the
+-- raws ever reorder that vector.
+local function workshop_exists_count(info)
+  local subtype = df.workshop_type[info.workshop_subtype]
   if not subtype then
     return nil
+  end
+  local custom_index = nil
+  if subtype == df.workshop_type.Custom and info.workshop_custom_code then
+    local defs = df.global.world.raws.buildings.workshops
+    for i = 0, #defs - 1 do
+      if defs[i].code == info.workshop_custom_code then
+        custom_index = i
+        break
+      end
+    end
   end
   local n = 0
   for _, bld in ipairs(df.global.world.buildings.all) do
@@ -132,7 +237,14 @@ local function workshop_exists_count(subtype_name)
     if ok_type and btype == df.building_type.Workshop then
       local ok_sub, sub = pcall(function() return bld.type end)
       if ok_sub and sub == subtype then
-        n = n + 1
+        if subtype == df.workshop_type.Custom then
+          local ok_c, c = pcall(function() return bld.custom_type end)
+          if ok_c and custom_index ~= nil and c == custom_index then
+            n = n + 1
+          end
+        else
+          n = n + 1
+        end
       end
     end
   end
@@ -197,7 +309,7 @@ function create_order(job_name, amount, dry_run)
     job = job_name,
     amount = amount,
     manager_appointed = manager_appointed(),
-    workshop_exists = workshop_exists_count(info.workshop_subtype),
+    workshop_exists = workshop_exists_count(info),
   }
 
   if dry then
