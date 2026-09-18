@@ -435,12 +435,16 @@ the rule, and the kind of detail a public repo exists not to hold.
      first occurrence, breaks every existing clone and worktree, and cannot be
      undone once pushed. Needs the user's explicit go-ahead, and every other
      session on this repo stopped first.
-- Worth doing alongside either: a pre-commit or CI check that refuses an IPv4
-  literal outside `infra/local.*`, since three leaks were caught by hand on
-  2026-09-19 alone and one was already public.
-- `infra/local.example.env` and `scripts/provision_vm.py` contain
-  `192.168.1.240/24` as an **illustrative example value**, not a real address;
-  those are fine and must not be swept up by a filter.
+- **A guard already exists, and this note wrongly proposed one.**
+  `tests/test_no_leaked_addresses.py` (commit `994e8a5`, 2026-09-12) fails the
+  suite on any private IPv4 or `.internal` hostname in a tracked file. It
+  **deliberately excludes `working-archive/`** as a historical record, which is
+  exactly why the 09-07 archive's addresses never tripped it. So the real
+  decision is whether that exclusion should stay. It caught this very note on
+  2026-09-19, when an earlier draft quoted the illustrative example address
+  from `infra/local.example.env` literally; those example values are already
+  allowlisted in the `.example` file and `scripts/provision_vm.py`, and are not
+  real addresses.
 
 ### Background, not urgent
 
