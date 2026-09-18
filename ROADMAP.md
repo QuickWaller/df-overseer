@@ -66,6 +66,28 @@ or `decisions/DECISIONS.md`, not here.
 ## Now
 <!-- Actively being worked, or the clear immediate next step. -->
 
+- **UPDATED 2026-09-19 (later the same day): the drinking diagnosis is
+  itself under suspicion.** An audit found the 2026-09-17 record has three
+  founders demonstrably drinking at that pond with `NastyWater` thoughts,
+  while the "zero walkable neighbours" reading below would make that
+  impossible. Leading hypothesis: **that reading derived walkability from
+  tile *shape*, and the pond is submerged ramps a dwarf may wade across.**
+  Until it is checked against `dfhack.maps.getWalkableGroup`, the well plan
+  rests on a bad measurement. A **brew route** may be shorter regardless,
+  since doctrine holds drink satisfies thirst on its own. What survives: over
+  6,303 ticks nobody drank. → `Working.md` HANDOVER 2026-09-19,
+  `research/2026-09-19-unverified-claims-audit.md` finding 5.
+- **NEW 2026-09-19: six streams merged, and an audit found the project had
+  shipped one bug five times.** Landed today: the snapshot assembler (the
+  caller that lets the graph see the fort), the water doctrine correction,
+  the availability tool (three of four exact deductions now readable), the
+  silent-zero fix, and the unverified-claims audit that found the last two.
+  **After the `FEED_WATER_WOUNDED` incident this project fixed `set_labor`,
+  wrote the lesson into the build spec, and left four copies of the same
+  shape in tools the agents call.** Nothing failed to prompt the discovery;
+  only the audit closed it. Suite is **382 passed / 1 skipped**. **Owed:
+  none of today's tool work is deployed.** → `decisions/DECISIONS.md`
+  2026-09-19 rows.
 - **NEW 2026-09-19: the fort cannot drink, and the well is blocked three
   levels down.** This corrects the 2026-09-17 item below, which says
   Uniboslan "now drinks". It does not. Measured exactly across two reads:
@@ -121,7 +143,7 @@ or `decisions/DECISIONS.md`, not here.
   still (designated, material on hand, no worker took the job across a full
   unpause), a trade depot, typed stockpiles, and a dig tool that can reach
   stone two levels down (blocks blocks and mechanisms). → `Working.md`
-  HANDOVER 2026-09-17, `decisions/DECISIONS.md` 2026-09-17 rows. Original
+  HANDOVER 2026-09-19 (the 2026-09-17 one is archived), `decisions/DECISIONS.md` 2026-09-17 rows. Original
   text follows.
 - **NOW, 2026-09-16: build the tools that make a fort produce anything.**
   Uniboslan is stopped behind a popup with zero fort-owned food or drink and

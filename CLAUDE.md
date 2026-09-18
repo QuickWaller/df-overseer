@@ -48,7 +48,7 @@ learning architecture.
 >   planted yet**. **Still not
 >   built:** the still (designated; the fort owns only 3 logs, no worker took
 >   the job yet either way). Fort-owned food is 17 units, drink still 0, 60
->   seeds (35 plump helmet). → `Working.md` HANDOVER 2026-09-17.
+>   seeds (35 plump helmet). → `Working.md` HANDOVER 2026-09-19 (the 2026-09-17 one is archived).
 >
 > - **The fort.** VM 103 (`df-colony-01`) runs **Uniboslan, "Ragwind,"** the
 >   one fort, on DF Classic plus DFHack under Xvfb, built by
@@ -56,7 +56,7 @@ learning architecture.
 >   Artobcatten, was lost founding it (register 2026-09-10). It is genuinely
 >   paused, the safe state. The user chose to continue on this fort; it is
 >   expendable, and rescuing it is worth trying for the tools it forces us to
->   build. → `Working.md` HANDOVER 2026-09-17.
+>   build. → `Working.md` HANDOVER 2026-09-19 (the 2026-09-17 one is archived).
 > - **Perception and action.** `scripts/dfhack/` holds the coordinate-free
 >   tools: connectivity, landmarks, overview, diff, open-area and diggable
 >   find/build, chokepoints, stuck jobs, labor, farm, workshop, zone, trees,
