@@ -44,6 +44,15 @@ with the user.
   allowed verdict. Adversarial review of a proposal *before* execution was
   judged overkill. Open: who sets the horizons, who judges, what a verdict
   attaches to, and what wakes a session (no scheduler exists).
+- **openclaw has no multi-agent primitive worth using** (research
+  2026-09-18, not independently confirmed in source: the local checkout is
+  scaffolding only). It has native session send/spawn, but the inter-agent
+  lane is reported as one concurrent operation, and cron, heartbeat and
+  webhook triggers all need a Gateway this project has never run. Hooks
+  exist for session and command lifecycle, **not** tool calls, so
+  `dfmcp/roles.py` stays the only real safety boundary. No spend cap of
+  any kind. Recommendation: keep the dispatcher-plus-queue design, with
+  independent one-shot `agent exec` runs. **Pending the user's decision.**
 - **The Overseer hands proposals to the consultant for fact-checking** (the
   "wiki nerd and researcher" role) before ruling.
 - **A new learning role, separate from but related to the consultant**, name
