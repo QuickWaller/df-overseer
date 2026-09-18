@@ -1,0 +1,73 @@
+# DEPLOYED 2026-09-19 (handoffs/2026-09-19-dfseries-auto-import.md). This
+# .example is the committed template; the real unit lives on VM 103 at
+# /etc/systemd/system/dfseries-import.service with CHANGEME below filled in.
+#
+# Triggered by dfseries-import.timer, not started directly and not enabled
+# on its own (Type=oneshot, no [Install] section needed -- the timer is
+# what gets enabled).
+#
+# The principle this unit depends on: the sampler's JSONL files
+# (docs/TIMESERIES.md) are the canonical record and this database is a
+# derived cache, rebuildable from them at any time. That is what makes it
+# safe to run this importer once a minute, unattended, in parallel with a
+# stream that may still be changing dfseries/'s schema -- if the schema
+# changes, the fix is "delete the database and re-import", never a patch to
+# this unit.
+#
+# Copy to /etc/systemd/system/dfseries-import.service on VM 103, next to
+# dfmcp-server.service (see infra/dfmcp-server.service.example for the
+# account and directory conventions this unit reuses), fill in CHANGEME, and
+# do not enable/start it before:
+#   1. dfseries/ is deployed next to dfmcp/ under the SAME checkout root
+#      dfmcp-server.service uses as its WorkingDirectory (so `python -m
+#      dfseries.cli` resolves the package from the current directory, the
+#      same mechanism dfmcp-server.service already relies on for `python -m
+#      dfmcp.server`) -- verified live by hash, see this handoff's write-up.
+#   2. The sample directory (where scripts/dfhack/df-overseer-sampler.lua
+#      writes JSONL, docs/TIMESERIES.md "Where files live") exists and this
+#      unit's User can read it.
+#   3. The database directory below exists or can be created by systemd's
+#      StateDirectory= mechanism (it will be, on first run, owned by this
+#      unit's User/Group) -- kept OUTSIDE the code tree on purpose, the same
+#      reasoning dfmcp-server.service's own comment gives for
+#      MCP_SERVER_QUEUE_DB: a code redeploy must never be able to clobber
+#      live data.
+#   4. The exact `systemctl enable --now dfseries-import.timer` command has
+#      been run past the user for explicit go-ahead, per this repo's
+#      CLAUDE.md rule that any change to live/VM state needs confirmation
+#      each time.
+
+[Unit]
+Description=df-overseer dfseries import (triggered by dfseries-import.timer)
+# Only needs the filesystem, not the network and not DFHack's RPC socket --
+# this reads JSONL files on disk, never talks to DFHack or the game process.
+After=local-fs.target
+
+[Service]
+Type=oneshot
+# Same account dfmcp-server.service runs as -- the account that owns
+# /opt/df and can read the sampler's output directory.
+User=CHANGEME
+Group=CHANGEME
+
+WorkingDirectory=/CHANGEME/df-automation-or-dfmcp-smoke
+# ExecStart does NOT expand shell globs, so the JSONL wildcard is wrapped in
+# a shell. python3 is the venv's own interpreter (dfseries is standard-
+# library only, so any Python 3 works, but reusing the existing venv keeps
+# one fewer moving part on the host).
+ExecStart=/bin/sh -c '/CHANGEME/df-automation-or-dfmcp-smoke/.venv/bin/python3 -m dfseries.cli import /CHANGEME/dfseries-db-dir/CHANGEME.series.sqlite3 /CHANGEME/sample-dir/*.jsonl'
+
+# Hardened like dfmcp-server.service, with the read/write split this unit
+# actually needs: read access to the sample directory (never write, move,
+# rotate or delete a JSONL file -- the importer already only ever opens
+# them for reading), write access only to the database's own directory.
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadOnlyPaths=/CHANGEME/sample-dir
+# StateDirectory=dfseries creates /var/lib/dfseries (owned by User/Group
+# above) and makes it implicitly writable under ProtectSystem=strict, with
+# no ReadWritePaths= needed -- same mechanism dfmcp-server.service uses for
+# its queue database (see that unit's own StateDirectory=dfmcp comment).
+StateDirectory=CHANGEME
