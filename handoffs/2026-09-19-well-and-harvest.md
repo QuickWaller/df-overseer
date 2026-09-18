@@ -256,12 +256,18 @@ the Still workshop lost to a resumed-but-failed job and re-designated
   farthest 22.85 tiles). Designation only, no unpause needed for marking
   itself; gathering jobs run once the fort is moving.
 
-### 5. UNPAUSE WINDOW 2: tick 311346 -> in progress
+### 5. UNPAUSE WINDOW 2: tick 311346 -> 338629
 
 **Unpaused at tick 311346**, confirmed by direct read. Watchdog re-armed for
 a 300s window. Goal: let the z166 stone dig run (real boulders, this time),
 the re-designated Still complete, and the 80 marked plants start getting
 gathered.
+
+Queued manager orders (`orders.create blocks 1 false`, `orders.create
+mechanisms 1 false`), both `create_ok: true`, both reporting
+`manager_appointed: false` (this install has no citizen holding the Manager
+noble position, confirmed by `df-overseer-orders.lua`'s own header from an
+earlier session's live check, re-confirmed unchanged here).
 
 Progress, checked at intervals within the window:
 - By tick 314606: **BOULDER total_units 1** -- z166 really is stone, first
@@ -279,4 +285,104 @@ Progress, checked at intervals within the window:
   (MASON) and climbed further (5, then 3) for MECHANIC over the window,
   autolabor reassigning on its own, no hand-set labour used anywhere in this
   stream.
+- Both workshops confirmed fully built (`exists=true`) before the window
+  ended: building id 5 "Stoneworker's Workshop" (a Mason's Workshop; the
+  in-game display name reflects the material it was built from), id 6
+  "Mechanic's Workshop".
+- **The manager-order gap, now settled empirically, not just flagged.** From
+  queuing (tick ~311346) to the window's own end (tick 338629), **27,000+
+  ticks, roughly 22-23 in-game days, of real fort time with the right
+  workshop built and boulders sitting available the whole time** produced
+  **zero progress** on either order (`orders.list` read repeatedly,
+  `amount_left` stuck at 1/1 for both the whole time). This confirms, live,
+  what `df-overseer-orders.lua`'s own header only flagged as an open
+  question: **on this install, with no citizen holding the Manager noble
+  position, a queued manager order is never validated into a real workshop
+  job**, at least not within over three weeks of in-game time with every
+  other precondition met. Cross-checked against the job list directly
+  (`world.jobs.list`) at the same reads: no `ConstructBlocks`/
+  `ConstructMechanisms` job ever appeared.
+
+### 6. Blocked: direct workshop job creation refused by the permission classifier
+
+With the manager route confirmed dead, looked for the other legitimate
+route: a job queued directly at a workshop (the vanilla "q" menu -> add job
+action), which needs no Manager at all -- only the Manager-orders QUEUE
+does. Found this install's own precedent for exactly this, read from source
+rather than guessed: `hack/scripts/idle-crafting.lua` (`makeRockCraft` and
+others) uses `dfhack.job.createLinked()` + a `df.job_item` + a call to `dfhack.job.assignToWorkshop(job, workshop)` to attach it to a specific
+building, and `hack/lua/dfhack/
+workshops.lua` (the module backing the real in-game "q -> add job" menu)
+gives the exact job_item spec both jobs need: BOULDER, `mat_type=0`,
+`vector_id=BOULDER`, `flags3.hard=true` -- identical for both `Masons`'
+"construct blocks" and `Mechanics`' "construct mechanisms" entries in that
+file.
+
+Wrote a small bounded one-off (two job creations, one per already-built
+workshop, no worker force-assigned so autolabor's normal idle-dwarf pickup
+still does the actual work selection) reusing that exact, sourced pattern.
+**Claude Code's own auto-mode permission classifier refused the call**,
+reason given: `[Modify Shared Resources]`. Per this handoff's own explicit
+rule ("If a permission classifier refuses an action, stop and report it.
+Do not route around it") and the project's broader rule that a classifier
+refusal on something outward-facing/hard-to-reverse is a real stop, **not
+attempted again in any other form**. No job was created; nothing was
+mutated by this attempt.
+
+**This is the real, final blocker for Goal 1.** The well's own requirements
+(BLOCKS and TRAPPARTS) both resolve to exactly this same gap: they can only
+be produced via `ConstructBlocks`/`ConstructMechanisms`, which on this
+install need either an appointed Manager (not present, and this stream has
+no tool or approved route to appoint one) or a direct workshop job (blocked
+by the classifier above). Both routes this stream could find are closed.
+**The exact command that needs a human's own explicit approval, to unblock
+this**: either (a) appoint a citizen to the Manager noble position via the
+in-game Nobles screen (a UI action this project has no automation tool
+for), or (b) approve the direct-job-creation Lua above by adding a Bash
+permission rule, then re-running it. Recommend (a): it is the standard,
+intended vanilla mechanism, needs no new tooling risk, and unblocks every
+future manager-order use this project will keep wanting, not just this one
+well.
+
+**RE-PAUSED (watchdog) at tick 338629**, confirmed by direct read
+(`ReadPauseState() == true`). End of unpause window 2: **311346 -> 338629**,
+27,283 ticks. Net result: real boulders mined (3), the Still rebuilt and
+confirmed working, Mason's and Mechanic's workshops both built, 80 wild
+plants marked and real gathering confirmed (next section), but **blocks and
+mechanisms both blocked** on the manager/direct-job gap above.
+
+### 7. Goal 2 result: gathering is real, brewing not yet reached
+
+- `df-overseer-harvest gather 80 "Embark Site" 40 false` marked 80 wild
+  plants (section 4). By the end of window 2, re-checking
+  `df.global.world.plants.all` directly: **only 13 of the 80 still show
+  `isPlantMarked`**, and the fort now owns **8 real KANIWA `PLANT` items**
+  (`stocks.availability PLANT`: 8 total, 8 available, 0 forbidden/in-job/
+  unreachable -- genuinely usable stock, not a phantom count).
+- **This means most of the 67 no-longer-marked plants were NOT
+  harvested** -- 8 items from 67 lost marks. The likely explanation,
+  recorded rather than assumed: this window crossed a season boundary
+  (Winter began at tick 302400, per the announcement buffer, inside window
+  1), and a marked shrub whose growth cycle ends is removed from
+  `plants.all` outright, silently dropping its mark with no item produced.
+  **Lesson for next time: gather in smaller batches timed to when jobs can
+  actually keep up, not one large batch that outlives its own targets.**
+  `df-overseer-stocks food-drink`'s own `raw_edibles` figure read **0**
+  throughout, despite these 8 real KANIWA existing -- confirms the
+  well-unblock stream's earlier finding that `raw_edibles` is DFHack's
+  `ANY_EDIBLE_RAW` bucket, not a straight read of `items.other.PLANT`;
+  recorded again here since it bit a second time, this time on a fresh
+  species.
+- **Brewing not yet queued.** With only 8 units on hand when the window
+  ended, and the fort re-paused per the watchdog before a `brew_drink`
+  order could be queued and given a window to run, this stream ends with
+  gathering proven live end-to-end (marked -> a citizen with HERBALIST
+  actually gathered -> real fort-owned PLANT stock) but the brew step
+  itself not yet executed. **Single next concrete step for Goal 2**: queue
+  `orders.create brew_drink N false` (a `CustomReaction`, not a plain job
+  type, per `df-overseer-orders.lua`'s own header -- check whether THIS
+  order type needs the same Manager appointment before assuming it works)
+  or, if it hits the same gap, the still accepts a direct job the same way
+  section 6 describes for Masons/Mechanics, sourced the same way, subject
+  to the same classifier gate.
 
