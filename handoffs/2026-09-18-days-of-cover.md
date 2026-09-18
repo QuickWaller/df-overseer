@@ -126,3 +126,99 @@ report can be produced from a synthetic snapshot, the lead-time term is
 honestly unavailable rather than estimated, every term carries a status, and
 the write-up at the bottom of this file states what the report can and cannot
 tell a reader today.
+
+## Write-up (2026-09-18, executed)
+
+Both gates named at the top of this file were already lifted when this
+stream started: `production/` had landed and `handoffs/2026-09-18-blocker-
+walk.md` was merged into `main` (`3bbf995`). Built `production/cover.py` plus
+`production/tests/test_cover.py`, following `blocker.py`'s pattern exactly: a
+pure function over a snapshot the caller assembles, no live call, no
+coordinate, and a doctrine-sourced `CoverTargets` carrier rather than a
+number baked into code.
+
+**What a cover report can tell a reader today:**
+
+- **Exact cover, in dwarf-days**, whenever two `production_observation` rows
+  exist for the same subject and metric at different `abs_tick`: a plain
+  arithmetic rate (`depletion_rate_per_day`), normalised to per-dwarf using
+  the headcount *at the time of measurement*
+  (`per_dwarf_consumption_rate`), divided into the netted, durability-split
+  available stock (`cover_dwarf_days`). This never reads today's population,
+  which is the entire reason the dwarf-days unit exists
+  (`cover-target-migration-headroom`).
+- **Durable cover and perishable cover, separately**, plus how much
+  perishable stock is already flagged rotten and excluded from the
+  perishable figure rather than folded silently into either bucket
+  (`durability-splits-cover-target`). A stock that is entirely perishable
+  reports zero durable cover rather than quietly inheriting the blended
+  total.
+- **How many days that cover is worth right now**, given today's headcount,
+  and how that figure moves if the census changes, with no re-measurement
+  (`days_at_population` / `days_at_current_population`) -- the property the
+  handoff's population-rescale test exists to prove.
+- **A verdict**: below the reserve floor, below the cover target, or above
+  it, read lexicographically off whatever `CoverTargets` the caller supplied
+  from doctrine (`material-policy-bands`). The calculator carries no day
+  count or percentage of its own.
+- **A `status` on every term** (`verified_raws` / `prior` / `measured` /
+  `unavailable`), so a consumer can tell a measured rate from a gap without
+  re-deriving it.
+
+**What it cannot tell a reader today, and why, honestly:**
+
+- **Whether cover is enough time to resupply.** `resupply_lead_time_days`
+  always returns `unavailable`, on purpose, regardless of what it is handed
+  -- tested by calling it with the real live figures from spec §11
+  (`growdur=300`, `grow_counter=18480`) and confirming it still refuses.
+  The unit relating `growdur` to `grow_counter` is unsettled on this
+  install (candidates a quarter day, 2.5 days, or 250 days), and no
+  conversion was picked. This is the one term in the report a reader must
+  not get today; everything else in the report stands on its own without
+  it (`test_cover_report_with_unavailable_lead_time_does_not_raise_and_
+  stays_useful`).
+- **A consumption rate from a single reading.** One `production_observation`
+  row for a subject/metric gives `unavailable`, never a per-dwarf wiki
+  figure -- tested directly, plus the degenerate case of two rows sharing
+  one `abs_tick` (no time separation, still `unavailable`).
+- **Whether the fort's population will change.** Migration is Q4 by design
+  (spec §3); the calculator reads a population figure only where the
+  handoff's own design permits it (normalising an already-measured rate at
+  measurement time, and converting a dwarf-days figure to "days, for us,
+  right now"), never as a forecast term.
+
+**Tests: 345 passed / 1 skipped ambient before this stream; 364 passed / 1
+skipped after (19 new, all in `test_cover.py`; `production/` alone: 57
+passed).** The 1 skip is the pre-existing, correct transport-SDK-import
+skip named in `CLAUDE.md`, untouched by this stream.
+
+**Judged wrong, or worth flagging:**
+
+- The handoff's own "ambient is 307 passed / 1 skipped" line was already
+  stale by the time this stream ran (the blocker-walk merge alone brought it
+  to 345); not a defect in the handoff, just a reminder that the ambient
+  count in a written handoff is a snapshot, not a live value -- the
+  orchestrator's dispatch message carried the correct 345 figure and this
+  write-up trusts that over the handoff's own text.
+- Doctrine as written (`material-policy-bands`,
+  `cover-target-migration-headroom`) never states a concrete day count for
+  the reserve floor or the cover target itself, only the band *shape* and a
+  >=50% migration-headroom padding rule to apply on top of some other,
+  unstated bare-demand target. So `CoverTargets` is deliberately a plain
+  carrier with no default and no fallback number: this stream could not
+  find, and did not invent, an actual day count to cite, and inventing one
+  would repeat exactly the mistake `docs/PRODUCTION-MODEL.md` §11 already
+  flags an earlier draft for ("an earlier draft of this document asserted
+  11 days, which was invented for the example"). Whoever sets the fort's
+  first real `CoverTargets` values needs a doctrine entry stating the bare
+  day count doctrine currently lacks, or a judgement call flagged as such,
+  before this calculator's verdict means anything for Uniboslan specifically
+  -- today it is exercised only against synthetic targets in tests.
+- `population_at_measurement` and `current_population` are two distinct
+  parameters on purpose (see `compute_cover_report`'s docstring): population
+  can change between the two stock reads that produce a rate, and the
+  handoff does not say what to do if it does mid-interval. This stream
+  treats that as out of scope (assumes a stable-population measurement
+  window) rather than silently averaging across a migration wave; flagged
+  here rather than solved, since solving it needs a population time series,
+  not just a scalar.
