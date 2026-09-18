@@ -1,6 +1,6 @@
 # Time series: the contract between the sampler and the store
 
-Status: **design, 2026-09-19, agreed with the user.** Nothing built yet. This
+Status: **agreed with the user 2026-09-19; the store (`dfseries/`) is built and merged, the sampler is in progress.** This
 file is the **contract** two streams build against in parallel:
 
 - the **sampler** (`scripts/dfhack/df-overseer-sampler.lua`), which runs
@@ -112,6 +112,15 @@ came from).
 only its samples **at or before** the tick where its successor began. Trend
 queries default to the current lineage. Asking across a superseded branch must
 be an explicit choice.
+
+**The boundary tie, settled 2026-09-19.** When a predecessor's last in-lineage
+sample and its successor's first sample share the same `abs_tick` (the normal
+case, since a timeline starts at the tick of the save it loaded), **the
+successor's row wins** in the current lineage. The successor is the history
+that actually continued from that point. The predecessor's row is kept and is
+reachable with an explicit all-timelines query. Found by the `dfseries` stream
+while writing its rollback test and implemented that way in `trend.series()`;
+recorded here so a second implementation cannot choose differently.
 
 ## Where files live
 
