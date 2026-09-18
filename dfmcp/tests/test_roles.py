@@ -16,6 +16,7 @@ import textwrap
 import pytest
 import yaml
 
+from dfmcp.doctrine_tools import NATIVE_TOOLS as DOCTRINE_NATIVE_TOOLS
 from dfmcp.queue_tools import NATIVE_TOOLS
 from dfmcp.registry import load_registry
 from dfmcp.roles import RoleValidationError, load_roster
@@ -28,7 +29,10 @@ def registry():
     # (handoffs/2026-09-15-queue-into-dfmcp.md), which roles.py rule 1
     # requires to exist in the registry -- load_roster(registry) below would
     # otherwise fail to load the real roster for every test in this file.
-    return load_registry(native_tools=NATIVE_TOOLS)
+    # DOCTRINE_NATIVE_TOOLS merged in too, added
+    # handoffs/2026-09-19-get-doctrine-tool.md: agents/consultant/tools.yaml
+    # now grants doctrine.get, same rule-1 requirement.
+    return load_registry(native_tools={**NATIVE_TOOLS, **DOCTRINE_NATIVE_TOOLS})
 
 
 # --------------------------------------------------------------------------

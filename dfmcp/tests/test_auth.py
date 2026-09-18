@@ -16,6 +16,7 @@ from pathlib import Path
 import pytest
 
 from dfmcp.auth import AuthConfigError, load_role_tokens, resolve
+from dfmcp.doctrine_tools import NATIVE_TOOLS as DOCTRINE_NATIVE_TOOLS
 from dfmcp.queue_tools import NATIVE_TOOLS
 from dfmcp.registry import load_registry
 from dfmcp.roles import load_roster
@@ -29,8 +30,11 @@ GOOD_CONSULTANT_TOKEN = "consultant-token-uvwxyz1234"  # 27 chars
 def registry():
     # native_tools=NATIVE_TOOLS: the real roster now grants queue.* ids
     # (handoffs/2026-09-15-queue-into-dfmcp.md); see test_roles.py's
-    # registry fixture for the full explanation.
-    return load_registry(native_tools=NATIVE_TOOLS)
+    # registry fixture for the full explanation. DOCTRINE_NATIVE_TOOLS
+    # merged in too, added handoffs/2026-09-19-get-doctrine-tool.md: the
+    # real agents/consultant/tools.yaml now grants doctrine.get, which
+    # roles.py rule 1 requires to exist in the registry.
+    return load_registry(native_tools={**NATIVE_TOOLS, **DOCTRINE_NATIVE_TOOLS})
 
 
 @pytest.fixture(scope="module")

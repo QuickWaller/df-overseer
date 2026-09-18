@@ -268,3 +268,12 @@ deny:
       the admin VNC channel.
   - id: "ui.embark-mode"
     reason: Would leave the live fort in a different game mode.
+  - id: "doctrine.get"
+    reason: >-
+      Withheld handoffs/2026-09-19-get-doctrine-tool.md. The already-agreed
+      design (Working.md 2026-09-17, "In discussion: designing the learning
+      loop") routes the Overseer's doctrine fact-checking through the
+      consultant before ruling, rather than the Overseer reading doctrine
+      directly -- "The Overseer hands proposals to the consultant for
+      fact-checking... before ruling." Granting this here would duplicate
+      that agreed path. Revisit only if that design changes.

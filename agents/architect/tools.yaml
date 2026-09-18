@@ -181,3 +181,15 @@ deny:
     reason: Not this role's domain, and it races autolabor regardless.
   - id: "ui.*"
     reason: Embark bootstrap only. No role should use this in steady-state play.
+  - id: "doctrine.get"
+    reason: >-
+      Withheld handoffs/2026-09-19-get-doctrine-tool.md, not for lack of
+      use -- several existing entries (water-source-needs-walkable-
+      neighbour, sunken-basin-recognition, do-not-dig-into-full-basin,
+      seed-stock-never-falls) bear directly on the siting and dig-order
+      proposals this role writes. Withheld because the agreed design for
+      how a proposal cites doctrine ("every proposal must list the
+      doctrine entries it relied on", Working.md 2026-09-17) has no field
+      in dfqueue.schema yet, so granting read access now would be an
+      unenforced convention, not a wired requirement. Revisit when that
+      field exists.

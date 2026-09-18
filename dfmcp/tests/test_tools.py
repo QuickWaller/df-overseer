@@ -38,6 +38,7 @@ import textwrap
 
 import pytest
 
+from dfmcp.doctrine_tools import NATIVE_TOOLS as DOCTRINE_NATIVE_TOOLS
 from dfmcp.queue_tools import NATIVE_TOOLS
 from dfmcp.registry import RegistryError, load_registry
 from dfmcp.roles import load_roster
@@ -59,7 +60,11 @@ def registry():
     # test_sweep_every_real_argument_token_is_confidently_typed below happy:
     # it iterates registry.all() generically and expects every tool to have
     # an .args to sweep, even if (as here) there is nothing in it.
-    return load_registry(native_tools=NATIVE_TOOLS)
+    # DOCTRINE_NATIVE_TOOLS merged in too, added
+    # handoffs/2026-09-19-get-doctrine-tool.md: agents/consultant/tools.yaml
+    # now grants doctrine.get, same rule-1 requirement, and
+    # dfmcp.doctrine_tools.NativeTool.args is likewise () for the same reason.
+    return load_registry(native_tools={**NATIVE_TOOLS, **DOCTRINE_NATIVE_TOOLS})
 
 
 @pytest.fixture(scope="module")
