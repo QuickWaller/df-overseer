@@ -251,3 +251,15 @@ def test_rate_on_level_metric_is_unchanged_and_labelled_endpoint(conn, tmp_path)
     assert result.metric_kind == metrics.LEVEL
     assert result.segment == "endpoint"
     assert result.value == pytest.approx(0.001)
+
+
+def test_hunger_reset_is_detected_but_never_dated_to_a_tick():
+    """Hunger's 1/tick rise supports DETECTING a reset, but exact dating also
+    needs eating to return the counter to zero, which no real hunger reset
+    has shown yet (orchestrator, 2026-09-19). So a hunger reset must come
+    back interval-bounded, never with an abs_tick. Thirst, where reset-to-zero
+    was verified by a real drink, still dates exactly."""
+    from dfseries.metrics import kind_of
+    assert kind_of("hunger_timer").rate_per_tick == 1.0
+    assert kind_of("hunger_timer").reset_to_zero_verified is False
+    assert kind_of("thirst_timer").reset_to_zero_verified is True

@@ -52,6 +52,14 @@ class MetricKind:
     kind: str
     rate_per_tick: float | None
     evidence: str
+    # Exact-tick dating (`t1 - v1/rate`) needs TWO facts, not one: the
+    # between-reset rate (above) AND that a reset returns the counter to
+    # zero. The rate alone supports *detecting* a reset; only both together
+    # support *dating* it to one tick. Added by the orchestrator 2026-09-19
+    # after hunger was granted exact dating "by analogy" with no real hunger
+    # reset ever observed; sleepiness had already shown a timer here that
+    # drains rather than snapping to zero.
+    reset_to_zero_verified: bool = False
 
 
 _NOT_CLASSIFIED = MetricKind(
@@ -72,8 +80,11 @@ REGISTRY: dict[str, MetricKind] = {
             "dating exactly to abs_tick 12373521 = 12374606 - 1085, and every "
             "other citizen's thirst shows no reset in that window. See "
             "handoffs/2026-09-19-sampler.md and "
-            "handoffs/2026-09-19-dfseries-resets.md."
+            "handoffs/2026-09-19-dfseries-resets.md. Reset-to-zero verified by "
+            "the same event: the post-drink value (1085) equals ticks since the "
+            "drink, corroborated by a GiveWater job in that interval."
         ),
+        reset_to_zero_verified=True,
     ),
     "hunger_timer": MetricKind(
         kind=RESETTING_COUNTER,
@@ -88,7 +99,13 @@ REGISTRY: dict[str, MetricKind] = {
             "never been tested against a real hunger reset. Treated as "
             "established by analogy to thirst's identical signature; a "
             "future run that ever produces a hunger reset should be checked "
-            "against this formula before it is trusted further."
+            "against this formula before it is trusted further. "
+            "Orchestrator, 2026-09-19: the rate supports DETECTING a hunger "
+            "reset, but exact-tick DATING also assumes eating returns the "
+            "counter to zero, which no real hunger reset has yet shown, and "
+            "sleepiness already proved a timer here can drain instead. So "
+            "reset_to_zero_verified stays False and hunger resets are reported "
+            "interval-bounded until a real meal confirms the formula."
         ),
     ),
     "sleepiness_timer": MetricKind(
