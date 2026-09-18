@@ -1,6 +1,26 @@
 """One test per branch of `extract.derive_consumption`
 (`docs/PRODUCTION-MODEL.md` §5), including the fourth, `modified_in_place`,
 that the first design's three-value enum had no room for.
+
+Real-corpus verification, 2026-09-19: the spec's "zero exceptions across
+159 reactions" claim (`docs/PRODUCTION-MODEL.md` §5) was made by a human
+reader, not by running code. This stream ran `derive_consumption` against
+all 314 real reagent lines (159 reactions, from the real corpus pulled
+read-only from VM 103, not committed to this repo) and found **zero
+exceptions**: every line's `(preserve_reagent, not_improved,
+reaction_has_product, product_to_container_target)` tuple landed cleanly
+in exactly one of the four buckets below, with counts consumed=194,
+occupied_until_released=78, occupied_job=38, modified_in_place=4 (the
+four real `GLAZE_*` reactions, one `modified_in_place` reagent each,
+matching the branch below exactly). Restricted to the 148 reactions this
+extractor actually loads into the graph (11 adventure-mode-only reactions
+excluded, `docs/PRODUCTION-MODEL.md` audit §5), the same zero-exception
+result holds over 292 reagent lines (182/78/28/4). See
+`research/2026-09-19-real-corpus-extraction.md` for the full writeup; the
+real corpus itself cannot be committed here (game data, this repo is
+public), so that verification cannot be re-run as a committed test --
+these branch-level unit tests below stay the durable, reproducible
+coverage.
 """
 
 from __future__ import annotations
