@@ -198,8 +198,8 @@
 -- caller can never mistake a silently-broken netting for a clean zero (the
 -- project's own prior "0 of 15 for a token that does not exist" incident).
 --
--- `owned` NEEDS ITS OTHER HALF, PER SPEC, AND THAT HALF IS UNVERIFIED
--- OFFLINE. This file's own header above already establishes `flags.owned`
+-- `owned` NEEDS ITS OTHER HALF, PER SPEC, AND THAT HALF WAS VERIFIED LIVE
+-- 2026-09-19. This file's own header above already establishes `flags.owned`
 -- as a real, distinct field (checked live, found false on every DRINK/
 -- BOULDER/SEED item sampled, believed personal not fort ownership --
 -- "believed", not proven, since no citizen-owned item was in that sample).
@@ -208,17 +208,20 @@
 -- confirmation. `checked_unit_holder_ref` below calls
 -- `dfhack.items.getGeneralRef(item, df.general_ref_type.UNIT_HOLDER)`,
 -- the same class of call this file's OWN header already describes using
--- to confirm `flags.trader` against a live merchant unit -- but that
--- specific call, for UNIT_HOLDER specifically, has never been run by any
--- COMMITTED code in this repo. The only precedent is an uncommitted, ad
--- hoc `dfhack-run lua` probe in a chat session
--- (df-overseer-orders.lua's own header, tick 227160: "3 fort-owned ...
--- unclaimed, no holder", read by hand, not by this file). So every result
--- this tool returns carries `owned_ref_check.verified_offline = false`,
--- unconditionally -- this stream cannot make that true, only a live run
--- against a real DFHack process can, and until then `owned_units` should
--- be read as "flagged owned", not as an independently confirmed dwarf
--- claim.
+-- to confirm `flags.trader` against a live merchant unit. Until
+-- 2026-09-19 that specific call, for UNIT_HOLDER specifically, had never
+-- been run by any COMMITTED code in this repo (the only precedent was an
+-- uncommitted, ad hoc `dfhack-run lua` probe in a chat session --
+-- df-overseer-orders.lua's own header, tick 227160: "3 fort-owned ...
+-- unclaimed, no holder", read by hand, not by this file). A bounded live
+-- probe (handoffs/2026-09-19-deploy-and-live-verify.md) then ran this
+-- exact call against VM 103 (Uniboslan, paused, tick 272606) for both a
+-- known-held item (a citizen's own inventory item -- ref found) and a
+-- known-unheld item (an available BUCKET -- no ref found), so every
+-- result this tool returns now carries `owned_ref_check.verified_offline
+-- = true`. `owned_units` can be read as an independently confirmed dwarf
+-- claim, not just "flagged owned", for the two shapes actually tested;
+-- a future live run against a broader item mix is still worth doing.
 --
 -- Usage: ./dfhack-run df-overseer-stocks food-drink
 -- Usage: ./dfhack-run df-overseer-stocks seeds
@@ -394,9 +397,11 @@ end
 -- itself could not be performed (df.general_ref_type.UNIT_HOLDER missing on
 -- this build, dfhack.items.getGeneralRef erroring, etc.) -- distinct from
 -- has_ref=false, which means the lookup ran cleanly and found no holder.
--- UNVERIFIED OFFLINE (see this file's header): this exact call has never
--- run against a live DFHack process from committed code. Every caller of
--- this function must surface that caveat, not just the count.
+-- VERIFIED LIVE 2026-09-19 (handoffs/2026-09-19-deploy-and-live-verify.md):
+-- a bounded probe against VM 103 (Uniboslan, paused, tick 272606) ran this
+-- exact call against a known-held item (a citizen's own inventory item --
+-- ref found) and a known-unheld item (an available BUCKET, flags.owned
+-- false -- no ref found), confirming both branches.
 local function checked_unit_holder_ref(item)
   local ok, ref = pcall(function()
     return dfhack.items.getGeneralRef(item, df.general_ref_type.UNIT_HOLDER)
@@ -517,11 +522,15 @@ local function count_availability(vec, main_group_id)
       with_unit_holder_ref = owned_with_holder_ref,
       without_unit_holder_ref = owned_without_holder_ref,
       lookup_errors = owned_ref_lookup_errors,
-      -- Always false: see this file's header, "UNVERIFIED OFFLINE". Never
-      -- flip this to true from inside this file -- it can only become
-      -- true from an actual live-run write-up, by a session that ran this
-      -- exact command against a real DFHack process.
-      verified_offline = false,
+      -- Flipped true 2026-09-19 by a live run against VM 103 (Uniboslan,
+      -- paused, tick 272606): a bounded probe (one citizen's inventory,
+      -- one BUCKET vector index) called the identical
+      -- dfhack.items.getGeneralRef(item, UNIT_HOLDER) this function wraps
+      -- against a known-held item (ref found) and a known-unheld item
+      -- (no ref found), confirming both branches actually behave as this
+      -- function assumes. See
+      -- handoffs/2026-09-19-deploy-and-live-verify.md.
+      verified_offline = true,
     },
     trader_units = trader_units,
     trader_item_count = trader_items,
