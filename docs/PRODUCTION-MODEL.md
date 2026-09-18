@@ -454,10 +454,33 @@ reachable source.
   is `prior` and needs verification. What is certain is that we can now
   *detect* it, since `item.flags.in_job` came back exact.
 
-**This gap was found by accident and it is live.** A metalcrafter cancelled
-"Give water: Need empty bucket" at tick 214135, and one of fifteen citizens
-reads unconscious. The fort owns no bucket, and no existing tool can make one:
-`orders.create` knows blocks, mechanisms, barrels and brew_drink only.
+**This gap was found by accident, and then my own reading of it was wrong.**
+Corrected by a live read at tick 227160, fort paused:
+
+- **The fort owns three usable buckets** (ids 81, 149, 150: empty, not
+  forbidden, not claimed, no holder). Two more are `trader=true`, held by the
+  caravan's yak pack animals. The earlier "owns no bucket" claim came from an
+  illustrative figure in a diagram, not from a read.
+- **The "unconscious citizen" is a sleeping miner**: `unconscious=2`,
+  `pain=0`, `wounds=0`, `current_job=Sleep`. No injury, no medical emergency.
+  The live audit's count was accurate; the inference drawn from it was not.
+
+**What survives, and is more interesting than the version I got wrong:** the
+fort held three empty buckets and still logged "Give water: Need empty bucket"
+(announcement 104, tick 214135). So that failure was **availability or
+reachability at that moment, not absence**, which is precisely the
+available-versus-total distinction in §7, demonstrated live before the code to
+detect it exists. The water chain still needs representing, and buckets still
+deserve an insurance par level, because existence is not availability.
+
+The lever gap is also real independently: `orders.create` knows blocks,
+mechanisms, barrels and brew_drink only, so no tool can make a bucket.
+
+**Method note, recorded because it is the design's own rule broken by its own
+author:** two true facts (a cancellation message, a nonzero unconscious count)
+were combined into a false conclusion without a read. The design says detect,
+do not infer, and treat a residual as unattributed rather than explained. That
+applies to whoever writes the reports, not only to the code.
 
 ## 13. Levers: what the fort can actually change
 
@@ -540,10 +563,21 @@ live medical reason to happen first.
 - The release trigger for `occupied_until_released` (engine behaviour, never
   raw-stated).
 - The `BAG_ITEM` token-family inconsistency.
-- **The hardcoded job types have not been enumerated.** Lye and potash have no
-  producing reaction in the shipped files, which almost certainly means
-  ashery jobs are hardcoded rather than absent. So the no-cycles conclusion
-  holds for raw reactions only, and one enum pass would settle it.
+- ~~The hardcoded job types have not been enumerated.~~ **Settled 2026-09-18
+  by a live enum read.** The ashery chain is hardcoded, not absent:
+  `MakeAsh` (185), `MakeLye` (186), `MakePotashFromLye` (187),
+  `MakePotashFromAsh` (189), alongside the already-known milling family
+  `MillPlants` (106), `ProcessPlants` (110), `ProcessPlantsVial` (112),
+  `ProcessPlantsBarrel` (113). So the static audit's finding that lye and
+  potash are raw-external is correct **about the reaction files** and would be
+  a modelling error if read as "the fort cannot make lye". These need
+  `production_process` rows with `is_hardcoded = 1`.
+  **The no-cycles conclusion is not yet fully settled.** Reasoning over the
+  chain, wood feeds ash, ash feeds lye and potash, lye feeds soap, and potash
+  is fertiliser, none of which returns to wood, so there is no loop. But that
+  is reasoning, not extraction. The definitive check belongs to the extractor
+  once hardcoded processes are rows, which is why the build order keeps the
+  cycle question as an output of extraction rather than an assumption.
 - Whether an item moved to a trade depot is distinguishable (no depot exists).
 - Hospital zone supply reservation.
 - The workshop task cap reads 5 on this install, not the wiki's 10, from one
