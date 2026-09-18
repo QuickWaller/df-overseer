@@ -88,6 +88,19 @@ doctrine change goes into a user digest, for now, until graded rulings show
 the Overseer arbitrates doctrine well (one ruling exists on record, on a
 cheap model, not yet evidence either way).
 
+**A new class of entry, 2026-09-18: material policy targets.** The
+production model (`docs/PRODUCTION-MODEL.md` §10, corrected by
+`research/2026-09-18-schema-extraction-static.md` and
+`research/2026-09-18-schema-extraction-live.md`) deliberately puts par
+levels, cover-day targets, reserve floors and band classification
+(reserve / keep-on-hand / working stock / surplus) in doctrine rather than
+in a solver's cost vector, because a weight vector is unreviewable and a
+target is. Nothing about the entry format above changes for these: they are
+ordinary doctrine entries with the same provenance and revision path, just
+a topic this store did not carry before today. `docs/AGENT-ARCHITECTURE.md`
+§4's Strategy layer note records the resulting division of labour (code
+prices the choice set, an agent sets the target).
+
 **Citation and disputed entries.** A proposal must cite the doctrine entries
 it relied on; an empty list is valid ("relied on none"), a missing field is
 not. When a proposal's prediction misses, the entries it cited come under
