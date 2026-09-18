@@ -386,7 +386,7 @@ mechanisms both blocked** on the manager/direct-job gap above.
   section 6 describes for Masons/Mechanics, sourced the same way, subject
   to the same classifier gate.
 
-### 8. UNPAUSE WINDOW 3: tick 338629 -> testing brew_drink
+### 8. UNPAUSE WINDOW 3: tick 338629 -> 356606
 
 Fresh quicksave taken and confirmed before this window (rotated to
 `autosave 1`, mtime matched wall-clock at issue time). Queued
@@ -396,4 +396,106 @@ watchdog armed for a 200s window. Goal: see whether a `CustomReaction`
 manager order behaves differently from a plain job-type order (blocks/
 mechanisms, section 5), and whether any more of the still-marked plants get
 gathered.
+
+Checked at ticks 340516, 341748, 342883-346357: **no change** in
+`orders.list` (`amount_left` stuck at 8/8 the whole window) or in `PLANT`
+stock (steady at 8). **The manager-appointment gap is not specific to
+`ConstructBlocks`/`ConstructMechanisms`** -- it blocks `CustomReaction`
+manager orders too, uniformly across this install's whole manager-order
+queue. The marked-plant count also held steady at 13 the whole window (no
+new gathers) -- the fort's one HERBALIST citizen had either exhausted what
+it could reach for now or was occupied elsewhere; recorded as an
+observation, not chased further.
+
+**RE-PAUSED (watchdog) at tick 356606**, confirmed by direct read
+(`ReadPauseState() == true`) and the watchdog's own log. End of unpause
+window 3: **338629 -> 356606**, 17,977 ticks.
+
+### 9. Final state, verified
+
+Read live, paused, tick **356606**:
+
+| Item | Before this stream | After this stream |
+|---|---|---|
+| BOULDER | 0 | **3** |
+| BLOCKS | 0 | 0 (order queued, unfulfilled) |
+| TRAPPARTS (mechanism) | 0 | 0 (order queued, unfulfilled) |
+| WOOD | 3 | 3 (untouched -- boulders funded all three workshops) |
+| Wild PLANT (harvested) | 0 | **8** (KANIWA) |
+| Drink | 0 | 0 |
+| Prepared meals | 0 | 0 |
+| Raw edibles (`ANY_EDIBLE_RAW` bucket) | 2 units | 0 (the 2 original units were consumed during the food crisis; see below) |
+
+New buildings: **Still** (rebuilt after this stream's own incident, id 4),
+**Mason's Workshop** (id 5), **Mechanic's Workshop** (id 6). New
+designations: the stair to z167/z166 (stone confirmed), an 80-tile wild
+gather batch (67 no longer marked, 13 still pending, 8 realised as items).
+Three manager orders sit queued and unfulfilled: `ConstructBlocks` x1,
+`ConstructMechanisms` x1, `CustomReaction BREW_DRINK_FROM_PLANT` x8.
+
+**Announcement-buffer context, not this stream's doing but relevant to
+reading these numbers**: at tick 285600, "Your fortress is out of food!"
+fired. The 2 raw plump helmets this stream inherited as baseline are gone
+by the time of this final read -- almost certainly eaten during that
+crisis, not lost to any action here. The fort remains at 23 citizens, 0
+new deaths recorded in anything this stream touched (population/mortality
+was not itself re-verified this session; the last confirmed zero-death
+figure is `Working.md`'s own 2026-09-19 morning read).
+
+**dfseries check attempted, inconclusive, does not change the answer.**
+Tried `python3 -m dfseries.cli latest ... citizen thirst_timer --all` from
+`/opt/df/dfmcp-smoke` per the handoff's own instruction; there is no
+`resets` subcommand on this build's CLI (`import|timelines|series|latest|
+rate` only), and `latest ... citizen thirst_timer` returned "no data"
+(likely a subject-naming mismatch, or the 60s auto-import had not yet
+caught up to this session's own tick range -- not chased further given the
+time this stream had left). **This does not matter for the verdict**: no
+well exists and drink stock is 0, so there is no possible water source for
+any citizen to have drunk from regardless of what the timeseries shows.
+
+### 10. Done-criteria verdict
+
+**Goal 1 (well): not done.** No well was built. Root blocker, fully
+diagnosed and reproducible, is NOT the original well-unblock chain (stone
+was mined, both workshops were built) -- it is the **Manager-order gap**
+(section 5-6): on this install, `ConstructBlocks`/`ConstructMechanisms`
+manager orders never get validated into real jobs without an appointed
+Manager, and the one alternative route (a direct workshop job, section 6)
+was refused by Claude Code's own permission classifier and correctly not
+routed around. **No dwarf has been recorded drinking from a well, because
+no well exists to drink from.**
+
+**Goal 2 (harvest wild plants): partially done.** The lever gap (no
+existing tool designates wild-plant gathering) was real and is now closed
+with `scripts/dfhack/df-overseer-harvest.lua`, committed and deployed,
+live-verified end to end: 80 wild plants marked for real, a citizen with
+the HERBALIST labour genuinely gathered some of them (8 fort-owned KANIWA
+items now exist, all reachable/unforbidden). **Brewing is queued
+(`orders.create brew_drink 8 false`) but not fulfilled**, blocked by the
+same Manager-order gap as Goal 1 -- confirmed to apply uniformly across
+order types, not just the two well-specific ones.
+
+### 11. Handback: the exact blocker and the two ways to clear it
+
+Both remaining steps in this stream (fulfilling `blocks`/`mechanisms` for
+the well, and `brew_drink` for Goal 2) are gated on the same single fact:
+**this fort has no appointed Manager, and this project has no tool or
+approved automation route to appoint one or to bypass the requirement.**
+
+- **Option A (recommended): appoint a Manager in-game.** A UI action on the
+  Nobles screen, needs a human at the game (or a future UI-automation tool
+  this project doesn't have yet, per `docs/DF-UI-AUTOMATION.md`'s existing
+  scope). Standard vanilla mechanism, no new risk, unblocks every future
+  manager-order use this project will keep wanting.
+- **Option B: approve the direct-job-creation Lua this stream wrote** (the
+  exact script is at `/tmp/direct_jobs.lua` on VM 103, sourced verbatim from
+  this install's own `hack/scripts/idle-crafting.lua` and `hack/lua/dfhack/
+  workshops.lua`, reproduced in section 6 above) **by adding a Bash
+  permission rule for it**, then re-run it. This clears `ConstructBlocks`/
+  `ConstructMechanisms` specifically; `brew_drink` (a `CustomReaction`, not
+  a plain job type) would need the same technique adapted with the
+  `BREW_DRINK_FROM_PLANT` reaction's own job_item spec, not yet written.
+
+Fort left **paused at tick 356606**, confirmed live. No further unpause
+attempted after this point.
 
