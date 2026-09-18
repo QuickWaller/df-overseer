@@ -11,7 +11,10 @@
 #            verified - confirmed from this install's game data or live state
 #            refuted  - kept so the mistake is not remade
 #   topics   what get_doctrine will index on: one or more of
-#            food, drink, water, farming, seeds, fishing, labor, health
+#            food, drink, water, farming, seeds, fishing, labor, health,
+#            material (added 2026-09-18 for goods-management policy that is
+#            not about one specific consumable: band vocabulary, cover-target
+#            margins, wear/clothing, durability classification)
 #   sources  one item per source, never a single blob:
 #     kind      live-read | game-data | devlog | bugtracker | wiki | forum |
 #               user | research (a repo research doc, which carries its own

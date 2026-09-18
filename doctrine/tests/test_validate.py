@@ -101,6 +101,16 @@ def test_bad_topic_is_refused():
     assert _errors_mentioning(errors, "test-entry.topics: 'gardening' is not one of")
 
 
+def test_material_topic_is_accepted():
+    # Added 2026-09-18 alongside the material-policy doctrine entries
+    # (bands, buckets, migration headroom, wear, durability): none of the
+    # older topics fit a goods-management policy that isn't about one
+    # specific consumable, so this is a deliberate vocabulary addition, not
+    # a loosened check.
+    entry = _entry(topics=["material"])
+    assert validate([entry]) == []
+
+
 def test_bad_read_value_is_refused():
     entry = _entry(sources=[_source(read="skimmed")])
     errors = validate([entry])
