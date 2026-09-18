@@ -35,6 +35,35 @@ read:
     status: exists
     note: >-
       Same handoff. Give/take links for one stockpile or workshop id.
+  - id: "series.timelines"
+    status: exists
+    note: >-
+      Added handoffs/2026-09-19-series-mcp-tools.md. The fort's own recorded
+      history (dfseries/), read-only. docs/TIMESERIES.md's design names this
+      role as owning inventory and production trends by agreed design (the
+      Overseer arbitrates, the Consultant fact-checks); granted here even
+      while this role stays disabled (see role.md, "not enabled... blocked
+      on tools, not on a decision"), so enabling it later is a config
+      change, not a fresh allowlist decision.
+  - id: "series.get"
+    status: exists
+    note: Same handoff and reasoning as series.timelines above.
+  - id: "series.latest"
+    status: exists
+    note: Same handoff and reasoning as series.timelines above.
+  - id: "series.rate"
+    status: exists
+    note: Same handoff and reasoning as series.timelines above.
+  - id: "series.resets"
+    status: exists
+    note: Same handoff and reasoning as series.timelines above.
+  - id: "series.dwarf_day_events"
+    status: exists
+    note: >-
+      Same handoff and reasoning as series.timelines above. The demand-side
+      figure (drinking events per dwarf-day) this role's own "food and
+      drink security" ownership needs, though it currently rests on 1
+      event over 207 dwarf-days -- not yet a rate to plan against.
 
 deny:
   - id: "orders.create"

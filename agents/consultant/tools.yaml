@@ -46,6 +46,36 @@ read:
       model priors alone") for doctrine specifically; that line is now
       stale for doctrine but still true for general wiki knowledge until
       knowledge.wiki_lookup exists.
+  - id: "series.timelines"
+    status: exists
+    note: >-
+      Added handoffs/2026-09-19-series-mcp-tools.md. The fort's own recorded
+      history (dfseries/), read-only. Answers this role's own stated
+      limitation for live-state claims the same way doctrine.get answers it
+      for mechanics claims: fact-checking "is the fort drinking now" against
+      a measured reset history, rather than model priors or a single live
+      snapshot. Every qualifier (metric kind, exact_tick vs
+      interval_bounded, sample/event counts) survives to this role
+      unflattened, matching role.md's own "label every claim" discipline.
+  - id: "series.get"
+    status: exists
+    note: Same handoff and reasoning as series.timelines above.
+  - id: "series.latest"
+    status: exists
+    note: Same handoff and reasoning as series.timelines above.
+  - id: "series.rate"
+    status: exists
+    note: Same handoff and reasoning as series.timelines above.
+  - id: "series.resets"
+    status: exists
+    note: Same handoff and reasoning as series.timelines above.
+  - id: "series.dwarf_day_events"
+    status: exists
+    note: >-
+      Same handoff and reasoning as series.timelines above. Currently
+      resting on 1 drinking event over 207 dwarf-days -- fact-checking a
+      claim like "the well is working now" against this figure means citing
+      that sample size, not just the rate.
 
 planned:
   - id: "queue.propose"
