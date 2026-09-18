@@ -53,6 +53,11 @@ with the user.
   `dfmcp/roles.py` stays the only real safety boundary. No spend cap of
   any kind. Recommendation: keep the dispatcher-plus-queue design, with
   independent one-shot `agent exec` runs. **Pending the user's decision.**
+- **Work orders can carry standing policy** (research 2026-09-18): shipped
+  conditioned orders exist, `JOB_COMPLETED` needs a one-line extension to
+  measure production, and the manager-appointment question needs one
+  supervised unpause to settle. None of this fort's current blockers is an
+  order problem.
 - **The Overseer hands proposals to the consultant for fact-checking** (the
   "wiki nerd and researcher" role) before ruling.
 - **A new learning role, separate from but related to the consultant**, name
