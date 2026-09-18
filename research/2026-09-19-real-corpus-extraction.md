@@ -73,10 +73,39 @@ occurrence of this shape across all 159 real reactions.
 **The join table itself is real and populates correctly**: 37
 `material_reaction_product` rows from `plant_standard.txt` alone (`DRINK_MAT`
 ×16, `SEED_MAT` ×17, `PRESS_PAPER_MAT` ×2, `PRESS_LIQUID_MAT` ×1, plus the
-one `item_reaction_product`-family `BAG_ITEM` row). See §4 for why its own
+one `item_reaction_product`-family `BAG_ITEM` row). See §5 for why its own
 real argument shape was also wrong before this stream.
 
-## 2. Consumption derivation: the zero-exceptions claim held, verified by running code
+## 2. A second "no value" sentinel leaked into 23 real product node ids
+
+Every fixture reaction file effectively descends from `reaction_other.txt`,
+where "no subtype" is always spelled `NONE` (e.g. real
+`[REAGENT:plant:1:PLANT:NONE:NONE:NONE]`). `reaction_smelter.txt`, real
+corpus, spells the identical concept differently: `NO_SUBTYPE` (61
+occurrences in that one file versus 27 `NONE`s; the other three real
+reaction files use `NONE` exclusively, 0 `NO_SUBTYPE` between them).
+`extract.py`'s `_fixed_node_id` only ever checked for `"NONE"`. Real
+corpus, `reaction_smelter.txt:9`:
+
+```
+[PRODUCT:100:9:BAR:NO_SUBTYPE:COAL:COKE][PRODUCT_DIMENSION:150]
+```
+
+Before the fix, `subtype="NO_SUBTYPE"` failed the `subtype not in (None,
+"NONE")` check (a real, non-`"NONE"` string), so it was appended into the
+node id as if it were meaningful: `"BAR:NO_SUBTYPE:COAL"` instead of
+`"BAR:COAL"`, `status='verified_raws'`. Measured: **23 of 23** real
+`reaction_smelter.txt` product node ids carried this spurious segment
+before the fix (every one of that file's real reactions uses the
+`NO_SUBTYPE` spelling). Fixed with a single `_is_none()` helper
+(`None`/`"NONE"`/`"NO_SUBTYPE"` all treated as "no value"), applied
+everywhere `_fixed_node_id` and `_reagent_class` check for an absent
+field. Verified against the real corpus post-fix: **0** node ids anywhere
+in the extracted graph contain the substring `NO_SUBTYPE`
+(`test_no_subtype_sentinel_does_not_leak_into_product_node_id` locks this
+in with an inline real-line regression test).
+
+## 3. Consumption derivation: the zero-exceptions claim held, verified by running code
 
 `docs/PRODUCTION-MODEL.md` §5 claims the four-outcome consumption rule
 (`PRESERVE_REAGENT` × `PRODUCT_TO_CONTAINER` target × `NOT_IMPROVED` ×
@@ -106,7 +135,7 @@ each with zero `[PRODUCT]` lines and one `PRESERVE_REAGENT` +
 a clean run, reported as one**, per the handoff's own instruction not to
 manufacture an exception that isn't there.
 
-## 3. Class expansion: the real number is 16 (or 76), not 5
+## 4. Class expansion: the real number is 16 (or 76), not 5
 
 The predecessor stream's fixture illustrated `BREW_DRINK_FROM_PLANT`
 materialising into 5 concrete drinks (the traditional five fort crops:
@@ -140,7 +169,7 @@ that this stream is not positioned to make unilaterally. Flagged for the
 next production-model stream to decide explicitly, with both real numbers
 now on record instead of the illustrative "5".
 
-## 4. The real `MATERIAL_REACTION_PRODUCT` shape carries no item type at all
+## 5. The real `MATERIAL_REACTION_PRODUCT` shape carries no item type at all
 
 The single most consequential fix. Real corpus, `plant_standard.txt:13-14`:
 
@@ -188,7 +217,7 @@ it still proves 5 concrete drinks and 5 seed nodes out of the fixture's 5
 plants, one reaction in, three of the four consumption branches exercised,
 exactly as the predecessor handoff specified.
 
-## 5. The reagent-material collapse: 88 distinct materials were indistinguishable, not just the 2 cases this stream set out to check
+## 6. The reagent-material collapse: 88 distinct materials were indistinguishable, not just the 2 cases this stream set out to check
 
 The handoff asked specifically about the `GET_MATERIAL_FROM_REAGENT` join
 (product side). Verifying `derive_consumption` against real reagent lines
@@ -259,9 +288,9 @@ not re-checked this session). Left as the existing, audited "COAL" bare-
 material behaviour (`BAR:COAL`, both COKE reactions collapse together);
 flagged here rather than silently changed either direction.
 
-## 6. Two reactions were silently over-resolved by matching on token *name* alone
+## 7. Two reactions were silently over-resolved by matching on token *name* alone
 
-Found while double-checking §5's fix against the full corpus, not one of
+Found while double-checking §6's fix against the full corpus, not one of
 the four things the handoff named to look hardest at, but exactly the
 kind of exception the handoff said was worth more than a clean run.
 
@@ -269,7 +298,7 @@ kind of exception the handoff said was worth more than a clean run.
 `material_reaction_product` purely by **token name**. That is correct
 when the reagent the product actually names was itself filtered via
 `HAS_MATERIAL_REACTION_PRODUCT` (the only mechanism that table's rows are
-ever sourced from in this corpus (all of them come from plant files).
+ever sourced from in this corpus, all of them come from plant files).
 It is **not** correct when the token name happens to collide with one
 from a completely unrelated material family. Two real reactions do
 exactly that:
@@ -312,7 +341,7 @@ depended on the old, wrong behaviour: `BREW_DRINK_FROM_PLANT` and
 `PROCESS_PLANT_TO_BAG`'s "plant" reagent both genuinely do carry
 `HAS_MATERIAL_REACTION_PRODUCT`, so they still resolve exactly as before.
 
-## 7. Reaction-level tokens were being silently misattributed, not dropped
+## 8. Reaction-level tokens were being silently misattributed, not dropped
 
 `CATEGORY`/`CATEGORY_NAME`/`CATEGORY_DESCRIPTION` (real corpus: 98 of 159
 reactions carry one, e.g. `reaction_dyes.txt:12`, `[CATEGORY:MAKE_DYE]`)
@@ -339,7 +368,7 @@ needed. Real result: 148 reactions (all fortress-mode ones) now carry a
 `display_name` attribute, 90 carry `category` (98 raw occurrences minus 8
 belonging to the 11 filtered adventure-mode-only reactions).
 
-## 8. Unparsed-line reporting: added, verified detectable, zero on the real corpus
+## 9. Unparsed-line reporting: added, verified detectable, zero on the real corpus
 
 The extractor previously had no mechanism to report a line it could not
 place anywhere. Added: `parse_reactions` and `parse_plants` now collect
@@ -361,9 +390,9 @@ meaningful rather than a check that would have said 0 regardless.
 **Real corpus result: 0 unparsed lines**, once `NAME`/`CATEGORY*` were
 recognised explicitly (before that fix, `NAME` alone would have reported
 159 false-positive "unparsed" entries, itself informative: it is exactly
-how this stream noticed `NAME` was being dropped, see §7).
+how this stream noticed `NAME` was being dropped, see §8).
 
-## 9. A minor, incidental correction to the static audit
+## 10. A minor, incidental correction to the static audit
 
 The static audit (§5) counted "22/22" real reactions where furniture/tool
 items made from `log` inherit whatever wood species the carpenter used,
@@ -381,25 +410,25 @@ record, not because it changes any conclusion.
 | Table | Rows | `status='prior'` | `status='unavailable'` | Notable NULL columns |
 |---|---|---|---|---|
 | `production_node` | 241 | 0 | 0 | `durability`: 101/241 (buildings, materials, and item types outside the four-entry `ITEM_TYPE_TEMPLATE` lookup, unchanged gap from the fixture stream, now measured at real scale) |
-| `production_class` | 48 | n/a (no `status` column) | n/a | none: 32 `DRINK` rows (16 real brewable plants × the 2 reactions that legitimately reference the plant-sourced `DRINK_MAT` token, `BREW_DRINK_FROM_PLANT` and `BREW_DRINK_FROM_PLANT_GROWTH`; see §6 for why this is 32 and not 48), 16 `BREWABLE_PLANT` |
+| `production_class` | 48 | n/a (no `status` column) | n/a | none: 32 `DRINK` rows (16 real brewable plants × the 2 reactions that legitimately reference the plant-sourced `DRINK_MAT` token, `BREW_DRINK_FROM_PLANT` and `BREW_DRINK_FROM_PLANT_GROWTH`; see §7 for why this is 32 and not 48), 16 `BREWABLE_PLANT` |
 | `material_reaction_product` | 37 | n/a | n/a | none: `DRINK_MAT` ×16, `SEED_MAT` ×17, `PRESS_PAPER_MAT` ×2, `PRESS_LIQUID_MAT` ×1, `BAG_ITEM` ×1 (item_reaction_product family, the known unresolved mismatch) |
 | `production_process` | 148 | n/a | n/a | `is_hardcoded`: 0/148 (all raw-defined; no hardcoded job type enumerated by this extraction, matching spec §17) |
-| `production_flow` | 539 | 0 | 76 (48 product, 28 reagent; see §6/§9 above for composition) | `node_id`: 76 (the unavailable rows); `unit`: 400/539; `consumption`: 247/539 (reagent-only by design); `container_class`: 461/539 |
+| `production_flow` | 539 | 0 | 76 (48 product, 28 reagent; see §7/§10 above for composition) | `node_id`: 76 (the unavailable rows); `unit`: 400/539; `consumption`: 247/539 (reagent-only by design); `container_class`: 461/539 |
 | `production_attribute` | 394 | 0 | 0 | `unit`: 347/394 (`display_name`/`category*`/season/value attributes carry no natural unit) |
 | `production_observation` | 0 | 0 | 0 | purely offline; the live layer writes no observations, by design |
 
 **These row counts are a claim about this install**, extracted from the
 real `vanilla_reactions`/`vanilla_plants`(`plant_standard.txt` only, see
-§3)/`vanilla_materials`/`vanilla_items` raws pulled read-only from VM 103
+§4)/`vanilla_materials`/`vanilla_items` raws pulled read-only from VM 103
 on 2026-09-19, not the fixture subset. The database itself lives out of
 tree, in this session's scratchpad, never committed.
 
 ## What still needs a decision, not an extraction fix
 
-- **Plant-file scope** (§3): extend to all five `vanilla_plants/objects/`
+- **Plant-file scope** (§4): extend to all five `vanilla_plants/objects/`
   files, or keep `plant_standard.txt` only? Real numbers now on record
   either way (16 vs 76 brewable plants).
-- **`COAL` as bare material vs. family** (§5): flagged, not resolved.
+- **`COAL` as bare material vs. family** (§6): flagged, not resolved.
 - **Multi-building reactions, `production_class.mechanism`'s wider
   vocabulary, the reagent `node_id`/product `node_id` type mismatch**:
   all carried over unchanged from `handoffs/2026-09-18-production-
