@@ -386,3 +386,14 @@ mechanisms both blocked** on the manager/direct-job gap above.
   section 6 describes for Masons/Mechanics, sourced the same way, subject
   to the same classifier gate.
 
+### 8. UNPAUSE WINDOW 3: tick 338629 -> testing brew_drink
+
+Fresh quicksave taken and confirmed before this window (rotated to
+`autosave 1`, mtime matched wall-clock at issue time). Queued
+`orders.create brew_drink 8 false` (8 KANIWA on hand, `create_ok: true`,
+same `manager_appointed: false` caveat). **Unpaused at tick 338629**,
+watchdog armed for a 200s window. Goal: see whether a `CustomReaction`
+manager order behaves differently from a plain job-type order (blocks/
+mechanisms, section 5), and whether any more of the still-marked plants get
+gathered.
+
