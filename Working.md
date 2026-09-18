@@ -182,11 +182,16 @@ Read directly this session. **This corrects two claims I made earlier today.**
   the fort has run 151 ticks since they appeared.
 - **The still (workshop 5) is still `exists=false`** with its
   `ConstructBuilding` job 366 **suspended**, and the fort owns 3 logs.
-- `autolabor` is **enabled**, so labour counts (PLANT 2, BREWER 1, COOK 1,
-  CARPENTER 1, DIAGNOSE 1, `FEED_WATER_WOUNDED` 0) are its live allocation,
-  not a configuration. Hand-setting a labour takes it off autolabor fort-wide
-  and permanently, so that lever is contested. → `docs/PRODUCTION-MODEL.md`
-  §13.
+- `autolabor` is **enabled**, so labour counts are its live allocation, not a
+  configuration: PLANT 2, BREWER 1, COOK 1, CARPENTER 1, DIAGNOSE 18 on 1,
+  SURGERY 19 on 1, RECOVER_WOUNDED 24 on 1, and **`FEED_WATER_CIVILIANS` 23
+  on all 15**. Hand-setting a labour takes it off autolabor fort-wide and
+  permanently, so that lever is contested. → `docs/PRODUCTION-MODEL.md` §13.
+- **Corrected the same day:** an earlier entry here said
+  `FEED_WATER_WOUNDED` was enabled on 0. That token does not exist, and the
+  probe could not tell a missing field from a real zero. There is **no labour
+  gap in the water chain**. `BIND_WOUND` and `DRESS_WOUNDS` are not real
+  tokens either.
 - **`growdur` for plump helmet is 300** and live `grow_counter` values are in
   the tens of thousands, so they are not the same unit and **the harvest clock
   is not computable until the unit is settled**. One observation of a planted
