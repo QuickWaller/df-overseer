@@ -95,3 +95,51 @@ The timer runs on its own, the store on the VM holds the real run, a rebuild
 reproduces it, the fort is still paused at the same tick, and the write-up
 records the database path, the rebuild command, and what home-lab needs to
 know.
+
+## Write-up (in progress)
+
+**Fort state at start:** paused, year 30, tick **283992** (bounded
+`dfhack-run lua` read of `ReadPauseState`/`cur_year`/`cur_year_tick` only).
+Baseline unit timestamps recorded before touching anything: `df-fortress`
+`ActiveEnterTimestamp` 2026-09-18 12:27:14 UTC, `df-xvfb` 2026-09-11
+02:26:46 UTC, `dfmcp-server` `ActiveEnterTimestamp` 2026-09-18 20:52:29 UTC,
+`NRestarts=0`.
+
+**Deploy.** `dfseries/` (12 tracked files) archived from `main` with
+`git -c core.autocrlf=false archive HEAD -- dfseries`, sha256 manifest built
+from the extracted tarball, `scp`'d to VM 103, extracted to a `/tmp` staging
+dir and verified there (`sha256sum -c`, all 12 OK), then copied to
+**`/opt/df/dfmcp-smoke/dfseries`** (a sibling of `dfmcp/`, `dfqueue/`,
+`agents/`, `scripts/` already there, so `python -m dfseries.cli` resolves
+the package the same way `python -m dfmcp.server` already does, from
+`WorkingDirectory=/opt/df/dfmcp-smoke`) and hashed again at that final path
+-- all 12 values identical (the only diff was sha256sum's `*`/` ` binary-mode
+marker, not the hash). No prior `dfseries` directory existed there, so no
+backup was needed. SSH as `df`, key `~/.ssh/df_overseer_ed25519`, `DF_VM_IP`
+CIDR suffix stripped.
+
+**Database path, chosen deliberately: `/var/lib/dfseries/uniboslan.series.sqlite3`.**
+Follows the exact precedent `dfmcp-server.service` already set for
+`dfqueue` (`MCP_SERVER_QUEUE_DB=/var/lib/dfmcp/Uniboslan.sqlite3`, read live
+off that unit before choosing): a `StateDirectory=` outside the code tree so
+a `dfseries/` redeploy can never touch it, created and owned `df:df`
+automatically by systemd on first run. Filename follows `dfseries/store.py`'s
+own `default_path()` convention (`{fort}.series.sqlite3`, fort=`uniboslan`),
+just rooted outside the package directory instead of inside it, since
+`DEFAULT_DIR` there is the package's own directory and writing there would
+violate "write access only to the database's directory."
+
+**Rebuild command (documented here, the one durable place for it since this
+stream may not write `docs/TIMESERIES.md`):**
+
+```
+sudo systemctl stop dfseries-import.timer
+sudo rm -f /var/lib/dfseries/uniboslan.series.sqlite3 /var/lib/dfseries/uniboslan.series.sqlite3-wal /var/lib/dfseries/uniboslan.series.sqlite3-shm
+sudo systemctl start dfseries-import.service   # one manual run reimports everything
+sudo systemctl start dfseries-import.timer     # resume the 60s cadence
+```
+
+The JSONL files under `/opt/df/game/dfhack-config/timeseries/` are never
+touched by this: deleting and reimporting the database is safe by
+construction (importer.py's own docstring: `source_file`/`source_line`
+uniqueness plus per-file progress tracking make any re-read idempotent).
