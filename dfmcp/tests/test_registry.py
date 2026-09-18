@@ -119,6 +119,25 @@ def test_the_two_safety_detectors_are_present_and_not_verified():
         )
 
 
+def test_stocks_availability_is_read_derivable_and_unverified():
+    """handoffs/2026-09-19-per-item-flags-tool.md: the per-item-flags
+    netting tool. Offline build stream -- never run against a live DFHack
+    process, so `verified` must still read as unverified (Tool.is_verified
+    False), the same "mark verified vs proposed" rule the safety-detector
+    test above pins for threat.scan/breach.check. Takes one positional
+    argument (TYPE, e.g. BUCKET/DRINK/SEEDS/CHAIN/BLOCKS/TRAPPARTS)."""
+    reg = load_registry()
+    assert "stocks.availability" in reg
+    tool = reg.get("stocks.availability")
+    assert tool.mutates is False
+    assert tool.knowledge_scope == "player_derivable"
+    assert tool.is_verified is False, (
+        "stocks.availability now claims to be verified -- was it actually "
+        "run against a live DFHack process? This tool was built offline."
+    )
+    assert tool.args == ["TYPE"]
+
+
 # --------------------------------------------------------------------------
 # knowledge_scope: added 2026-09-16 (handoffs/2026-09-16-knowledge-scope-audit.md,
 # decisions/DECISIONS.md 2026-09-16 "Agents may only know what a vanilla
