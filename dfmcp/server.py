@@ -127,7 +127,7 @@ from .dfhack_client import (
     DFHackConnectionPool,
     DFHackProtocolError,
 )
-from . import doctrine_tools, queue_tools
+from . import doctrine_tools, queue_tools, series_tools
 from .registry import Registry, load_registry
 from .roles import Roster, load_roster
 from .tools import ArgumentError, argv_for_call, build_tool_names, tool_definitions
@@ -181,6 +181,17 @@ class ServerConfig:
     way `registry.DEFAULT_TOOLS_YAML` already is -- see
     `dfmcp/doctrine_tools.py`'s module docstring, "Where the file lives at
     runtime".
+
+    `series_db`, added `handoffs/2026-09-19-series-mcp-tools.md`, is a third
+    case, distinct from both: like `queue_db`, `dfseries`'s database is
+    runtime-written data living outside the code tree, but unlike
+    `queue_db` its chosen deploy path
+    (`/var/lib/dfseries/uniboslan.series.sqlite3`) is **absolute**, so a
+    code redeploy resolving a relative path can never land on it by
+    accident -- the concern that forces `queue_db` to have no default does
+    not apply. A real in-tree default is therefore safe, same reasoning as
+    `doctrine_path` -- see `dfmcp/series_tools.py`'s module docstring, "The
+    database path: absolute, so a default here is safe (unlike queue_db)".
     """
 
     bind_host: str
@@ -190,6 +201,7 @@ class ServerConfig:
     dfhack_port: int = 5000
     pool_size: int = 4
     doctrine_path: str = str(doctrine_tools.DEFAULT_DOCTRINE_PATH)
+    series_db: str = series_tools.DEFAULT_SERIES_DB_PATH
 
     def __post_init__(self) -> None:
         if not self.bind_host or not self.bind_host.strip():
@@ -218,6 +230,7 @@ _ENV_KEYS = {
     "dfhack_port": "MCP_SERVER_DFHACK_PORT",
     "pool_size": "MCP_SERVER_POOL_SIZE",
     "doctrine_path": "MCP_SERVER_DOCTRINE_PATH",
+    "series_db": "MCP_SERVER_SERIES_DB",
 }
 
 _INT_FIELDS = {"bind_port", "dfhack_port", "pool_size"}
@@ -383,6 +396,7 @@ def _configure_call_log() -> None:
 def build_mcp_server(
     registry: Registry, roster: Roster, pool: DFHackConnectionPool, queue_db_path: Path,
     doctrine_path: Path = doctrine_tools.DEFAULT_DOCTRINE_PATH,
+    series_db_path: str = series_tools.DEFAULT_SERIES_DB_PATH,
 ) -> Server:
     """Build the low-level Server, wired to this registry/roster/pool.
 
@@ -401,6 +415,13 @@ def build_mcp_server(
     Defaults to the in-tree `doctrine/seed.yaml` (see that module's
     docstring for why a default is safe here unlike `queue_db_path` above);
     passed through from `ServerConfig.doctrine_path` in real use.
+
+    `series_db_path`, added `handoffs/2026-09-19-series-mcp-tools.md`: the
+    SQLite file `dfmcp.series_tools`'s six native `series.*` tools read.
+    Defaults to `dfmcp.series_tools.DEFAULT_SERIES_DB_PATH` (see that
+    module's docstring for why an absolute-path default is safe here, same
+    class of reasoning as `doctrine_path` and unlike `queue_db_path`);
+    passed through from `ServerConfig.series_db` in real use.
 
     Also builds this server's one `queue_write_lock` (Phase A review,
     2026-09-15): an `asyncio.Lock`, created fresh here rather than as a
@@ -485,8 +506,10 @@ def build_mcp_server(
             # Routed by which native module actually owns this id -- added
             # handoffs/2026-09-19-get-doctrine-tool.md alongside
             # dfmcp.queue_tools's own queue.propose/pass/rule/pending, which
-            # this branch served exclusively before. See dfmcp/queue_tools.py
-            # and dfmcp/doctrine_tools.py's own module docstrings.
+            # this branch served exclusively before, and extended again
+            # handoffs/2026-09-19-series-mcp-tools.md for the six read-only
+            # series.* tools. See dfmcp/queue_tools.py, dfmcp/doctrine_tools.py
+            # and dfmcp/series_tools.py's own module docstrings.
             try:
                 if tool_id in queue_tools.NATIVE_TOOL_IDS:
                     text, structured = await queue_tools.call(
@@ -499,11 +522,18 @@ def build_mcp_server(
                         tool_id, role, params.arguments or {},
                         doctrine_path=doctrine_path,
                     )
+                elif tool_id in series_tools.NATIVE_TOOL_IDS:
+                    text, structured = await series_tools.call(
+                        tool_id, role, params.arguments or {},
+                        series_db_path=series_db_path,
+                    )
                 else:  # pragma: no cover -- every native id belongs to one of the above
                     raise AssertionError(f"native tool id {tool_id!r} has no owning module")
             except queue_tools.QueueToolError as exc:
                 return _tool_result_error(str(exc))
             except doctrine_tools.DoctrineToolError as exc:
+                return _tool_result_error(str(exc))
+            except series_tools.SeriesToolError as exc:
                 return _tool_result_error(str(exc))
             return types.CallToolResult(
                 content=[types.TextContent(type="text", text=text)],
@@ -658,6 +688,7 @@ async def _serve(config: ServerConfig, registry: Registry, roster: Roster, token
     try:
         server = build_mcp_server(
             registry, roster, pool, Path(config.queue_db), Path(config.doctrine_path),
+            config.series_db,
         )
         app = build_asgi_app(server, tokens, config.bind_host)
         uvicorn_config = uvicorn.Config(app, host=config.bind_host, port=config.bind_port, log_level="info")
@@ -674,7 +705,9 @@ def main() -> None:
     this would run under."""
     _configure_call_log()
     config = load_config()
-    registry = load_registry(native_tools={**queue_tools.NATIVE_TOOLS, **doctrine_tools.NATIVE_TOOLS})
+    registry = load_registry(native_tools={
+        **queue_tools.NATIVE_TOOLS, **doctrine_tools.NATIVE_TOOLS, **series_tools.NATIVE_TOOLS,
+    })
     roster = load_roster(registry)
     tokens = load_role_tokens(roster)
     asyncio.run(_serve(config, registry, roster, tokens))

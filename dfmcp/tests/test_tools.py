@@ -42,6 +42,7 @@ from dfmcp.doctrine_tools import NATIVE_TOOLS as DOCTRINE_NATIVE_TOOLS
 from dfmcp.queue_tools import NATIVE_TOOLS
 from dfmcp.registry import RegistryError, load_registry
 from dfmcp.roles import load_roster
+from dfmcp.series_tools import NATIVE_TOOLS as SERIES_NATIVE_TOOLS
 from dfmcp.tools import (
     ArgumentError,
     ToolSchemaError,
@@ -64,7 +65,11 @@ def registry():
     # handoffs/2026-09-19-get-doctrine-tool.md: agents/consultant/tools.yaml
     # now grants doctrine.get, same rule-1 requirement, and
     # dfmcp.doctrine_tools.NativeTool.args is likewise () for the same reason.
-    return load_registry(native_tools={**NATIVE_TOOLS, **DOCTRINE_NATIVE_TOOLS})
+    # SERIES_NATIVE_TOOLS merged in too, added
+    # handoffs/2026-09-19-series-mcp-tools.md: agents/overseer/tools.yaml and
+    # agents/consultant/tools.yaml now grant series.* ids, same rule-1
+    # requirement, and dfmcp.series_tools.NativeTool.args is likewise ().
+    return load_registry(native_tools={**NATIVE_TOOLS, **DOCTRINE_NATIVE_TOOLS, **SERIES_NATIVE_TOOLS})
 
 
 @pytest.fixture(scope="module")

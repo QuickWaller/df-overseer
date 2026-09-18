@@ -382,9 +382,15 @@ class TestRosterWiring:
     def registry(self):
         from dfmcp.queue_tools import NATIVE_TOOLS as QUEUE_NATIVE_TOOLS
         from dfmcp.registry import load_registry
+        from dfmcp.series_tools import NATIVE_TOOLS as SERIES_NATIVE_TOOLS
 
+        # SERIES_NATIVE_TOOLS merged in too, added
+        # handoffs/2026-09-19-series-mcp-tools.md: agents/overseer/tools.yaml
+        # and agents/consultant/tools.yaml now grant series.* ids, which
+        # roles.py rule 1 requires to exist in the registry -- load_roster
+        # below would otherwise fail to load the real roster.
         return load_registry(
-            native_tools={**QUEUE_NATIVE_TOOLS, **doctrine_tools.NATIVE_TOOLS}
+            native_tools={**QUEUE_NATIVE_TOOLS, **doctrine_tools.NATIVE_TOOLS, **SERIES_NATIVE_TOOLS}
         )
 
     @pytest.fixture(scope="class")
