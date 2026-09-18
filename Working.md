@@ -308,35 +308,53 @@ live before touching anything. Nothing is running right now.
 
 ### START HERE, in priority order
 
-1. **Clear the still's stuck/suspended construction job.** Material is
-   available; nobody has worked it across a full unpause window. Check
-   whether it is actually DF's `suspended` flag or just never assigned a
-   worker before deciding how to unstick it.
-2. **Farm and stair tools: deployed and live-tested 2026-09-17.** Tool lists
-   live at 21/34/4. `farm.set-crop` real write and restore on plot 4 worked,
-   read back through `farm.list` (plot 4 ends plump helmet, all seasons).
-   **The stair did not work: it is half-designated.** `dig-stair` returned ok
-   for both halves, but its rank-1 spot sits under the fort's Stockpile, and
-   quickfort silently skips occupied tiles: z167 holds an orphan UpStair
-   designation with no DownStair above it (orchestrator-verified live, tick
-   227160, paused). The unpause stopped after 151 ticks on a false alarm in
-   the test's own sampler, so nothing was dug.
-3. **`dig-stair` fixed in code 2026-09-17, merged, NOT deployed.** Candidates
-   with a building on either tile are ranked out (verified live: the
-   Stockpile tile no longer ranks first), success is judged by reading the
-   designation back, the upper half goes first and is undone if the lower
-   fails, and failures are real errors (also `farm.set-crop`). **Next, needs
-   the user's go-ahead:** deploy, remove the orphan z167 UpStair, designate
-   the new rank-1 spot for real, and rerun the supervised dig with a fixed
-   focus check. → `handoffs/2026-09-17-dig-stair-fix.md` Result.
-4. **Run `ban-cooking all` on Uniboslan** (a write, needs the user's
-   go-ahead; fort can stay paused). Protects seeds, booze and brewables
-   from the kitchen in one command, including types not yet in stock. The
-   fort has never had it run, and `seed-stock-never-falls` doctrine has no
-   other enforcement. → `memory/dfhack-environment.md`.
-4. **Then a longer supervised run** for planting (nothing has sprouted yet;
-   the plot only finished construction partway through today's window) and
-   the still, once 1-3 are done.
+**Authority note, 2026-09-18:** the user granted this session full authority
+to push, to change the VM and to act on the fort, explicitly asking not to be
+asked per action. Standing exception kept: genuinely unrecoverable loss (the
+fort save, the VM itself) still stops and reports. Everything below that was
+previously "needs the user's go-ahead" is now simply sequenced work.
+
+**Sequencing rule while streams are live:** only one stream touches VM 103 or
+the fort at a time. Two `production/**` streams are also mutually exclusive.
+
+0. **Wait for the lever-gap tools stream, then deploy once.** Deploying from
+   `main` carries the merged `dig-stair` fix along with the new tools, so
+   there is no reason to deploy twice. Reconcile the `ROADMAP.md` /
+   `CLAUDE.md` tool-count mismatch (19/32/4 vs 21/34/4) with the real post-
+   deploy numbers at the same time; the doc drift pass deliberately left it
+   alone because the counts were another stream's surface.
+1. **Then the supervised run**, which is written and waiting:
+   `handoffs/2026-09-18-supervised-run-and-measure.md`. Feeds the fort (25
+   `PlantSeeds` jobs cannot run while paused, and food is down to 8 raw plants
+   for 15 citizens) and settles four known unknowns in one go, including the
+   `growdur` unit that currently blocks the harvest clock. Unsuspend the
+   still's job 366 as part of it: **the suspension question is answered**, it
+   is genuinely DF's `suspend` flag (`susp=true`, verified live today), not an
+   unassigned job.
+2. **`ban-cooking all`**, one command, fort can stay paused. Protects seeds,
+   booze and brewables from the kitchen including types not yet in stock, and
+   `seed-stock-never-falls` has no other enforcement. Sequence it **after the
+   deploy and before the run**, so the run cannot cook the seed stock. Note
+   the ordering against item 1 despite the numbering.
+3. **The stair, after the run.** Remove the orphan z167 UpStair designation,
+   then designate the new rank-1 spot for real and dig it. The code fix is
+   merged and rides along with the deploy in item 0.
+4. **Queued and gated, in `handoffs/`:** the days-of-cover calculator and the
+   blocker walk, both waiting on the `production/` package stream and
+   mutually exclusive with each other.
+
+**Background on the stair, for whoever picks item 3 up.** Farm and stair
+tools were deployed and live-tested 2026-09-17, tool lists live at 21/34/4,
+and `farm.set-crop`'s real write and restore on plot 4 worked, read back
+through `farm.list`. **The stair did not.** `dig-stair` returned ok for both
+halves, but its rank-1 spot sat under the fort's Stockpile and quickfort
+silently skips occupied tiles, so z167 holds an orphan UpStair with no
+DownStair above it (verified live, tick 227160, paused). The fix, merged
+2026-09-17 and not yet deployed, ranks out candidates with a building on
+either tile (verified live: the Stockpile tile no longer ranks first), judges
+success by reading the designation back, designates the upper half first and
+undoes it if the lower fails, and turns failures into real errors rather than
+an ok. → `handoffs/2026-09-17-dig-stair-fix.md` Result.
 
 **Fishing research: done 2026-09-17, and its first conclusions reversed.**
 A same-day audit found that the "overfishing may not be a real risk" swing
