@@ -226,3 +226,11 @@ can run the underlying failure to its natural conclusion (here, an outright
 building loss) rather than just sitting inert. Worth a second look before
 resuming any other stuck job found this way.
 
+**RE-PAUSED (watchdog) at tick 311346**, confirmed by direct read
+(`ReadPauseState() == true`) and the watchdog's own log
+(`WATCHDOG PAUSED at tick 311346`). End of unpause window 1:
+**283992 -> 311346**, 27,354 ticks. Net result: stair to z167 dug (real
+stone confirmed), a 5x5 mining room dug but it landed on soil (0 boulders),
+the Still workshop lost to a resumed-but-failed job and re-designated
+(unbuilt, pending the next window).
+
