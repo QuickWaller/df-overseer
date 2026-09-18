@@ -45,6 +45,7 @@ TOPICS = {
     "fishing",
     "labor",
     "health",
+    "material",
 }
 SOURCE_KINDS = {
     "live-read",
