@@ -1,0 +1,27 @@
+# DEPLOYED 2026-09-19 (handoffs/2026-09-19-dfseries-auto-import.md). This
+# .example is the committed template; the real unit lives on VM 103 at
+# /etc/systemd/system/dfseries-import.timer with CHANGEME below filled in
+# (currently nothing needs filling in -- kept CHANGEME-free intentionally
+# below, see dfseries-import.service.example for the unit this triggers).
+#
+# Fires dfseries-import.service every 60 seconds, and once 60 seconds after
+# boot. The importer is idempotent (docs/TIMESERIES.md, dfseries/importer.py
+# module docstring) so a missed or doubled tick is harmless -- a run that
+# finds no new lines reports 0 events imported rather than erroring.
+#
+# Enable with `sudo systemctl enable --now dfseries-import.timer` (this
+# enables the TIMER, never the .service directly -- the service has no
+# [Install] section on purpose). Only go live after the user's explicit
+# go-ahead, per CLAUDE.md.
+
+[Unit]
+Description=Run dfseries-import.service every 60 seconds
+
+[Timer]
+OnBootSec=60s
+OnUnitActiveSec=60s
+AccuracySec=1s
+Unit=dfseries-import.service
+
+[Install]
+WantedBy=timers.target
