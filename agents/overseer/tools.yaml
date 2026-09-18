@@ -86,6 +86,17 @@ read:
     note: >-
       Same handoff, item 4. Pending manager orders and whether a Manager
       is appointed. Not yet deployed.
+  - id: "stockpile.list"
+    status: exists
+    note: >-
+      Added handoffs/2026-09-18-lever-gap-tools.md. Every stockpile:
+      landmark-relative name, occupied/total tiles (a leading indicator --
+      docs/PRODUCTION-MODEL.md sec8), coarse accept categories.
+  - id: "stockpile.links"
+    status: exists
+    note: >-
+      Same handoff. Give/take links for one stockpile or workshop id.
+      Both of Uniboslan's stockpiles are unlinked today, live-verified.
   - id: "labor.unit-status"
     status: exists
     reliability: HEURISTIC
@@ -190,12 +201,16 @@ write:
   - id: "orders.create"
     status: exists
     note: >-
-      Same handoff, item 4. DRY_RUN defaults to true. JOB is one of
-      blocks/mechanisms/barrels/brew_drink. No citizen currently holds the
-      MANAGER noble position on this fort (live-verified) -- whether an
-      order queues into a real job without one is unverified; reported as
-      `manager_appointed` on every call, not enforced as a refusal.
-      UNTESTED live for the real create_orders call.
+      Same handoff, item 4; job vocabulary extended
+      handoffs/2026-09-18-lever-gap-tools.md. DRY_RUN defaults to true.
+      JOB is one of blocks/mechanisms/barrels/brew_drink/bucket/bed/door/
+      table/chair/splint/crutch/soap -- see the .lua file's own header for
+      each job's live-verified df.job_type id and workshop_subtype
+      confidence. No citizen currently holds the MANAGER noble position on
+      this fort (live-verified) -- whether an order queues into a real job
+      without one is unverified; reported as `manager_appointed` on every
+      call, not enforced as a refusal. UNTESTED live for the real
+      create_orders call.
   - id: "orders.cancel"
     status: exists
     note: >-
