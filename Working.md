@@ -338,6 +338,16 @@ is the current focus. **The loop itself ("nothing runs on its own") is not
 being built unilaterally**: its core architecture is pending the user's
 decision, per the learning-loop section above.
 
+### Update, 2026-09-19 afternoon: the fort records its own history
+
+The in-game sampler is live (one record per game day, `docs/TIMESERIES.md`),
+`dfseries` stores it, and the two were proven end to end on a real 9-game-day
+run. The autosave was seen firing for the first time. **The fort is paused at
+tick 283992** and **runs at 100 FPS, not 10**, despite several docs. The user
+directed the order: **fix the timer-reset bug, then automatic import, then MCP
+tooling**, and is away. Reset fix and auto-import are running; the MCP stream is
+written and waits on the reset fix.
+
 ### START HERE, in priority order
 
 **Sequencing rule while streams are live:** only one stream touches VM 103 or
