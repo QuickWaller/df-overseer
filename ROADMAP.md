@@ -6,8 +6,11 @@ paper, nothing built, two feasibility audits and a figures pass landed the
 same day) and pointed the "Game figures database and calculators" Next item
 at it. Re-scanned the rest of the Now and Next buckets for anything quietly
 finished or stalled: nothing found to change beyond the two items above;
-tool counts (21/34/4) deliberately left untouched, another stream owns that
-number today.) Previously: 2026-09-17 (nineteenth pass, targeted: the production-gap
+tool counts left to the stream that owned them, now reconciled by the
+orchestrator: **23/36/4 deployed and live-verified per role** on 2026-09-18,
+after the bucket-order and stockpile tools. The stale 19/32/4 in the
+2026-09-17 entry below is left as written, since that entry records what was
+true that day.) Previously: 2026-09-17 (nineteenth pass, targeted: the production-gap
 Now item updated to say it is partly closed, since the fort now drinks and has
 a farm plot with its crop set (nothing planted yet) and 19/32/4 deployed tools; the still, a trade depot, typed
 stockpiles and deeper digging remain unbuilt. Checked and left as-is: the

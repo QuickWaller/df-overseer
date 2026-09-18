@@ -511,14 +511,15 @@ until this table existed nobody had checked that a tool exists for each fix.
 | Not reachable, or hidden | dig or connect | `diggable.dig`, `dig-stair`, `openarea.build` | **yes** |
 | No labourer enabled | labour flag | `labor.set-labor` | **yes, but contested: see below** |
 | Capacity shortage | build another workshop | `workshop.build` | **yes** |
-| Stockpile link misconfigured | set take-from / give-to | — | **no** |
+| Stockpile link misconfigured | set take-from / give-to | `stockpile links` reads them; no tool writes them | **partly**: diagnosable, not fixable |
 | Output backed up | new stockpile, or disposal | partial | **no** |
 | Labourer busy hauling | job priority, or a burrow | — | **no** |
 | Squad duty conflict | military schedule | — | **no** |
-| Stockpile full | expand or dispose | — | **no** |
-| Water to an immobile dwarf | make a bucket | `orders.create` lacks the job | **no** |
+| Stockpile full | expand or dispose | `stockpile list` reads occupancy; no tool expands or disposes | **partly**: visible, not actionable |
+| Water to an immobile dwarf | make a bucket | `orders.create`, extended to 12 jobs 2026-09-18 | **yes**, dry-run verified, deployed |
 
-**Four actionable, six not.** The majority of diagnoses this design can
+**Was four actionable of ten; now six, with two more diagnosable but not fixable** (2026-09-18: `orders.create` grew to 12 jobs and a stockpile read landed).
+The original count is kept below because the shape of the argument is what matters, not the score. The majority of diagnoses this design can
 produce are ones nobody can act on. That is the sharper form of "nothing
 executes", and it reorders the work: two small tool builds convert two dead
 diagnoses into live ones, and they are worth more than the solver.
