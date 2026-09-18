@@ -211,7 +211,7 @@
 
 - id: water-source-zone-for-ponds
   scope: universal
-  status: verified
+  status: refuted
   topics: [water, drink]
   sources:
     - kind: live-read
@@ -225,15 +225,161 @@
       describes: unknown
       read: recalled
       accessed: 2026-09-17
+    - kind: live-read
+      ref: >-
+        Uniboslan, two exact tick/thirst reads (tick 227160 thirst 23,391;
+        tick 233463 thirst 29,694), all 15 citizens
+      describes: "53.16"
+      read: opened
+      accessed: 2026-09-19
   statement: >-
     A fort whose only water is a sunken pond may have dwarves that never
     drink. Marking the water itself as a Water Source zone, on the level the
     water is on, got dwarves down to the water and drinking within about four
     game days. Place the zone on the water, not on the open space above it.
   note: >-
-    Risks seen: dwarves then stand in 6-7/7 water, deep enough to drown a poor
-    swimmer, and stagnant water gives a NastyWater thought whose health effect
-    is unverified. A well avoids both.
+    Refuted 2026-09-19, kept so the mistake is not remade. The 2026-09-17
+    read that this entry was built on was itself flagged correlational, not
+    isolated, and the correlation did not hold up: measured across two exact
+    reads at Uniboslan, delta tick equalled delta thirst exactly (6,303 =
+    6,303) across all 15 citizens, meaning zero drinks occurred in that
+    window, while the zone still read active
+    (`spec_sub_flag.active = true`). The zone being active proves nothing
+    about reachability. This install's pond is a sunken basin: at the
+    water's own z-level (z168) all 27 wet tiles have zero walkable
+    neighbours, so no dwarf can path adjacent to the water to drink from it.
+    Whatever produced the three founders' apparent self-serve drinking on
+    2026-09-17 was not the zone reliably solving this pond; that reading is
+    superseded. The replacement rules are water-source-needs-walkable-
+    neighbour, sunken-basin-recognition and do-not-dig-into-full-basin below.
+    Risks noted at the time still stand as a caution for a pond that IS
+    reachable: dwarves would stand in 6-7/7 water, deep enough to drown a
+    poor swimmer, and stagnant water gives a NastyWater thought whose health
+    effect is unverified. A well avoids both, and is now the fort's own
+    plan (Working.md, "The fort cannot drink, and the pond cannot be dug
+    to").
+
+- id: water-source-needs-walkable-neighbour
+  scope: universal
+  status: prior
+  topics: [water, drink]
+  sources:
+    - kind: live-read
+      ref: >-
+        Uniboslan tile-shape read, z168 (142 WALL, 26 RAMP, 1 FLOOR, 0
+        walkable; 27 wet tiles, 0 with a walkable neighbour) and z169 (134
+        walkable, 100 FLOOR, 26 RAMP_TOP, 0 wet)
+      describes: "53.16"
+      read: opened
+      accessed: 2026-09-19
+    - kind: live-read
+      ref: >-
+        Uniboslan, two exact tick/thirst reads (tick 227160 thirst 23,391;
+        tick 233463 thirst 29,694), all 15 citizens
+      describes: "53.16"
+      read: opened
+      accessed: 2026-09-19
+  statement: >-
+    A `WaterSource` zone reading `spec_sub_flag.active = true` says only that
+    the zone exists on water; it says nothing about whether any dwarf can
+    reach that water. Reachability needs a walkable tile adjacent to the
+    water at the water's own z-level. Check tile shapes at the water's
+    z-level before placing a zone, not after: if every wet tile there has
+    zero walkable neighbours, no dwarf can path to it regardless of the
+    zone.
+  note: >-
+    What this proves: at Uniboslan, the zone was active, all 27 wet tiles at
+    z168 had zero walkable neighbours, and thirst_timer rose in exact
+    lockstep with tick across all 15 citizens over a 6,303-tick window, so
+    zero drinks happened in that window. That supports the necessary
+    direction (no walkable neighbour, no drinking observed) at this one
+    site. It does not prove the converse, that a walkable neighbour is
+    sufficient for drinking to happen: no reachable-water case was measured
+    this way for comparison. It also does not establish this as a general
+    DF mechanic beyond this install; the underlying idea (a unit must be
+    able to stand adjacent to a tile to interact with it) is ordinary
+    pathing logic, not something this project verified from source.
+
+    Status downgraded from `verified` to `prior` by the orchestrator on
+    2026-09-19: the measurements cited are real and stand, but the statement
+    is `scope: universal` while the evidence is one pond at one site, and
+    this entry's own note says it does not establish a general DF mechanic.
+    A universal claim marked verified on single-site evidence is the exact
+    pattern this project keeps catching itself in. The Uniboslan measurement
+    is not in doubt; its generality is.
+
+- id: sunken-basin-recognition
+  scope: universal
+  status: prior
+  topics: [water, drink]
+  sources:
+    - kind: live-read
+      ref: >-
+        Uniboslan tile-shape read, z168 (142 WALL, 26 RAMP, 1 FLOOR, 0
+        walkable; 27 wet tiles) and z169 (134 walkable, 100 FLOOR, 26
+        RAMP_TOP, 0 wet)
+      describes: "53.16"
+      read: opened
+      accessed: 2026-09-19
+  statement: >-
+    Recognise a sunken basin before trying to fix it: at the water's own
+    z-level, every wet tile's shape is WALL or RAMP (no FLOOR), the walkable
+    count at that level is 0, and the z-level directly above has walkable
+    floor with zero wet tiles. That shape means the pond is a submerged bowl
+    ringed by wall with dry ground only one level up. Treat it as a well
+    case from the start, not a digging case: see
+    do-not-dig-into-full-basin.
+  note: >-
+    Measured for Uniboslan's one pond only. The tile-shape signature
+    (WALL/RAMP wet tiles, 0 walkable at the water level, walkable dry floor
+    one z above) is what was actually read there; this entry does not claim
+    every sunken-looking pond elsewhere reproduces this exact signature,
+    only that this is what to check for and what it looked like here.
+
+    Status downgraded from `verified` to `prior` by the orchestrator on
+    2026-09-19, for the same reason as `water-source-needs-walkable-
+    neighbour`: one basin observed, universal claim stated. The tile-shape
+    signature is real at Uniboslan and untested anywhere else.
+
+- id: do-not-dig-into-full-basin
+  scope: universal
+  status: prior
+  topics: [water, drink]
+  sources:
+    - kind: live-read
+      ref: >-
+        Uniboslan, one supervised unpause: Channel designated at z169 on a
+        FLOOR tile with 3 walkable neighbours, above a waterline wall,
+        adjacent to 6/7 water. Before: z168 wet 27, walkable 0. After: z168
+        wet 28, walkable 0.
+      describes: "53.16"
+      read: opened
+      accessed: 2026-09-19
+  statement: >-
+    Opening a tile immediately adjacent to a full body of water at the
+    water's own z-level does not create a standing spot there; the newly
+    opened tile fills with water and becomes wet, not walkable. Do not dig a
+    channel or ramp directly into a full basin to make a place to stand at
+    water level. If a basin has no walkable neighbour tile (see
+    sunken-basin-recognition), the remedy is a well, which draws water
+    upward from a dry tile above, not a dig at the water's own level.
+  note: >-
+    What this proves: one channel dig, at one site, into one full basin,
+    produced more water and no new walkable tile (wet 27 to 28, walkable
+    unchanged at 0). It does not prove no dig anywhere could ever reach this
+    basin or one like it, for example a stairway or a differently shaped cut
+    landing beside the water rather than opening straight into it was not
+    tried. It only establishes that this specific approach (open the tile
+    that touches the water, at the water's level) fails, and fails by
+    becoming more water rather than by simply not completing.
+
+    Status downgraded from `verified` to `prior` by the orchestrator on
+    2026-09-19. This one rests on **a single dig of a single shape**, and
+    the stream that wrote it said so plainly in its own report: only one dig
+    shape was tested, so no conclusion follows about digs in general. The
+    observation (channel dug, wet 27 to 28, walkable still 0) is exact and
+    stands as evidence; the universal prohibition does not follow from it
+    yet.
 
 - id: do-not-overfish
   scope: universal
@@ -782,3 +928,92 @@
     within a day. The one observation that unblocks this is cheap: read a
     planted crop's grow_counter at two known ticks and watch when it becomes
     harvestable.
+
+- id: brewing-chain-from-raws
+  scope: universal
+  status: verified
+  topics: [drink, food, material]
+  sources:
+    - kind: game-data
+      ref: >-
+        data/vanilla/vanilla_reactions/objects/reaction_other.txt lines
+        265-281, REACTION:BREW_DRINK_FROM_PLANT, pulled read-only from VM 103
+        on 2026-09-19 and read in full
+      describes: "53.16"
+      read: opened
+      accessed: 2026-09-19
+  statement: >-
+    Brewing on this install is one plant plus one container, giving **five
+    drinks and one seed**. The reaction is `BREW_DRINK_FROM_PLANT` at the
+    STILL, skill BREWING. The plant reagent must carry
+    `HAS_MATERIAL_REACTION_PRODUCT:DRINK_MAT` and must be `UNROTTEN`. The
+    container reagent is `EMPTY` plus `FOOD_STORAGE_CONTAINER`, described in
+    the raws as "barrel or any non-absorbing tool with FOOD_STORAGE", so **it
+    need not be a wooden barrel**: a rock pot qualifies. The container carries
+    `PRESERVE_REAGENT`, so it is occupied rather than consumed, and is freed
+    when the drink is drunk rather than when brewing finishes. Products are
+    `5 DRINK` (with `PRODUCT_TO_CONTAINER` and `PRODUCT_DIMENSION:150`) and
+    `1 SEEDS`.
+  note: >-
+    Two consequences worth acting on. **Brewing returns a seed**, so it does
+    not draw down seed stock the way cooking does, which makes it strictly
+    preferable to cooking under `seed-stock-never-falls` and
+    `never-cook-seed-items`. And the **five-to-one yield** means a small plant
+    stock goes much further than a raw count suggests: eight plants is up to
+    forty drinks, not eight. This entry records the reaction only. Whether a
+    brewed drink satisfies thirst is a separate claim and is **not** verified
+    here; see `alcohol-is-not-food`, which is still `prior` on an unrecorded
+    wiki read.
+
+- id: plump-helmet-is-brewable
+  scope: universal
+  status: verified
+  topics: [drink, food, farming]
+  sources:
+    - kind: game-data
+      ref: >-
+        data/vanilla/vanilla_plants/objects/plant_standard.txt, the
+        MUSHROOM_HELMET_PLUMP block, line 13:
+        [MATERIAL_REACTION_PRODUCT:DRINK_MAT:LOCAL_PLANT_MAT:DRINK], and line
+        14 the matching SEED_MAT
+      describes: "53.16"
+      read: opened
+      accessed: 2026-09-19
+  statement: >-
+    Plump helmet carries `MATERIAL_REACTION_PRODUCT:DRINK_MAT`, so it
+    satisfies the one reagent condition `BREW_DRINK_FROM_PLANT` imposes on its
+    plant, and is brewable on this install. It also carries `SEED_MAT`, which
+    is what the reaction's seed product resolves through.
+  note: >-
+    Checked because the brew route for Uniboslan's thirst crisis rests
+    entirely on it and it was one grep. This is the specific condition that
+    could have failed silently: a plant without `DRINK_MAT` is simply not a
+    valid reagent, and the failure would have shown up as a job that never
+    starts rather than as an error. Recorded so the next reader does not have
+    to re-derive it. See `brewing-chain-from-raws`.
+
+- id: brew-before-plants-run-out
+  scope: universal
+  status: prior
+  topics: [drink, food]
+  sources:
+    - kind: user
+      ref: >-
+        The user, 2026-09-19, on Uniboslan's drink position: "they need
+        drinks ready before the plants go"
+      describes: unknown
+      read: opened
+      accessed: 2026-09-19
+  statement: >-
+    Keep a drink stock brewed ahead of need, rather than brewing only once
+    the fort is already thirsty and the plant stock is nearly spent.
+  note: >-
+    Recorded as the user stated it, deliberately not sharpened into a
+    number: no cover target exists yet (`cover-target-not-yet-settable`),
+    because the harvest clock is not computable. What makes the rule bite
+    on this install is `brewing-chain-from-raws`: one plant brews to five
+    drinks and returns a seed, so a plant lost to rot before brewing costs
+    five drinks. What eating a plant raw yields (and whether it returns a
+    seed) is **not checked here** and should not be assumed either way; an
+    earlier draft of this note asserted "no seed" without evidence and was
+    corrected before commit.

@@ -106,6 +106,17 @@ findings without another doc home yet.
   trustworthy fort-defense signal** — proven wrong in both directions the
   same day it was tested. Treat its output as "worth a second look," never
   as "confirmed safe" or "confirmed hostile" on its own.
+- **A `WaterSource` zone reading `spec_sub_flag.active = true` says nothing
+  about whether any dwarf can actually reach the water.** Uniboslan's zone
+  read active the whole time while `thirst_timer` rose in exact lockstep
+  with tick across all 15 citizens (delta tick 6,303 = delta thirst 6,303),
+  meaning zero drinks. The pond is a sunken basin: zero walkable tiles at
+  the water's own z-level, and all wet tiles there have zero walkable
+  neighbours. Active tells you the zone exists on water, not that a dwarf
+  can stand next to it. The real check is a thirst-timer delta across two
+  reads, not the zone's own flag. See `doctrine/seed.yaml`
+  (`water-source-needs-walkable-neighbour`) and `docs/PRODUCTION-MODEL.md`
+  §12.
 
 ---
 
@@ -467,3 +478,30 @@ throughout, no file was written, no designation or struct write happened.
   skip an optional slot once a later one is given.
 - **`mcp==2.2.0`'s `streamable_http_client`** takes `http_client=` (a built
   client), not `headers=`, and yields a 2-tuple.
+
+## DFHack command execution is not safely concurrent, and the watchdog is not exempt
+
+**Found 2026-09-19, the hard way.** An unbounded full-map diagnostic query run
+against the live DFHack process **wedged its command pipe for over ten
+minutes**. Critically, the wedge took the **remote watchdog's own pause call
+with it**, so the supervised-unpause safety net failed in precisely the
+situation it was built for. Recovery needed `systemctl stop`, `kill -9` and a
+restart.
+
+**Two rules, and the second matters more than the first:**
+
+1. **Never run an unbounded query against a live DFHack process.** Every read
+   must be bounded and targeted: a specific item vector, a specific unit list,
+   a specific building. No full-map sweeps, no open-ended scans. If a
+   diagnostic needs the whole map, it needs a paused fort and a bounded loop,
+   not one big query.
+2. **Quicksave immediately before any live fort action, and verify it wrote**
+   by checking the save directory mtime. The incident above cost **22,000
+   ticks** (the `WaterSource` zone, the first farm plot, a stair designation)
+   **not because of the wedge, but because the most recent quicksave was three
+   days old.** The cost of an incident is set by the age of the last save, not
+   by the severity of the incident.
+
+If DFHack stops responding, **attempt a quicksave before escalating** to stop
+or kill. If that is impossible, escalate anyway, because regaining control is
+correct, but say so in the report.
