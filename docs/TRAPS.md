@@ -116,8 +116,8 @@ or against this install's own raw files
 (`research/2026-09-18-schema-extraction-static.md`); the fort stayed paused
 throughout, no file was written, no designation or struct write happened.
 
-- **The forbidden-item flag is `item.flags.forbid`, not `forbidden`** —
-  guessing the obvious name errors outright (`forbidden` is not a field on
+- **The forbidden-item flag is `item.flags.forbid`, not `forbidden`.**
+  Guessing the obvious name errors outright (`forbidden` is not a field on
   this build). 218 of 1325 items on Uniboslan carry it.
 - **Unconsciousness lives in `unit.counters`, not `counters2`.** `counters2`
   holds the timers (`hunger_timer`, `thirst_timer`, `sleepiness_timer`,
@@ -139,14 +139,14 @@ throughout, no file was written, no designation or struct write happened.
   entirely and leaves nothing structural behind.
 - **`building.profile.max_general_orders` read 5 on this install**, not the
   wiki's widely-repeated 10. One incomplete sample (the fort's only
-  workshop, never finished construction) — record as a discrepancy to
+  workshop, never finished construction), record as a discrepancy to
   re-check against a completed or different workshop kind, not as a settled
   figure.
 - **42% of reaction product lines inherit their material from a reagent**
   (`GET_MATERIAL_FROM_REAGENT`, 67 of 163 `[PRODUCT:...]` lines across the
   four shipped reaction files, plus one line inheriting the item type too
   via `GET_ITEM_DATA_FROM_REAGENT`), so a concrete item id cannot be read
-  off a reaction line alone — this covers every food/drink/seed reaction
+  off a reaction line alone. This covers every food/drink/seed reaction
   this project's doctrine cares about (brewing, mead, plant-to-bag).
   Anyone parsing raws for a specific output needs the material-side join
   (the reagent's class filter against every material declaring a matching

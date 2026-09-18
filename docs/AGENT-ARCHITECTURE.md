@@ -392,7 +392,7 @@ today. → `decisions/DECISIONS.md` 2026-09-17.
   **code produces the priced choice set** (the blocker walk, the diagnostic
   ladder, route pricing where figures exist) **while an agent supplies
   judgement about targets** (the material-policy bands in
-  `doctrine/seed.yaml`, §10 there — reserve floors, par levels, cover days,
+  `doctrine/seed.yaml`, §10 there: reserve floors, par levels, cover days,
   which is discretionary versus liability). The Quartermaster's strategy
   proposals are exactly the target-setting half; the priced choice set is
   never something an agent computes by hand.

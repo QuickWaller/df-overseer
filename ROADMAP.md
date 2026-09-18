@@ -432,7 +432,7 @@ or `decisions/DECISIONS.md`, not here.
   crop can be cooked without seed stock falling). Seeded first from the
   install's own raws (version-exact), then from research, then from the
   fort's own measurements. Complements the wiki lookup, does not replace it.
-  **UPDATED 2026-09-18: this is now a real design, not a sketch** — see the
+  **UPDATED 2026-09-18: this is now a real design, not a sketch**, see the
   Now-bucket production-model item above; the design's own `status`/
   `source_ref` columns are this item's prior/verified vocabulary, made
   concrete. → `decisions/DECISIONS.md` 2026-09-17 "Game figures belong in a
