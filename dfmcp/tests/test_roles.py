@@ -113,6 +113,24 @@ def test_water_and_industry_tools_follow_the_farm_find_pairing(registry):
         assert not architect.allows(write_id), f"architect must not hold {write_id}"
 
 
+def test_stocks_availability_follows_the_stocks_food_drink_pairing(registry):
+    """handoffs/2026-09-19-per-item-flags-tool.md: a read tool, so it
+    follows stocks.food-drink/stocks.seeds' existing precedent of being
+    granted to BOTH advisory roles (unlike openarea.find/diggable.find,
+    which are Architect-only per the test above) -- the Overseer needs to
+    read its own build's own precondition (a stalled water/bucket job) just
+    as much as the Architect needs it to write a proposal. This stream did
+    not touch agents/consultant/tools.yaml (not in its touched surfaces),
+    so that role is not asserted here."""
+    roster = load_roster(registry)
+    overseer = roster.roles["overseer"]
+    architect = roster.roles["architect"]
+
+    assert overseer.allows("stocks.availability")
+    assert architect.allows("stocks.availability")
+    assert registry.get("stocks.availability").mutates is False
+
+
 def test_check_returns_legible_reasons(registry):
     roster = load_roster(registry)
 

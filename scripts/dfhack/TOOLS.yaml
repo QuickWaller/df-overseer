@@ -1037,6 +1037,110 @@ df-overseer-stocks.lua:
         today, not a property of the SEEDS item type in general, which is
         exactly why this tool reports both rather than assuming the
         equality holds.
+    "availability TYPE":
+      lua_function: get_availability
+      effect: read
+      coordinate_bearing: false
+      live_deployed: false
+      verified: unverified
+      knowledge_scope: player_derivable
+      # player_derivable, not player_visible, same reasoning as food-drink/
+      # seeds above: each per-item fact this aggregates (forbidden tag,
+      # in-job/claimed status, an ownership tag) is individually visible on
+      # the vanilla stocks/item-viewer screens, but the netted aggregate is
+      # a computation over them, not itself one screen.
+      notes: >
+        ADDED handoffs/2026-09-19-per-item-flags-tool.md, an OFFLINE build
+        stream: no VM, no DFHack process, no deploy, so this command is
+        UNVERIFIED BY EXECUTION, not merely "not yet redeployed" like
+        food-drink/seeds above -- it has never been run at all. Everything
+        below is static reasoning plus reuse of already-verified
+        primitives from this same file, stated as such, not as a live
+        result.
+
+        Closes the gap handoffs/2026-09-19-snapshot-assembler.md's
+        write-up named: `count_bucket`/`count_fort_owned` (this file,
+        `df-overseer-well.lua`, `df-overseer-workshop.lua`) all fold
+        straight to `units`/`item_count` sums, so no per-item record ever
+        reaches a caller for `production/snapshot.py`'s already-built
+        `stock_from_items`/`items_for_cover` path to net further, even in
+        principle -- of docs/PRODUCTION-MODEL.md sec7's four deductions
+        (`in_job`, `owned`+`UNIT_HOLDER`, `forbid`, `trader`), only
+        `trader` was reachable from any shipped tool. Motivating case: the
+        fort held 3 empty, unforbidden, unclaimed BUCKET items and still
+        logged "Give water: Need empty bucket" (tick 214135) -- a
+        totals-only read (well.lua's `fort_owned.BUCKET: 3`) cannot
+        distinguish that from "0 exist," "3 exist but all job-claimed," or
+        "3 exist but all forbidden," which are four different fixes (wait,
+        make one, raise priority, unforbid).
+
+        TYPE is any `df.global.world.items.other` key -- BUCKET (the
+        motivating case), DRINK/FOOD/ANY_EDIBLE_RAW/SEEDS (this file's own
+        other buckets, now netted one flag further), CHAIN/BLOCKS/
+        TRAPPARTS (well.lua's other three well materials). An unresolved
+        TYPE returns `{error: ...}` (dfmcp/server.py's exact-shape rule
+        surfaces this as `isError`), never a silently-empty result --
+        matching `production/snapshot.py`'s own `UnknownNodeError`
+        convention, per this stream's own handoff ("Unknown node ids are
+        an error, not a silent skip").
+
+        `trader` reuses `is_fort_owned`, THIS FILE'S OWN ALREADY-VERIFIED
+        predicate (food-drink verified 2026-09-16, mechanism-level;
+        untouched by this addition, so that verification is not
+        invalidated). `in_job`/`forbid`/`owned` are the three new
+        deductions, each read through a new `checked_flag` helper that
+        treats a raised read (docs/TRAPS.md: `item.flags.forbidden`
+        "errors outright" live on this install -- `forbid` is the real
+        name) AND a non-boolean silent return AS THE SAME HONEST FAILURE,
+        never as `false` -- the exact "0 of 15 for a token that does not
+        exist" failure mode this project has shipped once before, this
+        time asserted against rather than trusted. An item whose flag
+        can't be checked is tallied under `unnetted_units`/
+        `unnetted_item_count`, never folded into `available_units`, and
+        the flag's name is added to the result's own `flag_read_errors`
+        list once.
+
+        `owned` IS SHIPPED HALF-CHECKED, AND SAYS SO IN ITS OWN OUTPUT.
+        docs/PRODUCTION-MODEL.md sec7 requires `item.flags.owned` PLUS the
+        item's own `UNIT_HOLDER` general_ref as confirmation, not the flag
+        alone. `checked_unit_holder_ref` calls
+        `dfhack.items.getGeneralRef(item, df.general_ref_type.UNIT_HOLDER)`
+        -- the same class of call this file's own header already
+        describes using, live, to confirm `flags.trader` against a real
+        merchant unit -- but that exact call, for UNIT_HOLDER, has never
+        run from any COMMITTED code in this repo; the only precedent is an
+        uncommitted ad hoc `dfhack-run lua` probe in a chat session
+        (`df-overseer-orders.lua`'s own header, tick 227160: "3 fort-owned
+        ... unclaimed, no holder"). Every result this command returns
+        therefore carries `owned_ref_check.verified_offline: false`
+        unconditionally, per this stream's own handoff ("if you cannot
+        confirm the ref lookup offline, say so and leave it flagged rather
+        than shipping a half-check that reads as authoritative") -- read
+        `owned_units` as "flagged owned," not as an independently
+        confirmed live dwarf claim, until a live run flips that flag from
+        outside this file.
+
+        Output per call: `type`, `total_units`/`total_item_count`
+        (fort-owned, i.e. today's existing food-drink/seeds/well/workshop
+        base -- trader/garbage_collect/removed/hidden-tile already netted
+        out), `available_units`/`available_item_count` (fully netted, all
+        four deductions), `unnetted_units`/`unnetted_item_count` (a flag
+        read failed, availability genuinely unknown), `in_job_units`/
+        `forbid_units`/`owned_units` (+`_item_count` each) as the per-flag
+        breakdown the handoff asked for, `owned_ref_check` (see above),
+        `trader_units`/`trader_item_count` (mirrors food-drink's
+        `foreign_units` but scoped to this one type), `rotten_units`/
+        `unreachable_units` (reused unchanged from count_bucket), and
+        `flag_read_errors` (a list of flag names, empty when every read
+        succeeded).
+
+        NOT DONE THIS STREAM, and deliberately: no live run (offline
+        stream, VM 103 owned by a parallel stream this session), no change
+        to `production/snapshot.py` (out of this stream's touched
+        surfaces; a consuming change is described in the handoff's
+        write-up instead of made), and no attempt to make
+        `owned_ref_check.verified_offline` true from inside this file --
+        only a live-run write-up can do that honestly.
 
 df-overseer-labor.lua:
   build_order_item: "not in the 0-9 spatial build order -- a separate gap, decisions/DECISIONS.md 2026-09-11"
