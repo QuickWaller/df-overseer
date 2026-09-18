@@ -263,3 +263,20 @@ a 300s window. Goal: let the z166 stone dig run (real boulders, this time),
 the re-designated Still complete, and the 80 marked plants start getting
 gathered.
 
+Progress, checked at intervals within the window:
+- By tick 314606: **BOULDER total_units 1** -- z166 really is stone, first
+  real boulder mined.
+- By tick 317216: **the re-designated Still completed** (`buildings.all` now
+  includes id 4, `Workshop`/`Still`, `exists=true`) -- this time the build
+  succeeded. **WOOD stayed at 3/3 available afterward**, so DF actually used
+  a boulder for it, not a log; the earlier wood-specific cancellation
+  (section 3) is not re-explained by this, just not repeated.
+- By tick 318945: **BOULDER 3/3 available**. Built both remaining workshops
+  immediately, spending boulders instead of wood to keep all 3 logs in
+  reserve: `workshop.build 3 3 -1 "Embark Site" mason starter-mason-3x3.csv
+  1 20 false` and `... mechanic starter-mechanic-3x3.csv 1 20 false`, both
+  `quickfort_ok: true`. Citizens with the relevant labour had risen to 2
+  (MASON) and climbed further (5, then 3) for MECHANIC over the window,
+  autolabor reassigning on its own, no hand-set labour used anywhere in this
+  stream.
+
