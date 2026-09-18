@@ -767,6 +767,29 @@ def pass1(
             }
             reaction_has_product = len(reaction["products"]) > 0
 
+            # Real-corpus finding, 2026-09-19: MAKE_MEAD's product line
+            # (real: `[PRODUCT:100:5:DRINK:NONE:GET_MATERIAL_FROM_REAGENT:
+            # honey:DRINK_MAT]`) names a token, DRINK_MAT, that IS a real
+            # entry in material_reaction_products -- but only because 16
+            # unrelated PLANTS happen to declare that same token name. The
+            # "honey" reagent it actually names
+            # (`[REAGENT:honey:150:LIQUID_MISC:NONE:CREATURE_MAT:
+            # HONEY_BEE:HONEY]`) has no HAS_MATERIAL_REACTION_PRODUCT flag
+            # at all -- it is a FIXED creature material, and this corpus
+            # has no creature files to resolve what DRINK_MAT means on
+            # honeybee honey (not pulled down for this stream). Before this
+            # fix, pass2 matched purely by token *name*, so MAKE_MEAD
+            # spuriously materialised into 16 plant-flavoured "mead" nodes
+            # it has no real connection to -- every one stamped
+            # verified_raws. Recording, per reagent name, which mechanism
+            # actually resolved its class lets pass2 refuse to join a
+            # parametric product against material_reaction_product unless
+            # the reagent it names was ACTUALLY filtered via
+            # HAS_MATERIAL_REACTION_PRODUCT (the only mechanism that join
+            # table's rows are ever sourced from) -- not merely happens to
+            # share a token string with one that was.
+            reagent_mechanism_by_name: dict[str, str | None] = {}
+
             for reagent in reaction["reagents"]:
                 flags = {f[0] for f in reagent["flags"]}
                 preserve = "PRESERVE_REAGENT" in flags
@@ -778,6 +801,8 @@ def pass1(
                     product_to_container_target=is_target,
                 )
                 class_name, mechanism, container_class = _reagent_class(reagent)
+                if reagent["name"] is not None:
+                    reagent_mechanism_by_name[reagent["name"]] = mechanism
                 flows.append({
                     "process_id": reaction["id"], "direction": schema.REAGENT,
                     "node_id": class_name, "quantity": _to_int(reagent["quantity"]),
@@ -864,6 +889,13 @@ def pass1(
                         flow["_mat_source_token"] = mat_args[1] if len(mat_args) > 1 else None
                     flow["_item_type"] = effective_item_type
                     flow["_subtype"] = None if item_data_in_item_type_slot else product["subtype"]
+                    # See the MAKE_MEAD comment above `reagent_mechanism_by_
+                    # name`: only a reagent actually filtered via HAS_
+                    # MATERIAL_REACTION_PRODUCT is a legitimate target for
+                    # pass2's material_reaction_product join.
+                    flow["_mat_source_mechanism"] = reagent_mechanism_by_name.get(
+                        flow["_mat_source_reagent"]
+                    )
                 flows.append(flow)
 
     return {
@@ -917,10 +949,20 @@ def pass2(pass1_result: dict) -> dict:
             continue
 
         token = flow.get("_mat_source_token")
+        # Real-corpus finding, 2026-09-19 (MAKE_MEAD): matching by token
+        # NAME alone is not enough -- a token can coincidentally collide
+        # with one from a completely unrelated material family. Only join
+        # if the reagent this product actually names was itself filtered
+        # via HAS_MATERIAL_REACTION_PRODUCT (see pass1's
+        # `reagent_mechanism_by_name`); otherwise the material is fixed
+        # elsewhere (a creature file this corpus doesn't have, for
+        # MAKE_MEAD's honey) and no amount of token-matching against the
+        # plant corpus can honestly resolve it.
+        eligible = flow.get("_mat_source_mechanism") == schema.MECH_MATERIAL_REACTION_PRODUCT
         matches = [
             r for r in mrp_rows
             if r["token"] == token and r["token_family"] == schema.FAMILY_MATERIAL_REACTION_PRODUCT
-        ] if token else []
+        ] if (token and eligible) else []
 
         clean = {k: v for k, v in flow.items() if not k.startswith("_")}
         item_type = flow.get("_item_type")
