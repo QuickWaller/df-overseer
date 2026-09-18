@@ -124,6 +124,19 @@ design settles.
 Moved to `working-archive/Working_archive-2026-09-14.md` on 2026-09-19: every
 stream it dispatched finished. Design lives in `docs/PRODUCTION-MODEL.md`.
 
+## The visual ledger (artifact)
+
+**https://claude.ai/artifact/NK1FMkcA1ev9Wvcas6SBpD** (published 2026-09-19).
+The fort's state, the production model's build status, the four quadrants, the
+lever table, the four deductions, and a two-route diagram of the well versus
+brew chains. **It exists to keep measured facts visibly separate from asserted
+ones**, and carries the "things this project got wrong" list deliberately.
+
+The **earlier** artifact (`CQZHQDLRB7hRHWLqYrfmY5`) was published under a
+different account and **can no longer be updated from this session**. Do not
+try; publish to the URL above instead. Republishing the same scratchpad file
+path keeps that URL.
+
 ## Live fort state, read-only, 2026-09-18 at tick 227160 (paused)
 
 Read directly this session. **This corrects two claims I made earlier today.**
