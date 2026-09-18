@@ -1192,3 +1192,43 @@ fort-owned `FISH` (flagged `foreign=true`) are the vanilla default "Play
 Now!" embark ration (wiki: 15 units, 3 stacks of 5, one barrel) minus one
 eaten stack — not evidence of a past catch. → `doctrine/seed.yaml`
 `uniboslan-fishing-untouched`, `decisions/DECISIONS.md` 2026-09-17.
+
+## Current state, 2026-09-15: the agent loop is reaching the fort, and the channel exists
+
+The 2026-09-12 to 09-14 section (the agent architecture design phase, the
+MCP server build, its first contact with reality, openclaw's install and the
+first agent calls) moved wholesale to
+[`working-archive/Working_archive-2026-09-14.md`](working-archive/Working_archive-2026-09-14.md).
+Everything below is what is still open.
+
+**Where things stand.**
+- **The server:** `dfmcp-server.service` runs on VM 103, LAN-bound, with
+  bearer tokens as the only guard until Tailscale. It is live-verified with
+  relative `level` args, `isError` for script errors, and a JSON tool-call
+  log in journald.
+- **The agent host:** openclaw on VM 106 has run the architect three times as
+  a one-shot `agent exec` on DeepSeek. VM 106 went dark after run #3 and was
+  rebuilt in place 2026-09-15. openclaw is reinstalled and now hosts two agents,
+  architect and overseer, with both MCP tokens in place (2026-09-16).
+- **Incident capture** (guest agent, persistent journal, per-minute netwatch
+  dump on gateway loss) is live on VMs 103 and 106 since 2026-09-15. A new
+  clone needs `provision_vm.py setup-capture --vmid N` run by hand. **Why
+  VM 106 went dark on 2026-09-14 is still not established**; the capture is
+  there to record it if it recurs (`docs/RUNBOOK-DARK-GUEST.md`).
+- **The queue is live** (2026-09-15): `queue.propose`/`pass` (architect) and
+  `queue.rule`/`pending` (Overseer) on VM 103, DB under `/var/lib/dfmcp`.
+  It holds one real record, `proposal-0001` from architect run #3, with a
+  pending prediction (`due_game_tick` 12276077), accepted by the Overseer
+  2026-09-16. No grader runs on a schedule; its window is blown regardless
+  (see the facts section below) and it is left ungraded on purpose. The fort
+  has since been unpaused several times for supervised tests (2026-09-17,
+  see the HANDOVER below) and is paused again now.
+  → register 2026-09-15 rows,
+  `handoffs/2026-09-15-queue-live-deploy.md`.
+- **Saves:** under the `df` user's XDG data dir on VM 103 (`Bay 12 Games/
+  Dwarf Fortress/save`), **not** the game directory: slots `autosave 1..3`,
+  `current`, `region1`, `region2`. Two quicksaves wrote `autosave 2` and
+  `autosave 3` on 2026-09-15; `quicksave` rotates slots and needs a render
+  pass, so it can silently do nothing (memory/fort-operations-and-incidents).
+- **Tests:** ambient `python -m pytest` gives 306 passed, 1 skipped;
+  `.venv-dfmcp` gives 165 for `dfmcp/tests` (register 2026-09-17 figures).
