@@ -1232,3 +1232,50 @@ Everything below is what is still open.
   pass, so it can silently do nothing (memory/fort-operations-and-incidents).
 - **Tests:** ambient `python -m pytest` gives 306 passed, 1 skipped;
   `.venv-dfmcp` gives 165 for `dfmcp/tests` (register 2026-09-17 figures).
+
+## In flight: production model designed, audited, and four streams dispatched (2026-09-18)
+
+**Design is settled on paper and nothing is built.** Six register rows dated
+2026-09-18 carry the decisions; the diagrams are in an artifact (URL in the
+session, not committed). Read `research/2026-09-18-production-graph.md` for
+the formalism and `research/2026-09-18-production-figures.md` for the figures
+before touching any of it.
+
+**The short version:** a directed hypergraph in plain SQLite, **seven** tables
+(`production_node`, `_class`, `material_reaction_product`, `_process`,
+`_flow`, `_attribute`, `_observation`). A node is an item type crossed with a
+material; processes consume classes and produce specifics, so routes are
+generated rather than authored, and the join table plus a two-pass extraction
+exist because 42% of product lines inherit their material at job time.
+**Four** consumption semantics (consumed, occupied for the job, occupied until
+released, modified in place), because a barrel is freed by drinking rather
+than by brewing, and the glaze reactions have no product row at all. The
+static graph is placeless: move, install and trade are all generated at query
+time. Material policy is banded and lives in **doctrine**, not in the graph,
+which is what removes the need for a solver cost vector.
+
+**The rule that governs all of it:** four quadrants, and quadrant 4
+(happiness effects, interruption behaviour, time lost to needs) never enters a
+formula, only appears as an unattributed residual. Demand is exact, supply
+capacity is not, so every question is posed from the demand side.
+
+**Both feasibility audits are in** (`research/2026-09-18-schema-extraction-
+static.md`, `-live.md`) and the spec is corrected from them. Headlines: node
+identity needed a material join table and a two-pass extraction because 42% of
+product lines inherit their material; `consumption` needed a fourth value;
+the observation key had to become an absolute tick because
+`ReadCurrentTick()` resets annually. Nine of twelve live facts are exactly
+readable, job claims are a plain flag, and cancellation announcements turned
+out to be a lossy hint rather than a shortcut.
+
+**Four build streams dispatched 2026-09-18**, no two sharing a file:
+- **Doctrine** — **DONE and merged.** Six `prior` entries, new `material`
+  topic, 307 passed / 1 skipped.
+- **Lever-gap tools** — `orders.create` learns a `bucket` job and friends;
+  new `stockpile list`/`links`. Deploys to VM 103, dry runs only.
+- **`production/` package** — seven tables, two-pass extraction, offline.
+- **Doc drift pass** — seven new traps from the audits, plus `ROADMAP.md`,
+  `AGENT-ARCHITECTURE.md`, `MEMORY-ARCHITECTURE.md`, `CLAUDE.md` status.
+
+
+**Archived 2026-09-19.** Every stream this section dispatched finished: doctrine, lever-gap tools, the `production/` package and the doc drift pass, plus the blocker walk and the days-of-cover calculator. The design it summarises lives in `docs/PRODUCTION-MODEL.md`; the decisions are in `decisions/DECISIONS.md` dated 2026-09-18.

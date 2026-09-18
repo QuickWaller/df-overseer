@@ -119,51 +119,12 @@ design settles.
 **Next concrete step:** continue the design conversation with the user from
 "which revisions count as learning revisions".
 
-## In flight: production model designed, audited, and four streams dispatched (2026-09-18)
+## Archived: production model designed, audited, four streams dispatched (2026-09-18)
 
-**Design is settled on paper and nothing is built.** Six register rows dated
-2026-09-18 carry the decisions; the diagrams are in an artifact (URL in the
-session, not committed). Read `research/2026-09-18-production-graph.md` for
-the formalism and `research/2026-09-18-production-figures.md` for the figures
-before touching any of it.
+Moved to `working-archive/Working_archive-2026-09-14.md` on 2026-09-19: every
+stream it dispatched finished. Design lives in `docs/PRODUCTION-MODEL.md`.
 
-**The short version:** a directed hypergraph in plain SQLite, **seven** tables
-(`production_node`, `_class`, `material_reaction_product`, `_process`,
-`_flow`, `_attribute`, `_observation`). A node is an item type crossed with a
-material; processes consume classes and produce specifics, so routes are
-generated rather than authored, and the join table plus a two-pass extraction
-exist because 42% of product lines inherit their material at job time.
-**Four** consumption semantics (consumed, occupied for the job, occupied until
-released, modified in place), because a barrel is freed by drinking rather
-than by brewing, and the glaze reactions have no product row at all. The
-static graph is placeless: move, install and trade are all generated at query
-time. Material policy is banded and lives in **doctrine**, not in the graph,
-which is what removes the need for a solver cost vector.
-
-**The rule that governs all of it:** four quadrants, and quadrant 4
-(happiness effects, interruption behaviour, time lost to needs) never enters a
-formula, only appears as an unattributed residual. Demand is exact, supply
-capacity is not, so every question is posed from the demand side.
-
-**Both feasibility audits are in** (`research/2026-09-18-schema-extraction-
-static.md`, `-live.md`) and the spec is corrected from them. Headlines: node
-identity needed a material join table and a two-pass extraction because 42% of
-product lines inherit their material; `consumption` needed a fourth value;
-the observation key had to become an absolute tick because
-`ReadCurrentTick()` resets annually. Nine of twelve live facts are exactly
-readable, job claims are a plain flag, and cancellation announcements turned
-out to be a lossy hint rather than a shortcut.
-
-**Four build streams dispatched 2026-09-18**, no two sharing a file:
-- **Doctrine** — **DONE and merged.** Six `prior` entries, new `material`
-  topic, 307 passed / 1 skipped.
-- **Lever-gap tools** — `orders.create` learns a `bucket` job and friends;
-  new `stockpile list`/`links`. Deploys to VM 103, dry runs only.
-- **`production/` package** — seven tables, two-pass extraction, offline.
-- **Doc drift pass** — seven new traps from the audits, plus `ROADMAP.md`,
-  `AGENT-ARCHITECTURE.md`, `MEMORY-ARCHITECTURE.md`, `CLAUDE.md` status.
-
-### Live fort state, read-only, 2026-09-18 at tick 227160 (paused)
+## Live fort state, read-only, 2026-09-18 at tick 227160 (paused)
 
 Read directly this session. **This corrects two claims I made earlier today.**
 
@@ -214,6 +175,51 @@ that gap rather than closing it.
 schema on paper where they say it cannot be populated, then decide whether
 extraction is worth building before execution exists.
 
+
+### The fort cannot drink, and the pond cannot be dug to (2026-09-18, tick 235668, paused)
+
+**Supersedes the thirst line above.** Measured exactly across two reads: tick
+227160 thirst 23,391; tick 233463 thirst 29,694. **Delta tick 6,303 = delta
+thirst 6,303 across all 15 citizens**, so `thirst_timer` increments exactly 1
+per tick and **nobody drank at all**. Top thirst is now 31,899. The earlier
+"not in danger" reading was wrong: the `WaterSource` zone is active but
+unreachable.
+
+**Why.** The pond is a sunken bowl. Decoded tile shapes: z168 is 142 WALL, 26
+RAMP, 1 FLOOR, **0 walkable**, with 27 water tiles all at least 3 deep and
+**zero water tiles having any walkable neighbour**. z169 above is 134 walkable,
+100 FLOOR, 26 RAMP_TOP, 0 wet.
+
+**Digging does not fix it, proven not assumed.** A ramp was first designated at
+z168; the user corrected the level, and investigation showed z168 has **0
+walkable tiles near the pond**, so no miner could stand there to dig it. It was
+cleared and a Channel designated at z169 on a floor tile with 3 walkable
+neighbours. One supervised unpause with a remote watchdog: designation dug,
+z168 wet went **27 to 28**, z168 walkable stayed **0**. The new tile simply
+flooded. The user reached the same conclusion independently: **go for a well.**
+
+**The well's blocker, from `df-overseer-well find 1 "Activity Zone #1" 20`:**
+a viable site one tile from the zone, water depth 6, not salt, **stagnant
+true** (a well on it gives unhappy thoughts; survivable). Requirements against
+fort-owned stock: **BUCKET 3 and CHAIN 3 present, BLOCKS 0 and TRAPPARTS 0
+absent.** The fort owns 3 logs and 0 boulders, and stone is at z167 behind the
+half-designated stair.
+
+That is a three-deep chain and exactly the shape `production/blocker.py` was
+built to report: drink -> WELL -> BLOCKS + TRAPPARTS -> stone -> stair to z167
+-> not dug.
+
+**Dispatched, not resolved:** `handoffs/2026-09-18-well-unblock.md`. Its first
+task is to settle from this install's own raws whether a mechanism can be made
+from wood, because that single fact chooses between the wood route (3 logs) and
+the stone route (finish the stair, mine, build mason's and mechanic's). Done
+means thirst falling across two reads, not a well existing.
+
+**Also open, unresolved:** the `PlantSeeds` queue drained 25 to 13 with no
+seed-stock change and no plants appearing. The user reports the farm is
+genuinely half-sown and still being sown, so this is a **measurement
+discrepancy in our read**, not a stalled fort. The still's job 366 was
+unsuspended this session; the user reports it reads suspended again.
 ## Current state, 2026-09-15: archived
 
 Moved wholesale to [`working-archive/Working_archive-2026-09-14.md`](working-archive/Working_archive-2026-09-14.md) on 2026-09-18, superseded by
@@ -313,33 +319,48 @@ fort save, the VM itself) still stops and reports. Everything below that was
 previously "needs the user's go-ahead" is now simply sequenced work.
 
 **Sequencing rule while streams are live:** only one stream touches VM 103 or
-the fort at a time. Two `production/**` streams are also mutually exclusive.
+the fort at a time. Two `production/` streams may run together **only** when
+their file ownership is strictly disjoint and each handoff names the other's
+files as forbidden; the blocker-walk and days-of-cover pair had to be
+serialised because both simply claimed `production/**`.
 
-0. **Wait for the lever-gap tools stream, then deploy once.** Deploying from
-   `main` carries the merged `dig-stair` fix along with the new tools, so
-   there is no reason to deploy twice. Reconcile the `ROADMAP.md` /
-   `CLAUDE.md` tool-count mismatch (19/32/4 vs 21/34/4) with the real post-
-   deploy numbers at the same time; the doc drift pass deliberately left it
-   alone because the counts were another stream's surface.
-1. **Then the supervised run**, which is written and waiting:
-   `handoffs/2026-09-18-supervised-run-and-measure.md`. Feeds the fort (25
-   `PlantSeeds` jobs cannot run while paused, and food is down to 8 raw plants
-   for 15 citizens) and settles four known unknowns in one go, including the
-   `growdur` unit that currently blocks the harvest clock. Unsuspend the
-   still's job 366 as part of it: **the suspension question is answered**, it
-   is genuinely DF's `suspend` flag (`susp=true`, verified live today), not an
-   unassigned job.
-2. **`ban-cooking all`: DONE 2026-09-18.** Kitchen exclusions went 110 to
-   1279 (1169 types banned), fort paused at tick 227160 before and after.
-   First enforcement `seed-stock-never-falls` has ever had. Note for the
-   record: 110 exclusions already existed before today and nobody had
+**Three streams are live as of 2026-09-19.** One owns the VM and the fort
+(the well), two are offline and own strictly non-overlapping files under
+`production/`. Do not dispatch a fourth that touches either surface.
+
+0. **The well, and with it the fort's water.** Running:
+   `handoffs/2026-09-19-well-unblock.md`. Gated on settling from this
+   install's own raws whether a mechanism can be made from wood, because that
+   one fact chooses between the 3-log route and the stone route. **Done means
+   thirst falling across two reads**, not a well existing. This stream owns
+   VM 103 until it reports.
+1. **Fill the graph and connect it.** Running, both offline, both
+   worktree-isolated:
+   `handoffs/2026-09-19-real-corpus-extraction.md` (the extractor has never
+   seen real data; 159 real reactions now staged out of tree) and
+   `handoffs/2026-09-19-snapshot-assembler.md` (nobody ever wrote the caller,
+   so the graph has never been pointed at this fort). The second one's proof
+   test is the well chain itself.
+2. **Then the supervised run**, written and waiting:
+   `handoffs/2026-09-18-supervised-run-and-measure.md`. **Now blocked behind
+   the well stream**, because only one stream touches the fort at a time. It
+   settles four known unknowns including the `growdur` unit that blocks the
+   harvest clock, and the still's job 366 goes with it: the suspension
+   question is answered, it is genuinely DF's `susp` flag, verified live.
+3. **The stair may be resolved by the well stream, or not.** If the wooden-
+   mechanism answer is no, the stone route *is* the stair: remove the orphan
+   z167 UpStair designation, designate the merged rank-1 spot, dig it. If the
+   answer is yes, the stair stays outstanding as its own item. Read the well
+   stream's write-up before picking this up.
+4. **`ban-cooking all`: DONE 2026-09-18.** Kitchen exclusions went 110 to
+   1279 (1169 types banned). First enforcement `seed-stock-never-falls` has
+   ever had. For the record: 110 exclusions already existed and nobody had
    recorded why.
-3. **The stair, after the run.** Remove the orphan z167 UpStair designation,
-   then designate the new rank-1 spot for real and dig it. The code fix is
-   merged and rides along with the deploy in item 0.
-4. **Queued and gated, in `handoffs/`:** the days-of-cover calculator and the
-   blocker walk, both waiting on the `production/` package stream and
-   mutually exclusive with each other.
+5. **Done since this list was last written**, so do not go looking for them:
+   the lever-gap tools (deployed, role lists **23/36/4** verified live per
+   role over a real MCP client), the `production/` package, the doctrine
+   material-policy entries, the doc drift pass, the blocker walk and the
+   days-of-cover calculator. Suite is 364 passed / 1 skipped.
 
 **Background on the stair, for whoever picks item 3 up.** Farm and stair
 tools were deployed and live-tested 2026-09-17, tool lists live at 21/34/4,
