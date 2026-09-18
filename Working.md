@@ -233,11 +233,31 @@ moved wholesale to
 [`working-archive/Working_archive-2026-09-14.md`](working-archive/Working_archive-2026-09-14.md).**
 Everything below is today's outcome and what's still open.
 
-**Uniboslan drinks and grows food for the first time.** Paused, tick
+**Uniboslan drinks and grows food for the first time.** **Stale as of
+2026-09-19: it does not drink, and the fort is at tick 235668, not 227008.
+Read the section "The fort cannot drink, and the pond cannot be dug to"
+earlier in this file first.** Paused, tick
 **227008**, year 30, 15 citizens, no deaths, `dwarfmode/Default` focus (no
 dialog up), the last state every stream today independently re-verified
 live before touching anything. Nothing is running right now.
 
+- **SUPERSEDED 2026-09-19, and the contradiction is unresolved. Read this
+  before the bullet below it.** Measurement on 2026-09-19 found delta thirst
+  equalled delta tick exactly across all 15 citizens over 6,303 ticks, so
+  **nobody drank at all** in that window. See the section "The fort cannot
+  drink, and the pond cannot be dug to" earlier in this file. **But the two
+  findings cannot both be right as stated**, and an audit
+  (`research/2026-09-19-unverified-claims-audit.md`, finding 5) flagged it:
+  the bullet below reports three founders demonstrably drinking at z168 and
+  three more catching a `NastyWater` thought, which the 2026-09-19 "zero
+  walkable neighbours" reading would make impossible. **Leading hypothesis,
+  not yet confirmed: the 2026-09-19 reading derived walkability from tile
+  *shape*, and the pond is a bowl of submerged RAMP tiles that dwarves may
+  well traverse.** The right primitive is probably
+  `dfhack.maps.getWalkableGroup`, which `df-overseer-connectivity.lua`
+  already uses. **Until this is settled, treat the well plan as resting on a
+  measurement that may be wrong.** What survives regardless: nobody drank
+  over that window.
 - **Drink is solved, in practice.** Every pond is a sunken basin of 6-7/7
   water at z168 with nowhere dry to stand at the water's own level, which is
   why nobody drank unaided (`research/2026-09-17-founders-not-drinking.md`).
@@ -251,7 +271,7 @@ live before touching anything. Nothing is running right now.
   water (deep enough to drown a poor swimmer), and the water is stagnant
   (health effect of the `NastyWater` thought unverified). A well removes both
   and is no longer urgent. → `decisions/DECISIONS.md` 2026-09-17 rows,
-  `research/2026-09-17-water-source-zone-test.md`.
+  `handoffs/2026-09-17-water-source-zone-test.md`.
   **Correction folded in:** an earlier same-day research pass
   (`research/2026-09-17-pool-reachability.md`) concluded `getWalkableGroup`
   was broken around ramps; its own top-of-file correction note (verified live
