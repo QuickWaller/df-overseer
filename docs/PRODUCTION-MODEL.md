@@ -550,12 +550,36 @@ Two consequences for the design:
   Claim state is only meaningful over a running interval, which makes it the
   one rung of the ladder that a snapshot cannot answer.
 
-`FEED_WATER_WOUNDED` at zero is worth its own note: nobody currently has the
-labour that carries water to an incapacitated dwarf. Whether DF still gates
-"Give water" on that specific labour in 53.16 is **not established**, and a
-real `GiveWater` job did get taken and cancelled by a metalcrafter at tick
-214135, which is weak evidence against a hard gate. Unresolved on purpose
-rather than assumed either way.
+**A correction, and the most instructive error of the day.** An earlier
+version of this section reported `FEED_WATER_WOUNDED` enabled on **zero**
+citizens and drew conclusions from it. That token **does not exist**. The real
+labour is `FEED_WATER_CIVILIANS`, found by a researcher reading DFHack's own
+`df.job.xml`, and on this fort it is enabled on **all fifteen citizens**.
+
+The probe that produced the zero looked up the labour by name, skipped it when
+the name did not resolve, and then printed the untouched counter as `0`. So a
+missing field and a genuine zero were indistinguishable in its output, which
+means the check **could not have detected the thing it was being used to
+claim**. That is the "verify the verification" rule in `CLAUDE.md`, broken by
+this document's own author while writing a document about honest measurement.
+
+Two rules follow, and they belong in any probe this project writes:
+
+- **A lookup that can silently miss must report the miss**, not fall through to
+  a default. The corrected probe prints `TOKEN_DOES_NOT_EXIST` and that is how
+  the error was caught.
+- **`BIND_WOUND` and `DRESS_WOUNDS` do not exist either.** Medical labours on
+  this install are `DIAGNOSE` (18), `SURGERY` (19), `RECOVER_WOUNDED` (24) and
+  `FEED_WATER_CIVILIANS` (23), each enabled on one citizen except the last,
+  which is on all fifteen. Guessing a labour token's name is unreliable in
+  both directions.
+
+**So the water chain has no labour gap at all**, and the doctrine entry's
+"enable it on more than one dwarf" clause is already satisfied fifteen times
+over. The tick-214135 cancellation therefore remains genuinely unexplained:
+not a bucket shortage (three were free), not a labour gap (all fifteen had
+it). Reachability at that moment is the remaining candidate and nothing read
+so far settles it.
 
 ## 14. Build order
 
