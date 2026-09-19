@@ -171,3 +171,23 @@ by direct read (`ReadPauseState() == true`) and `/tmp/watchdog.log`
 ("WATCHDOG PAUSED at tick 372270", fired 03:20:04Z). End of unpause window
 1: **356606 -> 372270**, 15,664 ticks. Net result: no order progressed; the
 hand-set `validated=true` did not unblock any of the three.
+
+Before concluding, checked whether `SHALE` (the boulders' own material,
+`mat_type=0 mat_index=243`) carries the `ECONOMIC` raw flag responsible for
+the still's earlier "non-economic item" cancellation: it does not
+(`CAN_OCCUR_ON_SURFACE`, `SEDIMENTARY`, `SEDIMENTARY_OCEAN_SHALLOW` only),
+so that specific mechanism is ruled out as the cause here. Also checked
+`item_conditions`/`order_conditions` on all three orders: both empty (no
+condition to fail to satisfy), and each workshop's `profile.permitted_workers`
+is empty (unrestricted) with no `blocked_labors` set. No structural
+explanation found; ruled out rather than left unchecked.
+
+### 3. UNPAUSE WINDOW 2: tick 372270 -> in progress
+
+One more window before treating this as settled, since the prior stream's
+own research (`research/2026-09-18-work-orders.md` §1) flagged the
+population/manager question as genuinely unresolved rather than a clean
+yes/no, and 15,664 ticks alone could in principle be a timing artefact
+(citizen availability) rather than a hard block. Watchdog re-armed (400s
+this time), **unpaused at tick 372270** at 03:29:50Z, confirmed by
+immediate read (`ReadPauseState() == false`).
