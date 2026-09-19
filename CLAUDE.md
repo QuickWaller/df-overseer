@@ -77,7 +77,7 @@ learning architecture.
 >   tools: connectivity, landmarks, overview, diff, open-area and diggable
 >   find/build, chokepoints, stuck jobs, labor, farm, workshop, zone, trees,
 >   well, and manager work orders, all live on VM 103. Role tool lists:
->   architect 24, overseer 37, consultant 4 (2026-09-19, deployed and live-verified per role over a real MCP client; `stocks.availability` added to architect and overseer). Closed loops ran for real:
+>   architect 25, overseer 45, consultant 11 (2026-09-20, live-verified per role over a real MCP client, after `doctrine.get`, `series.*` and `workjob` landed). Closed loops ran for real:
 >   Stockpile #2 built, a 41-tile dig completed, a farm plot built and its crop
 >   set,
 >   and a `WaterSource` zone placed, none needing a raw coordinate to reach
