@@ -348,22 +348,22 @@ directed the order: **fix the timer-reset bug, then automatic import, then MCP
 tooling**, and is away. Reset fix and auto-import are running; the MCP stream is
 written and waits on the reset fix.
 
-### RESUME HERE (2026-09-19, written as the session limit ran out)
+### RESUME HERE (2026-09-20)
 
 - **Fort**: well built (id 8), fed, farm rebuilt, 22 alive / 1 starved,
   paused at year 31 tick 103055, autosave and sampler running.
-- **In flight when the session ended**: `handoffs/2026-09-19-deploy-batch.md`.
-  It had deployed and hash-verified 12 files (stocks six-deduction, doctrine,
-  series tools, server.py, tools.yaml) but **had not yet restarted
-  `dfmcp-server`** at its last write-up. Read that handoff's write-up first:
-  if the stream died, the restart plus its checks remain. It confirmed the WAL
-  risk in advance (the unit grants no write to `/var/lib/dfseries`).
-- **Also flagged by it**: the VM's `dfseries/` is stale versus `main` (missing
-  hunger's `reset_to_zero_verified=True`); redeploy it.
-- **Next after that**: brewing (workjob refuses the container reagent by
-  design), an appoint-a-Manager tool, fishing/hunting, finding the fort's
-  unlocated water source, the MCP apostrophe fix. Loop design is tabled by the
-  user.
+- **Deploy batch fully live** (`handoffs/2026-09-19-deploy-batch.md`, incl.
+  its 2026-09-20 follow-up). The WAL block is fixed with one
+  `ReadWritePaths=/var/lib/dfseries` line in `dfmcp-server.service`, and
+  `series.*` was verified live over a real MCP client. `dfseries/` was
+  redeployed, hash-checked twice, with hunger `reset_to_zero_verified=True`
+  confirmed on the VM; the importer ran clean. Revert backups are in
+  `/opt/df/deploy-backup-2026-09-20-{wal,dfseries}/`. Live tool ids are
+  double-underscored (`series__resets`), not dotted.
+- **Stopped here on the user's instruction.** Next, when resumed: brewing
+  (workjob refuses the container reagent by design), an appoint-a-Manager tool,
+  fishing/hunting, finding the fort's unlocated water source, the MCP
+  apostrophe fix. Loop design is tabled by the user.
 
 ### START HERE, in priority order
 

@@ -337,3 +337,155 @@ daemon-reload && sudo systemctl restart dfmcp-server`), after which
 `series.timelines`/`series.resets(unit:192, thirst_timer)` should be
 re-run to confirm the fix actually closes the gap rather than assuming it
 will.
+
+## Follow-up 2026-09-20: WAL fix applied, dfseries redeployed
+
+User explicitly approved both fixes today. Method unchanged: SSH as `df` to
+VM 103 (`DF_VM_IP` from `.env`, CIDR stripped), `sudo -n` for privileged
+steps. Fort state read once at the very start via bounded `dfhack-run lua`
+(`dfhack.world.ReadPauseState()`, `df.global.cur_year`,
+`df.global.cur_year_tick`): **paused, year 31, tick 103055** -- unchanged
+from where the base stream left it.
+
+### Milestone: unit backed up and changed
+
+`/etc/systemd/system/dfmcp-server.service` copied with `sudo -n cp -p` to
+`/opt/df/deploy-backup-2026-09-20-wal/dfmcp-server.service` *before* any
+edit; `sha256sum` on the backup and the still-untouched live file matched
+exactly (`27518e88...939e53`). One line added with `sudo -n sed -i` targeting
+the exact existing `ReadWritePaths=/opt/df/dfmcp-smoke` line and inserting
+`ReadWritePaths=/var/lib/dfseries` immediately after it -- diffed by eye
+against a full `sudo -n cat` afterward: every other line, including both
+`Protect*` lines and `NoNewPrivileges`, is byte-identical to the backup.
+`sudo -n systemctl daemon-reload && sudo -n systemctl restart dfmcp-server`
+came back `active (running)` within 2 seconds; `systemctl show -p NRestarts`
+read `0` five seconds later, confirming no crash-restart loop.
+
+### Milestone: series.* verified live, WAL fix confirmed
+
+Rebuilt the same real-client method as the base stream (`mcp==2.2.0`
+`ClientSession`, run from `/opt/df/dfmcp-smoke/.venv`, overseer bearer token
+read by key from `/opt/df/dfmcp-smoke/.env`'s `MCP_ROLE_TOKEN_OVERSEER`),
+adjusted for two library-surface facts this run discovered by hitting them
+(not guessed): this venv's `mcp` build exposes
+`mcp.client.streamable_http.streamable_http_client` (not the
+`streamablehttp_client` name the base handoff's prose used) taking
+`http_client=` (an `httpx2.AsyncClient`, since this venv vendors `httpx` as
+`httpx2`) rather than a bare `headers=` kwarg, and yields a 2-tuple
+`(read, write)`, not 3. Tool ids on the wire are double-underscored
+(`series__timelines`, `series__resets`, confirmed by a `list_tools()` call
+before guessing), matching the per-role count write-up's own naming, even
+though this doc's prose elsewhere writes them with a dot.
+
+Real output, `series__timelines()`:
+```
+<timelines count="2">
+  <timeline id="tl-20260918T212843Z-991544" start_abs_tick="12368606" first_wall_utc="2026-09-18T21:28:43Z" cutoff_abs_tick="12368606" is_current_tip="false"/>
+  <timeline id="tl-20260918T213057Z-688464" start_abs_tick="12368606" first_wall_utc="2026-09-18T21:30:57Z" cutoff_abs_tick="null" is_current_tip="true"/>
+</timelines>
+```
+`is_error=False`.
+
+Real output, `series__resets(subject="unit:192", metric="thirst_timer")`
+(excerpt; 16 events returned, `anomaly_count="0"`):
+```
+<resets subject="unit:192" metric="thirst_timer" lineage="current"
+  metric_kind="resetting_counter" rate_per_tick="1.0"
+  reset_to_zero_verified="true" event_count="16" anomaly_count="0">
+  <event kind="exact_tick" abs_tick="12373521" from_value="33722.0" to_value="1085.0"/>
+  ... (15 more events) ...
+</resets>
+```
+`is_error=False`, `reset_to_zero_verified=True` in the structured content.
+This is the exact call the base stream's `mcp.shared.exceptions.MCPError:
+unable to open database file` blocked; it now succeeds with real rows,
+confirming the `ReadWritePaths=/var/lib/dfseries` addition was the correct
+and sufficient fix -- no other unit line was touched.
+
+### Milestone: dfseries/ redeployed
+
+`/etc/systemd/system/dfseries-import.service`'s `ExecStart` points at
+`/opt/df/dfmcp-smoke/dfseries` (confirmed by `sudo -n cat` before touching
+anything) -- the one copy the base stream flagged as stale, and the only
+copy on the VM; no second copy exists elsewhere.
+
+`sudo -n systemctl stop dfseries-import.timer` first, confirmed `inactive`
+by `systemctl is-active` right after (exit 3, the normal code for
+"inactive") before any file was copied. Built with
+`git -c core.autocrlf=false archive HEAD dfseries/` locally (this
+workstation defaults to `autocrlf=true`) into a scratchpad tarball,
+extracted locally to `extracted/dfseries/` (17 files: 9 package modules
+plus 8 test files), and a `sha256sum` manifest built from that extraction.
+Existing VM `dfseries/` backed up whole with `sudo -n cp -a` to
+`/opt/df/deploy-backup-2026-09-20-dfseries/` (26 files including its stale
+`__pycache__`, kept as-is for a faithful backup) before any file there was
+touched. Tarball and manifest `scp`'d to the VM, extracted under `/tmp/`,
+`sha256sum -c` run there against the manifest immediately after extraction:
+**all 17 `OK`**. Installed with `sudo -n rm -rf` of the old directory then
+`sudo -n cp -r` of the verified extraction into
+`/opt/df/dfmcp-smoke/dfseries/`, then `sudo -n chown -R df:df`. Re-hashed
+every file at the final installed path and diffed the sorted hash values
+against the original manifest's hashes (the raw `sha256sum -c` line format
+differs cosmetically between the two invocations, `*path` vs `  path`, for
+binary-vs-text mode -- the hash values themselves were compared directly to
+avoid that noise): **all 17 hashes identical**. `file` on every installed
+`.py` file confirmed no CRLF (`Python script, ASCII text executable` for
+every non-empty file, `empty` for `tests/__init__.py`; no "with CRLF line
+terminators" anywhere).
+
+`dfseries-import.timer` restarted with `sudo -n systemctl start
+dfseries-import.timer`; `systemctl is-active` confirmed `active` afterward.
+
+Fix confirmed live with the venv's own python
+(`cd /opt/df/dfmcp-smoke && .venv/bin/python -c ...`, no `PYTHONPATH` needed
+since `-c` mode already puts the current directory on `sys.path`), calling
+`dfseries.metrics.kind_of()` for each of the three metrics and reading
+`.reset_to_zero_verified` directly: **hunger `True`, thirst `True`,
+sleepiness `False`** -- exactly the three-way pattern this redeploy was
+meant to bring over from local `main`. Confirmed byte-for-byte: `diff` of
+the VM's installed `dfseries/metrics.py` (fetched back over SSH) against
+this workstation's own `dfseries/metrics.py` returned no differences.
+
+### Milestone: importer re-verified after redeploy
+
+Ran the importer's own oneshot unit once directly:
+`sudo -n systemctl start dfseries-import.service` (the `.timer`'s companion
+`.service`, safe to run once by hand -- it is the same unit the timer itself
+fires), then `systemctl show dfseries-import.service -p ExecMainStatus -p
+Result`: `ExecMainStatus=0`, `Result=success`. `journalctl -u
+dfseries-import.service -n 20 --no-pager` showed a clean run against the
+newly-deployed code with no traceback.
+
+Per the task's own instruction ("The MCP server may need a restart to pick
+up new `dfseries` code, since it imports at startup"), `sudo -n systemctl
+restart dfmcp-server` was run once more proactively, without first testing
+whether the still-running process was actually stale -- Python module
+imports are cached at process start, so the process from the WAL-fix
+restart earlier in this same follow-up could only have the pre-redeploy
+`dfseries/` code in memory regardless. This is covered by the same restart
+approval as the WAL fix; it is the only additional live-state action this
+follow-up took beyond the two explicitly approved changes. Confirmed
+`active (running)`, `NRestarts=0` five seconds later. `series__timelines`
+and `series__resets(subject="unit:192", metric="thirst_timer")` were then
+re-run once against this fresh process, over the same MCP client method as
+the WAL-fix check: both still returned `is_error=False`, and
+`series__resets` still returned the same 16-event,
+`reset_to_zero_verified=True` result as the first check, confirming the
+running server's view is consistent after the redeploy.
+
+### Fort state, start to finish (follow-up)
+
+Read once at the very start of this follow-up and once at the very end,
+both bounded `dfhack-run lua` calls (pause state plus the two tick fields
+only): **paused, year 31, tick 103055 -- unchanged, both times.** No unpause
+was run or needed; `df-fortress` was never touched.
+
+### Status: both approved fixes applied and verified
+
+Both of the user's two approved changes are live: the `ReadWritePaths`
+addition to `dfmcp-server.service`, and the `dfseries/` redeploy plus its
+importer. `series.*` is now fully live-verified end to end, closing the one
+item the base stream handed back. Backups exist at
+`/opt/df/deploy-backup-2026-09-20-wal/` and
+`/opt/df/deploy-backup-2026-09-20-dfseries/` if either change needs
+reverting. Nothing else on VM 103 was touched; the fort was never unpaused.
