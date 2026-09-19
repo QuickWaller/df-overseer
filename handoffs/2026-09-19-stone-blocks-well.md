@@ -167,3 +167,25 @@ Real calls: `workjob queue blocks "Stoneworker's Workshop" false` ->
 report `jobs_queued_before: 0`, one job item each, resolved. No
 `validated` field touched anywhere; this route needs no manager order at
 all.
+
+### 5. Both jobs completed: BLOCKS and TRAPPARTS both real stock
+
+Poll at tick 54500 (bounded read): 22 citizens, 0 new deaths, worst hunger
+36384, worst thirst 32223 (all falling, fort healthy). `stocks
+availability BLOCKS`: **total_units 4, available_units 4** (from 0).
+`stocks availability TRAPPARTS`: **total_units 1, available_units 1**
+(from 0; a bounded read of the item vector directly confirms the one
+TRAPPARTS item carries `in_building=false, in_job=false, forbid=false`,
+genuinely free, not a stocks-tool miscount this time). Both jobs the
+workjob tool created ran to completion and produced real, usable stock.
+
+### 6. Well built
+
+`well find "Embark Site" 20`: 5 candidates, all `requirements.fort_owned`
+now reading `BLOCKS: 4, BUCKET: 3, CHAIN: 3, TRAPPARTS: 1` -- **every
+requirement met**. Dry run at rank 1 (`water_depth 7`, not salt, stagnant
+true): `would_run_blueprint: starter-well-1x1.csv`, no error. Real build:
+`well build "Embark Site" starter-well-1x1.csv 1 20 false` ->
+`quickfort_ok: true`, 1 building designated. **The well is designated**;
+its construction still needs a citizen to walk the materials over and
+build it, which needs the fort kept running (see below).
