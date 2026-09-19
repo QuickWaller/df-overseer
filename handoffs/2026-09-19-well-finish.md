@@ -82,3 +82,54 @@ The well exists, a thirst reset is recorded after it was built (with whether
 it was water or brewed drink, or honestly unknown), the brews ran or the reason
 they did not is stated, the fort is paused again, and stock before and after is
 recorded.
+
+## Write-up (2026-09-19, executed live)
+
+### 0. Baseline, before any action
+
+Read live, paused, tick **356606**, `ReadPauseState() == true`, matching the
+prior stream's handback exactly.
+
+- `df.global.world.manager_orders.all`, read directly by field (not just
+  `orders.list`, which does not expose `status.validated`): all three orders
+  confirmed **`status.validated = true`** (id 0 `ConstructBlocks` 1/1, id 1
+  `ConstructMechanisms` 1/1, id 2 `CustomReaction` `BREW_DRINK_FROM_PLANT`
+  8/8), matching the prior commit's claim.
+- `df-overseer-orders list`: `manager_appointed: false` (unchanged, expected;
+  the validation was hand-set, not a Manager appointment).
+- `df-overseer-stocks food-drink`: drink 0, prepared_meals 0, raw_edibles 0
+  (all fields, all buckets zero).
+- Stair/room dig from the prior stream still in place; BOULDER 3 per that
+  stream's final read (not re-checked by item type yet this stream; will be
+  in the requirements() call below).
+
+### 1. Quicksave, confirmed by slot mtime
+
+Real save path is the XDG one per `docs/TRAPS.md`
+(`/home/df/.local/share/Bay 12 Games/Dwarf Fortress/save/`), not
+`/opt/df/game/data/save/`. Issued `dfhack-run quicksave` at 03:12 UTC.
+Polled `df.global.world.cur_savegame.save_dir` and the save file's own mtime
+every 6s: rotated from `autosave 1` (stale, 2026-09-18T22:50:38Z) to
+**`autosave 2`**, `world.sav` mtime **2026-09-19T03:13:30Z**, stable across
+9 further polls (54s). Confirmed written before any mutation.
+
+### 2. UNPAUSE WINDOW 1: tick 356606 -> in progress
+
+Detached watchdog armed first (`/tmp/pause_watchdog.sh 300`, reused verbatim
+from the prior stream, `/tmp/pause_now.lua` unchanged). **Local `ssh.exe`
+hung backgrounding it** (the known trap: detaching a long-running process
+over this workstation's ssh still blocks the local client even with
+`setsid nohup ... < /dev/null &`), moved to Claude Code's own background job
+queue rather than treated as a server failure. **Confirmed armed from a
+second connection**: `pause_watchdog.sh 300` running, pid 579112, already
+128s into its sleep at check time.
+
+**Unpaused at tick 356606** (confirmed by immediate read,
+`ReadPauseState() == false`), at 03:17:20Z. Watchdog will fire a fallback
+pause call around 300s after it started (~03:17:38Z start, so ~03:22:38Z),
+overlapping this window rather than cutting it short since the window's own
+goal-check loop re-paces itself; if the watchdog fires before the goal check
+does, the window simply ends early and that is fine, it is the safety net,
+not the primary stop. Goal of this window: watch whether the three
+hand-validated orders actually turn into jobs now that `validated=true`, and
+if a job appears, let it run to product.
