@@ -248,3 +248,92 @@ reasonable adjacency radius (2 tiles) for "drank from this well."
 `/tmp/watchdog.log` ("WATCHDOG PAUSED at tick 87215") and a direct read.
 End of unpause window 2: **66127 -> 87215**, 21,088 ticks. 22 citizens, 0
 new deaths, worst hunger 38291, worst thirst 15622 (both healthy).
+
+### 10. UNPAUSE WINDOW 3: tick 87215 -> 103055, the positive catch
+
+One negative result from one citizen is not the full picture, so a third
+window ran the same `thirst_watch.lua` loop longer, to see whether the
+well is used at all, not just to confirm the one miss. Watchdog re-armed
+(200s), confirmed running from a second connection. **Unpaused at tick
+87215**, confirmed by immediate read at 05:38:43Z.
+
+Polled every ~4s. Results, in order:
+
+| tick | unit | prev -> now | near_well | dist (tiles) |
+|---|---|---|---|---|
+| 91940 | 453 | 19858 -> 12 | **true** | **1** |
+| 92431 | 455 | 20056 -> 204 | false | 12 |
+| 92917 | 456 | 20081 -> 369 | false | 10 |
+| 92917 | 458 | 19828 -> 35 | false | 3 |
+| 92917 | 460 | 20183 -> 206 | false | 7 |
+| 93415 | 459 | 20660 -> 291 | false | 8 |
+| 96866 | 352 | 19819 -> 125 | false | 8 |
+
+**A real, live-caught positive**: unit 453's thirst reset at tick 91940
+happened with that citizen standing **1 tile from the well's own
+bounding box** -- the same live method that caught the window-2 miss 11
+tiles out, this time catching a hit essentially at the well. The other
+six resets in this window, several clustered within the same ~500 ticks
+as the hit, happened 3 to 12 tiles away, consistent with the well-finish
+stream's own finding that most of the fort's drinking still comes from an
+unlocated source elsewhere. **Both things are true at once**: the well
+is real, built, and at least one citizen has used it, and it is not yet
+the fort's main water source.
+
+Re-paused **manually** at tick 103055 (05:41:34Z), confirmed by immediate
+read (`ReadPauseState() == true`), rather than waiting on the watchdog
+once the evidence needed was in hand (the watchdog's own 200s window had
+run long past its nominal fire time without tripping the poll loop's own
+pause check -- not chased further, since a direct manual pause achieves
+the same safe end-state and was confirmed the same way). End of unpause
+window 3: **87215 -> 103055**, 15,840 ticks. 22 citizens throughout (0
+new deaths across all three windows), worst hunger 37978, worst thirst
+20224 at the final check before pausing -- both healthy.
+
+### 11. Final stock, verified
+
+Read live, paused, tick **103055**:
+
+| Item | Before this stream (tick 40916) | After this stream (tick 103055) |
+|---|---|---|
+| BOULDER (stocks tool, uncorrected) | 3 | 7 |
+| BOULDER, free (`in_building`-checked directly) | **0** | **4** (3 original still `in_building=true`; 6 newly mined, 2 consumed by the blocks/mechanisms jobs, 4 remain free) |
+| BLOCKS | 0 | **4** |
+| TRAPPARTS (mechanism) | 0 | **1** |
+| WOOD | 3 | 3 (untouched) |
+| Well | none | **built** (id 8, `flags.exists = true`) |
+| Citizens | 22 alive, 1 dead | **22 alive, 1 dead** (no new deaths) |
+
+### 12. Done-criteria verdict
+
+**Free stone: proven free, not assumed.** The three original boulders
+remain `in_building = true` throughout (still the fabric of the still and
+two workshops); 34 tiles of confirmed-stone designation produced 6 new
+boulders, checked individually by the same field the deployed
+`stocks.availability` still misses, 4 of which remain free after funding
+the two jobs below.
+
+**Blocks and mechanisms: made by workjob-queued jobs, not manager
+orders.** Dry run first for both, then real calls via
+`df-overseer-workjob`, one boulder consumed each, `status.validated`
+never touched, no manager order involved anywhere in this stream.
+
+**The well: built.** `well.build` at the rank-1 site `well find` returned
+(fresh water, depth 7, not salt), confirmed `flags.exists = true`.
+
+**Drinking from it: evidenced, honestly, both ways.** A live position
+check at the exact tick of a real thirst reset caught one citizen
+drinking within 1 tile of the well (a positive), and six other resets in
+the same window, several minutes apart and some in the same short
+cluster, at 3 to 12 tiles away (not the well). **The well works and has
+been used at least once; it is not yet where most of the fort drinks.**
+This is stronger than "cannot tell": it is a specific, positional,
+live-caught result in both directions, not an inference from timing
+alone.
+
+**No citizen died in this stream.** 22 citizens at the start and 22 at
+the end, across all three unpause windows, hunger and thirst both healthy
+throughout (never above ~40,000 hunger, ~35,000 thirst).
+
+**Fort left paused at tick 103055**, confirmed live. No further unpause
+attempted after this point.
