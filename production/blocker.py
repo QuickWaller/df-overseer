@@ -52,25 +52,40 @@ from . import schema
 
 # ---- available stock, never total (spec sec7) -----------------------------
 #
-# Four deductions, all exact reads on the live side; this function is the
+# Six deductions, all exact reads on the live side; this function is the
 # pure netting step the caller runs *before* building the snapshot this
-# module walks. The fifth case (item moved to a trade depot) is
-# unverified per spec sec7/docs sec17 -- this function recognises no
-# `on_depot`-shaped flag, so an item carrying one is neither deducted nor
-# claimed to be handled; callers must keep such items out of the pool
-# rather than pass them through here.
+# module walks. **`in_building` and `construction` added 2026-09-19**
+# (`handoffs/2026-09-19-in-building-deduction.md`): the fort had three
+# shale boulders, `stocks.availability BOULDER` reported 3 available, and
+# all three were `flags.in_building=true` (the still, the mason's and the
+# mechanic's workshop) -- the fifth deduction this design missed, found only
+# because a blocks job was cancelled for "needs hard stone boulders" and an
+# earlier stream had already recorded "every precondition satisfied" for 42
+# game days on the strength of the false 3. `construction` (an item used as
+# material in a built wall/floor/etc, `docs/PRODUCTION-MODEL.md` sec7's own
+# comment: "Material used in construction") is the same failure shape and is
+# added alongside it on the strength of that analogy, though Uniboslan has
+# never had a construction to verify it live against.
+#
+# Another case (item moved to a trade depot) is still unverified per spec
+# sec7/docs sec17 -- this function recognises no `on_depot`-shaped flag, so
+# an item carrying one is neither deducted nor claimed to be handled;
+# callers must keep such items out of the pool rather than pass them
+# through here.
 
-DEDUCTION_FLAGS = ("in_job", "owned", "forbid", "trader")
+DEDUCTION_FLAGS = ("in_job", "owned", "forbid", "trader", "in_building", "construction")
 
 
 def available_quantity(items: Iterable[Mapping]) -> int:
     """Net count of `items`, each a dict that may carry the boolean flags
     `in_job` (`item.flags.in_job`), `owned` (`item.flags.owned` plus a
     `UNIT_HOLDER` ref), `forbid` (`item.flags.forbid`, **not**
-    `forbidden`), and `trader` (`flags.trader`). An item counts toward the
-    total unless at least one of those four reads true. Pure arithmetic
-    over data the caller already read live; this function makes no DFHack
-    call itself."""
+    `forbidden`), `trader` (`flags.trader`), `in_building` (`item.flags.
+    in_building`, "part of a building, including mechanisms and bodies in
+    coffins") and `construction` (`item.flags.construction`, "material used
+    in construction"). An item counts toward the total unless at least one
+    of those six reads true. Pure arithmetic over data the caller already
+    read live; this function makes no DFHack call itself."""
     count = 0
     for item in items:
         if any(item.get(flag) for flag in DEDUCTION_FLAGS):
