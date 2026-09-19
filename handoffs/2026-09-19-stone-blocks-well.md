@@ -124,3 +124,24 @@ earlier 5x5 dig at this same depth produced only 3 boulders from 25 tiles
 `blocks`, 1 for `mechanisms`): `diggable dig 5 5 -2 "Embark Site"
 starter-room-5x5.csv 1 25` → `quickfort_ok: true`, 25 tiles. **34 tiles
 designated total**, both confirmed stone before digging, not assumed.
+
+### 2. Quicksave confirmed, watchdog armed
+
+`dfhack-run quicksave` issued at wall-clock epoch 1789795339. Polled the
+save directory every 6s for 90s: rotated to **`autosave 1`**, `world.sav`
+mtime **1789795347**, stable across all 15 polls. Confirmed written before
+any unpause. Tick unchanged at 40916, still paused.
+
+Reused the existing detached watchdog from prior streams verbatim
+(`/tmp/pause_watchdog.sh 300`, `/tmp/pause_now.lua`), armed via
+`setsid nohup ... < /dev/null & disown`, then **confirmed running from a
+second connection** (`ps -eo pid,etimes,cmd`, pid 599290, 7s elapsed at
+check time) rather than trusted from the arming command's own return.
+
+### 3. UNPAUSE WINDOW 1: tick 40916 -> in progress
+
+**Unpaused at tick 40916**, confirmed by immediate read
+(`ReadPauseState() == false`) at 05:25:04Z. Watchdog armed for a 300s
+fallback re-pause. Goal of this window: let the 34 designated tiles get
+mined out, producing free boulders, then dry-run and queue one `blocks`
+and one `mechanisms` job with `df-overseer-workjob`.
