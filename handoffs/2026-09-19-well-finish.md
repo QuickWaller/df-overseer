@@ -191,3 +191,50 @@ yes/no, and 15,664 ticks alone could in principle be a timing artefact
 (citizen availability) rather than a hard block. Watchdog re-armed (400s
 this time), **unpaused at tick 372270** at 03:29:50Z, confirmed by
 immediate read (`ReadPauseState() == false`).
+
+Polled every ~30s (12 reads), this time also tracking citizen 460's own
+`job.current_job.job_type` directly rather than a labour snapshot, to rule
+out "the only idle labour-holder was never really idle." Result: unit 460
+cycled genuinely through **Sleep (23) -> idle -> idle -> HuntVermin (27) x7
+-> idle -> idle**, including **two separate idle stretches**, one of them
+spanning the fort's own new-year rollover (`cur_year_tick` reset 400317 ->
+0 between polls 10 and 11, i.e. year 30 turned into year 31 mid-window).
+**All three orders' `amount_left` and `status.active` stayed frozen at
+their exact starting values through every single poll**, across a real
+idle window and across a year boundary. **RE-PAUSED (watchdog) at year 31,
+tick 4257** (absolute tick 12,503,457), confirmed by direct read
+(`ReadPauseState() == true`) and `/tmp/watchdog.log`. End of unpause window
+2: **372270 -> (year 31) 4257**, **35,187 ticks** (year-adjusted:
+31*403200+4257 minus 30*403200+372270). Combined with window 1, this
+stream ran the fort **50,851 ticks (~42 game days) with `validated=true`
+already set on all three orders, boulders sitting available the entire
+time, all three workshops built and idle, and multiple confirmed idle
+stretches for a labour-holding citizen, without a single one of the three
+orders ever going `active` or losing so much as one unit of
+`amount_left`.**
+
+### 4. Conclusion on Goal 1/2's blocker: settled, not guessed at further
+
+**Hand-setting `status.validated = true` does not make DF's engine convert a
+manager order into a workshop job on this install.** Whatever actually
+gates that conversion is not fully captured by the `manager_order` struct's
+readable fields (materials present, workshop built and idle, no
+conditions, unrestricted workshop/material selectors all checked and ruled
+out in §2 above) -- the leading candidate, per this project's own prior
+research (`research/2026-09-18-work-orders.md` §1, flagged there as the
+single most important untested assumption) and the population figure
+itself (23 citizens, above the wiki's cited 20-citizen manager-validation
+threshold), is that the actual job-dispatch-from-queue step, not just the
+one-time validation, is itself tied to a living, appointed Manager doing
+something the struct's `validated` bit alone does not substitute for. This
+stream did not test appointing a Manager or writing a new direct workshop
+job (the latter already refused once by Claude Code's own permission
+classifier in the prior stream, `[Modify Shared Resources]`) -- neither is
+in this handoff's authorised "Do" list, and the instruction is explicit:
+report a still-stalled validated order as a finding rather than guess
+further or invent a new mutation route. **Reporting exactly that: the well
+(needs BLOCKS, TRAPPARTS) and the brew (needs the `CustomReaction` order)
+are both still blocked, empirically, a second time, with more evidence than
+the prior stream had.** No well was built this stream; `BLOCKS` and
+`TRAPPARTS` are still both 0, so `well.build`'s own precondition
+("once BLOCKS and TRAPPARTS are both at least 1") was never reached.
