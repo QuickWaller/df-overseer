@@ -10,6 +10,11 @@ learning architecture.
 > Game knowledge (crop and water rules the agents should use) goes in
 > `doctrine/seed.yaml`, not the register.
 >
+> - **The well is built (2026-09-19)**, from blocks and a mechanism the fort
+>   made itself through `df-overseer-workjob` (one-off workshop jobs, the way
+>   a player clicks, since manager orders never run without a Manager). A
+>   dwarf was caught drinking 1 tile from it; most drinking still comes from
+>   an unlocated source. 22 alive, fort paused at year 31, tick 103055.
 > - **First death, 2026-09-19: the fort starved before it was fed.** Unit
 >   454 starved at year 31 tick 15143. All 23 citizens had been hungry and 11
 >   past 75,000 while this project's reporting counted only drinks; the user's
