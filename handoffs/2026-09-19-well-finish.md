@@ -238,3 +238,39 @@ are both still blocked, empirically, a second time, with more evidence than
 the prior stream had.** No well was built this stream; `BLOCKS` and
 `TRAPPARTS` are still both 0, so `well.build`'s own precondition
 ("once BLOCKS and TRAPPARTS are both at least 1") was never reached.
+
+Final stock read at re-pause (year 31, tick 4257): BOULDER 3 (unchanged),
+BLOCKS 0, TRAPPARTS 0, drink 0, prepared_meals 0, raw_edibles 0, wild PLANT
+8 (unchanged, the KANIWA from the prior stream). No other state changed
+this stream beyond tick count and the (already-committed) order
+validation.
+
+### 5. `dfseries/` redeployed to VM 103, hash-verified
+
+The deployed copy predates the reset-fix commit and lacked `resets`/
+`dwarf-day` (`import|timelines|series|latest|rate` only, confirmed live
+before touching anything). Built the archive with
+`git -c core.autocrlf=false archive --format=tar HEAD dfseries`
+(this workstation's `core.autocrlf=true` would otherwise ship CRLF and
+break the hash check, per `CLAUDE.md`'s own deploy rule). `sha256sum` of
+the tar matched byte-for-byte between the local build and the copy landed
+on the VM by `scp` (`09c97b3b...`) before any extraction. Backed up the
+live deployed copy first
+(`/opt/df/dfmcp-smoke/dfseries.bak-20260919T033841`), then replaced the
+`.py` files and extracted the new archive over
+`/opt/df/dfmcp-smoke/dfseries/`. **Verified by hashing, not by trusting the
+copy step**: extracted the same tar locally into a scratch directory and
+diffed its 9 `.py` file hashes against the 9 on the VM -- all nine match
+exactly (`__init__`, `aggregate`, `cli`, `importer`, `metrics`, `schema`,
+`store`, `timeline`, `trend`; the two also differed from the Windows
+working-tree's own on-disk hashes, confirming the CRLF trap is real and
+that comparing against the *archive's* extracted content, not the checked-
+out files, is the correct check). Confirmed no schema change: `schema.py`
+content (docstring, DDL, `SCHEMA_VERSION = 1`) is byte-identical between
+the two versions once line endings are normalised (a full-file diff showed
+only line-ending noise, no textual difference), so **no database rebuild
+was needed or done** -- `/var/lib/dfseries/uniboslan.series.sqlite3` was
+never touched. `python3 -m dfseries.cli --help` now lists `resets` and
+`dwarf-day`. `dfseries-import.timer` checked and left exactly as it was:
+`active (waiting)`, enabled, next trigger due in the same 60s cadence as
+before this stream touched anything.
