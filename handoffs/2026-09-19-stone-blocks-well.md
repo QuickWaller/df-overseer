@@ -83,3 +83,44 @@ Free stone exists and is proven free; a block and a mechanism were made by
 workjob-queued jobs; the well exists; drinking from it is evidenced or
 honestly marked unknown; no citizen has died (or any death is reported at
 once); the fort is paused again; stock before and after is recorded.
+
+## Write-up (2026-09-19, executed live)
+
+### 0. Baseline, before any action
+
+Read live, paused, **year 31, tick 40916**, `ReadPauseState() == true`,
+matching the handoff's own figure exactly.
+
+- `stocks availability BOULDER`: `total_units 3`, `available_units 3`
+  (**not trustworthy**, per the handoff's own warning: this tool does not
+  net `in_building`). `BLOCKS` and `TRAPPARTS` both 0 total/available. `WOOD`
+  3/3.
+- **Bounded read of `df.global.world.items.other.BOULDER` directly** (3
+  items, the whole vector, not a tile scan): all three carry
+  `flags.in_building = true`, `in_job = false`, `forbid = false`,
+  `owned = false`, `construction = false`. **Zero free boulders, confirmed
+  by the field the deployed `stocks.availability` still misses**, matching
+  the handoff's root-cause finding exactly.
+- `landmarks list`: Embark Site, Farm Plot, Mechanic's Workshop, Still,
+  Stockpile #1, Stockpile #2, Stoneworker's Workshop, Wagon. Matches
+  expectations; no well yet.
+
+### 1. More stone designated, both candidates confirmed STONE before digging
+
+`diggable find 3 3 -2 "Embark Site" 20`: 5 candidates; rank 5 (near "Still",
+distance 0) already shows `material: STONE` (revealed by the earlier dig).
+Wrote a new blueprint directly to the VM's blueprint directory (per
+`docs/TRAPS.md`, quickfort resolves bare filenames there, not a repo path):
+`starter-room-3x3.csv`, a plain 3x3 all-`d` dig, since no 3x3 dig-only
+blueprint existed (only workshop/farm/room blueprints). Designated it:
+`diggable dig 3 3 -2 "Embark Site" starter-room-3x3.csv 5 20` →
+`quickfort_ok: true`, 9 tiles.
+
+`diggable find 5 5 -2 "Embark Site" 25`: rank 1 (near "Still", distance 1)
+also `material: STONE`, a fresh area (not overlapping the 3x3 above; the
+tool ranks out occupied spots). Designated it too, for margin, since the
+earlier 5x5 dig at this same depth produced only 3 boulders from 25 tiles
+(~12% yield) and 2 free boulders are the bare minimum needed (1 for
+`blocks`, 1 for `mechanisms`): `diggable dig 5 5 -2 "Embark Site"
+starter-room-5x5.csv 1 25` → `quickfort_ok: true`, 25 tiles. **34 tiles
+designated total**, both confirmed stone before digging, not assumed.
