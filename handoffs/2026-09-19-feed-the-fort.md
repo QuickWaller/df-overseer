@@ -267,3 +267,16 @@ by a second connection (`ps`, pid 591436, elapsed 1s at check time).
 farm plot's own construction job complete (so `set-crop` becomes possible),
 let some of the 429 marked plants actually get gathered, and watch whether
 any citizen's `hunger_timer` resets (a real meal).
+
+Progress within the window, polled by direct bounded reads:
+- Tick 11981 (30s in): still unpaused, no issue.
+- Tick 16205 (70s in): **farm plot 7's `flags.exists` reads `true`** --
+  construction finished already, fast because it needs no material.
+  **PLANT stock jumped from 8 to 44 total units (42 available)** -- real
+  gathering happening quickly with 16 citizens on HERBALIST and 429 marked
+  targets.
+- **Crop set immediately once `exists` went true**: `farm set-crop 7
+  <season> MUSHROOM_HELMET_PLUMP false` for all four seasons, each
+  `write_ok: true` and `read_back_plant_index: 173` (matches the seed
+  stock's own MUSHROOM_HELMET_PLUMP mat_index convention). **The farm plot
+  is now fully built and planted.**
