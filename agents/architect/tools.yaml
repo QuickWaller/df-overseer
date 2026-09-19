@@ -124,6 +124,15 @@ read:
       Same handoff, item 4. Pending manager orders plus whether a Manager
       is currently appointed (live-verified false on this fort). Not yet
       deployed.
+  - id: "workjob.list"
+    status: exists
+    note: >-
+      Added handoffs/2026-09-19-workshop-add-job.md. Read-only job
+      vocabulary (blocks/mechanisms/brew_drink) -- harmless, and useful
+      when a proposal needs to name the direct-workshop-job route as an
+      alternative to a manager order that has stalled (orders.list above
+      already shows manager_appointed false on this fort). Does not grant
+      the ability to act -- see the workjob.queue deny below.
   - id: "stockpile.list"
     status: exists
     note: >-
@@ -176,6 +185,8 @@ deny:
   - id: "orders.create"
     reason: Advisors do not act. Propose it.
   - id: "orders.cancel"
+    reason: Advisors do not act. Propose it.
+  - id: "workjob.queue"
     reason: Advisors do not act. Propose it.
   - id: "labor.set-labor"
     reason: Not this role's domain, and it races autolabor regardless.

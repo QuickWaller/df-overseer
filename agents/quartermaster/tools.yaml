@@ -73,3 +73,11 @@ deny:
       work orders are squarely this role's future domain per role.md.
   - id: "orders.cancel"
     reason: Same as orders.create above.
+  - id: "workjob.queue"
+    reason: >-
+      Added handoffs/2026-09-19-workshop-add-job.md. Same as orders.create
+      above (this role is not enabled and holds no write authority
+      regardless): the direct-workshop-job route is, if anything, more
+      squarely this role's future domain than manager orders are (brewing
+      is literally "food and drink security"), so it is listed explicitly
+      rather than left an implicit gap.
