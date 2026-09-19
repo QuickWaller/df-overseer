@@ -76,3 +76,63 @@ the WAL check demands it), and this handoff doc.
 Everything listed is live and hash-verified, every check above passed or its
 failure is reported with the exact error, the real tool counts are recorded,
 and the fort is still paused at the same tick.
+
+## Write-up (executor, in progress)
+
+### What was on VM 103 before this stream touched anything
+
+Checked by grep/ls, not assumed:
+
+- `/opt/df/game/hack/scripts/df-overseer-stocks.lua` (DF's own script dir,
+  separate from the `dfmcp-smoke` checkout), dated 2026-09-18 20:57, **0**
+  occurrences of `in_building`/`construction` -- the old four-deduction
+  version, matching the header's claim exactly.
+- `/opt/df/game/hack/scripts/df-overseer-workjob.lua`, dated 2026-09-19
+  04:31, present -- **already deployed**, confirming the header's claim; not
+  touched by this stream.
+- `/opt/df/dfmcp-smoke/dfmcp/` had no `doctrine_tools.py` and no
+  `series_tools.py` at all, and `server.py` was dated 2026-09-16 10:18 (pre-
+  dating both features).
+- `/opt/df/dfmcp-smoke/doctrine/` **did not exist**.
+- `/opt/df/dfmcp-smoke/scripts/dfhack/TOOLS.yaml` (the copy the MCP server's
+  registry actually reads) had **0** occurrences of `workjob`, `doctrine.get`
+  or `series.`.
+- `/opt/df/dfmcp-smoke/agents/{architect,overseer,consultant}/tools.yaml` had
+  **0** occurrences of `doctrine.get` or `series.` grants/denials.
+- `dfmcp-server.service`'s live unit (`/etc/systemd/system/`, read via
+  `sudo -n cat`, no write) confirmed the WAL risk in advance:
+  `ProtectSystem=strict`, `ProtectHome=true`,
+  `ReadWritePaths=/opt/df/dfmcp-smoke` only, plus `StateDirectory=dfmcp`
+  (giving `/var/lib/dfmcp`). Nothing grants `/var/lib/dfseries`.
+- **Flagged, not fixed, out of this stream's touched surfaces**: the VM's
+  deployed `dfseries/` package (`/opt/df/dfmcp-smoke/dfseries/`, last
+  touched 2026-09-19 03:37) is genuinely stale relative to local `main`.
+  Direct byte comparison of `dfseries/metrics.py` (after stripping this
+  workstation's CRLF) shows the VM copy is **missing** the
+  `feed-the-fort` stream's hunger `reset_to_zero_verified=True` update, and
+  `dfseries/aggregate.py` differs by more than line endings too. This
+  stream's handoff does not list `dfseries/` as a deploy target (only
+  `series-mcp-tools`'s own handoff touches it, and that one's touched
+  surfaces explicitly exclude `dfseries/`), so it was left alone rather than
+  silently redeployed as a drive-by fix. Whoever owns `dfseries/` next should
+  check whether this drift matters for anything beyond hunger's exactness
+  flag.
+
+### Deployed, hash-verified twice
+
+`git -c core.autocrlf=false archive HEAD` of exactly 12 files: the four
+`agents/*/tools.yaml`, `dfmcp/{doctrine_tools,series_tools,server}.py`,
+`doctrine/{__init__,validate}.py` + `seed.yaml`, and
+`scripts/dfhack/{TOOLS.yaml,df-overseer-stocks.lua}`. A `sha256sum` manifest
+was built from the extracted tarball locally, the tar copied to the VM by
+`scp`, `sha256sum -c` run immediately after extracting there (all 12 `OK`),
+existing files backed up to
+`/opt/df/deploy-backup-2026-09-19-batch/` (stocks.lua, TOOLS.yaml, server.py,
+the four tools.yaml -- `doctrine/` had nothing to back up, being new), then
+copied into place (`chown df:df`), then **hashed again at the final
+installed path** against the same manifest: all 12 `OK`. `file` confirmed no
+CRLF crept in (`ASCII text` / `UTF-8 text`, no "with CRLF line terminators").
+SSH as `df` throughout (root was never used); `DF_VM_IP`'s CIDR suffix
+stripped before connecting.
+
+`dfmcp-server` not yet restarted at this point in the write-up -- next step.
