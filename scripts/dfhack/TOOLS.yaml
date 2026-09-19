@@ -811,6 +811,62 @@ df-overseer-orders.lua:
         handoff's own "orders.cancel ID for reversibility"), but the
         mechanism itself was never exercised on a real order this session.
 
+df-overseer-workjob.lua:
+  build_order_item: "handoffs/2026-09-19-workshop-add-job.md -- the honest alternative to a stalled manager order: a direct workshop job, no Manager needed, per handoffs/2026-09-19-well-and-harvest.md section 6 and handoffs/2026-09-19-well-finish.md sections 2-4"
+  commands:
+    list:
+      lua_function: list_jobs
+      effect: read
+      coordinate_bearing: false
+      live_deployed: false
+      verified: unverified
+      knowledge_scope: player_visible
+      notes: "Known JOB values (blocks/mechanisms/brew_drink), the same vocabulary the real 'q -> add job' menu offers at the matching workshop kind."
+    "queue JOB WORKSHOP_LANDMARK_NAME [DRY_RUN]":
+      lua_function: queue_job
+      effect: mutate
+      coordinate_bearing: false
+      live_deployed: false
+      verified: unverified
+      knowledge_scope: player_visible
+      notes: >
+        Offline build, never run against a live DFHack process (this
+        stream had no VM). DRY_RUN defaults to true. JOB is one of
+        blocks (ConstructBlocks @ Masons), mechanisms (ConstructMechanisms
+        @ Mechanics), brew_drink (CustomReaction BREW_DRINK_FROM_PLANT @
+        Still) -- see the .lua file's own header for the exact DFHack code
+        path cited (idle-crafting.lua's makeRockCraft,
+        library/lua/dfhack/workshops.lua's Masons/Mechanics job
+        definitions) for the first two, and this project's own honestly-
+        flagged reagent-field-copy code (not a reused DFHack path -- none
+        was found) for brew_drink, which REFUSES rather than guesses on
+        any reagent whose item_type is a wildcard/tag match (a generic
+        "any empty container" reagent is the suspected shape of brewing's
+        own second reagent on the vanilla wiki token, unconfirmed against
+        this install's live raws). Refuses explicitly on: an unknown JOB
+        name, an unknown workshop landmark, a landmark that is not a
+        workshop, a workshop of the wrong kind, a workshop still under
+        construction (`bld.flags.exists` false), and a full job queue
+        (`#bld.jobs >= 10`, dfhack.job.assignToWorkshop's own documented
+        cap). Never sets `status.validated` and never touches
+        `df.global.world.manager_orders.all` -- a wholly separate route
+        from df-overseer-orders.lua's queue, not a patch on it. The real
+        `dfhack.job.createLinked`/`assignToWorkshop` mutation path is
+        UNTESTED live; only the refusal logic and job_item construction
+        were reasoned through against this install's own prior live
+        findings (handoffs/2026-09-19-well-and-harvest.md section 6), not
+        exercised. First live run must check, in order: (1) `list` and
+        `queue blocks|mechanisms <workshop> true` (dry-run) resolve the
+        already-built Mason's/Mechanic's Workshop landmarks correctly and
+        report `job_item_count: 1`; (2) `queue brew_drink <still> true`
+        either resolves cleanly or names exactly which reagent it refuses
+        and why -- if it refuses, that is this tool doing its job, not a
+        bug; (3) only once both dry-runs look right, a single DRY_RUN=false
+        call for `blocks` or `mechanisms` (the simpler, single-reagent
+        case) with the fort paused immediately after, checking
+        `world.jobs.list` for the new job and `#bld.jobs` on the target
+        workshop before unpausing at all.
+
 df-overseer-stockpile.lua:
   build_order_item: "handoffs/2026-09-18-lever-gap-tools.md deliverable 2, docs/PRODUCTION-MODEL.md sec8/sec13 (leading indicator, stockpile-link lever gap)"
   commands:

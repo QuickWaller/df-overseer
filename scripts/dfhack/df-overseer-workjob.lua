@@ -302,6 +302,16 @@ local function resolve_workshop(name, info)
   return nil, "unknown workshop: " .. tostring(name)
 end
 
+-- Known JOB values -- the same vocabulary the real "q -> add job" menu
+-- offers at the matching workshop kind. Exported so a caller (or a future
+-- reqscript'ing tool) can list them without shelling out to the CLI.
+function list_jobs()
+  local known = {}
+  for k in pairs(JOB_INFO) do table.insert(known, k) end
+  table.sort(known)
+  return {jobs = known}
+end
+
 -- DRY_RUN defaults to true. See header for the exact call sequence this
 -- mirrors when DRY_RUN is false, and why that path is UNTESTED live this
 -- stream.
@@ -410,10 +420,7 @@ local args = {...}
 local cmd = args[1]
 
 if cmd == "list" then
-  local known = {}
-  for k in pairs(JOB_INFO) do table.insert(known, k) end
-  table.sort(known)
-  print(json.encode({jobs = known}))
+  print(json.encode(list_jobs()))
 elseif cmd == "queue" then
   local job, workshop, dry_run = args[2], args[3], args[4]
   if not (job and workshop) then
