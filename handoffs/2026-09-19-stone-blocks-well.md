@@ -203,3 +203,48 @@ total; the well built. A bounded scan of `world.jobs.list` at this exact
 moment found **0 jobs of any kind** (nothing mid-flight when the watchdog
 paused), so no `Drink` job was caught live in this window; that check
 needs another window (see below).
+
+### 8. Checking whether drinking ties to the well: dfseries, then a live catch
+
+`dfseries.cli series unit:460 thirst_timer --start 12540116 --end
+12565327` (absolute ticks for window 1, `year*403200+tick`) shows two real
+resets for that one citizen, at abs_tick **12545563** and **12551163**.
+Both predate the well: TRAPPARTS did not reach 1 (and `well.build` was not
+even called) until roughly abs_tick 12553700 (the tick-54500 stock check).
+So neither of unit 460's two resets in window 1 can be the well.
+
+`dfseries.cli dwarf-day thirst_timer <db> --start 12553406 --end
+12564206` (the sub-window strictly after the well request, using the
+correct argument order, db-path before metric -- the earlier `n/a, 0
+dwarf-days` results were this stream's own mistake, metric-before-db):
+**18 exact-tick drinking events fort-wide** in that ~10,800-tick
+sub-window. Timing alone does not tell us these are the well; the prior
+well-finish stream already established the fort drinks from an unlocated
+source at a similar background rate.
+
+**So a live catch was needed, not just timing.** Wrote
+`/tmp/thirst_watch.lua`: reads all 22 citizens' `thirst_timer` each call,
+diffs against the previous call's values (persisted in a small `/tmp`
+state file between SSH round-trips, since `dfhack-run` is one-shot), flags
+any drop bigger than the natural +1/tick drift as a real reset, and for
+each one computes internally (never printed) the Chebyshev distance from
+that citizen's live position to the well building's own bounding box,
+printing only the distance in tiles and a boolean, no coordinates.
+
+### 9. UNPAUSE WINDOW 2: tick 66127 -> 87215
+
+**Unpaused at tick 66127**, confirmed by immediate read
+(`ReadPauseState() == false`) at 05:33:42Z. Watchdog re-armed (240s),
+confirmed running from a second connection before unpausing. Goal: catch
+a live `thirst_timer` reset and check its distance from the well.
+
+Polled `thirst_watch.lua` every ~4s. At tick 85882 (05:37:15Z): **caught a
+real reset live** -- unit 193, `prev=21731 now=430`, **11 tiles from the
+well** (`near_well=false`). This is a real drink, not the well: the
+citizen was 11 tiles away at the moment of the reset, well outside any
+reasonable adjacency radius (2 tiles) for "drank from this well."
+
+**RE-PAUSED (watchdog) at tick 87215**, confirmed by
+`/tmp/watchdog.log` ("WATCHDOG PAUSED at tick 87215") and a direct read.
+End of unpause window 2: **66127 -> 87215**, 21,088 ticks. 22 citizens, 0
+new deaths, worst hunger 38291, worst thirst 15622 (both healthy).
