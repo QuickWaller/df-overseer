@@ -105,8 +105,14 @@ REGISTRY: dict[str, MetricKind] = {
             "counter to zero, which no real hunger reset has yet shown, and "
             "sleepiness already proved a timer here can drain instead. So "
             "reset_to_zero_verified stays False and hunger resets are reported "
-            "interval-bounded until a real meal confirms the formula."
+            "interval-bounded until a real meal confirms the formula. "
+            "CONFIRMED 2026-09-19 by the first real meals on record "
+            "(handoffs/2026-09-19-feed-the-fort.md, section 5): unit:344 went "
+            "45629 -> 442 across a meal, then 442 -> 1642 -> 2842, exactly "
+            "+1200 per 1200-tick sample, the same signature thirst showed. So "
+            "reset_to_zero_verified is now True for hunger."
         ),
+        reset_to_zero_verified=True,
     ),
     "sleepiness_timer": MetricKind(
         kind=RESETTING_COUNTER,
