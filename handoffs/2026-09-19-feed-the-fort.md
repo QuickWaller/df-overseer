@@ -280,3 +280,163 @@ Progress within the window, polled by direct bounded reads:
   `write_ok: true` and `read_back_plant_index: 173` (matches the seed
   stock's own MUSHROOM_HELMET_PLUMP mat_index convention). **The farm plot
   is now fully built and planted.**
+
+### 4. STOP: a citizen died during this window
+
+At tick 23787 (~150s into the window), a routine hunger/thirst poll showed
+**`citizen_count` had dropped from 23 to 22**, with id=454 missing from
+`getCitizens()`. Checked immediately: `df.unit.find(454)` still resolves,
+`dfhack.units.isDead(unit) == true`, `dfhack.units.isCitizen(unit) ==
+false`. Cross-checked against the announcement buffer: report id 322,
+year 31, **tick 15143**: **"Kadol Zulbanurdim, Gem Setter has been found,
+starved to death."** `dfhack.units.getReadableName` on unit 454 confirms
+the identity: `Kadol Zulbanurdim "Bannertower", Gem Setter`.
+
+**Per this handoff's own hard rule, stopped immediately and re-paused the
+fort**: `dfhack.world.SetPauseState(true)` issued at 04:16:51Z, confirmed
+by immediate read (`ReadPauseState() == true`), **fort paused at year 31,
+tick 29445**. End of unpause window 1: **4257 -> 29445**, 25,188 ticks
+(~21 game days). Checked the announcement buffer again after re-pausing:
+no second death, `citizen_count` confirmed still 22 (not falling further).
+
+**The death, stated plainly**: unit 454's own baseline (this stream's own
+tick-4257 read, section 0) was **hunger 105911, thirst 32322** -- the
+second-highest hunger in the fort, already deep into starvation before
+this stream took any action. It died at tick 15143, **10,886 ticks (~9
+game days) after this stream's baseline read and after this stream's own
+unpause**, before the marked-plant gathering had scaled up enough to
+reach it -- the farm plot did not finish construction until roughly tick
+16205 and `PLANT` stock was still only 8 units at baseline. **This reads
+as a citizen who was very likely already past saving by the time this
+stream started reading the fort, not a consequence of any action taken
+here** -- no plant was unmarked, no labour was pulled, nothing this stream
+did could plausibly have fed unit 454 faster than tick 15143 given travel
+and job-completion time. Recorded honestly rather than argued away: this
+is exactly the scenario the situation report's own crisis framing warned
+about (11 citizens already past 75000 hunger at baseline, one at 121585),
+and the fort's food pipeline, even responding immediately, was not fast
+enough to save the second-worst case.
+
+**Everyone else improved sharply in the same window.** Re-reading all
+(now 22) citizens at the moment of re-pause: hunger fell across the board,
+often by 60,000-80,000 ticks more than the ~25,000 elapsed alone would
+explain (proof of real eating, not just less time passing) -- e.g. id=344
+75480 -> 3281, id=347 77230 -> 6472, id=353 66834 -> 263, id=346 (the
+fort's own worst case at baseline) 121585 -> 45773. `stocks
+availability PLANT`: **118 total units (88 available)**, up from 8.
+`stocks food-drink`: **`raw_edibles` now reads 175 units / 166 items**,
+up from 0 -- the fort has real, eatable food again.
+
+### 5. Hunger-reset proof, and the reset-to-zero question finally answered
+
+`python3 -m dfseries.cli resets /var/lib/dfseries/uniboslan.series.sqlite3
+unit:344 hunger_timer --start 12503000 --end 12530000` (run from
+`/opt/df/dfmcp-smoke`, `python3` not `python` on this VM) reports **three
+resets** for citizen 344 in this stream's own window, and the same query
+for citizen 346 reports **two**. Both confirm real eating happened, fort-
+wide, immediately after food became available.
+
+**The reset-to-zero question this project's own tooling had left open**
+(`reset_to_zero_verified` stayed `False` because no real hunger reset had
+ever been observed) **is answered by this stream's own data.** Fine-
+grained series for unit 344 around its third reset
+(`dfseries.cli series ... --start 12523000 --end 12530000`):
+
+```
+12523406: 44429.0 ticks
+12524606: 45629.0 ticks
+12525806: 442.0 ticks     <- the reset: dropped from 45629 to near zero
+12527006: 1642.0 ticks    <- 442 + 1200 (the sampler's own tick gap) exactly
+12528206: 2842.0 ticks    <- 1642 + 1200 exactly
+```
+
+**Hunger drops to near zero on a real meal, then rises exactly 1 tick per
+tick afterward** -- both post-reset deltas match the sampler's 1200-tick
+gap exactly, with no drift. This is the same signature thirst_timer
+already had verified; hunger now has it too, for the first time, from a
+real meal this stream's own actions produced. Recording this as new,
+verified evidence for the registry (not written here per this handoff's
+own scope restriction -- the orchestrator owns `decisions/DECISIONS.md`).
+
+### 6. Stopped here, per the death rule. Not resumed this session.
+
+Per this handoff's own instruction, this stream stops at the death report
+rather than opening a second unpause window. Final state, verified live at
+the re-pause:
+
+| Item | Before this stream (tick 4257) | After this stream (tick 29445) |
+|---|---|---|
+| FOOD | 0 | 0 (no `FOOD`-type items produced; food is all raw `PLANT`) |
+| MEAT | 0 | 0 |
+| FISH | 0 | 0 |
+| PLANT (wild-gathered) | 8 total / 8 available | **118 total / 88 available** |
+| `raw_edibles` bucket (units) | 0 | **175** |
+| Drink | 0 | 0 (not brewed this stream; out of scope -- see below) |
+| Seeds | 97 (unchanged; none consumed by gathering) | 97 |
+| Farm plots | 0 | **1** (id 7, 4x4, underground, MUSHROOM_HELMET_PLUMP all 4 seasons) |
+| Citizens | 23, 0 dead | **22, 1 dead** (unit 454, tick 15143, starved) |
+| Worst hunger | id=346, 121585 | id=346 (still worst), **45773** |
+| Citizens > 75000 hunger | 11 | **0** (highest remaining is 45773) |
+
+**Labour decision**: let autolabor respond (16/23 already on HERBALIST at
+baseline); no `labor.set-labor` call made. Reasoning in section 2.
+
+**Farm plot and crop**: id 7, 4x4, underground near Stockpile #2,
+MUSHROOM_HELMET_PLUMP set for all four seasons, write-confirmed by
+read-back. 51 of the fort's 97 seeds are this species.
+
+**Plants marked and gathered**: 429 marked across 12 EDIBLE_RAW species
+(OATS excluded, EDIBLE_COOKED only). By the time of re-pause, real
+gathered stock had reached 118 PLANT units (from 8) -- gathering is
+genuinely working at a much higher throughput than the prior stream's 8-
+of-80, consistent with 16 citizens on HERBALIST against a much larger
+marked pool.
+
+**Fishing/hunting**: no tool exists for either (`df-overseer-zone.lua`
+only implements a `water_source` zone kind; no fish/hunt designation tool
+in `TOOLS.yaml`). Recorded as a lever gap, not closed -- building one was
+not "cheap" under this crisis's time budget, and this stream stopped early
+regardless once the death was found.
+
+**Brewing**: not attempted this stream. The situation report's priority
+order was food-flowing-now (done), a farm (done), then fishing/hunting
+(gap, recorded); brewing the gathered KANIWA/CRANBERRY/WILD_CARROT/
+BLACKBERRY/REED_ROPE/WEED_RAT/BERRIES_FISHER/BERRY_SUN was not in this
+handoff's own priority list and was not reached before the death stopped
+the stream. The still exists and is idle; a future stream could queue
+brewing directly at it (not via a manager order -- `decisions/DECISIONS.md`
+and both prior well streams established manager orders are dead on this
+fort without an appointed Manager, and hand-validating one was explicitly
+forbidden by this handoff).
+
+**Unpause windows, exact ticks**:
+- Window 1: year 31, tick 4257 -> tick 29445 (25,188 ticks, ~21 game
+  days). Started 04:12:21Z, ended (re-paused on the death finding)
+  04:16:51Z.
+
+**Fort left paused at year 31, tick 29445**, confirmed live
+(`ReadPauseState() == true`). No further unpause attempted this session.
+
+### 7. Done-criteria verdict
+
+**Food flowing now: done, and proven.** 429 EDIBLE_RAW wild plants marked
+(edibility checked from this install's own raws, not by name), real
+gathered stock rose from 8 to 118 PLANT units / 175 raw-edible units in
+one 25,188-tick window, and hunger fell sharply fort-wide -- 11 citizens
+above 75000 at baseline, zero above 75000 at re-pause. Hunger resets
+recorded for two citizens via `dfseries`, and the reset-to-zero mechanism
+is now verified for the first time (section 5), not just inferred.
+
+**A farm, for food that keeps coming: done.** Farm plot 7, 4x4,
+underground, MUSHROOM_HELMET_PLUMP set for all four seasons, construction
+confirmed complete and the crop write confirmed by read-back.
+
+**Fishing/hunting: gap recorded, not closed.** No tool exists; not
+attempted, per the handoff's own "only if cheap" instruction.
+
+**One citizen died: unit 454, Kadol Zulbanurdim, Gem Setter, tick 15143
+(year 31), hunger 105911 / thirst 32322 at this stream's own baseline
+(tick 4257), starved before this stream's own food response could reach
+it.** Reported per the handoff's hard rule; the fort was re-paused
+immediately on discovery (tick 29445) and no further unpause was
+attempted this session.
