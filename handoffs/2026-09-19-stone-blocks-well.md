@@ -186,6 +186,20 @@ now reading `BLOCKS: 4, BUCKET: 3, CHAIN: 3, TRAPPARTS: 1` -- **every
 requirement met**. Dry run at rank 1 (`water_depth 7`, not salt, stagnant
 true): `would_run_blueprint: starter-well-1x1.csv`, no error. Real build:
 `well build "Embark Site" starter-well-1x1.csv 1 20 false` ->
-`quickfort_ok: true`, 1 building designated. **The well is designated**;
-its construction still needs a citizen to walk the materials over and
-build it, which needs the fort kept running (see below).
+`quickfort_ok: true`, 1 building designated. Checked shortly after
+(05:28:45Z): **the well building (id 8) already reads `flags.exists =
+true`** -- construction completed within the same window, needing no
+material walk (blocks/bucket/chain/mechanism were all already at the
+site's stockpiles). **The well is fully built.**
+
+### 7. RE-PAUSED (watchdog) at tick 66127
+
+Watchdog fired at 05:29:27Z, confirmed by `/tmp/watchdog.log`
+("WATCHDOG PAUSED at tick 66127") and a direct read
+(`ReadPauseState() == true`). End of unpause window 1: **40916 -> 66127**,
+25,211 ticks. Net result: 22 citizens, 0 new deaths, worst hunger 39963,
+worst thirst 14871 (both falling, fort healthy); BOULDER 4 free of 7
+total; the well built. A bounded scan of `world.jobs.list` at this exact
+moment found **0 jobs of any kind** (nothing mid-flight when the watchdog
+paused), so no `Drink` job was caught live in this window; that check
+needs another window (see below).
