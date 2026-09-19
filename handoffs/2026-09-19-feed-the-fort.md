@@ -201,3 +201,69 @@ mtimes every 6s for 90s: rotated to **`autosave 1`**, mtime
 **2026-09-19T04:08:11Z**, stable across all 15 polls, and
 `df.global.world.cur_savegame.save_dir` confirms `autosave 1`. Confirmed
 written before any mutation. Tick unchanged at year 31, 4257, still paused.
+
+### 2. Farm plot built (designated), labour decision, plants marked
+
+**Labour decision, stated up front**: **let autolabor respond, do not
+hand-set HERBALIST on anyone.** Reason: `harvest find` already reads
+**16 of 23 citizens with HERBALIST**, autolabor's own response to the
+crisis, far beyond the "one herbalist" the situation report described.
+The prior stream's bottleneck (8 of 80 gathered) was the **size of the
+marked-plant batch**, not a shortage of gathering labour -- autolabor had
+already reallocated most of the fort to it. Hand-setting more citizens with
+`labor.set-labor` would strip autolabor's fort-wide management of
+HERBALIST **permanently**, for a labour pool that is not the constraint,
+which is a worse trade than leaving it alone. This is the deliberate
+choice the handoff asked for, not a default.
+
+**Farm plot**: built (designated) at the only viable underground site found,
+4x4, near Stockpile #2, using a new blueprint file
+(`dfhack-config/blueprints/starter-farmplot-4x4.csv`, written directly to
+the VM, not a repo file -- no 4x4 farm blueprint existed before this
+stream, only 5x5, and 5x5 does not fit here). `farm build 4 4 -1
+"Embark Site" starter-farmplot-4x4.csv 1 40 false`: `quickfort_ok: true`,
+`id: 7`, 1 building designated. Crop will be **MUSHROOM_HELMET_PLUMP**
+(51 of the fort's 97 seeds, by far the largest holding, and the only
+underground-valid crop with meaningful seed stock -- BUSH_QUARRY/
+GRASS_TAIL_PIG/GRASS_WHEAT_CAVE/MUSHROOM_CUP_DIMPLE/POD_SWEET each have
+only 5). **Not set yet**: `set-crop` requires `flags.exists == true`
+(construction finished), confirmed still `false` right after designation
+by a direct bounded read (`df.building.find(7).flags.exists`) -- a
+zero-material building still needs a citizen to walk over and complete
+the construction job, which needs the fort unpaused. Deferred to the first
+unpause window.
+
+**Bug found, recorded not fixed (out of this stream's touched surfaces,
+which are VM/fort only, no repo changes)**: `df-overseer-farm.lua`'s
+`list_farm_plots()` collapses `exists = false` to `nil` in its JSON output
+(`ok_exists and exists or nil` -- the same "Lua `false or nil` folds to
+nil" trap `docs/TRAPS.md` already documents elsewhere for a different
+field). `farm list` printed `{"id":7,"default_name":"Farm Plot","crops":
+[]}` with no `exists` key at all right after designation, which reads
+exactly like a fully-built plot with no crop set rather than an
+unfinished one. Caught only by cross-checking with a direct bounded
+`df.building.find(7).flags.exists` read, which returned `false`. Anyone
+using `farm list` to decide whether a plot is ready for `set-crop` should
+not trust a missing `exists` key as meaning "false" without checking the
+building directly, until this is fixed.
+
+**Plants marked**: edibility checked against this install's own raws (see
+baseline), OATS excluded (`EDIBLE_COOKED` only, no kitchen exists). All 12
+EDIBLE_RAW species' full reachable counts dry-run-verified then marked for
+real, one `harvest gather` call per species (the tool takes one species
+filter at a time): CRANBERRY 59, MUSKMELON 56, RED_SPINACH 55, WILD_CARROT
+52, SPINACH 51, LETTUCE 45, BLACKBERRY 42, KANIWA 34, REED_ROPE 14,
+WEED_RAT 12, BERRIES_FISHER 6, BERRY_SUN 3 -- **429 wild plants marked for
+real**, every dry run's `would_gather` matching its real `marked` count
+exactly (no partial marks, no failures).
+
+### 3. UNPAUSE WINDOW 1: year 31 tick 4257 -> in progress
+
+Detached watchdog armed first (`/tmp/pause_watchdog.sh 300`, reused
+verbatim from the well-and-harvest/well-finish streams), confirmed running
+by a second connection (`ps`, pid 591436, elapsed 1s at check time).
+**Unpaused at year 31, tick 4257**, confirmed by immediate read
+(`ReadPauseState() == false`) at 04:12:21Z. Goal of this window: let the
+farm plot's own construction job complete (so `set-crop` becomes possible),
+let some of the 429 marked plants actually get gathered, and watch whether
+any citizen's `hunger_timer` resets (a real meal).
