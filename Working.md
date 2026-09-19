@@ -348,6 +348,23 @@ directed the order: **fix the timer-reset bug, then automatic import, then MCP
 tooling**, and is away. Reset fix and auto-import are running; the MCP stream is
 written and waits on the reset fix.
 
+### RESUME HERE (2026-09-19, written as the session limit ran out)
+
+- **Fort**: well built (id 8), fed, farm rebuilt, 22 alive / 1 starved,
+  paused at year 31 tick 103055, autosave and sampler running.
+- **In flight when the session ended**: `handoffs/2026-09-19-deploy-batch.md`.
+  It had deployed and hash-verified 12 files (stocks six-deduction, doctrine,
+  series tools, server.py, tools.yaml) but **had not yet restarted
+  `dfmcp-server`** at its last write-up. Read that handoff's write-up first:
+  if the stream died, the restart plus its checks remain. It confirmed the WAL
+  risk in advance (the unit grants no write to `/var/lib/dfseries`).
+- **Also flagged by it**: the VM's `dfseries/` is stale versus `main` (missing
+  hunger's `reset_to_zero_verified=True`); redeploy it.
+- **Next after that**: brewing (workjob refuses the container reagent by
+  design), an appoint-a-Manager tool, fishing/hunting, finding the fort's
+  unlocated water source, the MCP apostrophe fix. Loop design is tabled by the
+  user.
+
 ### START HERE, in priority order
 
 **Sequencing rule while streams are live:** only one stream touches VM 103 or
