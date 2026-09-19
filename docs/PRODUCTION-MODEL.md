@@ -259,7 +259,7 @@ item until installed, then it is a building. Par levels apply to the
 fifteen beds in a stockpile, dwarves on the floor, and every stock query
 reporting it well supplied.
 
-**Available stock is never total stock.** Four deductions, all exact:
+**Available stock is never total stock.** Six deductions, all exact:
 
 | Deduction | Read |
 |---|---|
@@ -267,9 +267,57 @@ reporting it well supplied.
 | owned by a dwarf | `item.flags.owned` plus the `UNIT_HOLDER` ref |
 | forbidden | `item.flags.forbid` (**not** `forbidden`) |
 | caravan-owned | `flags.trader`, already implemented in `df-overseer-stocks.lua` |
+| built into a building | `item.flags.in_building` (DFHack's own comment: "Part of a building, including mechanisms, bodies in coffins") |
+| used in a construction | `item.flags.construction` (DFHack's own comment: "Material used in construction") |
 
-An item moved to a trade depot for sale is a fifth case and is **unverified**,
-because Uniboslan has never had a depot.
+**Missed for one full day, 2026-09-19, and recorded here rather than
+smoothed over.** The table above listed only the first four through this
+document's own first draft. On 2026-09-19 the fort had three shale
+boulders; `stocks.availability BOULDER` reported **3 available**, because
+the four-flag gate never checked `in_building`. All three boulders were
+`flags.in_building=true`: the building material of the still, the mason's
+workshop and the mechanic's workshop, the exact three things an earlier
+stream had built from the fort's only three boulders. A blocks job was then
+correctly cancelled "needs hard stone boulders", and a still-earlier stream
+had already logged "every precondition satisfied" for **42 game days** on
+the strength of the false 3 (`handoffs/2026-09-19-in-building-deduction.md`,
+`decisions/DECISIONS.md` 2026-09-19 "Solved: there were no free boulders at
+all"). `construction` is added alongside it on the same reasoning (an item
+consumed into a built wall or floor is exactly as unavailable as one
+consumed into a workshop) but is **unverified live**: Uniboslan has never
+had a construction to read.
+
+An item moved to a trade depot for sale is another case and is
+**unverified**, because Uniboslan has never had a depot.
+
+**Candidate flags checked and not added**, evidence from DFHack's own
+`df-structures` `df.item.xml`'s `item_flags`/`item_flags2` bitfields rather
+than guessed (full reasoning in `scripts/dfhack/df-overseer-stocks.lua`'s
+header):
+
+- `hostile` ("Item owned by hostile") -- structurally the same shape as
+  `trader`, a real candidate, but no hostile-owned item has ever been
+  sampled live on this install.
+- `in_inventory` ("Item in a creature, workshop or container inventory")
+  -- **rejected**, not parked: this is true for any item sitting inside an
+  ordinary storage barrel or bin, so treating it as a deduction would
+  remove most of the fort's own correctly-stored food and drink from
+  every count, the same failure class as this section's own incident, in
+  the opposite direction.
+- `dump` / `melt` (`DUMP_DESIGNATED`/`MELT_DESIGNATED`) -- plausible
+  (vanilla DF excludes forbidden items from job material selection, and
+  these are believed to behave similarly), unverified.
+- `rotten` as a hard deduction -- left as the informational count this
+  project already reports, not folded into `available`, because whether
+  rotten food is usable is a doctrine question, not a structural fact.
+- `encased` ("item encased in ice or obsidian") -- likely already
+  surfaces as `unreachable`, which this project computes but has never
+  subtracted from `available` for any deduction; unconfirmed.
+- `item_flags2.utterly_destroyed` -- the strongest remaining candidate,
+  structurally identical to the already-implemented `garbage_collect`/
+  `removed` "already gone" exclusion, just on the item's second flags
+  word. Left for a follow-up stream with live access to confirm the field
+  reads as advertised.
 
 ## 8. Logistics without a time model
 
@@ -724,3 +772,14 @@ live medical reason to happen first.
 - Hospital zone supply reservation.
 - The workshop task cap reads 5 on this install, not the wiki's 10, from one
   incomplete sample.
+- Whether `item.flags.construction` reads as advertised (DFHack's
+  df.item.xml comment: "Material used in construction") -- added to the
+  deduction set 2026-09-19 on that comment plus sec7's own analogy to
+  `in_building`, but Uniboslan has never had a construction to read it
+  against.
+- Six candidate item flags named but not added to sec7's deduction table
+  (`hostile`, `in_inventory` -- rejected, `dump`, `melt`, `rotten` as a hard
+  deduction, `item_flags2.utterly_destroyed`) -- see sec7's own note for the
+  evidence and reasoning against each. `utterly_destroyed` is the strongest
+  of these, structurally identical to the already-implemented
+  `garbage_collect`/`removed` exclusion; worth a live-verified follow-up.

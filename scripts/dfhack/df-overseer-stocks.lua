@@ -160,13 +160,17 @@
 -- ============================================================================
 --
 -- ADDED handoffs/2026-09-19-per-item-flags-tool.md, offline build stream (no
--- VM, no DFHack process, no deploy). docs/PRODUCTION-MODEL.md sec7: "Available
--- stock is never total stock", four exact deductions --
+-- VM, no DFHack process, no deploy). docs/PRODUCTION-MODEL.md sec7 AT THE
+-- TIME: "Available stock is never total stock", four exact deductions --
 --   claimed by a pending job  -- item.flags.in_job
 --   owned by a dwarf          -- item.flags.owned, plus the UNIT_HOLDER ref
 --   forbidden                 -- item.flags.forbid (NOT `forbidden`)
 --   caravan-owned              -- flags.trader, ALREADY netted above by
 --                                 is_fort_owned/count_bucket/get_seeds
+-- SUPERSEDED same day by a fifth and sixth deduction, `in_building` and
+-- `construction` -- see "THE FIFTH DEDUCTION THIS TOOL MISSED" below, kept
+-- here so this section's own history reads honestly rather than being
+-- rewritten to look right in hindsight.
 -- handoffs/2026-09-19-snapshot-assembler.md's write-up grepped every
 -- committed tool and found only `trader` reachable: `count_bucket` above
 -- folds straight to `units`/`item_count` sums with no per-item record
@@ -222,6 +226,79 @@
 -- = true`. `owned_units` can be read as an independently confirmed dwarf
 -- claim, not just "flagged owned", for the two shapes actually tested;
 -- a future live run against a broader item mix is still worth doing.
+--
+-- THE FIFTH DEDUCTION THIS TOOL MISSED, FOUND LIVE 2026-09-19
+-- (handoffs/2026-09-19-in-building-deduction.md, decisions/DECISIONS.md
+-- same date, "Solved: there were no free boulders at all"). The fort had
+-- three shale boulders; `availability BOULDER` reported **3 available**,
+-- because the four-flag gate above never checked `flags.in_building`. All
+-- three boulders were `in_building=true` -- the building material of the
+-- still, the mason's workshop and the mechanic's workshop (the exact three
+-- things an earlier stream built from the fort's only three boulders) -- so
+-- the true available count was 0, not 3. A blocks job was correctly
+-- cancelled "needs hard stone boulders" while this tool kept reporting
+-- plenty, and an earlier stream had already logged "every precondition
+-- satisfied" for 42 game days on the strength of the false number.
+-- `in_building` and `construction` (`item.flags.construction`, "material
+-- used in construction" per DFHack's own df.item.xml comment -- a wall or
+-- floor consumes its material exactly the way a building does, though
+-- Uniboslan has never had a construction to confirm this specific field
+-- live) are now netted through the same `checked_flag` machinery as
+-- in_job/forbid/owned, and reported per-flag (`in_building_units`,
+-- `construction_units`) exactly like the other three, so a caller can see
+-- "3 total, 3 in_building, 0 available" instead of a bare, wrong 3.
+--
+-- OTHER ITEM FLAGS CONSIDERED AND NOT ADDED THIS STREAM, checked against
+-- DFHack's own df-structures df.item.xml (`item_flags`/`item_flags2`
+-- bitfields) rather than guessed, and left as candidates rather than
+-- silently assumed irrelevant:
+--   `hostile` ("Item owned by hostile") -- structurally the same shape as
+--     `trader` (an ownership-exclusion flag, not a claim-on-fort-stock
+--     flag), and a real candidate for folding into `is_fort_owned`
+--     alongside `trader`/`garbage_collect`/`removed`. Not added: no
+--     hostile=true item has ever been sampled live on this install, so
+--     its real-world behavior here (does it clear once the owning
+--     creature dies? does it ever appear on a reachable, non-hidden
+--     tile?) is unverified, and this is an offline stream with no VM to
+--     check it against.
+--   `in_inventory` ("Item in a creature, workshop or container inventory")
+--     -- REJECTED, not just parked: per the handoff's own suggestion
+--     ("in_inventory on a hauled item") this looked promising, but the
+--     structure comment shows it is far broader than "hauled" -- it is
+--     true for ANY item sitting inside a barrel, bin or other container,
+--     which is the ordinary, correct storage state for most of a fort's
+--     own food and drink. Netting on it would deduct the entire stockpile
+--     contents from every count, reproducing this project's own
+--     documented failure class (a confident, specific, false zero) in the
+--     opposite direction from the bug this stream fixes. `in_job` is
+--     already the correct signal for "claimed by a live job."
+--   `dump` (DUMP_DESIGNATED) / `melt` (MELT_DESIGNATED) -- plausible
+--     candidates (vanilla DF excludes forbidden items from job material
+--     selection, and dump/melt-designated items are believed to behave
+--     similarly), but unverified on this install and this fort has never
+--     had a dump- or melt-designated item to sample.
+--   `rotten` as a hard availability deduction (rather than the informational
+--     `rotten_units` this file already reports) -- left alone deliberately.
+--     Whether rotten food should count as unavailable is a doctrine
+--     question (some game states still permit eating it), not a pure
+--     structural fact, and `docs/PRODUCTION-MODEL.md` sec7's four-then-six
+--     deductions are all exact ownership/claim facts, not judgment calls.
+--   `encased` (IMBED, "item encased in ice or obsidian") -- likely already
+--     shows up as `unreachable` via `is_unreachable`'s walkable-group
+--     check, since an encased item cannot sit on an ordinarily-walkable
+--     tile; unconfirmed live, and `unreachable_units` is informational
+--     only in this tool today (not subtracted from `available_units`,
+--     matching `docs/PRODUCTION-MODEL.md` sec7's own four-then-six list,
+--     which has never included reachability).
+--   `item_flags2.utterly_destroyed` (UTTERLY_DESTROYED_OR_TRANSFORMED) --
+--     the strongest remaining candidate, structurally identical to the
+--     already-implemented `garbage_collect`/`removed` "this is already
+--     gone" exclusion in `is_fort_owned`, just on the second flags word.
+--     Not added this stream to keep this change to exactly what the
+--     handoff asked plus what could be verified from the structure
+--     definitions alone; worth a follow-up alongside a live check that
+--     `item.flags2.utterly_destroyed` actually reads as advertised on this
+--     DFHack build.
 --
 -- Usage: ./dfhack-run df-overseer-stocks food-drink
 -- Usage: ./dfhack-run df-overseer-stocks seeds
@@ -413,14 +490,34 @@ local function checked_unit_holder_ref(item)
 end
 
 -- Walks ONE df.global.world.items.other[type_name] vector and nets it by
--- all four deduction flags docs/PRODUCTION-MODEL.md sec7 names. Trader (and
+-- all six deduction flags docs/PRODUCTION-MODEL.md sec7 names. Trader (and
 -- the same garbage_collect/removed/hidden-tile guard every other function
 -- in this file already uses) is netted via the existing, already-verified
 -- `is_fort_owned` -- unchanged, not touched by this addition, so
 -- food-drink/seeds' own verified behavior cannot regress. in_job/forbid/
--- owned are the marginal three this stream adds, each read through
+-- owned/in_building/construction are the marginal five, each read through
 -- `checked_flag` so a bad field name degrades to an honest "unnetted" tally
 -- instead of a silent false-negative.
+--
+-- `in_building`/`construction` ADDED handoffs/2026-09-19-in-building-
+-- deduction.md, the fix for the fort's own demonstrated failure: three
+-- shale boulders, this exact function reporting 3 available, and all
+-- three `flags.in_building=true` -- the building material of the still,
+-- the mason's workshop and the mechanic's workshop
+-- (decisions/DECISIONS.md 2026-09-19, "Solved: there were no free boulders
+-- at all"). Confirmed as real, named fields on df.item_flags (not guessed):
+-- `in_building` -- "Part of a building (including mechanisms, bodies in
+-- coffins)" -- and `construction` -- "Material used in construction" --
+-- both direct comments in DFHack's own df-structures df.item.xml
+-- (`item_flags` bitfield), fetched from upstream for this stream rather
+-- than trusted from memory. `in_building` is LIVE-CONFIRMED on this
+-- install (the three-boulder read above); `construction` is added on the
+-- strength of that same structure definition and the doc's own existing
+-- analogy ("an item used in a built construction... is equally not
+-- available") -- Uniboslan has never had a construction, so this specific
+-- field has not itself been read live. Both go through `checked_flag`
+-- exactly like the other three marginal flags: a read failure is an
+-- honest `unnetted` tally, never a silent `false`.
 local function count_availability(vec, main_group_id)
   local total_units, total_items = 0, 0
   local avail_units, avail_items = 0, 0
@@ -428,6 +525,8 @@ local function count_availability(vec, main_group_id)
   local forbid_units, forbid_items = 0, 0
   local owned_units, owned_items = 0, 0
   local owned_with_holder_ref, owned_without_holder_ref, owned_ref_lookup_errors = 0, 0, 0
+  local in_building_units, in_building_items = 0, 0
+  local construction_units, construction_items = 0, 0
   local trader_units, trader_items = 0, 0
   local rotten_units, unreachable_units = 0, 0
   local unnetted_units, unnetted_items = 0, 0
@@ -464,9 +563,13 @@ local function count_availability(vec, main_group_id)
       local in_job_ok, in_job_val = checked_flag(item, "in_job")
       local forbid_ok, forbid_val = checked_flag(item, "forbid")
       local owned_ok, owned_val = checked_flag(item, "owned")
+      local in_building_ok, in_building_val = checked_flag(item, "in_building")
+      local construction_ok, construction_val = checked_flag(item, "construction")
       if not in_job_ok then note_error("in_job") end
       if not forbid_ok then note_error("forbid") end
       if not owned_ok then note_error("owned") end
+      if not in_building_ok then note_error("in_building") end
+      if not construction_ok then note_error("construction") end
 
       if in_job_ok and in_job_val then
         in_job_units = in_job_units + units
@@ -488,13 +591,26 @@ local function count_availability(vec, main_group_id)
           owned_without_holder_ref = owned_without_holder_ref + 1
         end
       end
+      if in_building_ok and in_building_val then
+        in_building_units = in_building_units + units
+        in_building_items = in_building_items + 1
+      end
+      if construction_ok and construction_val then
+        construction_units = construction_units + units
+        construction_items = construction_items + 1
+      end
 
-      -- Available requires all three marginal flags to have been readable
+      -- Available requires all five marginal flags to have been readable
       -- AND all false. A read failure on ANY of them means this item's
       -- true availability is unknown, not available -- it goes to
-      -- `unnetted`, never silently into `avail`.
-      if in_job_ok and forbid_ok and owned_ok then
-        if (not in_job_val) and (not forbid_val) and (not owned_val) then
+      -- `unnetted`, never silently into `avail`. This is the exact gate
+      -- that missed the fort's own three shale boulders before this
+      -- stream: all three read in_job=false/forbid=false/owned=false and
+      -- would have counted available under the four-flag gate, when all
+      -- three were actually `in_building=true`.
+      if in_job_ok and forbid_ok and owned_ok and in_building_ok and construction_ok then
+        if (not in_job_val) and (not forbid_val) and (not owned_val)
+          and (not in_building_val) and (not construction_val) then
           avail_units = avail_units + units
           avail_items = avail_items + 1
         end
@@ -532,6 +648,10 @@ local function count_availability(vec, main_group_id)
       -- handoffs/2026-09-19-deploy-and-live-verify.md.
       verified_offline = true,
     },
+    in_building_units = in_building_units,
+    in_building_item_count = in_building_items,
+    construction_units = construction_units,
+    construction_item_count = construction_items,
     trader_units = trader_units,
     trader_item_count = trader_items,
     rotten_units = rotten_units,
