@@ -145,3 +145,25 @@ check time) rather than trusted from the arming command's own return.
 fallback re-pause. Goal of this window: let the 34 designated tiles get
 mined out, producing free boulders, then dry-run and queue one `blocks`
 and one `mechanisms` job with `df-overseer-workjob`.
+
+Progress check at tick 46426 (bounded read, `getCitizens()` plus the
+`BOULDER` vector, no map scan): **22 citizens, 0 new deaths** (matches the
+handoff's own "22 alive, 1 dead" baseline exactly), worst hunger 38205,
+worst thirst 34970, nowhere near crisis levels. **`BOULDER` vector now 7
+items total, 3 free** (not `in_building`/`in_job`/`forbid`) -- the new
+designations are already producing free stone.
+
+### 4. Blocks and mechanisms jobs queued for real
+
+Dry runs first, both `would_queue: true`, `job_item_diagnostics` resolved
+(`BOULDER, mat_type=0, flags3.hard`): `workjob queue blocks
+"Stoneworker's Workshop" true` and `workjob queue mechanisms
+"Mechanic's Workshop" true` (via the raw CLI over SSH, never the MCP
+apostrophe path, per `TOOLS.yaml`'s own recorded finding).
+
+Real calls: `workjob queue blocks "Stoneworker's Workshop" false` ->
+`create_ok: true, job_id: 1998`. `workjob queue mechanisms
+"Mechanic's Workshop" false` -> `create_ok: true, job_id: 2003`. Both
+report `jobs_queued_before: 0`, one job item each, resolved. No
+`validated` field touched anywhere; this route needs no manager order at
+all.
