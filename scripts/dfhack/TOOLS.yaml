@@ -865,7 +865,18 @@ df-overseer-workjob.lua:
         call for `blocks` or `mechanisms` (the simpler, single-reagent
         case) with the fort paused immediately after, checking
         `world.jobs.list` for the new job and `#bld.jobs` on the target
-        workshop before unpausing at all.
+        workshop before unpausing at all. **REAL FINDING, not fixed here
+        (dfmcp/tools.py is not a touched surface this stream)**: if driven
+        through the MCP server rather than the raw CLI,
+        `dfmcp/tools.py`'s own `_SHELL_METACHAR_RE` refuses any argument
+        containing a literal apostrophe -- and this fort's actual Mason's
+        Workshop is named "Stoneworker's Workshop"
+        (handoffs/2026-09-19-well-and-harvest.md's own live write-up),
+        DF's vanilla default naming for a Masons subtype built of stone.
+        The very first live call for `blocks` will hit this if made via
+        MCP; the raw `./dfhack-run df-overseer-workjob ...` CLI has no such
+        restriction. See dfmcp/tests/test_workjob_tool.py's own
+        `test_apostrophed_workshop_names_are_refused_by_the_mcp_layer`.
 
 df-overseer-stockpile.lua:
   build_order_item: "handoffs/2026-09-18-lever-gap-tools.md deliverable 2, docs/PRODUCTION-MODEL.md sec8/sec13 (leading indicator, stockpile-link lever gap)"
