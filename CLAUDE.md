@@ -10,6 +10,12 @@ learning architecture.
 > Game knowledge (crop and water rules the agents should use) goes in
 > `doctrine/seed.yaml`, not the register.
 >
+> - **First death, 2026-09-19: the fort starved before it was fed.** Unit
+>   454 starved at year 31 tick 15143. All 23 citizens had been hungry and 11
+>   past 75,000 while this project's reporting counted only drinks; the user's
+>   screen caught it. A feeding stream then marked 429 edible wild plants and
+>   rebuilt a farm, and **no citizen is above 75,000 hunger now**. 22 alive,
+>   fort paused at year 31, tick 29445.
 > - **The fort drinks, measured 2026-09-19.** The sampler's history records
 >   **73 thirst resets across all 23 citizens in 42 game days**, with no well
 >   and no brewed drink, so they drink from a water source not yet located.
