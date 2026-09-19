@@ -1131,8 +1131,8 @@ df-overseer-stocks.lua:
         straight to `units`/`item_count` sums, so no per-item record ever
         reaches a caller for `production/snapshot.py`'s already-built
         `stock_from_items`/`items_for_cover` path to net further, even in
-        principle -- of docs/PRODUCTION-MODEL.md sec7's four deductions
-        (`in_job`, `owned`+`UNIT_HOLDER`, `forbid`, `trader`), only
+        principle -- of docs/PRODUCTION-MODEL.md sec7's four deductions AT
+        THE TIME (`in_job`, `owned`+`UNIT_HOLDER`, `forbid`, `trader`), only
         `trader` was reachable from any shipped tool. Motivating case: the
         fort held 3 empty, unforbidden, unclaimed BUCKET items and still
         logged "Give water: Need empty bucket" (tick 214135) -- a
@@ -1140,6 +1140,26 @@ df-overseer-stocks.lua:
         distinguish that from "0 exist," "3 exist but all job-claimed," or
         "3 exist but all forbidden," which are four different fixes (wait,
         make one, raise priority, unforbid).
+
+        SUPERSEDED handoffs/2026-09-19-in-building-deduction.md, still
+        offline (no VM this stream either). The four-flag gate above still
+        missed a real case the same day: three fort-owned, unforbidden,
+        unclaimed shale boulders, and `availability BOULDER` reported 3
+        available while all three were `flags.in_building=true` (built into
+        the still, the mason's workshop and the mechanic's workshop --
+        decisions/DECISIONS.md 2026-09-19, "Solved: there were no free
+        boulders at all"). `in_building` ("Part of a building, including
+        mechanisms and bodies in coffins") and `construction` ("Material
+        used in construction") are now netted the same way as in_job/
+        forbid/owned, both confirmed as real `item_flags` bitfield members
+        in DFHack's own df-structures `df.item.xml`, fetched from upstream
+        for this stream. `in_building` is live-confirmed on this install;
+        `construction` is added on the strength of the same structure
+        definition and sec7's own analogy, unverified live (no construction
+        has ever existed on Uniboslan). The gate is now five marginal flags
+        (`in_job`, `forbid`, `owned`, `in_building`, `construction`) plus
+        `trader` via `is_fort_owned`, six total, matching
+        `production/blocker.py`'s `DEDUCTION_FLAGS`.
 
         TYPE is any `df.global.world.items.other` key -- BUCKET (the
         motivating case), DRINK/FOOD/ANY_EDIBLE_RAW/SEEDS (this file's own
@@ -1191,23 +1211,30 @@ df-overseer-stocks.lua:
         (fort-owned, i.e. today's existing food-drink/seeds/well/workshop
         base -- trader/garbage_collect/removed/hidden-tile already netted
         out), `available_units`/`available_item_count` (fully netted, all
-        four deductions), `unnetted_units`/`unnetted_item_count` (a flag
+        six deductions), `unnetted_units`/`unnetted_item_count` (a flag
         read failed, availability genuinely unknown), `in_job_units`/
         `forbid_units`/`owned_units` (+`_item_count` each) as the per-flag
         breakdown the handoff asked for, `owned_ref_check` (see above),
-        `trader_units`/`trader_item_count` (mirrors food-drink's
-        `foreign_units` but scoped to this one type), `rotten_units`/
-        `unreachable_units` (reused unchanged from count_bucket), and
-        `flag_read_errors` (a list of flag names, empty when every read
-        succeeded).
+        `in_building_units`/`construction_units` (+`_item_count` each,
+        ADDED handoffs/2026-09-19-in-building-deduction.md -- the fifth and
+        sixth per-flag breakdown, same shape as in_job/forbid/owned, so a
+        caller sees e.g. "3 total, 3 in_building, 0 available" instead of a
+        bare wrong 3), `trader_units`/`trader_item_count` (mirrors
+        food-drink's `foreign_units` but scoped to this one type),
+        `rotten_units`/`unreachable_units` (reused unchanged from
+        count_bucket), and `flag_read_errors` (a list of flag names, empty
+        when every read succeeded -- now can also name `in_building` or
+        `construction`).
 
-        NOT DONE THIS STREAM, and deliberately: no live run (offline
-        stream, VM 103 owned by a parallel stream this session), no change
-        to `production/snapshot.py` (out of this stream's touched
-        surfaces; a consuming change is described in the handoff's
-        write-up instead of made), and no attempt to make
-        `owned_ref_check.verified_offline` true from inside this file --
-        only a live-run write-up can do that honestly.
+        NOT DONE EITHER STREAM, and deliberately: no live run (offline both
+        times; VM 103 was owned by a parallel stream on 2026-09-19's first
+        pass, and this second pass is offline by its own handoff's design),
+        no attempt to make `owned_ref_check.verified_offline` true from
+        inside this file (only a live-run write-up can do that honestly),
+        and no attempt to verify `construction` live (Uniboslan has never
+        had a construction). `production/snapshot.py`'s `DEDUCTION_FLAGS`/
+        `UNNETTABLE_TODAY` were updated by the second stream (in scope for
+        it, unlike the first).
 
 df-overseer-labor.lua:
   build_order_item: "not in the 0-9 spatial build order -- a separate gap, decisions/DECISIONS.md 2026-09-11"
