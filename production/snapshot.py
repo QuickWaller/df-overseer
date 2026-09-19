@@ -13,9 +13,12 @@ same boundary rule, one level up.
 ## The gap, established from the tool source, not assumed
 
 `blocker.available_quantity()` (and `cover.split_stock()`, which imports the
-same constant) need all **four** deduction flags: `blocker.DEDUCTION_FLAGS`
-= `("in_job", "owned", "forbid", "trader")` (spec §7's table). Grepping
-every `df-overseer-*.lua` file in `scripts/dfhack/` for
+same constant) need all **six** deduction flags: `blocker.DEDUCTION_FLAGS`
+= `("in_job", "owned", "forbid", "trader", "in_building", "construction")`
+(spec §7's table -- `in_building`/`construction` added 2026-09-19,
+`handoffs/2026-09-19-in-building-deduction.md`, after three shale boulders
+all `in_building=true` read as "3 available"). Grepping every
+`df-overseer-*.lua` file in `scripts/dfhack/` for
 `in_job|forbid|flags.owned|UNIT_HOLDER` turns up exactly one file:
 `df-overseer-stocks.lua`, and there only in a header comment recording that
 `flags.owned` was *checked and found unrelated* (item-level personal
@@ -36,10 +39,17 @@ predicate, and it is the same three-or-four-term test in each case:
   `TOOLS.yaml` entry ("duplicated rather than reqscript'd, stocks.lua not a
   touched surface").
 
-So **`trader` is the only one of the four deduction flags any shipped tool
+So **`trader` is the only one of the six deduction flags any shipped tool
 nets today**, plus two extra exclusions no module here asks for
 (`garbage_collect`, `removed`) and a project-specific hidden-tile guard.
-`in_job`, `owned` and `forbid` are read by **none** of them. And what these
+`in_job`, `owned`, `forbid`, `in_building` and `construction` are read by
+**none** of them (as of this stream, `df-overseer-stocks.lua`'s own
+`get_availability` nets all six deduction flags per item -- `trader` via
+the existing `is_fort_owned` pre-filter, the other five via `checked_flag`
+-- see that file; but `well.lua`'s and `workshop.lua`'s integer-only
+`fort_owned` counts still do not net any of the five marginal flags, and
+are exactly the tools whose reading fed the false "3 available" this
+stream traces back to). And what these
 three tools return is not even item-level to begin with: `count_fort_owned`
 folds straight to an integer (`n = n + 1` per passing item, well.lua lines
 206-218), so there is no item list downstream of it for this module to net
@@ -80,8 +90,9 @@ read) -- out of scope here: **this stream may not edit the Lua tools.**
 
 2. **`stock_from_items`** / **`items_for_cover`** -- the shape both modules'
    own docstrings actually ask for: item dicts carrying `in_job`, `owned`,
-   `forbid`, `trader` (`blocker.DEDUCTION_FLAGS`) and, for `cover.py`,
-   `rotten` plus `node_id`. No shipped tool returns this today (see above);
+   `forbid`, `trader`, `in_building`, `construction`
+   (`blocker.DEDUCTION_FLAGS`) and, for `cover.py`, `rotten` plus `node_id`.
+   No shipped tool returns this today (see above);
    these functions exist for the day one does, and are exercised in
    `test_snapshot.py` against hand-built tool-shaped fixtures so the
    translation itself is proven correct now rather than only once a live
@@ -142,20 +153,28 @@ def _resolve_node_id(df_key: str, node_id_map: Mapping[str, str]) -> str:
 # `building_material_report().fort_owned`: DF_TYPE -> integer, already netted
 # for trader/garbage_collect/removed/hidden-tile (is_fort_owned /
 # is_fort_owned_item, identical test, duplicated across both files -- see
-# module docstring) and NOT for in_job/owned/forbid, because neither tool
-# emits an item list this module could net further.
+# module docstring) and NOT for in_job/owned/forbid/in_building/construction,
+# because neither tool emits an item list this module could net further.
+# `in_building`/`construction` added to this tuple 2026-09-19 alongside
+# `blocker.DEDUCTION_FLAGS` -- the exact false "3 available" this stream
+# traces back to was read through one of these two integer-count tools
+# (`workshop.lua`'s `building_material_report`), so this path is precisely
+# the one that must never claim a fuller netting than it did.
 
-UNNETTABLE_TODAY = ("in_job", "owned", "forbid")
+UNNETTABLE_TODAY = ("in_job", "owned", "forbid", "in_building", "construction")
 
 
 def _unnetted_reason(source: str, df_key: str, count: int) -> str:
     return (
         f"{source} ({df_key}): {count} fort-owned by trader/garbage_collect/"
         "removed/hidden-tile only (is_fort_owned / is_fort_owned_item; see "
-        "production/snapshot.py module docstring). in_job, owned and forbid "
-        "are not netted -- no shipped tool exposes them per item -- so this "
-        "count may overcount true availability. Needs a tool change; see "
-        "handoffs/2026-09-19-snapshot-assembler.md write-up."
+        "production/snapshot.py module docstring). in_job, owned, forbid, "
+        "in_building and construction are not netted -- no shipped tool "
+        "exposes them per item -- so this count may overcount true "
+        "availability (an item built into a workshop or wall reads as "
+        "'fort-owned' here exactly as it did the day this bit the fort). "
+        "Needs a tool change; see handoffs/2026-09-19-snapshot-assembler.md "
+        "and handoffs/2026-09-19-in-building-deduction.md write-ups."
     )
 
 
@@ -210,10 +229,10 @@ def merge_stock(*stocks: Mapping[str, Mapping]) -> dict[str, dict]:
 # ---- path 2: the shape blocker.py / cover.py actually document --------------
 #
 # Item dicts carrying blocker.DEDUCTION_FLAGS (`in_job`, `owned`, `forbid`,
-# `trader`) plus `node_id` and (for cover.py) `rotten`. No shipped tool
-# returns this today (see module docstring); these functions exist so the
-# translation is proven correct in advance of one, against hand-built
-# tool-shaped fixtures in test_snapshot.py.
+# `trader`, `in_building`, `construction`) plus `node_id` and (for cover.py)
+# `rotten`. No shipped tool returns this today (see module docstring); these
+# functions exist so the translation is proven correct in advance of one,
+# against hand-built tool-shaped fixtures in test_snapshot.py.
 
 
 def translate_items(
@@ -224,7 +243,8 @@ def translate_items(
 ) -> list[dict]:
     """Normalises a list of tool-reported item dicts into the flat shape
     `blocker.available_quantity` / `cover.split_stock` are documented to
-    accept: `node_id`, `in_job`, `owned`, `forbid`, `trader`, `rotten`.
+    accept: `node_id`, `in_job`, `owned`, `forbid`, `trader`, `in_building`,
+    `construction`, `rotten`.
 
     Each `raw_items` entry is read defensively, not assumed to already
     match the target shape: a flag may be given at the top level (`{"df_type":

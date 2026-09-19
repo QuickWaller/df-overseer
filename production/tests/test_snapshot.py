@@ -84,13 +84,15 @@ def test_stock_from_items_nets_in_job_end_to_end():
     assert stock == {"ITEM:BUCKET": {"available": 2, "status": schema.MEASURED}}
 
 
-def test_stock_from_items_nets_all_four_flags_independently():
+def test_stock_from_items_nets_all_six_flags_independently():
     raw_items = [
         {"df_type": "X"},               # clean
         {"df_type": "X", "in_job": True},
         {"df_type": "X", "owned": True},
         {"df_type": "X", "forbid": True},
         {"df_type": "X", "trader": True},
+        {"df_type": "X", "in_building": True},
+        {"df_type": "X", "construction": True},
     ]
     node_id_map = {"X": "ITEM:X"}
 
@@ -98,6 +100,23 @@ def test_stock_from_items_nets_all_four_flags_independently():
 
     assert stock["ITEM:X"]["available"] == 1
     assert stock["ITEM:X"]["status"] == schema.MEASURED
+
+
+def test_stock_from_items_nets_in_building_the_fort_own_incident():
+    """The real case, 2026-09-19: three shale boulders, all `in_building`
+    (the still, the mason's and the mechanic's workshop). `available` must
+    read 0, not the false 3 `stocks.availability` reported before this
+    stream."""
+    raw_items = [
+        {"df_type": "BOULDER", "in_building": True},
+        {"df_type": "BOULDER", "in_building": True},
+        {"df_type": "BOULDER", "in_building": True},
+    ]
+    node_id_map = {"BOULDER": "MATERIAL:BOULDER"}
+
+    stock = snapshot.stock_from_items(raw_items, node_id_map)
+
+    assert stock["MATERIAL:BOULDER"]["available"] == 0
 
 
 def test_translate_items_reads_nested_flags_dict_too():
@@ -134,8 +153,13 @@ def test_fort_owned_counts_never_claim_full_netting():
     """`fort_owned_counts_to_stock` is fed today's real tool shape
     (`well.lua`'s `requirements().fort_owned`). Even for a nonzero count,
     the result must never carry `schema.MEASURED` or `schema.VERIFIED_RAWS`
-    -- that would claim in_job/owned/forbid were netted when they were not
-    -- and must say, explicitly, which flags are missing."""
+    -- that would claim in_job/owned/forbid/in_building/construction were
+    netted when they were not -- and must say, explicitly, which flags are
+    missing. `in_building`/`construction` belong in this set for the exact
+    reason this stream exists: `workshop.lua`'s own `building_material_
+    report` is one of the two integer-count tools that read the fort's
+    three shale boulders as "3 available" while all three were built into
+    a workshop."""
     fort_owned = {"BUCKET": 3, "CHAIN": 3, "BLOCKS": 0, "TRAPPARTS": 0}
     node_id_map = {
         "BUCKET": "ITEM:BUCKET", "CHAIN": "ITEM:CHAIN",
@@ -155,7 +179,9 @@ def test_fort_owned_counts_never_claim_full_netting():
         assert entry["available"] == count
         assert entry["status"] == schema.UNAVAILABLE
         assert entry["status"] not in (schema.MEASURED, schema.VERIFIED_RAWS, schema.PRIOR)
-        assert set(entry["unnetted_flags"]) == {"in_job", "owned", "forbid"}
+        assert set(entry["unnetted_flags"]) == {
+            "in_job", "owned", "forbid", "in_building", "construction",
+        }
         assert "in_job" in entry["reason"] or "owned" in entry["reason"] or "forbid" in entry["reason"]
 
 

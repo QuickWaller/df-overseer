@@ -303,6 +303,53 @@ def test_available_quantity_ignores_forbidden_and_trader_owned_items():
     assert blocker.available_quantity(items) == 1
 
 
+# ---- in_building / construction: the fifth and sixth deductions, missed once ---
+#
+# 2026-09-19: the fort had three shale boulders, `stocks.availability
+# BOULDER` reported 3 available, and all three were `flags.in_building=true`
+# (the still, the mason's and the mechanic's workshop). This is that
+# incident, rewritten as a check on the deduction wiring, the same way the
+# in_job/owned bucket test above rewrites the earlier "no water delivered"
+# incident.
+
+
+def test_available_quantity_ignores_in_building_and_construction_items():
+    items = [
+        {"in_building": True},
+        {"in_building": True},
+        {"construction": True},
+        {},  # one genuinely free item
+    ]
+    assert blocker.available_quantity(items) == 1
+
+
+def test_available_quantity_all_boulders_in_building_gives_zero():
+    # The exact fort figure: three shale boulders, all built into a
+    # workshop, zero genuinely free.
+    items = [{"in_building": True} for _ in range(3)]
+    assert blocker.available_quantity(items) == 0
+
+
+def test_find_blocker_names_boulder_when_every_boulder_is_in_a_building():
+    """End to end: the well's mechanism needs a boulder; three exist but
+    all three are `in_building`, so `available_quantity` nets them to 0
+    before the stock ever reaches `find_blocker` -- the walk must still
+    name BOULDER as the blocker, not report the well as satisfied on the
+    strength of a raw item count of 3."""
+    graph = _well_graph()
+    boulder_items = [{"in_building": True} for _ in range(3)]
+    stock = _well_stock(boulders=blocker.available_quantity(boulder_items))
+
+    result = blocker.find_blocker("BUILDING:WELL", graph, stock)
+
+    assert result.blocked is True
+    assert result.blocker is not None
+    assert result.blocker.target == "BOULDER"
+    assert result.blocker.is_class is True
+    assert result.blocker.quantity_available == 0
+    assert result.blocker.quantity_short == 1
+
+
 # ---- termination on adversarial input -----------------------------------------
 
 
