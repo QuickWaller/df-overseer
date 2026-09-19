@@ -96,6 +96,12 @@ read:
     note: >-
       Same handoff, item 4. Pending manager orders and whether a Manager
       is appointed. Not yet deployed.
+  - id: "workjob.list"
+    status: exists
+    note: >-
+      Added handoffs/2026-09-19-workshop-add-job.md. The known JOB
+      vocabulary (blocks/mechanisms/brew_drink) for workjob.queue below.
+      Offline build, not yet run against a live DFHack process.
   - id: "stockpile.list"
     status: exists
     note: >-
@@ -263,6 +269,24 @@ write:
       matching df.manager_order, inferred by convention (workorder.lua's
       own rollback pattern) and not independently proven by a real
       removal.
+  - id: "workjob.queue"
+    status: exists
+    note: >-
+      Added handoffs/2026-09-19-workshop-add-job.md, the direct-workshop-
+      job route: this fort has no appointed Manager and manager orders
+      (orders.create above) have twice, empirically, run 15,000-50,000+
+      ticks each without ever converting into a real job
+      (handoffs/2026-09-19-well-and-harvest.md section 5,
+      handoffs/2026-09-19-well-finish.md sections 2-4) -- this is the
+      other legitimate vanilla route (the "q -> add job" menu), needing no
+      Manager at all. Granted to the Overseer only, as the sole writer,
+      matching every other fort-mutating tool in this file. DRY_RUN
+      defaults to true. Never sets `status.validated` and never touches
+      `world.manager_orders.all` -- a separate route from orders.create/
+      cancel, not a patch on them. Offline build, the real
+      createLinked/assignToWorkshop mutation path is UNTESTED live -- see
+      the .lua file's own header and TOOLS.yaml's notes for exactly what
+      the first live run must check before trusting this beyond dry-run.
   - id: "labor.set-labor"
     status: exists
     hazard: >-
