@@ -133,3 +133,41 @@ does, the window simply ends early and that is fine, it is the safety net,
 not the primary stop. Goal of this window: watch whether the three
 hand-validated orders actually turn into jobs now that `validated=true`, and
 if a job appears, let it run to product.
+
+Polled every ~20s throughout (11 reads total, tick 360011 through 372270):
+`status.active` read **`false` on all three orders at every single poll**,
+`amount_left` never moved off 1/1/1/8. Cross-checked against
+`world.jobs.list` directly mid-window (tick ~367000): 5 jobs present, all
+`job_type 27` (`HuntVermin`, a stray dog vs. an emu, confirmed by
+`df.job_type[27]`), **zero** `ConstructBlocks`/`ConstructMechanisms`/
+`CustomReaction` jobs at any point. Checked the concrete preconditions this
+research doc's own failure-mode table (`research/2026-09-18-work-orders.md`
+§5) lists, all satisfied, not just assumed:
+- **Material present**: `stocks availability BOULDER` reads 3 available, 0
+  forbidden/in-job/unreachable.
+- **Workshops built and idle**: `Stoneworker's Workshop` (id 5),
+  `Mechanic's Workshop` (id 6), `Still` (id 4) all `exists=true`, 0 jobs
+  each (`#building.jobs == 0`).
+- **Labour holders idle**: citizen 460 (Urist Ralushul, Gem Cutter) carries
+  `MASON=true, MECHANIC=true, BREWER=true` and `job=nil` (genuinely idle) at
+  the mid-window check; several others also carry the labours but were
+  doing `HuntVermin` at the time.
+- **Order struct itself**: `workshop_id=-1`, `max_workshops=0`,
+  `mat_type=-1`, `mat_index=-1` on all three, i.e. unrestricted, exactly
+  what `create_orders`'s own default path produces (per
+  `research/2026-09-18-work-orders.md` §2-3, not hand-rolled).
+
+**This is the new finding the handoff asked for, not a guess: `validated =
+true` alone does not convert a manager order into a job on this install**,
+at least not within 15,664 ticks (~13 game days) with every other
+precondition this project can check satisfied. `status.active` staying
+`false` the whole time (§5 of the research doc: "no jobs spawned") is the
+same signature the doc lists for "no matching workshop" or "conditions
+never satisfied," neither of which applies here, so whatever the engine
+checks before spawning a job is not fully captured by the `manager_order`
+struct's own fields, and setting `validated` by hand does not stand in for
+whatever else it checks. **RE-PAUSED (watchdog) at tick 372270**, confirmed
+by direct read (`ReadPauseState() == true`) and `/tmp/watchdog.log`
+("WATCHDOG PAUSED at tick 372270", fired 03:20:04Z). End of unpause window
+1: **356606 -> 372270**, 15,664 ticks. Net result: no order progressed; the
+hand-set `validated=true` did not unblock any of the three.
