@@ -347,3 +347,35 @@ recorded drinking *from the well*, because no well exists to drink from.
 Dwarves plainly are drinking from *something*, during this stream's own
 live time, at tick 12471763 (year 30) among others -- **not well water,
 not brewed drink, and not identified further this session.**
+
+### 7. Done-criteria verdict
+
+**The well: not built.** `BLOCKS` and `TRAPPARTS` never left 0, so
+`well.build`'s own stated precondition was never reached. Root cause is not
+the original stone/workshop chain (both fully solved by the prior stream)
+but the manager-order dispatch gap, now confirmed twice, empirically,
+across 50,851 combined ticks with every checkable precondition satisfied
+(§2-4 above). This stream did not attempt the two remaining unblock routes
+(appoint a Manager in-game; retry the classifier-refused direct-job-
+creation Lua) because neither is in this handoff's authorised "Do" list and
+the instruction was explicit: report a stalled validated order as a
+finding, not a problem to route around.
+
+**The brews: not fulfilled**, blocked by the identical gap (`CustomReaction
+BREW_DRINK_FROM_PLANT` stuck at 8/8 the entire time this stream ran).
+
+**dfseries: redeployed and verified.** `resets`/`dwarf-day` now available
+at `/opt/df/dfmcp-smoke/dfseries` on VM 103, hash-confirmed against the
+archive, no schema change, import timer undisturbed.
+
+**The thirst-reset proof: real, but not attributable to this stream's own
+goals.** 73 genuine drink events occurred fort-wide during this stream's
+own live time, definitively not well water (no well) and not brewed drink
+(stock verified 0 throughout by direct necessity, not just spot checks),
+from a water source three independent bounded checks failed to locate at
+the previously-investigated pond. Handed back as an open, well-evidenced
+question rather than resolved by guessing.
+
+**Fort left paused at year 31, tick 4257** (absolute tick 12,503,457),
+confirmed live by direct read. No further unpause attempted after this
+point.
