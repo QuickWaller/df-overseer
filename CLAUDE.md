@@ -10,7 +10,12 @@ learning architecture.
 > Game knowledge (crop and water rules the agents should use) goes in
 > `doctrine/seed.yaml`, not the register.
 >
-> - **The fort cannot drink.** This corrects the entry below it, written
+> - **The fort drinks, measured 2026-09-19.** The sampler's history records
+>   **73 thirst resets across all 23 citizens in 42 game days**, with no well
+>   and no brewed drink, so they drink from a water source not yet located.
+>   The bullet below stands as a record of the known pond (still unreachable)
+>   but is no longer the fort's state. Fort paused at year 31, tick 4257.
+> - **Superseded 2026-09-19, kept for the record: the fort cannot drink.** This corrects the entry below it, written
 >   2026-09-17, which said Uniboslan drinks. Measured 2026-09-19 across two
 >   exact reads: delta tick 6,303 equalled delta thirst 6,303 across all 15
 >   citizens, so `thirst_timer` increments 1 per tick and **nobody drank at
