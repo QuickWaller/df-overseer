@@ -274,3 +274,76 @@ never touched. `python3 -m dfseries.cli --help` now lists `resets` and
 `dwarf-day`. `dfseries-import.timer` checked and left exactly as it was:
 `active (waiting)`, enabled, next trigger due in the same 60s cadence as
 before this stream touched anything.
+
+### 6. The thirst-reset check: real drinks happened, but not from a well or brew
+
+`python -m dfseries.cli series /var/lib/dfseries/uniboslan.series.sqlite3
+unit:460 thirst_timer --start 12440000 --end 12510000` (subjects are
+`unit:<id>`, per the handoff's own correction) showed the counter rising
+cleanly tick-for-tick, then dropping sharply three times in this range.
+`cli resets` on the same window dates them precisely:
+`12427669`, `12446269` (both **before** this stream's own baseline, abs
+tick 12452606, so not this stream's doing), and **`12471763`** -- squarely
+inside this stream's own unpause window 2 (`12468270` to `12503457`). This
+is a real, algorithmically-dated drink (the tool's own evidence text: "a
+real drink dating exactly to abs_tick ... corroborated by a GiveWater job
+in that interval" is how it validated the method on a prior citizen; the
+same detector flagged this one the same way, not a bare "value went down"
+read).
+
+**Fort-wide, not just one citizen**: `cli dwarf-day thirst_timer --start
+12452606 --end 12503457` (this stream's own two windows, combined) reports
+**73 reset events across all 23 citizen-subjects observed**, 0 anomalies,
+0.0756 events per dwarf-day. Real drinking happened, during this stream's
+own live time, at a normal-looking rate.
+
+**But it cannot be the well (never built) or the brew (never ran).**
+Checked directly, not inferred: `BLOCKS` and `TRAPPARTS` stayed at 0
+throughout (§4); the `CustomReaction BREW_DRINK_FROM_PLANT` order's
+`status.active` stayed `false` and `amount_left` stayed frozen at 8/8
+through both entire windows (§2-3), so the still ran zero brewing jobs,
+which makes `drink` stock's own direct reads of exactly **0** at baseline,
+and again at the final read after both windows, not just spot-checks but
+the only value that was logically possible the whole time.
+
+**So this stream did what the well-and-harvest research already treated as
+settled -- re-checked it anyway, since new evidence (73 real drinks)
+directly contradicted it -- and the settled finding held up under a second,
+independent check.** `docs/TRAPS.md`'s own entry ("zero water tiles have
+any walkable neighbour") and `decisions/DECISIONS.md`'s 2026-09-19 row (the
+"submerged ramps" hypothesis, left unresolved, told the next live stream to
+check it with `getWalkableGroup`) both name this exact open question. Ran
+three bounded, coordinate-free, read-only checks (radius 30 around "Embark
+Site", one-off scripts, coordinates computed and consumed internally, never
+printed, same contract as every deployed `df-overseer-*.lua` tool):
+1. The well-placement geometry itself (a walkable tile directly above
+   >=3/7-deep water, `df-overseer-well.lua`'s own rule): 3,721 tiles
+   checked, **0 hits**.
+2. Direct edge-adjacency (a walkable tile at the *same* z as a water tile,
+   the plain "can a dwarf walk up and drink" geometry) at z169/168/167/166:
+   **142 water tiles at z168, 0 with any walkable same-z neighbour**; 0
+   water at all at z167/z166 (the freshly dug rooms).
+3. The disputed "submerged ramp" hypothesis itself -- a water tile's *own*
+   walkable-group, in case the tile is traversable while flooded: of the
+   same 142 water tiles, **0 carry any nonzero walkable group at all**,
+   let alone one matching citizen 460's own group (3477).
+
+**All three agree with the existing finding: this specific, previously-
+investigated pond (the one near "Still," used for the 2026-09-17
+`WaterSource` zone attempt) is still unreachable by any method this project
+has a check for.** So the 73 real drinks did not come from it. **This
+stream did not locate the water source that actually produced them** --
+the search was bounded to 30 tiles of "Embark Site," and the map may hold
+a second water body (a river or brook this project's landmark tool has
+never catalogued, since it only names built structures and zones) outside
+that radius. Recorded as a genuinely new, unresolved finding rather than
+guessed at further, given the time this stream had left: **something on
+this map lets citizens drink normally, it is not the well (absent) or the
+still (never ran), and it is not the "Still"-adjacent pond either (three
+independent bounded checks agree it is unreachable)**.
+
+**Answering the deliverable's own question directly**: no dwarf was
+recorded drinking *from the well*, because no well exists to drink from.
+Dwarves plainly are drinking from *something*, during this stream's own
+live time, at tick 12471763 (year 30) among others -- **not well water,
+not brewed drink, and not identified further this session.**
