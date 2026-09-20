@@ -5,11 +5,19 @@ story without you. See **[docs/PURPOSE.md](docs/PURPOSE.md)** for what this is
 and why, and **[docs/MEMORY-ARCHITECTURE.md](docs/MEMORY-ARCHITECTURE.md)** for the overseer's memory and
 learning architecture.
 
-> **Status, 2026-09-18.** Current work and next steps: `Working.md` ("START
+> **Status, 2026-09-21.** Current work and next steps: `Working.md` ("START
 > HERE"). History: `decisions/DECISIONS.md`, `working-archive/`, `evals/live/`.
 > Game knowledge (crop and water rules the agents should use) goes in
 > `doctrine/seed.yaml`, not the register.
 >
+> - **Current state, as last recorded 2026-09-20 (not re-read live since).**
+>   Uniboslan is paused at year 31, tick 103055, 22 alive and 1 dead. The
+>   batch of merged tools is deployed and live-verified on VM 103: role tool
+>   lists **architect 25, overseer 45, consultant 11**, including the
+>   six-deduction `stocks.availability`, `doctrine.get` and the `series.*`
+>   history tools (the fort is sampled once per game day into `dfseries`).
+>   Open next: read every vital on the live fort, then the supervised run that
+>   settles the `growdur` unit. → `Working.md` HANDOVER 2026-09-21.
 > - **The well is built (2026-09-19)**, from blocks and a mechanism the fort
 >   made itself through `df-overseer-workjob` (one-off workshop jobs, the way
 >   a player clicks, since manager orders never run without a Manager). A
@@ -35,6 +43,10 @@ learning architecture.
 >   disproven by digging: a channel at z169 flooded and left z168 walkable at
 >   0. The fort needs a **well**, blocked on BLOCKS 0 and TRAPPARTS 0 against
 >   3 logs and 0 boulders. → `handoffs/2026-09-19-well-unblock.md`.
+> - **Updated 2026-09-21: the production graph is no longer empty**: the
+>   real-corpus extraction and the snapshot assembler both merged on
+>   2026-09-19 (the suite is now **552 passed / 1 skipped**). Pointing it at the
+>   live fort is the supervised run above. The entry below is kept as written.
 > - **The production model is built, green and empty.** `production/` is
 >   2,182 lines across five modules at **364 passed / 1 skipped**, covering
 >   steps 1 to 5 of the spec's build order. Two gaps, both found by audit
@@ -82,7 +94,7 @@ learning architecture.
 >   set,
 >   and a `WaterSource` zone placed, none needing a raw coordinate to reach
 >   the decision-maker. **`doctrine/`** holds game knowledge (crop and water
->   rules) the agents should eventually read; nothing reads it yet, and it is
+>   rules) the agents should eventually read; only the consultant reads it, through `doctrine.get` (deployed 2026-09-20), and it is
 >   never a repo decision, so it never goes in the register.
 > - **`dfmcp/`**, the MCP server: `dfmcp-server.service` on VM 103,
 >   LAN-bound, **bearer tokens the only guard until Tailscale**. Per-role
@@ -113,9 +125,9 @@ learning architecture.
 >   is design or proposal unless marked verified.
 >
 > **Traps before running anything:**
-> - Ambient `python -m pytest` gives **306 passed, 1 skipped**; the skip is
+> - Ambient `python -m pytest` gives **552 passed, 1 skipped** (measured 2026-09-21); the skip is
 >   correct (transport tests guard their pinned SDK import). Run `dfmcp/tests`
->   in `.venv-dfmcp` for all **165**. `py -3` here is a 3.13 without pytest:
+>   in `.venv-dfmcp` for all **271** (measured 2026-09-21). `py -3` here is a 3.13 without pytest:
 >   use `python`.
 > - Packages are `dfmcp` and `dfqueue`, never `mcp` or `queue`: a local
 >   directory of either name shadows the MCP SDK or the stdlib module.

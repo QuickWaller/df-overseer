@@ -22,7 +22,7 @@ with the user.
 **Agreed so far** (→ `decisions/DECISIONS.md` 2026-09-17):
 - Doctrine sources carry per-source provenance; `verified` needs a 53.16 live
   or game-data source; a pytest validator enforces it (built).
-- `get_doctrine`, read-only, with a topic index (agreed; **built 2026-09-19** as `doctrine.get`, consultant only, not yet deployed).
+- `get_doctrine`, read-only, with a topic index (agreed; **built 2026-09-19** as `doctrine.get`, consultant only, **deployed and live-verified 2026-09-20**).
 - Doctrine revisions are proposals; the Overseer can accept, reject, defer,
   **amend**, or hand the proposal to another role for querying first.
   Amendments apply directly for tactical and strategy proposals and return to
@@ -78,7 +78,9 @@ with the user.
 **Built today vs missing, checked against code:** predictions are recorded
 and there are two graders (`dfqueue/grade.py`, `learning/predictions/`), but
 neither has graded a real proposal. There is no evidence model, no doctrine
-reader or revision type, no chronicle, no ledger rows and no scheduler.
+revision type (the reader, `doctrine.get`, is live), no chronicle and no
+scheduler. The fort's history is now stored and readable (`dfseries`, the
+`series.*` tools), but nothing consumes it for grading yet.
 
 **Two of this section's open questions were answered by the production-model
 work on 2026-09-18, not by this conversation.** Recorded here because they
@@ -137,274 +139,98 @@ different account and **can no longer be updated from this session**. Do not
 try; publish to the URL above instead. Republishing the same scratchpad file
 path keeps that URL.
 
-## Live fort state, read-only, 2026-09-18 at tick 227160 (paused)
 
-Read directly this session. **This corrects two claims I made earlier today.**
+## Archived: live fort state and the 2026-09-19 handover (2026-09-21)
 
-- **The fort owns three usable buckets** (ids 81, 149, 150: empty,
-  unforbidden, unclaimed, no holder). Two more are `trader=true`, held by the
-  caravan's yak pack animals. There is no bucket shortage.
-- **Nobody is injured.** The "1 of 15 unconscious" from the live audit is a
-  **sleeping miner**: `pain=0`, `wounds=0`, `current_job=Sleep`.
-- **Fort-owned stock**: logs 3, seeds 60, **drink 0, prepared meals 0**, raw
-  plants 8, boulders 0. Food is 8 raw plants for 15 citizens.
-- **Thirst** is staggered across three bands, worst 23,391 against a roughly
-  three-week (~25,200 tick) drink interval, consistent with the `WaterSource`
-  zone working. Not in danger.
-- **Farm plot 4 exists**, plump helmet set for all four seasons, and **25
-  `PlantSeeds` jobs are queued**, 2 claimed. Claim state is uninformative:
-  the fort has run 151 ticks since they appeared.
-- **The still (workshop 5) is still `exists=false`** with its
-  `ConstructBuilding` job 366 **suspended**, and the fort owns 3 logs.
-- `autolabor` is **enabled**, so labour counts are its live allocation, not a
-  configuration: PLANT 2, BREWER 1, COOK 1, CARPENTER 1, DIAGNOSE 18 on 1,
-  SURGERY 19 on 1, RECOVER_WOUNDED 24 on 1, and **`FEED_WATER_CIVILIANS` 23
-  on all 15**. Hand-setting a labour takes it off autolabor fort-wide and
-  permanently, so that lever is contested. → `docs/PRODUCTION-MODEL.md` §13.
-- **Corrected the same day:** an earlier entry here said
-  `FEED_WATER_WOUNDED` was enabled on 0. That token does not exist, and the
-  probe could not tell a missing field from a real zero. There is **no labour
-  gap in the water chain**. `BIND_WOUND` and `DRESS_WOUNDS` are not real
-  tokens either.
-- **`growdur` for plump helmet is 300** and live `grow_counter` values are in
-  the tens of thousands, so they are not the same unit and **the harvest clock
-  is not computable until the unit is settled**. One observation of a planted
-  crop settles it.
+Moved to `working-archive/Working_archive-2026-09-14.md` on 2026-09-21: both
+2026-09-18 live-fort sections ("cannot drink", tick 227160/235668) and the whole
+HANDOVER 2026-09-19, superseded by the section below. Fort figures in them are
+historical.
 
-**Parked by the user, deliberately:** trade (a transient hyperedge inserted
-when a caravan is present, so it needs nothing now); rooms and
-room-dependent furniture requirements; per-stockpile sites (coarse areas
-first); the solver itself, pending a sensitivity check that may show we never
-needed it; the mixed-integer question (build a rail line or not), which is
-the only thing the missing haul-tier figures block.
-
-**The uncomfortable gap:** nothing in this design executes anything. Work
-orders carry standing conditions, so the keep-on-hand band is expressible in
-DF's own mechanism today, but the rest has no hands. `proposal-0001` was
-accepted and never executed; better diagnosis on an unexecuted loop widens
-that gap rather than closing it.
-
-**Next concrete step:** read both research reports when they land, fix the
-schema on paper where they say it cannot be populated, then decide whether
-extraction is worth building before execution exists.
-
-
-### The fort cannot drink, and the pond cannot be dug to (2026-09-18, tick 235668, paused)
-
-**Supersedes the thirst line above.** Measured exactly across two reads: tick
-227160 thirst 23,391; tick 233463 thirst 29,694. **Delta tick 6,303 = delta
-thirst 6,303 across all 15 citizens**, so `thirst_timer` increments exactly 1
-per tick and **nobody drank at all**. Top thirst is now 31,899. The earlier
-"not in danger" reading was wrong: the `WaterSource` zone is active but
-unreachable.
-
-**Why.** The pond is a sunken bowl. Decoded tile shapes: z168 is 142 WALL, 26
-RAMP, 1 FLOOR, **0 walkable**, with 27 water tiles all at least 3 deep and
-**zero water tiles having any walkable neighbour**. z169 above is 134 walkable,
-100 FLOOR, 26 RAMP_TOP, 0 wet.
-
-**Digging does not fix it, proven not assumed.** A ramp was first designated at
-z168; the user corrected the level, and investigation showed z168 has **0
-walkable tiles near the pond**, so no miner could stand there to dig it. It was
-cleared and a Channel designated at z169 on a floor tile with 3 walkable
-neighbours. One supervised unpause with a remote watchdog: designation dug,
-z168 wet went **27 to 28**, z168 walkable stayed **0**. The new tile simply
-flooded. The user reached the same conclusion independently: **go for a well.**
-
-**The well's blocker, from `df-overseer-well find 1 "Activity Zone #1" 20`:**
-a viable site one tile from the zone, water depth 6, not salt, **stagnant
-true** (a well on it gives unhappy thoughts; survivable). Requirements against
-fort-owned stock: **BUCKET 3 and CHAIN 3 present, BLOCKS 0 and TRAPPARTS 0
-absent.** The fort owns 3 logs and 0 boulders, and stone is at z167 behind the
-half-designated stair.
-
-That is a three-deep chain and exactly the shape `production/blocker.py` was
-built to report: drink -> WELL -> BLOCKS + TRAPPARTS -> stone -> stair to z167
--> not dug.
-
-**Dispatched, not resolved:** `handoffs/2026-09-18-well-unblock.md`. Its first
-task is to settle from this install's own raws whether a mechanism can be made
-from wood, because that single fact chooses between the wood route (3 logs) and
-the stone route (finish the stair, mine, build mason's and mechanic's). Done
-means thirst falling across two reads, not a well existing.
-
-**Also open, unresolved:** the `PlantSeeds` queue drained 25 to 13 with no
-seed-stock change and no plants appearing. The user reports the farm is
-genuinely half-sown and still being sown, so this is a **measurement
-discrepancy in our read**, not a stalled fort. The still's job 366 was
-unsuspended this session; the user reports it reads suspended again.
 ## Current state, 2026-09-15: archived
 
 Moved wholesale to [`working-archive/Working_archive-2026-09-14.md`](working-archive/Working_archive-2026-09-14.md) on 2026-09-18, superseded by
 HANDOVER 2026-09-19 and the production-model work above.
 
-## HANDOVER 2026-09-19 (read this first after a /clear)
+## HANDOVER 2026-09-21 (read this first after a /clear)
 
-The 2026-09-17 handover is archived in
-`working-archive/Working_archive-2026-09-14.md`. Its fort figures were
-disproven and its stream list overtaken, but the fishing reversal, the stair
-background and the ground-truth idea live only there.
+The 2026-09-19 handover, the two 2026-09-18 live-fort sections and the
+2026-09-19 "Done today" list moved wholesale to
+[`working-archive/Working_archive-2026-09-14.md`](working-archive/Working_archive-2026-09-14.md)
+on 2026-09-21 (the file had reached 586 lines). Their fort figures were
+overtaken (rollback to tick 213622, "cannot drink", "the fort drinks", the
+first-death entry), but the rollback account, the walkability contradiction and
+the well-route reasoning live only there.
 
-**Authority.** The user granted this session full authority to push, to change
-the VM and to act on the fort, explicitly asking not to be asked per action,
-and restated it on 2026-09-19 ("this is all dev experiments not production").
-Standing exception kept: genuinely unrecoverable loss (the fort save, the VM
-itself) still stops and reports.
+**Authority.** Unchanged from 2026-09-19: the user granted full authority to
+push, change the VM and act on the fort, and asked not to be asked per action
+("this is all dev experiments not production"). Standing exception:
+genuinely unrecoverable loss (the fort save, the VM itself) still stops and
+reports. Two standing rules from the rollback are in `docs/TRAPS.md`: never
+run an unbounded query against a live DFHack process, and quicksave
+immediately before any live fort action.
 
-### The fort, and the one thing that is actually wrong
+### The fort, as last recorded (2026-09-20; not re-read this session)
 
-**ROLLED BACK 2026-09-19. Paused at tick 213622, not 235668.** An unbounded
-live DFHack query wedged the command pipe and recovery needed `kill -9`, which
-discarded roughly **22,000 ticks** back to a three-day-old quicksave. **Lost:
-the 2026-09-17 `WaterSource` zone, the first farm plot, and a stair
-designation.** Two standing rules came out of it and are now in
-`docs/TRAPS.md`: never run an unbounded query against a live DFHack process,
-and **quicksave immediately before any live fort action**, because the cost of
-an incident is set by the age of the last save.
+Uniboslan, year 31, **paused at tick 103055**, 100 FPS when running (not 10).
+**22 alive, 1 dead** (unit 454 starved at year 31 tick 15143, the first death).
+The **well is built** (id 8), from blocks and a mechanism the fort made itself
+through `df-overseer-workjob`; one drink was caught 1 tile from it. Most
+drinking still comes from an **unlocated** source (73 thirst resets across all
+23 citizens in 42 game days with no well and no brewed drink). A 4x4 plump
+helmet farm was rebuilt and 429 wild plants were marked for gathering; the
+last recorded hunger read (tick 29445) had **no citizen above 75,000**, but
+the fort has run about 73,000 ticks since and hunger was not re-read in the
+sources checked. Autosave (in-game `repeat`, every 7 game days) and the
+sampler (one record per game day) run only while unpaused.
 
-**Uniboslan does not drink.** Paused at tick **213622**, year 30, 15 citizens,
-zero deaths. Fort-owned after the rollback: **drink 0, prepared meals 0**,
-**raw plants 2** (was 8), seeds 60, logs 3, boulders 0, and **15 empty
-barrels**.
+**Read hunger, thirst, deaths and stock together before calling it healthy**
+(register 2026-09-19: a thirst-only all-clear cost a citizen).
 
-**The route is brewing, not a well.** Settled from the install's own data:
-**no reaction anywhere produces `TRAPPARTS` from wood**, and DFHack's
-`stockflow.lua` offers `ConstructMechanisms` only under rock and metal, so the
-well needs stone the fort does not have. Brewing needs only a still (1 log of
-3) and an empty `FOOD_STORAGE` container, and **the fort already owns 15
-barrels**, so the container is free. 2 plants brew to up to 10 drinks
-(`brewing-chain-from-raws`, `plump-helmet-is-brewable`, both verified).
+### Deployed and live-verified (VM 103, 2026-09-20)
 
-**The deliverable is not the drink, it is the two thirst reads.** Whether
-alcohol satisfies thirst on this install is still only `prior`, on an
-unrecorded wiki read.
+Batch deploy done (`handoffs/2026-09-19-deploy-batch.md`, including its
+follow-up): **role tool lists architect 25, overseer 45, consultant 11.**
+Six-deduction `stocks.availability` (a live `BOULDER` read returned 7 total, 3
+in buildings, 4 available), `doctrine.get` (consultant only), six `series.*`
+tools (overseer, consultant), `workjob` registrations, and the doctrine file.
+The series tools were blocked by the server's `ProtectSystem=strict` (WAL
+needs to write beside the database); one `ReadWritePaths=/var/lib/dfseries`
+line fixed it, and `dfseries/` was redeployed and hash-checked twice. Live tool
+ids are double-underscored (`series__resets`), not dotted. Revert backups:
+`/opt/df/deploy-backup-2026-09-20-{wal,dfseries}/`. `dfseries-import.timer`
+(60 s) is enabled and boot-persistent.
 
-Measured across two exact reads: **delta tick 6,303 equalled delta thirst
-6,303** across all 15 citizens, so `thirst_timer` rises 1 per tick and nobody
-drank in that window. Top thirst 31,899.
-
-**The measurement method is now cleared, but the contradiction is still open.**
-`getWalkableGroup` was compared against tile shape and the two **agree** at 0
-walkable neighbours, sanity-checked first against all 15 citizens' own
-known-walkable positions. So the suspicion below was unfounded and the reading
-was sound. **What remains unexplained:** the offered explanation (that a
-41-tile dig bridged the network and was lost in the rollback) **does not fit
-the dates**, because the rollback happened *after* the zero-walkable
-measurement was taken. Either something else removed reachability between
-2026-09-17 and 2026-09-19, or that dig never reached the water, or the
-2026-09-17 drinking happened elsewhere. Left open deliberately.
-
-**The original suspicion, kept for the record:** An audit found that the 2026-09-17 record has three founders
-demonstrably drinking at that pond with `NastyWater` thoughts, while the
-2026-09-19 reading says zero water tiles have a walkable neighbour, which
-would make that impossible. **Leading hypothesis: the 2026-09-19 reading is
-mine and is wrong**, because it derived walkability from tile *shape* while
-the pond is a bowl of submerged RAMP tiles a dwarf may wade across. The right
-primitive is probably `dfhack.maps.getWalkableGroup`, which
-`df-overseer-connectivity.lua` already uses.
-
-**Do not act on the well plan until that is settled.** What survives either
-way: nobody drank over that window.
-
-**The brew route may be shorter than the well anyway.** Doctrine
-(`alcohol-is-not-food`, status `prior`) holds that drink satisfies thirst on
-its own, which would make the whole pond question moot. The fort has 8 raw
-plants and 3 logs; the still is designated but unbuilt with its job **366**
-reported suspended twice.
-
-### Update, 2026-09-19 morning (read before the list below)
-
-**The fort survived and drinks.** Live read at tick **272606**, paused: **23
-citizens alive, 0 dead** (eight migrants arrived), a still exists, drink stock
-0. All 15 original citizens (ids 192-198 and 344-353) have thirst at or below
-28,922 after roughly 59,000 elapsed ticks, which is only possible if each
-drank. The newest eight (453-460) sit at 1,737-2,377 in exact steps of 100,
-consistent with arrival, so they are not counted as evidence. **What they drank
-is unknown and deliberately not being chased** (user, "idrc"): 2 plants brew at
-most 10 drinks, which cannot cover it alone.
-
-**Autosave is fixed** (register 2026-09-19): an in-game `repeat` quicksaves
-every 7 game days, persisted in `onMapLoad.init`. Registered, **not yet seen
-firing**. A manual quicksave was taken at 272606 and confirmed by slot mtime.
-
-**The well stream and the extraction stream both died on a Sonnet session
-limit.** The extraction work was preserved on its branch and the stream has
-been resumed. Three streams now running: extraction (resumed), deploy and
-live-verify (VM 103), and `get_doctrine`.
-
-**User directions:** blocks come from mining plus a mason's workshop;
-drinks must be kept ahead of the plants (`brew-before-plants-run-out`); neither
-is the current focus. **The loop itself ("nothing runs on its own") is not
-being built unilaterally**: its core architecture is pending the user's
-decision, per the learning-loop section above.
-
-### Update, 2026-09-19 afternoon: the fort records its own history
-
-The in-game sampler is live (one record per game day, `docs/TIMESERIES.md`),
-`dfseries` stores it, and the two were proven end to end on a real 9-game-day
-run. The autosave was seen firing for the first time. **The fort is paused at
-tick 283992** and **runs at 100 FPS, not 10**, despite several docs. The user
-directed the order: **fix the timer-reset bug, then automatic import, then MCP
-tooling**, and is away. Reset fix and auto-import are running; the MCP stream is
-written and waits on the reset fix.
-
-### RESUME HERE (2026-09-20)
-
-- **Fort**: well built (id 8), fed, farm rebuilt, 22 alive / 1 starved,
-  paused at year 31 tick 103055, autosave and sampler running.
-- **Deploy batch fully live** (`handoffs/2026-09-19-deploy-batch.md`, incl.
-  its 2026-09-20 follow-up). The WAL block is fixed with one
-  `ReadWritePaths=/var/lib/dfseries` line in `dfmcp-server.service`, and
-  `series.*` was verified live over a real MCP client. `dfseries/` was
-  redeployed, hash-checked twice, with hunger `reset_to_zero_verified=True`
-  confirmed on the VM; the importer ran clean. Revert backups are in
-  `/opt/df/deploy-backup-2026-09-20-{wal,dfseries}/`. Live tool ids are
-  double-underscored (`series__resets`), not dotted.
-- **Stopped here on the user's instruction.** Next, when resumed: brewing
-  (workjob refuses the container reagent by design), an appoint-a-Manager tool,
-  fishing/hunting, finding the fort's unlocated water source, the MCP
-  apostrophe fix. Loop design is tabled by the user.
+**Suite, measured 2026-09-21:** ambient `python -m pytest` **552 passed / 1
+skipped**; `dfmcp/tests` in `.venv-dfmcp` **271 passed**.
 
 ### START HERE, in priority order
 
-**Sequencing rule while streams are live:** only one stream touches VM 103 or
-the fort at a time. Two `production/` streams may run together **only** when
-their file ownership is strictly disjoint and each handoff names the other's
-files as forbidden.
+**Sequencing rule:** one stream at a time on VM 103 or the fort. Two offline
+streams may run together only with strictly disjoint file ownership. A
+worktree agent is cut from the last **pushed** commit: commit and push the
+handoff before dispatching.
 
-**The worktree trap, hit twice now:** a worktree agent is cut from the last
-**pushed** commit. Write the handoff, commit, **push**, then dispatch. A local
-commit is not enough.
+0. **Read the live fort, all vitals, quicksave first.** Bounded calls only.
+   Nothing in the docs says what hunger looks like after 73,000 ticks.
+1. **The supervised run**, `handoffs/2026-09-18-supervised-run-and-measure.md`,
+   written and never run. Still open from it: the **`growdur` unit** (300 vs
+   `grow_counter` in the tens of thousands, which blocks the harvest clock),
+   one real job duration with the worker's skill level, whether claim state
+   means anything over a running interval, and `item.age` against the pruned
+   announcement buffer. The feed and sampler streams overlapped some of its
+   ground (hunger's reset-to-zero is now verified), so re-read the handoff and
+   trim it before dispatching.
+2. **Give the fort a drink that does not depend on luck.** Brewing (`workjob`
+   refuses the container reagent by design, so it needs a designed fix), an
+   appoint-a-Manager tool (manager orders never become jobs without one),
+   finding the unlocated water source, and fishing and hunting.
+3. **The MCP apostrophe fix**: the server refuses `Stoneworker's Workshop`, so
+   workjob's first run went through the raw CLI.
+4. **z167 stone**: the rollback lost the stair, `well-and-harvest` designated
+   another, and the well was finally built from free boulders. No source says
+   whether the stair was dug. Check before anyone plans on z167.
 
-0. **Settle the walkability contradiction, then get the fort drinking**, by
-   whichever of brew or well the evidence favours. Running:
-   `handoffs/2026-09-19-well-unblock.md`. Done means thirst **falling** across
-   two reads, not a well existing.
-1. **Deploy the new tools to VM 103 and live-verify them.** Queued behind the
-   fort stream. Three things landed undeployed today: `stocks.availability`
-   (new), the silent-zero fixes in `trees`/`workshop`/`well`, and the older
-   `dig-stair` fix. **`stocks.availability` specifically needs both
-   `UNIT_HOLDER` branches exercised** (a known-held item and a known-unheld
-   one) before `owned_ref_check.verified_offline` can honestly flip to true.
-   Reconcile the `ROADMAP.md` / `CLAUDE.md` tool counts against the real
-   post-deploy numbers at the same time.
-2. **Fill the graph.** Running:
-   `handoffs/2026-09-19-real-corpus-extraction.md`. The extractor had never
-   seen real data; 159 real reactions are staged out of tree.
-3. **Then the supervised run**, written and waiting:
-   `handoffs/2026-09-18-supervised-run-and-measure.md`. Settles four known
-   unknowns including the `growdur` unit that blocks the harvest clock.
-4. **The stair to z167** stays outstanding unless the fort stream resolves it
-   as part of a stone route. Orphan UpStair designation at z167 still present;
-   the `dig-stair` fix is merged but undeployed.
-
-### Done today, so do not go looking for it
-
-Six streams merged on 2026-09-19: the snapshot assembler, the water doctrine
-correction, the unverified-claims audit, the availability tool, the
-silent-zero fix, and (2026-09-18) days-of-cover and the blocker walk. Suite is
-**382 passed / 1 skipped**. `production/` is six modules. The visual ledger is
-at the artifact URL recorded above.
 
 ### Open, waiting on the user
 
@@ -584,3 +410,4 @@ traps there rather than here.** Current state is the section above.
   The file was 893 lines. Every still-open item was carried into the current-state section at the top.
 - 2026-09-19: the whole HANDOVER 2026-09-17 section moved wholesale to the 2026-09-14 archive file. Its fort figures (tick 227008, "drink is solved") had been disproven by measurement and its stream list overtaken, but the fishing reversal, the stair background and the ground-truth idea live only there. Every still-open item was carried into HANDOVER 2026-09-19.
 - 2026-09-17: the whole HANDOVER 2026-09-16 section (the production-gap discovery, the stocks/labor-race fix, the knowledge-scope audit, and the day-one farm-and-water work) moved wholesale to the same 2026-09-14 archive file, since the file exceeded the ~400-line threshold. Every still-open item was carried into HANDOVER 2026-09-17 at the top; nothing was summarised or dropped.
+- 2026-09-21: the 2026-09-18 live-fort sections ("cannot drink") and the whole HANDOVER 2026-09-19 (rollback, walkability contradiction, the deploy and sampler updates, the old START HERE list and "Done today") moved wholesale to the 2026-09-14 archive file; the file was 586 lines. Open items were carried into HANDOVER 2026-09-21.

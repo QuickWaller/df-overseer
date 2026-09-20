@@ -1,10 +1,23 @@
 # Roadmap
 
-**Last reviewed:** 2026-09-19 (twenty-first pass, targeted: the drinking
+**Last reviewed:** 2026-09-21 (twenty-second pass, full re-scan of the Now
+bucket against `Working.md`, the register and the handoff index. Four things
+had moved since the last pass and are recorded in the new top Now item: the
+well was built, the fort lost its first citizen to starvation and was then fed,
+the batch deploy went live (tool lists now **25/45/11**), and the fort's history
+is now sampled, stored and served to agents. The Next and Later buckets were
+keyword-scanned (doctrine, time series, snapshot, well, deploy, manager,
+brew) for anything quietly finished and nothing was found; that was a
+search, not a line-by-line read. Older Now items
+below are left as written, each already carrying its own supersession note or
+now carrying one. Suite measured 2026-09-21: **552 passed / 1 skipped**
+ambient, **271** in `.venv-dfmcp`.)
+
+**Previously reviewed:** 2026-09-19 (twenty-first pass, targeted: the drinking
 crisis corrects the 2026-09-17 "now drinks" claim, and the production graph
 moves from "nothing built" to "built, green and empty" with two streams live.)
 
-**Previously reviewed:** 2026-09-18 (twentieth pass, targeted doc-drift pass: added
+Previously: 2026-09-18 (twentieth pass, targeted doc-drift pass: added
 a new top Now item for the production and logistics model design (settled on
 paper, nothing built, two feasibility audits and a figures pass landed the
 same day) and pointed the "Game figures database and calculators" Next item
@@ -65,6 +78,33 @@ or `decisions/DECISIONS.md`, not here.
 
 ## Now
 <!-- Actively being worked, or the clear immediate next step. -->
+
+- **NEW 2026-09-21: the fort has a well and a history, and the next job is
+  reading it properly and giving it a drink that does not depend on luck.**
+  Uniboslan is paused at year 31, tick 103055, **22 alive and 1 dead** (unit 454
+  starved at tick 15143, when only drinks were being counted). The **well is
+  built** (id 8) from blocks and a mechanism the fort made itself through
+  `df-overseer-workjob`; a dwarf was caught drinking 1 tile from it, but most
+  drinking still comes from a water source nobody has located. The fort's own
+  history is now recorded (in-game sampler, one record per game day), stored
+  (`dfseries`, reset-aware) and readable by the overseer and consultant
+  (`series.*`), all live on VM 103 after the 2026-09-20 batch deploy. What is
+  still open, in order: **(1)** read every vital on the live fort, since the
+  last recorded hunger read is 73,000 ticks old; **(2)** the supervised run
+  (`handoffs/2026-09-18-supervised-run-and-measure.md`), still unrun, mainly for
+  the `growdur` unit that blocks the harvest clock; **(3)** brewing, an
+  appoint-a-Manager tool, fishing and hunting, and finding the unlocated
+  water; **(4)** the MCP apostrophe fix. The loop architecture stays tabled by
+  the user. -> `Working.md` HANDOVER 2026-09-21, `decisions/DECISIONS.md`
+  2026-09-19 and 2026-09-20 rows, `handoffs/INDEX.md`.
+- **SUPERSEDED 2026-09-21 by the item above (kept for the record):** the two
+  2026-09-19 items directly below that say the drinking diagnosis is under
+  suspicion, that the fort "cannot drink", that the well is blocked three
+  levels down, and that "none of today's tool work is deployed". The well is
+  built, the tools are deployed and live-verified, and the real corpus was
+  extracted and the snapshot assembler built (the production-graph item below
+  still says "green and empty": it is now filled, and pointing it at the live
+  fort is the supervised run above).
 
 - **UPDATED 2026-09-19 (later the same day): the drinking diagnosis is
   itself under suspicion.** An audit found the 2026-09-17 record has three
