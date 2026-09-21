@@ -193,3 +193,19 @@ worktree's ambient python (the 537 is the `.venv-dfmcp` figure, re-measured at t
   the first still said manager work orders have no tool (`orders.*` and `workjob` exist), the
   second said role.md still had a stale line (role.md was fixed on 2026-09-17). Both corrected.
   ROSTER.yaml was not named in the brief; it sits under `agents/` and the fix is mechanical.
+
+### 3. `docs/BUILDING-TOOL.md` (done)
+
+Status block added at the top (built, deployed, verified live, never run for real,
+join-shapes fix merged and not redeployed). Design text kept; additions are marked
+"Resolved", "Answered", "As built" or "Update". The ConstructBlocks disagreement, the
+BrewDrink/MakeTrapParts lookup errors (names absent from `df.job_type`), the labor source
+(graph, joined in the MCP server, deployed), material filters (DFHack's own table, not the
+game's), the optional `[W H]` and `LABOR...` arguments and the zone generalisation are ticked
+off, each from its handoff report. Contracts C1, C2 and C3 each have an "as built" paragraph
+(C1 from the Lua as read in the labor-join-shapes report, C2 the stricter status rule and
+additive keys, C3 the single `tool_guidance` key). Ends with a "still open" list; the old
+"Next step" is kept under a heading saying it predates the build.
+Left open rather than claimed: whether a per-kind requirements file was built (no report
+shows it), whether installation became a graph process, and the wrappers `workshop`/`well`/`farm`
+(not rebuilt over the generic tool, per the Lua report's finding 5).
