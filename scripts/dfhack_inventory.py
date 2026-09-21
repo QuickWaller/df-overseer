@@ -110,7 +110,7 @@ def render(tools: list[dict], scripts: set[str], plugins: set[str], groups: dict
     w("  never written the name down, not that it is useless.")
     w("- **Tags are DFHack's.** `armok` means \"god-like powers or access to information the")
     w("  game hides\", which is the closest thing DFHack has to a cheat marker. The project")
-    w("  has no written rule about them yet (see `Working.md`).\n")
+    w("  has a written rule about them: see `CLAUDE.md` (\"No armok capabilities\") and `docs/ARMOK-RULINGS.md`.\n")
     w("## Counts\n")
     w(f"- Documented tools: **{len(tools)}** ({len(avail)} available, {len(tools) - len(avail)} tagged `unavailable`).")
     w(f"- Installed script files: {len(scripts)} (of which {len(ours)} are ours, `{OURS_PREFIX}-*`); plugin files: {len(plugins)}.")

@@ -15,7 +15,7 @@ DFHack version per `memory/dfhack-environment.md` (53.16-r1.1), not re-checked h
   never written the name down, not that it is useless.
 - **Tags are DFHack's.** `armok` means "god-like powers or access to information the
   game hides", which is the closest thing DFHack has to a cheat marker. The project
-  has no written rule about them yet (see `Working.md`).
+  has a written rule about them: see `CLAUDE.md` ("No armok capabilities") and `docs/ARMOK-RULINGS.md`.
 
 ## Counts
 
