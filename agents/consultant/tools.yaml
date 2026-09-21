@@ -84,6 +84,15 @@ read:
       each titled by its condition. Try a listed one only if its title applies and the
       tool fails without it. Not yet deployed.
 
+  - id: "nobles.list"
+    status: exists
+    note: >-
+      Added handoffs/2026-09-21-nobles-appoint.md. Every fortress position and its holder.
+  - id: "nobles.verify"
+    status: exists
+    note: >-
+      Same handoff. Read-only both-sides check of one position.
+
 planned:
   - id: "queue.propose"
     status: planned

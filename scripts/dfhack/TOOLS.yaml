@@ -1463,6 +1463,64 @@ df-overseer-ui.lua:
         running fort. Read-only -- the caller (xdotool over SSH) drives the
         real cursor; this only reads hover state back.
 
+df-overseer-nobles.lua:
+  build_order_item: "the user's minimum bar for openclaw (appoint a Manager and other nobles); handoffs/2026-09-21-nobles-appoint.md"
+  commands:
+    list:
+      lua_function: list
+      effect: read
+      coordinate_bearing: false
+      live_deployed: true
+      verified: "2026-09-21 (live on VM 103, fort paused: all 12 positions of the fortress entity)"
+      knowledge_scope: player_visible
+      notes: >
+        Every position of the fortress entity: code, name, assignment id and
+        index, holder unit id or vacant, whether it is elected, its population
+        requirement and whether that is met, and the office it needs. The
+        Nobles screen shows all of this to a player. A holder that cannot be
+        read is null plus an error, never a default.
+    "verify POSITION_CODE":
+      lua_function: verify
+      effect: read
+      coordinate_bearing: false
+      live_deployed: true
+      verified: "2026-09-21 (live on VM 103: vacant, held, and after appoint and unappoint)"
+      knowledge_scope: player_visible
+      notes: >
+        Read-only consistency check for one position, from both sides: the
+        assignment's holder, the holder's position link and its vector index,
+        and dfhack.units.getNoblePositions. consistent is true only if every
+        check passes.
+    "appoint POSITION_CODE UNIT_ID [DRY_RUN] [VERSION]":
+      lua_function: appoint
+      effect: mutate
+      coordinate_bearing: false
+      live_deployed: true
+      verified: "2026-09-21 (live on VM 103, minimal version: unit 345 appointed MANAGER, verified from both sides, unappointed and re-appointed)"
+      knowledge_scope: player_visible
+      notes: >
+        Appoints a living adult citizen to a vacant position, as a player does
+        on the Nobles screen. DRY_RUN defaults to true; only the word false
+        writes. Refuses, with a named reason, an unknown code, an elected
+        position, an unmet population requirement, a position already held,
+        and a unit that is missing, dead, not a citizen, not an adult or has
+        no historical figure. VERSION minimal (default) writes what DFHack's
+        make-monarch writes and was sufficient live; with_event also writes the
+        matching history event and is untested. An appointment alone did not
+        start the fort's queued manager orders within three game days: the
+        Manager needs an office, and the fort has none (handoffs/2026-09-21-
+        nobles-appoint.md).
+    "unappoint POSITION_CODE [DRY_RUN] [VERSION]":
+      lua_function: unappoint
+      effect: mutate
+      coordinate_bearing: false
+      live_deployed: true
+      verified: "2026-09-21 (live on VM 103, minimal version: MANAGER unappointed, position link replaced by a former-position link, verified)"
+      knowledge_scope: player_visible
+      notes: >
+        Removes the holder of a held, non-elected position. Same DRY_RUN and
+        VERSION semantics as appoint. Refuses a vacant or elected position.
+
 # Not yet built, flagged here rather than silently absent:
 #   - resource_summary (get_overview's remaining unbuilt field, needed to
 #     unblock chokepoints' rank_candidate_sites).

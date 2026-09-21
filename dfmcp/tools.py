@@ -242,6 +242,20 @@ _BRACKET_RE = re.compile(r"^\[(.+)\]$")
 # "description" key in its schema property at all (never an empty string):
 # the same honest-gap default _INTEGER_ARG_NAMES uses for type.
 _ARG_DESCRIPTIONS: Dict[str, str] = {
+    "POSITION_CODE": (
+        "The code of a fortress position exactly as nobles.list shows it, "
+        "for example MANAGER, BOOKKEEPER or BROKER. An unknown code is an "
+        "error that lists the known ones."
+    ),
+    "VERSION": (
+        "How much the write records: minimal (the default, the two "
+        "assignment fields and the position link) or with_event (also the "
+        "history event). Leave it out unless minimal fails a nobles.verify."
+    ),
+    "DRY_RUN": (
+        "true (the default) only reports what would change; only the exact "
+        "word false makes the change."
+    ),
     "LEVEL": (
         "An offset relative to NEAR_LANDMARK's own level, NOT an absolute DF "
         "map coordinate: 0 (the default when omitted) is the landmark's own "

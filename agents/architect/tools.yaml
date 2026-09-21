@@ -175,6 +175,15 @@ read:
       Same handoff. How many citizens have a labor enabled; null plus an error when
       unknown, never 0. Not yet deployed.
 
+  - id: "nobles.list"
+    status: exists
+    note: >-
+      Added handoffs/2026-09-21-nobles-appoint.md. Every fortress position and its holder.
+  - id: "nobles.verify"
+    status: exists
+    note: >-
+      Same handoff. Read-only both-sides check of one position.
+
 write:
   - id: "queue.propose"
     status: exists
