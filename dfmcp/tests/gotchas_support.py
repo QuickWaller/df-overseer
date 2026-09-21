@@ -25,6 +25,7 @@ import yaml
 
 from dfmcp.doctrine_tools import NATIVE_TOOLS as DOCTRINE_NATIVE_TOOLS
 from dfmcp.gotchas_tools import NATIVE_TOOLS as GOTCHAS_NATIVE_TOOLS
+from dfmcp.knowledge_tools import NATIVE_TOOLS as KNOWLEDGE_NATIVE_TOOLS
 from dfmcp.queue_tools import NATIVE_TOOLS as QUEUE_NATIVE_TOOLS
 from dfmcp.registry import DEFAULT_TOOLS_YAML, load_registry
 from dfmcp.roles import DEFAULT_AGENTS_DIR, load_roster
@@ -32,6 +33,7 @@ from dfmcp.series_tools import NATIVE_TOOLS as SERIES_NATIVE_TOOLS
 
 ALL_NATIVE_TOOLS = {
     **QUEUE_NATIVE_TOOLS, **DOCTRINE_NATIVE_TOOLS, **SERIES_NATIVE_TOOLS, **GOTCHAS_NATIVE_TOOLS,
+    **KNOWLEDGE_NATIVE_TOOLS,
 }
 
 _BUILDING_SCRIPT = {

@@ -522,12 +522,13 @@ class TestRosterWiring:
     def registry(self):
         from dfmcp.doctrine_tools import NATIVE_TOOLS as DOCTRINE_NATIVE_TOOLS
         from dfmcp.gotchas_tools import NATIVE_TOOLS as GOTCHAS_NATIVE_TOOLS
+        from dfmcp.knowledge_tools import NATIVE_TOOLS as KNOWLEDGE_NATIVE_TOOLS
         from dfmcp.queue_tools import NATIVE_TOOLS as QUEUE_NATIVE_TOOLS
         from dfmcp.registry import load_registry
 
         return load_registry(
             native_tools={**QUEUE_NATIVE_TOOLS, **DOCTRINE_NATIVE_TOOLS, **series_tools.NATIVE_TOOLS,
-                **GOTCHAS_NATIVE_TOOLS}
+                **GOTCHAS_NATIVE_TOOLS, **KNOWLEDGE_NATIVE_TOOLS}
         )
 
     @pytest.fixture(scope="class")
