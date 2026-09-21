@@ -14,7 +14,10 @@ from __future__ import annotations
 from xml.etree import ElementTree as ET
 
 from dfqueue import render
-from dfqueue.tests._helpers import make_pass, make_proposal, make_ruling
+from dfqueue.tests._helpers import (
+    make_answer, make_ask, make_executed, make_pass, make_proposal,
+    make_ruling,
+)
 
 
 def test_public_view_never_leaks_a_field_added_to_the_record():
@@ -104,3 +107,56 @@ def test_to_xml_ruling_is_well_formed():
     assert root.tag == "ruling"
     assert root.find("decision").text == "accept"
     assert root.find("proposal_id").text == "proposal-0001"
+
+
+def test_to_xml_executed_is_well_formed_with_one_action_per_element():
+    record = make_executed(
+        id="executed-0001",
+        actions=[
+            {"tool": "workshop.build", "outcome": "success"},
+            {"tool": "farm.set-crop", "outcome": "failure", "detail": "stale precondition"},
+        ],
+    )
+    xml = render.to_xml(record)
+    root = ET.fromstring(xml)
+    assert root.tag == "executed"
+    assert root.find("ruling_id").text == "ruling-0001"
+    actions = root.find("actions").findall("action")
+    assert len(actions) == 2
+    assert actions[0].get("tool") == "workshop.build"
+    assert actions[0].get("outcome") == "success"
+    assert actions[1].get("detail") == "stale precondition"
+    assert root.find("notes") is not None
+
+
+def test_to_xml_ask_is_well_formed_with_and_without_a_proposal_id():
+    xml = render.to_xml(make_ask(id="ask-0001"))
+    root = ET.fromstring(xml)
+    assert root.tag == "ask"
+    assert root.find("question") is not None
+    assert root.find("proposal_id") is None
+
+    xml2 = render.to_xml(make_ask(id="ask-0002", role="overseer", proposal_id="proposal-0001"))
+    root2 = ET.fromstring(xml2)
+    assert root2.find("proposal_id").text == "proposal-0001"
+
+
+def test_to_xml_answer_is_well_formed():
+    record = make_answer(id="answer-0001")
+    xml = render.to_xml(record)
+    root = ET.fromstring(xml)
+    assert root.tag == "answer"
+    assert root.find("ask_id").text == "ask-0001"
+    assert root.find("answer") is not None
+
+
+def test_public_view_of_executed_carries_only_the_common_allowlisted_fields():
+    record = make_executed(id="executed-0001", ts="2026-09-22T00:00:00+00:00")
+    view = render.public_view(record)
+    assert view == {
+        "id": "executed-0001", "ts": "2026-09-22T00:00:00+00:00",
+        "kind": "executed", "role": "overseer",
+    }
+    assert "ruling_id" not in view
+    assert "actions" not in view
+    assert "notes" not in view

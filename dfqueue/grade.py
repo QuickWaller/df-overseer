@@ -11,7 +11,12 @@ record's `summary`/`rationale` prose, only `prediction.signal`,
 
 from __future__ import annotations
 
+import argparse
+import json
 import re
+import sys
+from datetime import datetime, timezone
+from pathlib import Path
 from typing import Callable
 
 from learning import live_signals
@@ -120,3 +125,104 @@ def grade_due(
 
     store.apply_grades(db, updates)
     return updates
+
+
+def run_grading_cycle(
+    db, call_tool: CallTool, *, graded_at: str | None = None,
+) -> dict:
+    """`docs/AGENT-LOOP.md` item 2, "Grading on demand": the one entry point
+    a conductor service calls once per cycle to grade everything now due.
+    Reads the fort's own current tick through `call_tool` (never a
+    wall-clock stand-in — `game_tick_from_overview` needs the real
+    `overview.get`), grades every prediction due by then (`grade_due`), and
+    alongside that reports every accepted proposal that has no `executed`
+    record yet (`store.unexecuted_accepted_proposals`) — item 4's own
+    requirement that an unexecuted acceptance is reported, never silently
+    scored as a miss.
+
+    Idempotent by construction: `grade_due` only ever touches rows still
+    `pending` (a graded row is never re-read), and
+    `unexecuted_accepted_proposals` is a pure read with no side effect —
+    so calling this twice in a row for the same cycle is safe and produces
+    the same "still unexecuted" list, with an empty (not duplicated)
+    `graded` list the second time.
+    """
+    if graded_at is None:
+        graded_at = datetime.now(timezone.utc).isoformat()
+
+    overview = call_tool("overview.get", {})
+    current_game_tick = game_tick_from_overview(overview)
+
+    graded = grade_due(db, current_game_tick, call_tool, graded_at)
+    unexecuted = store.unexecuted_accepted_proposals(db)
+
+    return {
+        "current_game_tick": current_game_tick,
+        "graded_at": graded_at,
+        "graded": graded,
+        "unexecuted": unexecuted,
+    }
+
+
+# ---------------------------------------------------------------------------
+# CLI -- offline/testable only: no VM, no DFHack process, no model call in
+# this stream. A real conductor wires `call_tool` to a live dfmcp client
+# (docs/AGENT-LOOP.md item 3, not built, no VM this stream); this CLI wires
+# it instead to a "replay" JSON file of pre-captured tool responses, so the
+# grading pass itself (the part this stream actually built and can prove)
+# is runnable and testable from the command line without a live fort.
+# ---------------------------------------------------------------------------
+
+
+def _call_tool_from_replay(replay: dict) -> CallTool:
+    """Build a `call_tool` from a replay file shaped
+    `{"calls": [{"tool_id": ..., "args": {...}, "result": ...}, ...]}`.
+    Matches on `(tool_id, args)` equality; raises `KeyError` naming the
+    call if nothing matches, rather than guessing or returning `None`."""
+    calls = replay.get("calls", [])
+
+    def call_tool(tool_id: str, arguments):
+        args = dict(arguments)
+        for entry in calls:
+            if entry.get("tool_id") == tool_id and entry.get("args", {}) == args:
+                return entry["result"]
+        raise KeyError(f"no replay entry for tool_id={tool_id!r} args={args!r}")
+
+    return call_tool
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(
+        prog="python -m dfqueue.grade",
+        description=(
+            "Run one grading cycle against a dfqueue database, reading tool "
+            "results from a replay JSON file rather than a live DFHack "
+            "process (offline only; see this module's own docstring)."
+        ),
+    )
+    parser.add_argument("--db", required=True, type=Path, help="path to the queue sqlite3 database")
+    parser.add_argument(
+        "--replay", required=True, type=Path,
+        help='JSON file: {"calls": [{"tool_id", "args", "result"}, ...]}',
+    )
+    parser.add_argument("--graded-at", default=None, help="ISO timestamp; defaults to now (UTC)")
+    args = parser.parse_args(argv)
+
+    with args.replay.open(encoding="utf-8") as fh:
+        replay = json.load(fh)
+    call_tool = _call_tool_from_replay(replay)
+
+    result = run_grading_cycle(args.db, call_tool, graded_at=args.graded_at)
+    print(json.dumps({
+        "current_game_tick": result["current_game_tick"],
+        "graded_at": result["graded_at"],
+        "graded_count": len(result["graded"]),
+        "graded": result["graded"],
+        "unexecuted_count": len(result["unexecuted"]),
+        "unexecuted_proposal_ids": [u["proposal"]["id"] for u in result["unexecuted"]],
+    }, indent=2, default=str))
+    return 0
+
+
+if __name__ == "__main__":  # pragma: no cover -- exercised via main() directly in tests
+    sys.exit(main())

@@ -14,7 +14,7 @@ from __future__ import annotations
 
 from xml.sax.saxutils import escape, quoteattr
 
-from .schema import PASS, PROPOSAL, RULING
+from .schema import ANSWER, ASK, EXECUTED, PASS, PROPOSAL, RULING
 
 #: §8's allowlist, plus id/ts/kind "so the feed can order and thread items"
 #: (this stream's brief). Nothing else is ever published, by construction:
@@ -98,7 +98,46 @@ def _ruling_xml(record: dict) -> str:
     ])
 
 
-_RENDERERS = {PROPOSAL: _proposal_xml, PASS: _pass_xml, RULING: _ruling_xml}
+def _executed_xml(record: dict) -> str:
+    lines = [_open_tag("executed", record)]
+    lines.append(f"  <ruling_id>{escape(record['ruling_id'])}</ruling_id>")
+    lines.append("  <actions>")
+    for action in record["actions"]:
+        attrs = (
+            f" tool={quoteattr(str(action['tool']))}"
+            f" outcome={quoteattr(str(action['outcome']))}"
+        )
+        if action.get("detail") is not None:
+            attrs += f" detail={quoteattr(str(action['detail']))}"
+        lines.append(f"    <action{attrs}/>")
+    lines.append("  </actions>")
+    lines.append(f"  <notes>{escape(record['notes'])}</notes>")
+    lines.append("</executed>")
+    return "\n".join(lines)
+
+
+def _ask_xml(record: dict) -> str:
+    lines = [_open_tag("ask", record)]
+    lines.append(f"  <question>{escape(record['question'])}</question>")
+    if record.get("proposal_id") is not None:
+        lines.append(f"  <proposal_id>{escape(record['proposal_id'])}</proposal_id>")
+    lines.append("</ask>")
+    return "\n".join(lines)
+
+
+def _answer_xml(record: dict) -> str:
+    return "\n".join([
+        _open_tag("answer", record),
+        f"  <ask_id>{escape(record['ask_id'])}</ask_id>",
+        f"  <answer>{escape(record['answer'])}</answer>",
+        "</answer>",
+    ])
+
+
+_RENDERERS = {
+    PROPOSAL: _proposal_xml, PASS: _pass_xml, RULING: _ruling_xml,
+    EXECUTED: _executed_xml, ASK: _ask_xml, ANSWER: _answer_xml,
+}
 
 
 def to_xml(record: dict) -> str:
