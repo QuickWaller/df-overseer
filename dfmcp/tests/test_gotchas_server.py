@@ -196,10 +196,10 @@ class TestEnrichmentOverTheWire:
         ))
         app = make_app(rr, pool, tmp_path, gdb, confidence=cfg)
         async with mcp_session(app, ARCHITECT_TOKEN) as session:
-            result = await session.call_tool("building__find", {"kind": "Masons", "near_landmark": "Wagon"})
+            result = await session.call_tool("building__find", {"kind": "Masons", "w": 3, "h": 3, "near_landmark": "Wagon"})
         assert result.structured_content["tool_guidance"]["confidence"] == "full"
         assert fake_dfhack.received_requests[0] == _encode_run_command_request(
-            "df-overseer-building", ["find", "Masons", "Wagon"]
+            "df-overseer-building", ["find", "Masons", "3", "3", "Wagon"]
         )
 
 
@@ -349,7 +349,7 @@ class TestLaborJoinOverTheWire:
         stub = c2_stub()
         app = make_app(rr, pool, tmp_path, gdb, production_db="/graph.sqlite3", labors_for_kind=stub)
         async with mcp_session(app, ARCHITECT_TOKEN) as session:
-            result = await session.call_tool("building__find", {"kind": "Still", "near_landmark": "Wagon"})
+            result = await session.call_tool("building__find", {"kind": "Still", "w": 3, "h": 3, "near_landmark": "Wagon"})
         assert result.is_error is False
         sc = result.structured_content
         assert stub.calls == [("/graph.sqlite3", "Still")]
@@ -373,7 +373,7 @@ class TestLaborJoinOverTheWire:
         )
         app = make_app(rr, pool, tmp_path, gdb, production_db="/g", labors_for_kind=c2_stub())
         async with mcp_session(app, OVERSEER_TOKEN) as session:
-            result = await session.call_tool("building__build", {"kind": "Still", "near_landmark": "Wagon"})
+            result = await session.call_tool("building__build", {"kind": "Still", "w": 3, "h": 3, "near_landmark": "Wagon"})
         assert result.is_error is False
         assert result.structured_content["operating_labors"]["citizens_with_labor"] == {"BREWER": 2}
 
@@ -382,7 +382,7 @@ class TestLaborJoinOverTheWire:
         stub = c2_stub(status="unknown", labors=[], reason="the kind hosts no process in the graph")
         app = make_app(rr, pool, tmp_path, gdb, production_db="/g", labors_for_kind=stub)
         async with mcp_session(app, ARCHITECT_TOKEN) as session:
-            result = await session.call_tool("building__find", {"kind": "Still", "near_landmark": "Wagon"})
+            result = await session.call_tool("building__find", {"kind": "Still", "w": 3, "h": 3, "near_landmark": "Wagon"})
         sc = result.structured_content
         assert sc["operating_labors"]["status"] == "unknown"
         assert sc["operating_labors"]["labors"] is None
@@ -394,7 +394,7 @@ class TestLaborJoinOverTheWire:
         fake_dfhack.queue_actions(make_ok_action(BUILD_RESULT), make_fail_action(1))
         app = make_app(rr, pool, tmp_path, gdb, production_db="/g", labors_for_kind=c2_stub())
         async with mcp_session(app, ARCHITECT_TOKEN) as session:
-            result = await session.call_tool("building__find", {"kind": "Still", "near_landmark": "Wagon"})
+            result = await session.call_tool("building__find", {"kind": "Still", "w": 3, "h": 3, "near_landmark": "Wagon"})
         op = result.structured_content["operating_labors"]
         assert result.is_error is False
         assert op["citizens_with_labor"] == {"BREWER": None}
@@ -408,7 +408,7 @@ class TestLaborJoinOverTheWire:
         )
         app = make_app(rr, pool, tmp_path, gdb, production_db="/g", labors_for_kind=c2_stub())
         async with mcp_session(app, ARCHITECT_TOKEN) as session:
-            result = await session.call_tool("building__find", {"kind": "Still", "near_landmark": "Wagon"})
+            result = await session.call_tool("building__find", {"kind": "Still", "w": 3, "h": 3, "near_landmark": "Wagon"})
         op = result.structured_content["operating_labors"]
         assert op["citizens_with_labor"] == {"BREWER": None}
         assert op["citizens_with_labor_errors"] == {"BREWER": "unknown labor token"}
@@ -418,7 +418,7 @@ class TestLaborJoinOverTheWire:
         # No injected function: the real production.labors, absent or pointed at a missing file.
         app = make_app(rr, pool, tmp_path, gdb, production_db=str(tmp_path / "no-graph.sqlite3"))
         async with mcp_session(app, ARCHITECT_TOKEN) as session:
-            result = await session.call_tool("building__find", {"kind": "Still", "near_landmark": "Wagon"})
+            result = await session.call_tool("building__find", {"kind": "Still", "w": 3, "h": 3, "near_landmark": "Wagon"})
         assert result.is_error is False
         op = result.structured_content["operating_labors"]
         assert op["status"] == "unknown" and op["labors"] is None and "not found" in op["unknown_reason"]
