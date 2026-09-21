@@ -594,6 +594,11 @@ df-overseer-workshop.lua:
       verified: "2026-09-16 (DRY_RUN=true path only; the real quickfort path is UNTESTED live). Deployed to VM 103 2026-09-17 (handoffs/2026-09-17-farm-tools-deploy.md and the water-industry deploy, hash-verified) and dry-run there for still, kitchen, mason and mechanic"
       knowledge_scope: player_derivable
       notes: >
+        UPDATE 2026-09-22: the starter blueprints for still, kitchen, mason and
+        mechanic were deployed to the guest's dfhack-config/blueprints/ on
+        2026-09-17 (handoffs/2026-09-17-farm-tools-deploy.md and
+        handoffs/2026-09-17-water-industry-tools-deploy.md), so the sentence below
+        that says they are not yet deployed is stale.
         DRY_RUN defaults to true, same contract as farm.build. Dry-run
         tested live for KIND=still. Does not name the building it creates
         (unlike farm.build) -- a workshop's DF-default name was not
@@ -978,6 +983,11 @@ df-overseer-workjob.lua:
       # here because dfmcp/tests/test_workjob_tool.py pins it; see handoffs/2026-09-21-doc-drift-pass-2.md.
       knowledge_scope: player_visible
       notes: >
+        UPDATE 2026-09-22: the opening sentence below (offline build, never run
+        live) is stale. The tool was deployed on 2026-09-19 and run live,
+        including one real blocks job (decisions/DECISIONS.md 2026-09-19).
+        DFHack's own workshops.getJobs would replace this three-job table
+        (handoffs/2026-09-21-workjob-generalise.md, written, not dispatched).
         Offline build, never run against a live DFHack process (this
         stream had no VM). DRY_RUN defaults to true. JOB is one of
         blocks (ConstructBlocks @ Masons), mechanisms (ConstructMechanisms
@@ -1193,6 +1203,11 @@ df-overseer-stocks.lua:
       # which a player sees only via the trade screen or an explicit look at
       # the wagon. Items on hidden tiles are excluded (is_on_hidden_tile).
       notes: >
+        UPDATE 2026-09-22: the sentences below that say NOT DEPLOYED and that the
+        file has never been placed on VM 103 describe the build stream and are
+        stale. The file was deployed and run as the shipped command (see
+        `verified`), and again on 2026-09-19
+        (handoffs/2026-09-19-deploy-and-live-verify.md).
         NOT DEPLOYED. This tool's whole reason for existing is a corrected
         ownership test: `not item.flags.trader`, NEVER `not item.flags.foreign`
         -- flags.foreign is an origin flag (embark-outfitted OR caravan-brought),
@@ -1267,6 +1282,15 @@ df-overseer-stocks.lua:
       # the vanilla stocks/item-viewer screens, but the netted aggregate is
       # a computation over them, not itself one screen.
       notes: >
+        UPDATE 2026-09-22: the paragraphs below are the offline build's own words
+        and are kept as history. Since then the tool was deployed and hash-verified
+        on VM 103 (2026-09-19), run live against BUCKET, an unknown type gave an
+        error object and both UNIT_HOLDER branches were exercised, and
+        owned_ref_check.verified_offline was flipped to true
+        (handoffs/2026-09-19-deploy-and-live-verify.md). `verified` stays
+        unverified above only because a registry test pins it. The six-deduction
+        form (in_building and construction added) is what is deployed and was
+        run live against BOULDER (handoffs/2026-09-19-deploy-batch.md).
         ADDED handoffs/2026-09-19-per-item-flags-tool.md, an OFFLINE build
         stream: no VM, no DFHack process, no deploy, so this command is
         UNVERIFIED BY EXECUTION, not merely "not yet redeployed" like
