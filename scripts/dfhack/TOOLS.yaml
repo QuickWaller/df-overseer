@@ -1106,10 +1106,19 @@ df-overseer-threat.lua:
       lua_function: find_threats
       effect: read
       coordinate_bearing: false
-      live_deployed: false
+      live_deployed: true
       verified: unverified
       knowledge_scope: player_derivable
       notes: >
+        UPDATE 2026-09-22: the closing sentences below that say NOT DEPLOYED AND
+        NOT RUN are stale. The file was on VM 103 and byte-equal to main on
+        2026-09-17 (handoffs/2026-09-17-farm-tools-deploy.md), and the
+        pre-fix version was live-verified 2026-09-12 (decisions/DECISIONS.md
+        2026-09-12, 'Threat detector LIVE-VERIFIED'). `verified` stays
+        unverified because the 2026-09-16 knowledge-scope fix has not been run
+        live since and a registry test pins it. The 2026-09-21 deploy report
+        found this file's bytes differ from main again (cause and direction not
+        checked).
         KNOWLEDGE-SCOPE FIX 2026-09-16: was OMNISCIENT before this fix --
         isHidden units were reported as informational, not excluded, and
         this tool's own stated purpose is catching exactly what isHidden says
@@ -1148,10 +1157,17 @@ df-overseer-breach.lua:
       lua_function: check_breach
       effect: read
       coordinate_bearing: false
-      live_deployed: false
+      live_deployed: true
       verified: unverified
       knowledge_scope: player_derivable
       notes: >
+        UPDATE 2026-09-22: the sentences below that say NOT DEPLOYED AND NOT RUN
+        are stale as to deployment. The file was on VM 103 and byte-equal to main
+        on 2026-09-17 (handoffs/2026-09-17-farm-tools-deploy.md and
+        handoffs/2026-09-17-water-industry-tools-deploy.md); no live run of it is
+        recorded in the deploy reports read for this update, so `verified` stays unverified. The 2026-09-21 deploy report
+        found this file's bytes differ from main again (cause and direction not
+        checked).
         KNOWLEDGE-SCOPE FIX 2026-09-16: was "player_derivable, leaning
         omniscient on mechanism" -- stage 2 read flow_size/liquid_type on any
         flagged block's tiles with no designation.hidden check, relying only
