@@ -1,0 +1,354 @@
+{
+ "customs": [
+  {
+   "code": "SOAP_MAKER",
+   "id": 0,
+   "index": 0,
+   "name": "Soap Maker's Workshop"
+  },
+  {
+   "code": "SCREW_PRESS",
+   "id": 1,
+   "index": 1,
+   "name": "Screw Press"
+  }
+ ],
+ "fixture_note": "subset of the real dump: entries copied verbatim, only filtered",
+ "generated": "2026-09-21T04:14:52.058382+00:00Z",
+ "how": "read-only dfhack-run lua reads on the paused fort (year 31 tick 103055); enum-range loops plus static tables, no map or unit sweeps",
+ "join_note": "labors come only from df.job_type.attrs (skill, skill_stone/wood/metal, attr_labor). A job whose table names none (all the Masons and Carpenters furniture jobs, ConstructDoor and the like) has an empty list and basis 'none': the labor is applied by game code from the item material and is NOT derivable here. For those the only game-side hint is get_profile_labors for the kind (S2).",
+ "kinds": [
+  {
+   "building_type": "Workshop",
+   "class": "workshop",
+   "custom": -1,
+   "s1_jobs": [
+    {
+     "job_type": "ConstructBlocks",
+     "name": "construct blocks"
+    },
+    {
+     "job_type": "ConstructDoor",
+     "name": "construct door"
+    },
+    {
+     "job_type": "MakeAnimalTrap",
+     "name": "make animal trap"
+    }
+   ],
+   "s2_profile_labors": [
+    "CARPENTER",
+    "TRAPPER"
+   ],
+   "s3_reactions": [
+    "MAKE WOODEN CHAIR"
+   ],
+   "subtype": 0,
+   "subtype_name": "Carpenters"
+  },
+  {
+   "building_type": "Workshop",
+   "class": "workshop",
+   "custom": -1,
+   "s1_jobs": [],
+   "s2_profile_labors": [
+    "PROCESS_PLANT",
+    "MAKE_CHEESE",
+    "MILK",
+    "SHEARER",
+    "SPINNER",
+    "PAPERMAKING"
+   ],
+   "s3_reactions": [
+    "PROCESS_PLANT_TO_BAG",
+    "MAKE_SHEET_FROM_PLANT"
+   ],
+   "subtype": 1,
+   "subtype_name": "Farmers"
+  },
+  {
+   "building_type": "Workshop",
+   "class": "workshop",
+   "custom": -1,
+   "s1_jobs": [
+    {
+     "job_type": "ConstructBlocks",
+     "name": "construct blocks"
+    },
+    {
+     "job_type": "ConstructDoor",
+     "name": "construct door"
+    },
+    {
+     "job_type": "ConstructQuern",
+     "name": "construct quern"
+    },
+    {
+     "job_type": "ConstructTable",
+     "name": "construct table"
+    }
+   ],
+   "s2_profile_labors": [
+    "STONECUTTER",
+    "STONE_CARVER"
+   ],
+   "s3_reactions": [
+    "MAKE_ENT16 INP1_BODY"
+   ],
+   "subtype": 2,
+   "subtype_name": "Masons"
+  },
+  {
+   "building_type": "Workshop",
+   "class": "workshop",
+   "custom": -1,
+   "s1_jobs": [],
+   "s2_profile_labors": [
+    "FORGE_WEAPON",
+    "FORGE_ARMOR",
+    "FORGE_FURNITURE",
+    "METAL_CRAFT",
+    "TRAPPER"
+   ],
+   "s3_reactions": [
+    "MAKE_ENT12 INK3_VIB"
+   ],
+   "subtype": 5,
+   "subtype_name": "MetalsmithsForge"
+  },
+  {
+   "building_type": "Workshop",
+   "class": "workshop",
+   "custom": -1,
+   "s1_jobs": [],
+   "s2_profile_labors": [
+    "FORGE_WEAPON",
+    "FORGE_ARMOR",
+    "FORGE_FURNITURE",
+    "METAL_CRAFT",
+    "TRAPPER"
+   ],
+   "s3_reactions": [
+    "MAKE_ENT12 INK3_VIB"
+   ],
+   "subtype": 6,
+   "subtype_name": "MagmaForge"
+  },
+  {
+   "building_type": "Workshop",
+   "class": "workshop",
+   "custom": -1,
+   "s1_jobs": [],
+   "s2_profile_labors": [],
+   "s3_reactions": [],
+   "subtype": 7,
+   "subtype_name": "Bowyers"
+  },
+  {
+   "building_type": "Workshop",
+   "class": "workshop",
+   "custom": -1,
+   "s1_jobs": [
+    {
+     "job_type": "ButcherAnimal",
+     "name": "butcher an animal"
+    },
+    {
+     "job_type": "CatchLiveLandAnimal",
+     "name": "catch live land animal"
+    },
+    {
+     "job_type": "ExtractFromLandAnimal",
+     "name": "extract from land animal"
+    }
+   ],
+   "s2_profile_labors": [
+    "BUTCHER",
+    "DISSECT_VERMIN"
+   ],
+   "s3_reactions": [],
+   "subtype": 10,
+   "subtype_name": "Butchers"
+  },
+  {
+   "building_type": "Workshop",
+   "class": "workshop",
+   "custom": -1,
+   "s1_jobs": [
+    {
+     "job_type": "MakeBackpack",
+     "name": "construct backpack"
+    },
+    {
+     "job_type": "MakeFlask",
+     "name": "construct waterskin"
+    }
+   ],
+   "s2_profile_labors": [],
+   "s3_reactions": [],
+   "subtype": 11,
+   "subtype_name": "Leatherworks"
+  },
+  {
+   "building_type": "Workshop",
+   "class": "workshop",
+   "custom": -1,
+   "s1_jobs": [
+    {
+     "job_type": "CatchLiveFish",
+     "name": "catch live fish"
+    },
+    {
+     "job_type": "ExtractFromRawFish",
+     "name": "extract from raw fish"
+    },
+    {
+     "job_type": "PrepareRawFish",
+     "name": "prepare raw fish"
+    }
+   ],
+   "s2_profile_labors": [
+    "FISH",
+    "CLEAN_FISH",
+    "DISSECT_FISH"
+   ],
+   "s3_reactions": [],
+   "subtype": 14,
+   "subtype_name": "Fishery"
+  },
+  {
+   "building_type": "Workshop",
+   "class": "workshop",
+   "custom": -1,
+   "s1_jobs": [],
+   "s2_profile_labors": [
+    "BREWER",
+    "HERBALIST"
+   ],
+   "s3_reactions": [
+    "BREW_DRINK_FROM_PLANT",
+    "BREW_DRINK_FROM_PLANT_GROWTH",
+    "MAKE_MEAD"
+   ],
+   "subtype": 15,
+   "subtype_name": "Still"
+  },
+  {
+   "building_type": "Workshop",
+   "class": "workshop",
+   "custom": -1,
+   "s1_jobs": [
+    {
+     "job_type": "DyeThread",
+     "name": "dye cloth"
+    },
+    {
+     "job_type": "DyeThread",
+     "name": "dye thread"
+    }
+   ],
+   "s2_profile_labors": [],
+   "s3_reactions": [
+    "ACACIA_BARK_DYE"
+   ],
+   "subtype": 21,
+   "subtype_name": "Dyers"
+  },
+  {
+   "building_type": "Furnace",
+   "class": "furnace",
+   "custom": -1,
+   "s1_jobs": [
+    {
+     "job_type": "MeltMetalObject",
+     "name": "Melt metal object"
+    }
+   ],
+   "s1_note": "static table only; getJobs also generates one SmeltOre job per metal ore inorganic (skipped: it printall()s each ore)",
+   "s2_profile_labors": [],
+   "s3_reactions": [
+    "BILLON_MAKING"
+   ],
+   "subtype": 1,
+   "subtype_name": "Smelter"
+  },
+  {
+   "building_type": "Furnace",
+   "class": "furnace",
+   "custom": -1,
+   "s1_jobs": [
+    {
+     "job_type": "CollectSand",
+     "name": "collect sand"
+    }
+   ],
+   "s2_profile_labors": [],
+   "s3_reactions": [],
+   "subtype": 2,
+   "subtype_name": "GlassFurnace"
+  },
+  {
+   "building_type": "Furnace",
+   "class": "furnace",
+   "custom": -1,
+   "s1_jobs": [],
+   "s2_profile_labors": [
+    "SMELT",
+    "POTTERY",
+    "GLAZING"
+   ],
+   "s3_reactions": [
+    "GLAZE_JUG",
+    "GLAZE_STATUE",
+    "MAKE_ENT12 INK1_BODY"
+   ],
+   "subtype": 3,
+   "subtype_name": "Kiln"
+  },
+  {
+   "building_type": "Furnace",
+   "class": "furnace",
+   "custom": -1,
+   "s1_jobs": [
+    {
+     "job_type": "MeltMetalObject",
+     "name": "Melt metal object"
+    }
+   ],
+   "s1_note": "static table only; getJobs also generates one SmeltOre job per metal ore inorganic (skipped: it printall()s each ore)",
+   "s2_profile_labors": [],
+   "s3_reactions": [
+    "BILLON_MAKING"
+   ],
+   "subtype": 4,
+   "subtype_name": "MagmaSmelter"
+  },
+  {
+   "building_type": "Furnace",
+   "class": "furnace",
+   "custom": -1,
+   "s1_jobs": [],
+   "s2_profile_labors": [
+    "SMELT",
+    "POTTERY",
+    "GLAZING"
+   ],
+   "s3_reactions": [
+    "GLAZE_JUG",
+    "GLAZE_STATUE",
+    "MAKE_ENT12 INK1_BODY"
+   ],
+   "subtype": 6,
+   "subtype_name": "MagmaKiln"
+  }
+ ],
+ "note_encoding": "DF strings are CP437; one reaction name carried a non-UTF-8 byte and was decoded with replacement",
+ "reaction_count": 304,
+ "sources": {
+  "S1": "dfhack.workshops.getJobs(building_type, subtype, custom): a hand-written per-kind job table (jobs_workshop, jobs_furnace, from DFHack's advfort) plus reaction jobs from the raws. INCOMPLETE for hard-coded jobs: 16 of 33 kinds carry any, 50 distinct job types in total; its own source comments mark the forges as unfinished. Smelters skipped in this dump because getJobs also generates one SmeltOre job per metal ore and printall()s each",
+  "S2": "plugins.orders.get_profile_labors(type, subtype): the vanilla Workers-tab labor set for the kind, DFHack's transcription of what the game's restriction UI offers. Non-empty for 17 of 33 kinds, empty for the rest (kitchen, mechanic, siege, loom, bowyer, leatherworks, clothier, dyer, furnaces except kiln), which is absence of a restriction UI, not absence of a labor",
+  "S3": "own scan of world.raws.reactions.reactions[*].building (type, subtype, custom). Complete for reaction-defined jobs and identical to S1's reaction entries on every non-smelter kind",
+  "not_used": "the game's own workshop 'add task' list (main_interface.building buttons) is populated only when a building is selected in the UI; reading it means driving UI state, so it was not attempted"
+ },
+ "stream": "handoffs/2026-09-21-building-tool-lua.md"
+}

@@ -1,0 +1,521 @@
+{
+ "fixture_note": "subset of the real dump: entries copied verbatim, only filtered",
+ "generated": "2026-09-21T04:14:52.058382+00:00Z",
+ "how": "read-only dfhack-run lua reads on the paused fort (year 31 tick 103055); enum-range loops plus static tables, no map or unit sweeps",
+ "job_count": 22,
+ "jobs": [
+  {
+   "attr_labor_id": -1,
+   "caption": "Carve Fortification",
+   "id": 0,
+   "is_designation": true,
+   "item": -1,
+   "name": "CarveFortification",
+   "skill": {
+    "labor": "STONECUTTER",
+    "labor_id": 12,
+    "skill": "CUT_STONE",
+    "skill_caption": "Cut Stone",
+    "skill_id": 135
+   }
+  },
+  {
+   "attr_labor": "HAUL_ITEM",
+   "attr_labor_id": 6,
+   "caption": "Collect Sand",
+   "id": 24,
+   "is_designation": false,
+   "item": 70,
+   "name": "CollectSand",
+   "skill": {
+    "note": "skill is -1 (no skill)",
+    "skill": "NONE",
+    "skill_id": -1
+   }
+  },
+  {
+   "attr_labor_id": -1,
+   "caption": "Catch Live Land Animal",
+   "id": 33,
+   "is_designation": false,
+   "item": 51,
+   "name": "CatchLiveLandAnimal",
+   "skill": {
+    "labor": "TRAPPER",
+    "labor_id": 26,
+    "skill": "TRAPPING",
+    "skill_caption": "Trapping",
+    "skill_id": 11
+   }
+  },
+  {
+   "attr_labor_id": -1,
+   "caption": "Catch Live Fish",
+   "id": 34,
+   "is_designation": false,
+   "item": 51,
+   "name": "CatchLiveFish",
+   "skill": {
+    "labor": "FISH",
+    "labor_id": 41,
+    "skill": "FISH",
+    "skill_caption": "Fishing",
+    "skill_id": 23
+   }
+  },
+  {
+   "attr_labor_id": -1,
+   "caption": "Construct Door",
+   "id": 67,
+   "is_designation": false,
+   "item": 6,
+   "name": "ConstructDoor",
+   "skill": {
+    "note": "skill is -1 (no skill)",
+    "skill": "NONE",
+    "skill_id": -1
+   }
+  },
+  {
+   "attr_labor_id": -1,
+   "caption": "Construct Table",
+   "id": 72,
+   "is_designation": false,
+   "item": 20,
+   "name": "ConstructTable",
+   "skill": {
+    "note": "skill is -1 (no skill)",
+    "skill": "NONE",
+    "skill_id": -1
+   }
+  },
+  {
+   "attr_labor_id": -1,
+   "caption": "Construct Blocks",
+   "id": 80,
+   "is_designation": false,
+   "item": 2,
+   "name": "ConstructBlocks",
+   "skill": {
+    "labor": "STONECUTTER",
+    "labor_id": 12,
+    "skill": "CUT_STONE",
+    "skill_caption": "Cut Stone",
+    "skill_id": 135
+   }
+  },
+  {
+   "attr_labor_id": -1,
+   "caption": "Make Crafts",
+   "id": 82,
+   "is_designation": false,
+   "item": -1,
+   "name": "MakeCrafts",
+   "skill": {
+    "note": "skill is -1 (no skill)",
+    "skill": "NONE",
+    "skill_id": -1
+   },
+   "skill_metal": {
+    "labor": "METAL_CRAFT",
+    "labor_id": 49,
+    "skill": "METALCRAFT",
+    "skill_caption": "Metal Crafting",
+    "skill_id": 33
+   },
+   "skill_stone": {
+    "labor": "STONE_CRAFT",
+    "labor_id": 53,
+    "skill": "STONECRAFT",
+    "skill_caption": "Stone Crafting",
+    "skill_id": 32
+   },
+   "skill_wood": {
+    "labor": "WOOD_CRAFT",
+    "labor_id": 52,
+    "skill": "WOODCRAFT",
+    "skill_caption": "Wood Crafting",
+    "skill_id": 31
+   }
+  },
+  {
+   "attr_labor_id": -1,
+   "caption": "Cut Gems",
+   "id": 84,
+   "is_designation": false,
+   "item": 1,
+   "name": "CutGems",
+   "skill": {
+    "labor": "CUT_GEM",
+    "labor_id": 50,
+    "skill": "CUTGEM",
+    "skill_caption": "Gem Cutting",
+    "skill_id": 29
+   }
+  },
+  {
+   "attr_labor_id": -1,
+   "caption": "Smelt Ore",
+   "id": 89,
+   "is_designation": false,
+   "item": 0,
+   "name": "SmeltOre",
+   "skill": {
+    "labor": "SMELT",
+    "labor_id": 45,
+    "skill": "SMELT",
+    "skill_caption": "Furnace Operation",
+    "skill_id": 24
+   }
+  },
+  {
+   "attr_labor_id": -1,
+   "caption": "Melt a Metal Object",
+   "id": 90,
+   "is_designation": false,
+   "item": 0,
+   "name": "MeltMetalObject",
+   "skill": {
+    "labor": "SMELT",
+    "labor_id": 45,
+    "skill": "SMELT",
+    "skill_caption": "Furnace Operation",
+    "skill_id": 24
+   }
+  },
+  {
+   "attr_labor_id": -1,
+   "caption": "Butcher an Animal",
+   "id": 104,
+   "is_designation": false,
+   "item": -1,
+   "name": "ButcherAnimal",
+   "skill": {
+    "labor": "BUTCHER",
+    "labor_id": 25,
+    "skill": "BUTCHER",
+    "skill_caption": "Butchery",
+    "skill_id": 10
+   }
+  },
+  {
+   "attr_labor_id": -1,
+   "caption": "Prepare a Raw Fish",
+   "id": 105,
+   "is_designation": false,
+   "item": 49,
+   "name": "PrepareRawFish",
+   "skill": {
+    "labor": "CLEAN_FISH",
+    "labor_id": 42,
+    "skill": "PROCESSFISH",
+    "skill_caption": "Fish Cleaning",
+    "skill_id": 9
+   }
+  },
+  {
+   "attr_labor_id": -1,
+   "caption": "Process Plants",
+   "id": 110,
+   "is_designation": false,
+   "item": 57,
+   "name": "ProcessPlants",
+   "skill": {
+    "labor": "PROCESS_PLANT",
+    "labor_id": 35,
+    "skill": "PROCESSPLANTS",
+    "skill_caption": "Threshing",
+    "skill_id": 17
+   }
+  },
+  {
+   "attr_labor_id": -1,
+   "caption": "Prepare Meal",
+   "id": 114,
+   "is_designation": false,
+   "item": 72,
+   "name": "PrepareMeal",
+   "skill": {
+    "labor": "COOK",
+    "labor_id": 38,
+    "skill": "COOK",
+    "skill_caption": "Cooking",
+    "skill_id": 20
+   }
+  },
+  {
+   "attr_labor_id": -1,
+   "caption": "Make Flask",
+   "id": 121,
+   "is_designation": false,
+   "item": 11,
+   "name": "MakeFlask",
+   "skill": {
+    "note": "skill is -1 (no skill)",
+    "skill": "NONE",
+    "skill_id": -1
+   },
+   "skill_metal": {
+    "labor": "METAL_CRAFT",
+    "labor_id": 49,
+    "skill": "METALCRAFT",
+    "skill_caption": "Metal Crafting",
+    "skill_id": 33
+   }
+  },
+  {
+   "attr_labor_id": -1,
+   "caption": "Make Animal Trap",
+   "id": 124,
+   "is_designation": false,
+   "item": 19,
+   "name": "MakeAnimalTrap",
+   "skill": {
+    "labor": "TRAPPER",
+    "labor_id": 26,
+    "skill": "TRAPPING",
+    "skill_caption": "Trapping",
+    "skill_id": 11
+   }
+  },
+  {
+   "attr_labor_id": -1,
+   "caption": "Make Backpack",
+   "id": 131,
+   "is_designation": false,
+   "item": 61,
+   "name": "MakeBackpack",
+   "skill": {
+    "note": "skill is -1 (no skill)",
+    "skill": "NONE",
+    "skill_id": -1
+   }
+  },
+  {
+   "attr_labor_id": -1,
+   "caption": "Extract from Raw Fish",
+   "id": 150,
+   "is_designation": false,
+   "item": 73,
+   "name": "ExtractFromRawFish",
+   "skill": {
+    "labor": "DISSECT_FISH",
+    "labor_id": 43,
+    "skill": "DISSECT_FISH",
+    "skill_caption": "Fish Dissection",
+    "skill_id": 7
+   }
+  },
+  {
+   "attr_labor_id": -1,
+   "caption": "Extract from Land Animal",
+   "id": 151,
+   "is_designation": false,
+   "item": 73,
+   "name": "ExtractFromLandAnimal",
+   "skill": {
+    "labor": "DISSECT_VERMIN",
+    "labor_id": 27,
+    "skill": "DISSECT_VERMIN",
+    "skill_caption": "Animal Dissection",
+    "skill_id": 8
+   }
+  },
+  {
+   "attr_labor_id": -1,
+   "caption": "Dye Thread",
+   "id": 190,
+   "is_designation": false,
+   "item": -1,
+   "name": "DyeThread",
+   "skill": {
+    "labor": "DYER",
+    "labor_id": 63,
+    "skill": "DYER",
+    "skill_caption": "Dyeing",
+    "skill_id": 67
+   }
+  },
+  {
+   "attr_labor_id": -1,
+   "caption": "Construct Quern",
+   "id": 201,
+   "is_designation": false,
+   "item": 80,
+   "name": "ConstructQuern",
+   "skill": {
+    "note": "skill is -1 (no skill)",
+    "skill": "NONE",
+    "skill_id": -1
+   }
+  }
+ ],
+ "labors": [
+  {
+   "caption": "Item Hauling",
+   "id": 6,
+   "name": "HAUL_ITEM"
+  },
+  {
+   "caption": "Carpentry",
+   "id": 11,
+   "name": "CARPENTER"
+  },
+  {
+   "caption": "Stone Cutting",
+   "id": 12,
+   "name": "STONECUTTER"
+  },
+  {
+   "caption": "Stone Carving",
+   "id": 13,
+   "name": "STONE_CARVER"
+  },
+  {
+   "caption": "Masonry",
+   "id": 15,
+   "name": "MASON"
+  },
+  {
+   "caption": "Butchery",
+   "id": 25,
+   "name": "BUTCHER"
+  },
+  {
+   "caption": "Trapping",
+   "id": 26,
+   "name": "TRAPPER"
+  },
+  {
+   "caption": "Small Animal Dissection",
+   "id": 27,
+   "name": "DISSECT_VERMIN"
+  },
+  {
+   "caption": "Brewing",
+   "id": 30,
+   "name": "BREWER"
+  },
+  {
+   "caption": "Plant Processing",
+   "id": 35,
+   "name": "PROCESS_PLANT"
+  },
+  {
+   "caption": "Cheese Making",
+   "id": 36,
+   "name": "MAKE_CHEESE"
+  },
+  {
+   "caption": "Milking",
+   "id": 37,
+   "name": "MILK"
+  },
+  {
+   "caption": "Cooking",
+   "id": 38,
+   "name": "COOK"
+  },
+  {
+   "caption": "Plant Gathering",
+   "id": 40,
+   "name": "HERBALIST"
+  },
+  {
+   "caption": "Fishing",
+   "id": 41,
+   "name": "FISH"
+  },
+  {
+   "caption": "Fish Cleaning",
+   "id": 42,
+   "name": "CLEAN_FISH"
+  },
+  {
+   "caption": "Fish Dissection",
+   "id": 43,
+   "name": "DISSECT_FISH"
+  },
+  {
+   "caption": "Furnace Operating",
+   "id": 45,
+   "name": "SMELT"
+  },
+  {
+   "caption": "Weaponsmithing",
+   "id": 46,
+   "name": "FORGE_WEAPON"
+  },
+  {
+   "caption": "Armoring",
+   "id": 47,
+   "name": "FORGE_ARMOR"
+  },
+  {
+   "caption": "Blacksmithing",
+   "id": 48,
+   "name": "FORGE_FURNITURE"
+  },
+  {
+   "caption": "Metalcrafting",
+   "id": 49,
+   "name": "METAL_CRAFT"
+  },
+  {
+   "caption": "Gem Cutting",
+   "id": 50,
+   "name": "CUT_GEM"
+  },
+  {
+   "caption": "Woodcrafting",
+   "id": 52,
+   "name": "WOOD_CRAFT"
+  },
+  {
+   "caption": "Stonecrafting",
+   "id": 53,
+   "name": "STONE_CRAFT"
+  },
+  {
+   "caption": "Dyeing",
+   "id": 63,
+   "name": "DYER"
+  },
+  {
+   "caption": "Shearing",
+   "id": 66,
+   "name": "SHEARER"
+  },
+  {
+   "caption": "Spinning",
+   "id": 67,
+   "name": "SPINNER"
+  },
+  {
+   "caption": "Pottery",
+   "id": 68,
+   "name": "POTTERY"
+  },
+  {
+   "caption": "Glazing",
+   "id": 69,
+   "name": "GLAZING"
+  },
+  {
+   "caption": "Papermaking",
+   "id": 81,
+   "name": "PAPERMAKING"
+  }
+ ],
+ "lookup_error_count": 0,
+ "lookup_errors": [],
+ "note_encoding": "DF strings are CP437; one reaction name carried a non-UTF-8 byte and was decoded with replacement",
+ "semantics": {
+  "attr_labor": "df.job_type.attrs[job].labor, a direct labor on the job, set for 18 of 259 jobs, all hauling/cleaning/misc",
+  "id_-1_row": "the enum's -1 sentinel, name nil",
+  "nonexistent_names": "The design note's two lookup errors (BrewDrink, MakeTrapParts) were names that do not exist in df.job_type on this build, not failed lookups: brewing is reaction-defined (the Still hosts 3 reactions), and the trap-parts job is MakeTrapComponent. Enumerating the enum range, as this dump does, cannot hit that failure.",
+  "skill": "df.job_type.attrs[job].skill -> df.job_skill.attrs[skill].labor. skill NONE (-1) means the game has no fixed skill for this job in its own table",
+  "skill_stone/skill_wood/skill_metal": "per-material skill overrides, present only when set; MakeCrafts, MakeGoblet, MakeAmmo etc. use these"
+ },
+ "stream": "handoffs/2026-09-21-building-tool-lua.md"
+}

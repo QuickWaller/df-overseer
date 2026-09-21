@@ -469,20 +469,27 @@ def ingest_dump(
 
 def format_coverage(db_path: str | Path, universe: list[str] | None = None) -> str:
     cov = L.coverage(db_path, universe)
+    hosting = L.kind_tokens(db_path)
+    st = cov["by_status_hosting_kinds"]
     lines = [
-        "kinds by status (strict rule: every hosted process determined AND the Workers-tab list closed):",
-        "  " + ", ".join(f"{s} {n}" for s, n in cov["by_status"].items()) + f" (of {len(cov['kinds'])})",
+        f"workshop and furnace kinds the graph holds hosted-job data for ({len(hosting)}): "
+        + ", ".join(f"{s} {n}" for s, n in st.items()),
+        "  strict rule: every hosted process determined AND the Workers-tab list non-empty and fully explained",
         f"  known under the looser rule (no closure check): {len(cov['literal_known'])}: "
         + ", ".join(cov["literal_known"]),
     ]
+    other = len(cov["kinds"]) - sum(1 for t in cov["kinds"] if t in set(hosting))
+    if universe is not None:
+        lines.append(f"other tokens in the universe ({other}): all unknown, the graph holds no hosted-job data for them")
     for label in ("hardcoded", "reaction", "all"):
         p = cov["processes"][label]
         lines.append(
             f"processes ({label}): {p['total']} total, {p['determined']} determined, "
-            f"{p['undetermined']} undetermined " + json.dumps(p["by_reason"])
+            f"{p['undetermined']} undetermined ({p['undetermined_with_candidate']} with an inferred candidate) "
+            + json.dumps(p["by_reason"])
         )
     for status in ("known", "partial", "unknown"):
-        lines.append(f"{status}: " + ", ".join(t for t, s in cov["kinds"].items() if s == status))
+        lines.append(f"{status}: " + ", ".join(t for t in hosting if cov["kinds"].get(t, L.labors_for_kind(db_path, t)["status"]) == status))
     return "\n".join(lines)
 
 

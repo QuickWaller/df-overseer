@@ -162,7 +162,7 @@ def open_readonly(db_path: str | Path) -> sqlite3.Connection:
             # fails on first use, not on connect.
             conn.execute("SELECT COUNT(*) FROM sqlite_master").fetchone()
             return conn
-        except sqlite3.OperationalError as exc:
+        except sqlite3.Error as exc:
             last = exc
             try:
                 conn.close()  # type: ignore[possibly-undefined]
@@ -251,9 +251,18 @@ def _breakdown(nulls: Iterable[dict], bases: dict[str, str | None]) -> str:
 
 
 def labors_for_kind(db_path: str | Path, kind_token: str) -> dict:
-    """Contract C2. See the module docstring for the status rules."""
+    """Contract C2. See the module docstring for the status rules. Raises
+    `GraphError` if the database cannot be read as a graph (never an empty
+    answer), `ValueError` for a malformed token."""
     if not isinstance(kind_token, str) or not kind_token:
         raise ValueError("kind_token must be a non-empty string")
+    try:
+        return _labors_for_kind(db_path, kind_token)
+    except sqlite3.Error as exc:
+        raise GraphError(f"the production graph at {db_path} could not be read as a graph: {exc}") from exc
+
+
+def _labors_for_kind(db_path: str | Path, kind_token: str) -> dict:
     with closing(open_readonly(db_path)) as conn:
         node = _kind_attr(conn, kind_token, ATTR_NODE)
         if node is None:
@@ -344,7 +353,9 @@ def coverage(db_path: str | Path, universe: Iterable[str] | None = None) -> dict
     token in quickfort's building table); absent tokens count as unknown with
     their reason. Returns:
 
-    - `kinds`: `{token: status}`; `by_status`: counts.
+    - `kinds`: `{token: status}`; `by_status`: counts over the universe;
+      `by_status_hosting_kinds`: counts over just the kinds the graph holds
+      hosted-job data for (the workshops and furnaces).
     - `literal_known`: kinds that would be `known` under the looser rule (every
       hosted process has a determined labor, no closure check), to show what the
       strict rule costs.
@@ -360,8 +371,12 @@ def coverage(db_path: str | Path, universe: Iterable[str] | None = None) -> dict
         if r["processes"] and r["status"] != "unknown" and r["undetermined_process_count"] == 0:
             literal_known.append(t)
     by_status = {"known": 0, "partial": 0, "unknown": 0}
-    for s in kinds.values():
+    by_status_hosting = {"known": 0, "partial": 0, "unknown": 0}
+    hosting = set(kind_tokens(db_path))
+    for t, s in kinds.items():
         by_status[s] += 1
+        if t in hosting:
+            by_status_hosting[s] += 1
 
     with closing(open_readonly(db_path)) as conn:
         bases = {
@@ -369,6 +384,10 @@ def coverage(db_path: str | Path, universe: Iterable[str] | None = None) -> dict
             for r in conn.execute("SELECT subject_id, value FROM production_attribute WHERE name = ?", (ATTR_BASIS,))
         }
         rows = conn.execute("SELECT id, labor, is_hardcoded FROM production_process").fetchall()
+        candidates = {
+            r["subject_id"]
+            for r in conn.execute("SELECT subject_id FROM production_attribute WHERE name = ?", (ATTR_CANDIDATE,))
+        }
 
     def tally(sel) -> dict:
         chosen = [r for r in rows if sel(r)]
@@ -381,11 +400,13 @@ def coverage(db_path: str | Path, universe: Iterable[str] | None = None) -> dict
         return {
             "total": len(chosen), "determined": len(chosen) - undetermined,
             "undetermined": undetermined, "by_reason": dict(sorted(by_reason.items())),
+            "undetermined_with_candidate": sum(1 for r in chosen if r["labor"] is None and r["id"] in candidates),
         }
 
     return {
         "kinds": kinds,
         "by_status": by_status,
+        "by_status_hosting_kinds": by_status_hosting,
         "literal_known": sorted(literal_known),
         "processes": {
             "all": tally(lambda r: True),

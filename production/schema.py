@@ -16,6 +16,12 @@ must not be "simplified back" here:
    cur_year_tick`, never the bare tick, which resets annually
    (`docs/PRODUCTION-MODEL.md` §4, "Why `abs_tick` and not `tick`").
 
+`production_process.labor` holds a `df.unit_labor` token (BREWER), **never** a
+raws `[SKILL:...]` token (BREWING): the spec's "SKILL to labor" step needs a
+table the raws do not carry. The extractor leaves it NULL and records the skill
+as a `skill` attribute; `labor_ingest.py` fills it from the game's own tables
+and records how in a `labor_basis` attribute (2026-09-21).
+
 `production_process.capacity_theoretical` is deliberately absent: no file on
 any read install states a job-time figure, and a column nothing can fill
 invites a guess.

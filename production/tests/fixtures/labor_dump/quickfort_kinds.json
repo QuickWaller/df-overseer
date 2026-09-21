@@ -1,0 +1,344 @@
+[
+ {
+  "aliases": [],
+  "custom_code": null,
+  "fixed_size": true,
+  "has_extents": false,
+  "key": "b",
+  "label": "Bed",
+  "max": [
+   1,
+   1
+  ],
+  "min": [
+   1,
+   1
+  ],
+  "subtype": null,
+  "token": "Bed",
+  "type": "Bed"
+ },
+ {
+  "aliases": [],
+  "custom_code": null,
+  "fixed_size": true,
+  "has_extents": false,
+  "key": "eg",
+  "label": "Glass Furnace",
+  "max": [
+   3,
+   3
+  ],
+  "min": [
+   3,
+   3
+  ],
+  "subtype": "GlassFurnace",
+  "token": "GlassFurnace",
+  "type": "Furnace"
+ },
+ {
+  "aliases": [],
+  "custom_code": null,
+  "fixed_size": true,
+  "has_extents": false,
+  "key": "ek",
+  "label": "Kiln",
+  "max": [
+   3,
+   3
+  ],
+  "min": [
+   3,
+   3
+  ],
+  "subtype": "Kiln",
+  "token": "Kiln",
+  "type": "Furnace"
+ },
+ {
+  "aliases": [],
+  "custom_code": null,
+  "fixed_size": true,
+  "has_extents": false,
+  "key": "en",
+  "label": "Magma Kiln",
+  "max": [
+   3,
+   3
+  ],
+  "min": [
+   3,
+   3
+  ],
+  "subtype": "MagmaKiln",
+  "token": "MagmaKiln",
+  "type": "Furnace"
+ },
+ {
+  "aliases": [],
+  "custom_code": null,
+  "fixed_size": true,
+  "has_extents": false,
+  "key": "el",
+  "label": "Magma Smelter",
+  "max": [
+   3,
+   3
+  ],
+  "min": [
+   3,
+   3
+  ],
+  "subtype": "MagmaSmelter",
+  "token": "MagmaSmelter",
+  "type": "Furnace"
+ },
+ {
+  "aliases": [],
+  "custom_code": null,
+  "fixed_size": true,
+  "has_extents": false,
+  "key": "es",
+  "label": "Smelter",
+  "max": [
+   3,
+   3
+  ],
+  "min": [
+   3,
+   3
+  ],
+  "subtype": "Smelter",
+  "token": "Smelter",
+  "type": "Furnace"
+ },
+ {
+  "aliases": [],
+  "custom_code": null,
+  "fixed_size": true,
+  "has_extents": false,
+  "key": "l",
+  "label": "Well",
+  "max": [
+   1,
+   1
+  ],
+  "min": [
+   1,
+   1
+  ],
+  "subtype": null,
+  "token": "Well",
+  "type": "Well"
+ },
+ {
+  "aliases": [],
+  "custom_code": null,
+  "fixed_size": true,
+  "has_extents": false,
+  "key": "wb",
+  "label": "Bowyer's Workshop",
+  "max": [
+   3,
+   3
+  ],
+  "min": [
+   3,
+   3
+  ],
+  "subtype": "Bowyers",
+  "token": "Bowyers",
+  "type": "Workshop"
+ },
+ {
+  "aliases": [],
+  "custom_code": null,
+  "fixed_size": true,
+  "has_extents": false,
+  "key": "wu",
+  "label": "Butcher's Shop",
+  "max": [
+   3,
+   3
+  ],
+  "min": [
+   3,
+   3
+  ],
+  "subtype": "Butchers",
+  "token": "Butchers",
+  "type": "Workshop"
+ },
+ {
+  "aliases": [],
+  "custom_code": null,
+  "fixed_size": true,
+  "has_extents": false,
+  "key": "wc",
+  "label": "Carpenter's Workshop",
+  "max": [
+   3,
+   3
+  ],
+  "min": [
+   3,
+   3
+  ],
+  "subtype": "Carpenters",
+  "token": "Carpenters",
+  "type": "Workshop"
+ },
+ {
+  "aliases": [],
+  "custom_code": null,
+  "fixed_size": true,
+  "has_extents": false,
+  "key": "wd",
+  "label": "Dyer's Shop",
+  "max": [
+   3,
+   3
+  ],
+  "min": [
+   3,
+   3
+  ],
+  "subtype": "Dyers",
+  "token": "Dyers",
+  "type": "Workshop"
+ },
+ {
+  "aliases": [],
+  "custom_code": null,
+  "fixed_size": true,
+  "has_extents": false,
+  "key": "ww",
+  "label": "Farmer's Workshop",
+  "max": [
+   3,
+   3
+  ],
+  "min": [
+   3,
+   3
+  ],
+  "subtype": "Farmers",
+  "token": "Farmers",
+  "type": "Workshop"
+ },
+ {
+  "aliases": [],
+  "custom_code": null,
+  "fixed_size": true,
+  "has_extents": false,
+  "key": "wh",
+  "label": "Fishery",
+  "max": [
+   3,
+   3
+  ],
+  "min": [
+   3,
+   3
+  ],
+  "subtype": "Fishery",
+  "token": "Fishery",
+  "type": "Workshop"
+ },
+ {
+  "aliases": [],
+  "custom_code": null,
+  "fixed_size": true,
+  "has_extents": false,
+  "key": "we",
+  "label": "Leather Works",
+  "max": [
+   3,
+   3
+  ],
+  "min": [
+   3,
+   3
+  ],
+  "subtype": "Leatherworks",
+  "token": "Leatherworks",
+  "type": "Workshop"
+ },
+ {
+  "aliases": [],
+  "custom_code": null,
+  "fixed_size": true,
+  "has_extents": false,
+  "key": "wv",
+  "label": "Magma Forge",
+  "max": [
+   3,
+   3
+  ],
+  "min": [
+   3,
+   3
+  ],
+  "subtype": "MagmaForge",
+  "token": "MagmaForge",
+  "type": "Workshop"
+ },
+ {
+  "aliases": [],
+  "custom_code": null,
+  "fixed_size": true,
+  "has_extents": false,
+  "key": "wm",
+  "label": "Mason's Workshop",
+  "max": [
+   3,
+   3
+  ],
+  "min": [
+   3,
+   3
+  ],
+  "subtype": "Masons",
+  "token": "Masons",
+  "type": "Workshop"
+ },
+ {
+  "aliases": [],
+  "custom_code": null,
+  "fixed_size": true,
+  "has_extents": false,
+  "key": "wf",
+  "label": "Metalsmith's Forge",
+  "max": [
+   3,
+   3
+  ],
+  "min": [
+   3,
+   3
+  ],
+  "subtype": "MetalsmithsForge",
+  "token": "MetalsmithsForge",
+  "type": "Workshop"
+ },
+ {
+  "aliases": [],
+  "custom_code": null,
+  "fixed_size": true,
+  "has_extents": false,
+  "key": "wl",
+  "label": "Still",
+  "max": [
+   3,
+   3
+  ],
+  "min": [
+   3,
+   3
+  ],
+  "subtype": "Still",
+  "token": "Still",
+  "type": "Workshop"
+ }
+]

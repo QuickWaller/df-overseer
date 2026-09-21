@@ -492,3 +492,17 @@ def test_unparsed_tracking_catches_a_genuinely_orphaned_token():
     assert len(reaction["unparsed"]) == 1
     assert reaction["unparsed"][0]["token"] == "SOME_UNKNOWN_RESERVED_FLAG"
     assert reaction["unparsed"][0]["reason"] == "no open reagent/product to attach to"
+
+
+def test_a_reactions_skill_is_an_attribute_and_never_written_into_labor():
+    """`[SKILL:BREWING]` names a skill; the labor (BREWER) is not in the raws.
+    Before 2026-09-21 the skill token was written into `production_process.labor`,
+    which a reader would have returned as if it were a labor.
+    `production.labor_ingest` resolves skill to labor from the game's own tables."""
+    rows = extract.extract()
+    brew = next(p for p in rows["processes"] if p["id"] == "BREW_DRINK_FROM_PLANT")
+    assert brew["labor"] is None
+    skills = [a for a in rows["attributes"] if a["subject_id"] == "BREW_DRINK_FROM_PLANT" and a["name"] == "skill"]
+    assert [a["value"] for a in skills] == ["BREWING"]
+    assert skills[0]["status"] == schema.VERIFIED_RAWS
+    assert all(p["labor"] is None for p in rows["processes"])
