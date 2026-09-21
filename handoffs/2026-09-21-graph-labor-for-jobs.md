@@ -224,7 +224,7 @@ than answering empty.
    i=0,df.job_skill._last_item do local a=df.job_skill.attrs[i];
    print(df.job_skill[i], a.labor >= 0 and df.unit_labor[a.labor] or 'NONE')
    end`.
-2. **Extract the 145 reactions the extractor never read.** They are instrument
+2. **(Corrected 2026-09-21: the 145 are generated `MAKE_ENT` reactions that exist only in the world save, not in raw files; see `handoffs/2026-09-21-extract-remaining-reactions.md`. They can only be read from the live game.)** Read the 145 reactions the extractor never saw. They are instrument
    and craft reactions (`MAKE_ENT..` and similar) from raw files outside the four
    `DEFAULT_REACTION_FILES`. Until then Craftsdwarfs (104), Metalsmith's and
    Magma Forge (15 each), Leatherworks (6), the glass furnaces (13 each) and 7

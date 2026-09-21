@@ -270,7 +270,7 @@ handoff before dispatching.
    the Mason's Workshop labor is STONECUTTER/STONE_CARVER, so the `mason`
    entry in `df-overseer-workshop.lua` is wrong). Allowlists granted (architect
    30, overseer 51, consultant 12 on the merged tree). **Graph-labor stream merged**
-   (`production/labors.py`, strict `known` rule: 2 known, 18 partial, 13 unknown of 33 kinds; the extractor no longer writes a skill into `labor`; 762 passed / 2 skipped ambient, 430 in the venv). **Open:** the manifest requires W and H
+   (`production/labors.py`, strict `known` rule: 2 known, 18 partial, 13 unknown of 33 kinds; the extractor no longer writes a skill into `labor`) and the reaction-extraction stream merged (786 passed / 2 skipped ambient, 430 in the venv). **It found the 145 unread reactions are generated at world creation and exist only in the world save, so coverage did not move; reading them needs a live read, folded into the deploy handoff as step 2b.** The nobles dispatch was refused by the auto-mode classifier as a shared-resource change; awaiting the user's route. **Open:** the manifest requires W and H
    and one labor per `enabled-counts` call because `dfmcp/tools.py` cannot
    express optional or repeated arguments (the user has not ruled: extend
    `tools.py`, or accept); nothing has really built a never-built kind; deploy

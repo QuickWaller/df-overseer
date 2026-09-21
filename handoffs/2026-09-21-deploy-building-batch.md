@@ -1,8 +1,7 @@
 # Handoff: deploy the building tool, gotchas, labor graph and nobles tool, and verify each live
 
-Date: 2026-09-21. **WRITTEN, gated: dispatch only after the nobles stream and
-the reaction-extraction stream have merged** (one stream at a time on VM 103,
-and the deploy should carry both). **Live stream on VM 103. The fort stays
+Date: 2026-09-21. **WRITTEN, gated: dispatch only after the nobles stream has merged** (one stream at a time on VM 103,
+and the deploy should carry it; the reaction-extraction stream has merged). **Live stream on VM 103. The fort stays
 paused; no unpause is needed or permitted. No real building is built.**
 
 Read `CLAUDE.md` (the deploy trap in its status block), `docs/TRAPS.md`, the
@@ -36,6 +35,17 @@ Expected role tool counts on the merged tree, before any later grants:
    untested sketch in the graph report, item 1), written to a JSON file
    `[{"skill": ..., "labor": ...}]` **outside the repo**. Quote the output. A
    skill with no labor is written as absent, never as a guess.
+2b. **The generated-reaction read.** The extraction stream found that the 145
+   `MAKE_ENT<n> <PART>` reactions (instrument pieces; Craftsdwarfs 100, forges 15,
+   glass furnaces 13, Kiln 7, Leatherworks 6, Masons 3, Carpenters 1) exist only in
+   the world save, not in any raw file. Read them the same way: a bounded,
+   read-only loop over `df.global.world.raws.reactions.reactions`, restricted to
+   the ids that are not already in the four vanilla files. Start cheap: code, the
+   building it is hosted at, and its skill, which is all `labors_for_kind`
+   needs; render as raw tokens into one `reaction_generated.txt` outside the
+   repo if the fuller read is cheap. An untested sketch is in section 6 of
+   `handoffs/2026-09-21-extract-remaining-reactions.md`. Do not commit the
+   output (game data, public repo).
 3. **Build the graph database** offline from the real raws and the dump:
    extraction, then `python -m production.labor_ingest DB DUMP_DIR
    --skill-labors skills.json` (dump path in the graph report; it ends in
