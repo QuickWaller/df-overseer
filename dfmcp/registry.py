@@ -75,6 +75,14 @@ class Tool:
     notes: Optional[str] = None
     args: list = field(default_factory=list)
     build_order_item: Any = None
+    # Raw optional tokens (as written in the signature, e.g. "[W H]") that the
+    # Lua CLI can leave out even when a LATER optional is given, because it
+    # works out which optionals were passed from how many leading numbers it
+    # sees rather than from fixed positional slots. Declared per command in
+    # TOOLS.yaml (`skippable:`); empty for every command that is purely
+    # positional. See dfmcp/tools.py's "Optional groups and repeated
+    # arguments" section for what the gap check does with it.
+    skippable: tuple = ()
 
     @property
     def mutates(self) -> bool:
@@ -154,6 +162,10 @@ def _script_short_name(filename: str) -> str:
     return name
 
 
+# A whole [...] run (spaces allowed inside), else a run of non-space characters.
+_ARG_TOKEN_RE = re.compile(r"\[[^\]]*\]|\S+")
+
+
 def _leading_verb(command_signature: str) -> str:
     match = _VERB_RE.match(command_signature.strip())
     if not match:
@@ -166,16 +178,19 @@ def _leading_verb(command_signature: str) -> str:
 def _parse_args(command_signature: str, verb: str) -> list:
     """A light tokenisation of the signature's trailing arguments.
 
-    Not a full grammar: this repo's signatures are simple enough that
-    whitespace-splitting the text after the verb is enough to answer "what
-    arguments does this take", which is all the registry promises. A
-    parenthetical like "(or no args)" is descriptive text, not a real
-    argument, and is treated as an empty argument list.
+    Not a full grammar: whitespace-splitting the text after the verb, with
+    one exception, a bracketed group. `[W H]` is ONE token (an optional pair,
+    interpreted by dfmcp/tools.py), so a run from `[` to the next `]` is kept
+    whole even though it contains a space. Brackets do not nest. Everything
+    else, including `LABOR...` and `[a|b]`, is an ordinary whitespace-
+    delimited token; what it means is dfmcp/tools.py's job. A parenthetical
+    like "(or no args)" is descriptive text, not a real argument, and is
+    treated as an empty argument list.
     """
     rest = command_signature.strip()[len(verb):].strip()
     if not rest or rest.startswith("("):
         return []
-    return rest.split()
+    return _ARG_TOKEN_RE.findall(rest)
 
 
 def load_registry(path=DEFAULT_TOOLS_YAML, *, native_tools: Optional[Mapping[str, Any]] = None) -> Registry:
@@ -247,6 +262,19 @@ def load_registry(path=DEFAULT_TOOLS_YAML, *, native_tools: Optional[Mapping[str
                     "know what a vanilla player could know')"
                 )
 
+            args = _parse_args(command_sig, verb)
+            skippable = spec.get("skippable") or []
+            if not isinstance(skippable, list) or not all(isinstance(t, str) for t in skippable):
+                raise RegistryError(
+                    f"{script_name} {command_sig!r}: skippable must be a list of signature tokens"
+                )
+            for token in skippable:
+                if token not in args or not token.startswith("["):
+                    raise RegistryError(
+                        f"{script_name} {command_sig!r}: skippable entry {token!r} is not an "
+                        f"optional (bracketed) token of this signature; its tokens are {args}"
+                    )
+
             tools[tool_id] = Tool(
                 id=tool_id,
                 script=script_name,
@@ -258,8 +286,9 @@ def load_registry(path=DEFAULT_TOOLS_YAML, *, native_tools: Optional[Mapping[str
                 verified=str(spec.get("verified", "unverified")),
                 knowledge_scope=knowledge_scope,
                 notes=spec.get("notes"),
-                args=_parse_args(command_sig, verb),
+                args=args,
                 build_order_item=build_order_item,
+                skippable=tuple(skippable),
             )
 
     collisions = {tid: sigs for tid, sigs in seen.items() if len(sigs) > 1}

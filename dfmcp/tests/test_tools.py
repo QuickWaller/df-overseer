@@ -196,27 +196,32 @@ def test_literal_choice_tokens_become_enums(registry):
 
 
 def test_sweep_every_real_argument_token_is_confidently_typed(registry):
-    """Every argument token in the real, current manifest is either a plain
-    UPPER_CASE placeholder (typed via _INTEGER_ARG_NAMES or defaulted to
-    string) or one of the two known literal-choice tokens. If a future
-    manifest edit adds a token shaped some third way, this test should be
-    the thing that notices."""
-    from dfmcp.tools import _BRACKET_RE
+    """Every argument token in the real, current manifest is one of the forms
+    dfmcp/tools.py documents: a plain placeholder, a literal choice, an
+    all-or-nothing group of plain placeholders, or a repeated placeholder
+    (last in its signature). Each must resolve to specs whose names are legal
+    JSON-Schema property names. If a future manifest edit adds a token shaped
+    some other way, this test should be the thing that notices (the parser
+    itself raises ToolSchemaError, which fails the sweep loudly)."""
+    import re
 
+    from dfmcp.tools import _parse_arg_tokens
+
+    name_re = re.compile(r"^[a-z][a-z0-9_]*$")
     for tool in registry.all():
         for token in tool.args:
-            inner = token
-            m = _BRACKET_RE.match(token)
-            if m:
-                inner = m.group(1)
-            assert inner, f"{tool.id}: empty argument token {token!r}"
-            is_plain_placeholder = all(c.isalnum() or c == "_" for c in inner) and inner[0].isalpha()
-            is_literal_choice = "|" in inner
-            assert is_plain_placeholder or is_literal_choice, (
-                f"{tool.id}: argument token {token!r} is neither a plain UPPER_CASE "
-                "placeholder nor a literal-choice token -- the heuristic table does "
-                "not confidently cover this, see mcp/tools.py's module docstring"
-            )
+            specs = _parse_arg_tokens(token, tool.id.split(".", 1)[0])
+            assert specs, f"{tool.id}: empty argument token {token!r}"
+            for spec in specs:
+                assert name_re.match(spec.name) or spec.enum is not None, (
+                    f"{tool.id}: token {token!r} became property name {spec.name!r}"
+                )
+                if spec.group is not None:
+                    assert not spec.required and not spec.repeated and spec.enum is None
+        # a repeated argument is always last; the full-signature resolver enforces it
+        specs = _arg_specs_for_tool(tool)
+        assert all(not s.repeated for s in specs[:-1]), tool.id
+        assert len({s.name for s in specs}) == len(specs), f"{tool.id}: duplicate property names"
 
 
 def test_chokepoints_level_is_optional_integer(registry):
@@ -544,3 +549,317 @@ def test_numeric_string_accepted_for_integer_argument(registry):
     tool = registry.get("openarea.find")
     argv = argv_for_call(tool, {"w": "5", "h": "4", "near_landmark": "MainHall"})
     assert argv == ["df-overseer-openarea", "find", "5", "4", "MainHall"]
+
+
+# --------------------------------------------------------------------------
+# Optional groups `[A B]` and repeated arguments `NAME...`
+# (handoffs/2026-09-21-optional-and-variadic-args.md)
+# --------------------------------------------------------------------------
+
+
+def _tool_for(tmp_path, signature, *, skippable=None, verb_id="t.run"):
+    """A one-command registry built from a synthetic signature, so the
+    grammar is tested independently of whatever the real manifest says."""
+    extra = f"\n              skippable: {skippable}" if skippable is not None else ""
+    path = _write_tools_yaml(
+        tmp_path,
+        f"""
+        df-overseer-t.lua:
+          commands:
+            "{signature}":
+              lua_function: f{extra}
+              effect: read
+              knowledge_scope: player_visible
+        """,
+    )
+    return load_registry(path).get(verb_id)
+
+
+def test_registry_keeps_a_bracketed_group_as_one_token(tmp_path):
+    tool = _tool_for(tmp_path, "run KIND [W H] [LEVEL] NEAR [ITEM...] [a|b] LABOR...")
+    assert tool.args == ["KIND", "[W H]", "[LEVEL]", "NEAR", "[ITEM...]", "[a|b]", "LABOR..."]
+
+
+def test_group_members_are_flat_optional_typed_properties(tmp_path):
+    tool = _tool_for(tmp_path, "run KIND [W H] NEAR")
+    specs = {s.name: s for s in _arg_specs_for_tool(tool)}
+    assert list(specs) == ["kind", "w", "h", "near"]
+    for name in ("w", "h"):
+        assert specs[name].json_type == "integer"
+        assert specs[name].required is False
+        assert specs[name].group == "[W H]"
+    assert specs["kind"].group is None
+    from dfmcp.tools import _input_schema
+
+    schema = _input_schema(tool)
+    assert schema["properties"]["w"]["type"] == "integer"
+    assert schema["properties"]["h"]["type"] == "integer"
+    assert schema["required"] == ["kind", "near"]
+
+
+def test_group_given_whole_or_left_out_expands_normally(tmp_path):
+    tool = _tool_for(tmp_path, "run KIND [W H] NEAR")
+    assert argv_for_call(tool, {"kind": "Still", "near": "Wagon"}) == [
+        "df-overseer-t", "run", "Still", "Wagon"
+    ]
+    assert argv_for_call(tool, {"kind": "Still", "w": 3, "h": 3, "near": "Wagon"}) == [
+        "df-overseer-t", "run", "Still", "3", "3", "Wagon"
+    ]
+
+
+def test_one_member_of_a_group_is_a_named_error_never_a_default(tmp_path):
+    tool = _tool_for(tmp_path, "run KIND [W H] NEAR")
+    with pytest.raises(ArgumentError) as exc:
+        argv_for_call(tool, {"kind": "Still", "w": 3, "near": "Wagon"})
+    msg = str(exc.value)
+    assert "[W H]" in msg and "'w'" in msg and "'h'" in msg and "go together" in msg
+    with pytest.raises(ArgumentError) as exc:
+        argv_for_call(tool, {"kind": "Still", "h": 3, "near": "Wagon"})
+    assert "'h'" in str(exc.value) and "'w'" in str(exc.value)
+
+
+def test_null_member_counts_as_absent(tmp_path):
+    tool = _tool_for(tmp_path, "run KIND [W H] NEAR")
+    assert argv_for_call(tool, {"kind": "Still", "w": None, "h": None, "near": "Wagon"}) == [
+        "df-overseer-t", "run", "Still", "Wagon"
+    ]
+    with pytest.raises(ArgumentError):
+        argv_for_call(tool, {"kind": "Still", "w": 3, "h": None, "near": "Wagon"})
+
+
+def test_group_member_values_are_typed(tmp_path):
+    tool = _tool_for(tmp_path, "run KIND [W H] NEAR")
+    with pytest.raises(ArgumentError):
+        argv_for_call(tool, {"kind": "Still", "w": "wide", "h": 3, "near": "Wagon"})
+
+
+def test_omitted_group_blocks_a_later_optional_unless_declared_skippable(tmp_path):
+    """The positional-shift trap, for groups: without a declaration an omitted
+    [W H] followed by LEVEL would put LEVEL in W's slot."""
+    sig = "run KIND [W H] [LEVEL] NEAR"
+    (tmp_path / "a").mkdir()
+    strict = _tool_for(tmp_path / "a", sig)
+    with pytest.raises(ArgumentError) as exc:
+        argv_for_call(strict, {"kind": "Still", "level": -1, "near": "Wagon"})
+    msg = str(exc.value)
+    assert "'level'" in msg and "[W H]" in msg and "positional" in msg
+
+    (tmp_path / "b").mkdir()
+    lenient = _tool_for(tmp_path / "b", sig, skippable='["[W H]"]')
+    assert lenient.skippable == ("[W H]",)
+    assert argv_for_call(lenient, {"kind": "Still", "level": -1, "near": "Wagon"}) == [
+        "df-overseer-t", "run", "Still", "-1", "Wagon"
+    ]
+    assert argv_for_call(lenient, {"kind": "Still", "w": 3, "h": 3, "level": -1, "near": "Wagon"}) == [
+        "df-overseer-t", "run", "Still", "3", "3", "-1", "Wagon"
+    ]
+
+
+def test_skippable_does_not_excuse_other_gaps(tmp_path):
+    tool = _tool_for(tmp_path, "run KIND [W H] [LEVEL] NEAR [RANK]", skippable='["[W H]"]')
+    with pytest.raises(ArgumentError) as exc:
+        argv_for_call(tool, {"kind": "Still", "near": "Wagon", "rank": 2})
+    assert "'rank'" in str(exc.value) and "'level'" in str(exc.value)
+    assert argv_for_call(tool, {"kind": "Still", "near": "Wagon", "level": 0, "rank": 2}) == [
+        "df-overseer-t", "run", "Still", "0", "Wagon", "2"
+    ]
+
+
+def test_skippable_must_name_an_optional_token_of_the_signature(tmp_path):
+    with pytest.raises(RegistryError):
+        _tool_for(tmp_path, "run KIND [W H] NEAR", skippable='["[LEVEL]"]')
+    (tmp_path / "b").mkdir()
+    with pytest.raises(RegistryError):  # a required token cannot be skippable
+        _tool_for(tmp_path / "b", "run KIND [W H] NEAR", skippable='["KIND"]')
+
+
+def test_repeated_argument_is_an_array_expanded_into_argv(tmp_path):
+    from dfmcp.tools import _input_schema
+
+    tool = _tool_for(tmp_path, "run LABOR...")
+    (spec,) = _arg_specs_for_tool(tool)
+    assert spec.name == "labor" and spec.repeated and spec.required
+    prop = _input_schema(tool)["properties"]["labor"]
+    assert prop["type"] == "array" and prop["items"] == {"type": "string"} and prop["minItems"] == 1
+    assert _input_schema(tool)["required"] == ["labor"]
+    assert argv_for_call(tool, {"labor": ["MASON", "CARPENTER"]}) == [
+        "df-overseer-t", "run", "MASON", "CARPENTER"
+    ]
+    assert argv_for_call(tool, {"labor": ["MASON"]}) == ["df-overseer-t", "run", "MASON"]
+
+
+def test_repeated_argument_accepts_a_bare_scalar_as_one_item(tmp_path):
+    tool = _tool_for(tmp_path, "run LABOR...")
+    assert argv_for_call(tool, {"labor": "MASON"}) == ["df-overseer-t", "run", "MASON"]
+
+
+def test_required_repeated_argument_needs_at_least_one(tmp_path):
+    tool = _tool_for(tmp_path, "run LABOR...")
+    for missing in ({}, {"labor": []}, {"labor": None}):
+        with pytest.raises(ArgumentError) as exc:
+            argv_for_call(tool, missing)
+        assert "labor" in str(exc.value) and "at least one" in str(exc.value)
+
+
+def test_repeated_items_get_the_same_checks_as_single_values(tmp_path):
+    tool = _tool_for(tmp_path, "run LABOR...")
+    with pytest.raises(ArgumentError):
+        argv_for_call(tool, {"labor": ["MASON", "A;B"]})
+    with pytest.raises(ArgumentError):
+        argv_for_call(tool, {"labor": ["MASON", True]})
+    with pytest.raises(ArgumentError):
+        argv_for_call(tool, {"labor": ["MASON", ["NESTED"]]})
+    (tmp_path / "b").mkdir()
+    ints = _tool_for(tmp_path / "b", "run UNIT_ID...")
+    assert argv_for_call(ints, {"unit_id": [4, "5"]}) == ["df-overseer-t", "run", "4", "5"]
+    with pytest.raises(ArgumentError):
+        argv_for_call(ints, {"unit_id": [4, "five"]})
+
+
+def test_a_list_for_a_single_value_argument_is_refused(tmp_path):
+    tool = _tool_for(tmp_path, "run KIND")
+    with pytest.raises(ArgumentError) as exc:
+        argv_for_call(tool, {"kind": ["Still", "Kennel"]})
+    assert "single value" in str(exc.value)
+
+
+def test_optional_repeated_argument(tmp_path):
+    from dfmcp.tools import _input_schema
+
+    tool = _tool_for(tmp_path, "run KIND [ITEM...]")
+    assert "minItems" not in _input_schema(tool)["properties"]["item"]
+    assert argv_for_call(tool, {"kind": "Still"}) == ["df-overseer-t", "run", "Still"]
+    assert argv_for_call(tool, {"kind": "Still", "item": []}) == ["df-overseer-t", "run", "Still"]
+    assert argv_for_call(tool, {"kind": "Still", "item": ["a", "b"]}) == [
+        "df-overseer-t", "run", "Still", "a", "b"
+    ]
+
+
+def test_repeated_argument_must_be_last(tmp_path):
+    tool = _tool_for(tmp_path, "run LABOR... NEAR")
+    with pytest.raises(ToolSchemaError) as exc:
+        _arg_specs_for_tool(tool)
+    assert "last" in str(exc.value)
+
+
+@pytest.mark.parametrize(
+    "signature",
+    [
+        "run [W",  # unbalanced (the registry keeps "[W" as a plain token)
+        "run A..B",
+        "run [A... B]",  # repeated inside a group
+        "run [a|b c]",  # literal choice inside a group
+        "run 9LIVES",
+    ],
+)
+def test_malformed_tokens_are_a_named_schema_error_not_a_junk_property(tmp_path, signature):
+    tool = _tool_for(tmp_path, signature)
+    with pytest.raises(ToolSchemaError):
+        _arg_specs_for_tool(tool)
+
+
+def test_supplying_a_repeated_optional_after_an_omitted_optional_is_a_gap(tmp_path):
+    tool = _tool_for(tmp_path, "run [LEVEL] [ITEM...]")
+    with pytest.raises(ArgumentError) as exc:
+        argv_for_call(tool, {"item": ["a"]})
+    assert "'item'" in str(exc.value) and "'level'" in str(exc.value)
+
+
+# ---- the real manifest -----------------------------------------------------
+
+
+def test_real_building_signatures_use_the_optional_footprint_group(registry):
+    for tool_id, expected in (
+        (
+            "building.find",
+            ["kind", "w", "h", "level", "near_landmark", "radius_tiles"],
+        ),
+        (
+            "building.build",
+            ["kind", "w", "h", "level", "near_landmark", "rank", "radius_tiles", "dry_run"],
+        ),
+    ):
+        tool = registry.get(tool_id)
+        assert "[W H]" in tool.args and tool.skippable == ("[W H]",)
+        specs = _arg_specs_for_tool(tool)
+        assert [s.name for s in specs] == expected
+        by = {s.name: s for s in specs}
+        assert by["w"].required is False and by["h"].required is False
+        assert by["kind"].required and by["near_landmark"].required
+
+
+def test_real_building_find_with_only_kind_and_landmark(registry):
+    tool = registry.get("building.find")
+    assert argv_for_call(tool, {"kind": "Still", "near_landmark": "Wagon"}) == [
+        "df-overseer-building", "find", "Still", "Wagon"
+    ]
+    # a farm plot still says its size
+    assert argv_for_call(tool, {"kind": "FarmPlot", "w": 4, "h": 5, "near_landmark": "Wagon"}) == [
+        "df-overseer-building", "find", "FarmPlot", "4", "5", "Wagon"
+    ]
+    # LEVEL without a footprint: the Lua CLI reads one leading number as LEVEL
+    assert argv_for_call(tool, {"kind": "Still", "level": -1, "near_landmark": "Wagon"}) == [
+        "df-overseer-building", "find", "Still", "-1", "Wagon"
+    ]
+    with pytest.raises(ArgumentError):
+        argv_for_call(tool, {"kind": "Still", "w": 3, "near_landmark": "Wagon"})
+    with pytest.raises(ArgumentError):
+        argv_for_call(tool, {"w": 3, "h": 3, "near_landmark": "Wagon"})  # KIND is required
+
+
+def test_real_building_build_only_stays_positional_after_the_landmark(registry):
+    tool = registry.get("building.build")
+    assert argv_for_call(tool, {"kind": "Still", "near_landmark": "Wagon"}) == [
+        "df-overseer-building", "build", "Still", "Wagon"
+    ]
+    assert argv_for_call(
+        tool,
+        {"kind": "Still", "level": 0, "near_landmark": "Wagon", "rank": 2, "radius_tiles": 20, "dry_run": "false"},
+    ) == ["df-overseer-building", "build", "Still", "0", "Wagon", "2", "20", "false"]
+    # RANK without LEVEL is still the positional gap: only [W H] is skippable
+    with pytest.raises(ArgumentError):
+        argv_for_call(tool, {"kind": "Still", "near_landmark": "Wagon", "rank": 2})
+    with pytest.raises(ArgumentError):
+        argv_for_call(tool, {"kind": "Still", "near_landmark": "Wagon", "dry_run": "false"})
+
+
+def test_real_enabled_counts_takes_several_labors(registry):
+    tool = registry.get("labor.enabled-counts")
+    assert tool.args == ["LABOR..."]
+    assert argv_for_call(tool, {"labor": ["MASON", "BREWER"]}) == [
+        "df-overseer-labor", "enabled-counts", "MASON", "BREWER"
+    ]
+    assert argv_for_call(tool, {"labor": "MASON"}) == ["df-overseer-labor", "enabled-counts", "MASON"]
+    with pytest.raises(ArgumentError):
+        argv_for_call(tool, {})
+    with pytest.raises(ArgumentError):
+        argv_for_call(tool, {"labor": []})
+
+
+def test_scoped_descriptions_reach_the_schema(registry):
+    from dfmcp.tools import _input_schema
+
+    find = _input_schema(registry.get("building.find"))["properties"]
+    assert "building.list-kinds" in find["kind"]["description"]
+    w = find["w"]["description"].lower()
+    assert "footprint" in w and "together" in w and "variable-size" in w and "error" in w
+    assert "footprint" in find["h"]["description"].lower()
+    listed = _input_schema(registry.get("building.list-kinds"))["properties"]
+    assert "substring" in listed["filter"]["description"]
+    counts = _input_schema(registry.get("labor.enabled-counts"))["properties"]["labor"]
+    assert counts["type"] == "array" and "never as 0" in counts["description"]
+    # another script's KIND and W keep their own text, not the building tool's
+    zone = _input_schema(registry.get("zone.find"))["properties"]
+    assert "water_source" in zone["kind"]["description"]
+    open_area = _input_schema(registry.get("openarea.find"))["properties"]
+    assert "footprint" not in open_area["w"]["description"].lower()
+
+
+def test_the_architect_sees_the_optional_footprint_in_tools_list(registry, roster):
+    (find,) = [
+        d for d in tool_definitions(registry, roster, "architect") if d["name"] == "building__find"
+    ]
+    schema = find["inputSchema"]
+    assert schema["required"] == ["kind", "near_landmark"]
+    assert schema["properties"]["w"]["type"] == "integer"
+    assert "w" not in schema["required"] and "h" not in schema["required"]
