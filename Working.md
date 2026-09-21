@@ -244,8 +244,11 @@ handoff before dispatching.
    the tools that look single-instance (`workshop` has five hard-coded kinds,
    `zone` water source only, `orders.create` a fixed job vocabulary, `workjob`
    blocks and mechanisms). Rooms and furniture are expected to fall out of the
-   same base. **Design note written 2026-09-21: `docs/BUILDING-TOOL.md`,
-   awaiting the user's review; it now also records the confidence-level
+   same base. **Design note written 2026-09-21: `docs/BUILDING-TOOL.md`; four
+   handoffs written for the user's review, none dispatched:
+   `handoffs/2026-09-21-building-tool-lua.md` (live, read-only),
+   `-building-tool-server.md`, `-graph-labor-for-jobs.md` (waits on the Lua
+   stream's dump) and `-building-requirements-research.md`; it now also records the confidence-level
    requirement (each tool and kind carries a level that tells the agent how
    carefully to use it; the user chose this over a verification sweep).** It corrects an assumption: the raws do not
    carry standard buildings, but DFHack's quickfort table (about 87 entries,

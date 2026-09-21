@@ -194,6 +194,42 @@ loop**: the gotchas attached to a tool are learned material.
    waits on the overall openclaw design, which is not decided. Until then,
    proposed gotchas simply stay proposed and keep appearing as experiments.
 
+## Contracts between the streams
+
+The streams below build in parallel against these shapes. **Only the
+orchestrator edits this section**; an executor who finds a shape wrong reports
+it rather than changing it.
+
+**C1. Lua tool output** (`scripts/dfhack/df-overseer-building.lua`), JSON,
+live facts only, no labor names and no confidence:
+`{"kind": {"token", "label", "type", "subtype"}, "dims": [w, h],
+"site": {"rank", "near_landmark", "direction", "distance_tiles"},
+"dry_run": bool, "requirements": {"building_material": {...}},
+"quickfort_ok", "quickfort_error", "quickfort_stats"}` (the last three only on
+a real build). New read in `df-overseer-labor.lua`:
+`enabled-counts LABOR [LABOR...]` returning
+`{"counts": {"LABOR": n_or_null}, "errors": {"LABOR": "message"}}`. **A
+failed lookup is `null` plus an error, never `0`** (silent-zero rule).
+
+**C2. Graph API** (`production/labors.py`, new):
+`labors_for_kind(db_path, kind_token) -> {"kind": str, "labors": [str],
+"status": "known" | "partial" | "unknown", "processes": [{"id", "labor" or
+null, "source_ref"}], "unknown_reason": str or null}`. `labors` is empty with
+status `known` only if the game data says no labor applies; anything the
+extractor could not determine is `partial` or `unknown` with a reason.
+
+**C3. Gotcha record and result enrichment** (`dfmcp`):
+record `{"id", "tool", "kind" or null, "list": "gotcha" | "unexplained" |
+"vent", "title", "body", "status": "proposed" | "accepted" | "rejected",
+"created_at", "written_by_role", "run_id", "call_excerpt", "outcomes": [{"at",
+"role", "run_id", "result": "worked" | "did_not_work", "note"}]}`. Every
+DFHack-backed tool result gains one sibling object,
+`{"confidence": "medium", "confidence_note": "<a few words>", "gotchas":
+[{"id", "title", "status"}], "gotcha_addendum": "<standing text>"}`, with
+`gotchas` present only if the tool has any and the addendum only when a
+proposed one is listed. Titles only; full text comes from `gotchas.get`. The
+enrichment must survive the array-output trap in `docs/TRAPS.md`.
+
 ## Next step
 
 After review, two streams with disjoint files. **Offline:** a table reader,
