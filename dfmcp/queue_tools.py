@@ -162,6 +162,7 @@ is a local filesystem path, not a credential) -- but it also never echoes
 from __future__ import annotations
 
 import asyncio
+import json
 import sqlite3
 from dataclasses import dataclass
 from typing import Any, Awaitable, Callable, Dict, Mapping, Optional, Tuple
@@ -185,10 +186,22 @@ QUEUE_PENDING = "queue.pending"
 QUEUE_ASK = "queue.ask"
 QUEUE_ANSWER = "queue.answer"
 QUEUE_EXECUTED = "queue.executed"
+#: Added handoffs/2026-09-22-loop-conductor-service.md (docs/AGENT-LOOP.md
+#: item 2: "Grading reachable over MCP"). Runs dfqueue.grade.run_grading_cycle
+#: against the same queue database every other queue.* tool here uses.
+#: Granted only in agents/conductor/tools.yaml -- no other role's tools.yaml
+#: references this id, so in practice only the conductor SERVICE (code,
+#: never a model, MCP_ROLE_TOKEN_CONDUCTOR) can ever call it. Not a
+#: structural, load-time-enforced restriction the way SYSTEM_CLASS_TOOL_IDS
+#: is for the DFHack-backed clock/quicksave tools (dfmcp/roles.py) -- see
+#: this stream's report for why that stricter mechanism was judged
+#: unnecessary here (grading never mutates fort state, only dfqueue's own
+#: ledger, the same class of write every other queue.* tool already makes).
+QUEUE_GRADE = "queue.grade"
 
 NATIVE_TOOL_IDS = (
     QUEUE_PROPOSE, QUEUE_PASS, QUEUE_RULE, QUEUE_PENDING, QUEUE_ASK,
-    QUEUE_ANSWER, QUEUE_EXECUTED,
+    QUEUE_ANSWER, QUEUE_EXECUTED, QUEUE_GRADE,
 )
 
 
@@ -237,6 +250,8 @@ class NativeTool:
             return _ANSWER_DESCRIPTION, _ANSWER_SCHEMA
         if self.id == QUEUE_EXECUTED:
             return _EXECUTED_DESCRIPTION, _EXECUTED_SCHEMA
+        if self.id == QUEUE_GRADE:
+            return _GRADE_DESCRIPTION, _GRADE_SCHEMA
         raise AssertionError(f"NativeTool.describe: unknown id {self.id!r}")  # pragma: no cover
 
 
@@ -262,6 +277,12 @@ NATIVE_TOOLS: Dict[str, NativeTool] = {
     # docs/AGENT-LOOP.md item 4), so it reuses the same sole_writer_only
     # mechanism dfmcp.roles already enforces for queue.rule.
     QUEUE_EXECUTED: NativeTool(id=QUEUE_EXECUTED, mutates=False, sole_writer_only=True),
+    # queue.grade: runs dfqueue.grade.run_grading_cycle. Not sole_writer_only
+    # (that flag means specifically "the roster's sole_writer", the
+    # Overseer -- a different restriction than "the conductor only"). In
+    # practice restricted to the conductor role by which tools.yaml grants
+    # it; see this module's own comment on QUEUE_GRADE above.
+    QUEUE_GRADE: NativeTool(id=QUEUE_GRADE, mutates=False, sole_writer_only=False),
 }
 
 
@@ -581,6 +602,21 @@ _EXECUTED_SCHEMA = {
 }
 
 
+_GRADE_DESCRIPTION = (
+    "Conductor-only: run one grading cycle (dfqueue.grade.run_grading_cycle) "
+    "against this fort's queue database. Reads the current game tick, grades "
+    "every prediction now due, and reports every accepted proposal that has "
+    "no execution record yet (never silently scored as a miss). Idempotent: "
+    "a prediction already graded is never re-read or re-graded, so calling "
+    "this more than once for the same cycle is safe. Takes no arguments."
+)
+_GRADE_SCHEMA = {
+    "type": "object",
+    "additionalProperties": False,
+    "properties": {},
+}
+
+
 # --------------------------------------------------------------------------
 # cycle/snapshot stamping
 # --------------------------------------------------------------------------
@@ -787,6 +823,68 @@ async def _executed(
     return render.to_xml(written), written
 
 
+_GRADE_FIELDS: set = set()
+
+
+async def _grade(
+    role: str, arguments: Mapping[str, Any], *, db_path, call_dfhack: CallDFHack,
+    write_lock: "asyncio.Lock",
+) -> Tuple[str, dict]:
+    """`docs/AGENT-LOOP.md` item 2: the queue database lives on VM 103 and
+    the conductor on VM 106, so grading must be reachable over MCP rather
+    than run as a local import. Bridges `dfqueue.grade.run_grading_cycle`'s
+    synchronous `call_tool(tool_id, args) -> result` contract
+    (`learning.live_signals.read` calls it with no `await`) onto this
+    module's own async `call_dfhack` by running the whole grading pass in a
+    worker thread (`asyncio.to_thread`) and, from inside that thread,
+    handing back to THIS event loop for each actual DFHack call via
+    `asyncio.run_coroutine_threadsafe(...).result()` -- never a second event
+    loop, never a direct cross-thread call into asyncio internals.
+
+    No `write_lock` needed here despite writing (`apply_grades`/predictions
+    rows): grading's own writes are keyed by `predictions.id`, disjoint from
+    the `records.id` collision `_next_id`/insert race the lock exists to
+    serialise against (see this module's docstring, "SQLite runs off the
+    event loop"). `dfqueue.grade`/`dfqueue.store.apply_grades` were not
+    audited for a *second*, different race here -- flagged in this stream's
+    report, not silently assumed safe.
+    """
+    _reject_unknown_arguments(QUEUE_GRADE, arguments, _GRADE_FIELDS)
+    loop = asyncio.get_running_loop()
+
+    def sync_call_tool(tool_id: str, tool_arguments):
+        future = asyncio.run_coroutine_threadsafe(
+            call_dfhack(tool_id, dict(tool_arguments)), loop,
+        )
+        return future.result()
+
+    try:
+        result = await asyncio.to_thread(grade.run_grading_cycle, db_path, sync_call_tool)
+    except store.QueueError as exc:
+        raise _write_error(QUEUE_GRADE, exc) from exc
+    except (sqlite3.Error, OSError) as exc:
+        raise _storage_error(QUEUE_GRADE, exc) from exc
+    except Exception as exc:
+        # game_tick_from_overview raising (KeyError/TypeError/ValueError on
+        # a malformed in_game_date), or call_dfhack's own DFHackCallError/
+        # DFHackConnectionError/DFHackProtocolError surfacing through the
+        # coroutine-threadsafe bridge above -- refused, never an unhandled
+        # exception past this boundary, matching every other native tool
+        # here (module docstring, "Storage errors are refusals too").
+        raise QueueToolError(f"{QUEUE_GRADE}: grading failed: {exc}") from exc
+
+    structured = {
+        "current_game_tick": result["current_game_tick"],
+        "graded_at": result["graded_at"],
+        "graded_count": len(result["graded"]),
+        "graded": result["graded"],
+        "unexecuted_count": len(result["unexecuted"]),
+        "unexecuted_proposal_ids": [u["proposal"]["id"] for u in result["unexecuted"]],
+    }
+    text = json.dumps(structured, indent=2, default=str)
+    return text, structured
+
+
 _HANDLERS = {
     QUEUE_PROPOSE: _propose,
     QUEUE_PASS: _pass_,
@@ -795,6 +893,7 @@ _HANDLERS = {
     QUEUE_ASK: _ask,
     QUEUE_ANSWER: _answer,
     QUEUE_EXECUTED: _executed,
+    QUEUE_GRADE: _grade,
 }
 
 

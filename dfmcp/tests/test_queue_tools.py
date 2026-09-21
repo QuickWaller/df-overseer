@@ -20,6 +20,7 @@ import pytest
 
 from dfmcp import queue_tools
 from dfqueue import store
+from learning.predictions.schema import GRADED_TRUE
 
 pytestmark = pytest.mark.asyncio
 
@@ -318,6 +319,137 @@ class TestExecuted:
                     "notes": "No such ruling.",
                 },
                 db_path=path, call_dfhack=_ok_call_dfhack, write_lock=asyncio.Lock(),
+            )
+
+
+class _AdvancingOverview:
+    """A `call_dfhack` fake that answers `overview.get` with `before` until
+    `.advanced` is set True, then with `after` -- lets a test write and
+    execute a proposal at one game tick, then grade it from a later one,
+    exactly the two-reads-in-sequence shape `queue.grade` itself performs
+    (once to stamp `queue.executed`'s own cycle, once inside the grading
+    pass to read the fort's current tick)."""
+
+    def __init__(self, before: dict, after: dict):
+        self._before = before
+        self._after = after
+        self.advanced = False
+        self.calls: list = []
+
+    async def __call__(self, tool_id: str, arguments: dict):
+        self.calls.append(tool_id)
+        assert tool_id == "overview.get", f"unexpected tool_id {tool_id!r}"
+        return self._after if self.advanced else self._before
+
+
+def _dated_overview(tick: int, *, population: int = 7) -> dict:
+    return {
+        "tier1": {"population": population},
+        "tier2": {"in_game_date": f"year 0, month 1, day 1, tick {tick}", "alerts": []},
+    }
+
+
+class TestGrade:
+    """docs/AGENT-LOOP.md item 2, handoffs/2026-09-22-loop-conductor-service.md:
+    queue.grade runs dfqueue.grade.run_grading_cycle over MCP. These tests
+    exercise the real queue_tools.call() path end to end (propose, rule,
+    execute, then grade), never dfqueue.grade directly, so they also prove
+    the async/sync call_tool bridge (_grade's own sync_call_tool) actually
+    reaches DFHack through the injected call_dfhack."""
+
+    async def test_grades_a_due_prediction_through_the_real_call_path(self, tmp_path):
+        path = tmp_path / "queue.sqlite3"
+        call_dfhack = _AdvancingOverview(_dated_overview(100), _dated_overview(200))
+        lock = asyncio.Lock()
+
+        _p_text, proposal = await queue_tools.call(
+            queue_tools.QUEUE_PROPOSE, "architect",
+            _propose_args(prediction={
+                "signal": "fort.population", "op": "gte", "value": 1, "check_after_ticks": 50,
+            }),
+            db_path=path, call_dfhack=call_dfhack, write_lock=lock,
+        )
+        _r_text, ruling = await queue_tools.call(
+            queue_tools.QUEUE_RULE, "overseer",
+            {
+                "proposal_id": proposal["id"], "decision": "accept",
+                "reason": "Charter-clean.", "public_rationale": "Approved.",
+            },
+            db_path=path, call_dfhack=call_dfhack, write_lock=lock,
+        )
+        await queue_tools.call(
+            queue_tools.QUEUE_EXECUTED, "overseer",
+            {
+                "ruling_id": ruling["id"],
+                "actions": [{"tool": "workshop.build", "outcome": "success"}],
+                "notes": "Built as ruled.",
+            },
+            db_path=path, call_dfhack=call_dfhack, write_lock=lock,
+        )
+        # due_game_tick = 100 (execution tick) + 50 = 150, still before 100 -- not due yet
+        # (current tick is still 100 at this point: call_dfhack has not advanced).
+
+        call_dfhack.advanced = True  # the fort has moved on to tick 200
+        text, structured = await queue_tools.call(
+            queue_tools.QUEUE_GRADE, "conductor", {},
+            db_path=path, call_dfhack=call_dfhack, write_lock=lock,
+        )
+
+        assert structured["current_game_tick"] == 200
+        assert structured["graded_count"] == 1
+        assert structured["graded"][0]["id"]
+        assert structured["graded"][0]["status"] == GRADED_TRUE
+        assert structured["unexecuted_count"] == 0
+        assert "graded_count" in text  # the text block is the same structured payload, printed
+
+        # Idempotent: a second call the same cycle grades nothing more.
+        _text2, structured2 = await queue_tools.call(
+            queue_tools.QUEUE_GRADE, "conductor", {},
+            db_path=path, call_dfhack=call_dfhack, write_lock=lock,
+        )
+        assert structured2["graded_count"] == 0
+
+    async def test_reports_an_accepted_but_unexecuted_proposal(self, tmp_path):
+        path = tmp_path / "queue.sqlite3"
+        proposal, _ruling = await _propose_and_rule(path)
+
+        _text, structured = await queue_tools.call(
+            queue_tools.QUEUE_GRADE, "conductor", {},
+            db_path=path, call_dfhack=_ok_call_dfhack, write_lock=asyncio.Lock(),
+        )
+        assert structured["unexecuted_count"] == 1
+        assert structured["unexecuted_proposal_ids"] == [proposal["id"]]
+        assert structured["graded_count"] == 0  # never scored as a miss
+
+    async def test_grade_refuses_unexpected_arguments(self, tmp_path):
+        path = tmp_path / "queue.sqlite3"
+        with pytest.raises(queue_tools.QueueToolError, match="unexpected argument"):
+            await queue_tools.call(
+                queue_tools.QUEUE_GRADE, "conductor", {"limit": 5},
+                db_path=path, call_dfhack=_ok_call_dfhack, write_lock=asyncio.Lock(),
+            )
+
+    async def test_grade_refuses_when_dfhack_is_unreachable(self, tmp_path):
+        path = tmp_path / "queue.sqlite3"
+
+        async def _broken_call_dfhack(tool_id, arguments):
+            raise RuntimeError("DFHack connection reset")
+
+        with pytest.raises(queue_tools.QueueToolError, match="grading failed"):
+            await queue_tools.call(
+                queue_tools.QUEUE_GRADE, "conductor", {},
+                db_path=path, call_dfhack=_broken_call_dfhack, write_lock=asyncio.Lock(),
+            )
+
+    async def test_grade_against_an_unwritable_directory_is_refused_not_a_crash(self, tmp_path):
+        blocking_file = tmp_path / "not-a-directory"
+        blocking_file.write_text("x", encoding="utf-8")
+        bad_db_path = blocking_file / "sub" / "queue.sqlite3"
+
+        with pytest.raises(queue_tools.QueueToolError, match="queue database is unavailable"):
+            await queue_tools.call(
+                queue_tools.QUEUE_GRADE, "conductor", {},
+                db_path=bad_db_path, call_dfhack=_ok_call_dfhack, write_lock=asyncio.Lock(),
             )
 
 

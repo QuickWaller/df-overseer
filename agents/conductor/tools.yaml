@@ -78,3 +78,11 @@ write:
       file's own header -- a deliberate deviation from the handoff's literal
       phrasing, flagged in this stream's report). The cycle's "save before
       any action" step (docs/AGENT-LOOP.md ss1).
+  - id: "queue.grade"
+    status: exists
+    note: >-
+      Added handoffs/2026-09-22-loop-conductor-service.md (docs/AGENT-LOOP.md
+      item 2). Native tool (dfmcp/queue_tools.py), not a DFHack command --
+      runs dfqueue.grade.run_grading_cycle over MCP since the queue database
+      lives on VM 103 and this service runs on VM 106. Idempotent. Granted
+      only here: no other role's tools.yaml references this id.
