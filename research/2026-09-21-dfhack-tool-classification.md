@@ -10,6 +10,9 @@ All 443 tools are classified. **60 `will`, 46 `grey`, 337 `wont`.** Of the `wont
 
 ## Coverage against the minimum bar
 
+> **Correction by the orchestrator, 2026-09-21.** The "nothing exists" rows below were too strong: this classification read summaries and tags for about 290 tools. Checked afterwards against the install's docs: appointing a Manager or nobles has no tool or documented API function, but the mechanism is confirmed in the install's own `make-monarch.lua` and the fort's `MANAGER` assignment exists and is vacant (see `Working.md` item 6); room and furniture assignment is partly covered (`Buildings::setOwner` and `dfhack.buildings.getOwner` in the API; quickfort `#zone` blueprints can assign a zone to a noble role through `preserve-rooms`); confirming completion is covered by `eventful` and direct reads (we build the tool); assessment is partly covered (`allneeds` reads needs); unpause is a write to `pause_state`, which we already do; `burrow` covers civilian alerts and `Military::removeFromSquad` exists, with no squad-creation tool found. See `Working.md` START HERE item 6.
+
+
 Why this file exists: research toward the openclaw agent design, to learn what DFHack already gives us and what we must build. For each minimum-bar need below: the DFHack tools that provide it (with the verdict in this file), whether they are enough, and where nothing exists. **Every claim rests on DFHack's tool docs and this repo's own notes; nothing was run.** "Ours" means a tool already in `scripts/dfhack/TOOLS.yaml`. Where the docs were unclear I say so.
 
 | Need | DFHack provides | Enough? | Nothing exists / we build it |
