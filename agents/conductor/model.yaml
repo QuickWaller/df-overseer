@@ -1,0 +1,29 @@
+# Conductor model and budget -- N/A. This is the first role in the roster
+# that is code, never a model call (docs/AGENT-LOOP.md ss2-3: "starting and
+# stopping the fort belong to code, never to a model"). dfmcp/roles.py's
+# load_roster only checks that this FILE exists for every enabled role
+# (Rule 5); it does not parse or require any particular field inside it. This
+# file exists so `agents/conductor/` satisfies that structural requirement
+# and so a human reading the roster does not find a silent gap here, not
+# because the conductor service (docs/AGENT-LOOP.md item 3, a later stream)
+# will ever read a `model:` field out of it.
+
+schema_version: 1
+role: conductor
+
+model: null   # never calls a model; see the header above
+fallback: []
+
+rationale: >-
+  Code, not an agent. The conductor service (a later stream, Python on
+  VM 106 per docs/AGENT-LOOP.md's default) runs the cycle, triage and clock
+  policy deterministically and launches each ROLE's own one-shot `agent exec`
+  run -- it never itself reasons over a prompt.
+
+cadence:
+  mode: continuous   # the service's own process, not "woken" the way an
+                      # advisor/actor role is -- see docs/AGENT-LOOP.md ss1.
+
+budget:
+  ceiling_usd_per_day: 0
+  enforcement: n/a   # no model calls of its own to meter

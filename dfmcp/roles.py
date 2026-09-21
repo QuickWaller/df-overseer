@@ -26,6 +26,34 @@ from .registry import Registry
 REPO_ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_AGENTS_DIR = REPO_ROOT / "agents"
 
+# The one narrow, explicit exception to Rule 2 below (mutation implies
+# sole_writer). Added `handoffs/2026-09-22-loop-clock-conductor-role.md`:
+# the conductor is CODE, never an agent (docs/AGENT-LOOP.md ss2-3: "starting
+# and stopping the fort belong to code, never to a model"), and it needs a
+# handful of tools that mutate DFHack's own runtime state -- the frame cap,
+# the pause flag, the in-game tripwire watcher, a quicksave -- but never a
+# fort decision the way a designation or a build is. Rather than touch
+# dfmcp/registry.py's Tool schema (owned by a different stream this same
+# day, not this one's to edit) to add a new per-tool flag, this is a fixed,
+# explicit id allowlist checked directly against a role's `kind`.
+#
+# Deliberately stricter than the ordinary sole_writer carve-out: a tool in
+# this set may be granted ONLY to a role of kind "system", with NO exception
+# for the roster's sole_writer. This is what makes "the Overseer must never
+# gain clock.resume" a load-time-checked structural guarantee rather than a
+# charter sentence a future tools.yaml edit could quietly contradict --
+# see roles.py's _load_role_permissions below and
+# dfmcp/tests/test_roles.py's system-kind tests.
+SYSTEM_CLASS_TOOL_IDS = frozenset({
+    "clock.set-speed",
+    "clock.pause",
+    "clock.resume",
+    "clock.arm",
+    "clock.disarm",
+    "clock.clear",
+    "fort.quicksave",
+})
+
 
 class RoleValidationError(Exception):
     """A role's ROSTER.yaml entry or tools.yaml failed a strict validation rule.
@@ -167,9 +195,32 @@ def _load_role_permissions(
     # placed under `read` by mistake is caught too, not only one under
     # `write`. This is the roster's single most important invariant:
     # advisors are read-only.
+    #
+    # The SYSTEM_CLASS_TOOL_IDS exception (added
+    # handoffs/2026-09-22-loop-clock-conductor-role.md) is checked FIRST and
+    # separately, because its shape is the opposite of the ordinary
+    # carve-out: a system-class tool may be granted ONLY to a role of kind
+    # "system", with no exception for the sole_writer, whereas every other
+    # mutating tool may be granted ONLY to the sole_writer, with no
+    # exception for kind. A role could otherwise satisfy the sole_writer
+    # check below (by being the sole_writer) while still wrongly holding a
+    # tool that must belong to code alone, so this cannot simply extend the
+    # sole_writer branch.
+    for section_name, granted in (("read", read), ("write", write)):
+        for tool_id in granted:
+            if tool_id in SYSTEM_CLASS_TOOL_IDS and kind != "system":
+                raise RoleValidationError(
+                    f"'{role_name}' is granted system-class tool '{tool_id}' under {section_name}, "
+                    f"but only a role of kind 'system' may hold it (dfmcp/roles.py's "
+                    "SYSTEM_CLASS_TOOL_IDS exception has no carve-out for the sole_writer either) "
+                    f"-- '{role_name}' is kind '{kind}'."
+                )
+
     if role_name != sole_writer:
         for section_name, granted in (("read", read), ("write", write)):
             for tool_id in granted:
+                if tool_id in SYSTEM_CLASS_TOOL_IDS:
+                    continue  # already checked above; system-kind roles are exempt from this branch
                 tool = registry.get(tool_id)
                 if tool.mutates:
                     raise RoleValidationError(

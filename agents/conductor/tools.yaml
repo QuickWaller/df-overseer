@@ -1,0 +1,80 @@
+# Conductor tool allowlist. CODE, NEVER AN AGENT -- this role's token
+# (MCP_ROLE_TOKEN_CONDUCTOR) is held only by the conductor SERVICE
+# (docs/AGENT-LOOP.md item 3, a later stream), never by a model. No model
+# ever sees this file or calls these tools directly.
+#
+# Ids are the canonical scheme resolved against scripts/dfhack/TOOLS.yaml by
+# dfmcp/registry.py: see dfmcp/README.md for the scheme (strip df-overseer-/
+# .lua, take the command's leading verb, join with a dot).
+#
+# `status: exists` -> the underlying Lua command exists in this repo, but
+# `live_deployed: false` in TOOLS.yaml for every one of them as of this
+# stream (offline build, no VM). See this stream's handoff Result section
+# for the exact live checks the deploy stream must run before treating any
+# of these as verified.
+
+schema_version: 1
+role: conductor
+
+# Every write below mutates DFHack's OWN runtime state (frame cap, pause
+# flag, the tripwire watcher, a quicksave), never a fort decision -- the
+# fort's designations, builds and orders stay the Overseer's alone
+# (agents/ROSTER.yaml: sole_writer: overseer). dfmcp/roles.py's
+# SYSTEM_CLASS_TOOL_IDS is the one, narrow, load-time-checked exception that
+# lets a non-sole-writer role hold these seven ids, and only a role of
+# kind: system (this one) may hold them -- see agents/ROSTER.yaml's
+# conductor entry and dfmcp/roles.py's own header comment on the constant.
+write_authority: system-class only (game clock and quicksave; never fort state)
+
+read:
+  - id: "clock.status"
+    status: exists
+    note: Paused/fps/tick and the latched tripwire, if any.
+  - id: "vitals.summary"
+    status: exists
+    note: >-
+      Tier 0 figures for the per-cycle briefing (docs/AGENT-LOOP.md item 6):
+      alive, dead_total, worst hunger/thirst status category, warning_count.
+  - id: "overview.get"
+    status: exists
+    note: The same fort-overview read every other role's briefing draws on.
+  - id: "queue.pending"
+    status: exists
+    note: >-
+      Native tool (dfmcp/queue_tools.py), not a DFHack command. Read-only,
+      not sole_writer_only (roles.py rule 6 does not apply). Lets the
+      conductor's own triage (docs/AGENT-LOOP.md step 3) see what the queue
+      already holds before deciding who to wake.
+
+write:
+  - id: "clock.set-speed"
+    status: exists
+    note: base_fps / think_fps switching, per the wake-reason policy table (docs/AGENT-LOOP.md ss2).
+  - id: "clock.pause"
+    status: exists
+    note: Always allowed; pausing is the safe direction.
+  - id: "clock.resume"
+    status: exists
+    note: >-
+      Refused by the tool itself while a tripwire is latched. Granted ONLY
+      here, never to agents/overseer/tools.yaml: the Overseer's charter says
+      never unpause without being asked to, and dfmcp/roles.py's
+      SYSTEM_CLASS_TOOL_IDS check has no sole_writer carve-out, so granting
+      this to overseer's own tools.yaml (kind: actor) would fail to load,
+      not just be a bad idea.
+  - id: "clock.arm"
+    status: exists
+    note: Arms the in-game tripwire watcher at cycle start (or fort start-up).
+  - id: "clock.disarm"
+    status: exists
+    note: Stops the watcher (does not touch a latch already set).
+  - id: "clock.clear"
+    status: exists
+    note: Clears a latched tripwire once the Overseer has handled it (docs/AGENT-LOOP.md ss1 step 6-adjacent).
+  - id: "fort.quicksave"
+    status: exists
+    note: >-
+      Fires quicksave; does not block waiting for it to land (see the .lua
+      file's own header -- a deliberate deviation from the handoff's literal
+      phrasing, flagged in this stream's report). The cycle's "save before
+      any action" step (docs/AGENT-LOOP.md ss1).
