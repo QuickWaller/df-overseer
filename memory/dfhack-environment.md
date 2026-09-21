@@ -81,6 +81,17 @@ before designing around any tool.
 `prospector`, `probe`, `pathable`, `burrow`, `eventful`, `unretire-anyone`,
 `bodyswap`, `lair`, `gui/embark-anywhere`, `gui/control-panel`.
 
+**Audit 2026-09-21: "load-bearing" above means present and documented, not cleared
+for use.** Six of these are tagged `armok` by DFHack (`prospector`,
+`clean`/`cleaners`, `unretire-anyone`, `bodyswap`, `lair`,
+`gui/embark-anywhere`), and so are `caravan` and `diplomacy` in the additions
+below. The user's rule (`CLAUDE.md`, "No armok capabilities") bans powers a
+player lacks and information the game hides, and `docs/ARMOK-RULINGS.md` records
+each ruling: `prospect` (default mode), `caravan list` and `diplomacy` (list
+only) are allowed; `cleaners`, `lair`, `unretire-anyone`, `bodyswap` and
+`gui/embark-anywhere` are banned (the first two open for later). The tag is
+only a pointer, so check a tool against the rule, not against the tag.
+
 **ADDED 2026-09-12**, confirmed present by direct source read at the matching
 version tag (53.16-r1.1) while verifying capabilities the agent architecture
 depends on, and load-bearing enough to belong in this list:
