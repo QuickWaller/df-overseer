@@ -84,6 +84,11 @@
 -- (--dry-run, documented as "don't actually change any game state"),
 -- reporting that under `validation`, never under quickfort_ok (contract C1
 -- reserves quickfort_ok/quickfort_error/quickfort_stats for a REAL build).
+-- quickfort returns success even when it designated nothing (negative control,
+-- live 2026-09-21: an indoor-only Bed on an outdoor tile gave result 0 with
+-- "Unsuitable tiles for building: 1"), so `ok` is computed from its statistics:
+-- at least one building designated and no problem counter above zero. A real
+-- build additionally reads the tile back (`read_back`).
 -- The only side effect of a dry run is a scratch blueprint file on the
 -- guest, deleted straight after. Only an explicit false performs the real
 -- mutation, and that path is UNTESTED live (register: first real build of a
@@ -501,7 +506,7 @@ local function ranked_sites(k, w, h, level, near, radius_tiles)
   local search = {
     radius_tiles = radius,
     tiles_checked = stats.checked,
-    eligible_tiles = stats.eligible_tiles,
+    eligible_tiles = per_window and NULL or stats.eligible_tiles,
     windows_checked = stats.windows,
     fitting_sites = #candidates,
     check_errors = stats.errors,
@@ -680,7 +685,7 @@ local function write_blueprint(k, w, h)
   return filename
 end
 
-local function parse_quickfort_stats(output)
+function parse_quickfort_stats(output)
   local stats = {}
   if not output then return stats end
   for line in output:gmatch('[^\n]+') do
@@ -688,6 +693,25 @@ local function parse_quickfort_stats(output)
     if label and value then stats[label] = tonumber(value) end
   end
   return stats
+end
+
+-- quickfort returns CR_OK even when it designated nothing (a negative control
+-- on this install: a Bed on an outdoor tile printed "Buildings designated: 0,
+-- Unsuitable tiles for building: 1" and result CR_OK). So "ok" here means the
+-- run finished, at least one building was designated, and every OTHER stat
+-- quickfort printed (each is a problem counter) is zero.
+local DESIGNATED_LABEL = "Buildings designated"
+function assess_quickfort(ran, res, stats)
+  local problems = {}
+  if not ran then return false, problems end
+  for label, n in pairs(stats or {}) do
+    if label ~= DESIGNATED_LABEL and n ~= 0 then
+      problems[#problems + 1] = label .. ": " .. tostring(n)
+    end
+  end
+  table.sort(problems)
+  local designated = (stats or {})[DESIGNATED_LABEL] or 0
+  return (res == CR_OK and designated >= 1 and #problems == 0), problems
 end
 
 local function truthy_dry_run(v)
@@ -709,7 +733,7 @@ function find_kind(kind_name, w, h, level, near, radius_tiles)
   if err then return nil, err end
   if #chosen == 0 then
     return nil, string.format("no site for %s (%dx%d) near %s; search: %d tiles checked, %d eligible, %d check errors%s",
-      k.token, dw, dh, tostring(near), search.tiles_checked, search.eligible_tiles, search.check_errors,
+      k.token, dw, dh, tostring(near), search.tiles_checked, tonumber(search.eligible_tiles) or -1, search.check_errors,
       search.first_check_error ~= NULL and (" (first: " .. search.first_check_error .. ")") or "")
   end
   local req, gaps = requirements_for(k)
@@ -738,7 +762,7 @@ function build_kind(kind_name, w, h, level, near, rank, radius_tiles, dry_run)
   if err then return nil, err end
   if rank < 1 or rank > #chosen then
     return nil, string.format("no candidate at rank %d (found %d near %s); search: %d tiles checked, %d eligible, %d check errors",
-      rank, #chosen, tostring(near), search.tiles_checked, search.eligible_tiles, search.check_errors)
+      rank, #chosen, tostring(near), search.tiles_checked, tonumber(search.eligible_tiles) or -1, search.check_errors)
   end
   local c = chosen[rank]
   local req, gaps = requirements_for(k)
@@ -773,11 +797,13 @@ function build_kind(kind_name, w, h, level, near, rank, radius_tiles, dry_run)
     local ok_rm, rm = pcall(os.remove, "dfhack-config/blueprints/" .. filename)
     result.blueprint.removed = (ok_rm and rm == true)
     local stats = ok_run and parse_quickfort_stats(output) or nil
+    local ok_v, problems = assess_quickfort(ok_run, res, stats)
     result.validation = {
       by = "quickfort run --dry-run",
-      ok = ok_run and res == CR_OK,
+      ok = ok_v,
+      problems = problems,
       error = (not ok_run) and tostring(output) or NULL,
-      stats = stats or empty_object(),
+      stats = (stats and next(stats)) and stats or empty_object(),
     }
     return result
   end
@@ -785,9 +811,20 @@ function build_kind(kind_name, w, h, level, near, rank, radius_tiles, dry_run)
   local ok_run, output, res = pcall(dfhack.run_command_silent, 'quickfort', 'run', filename, '-c', coord)
   local ok_rm, rm = pcall(os.remove, "dfhack-config/blueprints/" .. filename)
   result.blueprint.removed = (ok_rm and rm == true)
-  result.quickfort_ok = ok_run and res == CR_OK
+  local stats = ok_run and parse_quickfort_stats(output) or nil
+  local ok_v, problems = assess_quickfort(ok_run, res, stats)
+  result.quickfort_ok = ok_v
   result.quickfort_error = (not ok_run) and tostring(output) or NULL
-  result.quickfort_stats = ok_run and parse_quickfort_stats(output) or empty_object()
+  result.quickfort_stats = (stats and next(stats)) and stats or empty_object()
+  result.quickfort_problems = problems
+  -- Read the tile back: quickfort can report success without a building
+  -- (TRAPS.md), so look at the game. UNTESTED live, like the whole real path.
+  local ok_b, bld = pcall(dfhack.buildings.findAtTile, xyz2pos(c.x, c.y, z))
+  result.read_back = {
+    building_found = ok_b and bld ~= nil and bld ~= false,
+    type_matches = ok_b and bld and bld:getType() == k.entry.type or false,
+    error = (not ok_b) and tostring(bld) or NULL,
+  }
   return result
 end
 
