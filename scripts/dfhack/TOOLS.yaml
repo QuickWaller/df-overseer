@@ -593,6 +593,82 @@ df-overseer-workshop.lua:
         quickfort call for these three kinds remains UNTESTED live, same
         as still/kitchen already were.
 
+df-overseer-building.lua:
+  build_order_item: "the user's minimum bar for openclaw (build workshops, rooms, furniture); docs/BUILDING-TOOL.md, handoffs/2026-09-21-building-tool-lua.md"
+  commands:
+    "list-kinds [FILTER]":
+      lua_function: list_kinds
+      effect: read
+      coordinate_bearing: false
+      live_deployed: false
+      verified: "2026-09-21 (live on VM 103 through a /tmp script path, fort paused; 175 kinds listed, no token collisions)"
+      knowledge_scope: player_visible
+      notes: >
+        Lists every building kind quickfort can place, read at run time
+        from quickfort's own table (reached through Lua upvalues, see the
+        .lua header for the choice and what a DFHack update would break).
+        Each row: token (the name to pass as KIND), key (quickfort's own
+        key, also accepted), label (display only, never pass it), type,
+        subtype, min and max footprint, and whether the size is fixed.
+        FILTER is an optional case-insensitive substring of token, label or
+        type (Workshop, Furnace, Bed, Bridge). An unmatched FILTER gives an
+        empty list; a table that cannot be read gives an error object, never
+        an empty list.
+    "find KIND W H [LEVEL] NEAR_LANDMARK [RADIUS_TILES]":
+      lua_function: find_kind
+      effect: read
+      coordinate_bearing: false
+      live_deployed: false
+      verified: "2026-09-21 (live on VM 103, fort paused, read only: workshop, furnace, 1x1 and 5x5 kinds, furniture, variable-size kinds and error cases)"
+      knowledge_scope: player_derivable
+      notes: >
+        Finds up to five non-overlapping sites for one building kind near a
+        landmark, ranked by distance. KIND is a token from list-kinds (or
+        quickfort's own key such as wl), never a display label. W H is the
+        footprint: pass the kind's own size for a fixed-size kind (3x3 for
+        every workshop, furnace and siege engine except Kennels, Siege and
+        TradeDepot at 5x5 and Quern, Millstone and SCREW_PRESS at 1x1;
+        list-kinds shows each), any size inside min..max for the rest (farm
+        plots, roads, bridges). The Lua CLI also accepts W H omitted for a
+        fixed-size kind, but this signature carries both because the
+        server's argument parser cannot express an optional pair. A site
+        qualifies when every footprint tile is revealed, building-free and
+        passes the kind's own quickfort tile rule (beds indoors, doors beside
+        a wall, farm plots on soil), with a walkable tile in or beside it.
+        Each result carries `requirements` (what the game says the kind needs
+        to be built, from dfhack.buildings.getFiltersByType, with stock
+        counts from the six-deduction availability read; counts are by item
+        type only, the filter's own flags are not applied), a plain `gaps`
+        list of what is short (report only, it never refuses a build), and a
+        `search` block of how many tiles were checked. No site gives an
+        error object that says how many tiles were checked and eligible, so
+        "nothing here" can be told apart from a broken check. Result shape is
+        contract C1 of docs/BUILDING-TOOL.md. No labor names and no
+        confidence level: the MCP layer adds those.
+    "build KIND W H [LEVEL] NEAR_LANDMARK [RANK] [RADIUS_TILES] [DRY_RUN]":
+      lua_function: build_kind
+      effect: mutate
+      coordinate_bearing: internal-only
+      live_deployed: false
+      verified: "2026-09-21 (DRY_RUN path only, live on VM 103: quickfort's own --dry-run validated the generated blueprint for workshop, furnace, furniture and variable-size kinds; the real path is UNTESTED live)"
+      knowledge_scope: player_derivable
+      notes: >
+        Places one building of KIND at the RANK-th site near a landmark.
+        DRY_RUN defaults to true; only an explicit "false" builds. A dry run
+        resolves the site, generates the blueprint in code (no per-kind
+        files), and asks quickfort to validate it with --dry-run under
+        `validation` (ok is true only when a building would be designated and
+        no problem counter is above zero; quickfort itself reports success
+        even when it designated nothing, verified by a negative control).
+        Its only side effect is a scratch blueprint file on the guest,
+        removed straight after. The real path runs the blueprint, reports
+        quickfort_ok/quickfort_error/quickfort_stats, and reads the tile
+        back (`read_back`) because quickfort can succeed without a building.
+        NEVER RUN LIVE for any kind yet: the first real build of a kind this
+        project has not built before needs the user's go-ahead. Same
+        requirements, gaps, search and site fields as find. Footprint rules
+        as in find.
+
 df-overseer-zone.lua:
   build_order_item: "gap named 2026-09-17, handoffs/2026-09-17-water-and-industry-tools.md item 1"
   commands:
@@ -1309,6 +1385,25 @@ df-overseer-labor.lua:
         automation config, out of scope for a read-only, no-deploy stream)
         -- verified-by-mechanism, not verified-by-execution, until a future
         session with go-ahead re-confirms it.
+
+    "enabled-counts LABOR":
+      lua_function: enabled_counts
+      effect: read
+      coordinate_bearing: false
+      live_deployed: false
+      verified: "2026-09-21 (live on VM 103 through a /tmp script under a throwaway name: real labors, an unknown name, NONE, an enum internal, lowercase and a number all behaved; MASON, STONECUTTER, MECHANIC and CARPENTER counts cross-checked against an independent per-unit read)"
+      knowledge_scope: player_visible
+      notes: >
+        How many citizens have a labor enabled, as {"counts": {LABOR: n or
+        null}, "errors": {LABOR: message}}. A name that is not a real
+        df.unit_labor entry is null plus an error, NEVER 0 (the
+        FEED_WATER_WOUNDED silent zero). Names are checked by round trip
+        through df.unit_labor, so NONE, enum internals, numbers and lowercase
+        are all errors. The Lua CLI takes any number of LABOR names
+        (enabled-counts LABOR [LABOR...], contract C1); this signature lists
+        one because the server's argument parser has no variadic form.
+        Enabled means the labor bit is set, not that anyone is skilled or
+        idle.
 
 df-overseer-ui.lua:
   build_order_item: "infra-support (menu/UI automation), not a perception/action primitive"
