@@ -158,11 +158,175 @@ skill table and generated reactions, with the worktree's `production` code. All 
 | build | known | partial | unknown | processes determined | reactions determined |
 |---|---|---|---|---|---|
 | before: dump only (matches the graph stream's 2/18/13, 129/366) | 2 | 18 | 13 | 129 / 366 | 98 / 293 |
-| after the skill read | 5 | 19 | 8 | 177 / 366 | 146 / 293 |
-| after the skill read and the 145 generated reactions | 5 | 23 | 4 | 304 / 366 | 273 / 293 |
+| after the skill read | 5 | 19 | 9 | 177 / 366 | 146 / 293 |
+| after the skill read and the 145 generated reactions | 5 | 23 | 5 | 304 / 366 | 273 / 293 |
+
+(The tool's own header line says unknown 8 and 4 for the last two rows and 12 for the first: it undercounts
+by one, `Tool`, which it lists but does not count. The rows above use the listed names, and each sums to 33.)
 
 Kinds, last row: known Fishery, Jewelers, Millstone, Quern, SCREW_PRESS. Unknown Bowyers, Clothiers, Kennels,
 SOAP_MAKER, Tool. The other 143 quickfort tokens (furniture and constructions) stay `unknown` by design.
 Undetermined processes, last row (62): 39 hard-coded jobs with no table labor, 22 `contradicts_profile`
 (20 reactions: 18 at Craftsdwarfs, 2 at the Soap Maker, where the skill's labor is not on the kind's Workers
 tab, so the graph refuses to name it), 1 material-dependent. `unextracted_reaction` is 0.
+
+### Step 4: deploy (archive of the tip, hash-verified three times)
+
+An archive of the tip (`11f4753`, same as main) made with line-ending conversion off, then a Python-built
+tarball of exactly 48 files with a sha256 manifest (no CR in any file, checked). Compared against the VM first:
+of 88 candidate files 34 already matched, 12 differed and 42 were absent. The 45 non-Lua files were installed
+under `/opt/df/dfmcp-smoke/` (`agents/`, `dfmcp/`, `gotchas/`, `production/` without tests, and
+`scripts/dfhack/TOOLS.yaml`) and 3 Lua scripts to DFHack's script directory: `df-overseer-building.lua` (new),
+`df-overseer-labor.lua` (`enabled-counts`) and `df-overseer-zone.lua`, the last together with the new
+`TOOLS.yaml` (the zone grammar changed). Verification: `sha256sum -c` after extraction on the VM (48 of 48 OK),
+a backup of every overwritten file to `/opt/df/deploy-backup-2026-09-21-building-batch/`, then `sha256sum -c` at
+the installed paths (45 OK plus the 3 Lua OK). `file` reports no CRLF. `df-overseer-nobles.lua` re-hashed
+after: still `5d6ea45464a677e4...`, untouched.
+
+**Found, not touched:** 15 other `df-overseer-*.lua` files under DFHack's script directory differ in content
+from main (breach, chokepoints, connectivity, diff, diggable, farm, landmarks, openarea, orders, overview,
+stockpile, stuckjobs, threat, ui; none has CR, so it is not line endings). The `TOOLS.yaml` diff shows this
+deploy changes only the building, labor, nobles and zone entries plus header comments, so none of them
+interact with this batch, but they are drift of unknown age and direction.
+
+### Steps 4 and 5: graph database, gotcha store, unit
+
+- Graph: the full build (skills plus generated reactions) copied to
+  `/var/lib/dfproduction/uniboslan.production.sqlite3`, mode 644, owned by `df`; sha256 identical locally, on
+  arrival and installed (`0bdcf979...c61083`). It is finalised `journal_mode=DELETE`.
+- Gotcha store: `/var/lib/dfgotchas/uniboslan.gotchas.sqlite3` created by `python -m dfmcp.gotchas_store init`
+  as `df` in the venv: `gotcha store ready`. Both state directories were created and chowned with `sudo -n`
+  (passwordless sudo for `df`, the route earlier deploys used; no password or other credential involved).
+- Unit: `/etc/systemd/system/dfmcp-server.service` backed up with `sudo -n cp -p` (hash equal), then exactly one
+  line added by `sudo -n sed`, `ReadWritePaths=/var/lib/dfgotchas`, after the existing `dfseries` line; the diff
+  against the backup is that single line. **No entry for `/var/lib/dfproduction`**, which the join then proved
+  unnecessary (below). `infra/dfmcp-server.service.example` updated (dfseries and dfgotchas lines, with a comment).
+- Step 6: `sudo -n systemctl daemon-reload` and `restart dfmcp-server` only. `active (running)`, `NRestarts=0`,
+  `Uvicorn running`, no traceback. DF and DFHack were not touched.
+
+### Verification (each over a real MCP client, real HTTP, per-role bearer read by key on the VM)
+
+**Per-role tool lists: architect 34, overseer 57, consultant 14, exactly the expected numbers** (before this
+deploy 25 / 45 / 11). Architect +9: building.list-kinds, building.find, gotchas.get, gotchas.write,
+labor.enabled-counts, nobles.list, nobles.verify, zone.check-owner, zone.list-kinds. Overseer +12: the same
+nine, plus building.build, nobles.appoint and nobles.unappoint (zone.place already existed). Consultant +3:
+gotchas.get, nobles.list, nobles.verify. Wire ids use two underscores and keep hyphens (`building__list-kinds`).
+
+**Fort state: paused, year 31, tick 106974 before, after each batch of calls and at the very end. Unchanged.**
+No unpause, no real build, no DF or DFHack restart. Every DFHack-backed call was one bounded read or a dry run.
+
+**building.list-kinds** (overseer): `filter=Still` returns the one Still row; a filter matching nothing returns
+`[]` (the tool's own contract, `tool_guidance` present).
+**building.find**, near "Embark Site": Masons, Still, Smelter, Kiln (workshops and furnaces, 3x3), Bed and Well
+(furniture, 1x1) and FarmPlot 5x5 each returned five sites. Errors, each `is_error: true` with a named reason:
+`unknown building kind: Widget (run list-kinds)`; `Stil` adds `did you mean: Still`; `Masons footprint 4x4 is
+outside the allowed width 3..3, height 3..3`; `FarmPlot needs W and H (width 1..31, height 1..31)`;
+`landmark not found: Nowhere Land`.
+**building.build with a dry run** (the default): Masons, Kiln, Craftsdwarfs, Smelter (default, and with
+`dry_run:"true"` plus level, rank and radius), Bed at rank 1 and 2, and FarmPlot 5x5 all returned
+`validation: {"by": "quickfort run --dry-run", "ok": true, "stats": {"Buildings designated": 1}}` with
+`dry_run: true`. An unknown kind errors. Usability trap found: `dry_run` is the last optional slot, so naming it
+without `level`, `rank` and `radius_tiles` is refused ("cannot supply 'dry_run' without also supplying the
+earlier optional argument 'level'", then 'radius_tiles'); omitting it is a dry run anyway.
+
+**tool_guidance** appears on all three shapes: an object (a `tool_guidance` sibling of the tool's own fields),
+an array (`building.list-kinds`: `structured` is `{"result": [...], "tool_guidance": {...}}`, no protocol
+error) and an error (`unknown building kind: Widget ...` carries the `<tool_guidance confidence="medium" ...>`
+text block). Roster refusals are not enriched, as designed.
+
+**The labor join against the real graph, opened by the service under `ProtectSystem=strict`: works.**
+`building.find Masons` returned `operating_labors.status: "partial"`, `labors: ["STONECUTTER",
+"STONE_CARVER"]`, reason "15 of 19 hosted processes have no determined labor (no labor in the game's job table
+(15))", with citizen counts `STONECUTTER 2, STONE_CARVER 2`. **This differs from the brief's expectation of
+STONECUTTER only:** the graph shipped here includes the 145 generated reactions, three of which the Masons
+host and which resolve to STONE_CARVER through their skill. The graph without them (the graph stream's build,
+and my "after the skill read" build) says STONECUTTER with STONE_CARVER only as an unexplained Workers-tab
+labor. MASON is not an operating labor of the Mason's Workshop in any build. Kinds the graph does not know
+return `labors: null`, never `[]`, each with a reason: Well, Bed and FarmPlot all gave `operating_labors:
+{"status": "unknown", "labors": null, "unknown_reason": "the graph has no record of a workshop or furnace kind
+'Well' ... an absence of data, not an absence of labor"}`. Kiln gave partial GLAZING, POTTERY, SMELT; Smelter
+partial SMELT; Craftsdwarfs partial with 8 labors. No `ReadWritePaths` entry for `/var/lib/dfproduction` was
+needed: a `DELETE`-journal file opens read-only from the read-only directory.
+
+**Two join gaps found** (safe, each is reported as unknown and never as an all-clear, but material gaps never
+come from the join): (1) `building.find` returns an array of five candidates, each with its own
+`requirements` and `gaps`, and the join looks for a top-level `requirements`, so every find says `gaps_unknown:
+"the result carried no requirements block"`, and a top-level `gaps: []` sits next to a candidate that says
+`needs 1 of TRAPPARTS, 0 available` (Well). (2) For `building.build` (an object) the join says "the
+building_material requirement was present but not in a shape the server understands": it does not read the
+tool's `filters[]` shape (item 14 of the server report). The tool's own `gaps` is kept and the server's is
+dropped with a note (`the tool's own result already has a 'gaps' key; the server's 'gaps' was dropped`), for
+example Bed `["needs 1 of BED, 0 available"]`. Smallest fix, in `dfmcp/labor_join.py`: take `requirements` from
+the first candidate of an array result, and read `filters[].need` and `.stock` for the gap wording.
+
+**labor.enabled-counts**: `{"MASON": 3, "NOTALABOR": null, "STONECUTTER": 2}` with `errors: {"NOTALABOR":
+"unknown labor: NOTALABOR"}`; a bad name is `null` plus an error, not 0. An independent bounded per-unit read of
+the citizens' labor bits (22 citizens) gave MASON 3, STONECUTTER 2. The earlier stream read 2 and 1, so labor
+assignments changed since (not investigated).
+
+**gotchas.get**, live store, as each role: architect, overseer and consultant all get the empty index
+(`<gotcha_index ...>` with no tools, `structured: {"tools": {}}`); `tool=building.build` returns "is a real tool
+and has no matching entries"; `tool=nonesuch.tool` is an error ("Refusing rather than returning an empty
+list"). **gotchas.write** on a second server instance on another port with a temporary store under `/tmp`
+(deleted after; the live store re-read before and after: **entries 0, outcomes 0, status_history 0**): the
+architect's new entry got `gotcha-0001`, `proposed`, with role and run id stamped; the same title again was
+refused ("its title is identical"), a bare label refused ("title is too short (9 chars, minimum 12)" and "must
+state the condition"), an unknown tool refused ("not a tool in this server's registry"); an outcome by id
+appended `worked` and the overseer's `gotchas.get` by id showed `outcomes total="1" worked="1"`; the consultant
+could read it and was refused the write ("'gotchas.write' is not on consultant's allowlist. Advisors do not
+act; propose it instead."); the next `building.list-kinds` result carried `<gotcha id="gotcha-0001"
+status="proposed" worked="1" did_not_work="0">` and the standing addendum. The temporary instance was stopped
+(port closed, checked).
+
+**Refusals:** the consultant is refused `building.find`, `building.build` and `building.list-kinds`; the
+architect is refused `building.build`; the consultant and architect are refused `nobles.appoint`. All with
+"'X' is not on <role>'s allowlist. Advisors do not act; propose it instead." **Not the per-tool deny reasons
+the brief expected:** neither role's `tools.yaml` has a `deny` entry for `building.*` or `nobles.appoint` (the
+consultant's deny list is openarea, diggable, labor, ui), so the generic wording is what is served.
+
+**nobles**: `nobles.list` as consultant and overseer: 12 positions, held: MANAGER by unit 345, EXPEDITION_LEADER
+by 198; `nobles.verify MANAGER` as overseer: `consistent: true`, every assignment check true. Read only; nothing
+appointed. **zone** (new script and grammar): `zone.list-kinds` lists kinds with owner capability and policy
+source; `zone.check-owner Office MANAGER` returns the preserve-rooms mechanism and `holder_unit_ids: [345]`.
+
+### Tests
+
+Ambient `python -m pytest`: **834 passed, 2 skipped** (the merged tree; the briefs' baselines were older, 552 to
+786). `dfmcp/tests` in `.venv-dfmcp`: **475 passed**. Both include the leak-guard test; no address, hostname or
+token is in any tracked file (grep of the diff for the address prefix: 0).
+
+### Refusals by the permission classifier
+
+One kind, three times: an address computed in a shell variable before the ssh call, an archive command with a
+variable in its paths, and a piped file-list command were each refused as "cannot be shown not to be git"
+(this is a worktree-isolated agent). Not routed around: the address was read by key in its own plain command and
+typed literally into every later `ssh` and `scp` (the user's form), and the archive and manifest were built with
+plain commands and scratch Python scripts. A large heredoc that mentioned those commands was refused the same
+way and the report was written with the edit tool instead. Nothing else was refused, including `sudo -n` for
+the directories, the unit edit and the restart.
+
+### What the docs now say wrongly (for the orchestrator)
+
+- `CLAUDE.md` status block: role counts "architect 25, overseer 45, consultant 11" and the "Current state"
+  bullets are stale: now **34 / 57 / 14**. `ROADMAP.md` carries the same counts.
+- `CLAUDE.md` and `Working.md`: fort tick 103055 is stale, it is **106974** (the nobles stream's supervised
+  unpause), with MANAGER held by unit 345.
+- The building, gotchas, labor-join, nobles and zone tools are **live**; `agents/*/tools.yaml` notes such as
+  "Not yet deployed" (for example `gotchas.get` in the consultant's) are now stale.
+- `handoffs/2026-09-21-graph-labor-for-jobs.md` and this brief expect Masons to say STONECUTTER only: the graph
+  on the VM was built with the generated reactions, so it says STONECUTTER plus STONE_CARVER.
+- `docs/PRODUCTION-MODEL.md` still says a process's labor comes from `[SKILL:...]` (flagged by the graph stream).
+
+### What remains unknown
+
+- Whether the join's gap wording should read `filters[]` and array candidates (the two gaps above; a `dfmcp` edit).
+- The 15 drifted Lua scripts under DFHack's script directory: undeployed changes or hand edits, direction unchecked.
+- Whether the generated reactions are stable: they came from this world's save (entities 12 to 22); a new world
+  needs the read repeated. The skill table is stable per DFHack version.
+- Remaining graph blanks: 39 hard-coded jobs whose labor the game picks in code from the material, 20 generated
+  reactions whose skill's labor is not on their kind's Workers tab (`contradicts_profile`: 18 at Craftsdwarfs, 2
+  at the Soap Maker), and five kinds still `unknown` (Bowyers, Clothiers, Kennels, SOAP_MAKER, Tool).
+- Why the MASON and STONECUTTER counts rose since the nobles stream.
+- Whether real agents follow the confidence legend and read the appended text blocks (not testable here).
+- Rollback material: `/opt/df/deploy-backup-2026-09-21-building-batch/` holds every overwritten file and the
+  original unit.

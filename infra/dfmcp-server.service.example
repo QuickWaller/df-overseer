@@ -63,6 +63,14 @@ PrivateTmp=true
 ProtectSystem=strict
 ProtectHome=true
 ReadWritePaths=/CHANGEME/df-automation
+# Each SQLite store the server opens outside the checkout needs its own entry:
+# WAL mode writes -wal/-shm files beside the database even for a read, and
+# ProtectSystem=strict mounts everything else read-only. Missing entries fail
+# as "unable to open database file" (series.*, 2026-09-19) or refuse startup
+# (the gotcha store). The production graph is NOT listed: it is finalised with
+# journal_mode=DELETE and opened read-only, which works from a read-only path.
+ReadWritePaths=/var/lib/dfseries
+ReadWritePaths=/var/lib/dfgotchas
 
 [Install]
 WantedBy=multi-user.target
