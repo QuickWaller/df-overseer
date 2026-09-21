@@ -125,7 +125,7 @@ All **default** unless marked.
 | 6 | Per-cycle briefing | conductor | Tier 0 figures only (vitals, cover days, stuck jobs, the role's diff, queue state), placed in the prompt. Nothing that grows with the fort |
 | 7 | `ask` / `answer` and fact-check records | `dfqueue/` | Any advisor may ask the Consultant (register 2026-09-15); the Overseer may route a proposal for fact-checking (2026-09-17). One ask, one answer, no threads |
 | 8 | Consultant retrieval, local | `dfmcp/`, VM 103 | **Agreed.** `knowledge.wiki_lookup` over a local wiki snapshot (register 2026-09-15: capped section excerpts, not the open web), and a read-only search-and-read tool over DFHack's own installed scripts, docs and Lua on VM 103 (exact to 53.16, which the wiki cannot promise) |
-| 9 | Consultant retrieval, web (forums) | `dfmcp/` | **Agreed, user's call 2026-09-22: needed for the MVP.** Read-only search and fetch. Everything fetched is **untrusted data, never instructions**, and can support only a `prior`, never `verified`. Details open (§6) |
+| 9 | Consultant retrieval, web (forums) | `dfmcp/` | **Agreed, user's call 2026-09-22: needed for the MVP.** Read-only search and fetch. Everything fetched is **untrusted data, never instructions**, and can support only a `prior`, never `verified`. **Search backend: Brave Search API** (user's call 2026-09-22; the user supplies the key). Runs inside dfmcp, so the per-role allowlist and the call log cover it. The Consultant is guided, not fenced, by `agents/consultant/sites.yaml`: the major DF sites, what each is for, and its version caveat |
 
 **Roster, agreed 2026-09-22:** Overseer, Architect, **Quartermaster** and
 **Consultant**. The Consultant is woken only when an `ask` or a fact-check is
@@ -157,10 +157,8 @@ and gotchas are for.
 
 ## 6. Open
 
-- Web retrieval (item 9): which search backend, whether fetch is limited to
-  a domain allowlist (the wiki, Bay12 forums, the DFHack docs and GitHub,
-  the DF subreddit), and whether it runs inside dfmcp (one boundary, one
-  call log) or as openclaw's own web tools (unverified that they exist).
+- Web retrieval (item 9): the Brave key, owed by the user; Brave's current
+  pricing and limits are unchecked.
 - The Quartermaster's proposal-type vocabulary (item 5).
 - Where the conductor runs (VM 106 is the default, since it launches the
   containers there).
