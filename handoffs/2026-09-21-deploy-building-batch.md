@@ -108,3 +108,61 @@ join shown working (or its exact failure reported), the fort still paused at
 the recorded tick, the ambient and venv suites unchanged, and a list for the
 orchestrator of what the docs now say wrongly (role counts in `CLAUDE.md` and
 `ROADMAP.md`).
+
+---
+
+## Report (executor, 2026-09-21, in progress)
+
+Worktree tip at start: `11f4753`. Sessions ran as `df` over key-pinned ssh throughout; every VM command was
+one plain `ssh`/`scp` with a literal address (a variable-computed address in a `VAR=$(...)` compound was
+refused by the permission classifier as "cannot be shown not to be git", so the address was read once by key
+in its own command and typed into each later one; nothing routed around, no address in any tracked file).
+
+### Step 1: what was on the VM, and the fort's state before
+
+- `df-overseer-nobles.lua`: sha256 `5d6ea454...c0aab4` on the VM, equal to the value in the brief. Left alone.
+- The VM's `/opt/df/game/hack/scripts/` has no `df-overseer-building.lua`; `df-overseer-zone.lua` (17433 bytes,
+  2026-09-18) and `df-overseer-labor.lua` (17924 bytes, 2026-09-18) are the old copies.
+- `/opt/df/dfmcp-smoke/` has no `production/` and no `gotchas/` directory; `/var/lib/` has `dfmcp` and
+  `dfseries` only (no `dfgotchas`, no `dfproduction`).
+- `dfmcp-server`: active.
+- Fort, read with one bounded `dfhack-run lua` (pause state, year, tick): **paused, year 31, tick 106974**
+  (the nobles stream's supervised unpause moved it from 103055).
+
+### Step 2: the skill read (bounded, read-only)
+
+One Lua loop over `df.job_skill._first_item .. _last_item` (-1 to 148, guarded to at most 400) reading
+`df.job_skill.attrs[i].labor`, run with `dfhack-run lua -f` from a `/tmp` copy that was removed afterwards.
+Result: 149 skill ids scanned, **68 with a labor, 0 read errors**, the other 81 written as absent (labor -1).
+Written out of tree to `skills.json` as `[{"skill","labor"}]`. Examples: MASONRY MASON, CUT_STONE STONECUTTER,
+CARVE_STONE STONE_CARVER, BREWING BREWER, CARPENTRY CARPENTER, POTTERY POTTERY, PRESSING PRESSING,
+CROSSBOW/BOW/SNEAK/RANGED_COMBAT all HUNT. It adds 22 skills to the 46 the dump had (map size 46 to 68).
+
+### Step 2b: the generated-reaction read
+
+`df.global.world.raws.reactions.reactions` has 304 entries; the ones whose code matches `^MAKE_ENT%d+ ` number
+**145**, exactly the count the extraction stream predicted. Each reaction carries `raw_strings`, a vector of the
+reaction's own raw tokens (`[BUILDING:CRAFTSMAN:NONE]`, `[REAGENT:...]`, `[PRODUCT:...]`, `[SKILL:BONECARVE]`),
+so the fuller read was as cheap as the cheap one: one bounded loop (guard 2000 reactions, 200 lines each)
+prints `[REACTION:code]` plus those strings. Rendered to one `reaction_generated.txt` (145 reactions, 2,201
+lines, out of tree, CP437 decoded). The extractor reads it with no code change. It reports 435 `unparsed`
+lines, all "no open reagent/product to attach to", which is exactly 3 per reaction: `[GENERATED]`,
+`[SOURCE_ENID]`, `[MAX_MULTIPLIER]` appear before any reagent. They carry no flow or labor.
+
+### Step 3: the graph database, coverage before and after
+
+Built offline from the real vanilla reaction files, the real building dump and (for the last two rows) the
+skill table and generated reactions, with the worktree's `production` code. All three files end in
+`journal_mode=DELETE` and pass `integrity_check`.
+
+| build | known | partial | unknown | processes determined | reactions determined |
+|---|---|---|---|---|---|
+| before: dump only (matches the graph stream's 2/18/13, 129/366) | 2 | 18 | 13 | 129 / 366 | 98 / 293 |
+| after the skill read | 5 | 19 | 8 | 177 / 366 | 146 / 293 |
+| after the skill read and the 145 generated reactions | 5 | 23 | 4 | 304 / 366 | 273 / 293 |
+
+Kinds, last row: known Fishery, Jewelers, Millstone, Quern, SCREW_PRESS. Unknown Bowyers, Clothiers, Kennels,
+SOAP_MAKER, Tool. The other 143 quickfort tokens (furniture and constructions) stay `unknown` by design.
+Undetermined processes, last row (62): 39 hard-coded jobs with no table labor, 22 `contradicts_profile`
+(20 reactions: 18 at Craftsdwarfs, 2 at the Soap Maker, where the skill's labor is not on the kind's Workers
+tab, so the graph refuses to name it), 1 material-dependent. `unextracted_reaction` is 0.
