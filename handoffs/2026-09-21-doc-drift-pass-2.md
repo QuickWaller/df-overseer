@@ -164,3 +164,32 @@ is not, and I did not promote `false` to `true` or demote to `STALE`. One read-o
 Header comment on `live_deployed` updated to stop saying "all 10 files".
 Suites after: ambient 891 passed / 3 skipped; `dfmcp/tests` 461 passed / 3 skipped in the
 worktree's ambient python (the 537 is the `.venv-dfmcp` figure, re-measured at the end).
+
+### 2. `agents/*` (done)
+
+- `agents/{architect,overseer,consultant}/tools.yaml`: every "Not yet deployed" is gone (0
+  left, grep-checked). Each note now says what the deploy reports show: stocks
+  (2026-09-16, 2026-09-19, 2026-09-20), farm/workshop/zone/trees/well/orders
+  (2026-09-17), workjob (2026-09-19), gotchas/building/labor enabled-counts and the
+  generalised zone (2026-09-21). No allowlist entry was added, removed or moved (role
+  lists parse to the same ids: architect 32 read, overseer 39 read and 18 write,
+  consultant 14 read; the registry tests pass).
+- Contradictions inside those notes, corrected against a primary source (a register row
+  or a handoff report, cited in the note): `stocks.availability` was described as an
+  offline build never run, four deductions, `verified_offline` always false (it is deployed,
+  was run live, has six deductions, and `verified_offline` was flipped true 2026-09-19);
+  `farm.build`/`farm.set-crop`, `well.build`, `workjob.queue` and `diggable.dig-stair` were
+  described as untested live for the real path (register rows of 2026-09-17, 2026-09-19 and
+  the well-unblock report show real runs); `orders.create`, `orders.list`, `workjob.*` said no
+  Manager exists (unit 345 has held MANAGER since 2026-09-21, orders still do not run);
+  `labor.set-labor` said "not yet redeployed, STALE" (the 2026-09-21 deploy redeployed the
+  file); `zone.find`/`zone.place` described the old water-only tool.
+- `agents/consultant/role.md` and `agents/CONFIDENCE-LEGEND.md`: the legend pointer told every
+  role to "record the outcome with `gotchas.write`", but the consultant has no
+  `gotchas.write` (refused live in the deploy report). The consultant's paragraph now says so
+  and the legend has a one-line exception. The architect and overseer pointers read correctly and
+  were left alone.
+- `agents/ROSTER.yaml` (quartermaster `blocked_on`) and `agents/quartermaster/tools.yaml` header:
+  the first still said manager work orders have no tool (`orders.*` and `workjob` exist), the
+  second said role.md still had a stale line (role.md was fixed on 2026-09-17). Both corrected.
+  ROSTER.yaml was not named in the brief; it sits under `agents/` and the fix is mechanical.

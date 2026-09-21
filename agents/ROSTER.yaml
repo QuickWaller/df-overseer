@@ -52,10 +52,13 @@ roles:
     dir: quartermaster
     kind: advisor
     blocked_on: >-
-      No tool surface exists. Manager work orders and stockpile settings have no
-      tool in this repo, and DFHack's own `stocks`/`workflow` are unavailable on
-      this install. `workorder.lua` IS present and callable, so the path is real
-      but unbuilt.
+      Little tool surface exists. Manager work orders now have tools
+      (`orders.list`/`create`/`cancel`, deployed 2026-09-17, and the direct
+      `workjob` route, deployed 2026-09-19), though queued manager orders still do
+      not run on this fort. Stockpiles have two read-only tools (`stockpile.list`,
+      `stockpile.links`) and nothing changes stockpile settings (filters,
+      thresholds, links). DFHack's own `stocks`/`workflow` are unavailable on
+      this install. `workorder.lua` IS present and callable.
     summary: Food, drink, seeds, work orders, stock thresholds.
 
   marshal:
