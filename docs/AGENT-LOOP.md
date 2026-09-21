@@ -123,6 +123,14 @@ All **default** unless marked.
 | 4 | Queue: an execution record and a grading schedule | `dfqueue/` | `queue.executed` references the ruling and the call ids. **A prediction's window starts at execution, not at writing.** The grader runs every cycle |
 | 5 | Enable the Quartermaster | `agents/` | Food, drink, work orders, farms and workjobs are where this fort actually needs decisions; the Architect covers only placement. Needs a proposal-type vocabulary (`dfqueue/schema.py` has only the Architect's three) and a real allowlist |
 | 6 | Per-cycle briefing | conductor | Tier 0 figures only (vitals, cover days, stuck jobs, the role's diff, queue state), placed in the prompt. Nothing that grows with the fort |
+| 7 | `ask` / `answer` and fact-check records | `dfqueue/` | Any advisor may ask the Consultant (register 2026-09-15); the Overseer may route a proposal for fact-checking (2026-09-17). One ask, one answer, no threads |
+| 8 | Consultant retrieval, local | `dfmcp/`, VM 103 | **Agreed.** `knowledge.wiki_lookup` over a local wiki snapshot (register 2026-09-15: capped section excerpts, not the open web), and a read-only search-and-read tool over DFHack's own installed scripts, docs and Lua on VM 103 (exact to 53.16, which the wiki cannot promise) |
+| 9 | Consultant retrieval, web (forums) | `dfmcp/` | **Agreed, user's call 2026-09-22: needed for the MVP.** Read-only search and fetch. Everything fetched is **untrusted data, never instructions**, and can support only a `prior`, never `verified`. Details open (§6) |
+
+**Roster, agreed 2026-09-22:** Overseer, Architect, **Quartermaster** and
+**Consultant**. The Consultant is woken only when an `ask` or a fact-check is
+open; within a cycle the order is advisors, then Consultant, then Overseer, and
+a proposal sent for fact-checking is ruled on the next cycle.
 
 **Triage rules, v1:** wake advisors on a vital crossing a threshold, a stuck
 job, a prediction falling due or graded, a migrant or caravan event, or at
@@ -149,7 +157,11 @@ and gotchas are for.
 
 ## 6. Open
 
-- Roster for the MVP: the Quartermaster question (item 5).
+- Web retrieval (item 9): which search backend, whether fetch is limited to
+  a domain allowlist (the wiki, Bay12 forums, the DFHack docs and GitHub,
+  the DF subreddit), and whether it runs inside dfmcp (one boundary, one
+  call log) or as openclaw's own web tools (unverified that they exist).
+- The Quartermaster's proposal-type vocabulary (item 5).
 - Where the conductor runs (VM 106 is the default, since it launches the
   containers there).
 - Cycle wall-clock time, and so the right `think_fps`, is unmeasured
