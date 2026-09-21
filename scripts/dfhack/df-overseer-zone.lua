@@ -101,6 +101,7 @@
 --
 -- Usage: ./dfhack-run df-overseer-zone list-kinds [FILTER]
 -- Usage: ./dfhack-run df-overseer-zone find KIND [W H] [LEVEL] NEAR_LANDMARK [RADIUS_TILES]
+-- Usage: ./dfhack-run df-overseer-zone check-owner KIND OWNER
 -- Usage: ./dfhack-run df-overseer-zone place KIND [W H] [LEVEL] NEAR_LANDMARK [RANK] [RADIUS_TILES] [DRY_RUN] [OWNER]
 --   W H are optional (a kind's default size is used); one bare number is
 --   LEVEL, two are W H, three are W H LEVEL. A positional CLI cannot skip a
@@ -275,7 +276,9 @@ local function enumerate_kinds()
 end
 
 local function finite(n)
-  if n == math.huge then return NULL end
+  -- quickfort's max_width/max_height are math.huge for a zone. Say so, do
+  -- not send null (null means unknown in this project).
+  if n == math.huge then return "unbounded" end
   return n
 end
 
@@ -864,8 +867,13 @@ local function resolve_owner(k, p, owner)
   if owner == nil or owner == "" then return nil end
   local s = tostring(owner)
   if not p.owner then
-    return nil, string.format("refused: %s cannot have an owner (only kinds marked owner in ZONE_POLICY can: "
-      .. "Bedroom, DiningHall, Office, Tomb)", k.token)
+    local capable = {}
+    for token, pol in pairs(ZONE_POLICY) do
+      if pol.owner then capable[#capable + 1] = token end
+    end
+    table.sort(capable)
+    return nil, string.format("refused: %s cannot have an owner (kinds marked owner in ZONE_POLICY: %s)",
+      k.token, table.concat(capable, ", "))
   end
   if s:match("^%d+$") then
     local uid = tonumber(s)
@@ -1052,8 +1060,10 @@ function find_zone_area(kind_name, w, h, level, near, radius_tiles)
   local chosen, search, err, z = ranked_rects(k, p, dw, dh, level, near, radius_tiles)
   if err then return nil, err end
   if #chosen == 0 then
-    return nil, string.format("no site for %s (%dx%d) near %s; search: %s; rejected %s",
-      k.token, dw, dh, tostring(near), elig_note(search), encode(search.rejected))
+    local rj = search.rejected
+    return nil, string.format("no site for %s (%dx%d) near %s; search: %s; rejected: %d occupied, %d liquid, %d not walkable, %d already zoned",
+      k.token, dw, dh, tostring(near), elig_note(search), rj.occupied, rj.liquid, rj.not_walkable,
+      rj.already_zoned_same_type)
   end
   local req = requirements_for(k, p)
   local results = {}
@@ -1065,6 +1075,22 @@ function find_zone_area(kind_name, w, h, level, near, radius_tiles)
     results[#results + 1] = r
   end
   return results
+end
+
+-- Read-only: would OWNER be accepted for this kind, and what would it mean
+-- right now (who holds the role, whether it is vacant)? Runs the same checks
+-- place runs before it touches anything, so an agent can ask first.
+function check_owner(kind_name, owner)
+  local k, kerr = resolve_kind(kind_name)
+  if not k then return nil, kerr end
+  local p = policy_for(k)
+  if owner == nil or owner == "" then
+    return {kind = k.label, token = k.token, owner_capable = p.owner,
+      owner = NULL, note = "no OWNER given"}
+  end
+  local plan, oerr = resolve_owner(k, p, owner)
+  if oerr then return nil, oerr end
+  return {kind = k.label, token = k.token, owner_capable = p.owner, owner = owner_block(plan)}
 end
 
 -- DRY_RUN defaults to true. See the header for what each mode does.
@@ -1183,6 +1209,7 @@ end
 local USAGE = {
   "usage: df-overseer-zone list-kinds [FILTER]",
   "usage: df-overseer-zone find KIND [W H] [LEVEL] NEAR_LANDMARK [RADIUS_TILES]",
+  "usage: df-overseer-zone check-owner KIND OWNER",
   "usage: df-overseer-zone place KIND [W H] [LEVEL] NEAR_LANDMARK [RANK] [RADIUS_TILES] [DRY_RUN] [OWNER]",
 }
 
@@ -1216,11 +1243,18 @@ elseif cmd == "find" then
     local res, err = find_zone_area(kind, w, h, level, near, tonumber(args[nxt]))
     print(encode(err and {error = err} or res))
   end
+elseif cmd == "check-owner" then
+  if not (args[2] and args[3]) then
+    print(encode({error = USAGE[3]}))
+  else
+    local res, err = check_owner(args[2], args[3])
+    print(encode(err and {error = err} or res))
+  end
 elseif cmd == "place" then
   local kind = args[2]
   local w, h, level, near, nxt = parse_site_args(args)
   if not (kind and near) then
-    print(encode({error = USAGE[3]}))
+    print(encode({error = USAGE[4]}))
   else
     local res, err = place_zone(kind, w, h, level, near, tonumber(args[nxt]),
       tonumber(args[nxt + 1]), args[nxt + 2], args[nxt + 3])
