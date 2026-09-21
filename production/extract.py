@@ -137,7 +137,7 @@ def parse_reactions(text: str, source_path: str) -> list[dict]:
                 "line": line_no,
                 "source_path": source_path,
                 "buildings": [],
-                "labor": None,
+                "skill": None,
                 "adventure_mode": False,
                 "name": None,
                 "category": None,
@@ -155,7 +155,7 @@ def parse_reactions(text: str, source_path: str) -> list[dict]:
         if name == "BUILDING":
             cur["buildings"].append(args[0] if args else None)
         elif name == "SKILL":
-            cur["labor"] = args[0] if args else None
+            cur["skill"] = args[0] if args else None
         elif name == "ADVENTURE_MODE_ENABLED":
             cur["adventure_mode"] = True
         elif name == "NAME":
@@ -737,11 +737,24 @@ def pass1(
                     "unit": None, "status": schema.VERIFIED_RAWS, "source_ref": reaction_source,
                 })
 
+            # `[SKILL:...]` names a *skill* (BREWING, CARPENTRY), not a labor
+            # (BREWER, CARPENTER): the two enums differ and the raws carry no
+            # translation. Before 2026-09-21 this wrote the skill token into
+            # `labor`, so a reader taking that column at its word would have
+            # returned skill names as labors. `labor` is now left NULL here
+            # (the raws alone do not determine it) and the skill token is kept
+            # as an attribute; `production.labor_ingest` resolves skill to
+            # labor from the game's own tables and records how, per row.
             processes.append({
                 "id": reaction["id"], "workshop_node": workshop_node,
-                "labor": reaction["labor"], "is_hardcoded": 0,
+                "labor": None, "is_hardcoded": 0,
                 "source_ref": reaction_source,
             })
+            if reaction["skill"] is not None:
+                attributes.append({
+                    "subject_id": reaction["id"], "name": "skill", "value": reaction["skill"],
+                    "unit": None, "status": schema.VERIFIED_RAWS, "source_ref": reaction_source,
+                })
 
             # CATEGORY/CATEGORY_NAME/CATEGORY_DESCRIPTION: real per-reaction
             # UI-grouping metadata (98/159 reactions carry one), now
