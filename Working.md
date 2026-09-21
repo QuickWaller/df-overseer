@@ -47,9 +47,14 @@ skipped**, `.venv-dfmcp` **604 passed**. Nothing deployed, nothing pushed.
 Design flags and deploy traps from the streams are in `docs/AGENT-LOOP.md`
 §7 (notably `proposal-0001` would grade as a latency miss on first run).
 
-**Next concrete step:** the conductor service handoff (items 3 and 6); then
-one deploy stream for everything, running the clock stream's nine live
-checks.
+**Next concrete step:** the conductor service stream (dispatched, running);
+then one deploy stream for everything, running the clock stream's nine live
+checks and voiding `proposal-0001`. **The user authorised the deploy to place
+the MCP role tokens itself (2026-09-22: "you can do the tokens yourself"),**
+including the new quartermaster, consultant and conductor tokens on VM 106.
+Rules still hold: read by key name only, never printed or tracked. If the
+auto-mode classifier refuses the secret-store write again (it did on
+2026-09-15), stop and tell the user; never route it through another session.
 
 ## In discussion: designing the learning loop (2026-09-17)
 
