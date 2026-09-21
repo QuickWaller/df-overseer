@@ -307,6 +307,13 @@ file first in any session.
 
 ## Project-specific rules
 
+- **No armok capabilities** (user's call, 2026-09-21; refined the same day
+  from "no armok tools"). The rule is about the capability, and DFHack's
+  `armok` tag is only a pointer to check. Banned: powers a player does not
+  have (heal, teleport, spawn, skip costs, alter the world) and information
+  the game hides. Reading something a player can already see is fine, however
+  it is implemented. `docs/DFHACK-INVENTORY.md` lists the tagged tools;
+  `docs/ARMOK-RULINGS.md` records the user's ruling on each one discussed.
 - **Tools must be generalisable** (user's call, 2026-09-21; applies to every
   tool). A tool that works for one instance is not a tool: a `build workshop`
   tool that only builds stills is a still script. Take the kind, item or job
