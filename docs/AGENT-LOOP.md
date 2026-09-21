@@ -108,7 +108,13 @@ still pauses itself on a death, a critical vital or a reachable hostile.
 
 Tripwires, v1: a citizen death; hunger or thirst past a critical threshold;
 a hostile `threat.scan` admits (reachability, not the danger flag); a new
-announcement of an alert class. **Not covered: flooding**, since the breach
+announcement of an alert class. **Built 2026-09-22 (not deployed): the first
+three**; the announcement tripwire was not in that stream's brief and is
+still owed. Defaults hunger 75,000 and thirst 50,000 ticks, from DFHack's
+`full-heal.lua` (`research/2026-09-16-food-clock-and-farm-lead-time.md`).
+`fort.quicksave` fires and reports the predicted slot, with a separate
+confirm call, because waiting inside Lua would hold the suspend lock the save
+itself needs. **Not covered: flooding**, since the breach
 detector is inconclusive (`ROADMAP.md`).
 
 ## 4. Build items
@@ -118,7 +124,7 @@ All **default** unless marked.
 | # | Piece | Where | Notes |
 |---|---|---|---|
 | 1 | In-game clock and tripwire script | VM 103 | Sets the frame cap on request; pauses on a tripwire and records the reason |
-| 2 | A `conductor` role in dfmcp | `dfmcp/` | New token held only by code, never by an agent: `clock.set_speed`, `clock.pause`, `clock.status`, `fort.quicksave`, `vitals.summary` |
+| 2 | A `conductor` role in dfmcp | `dfmcp/` | New token held only by code, never by an agent: `clock.set-speed`, `pause`, `resume`, `status`, `arm`, `disarm`, `clear`, `fort.quicksave`, `vitals.summary` (built 2026-09-22, not deployed) |
 | 3 | The conductor service | VM 106, systemd | Python. Runs the cycle, triage, the clock policy; launches `docker run --rm ... agent exec` as the 2026-09-16 run did; archives each run's JSON, tool calls and `costUsd` under `runtime/` for the public report |
 | 4 | Queue: an execution record and a grading schedule | `dfqueue/` | `queue.executed` references the ruling and the call ids. **A prediction's window starts at execution, not at writing.** The grader runs every cycle |
 | 5 | Enable the Quartermaster | `agents/` | Food, drink, work orders, farms and workjobs are where this fort actually needs decisions; the Architect covers only placement. Needs a proposal-type vocabulary (`dfqueue/schema.py` has only the Architect's three) and a real allowlist |
