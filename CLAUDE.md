@@ -307,6 +307,16 @@ file first in any session.
 
 ## Project-specific rules
 
+- **Tools must be generalisable** (user's call, 2026-09-21; applies to every
+  tool). A tool that works for one instance is not a tool: a `build workshop`
+  tool that only builds stills is a still script. Take the kind, item or job
+  as an argument and read what differs per kind (size, labor, materials,
+  requirements) from the game's own data; put genuinely per-kind policy in
+  data (doctrine or a requirements entry), not in branches in the tool.
+  Before building or extending a tool, ask what the next instance would cost
+  (the next workshop, crop, zone type or furniture piece) and design so the
+  answer is "one data entry, no new code". Known offenders are listed in
+  `Working.md` START HERE.
 - **Research before designing from scratch.** State the problem in
   domain-neutral terms, ask which other fields already own it, and read those.
   This produced the best material in both research specs so far — see

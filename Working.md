@@ -58,6 +58,13 @@ with the user.
   measure production, and the manager-appointment question needs one
   supervised unpause to settle. None of this fort's current blockers is an
   order problem.
+- **Tools carry a confidence level, and their gotchas are learned material**
+  (user, 2026-09-21): full means use it, medium means read the description and
+  gotchas closely and monitor for success. Part of this loop; each tool keeps
+  gotcha, vent and unexplained-error lists; results carry the level and short
+  condition-titled gotchas only; agents propose gotchas via the queue; the
+  level is static, with no mechanism to raise it (user, 2026-09-21); vent is
+  a complaint channel for an agent to say a tool does not fit its need. → `docs/BUILDING-TOOL.md`.
 - **The Overseer hands proposals to the consultant for fact-checking** (the
   "wiki nerd and researcher" role) before ruling.
 - **A new learning role, separate from but related to the consultant**, name
@@ -230,6 +237,22 @@ handoff before dispatching.
 4. **z167 stone**: the rollback lost the stair, `well-and-harvest` designated
    another, and the well was finally built from free boulders. No source says
    whether the stair was dug. Check before anyone plans on z167.
+5. **Make the tools generalisable** (user's rule, 2026-09-21, `CLAUDE.md`).
+   Design first, no code yet: a generic `building.find/build` that takes the
+   kind and reads footprint, labor and materials from the game's raws,
+   generates its own blueprint, and keeps per-kind policy as data; then audit
+   the tools that look single-instance (`workshop` has five hard-coded kinds,
+   `zone` water source only, `orders.create` a fixed job vocabulary, `workjob`
+   blocks and mechanisms). Rooms and furniture are expected to fall out of the
+   same base. **Design note written 2026-09-21: `docs/BUILDING-TOOL.md`,
+   awaiting the user's review; it now also records the confidence-level
+   requirement (each tool and kind carries a level that tells the agent how
+   carefully to use it; the user chose this over a verification sweep).** It corrects an assumption: the raws do not
+   carry standard buildings, but DFHack's quickfort table (about 87 entries,
+   workshops, furnaces, furniture, well, farm plot; rooms in `zone.lua`) does,
+   with footprints. Operating labor is only partly derivable. This is also the user's stated minimum for openclaw:
+   it must be able to build workshops, rooms and furniture, assess dwarves,
+   grow food and build wells before agent infrastructure is worth building.
 
 
 ### Open, waiting on the user
