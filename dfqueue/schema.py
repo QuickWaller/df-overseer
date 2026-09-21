@@ -1,4 +1,5 @@
-"""dfqueue record schema: `proposal`, `pass`, `ruling`, validated at write time.
+"""dfqueue record schema: `proposal`, `pass`, `ruling`, `executed`, `ask`,
+`answer`, validated at write time.
 
 Implements `docs/AGENT-ARCHITECTURE.md` §4, "Writes are tool calls; reads are
 XML": **a specialist cannot emit prose into the queue.** It calls
@@ -6,7 +7,7 @@ XML": **a specialist cannot emit prose into the queue.** It calls
 here, and a malformed record is refused with every error listed rather than
 silently accepted or silently trimmed.
 
-Three record kinds, per §4 and `agents/*/role.md`:
+Six record kinds, per §4, `docs/AGENT-LOOP.md` items 4/7, and `agents/*/role.md`:
 
 - **`proposal`** — an advisor's proposed action. The §4 record, field for
   field: `id`, `role`, `cycle`, `snapshot`, `type`, `summary`, `rationale`,
@@ -21,6 +22,25 @@ Three record kinds, per §4 and `agents/*/role.md`:
   or `defer`, plus `proposal_id`, `reason` and `public_rationale`. Only the
   roster's `sole_writer` may write one (§7: single writer; §3: "Specialists
   propose, the Overseer decides").
+- **`executed`** — the Overseer's record that an accepted ruling was carried
+  out: `ruling_id`, `actions` (the tool ids called and each one's outcome,
+  success or failure — a failed execution is a valid record), `notes`.
+  Added `docs/AGENT-LOOP.md` item 4, closing the gap that let
+  `proposal-0001`'s prediction window elapse before anything could act on
+  it: **a proposal's prediction window starts at the first `executed`
+  record referencing its ruling, not at the proposal's own write time.**
+  Only the roster's `sole_writer` may write one, same restriction as
+  `ruling`. See `dfqueue/store.py`, "Execution arms the prediction".
+- **`ask`** — a question to the Consultant: `question`, optional
+  `proposal_id`. Any of `architect`, `quartermaster` or `overseer` may write
+  one (`docs/AGENT-ARCHITECTURE.md` §4, the 2026-09-15 ask exception and the
+  2026-09-17 fact-check exception). An `ask` from the Overseer that names a
+  `proposal_id` **is** a fact-check: `dfqueue/store.py` refuses a `ruling`
+  on that proposal while the fact-check is open (no `answer` yet).
+- **`answer`** — the Consultant's answer to one open `ask`: `ask_id`,
+  `answer`. Only `consultant` may write one, and only once per `ask` (one
+  ask, one answer, no threads). Answers are hypotheses: nothing here
+  overrides a graded prediction.
 
 No `plan` record yet (§9's write-ahead-log record, "writes its ordered plan
 to the queue before executing"). See `dfqueue/README.md`.
@@ -80,12 +100,31 @@ ROSTER_PATH = REPO_ROOT / "agents" / "ROSTER.yaml"
 # ---- record kinds -----------------------------------------------------------
 
 PROPOSAL, PASS, RULING = "proposal", "pass", "ruling"
-KINDS = (PROPOSAL, PASS, RULING)
+EXECUTED, ASK, ANSWER = "executed", "ask", "answer"
+KINDS = (PROPOSAL, PASS, RULING, EXECUTED, ASK, ANSWER)
 
 # ---- ruling decisions ---------------------------------------------------------
 
 ACCEPT, REJECT, DEFER = "accept", "reject", "defer"
 RULING_DECISIONS = (ACCEPT, REJECT, DEFER)
+
+# ---- execution action outcomes -------------------------------------------------
+
+SUCCESS, FAILURE = "success", "failure"
+EXECUTION_OUTCOMES = (SUCCESS, FAILURE)
+
+# ---- who may write an `ask` --------------------------------------------------
+#
+# `docs/AGENT-ARCHITECTURE.md` §4: "any advisor may ask the Consultant"
+# (2026-09-15) plus "the Overseer may hand a proposal to the Consultant for
+# fact-checking before ruling" (2026-09-17). The Consultant itself never
+# asks (it answers), and a disabled role has no business writing anything.
+ASK_ROLES = ("architect", "quartermaster", "overseer")
+
+#: Only the Consultant may answer. Distinct from `sole_writer()`, which
+#: names the Overseer -- this is a second, independent single-role
+#: restriction, not the same one reused.
+ANSWER_ROLE = "consultant"
 
 # ---- cost unit vocabulary, small and starting here ---------------------------
 
@@ -118,6 +157,19 @@ ARCHITECT_TYPES = (
     DIG_ORDER,
 )
 
+WORK_ORDER = "work_order"
+CROP_PLAN = "crop_plan"
+STOCK_TARGET = "stock_target"
+
+#: `docs/AGENT-LOOP.md` item 5 (`handoffs/2026-09-22-loop-queue-quartermaster.md`
+#: "Why", item 5): the Quartermaster's closed vocabulary for the MVP.
+#: `work_order` -- a manager order or a direct workshop job, standing repeat
+#: orders included. `crop_plan` -- what a farm plot grows, per season.
+#: `stock_target` -- a par level or cover-day target for a named item class
+#: (`docs/PRODUCTION-MODEL.md` §10). Deliberately NOT included: a labor
+#: proposal (`set_labor` still races `autolabor`, unfixed).
+QUARTERMASTER_TYPES = (WORK_ORDER, CROP_PLAN, STOCK_TARGET)
+
 TYPE_VOCAB_BY_ROLE: dict[str, tuple[str, ...]] = {
     "architect": ARCHITECT_TYPES,
     # The Overseer arbitrates proposals and writes rulings; it never writes
@@ -130,13 +182,20 @@ TYPE_VOCAB_BY_ROLE: dict[str, tuple[str, ...]] = {
     # proposal from this role is refused by construction, not by an
     # incidentally-empty vocabulary.
     "consultant": (),
-    # Disabled roles (agents/ROSTER.yaml, all `enabled: false`): no tool
-    # surface exists yet for any of them, so no proposal type is drafted
-    # either. The role-enabled check refuses a record from any of these
-    # before the type check is even reached; these entries exist so the
-    # table stays a complete map of the roster rather than silently
-    # defaulting an unlisted role to "anything goes".
-    "quartermaster": (),
+    # Enabled for the MVP by the user's call, 2026-09-22
+    # (`handoffs/2026-09-22-loop-queue-quartermaster.md`), though the role
+    # itself stays `enabled: false` in `agents/ROSTER.yaml` until the
+    # orchestrator flips it at merge (not this stream's file). The type
+    # vocabulary is drafted ahead of that flip, same as every other role's
+    # here, so enabling the role is a config change, not a fresh schema
+    # decision.
+    "quartermaster": QUARTERMASTER_TYPES,
+    # Disabled roles (agents/ROSTER.yaml, `enabled: false`): no tool surface
+    # exists yet for either of them, so no proposal type is drafted either.
+    # The role-enabled check refuses a record from either of these before
+    # the type check is even reached; these entries exist so the table
+    # stays a complete map of the roster rather than silently defaulting an
+    # unlisted role to "anything goes".
     "marshal": (),
     "chronicler": (),
 }
@@ -152,6 +211,9 @@ KIND_FIELDS: dict[str, tuple[str, ...]] = {
     ),
     PASS: ("reason",),
     RULING: ("decision", "proposal_id", "reason", "public_rationale"),
+    EXECUTED: ("ruling_id", "actions", "notes"),
+    ASK: ("question", "proposal_id"),
+    ANSWER: ("ask_id", "answer"),
 }
 
 # ---- the raw-coordinate pattern -----------------------------------------------
@@ -406,6 +468,89 @@ def _validate_ruling_fields(record: dict, errors: list[str]) -> None:
     _validate_text_field(record, "public_rationale", errors)
 
 
+def _validate_action(item, errors: list[str], prefix: str) -> None:
+    if not isinstance(item, dict):
+        errors.append(f"{prefix}: expected an object")
+        return
+    known = {"tool", "outcome", "detail"}
+    for key in item:
+        if key not in known:
+            errors.append(f"{prefix}.{key}: not a field in the schema")
+
+    if "tool" not in item:
+        errors.append(f"{prefix}.tool: required field is missing")
+    else:
+        v = item["tool"]
+        if not isinstance(v, str) or not v:
+            errors.append(f"{prefix}.tool: expected a non-empty string")
+
+    if "outcome" not in item or item.get("outcome") not in EXECUTION_OUTCOMES:
+        errors.append(
+            f"{prefix}.outcome: {item.get('outcome')!r} is not in {EXECUTION_OUTCOMES}"
+        )
+
+    if "detail" in item:
+        v = item["detail"]
+        if not isinstance(v, str) or not v:
+            errors.append(f"{prefix}.detail: expected a non-empty string")
+        else:
+            coord = _find_coordinate(v)
+            if coord:
+                errors.append(
+                    f"{prefix}.detail: contains a raw-coordinate pattern ({coord!r}); "
+                    "design commitment #1 forbids coordinates in text fields"
+                )
+
+
+def _validate_executed_fields(record: dict, errors: list[str]) -> None:
+    """`ruling_id`'s existence and its ruling's `decision` (must be
+    `accept`) need the rest of the queue, so — same split as `ruling`'s own
+    `proposal_id` — that check lives in `store.append()`, not here."""
+    if "ruling_id" not in record:
+        errors.append("record.ruling_id: required field is missing")
+    else:
+        rid = record["ruling_id"]
+        if not isinstance(rid, str) or not rid:
+            errors.append("record.ruling_id: expected a non-empty string")
+
+    if "actions" not in record:
+        errors.append("record.actions: required field is missing")
+    else:
+        actions = record["actions"]
+        if not isinstance(actions, list) or not actions:
+            errors.append("record.actions: expected a non-empty list")
+        else:
+            for i, item in enumerate(actions):
+                _validate_action(item, errors, f"record.actions.{i}")
+
+    _validate_text_field(record, "notes", errors)
+
+
+def _validate_ask_fields(record: dict, errors: list[str]) -> None:
+    """`proposal_id`'s existence, when present, needs the rest of the queue
+    (`store.append()`), same split as `ruling`'s own `proposal_id`."""
+    _validate_text_field(record, "question", errors)
+
+    if "proposal_id" in record:
+        pid = record["proposal_id"]
+        if not isinstance(pid, str) or not pid:
+            errors.append("record.proposal_id: expected a non-empty string")
+
+
+def _validate_answer_fields(record: dict, errors: list[str]) -> None:
+    """`ask_id`'s existence, and whether it already has an answer, need the
+    rest of the queue (`store.append()`), same split as everywhere else in
+    this module a reference needs the loaded file."""
+    if "ask_id" not in record:
+        errors.append("record.ask_id: required field is missing")
+    else:
+        aid = record["ask_id"]
+        if not isinstance(aid, str) or not aid:
+            errors.append("record.ask_id: expected a non-empty string")
+
+    _validate_text_field(record, "answer", errors)
+
+
 # ---- top-level validation ------------------------------------------------------
 
 
@@ -451,13 +596,21 @@ def validate(record) -> list[str]:
             errors.append(
                 f"record.role: {role!r} is not an enabled role in agents/ROSTER.yaml"
             )
-        if kind == RULING:
+        if kind in (RULING, EXECUTED):
             writer = sole_writer()
             if role != writer:
                 errors.append(
                     f"record.role: only the roster's sole_writer ({writer!r}) may "
-                    f"write a ruling; got {role!r}"
+                    f"write a {kind}; got {role!r}"
                 )
+        if kind == ASK and role not in ASK_ROLES:
+            errors.append(
+                f"record.role: only {ASK_ROLES} may write an ask; got {role!r}"
+            )
+        if kind == ANSWER and role != ANSWER_ROLE:
+            errors.append(
+                f"record.role: only {ANSWER_ROLE!r} may write an answer; got {role!r}"
+            )
 
     if "cycle" not in record:
         errors.append("record.cycle: required field is missing")
@@ -479,5 +632,11 @@ def validate(record) -> list[str]:
         _validate_text_field(record, "reason", errors)
     elif kind == RULING:
         _validate_ruling_fields(record, errors)
+    elif kind == EXECUTED:
+        _validate_executed_fields(record, errors)
+    elif kind == ASK:
+        _validate_ask_fields(record, errors)
+    elif kind == ANSWER:
+        _validate_answer_fields(record, errors)
 
     return errors

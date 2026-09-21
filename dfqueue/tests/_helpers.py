@@ -82,3 +82,50 @@ def make_ruling(proposal_id: str = "proposal-0001", **overrides) -> dict:
     }
     record.update(overrides)
     return record
+
+
+def make_executed(ruling_id: str = "ruling-0001", **overrides) -> dict:
+    record = {
+        "kind": "executed",
+        "role": "overseer",
+        "cycle": 2,
+        "snapshot": "tick 178879",
+        "ruling_id": ruling_id,
+        "actions": [
+            {"tool": "workshop.build", "outcome": "success"},
+        ],
+        "notes": "Built the workshop as ruled, no precondition drift.",
+    }
+    record.update(overrides)
+    return record
+
+
+def make_ask(**overrides) -> dict:
+    record = {
+        "kind": "ask",
+        "role": "architect",
+        "cycle": 1,
+        "snapshot": "tick 178877",
+        "question": (
+            "Does a workshop built on soil (not stone) ever stall "
+            "construction in this DF version?"
+        ),
+    }
+    record.update(overrides)
+    return record
+
+
+def make_answer(ask_id: str = "ask-0001", **overrides) -> dict:
+    record = {
+        "kind": "answer",
+        "role": "consultant",
+        "cycle": 2,
+        "snapshot": "tick 178878",
+        "ask_id": ask_id,
+        "answer": (
+            "No: a workshop's construction depends on its own material "
+            "requirements, not the floor material beneath it."
+        ),
+    }
+    record.update(overrides)
+    return record
