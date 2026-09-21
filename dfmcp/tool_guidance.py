@@ -50,7 +50,9 @@ the gotcha check did not happen.
 
 If a tool's object result already has a key this module wants to add, the
 tool's value is kept, the server's is dropped, and `tool_guidance` gains a
-`notes` entry naming the collision.
+`notes` entry naming the collision. The one exception is `gaps` when the tool's
+own is a list (the building tool's is): the server's list begins with every
+entry of the tool's, so it replaces it as a superset, with a note.
 """
 
 from __future__ import annotations
@@ -179,9 +181,17 @@ async def enrich(
     kind = _kind_token(arguments, structured)
 
     if labor_join is not None and not is_error and tool_id in labor_join.tools:
-        joined = await labor_join.join(kind, (structured or {}).get("requirements"))
+        joined = await labor_join.join_result(structured, kind)
         for key in _JOIN_KEYS:
-            if key in out:
+            if key == "gaps" and isinstance(out.get(key), list):
+                # The joined gaps already start with every gap the tool itself
+                # reported (labor_join.combined_gaps), so this is a superset:
+                # nothing of the tool's is lost, and the labor gaps the join
+                # adds are not dropped beside a tool's own list.
+                if joined[key] != out[key]:
+                    notes.append("the tool's own 'gaps' was merged with the server's; the tool's entries come first")
+                out[key] = joined[key]
+            elif key in out:
                 notes.append(
                     f"the tool's own result already has a {key!r} key; the server's {key!r} was dropped"
                 )
