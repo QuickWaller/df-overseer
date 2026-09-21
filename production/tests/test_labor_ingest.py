@@ -298,3 +298,104 @@ class TestIdempotence:
     def test_a_missing_dump_file_is_an_error(self, graph, tmp_path):
         with pytest.raises(li.LaborIngestError, match="is missing"):
             li.ingest_dump(graph, tmp_path)
+
+
+# ---- reconciliation with a wider extractor (handoffs/2026-09-21-extract-remaining-reactions.md) ----
+
+#: A reaction the dump lists for Kiln/MagmaKiln and Masons that the extractor did
+#: not read in the fixture graph. The raw text below is a **synthetic** stand-in in
+#: the shape of the game's instrument example (`fixtures/extra_reactions/`), used
+#: only to give the extractor a reaction of this id; nothing pins its contents to
+#: the real world-generated reaction, which is in no raw file.
+_GENERATED = (
+    "[REACTION:MAKE_ENT12 INK1_BODY]\n"
+    "[NAME:make test body]\n"
+    "[BUILDING:KILN:NONE]\n"
+    "[REAGENT:clay:1:BOULDER:NONE:NONE:NONE]\n"
+    "[PRODUCT:100:1:TOOL:SOME BODY:GET_MATERIAL_FROM_REAGENT:clay:NONE]\n"
+    "[SKILL:GLAZING]\n"
+)
+
+
+def _add_extracted_reaction(path):
+    from production import extract
+
+    empty = ("", "x")
+    got = extract.extract_from_sources([(_GENERATED, "reaction_generated.txt")], empty, empty, empty)
+    with store.connect(path) as conn, conn:
+        conn.executemany(
+            "INSERT OR IGNORE INTO production_node (id, kind, display_name, durability, status, source_ref) "
+            "VALUES (:id, :kind, :display_name, :durability, :status, :source_ref)", got["nodes"],
+        )
+        conn.executemany(
+            "INSERT INTO production_process (id, workshop_node, labor, is_hardcoded, source_ref) "
+            "VALUES (:id, :workshop_node, :labor, :is_hardcoded, :source_ref)", got["processes"],
+        )
+        conn.executemany(
+            "INSERT INTO production_attribute (subject_id, name, value, unit, status, source_ref) "
+            "VALUES (:subject_id, :name, :value, :unit, :status, :source_ref)", got["attributes"],
+        )
+
+
+class TestWiderExtractor:
+    def test_the_report_counts_extracted_and_unextracted_game_reactions(self, ingested):
+        _, report = ingested
+        assert report["game_listed_reactions"] == 13
+        assert report["game_listed_reactions_from_raws"] + report["unextracted_reactions"] == report["game_listed_reactions"]
+        assert report["unextracted_by_kind"]["Kiln"] == 1
+
+    def test_a_reaction_the_extractor_now_reads_gets_no_dump_row(self, graph):
+        _add_extracted_reaction(graph)
+        report = li.ingest_dump(graph, FIXTURE_DUMP)
+        got = rows(graph, "SELECT * FROM production_process WHERE id = 'MAKE_ENT12 INK1_BODY'")
+        assert len(got) == 1 and not got[0]["source_ref"].startswith("dump:")
+        assert got[0]["workshop_node"] == "BUILDING:KILN"
+        # One fewer than the 3 dump-only reactions when this one was unextracted.
+        assert report["unextracted_reactions"] == 2
+        assert report["unextracted_by_kind"].get("Kiln", 0) == 0
+        assert report["game_listed_reactions_from_raws"] == 11
+
+    def test_its_labor_basis_now_comes_from_its_skill_not_from_being_unextracted(self, graph):
+        _add_extracted_reaction(graph)
+        li.ingest_dump(graph, FIXTURE_DUMP)
+        basis = _attr(graph, "MAKE_ENT12 INK1_BODY", "labor_basis")["value"]
+        assert basis == "undetermined:skill_not_in_table:GLAZING"
+        assert _attr(graph, "MAKE_ENT12 INK1_BODY", "skill")["value"] == "GLAZING"
+
+    def test_no_reaction_id_appears_twice_in_the_process_table(self, graph):
+        _add_extracted_reaction(graph)
+        li.ingest_dump(graph, FIXTURE_DUMP)
+        li.ingest_dump(graph, FIXTURE_DUMP)
+        dupes = rows(graph, "SELECT id, COUNT(*) n FROM production_process GROUP BY id HAVING n > 1")
+        assert dupes == []
+
+    def test_rerunning_with_the_wider_extraction_is_idempotent(self, graph):
+        _add_extracted_reaction(graph)
+        li.ingest_dump(graph, FIXTURE_DUMP)
+        first = _snapshot(graph)
+        li.ingest_dump(graph, FIXTURE_DUMP)
+        assert _snapshot(graph) == first
+
+    def test_a_dump_row_for_a_reaction_is_replaced_when_a_later_run_finds_it_extracted(self, graph):
+        li.ingest_dump(graph, FIXTURE_DUMP)
+        assert _proc(graph, "MAKE_ENT12 INK1_BODY")["source_ref"].startswith("dump:")
+        # The reaction is now extracted (the dump's own row is what a re-ingest
+        # cleans up first), so a re-ingest must end with the extractor's row only.
+        with store.connect(graph) as conn, conn:
+            conn.execute("DELETE FROM production_process WHERE id = 'MAKE_ENT12 INK1_BODY'")
+            conn.execute("DELETE FROM production_attribute WHERE subject_id = 'MAKE_ENT12 INK1_BODY'")
+        _add_extracted_reaction(graph)
+        li.ingest_dump(graph, FIXTURE_DUMP)
+        got = rows(graph, "SELECT * FROM production_process WHERE id = 'MAKE_ENT12 INK1_BODY'")
+        assert len(got) == 1 and not got[0]["source_ref"].startswith("dump:")
+
+    def test_an_extracted_reaction_the_game_does_not_list_is_reported(self, graph):
+        # The fixture graph's reactions are all listed by the dump, so nothing to report.
+        assert li.ingest_dump(graph, FIXTURE_DUMP)["extracted_not_listed_by_game"] == []
+        with store.connect(graph) as conn, conn:
+            conn.execute(
+                "INSERT INTO production_process (id, workshop_node, labor, is_hardcoded, source_ref) "
+                "VALUES ('MAKE EXAMPLE PHANTOM', 'BUILDING:KILN', NULL, 0, 'reaction_example.txt:1')"
+            )
+        report = li.ingest_dump(graph, FIXTURE_DUMP)
+        assert report["extracted_not_listed_by_game"] == ["MAKE EXAMPLE PHANTOM"]

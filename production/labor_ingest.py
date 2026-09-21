@@ -34,10 +34,16 @@ resetting the `labor` it filled in).
   when the game's job table determines it (see below); otherwise `labor` is
   NULL and a `labor_basis` attribute says why.
 - **Unextracted reaction processes**: a reaction the game lists (S3) that the
-  extractor did not read (the extractor reads four vanilla files; the game
-  loads 293 distinct hosted reactions, the extractor 148) gets a process row
-  with a NULL labor and basis `unextracted_reaction`. Omitting them would make
-  a kind hosting 104 reactions look as if it hosted 4.
+  extractor did not read gets a process row with a NULL labor and basis
+  `unextracted_reaction`. The extractor reads every `reaction_*.txt` it is given
+  (`production.extract.discover_reaction_files`); on the real install that is the
+  four vanilla files, 159 reactions, against the 293 the game lists. The other
+  145 (`MAKE_ENT<n> <INSTRUMENT PART>`) are generated when the world is created
+  and are in no raw text file, so they stay dump-only until something reads them
+  from the running game (`handoffs/2026-09-21-extract-remaining-reactions.md`).
+  Omitting them would make a kind hosting 104 reactions look as if it hosted 4.
+  A reaction the extractor *did* read is never given a second row here: the
+  graph's own row wins and the report counts both groups.
 - **Reaction labors**: `extract.py` records a reaction's `[SKILL:...]` (a
   skill, not a labor) as a `skill` attribute. Here it is translated with the
   skill to labor map. A skill with no entry (BREWING, CARPENTRY, POTTERY and
@@ -373,11 +379,31 @@ def ingest_dump(
             for k, tok in zip(kinds, tokens):
                 for r in k["s3_reactions"]:
                     hosting_of.setdefault(r, []).append(tok)
+            # A reaction the extractor read is never given a second row here: the
+            # graph's own row (with its raws building, skill and flows) is the
+            # one truth, and `production_process.id` is the key. What is left is
+            # exactly what the raws did not supply, and each such reaction is
+            # named in the report by hosting kind so the gap is countable.
+            # The converse check: an extracted reaction sitting at a node a listed
+            # kind maps to, that the game does not list for any kind. `labors_for_kind`
+            # counts every process at a kind's node as hosted, so such a row would
+            # make the kind look like it hosts something it does not (for example
+            # the game's instrument *example* file, which the game never loads,
+            # read as if it were a raw). Reported, not removed: which files are
+            # real raws is the caller's call and this module cannot tell.
+            mapped_nodes = set(kind_node.values())
+            not_listed = sorted(
+                rid for rid, node in graph_primary.items()
+                if node in mapped_nodes and rid not in hosting_of
+            )
             unextracted = 0
+            unextracted_by_kind: dict[str, int] = {}
             for rid, toks in sorted(hosting_of.items()):
                 if rid in graph_primary:
                     continue
                 unextracted += 1
+                for t in toks:
+                    unextracted_by_kind[t] = unextracted_by_kind.get(t, 0) + 1
                 nodes = list(dict.fromkeys(kind_node[t] for t in toks))
                 ref = f"dump:s3[{','.join(toks)}]"
                 processes.append({
@@ -456,6 +482,10 @@ def ingest_dump(
         "kinds_mapped_to_raws_node": len(kinds) - len(node_rows),
         "hardcoded": hard_stats,
         "unextracted_reactions": unextracted,
+        "unextracted_by_kind": dict(sorted(unextracted_by_kind.items())),
+        "extracted_not_listed_by_game": not_listed,
+        "game_listed_reactions": len(hosting_of),
+        "game_listed_reactions_from_raws": len(hosting_of) - unextracted,
         "extracted_reactions": react_stats,
         "skills_without_labor": dict(sorted(unmapped_skills.items())),
         "skill_map_size": len(skill_map),
