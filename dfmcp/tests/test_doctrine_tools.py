@@ -381,6 +381,7 @@ class TestRosterWiring:
     @pytest.fixture(scope="class")
     def registry(self):
         from dfmcp.gotchas_tools import NATIVE_TOOLS as GOTCHAS_NATIVE_TOOLS
+        from dfmcp.knowledge_tools import NATIVE_TOOLS as KNOWLEDGE_NATIVE_TOOLS
         from dfmcp.queue_tools import NATIVE_TOOLS as QUEUE_NATIVE_TOOLS
         from dfmcp.registry import load_registry
         from dfmcp.series_tools import NATIVE_TOOLS as SERIES_NATIVE_TOOLS
@@ -389,10 +390,13 @@ class TestRosterWiring:
         # handoffs/2026-09-19-series-mcp-tools.md: agents/overseer/tools.yaml
         # and agents/consultant/tools.yaml now grant series.* ids, which
         # roles.py rule 1 requires to exist in the registry -- load_roster
-        # below would otherwise fail to load the real roster.
+        # below would otherwise fail to load the real roster. KNOWLEDGE_NATIVE_TOOLS
+        # added handoffs/2026-09-22-loop-consultant-retrieval.md, same reason:
+        # agents/consultant/tools.yaml now grants web.search/web.fetch/
+        # knowledge.wiki_lookup/dfhack.source_search/dfhack.source_read.
         return load_registry(
             native_tools={**QUEUE_NATIVE_TOOLS, **doctrine_tools.NATIVE_TOOLS, **SERIES_NATIVE_TOOLS,
-                **GOTCHAS_NATIVE_TOOLS}
+                **GOTCHAS_NATIVE_TOOLS, **KNOWLEDGE_NATIVE_TOOLS}
         )
 
     @pytest.fixture(scope="class")

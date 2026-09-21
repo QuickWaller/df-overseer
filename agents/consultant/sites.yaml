@@ -62,7 +62,8 @@ sites:
   - name: Dwarf Fortress bug tracker
     url: https://dwarffortressbugtracker.com
     kind: bugtracker
-    for: "Is this a known bug?" when the game behaves against the wiki.
+    for: >-
+      "Is this a known bug?" when the game behaves against the wiki.
     caution: Check the reported version and whether the issue is resolved.
 
   - name: r/dwarffortress

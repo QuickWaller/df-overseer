@@ -22,6 +22,7 @@ from dfmcp.registry import load_registry
 from dfmcp.roles import RoleValidationError, SYSTEM_CLASS_TOOL_IDS, load_roster
 from dfmcp.series_tools import NATIVE_TOOLS as SERIES_NATIVE_TOOLS
 from dfmcp.gotchas_tools import NATIVE_TOOLS as GOTCHAS_NATIVE_TOOLS
+from dfmcp.knowledge_tools import NATIVE_TOOLS as KNOWLEDGE_NATIVE_TOOLS
 
 
 @pytest.fixture(scope="module")
@@ -38,7 +39,7 @@ def registry():
     # agents/overseer/tools.yaml and agents/consultant/tools.yaml now grant
     # series.* ids and agents/architect/tools.yaml denies them, same rule-1
     # requirement for the two enabled grantee roles.
-    return load_registry(native_tools={**NATIVE_TOOLS, **DOCTRINE_NATIVE_TOOLS, **SERIES_NATIVE_TOOLS, **GOTCHAS_NATIVE_TOOLS})
+    return load_registry(native_tools={**NATIVE_TOOLS, **DOCTRINE_NATIVE_TOOLS, **SERIES_NATIVE_TOOLS, **GOTCHAS_NATIVE_TOOLS, **KNOWLEDGE_NATIVE_TOOLS})
 
 
 # --------------------------------------------------------------------------
