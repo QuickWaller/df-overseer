@@ -22,6 +22,24 @@ Three top-level siblings, next to whatever the tool printed:
   with").
 - `gaps_unknown`: what could **not** be checked and why, in plain words.
 
+## The result shapes it reads (`df-overseer-building.lua`)
+
+- `building.build` is an object: `{kind, dims, site, requirements, gaps, ...}`.
+- `building.find` is an array of up to five candidates, each
+  `{kind, dims, site, search, requirements, gaps}`, which the server wraps as
+  `{"result": [...]}`. The candidates share one kind and one `requirements`,
+  but every candidate's `gaps` is kept: the joined `gaps` is the union of all
+  of them (order preserved, de-duplicated), so a gap on any candidate is a gap
+  of the result and `gaps: []` is never returned beside one.
+- `requirements.building_material.filters[]`: `{index, quantity, need,
+  available: int or null, stock, count_error?, quantity_note?}`. A filter with
+  `available < quantity` is a gap in the tool's own wording, a null `available`
+  is an unknown with its reason. The older `accepts` / `fort_owned` shape is
+  still read.
+- The joined `gaps` always begins with the tool's own gap strings, then the
+  gaps read from the requirements, then the labor gaps. `tool_guidance.enrich`
+  therefore lets it replace the tool's own `gaps` list, as a superset.
+
 ## Unknown is not zero (the rule this file exists to keep)
 
 The silent-zero bug class has shipped five times in this repo (register
@@ -114,7 +132,67 @@ def _validate_c2(raw: Any) -> Optional[str]:
     return None
 
 
+def _is_int(value: Any) -> bool:
+    return isinstance(value, int) and not isinstance(value, bool)
+
+
+def _filter_stock_why(rec: Mapping[str, Any]) -> str:
+    """Why a filter's stock could not be counted, from the tool's own fields:
+    `count_error` (no countable item type) or the per-type `stock` records'
+    `error` (the availability read failed)."""
+    if isinstance(rec.get("count_error"), str) and rec["count_error"]:
+        return rec["count_error"]
+    stock = rec.get("stock")
+    if isinstance(stock, Mapping):
+        errors = [
+            f"{name}: {s['error']}" for name, s in stock.items() if isinstance(s, Mapping) and s.get("error")
+        ]
+        if errors:
+            return "; ".join(errors)
+    return "no count returned"
+
+
+def _material_filters_gaps(bm: Mapping[str, Any], gaps: List[str], unknowns: List[str]) -> None:
+    """The building tool's real `building_material` shape:
+    `{source, buildingplan_enabled, filters: [{index, quantity, need, flags,
+    available: int or null, stock: {TYPE: {total, available, ...}},
+    count_error?, quantity_note?}], error?, note?}` (`requirements_for` in
+    `scripts/dfhack/df-overseer-building.lua`). The gap wording is the tool's own,
+    so a gap the tool already reported collapses into it when the two are
+    combined."""
+    filters = bm.get("filters")
+    if not isinstance(filters, list):
+        unknowns.append("the building_material 'filters' was present but not a list")
+        return
+    if bm.get("error"):
+        # getFiltersByType failed: the tool returns an empty list plus this error.
+        unknowns.append(f"could not read what the kind needs to build ({bm['error']})")
+        return
+    for i, rec in enumerate(filters, start=1):
+        if not isinstance(rec, Mapping) or not isinstance(rec.get("need"), str) or not rec["need"]:
+            unknowns.append(f"material filter {i} was not in a shape the server understands")
+            continue
+        need, quantity, available = rec["need"], rec.get("quantity"), rec.get("available")
+        if not _is_int(quantity):
+            unknowns.append(f"could not tell how many of {need} are needed (no quantity in the result)")
+        elif not _is_int(available):
+            unknowns.append(f"could not count stock for {need} ({_filter_stock_why(rec)})")
+        elif quantity >= 0:
+            if available < quantity:
+                gaps.append(f"needs {quantity} of {need}, {available} available")
+        elif available == 0:
+            gaps.append(f"needs some of {need} (the quantity depends on the footprint), 0 available")
+        else:
+            unknowns.append(
+                f"the quantity of {need} depends on the footprint, so {available} available "
+                "cannot be judged enough or not"
+            )
+
+
 def _building_material_gaps(bm: Any, gaps: List[str], unknowns: List[str]) -> None:
+    if isinstance(bm, Mapping) and "filters" in bm:
+        _material_filters_gaps(bm, gaps, unknowns)
+        return
     accepts = bm.get("accepts") if isinstance(bm, Mapping) else None
     owned = bm.get("fort_owned") if isinstance(bm, Mapping) else None
     if not (isinstance(accepts, list) and accepts and isinstance(owned, Mapping)):
@@ -165,6 +243,100 @@ def requirement_gaps(requirements: Any) -> Dict[str, List[str]]:
     return {"gaps": gaps, "gaps_unknown": unknowns}
 
 
+def _extend_unique(target: List[str], items: List[str]) -> None:
+    for item in items:
+        if item not in target:
+            target.append(item)
+
+
+def _own_gaps(value: Any, where: str) -> Dict[str, List[str]]:
+    """The tool's own `gaps` (a plain list of strings) as gaps. A list is
+    carried through unchanged: a gap the tool itself reported is never dropped
+    or reworded. Anything else is unknown, never an empty list."""
+    if value is None:
+        return {"gaps": [], "gaps_unknown": []}
+    if isinstance(value, list):
+        return {"gaps": [str(x) for x in value], "gaps_unknown": []}
+    return {"gaps": [], "gaps_unknown": [f"{where} 'gaps' was not a list, so it could not be read"]}
+
+
+def combined_gaps(blocks: List[Any], tool_gaps: Optional[List[str]] = None) -> Dict[str, List[str]]:
+    """Gaps and unknowns from every `requirements` block plus the tool's own
+    gap strings, as one de-duplicated pair of lists, the tool's own first.
+
+    `building.find` returns up to five candidates. They share one kind, so
+    their requirements are the same, but each carries its own `gaps` and the
+    server does not assume they agree: every block is read, every gap is kept,
+    and a gap found in any candidate is a gap of the result. That is what
+    makes `gaps: []` reachable only when no candidate reported one."""
+    gaps: List[str] = list(tool_gaps or [])
+    unknowns: List[str] = []
+    for block in blocks:
+        got = requirement_gaps(block)
+        _extend_unique(gaps, got["gaps"])
+        _extend_unique(unknowns, got["gaps_unknown"])
+    return {"gaps": list(dict.fromkeys(gaps)), "gaps_unknown": unknowns}
+
+
+class JoinInput:
+    """What the join reads from one building result: the kind, one
+    `requirements` block per candidate (one for an object result), the tool's
+    own gaps across candidates, and anything unreadable as plain-words unknowns."""
+
+    def __init__(self, kind: Optional[str], blocks: List[Any], tool_gaps: List[str], problems: List[str]):
+        self.kind, self.blocks, self.tool_gaps, self.problems = kind, blocks, tool_gaps, problems
+
+
+def _kind_of(item: Mapping[str, Any]) -> Optional[str]:
+    kind = item.get("kind")
+    token = kind.get("token") if isinstance(kind, Mapping) else None
+    return token if isinstance(token, str) and token else None
+
+
+def join_input(structured: Any) -> JoinInput:
+    """Read a building result as the server sees it: `building.build` is an
+    object (`{kind, dims, site, requirements, gaps, ...}`); `building.find` is
+    an array of candidates, which the server wraps as `{"result": [...]}` (an
+    object must be the structured content, `docs/TRAPS.md`). A wrapper is
+    exactly one key, `result`, holding a list."""
+    if (
+        isinstance(structured, Mapping)
+        and set(structured) == {"result"}
+        and isinstance(structured["result"], list)
+    ):
+        items: List[Any] = structured["result"]
+        where = "a candidate's"
+        wrapped = True
+    else:
+        items = [structured if isinstance(structured, Mapping) else {}]
+        where = "the result's"
+        wrapped = False
+    blocks: List[Any] = []
+    tool_gaps: List[str] = []
+    problems: List[str] = []
+    kinds: List[str] = []
+    if wrapped and not items:
+        problems.append("the result listed no candidates, so no requirements could be read")
+    for item in items:
+        if not isinstance(item, Mapping):
+            problems.append("a candidate was not an object, so its requirements and gaps could not be read")
+            continue
+        blocks.append(item.get("requirements"))
+        own = _own_gaps(item.get("gaps"), where)
+        _extend_unique(tool_gaps, own["gaps"])
+        _extend_unique(problems, own["gaps_unknown"])
+        token = _kind_of(item)
+        if token:
+            kinds.append(token)
+    kind: Optional[str] = None
+    if kinds:
+        if len(set(kinds)) == 1:
+            kind = kinds[0]
+        else:
+            problems.append(f"the candidates named different kinds ({', '.join(sorted(set(kinds)))})")
+    return JoinInput(kind, blocks, tool_gaps, problems)
+
+
 class LaborJoin:
     def __init__(
         self,
@@ -178,9 +350,32 @@ class LaborJoin:
         self._labors_for_kind = labors_for_kind
         self.tools = tuple(tools)
 
-    async def join(self, kind_token: Optional[str], requirements: Any) -> Dict[str, Any]:
-        """The three sibling keys for one building result. Never raises."""
-        req = requirement_gaps(requirements)
+    async def join_result(self, structured: Any, fallback_kind: Optional[str] = None) -> Dict[str, Any]:
+        """`join` for a whole building result, object or `{"result": [...]}`
+        array: the requirements of every candidate and the tool's own gaps."""
+        got = join_input(structured)
+        return await self.join(
+            got.kind or fallback_kind, None,
+            blocks=got.blocks, tool_gaps=got.tool_gaps, problems=got.problems,
+        )
+
+    async def join(
+        self,
+        kind_token: Optional[str],
+        requirements: Any,
+        tool_gaps: Optional[List[str]] = None,
+        *,
+        blocks: Optional[List[Any]] = None,
+        problems: Optional[List[str]] = None,
+    ) -> Dict[str, Any]:
+        """The three sibling keys for one building result. Never raises.
+
+        `requirements` is one block; `blocks` (the candidates of an array
+        result) replaces it when given. `tool_gaps` are the tool's own gap
+        strings, always kept in the joined `gaps`. `problems` are unreadable
+        parts of the result, carried as unknowns."""
+        req = combined_gaps([requirements] if blocks is None else blocks, tool_gaps)
+        _extend_unique(req["gaps_unknown"], list(problems or []))
         if not kind_token:
             return _unknown("the result carried no kind token to look up", req["gaps_unknown"]) | {
                 "gaps": req["gaps"]
