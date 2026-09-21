@@ -685,52 +685,104 @@ df-overseer-building.lua:
         as in find.
 
 df-overseer-zone.lua:
-  build_order_item: "gap named 2026-09-17, handoffs/2026-09-17-water-and-industry-tools.md item 1"
+  build_order_item: "gap named 2026-09-17 (handoffs/2026-09-17-water-and-industry-tools.md item 1); generalised over every zone kind and given an optional owner by handoffs/2026-09-21-zone-tool-generalise.md"
   commands:
-    "find KIND [LEVEL] NEAR_LANDMARK [RADIUS_TILES]":
-      lua_function: find_zone_area
+    "list-kinds [FILTER]":
+      lua_function: list_kinds
       effect: read
       coordinate_bearing: false
       live_deployed: false
-      verified: "2026-09-17 (live, via a /tmp shadow load under a fresh module name -- df-overseer-zone had never been reqscript'd before, so no cache trap applied here)"
+      verified: "2026-09-21 (live on VM 103 through a scratch script path, fort paused; 18 kinds listed, no token collisions, FILTER office gave one row, an unmatched FILTER gave [])"
+      knowledge_scope: player_visible
+      notes: >
+        Lists every zone kind quickfort can place, read at run time from
+        quickfort's own table (reached through Lua upvalues, see the .lua
+        header; a DFHack update that renames a hop gives an error naming it,
+        never an empty list). The install has 18 kinds, not the 17 the
+        handoff counted. Each row: token (the game's civzone_type name, the
+        name to pass as KIND), key (quickfort's own letter, also accepted),
+        label (display only), finder (`rectangle`, or `water_body` for
+        WaterSource), min and max size (max is the string "unbounded" for
+        every zone), default_dims, owner_capable, room_value_field (which
+        position field asks this kind for a room value, or null),
+        prefer_indoors, caveat and policy_source ("ZONE_POLICY entry" or
+        "default (no entry)"). Scope: the zone menu a player already sees.
+    "find KIND [W H] [LEVEL] NEAR_LANDMARK [RADIUS_TILES]":
+      lua_function: find_zone_area
+      skippable: ["[W H]"]
+      effect: read
+      coordinate_bearing: false
+      live_deployed: false
+      verified: "2026-09-21 (live on VM 103, fort paused, read only: Office, Bedroom, DiningHall with and without W H, level -1, and error cases; WaterSource returned the same five bodies as the deployed water-only tool, plus a `token` field)"
       knowledge_scope: player_derivable
       notes: >
-        KIND is "water_source" only this stream (structured so a later
-        kind is a new KIND_INFO entry, not a rewrite). Runs its own scoped
-        4-connected flood fill over tiles that are revealed, not magma, and
-        carry real water (flow_size >= 1) -- this project's own domain rule
-        layered on top of quickfort's own much looser is_valid_zone_tile
-        (hidden-only), read directly from this install's own
-        hack/scripts/internal/quickfort/zone.lua. Reports each water
-        body's bounding box, real tile count, depth min/max, and
-        stagnant/salt. LIVE-VERIFIED 2026-09-17 near "Embark Site": found
-        5 real water bodies matching research/2026-09-17-pool-
-        reachability.md's own independently-derived figures exactly (27,
-        31, 4, 13, 24 tiles), including the pond the sibling
-        water-source-zone-test stream had already zoned that same day
-        (reported as nearest, near_landmark "Activity Zone #1" -- a live,
-        moving-target confirmation, not a coincidence).
-    "place KIND [LEVEL] NEAR_LANDMARK [RANK] [RADIUS_TILES] [DRY_RUN]":
+        Finds up to five non-overlapping sites for one zone kind near a
+        landmark, ranked by distance. KIND is a token from list-kinds (the old
+        `water_source` still works). [W H] is an optional pair: give both or
+        neither; leave them out and the kind's default size is used
+        (list-kinds shows it; the defaults are this project's choice, not game
+        data). One bare number is read as LEVEL and two as W H, hence
+        `skippable`. Rectangle kinds: every tile of the window must be
+        revealed, pass quickfort's own tile rule for the kind, carry no
+        building or liquid, be walkable, sit in one walkable group and not
+        already be zoned with the same type. Kinds marked prefer_indoors list
+        fully indoor windows first (`indoors` on each result; the tile's
+        `outside` flag). Each result carries `search` (tiles checked,
+        eligible, and why others were rejected, so "nothing here" can be told
+        apart from a broken check), and `requirements.room_value` for room
+        kinds: the positions whose data asks for a value from this kind
+        (`required_office`, `_bedroom`, `_dining`, `_tomb`), whether each is
+        held and by whom, and a plain statement that what counts toward the
+        value is not exposed by the game (an external, older-version wiki
+        account is included and marked unverified). A `caveat` says when a
+        kind needs terrain this tool does not check. WaterSource keeps its
+        own finder (connected revealed water bodies, W H refused) and its old
+        output.
+    "check-owner KIND OWNER":
+      lua_function: check_owner
+      effect: read
+      coordinate_bearing: false
+      live_deployed: false
+      verified: "2026-09-21 (live on VM 103, fort paused, read only: MANAGER (held by unit 345), SHERIFF (vacant), MAYOR (group with EXPEDITION_LEADER, held by unit 198), a unit id, and refusals for an unknown code, a dead unit, a non-citizen, a missing unit, a kind that cannot have an owner and a malformed token)"
+      knowledge_scope: player_visible
+      notes: >
+        Would OWNER be accepted for this kind, and what would it mean right
+        now? Runs the same checks `place` runs before it touches anything.
+        OWNER is either a unit id (all digits, `dfhack.buildings.setOwner`,
+        the vanilla equivalent of choosing the owner on the room's screen) or
+        a position code such as MANAGER (the preserve-rooms plugin's
+        `assignToRole`: the room follows whoever holds the role; a vacant role
+        leaves it reserved and suspended). Refuses with a named reason: an
+        unknown code (lists the known ones), a unit that does not exist, is
+        dead or is not a citizen, a kind that cannot have an owner (only
+        Bedroom, DiningHall, Office and Tomb), or a malformed token. Reads
+        the Nobles screen's data (positions and holders) and nothing hidden.
+    "place KIND [W H] [LEVEL] NEAR_LANDMARK [RANK] [RADIUS_TILES] [DRY_RUN] [OWNER]":
       lua_function: place_zone
+      skippable: ["[W H]"]
       effect: mutate
       coordinate_bearing: internal-only
       live_deployed: false
-      verified: "2026-09-17 (DRY_RUN=true path only; the real quickfort path -- a dynamically generated throwaway #zone blueprint -- is UNTESTED live, mutation forbidden this session)"
+      verified: "2026-09-21 (code and manifest only; the DRY_RUN path was NOT run live this session because the auto-mode classifier refused a live place call, and the real path has never been run: see handoffs/2026-09-21-zone-tool-generalise.md)"
       knowledge_scope: player_derivable
       notes: >
-        DRY_RUN defaults to true, same contract as every other write tool
-        here. The real path writes a throwaway `#zone` blueprint CSV
-        shaped to the chosen water body's own membership (a `w` cell only
-        on its actual water tiles, blank elsewhere -- confirmed from source
-        that quickfort's own zone_template has_extents/is_valid_zone_extent
-        supports this, requiring only at least one true cell, the standard
-        mechanism every non-rectangular quickfort blueprint already uses),
-        runs quickfort against it, then deletes it. `io` library
-        availability inside a DFHack script context, and relative-path
-        resolution against dfhack-config/blueprints/, were BOTH confirmed
-        live this session with a READ-ONLY open of an existing blueprint
-        file (no write) -- the write-and-delete path itself was not
-        exercised.
+        Places one zone of KIND at the RANK-th site near a landmark. DRY_RUN
+        defaults to true; only an explicit "false" places. Rectangle kinds: a
+        dry run resolves the site, generates a `#zone` blueprint in code (no
+        per-kind files), and asks quickfort to validate it with --dry-run
+        under `validation` (ok only when a zone would be designated and no
+        problem counter is above zero), removing the scratch file after. A
+        real run reads the zone back (`read_back`: found, type, id and the
+        game's room description) and reports quickfort's own statistics.
+        WaterSource keeps its old behaviour exactly (a dry run reports the
+        body and `would_zone_tiles`, no quickfort). OWNER (last argument, so
+        RANK RADIUS_TILES and DRY_RUN must be given before it) assigns the
+        new zone: a unit id or a position code, validated as in check-owner
+        before anything is touched. quickfort's own dry run stops before it
+        assigns, so a dry run proves the owner checks but not the
+        assignment; a real run reads assigned_unit_id and the game's getOwner
+        back under `owner_result`. NEVER RUN FOR REAL yet: the first real
+        placement needs the user's go-ahead.
 
 df-overseer-trees.lua:
   build_order_item: "gap named 2026-09-17, handoffs/2026-09-17-water-and-industry-tools.md item 2"
