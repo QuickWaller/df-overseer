@@ -350,8 +350,8 @@ df-overseer-diggable.lua:
       lua_function: find_stair_down
       effect: read
       coordinate_bearing: false
-      live_deployed: false
-      verified: "2026-09-17; occupancy fix verified 2026-09-17"
+      live_deployed: true
+      verified: "2026-09-17; occupancy fix verified 2026-09-17. Deployed to VM 103 2026-09-18 by the well-unblock stream's ui-install and run live there for real use: rank 1 was an unoccupied candidate, confirming the occupancy fix (handoffs/2026-09-18-well-unblock.md, section 2)"
       knowledge_scope: player_derivable
       notes: >
         Added handoffs/2026-09-17-dig-down-to-stone.md, the "vertical,
@@ -391,8 +391,8 @@ df-overseer-diggable.lua:
       lua_function: dig_stair_down
       effect: mutate
       coordinate_bearing: internal-only
-      live_deployed: false
-      verified: "2026-09-17 (dry-run path, including the occupancy fix, live-verified; the real dry_run=false path -- both the honest-success and the rollback-on-partial-failure branches -- is UNTESTED live, real mutation forbidden every session so far)"
+      live_deployed: true
+      verified: "2026-09-17 (dry-run path, including the occupancy fix, live-verified; the real dry_run=false path -- both the honest-success and the rollback-on-partial-failure branches -- is UNTESTED live, real mutation forbidden every session so far). CORRECTION 2026-09-22: the real dry_run=false path was run for real on 2026-09-18 and designated both halves, each read back from the tile's own dig flag (handoffs/2026-09-18-well-unblock.md, section 2 step 3), so only the rollback-on-partial-failure branch is still untested. The stair was not watched to completion in that session (see the report there)"
       knowledge_scope: player_derivable
       notes: >
         Added handoffs/2026-09-17-dig-down-to-stone.md. Designates BOTH
@@ -443,8 +443,8 @@ df-overseer-farm.lua:
       lua_function: find_farm_plot_area
       effect: read
       coordinate_bearing: false
-      live_deployed: false
-      verified: "2026-09-16 (dry-run/read-only, via a /tmp copy, never deployed)"
+      live_deployed: true
+      verified: "2026-09-16 (dry-run/read-only, via a /tmp copy, never deployed). CORRECTION 2026-09-22: deployed to VM 103 on 2026-09-17 (handoffs/2026-09-17-farm-tools-deploy.md, hash-verified) and used there for the first farm plot"
       knowledge_scope: player_derivable
       notes: >
         Candidates are revealed, dug, soil/grass/plant or muddied-stone
@@ -465,8 +465,8 @@ df-overseer-farm.lua:
       lua_function: build_farm_plot
       effect: mutate
       coordinate_bearing: internal-only
-      live_deployed: false
-      verified: "2026-09-16 (DRY_RUN=true path only; the real quickfort/setName path is UNTESTED live)"
+      live_deployed: true
+      verified: "2026-09-16 (DRY_RUN=true path only; the real quickfort/setName path is UNTESTED live). CORRECTION 2026-09-22: deployed 2026-09-17, and the real path was run that day: farm build placed a 5x5 farm plot at z168, orchestrator-verified by a direct struct read (decisions/DECISIONS.md 2026-09-17, handoffs/2026-09-17-farm-still-first-build.md)"
       knowledge_scope: player_derivable
       notes: >
         DRY_RUN defaults to true; only an explicit false performs the real
@@ -484,8 +484,8 @@ df-overseer-farm.lua:
       lua_function: list_farm_plots
       effect: read
       coordinate_bearing: false
-      live_deployed: false
-      verified: "2026-09-17 (read-only, via addScriptPath to a /tmp copy): resolved Uniboslan's real plot, id 4, all four seasons MUSHROOM_HELMET_PLUMP"
+      live_deployed: true
+      verified: "2026-09-17 (read-only, via addScriptPath to a /tmp copy): resolved Uniboslan's real plot, id 4, all four seasons MUSHROOM_HELMET_PLUMP. Deployed to VM 103 2026-09-17 (handoffs/2026-09-17-farm-tools-deploy.md, hash-verified)"
       knowledge_scope: player_visible
       notes: >
         Added handoffs/2026-09-17-farm-tool-fixes.md. Every built farm plot
@@ -498,8 +498,8 @@ df-overseer-farm.lua:
       lua_function: set_farm_crop
       effect: mutate
       coordinate_bearing: false
-      live_deployed: false
-      verified: "2026-09-17 (DRY_RUN=true path and refusal paths against real plot id 4); real (DRY_RUN=false) write live-verified 2026-09-17, handoffs/2026-09-17-farm-stair-live-test.md Result section 3 (BUSH_QUARRY written to plot 4 spring, read back correctly, then restored to MUSHROOM_HELMET_PLUMP) -- correcting this line's own earlier claim that the real write was untested, caught while updating this entry for the dig-stair-fix handoff. The construction-gate refusal itself (writing before flags.exists) is still UNTESTED live -- Uniboslan's own plot was already built by the time this tool existed."
+      live_deployed: true
+      verified: "2026-09-17 (DRY_RUN=true path and refusal paths against real plot id 4); real (DRY_RUN=false) write live-verified 2026-09-17, handoffs/2026-09-17-farm-stair-live-test.md Result section 3 (BUSH_QUARRY written to plot 4 spring, read back correctly, then restored to MUSHROOM_HELMET_PLUMP) -- correcting this line's own earlier claim that the real write was untested, caught while updating this entry for the dig-stair-fix handoff. The construction-gate refusal itself (writing before flags.exists) is still UNTESTED live -- Uniboslan's own plot was already built by the time this tool existed.. Deployed to VM 103 2026-09-17 (handoffs/2026-09-17-farm-tools-deploy.md, hash-verified)"
       knowledge_scope: player_derivable
       notes: >
         Resolves ID (a building id, from farm.build's real result or
@@ -874,7 +874,7 @@ df-overseer-well.lua:
       effect: mutate
       coordinate_bearing: internal-only
       live_deployed: true
-      verified: "2026-09-17 (DRY_RUN=true path only; the real quickfort path is UNTESTED live). Deployed to VM 103 2026-09-17 (handoffs/2026-09-17-water-industry-tools-deploy.md, hash-verified) and dry-run there"
+      verified: "2026-09-17 (DRY_RUN=true path only; the real quickfort path is UNTESTED live). Deployed to VM 103 2026-09-17 (handoffs/2026-09-17-water-industry-tools-deploy.md, hash-verified) and dry-run there. CORRECTION 2026-09-22: the real path was run on 2026-09-19: well.build placed and completed the well (id 8, water depth 7), with the bucket and chain the fort already owned (decisions/DECISIONS.md 2026-09-19, 'The well is built')"
       knowledge_scope: player_derivable
       notes: >
         DRY_RUN defaults to true, same contract as every other write tool
