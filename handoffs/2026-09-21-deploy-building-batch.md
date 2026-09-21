@@ -23,7 +23,7 @@ reports of `2026-09-21-building-tool-lua.md`, `-building-tool-server.md` (the
    built graph database.
 
 Expected role tool counts on the merged tree, before any later grants:
-**architect 32, overseer 55, consultant 14** (the nobles tool is included: 2 read commands for architect and consultant, 2 read plus 2 write for overseer). The nobles script `df-overseer-nobles.lua` is already on VM 103 (hash-verified 2026-09-21, byte-identical to main's copy); confirm the hash and leave it.
+**architect 34, overseer 57, consultant 14** (nobles included: 2 read commands for architect and consultant, 2 read plus 2 write for overseer; the zone tool's `list-kinds` and `check-owner` are 2 more read for architect and overseer). **Deploy `scripts/dfhack/df-overseer-zone.lua` and `TOOLS.yaml` together**: the new manifest changed the zone grammar, so the deployed old zone script and the new manifest do not match. The old script is currently live. The nobles script `df-overseer-nobles.lua` is already on VM 103 (hash-verified 2026-09-21, byte-identical to main's copy); confirm the hash and leave it.
 
 ## Steps, in order
 
