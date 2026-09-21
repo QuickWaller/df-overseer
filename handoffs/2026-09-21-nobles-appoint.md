@@ -118,3 +118,123 @@ needed, what happened during the unpause, whether an appointed manager validates
 orders, and what remains unknown; the fort's final state (paused, tick, who holds
 MANAGER) is stated; the suite still passes (**552 passed / 1 skipped**, report
 before and after); and a proposed manifest entry is ready for the orchestrator.
+
+---
+
+## Report (run by the orchestrator in the main session, 2026-09-21)
+
+**Why not an executor:** the auto-mode classifier refused to dispatch an executor
+that writes to the live fort ("Modify Shared Resources"), and refused the first
+real write in the main session while auto mode was on ("Auto-Mode Bypass"). The
+user switched to manual mode and told it to go ahead; the write then ran. Nothing
+was routed around. The classifier is Claude Code's own; the project's settings
+files carry no auto-mode or classifier configuration.
+
+### Result: it works, and the appointed manager did not start the queued orders
+
+- **Tool built:** `scripts/dfhack/df-overseer-nobles.lua` (commit `3d1a21a`):
+  `list`, `verify POSITION_CODE`, `appoint POSITION_CODE UNIT_ID [DRY_RUN] [VERSION]`,
+  `unappoint POSITION_CODE [DRY_RUN] [VERSION]`. Deployed by copying the committed
+  bytes (`git show HEAD:...`); sha256 `5d6ea454...c0aab4` identical locally and on
+  the VM. Dry-run by default; only the literal word `false` writes.
+- **Position data inspected first (bounded, read-only).** The fortress entity (id 36)
+  has 14 position definitions and 12 assignments. Each position exposes `code`,
+  `flags` (`ELECTED`, `HAS_MET_POP_REQ`, `ACTIVE`, `IS_LEADER`), `requires_population`,
+  `number`, `required_office` and a `description`. MANAGER: `number` 1, appointed
+  (not `ELECTED`), `requires_population` 0, `required_office` 1; its description
+  says "Once your fortress reaches a certain population, the manager must work in an
+  office to validate work orders." DUNGEON_MASTER, MAYOR and CAPTAIN_OF_THE_GUARD
+  have `requires_population` 50 with the requirement unmet; MAYOR is `ELECTED`.
+- **Refusals exercised live (dry, all read-only):** elected (MAYOR), population
+  requirement unmet (DUNGEON_MASTER), already held (EXPEDITION_LEADER, unit 198),
+  unknown code (lists the known codes), not an adult (unit 455, a child), no such
+  unit, non-numeric unit, and `unappoint` of a vacant position. Each returned its own
+  named reason. Not exercised live: not-a-citizen, dead unit, no historical figure
+  (no such unit was at hand; those paths read `isCitizen`, `isAlive`,
+  `hist_figure_id`).
+- **The appointed citizen, by a stated rule:** an adult, living citizen in no squad,
+  not the expedition leader, with few enabled labors, excluding the fisher because
+  the fort has starved before. That is unit 345, Tun Konosamem, a Stonecrafter.
+- **Live steps, each confirmed:** quicksave (a new `world.sav` at 09:14:52, paused at
+  year 31 tick 103055), then a real `appoint MANAGER 345 false minimal`. Verified
+  **from both sides plus the game's own API**: the assignment's `histfig` and
+  `histfig2` equal the unit's figure (331); the figure holds a
+  `histfig_entity_link_positionst` with `assignment_id` 6 and `assignment_vector_idx`
+  6; `dfhack.units.getNoblePositions(unit)` lists MANAGER; the game's own readable
+  name changed from "Stonecrafter" to "manager"; `orders list` reports
+  `manager_appointed: true`.
+- **Which mechanism version the game needed:** **`minimal`** (the make-monarch
+  writes: `histfig`, `histfig2` and the position link). The `with_event` version
+  (also a history event, as the emigration helper writes on removal) was not needed
+  and not run; its event-writing code is untested.
+- **On the make-monarch index:** DFHack's `ipairs` over a game vector starts at 0
+  (verified live: first index 0), and a real holder's link stores the 0-based vector
+  index, so make-monarch's `assignment_vector_idx=assignment_idx` is correct as
+  written. An earlier remark in this session that it would be off by one was wrong.
+  The tool uses explicit 0-based loops and copies the shape of the real link; the
+  existing holder's assignment also has `histfig2` set, so the tool sets both.
+- **Round trip:** a second quicksave (`autosave 2`, 09:25:04, confirmed by every
+  slot's mtime, after a first attempt whose comparison path had rotated away and
+  could not be trusted), then `unappoint MANAGER false minimal`: assignment vacant,
+  the position link replaced by a `former_positionst` link (start 31, end 31),
+  `getNoblePositions` empty, title back to Stonecrafter, `manager_appointed: false`.
+  Then the same `appoint` again, verified consistent. Final state: appointed.
+
+### The supervised unpause
+
+Watchdog `/tmp/pause_watchdog.sh 60` (existing, unchanged), armed detached and
+confirmed running from a second connection before the unpause. Unpaused at tick
+103055 at 09:22:29 UTC; polled every ~9 s with a re-pause tripwire on any death.
+**Re-paused by the watchdog at tick 106974 (about 3,900 ticks, roughly three game
+days)**, confirmed by `/tmp/watchdog.log`, not by the command's return.
+
+- **No deaths** (22 alive throughout); worst hunger 39,984 and worst thirst 25,093
+  at the end (baseline 39,412 and 21,174); nothing near critical.
+- **The three queued orders never became jobs:** `ConstructBlocks` x1,
+  `ConstructMechanisms` x1 and `CustomReaction BREW_DRINK_FROM_PLANT` x8 stayed
+  `validated=true`, `active=false`, amount left unchanged, and no job of those types
+  appeared in the bounded job list at any of six polls (jobs seen: Eat, Fish, Sleep,
+  Drink). The Masons, Mechanics and Still workshops exist and hold no jobs.
+- **The game raised no complaint:** no announcement mentioning manager, office or
+  work order in the last 300.
+- **Why, not settled.** Observed: the manager unit has no current job, owns no
+  building, and the fort has no zones at all, so no Office; the position data says
+  the manager needs an office to work. That is the leading suspect and it is
+  untested. Not observed: what the manager does given an office. Also unresolved:
+  whether hand-set `validated=true` (a one-off from 2026-09-19) is honoured once a
+  manager exists, or whether the orders must be validated by the manager at an
+  office.
+- **What this settles and does not:** the appointment mechanism is real and
+  consistent; an appointment alone does not start orders within three game days.
+
+### Proposed manifest entry and grants (for the orchestrator to apply)
+
+`scripts/dfhack/TOOLS.yaml`, file `df-overseer-nobles.lua`, four commands: `list`
+and `verify POSITION_CODE` (effect `read`), `appoint POSITION_CODE UNIT_ID
+[DRY_RUN] [VERSION]` and `unappoint POSITION_CODE [DRY_RUN] [VERSION]` (effect
+`mutate`). `coordinate_bearing: false`, `live_deployed: true`, `verified: verified`
+for `list`, `verify`, and `appoint`/`unappoint` at the `minimal` version.
+**`knowledge_scope: player_visible`:** the Nobles screen shows every position and
+its holder to a player, and every field read is on that screen. Grants: `overseer`
+read `nobles.list` and `nobles.verify`, write `nobles.appoint` and
+`nobles.unappoint`; `architect` and `consultant` read `nobles.list` and
+`nobles.verify` only. The MCP layer needs argument descriptions for
+`POSITION_CODE`, `UNIT_ID` and `VERSION` in `dfmcp/tools.py`.
+
+### Fort state at the end
+
+Paused, year 31, **tick 106974**, 22 citizens alive, **MANAGER held by unit 345**.
+Two quicksaves exist from this run (pre-appointment `autosave 3` at 09:14:55, and
+post-appointment `autosave 2` at 09:25:04). The watchdog is not running. Scratch
+scripts were removed from the VM's `/tmp`; the new script stays under
+`hack/scripts/`.
+
+### What remains unknown
+
+1. Whether an Office zone assigned to the manager makes the orders run (the next
+   experiment; needs a zone tool that can place an Office and assign it).
+2. Whether `validated=true` set by hand is honoured, and what the manager's own
+   validation job looks like.
+3. Whether a longer window (more than three game days) changes the result.
+4. The `with_event` write path, and the refusals for not-a-citizen, dead unit and
+   no historical figure, were not exercised live.
