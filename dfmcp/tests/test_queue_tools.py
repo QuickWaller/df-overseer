@@ -244,3 +244,172 @@ class TestWriteSerialisation:
         )
         ids = {structured["id"] for _text, structured in results}
         assert len(ids) == 2
+
+
+# ==========================================================================
+# ask / answer / executed -- docs/AGENT-LOOP.md items 4 and 7
+# ==========================================================================
+
+
+async def _propose_and_rule(path, *, decision="accept"):
+    """Test helper: write one proposal (architect) and rule on it
+    (overseer), through the real queue_tools.call() path, and return
+    `(proposal_text, proposal_structured, ruling_text, ruling_structured)`."""
+    _p_text, proposal = await queue_tools.call(
+        queue_tools.QUEUE_PROPOSE, "architect", _propose_args(),
+        db_path=path, call_dfhack=_ok_call_dfhack, write_lock=asyncio.Lock(),
+    )
+    _r_text, ruling = await queue_tools.call(
+        queue_tools.QUEUE_RULE, "overseer",
+        {
+            "proposal_id": proposal["id"], "decision": decision,
+            "reason": "Charter-clean and worth trying.",
+            "public_rationale": "Approved.",
+        },
+        db_path=path, call_dfhack=_ok_call_dfhack, write_lock=asyncio.Lock(),
+    )
+    return proposal, ruling
+
+
+class TestExecuted:
+    async def test_executed_arms_the_prediction_and_is_overseer_only(self, tmp_path):
+        path = tmp_path / "queue.sqlite3"
+        proposal, ruling = await _propose_and_rule(path)
+
+        text, structured = await queue_tools.call(
+            queue_tools.QUEUE_EXECUTED, "overseer",
+            {
+                "ruling_id": ruling["id"],
+                "actions": [{"tool": "workshop.build", "outcome": "success"}],
+                "notes": "Built as ruled.",
+            },
+            db_path=path, call_dfhack=_ok_call_dfhack, write_lock=asyncio.Lock(),
+        )
+        assert "<executed" in text
+        assert structured["ruling_id"] == ruling["id"]
+
+        due = store.pending_due(path, structured["cycle"] + 1200)
+        assert len(due) == 1
+        assert due[0]["due_game_tick"] == structured["cycle"] + 1200
+
+    async def test_executed_refuses_role_arguments(self, tmp_path):
+        path = tmp_path / "queue.sqlite3"
+        _proposal, ruling = await _propose_and_rule(path)
+
+        with pytest.raises(queue_tools.QueueToolError, match="unexpected argument"):
+            await queue_tools.call(
+                queue_tools.QUEUE_EXECUTED, "overseer",
+                {
+                    "ruling_id": ruling["id"], "role": "architect",
+                    "actions": [{"tool": "workshop.build", "outcome": "success"}],
+                    "notes": "Trying to smuggle a role argument.",
+                },
+                db_path=path, call_dfhack=_ok_call_dfhack, write_lock=asyncio.Lock(),
+            )
+
+    async def test_executed_against_a_nonexistent_ruling_is_refused(self, tmp_path):
+        path = tmp_path / "queue.sqlite3"
+        with pytest.raises(queue_tools.QueueToolError, match="does not refer to an existing ruling"):
+            await queue_tools.call(
+                queue_tools.QUEUE_EXECUTED, "overseer",
+                {
+                    "ruling_id": "ruling-9999",
+                    "actions": [{"tool": "workshop.build", "outcome": "success"}],
+                    "notes": "No such ruling.",
+                },
+                db_path=path, call_dfhack=_ok_call_dfhack, write_lock=asyncio.Lock(),
+            )
+
+
+class TestAskAnswer:
+    async def test_a_lookup_ask_from_the_architect_and_the_consultants_answer(self, tmp_path):
+        path = tmp_path / "queue.sqlite3"
+        ask_text, ask = await queue_tools.call(
+            queue_tools.QUEUE_ASK, "architect",
+            {"question": "Does soil under a workshop ever stall construction?"},
+            db_path=path, call_dfhack=_ok_call_dfhack, write_lock=asyncio.Lock(),
+        )
+        assert "<ask" in ask_text
+        assert "proposal_id" not in ask
+
+        # Before an answer, the Consultant's own queue.pending lists it.
+        _pending_text, pending = await queue_tools.call(
+            queue_tools.QUEUE_PENDING, "consultant", {},
+            db_path=path, call_dfhack=_ok_call_dfhack, write_lock=asyncio.Lock(),
+        )
+        assert pending["ask_ids"] == [ask["id"]]
+
+        answer_text, answer = await queue_tools.call(
+            queue_tools.QUEUE_ANSWER, "consultant",
+            {"ask_id": ask["id"], "answer": "No, only its own material requirements matter."},
+            db_path=path, call_dfhack=_ok_call_dfhack, write_lock=asyncio.Lock(),
+        )
+        assert "<answer" in answer_text
+        assert answer["ask_id"] == ask["id"]
+
+        # Answered, so no longer open.
+        _pending_text2, pending2 = await queue_tools.call(
+            queue_tools.QUEUE_PENDING, "consultant", {},
+            db_path=path, call_dfhack=_ok_call_dfhack, write_lock=asyncio.Lock(),
+        )
+        assert pending2["ask_ids"] == []
+
+    async def test_queue_pending_for_a_non_consultant_role_is_unchanged(self, tmp_path):
+        path = tmp_path / "queue.sqlite3"
+        _text, proposal = await queue_tools.call(
+            queue_tools.QUEUE_PROPOSE, "architect", _propose_args(),
+            db_path=path, call_dfhack=_ok_call_dfhack, write_lock=asyncio.Lock(),
+        )
+        _pending_text, pending = await queue_tools.call(
+            queue_tools.QUEUE_PENDING, "overseer", {},
+            db_path=path, call_dfhack=_ok_call_dfhack, write_lock=asyncio.Lock(),
+        )
+        assert pending["proposal_ids"] == [proposal["id"]]
+        assert "ask_ids" not in pending
+
+    async def test_a_fact_check_from_the_overseer_blocks_ruling_until_answered(self, tmp_path):
+        path = tmp_path / "queue.sqlite3"
+        _p_text, proposal = await queue_tools.call(
+            queue_tools.QUEUE_PROPOSE, "architect", _propose_args(),
+            db_path=path, call_dfhack=_ok_call_dfhack, write_lock=asyncio.Lock(),
+        )
+        _ask_text, ask = await queue_tools.call(
+            queue_tools.QUEUE_ASK, "overseer",
+            {"question": "Is this hauling-distance claim right?", "proposal_id": proposal["id"]},
+            db_path=path, call_dfhack=_ok_call_dfhack, write_lock=asyncio.Lock(),
+        )
+
+        with pytest.raises(queue_tools.QueueToolError, match="open fact-check"):
+            await queue_tools.call(
+                queue_tools.QUEUE_RULE, "overseer",
+                {
+                    "proposal_id": proposal["id"], "decision": "accept",
+                    "reason": "Looks right.", "public_rationale": "Approved.",
+                },
+                db_path=path, call_dfhack=_ok_call_dfhack, write_lock=asyncio.Lock(),
+            )
+
+        await queue_tools.call(
+            queue_tools.QUEUE_ANSWER, "consultant",
+            {"ask_id": ask["id"], "answer": "Confirmed against the live layout."},
+            db_path=path, call_dfhack=_ok_call_dfhack, write_lock=asyncio.Lock(),
+        )
+
+        _r_text, ruling = await queue_tools.call(
+            queue_tools.QUEUE_RULE, "overseer",
+            {
+                "proposal_id": proposal["id"], "decision": "accept",
+                "reason": "Looks right.", "public_rationale": "Approved.",
+            },
+            db_path=path, call_dfhack=_ok_call_dfhack, write_lock=asyncio.Lock(),
+        )
+        assert ruling["decision"] == "accept"
+
+    async def test_ask_refuses_role_argument_smuggling(self, tmp_path):
+        path = tmp_path / "queue.sqlite3"
+        with pytest.raises(queue_tools.QueueToolError, match="unexpected argument"):
+            await queue_tools.call(
+                queue_tools.QUEUE_ASK, "architect",
+                {"question": "A question.", "role": "overseer"},
+                db_path=path, call_dfhack=_ok_call_dfhack, write_lock=asyncio.Lock(),
+            )

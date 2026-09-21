@@ -180,8 +180,16 @@ QUEUE_PROPOSE = "queue.propose"
 QUEUE_PASS = "queue.pass"
 QUEUE_RULE = "queue.rule"
 QUEUE_PENDING = "queue.pending"
+#: Added `handoffs/2026-09-22-loop-queue-quartermaster.md` (`docs/
+#: AGENT-LOOP.md` items 4 and 7).
+QUEUE_ASK = "queue.ask"
+QUEUE_ANSWER = "queue.answer"
+QUEUE_EXECUTED = "queue.executed"
 
-NATIVE_TOOL_IDS = (QUEUE_PROPOSE, QUEUE_PASS, QUEUE_RULE, QUEUE_PENDING)
+NATIVE_TOOL_IDS = (
+    QUEUE_PROPOSE, QUEUE_PASS, QUEUE_RULE, QUEUE_PENDING, QUEUE_ASK,
+    QUEUE_ANSWER, QUEUE_EXECUTED,
+)
 
 
 class QueueToolError(Exception):
@@ -222,7 +230,13 @@ class NativeTool:
         if self.id == QUEUE_RULE:
             return _RULE_DESCRIPTION, _RULE_SCHEMA
         if self.id == QUEUE_PENDING:
-            return _PENDING_DESCRIPTION, _PENDING_SCHEMA
+            return _pending_description(role), _PENDING_SCHEMA
+        if self.id == QUEUE_ASK:
+            return _ASK_DESCRIPTION, _ASK_SCHEMA
+        if self.id == QUEUE_ANSWER:
+            return _ANSWER_DESCRIPTION, _ANSWER_SCHEMA
+        if self.id == QUEUE_EXECUTED:
+            return _EXECUTED_DESCRIPTION, _EXECUTED_SCHEMA
         raise AssertionError(f"NativeTool.describe: unknown id {self.id!r}")  # pragma: no cover
 
 
@@ -231,6 +245,23 @@ NATIVE_TOOLS: Dict[str, NativeTool] = {
     QUEUE_PASS: NativeTool(id=QUEUE_PASS, mutates=False, sole_writer_only=False),
     QUEUE_RULE: NativeTool(id=QUEUE_RULE, mutates=False, sole_writer_only=True),
     QUEUE_PENDING: NativeTool(id=QUEUE_PENDING, mutates=False, sole_writer_only=False),
+    # queue.ask: architect, quartermaster or overseer may call it
+    # (dfqueue.schema.ASK_ROLES enforces the exact set again at write
+    # time); not sole_writer_only, since it is not restricted to the
+    # Overseer -- see this module's docstring on the two-layer pattern.
+    QUEUE_ASK: NativeTool(id=QUEUE_ASK, mutates=False, sole_writer_only=False),
+    # queue.answer: restricted to the Consultant in practice by which
+    # roles' tools.yaml grant it (only agents/consultant/tools.yaml does),
+    # plus dfqueue.schema's own role==consultant check at write time.
+    # sole_writer_only is deliberately NOT used here: that flag means
+    # specifically "the roster's sole_writer" (the Overseer), a different
+    # role than the Consultant, so reusing it here would enforce the wrong
+    # restriction.
+    QUEUE_ANSWER: NativeTool(id=QUEUE_ANSWER, mutates=False, sole_writer_only=False),
+    # queue.executed: same restriction as queue.rule (the Overseer only,
+    # docs/AGENT-LOOP.md item 4), so it reuses the same sole_writer_only
+    # mechanism dfmcp.roles already enforces for queue.rule.
+    QUEUE_EXECUTED: NativeTool(id=QUEUE_EXECUTED, mutates=False, sole_writer_only=True),
 }
 
 
@@ -432,10 +463,19 @@ _RULE_SCHEMA = {
     },
 }
 
-_PENDING_DESCRIPTION = (
-    "Read-only: every proposal in this queue with no ruling yet, rendered as "
-    "XML (the §4 prompt form), oldest first."
-)
+def _pending_description(role: str) -> str:
+    if role == "consultant":
+        return (
+            "Read-only: every open ask addressed to you (no answer yet), "
+            "rendered as XML, oldest first. The Consultant never proposes, "
+            "so this is what's pending FOR you, not a proposal review."
+        )
+    return (
+        "Read-only: every proposal in this queue with no ruling yet, rendered as "
+        "XML (the §4 prompt form), oldest first."
+    )
+
+
 _PENDING_SCHEMA = {
     "type": "object",
     "additionalProperties": False,
@@ -443,7 +483,99 @@ _PENDING_SCHEMA = {
         "limit": {
             "type": "integer",
             "minimum": 1,
-            "description": "Return at most this many pending proposals. Omit for all of them.",
+            "description": "Return at most this many pending records. Omit for all of them.",
+        },
+    },
+}
+
+_ASK_DESCRIPTION = (
+    "Ask the Consultant a question: a lookup (any of architect, quartermaster "
+    "or overseer may ask) or a fact-check (the Overseer only, by naming an "
+    "existing proposal_id) that routes a specific proposal for verification "
+    "before ruling. One ask, one answer, no threads. While a fact-check (an "
+    "ask from the Overseer that names a proposal_id) is open, that proposal "
+    "cannot be ruled on -- queue.rule is refused until queue.answer closes "
+    "it. role/id/ts/cycle/snapshot are stamped by the server; do not pass them."
+)
+_ASK_SCHEMA = {
+    "type": "object",
+    "additionalProperties": False,
+    "required": ["question"],
+    "properties": {
+        "question": {
+            "type": "string",
+            "description": "What you want to know. Coordinate-free.",
+        },
+        "proposal_id": {
+            "type": "string",
+            "description": (
+                "Optional: an existing proposal this question concerns. Set by "
+                "the Overseer, this IS a fact-check and blocks ruling on that "
+                "proposal until answered; set by any other role, it is a plain "
+                "lookup and never blocks anything."
+            ),
+        },
+    },
+}
+
+_ANSWER_DESCRIPTION = (
+    "Answer one open ask (queue.pending lists them for you). Only one answer "
+    "is accepted per ask -- one ask, one answer, no threads. Answers are "
+    "hypotheses: nothing here overrides a graded prediction. "
+    "role/id/ts/cycle/snapshot are stamped by the server; do not pass them."
+)
+_ANSWER_SCHEMA = {
+    "type": "object",
+    "additionalProperties": False,
+    "required": ["ask_id", "answer"],
+    "properties": {
+        "ask_id": {
+            "type": "string",
+            "description": "The id of an open ask (see queue.pending).",
+        },
+        "answer": {"type": "string", "description": "Coordinate-free."},
+    },
+}
+
+_EXECUTED_DESCRIPTION = (
+    "Record that an accepted proposal's ruling was carried out: the tool "
+    "calls made and each one's outcome, success or failure -- a failed "
+    "execution is still a valid, required record. This is what starts the "
+    "proposal's prediction grading window: it now runs from THIS call's own "
+    "stamped game tick, never from the original proposal's write time. Only "
+    "the roster's sole writer may call this. role/id/ts/cycle/snapshot are "
+    "stamped by the server; do not pass them."
+)
+_EXECUTED_SCHEMA = {
+    "type": "object",
+    "additionalProperties": False,
+    "required": ["ruling_id", "actions", "notes"],
+    "properties": {
+        "ruling_id": {
+            "type": "string",
+            "description": "The id of an existing, accepted ruling (decision=accept).",
+        },
+        "actions": {
+            "type": "array",
+            "minItems": 1,
+            "description": "One entry per tool call made while carrying this out.",
+            "items": {
+                "type": "object",
+                "additionalProperties": False,
+                "required": ["tool", "outcome"],
+                "properties": {
+                    "tool": {"type": "string", "description": "The tool id called, e.g. workjob.queue."},
+                    "outcome": {"type": "string", "enum": list(schema.EXECUTION_OUTCOMES)},
+                    "detail": {
+                        "type": "string",
+                        "description": "Optional, e.g. why a call failed. Coordinate-free.",
+                    },
+                },
+            },
+        },
+        "notes": {
+            "type": "string",
+            "description": "A coordinate-free account of what happened, overall.",
         },
     },
 }
@@ -503,6 +635,9 @@ _PROPOSE_FIELDS = {
 _PASS_FIELDS = {"reason"}
 _RULE_FIELDS = {"proposal_id", "decision", "reason", "public_rationale"}
 _PENDING_FIELDS = {"limit"}
+_ASK_FIELDS = {"question", "proposal_id"}
+_ANSWER_FIELDS = {"ask_id", "answer"}
+_EXECUTED_FIELDS = {"ruling_id", "actions", "notes"}
 
 
 def _write_error(tool_id: str, exc: store.QueueError) -> QueueToolError:
@@ -579,6 +714,14 @@ async def _pending(
     role: str, arguments: Mapping[str, Any], *, db_path, call_dfhack: CallDFHack,
     write_lock: "asyncio.Lock",
 ) -> Tuple[str, dict]:
+    """Role-dependent: the Consultant never proposes (`dfqueue.schema.
+    TYPE_VOCAB_BY_ROLE["consultant"]` is empty), so for that role alone
+    "what's pending for me" means open asks (`store.open_asks`), not
+    unruled proposals (`store.pending_proposals`) -- see this module's
+    docstring, "cycle/snapshot" section's sibling reasoning applied to
+    pending too: one tool id, meaning kept coherent per caller rather than
+    adding a second read tool id that every role's allowlist would then
+    need a fresh decision about."""
     _reject_unknown_arguments(QUEUE_PENDING, arguments, _PENDING_FIELDS)
     limit = arguments.get("limit")
     if limit is not None:
@@ -587,12 +730,61 @@ async def _pending(
     # No write_lock here on purpose: a plain read, not part of the
     # _next_id/insert race the lock exists to serialise (module docstring).
     try:
-        records = await asyncio.to_thread(store.pending_proposals, db_path, limit=limit)
+        if role == "consultant":
+            records = await asyncio.to_thread(store.open_asks, db_path, limit=limit)
+        else:
+            records = await asyncio.to_thread(store.pending_proposals, db_path, limit=limit)
     except (sqlite3.Error, OSError) as exc:
         raise _storage_error(QUEUE_PENDING, exc) from exc
     xml = "\n\n".join(render.to_xml(r) for r in records) if records else "<pending/>"
-    structured = {"count": len(records), "proposal_ids": [r["id"] for r in records]}
+    ids = [r["id"] for r in records]
+    if role == "consultant":
+        structured = {"count": len(records), "ask_ids": ids}
+    else:
+        structured = {"count": len(records), "proposal_ids": ids}  # unchanged key, pre-existing callers
     return xml, structured
+
+
+async def _ask(
+    role: str, arguments: Mapping[str, Any], *, db_path, call_dfhack: CallDFHack,
+    write_lock: "asyncio.Lock",
+) -> Tuple[str, dict]:
+    _reject_unknown_arguments(QUEUE_ASK, arguments, _ASK_FIELDS)
+    tick, snapshot = await _stamp_cycle_snapshot(call_dfhack)
+    record = {
+        "kind": schema.ASK, "role": role, "cycle": tick, "snapshot": snapshot,
+        **{k: arguments[k] for k in _ASK_FIELDS if k in arguments},
+    }
+    written = await _append_locked(QUEUE_ASK, record, db_path, None, write_lock)
+    return render.to_xml(written), written
+
+
+async def _answer(
+    role: str, arguments: Mapping[str, Any], *, db_path, call_dfhack: CallDFHack,
+    write_lock: "asyncio.Lock",
+) -> Tuple[str, dict]:
+    _reject_unknown_arguments(QUEUE_ANSWER, arguments, _ANSWER_FIELDS)
+    tick, snapshot = await _stamp_cycle_snapshot(call_dfhack)
+    record = {
+        "kind": schema.ANSWER, "role": role, "cycle": tick, "snapshot": snapshot,
+        **{k: arguments[k] for k in _ANSWER_FIELDS if k in arguments},
+    }
+    written = await _append_locked(QUEUE_ANSWER, record, db_path, None, write_lock)
+    return render.to_xml(written), written
+
+
+async def _executed(
+    role: str, arguments: Mapping[str, Any], *, db_path, call_dfhack: CallDFHack,
+    write_lock: "asyncio.Lock",
+) -> Tuple[str, dict]:
+    _reject_unknown_arguments(QUEUE_EXECUTED, arguments, _EXECUTED_FIELDS)
+    tick, snapshot = await _stamp_cycle_snapshot(call_dfhack)
+    record = {
+        "kind": schema.EXECUTED, "role": role, "cycle": tick, "snapshot": snapshot,
+        **{k: arguments[k] for k in _EXECUTED_FIELDS if k in arguments},
+    }
+    written = await _append_locked(QUEUE_EXECUTED, record, db_path, None, write_lock)
+    return render.to_xml(written), written
 
 
 _HANDLERS = {
@@ -600,6 +792,9 @@ _HANDLERS = {
     QUEUE_PASS: _pass_,
     QUEUE_RULE: _rule,
     QUEUE_PENDING: _pending,
+    QUEUE_ASK: _ask,
+    QUEUE_ANSWER: _answer,
+    QUEUE_EXECUTED: _executed,
 }
 
 
