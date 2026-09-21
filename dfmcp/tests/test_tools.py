@@ -850,7 +850,8 @@ def test_scoped_descriptions_reach_the_schema(registry):
     assert counts["type"] == "array" and "never as 0" in counts["description"]
     # another script's KIND and W keep their own text, not the building tool's
     zone = _input_schema(registry.get("zone.find"))["properties"]
-    assert "water_source" in zone["kind"]["description"]
+    assert "zone.list-kinds" in zone["kind"]["description"]
+    assert "Only water_source exists" not in zone["kind"]["description"]
     open_area = _input_schema(registry.get("openarea.find"))["properties"]
     assert "footprint" not in open_area["w"]["description"].lower()
 

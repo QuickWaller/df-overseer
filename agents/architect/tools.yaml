@@ -184,6 +184,15 @@ read:
     note: >-
       Same handoff. Read-only both-sides check of one position.
 
+  - id: "zone.list-kinds"
+    status: exists
+    note: >-
+      Added handoffs/2026-09-21-zone-tool-generalise.md. Every zone kind the game can place.
+  - id: "zone.check-owner"
+    status: exists
+    note: >-
+      Same handoff. Read-only: whether a zone kind can be given this owner (a unit or a position).
+
 write:
   - id: "queue.propose"
     status: exists

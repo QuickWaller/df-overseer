@@ -763,7 +763,7 @@ df-overseer-zone.lua:
       effect: mutate
       coordinate_bearing: internal-only
       live_deployed: false
-      verified: "2026-09-21 (code and manifest only; the DRY_RUN path was NOT run live this session because the auto-mode classifier refused a live place call, and the real path has never been run: see handoffs/2026-09-21-zone-tool-generalise.md)"
+      verified: "2026-09-21 (DRY_RUN run live on VM 103 by the orchestrator from a scratch script path, fort paused and unchanged at tick 106974: Office with owner MANAGER gave quickfort validation ok with 1 zone and 9 tiles designated; Bedroom, Dining Hall and Water Source dry runs returned well-formed results, but their validation blocks were not read. The real placement, the read-back and both owner assignments have never been run: see handoffs/2026-09-21-zone-tool-generalise.md)"
       knowledge_scope: player_derivable
       notes: >
         Places one zone of KIND at the RANK-th site near a landmark. DRY_RUN

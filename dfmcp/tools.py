@@ -343,7 +343,30 @@ _ARG_DESCRIPTIONS: Dict[str, str] = {
         "for a fixed-size kind is an error."
     ),
     "zone.KIND": (
-        "The kind of zone. Only water_source exists so far."
+        "The zone kind, as zone.list-kinds gives it in its token field "
+        "(Office, Bedroom, DiningHall, WaterSource), or quickfort's key such "
+        "as o. Never the display label. The old water_source still works."
+    ),
+    "zone.W": (
+        "Width in tiles of the zone. Optional; give both W and H or neither. "
+        "Leave both out for the kind's default size (zone.list-kinds shows "
+        "it). Refused for WaterSource, whose shape follows the water."
+    ),
+    "zone.H": (
+        "Height in tiles of the zone. Optional; give both W and H or "
+        "neither. Leave both out for the kind's default size (zone.list-kinds "
+        "shows it). Refused for WaterSource, whose shape follows the water."
+    ),
+    "zone.OWNER": (
+        "Optional. A unit id (digits) or a position code (MANAGER, "
+        "BOOKKEEPER, SHERIFF). A code reserves the room for whoever holds "
+        "the role now or later; a vacant role leaves it suspended. Only "
+        "Bedroom, DiningHall, Office and Tomb can have an owner. Check first "
+        "with zone.check-owner. Needs RANK, RADIUS_TILES and DRY_RUN given "
+        "before it."
+    ),
+    "zone.FILTER": (
+        "Optional substring of a kind's token or label."
     ),
     "workshop.KIND": (
         "Which workshop: still, kitchen, mason, mechanic or carpenter."
