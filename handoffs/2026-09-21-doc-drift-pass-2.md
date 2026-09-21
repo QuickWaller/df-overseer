@@ -110,3 +110,57 @@ says something the facts above contradict (or it is named in the report as a jud
 call), the new traps are recorded, the suites still pass (baseline **891 passed /
 3 skipped** ambient, **537 passed** in `.venv-dfmcp`, report before and after), and
 the report lists every contradiction found and what was done about it.
+
+---
+
+## Report (executor, 2026-09-22, in progress)
+
+Baseline before any edit, measured in this worktree: ambient `python -m pytest`
+**891 passed / 3 skipped**; `.venv-dfmcp` `dfmcp/tests` **537 passed**.
+
+### 1. `scripts/dfhack/TOOLS.yaml` (done)
+
+Flags flipped to `live_deployed: true`, each from a deploy report, never from a
+doc summary:
+
+- building `list-kinds`, `find`, `build`; labor `enabled-counts`; zone
+  `list-kinds`, `find`, `check-owner`, `place`: all deployed and hash-verified 48 of 48 in
+  `handoffs/2026-09-21-deploy-building-batch.md`. `verified` strings extended only
+  with what that report ran after the deploy over a real MCP client (building:
+  list-kinds, find, dry-run build; enabled-counts: MASON 3, STONECUTTER 2, bad name
+  null; zone: list-kinds and check-owner). Zone `find` and `place` say plainly that
+  they were deployed but not called after the deploy. `build` and `place` keep
+  "real path UNTESTED". The nobles commands were already `true` and correct; the
+  `with_event` version is already noted untested. Nothing else changed.
+- `labor set-labor`: was `STALE` ("the deployed file still has the OLD racy code").
+  The 2026-09-21 deploy overwrote `df-overseer-labor.lua` with main's copy, hash-verified,
+  so the note now says it is no longer stale; `verified` stays `unverified` (no call after).
+- Beyond the brief, but the same kind of falsehood and each backed by a deploy
+  report: workshop `find`/`build` (deployed 2026-09-17), trees `find`/`fell`, well
+  `find`/`build` (2026-09-17, water-industry deploy), workjob `list`/`queue` (deployed
+  and run live 2026-09-19), stocks `availability` (deployed and run live 2026-09-19)
+  were all `false`. Flipped to `true`.
+
+Two commands could not be promoted to `verified`: `stocks availability` and `workjob
+queue` were both run live (BUCKET, both UNIT_HOLDER branches; one real blocks job),
+but `dfmcp/tests/test_registry.py::test_stocks_availability_is_read_derivable_and_unverified`
+and `dfmcp/tests/test_workjob_tool.py::test_workjob_queue_is_not_claimed_verified`
+pin `verified` as `unverified` (stale tripwires written for the offline builds). I
+left `verified: unverified` with a comment naming the evidence and the test. For the
+orchestrator: update the two tests, then set `verified` on both.
+
+Not flipped, and why (contradiction between reports, unresolved offline):
+farm (4 commands, still `false`, `verified` says "never deployed"), diggable
+`find-stair`/`dig-stair`, threat `scan`, breach `check`, and openarea (`STALE`).
+The 2026-09-17 deploy reports say farm, threat, breach, diggable and openarea were
+deployed and matched main by hash; the 2026-09-21 deploy report says 15
+`df-overseer-*.lua` files under DFHack's script directory (breach, chokepoints,
+connectivity, diff, diggable, farm, landmarks, openarea, orders, overview, stockpile,
+stuckjobs, threat, ui, and one more it names) differ from main in content, cause and
+direction unknown. So "the file is on the VM" is certain for them but "it is main's code"
+is not, and I did not promote `false` to `true` or demote to `STALE`. One read-only
+`sha256sum` sweep on the VM against `git -c core.autocrlf=false archive` settles it.
+
+Header comment on `live_deployed` updated to stop saying "all 10 files".
+Suites after: ambient 891 passed / 3 skipped; `dfmcp/tests` 461 passed / 3 skipped in the
+worktree's ambient python (the 537 is the `.venv-dfmcp` figure, re-measured at the end).
