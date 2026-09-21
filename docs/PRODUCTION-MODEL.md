@@ -123,7 +123,7 @@ CREATE TABLE material_reaction_product (
 CREATE TABLE production_process (
   id            TEXT PRIMARY KEY,  -- reaction code, e.g. 'BREW_DRINK_FROM_PLANT'
   workshop_node TEXT REFERENCES production_node(id),
-  labor         TEXT,
+  labor         TEXT,              -- a real unit_labor, or NULL when not derivable. NOT the raws' [SKILL] token: a skill is not a labor (corrected 2026-09-21, production/labors.py)
   is_hardcoded  INTEGER NOT NULL DEFAULT 0,
   source_ref    TEXT NOT NULL
 );

@@ -269,8 +269,8 @@ handoff before dispatching.
    (32 kinds; DFHack's material filters are its own tables, not the game's;
    the Mason's Workshop labor is STONECUTTER/STONE_CARVER, so the `mason`
    entry in `df-overseer-workshop.lua` is wrong). Allowlists granted (architect
-   30, overseer 51, consultant 12 on the merged tree). **Graph-labor stream
-   dispatched** (worktree, offline). **Open:** the manifest requires W and H
+   30, overseer 51, consultant 12 on the merged tree). **Graph-labor stream merged**
+   (`production/labors.py`, strict `known` rule: 2 known, 18 partial, 13 unknown of 33 kinds; the extractor no longer writes a skill into `labor`; 762 passed / 2 skipped ambient, 430 in the venv). **Open:** the manifest requires W and H
    and one labor per `enabled-counts` call because `dfmcp/tools.py` cannot
    express optional or repeated arguments (the user has not ruled: extend
    `tools.py`, or accept); nothing has really built a never-built kind; deploy
