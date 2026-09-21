@@ -127,9 +127,11 @@ from .dfhack_client import (
     DFHackConnectionPool,
     DFHackProtocolError,
 )
-from . import doctrine_tools, queue_tools, series_tools
+from . import doctrine_tools, gotchas_store, gotchas_tools, labor_join, queue_tools, series_tools
+from .confidence import DEFAULT_CONFIDENCE_PATH, ConfidenceConfig, load_confidence
 from .registry import Registry, load_registry
 from .roles import Roster, load_roster
+from .tool_guidance import ToolGuidance, enrich
 from .tools import ArgumentError, argv_for_call, build_tool_names, tool_definitions
 
 # Never dereferenced as a real network address -- see this module's
@@ -202,6 +204,9 @@ class ServerConfig:
     pool_size: int = 4
     doctrine_path: str = str(doctrine_tools.DEFAULT_DOCTRINE_PATH)
     series_db: str = series_tools.DEFAULT_SERIES_DB_PATH
+    gotchas_db: str = gotchas_tools.DEFAULT_GOTCHAS_DB_PATH
+    production_db: str = labor_join.DEFAULT_PRODUCTION_DB_PATH
+    confidence_path: str = str(DEFAULT_CONFIDENCE_PATH)
 
     def __post_init__(self) -> None:
         if not self.bind_host or not self.bind_host.strip():
@@ -231,6 +236,9 @@ _ENV_KEYS = {
     "pool_size": "MCP_SERVER_POOL_SIZE",
     "doctrine_path": "MCP_SERVER_DOCTRINE_PATH",
     "series_db": "MCP_SERVER_SERIES_DB",
+    "gotchas_db": "MCP_SERVER_GOTCHAS_DB",
+    "production_db": "MCP_SERVER_PRODUCTION_DB",
+    "confidence_path": "MCP_SERVER_CONFIDENCE_PATH",
 }
 
 _INT_FIELDS = {"bind_port", "dfhack_port", "pool_size"}
@@ -380,6 +388,19 @@ def _call_log_line(
     }
 
 
+def _run_id(ctx: ServerRequestContext) -> str:
+    """The stamp for "this run" on a gotcha write (its `run_id`, and what the
+    per-run write cap counts): the MCP session id. One `agent exec` is expected
+    to be one session; that is an assumption to confirm live, and if a client
+    reuses a session across runs the cap is simply stricter, never looser. A
+    request with no session id shares one bucket, so it can never dodge the
+    cap by omitting the header."""
+    request = getattr(ctx, "request", None)
+    headers = getattr(request, "headers", None)
+    session_id = headers.get("mcp-session-id") if headers is not None else None
+    return f"session-{session_id}" if session_id else "no-session"
+
+
 def _configure_call_log() -> None:
     """Send the call log to stderr as bare JSON lines. Under systemd that is
     journald, so the log reads back as JSONL with
@@ -397,6 +418,10 @@ def build_mcp_server(
     registry: Registry, roster: Roster, pool: DFHackConnectionPool, queue_db_path: Path,
     doctrine_path: Path = doctrine_tools.DEFAULT_DOCTRINE_PATH,
     series_db_path: str = series_tools.DEFAULT_SERIES_DB_PATH,
+    gotchas_db_path: str = gotchas_tools.DEFAULT_GOTCHAS_DB_PATH,
+    confidence: Optional[ConfidenceConfig] = None,
+    production_db_path: Optional[str] = None,
+    labors_for_kind=None,
 ) -> Server:
     """Build the low-level Server, wired to this registry/roster/pool.
 
@@ -434,9 +459,26 @@ def build_mcp_server(
     `dfmcp/queue_tools.py`'s own docstring, "SQLite runs off the event
     loop, and writes are serialised", for why this exists and why it is
     held only around `store.append`, never around the DFHack stamping call.
+
+    `gotchas_db_path`, `confidence`, `production_db_path` and
+    `labors_for_kind`, added `handoffs/2026-09-21-building-tool-server.md`:
+    `gotchas_db_path` is the SQLite file `dfmcp.gotchas_tools`' `gotchas.get`/
+    `gotchas.write` use (and the enrichment reads). **`confidence` is the
+    switch for result enrichment:** None (the default, so every older caller
+    and test is unchanged) adds nothing to any result; a loaded
+    `ConfidenceConfig` adds `tool_guidance` (level and gotcha titles) to every
+    DFHack-backed result, and `main()` always passes one. `production_db_path`
+    is the same kind of switch for the building tool's labor join
+    (`dfmcp/labor_join.py`): None leaves those results unjoined, a path joins
+    them, and an unreadable graph then reaches the agent as unknown, never as
+    an empty list. `labors_for_kind` injects the C2 function (tests); None uses
+    the real `production.labors.labors_for_kind`, imported lazily.
     """
     id_to_name, name_to_id = build_tool_names(registry)
     queue_write_lock = asyncio.Lock()
+    gotchas_write_lock = asyncio.Lock()
+    known_tool_ids = registry.ids()
+    guidance = ToolGuidance(confidence, gotchas_db_path) if confidence is not None else None
 
     async def _call_dfhack(tool_id: str, arguments: Mapping[str, Any]) -> Any:
         """The one DFHack call `dfmcp.queue_tools` needs (`overview.get`, to
@@ -460,6 +502,22 @@ def build_mcp_server(
         if isinstance(parsed, dict) and set(parsed) == {"error"} and isinstance(parsed["error"], str):
             raise DFHackCallError(parsed["error"])
         return parsed
+
+    async def _count_labors(labors: list) -> Any:
+        """C1's `labor.enabled-counts LABOR [LABOR...]`, for the labor join only.
+        Server bookkeeping, so it bypasses `Roster.check` (see
+        `dfmcp/labor_join.py`). Raises on any failure; the joiner turns that
+        into unknown, never into a zero count."""
+        raw = await pool.run_command("df-overseer-labor", ["enabled-counts", *labors])
+        parsed = json.loads(raw.strip())
+        if isinstance(parsed, dict) and set(parsed) == {"error"} and isinstance(parsed["error"], str):
+            raise DFHackCallError(parsed["error"])
+        return parsed
+
+    labor_joiner = (
+        labor_join.LaborJoin(production_db_path, _count_labors, labors_for_kind)
+        if production_db_path is not None else None
+    )
 
     async def _on_list_tools(
         ctx: ServerRequestContext, params: Optional[types.PaginatedRequestParams]
@@ -527,6 +585,12 @@ def build_mcp_server(
                         tool_id, role, params.arguments or {},
                         series_db_path=series_db_path,
                     )
+                elif tool_id in gotchas_tools.NATIVE_TOOL_IDS:
+                    text, structured = await gotchas_tools.call(
+                        tool_id, role, params.arguments or {},
+                        db_path=gotchas_db_path, known_tools=known_tool_ids,
+                        run_id=_run_id(ctx), write_lock=gotchas_write_lock,
+                    )
                 else:  # pragma: no cover -- every native id belongs to one of the above
                     raise AssertionError(f"native tool id {tool_id!r} has no owning module")
             except queue_tools.QueueToolError as exc:
@@ -535,12 +599,44 @@ def build_mcp_server(
                 return _tool_result_error(str(exc))
             except series_tools.SeriesToolError as exc:
                 return _tool_result_error(str(exc))
+            except gotchas_tools.GotchaToolError as exc:
+                return _tool_result_error(str(exc))
             return types.CallToolResult(
                 content=[types.TextContent(type="text", text=text)],
                 structuredContent=structured,
                 isError=False,
             )
 
+        result = await _run_dfhack_tool(tool, tool_id, params)
+        return await _enriched(tool_id, params.arguments or {}, result)
+
+    async def _enriched(
+        tool_id: str, arguments: Mapping[str, Any], result: types.CallToolResult
+    ) -> types.CallToolResult:
+        """The one additive hook for a DFHack-backed result (success, array or
+        error): adds `tool_guidance` and, for the building tool, the labor
+        join, per `dfmcp/tool_guidance.py`. A no-op unless configured. An
+        enrichment failure never fails the call: the tool's own result is
+        returned with a text block saying the guidance could not be attached."""
+        if guidance is None and labor_joiner is None:
+            return result
+        try:
+            structured, blocks = await enrich(
+                tool_id, arguments, result.structured_content, bool(result.is_error),
+                guidance=guidance, labor_join=labor_joiner,
+            )
+        except Exception as exc:  # enrichment must never fail a tool call
+            structured = result.structured_content
+            blocks = [f"tool guidance could not be attached to this result: {type(exc).__name__}: {exc}"]
+        return types.CallToolResult(
+            content=[*result.content, *[types.TextContent(type="text", text=b) for b in blocks]],
+            structuredContent=structured,
+            isError=result.is_error,
+        )
+
+    async def _run_dfhack_tool(
+        tool: Any, tool_id: str, params: types.CallToolRequestParams
+    ) -> types.CallToolResult:
         try:
             argv = argv_for_call(tool, params.arguments or {})
         except ArgumentError as exc:
@@ -680,7 +776,10 @@ def build_asgi_app(server: Server, tokens: Mapping[str, str], bind_host: str):
 # --------------------------------------------------------------------------
 
 
-async def _serve(config: ServerConfig, registry: Registry, roster: Roster, tokens: Mapping[str, str]) -> None:
+async def _serve(
+    config: ServerConfig, registry: Registry, roster: Roster, tokens: Mapping[str, str],
+    confidence: Optional[ConfidenceConfig] = None,
+) -> None:
     import uvicorn
 
     pool = DFHackConnectionPool(host=config.dfhack_host, port=config.dfhack_port, size=config.pool_size)
@@ -688,7 +787,7 @@ async def _serve(config: ServerConfig, registry: Registry, roster: Roster, token
     try:
         server = build_mcp_server(
             registry, roster, pool, Path(config.queue_db), Path(config.doctrine_path),
-            config.series_db,
+            config.series_db, config.gotchas_db, confidence, config.production_db,
         )
         app = build_asgi_app(server, tokens, config.bind_host)
         uvicorn_config = uvicorn.Config(app, host=config.bind_host, port=config.bind_port, log_level="info")
@@ -707,10 +806,16 @@ def main() -> None:
     config = load_config()
     registry = load_registry(native_tools={
         **queue_tools.NATIVE_TOOLS, **doctrine_tools.NATIVE_TOOLS, **series_tools.NATIVE_TOOLS,
+        **gotchas_tools.NATIVE_TOOLS,
     })
     roster = load_roster(registry)
     tokens = load_role_tokens(roster)
-    asyncio.run(_serve(config, registry, roster, tokens))
+    # Both fail loudly at startup, never at first use: a confidence file naming a
+    # tool that does not exist, and an absent or malformed gotcha store.
+    confidence = load_confidence(config.confidence_path)
+    confidence.validate_against(registry.ids())
+    gotchas_store.check_store(config.gotchas_db)
+    asyncio.run(_serve(config, registry, roster, tokens, confidence))
 
 
 if __name__ == "__main__":

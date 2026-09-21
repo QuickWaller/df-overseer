@@ -22,6 +22,7 @@ from dfmcp.queue_tools import NATIVE_TOOLS
 from dfmcp.registry import load_registry
 from dfmcp.roles import load_roster
 from dfmcp.series_tools import NATIVE_TOOLS as SERIES_NATIVE_TOOLS
+from dfmcp.gotchas_tools import NATIVE_TOOLS as GOTCHAS_NATIVE_TOOLS
 from dfmcp.tools import argv_for_call, build_tool_names, tool_definitions
 
 
@@ -32,7 +33,7 @@ def registry():
     # files, which still grant queue.*/doctrine.get/series.* alongside the
     # new workjob.* ids this stream adds.
     return load_registry(
-        native_tools={**NATIVE_TOOLS, **DOCTRINE_NATIVE_TOOLS, **SERIES_NATIVE_TOOLS}
+        native_tools={**NATIVE_TOOLS, **DOCTRINE_NATIVE_TOOLS, **SERIES_NATIVE_TOOLS, **GOTCHAS_NATIVE_TOOLS}
     )
 
 
@@ -89,7 +90,7 @@ def test_workjob_queue_argument_signature_matches_the_lua_dispatch():
     test_tools.py's own module docstring pins W/H/LEVEL/etc against each
     owning script's dispatch code."""
     reg = load_registry(
-        native_tools={**NATIVE_TOOLS, **DOCTRINE_NATIVE_TOOLS, **SERIES_NATIVE_TOOLS}
+        native_tools={**NATIVE_TOOLS, **DOCTRINE_NATIVE_TOOLS, **SERIES_NATIVE_TOOLS, **GOTCHAS_NATIVE_TOOLS}
     )
     tool = reg.get("workjob.queue")
     tokens = [t.strip("[]") for t in tool.args]
