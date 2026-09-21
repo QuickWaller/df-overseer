@@ -1,28 +1,83 @@
-# Quartermaster tool allowlist. Deliberately minimal.
+# Quartermaster tool allowlist.
 #
 # Ids are the canonical scheme resolved against scripts/dfhack/TOOLS.yaml by
 # dfmcp/registry.py: see dfmcp/README.md for the scheme (strip df-overseer-/.lua,
 # take the command's leading verb, join with a dot).
 #
-# NOTE (handoffs/2026-09-18-lever-gap-tools.md): this file did not exist
-# before that stream. role.md used to say "No tools.yaml... yet,
-# deliberately: writing an allowlist of tools that do not exist would imply
-# a capability this project does not have." That reasoning held, since
-# stockpile.list/stockpile.links are real, deployed tools, not aspirational
-# ones. role.md's own opening was corrected afterwards and now says a
-# tools.yaml exists (checked 2026-09-22).
+# UPDATED handoffs/2026-09-22-loop-queue-quartermaster.md: this role is
+# enabled for the agent-loop MVP (user's call, 2026-09-22) with a real
+# three-type proposal vocabulary (work_order, crop_plan, stock_target;
+# dfqueue.schema.TYPE_VOCAB_BY_ROLE["quartermaster"]). It is an advisor,
+# same shape as the Architect: it proposes, it never acts, so its own
+# write: section holds only queue writes (to dfqueue's own ledger, never
+# the fort), never a fort-mutating tool. **agents/ROSTER.yaml still has
+# `enabled: false`** -- flipping it is the orchestrator's job at merge, not
+# this stream's file -- so this allowlist takes effect only once that flip
+# happens; dfmcp/tests/test_quartermaster_roster_enabled.py proves it would
+# load cleanly under dfmcp.roles if it were enabled today.
 #
-# This role stays `enabled: false` in agents/ROSTER.yaml (unchanged by this
-# stream -- that is a bigger decision than one tool grant). Everything else
-# this role would need (work-order priority, stock thresholds, the
-# autolabor race) is still unbuilt, per role.md's own "Would own"/"Traps"
-# sections -- this file grants only what now genuinely exists.
+# Read set: enough to write all three proposal types without a raw
+# coordinate -- stock levels (a par level or cover-day target needs to see
+# today's count first), manager orders and the direct-workshop-job route
+# (both are what work_order proposes), and farm plots (crop_plan). Trimmed
+# to what those three types actually need, same discipline as every other
+# role's allowlist here (role.md's own "Would own" list, not a browse of
+# everything that exists).
 
 schema_version: 1
 role: quartermaster
-write_authority: none
+write_authority: none      # enforced: this role has no FORT-mutating action tool
+                            # at all (Tool.mutates stays strictly "mutates fort
+                            # state" -- dfmcp/roles.py rule 2). queue.propose/
+                            # queue.pass/queue.ask below ARE writes, but to
+                            # dfqueue's own ledger, never to the fort.
 
 read:
+  - id: "overview.get"
+    status: exists
+    note: Enough situational context to ground a proposal, same as every other advisor.
+  - id: "stocks.food-drink"
+    status: exists
+    note: >-
+      Fort-owned (never caravan-owned) drink/prepared-meal/raw-edible counts.
+      The core signal for "is food or drink security actually at risk".
+  - id: "stocks.seeds"
+    status: exists
+    note: >-
+      Fort-owned seed counts by plant. A fort that eats its last plump helmet
+      seeds has lost farming permanently -- role.md's own opening line.
+  - id: "stocks.availability"
+    status: exists
+    note: >-
+      Per-item-type netted availability (six deductions), any
+      `df.global.world.items.other` key. What a stock_target proposal reads
+      before proposing a par level for a named item class -- generalises
+      past the two fixed food-drink buckets above.
+  - id: "orders.list"
+    status: exists
+    note: >-
+      Pending manager orders plus whether a Manager is currently appointed.
+      Read this before proposing a work_order: a queued order this fort
+      already has does not need a second one.
+  - id: "workjob.list"
+    status: exists
+    note: >-
+      Read-only job vocabulary (blocks/mechanisms/brew_drink) for the direct-
+      workshop-job route, the honest alternative when a manager order stalls
+      (this fort's own history: queued manager orders do not currently run).
+  - id: "farm.list"
+    status: exists
+    note: >-
+      Every built farm plot with its id and per-season crop. Read before
+      proposing a crop_plan: what a plot grows now is the baseline a change
+      is measured against.
+  - id: "farm.find"
+    status: exists
+    note: >-
+      Candidate farm-plot floor near a landmark, tagged outside/inside and
+      the fort-owned seeds actually valid there. Useful context for a
+      crop_plan proposal even though this role never sites a NEW plot
+      (that is the Architect's, per role.md's own "Would NOT own").
   - id: "stockpile.list"
     status: exists
     note: >-
@@ -40,10 +95,7 @@ read:
       Added handoffs/2026-09-19-series-mcp-tools.md. The fort's own recorded
       history (dfseries/), read-only. docs/TIMESERIES.md's design names this
       role as owning inventory and production trends by agreed design (the
-      Overseer arbitrates, the Consultant fact-checks); granted here even
-      while this role stays disabled (see role.md, "not enabled... blocked
-      on tools, not on a decision"), so enabling it later is a config
-      change, not a fresh allowlist decision.
+      Overseer arbitrates, the Consultant fact-checks).
   - id: "series.get"
     status: exists
     note: Same handoff and reasoning as series.timelines above.
@@ -64,19 +116,70 @@ read:
       drink security" ownership needs, though it currently rests on 1
       event over 207 dwarf-days -- not yet a rate to plan against.
 
+  - id: "gotchas.get"
+    status: exists
+    note: >-
+      Known hazards for a tool, each titled by its condition. Same access
+      every other advisor holds (agents/CONFIDENCE-LEGEND.md).
+  - id: "gotchas.write"
+    status: exists
+    note: >-
+      Records a proposed gotcha, or an outcome on an existing one. Same
+      access the Architect holds; this role calls just as many never-
+      built-for-real tools (work_order/crop_plan/stock_target) as the
+      Architect does, so it needs the same feedback channel.
+
+write:
+  - id: "queue.propose"
+    status: exists
+    note: >-
+      The only route into the queue: a specialist cannot emit prose into it
+      (docs/AGENT-ARCHITECTURE.md §4). Writes to dfqueue's own SQLite ledger,
+      never to the fort. Closed `type` vocabulary: work_order, crop_plan,
+      stock_target (dfqueue.schema.TYPE_VOCAB_BY_ROLE["quartermaster"]).
+  - id: "queue.pass"
+    status: exists
+    note: >-
+      An explicit decline, recorded rather than silently doing nothing --
+      same reasoning as agents/architect/tools.yaml's own entry.
+  - id: "queue.ask"
+    status: exists
+    note: >-
+      Added handoffs/2026-09-22-loop-queue-quartermaster.md (docs/
+      AGENT-LOOP.md item 7). A lookup question to the Consultant, e.g. "does
+      an item-quality drop change what counts as a par level". This role
+      never routes a fact-check itself (fact-checking a PROPOSAL is the
+      Overseer's own move before ruling, not an advisor's).
+
 deny:
   - id: "orders.create"
-    reason: >-
-      This role is not enabled and holds no write authority regardless
-      (see ROSTER.yaml). Listed explicitly, not left implicit, since
-      work orders are squarely this role's future domain per role.md.
+    reason: Advisors do not act. Propose a work_order instead.
   - id: "orders.cancel"
     reason: Same as orders.create above.
   - id: "workjob.queue"
     reason: >-
-      Added handoffs/2026-09-19-workshop-add-job.md. Same as orders.create
-      above (this role is not enabled and holds no write authority
-      regardless): the direct-workshop-job route is, if anything, more
-      squarely this role's future domain than manager orders are (brewing
-      is literally "food and drink security"), so it is listed explicitly
-      rather than left an implicit gap.
+      Same as orders.create above -- the direct-workshop-job route is, if
+      anything, more squarely this role's future domain than manager orders
+      are (brewing is literally "food and drink security"), so it is listed
+      explicitly rather than left an implicit gap.
+  - id: "farm.build"
+    reason: >-
+      Siting a NEW farm plot is the Architect's (role.md, "Would NOT own":
+      "Where anything physically goes"). This role proposes what an
+      EXISTING plot grows (crop_plan), never where a new one goes.
+  - id: "farm.set-crop"
+    reason: Advisors do not act. Propose a crop_plan instead.
+  - id: "labor.set-labor"
+    reason: >-
+      Not this role's domain (role.md, "Would NOT own": "Labor assignment
+      as a routine lever"), and it races autolabor regardless -- no
+      set_labor proposal type exists for exactly this reason
+      (handoffs/2026-09-22-loop-queue-quartermaster.md, "Why").
+  - id: "ui.*"
+    reason: Embark bootstrap only. No role should use this in steady-state play.
+  - id: "doctrine.get"
+    reason: >-
+      Same reasoning as agents/architect/tools.yaml's own entry: the agreed
+      design for how a proposal cites doctrine has no field in dfqueue.schema
+      yet, so granting read access now would be an unenforced convention.
+      Revisit when that field exists.

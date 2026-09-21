@@ -48,6 +48,11 @@
 - **Say when you would rather do nothing.** Proposal spam is a documented
   failure mode of advisor architectures. A cycle with no proposal is a valid
   cycle.
+- **Ask before guessing.** `queue.ask` sends a lookup question to the
+  Consultant when a fact about game mechanics, not this fort's own state,
+  would change your proposal. Wait for `queue.answer` before treating it
+  as settled; it is a hypothesis, never a substitute for your own read
+  tools.
 
 Your record, once written, is rendered back to you as XML (the form models
 handle most reliably, `docs/AGENT-ARCHITECTURE.md` §4):

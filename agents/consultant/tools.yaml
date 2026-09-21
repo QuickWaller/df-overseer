@@ -12,7 +12,7 @@
 
 schema_version: 1
 role: consultant
-write_authority: none
+write_authority: none  # no fort-mutating tool; queue.answer writes only to dfqueue's own ledger
 
 read:
   - id: "overview.get"
@@ -136,6 +136,22 @@ read:
   - id: "dfhack.source_read"
     status: exists
     note: Same handoff and reasoning as dfhack.source_search above.
+
+  - id: "queue.pending"
+    status: exists
+    note: >-
+      Added handoffs/2026-09-22-loop-queue-quartermaster.md. For this role
+      it returns open asks (no answer yet), not pending proposals:
+      dfmcp/queue_tools.py's pending branches on role.
+
+write:
+  - id: "queue.answer"
+    status: exists
+    note: >-
+      Added handoffs/2026-09-22-loop-queue-quartermaster.md (docs/
+      AGENT-LOOP.md item 7). Answers one open ask; one answer per ask,
+      enforced at write time (dfqueue.store). Answers are hypotheses,
+      never overriding a graded prediction.
 
 planned:
   - id: "queue.propose"

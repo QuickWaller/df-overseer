@@ -9,8 +9,13 @@ from __future__ import annotations
 
 import copy
 
+import pytest
+
 from dfqueue import schema
-from dfqueue.tests._helpers import make_pass, make_proposal, make_ruling
+from dfqueue.tests._helpers import (
+    make_answer, make_ask, make_executed, make_pass, make_proposal,
+    make_ruling,
+)
 
 
 def _errors_mentioning(errors: list[str], substring: str) -> list[str]:
@@ -350,7 +355,8 @@ def test_prediction_boolean_value_against_a_boolean_signal_is_accepted():
 
 
 def test_disabled_role_is_refused():
-    record = make_pass(role="quartermaster")
+    # marshal: still disabled in agents/ROSTER.yaml (quartermaster was enabled 2026-09-22).
+    record = make_pass(role="marshal")
     errors = schema.validate(record)
     assert _errors_mentioning(errors, "not an enabled role")
 
@@ -369,3 +375,169 @@ def test_validate_does_not_mutate_its_argument():
     before = copy.deepcopy(record)
     schema.validate(record)
     assert record == before
+
+
+# ---- executed -----------------------------------------------------------------
+
+
+def test_valid_executed_validates_clean():
+    assert schema.validate(make_executed()) == []
+
+
+def test_executed_requires_ruling_id():
+    record = make_executed()
+    del record["ruling_id"]
+    errors = schema.validate(record)
+    assert _errors_mentioning(errors, "record.ruling_id: required")
+
+
+def test_executed_requires_a_non_empty_actions_list():
+    errors = schema.validate(make_executed(actions=[]))
+    assert _errors_mentioning(errors, "record.actions: expected a non-empty list")
+
+
+def test_executed_action_outcome_must_be_success_or_failure():
+    record = make_executed(actions=[{"tool": "workshop.build", "outcome": "maybe"}])
+    errors = schema.validate(record)
+    assert _errors_mentioning(errors, "record.actions.0.outcome")
+
+
+def test_executed_a_failed_action_is_a_valid_record():
+    record = make_executed(actions=[
+        {"tool": "workshop.build", "outcome": "failure", "detail": "precondition stale"},
+    ])
+    assert schema.validate(record) == []
+
+
+def test_executed_action_detail_is_coordinate_scanned():
+    record = make_executed(actions=[
+        {"tool": "workshop.build", "outcome": "failure", "detail": "stalled at x=12"},
+    ])
+    errors = schema.validate(record)
+    assert _errors_mentioning(errors, "raw-coordinate pattern")
+
+
+def test_executed_requires_notes():
+    record = make_executed()
+    del record["notes"]
+    errors = schema.validate(record)
+    assert _errors_mentioning(errors, "record.notes: required")
+
+
+def test_executed_only_the_sole_writer_may_write_one():
+    record = make_executed(role="architect")
+    errors = schema.validate(record)
+    assert _errors_mentioning(errors, "only the roster's sole_writer")
+
+
+# ---- ask ------------------------------------------------------------------------
+
+
+def test_valid_ask_validates_clean():
+    assert schema.validate(make_ask()) == []
+
+
+def test_ask_with_a_proposal_id_validates_clean():
+    assert schema.validate(make_ask(role="overseer", proposal_id="proposal-0001")) == []
+
+
+def test_ask_requires_a_question():
+    record = make_ask()
+    del record["question"]
+    errors = schema.validate(record)
+    assert _errors_mentioning(errors, "record.question: required")
+
+
+def test_ask_question_is_coordinate_scanned():
+    errors = schema.validate(make_ask(question="What happens at (4, 9, -2)?"))
+    assert _errors_mentioning(errors, "raw-coordinate pattern")
+
+
+@pytest.mark.parametrize("role", ["consultant", "marshal", "chronicler"])
+def test_ask_is_refused_from_a_role_outside_the_closed_set(role):
+    # consultant is enabled but not an asker (it answers); marshal/chronicler
+    # are disabled, so both the role-restriction and enabled-role checks
+    # would fire -- assert on the ask-specific one here.
+    record = make_ask(role=role)
+    errors = schema.validate(record)
+    assert _errors_mentioning(errors, "may write an ask")
+
+
+# ---- answer ---------------------------------------------------------------------
+
+
+def test_valid_answer_validates_clean():
+    assert schema.validate(make_answer()) == []
+
+
+def test_answer_requires_ask_id():
+    record = make_answer()
+    del record["ask_id"]
+    errors = schema.validate(record)
+    assert _errors_mentioning(errors, "record.ask_id: required")
+
+
+def test_answer_requires_answer_text():
+    record = make_answer()
+    del record["answer"]
+    errors = schema.validate(record)
+    assert _errors_mentioning(errors, "record.answer: required")
+
+
+def test_answer_is_refused_from_any_role_but_consultant():
+    record = make_answer(role="architect")
+    errors = schema.validate(record)
+    assert _errors_mentioning(errors, "only 'consultant' may write an answer")
+
+
+# ---- the quartermaster's type vocabulary --------------------------------------
+#
+# agents/ROSTER.yaml still has quartermaster `enabled: false`
+# (handoffs/2026-09-22-loop-queue-quartermaster.md: "Do not flip enabled in
+# ROSTER.yaml", that is the orchestrator's job at merge), so a real proposal
+# from this role is refused on the enabled-role check regardless of its
+# type. These tests isolate the type-vocabulary question by monkeypatching
+# `schema.enabled_roles` directly (never `_load_roster`'s lru_cache, so the
+# real on-disk roster is never touched and no other test can be affected).
+
+
+def test_quartermaster_type_vocabulary_is_the_three_mvp_types():
+    assert schema.TYPE_VOCAB_BY_ROLE["quartermaster"] == (
+        schema.WORK_ORDER, schema.CROP_PLAN, schema.STOCK_TARGET,
+    )
+
+
+@pytest.mark.parametrize("ptype", [
+    schema.WORK_ORDER, schema.CROP_PLAN, schema.STOCK_TARGET,
+])
+def test_quartermaster_proposal_with_an_own_type_only_fails_on_enabled_role(
+    monkeypatch, ptype,
+):
+    monkeypatch.setattr(
+        schema, "enabled_roles",
+        lambda: frozenset({"architect", "overseer", "consultant", "quartermaster"}),
+    )
+    record = make_proposal(role="quartermaster", type=ptype)
+    assert schema.validate(record) == []
+
+
+def test_quartermaster_proposal_with_an_architect_type_is_refused_even_once_enabled(
+    monkeypatch,
+):
+    monkeypatch.setattr(
+        schema, "enabled_roles",
+        lambda: frozenset({"architect", "overseer", "consultant", "quartermaster"}),
+    )
+    record = make_proposal(role="quartermaster", type=schema.WORKSHOP_SITING)
+    errors = schema.validate(record)
+    assert _errors_mentioning(errors, "not in the proposal-type vocabulary")
+
+
+def test_quartermaster_proposal_is_accepted_by_the_real_on_disk_roster_today():
+    """Confirms the actual state, unmocked: quartermaster was enabled in
+    agents/ROSTER.yaml on 2026-09-22 (agent loop MVP), so its role check
+    passes. Other fields of this helper-built record may still be refused;
+    only the role check is asserted here."""
+    record = make_proposal(role="quartermaster", type=schema.WORK_ORDER)
+    errors = schema.validate(record)
+    assert not _errors_mentioning(errors, "not an enabled role")

@@ -367,7 +367,36 @@ write:
       own sole-writer check at write time -- two independent layers. The
       Overseer never holds queue.propose: its type vocabulary is empty by
       design (it rules on proposals, it never writes one -- §3, "Specialists
-      propose, the Overseer decides").
+      propose, the Overseer decides"). Refused (dfqueue.store) while an open
+      fact-check (see queue.ask below) is on the proposal you name.
+  - id: "queue.ask"
+    status: exists
+    note: >-
+      Added handoffs/2026-09-22-loop-queue-quartermaster.md (docs/
+      AGENT-LOOP.md item 7). Two distinct uses of the one tool: a plain
+      lookup question (no proposal_id), same as any advisor's own ask; or a
+      FACT-CHECK (proposal_id set to an existing proposal) that blocks
+      queue.rule on that proposal until queue.answer closes it -- the
+      2026-09-17 exception, distinct from the 2026-09-15 one. Route a
+      proposal for fact-checking only when you would otherwise rule on a
+      claim you cannot verify from your own read tools; it costs a full
+      cycle (this ask must be answered before the ruling can land).
+  - id: "queue.executed"
+    status: exists
+    note: >-
+      Added same handoff (docs/AGENT-LOOP.md item 4). Records that an
+      accepted ruling was carried out: the tool ids called and each one's
+      outcome (a failed execution is a valid, required record), plus
+      free-text notes. Restricted to the roster's sole_writer the same way
+      queue.rule is (dfmcp/roles.py rule 6, reusing sole_writer_only).
+      **This is what starts the proposal's prediction grading window** --
+      it now runs from THIS call's own stamped game tick, never from the
+      proposal's original write time (the gap that let proposal-0001's
+      window elapse before anything could act on it). Call it once you
+      have actually attempted the accepted proposal's action, whether or
+      not every individual tool call inside it succeeded; an accepted
+      proposal with no queue.executed record yet is reported as
+      unexecuted, never silently graded as a miss.
 
   - id: "building.build"
     status: exists

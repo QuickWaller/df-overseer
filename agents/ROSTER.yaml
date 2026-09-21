@@ -64,17 +64,9 @@ roles:
   # ---- config change, per §11. Each is blocked on tools, not on a decision.
 
   quartermaster:
-    enabled: false
+    enabled: true             # enabled 2026-09-22 for the agent loop MVP (user's call, docs/AGENT-LOOP.md)
     dir: quartermaster
     kind: advisor
-    blocked_on: >-
-      Little tool surface exists. Manager work orders now have tools
-      (`orders.list`/`create`/`cancel`, deployed 2026-09-17, and the direct
-      `workjob` route, deployed 2026-09-19), though queued manager orders still do
-      not run on this fort. Stockpiles have two read-only tools (`stockpile.list`,
-      `stockpile.links`) and nothing changes stockpile settings (filters,
-      thresholds, links). DFHack's own `stocks`/`workflow` are unavailable on
-      this install. `workorder.lua` IS present and callable.
     summary: Food, drink, seeds, work orders, stock thresholds.
 
   marshal:

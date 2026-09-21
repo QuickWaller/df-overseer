@@ -615,9 +615,11 @@ class TestQueueTools:
         assert {"queue__rule", "queue__pending"} <= overseer_names
         assert not ({"queue__propose", "queue__pass"} & overseer_names)
 
-        assert not (
-            {"queue__propose", "queue__pass", "queue__rule", "queue__pending"} & consultant_names
-        )
+        # Updated 2026-09-22 (handoffs/2026-09-22-loop-queue-quartermaster.md):
+        # the consultant now reads its open asks and answers them, and still
+        # never proposes, passes or rules.
+        assert {"queue__pending", "queue__answer"} <= consultant_names
+        assert not ({"queue__propose", "queue__pass", "queue__rule"} & consultant_names)
 
     async def test_propose_writes_a_record_stamped_with_the_live_game_tick(
         self, registry, roster, pool, fake_dfhack, tmp_path

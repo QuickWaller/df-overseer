@@ -53,7 +53,10 @@ from typing import Iterator
 
 from learning.predictions.schema import PENDING
 
-from .schema import ACCEPT, PROPOSAL, REJECT, RULING, fort_name, validate
+from .schema import (
+    ACCEPT, ANSWER, ASK, EXECUTED, PROPOSAL, REJECT, RULING, fort_name,
+    sole_writer, validate,
+)
 
 #: A ruling's `decision` values that close a proposal for good. `defer`
 #: ("decide later") is deliberately excluded: a proposal ruled only `defer`
@@ -62,7 +65,16 @@ from .schema import ACCEPT, PROPOSAL, REJECT, RULING, fort_name, validate
 #: FINAL ruling lands, no further ruling on that proposal is accepted.
 FINAL_DECISIONS = (ACCEPT, REJECT)
 
-SCHEMA_VERSION = 1
+#: A proposal's prediction status before any `executed` record has armed
+#: it -- distinct from (and never confused with) `learning.predictions.
+#: schema.PENDING`, which here means "armed and awaiting its due tick".
+#: Never `_load_roster`'d or otherwise touched by `learning/predictions/`,
+#: which this module deliberately does not extend (not a touched surface
+#: of `handoffs/2026-09-22-loop-queue-quartermaster.md`); kept local to
+#: `dfqueue` instead. See "Execution arms the prediction" below.
+AWAITING_EXECUTION = "awaiting_execution"
+
+SCHEMA_VERSION = 2
 
 DEFAULT_DIR = Path(__file__).resolve().parent
 
@@ -95,11 +107,24 @@ CREATE TABLE IF NOT EXISTS predictions (
     status TEXT NOT NULL,
     actual_value TEXT,
     graded_at TEXT,
-    grade_note TEXT
+    grade_note TEXT,
+    check_after_ticks INTEGER
 );
 
 CREATE INDEX IF NOT EXISTS idx_predictions_pending_due ON predictions(status, due_game_tick);
 """
+
+#: Schema migrations, keyed by the version they upgrade FROM. Applied in
+#: order by `_ensure_schema` for any database opened below `SCHEMA_VERSION`.
+#: See "Migrating a v1 database" below for what each one does and why a
+#: migration, not a hard refusal, is the right shape here.
+_MIGRATIONS: dict[int, str] = {
+    1: """
+    ALTER TABLE predictions ADD COLUMN check_after_ticks INTEGER;
+    UPDATE predictions SET check_after_ticks = due_game_tick - registered_game_tick
+        WHERE check_after_ticks IS NULL;
+    """,
+}
 
 
 class QueueError(Exception):
@@ -111,15 +136,49 @@ def default_path(fort: str | None = None) -> Path:
 
 
 def _ensure_schema(conn: sqlite3.Connection) -> None:
+    """Create the schema if this is a fresh database, or migrate an older
+    one forward. `CREATE TABLE IF NOT EXISTS` above already gives a fresh
+    database the current `predictions.check_after_ticks` column for free;
+    the migration path below is what an EXISTING v1 database (already has
+    `predictions`, without that column) actually needs.
+
+    ## Migrating a v1 database
+
+    `docs/AGENT-LOOP.md` item 4 changes what a proposal's prediction
+    `status` means: `AWAITING_EXECUTION` (new, this stream) until a
+    `queue.executed` record arms it, then `learning.predictions.schema.
+    PENDING` with `due_game_tick` computed from the EXECUTION tick, not the
+    proposal's own write tick. A v1 database's existing rows were written
+    under the OLD rule (`due_game_tick` already computed at write time,
+    `status` already `pending`/`graded_true`/`graded_false`/
+    `unresolvable`) — this migration does not, and must not, reinterpret
+    them: their `due_game_tick` keeps its original write-time meaning
+    (a compatible default, not a reinterpretation, per this stream's own
+    "keep existing records readable" requirement), and only NEWLY appended
+    proposals get the new `AWAITING_EXECUTION`-until-armed behaviour. The
+    migration's only job is to backfill `check_after_ticks` for old rows
+    (`due_game_tick - registered_game_tick`, the value that was implicit
+    in those two columns all along) so `store.append()`'s `EXECUTED`
+    handling below has one column to read regardless of which schema
+    version wrote a given prediction row.
+    """
     conn.executescript(_SCHEMA_SQL)
     row = conn.execute("SELECT version FROM schema_version").fetchone()
     if row is None:
         conn.execute("INSERT INTO schema_version (version) VALUES (?)", (SCHEMA_VERSION,))
         conn.commit()
-    elif row["version"] != SCHEMA_VERSION:
+        return
+
+    version = row["version"]
+    if version < SCHEMA_VERSION:
+        for v in range(version, SCHEMA_VERSION):
+            conn.executescript(_MIGRATIONS[v])
+        conn.execute("UPDATE schema_version SET version = ?", (SCHEMA_VERSION,))
+        conn.commit()
+    elif version != SCHEMA_VERSION:
         raise QueueError(
             f"database is schema_version {row['version']}, this code is "
-            f"{SCHEMA_VERSION}"
+            f"{SCHEMA_VERSION} (newer database, older code)"
         )
 
 
@@ -150,6 +209,17 @@ def _proposal_id_already_flagged(errors: list[str]) -> bool:
     return any(e.startswith("record.proposal_id:") for e in errors)
 
 
+def _ruling_id_already_flagged(errors: list[str]) -> bool:
+    """Same idea as `_proposal_id_already_flagged`, for `executed`'s own
+    `ruling_id`."""
+    return any(e.startswith("record.ruling_id:") for e in errors)
+
+
+def _ask_id_already_flagged(errors: list[str]) -> bool:
+    """Same idea again, for `answer`'s own `ask_id`."""
+    return any(e.startswith("record.ask_id:") for e in errors)
+
+
 def _insert_record(conn: sqlite3.Connection, record: dict) -> None:
     conn.execute(
         "INSERT INTO records (id, ts, kind, role, cycle, type, proposal_id, payload) "
@@ -164,19 +234,33 @@ def _insert_record(conn: sqlite3.Connection, record: dict) -> None:
 
 def _insert_prediction(
     conn: sqlite3.Connection, *, record_id: str, signal: str, op: str, value,
-    registered_game_tick: int, due_game_tick: int,
+    registered_game_tick: int, due_game_tick: int, check_after_ticks: int,
 ) -> None:
     """A separate, monkeypatchable function on purpose: `dfqueue/tests/
     test_store.py` patches this to raise between the two inserts `append()`
     makes for a proposal, to prove the transaction is really atomic rather
-    than just documented as such."""
+    than just documented as such.
+
+    `status` is always `AWAITING_EXECUTION` at insert time now (`docs/
+    AGENT-LOOP.md` item 4): `due_game_tick` is stored as a same-shaped
+    integer for the NOT NULL column and for anyone reading the row before
+    it is armed, but it is provisional (`registered_game_tick +
+    check_after_ticks`, i.e. computed as if execution happened
+    immediately) until the first `executed` record referencing this
+    proposal's ruling recomputes it from the real execution tick -- see
+    "Execution arms the prediction" on `append()` below. `pending_due()`
+    never returns a row whose status is `AWAITING_EXECUTION` regardless of
+    what `due_game_tick` currently holds, since it filters on `status =
+    PENDING` (`learning.predictions.schema`'s constant) — the provisional
+    value is inert until arming flips the status.
+    """
     conn.execute(
         "INSERT INTO predictions (record_id, signal, op, value, registered_game_tick, "
-        "due_game_tick, status, actual_value, graded_at, grade_note) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        "due_game_tick, status, actual_value, graded_at, grade_note, check_after_ticks) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         (
             record_id, signal, op, json.dumps(value), registered_game_tick, due_game_tick,
-            PENDING, None, None, None,
+            AWAITING_EXECUTION, None, None, None, check_after_ticks,
         ),
     )
 
@@ -188,15 +272,29 @@ def append(record: dict, path: str | Path, *, game_tick: int | None = None) -> d
 
     `game_tick` is the fort's current absolute in-game tick
     (`grade.game_tick_from_overview`), required for a `proposal` (its
-    prediction's `due_game_tick` is `game_tick + check_after_ticks`) and
-    ignored for `pass`/`ruling`, which carry no prediction.
+    prediction's provisional `due_game_tick` is `game_tick +
+    check_after_ticks` — see `_insert_prediction`) and ignored for every
+    other kind, none of which carry a prediction of their own. An
+    `executed` record's own execution tick is its `cycle` field (already
+    stamped the same way every record's `cycle` is, by the caller — see
+    `dfmcp/queue_tools.py`'s "cycle/snapshot" docstring section), not a
+    second `game_tick` kwarg.
 
-    Two checks need the rest of the queue and so cannot live in
+    Checks that need the rest of the queue and so cannot live in
     `schema.validate()`, which is stateless per record:
     - a fresh record's `id` must not collide with one already in the
       database;
-    - a `ruling`'s `proposal_id` must name a `proposal` already there.
-    Both are checked here, against the open connection, before anything is
+    - a `ruling`'s `proposal_id` must name a `proposal` already there, and
+      that proposal must not already have a final ruling;
+    - a `ruling` may not be written while a fact-check (an `ask` from the
+      Overseer naming this proposal) is still open;
+    - an `executed`'s `ruling_id` must name a `ruling` already there, and
+      that ruling's decision must be `accept`;
+    - an `ask`'s `proposal_id`, when present, must name a `proposal`
+      already there;
+    - an `answer`'s `ask_id` must name an `ask` already there, and that
+      `ask` must not already have an answer (one ask, one answer).
+    All are checked here, against the open connection, before anything is
     written — same contract as the JSONL version's `append()`.
     """
     if not isinstance(record, dict):
@@ -211,6 +309,7 @@ def append(record: dict, path: str | Path, *, game_tick: int | None = None) -> d
             record["ts"] = datetime.now(timezone.utc).isoformat()
 
         errors = validate(record)
+        kind = record.get("kind")
 
         existing = conn.execute(
             "SELECT 1 FROM records WHERE id = ?", (record["id"],)
@@ -218,7 +317,7 @@ def append(record: dict, path: str | Path, *, game_tick: int | None = None) -> d
         if existing is not None:
             errors.append(f"record.id: {record['id']!r} is already in the queue")
 
-        if record.get("kind") == RULING and not _proposal_id_already_flagged(errors):
+        if kind == RULING and not _proposal_id_already_flagged(errors):
             proposal_id = record.get("proposal_id")
             found = conn.execute(
                 "SELECT 1 FROM records WHERE id = ? AND kind = ?", (proposal_id, PROPOSAL)
@@ -249,7 +348,79 @@ def append(record: dict, path: str | Path, *, game_tick: int | None = None) -> d
                         "again only if its only ruling(s) so far were defer"
                     )
 
-        if record.get("kind") == PROPOSAL:
+                # Fact-check gate (docs/AGENT-ARCHITECTURE.md, "Consultant
+                # fact-check before ruling"; docs/AGENT-LOOP.md item 7):
+                # an `ask` from the Overseer naming this proposal, with no
+                # `answer` yet, blocks a ruling on it. A plain lookup ask
+                # (role != overseer, or no proposal_id at all) never blocks
+                # anything -- only role=overseer's own routed fact-check
+                # does.
+                open_fact_check = conn.execute(
+                    "SELECT a.id FROM records a WHERE a.kind = ? AND a.role = ? "
+                    "AND a.proposal_id = ? "
+                    "AND NOT EXISTS (SELECT 1 FROM records r WHERE r.kind = ? "
+                    "AND json_extract(r.payload, '$.ask_id') = a.id)",
+                    (ASK, sole_writer(), proposal_id, ANSWER),
+                ).fetchone()
+                if open_fact_check is not None:
+                    errors.append(
+                        f"record.proposal_id: {proposal_id!r} has an open fact-check "
+                        f"({open_fact_check['id']!r}, no answer yet); it cannot be "
+                        "ruled on until the Consultant answers"
+                    )
+
+        if kind == EXECUTED and not _ruling_id_already_flagged(errors):
+            ruling_id = record.get("ruling_id")
+            ruling_row = conn.execute(
+                "SELECT payload FROM records WHERE id = ? AND kind = ?", (ruling_id, RULING)
+            ).fetchone()
+            if ruling_row is None:
+                errors.append(
+                    f"record.ruling_id: {ruling_id!r} does not refer to an "
+                    "existing ruling in this queue"
+                )
+            else:
+                ruling_payload = json.loads(ruling_row["payload"])
+                if ruling_payload.get("decision") != ACCEPT:
+                    errors.append(
+                        f"record.ruling_id: {ruling_id!r} is a ruling whose decision "
+                        f"is {ruling_payload.get('decision')!r}, not {ACCEPT!r}; only "
+                        "an accepted proposal may be executed"
+                    )
+
+        if kind == ASK and "proposal_id" in record and not _proposal_id_already_flagged(errors):
+            proposal_id = record.get("proposal_id")
+            found = conn.execute(
+                "SELECT 1 FROM records WHERE id = ? AND kind = ?", (proposal_id, PROPOSAL)
+            ).fetchone()
+            if found is None:
+                errors.append(
+                    f"record.proposal_id: {proposal_id!r} does not refer to an "
+                    "existing proposal in this queue"
+                )
+
+        if kind == ANSWER and not _ask_id_already_flagged(errors):
+            ask_id = record.get("ask_id")
+            ask_row = conn.execute(
+                "SELECT 1 FROM records WHERE id = ? AND kind = ?", (ask_id, ASK)
+            ).fetchone()
+            if ask_row is None:
+                errors.append(
+                    f"record.ask_id: {ask_id!r} does not refer to an existing ask "
+                    "in this queue"
+                )
+            else:
+                already_answered = conn.execute(
+                    "SELECT 1 FROM records WHERE kind = ? AND "
+                    "json_extract(payload, '$.ask_id') = ?", (ANSWER, ask_id),
+                ).fetchone()
+                if already_answered is not None:
+                    errors.append(
+                        f"record.ask_id: {ask_id!r} already has an answer; one ask, "
+                        "one answer, no threads"
+                    )
+
+        if kind == PROPOSAL:
             if isinstance(game_tick, bool) or not isinstance(game_tick, int):
                 errors.append(
                     "game_tick: a proposal must be appended with an integer "
@@ -261,7 +432,7 @@ def append(record: dict, path: str | Path, *, game_tick: int | None = None) -> d
 
         with conn:  # one transaction: commits on success, rolls back on any exception
             _insert_record(conn, record)
-            if record["kind"] == PROPOSAL:
+            if kind == PROPOSAL:
                 pred = record["prediction"]
                 _insert_prediction(
                     conn,
@@ -271,9 +442,61 @@ def append(record: dict, path: str | Path, *, game_tick: int | None = None) -> d
                     value=pred.get("value"),
                     registered_game_tick=game_tick,
                     due_game_tick=game_tick + pred["check_after_ticks"],
+                    check_after_ticks=pred["check_after_ticks"],
                 )
+            elif kind == EXECUTED:
+                _arm_prediction_on_first_execution(conn, record)
 
         return record
+
+
+def _arm_prediction_on_first_execution(conn: sqlite3.Connection, record: dict) -> None:
+    """`docs/AGENT-LOOP.md` item 4: "a prediction's window starts at
+    execution, not at writing." Called from inside `append()`'s own
+    transaction, immediately after an `executed` record's own row lands in
+    `records`.
+
+    Only the FIRST `executed` record naming a given `ruling_id` arms that
+    ruling's proposal's prediction (flips `AWAITING_EXECUTION` ->
+    `learning.predictions.schema.PENDING`, recomputes `due_game_tick` from
+    THIS record's own `cycle` -- the execution tick -- plus the
+    prediction's stored `check_after_ticks`). A second, later `executed`
+    record for the same ruling (a retry after a failed first attempt, for
+    instance) is still inserted into `records` as its own audit entry, but
+    does not re-arm or move the window a second time: "a failed execution
+    is a valid record" does not mean a failed execution should be able to
+    restart -- or worse, on a later retry, silently shorten -- a window
+    that already started counting down."""
+    ruling_id = record["ruling_id"]
+
+    earlier = conn.execute(
+        "SELECT 1 FROM records WHERE kind = ? AND "
+        "json_extract(payload, '$.ruling_id') = ? AND id != ?",
+        (EXECUTED, ruling_id, record["id"]),
+    ).fetchone()
+    if earlier is not None:
+        return  # not the first execution of this ruling; no re-arming
+
+    ruling_row = conn.execute(
+        "SELECT proposal_id FROM records WHERE id = ? AND kind = ?", (ruling_id, RULING)
+    ).fetchone()
+    if ruling_row is None:  # pragma: no cover -- append() already refused a dangling ruling_id
+        return
+    proposal_id = ruling_row["proposal_id"]
+
+    pred_row = conn.execute(
+        "SELECT id, check_after_ticks FROM predictions WHERE record_id = ? AND status = ?",
+        (proposal_id, AWAITING_EXECUTION),
+    ).fetchone()
+    if pred_row is None:  # already armed, or (should not happen) no prediction row at all
+        return
+
+    execution_tick = record["cycle"]
+    due_game_tick = execution_tick + pred_row["check_after_ticks"]
+    conn.execute(
+        "UPDATE predictions SET status = ?, due_game_tick = ? WHERE id = ?",
+        (PENDING, due_game_tick, pred_row["id"]),
+    )
 
 
 def load(path: str | Path) -> list[dict]:
@@ -357,6 +580,64 @@ def pending_proposals(path: str | Path, limit: int | None = None) -> list[dict]:
     with _connect(path) as conn:
         rows = conn.execute(query, params).fetchall()
     return [json.loads(r["payload"]) for r in rows]
+
+
+def open_asks(path: str | Path, limit: int | None = None) -> list[dict]:
+    """Every `ask` record with no `answer` yet, oldest first -- the
+    Consultant's own read (`dfmcp/queue_tools.py`'s `queue.pending`, for
+    role `consultant`, branches to this instead of `pending_proposals`:
+    the Consultant never proposes, so "what's pending for me" means open
+    questions, not proposals). Same "no threads" contract `append()`
+    enforces at write time: at most one `answer` per `ask`, so "open" here
+    just means "answer count is zero", no defer-like open/closed
+    distinction to track.
+    """
+    query = (
+        "SELECT a.payload FROM records a WHERE a.kind = ? AND NOT EXISTS ("
+        "SELECT 1 FROM records r WHERE r.kind = ? AND "
+        "json_extract(r.payload, '$.ask_id') = a.id"
+        ") ORDER BY a.ts ASC, a.rowid ASC"
+    )
+    params: list = [ASK, ANSWER]
+    if limit is not None:
+        query += " LIMIT ?"
+        params.append(limit)
+    with _connect(path) as conn:
+        rows = conn.execute(query, params).fetchall()
+    return [json.loads(r["payload"]) for r in rows]
+
+
+def unexecuted_accepted_proposals(path: str | Path) -> list[dict]:
+    """Every proposal whose ruling was `accept` but that has no `executed`
+    record referencing that ruling yet, oldest proposal first. `docs/
+    AGENT-LOOP.md` item 4: "an accepted but never-executed proposal is
+    never graded as a miss, it is reported as unexecuted" -- this is that
+    report. `dfqueue/grade.py`'s `run_grading_cycle` calls this every time
+    it grades, alongside (never instead of) `pending_due`'s real misses/
+    hits, so a caller sees both in one pass rather than only the graded
+    half of the picture.
+
+    Each entry is `{"proposal": <the proposal record>, "ruling_id": <the
+    accepting ruling's id>}` -- the ruling id is what a caller would pass
+    to `queue.executed` next, so it is handed over rather than making the
+    caller re-derive it.
+    """
+    query = (
+        "SELECT p.payload AS proposal_payload, rl.id AS ruling_id "
+        "FROM records p "
+        "JOIN records rl ON rl.kind = ? AND rl.proposal_id = p.id "
+        "AND json_extract(rl.payload, '$.decision') = ? "
+        "WHERE p.kind = ? AND NOT EXISTS ("
+        "SELECT 1 FROM records ex WHERE ex.kind = ? AND "
+        "json_extract(ex.payload, '$.ruling_id') = rl.id"
+        ") ORDER BY p.ts ASC, p.rowid ASC"
+    )
+    with _connect(path) as conn:
+        rows = conn.execute(query, (RULING, ACCEPT, PROPOSAL, EXECUTED)).fetchall()
+    return [
+        {"proposal": json.loads(r["proposal_payload"]), "ruling_id": r["ruling_id"]}
+        for r in rows
+    ]
 
 
 def apply_grades(path: str | Path, updates: list[dict]) -> None:
