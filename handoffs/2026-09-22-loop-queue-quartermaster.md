@@ -78,12 +78,11 @@ of `orders.*`, `workjob.*`, farm, `stocks.*` tools.
 `dfqueue/` (all), `dfmcp/queue_tools.py`, `dfmcp/tests/test_queue_tools.py`,
 `learning/live_signals.py`, `learning/tests/`, `agents/quartermaster/`,
 `agents/architect/tools.yaml`, `agents/architect/role.md`,
-`agents/overseer/tools.yaml`, `agents/overseer/role.md`,
-`agents/consultant/role.md` (only the lines about answering asks), this doc,
-its `handoffs/INDEX.md` row.
+`agents/overseer/tools.yaml`, `agents/overseer/role.md`, this doc, its
+`handoffs/INDEX.md` row.
 
-**Not yours:** `agents/ROSTER.yaml`, `agents/consultant/tools.yaml`
-(report the lines to add), `dfmcp/roles.py`, `dfmcp/server.py`,
+**Not yours:** `agents/ROSTER.yaml`, `agents/consultant/tools.yaml` and
+`agents/consultant/role.md` (report the lines to add for answering asks), `dfmcp/roles.py`, `dfmcp/server.py`,
 `dfmcp/registry.py`, `scripts/dfhack/`, `dfmcp/README.md` (report lines).
 
 ## Hard lines
