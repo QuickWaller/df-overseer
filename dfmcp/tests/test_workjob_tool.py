@@ -74,13 +74,15 @@ def test_workjob_queue_carries_no_coordinates(registry):
         assert registry.get(tool_id).coordinate_bearing is False, tool_id
 
 
-def test_workjob_queue_is_not_claimed_verified(registry):
-    """This stream never ran against a live DFHack process (offline build,
-    no VM). is_verified must honestly stay False until a real live run
-    happens -- claiming otherwise here would be exactly the kind of
-    confidently-wrong this project's CLAUDE.md warns against."""
+def test_workjob_queue_is_verified_by_its_live_runs(registry):
+    """The offline build stream never ran live, so this test once pinned
+    is_verified False. UPDATED 2026-09-22: the tool has since queued blocks
+    and a mechanism for real and the well was built from them
+    (handoffs/2026-09-19-stone-blocks-well.md, register 2026-09-19), so the
+    manifest carries that evidence and is_verified is True. brew_drink still
+    refuses on the container reagent by design."""
     tool = registry.get("workjob.queue")
-    assert tool.is_verified is False
+    assert tool.is_verified is True
 
 
 def test_workjob_queue_argument_signature_matches_the_lua_dispatch():

@@ -240,7 +240,7 @@ df-overseer-openarea.lua:
       lua_function: find_open_area
       effect: read
       coordinate_bearing: false
-      live_deployed: STALE
+      live_deployed: true
       verified: "2026-09-11"
       knowledge_scope: player_derivable
       notes: >
@@ -253,11 +253,15 @@ df-overseer-openarea.lua:
         via reqscript) so df-overseer-workshop.lua can reuse it -- pure
         naming change, no behavior change, but VM 103 is still running the
         pre-export file. Not deployed this stream (no deploy).
+        CORRECTION 2026-09-22: not stale. A hash sweep of every deployed
+        df-overseer-*.lua against the committed bytes (read-only, VM 103) found
+        this file identical to main apart from one trailing blank line, the
+        known 2026-09-17 artifact, so the export change is deployed.
     "build W H [LEVEL] NEAR_LANDMARK BLUEPRINT_FILE [RANK] [RADIUS_TILES]":
       lua_function: build_open_area
       effect: mutate
       coordinate_bearing: internal-only
-      live_deployed: STALE
+      live_deployed: true
       verified: "2026-09-12"
       knowledge_scope: player_derivable
       notes: >
@@ -269,6 +273,7 @@ df-overseer-openarea.lua:
         is_free with find_open_area above, so the same 2026-09-16
         knowledge-scope fix applies here too. STALE for the same
         is_free-export reason as find above -- same file, same deploy gap.
+        CORRECTION 2026-09-22: not stale, see the find command above.
 
 df-overseer-chokepoints.lua:
   build_order_item: "7 (first half)"
@@ -978,7 +983,7 @@ df-overseer-workjob.lua:
       effect: mutate
       coordinate_bearing: false
       live_deployed: true
-      verified: unverified
+      verified: "2026-09-19 (live: blocks and a mechanism were queued for real and the well was built from them; brew_drink refuses on the container reagent by design; handoffs/2026-09-19-stone-blocks-well.md, register 2026-09-19)"
       # Deployed to VM 103 2026-09-19 and run live, including one real blocks job (decisions/DECISIONS.md 2026-09-19); still tagged unverified
       # here because dfmcp/tests/test_workjob_tool.py pins it; see handoffs/2026-09-21-doc-drift-pass-2.md.
       knowledge_scope: player_visible
@@ -1288,7 +1293,7 @@ df-overseer-stocks.lua:
       effect: read
       coordinate_bearing: false
       live_deployed: true
-      verified: unverified
+      verified: "2026-09-20 (live on VM 103 after the batch deploy: `availability BOULDER` read 7 total, 3 in buildings, 4 available; handoffs/2026-09-19-deploy-batch.md, register 2026-09-20)"
       # Deployed to VM 103 and run live 2026-09-19 (handoffs/2026-09-19-deploy-and-live-verify.md: BUCKET, an unknown type, both UNIT_HOLDER
       # branches), yet still tagged unverified here because dfmcp/tests/test_registry.py pins it; see handoffs/2026-09-21-doc-drift-pass-2.md.
       knowledge_scope: player_derivable
