@@ -13,6 +13,22 @@ user, breaking the "read secrets by the key you need" rule — it printed
 call: rotate later, not urgent, but don't lose the item. → decisions/DECISIONS.md
 2026-09-17.
 
+## In design: the agent loop MVP (2026-09-22)
+
+The user's goal: "design the agent loop, fill in the gaps, let the fort run",
+an MVP to improve from what it does. Design lives in `docs/AGENT-LOOP.md`
+(register 2026-09-22). **Agreed:** dispatcher plus queue (one-shot
+`agent exec` runs woken by a code conductor); clock speed set per wake reason
+(full, slowed, paused), from ticks-to-consequence where computable;
+`base_fps` a setting the user may lower later. **Defaults not yet confirmed:**
+the six build items in its §4 (in-game clock and tripwire script, a
+`conductor` dfmcp role, the conductor service on VM 106, an execution record
+with prediction windows starting at execution, enabling the Quartermaster, a
+Tier 0 briefing). Nothing built.
+
+**Next concrete step:** settle the MVP roster (enable the Quartermaster?),
+then write the handoffs for §4's items.
+
 ## In discussion: designing the learning loop (2026-09-17)
 
 **Not designed yet, by the user's own assessment.** No code; do not start
@@ -300,11 +316,8 @@ on powers a player lacks and on hidden information; the classification is
 
 ### Open, waiting on the user
 
-- **The loop architecture, including openclaw: TABLED by the user
-  2026-09-19** ("excited to get my teeth into it later"). Next in line once
-  the user picks it up; do not start designing it without them. Open question
-  to resume from: dispatcher plus queue (independent one-shot runs, our
-  scheduler wakes them, roles talk only through the queue)?
+- **The loop architecture: UNTABLED 2026-09-22, in design with the user**, see
+  "In design: the agent loop MVP" below.
 - **Key rotation** for four exposed secrets, deferred by the user ("ill rotate
   them another day"). See the section at the top of this file.
 
