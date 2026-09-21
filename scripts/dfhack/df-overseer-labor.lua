@@ -46,6 +46,16 @@
 --   set-labor UNIT_ID LABOR_NAME on|off
 --     -- flips one labor bit. LABOR_NAME is a df.unit_labor name (MINE,
 --        HAUL_STONE, FARM, ...); `labors` on any citizen shows live examples.
+--   enabled-counts LABOR [LABOR...]
+--     -- read only. JSON {"counts": {LABOR: n or null}, "errors": {LABOR: msg}}:
+--        how many citizens have each labor enabled. ADDED 2026-09-21
+--        (handoffs/2026-09-21-building-tool-lua.md, contract C1). A name that
+--        is not a real df.unit_labor entry is `null` plus an error, NEVER 0:
+--        FEED_WATER_WOUNDED never existed and used to print 0, the silent-zero
+--        bug class this repo has shipped five times (register 2026-09-19).
+--        Names are resolved through df.unit_labor and checked by round trip
+--        (code back to name), so enum internals such as `_last_item` cannot
+--        pass as labors, and NONE (-1) is rejected as not a labor.
 --
 -- Verified live against Uniboslan 2026-09-11 (7 citizens, all healthy, no
 -- military, Year 30) before writing any of the logic below, not assumed
@@ -146,6 +156,7 @@
 --     race, and beats a silent over-caution just as much.
 
 local landmarks_mod = reqscript('df-overseer-landmarks')
+local json = require('json')
 
 local args = {...}
 local cmd = args[1]
@@ -335,6 +346,67 @@ local function set_labor(unit, labor_name, state)
     tostring(state))
 end
 
+-- enabled-counts (contract C1). Returns counts, errors. A lookup that fails
+-- is null in counts plus a message in errors, never 0. NULL is json.lua's
+-- null sentinel, passed to encode below.
+local NULL = "\0"
+
+local function labor_code_for(name)
+  if type(name) ~= "string" or not name:match("^[A-Z][A-Z0-9_]*$") then
+    return nil, "not a df.unit_labor name: " .. tostring(name)
+  end
+  local ok, code = pcall(function() return df.unit_labor[name] end)
+  if not ok or type(code) ~= "number" then
+    return nil, "unknown labor: " .. name
+  end
+  if code < 0 then
+    return nil, "not a real labor (code " .. tostring(code) .. "): " .. name
+  end
+  local ok_back, back = pcall(function() return df.unit_labor[code] end)
+  if not ok_back or back ~= name then
+    return nil, "labor name does not round-trip through df.unit_labor: " .. name
+  end
+  return code
+end
+
+local function enabled_counts(names)
+  local counts, errors = {}, {}
+  local codes = {}
+  for _, name in ipairs(names) do
+    if counts[name] == nil then
+      local code, err = labor_code_for(name)
+      if code then
+        codes[name] = code
+        counts[name] = 0
+      else
+        counts[name] = NULL
+        errors[name] = err
+      end
+    end
+  end
+  local ok_c, cits = pcall(dfhack.units.getCitizens)
+  if not ok_c then
+    for name in pairs(codes) do
+      counts[name] = NULL
+      errors[name] = "could not list citizens: " .. tostring(cits)
+    end
+    return counts, errors
+  end
+  for _, unit in ipairs(cits) do
+    for name, code in pairs(codes) do
+      local ok_l, on = pcall(function() return unit.status.labors[code] end)
+      if not ok_l then
+        counts[name] = NULL
+        errors[name] = "could not read labor bit: " .. tostring(on)
+        codes[name] = nil
+      elseif on then
+        counts[name] = counts[name] + 1
+      end
+    end
+  end
+  return counts, errors
+end
+
 if cmd == "unit-status" then
   local filter = args[2]
   if filter and filter ~= "idle" and filter ~= "injured"
@@ -360,7 +432,20 @@ elseif cmd == "set-labor" then
     local ok, msg = set_labor(unit, args[3], args[4] == "on")
     print((ok and "OK: " or "FAIL: ") .. msg)
   end
+elseif cmd == "enabled-counts" then
+  if #args < 2 then
+    print(json.encode({error = "usage: df-overseer-labor enabled-counts LABOR [LABOR...]"}, {null = NULL}))
+  else
+    local names = {}
+    for i = 2, #args do names[#names + 1] = args[i] end
+    local counts, errors = enabled_counts(names)
+    if next(errors) == nil then
+      errors = setmetatable({}, {__tostring = function() return "JSON object" end})
+    end
+    print(json.encode({counts = counts, errors = errors}, {null = NULL}))
+  end
 else
   print("usage: df-overseer-labor <unit-status [idle|injured|military|hostile]"
-    .. "|labors UNIT_ID|set-labor UNIT_ID LABOR_NAME on|off>")
+    .. "|labors UNIT_ID|set-labor UNIT_ID LABOR_NAME on|off"
+    .. "|enabled-counts LABOR [LABOR...]>")
 end
