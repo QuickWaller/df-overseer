@@ -22,6 +22,24 @@ Three top-level siblings, next to whatever the tool printed:
   with").
 - `gaps_unknown`: what could **not** be checked and why, in plain words.
 
+## The result shapes it reads (`df-overseer-building.lua`)
+
+- `building.build` is an object: `{kind, dims, site, requirements, gaps, ...}`.
+- `building.find` is an array of up to five candidates, each
+  `{kind, dims, site, search, requirements, gaps}`, which the server wraps as
+  `{"result": [...]}`. The candidates share one kind and one `requirements`,
+  but every candidate's `gaps` is kept: the joined `gaps` is the union of all
+  of them (order preserved, de-duplicated), so a gap on any candidate is a gap
+  of the result and `gaps: []` is never returned beside one.
+- `requirements.building_material.filters[]`: `{index, quantity, need,
+  available: int or null, stock, count_error?, quantity_note?}`. A filter with
+  `available < quantity` is a gap in the tool's own wording, a null `available`
+  is an unknown with its reason. The older `accepts` / `fort_owned` shape is
+  still read.
+- The joined `gaps` always begins with the tool's own gap strings, then the
+  gaps read from the requirements, then the labor gaps. `tool_guidance.enrich`
+  therefore lets it replace the tool's own `gaps` list, as a superset.
+
 ## Unknown is not zero (the rule this file exists to keep)
 
 The silent-zero bug class has shipped five times in this repo (register
