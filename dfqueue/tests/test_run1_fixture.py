@@ -25,7 +25,7 @@ import pytest
 
 from dfqueue import grade as dfqueue_grade
 from dfqueue import schema, store
-from dfqueue.tests._helpers import make_ruling
+from dfqueue.tests._helpers import make_executed, make_ruling
 from learning.predictions.schema import GRADED_FALSE, GRADED_TRUE
 
 RUN1_PATH = (
@@ -149,8 +149,11 @@ def test_run1_proposal_with_the_corrected_signal_validates_clean():
 
 
 def test_run1_proposal_with_the_corrected_signal_is_appended_and_graded_true(tmp_path):
-    """End to end: append the corrected proposal (its prediction becomes a
-    pending row due at game_tick + 1200, matching the XML's own
+    """End to end: append the corrected proposal, accept and execute it
+    (`docs/AGENT-LOOP.md` item 4: the window starts at execution, not at
+    write time, so this now needs a ruling and an `executed` record before
+    the prediction is due at all), so its prediction becomes a pending row
+    due at the EXECUTION tick + 1200, matching the XML's own
     `check_after_ticks="1200"`), then grade it once the workshop exists and
     sits 7 tiles from the Wagon — `op="lte" value="7"` — and confirm it
     grades true."""
@@ -160,6 +163,13 @@ def test_run1_proposal_with_the_corrected_signal_is_appended_and_graded_true(tmp
     path = tmp_path / "queue.sqlite3"
     written = store.append(record, path, game_tick=178877)
     assert written["prediction"]["check_after_ticks"] == 1200
+
+    # Not due at all yet -- not even armed, with no ruling or execution.
+    assert store.pending_due(path, 10**9) == []
+
+    ruling = store.append(make_ruling(proposal_id=written["id"]), path)
+    store.append(make_executed(ruling_id=ruling["id"], cycle=178877), path)
+    # Now armed from the execution tick: due at 178877 + 1200.
 
     due_before = store.pending_due(path, 178877 + 1199)
     assert due_before == []
@@ -188,7 +198,9 @@ def test_run1_proposal_grades_false_if_the_workshop_lands_further_than_predicted
     record["prediction"]["signal"] = _corrected_signal()
 
     path = tmp_path / "queue.sqlite3"
-    store.append(record, path, game_tick=178877)
+    written = store.append(record, path, game_tick=178877)
+    ruling = store.append(make_ruling(proposal_id=written["id"]), path)
+    store.append(make_executed(ruling_id=ruling["id"], cycle=178877), path)
 
     def call_tool(tool_id, arguments):
         return {
@@ -208,7 +220,9 @@ def test_run1_proposal_grades_unresolvable_if_the_workshop_still_does_not_exist(
     record["prediction"]["signal"] = _corrected_signal()
 
     path = tmp_path / "queue.sqlite3"
-    store.append(record, path, game_tick=178877)
+    written = store.append(record, path, game_tick=178877)
+    ruling = store.append(make_ruling(proposal_id=written["id"]), path)
+    store.append(make_executed(ruling_id=ruling["id"], cycle=178877), path)
 
     def call_tool(tool_id, arguments):
         return {"error": "not found"}
