@@ -149,15 +149,23 @@ pin `verified` as `unverified` (stale tripwires written for the offline builds).
 left `verified: unverified` with a comment naming the evidence and the test. For the
 orchestrator: update the two tests, then set `verified` on both.
 
-Not flipped, and why (contradiction between reports, unresolved offline):
+UPDATE, later in this pass: farm (4 commands), diggable `find-stair`/`dig-stair`, threat
+`scan` and breach `check` were then also flipped to `true`, because the file's presence on
+VM 103 is proven by direct evidence (farm plot built and crop set for real 2026-09-17; the
+stair designated for real 2026-09-18; threat and breach hash-equal to main 2026-09-17), and
+`live_deployed` is defined as file presence. Their `verified` strings, and the tests pinning
+threat and breach as unverified, are untouched. Only openarea (`STALE`, two commands) was
+left alone. The rest of this paragraph is what I first wrote and is kept.
+
+Not flipped at first, and why (contradiction between reports, unresolved offline):
 farm (4 commands, still `false`, `verified` says "never deployed"), diggable
 `find-stair`/`dig-stair`, threat `scan`, breach `check`, and openarea (`STALE`).
 The 2026-09-17 deploy reports say farm, threat, breach, diggable and openarea were
 deployed and matched main by hash; the 2026-09-21 deploy report says 15
 `df-overseer-*.lua` files under DFHack's script directory (breach, chokepoints,
 connectivity, diff, diggable, farm, landmarks, openarea, orders, overview, stockpile,
-stuckjobs, threat, ui, and one more it names) differ from main in content, cause and
-direction unknown. So "the file is on the VM" is certain for them but "it is main's code"
+stuckjobs, threat, ui: the report says 15 and names these 14) differ from main in
+content, cause and direction unknown. So "the file is on the VM" is certain for them but "it is main's code"
 is not, and I did not promote `false` to `true` or demote to `STALE`. One read-only
 `sha256sum` sweep on the VM against `git -c core.autocrlf=false archive` settles it.
 
@@ -209,3 +217,101 @@ additive keys, C3 the single `tool_guidance` key). Ends with a "still open" list
 Left open rather than claimed: whether a per-kind requirements file was built (no report
 shows it), whether installation became a graph process, and the wrappers `workshop`/`well`/`farm`
 (not rebuilt over the generic tool, per the Lua report's finding 5).
+
+### 4. `docs/TRAPS.md` (done)
+
+Nine items. Extended in place, not duplicated: (a) the existing `autosave N` rotation entry
+(slot-mtime check for the wrong reason, with what to do), (b) the existing `dfhack_flags`
+entry (the nine-line wrapper), (f) the existing "worktree starts from the last pushed
+commit" entry (adds `origin/main` and the per-worktree `.claude/settings.json`). New, under
+"Added 2026-09-22": (c) DFHack `ipairs` is 0-based, (d) `core.autocrlf` versus deployed
+hashes (measured here: 518 CRs in the working copy of `docs/TRAPS.md`, 0 in the committed
+blob), (e) refused shell commands, (g) the auto-mode `autoMode` settings, (h) the CIDR
+suffix on `DF_VM_IP`, (i) the raws are not the whole reaction list. Each has the date, the
+symptom, the cause and what to do, and a source. **One item is weaker than the brief
+states it:** the brief says long quoted heredocs are rejected at parse time; the recorded
+refusals are the classifier's (variable-built addresses and paths, piped file lists, `git`
+forms it cannot bound to the worktree), and a quoted Python heredoc ran fine early in this
+pass (later ones naming `git` were refused). The entry says so and treats the parse-time
+rejection as intermittent, not a rule.
+Hunger and thirst entry checked against `scripts/dfhack/df-overseer-sampler.lua`: the trap
+says the timers live in `counters2` (and unconsciousness in `counters`), and the sampler
+reads `u.counters2.thirst_timer`, `hunger_timer` and `sleepiness_timer`. **No contradiction.**
+
+### 5. READMEs and design docs (done)
+
+- `dfmcp/README.md`: native-tool paragraph now says `main()` passes the queue, doctrine,
+  series and gotchas natives (it said only the queue's; checked against `server.py`); the
+  gotchas section gains "live since 2026-09-21" with counts 34/57/14, the deploy needs
+  (store `init`, `ReadWritePaths`, graph database and `production/`, the labor script, the
+  `journal_mode=DELETE` reason the graph opens read-only), and the merged-not-deployed shapes
+  fix with what the deployed join does meanwhile.
+- `gotchas/README.md`: deployed 2026-09-21, the store is empty and created by hand, who holds which tool.
+- `docs/PRODUCTION-MODEL.md`: status block (built in part, deployed for labors only, original
+  status kept); the Q1 row no longer says labour per reaction is "free and exact" (304 of 366
+  determined); the "159 reactions" claim and Pass 1 now say the 145 generated reactions are
+  outside the raws and unchecked against the consumption rule. The `[SKILL]` claim was already
+  corrected on 2026-09-21 (line 126) and needed nothing.
+- `docs/AGENT-ARCHITECTURE.md`: one new "UPDATED 2026-09-22" block after the last dated one
+  (counts, what acts on the fort, detectors, Manager appointed with no Office) and an inline
+  update on section 14 item 7 ("work orders have no tool"). The dated blocks are kept.
+- `docs/TIMESERIES.md`: status line (sampler live, `series.*` live).
+- `docs/MEMORY-ARCHITECTURE.md`: `get_doctrine` is built and live as `doctrine.get`, consultant only.
+
+### 6. Dead and duplicate files (listed, none deleted)
+
+- `dfmcp/tests/gotchas_support.py`: the `_BUILDING_SCRIPT` stand-in (signatures `[W] [H]`) is
+  skipped whenever the real manifest has `df-overseer-building.lua`, which it now does, so it
+  is dead. Its `agents/*/tools.yaml` grant loop (`gotchas.get`, `gotchas.write`, `building.find`,
+  `building.build`) is also a no-op now that the real allowlists hold those ids. The module
+  docstring still says the orchestrator has not yet granted them. Safe to reduce to the
+  native-tool registry plus a copy of the real files; two test modules import it.
+- `dfmcp/labor_join.py`: the older `accepts` / `fort_owned` / `needs_container` requirements
+  shape (around lines 196 to 240) is read only for the old workshop tool's stub shape; the real
+  building tool never emits it. Kept on purpose by the shapes stream, so not dead to its tests, but
+  dead for real results.
+- `docs/BUILDING-TOOL.md`: the old "Next step" text (kept, now headed as history).
+- `scripts/dfhack/df-overseer-workshop.lua` and the per-kind starter blueprints in `blueprints/`
+  (`starter-still-3x3.csv`, `-kitchen-`, `-mason-`, `-mechanic-`, `-carpenter-`, `-well-`,
+  `-farmplot-`): the generic tool needs none of them, but `workshop`, `well` and `farm` still use
+  them by decision, so not obsolete yet. They become removable when those three are rebuilt over `building`.
+- Out of tree: `df-overseer-embark.lua` on VM 103 has no counterpart in the repo (found 2026-09-17,
+  still there per the 2026-09-19 reports), and 15 deployed `df-overseer-*.lua` differ from main
+  (2026-09-21 report). Neither is verified from here.
+
+## Judgement calls left for the orchestrator
+
+1. **Flag semantics.** I read `live_deployed` by its header definition (the file is on VM 103), so
+   dry-run-only commands (`building.build`, `zone.place`) are `true` and say in `verified` that the
+   real path is untested. If you want it to mean "exercised for real", `building.build`,
+   `zone.place`, `zone.find`, `trees.fell` and similar would go back to `false`.
+2. **Two stale tripwire tests.** `dfmcp/tests/test_registry.py::test_stocks_availability_is_read_derivable_and_unverified`
+   and `dfmcp/tests/test_workjob_tool.py::test_workjob_queue_is_not_claimed_verified` pin `verified` as
+   `unverified`, though both tools were run live 2026-09-19. Update them, then set `verified` on both.
+   Threat and breach are also pinned `unverified`; I left them, since the threat detector's live
+   verification predates its knowledge-scope fix and breach has no recorded run.
+3. **The 15-script drift** (2026-09-21 deploy report) against the 2026-09-17 reports that say the same
+   files matched main. One read-only hash sweep on the VM would settle whether openarea's `STALE` and the
+   "differs from main again" sentences I wrote into the threat and breach notes are right.
+4. **Register rows to close** (I may not touch the register): the 2026-09-21 row that says the
+   building tool "requires W and H ... open" (answered by the optional-group syntax, per the optional-args
+   report), and any row that says the labor for Masons is MASON. Also the deploy report's finding that
+   `handoffs/2026-09-21-graph-labor-for-jobs.md` and the deploy brief expect Masons to say STONECUTTER only;
+   the deployed graph says STONECUTTER and STONE_CARVER.
+5. **`docs/MEMORY-ARCHITECTURE.md` says nothing about the gotcha and confidence layer** (a new
+   agent-written memory), and **`docs/AGENT-ARCHITECTURE.md` still has section 2 and 3 text written when only three
+   roles and no tool surface existed.** I added an update block rather than rewriting either; a real design pass could fold them in.
+6. **`agents/ROSTER.yaml`, the consultant's `role.md` and `CONFIDENCE-LEGEND.md`** were edited beyond the letter of
+   deliverable 2 (the brief said tools.yaml and role.md; the roster line and the legend exception were the same drift).
+7. **Consultant and `gotchas.write`.** The consultant cannot write gotchas (refused live). I made the docs say so; whether
+   it should hold `gotchas.write` (the server report argues an advisor may, since it mutates no fort state) is your call.
+8. **Manifest notes I left as written** because they describe behaviour, not deployment: for example the `workjob.queue` note
+   still opens "Offline build, never run against a live DFHack process", now preceded by an UPDATE line saying that is stale.
+9. `docs/BUILDING-TOOL.md` items I could not resolve from any report: whether a per-kind requirements file exists, and
+   whether installation became a graph process.
+
+## Test counts
+
+Before: ambient **891 passed / 3 skipped**; `.venv-dfmcp` `dfmcp/tests` **537 passed**. After: ambient
+**891 passed / 3 skipped**; `.venv-dfmcp` **537 passed**. Unchanged, as expected for a documentation and manifest-flag
+change. The ambient run includes `tests/test_no_leaked_addresses.py`, which scans every tracked file.
