@@ -26,8 +26,22 @@ the six build items in its §4 (in-game clock and tripwire script, a
 with prediction windows starting at execution, enabling the Quartermaster, a
 Tier 0 briefing). Nothing built.
 
-**Next concrete step:** settle the MVP roster (enable the Quartermaster?),
-then write the handoffs for §4's items.
+**Since then, same day:** the roster (Overseer, Architect, Quartermaster,
+Consultant), Consultant retrieval (local wiki, DFHack source, Brave web
+search, `agents/consultant/sites.yaml`) and the objectives direction (an
+Overseer-kept graph with a default flow and deviations, §6) were agreed. Three
+offline build streams are dispatched (`handoffs/2026-09-22-loop-*.md`) and one
+researcher on objective-graph prior art. **At merge, owed by the orchestrator:**
+flip `quartermaster` to enabled in `ROSTER.yaml`; add the README and
+`infra/local.example.env` lines the streams report; re-run both suites.
+
+**Held by the user, part of the framework design, not yet started:** how
+proposals work end to end: (1) the Overseer proposing to itself, with no
+second check; (2) which checks each kind of change needs (tactical,
+strategy, agenda, template, doctrine); (3) which revisions count as learning.
+
+**Next concrete step:** merge and review the three streams as they report;
+then the conductor service handoff (items 3 and 6).
 
 ## In discussion: designing the learning loop (2026-09-17)
 
