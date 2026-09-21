@@ -10,11 +10,17 @@ learning architecture.
 > Game knowledge (crop and water rules the agents should use) goes in
 > `doctrine/seed.yaml`, not the register.
 >
-> - **Current state, as last recorded 2026-09-20 (not re-read live since).**
->   Uniboslan is paused at year 31, tick 103055, 22 alive and 1 dead. The
->   batch of merged tools is deployed and live-verified on VM 103: role tool
->   lists **architect 25, overseer 45, consultant 11**, including the
->   six-deduction `stocks.availability`, `doctrine.get` and the `series.*`
+> - **Current state, as last recorded 2026-09-21 (fort re-read live at the deploy).**
+>   Uniboslan is paused at year 31, tick 106974, 22 alive and 1 dead, with
+>   **MANAGER appointed (unit 345)** by the new `nobles` tool; the queued manager
+>   orders still do not run, and the leading cause (the game's position data and
+>   the user's play experience agree) is that the Manager needs an **Office**,
+>   which the fort lacks (no zones at all). The 2026-09-21 batch is deployed and
+>   live-verified on VM 103: role tool lists **architect 34, overseer 57,
+>   consultant 14**, including the generic `building` tool (dry runs only: no
+>   never-built kind has been built for real), `gotchas.*`, the labor graph join,
+>   `nobles.*` and the generalised `zone` tool, on top of the six-deduction
+>   `stocks.availability`, `doctrine.get` and the `series.*`
 >   history tools (the fort is sampled once per game day into `dfseries`).
 >   Open next: read every vital on the live fort, then the supervised run that
 >   settles the `growdur` unit. → `Working.md` HANDOVER 2026-09-21.
@@ -89,7 +95,7 @@ learning architecture.
 >   tools: connectivity, landmarks, overview, diff, open-area and diggable
 >   find/build, chokepoints, stuck jobs, labor, farm, workshop, zone, trees,
 >   well, and manager work orders, all live on VM 103. Role tool lists:
->   architect 25, overseer 45, consultant 11 (2026-09-20, live-verified per role over a real MCP client, after `doctrine.get`, `series.*` and `workjob` landed). Closed loops ran for real:
+>   architect 34, overseer 57, consultant 14 (2026-09-21, live-verified per role over a real MCP client, after the building, gotchas, nobles and zone tools landed). Closed loops ran for real:
 >   Stockpile #2 built, a 41-tile dig completed, a farm plot built and its crop
 >   set,
 >   and a `WaterSource` zone placed, none needing a raw coordinate to reach

@@ -279,6 +279,8 @@ handoff before dispatching.
    Next: nobles test (VM 103 is free), deploy with the user's go-ahead, then
    the first supervised real build.
 
+**DEPLOYED 2026-09-21 (supersedes every "not deployed" above):** the building, gotchas, labor-graph, nobles and zone tools are live on VM 103, hash-verified, role tools architect 34, overseer 57, consultant 14, graph 5 known / 23 partial / 5 unknown of 33 kinds, fort untouched at tick 106974 (MANAGER held by unit 345, no Office). Left: (a) the labor-join shapes fix (dispatched; then a dfmcp-only redeploy), (b) an Office placed and assigned to the manager for real, then a supervised unpause to see whether the queued orders run (the zone tool's real placement has never run; what makes an Office count is unknown), (c) the first real build of a never-built kind, (d) the generalised `workjob` (handoff written, not dispatched), (e) the auto vs manual harness: an `autoMode` block is now in the user's settings, effect partly evidenced.
+
 6. **Design gaps against the openclaw minimum bar** (2026-09-21, none
    designed): **assessing dwarves** (what it feeds into is unanswered);
    **rooms**, which need the same wrapper-over-a-generic-tool system as

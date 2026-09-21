@@ -4,7 +4,7 @@
 bucket against `Working.md`, the register and the handoff index. Four things
 had moved since the last pass and are recorded in the new top Now item: the
 well was built, the fort lost its first citizen to starvation and was then fed,
-the batch deploy went live (tool lists now **25/45/11**), and the fort's history
+the batch deploy went live (tool lists were 25/45/11; **34/57/14 since 2026-09-21**), and the fort's history
 is now sampled, stored and served to agents. The Next and Later buckets were
 keyword-scanned (doctrine, time series, snapshot, well, deploy, manager,
 brew) for anything quietly finished and nothing was found; that was a
