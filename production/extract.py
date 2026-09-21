@@ -143,6 +143,9 @@ def parse_reactions(text: str, source_path: str) -> list[dict]:
                 "category": None,
                 "category_name": None,
                 "category_description": None,
+                "description": None,
+                "fuel": False,
+                "improvements": [],
                 "reagents": [],
                 "products": [],
                 "unparsed": [],
@@ -188,6 +191,31 @@ def parse_reactions(text: str, source_path: str) -> list[dict]:
             # contains one (none do in the 2026-09-19 corpus, verified, but
             # a bare args[0] would silently truncate one that did).
             cur["category_description"] = ":".join(args) if args else None
+        elif name == "DESCRIPTION":
+            # Instrument reactions (`docs`-style example file shipped with the
+            # game, and the world-generated instrument reactions it models)
+            # end with `[DESCRIPTION:USE_TOOL:<piece>]` or
+            # `[DESCRIPTION:USE_INSTRUMENT:<instrument>]`. It sits after the
+            # last product, so the catch-all below would have hung it on
+            # that product's flags, where nothing reads it.
+            cur["description"] = ":".join(args) if args else None
+        elif name == "FUEL":
+            # A reaction-level flag: each job burns one unit of fuel. It sits
+            # anywhere in the block (after the last PRODUCT in the smelter file,
+            # before any REAGENT in DFHack's steam-engine reaction), so the
+            # catch-all below either misfiled it on whatever product was open
+            # (36 of the 159 vanilla reactions) or, with nothing open, reported
+            # it as orphaned. Recorded on the reaction as an attribute. The
+            # graph has no fuel flow yet, so this is a fact recorded, not a
+            # consumption modelled: `docs/PRODUCTION-MODEL.md` says nothing
+            # about fuel and adding a flow is a schema decision, not this parser's.
+            cur["fuel"] = True
+        elif name == "IMPROVEMENT":
+            # `[IMPROVEMENT:100:instrument:INSTRUMENT_PIECE:BODY:
+            # GET_MATERIAL_FROM_REAGENT:drum:NONE]`: which reagent's material
+            # decorates which piece of the product. A reaction-level relation,
+            # not a property of whichever product happened to be open.
+            cur["improvements"].append({"args": list(args), "line": line_no})
         elif name == "REAGENT":
             cur_reagent = {
                 "name": args[0] if len(args) > 0 else None,
@@ -431,6 +459,14 @@ def derive_consumption(
 
 # ---- reagent class-filter resolution (audit sec3) -----------------------------------
 
+#: Item types whose subtype slot names one specific item definition (a tool, an
+#: instrument, a weapon), as opposed to a sub-part selector. Only these have the
+#: subtype carried into a reagent's class id. See `_reagent_class`.
+SUBTYPED_ITEM_TYPES = frozenset({
+    "TOOL", "INSTRUMENT", "WEAPON", "ARMOR", "SHOES", "SHIELD",
+    "HELM", "GLOVES", "PANTS", "AMMO", "SIEGEAMMO", "TRAPCOMP", "TOY",
+})
+
 
 def _reagent_class(reagent: dict) -> tuple[str | None, str | None, str | None]:
     """`(class_name, mechanism, container_class)` for one reagent, per
@@ -487,8 +523,20 @@ def _reagent_class(reagent: dict) -> tuple[str | None, str | None, str | None]:
         # mat-args slots actually carry one; falls back to the bare item
         # type when they don't (e.g. NONE/NONE, or a genuine class-filter
         # reagent already handled above).
+        #
+        # 2026-09-21: also qualify with the item SUBTYPE when the item type
+        # is one whose subtype names a specific item definition. The
+        # instrument-assembly reactions (the shape of the 145 world-generated
+        # reactions, and of the game's own example file) take reagents such as
+        # `[REAGENT:drum:1:TOOL:EXAMPLE DRUM BODY:NONE:NONE]`; read as the bare
+        # class "TOOL" every such reagent would collapse into one class, the
+        # same loss `METAL_ORE` had. Deliberately not applied to every item
+        # type: `PLANT_GROWTH`'s subtype (LEAVES, FRUIT) is dropped by this
+        # function today and changing it would change the existing extraction
+        # of the four vanilla files, which this stream did not set out to do.
+        subtype = reagent.get("subtype") if item_type in SUBTYPED_ITEM_TYPES else None
         class_name = _fixed_node_id(
-            item_type, None, reagent.get("mat_category"), reagent.get("mat_args") or [],
+            item_type, subtype, reagent.get("mat_category"), reagent.get("mat_args") or [],
         )
         container_class = class_name if "EMPTY" in flags else None
         return class_name, schema.MECH_ITEM_TYPE_ONLY, container_class
@@ -710,12 +758,34 @@ def pass1(
             })
 
     # ---- reactions ----
+    seen_reaction_ids: dict[str, str] = {}
     for text, source_path in reaction_texts:
         for reaction in parse_reactions(text, source_path):
             for entry in reaction["unparsed"]:
                 unparsed.append({**entry, "source_path": source_path})
             if reaction["adventure_mode"] and not reaction["buildings"]:
                 continue  # audit sec5: adventurer-mode craft, not a fortress process
+            if not reaction["id"]:
+                # A `[REACTION]` with no id cannot be a graph process. Report it
+                # (it is counted in `unparsed`) rather than write a NULL key.
+                unparsed.append({
+                    "reaction_id": None, "token": "REACTION", "args": [],
+                    "line": reaction["line"], "source_path": source_path,
+                    "reason": "reaction has no id",
+                })
+                continue
+            if reaction["id"] in seen_reaction_ids:
+                # Two files (or a mod and vanilla) define the same id. The
+                # process table is keyed on the id, so the second cannot be a
+                # second row and silently dropping it would hide a conflict.
+                # First definition wins, the collision is reported.
+                unparsed.append({
+                    "reaction_id": reaction["id"], "token": "REACTION", "args": [],
+                    "line": reaction["line"], "source_path": source_path,
+                    "reason": f"duplicate reaction id; the first definition ({seen_reaction_ids[reaction['id']]}) was kept",
+                })
+                continue
+            seen_reaction_ids[reaction["id"]] = f"{source_path}:{reaction['line']}"
 
             reaction_source = f"{source_path}:{reaction['line']}"
             primary_building = reaction["buildings"][0] if reaction["buildings"] else None
@@ -754,6 +824,28 @@ def pass1(
                 attributes.append({
                     "subject_id": reaction["id"], "name": "skill", "value": reaction["skill"],
                     "unit": None, "status": schema.VERIFIED_RAWS, "source_ref": reaction_source,
+                })
+
+            # IMPROVEMENT and DESCRIPTION (instrument reactions): reaction-level,
+            # kept as attributes so they are recorded, not dropped. One row per
+            # IMPROVEMENT line, value the token's own arguments joined on ':'.
+            for imp in reaction["improvements"]:
+                attributes.append({
+                    "subject_id": reaction["id"], "name": "improvement",
+                    "value": ":".join(imp["args"]), "unit": None,
+                    "status": schema.VERIFIED_RAWS,
+                    "source_ref": f"{source_path}:{imp['line']}",
+                })
+            if reaction["fuel"]:
+                attributes.append({
+                    "subject_id": reaction["id"], "name": "requires_fuel", "value": "true",
+                    "unit": None, "status": schema.VERIFIED_RAWS, "source_ref": reaction_source,
+                })
+            if reaction["description"] is not None:
+                attributes.append({
+                    "subject_id": reaction["id"], "name": "description",
+                    "value": reaction["description"], "unit": None,
+                    "status": schema.VERIFIED_RAWS, "source_ref": reaction_source,
                 })
 
             # CATEGORY/CATEGORY_NAME/CATEGORY_DESCRIPTION: real per-reaction
@@ -1109,10 +1201,72 @@ def _read(path: Path) -> tuple[str, str]:
     return path.read_text(encoding="utf-8"), str(path)
 
 
+#: The four reaction files the vanilla install ships
+#: (`data/vanilla/vanilla_reactions/objects/`), verified 2026-09-21 by listing
+#: every `reaction_*.txt` on the install. Kept as a floor for tests and
+#: documentation; **`extract()` no longer reads this list**, it discovers every
+#: `reaction_*.txt` (`discover_reaction_files`). A hard-coded list is how 145
+#: of the game's 293 reactions went unseen without anyone being told.
 DEFAULT_REACTION_FILES = (
     "reaction_other.txt", "reaction_adv_carpenter.txt",
     "reaction_dyes.txt", "reaction_smelter.txt",
 )
+
+
+def discover_reaction_files(*roots: Path | str) -> list[Path]:
+    """Every `reaction_*.txt` directly inside each root directory, roots in the
+    order given, files sorted by name within a root, a file reachable from two
+    roots read once.
+
+    A root that is not a directory raises: an empty result from a wrong path
+    must not look like "there are no reactions". An empty result from a real
+    directory is legitimate and returned as `[]`; the caller decides whether
+    that is acceptable (`extract()` refuses it)."""
+    seen: set[Path] = set()
+    out: list[Path] = []
+    # Files are read in a fixed order, and the order matters: node ids are
+    # first-writer-wins and a duplicate reaction id keeps the first definition.
+    # The four vanilla files come first in `DEFAULT_REACTION_FILES` order (the
+    # order every earlier extraction used, so their provenance does not move),
+    # then anything else by name.
+    rank = {name: i for i, name in enumerate(DEFAULT_REACTION_FILES)}
+    for root in roots:
+        d = Path(root)
+        if not d.is_dir():
+            raise NotADirectoryError(f"reaction root {d} is not a directory")
+        for f in sorted(d.glob("reaction_*.txt"), key=lambda p: (rank.get(p.name, len(rank)), p.name)):
+            key = f.resolve()
+            if key not in seen:
+                seen.add(key)
+                out.append(f)
+    return out
+
+
+def summarise_reaction_files(reaction_texts: list[tuple[str, str]]) -> list[dict]:
+    """One dict per source file: how many `[REACTION]` blocks it holds, how many
+    became fortress processes and how many were adventurer-mode only. Duplicate
+    ids and id-less reactions are counted separately, so the per-file line is
+    `reactions == processes + adventure_only + duplicates + no_id`. This is the
+    accounting a caller prints to prove every file was read and every reaction
+    is either a process or named as skipped."""
+    out: list[dict] = []
+    seen: set[str] = set()
+    for text, source_path in reaction_texts:
+        row = {"source": source_path, "reactions": 0, "processes": 0,
+               "adventure_only": 0, "duplicates": 0, "no_id": 0}
+        for r in parse_reactions(text, source_path):
+            row["reactions"] += 1
+            if r["adventure_mode"] and not r["buildings"]:
+                row["adventure_only"] += 1
+            elif not r["id"]:
+                row["no_id"] += 1
+            elif r["id"] in seen:
+                row["duplicates"] += 1
+            else:
+                seen.add(r["id"])
+                row["processes"] += 1
+        out.append(row)
+    return out
 
 
 def extract_from_sources(
@@ -1143,11 +1297,20 @@ def extract_from_sources(
     }
 
 
-def extract(fixtures_dir: Path = FIXTURES_DIR) -> dict:
+def extract(fixtures_dir: Path = FIXTURES_DIR, reaction_files: list[Path] | None = None) -> dict:
     """Run both passes against the fixture files in `fixtures_dir` and
     return the table->rows dict `store.write_all` expects (plus `unparsed`,
-    which isn't one of its kwargs -- see `extract_from_sources`)."""
-    reaction_texts = [_read(fixtures_dir / name) for name in DEFAULT_REACTION_FILES]
+    which isn't one of its kwargs -- see `extract_from_sources`).
+
+    Reaction files are **discovered** (every `reaction_*.txt` in
+    `fixtures_dir`) unless `reaction_files` is given, for a raws layout where
+    they live elsewhere (`discover_reaction_files(root_a, root_b)`). An empty
+    discovery raises: extracting a graph from zero reaction files is never
+    intended, and would look like a successful run."""
+    files = list(reaction_files) if reaction_files is not None else discover_reaction_files(fixtures_dir)
+    if not files:
+        raise FileNotFoundError(f"no reaction_*.txt found under {fixtures_dir}")
+    reaction_texts = [_read(f) for f in files]
     plant_text = _read(fixtures_dir / "plant_standard.txt")
     material_template_text = _read(fixtures_dir / "material_template_default.txt")
     item_tool_text = _read(fixtures_dir / "item_tool.txt")
@@ -1155,6 +1318,10 @@ def extract(fixtures_dir: Path = FIXTURES_DIR) -> dict:
 
 
 def main() -> None:
+    files = discover_reaction_files(FIXTURES_DIR)
+    for row in summarise_reaction_files([_read(f) for f in files]):
+        print("reaction file {source}: {reactions} reactions, {processes} processes, "
+              "{adventure_only} adventure-only, {duplicates} duplicate, {no_id} without id".format(**row))
     rows = extract()
     unparsed = rows.pop("unparsed", [])
     counts = store.write_all(store.default_path(), **rows)
