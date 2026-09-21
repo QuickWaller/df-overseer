@@ -19,7 +19,7 @@ import yaml
 from dfmcp.doctrine_tools import NATIVE_TOOLS as DOCTRINE_NATIVE_TOOLS
 from dfmcp.queue_tools import NATIVE_TOOLS
 from dfmcp.registry import load_registry
-from dfmcp.roles import RoleValidationError, load_roster
+from dfmcp.roles import RoleValidationError, SYSTEM_CLASS_TOOL_IDS, load_roster
 from dfmcp.series_tools import NATIVE_TOOLS as SERIES_NATIVE_TOOLS
 from dfmcp.gotchas_tools import NATIVE_TOOLS as GOTCHAS_NATIVE_TOOLS
 
@@ -49,7 +49,9 @@ def test_real_roster_loads(registry):
     """Fails if anyone edits an allowlist in agents/ into an invalid state."""
     roster = load_roster(registry)
     assert roster.sole_writer == "overseer"
-    assert set(roster.roles) == {"overseer", "architect", "consultant"}
+    # "conductor" added handoffs/2026-09-22-loop-clock-conductor-role.md:
+    # kind: system, code never an agent -- see the system-kind tests below.
+    assert set(roster.roles) == {"overseer", "architect", "consultant", "conductor"}
 
 
 def test_only_the_sole_writer_has_fort_mutating_write_entries(registry):
@@ -71,12 +73,23 @@ def test_only_the_sole_writer_has_fort_mutating_write_entries(registry):
 
 def test_no_advisor_holds_a_mutating_tool_by_any_route(registry):
     """Belt-and-braces over the loader's own rule 2: re-derive it from the
-    registry rather than trusting that the loader checked."""
+    registry rather than trusting that the loader checked.
+
+    Updated handoffs/2026-09-22-loop-clock-conductor-role.md: a system-class
+    tool id (SYSTEM_CLASS_TOOL_IDS) is the one sanctioned exception, and only
+    for a role of kind "system" -- checked precisely, not just skipped, so
+    this test still catches an ADVISOR quietly picking one up."""
     roster = load_roster(registry)
     for name, perms in roster.roles.items():
         if name == roster.sole_writer:
             continue
         for tool_id in list(perms.read) + list(perms.write):
+            if tool_id in SYSTEM_CLASS_TOOL_IDS:
+                assert perms.kind == "system", (
+                    f"{name} (kind {perms.kind!r}) holds system-class {tool_id}, "
+                    "but only a kind: system role may"
+                )
+                continue
             assert not registry.get(tool_id).mutates, f"{name} holds mutating {tool_id}"
 
 
@@ -139,6 +152,112 @@ def test_stocks_availability_follows_the_stocks_food_drink_pairing(registry):
     assert overseer.allows("stocks.availability")
     assert architect.allows("stocks.availability")
     assert registry.get("stocks.availability").mutates is False
+
+
+# --------------------------------------------------------------------------
+# The conductor: kind: system, the SYSTEM_CLASS_TOOL_IDS exception
+# (handoffs/2026-09-22-loop-clock-conductor-role.md)
+# --------------------------------------------------------------------------
+
+
+def test_conductor_is_kind_system_and_holds_exactly_the_clock_writes(registry):
+    """Pins the concrete shape, same style as
+    test_only_the_sole_writer_has_fort_mutating_write_entries above: a future
+    edit that quietly grants conductor something beyond the clock/quicksave
+    group, or drops kind: system, is a visible test failure, not a slip."""
+    roster = load_roster(registry)
+    conductor = roster.roles["conductor"]
+    assert conductor.kind == "system"
+    assert set(conductor.write) == SYSTEM_CLASS_TOOL_IDS
+    for tool_id in conductor.write:
+        assert registry.get(tool_id).mutates is True
+    assert "clock.status" in conductor.read
+    assert "vitals.summary" in conductor.read
+
+
+def test_overseer_holds_no_system_class_tool_despite_being_sole_writer(registry):
+    """THE central invariant this exception exists to protect: the Overseer
+    is the sole_writer, which would ordinarily let it hold any mutating
+    tool, but SYSTEM_CLASS_TOOL_IDS has no sole_writer carve-out. Pinned
+    directly rather than only via the generic sweep above, since this is the
+    one property the whole exception was built to guarantee (docs/AGENT-LOOP.md:
+    "the Overseer's charter line 'never unpause' is unchanged")."""
+    roster = load_roster(registry)
+    overseer = roster.roles["overseer"]
+    assert overseer.kind == "actor"
+    for tool_id in SYSTEM_CLASS_TOOL_IDS:
+        assert not overseer.allows(tool_id), f"overseer must not hold {tool_id}"
+    assert not overseer.allows("clock.resume")
+
+
+def test_advisors_hold_no_system_class_tool(registry):
+    roster = load_roster(registry)
+    for name in ("architect", "consultant"):
+        role = roster.roles[name]
+        for tool_id in SYSTEM_CLASS_TOOL_IDS:
+            assert not role.allows(tool_id), f"{name} must not hold {tool_id}"
+
+
+def test_rule_system_class_tool_granted_to_a_non_system_role_refuses_to_load(registry, tmp_path):
+    """The loader's own check, not just the belt-and-braces sweep above:
+    an advisor granted a system-class tool must fail to LOAD."""
+    agents = _roster(tmp_path, """
+        overseer:
+          enabled: true
+          dir: overseer
+          kind: actor
+        architect:
+          enabled: true
+          dir: architect
+          kind: advisor
+        """)
+    _role_dir(agents, "overseer", "read:\n  - id: \"overview.get\"\n")
+    _role_dir(agents, "architect", """
+        write:
+          - id: "clock.pause"
+        """)
+    with pytest.raises(RoleValidationError) as exc:
+        load_roster(registry, agents_dir=agents)
+    msg = str(exc.value)
+    assert "architect" in msg and "clock.pause" in msg and "system" in msg
+
+
+def test_rule_system_class_tool_granted_to_the_sole_writer_also_refuses_to_load(registry, tmp_path):
+    """THE property the exception exists for: even the sole_writer (kind:
+    actor here, not system) cannot be granted clock.resume. No carve-out."""
+    agents = _roster(tmp_path, BASIC_ROLES)  # overseer, kind: actor, sole_writer
+    _role_dir(agents, "overseer", """
+        read:
+          - id: "overview.get"
+        write:
+          - id: "clock.resume"
+        """)
+    with pytest.raises(RoleValidationError) as exc:
+        load_roster(registry, agents_dir=agents)
+    msg = str(exc.value)
+    assert "overseer" in msg and "clock.resume" in msg and "system" in msg
+
+
+def test_rule_system_class_tool_granted_to_a_system_kind_role_loads_fine(registry, tmp_path):
+    """The positive case: a role explicitly marked kind: system may hold one."""
+    agents = _roster(tmp_path, """
+        overseer:
+          enabled: true
+          dir: overseer
+          kind: actor
+        conductor:
+          enabled: true
+          dir: conductor
+          kind: system
+        """)
+    _role_dir(agents, "overseer", "read:\n  - id: \"overview.get\"\n")
+    _role_dir(agents, "conductor", """
+        write:
+          - id: "clock.pause"
+          - id: "clock.resume"
+        """)
+    roster = load_roster(registry, agents_dir=agents)
+    assert "clock.resume" in roster.roles["conductor"].write
 
 
 def test_check_returns_legible_reasons(registry):

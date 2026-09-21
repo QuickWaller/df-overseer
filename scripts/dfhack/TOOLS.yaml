@@ -1642,6 +1642,164 @@ df-overseer-nobles.lua:
         Removes the holder of a held, non-elected position. Same DRY_RUN and
         VERSION semantics as appoint. Refuses a vacant or elected position.
 
+df-overseer-clock.lua:
+  build_order_item: "agent loop MVP items 1-2 (docs/AGENT-LOOP.md); handoffs/2026-09-22-loop-clock-conductor-role.md"
+  commands:
+    "set-speed FPS":
+      lua_function: clock_set_speed
+      effect: mutate
+      coordinate_bearing: false
+      live_deployed: false
+      verified: unverified
+      knowledge_scope: player_visible
+      notes: >
+        Writes df.global.enabler.fps directly, mirroring setfps.lua's own
+        write (confirmed present at this install's version) plus its
+        fps_per_gfps update. Refuses outside [1, 1000], a sanity ceiling
+        this stream picked, not a researched engine limit. Returns old and
+        new value. Granted only to a role of kind system
+        (dfmcp/roles.py's SYSTEM_CLASS_TOOL_IDS exception) -- see the .lua
+        file's own header for why this is a narrow exception, not a
+        loosening, of "only the sole writer may mutate".
+    pause:
+      lua_function: clock_pause
+      effect: mutate
+      coordinate_bearing: false
+      live_deployed: false
+      verified: unverified
+      knowledge_scope: player_visible
+      notes: >
+        dfhack.world.SetPauseState(true). Always allowed (pausing is the
+        safe direction, docs/AGENT-ARCHITECTURE.md ss6). System-kind only.
+    resume:
+      lua_function: clock_resume
+      effect: mutate
+      coordinate_bearing: false
+      live_deployed: false
+      verified: unverified
+      knowledge_scope: player_visible
+      notes: >
+        dfhack.world.SetPauseState(false), refused with the latch detail
+        while a tripwire is latched (call clear first). System-kind only,
+        and NOT granted to the Overseer even though it is the roster's
+        sole_writer: dfmcp/roles.py's exception is gated on role kind, with
+        no sole-writer carve-out, specifically so "never unpause without
+        being asked to" is a structural guarantee, not just a charter line.
+    status:
+      lua_function: clock_status
+      effect: read
+      coordinate_bearing: false
+      live_deployed: false
+      verified: unverified
+      knowledge_scope: player_derivable
+      notes: >
+        paused, fps, cur_year/cur_year_tick/abs_tick, whether the tripwire
+        watcher is armed (repeat-util.isScheduled), and the latched
+        tripwire (reason/tick/detail) if any. player_derivable because the
+        latch detail for a hunger/thirst trip carries a status CATEGORY
+        derived from the raw timer, never the raw timer itself (see the
+        .lua file's header).
+    "arm [HUNGER_CRITICAL THIRST_CRITICAL CHECK_INTERVAL_TICKS THREAT_CHECK_EVERY_N]":
+      lua_function: clock_arm
+      effect: mutate
+      coordinate_bearing: false
+      live_deployed: false
+      verified: unverified
+      knowledge_scope: player_derivable
+      notes: >
+        Registers the in-game tripwire watcher via repeat-util (the same
+        registration mechanism as overseer-autosave/overseer-sampler, per
+        onMapLoad.init), an all-or-nothing optional group of four numeric
+        args. Defaults: hunger/thirst critical 75000/50000, sourced from
+        hack/scripts/full-heal.lua's is_in_dire_need(), cross-validated
+        against the wiki (research/2026-09-16-food-clock-and-farm-lead-time.md);
+        check interval 100 ticks and threat-scan-every 10 checks are this
+        stream's own reasoned defaults, not sourced. Clears any existing
+        latch (a fresh arm is a clean start). Tripwires v1: a citizen death
+        since the last check, hunger/thirst past critical, a hostile
+        df-overseer-threat.lua's find_threats admits by reachability (every
+        threat_check_every_n-th check only, reqscript'd not copied). On a
+        trip: pauses and writes {reason, tick, detail} to a state file (see
+        header for why a file, not a Lua global). System-kind only.
+    disarm:
+      lua_function: clock_disarm
+      effect: mutate
+      coordinate_bearing: false
+      live_deployed: false
+      verified: unverified
+      knowledge_scope: player_visible
+      notes: >
+        Cancels the repeat-util schedule. Does not touch an existing latch
+        (clear is the dedicated op for that). System-kind only.
+    clear:
+      lua_function: clock_clear
+      effect: mutate
+      coordinate_bearing: false
+      live_deployed: false
+      verified: unverified
+      knowledge_scope: player_visible
+      notes: >
+        Clears a latched tripwire so resume is no longer refused. Does not
+        itself resume. System-kind only.
+
+df-overseer-fort.lua:
+  build_order_item: "agent loop MVP item 2 (docs/AGENT-LOOP.md); handoffs/2026-09-22-loop-clock-conductor-role.md"
+  commands:
+    "quicksave [CONFIRM_SLOT CONFIRM_PRIOR_MTIME]":
+      lua_function: fort_quicksave
+      effect: mutate
+      coordinate_bearing: false
+      live_deployed: false
+      verified: unverified
+      knowledge_scope: player_visible
+      notes: >
+        No args: fires quicksave and returns the predicted target slot
+        ("autosave 1"/2/3, the one with the oldest world.sav mtime --
+        confirmed overwrite-oldest rotation, memory/dfhack-environment.md)
+        and its mtime immediately before firing. Deliberately does NOT
+        block waiting for the save to land: the .lua file's own header
+        argues from two already-established project facts (quicksave.lua's
+        render-gated asynchrony, up to ~90s observed,
+        research/2026-09-11-quicksave-silent-noop.md; and a script call
+        holding DFHack's suspend lock for its own duration,
+        docs/AGENT-ARCHITECTURE.md ss6) that blocking inline risks a
+        self-deadlock, not just a slow poll. A deliberate deviation from
+        the handoff's literal "confirmed by the slot's mtime changing"
+        phrasing -- flagged in this stream's report. Both args given (an
+        all-or-nothing pair): does not re-fire quicksave, just reports
+        whether that slot's mtime has moved past the given prior value --
+        meant to be called again later, spaced out, not in a tight loop.
+        Path derivation (parent of dfhack.getSavePath()) is NOT live-
+        verified this stream (no VM); see the report's exact live checks.
+        System-kind only.
+
+df-overseer-vitals.lua:
+  build_order_item: "agent loop MVP item 6 (docs/AGENT-LOOP.md); handoffs/2026-09-22-loop-clock-conductor-role.md"
+  commands:
+    summary:
+      lua_function: vitals_summary
+      effect: read
+      coordinate_bearing: false
+      live_deployed: false
+      verified: unverified
+      knowledge_scope: player_derivable
+      notes: >
+        Tier 0 figures for the conductor's per-cycle briefing: alive count,
+        dead_total (same undercount caveat as df-overseer-sampler.lua's
+        fort/deaths metric, copied not reqscript'd since that file's
+        helper is a local), worst_hunger_status/worst_thirst_status as a
+        CATEGORY ("fine"/"hungry"/"starving",
+        "fine"/"thirsty"/"dehydrated"), never the raw counters2 timer --
+        research/2026-09-16-food-clock-and-farm-lead-time.md's own bottom
+        line treats a raw hunger_timer/thirst_timer value as not
+        legitimately player-visible, only its flash-equivalent category is.
+        warning_count counts citizens at "hungry"/"thirsty" or worse. Cost
+        is O(population), not O(map size); not literally O(1) despite the
+        handoff's phrasing, which this stream reads as "cheap and bounded,
+        unlike a map sweep" rather than population-independent. Granted to
+        the conductor as an ordinary read (no system-kind exception
+        needed; effect: read).
+
 # Not yet built, flagged here rather than silently absent:
 #   - resource_summary (get_overview's remaining unbuilt field, needed to
 #     unblock chokepoints' rank_candidate_sites).

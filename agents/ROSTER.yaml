@@ -44,6 +44,22 @@ roles:
     kind: advisor
     summary: Dwarf Fortress domain knowledge on demand. Answers questions, never decides.
 
+  # `kind: system`, added handoffs/2026-09-22-loop-clock-conductor-role.md:
+  # code, never an agent (docs/AGENT-LOOP.md). Its token
+  # (MCP_ROLE_TOKEN_CONDUCTOR) is held only by the conductor service (a
+  # later stream), never by a model. dfmcp/roles.py's SYSTEM_CLASS_TOOL_IDS
+  # is the narrow, load-time-checked exception that lets this role hold
+  # tools that mutate DFHack's own runtime state (frame cap, pause,
+  # the tripwire watcher, quicksave) despite not being the sole_writer --
+  # and, unlike the ordinary sole_writer carve-out, that exception has no
+  # sole_writer exception either, so the Overseer cannot be granted
+  # clock.resume by editing its own tools.yaml.
+  conductor:
+    enabled: true
+    dir: conductor
+    kind: system
+    summary: Runs the game clock, the in-game tripwire watcher and quicksave. Code, never an agent; wakes the other roles per cycle.
+
   # ---- Defined but NOT enabled. Charters exist so enabling one later is a
   # ---- config change, per §11. Each is blocked on tools, not on a decision.
 
