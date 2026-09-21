@@ -40,8 +40,16 @@ proposals work end to end: (1) the Overseer proposing to itself, with no
 second check; (2) which checks each kind of change needs (tactical,
 strategy, agenda, template, doctrine); (3) which revisions count as learning.
 
-**Next concrete step:** merge and review the three streams as they report;
-then the conductor service handoff (items 3 and 6).
+**All three streams merged locally 2026-09-22** (`375d1f9`, `c0bdd6a`,
+`5edd1e4`), each checked against its code, the Quartermaster enabled, owed
+lines applied. Suites after the last merge: ambient **1035 passed / 3
+skipped**, `.venv-dfmcp` **604 passed**. Nothing deployed, nothing pushed.
+Design flags and deploy traps from the streams are in `docs/AGENT-LOOP.md`
+§7 (notably `proposal-0001` would grade as a latency miss on first run).
+
+**Next concrete step:** the conductor service handoff (items 3 and 6); then
+one deploy stream for everything, running the clock stream's nine live
+checks.
 
 ## In discussion: designing the learning loop (2026-09-17)
 

@@ -198,6 +198,26 @@ variance tracking, and RTS build orders adapting to scouting
 
 ## 7. Open
 
+**From the build streams, 2026-09-22 (all merged locally, none deployed):**
+
+- **A failed execution still starts the grading window**, so a later miss
+  cannot yet tell "the proposal was wrong" from "carrying it out failed".
+  Needed before any role's hit rate is trusted; it is also the attribution
+  split `docs/PRODUCTION-MODEL.md` §3 describes.
+- **Only the first execution arms the window.** Manager orders on this fort
+  have queued without ever running, so a `work_order` window may start long
+  before its effect can land.
+- **`order."ID".exists`** assumes DF removes a completed order from its list;
+  documented, never witnessed here. Its first live grading is also the first
+  check of that assumption.
+- **Deploy trap:** the queue migration keeps old rows on their write-time
+  deadlines. On VM 103 that includes `proposal-0001`, left ungraded on
+  purpose (register 2026-09-16); the first grading cycle would record it as
+  a latency miss. Decide before the conductor first runs the grader.
+- **Owed:** the announcement tripwire (§3); a wiki snapshot; the VM 103
+  DFHack source path check; the Brave key into VM 103's service environment.
+
+
 - Web retrieval (item 9): the Brave key, owed by the user; Brave's current
   pricing and limits are unchecked.
 - The Quartermaster's proposal-type vocabulary (item 5).
