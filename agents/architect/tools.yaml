@@ -216,6 +216,16 @@ write:
     note: >-
       An explicit decline, recorded rather than silently doing nothing --
       role.md: "a cycle with no proposal is a valid cycle."
+  - id: "queue.ask"
+    status: exists
+    note: >-
+      Added handoffs/2026-09-22-loop-queue-quartermaster.md (docs/
+      AGENT-LOOP.md item 7, the 2026-09-15 ask exception: "any advisor may
+      ask the Consultant"). A lookup question, never a fact-check routing
+      (that is the Overseer's own move, naming a proposal_id, before
+      ruling) -- this role may set proposal_id on its own ask too, but
+      doing so never blocks anything; only an Overseer-authored ask with
+      proposal_id set blocks a ruling.
 
 deny:
   - id: "openarea.build"

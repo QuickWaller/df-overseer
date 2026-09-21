@@ -1,0 +1,46 @@
+schema_version: 1
+role: quartermaster
+
+# DeepSeek, matching how every other role has actually run live so far
+# (agents/architect/model.yaml, agents/overseer/model.yaml both note the
+# same deviation from a Claude design default; this file sets DeepSeek as
+# the default directly rather than repeating that deviation dance, per
+# handoffs/2026-09-22-loop-queue-quartermaster.md's own instruction: "a
+# model.yaml (DeepSeek, as the other roles run live; look at theirs)").
+# deepseek-v4-flash specifically, matching the Architect: this role is the
+# same kind (advisor, read-only, proposes never acts), so it gets the same
+# starting model rather than a fresh, ungrounded guess.
+model: deepseek/deepseek-v4-flash
+fallback:
+  - anthropic/claude-haiku-4-5-20251001
+
+# A read-only advisor cannot hurt the fort directly: its only output is a
+# proposal the Overseer may ignore or reject. Same reasoning as
+# agents/architect/model.yaml's own rationale, applied to a role whose
+# proposal types (work_order, crop_plan, stock_target) are all still
+# UNTESTED live (no VM this stream) -- the cheap end of the model range is
+# exactly right for a role this early in its own track record.
+rationale: read-only advisor, zero blast radius, three brand-new untested proposal types
+
+cadence:
+  mode: woken
+  woken_by: [triage]
+  scheduler_note: >-
+    Not assumed to run every cycle -- the scheduler (docs/AGENT-LOOP.md
+    §"Triage rules") decides which one or two advisors are worth their
+    cost this cycle, same as every other advisor here.
+
+budget:
+  ceiling_usd_per_day: 2
+  enforcement: ours          # see agents/overseer/model.yaml, the host has no hard cap
+
+selection:
+  method: eval
+  suite: agents/quartermaster/evals/
+  status: not built
+  note: >-
+    Same replay-and-compare shape agents/architect/model.yaml describes:
+    read-only and idempotent, so two models can be A/B'd on the identical
+    situation. No real proposal has been written by this role yet (it was
+    disabled until this stream), so there is nothing to replay against yet
+    either -- the suite needs a first real run before it can be built.

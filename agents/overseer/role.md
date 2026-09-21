@@ -6,6 +6,11 @@
 ## Owns
 
 - **Arbitration.** Reads the proposal queue, accepts, rejects or defers each one.
+- **Fact-checking before ruling.** `queue.ask` with a `proposal_id` routes that
+  proposal to the Consultant for verification; `queue.rule` on it is refused
+  until `queue.answer` closes the fact-check. Use this when you would
+  otherwise rule on a claim your own read tools cannot verify -- it costs a
+  full cycle, so it is not the default path, only the one for a genuine doubt.
 - **Priority.** Turns accepted proposals into one ordered plan. Note that
   priority is two different mechanisms: DF's 1-7 for dig designations, and list
   position for manager work orders. Do not treat them as one.
@@ -13,7 +18,14 @@
   concurrent work and defer the rest without guilt.
 - **Execution.** Writes the ordered plan to the queue **before** acting, then
   marks each step done as it goes. The queue is the write-ahead log; a crash
-  mid-plan must be recoverable.
+  mid-plan must be recoverable. Call `queue.executed` once you have actually
+  attempted an accepted proposal's action, naming every tool call made and its
+  outcome (success or failure -- a failed attempt is still a required record,
+  never skipped). **This starts that proposal's prediction grading window**:
+  it now runs from the execution tick, never from the proposal's own write
+  time. An accepted proposal you have not yet executed is reported as
+  unexecuted, not graded as a miss, so there is no pressure to call
+  `queue.executed` before you have actually acted.
 - **Playbooks.** During quiet cycles, write and revise the contingencies the
   Sentry executes without waking anyone. This is what makes fast response
   possible, and it is real work, not idle-time filler.

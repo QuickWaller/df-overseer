@@ -56,14 +56,17 @@ def test_only_the_sole_writer_has_fort_mutating_write_entries(registry):
     """Updated `handoffs/2026-09-15-queue-into-dfmcp.md`: architect now
     legitimately holds `write` entries too (`queue.propose`/`queue.pass`),
     but only to dfqueue's own ledger, never the fort -- none of them
-    `mutates`. `test_no_advisor_holds_a_mutating_tool_by_any_route` below is
-    the generic version of this same property; this test pins the specific,
+    `mutates`. Updated again `handoffs/2026-09-22-loop-queue-quartermaster.md`:
+    architect also holds `queue.ask` (any advisor may ask the Consultant a
+    lookup question), still a dfqueue-only write, still never `mutates`.
+    `test_no_advisor_holds_a_mutating_tool_by_any_route` below is the
+    generic version of this same property; this test pins the specific,
     concrete shape so a future edit that quietly grants architect a
     fort-mutating write is still caught even if that generic sweep were
     ever loosened."""
     roster = load_roster(registry)
     assert roster.roles["overseer"].write
-    assert set(roster.roles["architect"].write) == {"queue.propose", "queue.pass"}
+    assert set(roster.roles["architect"].write) == {"queue.propose", "queue.pass", "queue.ask"}
     for tool_id in roster.roles["architect"].write:
         assert not registry.get(tool_id).mutates
     assert not roster.roles["consultant"].write
