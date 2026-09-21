@@ -13,9 +13,9 @@ import pytest
 from learning.live_signals import (
     BOOLEAN, FORT_ALERTS_COUNT, FORT_LANDMARKS_COUNT, FORT_POPULATION,
     FORT_STUCK_JOBS_COUNT, INTEGER, LANDMARK_EXISTS, LANDMARK_EXIT_DISTANCE,
-    STOCKS_DRINK_UNITS, STOCKS_PREPARED_MEALS_UNITS, STOCKS_RAW_EDIBLES_UNITS,
-    STOCKS_SEEDS_UNITS, SignalError, UNRESOLVABLE, parse, quote_landmark_name,
-    read,
+    ORDER_EXISTS, STOCKS_AVAILABILITY_UNITS, STOCKS_DRINK_UNITS,
+    STOCKS_PREPARED_MEALS_UNITS, STOCKS_RAW_EDIBLES_UNITS, STOCKS_SEEDS_UNITS,
+    SignalError, UNRESOLVABLE, parse, quote_landmark_name, read,
 )
 
 # ---- fixtures: real output shapes, not invented --------------------------------
@@ -141,6 +141,44 @@ STOCKS_SEEDS_JSON = {
     },
 }
 
+# df-overseer-orders.lua's list_orders(): {orders: [...], manager_appointed}.
+# Shape matches df-overseer-orders.lua's own header/TOOLS.yaml notes.
+ORDERS_LIST_JSON = {
+    "orders": [
+        {
+            "id": 17, "queue_position": 1, "job": "ConstructBlocks",
+            "reaction": None, "amount_left": 3, "amount_total": 5,
+        },
+    ],
+    "manager_appointed": True,
+}
+
+# df-overseer-stocks.lua's get_availability(): live-verified 2026-09-20,
+# `availability BOULDER` read 7 total, 3 in buildings, 4 available
+# (scripts/dfhack/TOOLS.yaml's own "availability TYPE" entry). Only the
+# fields this signal reads are filled in exactly; the rest are the real
+# per-flag breakdown fields this tool reports, included so the fixture is
+# an honest stand-in for the real shape, not a stripped-down guess.
+STOCKS_AVAILABILITY_BOULDER_JSON = {
+    "type": "BOULDER",
+    "total_units": 7, "total_item_count": 7,
+    "available_units": 4, "available_item_count": 4,
+    "unnetted_units": 0, "unnetted_item_count": 0,
+    "in_job_units": 0, "in_job_item_count": 0,
+    "forbid_units": 0, "forbid_item_count": 0,
+    "owned_units": 0, "owned_item_count": 0,
+    "owned_ref_check": {"verified_offline": True},
+    "in_building_units": 3, "in_building_item_count": 3,
+    "construction_units": 0, "construction_item_count": 0,
+    "trader_units": 0, "trader_item_count": 0,
+    "rotten_units": 0, "unreachable_units": 0,
+    "flag_read_errors": [],
+}
+
+# get_availability's own real failure shape for an unresolved TYPE
+# (scripts/dfhack/TOOLS.yaml: "An unresolved TYPE returns {error: ...}").
+STOCKS_AVAILABILITY_UNKNOWN_TYPE_JSON = {"error": "unknown item type: NOT_A_REAL_TYPE"}
+
 # df-overseer-stuckjobs.lua's get_stuck_jobs(): a bare array.
 STUCK_JOBS_JSON = [
     {
@@ -175,6 +213,13 @@ def _call_tool(tool_id: str, arguments: dict):
         return STOCKS_FOOD_DRINK_JSON
     if tool_id == "stocks.seeds":
         return STOCKS_SEEDS_JSON
+    if tool_id == "orders.list":
+        return ORDERS_LIST_JSON
+    if tool_id == "stocks.availability":
+        item_type = arguments.get("type")
+        if item_type == "BOULDER":
+            return STOCKS_AVAILABILITY_BOULDER_JSON
+        return STOCKS_AVAILABILITY_UNKNOWN_TYPE_JSON
     raise AssertionError(f"unexpected tool_id in test double: {tool_id!r}")
 
 
@@ -205,6 +250,20 @@ def test_parse_each_stocks_signal():
         assert parsed.kind == kind
         assert parsed.signal == signal
         assert parsed.value_type == INTEGER
+
+
+def test_parse_order_exists():
+    parsed = parse('order."17".exists')
+    assert parsed.kind == ORDER_EXISTS
+    assert parsed.order_id == "17"
+    assert parsed.value_type == BOOLEAN
+
+
+def test_parse_stocks_availability_units():
+    parsed = parse('stocks.availability."BOULDER".available_units')
+    assert parsed.kind == STOCKS_AVAILABILITY_UNITS
+    assert parsed.item_type == "BOULDER"
+    assert parsed.value_type == INTEGER
 
 
 def test_parse_landmark_exists_with_a_plain_name():
@@ -365,3 +424,24 @@ def test_read_landmarks_list_error_shape_reads_as_no_landmarks():
 
     assert read(parse("fort.landmarks.count"), call_tool) == 0
     assert read(parse('landmark."Wagon".exists'), call_tool) is False
+
+
+def test_read_order_exists_true():
+    assert read(parse('order."17".exists'), _call_tool) is True
+
+
+def test_read_order_exists_false_once_gone():
+    # A completed or cancelled order is removed from world.manager_orders.all
+    # by DF's own engine (see this module's docstring); a caller predicting
+    # "the order finishes" writes op="not_exists" against this signal.
+    assert read(parse('order."999".exists'), _call_tool) is False
+
+
+def test_read_stocks_availability_units():
+    parsed = parse('stocks.availability."BOULDER".available_units')
+    assert read(parsed, _call_tool) == 4
+
+
+def test_read_stocks_availability_units_unresolvable_for_an_unknown_type():
+    parsed = parse('stocks.availability."NOT_A_REAL_TYPE".available_units')
+    assert read(parsed, _call_tool) is UNRESOLVABLE

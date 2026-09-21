@@ -89,6 +89,58 @@ Each of these is a fixed signal name, exactly like `fort.population` — none
 of them take a landmark argument, since a stock count has no spatial
 component at all.
 
+## The `order.*` and `stocks.availability.*` signals -- added
+## `handoffs/2026-09-22-loop-queue-quartermaster.md`
+
+Added for the Quartermaster's own proposal-type predictions (`docs/
+AGENT-LOOP.md` item 5: `work_order` needs a way to predict an order
+completing; `stock_target` needs a stock count for a named item class, not
+just the four fixed food/drink buckets above).
+
+- `order."ID".exists` (boolean) -- backed by `orders.list`
+  (`scripts/dfhack/df-overseer-orders.lua`'s `list_orders`), which returns
+  `{orders: [{id, queue_position, job, reaction, amount_left,
+  amount_total}], manager_appointed}`. `ID` is a manager order's own `id`
+  field (an integer in the game, quoted here as a string, same grammar as
+  a landmark name — it is an opaque identifier, not a coordinate). Reads
+  `true` if an order with that id is still in the list, `false` once it is
+  gone. A completed (or cancelled) manager order is removed from
+  `world.manager_orders.all` by DF's own engine, per `df-overseer-
+  orders.lua`'s own header on `cancel`'s `erase(idx)` convention — this
+  project has not independently watched a real order complete and vanish
+  (no live run has ever had a working Manager long enough), so a
+  `work_order` proposal predicting `op="not_exists"` after
+  `check_after_ticks` is predicting on that documented-but-unwitnessed
+  engine behaviour, not on something this signal registry has confirmed
+  live itself. Never `UNRESOLVABLE`: an order id either is or is not in
+  the list, so this always resolves to a real boolean.
+- `stocks.availability."TYPE".available_units` (integer) -- backed by
+  `stocks.availability` (`df-overseer-stocks.lua`'s `get_availability`,
+  `dfmcp` tool id `stocks.availability`, argument name `type`), which
+  nets six deduction flags (`in_job`, `forbid`, `owned`, `in_building`,
+  `construction`, `trader`) down to `available_units` for any
+  `df.global.world.items.other` key -- BOULDER, BUCKET, DRINK, FOOD,
+  ANY_EDIBLE_RAW, SEEDS, CHAIN, BLOCKS, TRAPPARTS among others. `TYPE` is
+  quoted the same way a landmark name is (an opaque token, not a
+  coordinate), even though in practice it is always an unquoted-safe
+  upper-case word — the quoting grammar is reused rather than special-
+  cased, so one parser handles both. Generalises the four fixed
+  `stocks.*.units` signals above (drink/prepared_meals/raw_edibles/seeds)
+  to any item class `stocks.availability` already knows, which is what a
+  `stock_target` proposal (a par level for a NAMED item class, `docs/
+  PRODUCTION-MODEL.md` §10) actually needs to predict against — the four
+  fixed signals stay as they are, both forms are valid, and neither
+  supersedes the other.
+
+**Deliberately not added: a "cover days" signal for either of the
+above.** `docs/AGENT-LOOP.md` item 5 also names cover days as something
+a `stock_target` proposal might want to predict, but no existing read
+tool computes a consumption rate or a cover-day figure — `stocks.
+availability` and `stocks.food-drink` both report a point-in-time count,
+never a rate, and this module's own rule (every signal reads through an
+*existing* tool, never invents one) means cover days is not addable here
+until such a tool exists. Left as a known gap, not built around.
+
 ## Quoting a landmark name
 
 Landmark names come straight from the game (`"Stockpile #2"`) and may
@@ -132,11 +184,17 @@ STOCKS_PREPARED_MEALS_UNITS = "stocks.prepared_meals.units"
 STOCKS_RAW_EDIBLES_UNITS = "stocks.raw_edibles.units"
 STOCKS_SEEDS_UNITS = "stocks.seeds.units"
 
+#: `handoffs/2026-09-22-loop-queue-quartermaster.md`. See this module's
+#: docstring, "The order.* and stocks.availability.* signals", for the
+#: tools behind each and what op each one is meant for.
+ORDER_EXISTS = "order.exists"
+STOCKS_AVAILABILITY_UNITS = "stocks.availability.units"
+
 SIGNAL_KINDS = (
     FORT_POPULATION, FORT_ALERTS_COUNT, FORT_STUCK_JOBS_COUNT,
     FORT_LANDMARKS_COUNT, LANDMARK_EXISTS, LANDMARK_EXIT_DISTANCE,
     STOCKS_DRINK_UNITS, STOCKS_PREPARED_MEALS_UNITS, STOCKS_RAW_EDIBLES_UNITS,
-    STOCKS_SEEDS_UNITS,
+    STOCKS_SEEDS_UNITS, ORDER_EXISTS, STOCKS_AVAILABILITY_UNITS,
 )
 
 VALUE_TYPE = {
@@ -150,6 +208,8 @@ VALUE_TYPE = {
     STOCKS_PREPARED_MEALS_UNITS: INTEGER,
     STOCKS_RAW_EDIBLES_UNITS: INTEGER,
     STOCKS_SEEDS_UNITS: INTEGER,
+    ORDER_EXISTS: BOOLEAN,
+    STOCKS_AVAILABILITY_UNITS: INTEGER,
 }
 
 #: Every live signal is MECHANICAL: read straight off a read tool's own
@@ -168,6 +228,8 @@ class ParsedSignal:
     signal: str                    # the original dotted string, for messages/storage
     landmark: Optional[str] = None
     exit_to: Optional[str] = None
+    order_id: Optional[str] = None
+    item_type: Optional[str] = None
 
     @property
     def value_type(self) -> str:
@@ -186,6 +248,8 @@ _QUOTED = r'"((?:[^"\\]|\\.)*)"'
 
 _EXISTS_RE = re.compile(rf'^landmark\.{_QUOTED}\.exists$')
 _EXIT_RE = re.compile(rf'^landmark\.{_QUOTED}\.exit\.{_QUOTED}\.distance_tiles$')
+_ORDER_EXISTS_RE = re.compile(rf'^order\.{_QUOTED}\.exists$')
+_STOCKS_AVAILABILITY_RE = re.compile(rf'^stocks\.availability\.{_QUOTED}\.available_units$')
 
 _FIXED_SIGNALS = {
     FORT_POPULATION: FORT_POPULATION,
@@ -234,12 +298,23 @@ def parse(signal: Any) -> ParsedSignal:
             landmark=_unquote(m.group(1)), exit_to=_unquote(m.group(2)),
         )
 
+    m = _ORDER_EXISTS_RE.match(signal)
+    if m:
+        return ParsedSignal(kind=ORDER_EXISTS, signal=signal, order_id=_unquote(m.group(1)))
+
+    m = _STOCKS_AVAILABILITY_RE.match(signal)
+    if m:
+        return ParsedSignal(
+            kind=STOCKS_AVAILABILITY_UNITS, signal=signal, item_type=_unquote(m.group(1)),
+        )
+
     raise SignalError(
         f"signal {signal!r} is not a known live signal (fort.population, "
         "fort.alerts.count, fort.stuck_jobs.count, fort.landmarks.count, "
         'landmark."NAME".exists, landmark."NAME".exit."TO".distance_tiles, '
         "stocks.drink.units, stocks.prepared_meals.units, "
-        "stocks.raw_edibles.units, stocks.seeds.units)"
+        'stocks.raw_edibles.units, stocks.seeds.units, order."ID".exists, '
+        'stocks.availability."TYPE".available_units)'
     )
 
 
@@ -322,5 +397,16 @@ def read(parsed: ParsedSignal, call_tool: CallTool):
             if exit_.get("to") == parsed.exit_to:
                 return exit_["distance_tiles"]
         return UNRESOLVABLE  # not (yet) in the landmark's own ranked exit list
+
+    if parsed.kind == ORDER_EXISTS:
+        orders = call_tool("orders.list", {})
+        order_list = orders.get("orders", []) if isinstance(orders, dict) else []
+        return any(str(order.get("id")) == parsed.order_id for order in order_list)
+
+    if parsed.kind == STOCKS_AVAILABILITY_UNITS:
+        result = call_tool("stocks.availability", {"type": parsed.item_type})
+        if not isinstance(result, dict) or result.get("error"):
+            return UNRESOLVABLE  # an unresolved TYPE (get_availability's own {error: ...} shape)
+        return result["available_units"]
 
     raise SignalError(f"read(): unhandled signal kind {parsed.kind!r}")  # pragma: no cover
