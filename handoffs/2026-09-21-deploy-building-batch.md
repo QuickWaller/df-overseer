@@ -23,7 +23,7 @@ reports of `2026-09-21-building-tool-lua.md`, `-building-tool-server.md` (the
    built graph database.
 
 Expected role tool counts on the merged tree, before any later grants:
-**architect 30, overseer 51, consultant 12** (plus the nobles tool if granted).
+**architect 32, overseer 55, consultant 14** (the nobles tool is included: 2 read commands for architect and consultant, 2 read plus 2 write for overseer). The nobles script `df-overseer-nobles.lua` is already on VM 103 (hash-verified 2026-09-21, byte-identical to main's copy); confirm the hash and leave it.
 
 ## Steps, in order
 
