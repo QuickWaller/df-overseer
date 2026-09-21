@@ -155,7 +155,42 @@ court and the learning role, the public feed.
 failures. That is intended; it produces the evidence the confidence levels
 and gotchas are for.
 
-## 6. Open
+## 6. Objectives: a default flow with deviations (in design)
+
+Every wake reason above is reactive; nothing yet says what the fort is trying
+to achieve. **Agreed direction, 2026-09-22 (user):**
+
+- **The Overseer keeps the agenda** and changes it through queue proposals,
+  so every change is audited. How those proposals are ruled is open, pending
+  the wider proposals design.
+- **It starts preseeded** from forum and guide research, and grows and is
+  polished over time. **The seed waits until this design settles.**
+- **Two lifetimes** (orchestrator's suggestion, not yet confirmed): a
+  **progression template** that survives across forts and is what gets
+  polished, and a per-fort **agenda** instantiated from it, which dies with
+  the fort.
+- **An ordered graph with a default flow and deviations** (user's proposal):
+  the site decides not only *what* to do but *when*. Nodes are objectives
+  (`done_when`, prerequisites, `because`, sources); default-flow edges give
+  the standard progression; **deviation rules** (`when` a site or state fact
+  holds, insert, skip, move earlier or later, with `because` and sources)
+  adapt it. "Fishing needs a river, lake or ocean" is a visible rule with its
+  reason, whether or not it fired.
+- **Both code and the Overseer decide applicability** (user: "A and B"):
+  code evaluates rules against a closed vocabulary of site and state facts,
+  from a site-profile read tool, reporting `unknown` rather than guessing;
+  the Overseer may deviate where no rule foresaw it, recorded as a
+  **variance** with its reason and evidence.
+- **Viewable logic:** every objective carries its history (what changed, who
+  proposed it, the ruling, the evidence), returned by `agenda.get(id)`.
+- **Prompt size:** a prompt shows the top few open objectives in full plus a
+  one-line index of the rest; never the whole graph.
+
+Prior art being read before the schema is fixed: clinical pathways with
+variance tracking, and RTS build orders adapting to scouting
+(`research/2026-09-22-objective-graph-prior-art.md`, dispatched).
+
+## 7. Open
 
 - Web retrieval (item 9): the Brave key, owed by the user; Brave's current
   pricing and limits are unchecked.
