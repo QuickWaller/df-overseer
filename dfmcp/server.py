@@ -127,7 +127,7 @@ from .dfhack_client import (
     DFHackConnectionPool,
     DFHackProtocolError,
 )
-from . import doctrine_tools, gotchas_store, gotchas_tools, labor_join, queue_tools, series_tools
+from . import doctrine_tools, gotchas_store, gotchas_tools, knowledge_tools, labor_join, queue_tools, series_tools
 from .confidence import DEFAULT_CONFIDENCE_PATH, ConfidenceConfig, load_confidence
 from .registry import Registry, load_registry
 from .roles import Roster, load_roster
@@ -207,6 +207,9 @@ class ServerConfig:
     gotchas_db: str = gotchas_tools.DEFAULT_GOTCHAS_DB_PATH
     production_db: str = labor_join.DEFAULT_PRODUCTION_DB_PATH
     confidence_path: str = str(DEFAULT_CONFIDENCE_PATH)
+    brave_api_key: Optional[str] = None
+    wiki_snapshot_path: Optional[str] = knowledge_tools.DEFAULT_WIKI_SNAPSHOT_PATH
+    dfhack_source_root: Optional[str] = knowledge_tools.DEFAULT_DFHACK_SOURCE_ROOT
 
     def __post_init__(self) -> None:
         if not self.bind_host or not self.bind_host.strip():
@@ -239,6 +242,13 @@ _ENV_KEYS = {
     "gotchas_db": "MCP_SERVER_GOTCHAS_DB",
     "production_db": "MCP_SERVER_PRODUCTION_DB",
     "confidence_path": "MCP_SERVER_CONFIDENCE_PATH",
+    # Not MCP_SERVER_-prefixed: this is the exact env var name the key is
+    # already stored under in this workstation's .env and the one the
+    # handoff names, so the deploy does not need a second, renamed copy of
+    # the same secret.
+    "brave_api_key": "BRAVE_SEARCH_API_KEY",
+    "wiki_snapshot_path": "MCP_SERVER_WIKI_SNAPSHOT",
+    "dfhack_source_root": "MCP_SERVER_DFHACK_SOURCE_ROOT",
 }
 
 _INT_FIELDS = {"bind_port", "dfhack_port", "pool_size"}
@@ -422,6 +432,9 @@ def build_mcp_server(
     confidence: Optional[ConfidenceConfig] = None,
     production_db_path: Optional[str] = None,
     labors_for_kind=None,
+    brave_api_key: Optional[str] = None,
+    wiki_snapshot_path: Optional[str] = knowledge_tools.DEFAULT_WIKI_SNAPSHOT_PATH,
+    dfhack_source_root: Optional[str] = knowledge_tools.DEFAULT_DFHACK_SOURCE_ROOT,
 ) -> Server:
     """Build the low-level Server, wired to this registry/roster/pool.
 
@@ -459,6 +472,19 @@ def build_mcp_server(
     `dfmcp/queue_tools.py`'s own docstring, "SQLite runs off the event
     loop, and writes are serialised", for why this exists and why it is
     held only around `store.append`, never around the DFHack stamping call.
+
+    `brave_api_key`, `wiki_snapshot_path` and `dfhack_source_root`, added
+    `handoffs/2026-09-22-loop-consultant-retrieval.md`: config for
+    `dfmcp.knowledge_tools`' five native tools (`web.search`, `web.fetch`,
+    `knowledge.wiki_lookup`, `dfhack.source_search`, `dfhack.source_read`).
+    `brave_api_key` has no default (a secret, read from the environment like
+    a role token -- `ServerConfig`/`config_from_env` below); the other two
+    have no safe in-tree default either (this stream built neither a real
+    wiki snapshot nor ran against a real DFHack install -- see
+    `dfmcp/knowledge_tools.py`'s own docstring). Any of the three left unset
+    means the corresponding tool(s) are still listed (per-role allowlist,
+    not per-config) but fail loudly and specifically at call time, matching
+    `doctrine_path`/`series_db_path`'s own "fail loudly if missing" pattern.
 
     `gotchas_db_path`, `confidence`, `production_db_path` and
     `labors_for_kind`, added `handoffs/2026-09-21-building-tool-server.md`:
@@ -591,6 +617,12 @@ def build_mcp_server(
                         db_path=gotchas_db_path, known_tools=known_tool_ids,
                         run_id=_run_id(ctx), write_lock=gotchas_write_lock,
                     )
+                elif tool_id in knowledge_tools.NATIVE_TOOL_IDS:
+                    text, structured = await knowledge_tools.call(
+                        tool_id, role, params.arguments or {},
+                        brave_api_key=brave_api_key, wiki_snapshot_path=wiki_snapshot_path,
+                        dfhack_source_root=dfhack_source_root,
+                    )
                 else:  # pragma: no cover -- every native id belongs to one of the above
                     raise AssertionError(f"native tool id {tool_id!r} has no owning module")
             except queue_tools.QueueToolError as exc:
@@ -600,6 +632,8 @@ def build_mcp_server(
             except series_tools.SeriesToolError as exc:
                 return _tool_result_error(str(exc))
             except gotchas_tools.GotchaToolError as exc:
+                return _tool_result_error(str(exc))
+            except knowledge_tools.KnowledgeToolError as exc:
                 return _tool_result_error(str(exc))
             return types.CallToolResult(
                 content=[types.TextContent(type="text", text=text)],
@@ -788,6 +822,8 @@ async def _serve(
         server = build_mcp_server(
             registry, roster, pool, Path(config.queue_db), Path(config.doctrine_path),
             config.series_db, config.gotchas_db, confidence, config.production_db,
+            brave_api_key=config.brave_api_key, wiki_snapshot_path=config.wiki_snapshot_path,
+            dfhack_source_root=config.dfhack_source_root,
         )
         app = build_asgi_app(server, tokens, config.bind_host)
         uvicorn_config = uvicorn.Config(app, host=config.bind_host, port=config.bind_port, log_level="info")
@@ -806,7 +842,7 @@ def main() -> None:
     config = load_config()
     registry = load_registry(native_tools={
         **queue_tools.NATIVE_TOOLS, **doctrine_tools.NATIVE_TOOLS, **series_tools.NATIVE_TOOLS,
-        **gotchas_tools.NATIVE_TOOLS,
+        **gotchas_tools.NATIVE_TOOLS, **knowledge_tools.NATIVE_TOOLS,
     })
     roster = load_roster(registry)
     tokens = load_role_tokens(roster)
