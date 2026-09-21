@@ -3,8 +3,10 @@
 Repo memory: context that isn't derivable from the code. One line per file.
 
 - [DFHack environment](dfhack-environment.md) — verified versions, paths,
-  script-paths.txt, the remote interface, and which tools are shipped-but-
-  unavailable in 53.16. Check this before assuming any DFHack tool works.
+  script-paths.txt, the remote interface, which tools are shipped-but-
+  unavailable in 53.16, and (added 2026-09-21) how positions and nobles, zones,
+  building and job tables, generated reactions and save slots really behave.
+  Check this before assuming any DFHack tool works.
 
 - [Agent memory standards](agent-memory-standards.md) — Letta/Mem0/Zep, Anthropic's
   compaction + memory tool stack, where our four stores map onto the standard,

@@ -301,3 +301,84 @@ throughout, `ReadCurrentTick()` unchanged before and after:
   is a useful integrity check that you pulled the same corpus the audit read.
   **Do not commit them**: this repo is public and they are game data. Stage
   them in a scratchpad and read in place.
+
+## Added 2026-09-21 (building, nobles, zone and deploy work)
+
+Each fact says how it is known. "Live" means read or run on VM 103 on 2026-09-21;
+"source" means read from the install's files and not exercised.
+
+**Nobles and positions**
+- The fortress entity is `df.global.plotinfo.main.fortress_entity` (id 36 on
+  Uniboslan). `positions.own` holds the position definitions (14: `code`, `id`,
+  `flags`, `requires_population`, `number`, `required_office` / `required_bedroom` /
+  `required_dining` / `required_tomb`, `description`); `positions.assignments` holds the
+  slots (12: `id`, `histfig`, `histfig2`, `position_id`, `flags.active`). A vacant slot
+  has `histfig` -1; a real holder has `histfig` and `histfig2` equal. (live)
+- Position flags decide what can be appointed: `ELECTED` (the mayor), and
+  `requires_population` with `HAS_MET_POP_REQ` (Dungeon Master, Captain of the Guard and
+  Mayor need 50 and are unmet). MANAGER is appointed, `number` 1, `required_office` 1;
+  its description says it must work in an office to validate work orders. (live)
+- **Appointing works with the minimal write set** (live): set the assignment's `histfig`
+  and `histfig2` to the figure's id, and insert a `histfig_entity_link_positionst`
+  (`entity_id`, `link_strength` 100, `assignment_id`, `assignment_vector_idx` = the
+  **0-based** index of the assignment in `positions.assignments`, `start_year`) into the
+  figure's `entity_links`. Removing: erase that link, insert a
+  `histfig_entity_link_former_positionst` (`start_year`, `end_year`), set both fields to
+  -1. `dfhack.units.getNoblePositions(unit)` reflects both, and `getReadableName` shows
+  the title ("manager"). No history event was needed; the version that also writes one
+  (as `internal/emigration/unit-link-utils.lua` does on removal) is untested.
+- **`ipairs` over a game vector starts at 0** (live), so `make-monarch.lua`'s use of the
+  `ipairs` index as `assignment_vector_idx` is correct.
+- An appointed Manager with **no Office did not start** three hand-validated queued
+  orders in about 3,900 ticks (live, one fort). The user confirmed from play that an
+  office is required. What makes a room meet a required value is not exposed by the game
+  or DFHack (no room-value function; only `dfhack.buildings.getRoomDescription`).
+
+**Zones and rooms**
+- The zone vector is `df.global.world.buildings.other.ACTIVITY_ZONE` (`ZONE` does not
+  exist). (live)
+- quickfort's `zone_db_raw` has **18 zone kinds** on this install (AnimalTraining,
+  ArcheryRange, Barracks, Bedroom, ClayCollection, DiningHall, Dormitory, Dump, Dungeon,
+  FishingArea, MeetingHall, Office, Pen, PlantGathering, Pond, SandCollection, Tomb,
+  WaterSource). (live, read through Lua upvalues)
+- A zone's owner can be set two ways: quickfort's `assigned_unit` property calls
+  `preserve-rooms` `assignToRole(position_code, zone)` (23 codes; the room follows the
+  role's holder; only Bedroom, DiningHall, Office and Tomb), or `dfhack.buildings.setOwner`
+  with a unit id. `quickfort --dry-run` returns before it assigns, so a dry run cannot
+  prove an assignment. (source, dry-run checks live; no real assignment has run)
+
+**Buildings and jobs**
+- quickfort's `building_db_raw` and `zone_db_raw` are locals; reach them by Lua upvalues by
+  name (`do_run` to the db to its metatable `__index` to the raw table) and fail loud
+  naming the missing hop. 175 building kinds. (live)
+- `dfhack.buildings.getFiltersByType` returns DFHack's **hand-written tables** in
+  `hack/lua/dfhack/buildings.lua` for standard kinds; only the Soap Maker and Screw
+  Press come from the game's raws. `quantity` is unset except for the Siege Workshop.
+  (source)
+- `quickfort --dry-run` can print "Unsuitable tiles" while returning `CR_OK`: judge
+  validity from its statistics, not its return code. (live negative control)
+- `dfhack.workshops.getJobs(building, workshop, custom)` (`hack/lua/dfhack/workshops.lua`)
+  builds a workshop's job list: hard-coded definitions plus every reaction the raws attach
+  to that building, each reagent converted to a `job_item` by `reagentToJobItem`. It
+  covers hard-coded jobs for only 16 of 33 workshop and furnace kinds. (source, plus the
+  Lua stream's dump)
+- A job has flags `repeat`, `do_now`, `by_manager` and `suspend` (read from a fresh
+  `df.job`); `repeat` is the workshop's own standing order. Setting it is untested.
+- **The 145 `MAKE_ENT<n> <PART>` reactions** (instrument pieces; Craftsdwarfs 100, forges
+  15, glass furnaces 13, Kiln 7, Leatherworks 6, Masons 3, Carpenters 1) are in no raw
+  file: they are generated with the world and live in `world.raws.reactions.reactions`,
+  each carrying `raw_strings`. Read them from the running game; a new world needs the
+  read repeated. (live)
+- Labor sources: `df.job_skill.attrs[i].labor` gives a labor for 68 skills (ids -1 to
+  148); `plugins.orders.get_profile_labors` (the Workers tab) is non-empty for 17 kinds;
+  the Mason's Workshop's list is STONECUTTER and STONE_CARVER, never MASON. (live)
+
+**Units and saves**
+- Hunger and thirst are `unit.counters2.hunger_timer` and `unit.counters2.thirst_timer`
+  (`unit.counters` has no `hunger_timer`). (live)
+- `quicksave` rotates slot directories (`autosave 1` to `3`); `save/current` is the
+  game's working directory and can vanish after a rotation, so a check on its mtime alone
+  can pass for the wrong reason. Confirm by every slot's `world.sav` mtime and
+  `df.global.world.cur_savegame.save_dir`. (live)
+- `dfhack-run lua -f file` does not provide `dfhack_flags`; a module-style script needs a
+  small wrapper that sets it. (live)
