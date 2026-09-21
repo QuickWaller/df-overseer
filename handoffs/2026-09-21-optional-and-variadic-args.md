@@ -164,7 +164,7 @@ variable-size kind (naming the range). `df-overseer-labor.lua` takes
   sentences removed), header documents the token grammar and `skippable`.
 - `dfmcp/README.md`: one paragraph.
 - Tests: `dfmcp/tests/test_tools.py` (sweep rewritten to use the parser, 29 new
-  grammar and real-manifest tests), `dfmcp/tests/test_gotchas_server.py` (13 new
+  grammar and real-manifest tests), `dfmcp/tests/test_gotchas_server.py` (17 new
   over the real SDK client and in-process app: find with only KIND and
   NEAR_LANDMARK reaches the fake DFHack as `find Still Wagon`, given size
   unchanged, LEVEL alone sends one leading number, a lone `w` or `h` refused and
