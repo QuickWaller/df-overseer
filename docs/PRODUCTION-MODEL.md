@@ -1,5 +1,15 @@
 # The production model
 
+Status, 2026-09-22: **built in part, and read live for labors only.** The
+`production/` package (schema, store, extractor, blocker, cover, snapshot
+assembler, and `labors.py` with `labor_ingest.py`) exists on `main`. A graph
+database built from the real raws, the game's skill-to-labor table and the 145
+generated reactions is deployed on VM 103 and read by the MCP server, but only
+to answer "which labors operate this workshop" for the building tool
+(`handoffs/2026-09-21-deploy-building-batch.md`). No report shows the blocker
+walk or the days-of-cover calculator pointed at the live fort. The paragraph
+below is the original status, kept.
+
 Status, 2026-09-18: **design settled, nothing built.** This is the build spec
 for the production and logistics model. It supersedes nothing; it is the
 implementable form of `research/2026-09-18-production-graph.md`, corrected by
@@ -59,7 +69,7 @@ negotiable.
 
 | | Contents | Rule |
 |---|---|---|
-| **Q1 static, known** | Stoichiometry, reagent lists, workshop and labour per reaction, growdur, seasons, densities, values, container classes | Free and exact. Do maximum arithmetic here |
+| **Q1 static, known** | Stoichiometry, reagent lists, workshop per reaction, labour per reaction only in part (a skill is not a labour and the game applies some in code; 304 of 366 processes had a determined labour on the graph deployed 2026-09-21, see `production/labors.py`), growdur, seasons, densities, values, container classes | Free and exact. Do maximum arithmetic here |
 | **Q2 static, measurable** | Job duration, true container capacity, hand-haul load, traffic weights | Constants *of this install*. One opportunistic measurement pays forever. Every row carries the worker's skill level or the figure rots |
 | **Q3 dynamic, exact** | Stock, claims, queue depth, stockpile occupancy, labour flags, distances, tick | Cheap and exact. **Two snapshots make an exact rate** |
 | **Q4 dynamic, inferential** | Happiness effect on work rate, interruption behaviour, time lost to needs, migration | **Never a formula term.** Detected as a residual, never modelled |
@@ -188,7 +198,10 @@ garbage. Verified live.
 ## 5. Consumption: four outcomes, derivable
 
 The first design had three. The raws express four. The derivation rule is
-clean and had zero exceptions across 159 reactions and 314 reagent lines:
+clean and had zero exceptions across 159 reactions and 314 reagent lines
+(the reactions in the shipped raw files; the 145 generated `MAKE_ENT<n> <PART>`
+reactions exist only in the world save and the rule was not checked against
+them):
 
 | Rule | Outcome | Example |
 |---|---|---|
@@ -214,7 +227,9 @@ are measured and never read.
 ## 6. Extraction, in two passes
 
 **Pass 1, parse.** Read the four shipped reaction files, the plant file, the
-material files and the item files. Emit processes, flows, attributes and
+material files and the item files. (The 145 generated reactions the game also
+lists for workshops are in no raw file; the deployed graph adds them from one
+bounded read of the running game, see `docs/TRAPS.md`.) Emit processes, flows, attributes and
 classes. Flows whose product material is parametric
 (`GET_MATERIAL_FROM_REAGENT`) are written with `node_id` NULL.
 
