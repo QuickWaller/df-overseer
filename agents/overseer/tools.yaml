@@ -38,70 +38,81 @@ read:
   - id: "stocks.food-drink"
     status: exists
     note: >-
-      Added handoffs/2026-09-16-stocks-read-and-labor-race.md. Fort-owned
-      (never caravan-owned) drink/prepared-meal/raw-edible counts plus
-      rotten/unreachable flags per bucket. Not yet deployed to VM 103 -- see
-      TOOLS.yaml's own notes.
+      Added handoffs/2026-09-16-stocks-read-and-labor-race.md. Fort-owned (never
+      caravan-owned) drink/prepared-meal/raw-edible counts plus
+      rotten/unreachable flags per bucket. Deployed to VM 103 2026-09-16 and
+      redeployed 2026-09-19; see TOOLS.yaml's own notes.
   - id: "stocks.seeds"
     status: exists
-    note: Same file, same deploy caveat as stocks.food-drink above.
+    note: >-
+      Same file, deployed with stocks.food-drink above.
   - id: "stocks.availability"
     status: exists
     note: >-
-      Added handoffs/2026-09-19-per-item-flags-tool.md, offline build --
-      never run against a live DFHack process. Per-item-type netting
-      (in_job/owned+UNIT_HOLDER/forbid/trader), so 3 empty buckets that are
-      all job-claimed reads differently from all forbidden or all
-      dwarf-owned -- three different actions, not one "need bucket" alarm.
-      owned_ref_check.verified_offline is always false until a live run;
-      TOOLS.yaml carries the full reasoning.
+      Added handoffs/2026-09-19-per-item-flags-tool.md as an offline build;
+      deployed and run live 2026-09-19 (handoffs/2026-09-19-deploy-and-live-
+      verify.md), and the six-deduction form (in_job, owned+UNIT_HOLDER, forbid,
+      trader, in_building, construction) deployed 2026-09-20
+      (handoffs/2026-09-19-deploy-batch.md). Per-item-type netting, so 3 empty
+      buckets that are all job-claimed reads differently from all forbidden or
+      all dwarf-owned: different actions, not one 'need bucket' alarm.
+      owned_ref_check.verified_offline is true since both UNIT_HOLDER branches
+      were exercised live 2026-09-19. TOOLS.yaml still tags the command
+      unverified (a registry test pins that), so read it as run live once, not
+      as settled.
   - id: "farm.find"
     status: exists
     note: >-
       Added handoffs/2026-09-16-farm-and-still-tools.md. Candidate farm-plot
       floor, tagged outside/inside and the fort-owned seeds actually valid
-      there. Not yet deployed to VM 103.
+      there. Deployed to VM 103 2026-09-17.
   - id: "farm.list"
     status: exists
     note: >-
-      Added handoffs/2026-09-17-farm-tool-fixes.md. Every built farm plot
-      with its id and per-season crop; farm.set-crop needs the id. Not yet
-      deployed to VM 103.
+      Added handoffs/2026-09-17-farm-tool-fixes.md. Every built farm plot with
+      its id and per-season crop; farm.set-crop needs the id. Deployed to VM 103
+      2026-09-17.
   - id: "workshop.find"
     status: exists
     note: >-
       Same handoff, extended handoffs/2026-09-17-water-and-industry-tools.md
-      item 3 with mason/mechanic/carpenter and a building_material report
-      shared by all five kinds. Not yet deployed.
+      item 3 with mason/mechanic/carpenter and a building_material report shared
+      by all five kinds. Deployed to VM 103 2026-09-17. It covers five kinds
+      only; building.find is the generic one.
   - id: "zone.find"
     status: exists
     note: >-
-      Added handoffs/2026-09-17-water-and-industry-tools.md item 1. Ranked
-      revealed water bodies (bounding box, tile count, depth, stagnant/
-      salt) -- read this before zone.place, same pairing as farm.find/
-      workshop.find above. Not yet deployed.
+      Added handoffs/2026-09-17-water-and-industry-tools.md item 1 as a water-
+      body finder, deployed 2026-09-17. Generalised by handoffs/2026-09-21-zone-
+      tool-generalise.md to any of the install's 18 zone kinds (WaterSource
+      keeps its own finder), deployed with the new script 2026-09-21; not called
+      after that deploy, only zone.list-kinds and zone.check-owner were. Read
+      this before zone.place, same pairing as farm.find/workshop.find above.
   - id: "trees.find"
     status: exists
     note: >-
-      Same handoff, item 2. Distance-banded counts/reachability, CUTWOOD
-      labor and axe counts -- read before trees.fell. Not yet deployed.
+      Same handoff, item 2. Distance-banded counts/reachability, CUTWOOD labor
+      and axe counts; read before trees.fell. Deployed to VM 103 2026-09-17.
   - id: "well.find"
     status: exists
     note: >-
       Same handoff, item 5. Ranked pond-edge well sites with
-      BLOCKS/BUCKET/CHAIN/TRAPPARTS fort-owned counts -- read before
-      well.build. Not yet deployed.
+      BLOCKS/BUCKET/CHAIN/TRAPPARTS fort-owned counts; read before well.build.
+      Deployed to VM 103 2026-09-17.
   - id: "orders.list"
     status: exists
     note: >-
-      Same handoff, item 4. Pending manager orders and whether a Manager
-      is appointed. Not yet deployed.
+      Same handoff, item 4. Pending manager orders and whether a Manager is
+      appointed. Deployed to VM 103 2026-09-17. It read manager_appointed false
+      when first live-verified; since 2026-09-21 unit 345 holds MANAGER
+      (handoffs/2026-09-21-nobles-appoint.md), but the fort has no Office and
+      queued manager orders still do not run.
   - id: "workjob.list"
     status: exists
     note: >-
-      Added handoffs/2026-09-19-workshop-add-job.md. The known JOB
-      vocabulary (blocks/mechanisms/brew_drink) for workjob.queue below.
-      Offline build, not yet run against a live DFHack process.
+      Added handoffs/2026-09-19-workshop-add-job.md. The known JOB vocabulary
+      (blocks/mechanisms/brew_drink) for workjob.queue below. Deployed
+      2026-09-19 and run live.
   - id: "stockpile.list"
     status: exists
     note: >-
@@ -186,29 +197,31 @@ read:
   - id: "gotchas.get"
     status: exists
     note: >-
-      Added handoffs/2026-09-21-building-tool-server.md. Known hazards for a tool,
-      each titled by its condition. Try a listed one only if its title applies and the
-      tool fails without it. Not yet deployed.
+      Added handoffs/2026-09-21-building-tool-server.md. Known hazards for a
+      tool, each titled by its condition. Try a listed one only if its title
+      applies and the tool fails without it. Deployed 2026-09-21 (the live store
+      was empty at deploy).
   - id: "gotchas.write"
     status: exists
     note: >-
-      Same handoff. Records a proposed gotcha, or an outcome on an existing one. It changes
-      no fort state, only the gotcha store. Not yet deployed.
+      Same handoff. Records a proposed gotcha, or an outcome on an existing one.
+      It changes no fort state, only the gotcha store. Deployed 2026-09-21; the
+      write path was tested only against a temporary store, never the live one.
   - id: "building.list-kinds"
     status: exists
     note: >-
-      Added handoffs/2026-09-21-building-tool-lua.md. Every building kind the game
-      can place, from quickfort's own table. Not yet deployed.
+      Added handoffs/2026-09-21-building-tool-lua.md. Every building kind the
+      game can place, from quickfort's own table. Deployed 2026-09-21.
   - id: "building.find"
     status: exists
     note: >-
-      Same handoff. Ranked sites and what the kind needs, for any kind. Read-only.
-      Not yet deployed.
+      Same handoff. Ranked sites and what the kind needs, for any kind. Read-
+      only. Deployed 2026-09-21.
   - id: "labor.enabled-counts"
     status: exists
     note: >-
-      Same handoff. How many citizens have a labor enabled; null plus an error when
-      unknown, never 0. Not yet deployed.
+      Same handoff. How many citizens have a labor enabled; null plus an error
+      when unknown, never 0. Deployed 2026-09-21.
 
   - id: "nobles.list"
     status: exists
@@ -238,50 +251,54 @@ write:
     status: exists
     note: >-
       Added handoffs/2026-09-17-dig-down-to-stone.md. Designates a
-      downstair/upstair pair to extend the walkable network down one level
-      -- never one half without the other. No paired diggable.find-stair
-      read here, matching diggable.find/diggable.dig's own established
-      pairing (the Overseer acts on the Architect's discovery, it does not
-      discover for itself -- dfmcp/tests/test_roles.py
-      test_the_overseer_can_act_but_cannot_discover), not the newer farm/
-      zone/trees/well read-before-write pattern. DRY_RUN defaults to true;
-      only the dry-run path is live-verified this session (real mutation
-      was forbidden).
+      downstair/upstair pair to extend the walkable network down one level,
+      never one half without the other. No paired diggable.find-stair read here,
+      matching diggable.find/diggable.dig's own established pairing (the
+      Overseer acts on the Architect's discovery, it does not discover for
+      itself; dfmcp/tests/test_roles.py
+      test_the_overseer_can_act_but_cannot_discover), not the newer
+      farm/zone/trees/well read-before-write pattern. DRY_RUN defaults to true.
+      The dry-run path was live-verified 2026-09-17 and the real designation ran
+      2026-09-18, both halves read back (handoffs/2026-09-18-well-unblock.md);
+      the rollback-on-partial-failure branch is untested.
   - id: "landmarks.build"
     status: exists
   - id: "farm.build"
     status: exists
     note: >-
-      Added handoffs/2026-09-16-farm-and-still-tools.md. DRY_RUN defaults
-      to true -- an explicit false is required to actually mutate. Only the
-      dry-run path is live-verified; the real quickfort/setName path is
-      UNTESTED live. Blueprint not yet deployed to VM 103's
-      dfhack-config/blueprints/ -- see blueprints/README.md.
+      Added handoffs/2026-09-16-farm-and-still-tools.md. DRY_RUN defaults to
+      true, so an explicit false is required to actually mutate. Deployed
+      2026-09-17, and the real path was run that day: it placed a 5x5 farm plot
+      at z168, verified by a direct struct read (decisions/DECISIONS.md
+      2026-09-17). The blueprint is deployed to the guest's dfhack-
+      config/blueprints/.
   - id: "farm.set-crop"
     status: exists
     note: >-
       Same handoff. DRY_RUN defaults to true. Writes
-      building_farmplotst.plant_id[season] directly, by the same pattern
-      as set_labor below. UNTESTED live for the real write (this fort has
-      no farm plot to test against yet); only the plot-not-found refusal
-      path was exercised.
+      building_farmplotst.plant_id[season] directly, by the same pattern as
+      set_labor below. The real write was live-verified 2026-09-17 (plump helmet
+      in all four seasons, read back); a crop written before the plot's
+      construction completes does not survive it, so set the crop after
+      flags.exists (docs/TRAPS.md).
   - id: "workshop.build"
     status: exists
     note: >-
-      Same handoff. DRY_RUN defaults to true. Only the dry-run path is
-      live-verified. Blueprints not yet deployed. KIND now also accepts
-      mason/mechanic/carpenter (handoffs/2026-09-17-water-and-industry-
-      tools.md item 3) -- the real quickfort path for these three is
-      UNTESTED live, same as still/kitchen already were.
+      Same handoff. DRY_RUN defaults to true. Deployed 2026-09-17 with its
+      blueprints. The real path for a still ran 2026-09-17 (the still was
+      designated; decisions/DECISIONS.md 2026-09-17); the real path for
+      mason/mechanic/carpenter (handoffs/2026-09-17-water-and-industry-tools.md
+      item 3) is untested live. It covers five kinds only; building.build is the
+      generic one.
   - id: "zone.place"
     status: exists
     note: >-
-      Added handoffs/2026-09-17-water-and-industry-tools.md item 1.
-      DRY_RUN defaults to true. The real path writes a throwaway #zone
-      blueprint shaped to the chosen water body and deletes it after --
-      UNTESTED live (mutation forbidden that stream); io availability and
-      dfhack-config/blueprints/ resolution were confirmed live with a
-      read-only open, the write itself was not exercised.
+      Added handoffs/2026-09-17-water-and-industry-tools.md item 1, generalised
+      by handoffs/2026-09-21-zone-tool-generalise.md to any of the install's 18
+      zone kinds with an optional OWNER. DRY_RUN defaults to true. Deployed
+      2026-09-21. Only dry runs have been run through this tool (an Office dry
+      run validated in quickfort); the real placement, the read-back and both
+      owner assignments have never been run.
   - id: "trees.fell"
     status: exists
     note: >-
@@ -292,21 +309,22 @@ write:
     status: exists
     note: >-
       Same handoff, item 5. DRY_RUN defaults to true. Needs a matching
-      BLUEPRINT_FILE (a 1x1 #build `l` Well cell) deployed to
-      dfhack-config/blueprints/ -- see blueprints/README.md. UNTESTED live.
+      BLUEPRINT_FILE (a 1x1 #build `l` Well cell) in dfhack-config/blueprints/,
+      deployed 2026-09-17. The real path was run 2026-09-19: it placed and
+      completed the fort's well (decisions/DECISIONS.md 2026-09-19).
   - id: "orders.create"
     status: exists
     note: >-
-      Same handoff, item 4; job vocabulary extended
-      handoffs/2026-09-18-lever-gap-tools.md. DRY_RUN defaults to true.
-      JOB is one of blocks/mechanisms/barrels/brew_drink/bucket/bed/door/
-      table/chair/splint/crutch/soap -- see the .lua file's own header for
-      each job's live-verified df.job_type id and workshop_subtype
-      confidence. No citizen currently holds the MANAGER noble position on
-      this fort (live-verified) -- whether an order queues into a real job
-      without one is unverified; reported as `manager_appointed` on every
-      call, not enforced as a refusal. UNTESTED live for the real
-      create_orders call.
+      Same handoff, item 4; job vocabulary extended handoffs/2026-09-18-lever-
+      gap-tools.md. DRY_RUN defaults to true. JOB is one of blocks/mechanisms/ba
+      rrels/brew_drink/bucket/bed/door/table/chair/splint/crutch/soap; see the
+      .lua file's own header for each job's live-verified df.job_type id and
+      workshop_subtype confidence. No citizen held the MANAGER position when
+      this was written; unit 345 has held it since 2026-09-21, but the fort has
+      no Office and queued manager orders still do not run
+      (handoffs/2026-09-21-nobles-appoint.md). manager_appointed is reported on
+      every call, not enforced as a refusal. Deployed 2026-09-17; the real
+      create_orders call is untested live.
   - id: "orders.cancel"
     status: exists
     note: >-
@@ -317,33 +335,30 @@ write:
   - id: "workjob.queue"
     status: exists
     note: >-
-      Added handoffs/2026-09-19-workshop-add-job.md, the direct-workshop-
-      job route: this fort has no appointed Manager and manager orders
-      (orders.create above) have twice, empirically, run 15,000-50,000+
-      ticks each without ever converting into a real job
-      (handoffs/2026-09-19-well-and-harvest.md section 5,
-      handoffs/2026-09-19-well-finish.md sections 2-4) -- this is the
-      other legitimate vanilla route (the "q -> add job" menu), needing no
-      Manager at all. Granted to the Overseer only, as the sole writer,
-      matching every other fort-mutating tool in this file. DRY_RUN
-      defaults to true. Never sets `status.validated` and never touches
-      `world.manager_orders.all` -- a separate route from orders.create/
-      cancel, not a patch on them. Offline build, the real
-      createLinked/assignToWorkshop mutation path is UNTESTED live -- see
-      the .lua file's own header and TOOLS.yaml's notes for exactly what
-      the first live run must check before trusting this beyond dry-run.
+      Added handoffs/2026-09-19-workshop-add-job.md, the direct-workshop-job
+      route: this fort had no appointed Manager and manager orders
+      (orders.create above) ran 15,000-50,000+ ticks each without ever
+      converting into a real job (handoffs/2026-09-19-well-and-harvest.md
+      section 5, handoffs/2026-09-19-well-finish.md sections 2-4). A Manager was
+      appointed 2026-09-21 but orders still do not run, and this is the other
+      legitimate vanilla route (the 'q -> add job' menu). Granted to the
+      Overseer only, as the sole writer. DRY_RUN defaults to true. Never sets
+      status.validated and never touches world.manager_orders.all. Deployed
+      2026-09-19 and run for real: a blocks job and a mechanisms job made the
+      parts for the well (decisions/DECISIONS.md 2026-09-19). TOOLS.yaml still
+      tags the command unverified (a registry test pins that).
   - id: "labor.set-labor"
     status: exists
     hazard: >-
-      FIXED 2026-09-16 (handoffs/2026-09-16-stocks-read-and-labor-race.md
-      item 3), not yet redeployed to VM 103 (TOOLS.yaml marks this command
-      STALE). No longer races autolabor by default: it now disables
-      autolabor's management of that ONE LABOR, fort-wide, before writing,
-      or refuses outright if it cannot tell whether autolabor is even
-      enabled. The fort-wide (not per-unit) side effect is real and is
-      named in the tool's own return message every time it fires -- treat
-      any set-labor call as "this labor is now hand-managed for everyone,
-      not just this citizen," not as a narrow, single-unit action.
+      FIXED 2026-09-16 (handoffs/2026-09-16-stocks-read-and-labor-race.md item
+      3) and deployed to VM 103 with the 2026-09-21 deploy (TOOLS.yaml no longer
+      marks it STALE); no set-labor call has been made since. No longer races
+      autolabor by default: it now disables autolabor's management of that ONE
+      LABOR, fort-wide, before writing, or refuses outright if it cannot tell
+      whether autolabor is even enabled. The fort-wide (not per-unit) side
+      effect is real and is named in the tool's own return message every time it
+      fires. Treat any set-labor call as 'this labor is now hand-managed for
+      everyone, not just this citizen', not as a narrow, single-unit action.
   - id: "queue.rule"
     status: exists
     note: >-
@@ -357,8 +372,9 @@ write:
   - id: "building.build"
     status: exists
     note: >-
-      Same handoff. Places any kind at a ranked site; dry run by default. The first real
-      build of a never-built kind needs the user's go-ahead. Not yet deployed.
+      Same handoff. Places any kind at a ranked site; dry run by default.
+      Deployed 2026-09-21 and dry-run only so far: the first real build of a
+      never-built kind needs the user's go-ahead.
 
   - id: "nobles.appoint"
     status: exists

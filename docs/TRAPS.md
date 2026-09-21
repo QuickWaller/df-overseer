@@ -94,6 +94,17 @@ findings without another doc home yet.
   signal in either direction.** Poll the save slot's mtime for up to ~90s.
 - **Quicksave rotates forward through the `autosave N` slot pool,
   overwrite-oldest-first** — always re-read `cur_savegame.save_dir` fresh.
+  **Extended 2026-09-22: a "did the save happen" check that watches one fixed
+  path can pass or fail for the wrong reason.** Symptom (nobles stream,
+  2026-09-21, `handoffs/2026-09-21-nobles-appoint.md`): a comparison of one
+  slot's `world.sav` mtime, chosen before the quicksave, was unusable because the
+  slot it named had rotated away by the time the save landed, so a changed or
+  unchanged mtime proved nothing about the save just requested. Cause: each
+  quicksave writes into the next slot, and `current` is not where it lands.
+  What to do: after a quicksave, read **every** slot's `world.sav` mtime and
+  the fort's own `cur_savegame.save_dir`, and accept the save only when the slot
+  `cur_savegame.save_dir` names carries a fresh mtime. Record which slot it was,
+  because it is the slot to restore from.
 - **VM 103's SSH host key changes across a full Proxmox stop/start cycle**
   — expected, given documented intentional restarts; fix with
   `ssh-keygen -R <ip>` then accept the new key.
@@ -460,6 +471,15 @@ throughout, no file was written, no designation or struct write happened.
   deployed one, put a uniquely named copy in its own `/tmp` directory, call
   `dfhack.internal.addScriptPath` on that directory, run it as a named command,
   then `removeScriptPath` and delete the copy.
+  **Extended 2026-09-22:** a script written in the module style (it guards on
+  `dfhack_flags.module` and exports functions) needs a small wrapper to run
+  under `lua -f` at all. The wrapper used to test the generalised zone tool
+  (`handoffs/2026-09-21-zone-tool-generalise.md`, "Verified live") is about nine
+  lines: take the script path and its arguments from `...`, set the global
+  `dfhack_flags = {module = false}`, `loadfile` the path, call it under `pcall`
+  with the arguments, restore `dfhack_flags`, print any error. Run it as
+  `dfhack-run lua -f run.lua PATH ARGS`. The deployed tools are unaffected,
+  since they run by name, which is how they have run live.
 - **`dfhack.buildings.getName` returns a type default ("Farm Plot") when a
   building's own name is empty**, so it is never unique and never safe for
   looking a building up. Identify buildings by `building.id`.
@@ -467,6 +487,15 @@ throughout, no file was written, no designation or struct write happened.
   `main`.** With unpushed commits, the agent's checkout lacks them (both
   2026-09-17 executors found no handoff file). Tell the agent to check for the
   commit it needs and to `git merge --ff-only main` if it is missing.
+  **Extended 2026-09-22:** a subagent worktree is created from `origin/main`
+  and carries its own copy of `.claude/settings.json`, so neither an unpushed
+  commit nor an uncommitted or unpushed setting reaches it (register 2026-09-21,
+  auto-mode row). Symptom: the agent cannot find the handoff or a helper you just
+  committed, or it is refused for something your settings allow. Cause: the
+  checkout is built from the remote branch, not from your working tree. What to
+  do: make the first instruction to such an agent `git merge --ff-only main`,
+  then `git log --oneline -3` to confirm the expected tip, and stop if the
+  fast-forward fails.
 - **quickfort silently skips dig designation on a tile occupied by a building**
   (a stockpile included) and still reports success. Read the designation back;
   never trust the call. `dig-stair` left an orphan UpStair this way.
@@ -478,6 +507,72 @@ throughout, no file was written, no designation or struct write happened.
   skip an optional slot once a later one is given.
 - **`mcp==2.2.0`'s `streamable_http_client`** takes `http_client=` (a built
   client), not `headers=`, and yields a 2-tuple.
+
+## Added 2026-09-22, from the 2026-09-21 tool batch
+
+- **DFHack's `ipairs` over a game vector starts at 0, so copying an index from
+  `ipairs` into a 0-based field is correct.** Symptom: a remark that DFHack's
+  make-monarch code wrote an off-by-one `assignment_vector_idx` was wrong.
+  Cause: unlike plain Lua's 1-based `ipairs`, iterating a DFHack vector yields
+  index 0 first (verified live: first index 0), and a real position holder's
+  link stores the 0-based vector index, so `assignment_vector_idx =
+  assignment_idx` was correct as written. What to do: before "fixing" an index
+  by one, read a real existing record of the same kind and compare. Separately,
+  `ipairs` over the linked list `df.global.world.jobs.list` returns nothing at
+  all, because it is a linked list and not a vector
+  (`handoffs/2026-09-21-nobles-appoint.md`, `handoffs/2026-09-18-well-unblock.md`).
+- **On this Windows workstation a working-copy hash will not match the deployed
+  bytes.** Symptom: `sha256sum` of a file under the repo differs from the file
+  installed by a deploy that verified clean. Cause: `core.autocrlf=true` checks
+  files out with CRLF (measured 2026-09-22: `docs/TRAPS.md` has 518 CRs in the
+  working copy and none in its committed blob) while the deploy ships LF. What to
+  do: hash the committed bytes, `git -c core.autocrlf=false show HEAD:path |
+  sha256sum`, and build deploy archives with `git -c core.autocrlf=false
+  archive` (`CLAUDE.md`, `handoffs/2026-09-19-deploy-batch.md`). A tool that
+  edits a file here should keep its line endings (read and write with
+  `newline=""`), or the diff shows every line changed.
+- **Long shell commands that carry a heredoc full of quotes, or that mention
+  `git` or `ssh` in a computed form, have been refused in this harness.**
+  Symptom: the command is rejected before it runs. Two different causes are on
+  record and should not be conflated. The auto-mode classifier refused three
+  kinds of command in the deploy stream (an address computed in a shell variable
+  before `ssh`, a variable inside an archive path, a piped file list) and, in a
+  worktree-isolated agent, refuses a `git` command it cannot show stays inside
+  the worktree (`handoffs/2026-09-21-deploy-building-batch.md`; register
+  2026-09-21). The brief for the 2026-09-22 doc pass reports that a long quoted
+  heredoc has been rejected at parse time; a heredoc of Python with quotes did
+  run here on 2026-09-22, so treat that one as intermittent, not a rule. What to do: write
+  files with the editor tool and run a small script by path, keep `ssh` and
+  `git` commands plain and literal, and route a refusal by simplifying the
+  command, never through another agent.
+- **Auto mode's classifier reads its own `autoMode` block only from user or
+  managed settings.** Symptom: live dev-VM work (a deploy, a `dfhack-run` call, a
+  dispatched stream) is refused with names such as "Production Deploy" or
+  "Modify Shared Resources" even though the repo's `.claude/settings.json`
+  allows it. Cause: those are default `soft_deny` rules of the classifier;
+  project `permissions.allow` rules do not override it, broad ones such as
+  `Bash(python *)` or `Agent` are dropped in auto mode, and a list in `autoMode`
+  that does not start with `"$defaults"` **replaces** the defaults instead of
+  extending them. What to do: configure `autoMode` in the user's settings with
+  `"$defaults"` first in each list, check the merged result with
+  `claude auto-mode config`, and do not expect a repo settings edit to reach the
+  classifier (`decisions/DECISIONS.md` 2026-09-21).
+- **`DF_VM_IP` in `.env` carries a CIDR suffix.** Symptom: an `ssh` or `scp` command
+  built from the raw value has the wrong host. Cause: the value is stored in CIDR form
+  (`address/24`); why is not recorded here. What to do: strip everything from the slash
+  before connecting, read the value by its key alone, and never write the address
+  into a tracked file (`handoffs/2026-09-19-deploy-and-live-verify.md`).
+- **The raws are not the whole reaction list.** Symptom: an extraction of every
+  `reaction_*.txt` leaves 145 reactions unread: the game
+  lists them for workshops (`MAKE_ENT<n> <PART>`, the instrument pieces) exist in no
+  raw file. Cause: they are generated per world (each carries `[GENERATED]` and
+  `[SOURCE_ENID]` tokens) and live only in the world save, in
+  `world.raws.reactions.reactions` (304 entries on this fort, 145 of them
+  matching `^MAKE_ENT%d+ `). What to do: read
+  them from the running game with one bounded, read-only loop (each reaction
+  carries its own `raw_strings`), not from disk, and repeat the read for a new
+  world (`handoffs/2026-09-21-extract-remaining-reactions.md`,
+  `handoffs/2026-09-21-deploy-building-batch.md`).
 
 ## DFHack command execution is not safely concurrent, and the watchdog is not exempt
 

@@ -43,8 +43,11 @@
 #                        founded fort and isn't itself perception-layer code).
 #   live_deployed
 #     Whether the FILE is on VM 103's script-paths (per install_df.py
-#     ui-install / script-install). All 10 files are, confirmed
-#     2026-09-12 (Working.md handover) -- this field exists per-command
+#     ui-install / script-install). All 10 files were, confirmed
+#     2026-09-12 (Working.md handover); the later files were deployed
+#     2026-09-17, 2026-09-19 and 2026-09-21 (each deploy handoff's report
+#     is the evidence, and 2026-09-21 also redeployed the labor and zone
+#     scripts and added the building script) -- this field exists per-command
 #     anyway since a file being deployed doesn't mean every subcommand in it
 #     has been exercised for real. "STALE" (see notes) marks a command
 #     whose code was fixed in the repo but where VM 103 is still running an
@@ -347,8 +350,8 @@ df-overseer-diggable.lua:
       lua_function: find_stair_down
       effect: read
       coordinate_bearing: false
-      live_deployed: false
-      verified: "2026-09-17; occupancy fix verified 2026-09-17"
+      live_deployed: true
+      verified: "2026-09-17; occupancy fix verified 2026-09-17. Deployed to VM 103 2026-09-18 by the well-unblock stream's ui-install and run live there for real use: rank 1 was an unoccupied candidate, confirming the occupancy fix (handoffs/2026-09-18-well-unblock.md, section 2)"
       knowledge_scope: player_derivable
       notes: >
         Added handoffs/2026-09-17-dig-down-to-stone.md, the "vertical,
@@ -388,8 +391,8 @@ df-overseer-diggable.lua:
       lua_function: dig_stair_down
       effect: mutate
       coordinate_bearing: internal-only
-      live_deployed: false
-      verified: "2026-09-17 (dry-run path, including the occupancy fix, live-verified; the real dry_run=false path -- both the honest-success and the rollback-on-partial-failure branches -- is UNTESTED live, real mutation forbidden every session so far)"
+      live_deployed: true
+      verified: "2026-09-17 (dry-run path, including the occupancy fix, live-verified; the real dry_run=false path -- both the honest-success and the rollback-on-partial-failure branches -- is UNTESTED live, real mutation forbidden every session so far). CORRECTION 2026-09-22: the real dry_run=false path was run for real on 2026-09-18 and designated both halves, each read back from the tile's own dig flag (handoffs/2026-09-18-well-unblock.md, section 2 step 3), so only the rollback-on-partial-failure branch is still untested. The stair was not watched to completion in that session (see the report there)"
       knowledge_scope: player_derivable
       notes: >
         Added handoffs/2026-09-17-dig-down-to-stone.md. Designates BOTH
@@ -440,8 +443,8 @@ df-overseer-farm.lua:
       lua_function: find_farm_plot_area
       effect: read
       coordinate_bearing: false
-      live_deployed: false
-      verified: "2026-09-16 (dry-run/read-only, via a /tmp copy, never deployed)"
+      live_deployed: true
+      verified: "2026-09-16 (dry-run/read-only, via a /tmp copy, never deployed). CORRECTION 2026-09-22: deployed to VM 103 on 2026-09-17 (handoffs/2026-09-17-farm-tools-deploy.md, hash-verified) and used there for the first farm plot"
       knowledge_scope: player_derivable
       notes: >
         Candidates are revealed, dug, soil/grass/plant or muddied-stone
@@ -462,8 +465,8 @@ df-overseer-farm.lua:
       lua_function: build_farm_plot
       effect: mutate
       coordinate_bearing: internal-only
-      live_deployed: false
-      verified: "2026-09-16 (DRY_RUN=true path only; the real quickfort/setName path is UNTESTED live)"
+      live_deployed: true
+      verified: "2026-09-16 (DRY_RUN=true path only; the real quickfort/setName path is UNTESTED live). CORRECTION 2026-09-22: deployed 2026-09-17, and the real path was run that day: farm build placed a 5x5 farm plot at z168, orchestrator-verified by a direct struct read (decisions/DECISIONS.md 2026-09-17, handoffs/2026-09-17-farm-still-first-build.md)"
       knowledge_scope: player_derivable
       notes: >
         DRY_RUN defaults to true; only an explicit false performs the real
@@ -481,8 +484,8 @@ df-overseer-farm.lua:
       lua_function: list_farm_plots
       effect: read
       coordinate_bearing: false
-      live_deployed: false
-      verified: "2026-09-17 (read-only, via addScriptPath to a /tmp copy): resolved Uniboslan's real plot, id 4, all four seasons MUSHROOM_HELMET_PLUMP"
+      live_deployed: true
+      verified: "2026-09-17 (read-only, via addScriptPath to a /tmp copy): resolved Uniboslan's real plot, id 4, all four seasons MUSHROOM_HELMET_PLUMP. Deployed to VM 103 2026-09-17 (handoffs/2026-09-17-farm-tools-deploy.md, hash-verified)"
       knowledge_scope: player_visible
       notes: >
         Added handoffs/2026-09-17-farm-tool-fixes.md. Every built farm plot
@@ -495,8 +498,8 @@ df-overseer-farm.lua:
       lua_function: set_farm_crop
       effect: mutate
       coordinate_bearing: false
-      live_deployed: false
-      verified: "2026-09-17 (DRY_RUN=true path and refusal paths against real plot id 4); real (DRY_RUN=false) write live-verified 2026-09-17, handoffs/2026-09-17-farm-stair-live-test.md Result section 3 (BUSH_QUARRY written to plot 4 spring, read back correctly, then restored to MUSHROOM_HELMET_PLUMP) -- correcting this line's own earlier claim that the real write was untested, caught while updating this entry for the dig-stair-fix handoff. The construction-gate refusal itself (writing before flags.exists) is still UNTESTED live -- Uniboslan's own plot was already built by the time this tool existed."
+      live_deployed: true
+      verified: "2026-09-17 (DRY_RUN=true path and refusal paths against real plot id 4); real (DRY_RUN=false) write live-verified 2026-09-17, handoffs/2026-09-17-farm-stair-live-test.md Result section 3 (BUSH_QUARRY written to plot 4 spring, read back correctly, then restored to MUSHROOM_HELMET_PLUMP) -- correcting this line's own earlier claim that the real write was untested, caught while updating this entry for the dig-stair-fix handoff. The construction-gate refusal itself (writing before flags.exists) is still UNTESTED live -- Uniboslan's own plot was already built by the time this tool existed.. Deployed to VM 103 2026-09-17 (handoffs/2026-09-17-farm-tools-deploy.md, hash-verified)"
       knowledge_scope: player_derivable
       notes: >
         Resolves ID (a building id, from farm.build's real result or
@@ -538,8 +541,8 @@ df-overseer-workshop.lua:
       lua_function: find_workshop_area
       effect: read
       coordinate_bearing: false
-      live_deployed: false
-      verified: "2026-09-17 (dry-run/read-only, via dfhack.internal.addScriptPath to a /tmp copy, reversed after)"
+      live_deployed: true
+      verified: "2026-09-17 (dry-run/read-only, via dfhack.internal.addScriptPath to a /tmp copy, reversed after). Deployed to VM 103 2026-09-17 (handoffs/2026-09-17-farm-tools-deploy.md, extended and redeployed the same day in handoffs/2026-09-17-water-industry-tools-deploy.md, hash-verified), where find ran live for still, kitchen, mason, mechanic and carpenter"
       knowledge_scope: player_derivable
       notes: >
         KIND is "still", "kitchen", "mason", "mechanic" or "carpenter" --
@@ -587,10 +590,15 @@ df-overseer-workshop.lua:
       lua_function: build_workshop
       effect: mutate
       coordinate_bearing: internal-only
-      live_deployed: false
-      verified: "2026-09-16 (DRY_RUN=true path only; the real quickfort path is UNTESTED live)"
+      live_deployed: true
+      verified: "2026-09-16 (DRY_RUN=true path only; the real quickfort path is UNTESTED live). Deployed to VM 103 2026-09-17 (handoffs/2026-09-17-farm-tools-deploy.md and the water-industry deploy, hash-verified) and dry-run there for still, kitchen, mason and mechanic"
       knowledge_scope: player_derivable
       notes: >
+        UPDATE 2026-09-22: the starter blueprints for still, kitchen, mason and
+        mechanic were deployed to the guest's dfhack-config/blueprints/ on
+        2026-09-17 (handoffs/2026-09-17-farm-tools-deploy.md and
+        handoffs/2026-09-17-water-industry-tools-deploy.md), so the sentence below
+        that says they are not yet deployed is stale.
         DRY_RUN defaults to true, same contract as farm.build. Dry-run
         tested live for KIND=still. Does not name the building it creates
         (unlike farm.build) -- a workshop's DF-default name was not
@@ -610,8 +618,8 @@ df-overseer-building.lua:
       lua_function: list_kinds
       effect: read
       coordinate_bearing: false
-      live_deployed: false
-      verified: "2026-09-21 (live on VM 103 through a /tmp script path, fort paused; 175 kinds listed, no token collisions)"
+      live_deployed: true
+      verified: "2026-09-21 (live on VM 103 through a /tmp script path, fort paused; 175 kinds listed, no token collisions. After the deploy the same day, over a real MCP client as the overseer: filter Still returned the one Still row and a filter matching nothing returned [])"
       knowledge_scope: player_visible
       notes: >
         Lists every building kind quickfort can place, read at run time
@@ -629,8 +637,8 @@ df-overseer-building.lua:
       skippable: ["[W H]"]
       effect: read
       coordinate_bearing: false
-      live_deployed: false
-      verified: "2026-09-21 (live on VM 103, fort paused, read only: workshop, furnace, 1x1 and 5x5 kinds, furniture, variable-size kinds and error cases)"
+      live_deployed: true
+      verified: "2026-09-21 (live on VM 103, fort paused, read only: workshop, furnace, 1x1 and 5x5 kinds, furniture, variable-size kinds and error cases. After the deploy the same day, over a real MCP client as the overseer: Masons, Still, Smelter, Kiln, Bed, Well and FarmPlot each returned five sites, and the unknown kind, near-miss name, wrong footprint, missing W H and unknown landmark cases each errored with a named reason)"
       knowledge_scope: player_derivable
       notes: >
         Finds up to five non-overlapping sites for one building kind near a
@@ -664,8 +672,8 @@ df-overseer-building.lua:
       skippable: ["[W H]"]
       effect: mutate
       coordinate_bearing: internal-only
-      live_deployed: false
-      verified: "2026-09-21 (DRY_RUN path only, live on VM 103: quickfort's own --dry-run validated the generated blueprint for workshop, furnace, furniture and variable-size kinds; the real path is UNTESTED live)"
+      live_deployed: true
+      verified: "2026-09-21 (DRY_RUN path only, live on VM 103: quickfort's own --dry-run validated the generated blueprint for workshop, furnace, furniture and variable-size kinds, first through a /tmp script path and again after the deploy over a real MCP client as the overseer for Masons, Kiln, Craftsdwarfs, Smelter, Bed and FarmPlot 5x5; the real path is UNTESTED live)"
       knowledge_scope: player_derivable
       notes: >
         Places one building of KIND at the RANK-th site near a landmark.
@@ -691,8 +699,8 @@ df-overseer-zone.lua:
       lua_function: list_kinds
       effect: read
       coordinate_bearing: false
-      live_deployed: false
-      verified: "2026-09-21 (live on VM 103 through a scratch script path, fort paused; 18 kinds listed, no token collisions, FILTER office gave one row, an unmatched FILTER gave [])"
+      live_deployed: true
+      verified: "2026-09-21 (live on VM 103 through a scratch script path, fort paused; deployed and called over a real MCP client the same day; 18 kinds listed, no token collisions, FILTER office gave one row, an unmatched FILTER gave [])"
       knowledge_scope: player_visible
       notes: >
         Lists every zone kind quickfort can place, read at run time from
@@ -712,8 +720,8 @@ df-overseer-zone.lua:
       skippable: ["[W H]"]
       effect: read
       coordinate_bearing: false
-      live_deployed: false
-      verified: "2026-09-21 (live on VM 103, fort paused, read only: Office, Bedroom, DiningHall with and without W H, level -1, and error cases; WaterSource returned the same five bodies as the deployed water-only tool, plus a `token` field)"
+      live_deployed: true
+      verified: "2026-09-21 (deployed to VM 103 the same day, hash-verified; the checks below ran through a scratch script path before the deploy and were not repeated after it. Live on VM 103, fort paused, read only: Office, Bedroom, DiningHall with and without W H, level -1, and error cases; WaterSource returned the same five bodies as the deployed water-only tool, plus a `token` field)"
       knowledge_scope: player_derivable
       notes: >
         Finds up to five non-overlapping sites for one zone kind near a
@@ -742,8 +750,8 @@ df-overseer-zone.lua:
       lua_function: check_owner
       effect: read
       coordinate_bearing: false
-      live_deployed: false
-      verified: "2026-09-21 (live on VM 103, fort paused, read only: MANAGER (held by unit 345), SHERIFF (vacant), MAYOR (group with EXPEDITION_LEADER, held by unit 198), a unit id, and refusals for an unknown code, a dead unit, a non-citizen, a missing unit, a kind that cannot have an owner and a malformed token)"
+      live_deployed: true
+      verified: "2026-09-21 (live on VM 103, fort paused, read only, before the deploy through a scratch script path and after it over a real MCP client, where Office MANAGER returned the preserve-rooms mechanism and holder unit 345: MANAGER (held by unit 345), SHERIFF (vacant), MAYOR (group with EXPEDITION_LEADER, held by unit 198), a unit id, and refusals for an unknown code, a dead unit, a non-citizen, a missing unit, a kind that cannot have an owner and a malformed token)"
       knowledge_scope: player_visible
       notes: >
         Would OWNER be accepted for this kind, and what would it mean right
@@ -762,8 +770,8 @@ df-overseer-zone.lua:
       skippable: ["[W H]"]
       effect: mutate
       coordinate_bearing: internal-only
-      live_deployed: false
-      verified: "2026-09-21 (DRY_RUN run live on VM 103 by the orchestrator from a scratch script path, fort paused and unchanged at tick 106974: Office with owner MANAGER gave quickfort validation ok with 1 zone and 9 tiles designated; Bedroom, Dining Hall and Water Source dry runs returned well-formed results, but their validation blocks were not read. The real placement, the read-back and both owner assignments have never been run: see handoffs/2026-09-21-zone-tool-generalise.md)"
+      live_deployed: true
+      verified: "2026-09-21 (deployed to VM 103 the same day, hash-verified, and not called after the deploy. DRY_RUN run live on VM 103 by the orchestrator from a scratch script path, fort paused and unchanged at tick 106974: Office with owner MANAGER gave quickfort validation ok with 1 zone and 9 tiles designated; Bedroom, Dining Hall and Water Source dry runs returned well-formed results, but their validation blocks were not read. The real placement, the read-back and both owner assignments have never been run: see handoffs/2026-09-21-zone-tool-generalise.md)"
       knowledge_scope: player_derivable
       notes: >
         Places one zone of KIND at the RANK-th site near a landmark. DRY_RUN
@@ -791,8 +799,8 @@ df-overseer-trees.lua:
       lua_function: find_trees
       effect: read
       coordinate_bearing: false
-      live_deployed: false
-      verified: "2026-09-17 (live, via a /tmp shadow load, fresh module name)"
+      live_deployed: true
+      verified: "2026-09-17 (live, via a /tmp shadow load, fresh module name). Deployed to VM 103 2026-09-17 (handoffs/2026-09-17-water-industry-tools-deploy.md, hash-verified) and run there: 154 reachable trees near the embark site"
       knowledge_scope: player_derivable
       notes: >
         Revealed TREE-material tiles only (do_chop, the quickfort action
@@ -818,8 +826,8 @@ df-overseer-trees.lua:
       lua_function: fell_trees
       effect: mutate
       coordinate_bearing: internal-only
-      live_deployed: false
-      verified: "2026-09-17 (DRY_RUN=true path only; the real dfhack.designations.markPlant call is UNTESTED live, mutation forbidden this session)"
+      live_deployed: true
+      verified: "2026-09-17 (DRY_RUN=true path only; the real dfhack.designations.markPlant call is UNTESTED live, mutation forbidden this session). Deployed to VM 103 2026-09-17 (handoffs/2026-09-17-water-industry-tools-deploy.md, hash-verified) and dry-run there"
       knowledge_scope: player_derivable
       notes: >
         DRY_RUN defaults to true. The real path calls
@@ -841,8 +849,8 @@ df-overseer-well.lua:
       lua_function: find_well
       effect: read
       coordinate_bearing: false
-      live_deployed: false
-      verified: "2026-09-17 (live, via a /tmp shadow load, fresh module name)"
+      live_deployed: true
+      verified: "2026-09-17 (live, via a /tmp shadow load, fresh module name). Deployed to VM 103 2026-09-17 (handoffs/2026-09-17-water-industry-tools-deploy.md, hash-verified) and run there: 5 candidates"
       knowledge_scope: player_derivable
       notes: >
         Mirrors quickfort's own is_tile_empty_and_floor_adjacent
@@ -865,8 +873,8 @@ df-overseer-well.lua:
       lua_function: build_well
       effect: mutate
       coordinate_bearing: internal-only
-      live_deployed: false
-      verified: "2026-09-17 (DRY_RUN=true path only; the real quickfort path is UNTESTED live)"
+      live_deployed: true
+      verified: "2026-09-17 (DRY_RUN=true path only; the real quickfort path is UNTESTED live). Deployed to VM 103 2026-09-17 (handoffs/2026-09-17-water-industry-tools-deploy.md, hash-verified) and dry-run there. CORRECTION 2026-09-22: the real path was run on 2026-09-19: well.build placed and completed the well (id 8, water depth 7), with the bucket and chain the fort already owned (decisions/DECISIONS.md 2026-09-19, 'The well is built')"
       knowledge_scope: player_derivable
       notes: >
         DRY_RUN defaults to true, same contract as every other write tool
@@ -961,18 +969,25 @@ df-overseer-workjob.lua:
       lua_function: list_jobs
       effect: read
       coordinate_bearing: false
-      live_deployed: false
-      verified: unverified
+      live_deployed: true
+      verified: "2026-09-19 (deployed to VM 103, hash-verified, and loads and runs live: handoffs/2026-09-19-deploy-batch.md, decisions/DECISIONS.md 2026-09-19)"
       knowledge_scope: player_visible
       notes: "Known JOB values (blocks/mechanisms/brew_drink), the same vocabulary the real 'q -> add job' menu offers at the matching workshop kind."
     "queue JOB WORKSHOP_LANDMARK_NAME [DRY_RUN]":
       lua_function: queue_job
       effect: mutate
       coordinate_bearing: false
-      live_deployed: false
+      live_deployed: true
       verified: unverified
+      # Deployed to VM 103 2026-09-19 and run live, including one real blocks job (decisions/DECISIONS.md 2026-09-19); still tagged unverified
+      # here because dfmcp/tests/test_workjob_tool.py pins it; see handoffs/2026-09-21-doc-drift-pass-2.md.
       knowledge_scope: player_visible
       notes: >
+        UPDATE 2026-09-22: the opening sentence below (offline build, never run
+        live) is stale. The tool was deployed on 2026-09-19 and run live,
+        including one real blocks job (decisions/DECISIONS.md 2026-09-19).
+        DFHack's own workshops.getJobs would replace this three-job table
+        (handoffs/2026-09-21-workjob-generalise.md, written, not dispatched).
         Offline build, never run against a live DFHack process (this
         stream had no VM). DRY_RUN defaults to true. JOB is one of
         blocks (ConstructBlocks @ Masons), mechanisms (ConstructMechanisms
@@ -1091,10 +1106,19 @@ df-overseer-threat.lua:
       lua_function: find_threats
       effect: read
       coordinate_bearing: false
-      live_deployed: false
+      live_deployed: true
       verified: unverified
       knowledge_scope: player_derivable
       notes: >
+        UPDATE 2026-09-22: the closing sentences below that say NOT DEPLOYED AND
+        NOT RUN are stale. The file was on VM 103 and byte-equal to main on
+        2026-09-17 (handoffs/2026-09-17-farm-tools-deploy.md), and the
+        pre-fix version was live-verified 2026-09-12 (decisions/DECISIONS.md
+        2026-09-12, 'Threat detector LIVE-VERIFIED'). `verified` stays
+        unverified because the 2026-09-16 knowledge-scope fix has not been run
+        live since and a registry test pins it. The 2026-09-21 deploy report
+        found this file's bytes differ from main again (cause and direction not
+        checked).
         KNOWLEDGE-SCOPE FIX 2026-09-16: was OMNISCIENT before this fix --
         isHidden units were reported as informational, not excluded, and
         this tool's own stated purpose is catching exactly what isHidden says
@@ -1133,10 +1157,17 @@ df-overseer-breach.lua:
       lua_function: check_breach
       effect: read
       coordinate_bearing: false
-      live_deployed: false
+      live_deployed: true
       verified: unverified
       knowledge_scope: player_derivable
       notes: >
+        UPDATE 2026-09-22: the sentences below that say NOT DEPLOYED AND NOT RUN
+        are stale as to deployment. The file was on VM 103 and byte-equal to main
+        on 2026-09-17 (handoffs/2026-09-17-farm-tools-deploy.md and
+        handoffs/2026-09-17-water-industry-tools-deploy.md); no live run of it is
+        recorded in the deploy reports read for this update, so `verified` stays unverified. The 2026-09-21 deploy report
+        found this file's bytes differ from main again (cause and direction not
+        checked).
         KNOWLEDGE-SCOPE FIX 2026-09-16: was "player_derivable, leaning
         omniscient on mechanism" -- stage 2 read flow_size/liquid_type on any
         flagged block's tiles with no designation.hidden check, relying only
@@ -1188,6 +1219,11 @@ df-overseer-stocks.lua:
       # which a player sees only via the trade screen or an explicit look at
       # the wagon. Items on hidden tiles are excluded (is_on_hidden_tile).
       notes: >
+        UPDATE 2026-09-22: the sentences below that say NOT DEPLOYED and that the
+        file has never been placed on VM 103 describe the build stream and are
+        stale. The file was deployed and run as the shipped command (see
+        `verified`), and again on 2026-09-19
+        (handoffs/2026-09-19-deploy-and-live-verify.md).
         NOT DEPLOYED. This tool's whole reason for existing is a corrected
         ownership test: `not item.flags.trader`, NEVER `not item.flags.foreign`
         -- flags.foreign is an origin flag (embark-outfitted OR caravan-brought),
@@ -1251,8 +1287,10 @@ df-overseer-stocks.lua:
       lua_function: get_availability
       effect: read
       coordinate_bearing: false
-      live_deployed: false
+      live_deployed: true
       verified: unverified
+      # Deployed to VM 103 and run live 2026-09-19 (handoffs/2026-09-19-deploy-and-live-verify.md: BUCKET, an unknown type, both UNIT_HOLDER
+      # branches), yet still tagged unverified here because dfmcp/tests/test_registry.py pins it; see handoffs/2026-09-21-doc-drift-pass-2.md.
       knowledge_scope: player_derivable
       # player_derivable, not player_visible, same reasoning as food-drink/
       # seeds above: each per-item fact this aggregates (forbidden tag,
@@ -1260,6 +1298,15 @@ df-overseer-stocks.lua:
       # the vanilla stocks/item-viewer screens, but the netted aggregate is
       # a computation over them, not itself one screen.
       notes: >
+        UPDATE 2026-09-22: the paragraphs below are the offline build's own words
+        and are kept as history. Since then the tool was deployed and hash-verified
+        on VM 103 (2026-09-19), run live against BUCKET, an unknown type gave an
+        error object and both UNIT_HOLDER branches were exercised, and
+        owned_ref_check.verified_offline was flipped to true
+        (handoffs/2026-09-19-deploy-and-live-verify.md). `verified` stays
+        unverified above only because a registry test pins it. The six-deduction
+        form (in_building and construction added) is what is deployed and was
+        run live against BOULDER (handoffs/2026-09-19-deploy-batch.md).
         ADDED handoffs/2026-09-19-per-item-flags-tool.md, an OFFLINE build
         stream: no VM, no DFHack process, no deploy, so this command is
         UNVERIFIED BY EXECUTION, not merely "not yet redeployed" like
@@ -1422,15 +1469,18 @@ df-overseer-labor.lua:
       lua_function: set_labor
       effect: mutate
       coordinate_bearing: false
-      live_deployed: STALE
+      live_deployed: true
       verified: unverified
       knowledge_scope: player_visible
       notes: >
-        STALE: the file IS present on VM 103, but still runs the OLD, racy
-        code as of this note -- this fix has not been redeployed.
+        No longer STALE as of 2026-09-21: the deploy of that day
+        (handoffs/2026-09-21-deploy-building-batch.md) overwrote
+        df-overseer-labor.lua on VM 103 with main's copy, hash-verified 48 of
+        48 and again at the installed path, so the fix below is now the
+        deployed code. Still `unverified` as a command: no set-labor call was
+        made after the deploy.
         unit.status.labors as a genuine
-        indexable/settable bitfield is confirmed live 2026-09-11, but the
-        deployed VM 103 file still has the OLD, racy code as of this note.
+        indexable/settable bitfield is confirmed live 2026-09-11.
         FIXED 2026-09-16 (handoffs/2026-09-16-stocks-read-and-labor-race.md
         item 3, closing decisions/DECISIONS.md 2026-09-12's "set_labor
         already races autolabor" finding): set_labor now checks
@@ -1457,8 +1507,8 @@ df-overseer-labor.lua:
       lua_function: enabled_counts
       effect: read
       coordinate_bearing: false
-      live_deployed: false
-      verified: "2026-09-21 (live on VM 103 through a /tmp script under a throwaway name: real labors, an unknown name, NONE, an enum internal, lowercase and a number all behaved; MASON, STONECUTTER, MECHANIC and CARPENTER counts cross-checked against an independent per-unit read)"
+      live_deployed: true
+      verified: "2026-09-21 (live on VM 103 through a /tmp script under a throwaway name: real labors, an unknown name, NONE, an enum internal, lowercase and a number all behaved; MASON, STONECUTTER, MECHANIC and CARPENTER counts cross-checked against an independent per-unit read. After the deploy the same day, over a real MCP client: MASON 3, STONECUTTER 2 and NOTALABOR null with an error, cross-checked against an independent per-unit read of 22 citizens)"
       knowledge_scope: player_visible
       notes: >
         How many citizens have a labor enabled, as {"counts": {LABOR: n or

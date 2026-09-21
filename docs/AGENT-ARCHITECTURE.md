@@ -62,6 +62,29 @@ communicate, what they read, and how they learn.
 > `decisions/DECISIONS.md` 2026-09-14 to 2026-09-16 rows,
 > `handoffs/2026-09-15-queue-live-deploy.md`,
 > `handoffs/2026-09-15-overseer-first-ruling.md`.
+>
+> **UPDATED 2026-09-22: the tool surface is far past what the blocks above
+> describe, and several statements in this document predate it.** The role tool
+> lists on VM 103, read over a real MCP client on 2026-09-21, are **architect 34,
+> overseer 57, consultant 14**. Tools that act on the fort now exist for
+> farms, workshops, wells, trees, zones (any of 18 kinds, with an optional
+> owner), manager work orders, direct workshop jobs, nobles (appointing a
+> Manager included), and a generic `building` tool that has only ever been dry
+> run; stockpiles have two read tools. The history tools (`series.*`),
+> `doctrine.get` (consultant only) and a gotcha and confidence layer
+> (`gotchas.get`/`gotchas.write`, a `tool_guidance` block on every DFHack-backed
+> result) are live. So "no tool surface for work orders" (§14 item 7, and the
+> 2026-09-12 write-conflict findings quoted in §14) is history. Two detector
+> facts changed too: `df-overseer-threat.lua` and `df-overseer-breach.lua` are
+> on VM 103 (byte-equal to `main` on 2026-09-17, drifted since by an unchecked
+> amount), the threat detector's pre-fix version was live-verified 2026-09-12,
+> and the breach detector has no recorded live run. A Manager is appointed
+> (unit 345) but the fort has no Office and queued manager orders still do not
+> run. Sources: `handoffs/2026-09-21-deploy-building-batch.md`,
+> `handoffs/2026-09-17-farm-tools-deploy.md`,
+> `handoffs/2026-09-17-water-industry-tools-deploy.md`,
+> `handoffs/2026-09-19-deploy-batch.md`, `handoffs/2026-09-21-nobles-appoint.md`.
+> The dated blocks above are kept as the record of their day.
 
 Companion documents: [`PURPOSE.md`](PURPOSE.md) for the design commitments this
 must not break, [`MEMORY-ARCHITECTURE.md`](MEMORY-ARCHITECTURE.md) for the
@@ -1386,6 +1409,9 @@ Not yet gated on anything, and needing a decision:
    (§10).
 7. **Several roster roles have no tool surface at all** (work orders, squads,
    burrows, smoothing). Being enumerated by the write-conflict brief.
+   *Update 2026-09-22: work orders now have tools (`orders.*`, deployed
+   2026-09-17) and so does a direct workshop job (`workjob.*`); squads, burrows
+   and smoothing still have none that a report shows.*
 8. **Cycle wall-clock, queue depth and urgent-event frequency are unmeasured.**
    Instrument all three in v1 rather than pre-solving a throughput problem that
    may not exist.

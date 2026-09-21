@@ -55,5 +55,6 @@ that builds the case for a retrieval tool.
 Every DFHack-backed tool result carries a `tool_guidance` block: a confidence
 level for that tool (and kind), a short note, and the titles of any known
 gotchas. Read `agents/CONFIDENCE-LEGEND.md` for what each level means and how
-to treat a listed gotcha: try it only if its title applies and the tool fails
-without it, then record the outcome with `gotchas.write`.
+to treat a listed gotcha. This role holds `gotchas.get` only and has no
+`gotchas.write`, so the legend's instructions to record a gotcha or an outcome
+do not apply to you: read them, never write them.

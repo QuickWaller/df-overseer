@@ -5,13 +5,12 @@
 # take the command's leading verb, join with a dot).
 #
 # NOTE (handoffs/2026-09-18-lever-gap-tools.md): this file did not exist
-# before this stream -- role.md line 4 still says "No tools.yaml... yet,
+# before that stream. role.md used to say "No tools.yaml... yet,
 # deliberately: writing an allowlist of tools that do not exist would imply
-# a capability this project does not have." That reasoning holds; this file
-# does not contradict it, since stockpile.list/stockpile.links are now real,
-# deployed tools, not aspirational ones. But role.md's own line is now
-# stale and needs a human/orchestrator fix -- not done here, since role.md
-# is outside this stream's touched surfaces.
+# a capability this project does not have." That reasoning held, since
+# stockpile.list/stockpile.links are real, deployed tools, not aspirational
+# ones. role.md's own opening was corrected afterwards and now says a
+# tools.yaml exists (checked 2026-09-22).
 #
 # This role stays `enabled: false` in agents/ROSTER.yaml (unchanged by this
 # stream -- that is a bigger decision than one tool grant). Everything else

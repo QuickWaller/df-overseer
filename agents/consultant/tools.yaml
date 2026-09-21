@@ -25,11 +25,12 @@ read:
     status: exists
     note: >-
       Added handoffs/2026-09-16-stocks-read-and-labor-race.md. So food/drink
-      advice is grounded in the fort's actual (not caravan) stores. Not yet
-      deployed to VM 103 -- see TOOLS.yaml's own notes.
+      advice is grounded in the fort's actual (not caravan) stores. Deployed to
+      VM 103 2026-09-16 and redeployed 2026-09-19; see TOOLS.yaml's own notes.
   - id: "stocks.seeds"
     status: exists
-    note: Same file, same deploy caveat as stocks.food-drink above.
+    note: >-
+      Same file, deployed with stocks.food-drink above.
   - id: "doctrine.get"
     status: exists
     note: >-
@@ -80,9 +81,10 @@ read:
   - id: "gotchas.get"
     status: exists
     note: >-
-      Added handoffs/2026-09-21-building-tool-server.md. Known hazards for a tool,
-      each titled by its condition. Try a listed one only if its title applies and the
-      tool fails without it. Not yet deployed.
+      Added handoffs/2026-09-21-building-tool-server.md. Known hazards for a
+      tool, each titled by its condition. Deployed 2026-09-21 (the live store
+      was empty at deploy). This role has no gotchas.write (refused live
+      2026-09-21), so it can read gotchas but not record one or an outcome.
 
   - id: "nobles.list"
     status: exists

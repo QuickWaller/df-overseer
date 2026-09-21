@@ -156,7 +156,9 @@ into the same table additively, after the normal `TOOLS.yaml` parse and its
 own collision check, refusing to load (`RegistryError`) if a native id
 collides with a real one. `registry.py` does not know what a "native" tool
 is and never defaults this to anything; the one caller that passes it is
-`dfmcp/server.py`'s `main()`, with `queue_tools.NATIVE_TOOLS`. Every test
+`dfmcp/server.py`'s `main()`, with the queue, doctrine, series and gotchas
+natives (`queue_tools`, `doctrine_tools`, `series_tools` and `gotchas_tools`,
+each `NATIVE_TOOLS`; checked against `main()` 2026-09-22). Every test
 fixture that loads the real `agents/` roster does the same, because
 `agents/architect/tools.yaml`/`agents/overseer/tools.yaml` now grant real
 `queue.*` ids that `roles.py` rule 1 requires to exist in the registry --
@@ -793,13 +795,42 @@ This is the mechanical input `docs/AGENT-ARCHITECTURE.md` §10 expects for
 Added by `handoffs/2026-09-21-building-tool-server.md`; design and contracts in
 `docs/BUILDING-TOOL.md` (decisions 7 and 8, C2, C3).
 
+**Live on VM 103 since 2026-09-21** (`handoffs/2026-09-21-deploy-building-batch.md`):
+the role tool lists over a real MCP client are **architect 34, overseer 57,
+consultant 14** (were 25, 45 and 11), and `gotchas.get`, the `tool_guidance`
+enrichment and the labor join were each called for real. What that deploy needed,
+for the next one:
+
+- **The gotcha store must exist before the server starts** (`main()` refuses to
+  start without it): create the state directory, then
+  `python -m dfmcp.gotchas_store init <path>` as the service user. The live
+  store was empty at deploy.
+- **`ReadWritePaths=` for the gotcha directory** in the unit, beside the one for
+  `series.*` (`infra/dfmcp-server.service.example` carries both).
+- **The production graph** the join reads must be a built database at
+  `MCP_SERVER_PRODUCTION_DB`, and `production/` must be deployed with the
+  server (the join imports `production.labors`). The service opened it
+  read-only under `ProtectSystem=strict` with no `ReadWritePaths` entry, because
+  the file ends in `journal_mode=DELETE`; whether a WAL-mode file would open
+  the same way was not tested.
+- **`df-overseer-labor.lua` with `enabled-counts`** must be on the game side, or
+  every count is `null` with an error.
+- **Merged but not yet redeployed:** the labor join's fix to the real result
+  shapes (`dfmcp/labor_join.py`, `dfmcp/tool_guidance.py`,
+  `handoffs/2026-09-21-labor-join-shapes.md`). The table row below describes the
+  fixed join. As deployed today it reads only a top-level `requirements`, so a
+  `building.find` (an array of candidates) reports its gaps as unknown ("the
+  result carried no requirements block") and a `building.build` drops the
+  server's gaps in favour of the tool's own, with a note. Neither says "no gaps".
+  Redeploy is dfmcp only: those two files, then a restart of `dfmcp-server`.
+
 | Module | What it is |
 |---|---|
 | `gotchas_store.py` | Append-only SQLite store (`entries`, `outcomes`, `status_history`), write-time validation (registry tool, `"condition: hazard"` title, size limits, near-duplicates, per-run cap), JSONL export, `init` and `export` CLI. Fails loudly if the file is absent or malformed. |
 | `gotchas_tools.py` | Native tools `gotchas.get` (by id, by tool and optional kind, or an index) and `gotchas.write` (a new proposed entry, or with `id` an appended outcome). |
 | `confidence.py` | Loader for `gotchas/confidence.yaml`: tool id, optionally kind, to `full`/`medium`/`low`; default medium; refuses an unknown level, key or tool id. Static: nothing raises a level. |
 | `tool_guidance.py` | `enrich(...)`: adds `tool_guidance` (level, note, gotcha titles, addendum) to every DFHack-backed result, object, array or error. |
-| `labor_join.py` | For `building.find`/`building.build`: `operating_labors`, `gaps`, `gaps_unknown` from `production.labors.labors_for_kind` (C2) and the `labor enabled-counts` read (C1). |
+| `labor_join.py` | For `building.find`/`building.build`: `operating_labors`, `gaps`, `gaps_unknown` from `production.labors.labors_for_kind` (C2) and the `labor enabled-counts` read (C1). It reads `find`'s array of candidates (or the `{"result": [...]}` wrapper) and `requirements.building_material.filters[]` as the Lua tool returns them, after `handoffs/2026-09-21-labor-join-shapes.md` (merged, not yet deployed). A kind the graph does not know is `labors: null` with a reason, never `[]`. |
 
 `build_mcp_server(..., confidence=None, production_db_path=None)`: both
 switches default to off so older callers are unchanged; `main()` always turns

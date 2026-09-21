@@ -63,7 +63,10 @@ version, 53.16; wiki, forum and user sources can only ever support `prior`.
 A pytest validator, `doctrine/validate.py`, enforces the rule. Full field
 list and definitions: `doctrine/seed.yaml`'s header, not duplicated here.
 
-**`get_doctrine`, agreed, read-only, not built.** Called with no argument it
+**`get_doctrine`, agreed, read-only. Built and live as `doctrine.get`**
+(handoffs/2026-09-19-get-doctrine-tool.md, deployed 2026-09-20 per
+handoffs/2026-09-19-deploy-batch.md); only the consultant's allowlist holds it,
+by design (`agents/*/tools.yaml`). Called with no argument it
 returns the topic index; called with a topic it returns that topic's
 entries, with any source not describing 53.16 flagged to the model. It is
 topic-indexed rather than loaded whole because of the 2026-09-11 compliance

@@ -14,3 +14,15 @@ Static data for the confidence-and-gotchas design (`docs/BUILDING-TOOL.md`).
   `evals/live/` when someone decides they are worth keeping in the repo.
 - The one shared text every role prompt includes is
   `agents/CONFIDENCE-LEGEND.md`.
+
+Deployed to VM 103 on 2026-09-21 (`handoffs/2026-09-21-deploy-building-batch.md`).
+`confidence.yaml` ships with the code and today sets only the default, medium
+(its `tools` map is empty). The runtime store is not in git and is created once
+by hand: `python -m dfmcp.gotchas_store init <path>` as the service user, in a
+directory the unit lists under `ReadWritePaths=`; the server refuses to start
+without it. It was empty at deploy, and the write path was tested only against a
+temporary copy, so no gotcha has been written to the live store. The architect
+and the overseer hold `gotchas.get` and `gotchas.write`; the consultant holds
+`gotchas.get` only. The join that adds operating labors to a building result
+(`dfmcp/labor_join.py`) needs the production graph database and is described in
+`dfmcp/README.md`; a fix to its result shapes is merged and not yet redeployed.

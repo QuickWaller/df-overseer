@@ -35,8 +35,9 @@ read:
       stair-anchor candidates (a walkable column with diggable rock/soil
       directly below it), for extending the walkable network down one
       level where `diggable.find`'s box scan can never return anything
-      (no walkable tile exists yet at that level for it to border). Not
-      yet deployed.
+      (no walkable tile exists yet at that level for it to border).
+      Deployed to VM 103 2026-09-18 and run live there
+      (handoffs/2026-09-18-well-unblock.md).
   - id: "chokepoints.find"
     status: exists
     note: >-
@@ -59,80 +60,88 @@ read:
   - id: "stocks.food-drink"
     status: exists
     note: >-
-      Added handoffs/2026-09-16-stocks-read-and-labor-race.md. Fort-owned
-      (never caravan-owned) drink/prepared-meal/raw-edible counts plus
-      rotten/unreachable flags per bucket. Not yet deployed to VM 103 -- see
-      TOOLS.yaml's own notes.
+      Added handoffs/2026-09-16-stocks-read-and-labor-race.md. Fort-owned (never
+      caravan-owned) drink/prepared-meal/raw-edible counts plus
+      rotten/unreachable flags per bucket. Deployed to VM 103 2026-09-16 and
+      redeployed 2026-09-19; see TOOLS.yaml's own notes.
   - id: "stocks.seeds"
     status: exists
     note: >-
-      Fort-owned seed counts by plant. Same file, same deploy caveat as
-      stocks.food-drink above.
+      Fort-owned seed counts by plant. Same file, deployed with stocks.food-
+      drink above.
   - id: "stocks.availability"
     status: exists
     note: >-
-      Added handoffs/2026-09-19-per-item-flags-tool.md, offline build --
-      never run against a live DFHack process. Per-item-type netting
-      (docs/PRODUCTION-MODEL.md sec7's four deductions: in_job/owned+
-      UNIT_HOLDER/forbid/trader), not just a total, so a proposal can tell
-      "0 buckets exist" apart from "3 exist but all job-claimed/forbidden/
-      dwarf-owned" -- four different fixes. `owned_ref_check.
-      verified_offline` is always false until a live run confirms the
-      UNIT_HOLDER lookup; treat owned_units as "flagged owned," not a
-      confirmed claim, until then. TOOLS.yaml carries the full reasoning.
+      Added handoffs/2026-09-19-per-item-flags-tool.md as an offline build;
+      deployed and run live 2026-09-19 (handoffs/2026-09-19-deploy-and-live-
+      verify.md), and the six-deduction form (in_job, owned+UNIT_HOLDER, forbid,
+      trader, in_building, construction) deployed 2026-09-20
+      (handoffs/2026-09-19-deploy-batch.md). Per-item-type netting, not just a
+      total, so a proposal can tell '0 buckets exist' apart from '3 exist but
+      all job-claimed/forbidden/dwarf-owned', which are different fixes.
+      owned_ref_check.verified_offline is true since both UNIT_HOLDER branches
+      were exercised live 2026-09-19. TOOLS.yaml still tags the command
+      unverified (a registry test pins that), so read it as run live once, not
+      as settled.
   - id: "farm.find"
     status: exists
     note: >-
       Added handoffs/2026-09-16-farm-and-still-tools.md. Candidate farm-plot
       floor near a landmark, tagged outside/inside and the fort-owned seeds
-      actually valid there. Not yet deployed to VM 103 -- see TOOLS.yaml.
+      actually valid there. Deployed to VM 103 2026-09-17.
   - id: "farm.list"
     status: exists
     note: >-
-      Added handoffs/2026-09-17-farm-tool-fixes.md. Every built farm plot
-      with its id and per-season crop. Not yet deployed to VM 103.
+      Added handoffs/2026-09-17-farm-tool-fixes.md. Every built farm plot with
+      its id and per-season crop. Deployed to VM 103 2026-09-17.
   - id: "workshop.find"
     status: exists
     note: >-
       Same handoff, extended handoffs/2026-09-17-water-and-industry-tools.md
-      item 3 with mason/mechanic/carpenter KIND values and a
-      building_material report shared by all five kinds. Not yet deployed.
+      item 3 with mason/mechanic/carpenter KIND values and a building_material
+      report shared by all five kinds. Deployed to VM 103 2026-09-17. It covers
+      five kinds only; building.find is the generic one.
   - id: "zone.find"
     status: exists
     note: >-
-      Added handoffs/2026-09-17-water-and-industry-tools.md item 1. Ranked
-      revealed water bodies near a landmark (bounding box, real tile
-      count, depth, stagnant/salt) -- the discovery half of placing a
-      Water Source zone. Not yet deployed.
+      Added handoffs/2026-09-17-water-and-industry-tools.md item 1 as a water-
+      body finder, deployed 2026-09-17. Generalised by handoffs/2026-09-21-zone-
+      tool-generalise.md to any of the install's 18 zone kinds (WaterSource
+      keeps its own finder), deployed with the new script 2026-09-21; not called
+      after that deploy, only zone.list-kinds and zone.check-owner were. It is
+      the discovery half of placing a zone.
   - id: "trees.find"
     status: exists
     note: >-
-      Same handoff, item 2. Distance-banded tree counts/reachability near
-      a landmark, plus CUTWOOD labor and fort-owned axe counts -- never a
-      per-tree list (design commitment #1, and ~1,593 visible trees on
-      this map). Not yet deployed.
+      Same handoff, item 2. Distance-banded tree counts/reachability near a
+      landmark, plus CUTWOOD labor and fort-owned axe counts, never a per-tree
+      list (design commitment #1, and ~1,593 visible trees on this map).
+      Deployed to VM 103 2026-09-17.
   - id: "well.find"
     status: exists
     note: >-
       Same handoff, item 5. Ranked pond-edge well sites (quickfort's own
-      empty/ramp-top + floor-adjacent rule, plus this project's own
-      >=3/7-deep-revealed-water rule), with BLOCKS/BUCKET/CHAIN/TRAPPARTS
-      fort-owned counts. Not yet deployed.
+      empty/ramp-top + floor-adjacent rule, plus this project's own >=3/7-deep-
+      revealed-water rule), with BLOCKS/BUCKET/CHAIN/TRAPPARTS fort-owned
+      counts. Deployed to VM 103 2026-09-17.
   - id: "orders.list"
     status: exists
     note: >-
-      Same handoff, item 4. Pending manager orders plus whether a Manager
-      is currently appointed (live-verified false on this fort). Not yet
-      deployed.
+      Same handoff, item 4. Pending manager orders plus whether a Manager is
+      currently appointed. Deployed to VM 103 2026-09-17. It read
+      manager_appointed false when first live-verified; since 2026-09-21 unit
+      345 holds MANAGER (handoffs/2026-09-21-nobles-appoint.md), but the fort
+      has no Office and queued manager orders still do not run.
   - id: "workjob.list"
     status: exists
     note: >-
-      Added handoffs/2026-09-19-workshop-add-job.md. Read-only job
-      vocabulary (blocks/mechanisms/brew_drink) -- harmless, and useful
-      when a proposal needs to name the direct-workshop-job route as an
-      alternative to a manager order that has stalled (orders.list above
-      already shows manager_appointed false on this fort). Does not grant
-      the ability to act -- see the workjob.queue deny below.
+      Added handoffs/2026-09-19-workshop-add-job.md. Read-only job vocabulary
+      (blocks/mechanisms/brew_drink), harmless, and useful when a proposal needs
+      to name the direct-workshop-job route as an alternative to a manager order
+      that has stalled (orders.list above showed manager_appointed false when
+      this was written; a Manager has since been appointed but manager orders
+      still do not run). Deployed 2026-09-19. Does not grant the ability to act;
+      see the workjob.queue deny below.
   - id: "stockpile.list"
     status: exists
     note: >-
@@ -151,29 +160,31 @@ read:
   - id: "gotchas.get"
     status: exists
     note: >-
-      Added handoffs/2026-09-21-building-tool-server.md. Known hazards for a tool,
-      each titled by its condition. Try a listed one only if its title applies and the
-      tool fails without it. Not yet deployed.
+      Added handoffs/2026-09-21-building-tool-server.md. Known hazards for a
+      tool, each titled by its condition. Try a listed one only if its title
+      applies and the tool fails without it. Deployed 2026-09-21 (the live store
+      was empty at deploy).
   - id: "gotchas.write"
     status: exists
     note: >-
-      Same handoff. Records a proposed gotcha, or an outcome on an existing one. It changes
-      no fort state, only the gotcha store. Not yet deployed.
+      Same handoff. Records a proposed gotcha, or an outcome on an existing one.
+      It changes no fort state, only the gotcha store. Deployed 2026-09-21; the
+      write path was tested only against a temporary store, never the live one.
   - id: "building.list-kinds"
     status: exists
     note: >-
-      Added handoffs/2026-09-21-building-tool-lua.md. Every building kind the game
-      can place, from quickfort's own table. Not yet deployed.
+      Added handoffs/2026-09-21-building-tool-lua.md. Every building kind the
+      game can place, from quickfort's own table. Deployed 2026-09-21.
   - id: "building.find"
     status: exists
     note: >-
-      Same handoff. Ranked sites and what the kind needs, for any kind. Read-only.
-      Not yet deployed.
+      Same handoff. Ranked sites and what the kind needs, for any kind. Read-
+      only. Deployed 2026-09-21.
   - id: "labor.enabled-counts"
     status: exists
     note: >-
-      Same handoff. How many citizens have a labor enabled; null plus an error when
-      unknown, never 0. Not yet deployed.
+      Same handoff. How many citizens have a labor enabled; null plus an error
+      when unknown, never 0. Deployed 2026-09-21.
 
   - id: "nobles.list"
     status: exists

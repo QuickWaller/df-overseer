@@ -1,6 +1,6 @@
 # Time series: the contract between the sampler and the store
 
-Status: **agreed with the user 2026-09-19; the store (`dfseries/`) is built and merged, the sampler is in progress.** This
+Status: **agreed with the user 2026-09-19; both sides are built and live. The sampler runs on VM 103 as a DFHack `repeat` every game day and its samples import into the store every 60 seconds (register 2026-09-19); the `series.*` MCP tools that read the store went live 2026-09-20 (register 2026-09-20).** This
 file is the **contract** two streams build against in parallel:
 
 - the **sampler** (`scripts/dfhack/df-overseer-sampler.lua`), which runs
