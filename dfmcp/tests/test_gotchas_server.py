@@ -434,6 +434,177 @@ class TestLaborJoinOverTheWire:
 
 
 # --------------------------------------------------------------------------
+# Optional footprint and repeated labors, over the real registry, roster and
+# transport (handoffs/2026-09-21-optional-and-variadic-args.md)
+# --------------------------------------------------------------------------
+
+ENABLED_COUNTS_RESULT = '{"counts": {"MASON": 3, "BREWER": 0}, "errors": {}}'
+
+
+class TestOptionalAndRepeatedArgsOverTheWire:
+    """Each call goes: SDK client -> ASGI app -> Roster.check -> argv_for_call ->
+    the fake DFHack, whose `received_requests` are the bytes a real call would
+    send. A refused call must leave `received_requests` empty."""
+
+    async def test_find_with_only_kind_and_landmark_reaches_dfhack_without_a_size(
+        self, rr, pool, fake_dfhack, tmp_path, gdb
+    ):
+        fake_dfhack.queue_actions(make_ok_action(BUILD_RESULT))
+        app = make_app(rr, pool, tmp_path, gdb)
+        async with mcp_session(app, ARCHITECT_TOKEN) as session:
+            result = await session.call_tool("building__find", {"kind": "Still", "near_landmark": "Wagon"})
+        assert result.is_error is False
+        assert result.structured_content["dims"] == [3, 3]
+        assert fake_dfhack.received_requests == [
+            _encode_run_command_request("df-overseer-building", ["find", "Still", "Wagon"])
+        ]
+
+    async def test_find_with_a_given_size_is_unchanged(self, rr, pool, fake_dfhack, tmp_path, gdb):
+        fake_dfhack.queue_actions(make_ok_action(BUILD_RESULT))
+        app = make_app(rr, pool, tmp_path, gdb)
+        async with mcp_session(app, ARCHITECT_TOKEN) as session:
+            await session.call_tool(
+                "building__find", {"kind": "FarmPlot", "w": 4, "h": 5, "level": 0, "near_landmark": "Wagon", "radius_tiles": 20}
+            )
+        assert fake_dfhack.received_requests == [
+            _encode_run_command_request("df-overseer-building", ["find", "FarmPlot", "4", "5", "0", "Wagon", "20"])
+        ]
+
+    async def test_a_level_without_a_size_sends_one_leading_number(self, rr, pool, fake_dfhack, tmp_path, gdb):
+        """The Lua CLI reads one leading number as LEVEL, which is why [W H] is
+        skippable here."""
+        fake_dfhack.queue_actions(make_ok_action(BUILD_RESULT))
+        app = make_app(rr, pool, tmp_path, gdb)
+        async with mcp_session(app, ARCHITECT_TOKEN) as session:
+            await session.call_tool("building__find", {"kind": "Still", "level": -1, "near_landmark": "Wagon"})
+        assert fake_dfhack.received_requests == [
+            _encode_run_command_request("df-overseer-building", ["find", "Still", "-1", "Wagon"])
+        ]
+
+    @pytest.mark.parametrize("half", [{"w": 3}, {"h": 3}])
+    async def test_a_lone_width_or_height_is_refused_by_name_and_never_sent(
+        self, rr, pool, fake_dfhack, tmp_path, gdb, half
+    ):
+        app = make_app(rr, pool, tmp_path, gdb)
+        async with mcp_session(app, ARCHITECT_TOKEN) as session:
+            result = await session.call_tool(
+                "building__find", {"kind": "Still", "near_landmark": "Wagon", **half}
+            )
+        assert result.is_error is True
+        message = texts(result)[0]
+        assert "[W H]" in message and "'w'" in message and "'h'" in message
+        assert fake_dfhack.received_requests == []
+
+    async def test_a_missing_kind_is_refused_and_never_sent(self, rr, pool, fake_dfhack, tmp_path, gdb):
+        app = make_app(rr, pool, tmp_path, gdb)
+        async with mcp_session(app, ARCHITECT_TOKEN) as session:
+            result = await session.call_tool("building__find", {"near_landmark": "Wagon"})
+        assert result.is_error is True and "kind" in texts(result)[0]
+        assert fake_dfhack.received_requests == []
+
+    async def test_a_rank_without_a_level_is_still_a_named_gap(self, rr, pool, fake_dfhack, tmp_path, gdb):
+        """Only [W H] is skippable; the other positional slots still cannot be jumped."""
+        app = make_app(rr, pool, tmp_path, gdb)
+        async with mcp_session(app, OVERSEER_TOKEN) as session:
+            result = await session.call_tool(
+                "building__build", {"kind": "Still", "near_landmark": "Wagon", "rank": 2}
+            )
+        assert result.is_error is True
+        assert "'rank'" in texts(result)[0] and "'level'" in texts(result)[0]
+        assert fake_dfhack.received_requests == []
+
+    async def test_the_overseers_build_with_only_kind_and_landmark(self, rr, pool, fake_dfhack, tmp_path, gdb):
+        fake_dfhack.queue_actions(make_ok_action(BUILD_RESULT))
+        app = make_app(rr, pool, tmp_path, gdb)
+        async with mcp_session(app, OVERSEER_TOKEN) as session:
+            result = await session.call_tool("building__build", {"kind": "Still", "near_landmark": "Wagon"})
+        assert result.is_error is False
+        assert fake_dfhack.received_requests == [
+            _encode_run_command_request("df-overseer-building", ["build", "Still", "Wagon"])
+        ]
+
+    async def test_the_labor_join_still_works_when_the_call_carried_no_size(
+        self, rr, pool, fake_dfhack, tmp_path, gdb
+    ):
+        """labor_join reads the kind from the result and never from w/h, so an
+        omitted footprint changes nothing about the join, and the server's own
+        enabled-counts read still goes out after the tool call."""
+        fake_dfhack.queue_actions(
+            make_ok_action(BUILD_RESULT),
+            make_ok_action('{"counts": {"BREWER": 0}, "errors": {}}'),
+        )
+        stub = c2_stub()
+        app = make_app(rr, pool, tmp_path, gdb, production_db="/graph.sqlite3", labors_for_kind=stub)
+        async with mcp_session(app, ARCHITECT_TOKEN) as session:
+            result = await session.call_tool("building__find", {"kind": "Still", "near_landmark": "Wagon"})
+        assert result.is_error is False
+        assert stub.calls == [("/graph.sqlite3", "Still")]
+        assert result.structured_content["operating_labors"]["citizens_with_labor"] == {"BREWER": 0}
+        assert fake_dfhack.received_requests == [
+            _encode_run_command_request("df-overseer-building", ["find", "Still", "Wagon"]),
+            _encode_run_command_request("df-overseer-labor", ["enabled-counts", "BREWER"]),
+        ]
+
+    async def test_enabled_counts_with_two_labors_sends_two_arguments(self, rr, pool, fake_dfhack, tmp_path, gdb):
+        fake_dfhack.queue_actions(make_ok_action(ENABLED_COUNTS_RESULT))
+        app = make_app(rr, pool, tmp_path, gdb)
+        async with mcp_session(app, ARCHITECT_TOKEN) as session:
+            result = await session.call_tool("labor__enabled-counts", {"labor": ["MASON", "BREWER"]})
+        assert result.is_error is False
+        assert result.structured_content["counts"] == {"MASON": 3, "BREWER": 0}
+        assert fake_dfhack.received_requests == [
+            _encode_run_command_request("df-overseer-labor", ["enabled-counts", "MASON", "BREWER"])
+        ]
+
+    async def test_enabled_counts_accepts_one_bare_labor(self, rr, pool, fake_dfhack, tmp_path, gdb):
+        fake_dfhack.queue_actions(make_ok_action('{"counts": {"MASON": 3}, "errors": {}}'))
+        app = make_app(rr, pool, tmp_path, gdb)
+        async with mcp_session(app, ARCHITECT_TOKEN) as session:
+            result = await session.call_tool("labor__enabled-counts", {"labor": "MASON"})
+        assert result.is_error is False
+        assert fake_dfhack.received_requests == [
+            _encode_run_command_request("df-overseer-labor", ["enabled-counts", "MASON"])
+        ]
+
+    @pytest.mark.parametrize(
+        "arguments, needle",
+        [
+            ({}, "at least one"),
+            ({"labor": []}, "at least one"),
+            ({"labor": ["MASON", "A;B"]}, "not allowed"),
+            ({"labor": ["MASON", True]}, "boolean"),
+            ({"labor": ["MASON", ["X"]]}, "single value"),
+        ],
+    )
+    async def test_malformed_labor_lists_are_refused_by_name_and_never_sent(
+        self, rr, pool, fake_dfhack, tmp_path, gdb, arguments, needle
+    ):
+        app = make_app(rr, pool, tmp_path, gdb)
+        async with mcp_session(app, ARCHITECT_TOKEN) as session:
+            result = await session.call_tool("labor__enabled-counts", arguments)
+        assert result.is_error is True
+        assert "labor" in texts(result)[0] and needle in texts(result)[0]
+        assert fake_dfhack.received_requests == []
+
+    async def test_tools_list_shows_the_optional_pair_and_the_array(self, rr, pool, tmp_path, gdb):
+        app = make_app(rr, pool, tmp_path, gdb)
+        async with mcp_session(app, ARCHITECT_TOKEN) as session:
+            tools = {t.name: t for t in (await session.list_tools()).tools}
+        find = tools["building__find"].input_schema
+        assert find["required"] == ["kind", "near_landmark"]
+        assert find["properties"]["w"]["type"] == "integer" and find["properties"]["h"]["type"] == "integer"
+        assert "kind's own footprint" in find["properties"]["w"]["description"]
+        assert "building.list-kinds" in find["properties"]["kind"]["description"]
+        counts = tools["labor__enabled-counts"].input_schema
+        assert counts["required"] == ["labor"]
+        assert counts["properties"]["labor"]["type"] == "array"
+        assert counts["properties"]["labor"]["items"] == {"type": "string"}
+        assert counts["properties"]["labor"]["minItems"] == 1
+        listed = tools["building__list-kinds"].input_schema
+        assert "substring" in listed["properties"]["filter"]["description"]
+
+
+# --------------------------------------------------------------------------
 # Config
 # --------------------------------------------------------------------------
 

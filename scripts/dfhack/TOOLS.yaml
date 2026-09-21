@@ -82,6 +82,16 @@
 #   notes
 #     A pointer, not a re-narration. Long rationale lives in the .lua file's
 #     own header or a decisions/DECISIONS.md row.
+#   signature tokens (the quoted command key), read by dfmcp/tools.py
+#     NAME  required        [NAME]  optional        NAME...  one or more
+#     [NAME...]  zero or more (must be last)    [A B]  optional pair or
+#     group, all or nothing    a|b  a literal choice
+#     Optional tokens are positional: a later one cannot be given while an
+#     earlier one is left out. Only a command whose Lua CLI works out which
+#     optionals were given some other way may say so with
+#       skippable: ["[W H]"]
+#     (a list of optional tokens exactly as written in the signature, checked
+#     against it at load). Read the CLI's own parser before claiming it.
 
 df-overseer-connectivity.lua:
   build_order_item: 2
@@ -614,8 +624,9 @@ df-overseer-building.lua:
         type (Workshop, Furnace, Bed, Bridge). An unmatched FILTER gives an
         empty list; a table that cannot be read gives an error object, never
         an empty list.
-    "find KIND W H [LEVEL] NEAR_LANDMARK [RADIUS_TILES]":
+    "find KIND [W H] [LEVEL] NEAR_LANDMARK [RADIUS_TILES]":
       lua_function: find_kind
+      skippable: ["[W H]"]
       effect: read
       coordinate_bearing: false
       live_deployed: false
@@ -624,14 +635,17 @@ df-overseer-building.lua:
       notes: >
         Finds up to five non-overlapping sites for one building kind near a
         landmark, ranked by distance. KIND is a token from list-kinds (or
-        quickfort's own key such as wl), never a display label. W H is the
-        footprint: pass the kind's own size for a fixed-size kind (3x3 for
-        every workshop, furnace and siege engine except Kennels, Siege and
+        quickfort's own key such as wl), never a display label. [W H] is an
+        optional pair: give both or neither. Leave them out and the tool
+        uses the kind's own footprint, read from the game (3x3 for every
+        workshop, furnace and siege engine except Kennels, Siege and
         TradeDepot at 5x5 and Quern, Millstone and SCREW_PRESS at 1x1;
-        list-kinds shows each), any size inside min..max for the rest (farm
-        plots, roads, bridges). The Lua CLI also accepts W H omitted for a
-        fixed-size kind, but this signature carries both because the
-        server's argument parser cannot express an optional pair. A site
+        list-kinds shows each), so a caller never needs to know a fixed-size
+        kind's size. Pass W and H only for a variable-size kind (farm plots,
+        roads, bridges), any size inside min..max; a size that is not the
+        kind's own for a fixed-size kind is an error. The pair can be left
+        out while LEVEL is given: the Lua CLI reads one leading number as
+        LEVEL and two as W H (hence `skippable`). A site
         qualifies when every footprint tile is revealed, building-free and
         passes the kind's own quickfort tile rule (beds indoors, doors beside
         a wall, farm plots on soil), with a walkable tile in or beside it.
@@ -645,8 +659,9 @@ df-overseer-building.lua:
         "nothing here" can be told apart from a broken check. Result shape is
         contract C1 of docs/BUILDING-TOOL.md. No labor names and no
         confidence level: the MCP layer adds those.
-    "build KIND W H [LEVEL] NEAR_LANDMARK [RANK] [RADIUS_TILES] [DRY_RUN]":
+    "build KIND [W H] [LEVEL] NEAR_LANDMARK [RANK] [RADIUS_TILES] [DRY_RUN]":
       lua_function: build_kind
+      skippable: ["[W H]"]
       effect: mutate
       coordinate_bearing: internal-only
       live_deployed: false
@@ -1386,7 +1401,7 @@ df-overseer-labor.lua:
         -- verified-by-mechanism, not verified-by-execution, until a future
         session with go-ahead re-confirms it.
 
-    "enabled-counts LABOR":
+    "enabled-counts LABOR...":
       lua_function: enabled_counts
       effect: read
       coordinate_bearing: false
@@ -1399,10 +1414,9 @@ df-overseer-labor.lua:
         df.unit_labor entry is null plus an error, NEVER 0 (the
         FEED_WATER_WOUNDED silent zero). Names are checked by round trip
         through df.unit_labor, so NONE, enum internals, numbers and lowercase
-        are all errors. The Lua CLI takes any number of LABOR names
-        (enabled-counts LABOR [LABOR...], contract C1); this signature lists
-        one because the server's argument parser has no variadic form.
-        Enabled means the labor bit is set, not that anyone is skilled or
+        are all errors. Takes one or more LABOR names in a single call
+        (contract C1); the MCP argument `labor` is an array with one item
+        per name, expanded into one command-line word each. Enabled means the labor bit is set, not that anyone is skilled or
         idle.
 
 df-overseer-ui.lua:

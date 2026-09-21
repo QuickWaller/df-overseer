@@ -89,6 +89,45 @@ token is one of a plain `UPPER_CASE` placeholder, or one of the two
 literal-choice tokens named above. Nothing else was found that this table
 does not confidently cover.
 
+## Optional groups and repeated arguments
+
+Added 2026-09-21 (`handoffs/2026-09-21-optional-and-variadic-args.md`).
+Two forms beyond `NAME` and `[NAME]`, and nothing else:
+
+- **`[A B]`, an all-or-nothing optional group.** The registry keeps a
+  bracketed run as one token. Each member becomes its own flat, optional,
+  separately typed and described property (`w`, `h`), never a nested object,
+  so an existing caller passing `{"w": 3, "h": 3}` is unchanged and a model
+  sees the same flat shape it always did. The pairing is enforced in
+  `argv_for_call`: one member without the others is an `ArgumentError`
+  naming the group and the missing member, never a silent default. A group
+  counts as ONE optional slot for the gap check below.
+- **`NAME...` (required, one or more) and `[NAME...]` (optional), a repeated
+  argument.** It must be the last token (anything after it would be
+  ambiguous on a positional command line), becomes an `array` property named
+  like any other token (`LABOR...` -> `labor`), and is expanded into one
+  argv word per item. Each item gets the same type, boolean, and shell-
+  metacharacter checks as a single value. A bare scalar is accepted as a
+  one-item array (the same meaning, and it is what a caller written against
+  the old one-labor signature sends); an empty array is missing for a
+  required argument and omitted for an optional one.
+
+A token that is none of these (`[w`, `LAB OR`, `A..B`) is a `ToolSchemaError`
+when the schema or argv is built, not a property with a junk name.
+
+**Why the gap check needs a declaration for groups.** The rule below (a
+later optional cannot be given while an earlier one is omitted) stops a
+positional command line from silently shifting. An omitted `[W H]` followed
+by a given `LEVEL` is exactly that shape, and for a purely positional CLI it
+would put LEVEL in W's slot. `df-overseer-building.lua` is not purely
+positional: it reads up to three leading numbers after KIND and decides what
+they are by how many there are (1 = LEVEL, 2 = W H, 3 = W H LEVEL). So it is
+safe to leave `[W H]` out while giving LEVEL, and only that CLI can say so.
+A command opts in with `skippable: ["[W H]"]` in TOOLS.yaml (validated by the
+registry against the signature); everything without the key keeps the strict
+rule, so a future group on a positional CLI cannot shift arguments by
+accident.
+
 ## Argument descriptions: another table, not per-tool YAML
 
 Added 2026-09-14 (`handoffs/2026-09-14-relative-level-args.md`), closing a
@@ -275,6 +314,46 @@ _ARG_DESCRIPTIONS: Dict[str, str] = {
     ),
     "W": "Width, in tiles, of the region to search or build.",
     "H": "Height, in tiles, of the region to search or build.",
+    # Scoped entries ("<script short name>.<TOKEN>") win over the bare token
+    # for that script's commands: KIND and W/H mean different things in
+    # building, workshop and zone. Added 2026-09-21.
+    "building.KIND": (
+        "The building kind, exactly as building.list-kinds gives it in its "
+        "`token` field (Still, Carpenters, Bed, FarmPlot), or quickfort's own "
+        "key such as wl. Never the display label. An unknown kind is an error."
+    ),
+    "building.FILTER": (
+        "Optional. A case-insensitive substring of a kind's token, label or "
+        "type (Workshop, Furnace, Bed, Bridge) to narrow the list. A filter "
+        "that matches nothing gives an empty list, not an error."
+    ),
+    "building.W": (
+        "Width, in tiles, of the footprint. Optional, and give W and H "
+        "together or not at all. Leave both out and the tool uses the kind's "
+        "own footprint, read from the game (building.list-kinds shows it). "
+        "Pass them only for a variable-size kind such as a farm plot, road or "
+        "bridge, within that kind's min..max. A size that is not the kind's "
+        "own for a fixed-size kind is an error, and so is leaving both out "
+        "for a variable-size kind (the error states its allowed range)."
+    ),
+    "building.H": (
+        "Height, in tiles, of the footprint. Optional, and give W and H "
+        "together or not at all. Leave both out for the kind's own "
+        "footprint; pass them only for a variable-size kind. A wrong size "
+        "for a fixed-size kind is an error."
+    ),
+    "zone.KIND": (
+        "The kind of zone. Only water_source exists so far."
+    ),
+    "workshop.KIND": (
+        "Which workshop: still, kitchen, mason, mechanic or carpenter."
+    ),
+    "LABOR": (
+        "One or more labor names, exactly as df.unit_labor names them "
+        "(MASON, CARPENTER, BREWER), upper case. Give them all in one call. "
+        "A name that is not a real labor comes back as null with an error, "
+        "never as 0."
+    ),
     "RANK": (
         "Which ranked candidate to act on: 1 is the candidate closest to "
         "NEAR_LANDMARK. Defaults to 1 when omitted."
@@ -295,45 +374,118 @@ _SHELL_METACHAR_RE = re.compile(r'[;&|`$()<>\\"\'\n\r]')
 
 @dataclass(frozen=True)
 class ArgSpec:
-    """One positional argument, resolved from a TOOLS.yaml signature token."""
+    """One argument, resolved from a TOOLS.yaml signature token (a group token
+    such as `[W H]` resolves to one ArgSpec per member)."""
 
     name: str  # JSON-Schema-safe property name, unique within its tool
-    raw: str  # the manifest token, verbatim, brackets included
+    raw: str  # the manifest token, verbatim, brackets included (a group's members share the group's)
     required: bool
-    json_type: str  # "integer" or "string"
+    json_type: str  # "integer" or "string"; for a repeated argument, the type of each item
     enum: Optional[Tuple[str, ...]] = None
     description: Optional[str] = None  # from _ARG_DESCRIPTIONS, keyed by the raw token
+    repeated: bool = False  # `NAME...`: an array property, one argv word per item
+    group: Optional[str] = None  # the group token (`[W H]`) this spec belongs to, else None
 
 
-def _parse_arg_token(token: str) -> ArgSpec:
+_PLACEHOLDER_RE = re.compile(r"^[A-Za-z][A-Za-z0-9_]*$")
+
+
+def _describe(inner: str, scope: Optional[str]) -> Optional[str]:
+    if scope is not None:
+        scoped = _ARG_DESCRIPTIONS.get(f"{scope}.{inner}")
+        if scoped is not None:
+            return scoped
+    return _ARG_DESCRIPTIONS.get(inner)
+
+
+def _parse_one(
+    word: str, *, required: bool, raw: str, group: Optional[str], scope: Optional[str]
+) -> ArgSpec:
+    """One name inside a token: a placeholder, a literal-choice, or a
+    repeated placeholder (`NAME...`)."""
+    if "|" in word:
+        # A literal-choice token ("on|off", "idle|injured|military|hostile"):
+        # not a placeholder name, the actual values DFHack accepts. See
+        # module docstring.
+        choices = tuple(word.split("|"))
+        name = "_".join(choices).lower()
+        return ArgSpec(
+            name=name, raw=raw, required=required, json_type="string", enum=choices, group=group
+        )
+
+    repeated = word.endswith("...")
+    base = word[:-3] if repeated else word
+    if not _PLACEHOLDER_RE.match(base):
+        raise ToolSchemaError(
+            f"argument token {raw!r} contains {word!r}, which is not a placeholder name "
+            "(letters, digits, underscore), a literal choice (a|b), or a repeated name (NAME...)"
+        )
+    json_type = "integer" if base in _INTEGER_ARG_NAMES else "string"
+    return ArgSpec(
+        name=base.lower(),
+        raw=raw,
+        required=required,
+        json_type=json_type,
+        description=_describe(base, scope),
+        repeated=repeated,
+        group=group,
+    )
+
+
+def _parse_arg_tokens(token: str, scope: Optional[str] = None) -> List[ArgSpec]:
+    """Every ArgSpec one manifest token stands for: one for `NAME`, `[NAME]`,
+    `NAME...` and `[NAME...]`; one per member for a group `[A B]`."""
     required = True
     inner = token
     m = _BRACKET_RE.match(token)
     if m:
         required = False
-        inner = m.group(1)
+        inner = m.group(1).strip()
+    if "[" in inner or "]" in inner:
+        raise ToolSchemaError(f"argument token {token!r}: brackets do not nest or split")
+    words = inner.split()
+    if not words:
+        raise ToolSchemaError(f"argument token {token!r} is empty")
+    if len(words) == 1:
+        return [_parse_one(words[0], required=required, raw=token, group=None, scope=scope)]
+    if required:  # unreachable from the registry (whitespace splits an unbracketed token)
+        raise ToolSchemaError(f"argument token {token!r} contains a space outside brackets")
+    specs = [
+        _parse_one(w, required=False, raw=token, group=token, scope=scope) for w in words
+    ]
+    for spec, w in zip(specs, words):
+        if spec.repeated or spec.enum is not None:
+            raise ToolSchemaError(
+                f"argument group {token!r}: {w!r} is repeated or a literal choice; a group "
+                "holds plain names only"
+            )
+    return specs
 
-    if "|" in inner:
-        # A literal-choice token ("on|off", "idle|injured|military|hostile"):
-        # not a placeholder name, the actual values DFHack accepts. See
-        # module docstring.
-        choices = tuple(inner.split("|"))
-        name = "_".join(choices).lower()
-        return ArgSpec(name=name, raw=token, required=required, json_type="string", enum=choices)
 
-    name = inner.lower()
-    json_type = "integer" if inner in _INTEGER_ARG_NAMES else "string"
-    description = _ARG_DESCRIPTIONS.get(inner)
-    return ArgSpec(
-        name=name, raw=token, required=required, json_type=json_type, description=description
-    )
+def _parse_arg_token(token: str) -> ArgSpec:
+    """The single ArgSpec of a one-name token (kept for callers and tests
+    that only ever see one; a group token raises here, use _parse_arg_tokens)."""
+    specs = _parse_arg_tokens(token)
+    if len(specs) != 1:
+        raise ToolSchemaError(f"argument token {token!r} is a group of {len(specs)}, not one")
+    return specs[0]
 
 
 def _arg_specs_for_tool(tool: Tool) -> List[ArgSpec]:
     """The single source of truth for a tool's argument names, shared by
     tool_definitions (schema) and argv_for_call (argv), so the two can never
     disagree about which name means which position."""
-    prelim = [_parse_arg_token(tok) for tok in tool.args]
+    scope = tool.id.split(".", 1)[0]
+    prelim: List[ArgSpec] = []
+    for tok in tool.args:
+        prelim.extend(_parse_arg_tokens(tok, scope))
+
+    for i, spec in enumerate(prelim):
+        if spec.repeated and i != len(prelim) - 1:
+            raise ToolSchemaError(
+                f"{tool.id}: repeated argument {spec.raw!r} must be the last token of the "
+                "signature (anything after it would be ambiguous on a positional command line)"
+            )
 
     counts: Dict[str, int] = {}
     for spec in prelim:
@@ -375,6 +527,10 @@ def _input_schema(tool: Tool) -> dict:
         prop: Dict[str, Any] = {"type": spec.json_type}
         if spec.enum is not None:
             prop["enum"] = list(spec.enum)
+        if spec.repeated:
+            prop = {"type": "array", "items": prop}
+            if spec.required:
+                prop["minItems"] = 1
         if spec.description:
             prop["description"] = spec.description
         properties[spec.name] = prop
@@ -450,6 +606,14 @@ def _validate_value(tool_id: str, spec: ArgSpec, value: Any) -> str:
         # True/False would silently pass an integer check below.
         raise ArgumentError(f"{tool_id}: {spec.name!r} must not be a boolean, got {value!r}")
 
+    if isinstance(value, (list, tuple, dict)):
+        # Only a repeated argument takes a list, and _items_of has already
+        # split that into single values by here. str() of a container would
+        # otherwise reach the command line as its repr.
+        raise ArgumentError(
+            f"{tool_id}: {spec.name!r} takes a single value here, got {value!r}"
+        )
+
     if spec.enum is not None:
         text = str(value)
         if text not in spec.enum:
@@ -475,10 +639,27 @@ def _validate_value(tool_id: str, spec: ArgSpec, value: Any) -> str:
     return text
 
 
+def _items_of(spec: ArgSpec, value: Any) -> list:
+    """A repeated argument's values as a list. A bare scalar is one item (see
+    the module docstring); a non-repeated argument is always a single value."""
+    if spec.repeated and isinstance(value, (list, tuple)):
+        return list(value)
+    return [value]
+
+
+def _is_supplied(spec: ArgSpec, arguments: Mapping[str, Any]) -> bool:
+    if arguments.get(spec.name) is None:
+        return False
+    if spec.repeated:
+        return len(_items_of(spec, arguments[spec.name])) > 0
+    return True
+
+
 def argv_for_call(tool: Tool, arguments: Mapping[str, Any]) -> List[str]:
     """The exact argv DFHack expects: [script name minus ".lua", verb,
     positional args in signature order]. Raises ArgumentError for anything
-    invalid; see this module's docstring for the positional-optional trap."""
+    invalid; see this module's docstring for the positional-optional trap and
+    for optional groups and repeated arguments."""
     specs = _arg_specs_for_tool(tool)
     arguments = dict(arguments or {})
 
@@ -489,27 +670,56 @@ def argv_for_call(tool: Tool, arguments: Mapping[str, Any]) -> List[str]:
             f"{tool.id}: unknown argument(s) {unknown}; this tool accepts {sorted(known)}"
         )
 
-    supplied = [spec.name in arguments and arguments[spec.name] is not None for spec in specs]
+    supplied = [_is_supplied(spec, arguments) for spec in specs]
 
     for spec, has in zip(specs, supplied):
         if spec.required and not has:
-            raise ArgumentError(f"{tool.id}: missing required argument {spec.name!r} ({spec.raw})")
+            more = " (give at least one)" if spec.repeated else ""
+            raise ArgumentError(
+                f"{tool.id}: missing required argument {spec.name!r} ({spec.raw}){more}"
+            )
 
-    # The positional-optional gap check: optionals only, relative to each
+    # Units: one per single argument, one per optional group. The group is
+    # all-or-nothing, and for the gap check below it is one slot.
+    units: List[Tuple[str, List[int], bool]] = []  # (raw token, spec indices, required)
+    for i, spec in enumerate(specs):
+        if spec.group is not None and units and units[-1][0] == spec.group:
+            units[-1][1].append(i)
+        else:
+            units.append((spec.group or spec.raw, [i], spec.required))
+
+    for raw, indices, _required in units:
+        if len(indices) < 2:
+            continue
+        given = [specs[i].name for i in indices if supplied[i]]
+        absent = [specs[i].name for i in indices if not supplied[i]]
+        if given and absent:
+            raise ArgumentError(
+                f"{tool.id}: {raw} go together: got {given} without {absent}. Give all of "
+                "them, or none to use the default."
+            )
+
+    # The positional-optional gap check: optional units only, relative to each
     # other, ignoring required arguments interspersed between them (a
     # required argument is always present by the check above, so it never
-    # participates in a "gap").
-    optional_indices = [i for i, spec in enumerate(specs) if not spec.required]
-    supplied_optionals = [i for i in optional_indices if supplied[i]]
+    # participates in a "gap"). An omitted unit the manifest declares
+    # `skippable` (the CLI works out what was given by how many leading
+    # numbers it sees) does not block a later one.
+    skippable = set(getattr(tool, "skippable", ()) or ())
+    unit_supplied = [any(supplied[i] for i in indices) for _raw, indices, _r in units]
+    optional_units = [u for u, (_raw, _idx, required) in enumerate(units) if not required]
+    supplied_optionals = [u for u in optional_units if unit_supplied[u]]
     if supplied_optionals:
         last = supplied_optionals[-1]
-        for i in optional_indices:
-            if i >= last:
+        for u in optional_units:
+            if u >= last:
                 break
-            if not supplied[i]:
+            if not unit_supplied[u] and units[u][0] not in skippable:
+                first_name = specs[units[u][1][0]].name
+                last_name = specs[units[last][1][0]].name
                 raise ArgumentError(
-                    f"{tool.id}: cannot supply {specs[last].name!r} without also supplying the "
-                    f"earlier optional argument {specs[i].name!r} ({specs[i].raw}) -- DFHack's "
+                    f"{tool.id}: cannot supply {last_name!r} without also supplying the "
+                    f"earlier optional argument {first_name!r} ({units[u][0]}) -- DFHack's "
                     "command line is positional and cannot skip a slot. Pass a value for it "
                     "explicitly, or omit both."
                 )
@@ -519,5 +729,6 @@ def argv_for_call(tool: Tool, arguments: Mapping[str, Any]) -> List[str]:
     argv = [script, verb]
     for spec, has in zip(specs, supplied):
         if has:
-            argv.append(_validate_value(tool.id, spec, arguments[spec.name]))
+            for item in _items_of(spec, arguments[spec.name]):
+                argv.append(_validate_value(tool.id, spec, item))
     return argv
