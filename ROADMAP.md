@@ -1,6 +1,18 @@
 # Roadmap
 
-**Last reviewed:** 2026-09-21 (twenty-second pass, full re-scan of the Now
+**Last reviewed:** 2026-09-21, evening (twenty-third pass, targeted: a full re-read of the
+Now bucket's top items against `Working.md`, the register and the handoff index after a
+day of twelve streams. What moved is recorded in the new top Now item: the building,
+gotchas, labor-graph, nobles and zone tools are deployed (tool lists **34/57/14**), a
+Manager is appointed and its limit found (the fort has no Office), the labor graph is
+filled (5 known / 23 partial / 5 unknown of 33 kinds), and the auto-mode classifier is
+configured. The Next and Later buckets were keyword-scanned (building, workshop, zone,
+room, manager, nobles, gotcha, labor, workjob, deploy, stockpile, furniture, assess) and
+nothing was found that today's work finished; that was a search, not a line-by-line
+read. Suite measured 2026-09-21: **891 passed / 3 skipped** ambient, **537** in
+`.venv-dfmcp`.)
+
+**Previously reviewed:** 2026-09-21 (twenty-second pass, full re-scan of the Now
 bucket against `Working.md`, the register and the handoff index. Four things
 had moved since the last pass and are recorded in the new top Now item: the
 well was built, the fort lost its first citizen to starvation and was then fed,
@@ -79,6 +91,28 @@ or `decisions/DECISIONS.md`, not here.
 ## Now
 <!-- Actively being worked, or the clear immediate next step. -->
 
+- **NEW 2026-09-21, evening: the building blocks are live, and the next job is proving
+  them for real; the agent loop is the largest unbuilt piece.** Deployed and
+  live-verified on VM 103 today: the generic `building` tool (dry runs only), `labor
+  enabled-counts`, `gotchas.*` with static confidence levels, the labor graph and
+  join, `nobles` (unit 345 is now MANAGER, verified from both sides), and the
+  generalised `zone` tool (18 kinds, optional owner). A supervised unpause showed the
+  queued manager orders still do not run: the position needs an **Office** and the
+  fort has no zones. Against the user's minimum bar for openclaw, wells are done and
+  everything else is unproven or undesigned. In order: **(1)** redeploy the labor-join
+  shape fix and check it live; **(2)** place an Office for real, furnish it, and
+  watch whether the orders run; **(3)** the first real build of a never-built kind;
+  **(4)** generalise `workjob` (DFHack builds reaction jobs generically and jobs have a
+  `repeat` flag); **(5)** design assessing dwarves, the food chain end to end,
+  stockpile creation, game-clock control and defence; **(6)** only then the agent
+  loop and openclaw, which the user tabled. -> `Working.md` HANDOVER 2026-09-21,
+  evening, `decisions/DECISIONS.md` 2026-09-21 rows, `handoffs/INDEX.md`.
+- **PARTLY SUPERSEDED 2026-09-21, evening, by the item above (kept for the record):**
+  the item below, whose step (1) was answered in part (hunger and thirst were read at
+  tick 106974 and were nowhere near critical), whose step (3) named an
+  appoint-a-Manager tool (built, deployed and tested) and whose Manager premise
+  changed (an appointment alone does not start orders; an Office is needed). Its
+  steps (2) the supervised run and (4) the apostrophe fix are still open.
 - **NEW 2026-09-21: the fort has a well and a history, and the next job is
   reading it properly and giving it a drink that does not depend on luck.**
   Uniboslan is paused at year 31, tick 103055, **22 alive and 1 dead** (unit 454
