@@ -49,3 +49,11 @@ If a question can only be answered by information you do not have (a wiki page,
 a forum thread, the current state of a mechanic), say so and name what would
 settle it. That is a `vent.md` entry and a friction-log line: it is the evidence
 that builds the case for a retrieval tool.
+
+## Confidence and gotchas
+
+Every DFHack-backed tool result carries a `tool_guidance` block: a confidence
+level for that tool (and kind), a short note, and the titles of any known
+gotchas. Read `agents/CONFIDENCE-LEGEND.md` for what each level means and how
+to treat a listed gotcha: try it only if its title applies and the tool fails
+without it, then record the outcome with `gotchas.write`.

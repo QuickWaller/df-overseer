@@ -148,6 +148,33 @@ read:
       a misconfigured/absent link is one of the six diagnoses
       docs/PRODUCTION-MODEL.md sec13 names with no prior tool to see it.
 
+  - id: "gotchas.get"
+    status: exists
+    note: >-
+      Added handoffs/2026-09-21-building-tool-server.md. Known hazards for a tool,
+      each titled by its condition. Try a listed one only if its title applies and the
+      tool fails without it. Not yet deployed.
+  - id: "gotchas.write"
+    status: exists
+    note: >-
+      Same handoff. Records a proposed gotcha, or an outcome on an existing one. It changes
+      no fort state, only the gotcha store. Not yet deployed.
+  - id: "building.list-kinds"
+    status: exists
+    note: >-
+      Added handoffs/2026-09-21-building-tool-lua.md. Every building kind the game
+      can place, from quickfort's own table. Not yet deployed.
+  - id: "building.find"
+    status: exists
+    note: >-
+      Same handoff. Ranked sites and what the kind needs, for any kind. Read-only.
+      Not yet deployed.
+  - id: "labor.enabled-counts"
+    status: exists
+    note: >-
+      Same handoff. How many citizens have a labor enabled; null plus an error when
+      unknown, never 0. Not yet deployed.
+
 write:
   - id: "queue.propose"
     status: exists

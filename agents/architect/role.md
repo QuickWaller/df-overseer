@@ -84,3 +84,11 @@ arguments you pass to `queue.propose` itself.
   too, which is part of your proposal, not an afterthought. This project has
   already paid for that mistake once.
 - **Never trust `check FROM TO` as settled.** The manifest tags it unverified.
+
+## Confidence and gotchas
+
+Every DFHack-backed tool result carries a `tool_guidance` block: a confidence
+level for that tool (and kind), a short note, and the titles of any known
+gotchas. Read `agents/CONFIDENCE-LEGEND.md` for what each level means and how
+to treat a listed gotcha: try it only if its title applies and the tool fails
+without it, then record the outcome with `gotchas.write`.

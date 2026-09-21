@@ -63,3 +63,11 @@ the same plan step has failed twice.
   suspend window once per tick, which is why commands have been observed taking
   45-80 seconds. Slow is not broken. Do not retry a command because it has not
   landed yet.
+
+## Confidence and gotchas
+
+Every DFHack-backed tool result carries a `tool_guidance` block: a confidence
+level for that tool (and kind), a short note, and the titles of any known
+gotchas. Read `agents/CONFIDENCE-LEGEND.md` for what each level means and how
+to treat a listed gotcha: try it only if its title applies and the tool fails
+without it, then record the outcome with `gotchas.write`.

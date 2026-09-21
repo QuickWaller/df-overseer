@@ -77,6 +77,13 @@ read:
       claim like "the well is working now" against this figure means citing
       that sample size, not just the rate.
 
+  - id: "gotchas.get"
+    status: exists
+    note: >-
+      Added handoffs/2026-09-21-building-tool-server.md. Known hazards for a tool,
+      each titled by its condition. Try a listed one only if its title applies and the
+      tool fails without it. Not yet deployed.
+
 planned:
   - id: "queue.propose"
     status: planned
