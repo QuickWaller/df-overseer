@@ -1,0 +1,37 @@
+# Confidence level per tool, and per kind for the generic building tool.
+#
+# What a level means (docs/BUILDING-TOOL.md, "Confidence per tool and kind";
+# the text agents read is agents/CONFIDENCE-LEGEND.md): confidence that the
+# tool WORKS and that it is INTUITIVE for an agent to use. It is a STATIC
+# setting: we set it when a tool or kind is written or reviewed, and it stays
+# until we edit this file. There is deliberately no mechanism, in code or in
+# any agent's reach, that raises it (user's ruling, 2026-09-21).
+#
+# Levels (closed set, loaded by dfmcp/confidence.py, which refuses any other):
+#   full    the agent can just use the tool
+#   medium  read the description closely, check the gotchas, watch the result
+#   low     never run live or known to be unintuitive: dry-run first, check
+#           every step. NOT the user's wording; the design note suggested a
+#           level like this for things never run live. Nothing uses it yet.
+#
+# Every tool and kind starts at medium (user, 2026-09-21), so the default
+# below covers everything and `tools` is empty on purpose. Ids named under
+# `tools` must be real tool ids in the registry; the server refuses to start
+# on one that is not.
+#
+# An entry is either a bare level or a mapping:
+#
+#   tools:
+#     building.build:
+#       level: medium
+#       note: "a few words that override the level's default reminder"
+#       kinds:
+#         Masons: full            # a kind token, never a display label
+#         Still: {level: low, note: "never built live"}
+#
+# A kind with no entry inherits its tool's level; a tool with no entry gets
+# the default.
+
+default: medium
+
+tools: {}

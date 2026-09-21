@@ -380,6 +380,7 @@ class TestRosterWiring:
 
     @pytest.fixture(scope="class")
     def registry(self):
+        from dfmcp.gotchas_tools import NATIVE_TOOLS as GOTCHAS_NATIVE_TOOLS
         from dfmcp.queue_tools import NATIVE_TOOLS as QUEUE_NATIVE_TOOLS
         from dfmcp.registry import load_registry
         from dfmcp.series_tools import NATIVE_TOOLS as SERIES_NATIVE_TOOLS
@@ -390,7 +391,8 @@ class TestRosterWiring:
         # roles.py rule 1 requires to exist in the registry -- load_roster
         # below would otherwise fail to load the real roster.
         return load_registry(
-            native_tools={**QUEUE_NATIVE_TOOLS, **doctrine_tools.NATIVE_TOOLS, **SERIES_NATIVE_TOOLS}
+            native_tools={**QUEUE_NATIVE_TOOLS, **doctrine_tools.NATIVE_TOOLS, **SERIES_NATIVE_TOOLS,
+                **GOTCHAS_NATIVE_TOOLS}
         )
 
     @pytest.fixture(scope="class")

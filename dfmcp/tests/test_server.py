@@ -63,6 +63,7 @@ from dfmcp.queue_tools import NATIVE_TOOLS
 from dfmcp.registry import load_registry
 from dfmcp.roles import load_roster
 from dfmcp.series_tools import NATIVE_TOOLS as SERIES_NATIVE_TOOLS
+from dfmcp.gotchas_tools import NATIVE_TOOLS as GOTCHAS_NATIVE_TOOLS
 from dfmcp.tests.test_dfhack_client import FakeDFHackServer, make_fail_action, make_ok_action
 
 # dfmcp/server.py deliberately targets the mcp 2.x line (dfmcp/requirements.txt
@@ -132,7 +133,7 @@ def registry():
     # merged in too, added handoffs/2026-09-19-series-mcp-tools.md:
     # agents/overseer/tools.yaml and agents/consultant/tools.yaml now grant
     # series.* ids, same rule-1 requirement.
-    return load_registry(native_tools={**NATIVE_TOOLS, **DOCTRINE_NATIVE_TOOLS, **SERIES_NATIVE_TOOLS})
+    return load_registry(native_tools={**NATIVE_TOOLS, **DOCTRINE_NATIVE_TOOLS, **SERIES_NATIVE_TOOLS, **GOTCHAS_NATIVE_TOOLS})
 
 
 @pytest.fixture(scope="module")

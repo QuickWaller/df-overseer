@@ -21,6 +21,7 @@ from dfmcp.queue_tools import NATIVE_TOOLS
 from dfmcp.registry import load_registry
 from dfmcp.roles import load_roster
 from dfmcp.series_tools import NATIVE_TOOLS as SERIES_NATIVE_TOOLS
+from dfmcp.gotchas_tools import NATIVE_TOOLS as GOTCHAS_NATIVE_TOOLS
 
 GOOD_OVERSEER_TOKEN = "overseer-token-abcdefghij"  # 26 chars, well over the minimum
 GOOD_ARCHITECT_TOKEN = "architect-token-klmnopqrst"  # 26 chars
@@ -38,7 +39,7 @@ def registry():
     # merged in too, added handoffs/2026-09-19-series-mcp-tools.md: the real
     # agents/overseer, agents/consultant and agents/quartermaster
     # tools.yaml files now grant series.* ids, same rule 1 requirement.
-    return load_registry(native_tools={**NATIVE_TOOLS, **DOCTRINE_NATIVE_TOOLS, **SERIES_NATIVE_TOOLS})
+    return load_registry(native_tools={**NATIVE_TOOLS, **DOCTRINE_NATIVE_TOOLS, **SERIES_NATIVE_TOOLS, **GOTCHAS_NATIVE_TOOLS})
 
 
 @pytest.fixture(scope="module")

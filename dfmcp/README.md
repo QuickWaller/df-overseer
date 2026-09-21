@@ -776,6 +776,30 @@ This is the mechanical input `docs/AGENT-ARCHITECTURE.md` §10 expects for
   under many concurrent real agents is untested (every live run so far has
   been one `agent exec` at a time).
 
+## Gotchas, confidence, result enrichment and the labor join
+
+Added by `handoffs/2026-09-21-building-tool-server.md`; design and contracts in
+`docs/BUILDING-TOOL.md` (decisions 7 and 8, C2, C3).
+
+| Module | What it is |
+|---|---|
+| `gotchas_store.py` | Append-only SQLite store (`entries`, `outcomes`, `status_history`), write-time validation (registry tool, `"condition: hazard"` title, size limits, near-duplicates, per-run cap), JSONL export, `init` and `export` CLI. Fails loudly if the file is absent or malformed. |
+| `gotchas_tools.py` | Native tools `gotchas.get` (by id, by tool and optional kind, or an index) and `gotchas.write` (a new proposed entry, or with `id` an appended outcome). |
+| `confidence.py` | Loader for `gotchas/confidence.yaml`: tool id, optionally kind, to `full`/`medium`/`low`; default medium; refuses an unknown level, key or tool id. Static: nothing raises a level. |
+| `tool_guidance.py` | `enrich(...)`: adds `tool_guidance` (level, note, gotcha titles, addendum) to every DFHack-backed result, object, array or error. |
+| `labor_join.py` | For `building.find`/`building.build`: `operating_labors`, `gaps`, `gaps_unknown` from `production.labors.labors_for_kind` (C2) and the `labor enabled-counts` read (C1). |
+
+`build_mcp_server(..., confidence=None, production_db_path=None)`: both
+switches default to off so older callers are unchanged; `main()` always turns
+them on. See each module's docstring for the reasoning, in particular why
+`tool_guidance` is a single sibling key, why an unreadable store is reported
+as `gotchas_unavailable` rather than hidden, and why `unknown` never becomes
+an empty list.
+
+Config: `MCP_SERVER_GOTCHAS_DB`, `MCP_SERVER_PRODUCTION_DB`,
+`MCP_SERVER_CONFIDENCE_PATH` (defaults: two absolute paths under `/var/lib`
+and the in-tree `gotchas/confidence.yaml`).
+
 ## What this package deliberately does not do
 
 - **No mutation of `TOOLS.yaml`, `ROSTER.yaml`, any `role.md`, or any doc.**
