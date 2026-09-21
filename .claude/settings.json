@@ -22,9 +22,21 @@
       "PowerShell(gh pr view *)",
       "PowerShell(gh issue view *)",
       "PowerShell(gh repo list *)",
-      "PowerShell(mkdir *)"
+      "PowerShell(mkdir *)",
+      "Bash(ssh -o BatchMode=yes -i C:/Users/wills/.ssh/df_overseer_ed25519 *)",
+      "Bash(scp -q -i C:/Users/wills/.ssh/df_overseer_ed25519 *)",
+      "Bash(python *)",
+      "Bash(.venv-dfmcp/Scripts/python *)",
+      "Bash(sha256sum *)",
+      "Bash(git add *)",
+      "Bash(git commit *)",
+      "Bash(git merge *)",
+      "Bash(git cherry-pick *)",
+      "Bash(git worktree *)",
+      "PowerShell(git add *)",
+      "PowerShell(git commit *)",
+      "PowerShell(python *)"
     ],
-
     "ask": [
       "Bash(git push --force*)",
       "Bash(git push -f*)",
