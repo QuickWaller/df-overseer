@@ -34,7 +34,8 @@ The silent-zero bug class has shipped five times in this repo (register
 - A count the Lua read could not make (C1's `null` plus an error) stays
   `null` with its error and lands in `gaps_unknown`; it is never read as 0 and
   so never produces the "nobody has this labor" gap.
-- An absent graph database, an absent `production.labors` module (the graph
+- An absent graph database (checked before the real reader is called, because
+  the production store would otherwise create an empty one), an absent `production.labors` module (the graph
   stream not merged or not deployed), a lookup that raises, a result of an
   unexpected shape, a `requirements` block the joiner cannot read: each is
   `unknown` with the reason. None is an empty list and none is "no gaps".
@@ -60,6 +61,7 @@ from __future__ import annotations
 
 import asyncio
 import re
+from pathlib import Path
 from typing import Any, Awaitable, Callable, Dict, List, Mapping, Optional
 
 #: The DFHack-backed tool ids whose results are joined. Data, not a branch in
@@ -186,6 +188,15 @@ class LaborJoin:
 
         fn = self._labors_for_kind
         if fn is None:
+            # The real reader only. `production.store.connect` creates an empty,
+            # schema-valid database at any path that does not exist (as
+            # `dfqueue.store` and `dfseries.store` do), which would answer "this
+            # kind hosts no process" instead of "the graph is missing". Check first.
+            if not Path(self.production_db).is_file():
+                return _unknown(
+                    f"the production graph database was not found at {self.production_db}",
+                    req["gaps_unknown"],
+                ) | {"gaps": req["gaps"]}
             try:
                 fn = _import_labors_for_kind()
             except ImportError as exc:

@@ -421,7 +421,7 @@ class TestLaborJoinOverTheWire:
             result = await session.call_tool("building__find", {"kind": "Still", "near_landmark": "Wagon"})
         assert result.is_error is False
         op = result.structured_content["operating_labors"]
-        assert op["status"] == "unknown" and op["labors"] is None and op["unknown_reason"]
+        assert op["status"] == "unknown" and op["labors"] is None and "not found" in op["unknown_reason"]
         assert result.structured_content["dims"] == [3, 3]
 
     async def test_other_tools_are_not_joined(self, rr, pool, fake_dfhack, tmp_path, gdb):

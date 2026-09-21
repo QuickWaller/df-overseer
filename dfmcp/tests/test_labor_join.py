@@ -236,14 +236,32 @@ class TestUnknownIsNotZero:
         assert out["operating_labors"]["labors"] is None
         assert "no kind token" in out["operating_labors"]["unknown_reason"]
 
-    async def test_missing_production_labors_module_is_unknown(self, monkeypatch):
+    async def test_missing_production_labors_module_is_unknown(self, monkeypatch, tmp_path):
         def boom():
             raise ImportError("No module named 'production.labors'")
 
+        db = tmp_path / "g.sqlite3"
+        db.write_bytes(b"")
         monkeypatch.setattr(lj, "_import_labors_for_kind", boom)
-        out = await lj.LaborJoin(DB, counter()).join("Still", GOOD_REQ)
+        out = await lj.LaborJoin(str(db), counter()).join("Still", GOOD_REQ)
         assert out["operating_labors"]["status"] == "unknown"
         assert "production.labors is not available" in out["operating_labors"]["unknown_reason"]
+
+    async def test_an_absent_graph_file_is_unknown_and_the_real_reader_is_never_called(self, tmp_path, monkeypatch):
+        called = []
+        monkeypatch.setattr(lj, "_import_labors_for_kind", lambda: (lambda *a: called.append(a)))
+        out = await lj.LaborJoin(str(tmp_path / "absent.sqlite3"), counter()).join("Still", GOOD_REQ)
+        assert out["operating_labors"]["status"] == "unknown" and out["operating_labors"]["labors"] is None
+        assert "not found" in out["operating_labors"]["unknown_reason"] and called == []
+        assert not (tmp_path / "absent.sqlite3").exists()
+
+    async def test_an_existing_graph_file_reaches_the_real_reader(self, tmp_path, monkeypatch):
+        db = tmp_path / "g.sqlite3"
+        db.write_bytes(b"")
+        stub = Stub(c2())
+        monkeypatch.setattr(lj, "_import_labors_for_kind", lambda: stub)
+        out = await lj.LaborJoin(str(db), counter({"BREWER": 1})).join("Still", GOOD_REQ)
+        assert stub.calls == [(str(db), "Still")] and out["operating_labors"]["status"] == "known"
 
     async def test_join_never_raises(self):
         class Weird:
