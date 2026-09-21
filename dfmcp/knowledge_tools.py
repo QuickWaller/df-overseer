@@ -846,6 +846,7 @@ async def _source_search(
                             "text": line.rstrip("\n")[:_SOURCE_MAX_LINE_CHARS],
                         })
                         if len(matches) >= max_matches:
+                            truncated = True
                             break
         except OSError:
             continue
