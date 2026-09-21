@@ -287,6 +287,18 @@ each other; a required argument positioned after an optional one (as
 `NEAR_LANDMARK` sits after `[LEVEL]` in `openarea.build`) is validated
 independently and never participates in the gap.
 
+**Optional groups and repeated arguments.** Added 2026-09-21
+(`handoffs/2026-09-21-optional-and-variadic-args.md`). A signature token
+`[W H]` is an all-or-nothing optional group: flat optional properties `w` and
+`h`, and giving one without the other is a named `ArgumentError`. `NAME...`
+(`[NAME...]` optional) is a repeated argument: an `array` property (`LABOR...`
+becomes `labor`), one argv word per item, last in the signature. A command
+whose Lua CLI works out which optionals were given by counting leading numbers
+(`df-overseer-building.lua`) declares `skippable: ["[W H]"]` in `TOOLS.yaml`,
+so an omitted `[W H]` does not trip the trap above; without that key the strict
+rule applies to a group too. `_ARG_DESCRIPTIONS` also takes scoped keys
+(`"building.KIND"`) that win over the bare token for that script's commands.
+
 **Argument descriptions.** Added 2026-09-14
 (`handoffs/2026-09-14-relative-level-args.md`): `_ARG_DESCRIPTIONS` in
 `tools.py`, one table keyed by the raw manifest token (`"LEVEL"`,

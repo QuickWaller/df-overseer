@@ -92,7 +92,7 @@ def test_new_signatures_are_expressible_by_the_server_parser():
         for spec in specs:
             assert re.fullmatch(r"[a-z][a-z0-9_]*", spec.name), (
                 f"{tool_id}: token {spec.raw!r} became property name {spec.name!r}, "
-                "which the server cannot express (optional pairs and variadics do not parse)"
+                "which is not a legal property name (a group or repeated token was mis-parsed)"
             )
         assert len({s.name for s in specs}) == len(specs)
 
