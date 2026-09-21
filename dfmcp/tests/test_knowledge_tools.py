@@ -181,7 +181,7 @@ async def test_web_fetch_truncates_long_text():
 
 @pytest.mark.parametrize("bad_url", [
     "http://127.0.0.1/",
-    "http://10.1.2.3/",
+    "http://192.0.2.1/",  # RFC 5737 TEST-NET-1: still ipaddress.is_private, no real host (docs/TRAPS.md convention)
     "http://169.254.169.254/",       # common cloud-metadata address
     "http://[::1]/",
     "ftp://example.com/",
@@ -213,7 +213,7 @@ async def test_check_url_safe_accepts_a_public_looking_resolution():
 
 @pytest.mark.asyncio
 async def test_check_url_safe_refuses_when_resolution_is_private():
-    fake_infos = [(2, 1, 6, "", ("10.0.0.5", 0))]
+    fake_infos = [(2, 1, 6, "", ("192.0.2.5", 0))]  # RFC 5737 TEST-NET-1, still ipaddress.is_private
     with patch("dfmcp.knowledge_tools.socket.getaddrinfo", return_value=fake_infos):
         with pytest.raises(kt.KnowledgeToolError, match="private"):
             kt._check_url_safe("https://internal.example/")
