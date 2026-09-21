@@ -194,3 +194,68 @@ handoff before dispatching.
    rulings (`caravan`, `showmood`, `cleaners`, `clear-smoke`) are being
    discussed one at a time.
 
+## Archived 2026-09-21 (evening): superseded bullets from the CLAUDE.md status block
+
+Moved wholesale from `CLAUDE.md`'s status block when it was compacted. Every entry was
+already marked superseded or updated by a later one; the register holds the substance.
+
+> - **The well is built (2026-09-19)**, from blocks and a mechanism the fort
+>   made itself through `df-overseer-workjob` (one-off workshop jobs, the way
+>   a player clicks, since manager orders never run without a Manager). A
+>   dwarf was caught drinking 1 tile from it; most drinking still comes from
+>   an unlocated source. 22 alive, fort paused at year 31, tick 103055.
+> - **First death, 2026-09-19: the fort starved before it was fed.** Unit
+>   454 starved at year 31 tick 15143. All 23 citizens had been hungry and 11
+>   past 75,000 while this project's reporting counted only drinks; the user's
+>   screen caught it. A feeding stream then marked 429 edible wild plants and
+>   rebuilt a farm, and **no citizen is above 75,000 hunger now**. 22 alive,
+>   fort paused at year 31, tick 29445.
+> - **The fort drinks, measured 2026-09-19.** The sampler's history records
+>   **73 thirst resets across all 23 citizens in 42 game days**, with no well
+>   and no brewed drink, so they drink from a water source not yet located.
+>   The bullet below stands as a record of the known pond (still unreachable)
+>   but is no longer the fort's state. Fort paused at year 31, tick 4257.
+> - **Superseded 2026-09-19, kept for the record: the fort cannot drink.** This corrects the entry below it, written
+>   2026-09-17, which said Uniboslan drinks. Measured 2026-09-19 across two
+>   exact reads: delta tick 6,303 equalled delta thirst 6,303 across all 15
+>   citizens, so `thirst_timer` increments 1 per tick and **nobody drank at
+>   all**. The `WaterSource` zone is active but unreachable, because **zero
+>   water tiles have any walkable neighbour**, and digging to the water was
+>   disproven by digging: a channel at z169 flooded and left z168 walkable at
+>   0. The fort needs a **well**, blocked on BLOCKS 0 and TRAPPARTS 0 against
+>   3 logs and 0 boulders. → `handoffs/2026-09-19-well-unblock.md`.
+> - **Updated 2026-09-21: the production graph is no longer empty**: the
+>   real-corpus extraction and the snapshot assembler both merged on
+>   2026-09-19 (the suite is now **552 passed / 1 skipped**). Pointing it at the
+>   live fort is the supervised run above. The entry below is kept as written.
+> - **The production model is built, green and empty.** `production/` is
+>   2,182 lines across five modules at **364 passed / 1 skipped**, covering
+>   steps 1 to 5 of the spec's build order. Two gaps, both found by audit
+>   rather than by failure: the extractor has **never seen real data** (6
+>   hand-assembled fixture reactions, not the real 159), and **nobody wrote
+>   the caller** that assembles a snapshot for `blocker.py` and `cover.py`,
+>   so the graph has never been pointed at this fort. Two streams are on
+>   both. → `handoffs/2026-09-19-real-corpus-extraction.md`,
+>   `handoffs/2026-09-19-snapshot-assembler.md`.
+> - **The production and logistics model is designed in full, nothing
+>   built.** `docs/PRODUCTION-MODEL.md` is the build spec: a directed
+>   hypergraph in plain SQLite, corrected by two feasibility audits against
+>   this install's own raws and live state
+>   (`research/2026-09-18-schema-extraction-static.md`,
+>   `research/2026-09-18-schema-extraction-live.md`). Consumption has
+>   **four** outcomes, not three; 42% of reaction product lines need a
+>   material-side join before a concrete item id exists; no job-duration
+>   figure exists anywhere on this install, in DFHack's docs, or on the
+>   wiki, confirmed a third independent time. → `ROADMAP.md` Now bucket.
+> - **Superseded 2026-09-19, kept for the record: "the fort drinks and grows food for the first time."** Uniboslan is
+>   paused at tick 227160 (sim at **10 FPS**, deliberate) with 15 citizens, no
+>   deaths. Its ponds are sunken basins of 6-7/7 water one level below the
+>   surface, which is why no dwarf drank unaided; a `WaterSource` zone placed
+>   on the water at z168, plus one supervised unpause, got founders down to
+>   the water and self-serving (register 2026-09-17). A first farm plot is
+>   built at z168 with plump helmet set for all four seasons, but **nothing is
+>   planted yet**. **Still not
+>   built:** the still (designated; the fort owns only 3 logs, no worker took
+>   the job yet either way). Fort-owned food is 17 units, drink still 0, 60
+>   seeds (35 plump helmet). → `Working.md` HANDOVER 2026-09-19 (the 2026-09-17 one is archived).
+>

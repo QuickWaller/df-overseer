@@ -22,67 +22,20 @@ learning architecture.
 >   `nobles.*` and the generalised `zone` tool, on top of the six-deduction
 >   `stocks.availability`, `doctrine.get` and the `series.*`
 >   history tools (the fort is sampled once per game day into `dfseries`).
->   Open next: read every vital on the live fort, then the supervised run that
->   settles the `growdur` unit. → `Working.md` HANDOVER 2026-09-21.
-> - **The well is built (2026-09-19)**, from blocks and a mechanism the fort
->   made itself through `df-overseer-workjob` (one-off workshop jobs, the way
->   a player clicks, since manager orders never run without a Manager). A
->   dwarf was caught drinking 1 tile from it; most drinking still comes from
->   an unlocated source. 22 alive, fort paused at year 31, tick 103055.
-> - **First death, 2026-09-19: the fort starved before it was fed.** Unit
->   454 starved at year 31 tick 15143. All 23 citizens had been hungry and 11
->   past 75,000 while this project's reporting counted only drinks; the user's
->   screen caught it. A feeding stream then marked 429 edible wild plants and
->   rebuilt a farm, and **no citizen is above 75,000 hunger now**. 22 alive,
->   fort paused at year 31, tick 29445.
-> - **The fort drinks, measured 2026-09-19.** The sampler's history records
->   **73 thirst resets across all 23 citizens in 42 game days**, with no well
->   and no brewed drink, so they drink from a water source not yet located.
->   The bullet below stands as a record of the known pond (still unreachable)
->   but is no longer the fort's state. Fort paused at year 31, tick 4257.
-> - **Superseded 2026-09-19, kept for the record: the fort cannot drink.** This corrects the entry below it, written
->   2026-09-17, which said Uniboslan drinks. Measured 2026-09-19 across two
->   exact reads: delta tick 6,303 equalled delta thirst 6,303 across all 15
->   citizens, so `thirst_timer` increments 1 per tick and **nobody drank at
->   all**. The `WaterSource` zone is active but unreachable, because **zero
->   water tiles have any walkable neighbour**, and digging to the water was
->   disproven by digging: a channel at z169 flooded and left z168 walkable at
->   0. The fort needs a **well**, blocked on BLOCKS 0 and TRAPPARTS 0 against
->   3 logs and 0 boulders. → `handoffs/2026-09-19-well-unblock.md`.
-> - **Updated 2026-09-21: the production graph is no longer empty**: the
->   real-corpus extraction and the snapshot assembler both merged on
->   2026-09-19 (the suite is now **552 passed / 1 skipped**). Pointing it at the
->   live fort is the supervised run above. The entry below is kept as written.
-> - **The production model is built, green and empty.** `production/` is
->   2,182 lines across five modules at **364 passed / 1 skipped**, covering
->   steps 1 to 5 of the spec's build order. Two gaps, both found by audit
->   rather than by failure: the extractor has **never seen real data** (6
->   hand-assembled fixture reactions, not the real 159), and **nobody wrote
->   the caller** that assembles a snapshot for `blocker.py` and `cover.py`,
->   so the graph has never been pointed at this fort. Two streams are on
->   both. → `handoffs/2026-09-19-real-corpus-extraction.md`,
->   `handoffs/2026-09-19-snapshot-assembler.md`.
-> - **The production and logistics model is designed in full, nothing
->   built.** `docs/PRODUCTION-MODEL.md` is the build spec: a directed
->   hypergraph in plain SQLite, corrected by two feasibility audits against
->   this install's own raws and live state
->   (`research/2026-09-18-schema-extraction-static.md`,
->   `research/2026-09-18-schema-extraction-live.md`). Consumption has
->   **four** outcomes, not three; 42% of reaction product lines need a
->   material-side join before a concrete item id exists; no job-duration
->   figure exists anywhere on this install, in DFHack's docs, or on the
->   wiki, confirmed a third independent time. → `ROADMAP.md` Now bucket.
-> - **Superseded 2026-09-19, kept for the record: "the fort drinks and grows food for the first time."** Uniboslan is
->   paused at tick 227160 (sim at **10 FPS**, deliberate) with 15 citizens, no
->   deaths. Its ponds are sunken basins of 6-7/7 water one level below the
->   surface, which is why no dwarf drank unaided; a `WaterSource` zone placed
->   on the water at z168, plus one supervised unpause, got founders down to
->   the water and self-serving (register 2026-09-17). A first farm plot is
->   built at z168 with plump helmet set for all four seasons, but **nothing is
->   planted yet**. **Still not
->   built:** the still (designated; the fort owns only 3 logs, no worker took
->   the job yet either way). Fort-owned food is 17 units, drink still 0, 60
->   seeds (35 plump helmet). → `Working.md` HANDOVER 2026-09-19 (the 2026-09-17 one is archived).
+>   Open next, in order: redeploy the labor-join shape fix, place an Office for
+>   the Manager and watch the orders, the first real build of a never-built
+>   kind, then generalise `workjob`. Against the user's minimum bar for
+>   openclaw only wells are done; the agent loop is unbuilt. → `Working.md`
+>   HANDOVER 2026-09-21, evening.
+> - **Recent history, each in full in the register and `working-archive/`:** the fort
+>   could not drink and the well was built (2026-09-19, from blocks and a mechanism
+>   made through `df-overseer-workjob`, since manager orders never run without a
+>   Manager); it **starved before it was fed** (first death, unit 454, tick 15143;
+>   reporting had counted only drinks) and was then fed by marking 429 wild plants;
+>   the production graph went from designed to built to filled with the real corpus
+>   and, on 2026-09-21, to a labor graph over 33 building kinds (5 known, 23
+>   partial, 5 unknown). The superseded status bullets are archived in
+>   `working-archive/Working_archive-2026-09-21.md`.
 >
 > - **The fort.** VM 103 (`df-colony-01`) runs **Uniboslan, "Ragwind,"** the
 >   one fort, on DF Classic plus DFHack under Xvfb, built by
@@ -90,11 +43,12 @@ learning architecture.
 >   Artobcatten, was lost founding it (register 2026-09-10). It is genuinely
 >   paused, the safe state. The user chose to continue on this fort; it is
 >   expendable, and rescuing it is worth trying for the tools it forces us to
->   build. → `Working.md` HANDOVER 2026-09-19 (the 2026-09-17 one is archived).
+>   build. → `Working.md` HANDOVER 2026-09-21, evening.
 > - **Perception and action.** `scripts/dfhack/` holds the coordinate-free
 >   tools: connectivity, landmarks, overview, diff, open-area and diggable
 >   find/build, chokepoints, stuck jobs, labor, farm, workshop, zone, trees,
->   well, and manager work orders, all live on VM 103. Role tool lists:
+>   well, manager work orders, the generic `building` tool, `nobles` and a
+>   `zone` tool over every zone kind, all live on VM 103. Role tool lists:
 >   architect 34, overseer 57, consultant 14 (2026-09-21, live-verified per role over a real MCP client, after the building, gotchas, nobles and zone tools landed). Closed loops ran for real:
 >   Stockpile #2 built, a 41-tile dig completed, a farm plot built and its crop
 >   set,
@@ -120,8 +74,8 @@ learning architecture.
 >   minute, unexecuted, so grading it now would record a miss caused by
 >   wall-clock latency between ruling and execution, not a bad proposal. It is
 >   left ungraded on purpose; no grader runs on a schedule regardless. It also
->   could not be executed today even with write tools switched on, because no
->   tool builds what it asks for.
+>   could not be executed on 2026-09-15 even with write tools switched on, because no
+>   tool built what it asks for (a generic `building` tool is live now, dry runs only).
 > - **Incident capture** on VMs 103 and 106 (guest agent, persistent journal,
 >   a netwatch dump on gateway loss), with `docs/RUNBOOK-DARK-GUEST.md`. VM 106
 >   went dark on 2026-09-14, cause unknown; it was rebuilt in place.
@@ -131,14 +85,20 @@ learning architecture.
 >   is design or proposal unless marked verified.
 >
 > **Traps before running anything:**
-> - Ambient `python -m pytest` gives **552 passed, 1 skipped** (measured 2026-09-21); the skip is
->   correct (transport tests guard their pinned SDK import). Run `dfmcp/tests`
->   in `.venv-dfmcp` for all **271** (measured 2026-09-21). `py -3` here is a 3.13 without pytest:
+> - Ambient `python -m pytest` gives **891 passed, 3 skipped** (measured 2026-09-21); the
+>   skips are correct (transport tests guard their pinned SDK import). Run `dfmcp/tests`
+>   in `.venv-dfmcp` for all **537** (measured 2026-09-21). `py -3` here is a 3.13 without pytest:
 >   use `python`.
 > - Packages are `dfmcp` and `dfqueue`, never `mcp` or `queue`: a local
 >   directory of either name shadows the MCP SDK or the stdlib module.
 > - Deploy with `git -c core.autocrlf=false archive`; this workstation's
 >   `core.autocrlf=true` otherwise ships CRLF and breaks hash checks.
+> - Subagent worktrees are created from `origin/main`, not local HEAD, and carry their own
+>   copy of `.claude/settings.json`: tell a dispatched agent to `git merge --ff-only main`
+>   first. Hash **committed** bytes (`git -c core.autocrlf=false show HEAD:path`), not the
+>   working copy. Auto mode's classifier refuses live dev-VM work by its defaults and is
+>   configured only from the user's settings (`autoMode`), not the repo: see the register,
+>   2026-09-21, and `docs/TRAPS.md`.
 
 This repo is managed with Claude Code using a structured memory system,
 following the pattern published as
