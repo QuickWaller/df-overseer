@@ -257,6 +257,28 @@ handoff before dispatching.
    it must be able to build workshops, rooms and furniture, assess dwarves,
    grow food and build wells before agent infrastructure is worth building.
 
+   **Status, later on 2026-09-21: three of the four streams ran and are merged
+   locally, all green (698 passed / 3 skipped ambient, 429 / 1 in
+   `.venv-dfmcp`), none deployed.** Lua side: `df-overseer-building.lua`, 175
+   kinds from quickfort's own table (reached through upvalues), about 40 dry
+   runs verified live and read-only with the fort unchanged at tick 103055;
+   `labor enabled-counts`; the dump is at
+   `<scratchpad>/building-dump/` (out of tree). Server side: `gotchas.get` and
+   `gotchas.write`, static confidence levels, `tool_guidance` enrichment, the
+   labor join stubbed to C2. Research: `research/2026-09-21-building-requirements.md`
+   (32 kinds; DFHack's material filters are its own tables, not the game's;
+   the Mason's Workshop labor is STONECUTTER/STONE_CARVER, so the `mason`
+   entry in `df-overseer-workshop.lua` is wrong). Allowlists granted (architect
+   30, overseer 51, consultant 12 on the merged tree). **Graph-labor stream
+   dispatched** (worktree, offline). **Open:** the manifest requires W and H
+   and one labor per `enabled-counts` call because `dfmcp/tools.py` cannot
+   express optional or repeated arguments (the user has not ruled: extend
+   `tools.py`, or accept); nothing has really built a never-built kind; deploy
+   needs a gotcha-store directory, a `ReadWritePaths` line and the graph DB
+   (see the server report in `handoffs/2026-09-21-building-tool-server.md`).
+   Next: nobles test (VM 103 is free), deploy with the user's go-ahead, then
+   the first supervised real build.
+
 6. **Design gaps against the openclaw minimum bar** (2026-09-21, none
    designed): **assessing dwarves** (what it feeds into is unanswered);
    **rooms**, which need the same wrapper-over-a-generic-tool system as
