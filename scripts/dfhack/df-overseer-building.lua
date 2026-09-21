@@ -507,6 +507,7 @@ local function ranked_sites(k, w, h, level, near, radius_tiles)
     radius_tiles = radius,
     tiles_checked = stats.checked,
     eligible_tiles = per_window and NULL or stats.eligible_tiles,
+    eligible_note = per_window and "not counted: this kind's tile rule depends on the footprint window" or NULL,
     windows_checked = stats.windows,
     fitting_sites = #candidates,
     check_errors = stats.errors,
@@ -625,8 +626,10 @@ local function requirements_for(k)
         rec.count_error = "no df.global.world.items.other vector named " .. tostring(tname)
       end
     else
-      rec.need = "unspecified (no item type and no building_material class in the filter)"
-      rec.count_error = "filter names neither an item type nor the building_material class"
+      rec.need = (#flags > 0) and ("an item matching " .. table.concat(flags, ", "))
+        or "an item (the filter names no type and no flags)"
+      rec.count_error = "the filter has no item type and is not the building_material class, "
+        .. "so it cannot be counted by type"
     end
 
     if names then
@@ -724,6 +727,11 @@ end
 -- Commands
 -- ---------------------------------------------------------------------------
 
+local function elig_str(search)
+  if search.eligible_tiles == NULL then return "n/a" end
+  return tostring(search.eligible_tiles)
+end
+
 function find_kind(kind_name, w, h, level, near, radius_tiles)
   local k, kerr = resolve_kind(kind_name)
   if not k then return nil, kerr end
@@ -732,8 +740,8 @@ function find_kind(kind_name, w, h, level, near, radius_tiles)
   local chosen, search, err, z = ranked_sites(k, dw, dh, level, near, radius_tiles)
   if err then return nil, err end
   if #chosen == 0 then
-    return nil, string.format("no site for %s (%dx%d) near %s; search: %d tiles checked, %d eligible, %d check errors%s",
-      k.token, dw, dh, tostring(near), search.tiles_checked, tonumber(search.eligible_tiles) or -1, search.check_errors,
+    return nil, string.format("no site for %s (%dx%d) near %s; search: %d tiles checked, %s eligible, %d check errors%s",
+      k.token, dw, dh, tostring(near), search.tiles_checked, elig_str(search), search.check_errors,
       search.first_check_error ~= NULL and (" (first: " .. search.first_check_error .. ")") or "")
   end
   local req, gaps = requirements_for(k)
@@ -761,8 +769,8 @@ function build_kind(kind_name, w, h, level, near, rank, radius_tiles, dry_run)
   local chosen, search, err, z = ranked_sites(k, dw, dh, level, near, radius_tiles)
   if err then return nil, err end
   if rank < 1 or rank > #chosen then
-    return nil, string.format("no candidate at rank %d (found %d near %s); search: %d tiles checked, %d eligible, %d check errors",
-      rank, #chosen, tostring(near), search.tiles_checked, tonumber(search.eligible_tiles) or -1, search.check_errors)
+    return nil, string.format("no candidate at rank %d (found %d near %s); search: %d tiles checked, %s eligible, %d check errors",
+      rank, #chosen, tostring(near), search.tiles_checked, elig_str(search), search.check_errors)
   end
   local c = chosen[rank]
   local req, gaps = requirements_for(k)
