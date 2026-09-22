@@ -1745,7 +1745,7 @@ df-overseer-clock.lua:
 df-overseer-fort.lua:
   build_order_item: "agent loop MVP item 2 (docs/AGENT-LOOP.md); handoffs/2026-09-22-loop-clock-conductor-role.md"
   commands:
-    "quicksave [CONFIRM_SLOT CONFIRM_PRIOR_MTIME]":
+    "quicksave [PRIOR_AUTOSAVE_1 PRIOR_AUTOSAVE_2 PRIOR_AUTOSAVE_3]":
       lua_function: fort_quicksave
       effect: mutate
       coordinate_bearing: false
@@ -1753,24 +1753,28 @@ df-overseer-fort.lua:
       verified: unverified
       knowledge_scope: player_visible
       notes: >
-        No args: fires quicksave and returns the predicted target slot
-        ("autosave 1"/2/3, the one with the oldest world.sav mtime --
-        confirmed overwrite-oldest rotation, memory/dfhack-environment.md)
-        and its mtime immediately before firing. Deliberately does NOT
-        block waiting for the save to land: the .lua file's own header
-        argues from two already-established project facts (quicksave.lua's
-        render-gated asynchrony, up to ~90s observed,
+        No args: fires quicksave and returns every named slot's
+        ("autosave 1"/2/3) world.sav mtime as read immediately before
+        firing -- FIXED 2026-09-22 (handoffs/2026-09-22-loop-diff-
+        reregister-quicksave-slot.md) to never predict which slot the
+        overwrite-oldest rotation will pick: the original prediction was
+        wrong on a real fort (evals/live/2026-09-22-loop-game-text-encoding/
+        README.md, "autosave 1" predicted, "autosave 2" actually written).
+        Deliberately does NOT block waiting for the save to land: the .lua
+        file's own header argues from two already-established project facts
+        (quicksave.lua's render-gated asynchrony, up to ~90s observed,
         research/2026-09-11-quicksave-silent-noop.md; and a script call
         holding DFHack's suspend lock for its own duration,
         docs/AGENT-ARCHITECTURE.md ss6) that blocking inline risks a
         self-deadlock, not just a slow poll. A deliberate deviation from
         the handoff's literal "confirmed by the slot's mtime changing"
-        phrasing -- flagged in this stream's report. Both args given (an
-        all-or-nothing pair): does not re-fire quicksave, just reports
-        whether that slot's mtime has moved past the given prior value --
-        meant to be called again later, spaced out, not in a tight loop.
-        Path derivation (parent of dfhack.getSavePath()) is NOT live-
-        verified this stream (no VM); see the report's exact live checks.
+        phrasing -- flagged in this stream's report. All three args given
+        (an all-or-nothing group): does not re-fire quicksave, just reports
+        which slot's mtime actually moved past its given prior value (the
+        confirmed truth, never a guess) -- meant to be called again later,
+        spaced out, not in a tight loop. Path derivation (parent of
+        dfhack.getSavePath()) is NOT live-verified this stream (no VM); see
+        the report's exact live checks.
         System-kind only.
 
 df-overseer-vitals.lua:

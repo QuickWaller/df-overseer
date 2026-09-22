@@ -101,7 +101,7 @@ def _base_tools(**overrides):
         "clock.pause": {"ok": True, "paused": True},
         "fort.quicksave": {
             "ok": True, "mode": "issued", "issued": True,
-            "predicted_slot": "autosave 1", "predicted_slot_prior_mtime": 123,
+            "prior_mtimes": {"autosave 1": 100, "autosave 2": 110, "autosave 3": 120},
         },
     }
     results.update(overrides)

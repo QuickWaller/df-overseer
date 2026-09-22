@@ -42,13 +42,20 @@
 -- this stream's report for the flag raised about it.
 --
 -- ============================================================================
--- WHICH SLOT WILL BE WRITTEN. Confirmed rotation policy
--- (memory/dfhack-environment.md, "quicksave rotates slot directories
--- (autosave 1 to 3)... overwrite-oldest, not fixed round-robin", live-
--- confirmed twice in research/2026-09-11-quicksave-silent-noop.md ss3-4): the
--- next quicksave lands in whichever of the three `autosave N` directories has
--- the OLDEST world.sav mtime at the moment it is issued. Reading exactly
--- three named directories is a bounded read (docs/TRAPS.md), never a scan.
+-- WHICH SLOT WAS WRITTEN: NEVER PREDICTED, ALWAYS OBSERVED. FIXED 2026-09-22
+-- (handoffs/2026-09-22-loop-diff-reregister-quicksave-slot.md). The original
+-- version of this tool predicted the target slot as whichever named
+-- directory had the OLDEST world.sav mtime at issue time, on the theory that
+-- quicksave's confirmed overwrite-oldest rotation policy
+-- (memory/dfhack-environment.md, live-confirmed twice in
+-- research/2026-09-11-quicksave-silent-noop.md ss3-4) always picks it. That
+-- theory turned out wrong on a real fort: the encoding-fix stream's own
+-- quicksave predicted "autosave 1" while the save landed in "autosave 2"
+-- (evals/live/2026-09-22-loop-game-text-encoding/README.md). The tool no
+-- longer predicts anything -- it reports every named slot's mtime before
+-- firing and, on a later confirm call, reports whichever slot's mtime
+-- actually changed. Reading exactly three named directories, both before and
+-- during confirm, is a bounded read (docs/TRAPS.md), never a scan.
 --
 -- The three slots' parent directory is derived from dfhack.getSavePath()
 -- (the CURRENT save directory, which memory/dfhack-environment.md notes can
@@ -82,74 +89,84 @@ local function slot_mtime(root, slot_name)
   return mtime
 end
 
--- The slot with the OLDEST mtime among the three named slots is the one the
--- rotation policy will overwrite next. A slot that cannot be read (missing,
--- fresh install) sorts as "oldest" (mtime -1 treated as older than any real
--- mtime), since an absent slot is exactly where the next save should land.
-local function oldest_slot(root)
-  local oldest_name, oldest_mtime = nil, nil
-  for _, name in ipairs(SLOT_NAMES) do
-    local m = slot_mtime(root, name)
-    local sort_key = m or -1
-    if oldest_mtime == nil or sort_key < oldest_mtime then
-      oldest_name, oldest_mtime = name, sort_key
-    end
-  end
-  return oldest_name, oldest_mtime
-end
-
--- quicksave [CONFIRM_SLOT CONFIRM_PRIOR_MTIME]
+-- FIXED 2026-09-22 (handoffs/2026-09-22-loop-diff-reregister-quicksave-slot.md):
+-- the original "issued" reply predicted the target slot as the one with the
+-- OLDEST mtime among the three named slots, on the theory that quicksave's
+-- overwrite-oldest rotation always picks it. Found live, not by this stream
+-- (evals/live/2026-09-22-loop-game-text-encoding/README.md, "Found live,
+-- not fixed"): the encoding-fix stream's own quicksave predicted "autosave
+-- 1" while the save actually landed in "autosave 2" -- the prediction was
+-- simply wrong on a real fort, and the conductor and the deploy rules trust
+-- this tool's report, so a guess is not good enough.
 --
--- No args: fire quicksave, return the predicted target slot and its mtime
--- immediately before firing (never confirmed inline -- see header).
---
--- Both args given (an all-or-nothing pair, per the registry's own
--- convention): do NOT fire quicksave again; just report whether
--- CONFIRM_SLOT's world.sav mtime has moved past CONFIRM_PRIOR_MTIME. This is
--- the caller's own out-of-band confirmation step, meant to be called again
--- with real wall-clock gaps between attempts (up to ~90s observed,
--- research/2026-09-11-quicksave-silent-noop.md), never in a tight loop.
-function fort_quicksave(confirm_slot, confirm_prior_mtime)
+-- The fix drops prediction entirely. "issued" now returns the mtime of
+-- EVERY named slot as it stood immediately before firing quicksave (three
+-- bounded stat calls, same cost as before). Passing all three prior mtimes
+-- back (an all-or-nothing group, the same convention as the tool's
+-- original two-arg CONFIRM_SLOT/CONFIRM_PRIOR_MTIME pair, just now three
+-- members and no separate mode flag needed) reports whichever slot's mtime
+-- actually moved -- the truth, read after the fact, never a guess about
+-- which slot the rotation policy will pick.
+function fort_quicksave(prior_autosave_1, prior_autosave_2, prior_autosave_3)
   local root, root_err = save_root()
   if not root then
     return { ok = false, error = root_err }
   end
 
-  if confirm_slot and confirm_prior_mtime then
-    local prior = tonumber(confirm_prior_mtime)
-    if not prior then
-      return { ok = false, error = "CONFIRM_PRIOR_MTIME must be a number, got " .. tostring(confirm_prior_mtime) }
+  if prior_autosave_1 ~= nil or prior_autosave_2 ~= nil or prior_autosave_3 ~= nil then
+    local priors = { tonumber(prior_autosave_1), tonumber(prior_autosave_2), tonumber(prior_autosave_3) }
+    for i, name in ipairs(SLOT_NAMES) do
+      if priors[i] == nil then
+        return {
+          ok = false,
+          error = "confirm needs three prior mtimes, one per slot in order "
+            .. table.concat(SLOT_NAMES, ", ") .. " -- missing/non-numeric value for " .. name,
+        }
+      end
     end
-    local ok_slot = false
-    for _, name in ipairs(SLOT_NAMES) do
-      if name == confirm_slot then ok_slot = true end
+    local slots = {}
+    local changed = {}
+    for i, name in ipairs(SLOT_NAMES) do
+      local current = slot_mtime(root, name)
+      slots[name] = { prior_mtime = priors[i], current_mtime = current }
+      if current ~= nil and current ~= priors[i] then
+        table.insert(changed, name)
+      end
     end
-    if not ok_slot then
-      return { ok = false, error = "CONFIRM_SLOT must be one of \"autosave 1\"/\"autosave 2\"/\"autosave 3\", got " .. tostring(confirm_slot) }
-    end
-    local current = slot_mtime(root, confirm_slot)
-    return {
+    local result = {
       ok = true,
       mode = "confirm",
-      slot = confirm_slot,
-      prior_mtime = prior,
-      current_mtime = current,
-      confirmed = (current ~= nil and current ~= prior),
+      slots = slots,
+      changed_slots = changed,
+      confirmed = (#changed == 1),
+      ambiguous = (#changed > 1),
     }
+    if #changed == 1 then
+      result.slot = changed[1]
+    end
+    return result
   end
 
-  local target_slot, prior_mtime = oldest_slot(root)
+  local prior_mtimes = {}
+  for _, name in ipairs(SLOT_NAMES) do
+    -- json.encode drops a nil table value silently; a missing slot file
+    -- (fresh install, never rotated into yet) is reported as -1, the same
+    -- "older than any real mtime" sentinel a missing slot should sort as,
+    -- so the confirm call can still tell -1 apart from a real timestamp.
+    prior_mtimes[name] = slot_mtime(root, name) or -1
+  end
   dfhack.run_command('quicksave')
   return {
     ok = true,
     mode = "issued",
     issued = true,
-    predicted_slot = target_slot,
-    predicted_slot_prior_mtime = prior_mtime,
+    prior_mtimes = prior_mtimes,
     note = "quicksave is asynchronous (render-loop-gated, up to ~90s observed); "
-      .. "this call does not confirm completion -- poll again later with "
-      .. "'quicksave " .. tostring(target_slot) .. " " .. tostring(prior_mtime)
-      .. "' (spaced out, never in a tight loop) to confirm the mtime moved",
+      .. "this call does not confirm completion or predict a slot -- poll "
+      .. "again later with 'quicksave " .. tostring(prior_mtimes["autosave 1"])
+      .. " " .. tostring(prior_mtimes["autosave 2"]) .. " " .. tostring(prior_mtimes["autosave 3"])
+      .. "' (spaced out, never in a tight loop); the confirmed slot is "
+      .. "whichever mtime actually changed, never a prediction",
   }
 end
 
@@ -162,7 +179,7 @@ local args = {...}
 local cmd = args[1]
 
 if cmd == "quicksave" then
-  print(json.encode(fort_quicksave(args[2], args[3])))
+  print(json.encode(fort_quicksave(args[2], args[3], args[4])))
 else
-  print("usage: df-overseer-fort quicksave [CONFIRM_SLOT CONFIRM_PRIOR_MTIME]")
+  print("usage: df-overseer-fort quicksave [PRIOR_AUTOSAVE_1 PRIOR_AUTOSAVE_2 PRIOR_AUTOSAVE_3]")
 end
