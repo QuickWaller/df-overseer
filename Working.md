@@ -73,11 +73,14 @@ quartermaster 21, conductor 13. Dry run: it would wake the quartermaster on
 the deploy (the conductor's MCP client against the real SDK, a missing
 `diff.since` grant).
 
-**Owed before the first real start, awaiting the user:** (1) **text encoding**:
+**Owed before the first real start:** (1) **text encoding**:
 `diff.since` crashes on a CP437 character in a dwarf's name, and no script
-converts game text with `dfhack.df2utf`, so any tool emitting names may too;
-(2) **Docker access** for the conductor's service user (the `df` user needs
-sudo for docker; the unit calls it bare); (3) the tripwire live tests, which
+converts game text with `dfhack.df2utf`, so any tool emitting names may too
+(**in flight**, `handoffs/2026-09-22-loop-game-text-encoding.md`, fix plus
+redeploy, fort kept paused); (2) **Docker access: DONE 2026-09-22**,
+`SupplementaryGroups=docker` in the installed unit only, the `df` account's
+own groups unchanged (`handoffs/2026-09-22-loop-conductor-docker-access.md`,
+re-checked by the orchestrator); awaiting the user: (3) the tripwire live tests, which
 need a brief supervised unpause; (4) a short supervised first cycle.
 **Home-lab inventory:** home-lab-8e wrote both `inventory/services.yaml` lines
 (the conductor unit on VM 106, openclaw's four roles) on 2026-09-22, validated
