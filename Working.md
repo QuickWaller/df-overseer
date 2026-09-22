@@ -62,7 +62,28 @@ Known gap, explained: no "hostile seen but unreachable" signal. History was
 rewritten by home-lab-8e the same day to strip Claude credit; local `main`
 is credit-free, 68+ ahead of `origin/main`, fast-forward.
 
-**Next concrete step:** one deploy stream for everything, running the clock stream's nine live
+**DEPLOYED 2026-09-22, fort kept paused** (`handoffs/2026-09-22-loop-mvp-deploy.md`,
+`evals/live/2026-09-22-loop-mvp-deploy/`), orchestrator re-checked on both VMs:
+VM 103 paused, year 31, tick 106974, 100 FPS, `dfmcp-server` active,
+`proposal-0001` voided, 30-page wiki snapshot at `/var/lib/dfwiki/`; VM 106
+conductor unit **disabled and inactive**, four pinned openclaw configs, no
+containers. Role tool counts: overseer 60, architect 35, consultant 21,
+quartermaster 21, conductor 13. Dry run: it would wake the quartermaster on
+`vital_nearing_threshold` and slow the clock to 10. Two live bugs fixed in
+the deploy (the conductor's MCP client against the real SDK, a missing
+`diff.since` grant).
+
+**Owed before the first real start, awaiting the user:** (1) **text encoding**:
+`diff.since` crashes on a CP437 character in a dwarf's name, and no script
+converts game text with `dfhack.df2utf`, so any tool emitting names may too;
+(2) **Docker access** for the conductor's service user (the `df` user needs
+sudo for docker; the unit calls it bare); (3) the tripwire live tests, which
+need a brief supervised unpause; (4) a short supervised first cycle.
+**Owed to home-lab** (`inventory/services.yaml`): the conductor unit on VM 106
+(disabled), and openclaw now configured for four roles; commands in the
+deploy README.
+
+**Earlier plan, now done:** one deploy stream for everything, running the clock stream's nine live
 checks and voiding `proposal-0001`. **The user authorised the deploy to place
 the MCP role tokens itself (2026-09-22: "you can do the tokens yourself"),**
 including the new quartermaster, consultant and conductor tokens on VM 106.
