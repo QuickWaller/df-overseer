@@ -129,3 +129,19 @@ def make_answer(ask_id: str = "ask-0001", **overrides) -> dict:
     }
     record.update(overrides)
     return record
+
+
+def make_escalation(**overrides) -> dict:
+    """Added handoffs/2026-09-22-loop-conductor-fixes.md item 3."""
+    record = {
+        "kind": "escalation",
+        "role": "overseer",
+        "cycle": 1,
+        "snapshot": "tick 178877",
+        "reason": (
+            "An aquifer breach would be required to reach the candidate "
+            "site; no advisor has a proposal that avoids it."
+        ),
+    }
+    record.update(overrides)
+    return record
