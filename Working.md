@@ -76,8 +76,15 @@ the deploy (the conductor's MCP client against the real SDK, a missing
 **Owed before the first real start:** (1) **text encoding**:
 `diff.since` crashes on a CP437 character in a dwarf's name, and no script
 converts game text with `dfhack.df2utf`, so any tool emitting names may too
-(**in flight**, `handoffs/2026-09-22-loop-game-text-encoding.md`, fix plus
-redeploy, fort kept paused); (2) **Docker access: DONE 2026-09-22**,
+(**DONE 2026-09-22**, `handoffs/2026-09-22-loop-game-text-encoding.md`:
+shared `df-overseer-textutil.lua` helper, CP437 backstop in
+`dfmcp/dfhack_client.py`, redeployed; unseeded conductor dry run now clean;
+orchestrator re-checked the fort paused at tick 106974 and the backstop
+firing in the journal. **Residue:** `diff.lua`'s eventful listeners were
+registered once per DF process under the old code, so new events still log
+raw CP437 until they re-register (DF restart, or a version-keyed
+re-registration); the backstop covers it meanwhile. Also found:
+`fort.quicksave` predicted the wrong autosave slot this run); (2) **Docker access: DONE 2026-09-22**,
 `SupplementaryGroups=docker` in the installed unit only, the `df` account's
 own groups unchanged (`handoffs/2026-09-22-loop-conductor-docker-access.md`,
 re-checked by the orchestrator); awaiting the user: (3) the tripwire live tests, which
