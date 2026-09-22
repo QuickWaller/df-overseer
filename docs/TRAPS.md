@@ -105,6 +105,15 @@ findings without another doc home yet.
   the fort's own `cur_savegame.save_dir`, and accept the save only when the slot
   `cur_savegame.save_dir` names carries a fresh mtime. Record which slot it was,
   because it is the slot to restore from.
+- **`dfhack.filesystem.mtime` is broken on this install, so the mtime advice
+  above cannot be followed from inside Lua** (found 2026-09-22,
+  `handoffs/2026-09-22-loop-diff-reregister-quicksave-slot.md`). It returns
+  large negative numbers instead of the documented epoch seconds for every
+  real file, and `io.popen`/`os.execute` are sandboxed out, so a script has no
+  fallback. `fort.quicksave` now confirms the slot from DF's own
+  `cur_savegame.save_dir` (optionally compared with a `prior_save_dir` passed
+  in), not from mtimes. An mtime read over ssh from the shell is still fine
+  and is what earlier streams' shell-side checks actually used.
 - **VM 103's SSH host key changes across a full Proxmox stop/start cycle**
   — expected, given documented intentional restarts; fix with
   `ssh-keygen -R <ip>` then accept the new key.

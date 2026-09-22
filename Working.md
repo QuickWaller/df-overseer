@@ -84,9 +84,17 @@ firing in the journal. **Residue:** `diff.lua`'s eventful listeners were
 registered once per DF process under the old code, so new events still log
 raw CP437 until they re-register (DF restart, or a version-keyed
 re-registration); the backstop covers it meanwhile. Also found:
-`fort.quicksave` predicted the wrong autosave slot this run; **both in
-flight** as `handoffs/2026-09-22-loop-diff-reregister-quicksave-slot.md`,
-Sonnet worktree stream, fort kept paused, merge and re-check on return).
+`fort.quicksave` predicted the wrong autosave slot. **Both fixed and merged
+2026-09-22**, `handoffs/2026-09-22-loop-diff-reregister-quicksave-slot.md`:
+version-keyed listener re-registration (no DF restart needed), legacy log
+entries converted once, and `fort.quicksave` now reporting the slot from
+`cur_savegame.save_dir`. That stream's executor stalled after its last live
+check, so the orchestrator wrote the Result and re-checked VM 103 itself
+(new version registered, 1210 entries converted, next id 1211, fort paused at
+tick 106974, both suites green at 1229/3 and 630). **New trap recorded:**
+`dfhack.filesystem.mtime` is broken on this install, so no Lua script can
+confirm a save by mtime (`docs/TRAPS.md`). **Owed, needs game time:** that a
+genuinely new event logs UTF-8, checked in the first supervised run).
 **Design, paused mid-question 2026-09-22:** "the Overseer proposing to
 itself" is really two paths, since it holds no `queue.propose`: its own
 agenda edits, and its direct write actions outside any proposal. Proposed

@@ -104,4 +104,41 @@ related tests under `tests/`, `dfmcp/tests/`, `conductor/tests/`, this doc,
 
 ## Result
 
-(executor fills in)
+**DONE 2026-09-22, with one caveat: the executor stalled after its last live
+check (step 8), so this Result was written by the orchestrating session from
+the stream's own commits plus its own independent live checks.** Everything
+below marked "re-checked" was verified by the orchestrator against VM 103
+after the merge, not taken from the executor's report (there was none).
+Detail: `evals/live/2026-09-22-loop-diff-reregister-quicksave-slot/README.md`.
+
+- **Re-registration by version.** `df-overseer-diff.lua`'s boolean guard is
+  now a version constant (`REGISTRATION_VERSION`, currently
+  `2026-09-22-diff-rereg-1`), bumped whenever listener code changes, so a
+  redeploy replaces the live closures with no DF restart.
+- **Legacy entries converted once.** Entries with no `encoding_version` are
+  converted at re-registration and marked `legacy-converted`; entries written
+  by the current version carry its version and are never converted twice.
+- **Quicksave reports the slot it really wrote**, from DF's own
+  `cur_savegame.save_dir`, with an optional `prior_save_dir` argument
+  replacing the previous three-mtime comparison. `conductor/tests/
+  test_cycle.py`'s fixture and `TOOLS.yaml` updated to match.
+- **A real finding, load-bearing beyond this stream:**
+  `dfhack.filesystem.mtime` is broken on this install. The documented epoch
+  seconds come back as large negative numbers for every real file, and
+  `io.popen`/`os.execute` are sandboxed out, so there is no in-Lua fallback.
+  Every earlier "confirmed the quicksave by slot mtime" in this repo rested
+  on that call. `docs/TRAPS.md` now records it.
+- **Re-checked live on VM 103** (orchestrator, after the merge): installed
+  `df-overseer-diff.lua` and `df-overseer-fort.lua` hash-match the merged
+  committed bytes; `_G.__df_overseer_diff_registered_version` is the new
+  version; all 1210 log entries are marked `legacy-converted` and the next id
+  is 1211, so no event history or cursor was lost; `dfmcp-server` active; the
+  fort paused at year 31, tick 106974, 100 FPS, before and after.
+- **Both suites green after the merge**: ambient 1229 passed / 3 skipped
+  (was 1212/3), `dfmcp/tests` 630 passed (unchanged).
+- **Owed, needs game time:** that a genuinely new event logs UTF-8 through
+  the re-registered listeners. Check it in the first supervised run with
+  `diff.since <cursor>` over MCP as the conductor, reading a name that
+  contains a CP437 character.
+- **Not done, per the hard lines:** the fort was never unpaused, DF was never
+  restarted, no model call, VM 106 untouched, nothing pushed.
