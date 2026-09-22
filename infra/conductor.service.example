@@ -33,8 +33,12 @@
 #      not exist yet as of this stream -- see this stream's report.
 #   4. Docker itself is installed and reachable by the account this unit
 #      runs as (every prior openclaw run on VM 106 needed `sudo` for the
-#      Docker socket, per research/2026-09-15-openclaw-secret-storage.md --
-#      confirm this account's own access before enabling).
+#      Docker socket, per research/2026-09-15-openclaw-secret-storage.md).
+#      DONE 2026-09-22 on VM 106: `SupplementaryGroups=docker` below,
+#      live-verified via `systemd-run --uid=... -p SupplementaryGroups=docker
+#      ... docker ps` with no sudo (handoffs/2026-09-22-loop-conductor-
+#      docker-access.md). A future host copying this file still needs its
+#      own `docker` group to exist and its own account confirmed.
 #   5. The exact `systemctl start` command has been run past the user for
 #      explicit go-ahead, per this repo's CLAUDE.md rule that any change to
 #      live/VM state needs confirmation each time.
@@ -52,6 +56,16 @@ Wants=network-online.target
 Type=simple
 User=CHANGEME
 Group=CHANGEME
+# Docker socket access for the account this unit runs as, scoped to the
+# service rather than every login shell of that account
+# (handoffs/2026-09-22-loop-conductor-docker-access.md, live-verified on
+# VM 106 2026-09-22: the socket is root:docker mode 0660, and this is the
+# narrowest route that reaches it without a sudoers entry, a socket
+# permission change, or a rootless/TCP Docker socket). The alternative,
+# `usermod -aG docker CHANGEME`, was considered and rejected because it
+# grants the account's whole login shell Docker access, not just this
+# unit's invocation.
+SupplementaryGroups=docker
 
 WorkingDirectory=/CHANGEME/df-automation
 EnvironmentFile=/CHANGEME/conductor.env
