@@ -127,6 +127,7 @@
 -- Usage: ./dfhack-run df-overseer-workjob queue JOB WORKSHOP_LANDMARK_NAME [DRY_RUN]
 
 local json = require('json')
+local textutil = reqscript('df-overseer-textutil')
 
 -- Per DFHack's own documented cap on dfhack.job.assignToWorkshop (see
 -- header): it silently does nothing and returns false past this many jobs
@@ -274,6 +275,7 @@ local function resolve_workshop(name, info)
   local found_wrong_kind = nil
   for _, bld in ipairs(df.global.world.buildings.all) do
     local ok_name, bname = pcall(dfhack.buildings.getName, bld)
+    bname = ok_name and textutil.to_utf8(bname) or bname
     if ok_name and bname == name then
       local ok_btype, btype = pcall(function() return bld:getType() end)
       if not ok_btype or btype ~= df.building_type.Workshop then

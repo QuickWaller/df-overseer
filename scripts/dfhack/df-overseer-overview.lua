@@ -37,6 +37,7 @@
 local json = require('json')
 local landmarks_mod = reqscript('df-overseer-landmarks')
 local connectivity_mod = reqscript('df-overseer-connectivity')
+local textutil = reqscript('df-overseer-textutil')
 
 local function fortress_name()
   local ok_site, site = pcall(dfhack.world.getCurrentSite)
@@ -44,6 +45,7 @@ local function fortress_name()
     return nil
   end
   local ok_name, name = pcall(dfhack.translation.translateName, site.name)
+  name = ok_name and textutil.to_utf8(name) or name
   return (ok_name and name ~= '') and name or nil
 end
 

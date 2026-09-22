@@ -156,6 +156,7 @@
 --     race, and beats a silent over-caution just as much.
 
 local landmarks_mod = reqscript('df-overseer-landmarks')
+local textutil = reqscript('df-overseer-textutil')
 local json = require('json')
 
 local args = {...}
@@ -180,12 +181,12 @@ local function citizen_line(unit, is_idle, is_injured, is_military)
   local x, y, z = dfhack.units.getPosition(unit)
   local near, direction, distance = describe_position(x, y, z)
   local job = unit.job.current_job
-  local job_name = job and dfhack.job.getName(job) or "idle"
+  local job_name = job and textutil.to_utf8(dfhack.job.getName(job)) or "idle"
   local wounds = unit.body.wounds and #unit.body.wounds or 0
   return string.format(
     "CITIZEN id=%d profession=%q near_landmark=%q direction=%s distance_tiles=%d"
       .. " job=%q wounds=%d idle=%s injured=%s military=%s",
-    unit.id, dfhack.units.getProfessionName(unit), near, direction, distance,
+    unit.id, textutil.to_utf8(dfhack.units.getProfessionName(unit)), near, direction, distance,
     job_name, wounds, tostring(is_idle), tostring(is_injured),
     tostring(is_military))
 end
@@ -221,7 +222,7 @@ local function unit_status(filter)
         print(string.format(
           "THREAT id=%d race=%q near_landmark=%q direction=%s distance_tiles=%d"
             .. " invader=%s danger=%s",
-          unit.id, dfhack.units.getRaceName(unit), near, direction, distance,
+          unit.id, textutil.to_utf8(dfhack.units.getRaceName(unit)), near, direction, distance,
           tostring(dfhack.units.isInvader(unit)),
           tostring(dfhack.units.isDanger(unit))))
         printed = printed + 1

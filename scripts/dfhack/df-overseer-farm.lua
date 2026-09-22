@@ -131,6 +131,7 @@
 
 local json = require('json')
 local landmarks_mod = reqscript('df-overseer-landmarks')
+local textutil = reqscript('df-overseer-textutil')
 local stocks_mod = reqscript('df-overseer-stocks')
 
 local MAX_RADIUS = 60
@@ -533,7 +534,7 @@ function build_farm_plot(w, h, level, near, blueprint_file, rank, radius_tiles, 
       local ok_id, id = pcall(function() return bld.id end)
       plot_id = ok_id and id or nil
       local ok_name, gname = pcall(dfhack.buildings.getName, bld)
-      default_name = ok_name and gname or nil
+      default_name = ok_name and textutil.to_utf8(gname) or nil
     end
   end
 
@@ -624,7 +625,7 @@ function list_farm_plots()
       end
       table.insert(results, {
         id = ok_id and id or nil,
-        default_name = ok_name and name or nil,
+        default_name = ok_name and textutil.to_utf8(name) or nil,
         exists = ok_exists and exists or nil,
         outside = outside,
         crops = crops,

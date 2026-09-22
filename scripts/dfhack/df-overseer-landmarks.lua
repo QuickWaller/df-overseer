@@ -93,6 +93,7 @@
 -- Usage: ./dfhack-run df-overseer-landmarks <list|get NAME|build NAME BLUEPRINT_FILE>
 
 local json = require('json')
+local textutil = reqscript('df-overseer-textutil')
 
 local GLOBAL_KEY = 'df-overseer-landmarks_v1'
 local MAX_EXITS_PER_LANDMARK = 3
@@ -137,7 +138,7 @@ local function enumerate_buildings()
     if ok and name and name ~= '' then
       local ok_type, kind = pcall(function() return df.building_type[bld:getType()] end)
       table.insert(out, {
-        name = name,
+        name = textutil.to_utf8(name),
         kind = ok_type and kind or 'unknown',
         x = math.floor((bld.x1 + bld.x2) / 2 + 0.5),
         y = math.floor((bld.y1 + bld.y2) / 2 + 0.5),
@@ -159,7 +160,7 @@ local function enumerate_burrows()
       end
       local n = #blocks
       table.insert(out, {
-        name = dfhack.burrows.getName(br),
+        name = textutil.to_utf8(dfhack.burrows.getName(br)),
         kind = 'burrow',
         x = math.floor(sx / n + 8.5),
         y = math.floor(sy / n + 8.5),
