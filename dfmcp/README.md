@@ -28,7 +28,7 @@ network endpoint.
 | `tools.py` | Turns a registry + roster + role into actual MCP tool definitions (`name`/`description`/`inputSchema`), and turns a validated call's arguments back into the exact DFHack argv. Transport-independent: no MCP SDK import, no notion of HTTP. |
 | `auth.py` | Maps a bearer token to a role, from a gitignored `.env`-shaped file. The credential half of the trust boundary in `docs/AGENT-ARCHITECTURE.md` §13: role identity must be a credential, not a claim. |
 | `dfhack_client.py` | A persistent-connection client for DFHack's RPC socket: hand-rolled handshake/framing/protobuf-subset codec, a `DFHackConnection`, and a `DFHackConnectionPool` for batching a cycle's reads into one suspend window. The only module in this package that opens a socket. |
-| `queue_tools.py` | Eight "native" (non-DFHack) MCP tools -- `queue.propose`/`pass`/`rule`/`pending`, plus `queue.executed` (Overseer; arms a prediction's window at the execution tick), `queue.ask` and `queue.answer` (the one-ask-one-answer Consultant channel, including the Overseer's fact-check, which blocks a ruling until answered; added `handoffs/2026-09-22-loop-queue-quartermaster.md`; `queue.pending` is role-dependent and returns open asks for the Consultant), and `queue.grade` (conductor-only; runs `dfqueue.grade.run_grading_cycle` over MCP since the queue database and the conductor live on different hosts; added `handoffs/2026-09-22-loop-conductor-service.md`) -- that read and write `dfqueue`'s own SQLite queue instead of running a DFHack command. Merged into `registry.py`'s table additively (`load_registry(native_tools=...)`), so `roles.py`/`tools.py` enforce and describe them through the exact same seam as every DFHack tool. Added `handoffs/2026-09-15-queue-into-dfmcp.md`. |
+| `queue_tools.py` | Ten "native" (non-DFHack) MCP tools -- `queue.propose`/`pass`/`rule`/`pending`, plus `queue.executed` (Overseer; arms a prediction's window at the execution tick), `queue.ask` and `queue.answer` (the one-ask-one-answer Consultant channel, including the Overseer's fact-check, which blocks a ruling until answered; added `handoffs/2026-09-22-loop-queue-quartermaster.md`; `queue.pending` is role-dependent and returns open asks for the Consultant), `queue.grade` (conductor-only; runs `dfqueue.grade.run_grading_cycle` over MCP since the queue database and the conductor live on different hosts; added `handoffs/2026-09-22-loop-conductor-service.md`), `queue.overview` (conductor-only, role-independent: both pending proposals and open asks in one read, since `queue.pending`'s own per-caller-role branch left the conductor no way to see an open ask; added `handoffs/2026-09-22-loop-conductor-fixes.md`), and `queue.escalate` (Overseer-only, `sole_writer_only`: writes an `escalation` record, the only way the Overseer alerts the human, detected mechanically by the conductor rather than by parsing prose; added the same stream) -- that read and write `dfqueue`'s own SQLite queue instead of running a DFHack command. Merged into `registry.py`'s table additively (`load_registry(native_tools=...)`), so `roles.py`/`tools.py` enforce and describe them through the exact same seam as every DFHack tool. Added `handoffs/2026-09-15-queue-into-dfmcp.md`. |
 | `knowledge_tools.py` | Five native tools for the Consultant only: `web.search` (Brave Search API, key from `BRAVE_SEARCH_API_KEY`), `web.fetch` (refuses private, loopback and link-local targets, redirects re-checked), `knowledge.wiki_lookup` (local snapshot, `MCP_SERVER_WIKI_SNAPSHOT`, built by `scripts/build_wiki_snapshot.py`), `dfhack.source_search`/`source_read` (confined to `MCP_SERVER_DFHACK_SOURCE_ROOT`). Fetched content is labelled untrusted data and a `prior` at most. Added `handoffs/2026-09-22-loop-consultant-retrieval.md`. |
 | `server.py` | The MCP transport itself: the low-level `Server`, the streamable-HTTP ASGI app, and the `TokenVerifier` that resolves a bearer token to a role at the SDK's own auth seam. The only module that imports the MCP SDK. |
 
@@ -314,7 +314,7 @@ default the type heuristic uses.
 
 ## What `queue_tools.py` exposes
 
-Eight MCP tools, none of them a DFHack command: `queue.propose`
+Ten MCP tools, none of them a DFHack command: `queue.propose`
 (`queue__propose`), `queue.pass` (`queue__pass`), `queue.rule`
 (`queue__rule`), `queue.pending` (`queue__pending`, added
 `handoffs/2026-09-15-queue-into-dfmcp.md` to make
@@ -329,9 +329,11 @@ lookup question, and an Overseer ask naming a `proposal_id` is a fact-check
 that blocks `queue.rule` on that proposal until answered; `queue.pending`
 is role-dependent and returns open asks, not proposals, for the
 Consultant), all three added `handoffs/2026-09-22-loop-queue-quartermaster.md`;
-and `queue.grade` (`queue__grade`, added
+`queue.grade` (`queue__grade`, added
 `handoffs/2026-09-22-loop-conductor-service.md`, see its own paragraph
-below).
+below); and `queue.overview` and `queue.escalate` (`queue__overview`/
+`queue__escalate`, added `handoffs/2026-09-22-loop-conductor-fixes.md`, see
+their own paragraphs below).
 
 **Why a fourth kind of "tool" and not a `TOOLS.yaml` entry.**
 `registry.py`'s canonical-id scheme and `tools.py`'s argv-construction
@@ -460,6 +462,38 @@ collision the lock exists to serialise against (this module's own
 docstring, "SQLite runs off the event loop") -- not independently audited
 for a *different* race, flagged in `handoffs/2026-09-22-loop-conductor-
 service.md`'s own report rather than silently assumed safe.
+
+**`queue.overview`** (added `handoffs/2026-09-22-loop-conductor-fixes.md`
+fix 1): the fix for a real, load-bearing gap the conductor-service stream
+found and left open. `queue.pending`'s own role branch (`_pending` above)
+is keyed to the CALLER's authenticated role -- `if role == "consultant":
+open_asks() else: pending_proposals()` -- so a caller authenticating as
+`conductor` could only ever see `pending_proposals()` through it, with no
+way at all to ask "is there an open ask for the Consultant?" `queue.overview`
+sidesteps this by being role-independent: it always returns BOTH
+`store.pending_proposals()` and `store.open_asks()` in one call, regardless
+of who asks. Granted only in `agents/conductor/tools.yaml`, the same
+"restricted by allowlist only, not a structural check" pattern `queue.grade`
+already established -- this is not a general "read another role's queue"
+backdoor; no other role's `tools.yaml` grants this id, and none should.
+`conductor/cycle.py` uses it as its one Tier 0 queue read per cycle, and
+derives BOTH `Signals.queue_holds_for_overseer` (from the `proposals` half)
+and `Signals.open_ask_for_consultant` (from the `asks` half) from it.
+
+**`queue.escalate`** (added `handoffs/2026-09-22-loop-conductor-fixes.md`
+fix 3): writes an `escalation` record (`dfqueue.schema.ESCALATION`), the
+only way the Overseer's own charter (`agents/overseer/role.md`'s Escalation
+section) alerts the human. `sole_writer_only`, same restriction as
+`queue.rule`/`queue.executed`. Exists because prose in a model's own final
+answer is not a contract the conductor can detect mechanically -- before
+this tool, there was no established way to distinguish "the Overseer says
+it wants to escalate" from an ordinary final answer, so `conductor/cycle.py`
+had to (wrongly) treat any unclean run as an escalation and had no way at
+all to detect a CLEAN run that genuinely should have escalated. Now:
+`conductor/cycle.py` checks openclaw's own `toolSummary.tools` (the "stable
+agent-exec JSON envelope") for a call to this tool's wire name -- a real
+tool call, never parsed prose -- and leaves the fort paused if it finds one,
+whether or not a tripwire is already latched.
 
 ## What `auth.py` exposes
 

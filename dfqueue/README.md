@@ -87,7 +87,11 @@ match.
 
 ## What this is
 
-Three record kinds, one append-only SQLite database per fort:
+Seven record kinds, one append-only SQLite database per fort. (This section
+had said "Three" since the original build; `executed`, `ask`, `answer` were
+each added by a later stream without updating the count here, and
+`escalation` is this stream's own addition -- corrected now rather than
+compounding the drift a fourth time.)
 
 - **`proposal`** — an advisor's proposed action: `id`, `role`, `cycle`,
   `snapshot`, `type` (closed vocabulary, see below), `summary`, `rationale`,
@@ -101,6 +105,27 @@ Three record kinds, one append-only SQLite database per fort:
   (`accept`/`reject`/`defer`), `proposal_id`, `reason`, `public_rationale`.
   Only the roster's `sole_writer` (currently `overseer`,
   `agents/ROSTER.yaml`) may write one.
+- **`executed`** — the Overseer's record that an accepted ruling was carried
+  out: `ruling_id`, `actions` (each tool id called and its outcome, success
+  or failure), `notes`. Added `docs/AGENT-LOOP.md` item 4: a proposal's
+  prediction window starts at the FIRST `executed` record referencing its
+  ruling, never at the proposal's own write time. Only the sole_writer may
+  write one.
+- **`ask`** — a question to the Consultant: `question`, optional
+  `proposal_id`. Any of `architect`, `quartermaster` or `overseer` may write
+  one; an `ask` from the Overseer naming a `proposal_id` is a fact-check that
+  blocks `ruling` on that proposal until answered.
+- **`answer`** — the Consultant's answer to one open `ask`: `ask_id`,
+  `answer`. Only `consultant` may write one, and only once per `ask` (one
+  ask, one answer, no threads).
+- **`escalation`** — added `handoffs/2026-09-22-loop-conductor-fixes.md`
+  item 3: the Overseer alerting the human, `reason` only. Written via
+  `queue.escalate` (`dfmcp/queue_tools.py`), the only way to escalate --
+  never free text in a final answer, so `conductor/cycle.py` can detect it
+  mechanically (against the tool calls a run actually made) and leave the
+  fort paused. Only the sole_writer may write one, same restriction as
+  `ruling`/`executed`. Not a proposal and not an ask: `queue.pending`/
+  `queue.overview` never count it.
 
 **Not built yet: a `plan` record.** §9's write-ahead-log record ("writes its
 ordered plan to the queue before executing... marks each step done as it
