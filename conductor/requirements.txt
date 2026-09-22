@@ -1,0 +1,29 @@
+# conductor/'s own dependencies: a thin subset of dfmcp/requirements.txt.
+# Owed by handoffs/2026-09-22-loop-conductor-service.md (its own report,
+# "Anything in the design I think is wrong" item 7: "not written this
+# stream... a five-minute follow-up"); written here by
+# handoffs/2026-09-22-loop-conductor-fixes.md, item 5.
+#
+# `conductor/mcp_client.py`'s `StreamableHTTPMCPClient` needs the SAME MCP
+# Python SDK `dfmcp/server.py` already depends on (`mcp.client.session`,
+# `mcp.client.streamable_http`) -- imported LAZILY, inside `call_tool` only,
+# so every other module in this package (policy, triage, briefing, cursors,
+# archive, runner, config, cycle, service) imports with no MCP SDK
+# dependency at all; see that module's own docstring. Pinned to the exact
+# same version as dfmcp/requirements.txt rather than "whatever mcp resolves
+# to today", for the identical reason that file gives (the 2.x low-level
+# Server/session API this repo is built against, not 1.x's decorator-based
+# equivalent).
+mcp==2.2.0
+
+# conductor/policy.py and conductor/config.py both need pyyaml:
+# conductor/policy.yaml is loaded through it directly, and
+# ConductorConfig/config_from_env follow the same "no silent default for a
+# live host, an out-of-tree path, or a secret" discipline
+# dfmcp.server.ServerConfig already uses. Pinned to the same version
+# dfmcp/requirements.txt pins, which installed and ran live on VM 103.
+pyyaml==6.0.3
+
+# Every other module in this package (archive, briefing, cursors, cycle,
+# mcp_client's own non-lazy half, policy's non-yaml half, runner, status,
+# triage) needs nothing beyond the stdlib.
