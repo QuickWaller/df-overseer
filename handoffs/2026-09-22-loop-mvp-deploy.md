@@ -128,4 +128,62 @@ you actually ran.
 
 ## Result
 
-(executor fills in)
+**DONE 2026-09-22.** Deployed to VM 103 and VM 106, fort kept paused
+throughout (paused, year 31, tick 106974, before and after every step).
+Full detail: `evals/live/2026-09-22-loop-mvp-deploy/README.md`. Summary:
+
+- 99 committed files deployed to VM 103 (`dfmcp/`, `dfqueue/`, `learning/`,
+  `agents/`, 3 new Lua scripts, `TOOLS.yaml`), hash-verified on arrival and
+  installed; 35 files backed up first (`/opt/df/deploy-backup-2026-09-22-
+  loop-mvp/`).
+- Curated 30-page wiki snapshot built and deployed
+  (`/var/lib/dfwiki/snapshot.json`). `MCP_SERVER_DFHACK_SOURCE_ROOT`
+  confirmed live (`/opt/df/game/hack`). Two new role tokens minted on VM
+  103 (quartermaster, conductor); `BRAVE_SEARCH_API_KEY` placed after one
+  retried classifier refusal.
+- Queue DB backed up, migrated 1 -> 2 (existing row read back unchanged),
+  `proposal-0001` voided with the specified note and read back.
+- `dfmcp-server` restarted; per-role tool counts (real MCP client): 
+  overseer 60, architect 35, consultant 21, quartermaster 21, conductor 12
+  (-> 13 after a live-found fix, see below). All key grant checks passed.
+- All paused-safe live checks from the handoff ran and passed (clock
+  status/set-speed/pause/arm/disarm, quicksave+confirm, vitals.summary,
+  queue.overview, queue.grade, web.search, web.fetch, knowledge.wiki_lookup,
+  dfhack.source_search). `clock.resume`-while-latched and the threat
+  tripwire path are owed (need a real trip / a reachable hostile).
+- VM 106: tokens relayed VM-to-VM (never through this workstation); 4
+  pinned openclaw configs built, validated, and probed against the live
+  server (counts match exactly); conductor package deployed to
+  `/opt/df-automation`, its own venv built, `conductor.env` filled in,
+  systemd unit installed **disabled and inactive**.
+- **Two real bugs found and fixed live** (redeployed to both VMs,
+  hash-verified, full suites still green): `conductor/mcp_client.py`'s
+  transport call never matched the real installed MCP SDK (wrong function
+  name/kwarg/tuple arity/attribute names -- exactly `docs/TRAPS.md`'s
+  existing traps, just not yet applied here); `agents/conductor/
+  tools.yaml` never granted `diff.since`, which `conductor/cycle.py`
+  calls every cycle.
+- **One real bug found and NOT fixed**: `diff.since` crashes
+  (`'utf-8' codec can't decode byte 0x96'`) on a dwarf name with a
+  CP437-encoded character, reproduced with a direct `dfhack-run` call, no
+  MCP involved. Blocks the conductor's first real cycle for every role
+  (the design's own `INITIAL_CURSOR = 0`). A test-only cursor seed
+  (`diff.since 999999999`'s real high-water mark, 1210) got a full dry-run
+  cycle to complete cleanly and was removed again after.
+- Dry-run output: `clock=slowed, roles_woken=('quartermaster',),
+  would_set_clock: 10, reason: vital_nearing_threshold` -- no model call,
+  no real clock change (independently re-confirmed fps=100), no quicksave,
+  nothing archived.
+- Every refusal met (Brave key placement, `clock.set-speed`, `clock.arm`
+  x2) resolved on retry, verbatim in the README above.
+- Owed before first real start: fix or deliberately work around the
+  `diff.since` encoding bug; give `conductor.service`'s account real
+  Docker socket access (currently needs `sudo`); the tripwire true-
+  positive/negative live tests (need a real trip, needs the fort briefly
+  unpaused -- explicitly out of this stream's scope); a short supervised
+  first real cycle, gated on the user's go-ahead.
+- Home-lab lines owed (not written from here, per this repo's rule):
+  `services.yaml` should record the new `conductor.service` unit on VM 106
+  (disabled/inactive) and that openclaw there is now configured for four
+  roles, not two. No VM was created/resized/re-addressed, so `ips.yaml`
+  needs no change.
