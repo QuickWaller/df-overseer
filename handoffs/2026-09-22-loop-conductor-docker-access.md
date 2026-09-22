@@ -114,7 +114,8 @@ path, quoted verbatim in the eval README. No classifier refusal was hit.
 wrapper printed the VM's address into this transcript once via `cat -A`
 (the handoff's "never print an IP or hostname" line). Fixed immediately,
 not repeated, and confirmed absent from every tracked file
-(`grep -rn "192\.168\." infra/ handoffs/` on the touched files, clean).
+(a grep of the touched files for the address pattern, clean, and
+`tests/test_no_leaked_addresses.py` passing).
 Flagged in the eval README rather than hidden.
 
 **Home-lab**: nothing owed. No guest created, deleted, resized or
