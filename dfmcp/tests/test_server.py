@@ -114,10 +114,17 @@ _MCP_URL = f"{_BASE_URL}/mcp"
 ARCHITECT_TOKEN = "architect-test-token-aaaaaaaaaa"
 OVERSEER_TOKEN = "overseer-test-token-bbbbbbbbbbb"
 CONSULTANT_TOKEN = "consultant-test-token-ccccccccc"
+#: Added handoffs/2026-09-22-loop-conductor-fixes.md (fix 2): the only role
+#: whose real agents/conductor/tools.yaml grants clock.resume, needed to
+#: test that tool's own real refusal shape through the actual role that
+#: calls it in production, not a role scoping this test would otherwise
+#: have to fake.
+CONDUCTOR_TOKEN = "conductor-test-token-ddddddddd"
 TOKENS: Dict[str, str] = {
     ARCHITECT_TOKEN: "architect",
     OVERSEER_TOKEN: "overseer",
     CONSULTANT_TOKEN: "consultant",
+    CONDUCTOR_TOKEN: "conductor",
 }
 
 
@@ -451,6 +458,70 @@ class TestServerCallEdgeCases:
             result = await session.call_tool("landmarks__list", {})
         assert result.is_error is False
         assert result.structured_content == {"error": "partial", "near_landmark": "Wagon"}
+
+    async def test_ok_false_refusal_shape_is_a_tool_error_with_detail_kept(
+        self, registry, roster, pool, fake_dfhack
+    ):
+        """Fix 2, handoffs/2026-09-22-loop-conductor-fixes.md: the clock/
+        fort family's own {"ok": false, "error": ..., "tripwire": {...}}
+        refusal shape used to pass straight through as an ordinary
+        isError=False result (a three-key object is never `set(parsed) ==
+        {"error"}`, the ONLY shape the pre-existing check caught). Shaped
+        after clock.resume's own real refusal (scripts/dfhack/df-overseer-
+        clock.lua's clock_resume: {"ok": false, "error": ..., "tripwire":
+        ...}), kept short because FakeDFHackServer's own text-fragment
+        packer (dfmcp/tests/test_dfhack_client.py's `_pack_fragment`) writes
+        the length as a single raw byte, not a real protobuf varint --
+        anything >= 128 bytes there desyncs the fake protocol, a pre-
+        existing fixture limit unrelated to this fix, not something to work
+        around by touching that shared fixture."""
+        payload = '{"ok": false, "error": "refused: latched", "tripwire": {"reason": "hunger_critical"}}'
+        fake_dfhack.queue_actions(make_ok_action(payload))
+        app = _app(registry, roster, pool)
+        async with mcp_session(app, CONDUCTOR_TOKEN) as session:
+            result = await session.call_tool("clock__resume", {})
+        assert result.is_error is True
+        # Detail kept, not dropped: the full parsed object (tripwire
+        # included) still reaches structuredContent...
+        assert result.structured_content == {
+            "ok": False,
+            "error": "refused: latched",
+            "tripwire": {"reason": "hunger_critical"},
+        }
+        # ...and the text block still carries the complete raw JSON, so a
+        # client that only reads text (StreamableHTTPMCPClient on an
+        # isError, for instance) still sees the tripwire detail.
+        text = "".join(block.text for block in result.content if block.type == "text")
+        assert "hunger_critical" in text and "tripwire" in text
+
+    async def test_ok_true_clock_result_is_unaffected_by_the_new_check(
+        self, registry, roster, pool, fake_dfhack
+    ):
+        """The conductor's own `.get("ok", False)` checks must still work:
+        a real success from this same tool family is untouched by the new
+        rule -- checked against source (every ok=true return in
+        df-overseer-clock.lua/df-overseer-fort.lua never carries an "error"
+        key), not merely assumed."""
+        fake_dfhack.queue_actions(make_ok_action('{"ok": true, "paused": false}'))
+        app = _app(registry, roster, pool)
+        async with mcp_session(app, CONDUCTOR_TOKEN) as session:
+            result = await session.call_tool("clock__resume", {})
+        assert result.is_error is False
+        assert result.structured_content == {"ok": True, "paused": False}
+
+    async def test_ok_false_without_a_string_error_field_is_still_a_result(
+        self, registry, roster, pool, fake_dfhack
+    ):
+        """Narrow by convention (an explicit "ok": false PAIRED WITH a
+        string "error"), not "any falsy ok" -- a malformed or unrelated
+        payload that merely happens to carry `"ok": false` with no string
+        `error` must not misfire."""
+        fake_dfhack.queue_actions(make_ok_action('{"ok": false, "detail": 42}'))
+        app = _app(registry, roster, pool)
+        async with mcp_session(app, CONDUCTOR_TOKEN) as session:
+            result = await session.call_tool("clock__resume", {})
+        assert result.is_error is False
+        assert result.structured_content == {"ok": False, "detail": 42}
 
     async def test_every_call_writes_one_json_log_line(self, registry, roster, pool, fake_dfhack, caplog):
         """A result, a refusal and a script error each leave exactly one

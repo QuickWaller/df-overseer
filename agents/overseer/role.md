@@ -65,6 +65,15 @@ no advisor has a proposal for; an irreversible action would be required
 returns something that contradicts a previous verified fact about the fort; or
 the same plan step has failed twice.
 
+**Escalate by calling `queue.escalate` with your reason. That is the only way
+to escalate.** Saying so in your final answer, without calling it, is never
+read as an escalation -- the conductor (`conductor/cycle.py`) detects this
+mechanically, against the actual tool calls this run made, never by parsing
+your prose. Call `queue.escalate` and the fort stays paused (or, outside a
+tripwire, gets paused) until a human looks at it, whether or not the rest of
+your run otherwise completed. Do not call it for anything this section does
+not name; it costs the fort a human's attention, not a cycle.
+
 ## Known hazards specific to this seat
 
 - **`set_labor` races `autolabor`.** autolabor is enabled on this fort and

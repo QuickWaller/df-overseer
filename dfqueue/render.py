@@ -14,7 +14,7 @@ from __future__ import annotations
 
 from xml.sax.saxutils import escape, quoteattr
 
-from .schema import ANSWER, ASK, EXECUTED, PASS, PROPOSAL, RULING
+from .schema import ANSWER, ASK, ESCALATION, EXECUTED, PASS, PROPOSAL, RULING
 
 #: §8's allowlist, plus id/ts/kind "so the feed can order and thread items"
 #: (this stream's brief). Nothing else is ever published, by construction:
@@ -134,9 +134,18 @@ def _answer_xml(record: dict) -> str:
     ])
 
 
+def _escalation_xml(record: dict) -> str:
+    return "\n".join([
+        _open_tag("escalation", record),
+        f"  <reason>{escape(record['reason'])}</reason>",
+        "</escalation>",
+    ])
+
+
 _RENDERERS = {
     PROPOSAL: _proposal_xml, PASS: _pass_xml, RULING: _ruling_xml,
     EXECUTED: _executed_xml, ASK: _ask_xml, ANSWER: _answer_xml,
+    ESCALATION: _escalation_xml,
 }
 
 

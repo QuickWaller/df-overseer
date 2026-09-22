@@ -727,6 +727,38 @@ def build_mcp_server(
                 and isinstance(parsed["error"], str)
             ):
                 return _tool_result_error(parsed["error"])
+            # Fix 2, handoffs/2026-09-22-loop-conductor-fixes.md: the
+            # clock/fort family (df-overseer-clock.lua, df-overseer-fort.lua)
+            # uses a SECOND refusal shape the check above never caught --
+            # {"ok": false, "error": "...", ...extra detail, e.g. "tripwire"}
+            # -- which used to pass straight through as an ordinary,
+            # successful isError=False result: a three-key object is never
+            # `set(parsed) == {"error"}`. Generalised here, by CONVENTION
+            # (an explicit "ok": false paired with a string "error"), not by
+            # "any dict with an error-ish key" -- that stays deliberately
+            # narrow, matching the single-key check just above: an object
+            # that merely has an error-ish field alongside real data (e.g.
+            # `dig`'s `quickfort_error`, or a tool that never sets "ok" at
+            # all) is still a result, exactly as documented above. Every
+            # `ok=true` return in df-overseer-clock.lua/df-overseer-fort.lua
+            # never carries an "error" key (checked against source, not
+            # assumed), so this cannot misfire on a real success. Detail is
+            # kept, not dropped: the full parsed object (e.g. "tripwire")
+            # still reaches structuredContent, and the text block below
+            # still carries the complete raw JSON `dfmcp.queue_tools`'s own
+            # design already treats "storage errors are refusals too" the
+            # same way -- this is that same discipline applied at the
+            # DFHack-tool boundary, generically, not per tool id.
+            if (
+                isinstance(parsed, dict)
+                and parsed.get("ok") is False
+                and isinstance(parsed.get("error"), str)
+            ):
+                return types.CallToolResult(
+                    content=[types.TextContent(type="text", text=text)],
+                    structuredContent=parsed,
+                    isError=True,
+                )
             if isinstance(parsed, dict):
                 structured = parsed
             else:

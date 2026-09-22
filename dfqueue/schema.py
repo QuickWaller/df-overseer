@@ -1,5 +1,5 @@
 """dfqueue record schema: `proposal`, `pass`, `ruling`, `executed`, `ask`,
-`answer`, validated at write time.
+`answer`, `escalation`, validated at write time.
 
 Implements `docs/AGENT-ARCHITECTURE.md` §4, "Writes are tool calls; reads are
 XML": **a specialist cannot emit prose into the queue.** It calls
@@ -7,7 +7,7 @@ XML": **a specialist cannot emit prose into the queue.** It calls
 here, and a malformed record is refused with every error listed rather than
 silently accepted or silently trimmed.
 
-Six record kinds, per §4, `docs/AGENT-LOOP.md` items 4/7, and `agents/*/role.md`:
+Seven record kinds, per §4, `docs/AGENT-LOOP.md` items 4/7, and `agents/*/role.md`:
 
 - **`proposal`** — an advisor's proposed action. The §4 record, field for
   field: `id`, `role`, `cycle`, `snapshot`, `type`, `summary`, `rationale`,
@@ -41,6 +41,14 @@ Six record kinds, per §4, `docs/AGENT-LOOP.md` items 4/7, and `agents/*/role.md
   `answer`. Only `consultant` may write one, and only once per `ask` (one
   ask, one answer, no threads). Answers are hypotheses: nothing here
   overrides a graded prediction.
+- **`escalation`** — the Overseer alerting the human: `reason`. Added
+  `handoffs/2026-09-22-loop-conductor-fixes.md` item 3: a queue record via a
+  real tool call (`queue.escalate`, `dfmcp/queue_tools.py`), never free text
+  in the Overseer's own final answer, so `conductor/cycle.py` can detect it
+  mechanically (against openclaw's own `toolSummary.tools`, never by parsing
+  prose) and leave the fort paused. Only the roster's `sole_writer` may
+  write one, same restriction as `ruling`/`executed` -- the Overseer is the
+  only role with an Escalation section in its charter at all.
 
 No `plan` record yet (§9's write-ahead-log record, "writes its ordered plan
 to the queue before executing"). See `dfqueue/README.md`.
@@ -101,7 +109,9 @@ ROSTER_PATH = REPO_ROOT / "agents" / "ROSTER.yaml"
 
 PROPOSAL, PASS, RULING = "proposal", "pass", "ruling"
 EXECUTED, ASK, ANSWER = "executed", "ask", "answer"
-KINDS = (PROPOSAL, PASS, RULING, EXECUTED, ASK, ANSWER)
+#: Added handoffs/2026-09-22-loop-conductor-fixes.md item 3.
+ESCALATION = "escalation"
+KINDS = (PROPOSAL, PASS, RULING, EXECUTED, ASK, ANSWER, ESCALATION)
 
 # ---- ruling decisions ---------------------------------------------------------
 
@@ -214,6 +224,7 @@ KIND_FIELDS: dict[str, tuple[str, ...]] = {
     EXECUTED: ("ruling_id", "actions", "notes"),
     ASK: ("question", "proposal_id"),
     ANSWER: ("ask_id", "answer"),
+    ESCALATION: ("reason",),
 }
 
 # ---- the raw-coordinate pattern -----------------------------------------------
@@ -596,7 +607,7 @@ def validate(record) -> list[str]:
             errors.append(
                 f"record.role: {role!r} is not an enabled role in agents/ROSTER.yaml"
             )
-        if kind in (RULING, EXECUTED):
+        if kind in (RULING, EXECUTED, ESCALATION):
             writer = sole_writer()
             if role != writer:
                 errors.append(
@@ -638,5 +649,7 @@ def validate(record) -> list[str]:
         _validate_ask_fields(record, errors)
     elif kind == ANSWER:
         _validate_answer_fields(record, errors)
+    elif kind == ESCALATION:
+        _validate_text_field(record, "reason", errors)
 
     return errors

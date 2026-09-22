@@ -198,10 +198,32 @@ QUEUE_EXECUTED = "queue.executed"
 #: unnecessary here (grading never mutates fort state, only dfqueue's own
 #: ledger, the same class of write every other queue.* tool already makes).
 QUEUE_GRADE = "queue.grade"
+#: Added handoffs/2026-09-22-loop-conductor-fixes.md (fix 1: "the Consultant
+#: is never woken"). queue.pending's role branch is keyed to the CALLER's
+#: own authenticated role (see _pending below), so the conductor -- which
+#: authenticates as "conductor", never as "consultant" -- has no way to ask
+#: "is there an open ask?" through that tool. queue.overview is the fix:
+#: role-independent, always returns BOTH pending_proposals() and
+#: open_asks(), regardless of who calls it. Granted only in
+#: agents/conductor/tools.yaml, the same "restricted by allowlist only, not
+#: a structural check" pattern queue.grade already established -- this is
+#: not a general "read another role's queue" backdoor; no other role's
+#: tools.yaml grants this id, and none should.
+QUEUE_OVERVIEW = "queue.overview"
+#: Added handoffs/2026-09-22-loop-conductor-fixes.md (fix 3: "no escalation
+#: convention"). Writes an `escalation` record (dfqueue.schema.ESCALATION):
+#: how the Overseer alerts the human, per its own charter's Escalation
+#: section -- a queue record via a real tool call, never free text in its
+#: final answer, so conductor/cycle.py can detect it mechanically (against
+#: openclaw's own toolSummary.tools, never by parsing prose) and leave the
+#: fort paused. sole_writer_only=True, same restriction as queue.rule/
+#: queue.executed: only the roster's sole_writer (the Overseer) may call
+#: this, enforced again at write time by dfqueue.schema.validate.
+QUEUE_ESCALATE = "queue.escalate"
 
 NATIVE_TOOL_IDS = (
     QUEUE_PROPOSE, QUEUE_PASS, QUEUE_RULE, QUEUE_PENDING, QUEUE_ASK,
-    QUEUE_ANSWER, QUEUE_EXECUTED, QUEUE_GRADE,
+    QUEUE_ANSWER, QUEUE_EXECUTED, QUEUE_GRADE, QUEUE_OVERVIEW, QUEUE_ESCALATE,
 )
 
 
@@ -252,6 +274,10 @@ class NativeTool:
             return _EXECUTED_DESCRIPTION, _EXECUTED_SCHEMA
         if self.id == QUEUE_GRADE:
             return _GRADE_DESCRIPTION, _GRADE_SCHEMA
+        if self.id == QUEUE_OVERVIEW:
+            return _OVERVIEW_DESCRIPTION, _OVERVIEW_SCHEMA
+        if self.id == QUEUE_ESCALATE:
+            return _ESCALATE_DESCRIPTION, _ESCALATE_SCHEMA
         raise AssertionError(f"NativeTool.describe: unknown id {self.id!r}")  # pragma: no cover
 
 
@@ -283,6 +309,14 @@ NATIVE_TOOLS: Dict[str, NativeTool] = {
     # practice restricted to the conductor role by which tools.yaml grants
     # it; see this module's own comment on QUEUE_GRADE above.
     QUEUE_GRADE: NativeTool(id=QUEUE_GRADE, mutates=False, sole_writer_only=False),
+    # queue.overview: role-independent read (both pending_proposals() and
+    # open_asks(), regardless of caller role). Not sole_writer_only (it is
+    # not even a write); restricted to the conductor only by which
+    # tools.yaml grants it, same pattern as queue.grade.
+    QUEUE_OVERVIEW: NativeTool(id=QUEUE_OVERVIEW, mutates=False, sole_writer_only=False),
+    # queue.escalate: same restriction as queue.rule/queue.executed (the
+    # Overseer only, dfmcp.roles's sole_writer_only mechanism).
+    QUEUE_ESCALATE: NativeTool(id=QUEUE_ESCALATE, mutates=False, sole_writer_only=True),
 }
 
 
@@ -617,6 +651,52 @@ _GRADE_SCHEMA = {
 }
 
 
+_OVERVIEW_DESCRIPTION = (
+    "Conductor-only: read the whole queue regardless of caller role -- both "
+    "every pending proposal (no ruling yet) and every open ask (no answer "
+    "yet), in one call. Fixes queue.pending's own role branch, which is "
+    "keyed to the CALLER's authenticated identity: the conductor "
+    "authenticates as 'conductor', never as 'consultant', so it has no "
+    "other way to see whether an ask is open for the Consultant. Read-only, "
+    "restricted to the conductor by allowlist, never a way for any role to "
+    "read another role's own queue view."
+)
+_OVERVIEW_SCHEMA = {
+    "type": "object",
+    "additionalProperties": False,
+    "properties": {
+        "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Return at most this many of EACH (proposals and asks). Omit for all of them.",
+        },
+    },
+}
+
+
+_ESCALATE_DESCRIPTION = (
+    "Alert the human and stop: the fort is in a state no playbook covers, an "
+    "irreversible action would be required, a tool contradicted a previously "
+    "verified fact, or the same plan step failed twice (your own charter's "
+    "Escalation section). This is the ONLY way to escalate -- saying so in "
+    "your final answer is never read as an escalation; the conductor detects "
+    "only this call. Writes an escalation record to the queue and leaves the "
+    "fort paused. role/id/ts/cycle/snapshot are stamped by the server; do "
+    "not pass them."
+)
+_ESCALATE_SCHEMA = {
+    "type": "object",
+    "additionalProperties": False,
+    "required": ["reason"],
+    "properties": {
+        "reason": {
+            "type": "string",
+            "description": "Why you are escalating, for the human. Coordinate-free.",
+        },
+    },
+}
+
+
 # --------------------------------------------------------------------------
 # cycle/snapshot stamping
 # --------------------------------------------------------------------------
@@ -885,6 +965,65 @@ async def _grade(
     return text, structured
 
 
+_OVERVIEW_FIELDS = {"limit"}
+
+
+async def _overview(
+    role: str, arguments: Mapping[str, Any], *, db_path, call_dfhack: CallDFHack,
+    write_lock: "asyncio.Lock",
+) -> Tuple[str, dict]:
+    """Role-independent by design -- see QUEUE_OVERVIEW's own comment above
+    and _OVERVIEW_DESCRIPTION. Ignores `role` entirely (unlike `_pending`,
+    which branches on it): always reads both `store.pending_proposals` and
+    `store.open_asks`, regardless of who calls. Restriction to the
+    conductor happens one layer up, by which role's tools.yaml grants this
+    id -- never inside this handler."""
+    _reject_unknown_arguments(QUEUE_OVERVIEW, arguments, _OVERVIEW_FIELDS)
+    limit = arguments.get("limit")
+    if limit is not None:
+        if isinstance(limit, bool) or not isinstance(limit, int) or limit <= 0:
+            raise QueueToolError(f"{QUEUE_OVERVIEW}: 'limit' must be a positive integer, got {limit!r}")
+    try:
+        proposals = await asyncio.to_thread(store.pending_proposals, db_path, limit=limit)
+        asks = await asyncio.to_thread(store.open_asks, db_path, limit=limit)
+    except (sqlite3.Error, OSError) as exc:
+        raise _storage_error(QUEUE_OVERVIEW, exc) from exc
+
+    proposal_ids = [r["id"] for r in proposals]
+    ask_ids = [r["id"] for r in asks]
+    structured = {
+        "proposals": {"count": len(proposals), "proposal_ids": proposal_ids},
+        "asks": {"count": len(asks), "ask_ids": ask_ids},
+    }
+    proposals_xml = "\n\n".join(render.to_xml(r) for r in proposals) if proposals else "<proposals/>"
+    asks_xml = "\n\n".join(render.to_xml(r) for r in asks) if asks else "<asks/>"
+    text = f"<queue-overview>\n{proposals_xml}\n{asks_xml}\n</queue-overview>"
+    return text, structured
+
+
+_ESCALATE_FIELDS = {"reason"}
+
+
+async def _escalate(
+    role: str, arguments: Mapping[str, Any], *, db_path, call_dfhack: CallDFHack,
+    write_lock: "asyncio.Lock",
+) -> Tuple[str, dict]:
+    """Writes an `escalation` record (`dfqueue.schema.ESCALATION`). Role
+    restriction is enforced twice, same two-layer pattern as `queue.rule`/
+    `queue.executed` (this module's own docstring): `sole_writer_only=True`
+    on `NATIVE_TOOLS[QUEUE_ESCALATE]` (load-time, dfmcp.roles) and again
+    here at write time via `dfqueue.schema.validate`'s own `role ==
+    sole_writer()` check for `ESCALATION`."""
+    _reject_unknown_arguments(QUEUE_ESCALATE, arguments, _ESCALATE_FIELDS)
+    tick, snapshot = await _stamp_cycle_snapshot(call_dfhack)
+    record = {
+        "kind": schema.ESCALATION, "role": role, "cycle": tick, "snapshot": snapshot,
+        **{k: arguments[k] for k in _ESCALATE_FIELDS if k in arguments},
+    }
+    written = await _append_locked(QUEUE_ESCALATE, record, db_path, None, write_lock)
+    return render.to_xml(written), written
+
+
 _HANDLERS = {
     QUEUE_PROPOSE: _propose,
     QUEUE_PASS: _pass_,
@@ -894,6 +1033,8 @@ _HANDLERS = {
     QUEUE_ANSWER: _answer,
     QUEUE_EXECUTED: _executed,
     QUEUE_GRADE: _grade,
+    QUEUE_OVERVIEW: _overview,
+    QUEUE_ESCALATE: _escalate,
 }
 
 
