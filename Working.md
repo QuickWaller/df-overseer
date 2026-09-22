@@ -84,7 +84,17 @@ firing in the journal. **Residue:** `diff.lua`'s eventful listeners were
 registered once per DF process under the old code, so new events still log
 raw CP437 until they re-register (DF restart, or a version-keyed
 re-registration); the backstop covers it meanwhile. Also found:
-`fort.quicksave` predicted the wrong autosave slot this run); (2) **Docker access: DONE 2026-09-22**,
+`fort.quicksave` predicted the wrong autosave slot this run; **both in
+flight** as `handoffs/2026-09-22-loop-diff-reregister-quicksave-slot.md`,
+Sonnet worktree stream, fort kept paused, merge and re-check on return).
+**Design, paused mid-question 2026-09-22:** "the Overseer proposing to
+itself" is really two paths, since it holds no `queue.propose`: its own
+agenda edits, and its direct write actions outside any proposal. Proposed
+answer (not agreed): code checks (graph validity, applicability), a cited
+doctrine or wiki revision for any game-rule claim with a Consultant
+fact-check only when uncited or when a default step is skipped or deleted,
+and a record written before any self-originated action. Asked the user which
+path(s) they meant; next step is their answer; (2) **Docker access: DONE 2026-09-22**,
 `SupplementaryGroups=docker` in the installed unit only, the `df` account's
 own groups unchanged (`handoffs/2026-09-22-loop-conductor-docker-access.md`,
 re-checked by the orchestrator); awaiting the user: (3) the tripwire live tests, which
