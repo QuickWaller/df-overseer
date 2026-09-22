@@ -163,6 +163,37 @@ class TestSoulLifecycle:
         runner.cleanup_workspace("nobody-wrote-this-role")  # must not raise
 
 
+@pytest.mark.asyncio
+class TestRunWithCharter:
+    async def test_run_writes_the_charter_before_and_removes_it_after(self, tmp_path):
+        runner = _runner(tmp_path, _fake_exec(_FakeProcess(json.dumps(_OK_ENVELOPE).encode())))
+        soul_path = tmp_path / "workspaces" / "overseer-workspace" / "SOUL.md"
+
+        result = await runner.run(
+            "overseer", "rule on proposal-0001", model="m", charter="# Overseer\n\nCharter.",
+        )
+        assert result.ok is True
+        assert not soul_path.is_file()  # cleaned up after a successful run
+
+    async def test_run_removes_the_charter_even_when_the_run_times_out(self, tmp_path):
+        process = _FakeProcess(b"", hang=True)
+        runner = _runner(tmp_path, _fake_exec(process))
+        soul_path = tmp_path / "workspaces" / "architect-workspace" / "SOUL.md"
+
+        result = await runner.run(
+            "architect", "survey", model="m", timeout_seconds=0.01, charter="# Architect\n",
+        )
+        assert result.timed_out is True
+        assert not soul_path.is_file()
+
+    async def test_run_with_no_charter_never_writes_a_soul_file(self, tmp_path):
+        runner = _runner(tmp_path, _fake_exec(_FakeProcess(json.dumps(_OK_ENVELOPE).encode())))
+        soul_path = tmp_path / "workspaces" / "overseer-workspace" / "SOUL.md"
+
+        await runner.run("overseer", "rule", model="m")  # no charter=
+        assert not soul_path.is_file()
+
+
 # ---------------------------------------------------------------------------
 # FakeRoleRunner: the double conductor/cycle.py's own tests use
 # ---------------------------------------------------------------------------
@@ -175,7 +206,10 @@ class TestFakeRoleRunner:
         result = await fake.run("architect", "survey", model="m", timeout_seconds=60)
         assert result.ok is True
         assert "passed" in result.final_answer
-        assert fake.calls == [{"role": "architect", "prompt": "survey", "model": "m", "timeout_seconds": 60}]
+        assert fake.calls == [{
+            "role": "architect", "prompt": "survey", "model": "m", "timeout_seconds": 60,
+            "charter": None,
+        }]
 
     async def test_set_result_overrides_the_default(self):
         fake = FakeRoleRunner()

@@ -75,6 +75,7 @@ class RunResult:
 class RoleRunner(Protocol):
     async def run(
         self, role: str, prompt: str, *, model: str, timeout_seconds: float,
+        charter: Optional[str] = None,
     ) -> RunResult: ...
 
 
@@ -83,7 +84,8 @@ class FakeRoleRunner:
     default "passed, nothing proposed" result), and records every call made
     -- what `conductor/tests/test_cycle.py` asserts against to prove the
     cycle launched exactly the roles triage said to, with the right
-    prompt/model. Never touches a subprocess, a container, or the network."""
+    prompt/model/charter. Never touches a subprocess, a container, or the
+    network."""
 
     def __init__(self, results: Optional[Dict[str, RunResult]] = None):
         self._results: Dict[str, RunResult] = dict(results or {})
@@ -94,9 +96,11 @@ class FakeRoleRunner:
 
     async def run(
         self, role: str, prompt: str, *, model: str, timeout_seconds: float,
+        charter: Optional[str] = None,
     ) -> RunResult:
         self.calls.append({
             "role": role, "prompt": prompt, "model": model, "timeout_seconds": timeout_seconds,
+            "charter": charter,
         })
         if role in self._results:
             return self._results[role]
@@ -174,33 +178,46 @@ class DockerOpenClawRunner:
     async def run(
         self, role: str, prompt: str, *, model: str,
         timeout_seconds: float = DEFAULT_TIMEOUT_SECONDS,
+        charter: Optional[str] = None,
     ) -> RunResult:
+        """`charter`, if given, is written as this role's workspace
+        `SOUL.md` before launch and removed after -- success or failure --
+        matching every real run's own convention (`write_soul`/
+        `cleanup_workspace`'s own docstrings). `charter=None` (a role whose
+        deploy config already carries a persisted charter another way) skips
+        both steps."""
         command = self.build_command(role, prompt, model=model)
         started = self._clock()
 
+        if charter is not None:
+            self.write_soul(role, charter)
         try:
-            process = await self._subprocess_exec(
-                *command,
-                stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
-            )
-        except Exception as exc:  # docker itself missing, permission denied, etc.
-            return RunResult(
-                role=role, ok=False, status="launch_failed", cost_usd=0.0,
-                wall_clock_seconds=self._clock() - started, timed_out=False,
-                tool_summary={}, final_answer=None, raw={}, error=f"{type(exc).__name__}: {exc}",
-            )
+            try:
+                process = await self._subprocess_exec(
+                    *command,
+                    stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
+                )
+            except Exception as exc:  # docker itself missing, permission denied, etc.
+                return RunResult(
+                    role=role, ok=False, status="launch_failed", cost_usd=0.0,
+                    wall_clock_seconds=self._clock() - started, timed_out=False,
+                    tool_summary={}, final_answer=None, raw={}, error=f"{type(exc).__name__}: {exc}",
+                )
 
-        try:
-            stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=timeout_seconds)
-        except asyncio.TimeoutError:
-            process.kill()
-            await process.wait()
-            return RunResult(
-                role=role, ok=False, status="timeout", cost_usd=0.0,
-                wall_clock_seconds=self._clock() - started, timed_out=True,
-                tool_summary={}, final_answer=None, raw={},
-                error=f"timed out after {timeout_seconds}s",
-            )
+            try:
+                stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=timeout_seconds)
+            except asyncio.TimeoutError:
+                process.kill()
+                await process.wait()
+                return RunResult(
+                    role=role, ok=False, status="timeout", cost_usd=0.0,
+                    wall_clock_seconds=self._clock() - started, timed_out=True,
+                    tool_summary={}, final_answer=None, raw={},
+                    error=f"timed out after {timeout_seconds}s",
+                )
+        finally:
+            if charter is not None:
+                self.cleanup_workspace(role)
 
         wall_clock = self._clock() - started
         text = stdout.decode("utf-8", errors="replace").strip()
