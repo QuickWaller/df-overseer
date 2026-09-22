@@ -112,9 +112,11 @@ announcement of an alert class. **Built 2026-09-22 (not deployed): the first
 three**; the announcement tripwire was not in that stream's brief and is
 still owed. Defaults hunger 75,000 and thirst 50,000 ticks, from DFHack's
 `full-heal.lua` (`research/2026-09-16-food-clock-and-farm-lead-time.md`).
-`fort.quicksave` fires and reports the predicted slot, with a separate
-confirm call, because waiting inside Lua would hold the suspend lock the save
-itself needs. **Not covered: flooding**, since the breach
+`fort.quicksave` fires and reports every slot's mtime as it stood beforehand
+(never a predicted slot, fixed 2026-09-22 after a live prediction miss --
+`handoffs/2026-09-22-loop-diff-reregister-quicksave-slot.md`), with a
+separate confirm call, because waiting inside Lua would hold the suspend
+lock the save itself needs. **Not covered: flooding**, since the breach
 detector is inconclusive (`ROADMAP.md`).
 
 ## 4. Build items
