@@ -47,8 +47,15 @@ skipped**, `.venv-dfmcp` **604 passed**. Nothing deployed, nothing pushed.
 Design flags and deploy traps from the streams are in `docs/AGENT-LOOP.md`
 §7 (notably `proposal-0001` would grade as a latency miss on first run).
 
-**Next concrete step:** the conductor service stream (dispatched, running);
-then one deploy stream for everything, running the clock stream's nine live
+**Conductor built and merged 2026-09-22**, then a pre-deploy fix stream
+(the Consultant wake via `queue.overview`, refusals reaching clients as
+`isError`, `queue.escalate` as the only escalation route, requirements file).
+Suites: ambient **1202 passed / 3 skipped**, `.venv-dfmcp` **623 passed**.
+Known gap, explained: no "hostile seen but unreachable" signal. History was
+rewritten by home-lab-8e the same day to strip Claude credit; local `main`
+is credit-free, 68+ ahead of `origin/main`, fast-forward.
+
+**Next concrete step:** one deploy stream for everything, running the clock stream's nine live
 checks and voiding `proposal-0001`. **The user authorised the deploy to place
 the MCP role tokens itself (2026-09-22: "you can do the tokens yourself"),**
 including the new quartermaster, consultant and conductor tokens on VM 106.
