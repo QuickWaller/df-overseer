@@ -546,6 +546,16 @@ or `decisions/DECISIONS.md`, not here.
 ## Next
 <!-- Clearly in line, not yet started. -->
 
+- **Whole-wiki snapshot, kept current incrementally** (agreed 2026-09-22, "not
+  just yet"): one full pull storing each page's `revid`, then a VM 103 timer
+  that reads MediaWiki's `recentchanges` feed and re-fetches only changed,
+  moved or deleted pages, with a batched `revid` check as a backstop and a
+  deliberate full re-pull on a DF version bump. Doctrine cites the `revid`,
+  and pages that change get their citing entries flagged for re-reading, never
+  auto-edited. Unverified first: anonymous `recentchanges` access and its
+  retention on the DF wiki. The MVP ships a curated 20-30 page snapshot
+  instead. -> `decisions/DECISIONS.md` 2026-09-22.
+
 - **DF wiki lookup as a `dfmcp` tool for the Consultant and the Architect**,
   served from a local snapshot, not the open web, returning capped
   section-level excerpts (user's calls 2026-09-15). Fills the Consultant's
