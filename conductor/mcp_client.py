@@ -101,29 +101,47 @@ class StreamableHTTPMCPClient:
         # is the one module in ITS package that imports the SDK (see its
         # own docstring, "THE NAMING TRAP"/"Low-level Server"). Only this
         # class, and only this method, needs it.
+        #
+        # FIXED 2026-09-22 (handoffs/2026-09-22-loop-mvp-deploy.md, the
+        # first time this class was ever opened against a real server):
+        # against the real, installed `mcp==2.2.0` SDK, the function is
+        # `streamable_http_client` (not `streamablehttp_client`), it takes
+        # `http_client=` (a built httpx2.AsyncClient, via the SDK's own
+        # `create_mcp_http_client(headers=...)` helper), not `headers=`
+        # directly, and it yields a 2-tuple (`read, write`), not 3 --
+        # exactly the trap docs/TRAPS.md already recorded ("mcp==2.2.0's
+        # streamable_http_client takes http_client=..., and yields a
+        # 2-tuple") but this module had not yet been updated to match.
+        # Verified live on VM 103's dfmcp-server, all five roles, before
+        # this fix landed here.
         from mcp.client.session import ClientSession
-        from mcp.client.streamable_http import streamablehttp_client
+        from mcp.client.streamable_http import create_mcp_http_client, streamable_http_client
 
         name = tool_name(tool_id)
         headers = {"Authorization": f"Bearer {self._token}"}
         try:
-            async with streamablehttp_client(self.url, headers=headers) as (read, write, _get_session_id):
-                async with ClientSession(read, write) as session:
-                    await session.initialize()
-                    result = await session.call_tool(name, dict(arguments))
+            async with create_mcp_http_client(headers=headers) as http_client:
+                async with streamable_http_client(self.url, http_client=http_client) as (read, write):
+                    async with ClientSession(read, write) as session:
+                        await session.initialize()
+                        result = await session.call_tool(name, dict(arguments))
         except MCPToolError:
             raise
         except Exception as exc:  # any SDK/transport failure: connection refused, timeout, protocol error
             raise MCPToolError(f"{tool_id}: dfmcp is unreachable: {type(exc).__name__}: {exc}") from exc
 
-        if result.isError:
+        # `CallToolResult` is built with `isError=`/`structuredContent=` but
+        # exposed as `is_error`/`structured_content` on this SDK version
+        # (docs/TRAPS.md, "read as result.is_error"; same live-verification
+        # session found the pydantic attribute-name mismatch too).
+        if result.is_error:
             text = "".join(
                 block.text for block in result.content if getattr(block, "type", None) == "text"
             )
             raise MCPToolError(f"{tool_id}: {text}")
 
-        if result.structuredContent is not None:
-            return result.structuredContent
+        if result.structured_content is not None:
+            return result.structured_content
 
         # Every tool this role calls returns structuredContent per
         # dfmcp/server.py's own contract, so this branch should not be
