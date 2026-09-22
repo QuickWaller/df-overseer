@@ -101,7 +101,7 @@ def _base_tools(**overrides):
         "clock.pause": {"ok": True, "paused": True},
         "fort.quicksave": {
             "ok": True, "mode": "issued", "issued": True,
-            "prior_mtimes": {"autosave 1": 100, "autosave 2": 110, "autosave 3": 120},
+            "prior_save_dir": "autosave 1",
         },
     }
     results.update(overrides)

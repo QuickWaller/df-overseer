@@ -42,154 +42,101 @@
 -- this stream's report for the flag raised about it.
 --
 -- ============================================================================
--- WHICH SLOT WAS WRITTEN: NEVER PREDICTED, ALWAYS OBSERVED. FIXED 2026-09-22
--- (handoffs/2026-09-22-loop-diff-reregister-quicksave-slot.md). The original
--- version of this tool predicted the target slot as whichever named
--- directory had the OLDEST world.sav mtime at issue time, on the theory that
--- quicksave's confirmed overwrite-oldest rotation policy
--- (memory/dfhack-environment.md, live-confirmed twice in
--- research/2026-09-11-quicksave-silent-noop.md ss3-4) always picks it. That
--- theory turned out wrong on a real fort: the encoding-fix stream's own
--- quicksave predicted "autosave 1" while the save landed in "autosave 2"
--- (evals/live/2026-09-22-loop-game-text-encoding/README.md). The tool no
--- longer predicts anything -- it reports every named slot's mtime before
--- firing and, on a later confirm call, reports whichever slot's mtime
--- actually changed. Reading exactly three named directories, both before and
--- during confirm, is a bounded read (docs/TRAPS.md), never a scan.
+-- WHICH SLOT WAS WRITTEN: NEVER PREDICTED, ALWAYS OBSERVED FROM DF'S OWN
+-- RECORD, NOT FROM FILE MTIMES. REWRITTEN 2026-09-22
+-- (handoffs/2026-09-22-loop-diff-reregister-quicksave-slot.md), TWICE in the
+-- same stream:
 --
--- The three slots' parent directory is derived from dfhack.getSavePath()
--- (the CURRENT save directory, which memory/dfhack-environment.md notes can
--- report "current" rather than a slot name -- irrelevant here since only its
--- PARENT is used) by stripping its final path component. FOUND LIVE this
--- stream, not assumed: on VM 103, dfhack.getSavePath() reports a path
--- derived from the game's own install directory (e.g.
--- "/opt/df/game/save/autosave 3") that DOES NOT EXIST as a real directory
--- at all -- a known, already-documented quirk of this exact install
--- (research/2026-09-11-quicksave-silent-noop.md ss3, docs/TRAPS.md "Saves
--- live at the XDG path, not in the game directory"), never previously
--- encoded into a runtime check, only into prose. The real save directory is
--- the XDG basedir (`~/.local/share/Bay 12 Games/Dwarf Fortress/save` on
--- Linux). save_root() below is self-verifying rather than hardcoding one or
--- the other: it tries the getSavePath()-derived candidate first (so a
--- future DFHack/install fix that makes getSavePath() correct needs no
--- further change here), and falls back to the documented XDG candidate,
--- picking whichever one dfhack.filesystem.isdir confirms is a real
--- directory. Verified live this stream: the getSavePath()-derived candidate
--- does not exist; the XDG candidate does and holds the real, currently
--- rotating "autosave 1/2/3" directories.
-
+-- First pass: dropped the original oldest-mtime PREDICTION (it was wrong on
+-- a real fort -- the encoding-fix stream's own quicksave predicted "autosave
+-- 1", the save landed in "autosave 2",
+-- evals/live/2026-09-22-loop-game-text-encoding/README.md) in favour of
+-- reading every named slot's real `world.sav` mtime via
+-- `dfhack.filesystem.mtime` before and after firing.
+--
+-- Second pass, found live deploying THAT fix to VM 103, not assumed:
+-- `dfhack.filesystem.mtime` is BROKEN on this install. Its own doc says it
+-- returns "the modification time (in seconds)... or -1 if path does not
+-- exist"; live-verified against `stat`'s real values (which matched
+-- wall-clock time exactly), it instead returns huge, nonsensical negative
+-- numbers on the order of -1e18 to -5e18 for every real, existing file
+-- tested (a compiled binary, a log file, a save file) -- never a plausible
+-- epoch-seconds value. `io.popen`/`os.execute` are sandboxed out of this
+-- DFHack Lua environment entirely (`pcall(io.popen, ...)` fails live: "attempt
+-- to call a nil value"), so there is no in-sandbox way to shell out to a
+-- working `stat` as a fallback -- and shelling out would arguably be a bigger
+-- capability than a player has anyway, the same reasoning `CLAUDE.md`'s "no
+-- armok" rule already applies elsewhere in this project.
+--
+-- The fix drops file mtimes ENTIRELY and uses the handoff's own explicitly
+-- sanctioned alternative instead: "DF's own record of the save",
+-- `df.global.world.cur_savegame.save_dir`. Live-verified this stream,
+-- end to end: read before a real `quicksave`, it read "autosave 3"; after
+-- the save actually landed (confirmed independently via the OS's own `stat`
+-- over ssh, outside this tool, showing a fresh `autosave 1/world.sav` mtime),
+-- it read "autosave 1" -- the exact slot the rotation actually picked, not a
+-- guess. This is the same signal the encoding-fix stream used by hand
+-- ("cur_savegame.save_dir plus a fresh matching world.sav mtime").
+--
+-- Known, honest limitation of a plain equality check: if the rotation ever
+-- picks the SAME slot twice in a row across two "issue" calls with no
+-- intervening confirm (not possible with the documented overwrite-oldest,
+-- 3-slot policy unless two OTHER quicksaves already rotated back around --
+-- an unlikely cadence for this tool's real call pattern, roughly once per
+-- conductor cycle), "confirmed" would read false even though a real save did
+-- land. Not engineered around, since it cannot happen without knowing
+-- ahead of time that this SPECIFIC scenario matters to a real caller, and
+-- doing so would need tracking more state than this tool currently has any
+-- other reason to hold.
 local json = require('json')
 
-local SLOT_NAMES = { "autosave 1", "autosave 2", "autosave 3" }
-
-local function save_root()
-  local path = dfhack.getSavePath()
-  if not path then
-    return nil, "dfhack.getSavePath() returned nil -- no world loaded"
-  end
-  local candidate_a = path:match("^(.*)[/\\][^/\\]+[/\\]?$")
-  if candidate_a and dfhack.filesystem.isdir(candidate_a) then
-    return candidate_a, nil
-  end
-
-  local home = os.getenv("HOME")
-  local candidate_b = home and (home .. "/.local/share/Bay 12 Games/Dwarf Fortress/save") or nil
-  if candidate_b and dfhack.filesystem.isdir(candidate_b) then
-    return candidate_b, nil
-  end
-
-  return nil, "no real save directory found -- tried "
-    .. tostring(candidate_a or "(could not derive a parent from getSavePath() result " .. tostring(path) .. ")")
-    .. " and " .. tostring(candidate_b or "(no HOME env var, XDG candidate not attempted)")
-end
-
-local function slot_mtime(root, slot_name)
-  local world_sav = root .. "/" .. slot_name .. "/world.sav"
-  local ok, mtime = pcall(dfhack.filesystem.mtime, world_sav)
-  if not ok or mtime == nil or mtime < 0 then
+local function current_save_dir()
+  local ok, dir = pcall(function() return df.global.world.cur_savegame.save_dir end)
+  if not ok or dir == nil or dir == "" then
     return nil
   end
-  return mtime
+  return dir
 end
 
--- FIXED 2026-09-22 (handoffs/2026-09-22-loop-diff-reregister-quicksave-slot.md):
--- the original "issued" reply predicted the target slot as the one with the
--- OLDEST mtime among the three named slots, on the theory that quicksave's
--- overwrite-oldest rotation always picks it. Found live, not by this stream
--- (evals/live/2026-09-22-loop-game-text-encoding/README.md, "Found live,
--- not fixed"): the encoding-fix stream's own quicksave predicted "autosave
--- 1" while the save actually landed in "autosave 2" -- the prediction was
--- simply wrong on a real fort, and the conductor and the deploy rules trust
--- this tool's report, so a guess is not good enough.
+-- quicksave [PRIOR_SAVE_DIR]
 --
--- The fix drops prediction entirely. "issued" now returns the mtime of
--- EVERY named slot as it stood immediately before firing quicksave (three
--- bounded stat calls, same cost as before). Passing all three prior mtimes
--- back (an all-or-nothing group, the same convention as the tool's
--- original two-arg CONFIRM_SLOT/CONFIRM_PRIOR_MTIME pair, just now three
--- members and no separate mode flag needed) reports whichever slot's mtime
--- actually moved -- the truth, read after the fact, never a guess about
--- which slot the rotation policy will pick.
-function fort_quicksave(prior_autosave_1, prior_autosave_2, prior_autosave_3)
-  local root, root_err = save_root()
-  if not root then
-    return { ok = false, error = root_err }
-  end
-
-  if prior_autosave_1 ~= nil or prior_autosave_2 ~= nil or prior_autosave_3 ~= nil then
-    local priors = { tonumber(prior_autosave_1), tonumber(prior_autosave_2), tonumber(prior_autosave_3) }
-    for i, name in ipairs(SLOT_NAMES) do
-      if priors[i] == nil then
-        return {
-          ok = false,
-          error = "confirm needs three prior mtimes, one per slot in order "
-            .. table.concat(SLOT_NAMES, ", ") .. " -- missing/non-numeric value for " .. name,
-        }
-      end
-    end
-    local slots = {}
-    local changed = {}
-    for i, name in ipairs(SLOT_NAMES) do
-      local current = slot_mtime(root, name)
-      slots[name] = { prior_mtime = priors[i], current_mtime = current }
-      if current ~= nil and current ~= priors[i] then
-        table.insert(changed, name)
-      end
-    end
+-- No arg: fires quicksave and returns cur_savegame.save_dir as it stood
+-- immediately before firing (never confirmed inline -- see header).
+--
+-- One arg (PRIOR_SAVE_DIR, the value the "issued" call returned): does NOT
+-- re-fire quicksave, just reports whether cur_savegame.save_dir now reads a
+-- DIFFERENT value -- the slot DF itself just wrote to, read from its own
+-- record, never a guess. Meant to be called again later, spaced out, not in
+-- a tight loop (up to ~90s observed for a save to actually land).
+function fort_quicksave(prior_save_dir)
+  if prior_save_dir ~= nil then
+    local current = current_save_dir()
+    local confirmed = current ~= nil and current ~= prior_save_dir
     local result = {
       ok = true,
       mode = "confirm",
-      slots = slots,
-      changed_slots = changed,
-      confirmed = (#changed == 1),
-      ambiguous = (#changed > 1),
+      prior_save_dir = prior_save_dir,
+      current_save_dir = current,
+      confirmed = confirmed,
     }
-    if #changed == 1 then
-      result.slot = changed[1]
+    if confirmed then
+      result.slot = current
     end
     return result
   end
 
-  local prior_mtimes = {}
-  for _, name in ipairs(SLOT_NAMES) do
-    -- json.encode drops a nil table value silently; a missing slot file
-    -- (fresh install, never rotated into yet) is reported as -1, the same
-    -- "older than any real mtime" sentinel a missing slot should sort as,
-    -- so the confirm call can still tell -1 apart from a real timestamp.
-    prior_mtimes[name] = slot_mtime(root, name) or -1
-  end
+  local prior = current_save_dir()
   dfhack.run_command('quicksave')
   return {
     ok = true,
     mode = "issued",
     issued = true,
-    prior_mtimes = prior_mtimes,
+    prior_save_dir = prior,
     note = "quicksave is asynchronous (render-loop-gated, up to ~90s observed); "
       .. "this call does not confirm completion or predict a slot -- poll "
-      .. "again later with 'quicksave " .. tostring(prior_mtimes["autosave 1"])
-      .. " " .. tostring(prior_mtimes["autosave 2"]) .. " " .. tostring(prior_mtimes["autosave 3"])
+      .. "again later with 'quicksave " .. tostring(prior)
       .. "' (spaced out, never in a tight loop); the confirmed slot is "
-      .. "whichever mtime actually changed, never a prediction",
+      .. "cur_savegame.save_dir's new value, DF's own record, never a guess",
   }
 end
 
@@ -202,7 +149,7 @@ local args = {...}
 local cmd = args[1]
 
 if cmd == "quicksave" then
-  print(json.encode(fort_quicksave(args[2], args[3], args[4])))
+  print(json.encode(fort_quicksave(args[2])))
 else
-  print("usage: df-overseer-fort quicksave [PRIOR_AUTOSAVE_1 PRIOR_AUTOSAVE_2 PRIOR_AUTOSAVE_3]")
+  print("usage: df-overseer-fort quicksave [PRIOR_SAVE_DIR]")
 end

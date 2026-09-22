@@ -1745,7 +1745,7 @@ df-overseer-clock.lua:
 df-overseer-fort.lua:
   build_order_item: "agent loop MVP item 2 (docs/AGENT-LOOP.md); handoffs/2026-09-22-loop-clock-conductor-role.md"
   commands:
-    "quicksave [PRIOR_AUTOSAVE_1 PRIOR_AUTOSAVE_2 PRIOR_AUTOSAVE_3]":
+    "quicksave [PRIOR_SAVE_DIR]":
       lua_function: fort_quicksave
       effect: mutate
       coordinate_bearing: false
@@ -1753,13 +1753,22 @@ df-overseer-fort.lua:
       verified: unverified
       knowledge_scope: player_visible
       notes: >
-        No args: fires quicksave and returns every named slot's
-        ("autosave 1"/2/3) world.sav mtime as read immediately before
-        firing -- FIXED 2026-09-22 (handoffs/2026-09-22-loop-diff-
-        reregister-quicksave-slot.md) to never predict which slot the
-        overwrite-oldest rotation will pick: the original prediction was
-        wrong on a real fort (evals/live/2026-09-22-loop-game-text-encoding/
-        README.md, "autosave 1" predicted, "autosave 2" actually written).
+        No args: fires quicksave and returns
+        df.global.world.cur_savegame.save_dir ("autosave 1"/2/3) as it stood
+        immediately before firing -- REWRITTEN TWICE 2026-09-22
+        (handoffs/2026-09-22-loop-diff-reregister-quicksave-slot.md), live,
+        deploying to VM 103. First: dropped the original oldest-mtime
+        PREDICTION (wrong on a real fort -- predicted "autosave 1", landed in
+        "autosave 2", evals/live/2026-09-22-loop-game-text-encoding/README.md)
+        for a per-slot dfhack.filesystem.mtime read. Second, found live
+        deploying that: dfhack.filesystem.mtime is ITSELF broken on this
+        install (its doc promises real epoch seconds; live-verified against
+        `stat`, it returns huge nonsensical negative numbers for every real
+        file), and io.popen/os.execute are sandboxed out of this DFHack Lua
+        environment (no shell-out fallback available). Final fix: drop file
+        mtimes entirely, use "DF's own record of the save"
+        (cur_savegame.save_dir) instead -- live-verified this stream to
+        change to the real just-written slot after a real quicksave.
         Deliberately does NOT block waiting for the save to land: the .lua
         file's own header argues from two already-established project facts
         (quicksave.lua's render-gated asynchrony, up to ~90s observed,
@@ -1768,17 +1777,11 @@ df-overseer-fort.lua:
         docs/AGENT-ARCHITECTURE.md ss6) that blocking inline risks a
         self-deadlock, not just a slow poll. A deliberate deviation from
         the handoff's literal "confirmed by the slot's mtime changing"
-        phrasing -- flagged in this stream's report. All three args given
-        (an all-or-nothing group): does not re-fire quicksave, just reports
-        which slot's mtime actually moved past its given prior value (the
-        confirmed truth, never a guess) -- meant to be called again later,
-        spaced out, not in a tight loop. Path derivation: tries the parent
-        of dfhack.getSavePath() first, falls back to the documented XDG
-        basedir (~/.local/share/Bay 12 Games/Dwarf Fortress/save) if that
-        is not a real directory -- FOUND LIVE this stream (not assumed):
-        on VM 103, dfhack.getSavePath()'s reported path does not exist at
-        all, and the fallback is what real saves live under
-        (research/2026-09-11-quicksave-silent-noop.md ss3, docs/TRAPS.md).
+        phrasing -- flagged in this stream's report. One arg given (the
+        prior_save_dir the issue call returned): does not re-fire quicksave,
+        just reports whether cur_savegame.save_dir now differs -- the slot
+        DF itself just wrote, never a guess -- meant to be called again
+        later, spaced out, not in a tight loop.
         System-kind only.
 
 df-overseer-vitals.lua:
