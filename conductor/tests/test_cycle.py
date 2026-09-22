@@ -77,18 +77,28 @@ def _grade_result(**overrides):
     return base
 
 
+def _queue_overview(**overrides):
+    base = {
+        "proposals": {"count": 0, "proposal_ids": []},
+        "asks": {"count": 0, "ask_ids": []},
+    }
+    base.update(overrides)
+    return base
+
+
 def _base_tools(**overrides):
     results = {
         "vitals.summary": _vitals(),
         "clock.status": _clock_status(),
         "overview.get": _overview(),
-        "queue.pending": {"count": 0, "proposal_ids": []},
+        "queue.overview": _queue_overview(),
         "diff.since": _diff_sequence(),
         "queue.grade": _grade_result(),
         "clock.set-speed": {"ok": True, "old_fps": 100, "new_fps": 100},
         "clock.arm": {"ok": True, "armed": True},
         "clock.clear": {"ok": True, "had_latch": True},
         "clock.resume": {"ok": True, "paused": False},
+        "clock.pause": {"ok": True, "paused": True},
         "fort.quicksave": {
             "ok": True, "mode": "issued", "issued": True,
             "predicted_slot": "autosave 1", "predicted_slot_prior_mtime": 123,
@@ -213,7 +223,7 @@ async def test_overseer_not_woken_when_the_queue_is_empty(tmp_path):
 
 async def test_overseer_woken_and_quicksaved_before_running_when_the_queue_holds_something(tmp_path):
     tools = _base_tools()
-    tools["queue.pending"] = {"count": 1, "proposal_ids": ["proposal-0001"]}
+    tools["queue.overview"] = _queue_overview(proposals={"count": 1, "proposal_ids": ["proposal-0001"]})
     deps = _deps(tmp_path, tools=tools)
     result = await run_cycle(1, deps)
 
@@ -323,7 +333,7 @@ async def test_a_tripwire_takes_priority_over_ordinary_triage_this_cycle(tmp_pat
 async def test_dry_run_reports_a_plan_without_changing_the_clock_or_launching_anyone(tmp_path):
     tools = _base_tools()
     tools["diff.since"] = _diff_sequence([[{"id": 1, "type": "migrant_wave"}]])
-    tools["queue.pending"] = {"count": 1, "proposal_ids": ["proposal-0001"]}
+    tools["queue.overview"] = _queue_overview(proposals={"count": 1, "proposal_ids": ["proposal-0001"]})
     runner = FakeRoleRunner()
     deps = _deps(tmp_path, tools=tools, runner=runner, dry_run=True)
 
