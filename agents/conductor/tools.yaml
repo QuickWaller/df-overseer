@@ -52,6 +52,25 @@ read:
       own triage (docs/AGENT-LOOP.md step 3) see what the queue holds for
       BOTH the Overseer and the Consultant before deciding who to wake.
       Granted only here: no other role's tools.yaml references this id.
+  - id: "diff.since"
+    status: exists
+    note: >-
+      Added handoffs/2026-09-22-loop-mvp-deploy.md: a real, load-bearing gap
+      found on the conductor's first live contact with dfmcp (its own
+      pinned config until this point granted no diff.since at all, only
+      agents/overseer/tools.yaml did). conductor/cycle.py's Tier 0 read
+      calls "diff.since" once per role in ALL_ROLES, each with that role's
+      own persisted cursor (conductor/cursors.py) as the `cursor` argument
+      -- it is a plain DFHack-backed command (scripts/dfhack/df-overseer-
+      diff.lua), gated only by this allowlist, with no role-specific
+      branching server-side (unlike queue.pending's old role-keyed
+      behaviour above): the `cursor` is caller-supplied, not derived from
+      the authenticated identity, so the conductor reading on another
+      role's behalf with that role's own stored cursor is exactly what the
+      tool already supports. Read-only. Granted only here: every other
+      role reads its OWN diff.since only for itself (agents/overseer/
+      tools.yaml is still the only OTHER grant, for the Overseer's own use
+      inside a real run).
 
 write:
   - id: "clock.set-speed"
