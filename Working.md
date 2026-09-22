@@ -39,6 +39,13 @@ flip `quartermaster` to enabled in `ROSTER.yaml`; add the README and
 proposals work end to end: (1) the Overseer proposing to itself, with no
 second check; (2) which checks each kind of change needs (tactical,
 strategy, agenda, template, doctrine); (3) which revisions count as learning.
+**Design input agreed for that conversation (2026-09-22):** one shared
+"revisioned knowledge" pattern for doctrine, the agenda template, gotchas,
+playbooks and the wiki snapshot: stable entry ids, a revision number,
+citations of `entry@rev` (the court judges against what was actually read),
+a change log with reasons, and a cited-by index that flags, never edits,
+dependents when an entry changes. Not in the MVP; keep entry ids stable
+until then.
 
 **All three streams merged locally 2026-09-22** (`375d1f9`, `c0bdd6a`,
 `5edd1e4`), each checked against its code, the Quartermaster enabled, owed
