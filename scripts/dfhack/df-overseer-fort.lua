@@ -60,9 +60,23 @@
 -- The three slots' parent directory is derived from dfhack.getSavePath()
 -- (the CURRENT save directory, which memory/dfhack-environment.md notes can
 -- report "current" rather than a slot name -- irrelevant here since only its
--- PARENT is used) by stripping its final path component. NOT independently
--- live-verified this stream (no VM, no live fort) -- named as an exact live
--- check this stream's report asks the deploy stream to run.
+-- PARENT is used) by stripping its final path component. FOUND LIVE this
+-- stream, not assumed: on VM 103, dfhack.getSavePath() reports a path
+-- derived from the game's own install directory (e.g.
+-- "/opt/df/game/save/autosave 3") that DOES NOT EXIST as a real directory
+-- at all -- a known, already-documented quirk of this exact install
+-- (research/2026-09-11-quicksave-silent-noop.md ss3, docs/TRAPS.md "Saves
+-- live at the XDG path, not in the game directory"), never previously
+-- encoded into a runtime check, only into prose. The real save directory is
+-- the XDG basedir (`~/.local/share/Bay 12 Games/Dwarf Fortress/save` on
+-- Linux). save_root() below is self-verifying rather than hardcoding one or
+-- the other: it tries the getSavePath()-derived candidate first (so a
+-- future DFHack/install fix that makes getSavePath() correct needs no
+-- further change here), and falls back to the documented XDG candidate,
+-- picking whichever one dfhack.filesystem.isdir confirms is a real
+-- directory. Verified live this stream: the getSavePath()-derived candidate
+-- does not exist; the XDG candidate does and holds the real, currently
+-- rotating "autosave 1/2/3" directories.
 
 local json = require('json')
 
@@ -73,11 +87,20 @@ local function save_root()
   if not path then
     return nil, "dfhack.getSavePath() returned nil -- no world loaded"
   end
-  local root = path:match("^(.*)[/\\][^/\\]+[/\\]?$")
-  if not root then
-    return nil, "could not derive a parent directory from getSavePath() result " .. tostring(path)
+  local candidate_a = path:match("^(.*)[/\\][^/\\]+[/\\]?$")
+  if candidate_a and dfhack.filesystem.isdir(candidate_a) then
+    return candidate_a, nil
   end
-  return root, nil
+
+  local home = os.getenv("HOME")
+  local candidate_b = home and (home .. "/.local/share/Bay 12 Games/Dwarf Fortress/save") or nil
+  if candidate_b and dfhack.filesystem.isdir(candidate_b) then
+    return candidate_b, nil
+  end
+
+  return nil, "no real save directory found -- tried "
+    .. tostring(candidate_a or "(could not derive a parent from getSavePath() result " .. tostring(path) .. ")")
+    .. " and " .. tostring(candidate_b or "(no HOME env var, XDG candidate not attempted)")
 end
 
 local function slot_mtime(root, slot_name)

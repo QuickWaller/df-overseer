@@ -1772,9 +1772,13 @@ df-overseer-fort.lua:
         (an all-or-nothing group): does not re-fire quicksave, just reports
         which slot's mtime actually moved past its given prior value (the
         confirmed truth, never a guess) -- meant to be called again later,
-        spaced out, not in a tight loop. Path derivation (parent of
-        dfhack.getSavePath()) is NOT live-verified this stream (no VM); see
-        the report's exact live checks.
+        spaced out, not in a tight loop. Path derivation: tries the parent
+        of dfhack.getSavePath() first, falls back to the documented XDG
+        basedir (~/.local/share/Bay 12 Games/Dwarf Fortress/save) if that
+        is not a real directory -- FOUND LIVE this stream (not assumed):
+        on VM 103, dfhack.getSavePath()'s reported path does not exist at
+        all, and the fallback is what real saves live under
+        (research/2026-09-11-quicksave-silent-noop.md ss3, docs/TRAPS.md).
         System-kind only.
 
 df-overseer-vitals.lua:
