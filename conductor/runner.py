@@ -1,0 +1,234 @@
+"""Launching a role: `docs/AGENT-LOOP.md` item 1's "Launching a role" bullet
+and build item 3's own row -- "launches `docker run --rm ... agent exec` as
+the 2026-09-16 run did; archives each run's JSON, tool calls and `costUsd`."
+
+One `docker run --rm ... agent exec --json` per role per cycle, fresh
+context, the charter from `agents/<role>/role.md` written as the workspace's
+`SOUL.md` before the run and removed after -- the exact mechanism
+`evals/live/2026-09-15-overseer-first-ruling/README.md` and its sibling runs
+record, including the traps they hit:
+
+- `agents.defaults.systemAgent.agentId` must name the role in the pinned
+  config mounted for that run -- the parent `agent` command's own `--agent`
+  flag does NOT select the agent for `agent exec` in a multi-agent config
+  (found the hard way, same README, "Two real, previously-undocumented
+  schema/runtime requirements"). This module therefore expects one pinned
+  config file per role (`pinned_config_dir/<role>.json`), each already
+  carrying its own `systemAgent.agentId`, rather than trying to select a
+  role via a CLI flag.
+- Secrets only via `--env-file`, never argv or a tracked file (the same run's
+  own hard line, honoured here: `secrets_env_file` is a path, its contents
+  are never read by this module).
+- `ghcr.io/openclaw/openclaw:latest`, `--entrypoint node`, `openclaw.mjs`,
+  matching every real run 2026-09-14 through 2026-09-18
+  (`research/2026-09-18-openclaw-capabilities.md`).
+
+Nothing here ever runs for real in this stream -- **hard line: no Docker run
+of openclaw.** `DockerOpenClawRunner` is written for the deploy to use, and
+is exercised in tests only through an injected fake `subprocess_exec`
+function (default `asyncio.create_subprocess_exec`) that a test replaces
+with something that never touches a real container -- see
+`conductor/tests/test_runner.py`. `FakeRoleRunner` is the double
+`conductor/cycle.py`'s own tests use instead of this class entirely.
+"""
+
+from __future__ import annotations
+
+import asyncio
+import json
+import time
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Any, Awaitable, Callable, Dict, List, Optional, Protocol
+
+#: The image every real run so far has used, unchanged 2026-09-14 through
+#: 2026-09-18 (research/2026-09-18-openclaw-capabilities.md).
+DEFAULT_IMAGE = "ghcr.io/openclaw/openclaw:latest"
+
+#: openclaw's own `agent exec --help` documents 600s as its default
+#: deadline; kept the same here rather than invented, and overridable per
+#: role by the caller.
+DEFAULT_TIMEOUT_SECONDS = 600.0
+
+
+@dataclass(frozen=True)
+class RunResult:
+    """The one shape every `RoleRunner` returns, real or fake. Mirrors
+    openclaw's own "stable agent-exec JSON envelope"
+    (`research/2026-09-18-openclaw-capabilities.md`: `toolSummary`, `usage`,
+    `costUsd`, `assistantTurns`) closely enough that `conductor/archive.py`
+    can write it straight to `run-<role>.json`, plus the fields the
+    conductor itself needs that the envelope does not carry."""
+
+    role: str
+    ok: bool
+    status: str
+    cost_usd: float
+    wall_clock_seconds: float
+    timed_out: bool
+    tool_summary: Dict[str, Any]
+    final_answer: Optional[str]
+    raw: Dict[str, Any]
+    error: Optional[str] = None
+
+
+class RoleRunner(Protocol):
+    async def run(
+        self, role: str, prompt: str, *, model: str, timeout_seconds: float,
+    ) -> RunResult: ...
+
+
+class FakeRoleRunner:
+    """Test double: returns a caller-supplied `RunResult` per role (or a
+    default "passed, nothing proposed" result), and records every call made
+    -- what `conductor/tests/test_cycle.py` asserts against to prove the
+    cycle launched exactly the roles triage said to, with the right
+    prompt/model. Never touches a subprocess, a container, or the network."""
+
+    def __init__(self, results: Optional[Dict[str, RunResult]] = None):
+        self._results: Dict[str, RunResult] = dict(results or {})
+        self.calls: List[Dict[str, Any]] = []
+
+    def set_result(self, role: str, result: RunResult) -> None:
+        self._results[role] = result
+
+    async def run(
+        self, role: str, prompt: str, *, model: str, timeout_seconds: float,
+    ) -> RunResult:
+        self.calls.append({
+            "role": role, "prompt": prompt, "model": model, "timeout_seconds": timeout_seconds,
+        })
+        if role in self._results:
+            return self._results[role]
+        return RunResult(
+            role=role, ok=True, status="ok", cost_usd=0.0, wall_clock_seconds=0.0,
+            timed_out=False, tool_summary={"calls": 0, "distinctTools": 0, "failures": 0},
+            final_answer="(fake runner: no proposal, passed)", raw={},
+        )
+
+
+SubprocessExec = Callable[..., Awaitable[Any]]
+
+
+class DockerOpenClawRunner:
+    """The real launcher. See this module's docstring for the exact
+    mechanism and why nothing here is ever exercised against real docker in
+    this stream."""
+
+    def __init__(
+        self, *, pinned_config_dir: Path, openclaw_state_dir: Path, workspace_root: Path,
+        secrets_env_file: Path, image: str = DEFAULT_IMAGE,
+        subprocess_exec: SubprocessExec = asyncio.create_subprocess_exec,
+        clock: Callable[[], float] = time.monotonic,
+    ):
+        self.pinned_config_dir = Path(pinned_config_dir)
+        self.openclaw_state_dir = Path(openclaw_state_dir)
+        self.workspace_root = Path(workspace_root)
+        self.secrets_env_file = Path(secrets_env_file)
+        self.image = image
+        self._subprocess_exec = subprocess_exec
+        self._clock = clock
+
+    def _workspace_dir(self, role: str) -> Path:
+        return self.workspace_root / f"{role}-workspace"
+
+    def write_soul(self, role: str, charter_markdown: str) -> Path:
+        """Place `agents/<role>/role.md` (the caller reads it; this module
+        never reads agents/ itself) as this role's workspace `SOUL.md`,
+        matching `agents.entries.<role>.workspace` in that role's pinned
+        config. Created fresh each call, per the 2026-09-15 run's own
+        convention ("workspace... created fresh... before use")."""
+        workspace = self._workspace_dir(role)
+        workspace.mkdir(parents=True, exist_ok=True)
+        soul_path = workspace / "SOUL.md"
+        soul_path.write_text(charter_markdown, encoding="utf-8")
+        return soul_path
+
+    def cleanup_workspace(self, role: str) -> None:
+        """Delete this role's `SOUL.md` after the run, per every real run's
+        own cleanup convention (`evals/live/*/README.md`, "Cleanup and
+        reversal"). Never raises if already gone."""
+        (self._workspace_dir(role) / "SOUL.md").unlink(missing_ok=True)
+
+    def build_command(self, role: str, prompt: str, *, model: str) -> List[str]:
+        """The exact docker invocation: `--rm`, `--entrypoint node`, the
+        persisted openclaw state dir bind-mounted read-write at
+        `/home/node/.openclaw` (shares the auth profile and plugin registry
+        every real run has relied on), this role's own pinned config
+        overlaid **read-only** onto `openclaw.json`, the secrets env-file,
+        then `openclaw.mjs agent exec --json --model <model> <prompt>`.
+        `prompt` is passed as the final positional argument -- `agent exec`
+        takes it verbatim on the command line in every real run this
+        project has done, never over stdin.
+        """
+        return [
+            "docker", "run", "--rm", "--entrypoint", "node",
+            "--env-file", str(self.secrets_env_file),
+            "-v", f"{self.openclaw_state_dir}:/home/node/.openclaw",
+            "-v", f"{self.pinned_config_dir / (role + '.json')}:/home/node/.openclaw/openclaw.json:ro",
+            "-v", f"{self._workspace_dir(role)}:{self._workspace_dir(role)}",
+            self.image, "openclaw.mjs", "agent", "exec", "--json",
+            "--model", model, prompt,
+        ]
+
+    async def run(
+        self, role: str, prompt: str, *, model: str,
+        timeout_seconds: float = DEFAULT_TIMEOUT_SECONDS,
+    ) -> RunResult:
+        command = self.build_command(role, prompt, model=model)
+        started = self._clock()
+
+        try:
+            process = await self._subprocess_exec(
+                *command,
+                stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
+            )
+        except Exception as exc:  # docker itself missing, permission denied, etc.
+            return RunResult(
+                role=role, ok=False, status="launch_failed", cost_usd=0.0,
+                wall_clock_seconds=self._clock() - started, timed_out=False,
+                tool_summary={}, final_answer=None, raw={}, error=f"{type(exc).__name__}: {exc}",
+            )
+
+        try:
+            stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=timeout_seconds)
+        except asyncio.TimeoutError:
+            process.kill()
+            await process.wait()
+            return RunResult(
+                role=role, ok=False, status="timeout", cost_usd=0.0,
+                wall_clock_seconds=self._clock() - started, timed_out=True,
+                tool_summary={}, final_answer=None, raw={},
+                error=f"timed out after {timeout_seconds}s",
+            )
+
+        wall_clock = self._clock() - started
+        text = stdout.decode("utf-8", errors="replace").strip()
+        if not text:
+            return RunResult(
+                role=role, ok=False, status="no_output", cost_usd=0.0,
+                wall_clock_seconds=wall_clock, timed_out=False, tool_summary={}, final_answer=None,
+                raw={"stderr": stderr.decode("utf-8", errors="replace")},
+                error="agent exec --json printed nothing",
+            )
+        try:
+            envelope = json.loads(text)
+        except json.JSONDecodeError:
+            return RunResult(
+                role=role, ok=False, status="bad_json", cost_usd=0.0,
+                wall_clock_seconds=wall_clock, timed_out=False, tool_summary={}, final_answer=None,
+                raw={"stdout": text, "stderr": stderr.decode("utf-8", errors="replace")},
+                error="agent exec --json did not print valid JSON",
+            )
+
+        return RunResult(
+            role=role,
+            ok=bool(envelope.get("ok", False)),
+            status=str(envelope.get("status", "unknown")),
+            cost_usd=float(envelope.get("costUsd") or 0.0),
+            wall_clock_seconds=wall_clock,
+            timed_out=False,
+            tool_summary=envelope.get("toolSummary", {}) or {},
+            final_answer=envelope.get("finalAnswer") or envelope.get("final_answer"),
+            raw=envelope,
+        )
