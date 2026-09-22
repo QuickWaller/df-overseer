@@ -34,6 +34,7 @@
 -- historical figure). All loops are bounded.
 
 local json = require('json')
+local textutil = reqscript('df-overseer-textutil')
 
 local NULL = "\0"
 local MAX_ITEMS = 500
@@ -56,7 +57,7 @@ end
 
 local function position_name(p)
   local ok, n = pcall(function() return p.name[0] end)
-  if ok and type(n) == "string" and n ~= "" then return n end
+  if ok and type(n) == "string" and n ~= "" then return textutil.to_utf8(n) end
   return NULL
 end
 
@@ -286,7 +287,7 @@ local function appoint(code, unit_id, dry_arg, version)
   local a, p = target.a, target.p
   local plan = {
     position = code, position_id = p.id, assignment_id = a.id, assignment_index = target.idx,
-    unit_id = unit.id, unit_name = dfhack.units.getReadableName(unit), histfig_id = fig.id,
+    unit_id = unit.id, unit_name = textutil.to_utf8(dfhack.units.getReadableName(unit)), histfig_id = fig.id,
     version = version,
     would_write = {
       "assignment.histfig = " .. fig.id, "assignment.histfig2 = " .. fig.id,

@@ -44,9 +44,10 @@
 local json = require('json')
 local stranded = reqscript('warn-stranded')
 local landmarks = reqscript('df-overseer-landmarks')
+local textutil = reqscript('df-overseer-textutil')
 
 local function unit_name(unit)
-  return dfhack.translation.translateName(dfhack.units.getVisibleName(unit))
+  return textutil.to_utf8(dfhack.translation.translateName(dfhack.units.getVisibleName(unit)))
 end
 
 -- Mean position of a stranded group's units, for a nearest_landmark lookup.

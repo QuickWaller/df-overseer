@@ -48,6 +48,7 @@
 local json = require('json')
 local utils = require('utils')
 local landmarks_mod = reqscript('df-overseer-landmarks')
+local textutil = reqscript('df-overseer-textutil')
 
 if not _G.__df_overseer_stuckjobs_registered then
   _G.__df_overseer_job_start_tick = _G.__df_overseer_job_start_tick or {}
@@ -78,14 +79,14 @@ function get_stuck_jobs(min_idle_ticks)
         local building_name = nil
         if ok_holder and holder then
           local ok_bname, bname = pcall(dfhack.buildings.getName, holder)
-          building_name = ok_bname and bname or nil
+          building_name = ok_bname and textutil.to_utf8(bname) or nil
         end
         local ok_near, near_info = pcall(
           landmarks_mod.nearest_landmark, job.pos.x, job.pos.y, job.pos.z)
         local info = ok_near and near_info
         table.insert(results, {
           job_type = ok_type and jtype or "unknown",
-          detail = ok_name and name or nil,
+          detail = ok_name and textutil.to_utf8(name) or nil,
           building = building_name,
           waiting_on = job.flags.suspend and "suspended" or "no worker assigned",
           idle_ticks = idle_ticks,

@@ -123,6 +123,7 @@
 
 local json = require('json')
 local landmarks_mod = reqscript('df-overseer-landmarks')
+local textutil = reqscript('df-overseer-textutil')
 
 local MAX_RADIUS = 60
 local DEFAULT_RADIUS = 30
@@ -153,7 +154,7 @@ end
 
 local function race_name(unit)
   local ok, name = pcall(dfhack.units.getRaceName, unit)
-  return ok and name or "unknown"
+  return ok and textutil.to_utf8(name) or "unknown"
 end
 
 -- Server-side only, same fallback discipline as df-overseer-labor.lua's

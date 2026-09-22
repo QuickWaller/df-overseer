@@ -134,6 +134,7 @@
 local json = require('json')
 local eventful = require('plugins.eventful')
 local landmarks_mod = reqscript('df-overseer-landmarks')
+local textutil = reqscript('df-overseer-textutil')
 
 -- df.announcement_type ids this fort-defense caller needs to distinguish,
 -- grouped into categories. Verified live against this install's real enum
@@ -186,7 +187,7 @@ if not _G.__df_overseer_diff_registered then
   eventful.enableEvent(eventful.eventType.JOB_COMPLETED, 10)
   eventful.onJobCompleted.df_overseer_diff = function(job)
     local ok, name = pcall(dfhack.job.getName, job)
-    log_event({type = "JOB_COMPLETED", detail = ok and name or "unknown job"})
+    log_event({type = "JOB_COMPLETED", detail = ok and textutil.to_utf8(name) or "unknown job"})
   end
 
   -- KNOWLEDGE-SCOPE FIX, 2026-09-16: excludes any death dfhack.units.isHidden
@@ -207,8 +208,8 @@ if not _G.__df_overseer_diff_registered then
       return
     end
     local ok, name = pcall(function()
-      return dfhack.translation.translateName(
-        dfhack.units.getVisibleName(df.unit.find(unit_id)))
+      return textutil.to_utf8(dfhack.translation.translateName(
+        dfhack.units.getVisibleName(df.unit.find(unit_id))))
     end)
     log_event({type = "UNIT_DEATH", detail = ok and name or ("unit " .. tostring(unit_id))})
   end
@@ -227,7 +228,7 @@ if not _G.__df_overseer_diff_registered then
           log_event({
             type = "REPORT",
             detail = string.format("category=%s type=%s text=%s", cat,
-              df.announcement_type[rep.type] or tostring(rep.type), rep.text),
+              df.announcement_type[rep.type] or tostring(rep.type), textutil.to_utf8(rep.text)),
           })
         end
         break
@@ -249,9 +250,9 @@ if not _G.__df_overseer_diff_registered then
       local u = df.unit.find(id)
       if not u then return "unit " .. tostring(id) end
       local ok, name = pcall(function()
-        return dfhack.translation.translateName(dfhack.units.getVisibleName(u))
+        return textutil.to_utf8(dfhack.translation.translateName(dfhack.units.getVisibleName(u)))
       end)
-      local race = select(2, pcall(dfhack.units.getRaceName, u)) or "?"
+      local race = textutil.to_utf8(select(2, pcall(dfhack.units.getRaceName, u)) or "?")
       return string.format("%s (%s, id=%d)", ok and name ~= "" and name or race, race, id)
     end
     log_event({
@@ -300,7 +301,7 @@ local function report_line(rep)
   return string.format(
     "COMBAT id=%d year=%d time=%d category=%q type=%q near_landmark=%q"
       .. " direction=%s distance_tiles=%d text=%q",
-    rep.id, rep.year, rep.time, cat, type_name, near, direction, distance, rep.text)
+    rep.id, rep.year, rep.time, cat, type_name, near, direction, distance, textutil.to_utf8(rep.text))
 end
 
 -- Retrospective, registration-free poll over world.status.reports -- see

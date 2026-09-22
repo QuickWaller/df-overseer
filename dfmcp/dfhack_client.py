@@ -99,8 +99,11 @@ back up, with no explicit "reset the pool" call needed.
 from __future__ import annotations
 
 import asyncio
+import logging
 import struct
 from typing import List, Optional, Sequence, Tuple
+
+_logger = logging.getLogger(__name__)
 
 # --------------------------------------------------------------------------
 # Wire constants -- transcribed from research/2026-09-12-dfhack-rpc-client.md
@@ -274,7 +277,38 @@ def _iter_fields(data: bytes):
             )
 
 
-def _decode_text_fragment_text(data: bytes) -> Optional[str]:
+def _decode_dfhack_text(value: bytes, command: Optional[str]) -> str:
+    """Decode one text field DFHack sent us.
+
+    Backstop for handoffs/2026-09-22-loop-game-text-encoding.md: DF stores
+    game text (procedurally generated names, job/building/zone names,
+    announcement text, ...) in CP437, and the Lua side now converts every
+    known game-text call site to UTF-8 at the source with `dfhack.df2utf`
+    (scripts/dfhack/df-overseer-textutil.lua) before it is ever printed.
+    This is the backstop for a call site that is missed (a future tool that
+    forgets the helper, or an accessor this audit didn't find): if the
+    bytes are not valid UTF-8, decode them as CP437 instead of raising, and
+    log at WARNING which command produced it, so the gap is visible and
+    fixable rather than silently papered over. Deliberately not
+    `errors="replace"` -- that would turn the offending character into
+    U+FFFD and lose the name outright; CP437 recovers the actual text (at
+    worst, DF's own encoding was not CP437 for this string, in which case
+    the recovered text may itself be wrong, but it is never worse than a
+    thrown exception that drops the whole tool response)."""
+    try:
+        return value.decode("utf-8")
+    except UnicodeDecodeError as exc:
+        _logger.warning(
+            "dfhack command %r sent text that is not valid UTF-8 (%s); "
+            "decoding as CP437 instead of failing -- this means a game-text "
+            "call site in scripts/dfhack/ was missed by the df2utf "
+            "conversion pass and should be found and fixed",
+            command, exc,
+        )
+        return value.decode("cp437")
+
+
+def _decode_text_fragment_text(data: bytes, command: Optional[str] = None) -> Optional[str]:
     """CoreTextFragment{required string text = 1; optional Color color =
     2;} -- only `text` is read; `color` is intentionally ignored (research
     doc §5: it is an independent field, never embedded in the text, so
@@ -283,12 +317,12 @@ def _decode_text_fragment_text(data: bytes) -> Optional[str]:
     text: Optional[str] = None
     for field_number, wire_type, value in _iter_fields(data):
         if field_number == 1 and wire_type == _WIRE_TYPE_LENGTH_DELIMITED:
-            text = value.decode("utf-8")
+            text = _decode_dfhack_text(value, command)
         # field 2 (color) deliberately ignored -- see docstring.
     return text
 
 
-def _decode_text_notification(data: bytes) -> List[str]:
+def _decode_text_notification(data: bytes, command: Optional[str] = None) -> List[str]:
     """CoreTextNotification{repeated CoreTextFragment fragments = 1;} ->
     the text of every fragment, in wire order. For this repo's tools,
     research doc §5 expects exactly one fragment holding an entire
@@ -298,7 +332,7 @@ def _decode_text_notification(data: bytes) -> List[str]:
     texts: List[str] = []
     for field_number, wire_type, value in _iter_fields(data):
         if field_number == 1 and wire_type == _WIRE_TYPE_LENGTH_DELIMITED:
-            text = _decode_text_fragment_text(value)
+            text = _decode_text_fragment_text(value, command)
             if text is not None:
                 texts.append(text)
     return texts
@@ -414,7 +448,7 @@ class DFHackConnection:
 
                     if reply_id == RPC_REPLY_TEXT:
                         body = await self._read_exactly(reply_size)
-                        fragments.extend(_decode_text_notification(body))
+                        fragments.extend(_decode_text_notification(body, command))
                     elif reply_id == RPC_REPLY_RESULT:
                         await self._read_exactly(reply_size)  # EmptyMessage body, discarded
                         return "".join(fragments)

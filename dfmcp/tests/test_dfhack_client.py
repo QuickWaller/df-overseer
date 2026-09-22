@@ -43,6 +43,8 @@ from dfmcp.dfhack_client import (
     RPC_REPLY_RESULT,
     RPC_REPLY_TEXT,
     RPC_REQUEST_QUIT,
+    _decode_dfhack_text,
+    _decode_text_fragment_text,
     _decode_text_notification,
     _decode_varint,
     _encode_run_command_request,
@@ -172,6 +174,75 @@ class TestTextNotificationDecoding:
             _decode_text_notification(bad)
 
 
+class TestCP437Backstop:
+    """handoffs/2026-09-22-loop-game-text-encoding.md: `diff.since` crashed
+    (`'utf-8' codec can't decode byte 0x96'`) on a dwarf name holding a
+    CP437-encoded character, reproduced live with a direct `dfhack-run`
+    call. The Lua side now converts every known game-text call site to
+    UTF-8 at the source (`dfhack.df2utf`, scripts/dfhack/
+    df-overseer-textutil.lua); these tests cover the Python-side backstop
+    for a call site that gets missed anyway: decode as CP437 instead of
+    raising, and warn (naming the command) rather than silently recovering.
+
+    Byte-string fragments here are built by hand from raw bytes, not via
+    `.encode("utf-8")` like the fixtures above -- the whole point is bytes
+    that are not valid UTF-8."""
+
+    def _raw_fragment_bytes(self, raw: bytes, color: int = 0) -> bytes:
+        return bytes([0x0A, len(raw)]) + raw + bytes([0x10, color])
+
+    def test_0x96_byte_matching_the_real_crash_is_recovered_not_raised(self):
+        # The exact byte from the live crash report (a CP437-encoded
+        # accented character in a procedurally generated dwarf name).
+        raw = b"unit name with \x96 in it"
+        fragment = self._raw_fragment_bytes(raw)
+        notification = bytes([0x0A, len(fragment)]) + fragment
+        # Must not raise UnicodeDecodeError -- that is the bug being fixed.
+        result = _decode_text_notification(notification, command="df-overseer-diff")
+        assert result == [raw.decode("cp437")]
+
+    def test_decode_dfhack_text_prefers_utf8_when_it_is_valid(self):
+        # Plain ASCII/UTF-8 input must decode exactly as before -- the
+        # backstop must never touch text that was already correct.
+        assert _decode_dfhack_text(b"plain ascii", command="c") == "plain ascii"
+        utf8_bytes = "café".encode("utf-8")
+        assert _decode_dfhack_text(utf8_bytes, command="c") == "café"
+
+    def test_decode_dfhack_text_does_not_use_errors_replace(self):
+        # errors="replace" would turn the bad byte into U+FFFD and lose the
+        # name outright -- the handoff explicitly forbids that. CP437
+        # decoding must recover the real character, not a replacement mark.
+        raw = b"\x96"
+        result = _decode_dfhack_text(raw, command="c")
+        assert "�" not in result
+        assert result == raw.decode("cp437")
+
+    def test_cp437_fallback_logs_a_warning_naming_the_command(self, caplog):
+        import logging as _logging
+
+        with caplog.at_level(_logging.WARNING, logger="dfmcp.dfhack_client"):
+            _decode_dfhack_text(b"\x96", command="df-overseer-diff")
+        assert len(caplog.records) == 1
+        assert caplog.records[0].levelno == _logging.WARNING
+        assert "df-overseer-diff" in caplog.records[0].message
+
+    def test_valid_utf8_logs_no_warning(self, caplog):
+        import logging as _logging
+
+        with caplog.at_level(_logging.WARNING, logger="dfmcp.dfhack_client"):
+            _decode_dfhack_text(b"fine", command="df-overseer-diff")
+        assert caplog.records == []
+
+    def test_fragment_text_helper_also_threads_the_command_through(self, caplog):
+        import logging as _logging
+
+        fragment = self._raw_fragment_bytes(b"\x96")
+        with caplog.at_level(_logging.WARNING, logger="dfmcp.dfhack_client"):
+            text = _decode_text_fragment_text(fragment, command="df-overseer-labor")
+        assert text == b"\x96".decode("cp437")
+        assert "df-overseer-labor" in caplog.records[0].message
+
+
 # ==========================================================================
 # FakeDFHackServer -- a from-scratch, independent implementation of the
 # server side of the wire protocol, for the connection/pool tests below.
@@ -192,6 +263,24 @@ def _pack_fragment(text: str, color: int = 0) -> bytes:
 def _pack_text_notification(*texts: str) -> bytes:
     body = b"".join(bytes([0x0A, len(f := _pack_fragment(t))]) + f for t in texts)
     return body
+
+
+def _pack_fragment_raw(raw: bytes, color: int = 0) -> bytes:
+    # Same shape as _pack_fragment, but for raw bytes that are not valid
+    # UTF-8 -- used to reproduce the live CP437-in-a-name crash end to end.
+    return bytes([0x0A, len(raw)]) + raw + bytes([0x10, color])
+
+
+def make_ok_action_raw(*raws: bytes) -> Action:
+    async def action(reader, writer):
+        for raw in raws:
+            fragment = _pack_fragment_raw(raw)
+            body = bytes([0x0A, len(fragment)]) + fragment
+            writer.write(_pack_header(RPC_REPLY_TEXT, len(body)) + body)
+            await writer.drain()
+        writer.write(_pack_header(RPC_REPLY_RESULT, 0))
+        await writer.drain()
+    return action
 
 
 async def action_ok(reader, writer, texts: Tuple[str, ...] = ()):
@@ -445,6 +534,26 @@ class TestConnectionRunCommand:
         await conn.close()
         assert conn.is_closed
         # A second close() must be a harmless no-op, not a re-raise.
+        await conn.close()
+
+    async def test_non_utf8_reply_does_not_crash_the_call(self, fake_server, caplog):
+        # Regression test for handoffs/2026-09-22-loop-game-text-encoding.md:
+        # `diff.since` crashed with `'utf-8' codec can't decode byte 0x96'`
+        # on a dwarf name holding a CP437 character, reproduced live with a
+        # direct dfhack-run call, no MCP involved. This reproduces the same
+        # failure through the actual Python path this project's server uses
+        # (DFHackConnection.run_command -> _decode_text_notification), with
+        # a fake server that sends the literal 0x96 byte DFHack sent live.
+        import logging as _logging
+
+        raw = b'JSON with name "unit \x96 name"'
+        fake_server.queue_actions(make_ok_action_raw(raw))
+        conn = DFHackConnection(fake_server.host, fake_server.port, timeout=2.0)
+        await conn.connect()
+        with caplog.at_level(_logging.WARNING, logger="dfmcp.dfhack_client"):
+            result = await conn.run_command("df-overseer-diff", ["since", "0"])
+        assert result == raw.decode("cp437")
+        assert any("df-overseer-diff" in r.message for r in caplog.records)
         await conn.close()
 
 
