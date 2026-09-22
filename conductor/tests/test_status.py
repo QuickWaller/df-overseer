@@ -84,3 +84,14 @@ def test_log_cycle_an_ordinary_cycle_logs_at_info_only(caplog):
         log_cycle(result)
     assert any(rec.levelno == logging.INFO for rec in caplog.records)
     assert not any(rec.levelno >= logging.WARNING for rec in caplog.records)
+
+
+def test_log_cycle_an_ordinary_cycle_escalation_with_no_tripwire_logs_at_error(caplog):
+    """Fix 3, handoffs/2026-09-22-loop-conductor-fixes.md: conductor/cycle.py
+    can now pause the fort from an escalation during an ORDINARY cycle (no
+    tripwire latched), which must not silently fall through to the INFO
+    branch just because result.tripwire is None."""
+    result = _result(tripwire=None, escalated=True, roles_woken=("overseer",))
+    with caplog.at_level(logging.ERROR, logger="conductor.status"):
+        log_cycle(result)
+    assert any(rec.levelno == logging.ERROR and "ESCALATION" in rec.message for rec in caplog.records)

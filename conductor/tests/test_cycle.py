@@ -18,7 +18,7 @@ import pytest
 from conductor.archive import CycleArchive
 from conductor.cursors import CursorStore
 from conductor.cycle import CycleDeps, run_cycle
-from conductor.mcp_client import FakeToolCaller
+from conductor.mcp_client import FakeToolCaller, MCPToolError, tool_name
 from conductor.policy import FULL_SPEED, PAUSED, SLOWED, load_policy
 from conductor.runner import FakeRoleRunner, RunResult
 from conductor.triage import ADVISORS, CONSULTANT, OVERSEER
@@ -439,3 +439,147 @@ async def test_the_woken_roles_charter_and_briefing_reach_the_runner(tmp_path):
     assert briefing["role"] == "architect"
     assert briefing["wake_reason"] == "migrant_wave"
     assert briefing["clock"] == FULL_SPEED
+
+
+# ---------------------------------------------------------------------------
+# Fix 1 (handoffs/2026-09-22-loop-conductor-fixes.md): the conductor can now
+# see an open ask through queue.overview and wakes the Consultant for it.
+# ---------------------------------------------------------------------------
+
+
+async def test_an_open_ask_wakes_the_consultant(tmp_path):
+    tools = _base_tools()
+    tools["queue.overview"] = _queue_overview(asks={"count": 1, "ask_ids": ["ask-0001"]})
+    deps = _deps(tmp_path, tools=tools)
+    result = await run_cycle(1, deps)
+
+    assert CONSULTANT in result.roles_woken
+    assert OVERSEER not in result.roles_woken  # the proposal half is still empty
+
+
+async def test_the_consultants_briefing_carries_ask_ids_not_proposal_ids(tmp_path):
+    tools = _base_tools()
+    tools["queue.overview"] = _queue_overview(
+        proposals={"count": 1, "proposal_ids": ["proposal-0001"]},
+        asks={"count": 1, "ask_ids": ["ask-0001"]},
+    )
+    runner = FakeRoleRunner()
+    deps = _deps(tmp_path, tools=tools, runner=runner)
+    await run_cycle(1, deps)
+
+    consultant_call = next(c for c in runner.calls if c["role"] == CONSULTANT)
+    briefing = json.loads(consultant_call["prompt"])
+    assert briefing["queue"]["ids"]["items"] == ["ask-0001"]
+
+    overseer_call = next(c for c in runner.calls if c["role"] == OVERSEER)
+    overseer_briefing = json.loads(overseer_call["prompt"])
+    assert overseer_briefing["queue"]["ids"]["items"] == ["proposal-0001"]
+
+
+# ---------------------------------------------------------------------------
+# Fix 2: a clock.*/fort.quicksave refusal (now a real MCPToolError, per
+# dfmcp/server.py's own fix) is caught, logged, and does not crash the cycle.
+# ---------------------------------------------------------------------------
+
+
+async def test_a_clock_resume_refusal_is_logged_and_does_not_crash_the_cycle(tmp_path, caplog):
+    tools = _base_tools()
+    tools["clock.status"] = _clock_status(
+        paused=True, tripwire={"reason": "hunger_critical", "tick": 999, "detail": "x"},
+    )
+
+    def _refuse(_arguments):
+        raise MCPToolError("clock.resume: refused: a tripwire is latched")
+
+    tools["clock.resume"] = _refuse
+    runner = FakeRoleRunner({
+        OVERSEER: RunResult(
+            role=OVERSEER, ok=True, status="ok", cost_usd=0.0, wall_clock_seconds=1.0,
+            timed_out=False, tool_summary={"calls": 1, "tools": []}, final_answer="ok", raw={},
+        ),
+    })
+    deps = _deps(tmp_path, tools=tools, runner=runner)
+
+    import logging
+    with caplog.at_level(logging.ERROR, logger="conductor.cycle"):
+        result = await run_cycle(1, deps)  # must not raise
+
+    assert result.escalated is False  # the RUN was clean; only the resume call was refused
+    resume_change = next(c for c in result.clock_changes if c["tool"] == "clock.resume")
+    assert resume_change["result"] == {"ok": False, "error": "clock.resume: refused: a tripwire is latched"}
+    assert any("clock.resume refused" in rec.message for rec in caplog.records)
+
+
+# ---------------------------------------------------------------------------
+# Fix 3: mechanical escalation, via queue.escalate, not free text or "any
+# unclean run".
+# ---------------------------------------------------------------------------
+
+
+def _run_that_called(*tool_ids: str, ok: bool = True) -> RunResult:
+    return RunResult(
+        role=OVERSEER, ok=ok, status="ok" if ok else "error", cost_usd=0.0, wall_clock_seconds=1.0,
+        timed_out=False, tool_summary={"calls": len(tool_ids), "tools": [tool_name(t) for t in tool_ids]},
+        final_answer="handled" if ok else None, raw={}, error=None if ok else "refused",
+    )
+
+
+async def test_a_tripwire_stays_paused_when_a_clean_run_calls_queue_escalate(tmp_path):
+    """The actual gap fix 3 closes: a CLEAN run (ok=True) that mechanically
+    called queue.escalate must stay paused -- the old proxy (any unclean
+    run) could never detect this, since this run completed fine."""
+    tools = _base_tools()
+    tools["clock.status"] = _clock_status(
+        paused=True, tripwire={"reason": "hunger_critical", "tick": 999, "detail": "x"},
+    )
+    runner = FakeRoleRunner({OVERSEER: _run_that_called("queue.escalate")})
+    deps = _deps(tmp_path, tools=tools, runner=runner)
+    result = await run_cycle(1, deps)
+
+    assert result.escalated is True
+    tool_order = [c["tool"] for c in result.clock_changes]
+    assert "clock.clear" not in tool_order
+    assert "clock.resume" not in tool_order
+
+
+async def test_a_tripwire_resumes_when_a_clean_run_never_calls_queue_escalate(tmp_path):
+    """The companion invariant: a clean run with NO escalate call must no
+    longer be (mis)treated as an escalation."""
+    tools = _base_tools()
+    tools["clock.status"] = _clock_status(
+        paused=True, tripwire={"reason": "hunger_critical", "tick": 999, "detail": "x"},
+    )
+    runner = FakeRoleRunner({OVERSEER: _run_that_called("queue.propose")})
+    deps = _deps(tmp_path, tools=tools, runner=runner)
+    result = await run_cycle(1, deps)
+
+    assert result.escalated is False
+    tool_order = [c["tool"] for c in result.clock_changes]
+    assert tool_order == ["fort.quicksave", "clock.clear", "clock.resume"]
+
+
+async def test_the_overseer_can_escalate_during_an_ordinary_cycle_and_pauses_the_fort(tmp_path):
+    """agents/overseer/role.md's Escalation section is not tripwire-
+    specific: an ordinary cycle where the Overseer wakes (queue holds
+    something) and calls queue.escalate must pause the fort too, not only
+    the next time a tripwire happens to latch."""
+    tools = _base_tools()
+    tools["queue.overview"] = _queue_overview(proposals={"count": 1, "proposal_ids": ["proposal-0001"]})
+    runner = FakeRoleRunner({OVERSEER: _run_that_called("queue.escalate")})
+    deps = _deps(tmp_path, tools=tools, runner=runner)
+    result = await run_cycle(1, deps)
+
+    assert result.escalated is True
+    assert result.clock_level == PAUSED
+    assert any(c["tool"] == "clock.pause" for c in result.clock_changes)
+
+
+async def test_an_ordinary_cycle_with_no_escalate_call_never_pauses(tmp_path):
+    tools = _base_tools()
+    tools["queue.overview"] = _queue_overview(proposals={"count": 1, "proposal_ids": ["proposal-0001"]})
+    runner = FakeRoleRunner({OVERSEER: _run_that_called("queue.rule")})
+    deps = _deps(tmp_path, tools=tools, runner=runner)
+    result = await run_cycle(1, deps)
+
+    assert result.escalated is False
+    assert not any(c["tool"] == "clock.pause" for c in result.clock_changes)
