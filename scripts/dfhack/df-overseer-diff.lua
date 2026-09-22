@@ -10,16 +10,22 @@
 -- later piece build order item 5 always called out as its own work.
 --
 -- Registration (eventful.enableEvent + the onX listener tables) happens
--- once per DF process lifetime, guarded by a plain _G flag. Confirmed live
--- 2026-09-10, load-bearing for this whole design: a plain Lua global DOES
--- survive across separate `dfhack-run` invocations within the same running
--- DF process (two independent SSH calls incrementing and reading back the
--- same _G counter returned 1 then 2, not 1 then 1) -- DFHack's Lua state is
--- not reset per CLI invocation. The event log itself is intentionally a
--- plain _G table, not dfhack.persistent-backed: it is meant to be
--- ephemeral/session-scoped ("everything since my last call this
--- game-process-lifetime"), not durable across a restart, and nothing in
--- this design needs it to survive one.
+-- once per DF process lifetime PER REGISTRATION VERSION, guarded by a _G
+-- string keyed on a version constant this file bumps whenever listener code
+-- changes (see REGISTRATION_VERSION below, added
+-- 2026-09-22, handoffs/2026-09-22-loop-diff-reregister-quicksave-slot.md --
+-- a plain boolean guard was the original design and is why the
+-- encoding-fix stream's listener changes never took effect on the running
+-- process until this fix). Confirmed live 2026-09-10, load-bearing for this
+-- whole design: a plain Lua global DOES survive across separate
+-- `dfhack-run` invocations within the same running DF process (two
+-- independent SSH calls incrementing and reading back the same _G counter
+-- returned 1 then 2, not 1 then 1) -- DFHack's Lua state is not reset per
+-- CLI invocation. The event log itself is intentionally a plain _G table,
+-- not dfhack.persistent-backed: it is meant to be ephemeral/session-scoped
+-- ("everything since my last call this game-process-lifetime"), not
+-- durable across a restart, and nothing in this design needs it to survive
+-- one.
 --
 -- FOLDED IN 2026-09-12, merging perception-layer-experiments into main:
 -- this file originally wired only JOB_COMPLETED/UNIT_DEATH; a separate,
@@ -169,13 +175,74 @@ local function category_of(rtype)
   return REPORT_CATEGORY[rtype]
 end
 
-if not _G.__df_overseer_diff_registered then
-  _G.__df_overseer_diff_log = {}
-  _G.__df_overseer_diff_next_id = 1
+-- REGISTRATION VERSION, 2026-09-22 (handoffs/2026-09-22-loop-diff-reregister-
+-- quicksave-slot.md). Found live by the encoding-fix stream (evals/live/
+-- 2026-09-22-loop-game-text-encoding/README.md, "Found live, not fixed"):
+-- the old guard was a plain boolean (`_G.__df_overseer_diff_registered`),
+-- true forever once set, so a redeploy that changed this file's listener
+-- closures never took effect on the already-running DF process -- the
+-- eventful callbacks kept firing the PRE-encoding-fix code that never
+-- called textutil.to_utf8. Fixed here by keying the guard on a version
+-- string instead of a boolean: bump REGISTRATION_VERSION whenever a
+-- listener's own code changes, and the block below re-runs, replacing the
+-- listeners.
+--
+-- Why replacement is clean, not layered (the handoff's "if eventful's
+-- storage makes clean replacement impossible, stop and report" line):
+-- verified by SOURCE READING of the installed eventful plugin's Lua
+-- wrapper (hack/lua/plugins/eventful.lua on the Windows install, the
+-- closest available copy -- the onX tables themselves and enableEvent are
+-- native-plugin-exposed, not defined in that Lua file, so this is not a
+-- read of the actual storage implementation). What IS verified: this file
+-- already registers every listener as a plain Lua table assignment under a
+-- fixed string key (`eventful.onJobCompleted.df_overseer_diff = function
+-- ... end`, and likewise onUnitDeath/onReport/onUnitAttack) -- the
+-- documented DFHack idiom for eventful (named-slot registration, the same
+-- mechanism a script uses to unregister by setting the key to nil).
+-- Reassigning a Lua table key always replaces its prior value; this is a
+-- language guarantee, not something that depends on eventful's own
+-- internal implementation, PROVIDED eventful fires by reading through this
+-- same table by key at dispatch time rather than keeping a separate
+-- append-only list captured at registration -- which the named-slot
+-- registration/unregistration idiom implies but this stream could not
+-- confirm from the native plugin's source. Not independently verified
+-- live this stream (no VM in the offline-code phase); the live deploy step
+-- checks handler counts under each key before/after to catch layering if
+-- this assumption is wrong.
+local REGISTRATION_VERSION = "2026-09-22-diff-rereg-1"
+
+if _G.__df_overseer_diff_registered_version ~= REGISTRATION_VERSION then
+  _G.__df_overseer_diff_log = _G.__df_overseer_diff_log or {}
+  _G.__df_overseer_diff_next_id = _G.__df_overseer_diff_next_id or 1
+
+  -- One-time conversion of legacy entries: any entry already in the log
+  -- with no `encoding_version` field was logged by a closure that predates
+  -- this file's own encoding_version bookkeeping, i.e. by the pre-encoding-
+  -- fix listeners (raw CP437 `detail`, per the encoding-fix stream's live
+  -- finding, 13 of 1210 entries on Uniboslan). Convert each such entry's
+  -- `detail` exactly once via textutil.to_utf8 (the same helper every
+  -- other game-text call site in this project uses; safe on already-ASCII
+  -- text per its own header, since ASCII bytes pass through df2utf
+  -- unchanged) and stamp it so no future re-registration ever touches it
+  -- again -- converting an already-UTF-8 string with df2utf mangles it, so
+  -- this marker is the only thing standing between "convert once" and
+  -- "convert every redeploy". A fresh entry from THIS version's listeners
+  -- (below) is always stamped at creation, so it can never be mistaken for
+  -- an unconverted legacy one, no matter how many future version bumps
+  -- happen.
+  for _, entry in ipairs(_G.__df_overseer_diff_log) do
+    if entry.encoding_version == nil then
+      if entry.detail then
+        entry.detail = textutil.to_utf8(entry.detail)
+      end
+      entry.encoding_version = "legacy-converted"
+    end
+  end
 
   local function log_event(entry)
     entry.id = _G.__df_overseer_diff_next_id
     entry.at_tick = dfhack.world.ReadCurrentTick()
+    entry.encoding_version = REGISTRATION_VERSION
     _G.__df_overseer_diff_next_id = _G.__df_overseer_diff_next_id + 1
     table.insert(_G.__df_overseer_diff_log, entry)
   end
@@ -262,7 +329,7 @@ if not _G.__df_overseer_diff_registered then
     })
   end
 
-  _G.__df_overseer_diff_registered = true
+  _G.__df_overseer_diff_registered_version = REGISTRATION_VERSION
 end
 
 -- Every event with id > cursor, plus the new cursor to pass next time.
