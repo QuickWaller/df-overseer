@@ -79,9 +79,10 @@ converts game text with `dfhack.df2utf`, so any tool emitting names may too;
 (2) **Docker access** for the conductor's service user (the `df` user needs
 sudo for docker; the unit calls it bare); (3) the tripwire live tests, which
 need a brief supervised unpause; (4) a short supervised first cycle.
-**Owed to home-lab** (`inventory/services.yaml`): the conductor unit on VM 106
-(disabled), and openclaw now configured for four roles; commands in the
-deploy README.
+**Home-lab inventory:** home-lab-8e wrote both `inventory/services.yaml` lines
+(the conductor unit on VM 106, openclaw's four roles) on 2026-09-22, validated
+but **left uncommitted** in `../home-lab` beside other in-flight changes, for
+the user or whoever commits there next.
 
 **Earlier plan, now done:** one deploy stream for everything, running the clock stream's nine live
 checks and voiding `proposal-0001`. **The user authorised the deploy to place
