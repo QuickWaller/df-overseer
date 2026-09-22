@@ -236,6 +236,39 @@ is what actually stays comparable turn to turn. Both figures were checked
 this session against DFHack's published docs and the DF Wiki via WebFetch,
 not against a live VM — see the handoff report for the exact citations.
 
+## Voiding a prediction: `store.void_prediction`, admin-only
+
+Added `handoffs/2026-09-22-loop-conductor-service.md`
+(`decisions/DECISIONS.md` 2026-09-22, "`proposal-0001` is voided with a note
+before the loop first grades"). The v1->v2 schema migration keeps a
+pre-migration proposal's prediction on its original, write-time
+`due_game_tick` (see `store._ensure_schema`'s own docstring), so the
+conductor's first real grading cycle would otherwise score a proposal like
+`proposal-0001` (ruled 2026-09-16, left ungraded on purpose while the fort
+kept changing under it) as a miss caused by ruling-to-execution latency,
+never by the proposal itself.
+
+`store.void_prediction(path, proposal_id, note, *, voided_at=None)` marks
+that proposal's **prediction** row `store.VOID`, with the required `note`
+stored in `grade_note` -- the proposal's own `records` row is completely
+untouched (still `load()`-able, still exported by `export_jsonl`), so
+voiding keeps the record visible with its reason rather than deleting
+anything. `dfqueue/grade.py` needs no code change for this: `pending_due`
+already selects only `status = PENDING`, so a `VOID` row is skipped by
+every future grading cycle for free. Refuses (nothing written) an empty
+note, an unknown `proposal_id`, or a prediction already graded or already
+voided -- voiding is for skipping a grading that has not happened yet, not
+for undoing or repeating one that already has.
+
+**Deliberately not a `dfqueue.schema` record kind, and not reachable
+through `dfmcp.queue_tools` or any role's `tools.yaml`.** This is an admin
+action by code, run by a human from the command line
+(`python -m dfqueue.store --db PATH --proposal-id ID --note "..."`), never
+an agent tool -- no role's allowlist can ever grant it, because there is no
+MCP tool here to grant. Not run against any real database by the stream
+that built it; the deploy runs it once against VM 103's live queue for
+`proposal-0001`, per the register entry above.
+
 ## Coordinates
 
 Every free-text field (`summary`, `rationale`, `public_rationale`, `reason`)

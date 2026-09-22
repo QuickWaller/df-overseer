@@ -28,7 +28,7 @@ network endpoint.
 | `tools.py` | Turns a registry + roster + role into actual MCP tool definitions (`name`/`description`/`inputSchema`), and turns a validated call's arguments back into the exact DFHack argv. Transport-independent: no MCP SDK import, no notion of HTTP. |
 | `auth.py` | Maps a bearer token to a role, from a gitignored `.env`-shaped file. The credential half of the trust boundary in `docs/AGENT-ARCHITECTURE.md` §13: role identity must be a credential, not a claim. |
 | `dfhack_client.py` | A persistent-connection client for DFHack's RPC socket: hand-rolled handshake/framing/protobuf-subset codec, a `DFHackConnection`, and a `DFHackConnectionPool` for batching a cycle's reads into one suspend window. The only module in this package that opens a socket. |
-| `queue_tools.py` | Seven "native" (non-DFHack) MCP tools -- `queue.propose`/`pass`/`rule`/`pending`, plus `queue.executed` (Overseer; arms a prediction's window at the execution tick), `queue.ask` and `queue.answer` (the one-ask-one-answer Consultant channel, including the Overseer's fact-check, which blocks a ruling until answered; added `handoffs/2026-09-22-loop-queue-quartermaster.md`; `queue.pending` is role-dependent and returns open asks for the Consultant) -- that read and write `dfqueue`'s own SQLite queue instead of running a DFHack command. Merged into `registry.py`'s table additively (`load_registry(native_tools=...)`), so `roles.py`/`tools.py` enforce and describe them through the exact same seam as every DFHack tool. Added `handoffs/2026-09-15-queue-into-dfmcp.md`. |
+| `queue_tools.py` | Eight "native" (non-DFHack) MCP tools -- `queue.propose`/`pass`/`rule`/`pending`, plus `queue.executed` (Overseer; arms a prediction's window at the execution tick), `queue.ask` and `queue.answer` (the one-ask-one-answer Consultant channel, including the Overseer's fact-check, which blocks a ruling until answered; added `handoffs/2026-09-22-loop-queue-quartermaster.md`; `queue.pending` is role-dependent and returns open asks for the Consultant), and `queue.grade` (conductor-only; runs `dfqueue.grade.run_grading_cycle` over MCP since the queue database and the conductor live on different hosts; added `handoffs/2026-09-22-loop-conductor-service.md`) -- that read and write `dfqueue`'s own SQLite queue instead of running a DFHack command. Merged into `registry.py`'s table additively (`load_registry(native_tools=...)`), so `roles.py`/`tools.py` enforce and describe them through the exact same seam as every DFHack tool. Added `handoffs/2026-09-15-queue-into-dfmcp.md`. |
 | `knowledge_tools.py` | Five native tools for the Consultant only: `web.search` (Brave Search API, key from `BRAVE_SEARCH_API_KEY`), `web.fetch` (refuses private, loopback and link-local targets, redirects re-checked), `knowledge.wiki_lookup` (local snapshot, `MCP_SERVER_WIKI_SNAPSHOT`, built by `scripts/build_wiki_snapshot.py`), `dfhack.source_search`/`source_read` (confined to `MCP_SERVER_DFHACK_SOURCE_ROOT`). Fetched content is labelled untrusted data and a `prior` at most. Added `handoffs/2026-09-22-loop-consultant-retrieval.md`. |
 | `server.py` | The MCP transport itself: the low-level `Server`, the streamable-HTTP ASGI app, and the `TokenVerifier` that resolves a bearer token to a role at the SDK's own auth seam. The only module that imports the MCP SDK. |
 
@@ -314,13 +314,24 @@ default the type heuristic uses.
 
 ## What `queue_tools.py` exposes
 
-Four MCP tools, none of them a DFHack command: `queue.propose`
+Eight MCP tools, none of them a DFHack command: `queue.propose`
 (`queue__propose`), `queue.pass` (`queue__pass`), `queue.rule`
-(`queue__rule`), `queue.pending` (`queue__pending`). Added
+(`queue__rule`), `queue.pending` (`queue__pending`, added
 `handoffs/2026-09-15-queue-into-dfmcp.md` to make
 `docs/AGENT-ARCHITECTURE.md` §4's "a specialist cannot emit prose into the
-queue" actually true: before this stream, `dfqueue/` validated and stored a
-proposal, but nothing could call it except a test.
+queue" actually true -- before that stream, `dfqueue/` validated and stored
+a proposal, but nothing could call it except a test); `queue.executed`
+(`queue__executed`, Overseer-only, arms a proposal's prediction window at
+the execution tick rather than the write tick), `queue.ask` and
+`queue.answer` (`queue__ask`/`queue__answer`, the one-ask-one-answer
+Consultant channel -- any of architect/quartermaster/overseer may ask a
+lookup question, and an Overseer ask naming a `proposal_id` is a fact-check
+that blocks `queue.rule` on that proposal until answered; `queue.pending`
+is role-dependent and returns open asks, not proposals, for the
+Consultant), all three added `handoffs/2026-09-22-loop-queue-quartermaster.md`;
+and `queue.grade` (`queue__grade`, added
+`handoffs/2026-09-22-loop-conductor-service.md`, see its own paragraph
+below).
 
 **Why a fourth kind of "tool" and not a `TOOLS.yaml` entry.**
 `registry.py`'s canonical-id scheme and `tools.py`'s argv-construction
@@ -421,6 +432,34 @@ a monkeypatched slow `_next_id` and a lock-free direct call to
 `dfqueue.store.append`, then proves the real `queue_tools.call` path
 (with the lock) does not reproduce it under the same forced slowdown, and
 separately proves the lock is never held across the DFHack call.
+
+**`queue.grade`** (added `handoffs/2026-09-22-loop-conductor-service.md`,
+`docs/AGENT-LOOP.md` item 2, "Grading reachable over MCP"): runs
+`dfqueue.grade.run_grading_cycle` against the same queue database every
+other `queue.*` tool here uses. Exists because the queue database lives on
+VM 103 (inside `dfmcp`'s own process) but the conductor that needs to grade
+it runs on VM 106 -- a local Python import was never an option. Takes no
+arguments; idempotent (a prediction already graded is never re-read).
+Granted only in `agents/conductor/tools.yaml` -- unlike `queue.rule`/
+`queue.executed`, this is **not** `sole_writer_only` (that flag means
+specifically "the roster's sole_writer," a different restriction than "the
+conductor"); the restriction is by allowlist only, since grading never
+mutates fort state, the same class of write every other `queue.*` native
+tool already makes (`NativeTool.mutates` is always `False`).
+
+`dfqueue.grade.run_grading_cycle`'s own `call_tool(tool_id, args) ->
+result` contract is **synchronous** (`learning.live_signals.read` calls it
+with no `await`), while this module's own DFHack access
+(`_call_dfhack`) is async. `queue_tools._grade` bridges the two by running
+`run_grading_cycle` in a worker thread (`asyncio.to_thread`) and, from
+inside that thread, handing each actual DFHack call back to THIS event
+loop via `asyncio.run_coroutine_threadsafe(...).result()` -- never a
+second event loop. No `write_lock` is taken around it: grading's own
+writes are keyed by `predictions.id`, disjoint from the `records.id`
+collision the lock exists to serialise against (this module's own
+docstring, "SQLite runs off the event loop") -- not independently audited
+for a *different* race, flagged in `handoffs/2026-09-22-loop-conductor-
+service.md`'s own report rather than silently assumed safe.
 
 ## What `auth.py` exposes
 

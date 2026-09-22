@@ -1,0 +1,92 @@
+# UNDEPLOYED. This file is not installed on VM 106 or anywhere else -- the
+# stream that wrote it (handoffs/2026-09-22-loop-conductor-service.md) was
+# explicitly barred from touching any VM, from any Docker run of openclaw,
+# and from any model call. It exists so the eventual deploy step is a
+# review of a written unit, not an improvised one typed against a live
+# host.
+#
+# Copy to /etc/systemd/system/conductor.service on VM 106 (the openclaw
+# agent host -- docs/AGENT-ARCHITECTURE.md §13: it launches the containers
+# there, so the conductor runs alongside them rather than reaching across
+# hosts for every docker run), fill in the paths for that host's actual
+# venv and repo checkout, and never enable it before:
+#   1. `pip install -r dfmcp/requirements.txt` (or a narrower conductor-only
+#      requirements file, if this deploy chooses to split it) into a
+#      DEDICATED venv on VM 106, matching dfmcp-server.service.example's
+#      own reasoning -- conductor/mcp_client.py needs the same MCP SDK
+#      dfmcp/server.py does (mcp.client.streamable_http, mcp.client.session).
+#   2. A real conductor env file (see conductor.example.env, this
+#      directory) exists on this host with every CONDUCTOR_* value filled
+#      in and a real MCP_ROLE_TOKEN_CONDUCTOR -- the ONE token this service
+#      holds directly (agents/conductor/role.md: "no model ever calls the
+#      tools below or reads this file as a prompt"). Never the same token
+#      as any agent's own role token.
+#   3. Every role this MVP launches (architect, quartermaster, consultant,
+#      overseer) has its OWN pinned openclaw config file under
+#      CONDUCTOR_PINNED_CONFIG_DIR (<role>.json), each carrying its own
+#      agents.defaults.systemAgent.agentId set to that role -- see
+#      conductor/runner.py's own module docstring for why (the parent
+#      `agent` command's --agent flag does NOT select the agent for
+#      `agent exec` in a multi-agent config; found the hard way,
+#      evals/live/2026-09-15-overseer-first-ruling/README.md). Two of the
+#      four role tokens these configs need (quartermaster, consultant) do
+#      not exist yet as of this stream -- see this stream's report.
+#   4. Docker itself is installed and reachable by the account this unit
+#      runs as (every prior openclaw run on VM 106 needed `sudo` for the
+#      Docker socket, per research/2026-09-15-openclaw-secret-storage.md --
+#      confirm this account's own access before enabling).
+#   5. The exact `systemctl start` command has been run past the user for
+#      explicit go-ahead, per this repo's CLAUDE.md rule that any change to
+#      live/VM state needs confirmation each time.
+
+[Unit]
+Description=df-overseer conductor (conductor.service, the agent loop)
+After=network-online.target docker.service
+Wants=network-online.target
+# The conductor's own cycle read fails loudly (CycleError, logged, status
+# JSON marked read_failed) if dfmcp on VM 103 is unreachable -- it does NOT
+# need dfmcp to be co-located or start first, only reachable over the
+# tailnet by the time the first cycle runs.
+
+[Service]
+Type=simple
+User=CHANGEME
+Group=CHANGEME
+
+WorkingDirectory=/CHANGEME/df-automation
+EnvironmentFile=/CHANGEME/conductor.env
+ExecStart=/CHANGEME/df-automation/.venv-conductor/bin/python -m conductor.service
+# Add --dry-run here for the first supervised run on this host (prints what
+# each cycle would do without calling any model, changing the clock,
+# grading, quicksaving or launching anyone) -- remove it only after that
+# has been reviewed.
+
+Restart=on-failure
+RestartSec=10
+
+# Needs access to the Docker socket to launch `docker run --rm ... agent
+# exec` (conductor/runner.py's DockerOpenClawRunner) -- ProtectSystem=strict
+# would need an explicit ReadWritePaths for /var/run/docker.sock, or this
+# account's own group membership in `docker`, matching how every prior
+# openclaw run on this host was actually invoked (see item 4 above).
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/CHANGEME/df-automation
+# The conductor's own runtime archive and per-role cursor file, both
+# outside the checkout on purpose (a code redeploy of WorkingDirectory must
+# never be able to clobber live cycle history or cursor state) --
+# CONDUCTOR_RUNTIME_ROOT and CONDUCTOR_CURSOR_STORE_PATH in
+# conductor.example.env. Fill in the real chosen paths on both sides.
+ReadWritePaths=/var/lib/conductor
+# The openclaw state dir this service bind-mounts read-write into every
+# container it launches (shares the persisted DeepSeek auth profile and
+# plugin registry every real run has depended on).
+ReadWritePaths=/opt/openclaw/config
+# Each role's ephemeral workspace (SOUL.md written before a run, removed
+# after -- conductor/runner.py's write_soul/cleanup_workspace).
+ReadWritePaths=/opt/openclaw
+
+[Install]
+WantedBy=multi-user.target
