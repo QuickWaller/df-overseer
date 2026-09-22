@@ -705,3 +705,134 @@ def test_export_jsonl_is_deterministic_and_git_trackable(tmp_path):
         (out_dir / "predictions.jsonl").read_bytes()
         == (out_dir2 / "predictions.jsonl").read_bytes()
     )
+
+
+# ---- void_prediction: admin-only, keeps the record visible ----------------------
+#
+# handoffs/2026-09-22-loop-conductor-service.md item 3;
+# decisions/DECISIONS.md 2026-09-22 ("proposal-0001 is voided with a note").
+
+
+def test_void_prediction_flips_status_and_keeps_the_proposal_visible(tmp_path):
+    path = _db(tmp_path)
+    proposal = store.append(make_proposal(), path, game_tick=1000)
+
+    result = store.void_prediction(path, proposal["id"], "fort has changed completely; voided per user's call")
+    assert result["proposal_id"] == proposal["id"]
+    assert result["status"] == store.VOID
+    assert result["note"] == "fort has changed completely; voided per user's call"
+    assert result["voided_at"]
+
+    # The proposal RECORD itself is untouched, still loadable and unchanged.
+    loaded = store.load(path)
+    assert len(loaded) == 1
+    assert loaded[0] == proposal
+
+    # The prediction row now carries the reason, never silently disappears.
+    with sqlite3.connect(path) as conn:
+        conn.row_factory = sqlite3.Row
+        row = conn.execute(
+            "SELECT status, grade_note, graded_at FROM predictions WHERE record_id = ?",
+            (proposal["id"],),
+        ).fetchone()
+    assert row["status"] == store.VOID
+    assert row["grade_note"] == "fort has changed completely; voided per user's call"
+    assert row["graded_at"]
+
+
+def test_void_prediction_is_skipped_by_the_grader(tmp_path):
+    """The whole point: a voided prediction must never show up as due,
+    however overdue its (possibly pre-migration) due_game_tick is."""
+    path = _db(tmp_path)
+    written = store.append(make_proposal(), path, game_tick=0)
+    _accept_and_execute(path, written["id"], execution_cycle=0)  # due at tick 1200
+
+    assert len(store.pending_due(path, 1200)) == 1  # due and still gradeable before voiding
+
+    store.void_prediction(path, written["id"], "left over from a superseded design")
+
+    assert store.pending_due(path, 10**9) == []  # never due again, at any tick
+
+
+def test_void_prediction_works_on_an_awaiting_execution_proposal(tmp_path):
+    """proposal-0001's own real shape: ruled but never executed, so its
+    prediction never left AWAITING_EXECUTION. Voiding must not require an
+    execution record first."""
+    path = _db(tmp_path)
+    written = store.append(make_proposal(), path, game_tick=0)
+
+    result = store.void_prediction(path, written["id"], "ruled but never executed; fort has moved on")
+    assert result["status"] == store.VOID
+
+
+def test_void_prediction_requires_a_non_empty_note(tmp_path):
+    path = _db(tmp_path)
+    written = store.append(make_proposal(), path, game_tick=0)
+
+    with pytest.raises(store.QueueError, match="note"):
+        store.void_prediction(path, written["id"], "")
+    with pytest.raises(store.QueueError, match="note"):
+        store.void_prediction(path, written["id"], "   ")
+
+    # Nothing written: still voidable afterward, proving the refusal above
+    # left the prediction's status untouched.
+    result = store.void_prediction(path, written["id"], "a real reason")
+    assert result["status"] == store.VOID
+
+
+def test_void_prediction_refuses_an_unknown_proposal_id(tmp_path):
+    path = _db(tmp_path)
+    with pytest.raises(store.QueueError, match="proposal-9999"):
+        store.void_prediction(path, "proposal-9999", "a real reason")
+
+
+def test_void_prediction_refuses_an_already_graded_prediction(tmp_path):
+    path = _db(tmp_path)
+    written = store.append(make_proposal(), path, game_tick=0)
+    _accept_and_execute(path, written["id"], execution_cycle=0)
+    due = store.pending_due(path, 1200)
+    store.apply_grades(path, [{
+        "id": due[0]["id"], "status": GRADED_TRUE, "actual_value": 15,
+        "graded_at": "2026-09-15T00:00:00+00:00", "grade_note": "",
+    }])
+
+    with pytest.raises(store.QueueError, match="already"):
+        store.void_prediction(path, written["id"], "too late, already graded")
+
+
+def test_void_prediction_refuses_a_second_void(tmp_path):
+    path = _db(tmp_path)
+    written = store.append(make_proposal(), path, game_tick=0)
+    store.void_prediction(path, written["id"], "first void")
+
+    with pytest.raises(store.QueueError, match="already"):
+        store.void_prediction(path, written["id"], "second void attempt")
+
+
+def test_cli_void_writes_json_to_stdout(tmp_path, capsys):
+    path = _db(tmp_path)
+    written = store.append(make_proposal(), path, game_tick=0)
+
+    exit_code = store._cli_void([
+        "--db", str(path), "--proposal-id", written["id"], "--note", "cli round trip",
+    ])
+    assert exit_code == 0
+
+    out = json.loads(capsys.readouterr().out)
+    assert out["proposal_id"] == written["id"]
+    assert out["status"] == store.VOID
+    assert out["note"] == "cli round trip"
+
+
+def test_cli_void_reports_a_refusal_on_stderr_and_returns_nonzero(tmp_path, capsys):
+    path = _db(tmp_path)
+
+    exit_code = store._cli_void([
+        "--db", str(path), "--proposal-id", "proposal-9999", "--note", "does not exist",
+    ])
+    assert exit_code == 1
+
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    err = json.loads(captured.err)
+    assert "proposal-9999" in err["error"]

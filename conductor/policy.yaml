@@ -1,0 +1,81 @@
+# The conductor's triage rules and clock policy, held as DATA
+# (docs/AGENT-LOOP.md item 1: "Triage rules and the clock policy as data").
+#
+# Nothing in conductor/cycle.py branches on a literal wake-reason string;
+# every reason named here is looked up through conductor/policy.py's
+# Policy.reason(name), so adding, retuning or retiring a reason is an edit
+# to this file, never to the cycle loop's own code.
+#
+# Checked into the repo (not a secret, not runtime-written state) -- unlike
+# infra/local.example.env's placeholders, real starting values belong here
+# directly, the same way scripts/dfhack/df-overseer-clock.lua's own tripwire
+# defaults are real numbers, not placeholders.
+
+schema_version: 1
+
+# docs/AGENT-LOOP.md §2's three levels. base_fps is a SETTING, not a
+# constant ("the user may lower full speed later... every rule below is
+# written in ticks, so it holds whatever base_fps is set to").
+base_fps: 100
+think_fps: 10
+
+# §2's "closing in" rule: slow only when ticks to a computable consequence
+# fall under this many multiples of expected thinking time (in ticks at the
+# current base_fps).
+closing_in_multiple: 3
+
+# Starting value, in real seconds. conductor/policy.py's
+# update_expected_thinking_seconds is how this becomes a measured, moving
+# figure from each run's own wall-clock rather than staying this guess
+# forever -- see that function's own docstring for the update rule.
+expected_thinking_seconds: 90
+
+# §4 triage rules v1: "at least every 7 game days" if nothing else has woken
+# the advisors. DF's fixed calendar is 1200 ticks/day (dfqueue/grade.py's
+# own GAME_TICKS_PER_YEAR comment cites the same wiki source).
+routine_review_interval_game_days: 7
+
+# Every wake reason this conductor build knows about. `clock` is the
+# fallback table entry (§2); `computable: true` means conductor/cycle.py
+# will prefer the ticks-to-consequence rule over this fallback whenever it
+# can actually compute a ticks-to-consequence value for that reason, per
+# policy.clock_for_reason. `wakes` names which role(s) this reason wakes;
+# an empty list means the reason affects the clock but wakes nobody by
+# itself (docs/AGENT-LOOP.md §2's hostile-seen-but-unreachable row).
+wake_reasons:
+  routine_review:
+    clock: full_speed
+    wakes: [architect, quartermaster]
+  prediction_due:
+    clock: full_speed
+    wakes: [architect, quartermaster]
+  prediction_graded:
+    clock: full_speed
+    wakes: [architect, quartermaster]
+  season_change:
+    clock: full_speed
+    wakes: [architect, quartermaster]
+  migrant_wave:
+    clock: full_speed
+    wakes: [architect, quartermaster]
+  stuck_job:
+    clock: full_speed
+    wakes: [quartermaster]
+    computable: true
+  stock_below_target:
+    clock: full_speed
+    wakes: [quartermaster]
+    computable: true
+  vital_nearing_threshold:
+    clock: slowed
+    wakes: [quartermaster]
+    computable: true
+  caravan_present:
+    clock: slowed
+    wakes: [quartermaster]
+  hostile_seen_unreachable:
+    clock: slowed
+    wakes: []
+  tripwire:
+    clock: paused
+    wakes: [overseer]

@@ -44,8 +44,10 @@ nothing to either table, matching the JSONL version's contract exactly.
 
 from __future__ import annotations
 
+import argparse
 import json
 import sqlite3
+import sys
 from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
@@ -73,6 +75,21 @@ FINAL_DECISIONS = (ACCEPT, REJECT)
 #: of `handoffs/2026-09-22-loop-queue-quartermaster.md`); kept local to
 #: `dfqueue` instead. See "Execution arms the prediction" below.
 AWAITING_EXECUTION = "awaiting_execution"
+
+#: A prediction's status once an admin voids it (`void_prediction` below):
+#: `docs/AGENT-LOOP.md` §7, `decisions/DECISIONS.md` 2026-09-22
+#: ("proposal-0001 is voided with a note before the loop first grades").
+#: Never written by `append()` or any agent-reachable tool -- only by the
+#: admin CLI at the bottom of this module, run by a human, never a role.
+VOID = "void"
+
+#: Statuses `void_prediction` will actually change. Voiding an
+#: already-graded prediction (GRADED_TRUE/GRADED_FALSE/UNRESOLVABLE) is
+#: refused: voiding exists to skip a grading that has not happened yet, not
+#: to erase one that has. `AWAITING_EXECUTION` is included because a
+#: proposal that was ruled but never executed (proposal-0001's own case)
+#: never left that status.
+_VOIDABLE_STATUSES = (AWAITING_EXECUTION, PENDING)
 
 SCHEMA_VERSION = 2
 
@@ -685,3 +702,121 @@ def export_jsonl(path: str | Path, out_dir: str | Path) -> None:
     with (out_dir / "predictions.jsonl").open("w", encoding="utf-8") as fh:
         for p in predictions:
             fh.write(json.dumps(_prediction_row(p), sort_keys=True, ensure_ascii=False) + "\n")
+
+
+# ---------------------------------------------------------------------------
+# Voiding a prediction -- admin-only, by code, never an agent tool.
+#
+# `docs/AGENT-LOOP.md` §7 and `decisions/DECISIONS.md` 2026-09-22: the queue
+# migration keeps a pre-migration proposal's prediction on its original,
+# write-time `due_game_tick` (see `_ensure_schema`'s own docstring above), so
+# the conductor's first grading cycle would otherwise record `proposal-0001`
+# (ruled 2026-09-16, left ungraded on purpose) as a miss caused by
+# ruling-to-execution latency, not by the proposal itself. The user chose to
+# void it with a note rather than grade it. This is deliberately NOT a
+# `dfqueue.schema` record kind and NOT reachable through `dfmcp.queue_tools`:
+# no role's tools.yaml can ever grant it, because there is no MCP tool at
+# all here to grant -- it is a direct `dfqueue.store` call, run by a human
+# from the CLI at the bottom of this module, never inside a cycle.
+# ---------------------------------------------------------------------------
+
+
+def void_prediction(
+    path: str | Path, proposal_id: str, note: str, *, voided_at: str | None = None,
+) -> dict:
+    """Mark `proposal_id`'s prediction `VOID` with a required, non-empty
+    `note`. The proposal's own `records` row is untouched (still visible,
+    still loadable via `load()`/`export_jsonl()`) -- only the prediction
+    row's `status`/`grade_note`/`graded_at` change, so the record stays
+    visible with its reason rather than being deleted. `dfqueue/grade.py`'s
+    `pending_due` only ever selects `status = PENDING`, so a voided
+    prediction is skipped by every future grading cycle for free, with no
+    change needed there.
+
+    Refuses (`QueueError`, nothing written):
+    - an empty or whitespace-only `note` -- a void with no reason defeats
+      the entire point of voiding rather than deleting;
+    - a `proposal_id` not present in this queue, or one with no prediction
+      row at all (should not happen: every `proposal` gets one atomically
+      at `append()` time);
+    - a prediction not in `_VOIDABLE_STATUSES` -- already graded, or
+      already voided. Voiding is for skipping a grading that has not
+      happened yet, not for erasing or re-doing one that already has.
+    """
+    if not isinstance(note, str) or not note.strip():
+        raise QueueError("refusing to void: a note is required and must not be empty")
+    if voided_at is None:
+        voided_at = datetime.now(timezone.utc).isoformat()
+
+    with _connect(path) as conn:
+        proposal_row = conn.execute(
+            "SELECT 1 FROM records WHERE id = ? AND kind = ?", (proposal_id, PROPOSAL)
+        ).fetchone()
+        if proposal_row is None:
+            raise QueueError(f"refusing to void: {proposal_id!r} is not a proposal in this queue")
+
+        pred_row = conn.execute(
+            "SELECT id, status FROM predictions WHERE record_id = ?", (proposal_id,)
+        ).fetchone()
+        if pred_row is None:  # pragma: no cover -- append() always inserts one atomically
+            raise QueueError(f"refusing to void: {proposal_id!r} has no prediction row")
+
+        if pred_row["status"] not in _VOIDABLE_STATUSES:
+            raise QueueError(
+                f"refusing to void: {proposal_id!r}'s prediction is already "
+                f"{pred_row['status']!r}; only an ungraded prediction "
+                f"({', '.join(_VOIDABLE_STATUSES)}) may be voided"
+            )
+
+        with conn:
+            conn.execute(
+                "UPDATE predictions SET status = ?, grade_note = ?, graded_at = ? WHERE id = ?",
+                (VOID, note, voided_at, pred_row["id"]),
+            )
+
+    return {
+        "proposal_id": proposal_id, "status": VOID, "note": note, "voided_at": voided_at,
+    }
+
+
+def _cli_void(argv: list[str] | None = None) -> int:
+    """`python -m dfqueue.store --db PATH --proposal-id ID --note "..."`.
+    The module's only CLI action is a void -- there is deliberately no
+    second subcommand here, since every other queue write goes through
+    `dfmcp.queue_tools` (an agent-reachable MCP tool), never this file's
+    own `__main__`.
+
+    Offline and directly testable (`dfqueue/tests/test_store.py` calls
+    `_cli_void` against a `tmp_path` database, never a real one). Per this
+    repo's CLAUDE.md, running this against any real, deployed queue database
+    is a live-state change and needs the user's explicit go-ahead each time
+    -- this stream builds and tests the mechanism only; it is never run here
+    against VM 103's own queue.
+    """
+    parser = argparse.ArgumentParser(
+        prog="python -m dfqueue.store",
+        description=(
+            "Admin-only: void one proposal's prediction so it is never graded, "
+            "keeping the record visible with a required reason. Never an agent "
+            "tool -- run by a human. Destructive-adjacent (changes what a live "
+            "queue will grade): confirm the target database with the user "
+            "before running this against anything but a throwaway/test file."
+        ),
+    )
+    parser.add_argument("--db", required=True, type=Path, help="path to the queue sqlite3 database")
+    parser.add_argument("--proposal-id", required=True, help='e.g. "proposal-0001"')
+    parser.add_argument("--note", required=True, help="why this proposal is voided rather than graded")
+    args = parser.parse_args(argv)
+
+    try:
+        result = void_prediction(args.db, args.proposal_id, args.note)
+    except QueueError as exc:
+        print(json.dumps({"error": str(exc)}), file=sys.stderr)
+        return 1
+
+    print(json.dumps(result, indent=2))
+    return 0
+
+
+if __name__ == "__main__":  # pragma: no cover -- exercised via _cli_void() directly in tests
+    sys.exit(_cli_void())

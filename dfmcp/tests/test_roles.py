@@ -170,12 +170,23 @@ def test_conductor_is_kind_system_and_holds_exactly_the_clock_writes(registry):
     """Pins the concrete shape, same style as
     test_only_the_sole_writer_has_fort_mutating_write_entries above: a future
     edit that quietly grants conductor something beyond the clock/quicksave
-    group, or drops kind: system, is a visible test failure, not a slip."""
+    group, or drops kind: system, is a visible test failure, not a slip.
+
+    `queue.grade` (added handoffs/2026-09-22-loop-conductor-service.md) is
+    the one deliberate addition beyond SYSTEM_CLASS_TOOL_IDS: a NATIVE tool
+    (dfmcp/queue_tools.py), never a DFHack command, so it is not itself
+    system-class -- it does not mutate fort state (mutates is always False
+    for a native tool; see queue_tools.py's own docstring) and is restricted
+    to the conductor only by which tools.yaml grants it, not by the
+    SYSTEM_CLASS_TOOL_IDS load-time mechanism."""
     roster = load_roster(registry)
     conductor = roster.roles["conductor"]
     assert conductor.kind == "system"
-    assert set(conductor.write) == SYSTEM_CLASS_TOOL_IDS
+    assert set(conductor.write) == SYSTEM_CLASS_TOOL_IDS | {"queue.grade"}
     for tool_id in conductor.write:
+        if tool_id == "queue.grade":
+            assert registry.get(tool_id).mutates is False
+            continue
         assert registry.get(tool_id).mutates is True
     assert "clock.status" in conductor.read
     assert "vitals.summary" in conductor.read

@@ -66,3 +66,11 @@ dfqueue/*.sqlite3*
 production/*.sqlite3*
 # dfseries/<fort>.series.sqlite3, same pattern again (handoffs/2026-09-19-dfseries-store.md).
 dfseries/*.sqlite3*
+
+# The conductor's own runtime archive (handoffs/2026-09-22-loop-conductor-
+# service.md; docs/AGENT-LOOP.md item 3): each cycle's briefing, every role
+# run's JSON envelope, cost and clock changes, plus per-role diff cursors
+# and the daily cost log -- all real, per-fort operational data written by
+# the running service on VM 106, never source. See conductor/archive.py and
+# conductor/cursors.py.
+runtime/
