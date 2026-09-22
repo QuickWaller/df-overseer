@@ -73,40 +73,41 @@ quartermaster 21, conductor 13. Dry run: it would wake the quartermaster on
 the deploy (the conductor's MCP client against the real SDK, a missing
 `diff.since` grant).
 
-**Owed before the first real start:** (1) **text encoding**:
-`diff.since` crashes on a CP437 character in a dwarf's name, and no script
-converts game text with `dfhack.df2utf`, so any tool emitting names may too
-(**DONE 2026-09-22**, `handoffs/2026-09-22-loop-game-text-encoding.md`:
-shared `df-overseer-textutil.lua` helper, CP437 backstop in
-`dfmcp/dfhack_client.py`, redeployed; unseeded conductor dry run now clean;
-orchestrator re-checked the fort paused at tick 106974 and the backstop
-firing in the journal. **Residue:** `diff.lua`'s eventful listeners were
-registered once per DF process under the old code, so new events still log
-raw CP437 until they re-register (DF restart, or a version-keyed
-re-registration); the backstop covers it meanwhile. Also found:
-`fort.quicksave` predicted the wrong autosave slot. **Both fixed and merged
-2026-09-22**, `handoffs/2026-09-22-loop-diff-reregister-quicksave-slot.md`:
-version-keyed listener re-registration (no DF restart needed), legacy log
-entries converted once, and `fort.quicksave` now reporting the slot from
-`cur_savegame.save_dir`. That stream's executor stalled after its last live
-check, so the orchestrator wrote the Result and re-checked VM 103 itself
-(new version registered, 1210 entries converted, next id 1211, fort paused at
-tick 106974, both suites green at 1229/3 and 630). **New trap recorded:**
-`dfhack.filesystem.mtime` is broken on this install, so no Lua script can
-confirm a save by mtime (`docs/TRAPS.md`). **Owed, needs game time:** that a
-genuinely new event logs UTF-8, checked in the first supervised run).
-**Design, paused mid-question 2026-09-22:** "the Overseer proposing to
+**Owed before the first real start.**
+
+1. **Text encoding: DONE 2026-09-22**
+   (`handoffs/2026-09-22-loop-game-text-encoding.md`). Shared
+   `df-overseer-textutil.lua` helper over `dfhack.df2utf`, a CP437 backstop in
+   `dfmcp/dfhack_client.py` that logs which tool needed it, redeployed; the
+   unseeded conductor dry run is clean; orchestrator re-checked the fort
+   paused at tick 106974 and the backstop firing in the journal.
+2. **Stale listeners and the quicksave slot: DONE 2026-09-22**
+   (`handoffs/2026-09-22-loop-diff-reregister-quicksave-slot.md`). `diff.lua`
+   re-registers its eventful listeners on a version bump, so a deploy takes
+   effect with no DF restart; the 1210 legacy log entries were converted once
+   and marked, next id 1211 intact; `fort.quicksave` reports the slot from
+   `cur_savegame.save_dir`. That executor stalled after its last live check,
+   so the orchestrator wrote the Result and re-checked VM 103 itself; suites
+   1229/3 and 630. **New trap:** `dfhack.filesystem.mtime` is broken on this
+   install, so no Lua script can confirm a save by mtime (`docs/TRAPS.md`).
+   **Owed, needs game time:** that a genuinely new event logs UTF-8.
+3. **Docker access: DONE 2026-09-22**
+   (`handoffs/2026-09-22-loop-conductor-docker-access.md`).
+   `SupplementaryGroups=docker` on the installed unit only, the `df`
+   account's own groups unchanged, re-checked by the orchestrator.
+4. **Awaiting the user:** the tripwire live tests (need a brief supervised
+   unpause) and a short supervised first cycle. The first run should also
+   check owed item 2's UTF-8 event.
+
+**Design, paused mid-question 2026-09-22.** "The Overseer proposing to
 itself" is really two paths, since it holds no `queue.propose`: its own
 agenda edits, and its direct write actions outside any proposal. Proposed
-answer (not agreed): code checks (graph validity, applicability), a cited
-doctrine or wiki revision for any game-rule claim with a Consultant
-fact-check only when uncited or when a default step is skipped or deleted,
-and a record written before any self-originated action. Asked the user which
-path(s) they meant; next step is their answer; (2) **Docker access: DONE 2026-09-22**,
-`SupplementaryGroups=docker` in the installed unit only, the `df` account's
-own groups unchanged (`handoffs/2026-09-22-loop-conductor-docker-access.md`,
-re-checked by the orchestrator); awaiting the user: (3) the tripwire live tests, which
-need a brief supervised unpause; (4) a short supervised first cycle.
+answer (not agreed): code checks (graph validity, applicability); a cited
+doctrine or wiki revision for any game-rule claim, with a Consultant
+fact-check only when uncited or when a default step is skipped or deleted;
+and a record written before any self-originated action. The user was asked
+which path they meant; their answer is the next step.
+
 **Home-lab inventory:** home-lab-8e wrote both `inventory/services.yaml` lines
 (the conductor unit on VM 106, openclaw's four roles) on 2026-09-22, validated
 but **left uncommitted** in `../home-lab` beside other in-flight changes, for
