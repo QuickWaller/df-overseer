@@ -38,13 +38,20 @@ read:
   - id: "overview.get"
     status: exists
     note: The same fort-overview read every other role's briefing draws on.
-  - id: "queue.pending"
+  - id: "queue.overview"
     status: exists
     note: >-
-      Native tool (dfmcp/queue_tools.py), not a DFHack command. Read-only,
-      not sole_writer_only (roles.py rule 6 does not apply). Lets the
-      conductor's own triage (docs/AGENT-LOOP.md step 3) see what the queue
-      already holds before deciding who to wake.
+      Added handoffs/2026-09-22-loop-conductor-fixes.md (fix 1). Native tool
+      (dfmcp/queue_tools.py), not a DFHack command. Read-only, not
+      sole_writer_only (roles.py rule 6 does not apply). Replaces
+      queue.pending for this role: queue.pending's role branch is keyed to
+      the CALLER's own authenticated identity, so the conductor (which
+      authenticates as "conductor", never "consultant") could never see an
+      open ask through it -- queue.overview is role-independent and always
+      returns both pending proposals and open asks, letting the conductor's
+      own triage (docs/AGENT-LOOP.md step 3) see what the queue holds for
+      BOTH the Overseer and the Consultant before deciding who to wake.
+      Granted only here: no other role's tools.yaml references this id.
 
 write:
   - id: "clock.set-speed"

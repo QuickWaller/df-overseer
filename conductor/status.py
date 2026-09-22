@@ -84,12 +84,24 @@ def log_cycle(result: CycleResult) -> None:
     escalation is the one case this project's own convention (CLAUDE.md's
     "check live state before escalating" memory rule, applied in reverse
     here -- an actual escalation must never read as routine) requires
-    `ERROR`, never `WARNING` or `INFO`."""
+    `ERROR`, never `WARNING` or `INFO`. Fix 3 (`handoffs/2026-09-22-loop-
+    conductor-fixes.md`): an escalation is no longer only reachable through
+    a tripwire -- `conductor/cycle.py` can now also pause the fort from an
+    ORDINARY cycle if the Overseer calls `queue.escalate` outside a
+    tripwire, so `escalated=True` with `tripwire=None` is a real, distinct
+    case that must log at `ERROR` too, not fall through to the ordinary
+    `INFO` branch below."""
     if result.tripwire is not None and result.escalated:
         LOG.error(
             "ESCALATION: cycle %s's Overseer run did not resolve the tripwire; "
             "the fort stays PAUSED. tripwire=%s",
             result.cycle_index, result.tripwire,
+        )
+    elif result.tripwire is None and result.escalated:
+        LOG.error(
+            "ESCALATION: cycle %s's Overseer escalated during an ordinary cycle "
+            "(no tripwire); the fort is PAUSED.",
+            result.cycle_index,
         )
     elif result.tripwire is not None:
         LOG.warning(

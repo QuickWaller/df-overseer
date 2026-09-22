@@ -12,8 +12,8 @@ import pytest
 
 from dfqueue import render, schema, store
 from dfqueue.tests._helpers import (
-    make_answer, make_ask, make_executed, make_pass, make_proposal,
-    make_ruling,
+    make_answer, make_ask, make_escalation, make_executed, make_pass,
+    make_proposal, make_ruling,
 )
 from learning.predictions.schema import GRADED_TRUE, PENDING
 
@@ -68,6 +68,27 @@ def test_append_then_load_round_trips_a_pass(tmp_path):
     xml = render.to_xml(loaded[0])
     assert xml.startswith("<pass ")
     assert "<reason>" in xml
+
+
+def test_append_then_load_round_trips_an_escalation(tmp_path):
+    """Added handoffs/2026-09-22-loop-conductor-fixes.md item 3: an
+    escalation is a standalone record, same class as `pass` -- no reference
+    to another record, needs no game_tick."""
+    path = _db(tmp_path)
+    written = store.append(make_escalation(), path)
+
+    loaded = store.load(path)
+    assert loaded == [written]
+
+    xml = render.to_xml(loaded[0])
+    assert xml.startswith("<escalation ")
+    assert "<reason>" in xml
+
+    # It is not a proposal and not an ask -- neither queue-state read
+    # conductor/cycle.py relies on (queue.overview's own two halves) may
+    # ever count it.
+    assert store.pending_proposals(path) == []
+    assert store.open_asks(path) == []
 
 
 def test_append_then_load_round_trips_a_ruling(tmp_path):

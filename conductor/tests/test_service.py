@@ -34,7 +34,10 @@ def _quiet_tools():
             "tier1": {"population": 20},
             "tier2": {"in_game_date": "year 1, month 1, day 1, tick 1000", "alerts": []},
         },
-        "queue.pending": {"count": 0, "proposal_ids": []},
+        "queue.overview": {
+            "proposals": {"count": 0, "proposal_ids": []},
+            "asks": {"count": 0, "ask_ids": []},
+        },
         "diff.since": lambda args: {"cursor": str(args.get("cursor", 0)), "events": []},
         "queue.grade": {
             "current_game_tick": 403200 + 1000, "graded_at": "x",

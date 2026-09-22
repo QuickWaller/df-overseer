@@ -13,8 +13,8 @@ import pytest
 
 from dfqueue import schema
 from dfqueue.tests._helpers import (
-    make_answer, make_ask, make_executed, make_pass, make_proposal,
-    make_ruling,
+    make_answer, make_ask, make_escalation, make_executed, make_pass,
+    make_proposal, make_ruling,
 )
 
 
@@ -488,6 +488,37 @@ def test_answer_is_refused_from_any_role_but_consultant():
     record = make_answer(role="architect")
     errors = schema.validate(record)
     assert _errors_mentioning(errors, "only 'consultant' may write an answer")
+
+
+# ---- escalation (handoffs/2026-09-22-loop-conductor-fixes.md item 3) ------------
+
+
+def test_valid_escalation_validates_clean():
+    assert schema.validate(make_escalation()) == []
+
+
+def test_escalation_requires_a_reason():
+    record = make_escalation()
+    del record["reason"]
+    errors = schema.validate(record)
+    assert _errors_mentioning(errors, "record.reason: required")
+
+
+def test_escalation_reason_is_coordinate_scanned():
+    errors = schema.validate(make_escalation(reason="Happens at (4, 9, -2)."))
+    assert _errors_mentioning(errors, "raw-coordinate pattern")
+
+
+def test_escalation_from_a_non_sole_writer_role_is_refused():
+    record = make_escalation(role="architect")
+    errors = schema.validate(record)
+    assert _errors_mentioning(errors, "only the roster's sole_writer")
+
+
+def test_escalation_rejects_an_unknown_field():
+    record = make_escalation(public_rationale="not a field on this record")
+    errors = schema.validate(record)
+    assert _errors_mentioning(errors, "record.public_rationale: not a field in the escalation schema")
 
 
 # ---- the quartermaster's type vocabulary --------------------------------------

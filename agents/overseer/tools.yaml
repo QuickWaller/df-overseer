@@ -405,6 +405,18 @@ write:
       Deployed 2026-09-21 and dry-run only so far: the first real build of a
       never-built kind needs the user's go-ahead.
 
+  - id: "queue.escalate"
+    status: exists
+    note: >-
+      Added handoffs/2026-09-22-loop-conductor-fixes.md (fix 3). The only
+      way to escalate to the human, per this role's own Escalation section
+      below: a queue record via a real tool call, never free text in a
+      final answer. conductor/cycle.py detects this mechanically (against
+      openclaw's own toolSummary.tools, never by parsing prose) and leaves
+      the fort paused, whether the tripwire is already latched or not.
+      Restricted to the roster's sole_writer the same way queue.rule/
+      queue.executed are (dfmcp/roles.py rule 6, reusing sole_writer_only).
+
   - id: "nobles.appoint"
     status: exists
     note: >-

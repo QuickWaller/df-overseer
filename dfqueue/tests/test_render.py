@@ -15,8 +15,8 @@ from xml.etree import ElementTree as ET
 
 from dfqueue import render
 from dfqueue.tests._helpers import (
-    make_answer, make_ask, make_executed, make_pass, make_proposal,
-    make_ruling,
+    make_answer, make_ask, make_escalation, make_executed, make_pass,
+    make_proposal, make_ruling,
 )
 
 
@@ -156,6 +156,26 @@ def test_public_view_of_executed_carries_only_the_common_allowlisted_fields():
     assert view == {
         "id": "executed-0001", "ts": "2026-09-22T00:00:00+00:00",
         "kind": "executed", "role": "overseer",
+    }
+
+
+def test_to_xml_escalation_is_well_formed():
+    record = make_escalation(id="escalation-0001")
+    xml = render.to_xml(record)
+    root = ET.fromstring(xml)
+    assert root.tag == "escalation"
+    assert root.find("reason").text == record["reason"]
+
+
+def test_public_view_of_escalation_carries_only_the_common_allowlisted_fields():
+    """An escalation's own reason is deliberately NOT allowlisted -- same
+    "allowlist, not denylist" discipline as executed's notes: nothing new
+    leaks to the public feed just because a field was added to the schema."""
+    record = make_escalation(id="escalation-0001", ts="2026-09-22T00:00:00+00:00")
+    view = render.public_view(record)
+    assert view == {
+        "id": "escalation-0001", "ts": "2026-09-22T00:00:00+00:00",
+        "kind": "escalation", "role": "overseer",
     }
     assert "ruling_id" not in view
     assert "actions" not in view

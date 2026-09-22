@@ -545,3 +545,214 @@ class TestAskAnswer:
                 {"question": "A question.", "role": "overseer"},
                 db_path=path, call_dfhack=_ok_call_dfhack, write_lock=asyncio.Lock(),
             )
+
+
+# ==========================================================================
+# queue.overview: fix 1 (handoffs/2026-09-22-loop-conductor-fixes.md) --
+# role-independent, so the conductor (which authenticates as "conductor",
+# never "consultant") can see BOTH pending proposals and open asks in one
+# read, the whole ask/wake/answer/ruling loop through the conductor's own
+# view of the queue.
+# ==========================================================================
+
+
+class TestQueueOverview:
+    async def test_the_full_ask_wake_answer_ruling_loop_through_queue_overview(self, tmp_path):
+        """The handoff's own test requirement: ask, wake, answer, then the
+        ruling going through -- "wake" here means what conductor/triage.py
+        actually wakes on: queue.overview's own asks.count, proven at this
+        (queue_tools) layer since that is where the signal is produced."""
+        path = tmp_path / "queue.sqlite3"
+        _p_text, proposal = await queue_tools.call(
+            queue_tools.QUEUE_PROPOSE, "architect", _propose_args(),
+            db_path=path, call_dfhack=_ok_call_dfhack, write_lock=asyncio.Lock(),
+        )
+        _ask_text, ask = await queue_tools.call(
+            queue_tools.QUEUE_ASK, "overseer",
+            {"question": "Is this hauling-distance claim right?", "proposal_id": proposal["id"]},
+            db_path=path, call_dfhack=_ok_call_dfhack, write_lock=asyncio.Lock(),
+        )
+
+        # ASK: the conductor's own role-independent read sees both halves,
+        # regardless of authenticating as "conductor" -- never "consultant"
+        # or "overseer", which is exactly what queue.pending could not do.
+        _ov_text, overview = await queue_tools.call(
+            queue_tools.QUEUE_OVERVIEW, "conductor", {},
+            db_path=path, call_dfhack=_ok_call_dfhack, write_lock=asyncio.Lock(),
+        )
+        assert overview["proposals"]["count"] == 1
+        assert overview["proposals"]["proposal_ids"] == [proposal["id"]]
+        # WAKE: this is the signal conductor/cycle.py turns into
+        # Signals.open_ask_for_consultant -- non-zero, so the Consultant
+        # would wake.
+        assert overview["asks"]["count"] == 1
+        assert overview["asks"]["ask_ids"] == [ask["id"]]
+
+        # The ruling is blocked while this fact-check is open (same
+        # invariant TestAskAnswer's own fact-check test proves; re-checked
+        # here because queue.overview's own read must agree with it).
+        with pytest.raises(queue_tools.QueueToolError, match="open fact-check"):
+            await queue_tools.call(
+                queue_tools.QUEUE_RULE, "overseer",
+                {
+                    "proposal_id": proposal["id"], "decision": "accept",
+                    "reason": "Looks right.", "public_rationale": "Approved.",
+                },
+                db_path=path, call_dfhack=_ok_call_dfhack, write_lock=asyncio.Lock(),
+            )
+
+        # ANSWER.
+        await queue_tools.call(
+            queue_tools.QUEUE_ANSWER, "consultant",
+            {"ask_id": ask["id"], "answer": "Confirmed against the live layout."},
+            db_path=path, call_dfhack=_ok_call_dfhack, write_lock=asyncio.Lock(),
+        )
+
+        # queue.overview now reports no open asks -- the Consultant would
+        # not be woken again for this one.
+        _ov_text2, overview2 = await queue_tools.call(
+            queue_tools.QUEUE_OVERVIEW, "conductor", {},
+            db_path=path, call_dfhack=_ok_call_dfhack, write_lock=asyncio.Lock(),
+        )
+        assert overview2["asks"]["count"] == 0
+        assert overview2["proposals"]["count"] == 1  # the proposal is still pending
+
+        # RULING now goes through.
+        _r_text, ruling = await queue_tools.call(
+            queue_tools.QUEUE_RULE, "overseer",
+            {
+                "proposal_id": proposal["id"], "decision": "accept",
+                "reason": "Looks right.", "public_rationale": "Approved.",
+            },
+            db_path=path, call_dfhack=_ok_call_dfhack, write_lock=asyncio.Lock(),
+        )
+        assert ruling["decision"] == "accept"
+
+        # And the proposal is no longer pending, through the same read.
+        _ov_text3, overview3 = await queue_tools.call(
+            queue_tools.QUEUE_OVERVIEW, "conductor", {},
+            db_path=path, call_dfhack=_ok_call_dfhack, write_lock=asyncio.Lock(),
+        )
+        assert overview3["proposals"]["count"] == 0
+
+    async def test_overview_is_empty_on_a_fresh_queue(self, tmp_path):
+        path = tmp_path / "queue.sqlite3"
+        _text, overview = await queue_tools.call(
+            queue_tools.QUEUE_OVERVIEW, "conductor", {},
+            db_path=path, call_dfhack=_ok_call_dfhack, write_lock=asyncio.Lock(),
+        )
+        assert overview == {
+            "proposals": {"count": 0, "proposal_ids": []},
+            "asks": {"count": 0, "ask_ids": []},
+        }
+
+    async def test_overview_ignores_the_caller_role_entirely(self, tmp_path):
+        """Unlike queue.pending, the role argument changes nothing about
+        what this tool returns -- proven by calling it as a role that is
+        not even "conductor" and getting the identical structured result."""
+        path = tmp_path / "queue.sqlite3"
+        await queue_tools.call(
+            queue_tools.QUEUE_PROPOSE, "architect", _propose_args(),
+            db_path=path, call_dfhack=_ok_call_dfhack, write_lock=asyncio.Lock(),
+        )
+        _t1, as_conductor = await queue_tools.call(
+            queue_tools.QUEUE_OVERVIEW, "conductor", {},
+            db_path=path, call_dfhack=_ok_call_dfhack, write_lock=asyncio.Lock(),
+        )
+        _t2, as_someone_else = await queue_tools.call(
+            queue_tools.QUEUE_OVERVIEW, "architect", {},
+            db_path=path, call_dfhack=_ok_call_dfhack, write_lock=asyncio.Lock(),
+        )
+        assert as_conductor == as_someone_else
+
+    async def test_overview_refuses_unexpected_arguments(self, tmp_path):
+        path = tmp_path / "queue.sqlite3"
+        with pytest.raises(queue_tools.QueueToolError, match="unexpected argument"):
+            await queue_tools.call(
+                queue_tools.QUEUE_OVERVIEW, "conductor", {"role": "consultant"},
+                db_path=path, call_dfhack=_ok_call_dfhack, write_lock=asyncio.Lock(),
+            )
+
+    async def test_overview_refuses_a_non_positive_limit(self, tmp_path):
+        path = tmp_path / "queue.sqlite3"
+        with pytest.raises(queue_tools.QueueToolError, match="positive integer"):
+            await queue_tools.call(
+                queue_tools.QUEUE_OVERVIEW, "conductor", {"limit": 0},
+                db_path=path, call_dfhack=_ok_call_dfhack, write_lock=asyncio.Lock(),
+            )
+
+    async def test_overview_against_an_unwritable_directory_is_refused_not_a_crash(self, tmp_path):
+        blocking_file = tmp_path / "not-a-directory"
+        blocking_file.write_text("x", encoding="utf-8")
+        bad_db_path = blocking_file / "sub" / "queue.sqlite3"
+
+        with pytest.raises(queue_tools.QueueToolError, match="queue database is unavailable"):
+            await queue_tools.call(
+                queue_tools.QUEUE_OVERVIEW, "conductor", {},
+                db_path=bad_db_path, call_dfhack=_ok_call_dfhack, write_lock=asyncio.Lock(),
+            )
+
+
+# ==========================================================================
+# queue.escalate: fix 3 (handoffs/2026-09-22-loop-conductor-fixes.md) --
+# how the Overseer alerts the human, mechanically, via a real queue record.
+# ==========================================================================
+
+
+class TestQueueEscalate:
+    async def test_the_overseer_can_escalate_with_a_reason(self, tmp_path):
+        path = tmp_path / "queue.sqlite3"
+        text, escalation = await queue_tools.call(
+            queue_tools.QUEUE_ESCALATE, "overseer",
+            {"reason": "An aquifer breach would be required; no playbook covers this."},
+            db_path=path, call_dfhack=_ok_call_dfhack, write_lock=asyncio.Lock(),
+        )
+        assert "<escalation" in text
+        assert escalation["kind"] == "escalation"
+        assert escalation["role"] == "overseer"
+        assert escalation["reason"] == "An aquifer breach would be required; no playbook covers this."
+
+    async def test_escalate_is_refused_for_a_role_other_than_the_sole_writer(self, tmp_path):
+        """dfqueue.schema.validate's own role==sole_writer() check for
+        ESCALATION -- the second, write-time layer, independent of
+        dfmcp.roles's load-time sole_writer_only check (dfmcp/tests/
+        test_roles.py covers that layer)."""
+        path = tmp_path / "queue.sqlite3"
+        with pytest.raises(queue_tools.QueueToolError, match="sole_writer"):
+            await queue_tools.call(
+                queue_tools.QUEUE_ESCALATE, "architect",
+                {"reason": "Trying to escalate without being the Overseer."},
+                db_path=path, call_dfhack=_ok_call_dfhack, write_lock=asyncio.Lock(),
+            )
+
+    async def test_escalate_refuses_an_empty_reason(self, tmp_path):
+        path = tmp_path / "queue.sqlite3"
+        with pytest.raises(queue_tools.QueueToolError, match="non-empty string"):
+            await queue_tools.call(
+                queue_tools.QUEUE_ESCALATE, "overseer", {"reason": ""},
+                db_path=path, call_dfhack=_ok_call_dfhack, write_lock=asyncio.Lock(),
+            )
+
+    async def test_escalate_refuses_unexpected_arguments(self, tmp_path):
+        path = tmp_path / "queue.sqlite3"
+        with pytest.raises(queue_tools.QueueToolError, match="unexpected argument"):
+            await queue_tools.call(
+                queue_tools.QUEUE_ESCALATE, "overseer",
+                {"reason": "x", "public_rationale": "not a field on this record"},
+                db_path=path, call_dfhack=_ok_call_dfhack, write_lock=asyncio.Lock(),
+            )
+
+    async def test_an_escalation_does_not_appear_in_queue_pending_or_overview(self, tmp_path):
+        """An escalation is not a proposal and not an ask -- it must not
+        pollute either count queue.pending/queue.overview report."""
+        path = tmp_path / "queue.sqlite3"
+        await queue_tools.call(
+            queue_tools.QUEUE_ESCALATE, "overseer", {"reason": "x"},
+            db_path=path, call_dfhack=_ok_call_dfhack, write_lock=asyncio.Lock(),
+        )
+        _text, overview = await queue_tools.call(
+            queue_tools.QUEUE_OVERVIEW, "conductor", {},
+            db_path=path, call_dfhack=_ok_call_dfhack, write_lock=asyncio.Lock(),
+        )
+        assert overview["proposals"]["count"] == 0
+        assert overview["asks"]["count"] == 0
