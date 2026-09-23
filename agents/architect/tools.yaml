@@ -218,6 +218,13 @@ read:
     status: exists
     note: >-
       Same handoff. Read-only both-sides check of one position.
+  - id: "nobles.requirements"
+    status: exists
+    note: >-
+      Added handoffs/2026-09-23-position-requirements-check.md. Per position,
+      which of its own room-value and furniture-count requirement fields are
+      met, not met, or cannot be determined -- the question this fort's
+      Office siting needs an Architect to weigh before proposing a room.
 
   - id: "zone.list-kinds"
     status: exists

@@ -257,6 +257,15 @@ read:
     status: exists
     note: >-
       Same handoff. Read-only both-sides check of one position.
+  - id: "nobles.requirements"
+    status: exists
+    note: >-
+      Added handoffs/2026-09-23-position-requirements-check.md. Per position,
+      which room-value and furniture-count requirement fields are met, not
+      met, or cannot be determined. The office post-mortem's capability
+      half: this is what should have caught the Manager's non-working
+      Office before two days were spent investigating why no order
+      validated (nobles.verify alone never read required_office at all).
 
   - id: "zone.list-kinds"
     status: exists

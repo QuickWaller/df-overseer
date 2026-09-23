@@ -94,6 +94,14 @@ read:
     status: exists
     note: >-
       Same handoff. Read-only both-sides check of one position.
+  - id: "nobles.requirements"
+    status: exists
+    note: >-
+      Added handoffs/2026-09-23-position-requirements-check.md. Per position,
+      which room-value and furniture-count requirement fields are met, not
+      met, or cannot be determined -- a fact-checking question ("is the
+      Manager's office actually working") this role can now answer from a
+      real read instead of a prior.
 
   - id: "web.search"
     status: exists

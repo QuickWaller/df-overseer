@@ -20,6 +20,8 @@
 -- an error, never a default):
 --   list                                  every position of the fortress entity
 --   verify POSITION_CODE                  read-only consistency check, both sides
+--   requirements POSITION_CODE            read-only: which of this position's
+--                                          own requirement fields are met
 --   appoint POSITION_CODE UNIT_ID [DRY_RUN] [VERSION]
 --   unappoint POSITION_CODE [DRY_RUN] [VERSION]
 --
@@ -32,6 +34,47 @@
 -- (flags.ELECTED, requires_population with flags.HAS_MET_POP_REQ, the
 -- assignments already held) or from the unit (alive, citizen, adult, has a
 -- historical figure). All loops are bounded.
+--
+-- REQUIREMENTS (handoffs/2026-09-23-position-requirements-check.md). `verify`
+-- answers "is this appointment internally consistent" (histfig links, vector
+-- index, getNoblePositions); it never reads a single requirement field, which
+-- is exactly how a Manager with no working Office read as "set up". This is
+-- the other question, kept as its own verb rather than folded into `verify`,
+-- because a caller may well want the appointment check without the room
+-- check or vice versa, and conflating them would hide which one failed.
+--
+-- Reads every requirement field research/2026-09-23-room-and-zone-requirements.md
+-- found on df.entity_position: the four room-value fields (required_office,
+-- _bedroom, _dining, _tomb) and the four furniture-count fields
+-- (required_boxes, _cabinets, _racks, _stands). No per-position branch exists
+-- anywhere in this check: ROOM_VALUE_FIELDS and FURNITURE_FIELDS below are
+-- plain data tables, so a position this fort has never appointed is read by
+-- the exact same loop.
+--
+-- ROOM VALUE HAS NO NUMBER TO READ. DFHack exposes no numeric room value
+-- anywhere (confirmed live in the research pass above: dfhack.buildings has
+-- exactly one function with "room"/"quality"/"value" in its name,
+-- getRoomDescription, and it returns only a quality-word string or empty).
+-- So a room-value requirement's status is one of three, never a number
+-- compared against one:
+--   met         at least one zone of the needed kind, owned by the holder,
+--               read back a non-empty quality word.
+--   not_met     either the holder owns no zone of that kind at all (a
+--               positive requirement definitely fails with no room), or
+--               every owned zone's read succeeded and came back empty (the
+--               strongest available evidence of no value, not proof of an
+--               exact number -- see the .lua's own room_value_status).
+--   cannot_tell the position is vacant, its holder cannot be resolved to a
+--               live unit, or a getRoomDescription read itself failed.
+-- cannot_tell is never collapsed into not_met or met: a failed read reports
+-- itself as a failed read (read_failures, dfhack.printerr), same discipline
+-- df-overseer-threat.lua's class_flags uses.
+--
+-- FURNITURE COUNTS HAVE NO CHECK AT ALL. required_boxes/_cabinets/_racks/
+-- _stands exist and are read, but nothing in DFHack's API or this game's own
+-- exposed data says whether they are satisfied (research doc, "What could
+-- not be verified"). Every one of these always reports cannot_tell: this
+-- project does not invent a check it cannot back with a real read.
 
 local json = require('json')
 local textutil = reqscript('df-overseer-textutil')
@@ -214,6 +257,174 @@ local function verify(code)
     out[#out + 1] = row
   end
   return {position = code, entity_id = e.id, consistent = consistent, assignments = out}
+end
+
+-- ---------------------------------------------------------------------------
+-- requirements: data-driven read of a position's own requirement fields.
+-- See the header for what each status means and why. DATA ONLY below: the
+-- field name and the zone kind it asks a value from. df-overseer-zone.lua's
+-- own ZONE_POLICY carries the same position_field choices for these four
+-- kinds; this table is not read through that file's quickfort-upvalue reach
+-- (deliberately -- civzone_type is the game's own stable engine enum, not
+-- something quickfort's own zone table defines, so resolving a kind name to
+-- a type id here does not need that file's more fragile path at all).
+-- ---------------------------------------------------------------------------
+
+local ROOM_VALUE_FIELDS = {
+  {field = "required_office", kind = "Office"},
+  {field = "required_bedroom", kind = "Bedroom"},
+  {field = "required_dining", kind = "DiningHall"},
+  {field = "required_tomb", kind = "Tomb"},
+}
+
+local FURNITURE_FIELDS = {
+  "required_boxes", "required_cabinets", "required_racks", "required_stands",
+}
+
+local MAX_ZONES = 5000
+
+-- Zones of one civzone_type kind, owned by unit_id (assigned_unit_id or the
+-- game's own getOwner agreeing -- same two owner mechanisms
+-- df-overseer-zone.lua's apply_owner/check_owner read back). Bounded over
+-- the fortress's own zone vector, same cap df-overseer-zone.lua's
+-- max_zone_id uses. Returns a list (possibly empty) or nil, err.
+local function owned_zones_of_kind(kind_name, unit_id)
+  local type_id = df.civzone_type[kind_name]
+  if type_id == nil then
+    return nil, "df.civzone_type has no member named " .. tostring(kind_name)
+  end
+  local ok_v, zv = pcall(function() return df.global.world.buildings.other.ACTIVITY_ZONE end)
+  if not ok_v or not zv then
+    return nil, "could not read the fortress's own zone vector: " .. tostring(zv)
+  end
+  local out = {}
+  for i = 0, math.min(#zv, MAX_ZONES) - 1 do
+    local z = zv[i]
+    if z.type == type_id then
+      local ok_o, owner = pcall(dfhack.buildings.getOwner, z)
+      local owner_id = (ok_o and owner) and owner.id or nil
+      if z.assigned_unit_id == unit_id or owner_id == unit_id then
+        local ok_d, desc = pcall(dfhack.buildings.getRoomDescription, z)
+        table.insert(out, {
+          id = z.id,
+          description_ok = ok_d,
+          description = (ok_d and desc ~= "") and desc or NULL,
+          description_error = (not ok_d) and tostring(desc) or nil,
+        })
+      end
+    end
+  end
+  return out
+end
+
+-- One room-value requirement's status. `holder_uid` nil plus `holder_reason`
+-- set means "no live unit to evaluate against" (vacant, unresolvable
+-- histfig, or a histfig with no unit) -- always cannot_tell, never a guess.
+local function room_value_status(kind, field, required, holder_uid, holder_reason, read_failures)
+  if not required or required <= 0 then
+    return {position_field = field, required = required or 0, status = "not_required"}
+  end
+  if holder_uid == nil then
+    return {position_field = field, required = required, status = "cannot_tell", detail = holder_reason}
+  end
+  local zones, zerr = owned_zones_of_kind(kind, holder_uid)
+  if not zones then
+    table.insert(read_failures, kind .. ": " .. tostring(zerr))
+    return {position_field = field, required = required, status = "cannot_tell", detail = zerr}
+  end
+  if #zones == 0 then
+    return {position_field = field, required = required, status = "not_met",
+      detail = "holder owns no " .. kind .. " zone; a positive room value needs an owned room of this kind"}
+  end
+  local any_nonempty, any_read_ok, any_read_failed = false, false, false
+  local zone_ids = {}
+  for _, z in ipairs(zones) do
+    table.insert(zone_ids, z.id)
+    if z.description_ok then
+      any_read_ok = true
+      if z.description ~= NULL then any_nonempty = true end
+    else
+      any_read_failed = true
+      table.insert(read_failures, kind .. " zone " .. z.id .. ": getRoomDescription failed: "
+        .. tostring(z.description_error))
+    end
+  end
+  if any_read_failed then
+    pcall(function()
+      dfhack.printerr(string.format(
+        "df-overseer-nobles: room_value_status read failure kind=%s holder=%s zones=%s",
+        kind, tostring(holder_uid), table.concat(zone_ids, ",")))
+    end)
+  end
+  if any_nonempty then
+    return {position_field = field, required = required, status = "met", zone_ids = zone_ids,
+      detail = "at least one owned zone reports a nonempty quality word"}
+  end
+  if any_read_ok then
+    return {position_field = field, required = required, status = "not_met", zone_ids = zone_ids,
+      detail = "every owned zone's getRoomDescription read succeeded and returned empty; the "
+        .. "strongest evidence available that this room's value has not cleared the lowest "
+        .. "quality tier, not proof of an exact number (no numeric room value is exposed anywhere "
+        .. "this project can read; research/2026-09-23-room-and-zone-requirements.md Q3/Q6)"}
+  end
+  return {position_field = field, required = required, status = "cannot_tell", zone_ids = zone_ids,
+    detail = "every owned zone's getRoomDescription read failed; see read_failures"}
+end
+
+local function furniture_status(field, required)
+  if not required or required <= 0 then
+    return {required = required or 0, status = "not_required"}
+  end
+  return {required = required, status = "cannot_tell",
+    detail = "DFHack exposes no furniture-count-per-position check; only the required count is "
+      .. "read (research/2026-09-23-room-and-zone-requirements.md Q6)"}
+end
+
+-- Every requirement field of one position code, per assignment slot (a code
+-- can have more than one). No per-position branch: the two field tables
+-- above are the only place a specific field name appears.
+local function requirements(code)
+  local e, err = entity()
+  if not e then return {error = err} end
+  local items = assignments_for(e, code)
+  if #items == 0 then
+    return {error = "unknown position code " .. tostring(code) .. "; known: " .. table.concat(known_codes(e), ", ")}
+  end
+  local read_failures = {}
+  local rows = {}
+  for _, item in ipairs(items) do
+    local a, p = item.a, item.p
+    local vacant = a.histfig < 0
+    local holder, herr = holder_of(a)
+    local holder_uid, holder_reason
+    if vacant then
+      holder_reason = "position is vacant; no holder to own a room"
+    elseif holder == NULL then
+      holder_reason = herr
+    elseif type(holder) == "number" and holder >= 0 then
+      holder_uid = holder
+    else
+      holder_reason = "assignment's historical figure has no live unit (unit_id " .. tostring(holder) .. ")"
+    end
+
+    local room_value = {}
+    for _, rvf in ipairs(ROOM_VALUE_FIELDS) do
+      room_value[rvf.kind] = room_value_status(rvf.kind, rvf.field, p[rvf.field], holder_uid, holder_reason, read_failures)
+    end
+    local furniture = {}
+    for _, ff in ipairs(FURNITURE_FIELDS) do
+      furniture[ff] = furniture_status(ff, p[ff])
+    end
+    rows[#rows + 1] = {
+      assignment_id = a.id,
+      assignment_index = item.idx,
+      vacant = vacant,
+      holder_unit_id = holder_uid or NULL,
+      room_value = room_value,
+      furniture = furniture,
+    }
+  end
+  return {position = code, entity_id = e.id, assignments = rows, read_failures = read_failures}
 end
 
 local function is_dry(arg)
@@ -401,6 +612,12 @@ elseif cmd == "verify" then
   else
     emit(verify(args[2]))
   end
+elseif cmd == "requirements" then
+  if not args[2] then
+    print("usage: df-overseer-nobles requirements POSITION_CODE")
+  else
+    emit(requirements(args[2]))
+  end
 elseif cmd == "appoint" then
   if not (args[2] and args[3]) then
     print("usage: df-overseer-nobles appoint POSITION_CODE UNIT_ID [DRY_RUN] [VERSION]")
@@ -416,6 +633,7 @@ elseif cmd == "unappoint" then
 else
   print("usage: df-overseer-nobles list")
   print("usage: df-overseer-nobles verify POSITION_CODE")
+  print("usage: df-overseer-nobles requirements POSITION_CODE")
   print("usage: df-overseer-nobles appoint POSITION_CODE UNIT_ID [DRY_RUN] [VERSION]")
   print("usage: df-overseer-nobles unappoint POSITION_CODE [DRY_RUN] [VERSION]")
 end

@@ -115,4 +115,112 @@ run, and states plainly what the check still cannot see.
 
 ## Result
 
-(to be filled by the stream)
+**Built, offline only. Nothing deployed, nothing pushed, no VM touched, fort
+untouched (this stream ran entirely against the repo, never against VM 103).**
+
+**1. Position requirements check: `nobles.requirements POSITION_CODE`, a new
+verb, not folded into `verify`** (kept separate because a caller may want the
+appointment check without the room check or vice versa, and conflating them
+would hide which one failed -- `verify` still never reads a single
+requirement field). Data-driven over two small tables
+(`ROOM_VALUE_FIELDS`, `FURNITURE_FIELDS` in `df-overseer-nobles.lua`): no
+per-position branch anywhere, so a position this fort has never appointed is
+read by the exact same loop. Per assignment slot of the code:
+- Room-value fields (`required_office`/`_bedroom`/`_dining`/`_tomb`): three
+  states, `met` / `not_met` / `cannot_tell`, never a number (see item 2).
+  `cannot_tell` covers a vacant position, an unresolvable histfig, or a
+  failed `getRoomDescription` read; it is never collapsed into `not_met`.
+  Zone kind resolution uses `df.civzone_type[kind]` directly, not
+  `zone.lua`'s quickfort-upvalue reach: civzone_type is the game's own
+  stable engine enum, so this check does not depend on that file's more
+  fragile path at all.
+- Furniture-count fields (`required_boxes`/`_cabinets`/`_racks`/`_stands`):
+  read and reported, always `cannot_tell` -- nothing in DFHack's API or this
+  game's own exposed data says whether they are satisfied
+  (research doc, "What could not be verified"). This project does not
+  invent a check it cannot back with a real read.
+- `read_failures` plus `dfhack.printerr` on every failed
+  `getRoomDescription`/zone-vector read, same discipline
+  `df-overseer-threat.lua`'s `class_flags` uses: a pcall-guarded default is
+  never silently indistinguishable from a genuine negative.
+
+**2. The honest answer about room value, stated plainly.** DFHack exposes no
+numeric room value anywhere (research, confirmed live 2026-09-23:
+`dfhack.buildings` has exactly one function with "room"/"quality"/"value" in
+its name, `getRoomDescription`, returning only a quality-word string or
+empty). No number is invented anywhere in this check. The proxy: find every
+zone of the requirement's own kind owned by the position's holder
+(`assigned_unit_id` or the game's own `getOwner` agreeing); a nonempty
+`getRoomDescription` on any of them is `met`; an owned zone whose read
+succeeded and came back empty, or no owned zone at all, is `not_met` (a
+positive requirement with no room is a real, provable failure, not a guess);
+any read failure or unresolvable holder is `cannot_tell`.
+
+**3. `zone.place`'s real path is now loud about an empty read.** A
+room-value kind (`ZONE_POLICY[token].position_field` set) whose real
+placement read back an empty or failed `getRoomDescription` now carries
+`read_back.room_value_warning` naming what that does and does not prove,
+instead of a bare `null` a human already misread once on this fort's real
+Office zones (2026-09-23-office-and-first-real-build). Data-driven off
+`position_field`, no per-kind branch.
+
+**Scope followed exactly**: only `df-overseer-nobles.lua`,
+`df-overseer-zone.lua`, `TOOLS.yaml` and the architect/consultant/overseer
+`tools.yaml` allowlists were touched. `nobles.requirements` was granted to
+the same three roles that already hold `nobles.list`/`nobles.verify`
+(architect, consultant, overseer); quartermaster and conductor were left
+alone, matching their existing tools.yaml (neither holds any `nobles.*` or
+`zone.*` grant today). Verified with a Python-side registry/roster check
+(not a live DFHack read, since none was permitted): `nobles.requirements`
+resolves to `nobles__requirements` and appears in exactly those three
+roles' tool lists, +1 tool each (architect 38->39, consultant 21->22,
+overseer 64->65 before/after this stream's own edits, checked by a
+`git stash` round-trip on just the touched files), never in
+quartermaster's or conductor's.
+
+**What this check still cannot see, stated as plainly as the brief asked**:
+it can never prove an exact room value or compare against the required
+number; `met`/`not_met` rest entirely on whether a quality word is present
+at all, which the research pass found is the only room-value-adjacent
+signal DFHack exposes on this install. It cannot check whether the
+furniture-count fields are satisfied by anything at all -- those four
+fields are read, never verdicted. It does not weigh in on the
+population-gate half of a position's requirements (`requires_population`/
+`HAS_MET_POP_REQ`): that is already reported by `nobles.list` and
+`zone.lua`'s own `requirements_for`, and adding it here would have
+duplicated an existing read rather than closing a gap.
+
+**MANAGER on this fort, worked through by hand against the research
+pass's own live table (Q4: `required_office=1`, holder unit 345, per
+Q3: zone 11's `getRoomDescription` read empty even with the Chair built,
+because the Chair sits outside both zones' own footprints)**: vacant=false,
+holder_uid=345, `owned_zones_of_kind("Office", 345)` finds zone 11 only
+(zone 10 is unowned), its read succeeds and returns empty, so `Office`
+resolves to `not_met`. This satisfies "Done means": the office requirement
+reports unmet, never met. **The live check itself is owed** (this stream
+was offline-only and did not run against VM 103); the deploy a later
+session should run is `df-overseer-nobles.lua requirements MANAGER`
+against the paused fort, expecting exactly `Office: not_met` given the
+zone-11-only, empty-read state the research pass already confirmed live.
+
+**Register lines owed** (not written here per the `handoffs/` rule; the
+orchestrating session owns `Working.md`/`decisions/DECISIONS.md`/`memory/`/
+`handoffs/INDEX.md`):
+- `Working.md`: this stream is done and offline-only; the owed next step is
+  the live deploy + `nobles.requirements MANAGER` check named above.
+- `decisions/DECISIONS.md`: a row for the decision to keep `requirements`
+  a separate verb from `verify` (and why), and the decision to report
+  furniture-count fields as permanently `cannot_tell` rather than inventing
+  a proxy for them.
+- Tool-count figures in `CLAUDE.md`'s status paragraph (overseer 63,
+  architect 37, quartermaster 23, consultant 21, conductor 15) are already
+  one stream stale as of this pass -- before this stream's own edits this
+  worktree already measured architect 38, consultant 21->21 (unchanged,
+  see below), overseer 64, quartermaster 24, conductor 15, i.e. the cited
+  63/37/21/15 figures for overseer/architect/consultant/conductor were
+  already off by the room-and-zone-requirements/conductor-game-tick
+  streams merged in immediately before this one. After this stream:
+  architect 39, consultant 22, overseer 65, quartermaster 24 (unchanged),
+  conductor 15 (unchanged). Worth a memory-audit note per CLAUDE.md's own
+  "if docs and repo state disagree, flag it" rule; not corrected here since
+  `CLAUDE.md` itself is out of this stream's touched-surfaces scope.

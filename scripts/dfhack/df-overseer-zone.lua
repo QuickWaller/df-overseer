@@ -84,6 +84,16 @@
 -- function; only dfhack.buildings.getRoomDescription, which returns the
 -- quality word as the room's screen shows it): the result says so and
 -- carries the external, older-version wiki account marked unverified here.
+-- ADDED 2026-09-23 (handoffs/2026-09-23-position-requirements-check.md):
+-- a real placement's own read_back now carries a loud
+-- `room_value_warning` when the kind is a room-value kind
+-- (ZONE_POLICY[token].position_field set) and the read came back empty or
+-- failed, instead of a bare null a human can misread as "unreadable"
+-- rather than "empty" (exactly what happened on this fort's real Office
+-- placements). Whether that requirement is actually met, per position and
+-- per holder, is df-overseer-nobles.lua's `requirements` verb, not this
+-- file's job: this warning only says the placement's own read came back
+-- empty, never whether any specific position's requirement is satisfied.
 --
 -- BLUEPRINT (rectangle kinds and the water body): generated in code, mode
 -- `#zone`, the kind's own key in every cell, written to dfhack-config/
@@ -1194,6 +1204,21 @@ function place_zone(kind_name, w, h, level, near, rank, radius_tiles, dry_run, o
   if zone then
     local ok_d, desc = pcall(dfhack.buildings.getRoomDescription, zone)
     result.read_back.room_description = (ok_d and desc ~= "") and desc or NULL
+    -- Data-driven, not a per-kind branch: p.position_field (ZONE_POLICY) is
+    -- the only thing that says this kind's zones carry a room value a
+    -- position reads from. handoffs/2026-09-23-position-requirements-check.md
+    -- item 3: this read used to leave a bare null for a human to misread as
+    -- "the tool can't see room value" (2026-09-23-office-and-first-real-build).
+    -- Say it in the result instead of leaving a null to be misread.
+    if p.position_field and (not ok_d or desc == "") then
+      result.read_back.room_value_warning = string.format(
+        "%s is a position_field == %s kind: at least one position reads its required room value "
+          .. "from a zone like this. This placement's own getRoomDescription read %s. An empty or "
+          .. "failed read is strong evidence this zone is not yet counting any value toward that "
+          .. "requirement, not proof of an exact number -- see nobles.requirements for the "
+          .. "per-position check and research/2026-09-23-room-and-zone-requirements.md Q3.",
+        k.token, p.position_field, ok_d and "empty (no quality word)" or ("failed: " .. tostring(desc)))
+    end
     if plan then result.owner_result = apply_owner(zone, plan) end
   elseif plan then
     result.owner_result = {by = plan.by, applied = false, error = "the zone could not be found to assign"}
