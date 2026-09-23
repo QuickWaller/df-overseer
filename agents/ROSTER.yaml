@@ -6,15 +6,25 @@
 # Design: docs/AGENT-ARCHITECTURE.md (§3 roster, §11 modularity).
 # Decisions: decisions/DECISIONS.md 2026-09-12 rows.
 #
-# STATUS 2026-09-16: the MCP server these allowlists reference is live on
-# VM 103 (dfmcp-server.service), and two of the three enabled roles have
-# actually run against it: architect and overseer, each as a one-shot
-# openclaw `agent exec` on VM 106, not as a resident service. architect
-# wrote the first real queue proposal (proposal-0001, 2026-09-15) and
-# overseer ruled on it (ruling-0001, accepted, 2026-09-16). consultant has
-# not yet made a real call. No role runs continuously; this file still
-# describes a roster, not a running loop. → decisions/DECISIONS.md
-# 2026-09-14 to 2026-09-16 rows.
+# STATUS 2026-09-16 (original note, kept for the record): the MCP server
+# these allowlists reference is live on VM 103 (dfmcp-server.service), and
+# two of the three then-enabled roles have actually run against it:
+# architect and overseer, each as a one-shot openclaw `agent exec` on VM
+# 106, not as a resident service. architect wrote the first real queue
+# proposal (proposal-0001, 2026-09-15) and overseer ruled on it
+# (ruling-0001, accepted, 2026-09-16). consultant has not yet made a real
+# call. No role runs continuously; this file still describes a roster, not
+# a running loop. → decisions/DECISIONS.md 2026-09-14 to 2026-09-16 rows.
+#
+# UPDATED 2026-09-23: quartermaster and conductor are both now enabled too
+# (see their own entries below). The conductor service exists on VM 106,
+# installed and Docker-capable, but has never run as a live systemd
+# service -- only a manual, foreground `--dry-run --once`. Whether
+# quartermaster or consultant has ever run a real `agent exec` call (as
+# opposed to being pinned, validated and probed live against the MCP
+# server) is UNKNOWN as of this pass -- no run record for either was found.
+# So "no role runs continuously; this file still describes a roster, not a
+# running loop" is still true today, unchanged since 2026-09-16.
 
 schema_version: 1
 fort: Uniboslan            # "Ragwind", VM 103. One roster per fort.

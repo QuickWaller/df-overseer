@@ -9,9 +9,23 @@ build order is `handoffs/2026-09-14-proposal-queue.md`). **UPDATED
 exposes `queue.propose`/`pass`/`rule`/`pending` as real MCP tools, deployed on
 VM 103 since 2026-09-15; the architect has written a real proposal through it
 (`proposal-0001`) and the Overseer has ruled on it (`ruling-0001`, accepted,
-2026-09-16). **Still not built: the publisher and the feed page** (§8's steps
-2 and 3) — no model call happens on a schedule, and nothing publishes to a
-public page yet.
+2026-09-16). **UPDATED 2026-09-22, for the agent loop MVP
+(`handoffs/2026-09-22-loop-*.md`):** `queue.ask`/`queue.answer` (the
+one-ask-one-answer Consultant channel), `queue.grade` (conductor-only, runs
+the grader over MCP since the queue database and the conductor live on
+different hosts), `queue.overview` (conductor-only, role-independent read
+of both pending proposals and open asks) and `queue.escalate`
+(Overseer-only, the mechanical escalation-to-human record) are all built,
+deployed and live-verified (`evals/live/2026-09-22-loop-mvp-deploy/`).
+`proposal-0001` was **voided** (not graded) during that deploy, since its
+1200-tick prediction window elapses in well under a minute at the fort's
+real 100 FPS cap; grading it would record wall-clock latency, not a
+verdict (see "What was graded" below). The Quartermaster role is now
+enabled and can call `queue.propose`/`queue.pass`/`queue.ask` too. **Still
+not built: the publisher and the feed page** (§8's steps 2 and 3) — no
+model call happens on a schedule (the conductor exists and can trigger one,
+but has never run as a live service, only a manual `--dry-run`), and
+nothing publishes to a public page yet.
 
 **Package name is `dfqueue`, never `queue`.** A local `queue/` directory
 would shadow Python's own stdlib `queue` module for anything run from the

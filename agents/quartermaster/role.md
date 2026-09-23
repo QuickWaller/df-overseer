@@ -6,10 +6,14 @@
 **Enabled for the agent-loop MVP** (user's call, 2026-09-22,
 `handoffs/2026-09-22-loop-queue-quartermaster.md`): food, drink, work
 orders and farms are where this fort actually needs decisions, and the
-Architect covers only placement. **`agents/ROSTER.yaml` still says
-`enabled: false`** — flipping it is the orchestrator's job at merge, not
-this stream's file, so this charter and its allowlist take effect only
-once that flip happens.
+Architect covers only placement. `agents/ROSTER.yaml` was flipped to
+`enabled: true` at merge the same day. This role's tool list is deployed
+and live-verified (**23 tools as of 2026-09-23**, `evals/live/2026-09-23-attention-deploy/`),
+including `orders.check-duplicate` and `ledger.read`; its openclaw config
+is pinned and probed live against the real MCP server (tool count matches
+exactly), but **unknown** whether it has ever actually run a real
+`agent exec` call -- no proposal from this role has landed in the queue,
+and no run record for it was found in the sources this pass read.
 
 ## Owns
 

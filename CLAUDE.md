@@ -5,37 +5,59 @@ story without you. See **[docs/PURPOSE.md](docs/PURPOSE.md)** for what this is
 and why, and **[docs/MEMORY-ARCHITECTURE.md](docs/MEMORY-ARCHITECTURE.md)** for the overseer's memory and
 learning architecture.
 
-> **Status, 2026-09-21.** Current work and next steps: `Working.md` ("START
+> **Status, 2026-09-23.** Current work and next steps: `Working.md` ("START
 > HERE"). History: `decisions/DECISIONS.md`, `working-archive/`, `evals/live/`.
 > Game knowledge (crop and water rules the agents should use) goes in
 > `doctrine/seed.yaml`, not the register.
 >
-> - **Current state, as last recorded 2026-09-21 (fort re-read live at the deploy).**
->   Uniboslan is paused at year 31, tick 106974, 22 alive and 1 dead, with
->   **MANAGER appointed (unit 345)** by the new `nobles` tool; the queued manager
->   orders still do not run, and the leading cause (the game's position data and
->   the user's play experience agree) is that the Manager needs an **Office**,
->   which the fort lacks (no zones at all). The 2026-09-21 batch is deployed and
->   live-verified on VM 103: role tool lists **architect 34, overseer 57,
->   consultant 14**, including the generic `building` tool (dry runs only: no
->   never-built kind has been built for real), `gotchas.*`, the labor graph join,
->   `nobles.*` and the generalised `zone` tool, on top of the six-deduction
->   `stocks.availability`, `doctrine.get` and the `series.*`
->   history tools (the fort is sampled once per game day into `dfseries`).
->   Open next, in order: redeploy the labor-join shape fix, place an Office for
->   the Manager and watch the orders, the first real build of a never-built
->   kind, then generalise `workjob`. Against the user's minimum bar for
->   openclaw only wells are done; the agent loop is unbuilt. → `Working.md`
->   HANDOVER 2026-09-21, evening.
-> - **Recent history, each in full in the register and `working-archive/`:** the fort
->   could not drink and the well was built (2026-09-19, from blocks and a mechanism
->   made through `df-overseer-workjob`, since manager orders never run without a
->   Manager); it **starved before it was fed** (first death, unit 454, tick 15143;
->   reporting had counted only drinks) and was then fed by marking 429 wild plants;
->   the production graph went from designed to built to filled with the real corpus
->   and, on 2026-09-21, to a labor graph over 33 building kinds (5 known, 23
->   partial, 5 unknown). The superseded status bullets are archived in
->   `working-archive/Working_archive-2026-09-21.md`.
+> - **Current state, as last verified live 2026-09-23 (the tag-fix redeploy,
+>   `evals/live/2026-09-23-attention-deploy/` plus the orchestrator's
+>   single-file redeploy that followed it).** Uniboslan is paused at year 31,
+>   tick 107874, 22 alive and 1 dead, 100 FPS, `dfmcp-server` active. Role
+>   tool lists: **overseer 63, architect 37, quartermaster 23, consultant
+>   21, conductor 15**. **Two Office zones exist** (id 10 unowned, id 11
+>   owned by the Manager, unit 345, read back twice), both outdoors (no
+>   fully indoor 3x3 site was available near a workshop or the Well). **A
+>   Chair was built for real** — the first real, non-dry-run build of any
+>   kind by the generic `building` tool — and sits buildingplan-suspended,
+>   pending a Chair item; a new manager order (id 3, ConstructThrone) was
+>   created to supply one. **Four manager orders exist**: three
+>   (`ConstructBlocks`, `ConstructMechanisms`, the brew-drink reaction)
+>   `validated: true, active: false`; the new Chair order `validated: false`.
+>   None has ever produced a job with a populated `order_id`, so whether the
+>   office is enough room value for the Manager, and whether a completed
+>   order actually starts a job, are both still open. The conductor is
+>   installed on VM 106 (`conductor.service`), **disabled and inactive**; it
+>   has run only as a manual dry run, never for real. → `Working.md`, whose
+>   own top section is current as of this pass and was not rewritten here
+>   (`handoffs/` rule: the orchestrating session owns it).
+> - **Recent history, each in full in the register, `Working.md` and
+>   `evals/live/`:** the agent loop MVP (clock/tripwire script, a
+>   `conductor` dfmcp role, the conductor service, the Quartermaster
+>   enabled, Consultant web/wiki/source retrieval) was designed, built and
+>   deployed 2026-09-22, with two live bugs found and fixed (the
+>   conductor's MCP client against the real SDK; a missing `diff.since`
+>   grant) and a CP437 game-text encoding bug found and fixed at its
+>   source (`df-overseer-textutil.lua`, a Python-side backstop in
+>   `dfmcp/dfhack_client.py`). `df.job.order_id` was found to link a
+>   spawned job back to the manager order that made it, correcting an
+>   earlier research claim that no such link existed; order-status fields
+>   and a duplicate-production check (`orders.check-duplicate`) shipped and
+>   were deployed and live-verified 2026-09-23. The first unattended run
+>   (900 of a possible 2000-tick window) placed the first two real Office
+>   zones and the first real Chair, then stopped itself on its own
+>   `hostile_reachable` tripwire (a kea 68 tiles away) exactly as designed.
+>   A three-tier attention system (record/slow/pause, replacing "pause on
+>   any reachable creature"), a fifth tripwire on 25 pause-level
+>   announcements, an observation ledger, and a stalled/blocked order
+>   poller were designed from two research passes and deployed the same
+>   day. **The mandatory live check on that deploy caught a real bug**: all
+>   six creature-tag reads in the tier classifier were at the wrong struct
+>   level and partly misspelled, silently returning `false` for every read
+>   (pcall-guarded); a kea still landed in the correct tier by luck, but the
+>   slow tier — built for a thieving creature closing in — could never have
+>   fired. Fixed, redeployed and live-verified the same day against the
+>   same live kea.
 >
 > - **The fort.** VM 103 (`df-colony-01`) runs **Uniboslan, "Ragwind,"** the
 >   one fort, on DF Classic plus DFHack under Xvfb, built by
@@ -43,51 +65,52 @@ learning architecture.
 >   Artobcatten, was lost founding it (register 2026-09-10). It is genuinely
 >   paused, the safe state. The user chose to continue on this fort; it is
 >   expendable, and rescuing it is worth trying for the tools it forces us to
->   build. → `Working.md` HANDOVER 2026-09-21, evening.
+>   build.
 > - **Perception and action.** `scripts/dfhack/` holds the coordinate-free
 >   tools: connectivity, landmarks, overview, diff, open-area and diggable
 >   find/build, chokepoints, stuck jobs, labor, farm, workshop, zone, trees,
->   well, manager work orders, the generic `building` tool, `nobles` and a
->   `zone` tool over every zone kind, all live on VM 103. Role tool lists:
->   architect 34, overseer 57, consultant 14 (2026-09-21, live-verified per role over a real MCP client, after the building, gotchas, nobles and zone tools landed). Closed loops ran for real:
->   Stockpile #2 built, a 41-tile dig completed, a farm plot built and its crop
->   set,
->   and a `WaterSource` zone placed, none needing a raw coordinate to reach
->   the decision-maker. **`doctrine/`** holds game knowledge (crop and water
->   rules) the agents should eventually read; only the consultant reads it, through `doctrine.get` (deployed 2026-09-20), and it is
->   never a repo decision, so it never goes in the register.
+>   well, manager work orders and a direct-job route, the generic
+>   `building` tool (now with one real non-dry-run build to its name),
+>   `nobles`, a `zone` tool over every zone kind, a shared tri-state
+>   reachability helper (fixes a false negative where the Well's own centre
+>   tile, a ramp top, read unreachable to every neighbour), an observation
+>   ledger, and the in-game clock/tripwire/vitals/quicksave tools the
+>   conductor uses, all live on VM 103. **`doctrine/`** holds game knowledge
+>   (crop and water rules) the agents should eventually read; only the
+>   consultant reads it, through `doctrine.get`, and it is never a repo
+>   decision, so it never goes in the register.
 > - **`dfmcp/`**, the MCP server: `dfmcp-server.service` on VM 103,
 >   LAN-bound, **bearer tokens the only guard until Tailscale**. Per-role
 >   allowlists enforced server-side, role from the credential, every call
 >   logged to journald.
 > - **`dfqueue/`**, the proposal queue: SQLite, validated at write time, live
->   since 2026-09-15 (`queue.propose`/`pass` for the architect,
->   `queue.rule`/`pending` for the Overseer). Architect run #3 wrote the first
->   real proposal; the Overseer accepted it 2026-09-16 (`ruling-0001`, one
->   sample on a cheap model, not evidence of good arbitration). The fort was
->   kept paused at tick 12274877 under the user's standing rule until
->   2026-09-15 23:03 UTC, then unpaused and left running unattended with no
->   Sentry (register), before stopping paused behind a dialog the user
->   dismissed the same day. At the fort's
->   real cap (`FPS_CAP` 100, not the 5 several docs assumed)
->   `proposal-0001`'s 1200-tick prediction window elapsed within about a
->   minute, unexecuted, so grading it now would record a miss caused by
->   wall-clock latency between ruling and execution, not a bad proposal. It is
->   left ungraded on purpose; no grader runs on a schedule regardless. It also
->   could not be executed on 2026-09-15 even with write tools switched on, because no
->   tool built what it asks for (a generic `building` tool is live now, dry runs only).
+>   since 2026-09-15. `proposal-0001` (the only proposal a role has ever
+>   written for real) was voided during the 2026-09-22 MVP deploy rather
+>   than graded, since its 1200-tick prediction window elapses in well
+>   under a minute at the fort's real 100 FPS cap — grading it now would
+>   record wall-clock latency, not a verdict on the proposal.
 > - **Incident capture** on VMs 103 and 106 (guest agent, persistent journal,
 >   a netwatch dump on gateway loss), with `docs/RUNBOOK-DARK-GUEST.md`. VM 106
 >   went dark on 2026-09-14, cause unknown; it was rebuilt in place.
-> - **Agents.** openclaw on VM 106 has run two agents one-shot via `agent
->   exec` on DeepSeek: architect (proposals) and overseer (rulings). No agent
->   runs as a service. Everything in `docs/` and `research/` beyond the above
->   is design or proposal unless marked verified.
+> - **Agents.** openclaw on VM 106 is configured with four pinned roles
+>   (architect, overseer, quartermaster, consultant), each validated and
+>   probed live against the real MCP server (tool counts match exactly).
+>   Only architect and overseer are confirmed to have actually run a real
+>   `agent exec` decision (the architect's proposals, the Overseer's single
+>   ruling, `ruling-0001` from 2026-09-16); **unknown** whether quartermaster
+>   or consultant has ever run one for real, versus only being probed/
+>   validated -- no run record for either was found in the sources this pass
+>   read. The conductor has run once, manually, in the foreground, with
+>   `--dry-run --once`; it has never run as a live systemd service, and no
+>   agent or conductor cycle has ever made a real decision on this fort
+>   beyond `ruling-0001`. Everything in `docs/` and `research/` beyond the
+>   above is design or proposal unless marked verified.
 >
 > **Traps before running anything:**
-> - Ambient `python -m pytest` gives **891 passed, 3 skipped** (measured 2026-09-21); the
+> - Ambient `python -m pytest` gives **1348 passed, 3 skipped** (measured 2026-09-23,
+>   `handoffs/2026-09-23-creature-tag-fields-fix.md`); the
 >   skips are correct (transport tests guard their pinned SDK import). Run `dfmcp/tests`
->   in `.venv-dfmcp` for all **537** (measured 2026-09-21). `py -3` here is a 3.13 without pytest:
+>   in `.venv-dfmcp` for all **652** (measured 2026-09-23). `py -3` here is a 3.13 without pytest:
 >   use `python`.
 > - Packages are `dfmcp` and `dfqueue`, never `mcp` or `queue`: a local
 >   directory of either name shadows the MCP SDK or the stdlib module.

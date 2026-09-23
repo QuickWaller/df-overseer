@@ -3,11 +3,22 @@
 How the fort runs unattended: what wakes an agent, what the game clock does
 while one thinks, and who carries out a decision.
 
-> **Status: design, 2026-09-22. Nothing here is built.** Written in a design
-> conversation with the user, whose goal is "design the agent loop, fill in
-> the gaps, let the fort run": an MVP that runs, to be improved from what it
-> does. Each decision is marked **agreed** (the user's call) or **default**
-> (the orchestrator's gap-fill, standing until the user overrides it).
+> **Status: design, 2026-09-22, and largely built since.** Written in a
+> design conversation with the user, whose goal is "design the agent loop,
+> fill in the gaps, let the fort run": an MVP that runs, to be improved
+> from what it does. Each decision is marked **agreed** (the user's call)
+> or **default** (the orchestrator's gap-fill, standing until the user
+> overrides it). **UPDATE 2026-09-23: most of §4's build items are built
+> and deployed to VM 103/106** (the in-game clock and tripwire script, the
+> conductor dfmcp role, the conductor systemd service on VM 106, the
+> Quartermaster enabled, local and web Consultant retrieval), but **the
+> conductor has never run as a live service** -- only manually, in the
+> foreground, with `--dry-run`. §3's tripwires now number five, not four
+> (an announcement-level tripwire and a tier system replaced the flat
+> hostile-reachable rule), and a live-caught bug in that tier system was
+> found and fixed the same day it deployed (see §3 and
+> `docs/TRAPS.md`, "A pcall-guarded read..."). See §7 for what changed
+> and what is still open, checked item by item.
 > Companion to `docs/AGENT-ARCHITECTURE.md`, which this narrows to a first
 > buildable slice rather than replaces.
 
@@ -106,11 +117,36 @@ the conductor sees the pause and wakes the Overseer. So if the conductor or
 openclaw dies, the fort keeps running at whatever speed it was set to and
 still pauses itself on a death, a critical vital or a reachable hostile.
 
-Tripwires, v1: a citizen death; hunger or thirst past a critical threshold;
-a hostile `threat.scan` admits (reachability, not the danger flag); a new
-announcement of an alert class. **Built 2026-09-22 (not deployed): the first
-three**; the announcement tripwire was not in that stream's brief and is
-still owed. Defaults hunger 75,000 and thirst 50,000 ticks, from DFHack's
+Tripwires, v1 as designed: a citizen death; hunger or thirst past a
+critical threshold; a hostile `threat.scan` admits (reachability, not the
+danger flag); a new announcement of an alert class. **Built and deployed
+2026-09-22 (`handoffs/2026-09-22-loop-clock-conductor-role.md`,
+`evals/live/2026-09-22-loop-mvp-deploy/`): the first three.**
+
+**Built and deployed 2026-09-23, a fifth tripwire replaces the flat
+hostile-reachable rule** (`handoffs/2026-09-23-attention-tiers-ingame.md`,
+`evals/live/2026-09-23-attention-deploy/`): a candidate `threat.scan` admits
+now carries a `tier` (`pause`/`slow`/`record_only`,
+`research/2026-09-23-wildlife-threat-classes.md`), and only `pause` latches
+the clock; `slow` sets FPS to `think_fps` and writes a non-blocking
+advisory instead; `record_only` only feeds the new observation ledger. A
+separate, fifth mechanism pauses on a newly-arrived announcement whose type
+is one of 25 generated `PAUSE_REPORT_IDS`
+(`research/2026-09-23-announcement-severity.md`), independent of the threat
+scan. **Live-caught bug in the same deploy, fixed and re-verified same
+day** (`handoffs/2026-09-23-creature-tag-fields-fix.md`,
+`docs/TRAPS.md` "A pcall-guarded read..."): the six creature-tag reads that
+feed `tier` classification were all at the wrong struct level and
+partly misspelled, silently returning `false` for every read. The `pause`
+boundary happened to stay correct by luck (a kea's real tags are not the
+ones gating `pause`); the `slow` boundary could never have fired for the
+theft case it was built for, until the fix. Fixed and live-verified against
+the same live kea the same day. Still owed: a live check that a
+deliberately broken field name actually surfaces in the new
+`read_failures` array (only a failing read can prove the guard fires, and
+none has failed live yet).
+
+Defaults hunger 75,000 and thirst 50,000 ticks, from DFHack's
 `full-heal.lua` (`research/2026-09-16-food-clock-and-farm-lead-time.md`).
 `fort.quicksave` fires and reports `cur_savegame.save_dir` ("DF's own record
 of the save") as it stood beforehand, with a separate confirm call, never a
@@ -121,15 +157,22 @@ is broken on this install. Waiting inside Lua would hold the suspend lock
 the save itself needs. **Not covered: flooding**, since the breach
 detector is inconclusive (`ROADMAP.md`).
 
+**The tripwire's own live tests remain unrun** (true positive and true
+negative both, `docs/AGENT-LOOP.md`'s own owed list below): the first and
+only real trip so far was `hostile_reachable` on a kea, 900 ticks into the
+first unattended run, against the PRE-fix tier code
+(`evals/live/2026-09-23-office-and-first-real-build/`); no tripwire has yet
+fired against the corrected code.
+
 ## 4. Build items
 
 All **default** unless marked.
 
 | # | Piece | Where | Notes |
 |---|---|---|---|
-| 1 | In-game clock and tripwire script | VM 103 | Sets the frame cap on request; pauses on a tripwire and records the reason |
-| 2 | A `conductor` role in dfmcp | `dfmcp/` | New token held only by code, never by an agent: `clock.set-speed`, `pause`, `resume`, `status`, `arm`, `disarm`, `clear`, `fort.quicksave`, `vitals.summary` (built 2026-09-22, not deployed) |
-| 3 | The conductor service | VM 106, systemd | Python. Runs the cycle, triage, the clock policy; launches `docker run --rm ... agent exec` as the 2026-09-16 run did; archives each run's JSON, tool calls and `costUsd` under `runtime/` for the public report |
+| 1 | In-game clock and tripwire script | VM 103 | Sets the frame cap on request; pauses on a tripwire and records the reason. **Built and deployed 2026-09-22/23**, live-verified |
+| 2 | A `conductor` role in dfmcp | `dfmcp/` | New token held only by code, never by an agent: `clock.set-speed`, `pause`, `resume`, `status`, `arm`, `disarm`, `clear`, `fort.quicksave`, `vitals.summary` (**built and deployed 2026-09-22**, live-verified, `evals/live/2026-09-22-loop-mvp-deploy/`) |
+| 3 | The conductor service | VM 106, systemd | Python. Runs the cycle, triage, the clock policy; launches `docker run --rm ... agent exec` as the 2026-09-16 run did; archives each run's JSON, tool calls and `costUsd` under `runtime/` for the public report. **Built and installed 2026-09-22** (`conductor.service` on VM 106, disabled/inactive, Docker socket access granted the same day). **Never run as a live service**: only a manual, foreground `--dry-run --once`, which completed cleanly from a real unseeded cursor after the encoding fix (`evals/live/2026-09-22-loop-game-text-encoding/`) |
 | 4 | Queue: an execution record and a grading schedule | `dfqueue/` | `queue.executed` references the ruling and the call ids. **A prediction's window starts at execution, not at writing.** The grader runs every cycle |
 | 5 | Enable the Quartermaster | `agents/` | Food, drink, work orders, farms and workjobs are where this fort actually needs decisions; the Architect covers only placement. Needs a proposal-type vocabulary (`dfqueue/schema.py` has only the Architect's three) and a real allowlist |
 | 6 | Per-cycle briefing | conductor | Tier 0 figures only (vitals, cover days, stuck jobs, the role's diff, queue state), placed in the prompt. Nothing that grows with the fort |
@@ -202,7 +245,37 @@ variance tracking, and RTS build orders adapting to scouting
 
 ## 7. Open
 
-**From the build streams, 2026-09-22 (all merged locally, none deployed):**
+**Closed since the 2026-09-22 list below was written, checked one by one
+2026-09-23:**
+
+- **The announcement tripwire (§3)** is built and deployed
+  (`handoffs/2026-09-23-attention-tiers-ingame.md`).
+- **A wiki snapshot** exists and is deployed (referenced throughout
+  `evals/live/2026-09-22-loop-mvp-deploy/`, "30-page wiki snapshot at
+  `/var/lib/dfwiki/`", `Working.md`).
+- **The VM 103 DFHack source path check** and **the Brave key into VM 103's
+  service environment** are both done; `dfhack.source_search`/`source_read`
+  and `web.search`/`web.fetch` all ran live in the 2026-09-22 MVP deploy
+  (`evals/live/2026-09-22-loop-mvp-deploy/README.md`, "Live checks").
+- **`order."ID".exists`'s assumption is still genuinely open**, not
+  answered: no order on this fort has ever gone `active`, let alone
+  finished, so whether DF removes a completed order from its list remains
+  untested as of the first unattended run (`evals/live/2026-09-23-office-
+  and-first-real-build/`, "orders watched"). Left in this list rather than
+  moved to closed.
+- **One new answer, not previously listed here: `job.order_id` links a
+  spawned job back to the order that made it**, contradicting an earlier
+  research claim that no such link existed
+  (`handoffs/2026-09-23-order-job-attribution-and-checks.md`, live-
+  introspected on VM 103, DFHack's own `do-job-now.lua:106` matches on it).
+  `orders.list` now carries `validated`/`active`/`finished_year`/
+  `frequency`/`max_workshops`, deployed and live-verified 2026-09-23
+  (`evals/live/2026-09-23-order-job-attribution/`); the populated
+  `order_id`/`from_order` field shape on a real order-spawned job is still
+  unverified, since no order on this fort has ever spawned one.
+
+**Still open, from the 2026-09-22 build streams (all merged and deployed
+now, but the underlying gaps are unresolved):**
 
 - **A failed execution still starts the grading window**, so a later miss
   cannot yet tell "the proposal was wrong" from "carrying it out failed".
@@ -211,21 +284,49 @@ variance tracking, and RTS build orders adapting to scouting
 - **Only the first execution arms the window.** Manager orders on this fort
   have queued without ever running, so a `work_order` window may start long
   before its effect can land.
-- **`order."ID".exists`** assumes DF removes a completed order from its list;
-  documented, never witnessed here. Its first live grading is also the first
-  check of that assumption.
 - **Deploy trap:** the queue migration keeps old rows on their write-time
-  deadlines. On VM 103 that includes `proposal-0001`, left ungraded on
-  purpose (register 2026-09-16); the first grading cycle would record it as
-  a latency miss. Decide before the conductor first runs the grader.
-- **Owed:** the announcement tripwire (§3); a wiki snapshot; the VM 103
-  DFHack source path check; the Brave key into VM 103's service environment.
+  deadlines. On VM 103 that includes `proposal-0001`, voided during the
+  2026-09-22 deploy rather than graded (register 2026-09-16, grading it
+  would record a latency miss, not a verdict).
 
+**New, from the 2026-09-23 streams:**
 
-- Web retrieval (item 9): the Brave key, owed by the user; Brave's current
-  pricing and limits are unchecked.
-- The Quartermaster's proposal-type vocabulary (item 5).
-- Where the conductor runs (VM 106 is the default, since it launches the
-  containers there).
+- **The stalled/blocked order poller's thresholds are reasoned, not
+  measured** (`conductor/order_watch.py`, 1200 ticks;
+  `handoffs/2026-09-23-stalled-order-poller.md`). No order has ever gone
+  active on this fort, so there is no real timing data yet to check the
+  threshold against.
+- **The placeholder distance and decay numbers in the observation ledger
+  and the threat tier classifier are reasoned defaults, not measured**
+  (`research/2026-09-23-wildlife-threat-classes.md` notes no tick-timing
+  data exists for how fast a threat develops; the pause tier deliberately
+  does not depend on one).
+- **The unproven failed-read reporting**: `class_flags`'s new
+  `read_failures` array has never actually been observed non-empty live
+  (see `docs/TRAPS.md`, "A pcall-guarded read..."). It is proven correct by
+  the fix that populated it, not yet proven to fire on a genuine failure.
+- **The office-and-first-build question is open, not answered**: two real
+  Office zones exist (one owned by the Manager), both outdoors, and 900
+  ticks was not enough to tell "needs more time" from "needs more room
+  value" for `required_office: 1` (`evals/live/2026-09-23-office-and-
+  first-real-build/`). The next unattended window is the way to settle it,
+  pending a decision on whether harmless wildlife should keep tripping
+  `hostile_reachable` at long range (now softened by the tier system above,
+  but the first trip was against the pre-fix code).
+- **Whether harmless wildlife should stop an unattended run at long range
+  at all** is a design decision for the user, not resolved by the tier
+  system alone: the tier system changes what counts as `pause`-worthy, but
+  a `pause`-tier candidate still stops the run exactly as before.
+
+- Web retrieval (item 9): Brave's current pricing and limits are unchecked
+  (the key itself is in place and working).
+- The Quartermaster's proposal-type vocabulary (item 5): the Quartermaster
+  role is enabled and has tools (`orders.*`, `workjob.*`,
+  `ledger.read`), but no closed proposal-type vocabulary for it exists in
+  `dfqueue/schema.py` yet.
+- Where the conductor runs (VM 106, as installed; `conductor.service`
+  exists there, disabled and inactive, and has never run as a live
+  service, only a manual foreground `--dry-run`).
 - Cycle wall-clock time, and so the right `think_fps`, is unmeasured
-  (`docs/AGENT-ARCHITECTURE.md` §14 item 8). Instrument it from the first run.
+  (`docs/AGENT-ARCHITECTURE.md` §14 item 8). Instrument it from the first
+  real (non-dry-run) run.

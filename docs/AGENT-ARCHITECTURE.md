@@ -85,6 +85,48 @@ communicate, what they read, and how they learn.
 > `handoffs/2026-09-17-water-industry-tools-deploy.md`,
 > `handoffs/2026-09-19-deploy-batch.md`, `handoffs/2026-09-21-nobles-appoint.md`.
 > The dated blocks above are kept as the record of their day.
+>
+> **UPDATED 2026-09-23: the agent loop MVP (`docs/AGENT-LOOP.md`) landed
+> mostly on top of this document, not as a replacement for it, and several
+> facts below are now stale.** Role tool lists, live-verified over a real
+> MCP client on 2026-09-23, are **overseer 63, architect 37, quartermaster
+> 23, consultant 21, conductor 15** (conductor is new: a code-only role,
+> never an agent, holding `clock.*`, `fort.quicksave`, `vitals.summary`,
+> `queue.grade`/`overview`, `diff.since`, `orders.list` and
+> `announcement-levels.slow-ids`). **The roster is now four agent roles**
+> (Overseer, Architect, Quartermaster, Consultant), not the three §3
+> "DECIDED 2026-09-12" describes; the Quartermaster's carve-out, discussed
+> in §7 as hypothetical, is not what happened -- it was enabled as a
+> fourth *advisory* role under the unchanged single-writer rule, not
+> carved out as a second writer. **§7's single-writer rule is unchanged in
+> substance**: only the Overseer's own write tools mutate the fort for
+> real; the new `orders.check-duplicate` (read) is granted to overseer,
+> architect and quartermaster alike, and the new `workjob.cancel` (a
+> write) is granted only to the overseer, with architect and quartermaster
+> explicitly denied -- confirmed live at the listing layer, not merely a
+> call-time refusal (`evals/live/2026-09-23-order-job-attribution/`). **A
+> new escalation path exists that this document does not describe**:
+> `queue.escalate`, held only by the overseer, and the conductor's own
+> triage code in `conductor/cycle.py`/`conductor/order_watch.py`, which
+> decides who to wake including on a stalled or blocked manager order (a
+> poller, the same shape §4's wake-event table calls for `job_stalled`/
+> `stock_below_threshold`, now actually built for the order layer
+> specifically, `handoffs/2026-09-23-stalled-order-poller.md`). **The
+> queue itself gained no new record type this week** (`dfqueue/` schema is
+> unchanged); what changed is which tools can populate its
+> triggers. **Two safety detectors changed under the tier system**:
+> `df-overseer-threat.lua` no longer pauses on any reachable candidate
+> (§4's wake-event table above still describes the old flat rule); it now
+> reports a `tier` per candidate and only `pause`-tier candidates latch the
+> clock, per `docs/AGENT-LOOP.md` §3. A live-caught bug in that tier
+> classifier (six creature-tag reads at the wrong struct level, silently
+> returning `false`) was found and fixed the same day it deployed
+> (`docs/TRAPS.md`, "A pcall-guarded read..."). `df-overseer-breach.lua`'s
+> status is unchanged from the block above: still inconclusive, still
+> covering nothing. This document's own body (§1-§14) was not rewritten
+> for any of this; treat every claim below about "three roles" or "single
+> writer means the Overseer alone holds every relevant tool" as narrowed
+> by this block, not as current in full.
 
 Companion documents: [`PURPOSE.md`](PURPOSE.md) for the design commitments this
 must not break, [`MEMORY-ARCHITECTURE.md`](MEMORY-ARCHITECTURE.md) for the

@@ -610,6 +610,56 @@ If DFHack stops responding, **attempt a quicksave before escalating** to stop
 or kill. If that is impossible, escalate anyway, because regaining control is
 correct, but say so in the report.
 
+## A pcall-guarded read that degrades to `false` on failure can hide a bug through a full deploy
+
+**Found 2026-09-23**, the same day it was built
+(`handoffs/2026-09-23-attention-tiers-ingame.md`,
+`handoffs/2026-09-23-creature-tag-fields-fix.md`). The attention system's
+three-tier classifier reads six creature raw tags, each wrapped in its own
+`pcall` so one missing field cannot crash the scan. All six were read at the
+wrong struct level (`creature.flags.X` instead of `creature.caste[caste].
+flags.X`) and two were misspelled (`CURIOUSBEAST_ITEM` instead of
+`CURIOUS_BEAST_ITEM`); one (`BUILDINGDESTROYER`) was tested as a flag bit
+when it is a plain integer field. Every one of the six reads therefore
+raised inside its own `pcall` and silently returned `false`, every time,
+for every creature. Offline unit tests, an integration test and a static
+type-check all passed, because none of them held a real creature raw. The
+code shipped to a live deploy and the regression it was built to fix (a kea
+must never pause the fort) happened to still hold, by luck: none of the
+tags that are actually true for a kea are the ones that gate the *pause*
+tier. The tags that were supposed to gate the *slow* tier (a thieving
+creature closing in) were exactly the ones silently wrong, so that tier
+could never have fired for the case it was designed for, and nothing
+would have said so.
+
+**Three things follow, all load-bearing, not just for this bug:**
+
+1. **A guarded read that degrades to a default on failure is
+   indistinguishable, from the caller's side, from a genuine negative
+   reading.** `pcall` is the right tool for not crashing the scan; it is
+   the wrong tool for surfacing that a field name was wrong, unless the
+   failure itself is also reported. The fix here was exactly that: a
+   `read_failures` array naming any field that could not be read, checked
+   by the caller and logged via `dfhack.printerr` on a non-empty result,
+   so a broken field name is visible on the next call rather than silent
+   forever.
+2. **Any new read gets one live verification against real game data
+   before it is trusted**, not just against a fake server or a hand-built
+   fixture. A fake DFHack server verifies the wire, not the payload
+   (2026-09-14 entry above, the same lesson in a different shape); a
+   hand-authored fixture verifies the code's own idea of the struct shape,
+   which is exactly what was wrong here. Three offline test layers passed;
+   only a live creature caught it.
+3. **This was one of three failures the same week that were reads unable
+   to report their own failure**, not three unrelated bugs: the
+   `dfhack.filesystem.mtime` entry above (wrong values, no error, looked
+   like a working API), the diff/encoding CP437 crash (silently truncated
+   or corrupted text before the fix), and this one. The pattern is worth
+   naming on its own: a system that fails loudly is debuggable by anyone
+   who runs it; a system that fails quietly needs its failure explicitly
+   surfaced by design, or it will pass every review that does not happen
+   to exercise the one input that breaks it.
+
 ## A doc-only edit can fail the test suite
 
 `tests/test_no_leaked_addresses.py` (since 2026-09-12) scans **every tracked

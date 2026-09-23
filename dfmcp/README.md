@@ -870,10 +870,21 @@ Added by `handoffs/2026-09-21-building-tool-server.md`; design and contracts in
 `docs/BUILDING-TOOL.md` (decisions 7 and 8, C2, C3).
 
 **Live on VM 103 since 2026-09-21** (`handoffs/2026-09-21-deploy-building-batch.md`):
-the role tool lists over a real MCP client are **architect 34, overseer 57,
-consultant 14** (were 25, 45 and 11), and `gotchas.get`, the `tool_guidance`
-enrichment and the labor join were each called for real. What that deploy needed,
-for the next one:
+the role tool lists over a real MCP client were **architect 34, overseer 57,
+consultant 14** (were 25, 45 and 11) at that deploy, and `gotchas.get`, the
+`tool_guidance` enrichment and the labor join were each called for real.
+**UPDATED 2026-09-23: role tool lists have grown substantially since**
+(agent-loop MVP, order/job attribution and attention-system batches,
+2026-09-22/23) -- current counts, live-verified: **overseer 63, architect
+37, quartermaster 23, consultant 21, conductor 15**
+(`evals/live/2026-09-23-attention-deploy/README.md`; `agents/ROSTER.yaml`
+and `scripts/dfhack/TOOLS.yaml` are the sources of truth for the exact
+tool ids, not this paragraph). Whether the labor-join shape fix mentioned
+below has since been redeployed was **not confirmed by this pass** -- none
+of the 2026-09-22/23 deploy batches this pass read touched
+`dfmcp/labor_join.py` or `dfmcp/tool_guidance.py`, so treat it as still
+open unless a later deploy record says otherwise. What that 2026-09-21
+deploy needed, for the next one:
 
 - **The gotcha store must exist before the server starts** (`main()` refuses to
   start without it): create the state directory, then
