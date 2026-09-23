@@ -120,10 +120,19 @@
 local json = require('json')
 local repeatUtil = require('repeat-util')
 local threat_mod = reqscript('df-overseer-threat')
+local ledger_mod = reqscript('df-overseer-ledger')
+local announcement_levels = reqscript('df-overseer-announcement-levels')
 
 local TRIPWIRE_NAME = "overseer-tripwire"
 local STATE_DIR = "dfhack-config/overseer-clock"
 local LATCH_FILE = STATE_DIR .. "/tripwire_latch.json"
+-- Advisory: the "slow" tier's own record, NEVER blocks resume (clock_resume
+-- only ever checks LATCH_FILE, see below) -- a purely informational note the
+-- conductor can read off clock_status while deciding who to wake. Kept
+-- separate from the latch file on purpose: the two have different
+-- lifecycles (a latch is cleared once acknowledged; this is just
+-- overwritten by the next slow-tier trip).
+local ADVISORY_FILE = STATE_DIR .. "/tripwire_advisory.json"
 
 local MIN_FPS = 1
 -- Arbitrary, generous ceiling well above any base_fps/think_fps value this
@@ -137,6 +146,14 @@ local MAX_FPS = 1000
 -- (research/2026-09-16-food-clock-and-farm-lead-time.md).
 local DEFAULT_HUNGER_CRITICAL = 75000   -- "Starving" flash
 local DEFAULT_THIRST_CRITICAL = 50000   -- "Dehydrated" flash
+
+-- Sourced: docs/AGENT-LOOP.md ss2's own "Three levels" table, "Slowed:
+-- think_fps, starting value 10". Used only for the slow-tier wildlife/
+-- invader case (df-overseer-threat.lua's classify_tier) -- the announcement
+-- tripwire's own slow ids (df-overseer-announcement-levels.lua) are
+-- deliberately NOT acted on here at all, see that file's header and this
+-- stream's Result.
+local DEFAULT_THINK_FPS = 10
 
 -- Default periodic-check cadence and the threat-scan cadence multiple.
 -- Reasoned, not sourced: getCitizens()+two numeric comparisons per citizen
@@ -186,6 +203,23 @@ end
 local function clear_latch_file()
   ensure_state_dir()
   json.encode_file({}, LATCH_FILE)
+end
+
+-- Advisory (slow tier): nil on a missing/unreadable/empty file, same
+-- fallback discipline as read_latch. Never gates resume -- clock_resume
+-- below only ever checks read_latch().
+local function read_advisory()
+  ensure_state_dir()
+  local ok, data = pcall(json.decode_file, ADVISORY_FILE)
+  if not ok or type(data) ~= "table" or not data.reason then
+    return nil
+  end
+  return data
+end
+
+local function write_advisory(advisory)
+  ensure_state_dir()
+  json.encode_file(advisory, ADVISORY_FILE)
 end
 
 -- ----------------------------------------------------------------------------
@@ -246,6 +280,10 @@ function clock_status()
     abs_tick = ok_tick and abs_tick or nil,
     armed = repeatUtil.isScheduled(TRIPWIRE_NAME),
     tripwire = read_latch(),
+    -- Added handoffs/2026-09-23-attention-tiers-ingame.md: the most recent
+    -- slow-tier trip, if any -- purely informational, never blocks resume
+    -- (see read_advisory's own comment).
+    advisory = read_advisory(),
   }
 end
 
@@ -281,9 +319,52 @@ local function thirst_status(thirst_timer, warning, critical)
   return "fine"
 end
 
-local function make_check_fn(hunger_critical, thirst_critical, threat_check_every_n)
+-- Bounded initial cursor for the announcement tripwire (step 4 below):
+-- the current max report id at arm time, so a fresh arm never retroactively
+-- pauses on history already in world.status.reports -- same "clean start on
+-- arm" discipline the death check's known_ids and the latch file already
+-- have (see header, "why arm always resets the latch first").
+local function current_max_report_id()
+  local ok, reports = pcall(function() return df.global.world.status.reports end)
+  if not ok or not reports or #reports == 0 then
+    return 0
+  end
+  local ok_id, id = pcall(function() return reports[#reports - 1].id end)
+  return (ok_id and id) or 0
+end
+
+-- Bounded scan (docs/TRAPS.md): walks backward from the newest report only
+-- until it reaches one at or before last_seen_id -- cost is proportional to
+-- how many NEW reports arrived since the last check (bounded by how often
+-- this tripwire fires), never the full report history, same technique
+-- df-overseer-diff.lua's own onReport/recent_combat already use.
+local function new_pause_reports(last_seen_id)
+  local ok, reports = pcall(function() return df.global.world.status.reports end)
+  if not ok or not reports then
+    return {}, last_seen_id
+  end
+  local hits = {}
+  local max_id = last_seen_id
+  for i = #reports - 1, 0, -1 do
+    local rep = reports[i]
+    if rep.id <= last_seen_id then
+      break
+    end
+    if rep.id > max_id then
+      max_id = rep.id
+    end
+    local ok_pause, is_pause = pcall(announcement_levels.is_pause_report, rep.type)
+    if ok_pause and is_pause then
+      table.insert(hits, 1, rep)
+    end
+  end
+  return hits, max_id
+end
+
+local function make_check_fn(hunger_critical, thirst_critical, threat_check_every_n, think_fps)
   local known_ids = select(2, citizen_ids_now())
   local fire_count = 0
+  local last_seen_report_id = current_max_report_id()
 
   return function()
     fire_count = fire_count + 1
@@ -300,6 +381,26 @@ local function make_check_fn(hunger_critical, thirst_critical, threat_check_ever
     local tick_now = ok_tick and abs_tick or -1
 
     -- 1. Death since the last check (cheap: a set-membership diff).
+    -- ITEM 5 OF handoffs/2026-09-23-attention-tiers-ingame.md, CHECKED AND
+    -- REPORTED: research/2026-09-23-announcement-severity.md S:A.3 says "the
+    -- existing death tripwire fires on the raw DFHack UNIT_DEATH eventful
+    -- event", tagged omniscient by research/2026-09-16-player-visibility.md.
+    -- Read against the ACTUAL code (not the design doc's paraphrase) this
+    -- session: this check has never used UNIT_DEATH -- it is, and always
+    -- was, a dfhack.units.getCitizens() roster diff, i.e. "is a citizen who
+    -- was on MY fort's own citizen list a moment ago no longer on it" --
+    -- already scoped to the player's own fort roster (a real screen a
+    -- vanilla player has), not the omniscient world.units.active-wide event.
+    -- No change made here for that reason: there is no omniscience to fix.
+    -- DUAL-ARMED FOR FREE by step 4 below instead: CITIZEN_DEATH (id 106)
+    -- and PET_DEATH (id 107) are both `pause`-level in
+    -- research/data/2026-09-23-announcement-severity.yaml, so they are
+    -- already members of df-overseer-announcement-levels.lua's
+    -- PAUSE_REPORT_IDS -- step 4's own announcement tripwire independently
+    -- pauses on either, a player-visible, DF-announced corroborating signal
+    -- alongside this roster diff, with no separate wiring needed. This also
+    -- adds coverage this roster diff structurally cannot have: PET_DEATH
+    -- (getCitizens() only ever lists dwarves, never animals).
     local citizens, current_ids = citizen_ids_now()
     local missing = {}
     for uid, _ in pairs(known_ids) do
@@ -350,36 +451,114 @@ local function make_check_fn(hunger_critical, thirst_critical, threat_check_ever
     end
 
     -- 3. Hostile reachable, at a lower cadence (see header rationale).
+    -- THREE TIERS, handoffs/2026-09-23-attention-tiers-ingame.md item 1
+    -- (research/2026-09-23-wildlife-threat-classes.md S:E1, taken as
+    -- written): every candidate find_threats returns now carries its own
+    -- `tier` (df-overseer-threat.lua's classify_tier). This used to pause
+    -- on ANY candidate at all -- the failure a kea 68 tiles away exposed
+    -- (evals/live/2026-09-23-office-and-first-real-build/). Now:
+    --   pause tier       -> latch and pause, exactly as before.
+    --   slow tier        -> NOT paused. FPS set to think_fps and an
+    --                       ADVISORY (not the latch) written -- the
+    --                       conductor's own triage (a later stream) decides
+    --                       who to wake from it, per docs/AGENT-LOOP.md ss2.
+    --   record_only tier -> nothing here at all; every candidate this scan
+    --                       saw is written to the ledger below regardless
+    --                       of tier, so a repeated harmless visitor becomes
+    --                       a pattern, not silence.
+    -- LEDGER WRITE ORDER: every candidate's tier was computed by find_threats
+    -- against the ledger's PRIOR state (a read-only lookup,
+    -- ledger_closest_distance); the record() calls below happen strictly
+    -- AFTER that computation, for every scan, so a single scan's own
+    -- candidates never see each other's fresh writes mid-computation.
     if fire_count % threat_check_every_n == 0 then
       local ok_scan, threats = pcall(threat_mod.find_threats)
-      if ok_scan and threats and #threats > 0 then
-        local top = threats[1]
-        write_latch({
-          reason = "hostile_reachable",
-          tick = tick_now,
-          detail = {
-            race = top.race,
-            near_landmark = top.near_landmark,
-            direction = top.direction,
-            distance_tiles = top.distance_tiles,
-            why = top.why,
-          },
-        })
-        dfhack.world.SetPauseState(true)
-        return
+      if ok_scan and threats then
+        for _, candidate in ipairs(threats) do
+          pcall(ledger_mod.record, candidate.race, tick_now, candidate.distance_tiles, "present")
+        end
+
+        if #threats > 0 then
+          local top = threats[1]
+          if top.tier == "pause" then
+            write_latch({
+              reason = "hostile_reachable",
+              tick = tick_now,
+              detail = {
+                race = top.race,
+                near_landmark = top.near_landmark,
+                direction = top.direction,
+                distance_tiles = top.distance_tiles,
+                tier = top.tier,
+                tier_reasons = top.tier_reasons,
+                why = top.why,
+              },
+            })
+            dfhack.world.SetPauseState(true)
+            return
+          elseif top.tier == "slow" then
+            clock_set_speed(think_fps)
+            write_advisory({
+              reason = "hostile_slow",
+              tick = tick_now,
+              detail = {
+                race = top.race,
+                near_landmark = top.near_landmark,
+                direction = top.direction,
+                distance_tiles = top.distance_tiles,
+                tier = top.tier,
+                tier_reasons = top.tier_reasons,
+                why = top.why,
+              },
+            })
+          end
+          -- record_only: already written to the ledger above; nothing else
+          -- to do here.
+        end
       end
+    end
+
+    -- 4. A newly-arrived announcement of pause severity. A SEPARATE
+    -- tripwire (handoffs/2026-09-23-attention-tiers-ingame.md item 2), not
+    -- folded into step 3's hostile-reachable check above -- a fixed-id
+    -- lookup over the report stream is a different mechanism than a
+    -- reachability/raw-tag read over live units. Table generated from
+    -- research/data/2026-09-23-announcement-severity.yaml
+    -- (scripts/gen_announcement_pause_slow.py), 25 ids. The 23 `slow` ids
+    -- in the same classification are deliberately NOT read here at all --
+    -- see df-overseer-announcement-levels.lua's own header and this
+    -- stream's Result for the field shape exposed to the sibling conductor
+    -- stream instead. Bounded scan: new_pause_reports only walks reports
+    -- newer than the last check, never the full history (docs/TRAPS.md).
+    local pause_reports, new_max_id = new_pause_reports(last_seen_report_id)
+    last_seen_report_id = new_max_id
+    if #pause_reports > 0 then
+      local rep = pause_reports[1]
+      write_latch({
+        reason = "announcement",
+        tick = tick_now,
+        detail = {
+          type_id = rep.type,
+          type_name = df.announcement_type[rep.type] or tostring(rep.type),
+          report_id = rep.id,
+          new_pause_report_count = #pause_reports,
+        },
+      })
+      dfhack.world.SetPauseState(true)
+      return
     end
   end
 end
 
 -- ----------------------------------------------------------------------------
--- arm [HUNGER_CRITICAL THIRST_CRITICAL CHECK_INTERVAL_TICKS THREAT_CHECK_EVERY_N]
+-- arm [HUNGER_CRITICAL THIRST_CRITICAL CHECK_INTERVAL_TICKS THREAT_CHECK_EVERY_N THINK_FPS]
 
-function clock_arm(hunger_critical, thirst_critical, check_interval_ticks, threat_check_every_n)
+function clock_arm(hunger_critical, thirst_critical, check_interval_ticks, threat_check_every_n, think_fps)
   hunger_critical = tonumber(hunger_critical) or DEFAULT_HUNGER_CRITICAL
   thirst_critical = tonumber(thirst_critical) or DEFAULT_THIRST_CRITICAL
   check_interval_ticks = tonumber(check_interval_ticks) or DEFAULT_CHECK_INTERVAL_TICKS
   threat_check_every_n = tonumber(threat_check_every_n) or DEFAULT_THREAT_CHECK_EVERY_N
+  think_fps = tonumber(think_fps) or DEFAULT_THINK_FPS
 
   if hunger_critical <= 0 or thirst_critical <= 0 then
     return { ok = false, error = "hunger_critical/thirst_critical must be positive tick counts" }
@@ -387,9 +566,14 @@ function clock_arm(hunger_critical, thirst_critical, check_interval_ticks, threa
   if check_interval_ticks <= 0 or threat_check_every_n <= 0 then
     return { ok = false, error = "check_interval_ticks/threat_check_every_n must be positive" }
   end
+  if think_fps < MIN_FPS or think_fps > MAX_FPS then
+    return { ok = false, error = string.format(
+      "think_fps %s outside sane range [%d, %d]", tostring(think_fps), MIN_FPS, MAX_FPS) }
+  end
 
   clear_latch_file()
-  local check_fn = make_check_fn(hunger_critical, thirst_critical, threat_check_every_n)
+  write_advisory({})
+  local check_fn = make_check_fn(hunger_critical, thirst_critical, threat_check_every_n, think_fps)
   -- scheduleEvery cancels any existing schedule of the same name first
   -- (repeat-util.lua's own scheduleEvery), so re-arming is safe and clean.
   repeatUtil.scheduleEvery(TRIPWIRE_NAME, check_interval_ticks, "ticks", check_fn)
@@ -401,6 +585,7 @@ function clock_arm(hunger_critical, thirst_critical, check_interval_ticks, threa
     thirst_critical = thirst_critical,
     check_interval_ticks = check_interval_ticks,
     threat_check_every_n = threat_check_every_n,
+    think_fps = think_fps,
   }
 end
 
@@ -434,11 +619,11 @@ elseif cmd == "resume" then
 elseif cmd == "status" then
   print(json.encode(clock_status()))
 elseif cmd == "arm" then
-  print(json.encode(clock_arm(args[2], args[3], args[4], args[5])))
+  print(json.encode(clock_arm(args[2], args[3], args[4], args[5], args[6])))
 elseif cmd == "disarm" then
   print(json.encode(clock_disarm()))
 elseif cmd == "clear" then
   print(json.encode(clock_clear()))
 else
-  print("usage: df-overseer-clock <set-speed FPS|pause|resume|status|arm [HUNGER_CRITICAL THIRST_CRITICAL CHECK_INTERVAL_TICKS THREAT_CHECK_EVERY_N]|disarm|clear>")
+  print("usage: df-overseer-clock <set-speed FPS|pause|resume|status|arm [HUNGER_CRITICAL THIRST_CRITICAL CHECK_INTERVAL_TICKS THREAT_CHECK_EVERY_N THINK_FPS]|disarm|clear>")
 end

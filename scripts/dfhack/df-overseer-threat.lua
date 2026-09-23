@@ -21,6 +21,19 @@
 -- input among several, logged and labeled HEURISTIC, never the filter
 -- itself. No new hostility heuristic is invented here.
 --
+-- ADDENDUM, 2026-09-23 (handoffs/2026-09-23-attention-tiers-ingame.md):
+-- reachability alone used to be treated as "pause the fort" by
+-- df-overseer-clock.lua's tripwire -- the failure a kea 68 tiles away
+-- exposed (evals/live/2026-09-23-office-and-first-real-build/), since an
+-- ordinary bird with no combat tag is reachable exactly like a real invader
+-- is. Reachability is still the FILTER (a candidate must clear one of the
+-- two criteria below to appear at all); what's new is that every candidate
+-- that clears it also gets a tier (pause/slow/record_only, see class_flags/
+-- classify_tier below), and df-overseer-clock.lua now acts on the tier, not
+-- on "any candidate at all". See those two functions' own comments for the
+-- tier rule (research/2026-09-23-wildlife-threat-classes.md S:E1, taken as
+-- written).
+--
 -- Two independent reachability criteria (OR, not AND -- see below for why
 -- each alone has a real blind spot):
 --   1. shares_walkable_group: the candidate's tile and at least one living
@@ -135,10 +148,20 @@ local json = require('json')
 local landmarks_mod = reqscript('df-overseer-landmarks')
 local textutil = reqscript('df-overseer-textutil')
 local reachability = reqscript('df-overseer-reachability')
+local ledger_mod = reqscript('df-overseer-ledger')
 
 local MAX_RADIUS = 60
 local DEFAULT_RADIUS = 30
 local MAX_RESULTS = 15
+
+-- Reasoned, not sourced: research/2026-09-23-wildlife-threat-classes.md S:C
+-- is explicit that tick-to-tile movement conversion is unverified -- this
+-- project has no measured number to derive a real proximity threshold from.
+-- 10 tiles is this stream's own placeholder (a fraction of DEFAULT_RADIUS
+-- above), overridable by the caller, not a researched distance. Flag as
+-- unverified in the deploy checklist, same honesty as the raw-tag reads
+-- below.
+local DEFAULT_CLOSE_RANGE_TILES = 10
 
 -- FIXED 2026-09-23 (handoffs/2026-09-23-landmark-reachability.md): this used
 -- to call dfhack.maps.getWalkableGroup directly on each citizen's own tile
@@ -201,6 +224,154 @@ end
 -- repo to apply that tagging inline in its own output, not just in
 -- TOOLS.yaml metadata, because the whole point of this file is that the
 -- flags must visibly NOT be the reason a candidate is here.
+-- ============================================================================
+-- THREE TIERS, handoffs/2026-09-23-attention-tiers-ingame.md item 1, over
+-- research/2026-09-23-wildlife-threat-classes.md S:E1's rule, taken as
+-- written, not re-derived: pause for a large predator, a building-destroyer,
+-- or a confirmed invader/marauder that has actually reached the citizens'
+-- walkable network; slow for a theft-tagged creature closing in, or an
+-- invader visible but not yet reachable; record_only for anything else,
+-- including a kea at any distance (the concrete case this file's own header
+-- names as its worst prior failure).
+--
+-- RAW-TAG READS ARE UNVERIFIED THIS SESSION, STATED PLAINLY. This stream is
+-- offline (no VM, no live DFHack -- the handoff's own hard line).
+-- `df.global.world.raws.creatures.all[unit.race].flags.<NAME>` is the
+-- standard DFHack idiom for a creature-level raw flag (Lua bitfields index
+-- the flag name directly as a boolean, no `.bits` -- that indirection is a
+-- C++-only detail, per Lua API.txt's documented bitfield behaviour, already
+-- cited correctly in research/2026-09-16-player-visibility.md's C++ quote
+-- vs. this project's own Lua call sites), and `df.creature_raw_flags` is
+-- expected to carry LARGE_PREDATOR/BUILDINGDESTROYER/BENIGN/MISCHIEVOUS/
+-- CURIOUSBEAST_ITEM/_EATER/_GUZZLER under the same name the raw token uses
+-- (DF's raw parser maps a token to a same-named flag in the overwhelming
+-- majority of cases, per the wildlife research's own A1-A5 reading of the
+-- installed raw text) -- but the EXACT struct field and enum member names
+-- were not independently confirmed against a live df-structures read this
+-- session, unlike the isDanger/isInvader/isAgitated/isGreatDanger calls
+-- below (documented dfhack.units wrapper functions, not raw struct access).
+-- Every read here is pcall-wrapped and degrades to false, never errors the
+-- scan, the same discipline danger_flags() below already has -- but this is
+-- a REAL, NAMED GAP: confirm these six names against a live game
+-- (e.g. `:lua =df.global.world.raws.creatures.all[SOME_KEA_UNIT.race].flags`)
+-- before trusting a live run's tier assignment, and say so in the deploy
+-- checklist. Not fixed here -- no VM this stream.
+local function safe_creature_flag(craw, name)
+  if not craw then return false end
+  local ok, v = pcall(function() return craw.flags[name] end)
+  return ok and v == true
+end
+
+-- Exported for testing/reuse, same convention as danger_flags below: read
+-- and reported, this file's own tier decision (classify_tier) is the ONLY
+-- thing that turns these into a pause/slow/record_only outcome -- adding a
+-- new raw-tag class here never requires a new branch in classify_tier,
+-- only a new row in TIER_ESCALATIONS.
+function class_flags(unit)
+  local ok, craw = pcall(function()
+    return df.global.world.raws.creatures.all[unit.race]
+  end)
+  craw = ok and craw or nil
+  return {
+    is_large_predator       = safe_creature_flag(craw, "LARGE_PREDATOR"),
+    is_buildingdestroyer    = safe_creature_flag(craw, "BUILDINGDESTROYER"),
+    is_curiousbeast_item    = safe_creature_flag(craw, "CURIOUSBEAST_ITEM"),
+    is_curiousbeast_eater   = safe_creature_flag(craw, "CURIOUSBEAST_EATER"),
+    is_curiousbeast_guzzler = safe_creature_flag(craw, "CURIOUSBEAST_GUZZLER"),
+    is_benign               = safe_creature_flag(craw, "BENIGN"),
+    -- Read and reported for the ledger's own informational record only
+    -- (research doc S:E2: this project has no legal way to gate a DECISION
+    -- on MISCHIEVOUS -- doing so would reproduce the exact isHidden
+    -- violation already ruled out, S:D). classify_tier below never reads
+    -- this field; TIER_ESCALATIONS deliberately carries no row for it.
+    is_mischievous          = safe_creature_flag(craw, "MISCHIEVOUS"),
+    reliability = "MECHANICAL",
+  }
+end
+
+-- Tier data (research doc S:E1). Each row: a raw-tag name this file already
+-- reads above, plus the tier it escalates to WHEN REACHABLE. The next
+-- creature class this project meets that should behave like
+-- LARGE_PREDATOR/BUILDINGDESTROYER is one row here, never a new branch in
+-- classify_tier -- CLAUDE.md's "tools must be generalisable" rule, and
+-- tests/test_wildlife_tier_logic.py's own drift guard.
+local TIER_ESCALATIONS = {
+  { flag = "is_large_predator", tier = "pause" },
+  { flag = "is_buildingdestroyer", tier = "pause" },
+}
+
+local TIER_RANK = { record_only = 1, slow = 2, pause = 3 }
+
+local function worst_tier(a, b)
+  if TIER_RANK[a] >= TIER_RANK[b] then return a else return b end
+end
+
+-- classify_tier(flags, is_invader, shares_group, within_radius,
+--   distance_tiles, prior_closest_distance_tiles, close_range_tiles)
+--   -> tier ("pause"|"slow"|"record_only"), reasons (array of strings)
+--
+-- flags: class_flags(unit) above. is_invader: dfhack.units.isInvader(unit),
+-- the SAME HEURISTIC danger_flags() below already reads -- not re-derived.
+-- shares_group/within_radius/distance_tiles: this file's own reachability
+-- fields for the candidate. prior_closest_distance_tiles: df-overseer-
+-- ledger.lua's own last recorded closest_distance_tiles for this race, or
+-- nil on a first sighting -- READ before this scan's own ledger write, per
+-- S:E1's "compare distance_tiles across two consecutive scans" rule. nil is
+-- treated as "not closing", the safe direction: a creature's FIRST sighting
+-- never trips slow on closing-in alone.
+function classify_tier(flags, is_invader, shares_group, within_radius,
+    distance_tiles, prior_closest_distance_tiles, close_range_tiles)
+  close_range_tiles = close_range_tiles or DEFAULT_CLOSE_RANGE_TILES
+  local reachable = shares_group or within_radius
+  if not reachable then
+    return "record_only", { "not_reachable" }
+  end
+
+  local tier = "record_only"
+  local reasons = {}
+
+  for _, row in ipairs(TIER_ESCALATIONS) do
+    if flags[row.flag] then
+      tier = worst_tier(tier, row.tier)
+      table.insert(reasons, row.flag)
+    end
+  end
+
+  -- Invader-worldgen-flag rule composes with WHICH reachability criterion
+  -- matched, not just whether one did (S:E1): pause only once the unit has
+  -- actually reached the citizen network; visible-but-not-yet-reachable is
+  -- slow, the "hostile seen but not yet able to reach the fort" row
+  -- docs/AGENT-LOOP.md ss2's table already names but never gave a concrete
+  -- trigger to before this file.
+  if is_invader then
+    if shares_group then
+      tier = worst_tier(tier, "pause")
+      table.insert(reasons, "invader_reachable")
+    else
+      tier = worst_tier(tier, "slow")
+      table.insert(reasons, "invader_visible_not_yet_reachable")
+    end
+  end
+
+  -- Theft tags escalate to slow only when actually closing in or already
+  -- close, never merely present at any distance (S:E1's explicit kea
+  -- verdict: reachable at 68 tiles, no escalation).
+  if flags.is_curiousbeast_item or flags.is_curiousbeast_eater then
+    local close = distance_tiles ~= nil and distance_tiles <= close_range_tiles
+    local closing = distance_tiles ~= nil and prior_closest_distance_tiles ~= nil
+      and distance_tiles < prior_closest_distance_tiles
+    if close or closing then
+      tier = worst_tier(tier, "slow")
+      table.insert(reasons, close and "theft_tag_close_range" or "theft_tag_closing_in")
+    end
+  end
+
+  if #reasons == 0 then
+    table.insert(reasons, "no_pause_or_slow_condition_met")
+  end
+  return tier, reasons
+end
+
 local function danger_flags(unit)
   local function safe(fn)
     local ok, v = pcall(fn, unit)
@@ -254,6 +425,19 @@ function find_threats(radius_tiles)
 
         if shares_group or within_radius then
           local flags = danger_flags(unit)
+          local classes = class_flags(unit)
+          local race = race_name(unit)
+          local distance_tiles = near and near.distance_tiles or nil
+          -- Read-only lookup (never a write -- see df-overseer-ledger.lua's
+          -- own header): this scan's own record() call, if any, happens
+          -- later, in df-overseer-clock.lua's tripwire step, strictly after
+          -- every candidate in this scan has already computed its tier off
+          -- the ledger's PRIOR state.
+          local ok_prior, prior_closest = pcall(ledger_mod.ledger_closest_distance, race)
+          local prior_closest_distance = ok_prior and prior_closest or nil
+          local tier, tier_reasons = classify_tier(
+            classes, flags.is_invader, shares_group, within_radius,
+            distance_tiles, prior_closest_distance)
 
           local why = {}
           if shares_group then
@@ -288,14 +472,14 @@ function find_threats(radius_tiles)
           elseif flags.is_invader then score = score + 40
           elseif flags.is_danger then score = score + 30
           elseif flags.is_agitated then score = score + 20 end
-          score = score - (near and near.distance_tiles or radius) * 0.1
+          score = score - (distance_tiles or radius) * 0.1
 
           table.insert(candidates, {
             unit_id = unit.id,
-            race = race_name(unit),
+            race = race,
             near_landmark = near and near.name or nil,
             direction = near and near.direction or nil,
-            distance_tiles = near and near.distance_tiles or nil,
+            distance_tiles = distance_tiles,
             reachable = {
               shares_walkable_group_with_citizens = shares_group,
               shares_walkable_group_via = shares_group and shares_how or nil,
@@ -303,20 +487,35 @@ function find_threats(radius_tiles)
               reliability = "MECHANICAL",
             },
             flags = flags,
+            class_flags = classes,
+            tier = tier,
+            tier_reasons = tier_reasons,
             why = why,
             _score = score,
+            _tier_rank = TIER_RANK[tier],
           })
         end
       end
     end
   end
 
-  table.sort(candidates, function(a, b) return a._score > b._score end)
+  -- Tier dominates the ranking (handoffs/2026-09-23-attention-tiers-ingame.md
+  -- item 1: clock.lua's tripwire only ever looks at results[1], so the
+  -- worst TIER present must sort first, not merely the highest heuristic
+  -- score within an unordered mix of tiers); the existing score stays the
+  -- tiebreak within a tier.
+  table.sort(candidates, function(a, b)
+    if a._tier_rank ~= b._tier_rank then
+      return a._tier_rank > b._tier_rank
+    end
+    return a._score > b._score
+  end)
 
   local results = {}
   for i, c in ipairs(candidates) do
     if i > MAX_RESULTS then break end
     c._score = nil
+    c._tier_rank = nil
     c.rank = i
     table.insert(results, c)
   end
