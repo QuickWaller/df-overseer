@@ -49,6 +49,43 @@ untouched. And positions demand sharply different room values, read live:
 `DUNGEON_MASTER` 250, `MAYOR` 500, so smoothing and engraving are the value
 lever rather than decoration.
 
+**The room pipeline, from the user's own play sequence (2026-09-24).** Five
+ordered stages: (1) decide the floor plan and mine it out, (2) mine every ore
+and gem the dig uncovered, (3) smooth stone into finished wall, or replace
+soil with a constructed wall where smoothing is impossible, veins having
+already been removed so a wall can stand there, (4) place furniture, (5) paint
+the zones.
+
+**This dissolves the material-knowledge problem** rather than solving it: no
+need to know a tile's material before digging, because stage 3 handles either
+outcome. It therefore supersedes the "plan, then verify" framing below for the
+material question specifically, while the act/sense rule it rests on still
+stands.
+
+**Stage 5 being last is an invariant this project has already violated.** Both
+Office zones were painted *before* any furniture existed, which is exactly why
+`getRoomDescription` read empty for two days. Paint the zone after the
+furniture and the read-back is meaningful on the first try. The ordering is
+itself a rule, and nobody noticed there was an order to get wrong.
+
+**Each stage boundary is a checkable postcondition**, which is the same shape
+as the parked proposals-and-checks question arriving from another direction:
+every designated tile dug, every revealed vein mined, every wall smoothed or
+constructed, furniture placed, zone painted and reading non-empty. A stage
+that has not met its gate blocks the next.
+
+**Tool coverage, checked 2026-09-24: four of the five stages are covered and
+the gap is stage 3.** Dig and vein mining are `diggable.dig`'s designation
+family; constructed walls appear reachable through the generic `building`
+tool, which already maps `df.building_type.Construction` to
+`df.construction_type`; furniture is the `building` tool (proven, it built the
+Chair); zones are `zone.place`. **Smoothing and engraving have no tool at all,
+zero matches in `scripts/dfhack/TOOLS.yaml`**, and they are the stage that
+sets a room's value ceiling: furniture alone may reach MANAGER's 1, but
+MAYOR's 500 is unlikely to be reachable without them. They are designations
+rather than buildings, so the natural home is beside `diggable.dig`, not in
+the `building` tool.
+
 **Build-cost correction from the user, 2026-09-24, and the constraint it
 exposes.** Digging a room in rock gives you its walls for free: the undug
 stone is the wall, so build cost is tiles excavated plus a door plus
