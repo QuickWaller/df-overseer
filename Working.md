@@ -161,6 +161,29 @@ active and spawn a job carrying their `order_id`. Also records what room value
 required, and whether a finished order leaves `world.manager_orders.all`
 (`docs/AGENT-LOOP.md` §7).
 
+**First unattended run, 2026-09-23: partial, tripwire-stopped**
+(`evals/live/2026-09-23-office-and-first-real-build/`). One 900-tick window of
+the ten allowed. **The first real build of a never-built kind happened**: a
+Chair, dry run and real run identical, read back as existing, and now held
+suspended by buildingplan because the fort owns no Chair item (`stocks
+CHAIR=0`), so a new manager order (id 3, ConstructThrone) was created to
+supply one. Two Office zones exist (10 unowned, 11 owned by the Manager, unit
+345, read back twice); no indoor 3x3 site was available near a workshop or the
+Well, so both are outdoors. **The tripwire fired for the first time for real**,
+`hostile_reachable` on a kea 68 tiles away sharing the citizens' walkable
+group, and paused the fort itself, as designed. The run stopped there per its
+own hard line. Orchestrator re-checked: paused at tick 107874, 22 alive, 1
+dead, hunger fine, thirst thirsty (warning), 2 zones, orders 0/1/2 still
+`validated=true, active=false`, order 3 `validated=false`. Restore point
+`autosave 2`. **Still open:** whether a bare outdoor owned office carries
+enough room value for `required_office=1`; 900 ticks cannot separate "needs
+more time" from "needs more room value". **Decision owed by the user:** does
+harmless wildlife count as `hostile_reachable`? A kea will stop every window
+otherwise. Note the interaction: the in-flight reachability stream
+(`handoffs/2026-09-23-landmark-reachability.md`) changes the very rule this
+tripwire uses. Two more address or hostname prints by that executor, neither
+reaching a tracked file; the shared ssh helper is now clearly overdue.
+
 **Design, paused mid-question 2026-09-22.** "The Overseer proposing to
 itself" is really two paths, since it holds no `queue.propose`: its own
 agenda edits, and its direct write actions outside any proposal. Proposed
