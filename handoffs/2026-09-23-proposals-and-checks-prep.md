@@ -112,4 +112,43 @@ than as a recommendation dressed up as a summary.
 
 ## Result
 
-(to be filled by the stream)
+**Status: done.** `research/2026-09-23-proposals-and-checks.md` written,
+answering all six questions, citing prior art (design by contract, database
+transactions/ACID, control theory setpoint-feedback, aviation
+challenge-response, change management plan/verify/rollback, property-based
+testing invariants) and ending with five decisions phrased as choices, each
+with a recommendation marked as such and its strongest counter-argument.
+Read-only throughout: no file on VM 103 was touched, the fort was never
+queried live and never unpaused. Every question was answerable from
+repo-internal evidence already recorded (the two real proposals, the three
+2026-09-23 live run READMEs, `scripts/dfhack/TOOLS.yaml`,
+`learning/live_signals.py`, `dfqueue/`, `agents/*/role.md`), so no live
+DFHack call was made and `scripts/vm-ssh.sh` was never invoked.
+
+**Verdict, one line:** the project has already independently built two
+different classical check shapes (one-shot postcondition predictions via
+`dfqueue`, continuous invariants via tripwires) without naming either; the
+friction so far (the `proposal-0001` void, the Chair run's mechanism-vs-
+outcome finding) comes from anchoring or shape mismatches within a sound
+pair of mechanisms, not from either mechanism being wrong.
+
+**Two things worth flagging for whoever picks up the design conversation,
+not built or decided here:**
+
+- The `dfqueue.prediction` closed signal vocabulary
+  (`learning/live_signals.py`) is much narrower than what is actually
+  readable through `scripts/dfhack/TOOLS.yaml` (ten signals versus building
+  state, job origin, order status, zone ownership, all readable but not
+  gradeable as a `prediction.signal` today). Any design that wants to
+  predict outcomes in the sense §3 recommends will need this registry
+  extended, which is a schema change this stream did not make (read-only).
+- `queue.escalate` has a complete mechanical design and has never fired on
+  a real run; every stop condition hit so far has been a tripwire pause or
+  an executor's own explicit stop condition instead. Worth a deliberate
+  live exercise before the design leans on it as the "check failed, wake a
+  human" path.
+
+No register lines are owed beyond what the orchestrating session already
+tracks in `Working.md`/`decisions/DECISIONS.md`: this stream touched only
+the one research file and this doc's own Result section, per its own
+scope line.
