@@ -491,7 +491,7 @@ as "a real negative worth acting on"). **`df.job` has an `order_id` field**,
 found by the orchestrating session's live introspection of `df.job._fields`
 on this install, and DFHack's own shipped
 `/opt/df/game/hack/scripts/do-job-now.lua:106` matches jobs to orders with
-`job.order_id == needle` — DFHack's own attribution route, not something this
+`job.order_id == needle`: DFHack's own attribution route, not something this
 project would have to build by inference. This section does not rewrite §C/
 §D/§E in place; it states what changes.
 
@@ -501,7 +501,7 @@ project would have to build by inference. This section does not rewrite §C/
 wrong as stated: a job's own `order_id` field answers this directly once a
 tool reads and reports it (not yet done as of this report; see the dispatched
 handoff). The "real attribution gap" this section named is a **tooling gap,
-not a data gap** — the field already exists, only no tool reads it.
+not a data gap**: the field already exists, only no tool reads it.
 
 **§D changes.** The "read that would have to be built, not found anywhere in
 this project's tools or in the web sources checked this session" (whether a
@@ -509,13 +509,13 @@ spawned `df.job` carries any struct-level link back to its `manager_order`)
 is resolved: it does. This "resolves both the attribution gap in C and
 materially strengthens D" exactly as this report's own §D speculated it
 would if found. It does **not** resolve the separate, still-open §D question
-of whether DF removes a completed order from `world.manager_orders.all` —
+of whether DF removes a completed order from `world.manager_orders.all`:
 `order_id` says which order a job came from, not what happens to that order's
 list entry after the job finishes. That assumption remains unverified.
 
 **§E changes.** Recommendation 4's first check ("a duplicate-production
 check spanning both routes") no longer needs to fall back to job_type/
-workshop matching alone to approximate origin — it can use `order_id`
+workshop matching alone to approximate origin: it can use `order_id`
 directly to say, of an in-flight job, whether it came from the order route or
 was queued directly, which is a strictly stronger signal for exactly the
 "something already in flight for it" question that check exists to answer.
