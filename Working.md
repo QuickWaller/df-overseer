@@ -99,6 +99,26 @@ the deploy (the conductor's MCP client against the real SDK, a missing
    unpause) and a short supervised first cycle. The first run should also
    check owed item 2's UTF-8 event.
 
+**Research in, 2026-09-23: work orders versus direct jobs**
+(`research/2026-09-23-work-orders-vs-direct-jobs.md`, the user asked for the
+difference, priorities and conflicts). Both routes end in the same `df.job`;
+the asymmetry is capability against reliability. Orders alone give conditions,
+repeat and ordering, need a Manager with an Office (install-verified on the
+MANAGER position: `required_office=1`, `requires_population=0`, so not the
+wiki's 20-citizen story) and give **no signal at all** when they silently do
+not run: the 2026-09-21 unpause saw zero announcements across 3,900 ticks
+with three orders stuck. Direct jobs are the only route that has actually
+produced on this fort, but have no conditions, no repeat, no duplicate
+detection, a 3-kind vocabulary against 12, and no cancel or recheck. **No
+field links a spawned job back to the order that made it**, so we cannot
+currently tell which route produced a given job. Researcher's recommendation:
+keep one `work_order` proposal type covering both; do not gate the
+Quartermaster on an Office, gate trust in the manager route until one order
+is watched completing; build a duplicate-production check across both lists
+and a "proven on this fort" flag. **Still unverified:** whether DF removes a
+completed order from the list, which the `order."ID".exists` grading signal
+assumes.
+
 **Design, paused mid-question 2026-09-22.** "The Overseer proposing to
 itself" is really two paths, since it holds no `queue.propose`: its own
 agenda edits, and its direct write actions outside any proposal. Proposed
