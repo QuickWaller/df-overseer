@@ -14,7 +14,9 @@
 #            food, drink, water, farming, seeds, fishing, labor, health,
 #            material (added 2026-09-18 for goods-management policy that is
 #            not about one specific consumable: band vocabulary, cover-target
-#            margins, wear/clothing, durability classification)
+#            margins, wear/clothing, durability classification),
+#            rooms (added 2026-09-23 for room/zone value, ownership and the
+#            noble/administrative-position requirements that ask for them)
 #   sources  one item per source, never a single blob:
 #     kind      live-read | game-data | devlog | bugtracker | wiki | forum |
 #               user | research (a repo research doc, which carries its own
@@ -1017,3 +1019,265 @@
     seed) is **not checked here** and should not be assumed either way; an
     earlier draft of this note asserted "no seed" without evidence and was
     corrected before commit.
+
+# ---- Rooms and zones, from research/2026-09-23-room-and-zone-requirements.md
+# handoffs/2026-09-23-room-and-zone-requirements.md: what a room is, what
+# each kind and each noble/administrative position require, and what this
+# fort's own stalled office turned out to actually be missing.
+
+- id: rooms-are-zones-not-furniture
+  scope: universal
+  status: verified
+  topics: [rooms]
+  sources:
+    - kind: live-read
+      ref: >-
+        df-overseer-zone.lua's load_quickfort_table, reached through Lua
+        upvalues off quickfort's own zone module
+        (internal/quickfort/zone.lua); 18 civzone_type kinds confirmed live
+        via the deployed list-kinds command on VM 103, including
+        Bedroom/Office/DiningHall/Tomb as ordinary rectangle zone entries
+      describes: "53.16"
+      read: opened
+      accessed: 2026-09-23
+    - kind: live-read
+      ref: >-
+        df.building_civzonest._fields field-name scan and a direct read of
+        zone 10/zone 11/building 9's own `room` extent struct (T_room:
+        extents, x, y, width, height), Uniboslan, VM 103
+      describes: "53.16"
+      read: opened
+      accessed: 2026-09-23
+    - kind: wiki
+      ref: >-
+        Room (https://dwarffortresswiki.org/index.php/Room), version
+        banner: "This page refers to a Dwarf Fortress feature that no
+        longer exists in v53.16."
+      describes: "53.16"
+      read: opened
+      accessed: 2026-09-23
+  statement: >-
+    A Bedroom, Office, Dining Hall or Tomb in this version is a Zone,
+    painted through the same z/Zones interface (quickfort's #zone mode) as
+    every other zone kind, not a room defined from a piece of furniture.
+    The classic furniture-defines-a-room mechanic (the wiki's own "Room"
+    page, whose current-namespace banner states it "no longer exists in
+    v53.16") is gone; what remains on the struct is a generic `room` extent
+    field on every building (populated for a zone's own rectangle), not a
+    per-furniture room boundary a player sets. Furniture placed inside a
+    room-kind zone's footprint is what contributes value (see
+    room-furniture-must-sit-inside-zone-footprint); the zone itself is what
+    makes the room exist.
+  note: >-
+    research/2026-09-23-room-and-zone-requirements.md Q1. Confirms and
+    settles which side of this mechanism df-overseer-zone.lua (correct: it
+    places Zones) and df-overseer-building.lua (a separate
+    furniture-placement tool) each sit on, and why nothing currently checks
+    whether the two align.
+
+- id: room-value-not-computable-only-quality-word
+  scope: universal
+  status: verified
+  topics: [rooms]
+  sources:
+    - kind: live-read
+      ref: >-
+        A full key scan of the dfhack.buildings Lua module on VM 103 for
+        any name containing room/quality/value; getRoomDescription is the
+        only match
+      describes: "53.16"
+      read: opened
+      accessed: 2026-09-23
+  statement: >-
+    DFHack exposes no numeric room value anywhere. The only
+    room-value-adjacent function in the whole dfhack.buildings module is
+    getRoomDescription(zone), which returns a quality word (or an empty
+    string) computed inside DF's own closed-source binary, never a number.
+    A calculator, agent or tool asking "what is this room worth" cannot be
+    answered from this install at all, only "does it currently register a
+    quality word yet".
+  note: >-
+    research/2026-09-23-room-and-zone-requirements.md Q3/Q6. This is a
+    checked negative (the module was scanned, not merely unexamined), the
+    same standard cooking-plants-costs-seeds and other verified entries in
+    this file use for a negative claim.
+
+- id: uniboslan-office-furniture-outside-zone-footprint
+  scope: site
+  status: verified
+  topics: [rooms]
+  sources:
+    - kind: live-read
+      ref: >-
+        Uniboslan, zone 10, zone 11 and building 9 (the Chair) each read
+        directly by id: x1/y1/x2/y2 boundary fields and
+        dfhack.buildings.getRoomDescription, after the Chair's completion
+        (flags.exists: true, per evals/live/2026-09-23-chair-completion-run/
+        README.md)
+      describes: "53.16"
+      read: opened
+      accessed: 2026-09-23
+  statement: >-
+    Both of Uniboslan's Office zones (id 10, unowned; id 11, owned by the
+    Manager) read an empty room quality from
+    dfhack.buildings.getRoomDescription, even after the fort's one Chair
+    (building id 9) finished construction. A direct boundary read of all
+    three objects confirms why: the Chair's own tile is outside both zones'
+    rectangles (one row outside zone 10's nearest edge; not inside zone
+    11's rectangle at all, since zone 11 was placed at a different site
+    once zone 10 had already claimed the Chair's immediate neighbourhood).
+    Neither zone has ever had any furniture inside its own footprint.
+  note: >-
+    research/2026-09-23-room-and-zone-requirements.md Q3. This is the
+    leading, evidence-backed explanation for order id 3 (ConstructThrone)
+    staying validated:false through every window run so far, replacing
+    "outdoors" as the leading suspect (see
+    room-indoor-status-not-shown-to-matter). Does not prove a corrected,
+    furniture-aligned office would validate; that test has not been run
+    (would mutate the fort).
+
+- id: room-furniture-must-sit-inside-zone-footprint
+  scope: universal
+  status: prior
+  topics: [rooms]
+  sources:
+    - kind: research
+      ref: >-
+        research/2026-09-23-room-and-zone-requirements.md Q3, generalising
+        uniboslan-office-furniture-outside-zone-footprint
+      describes: "53.16"
+      read: opened
+      accessed: 2026-09-23
+  statement: >-
+    Generalising the one site-scoped observation this project has made: a
+    piece of room-relevant furniture (a bed, chair, table, coffin) most
+    likely has to sit inside a room-kind zone's own painted footprint to
+    contribute to that zone's value, not merely be nearby. When placing a
+    room-kind zone and its furniture as two separate actions (this
+    project's own tool split, df-overseer-zone.lua for the zone and
+    df-overseer-building.lua for the furniture), check that the
+    furniture's own tile falls inside the zone's rectangle before trusting
+    the room to register any value.
+  note: >-
+    Inferred from exactly one instance (Uniboslan's Office), with no
+    positive control: no site on this fort has ever had furniture correctly
+    placed inside a room-kind zone to compare against. Kept prior
+    deliberately, matching this file's own precedent for a single-site
+    geometric finding (see water-source-needs-walkable-neighbour's
+    identical caution). What would settle it: rebuild the office so the
+    Chair's tile falls inside the owned zone's footprint and read
+    getRoomDescription again.
+
+- id: room-indoor-status-not-shown-to-matter
+  scope: universal
+  status: prior
+  topics: [rooms]
+  sources:
+    - kind: wiki
+      ref: >-
+        Office (https://dwarffortresswiki.org/index.php/Office), version
+        banner "v53.16 · v0.47.05": "does not necessarily need to be
+        enclosed"
+      describes: "53.16"
+      read: opened
+      accessed: 2026-09-23
+    - kind: live-read
+      ref: >-
+        df-overseer-zone.lua's own ZONE_POLICY table and header comment:
+        prefer_indoors is labelled this project's own preference, not a
+        game rule, for Bedroom/Office/DiningHall
+      describes: "53.16"
+      read: opened
+      accessed: 2026-09-23
+  statement: >-
+    Nothing in this install's own data, DFHack's API, or a
+    current-namespace wiki page ties a room-kind zone's indoor/outdoor
+    status to its value or to a position's
+    required_office/_bedroom/_dining check. The Office wiki page states an
+    office "does not necessarily need to be enclosed". Uniboslan's own
+    stalled office is fully explained by a furniture-placement geometry
+    problem (uniboslan-office-furniture-outside-zone-footprint) without
+    needing "outdoors" as a cause.
+  note: >-
+    Does not positively prove indoor status is irrelevant to value: no site
+    on this fort has ever produced a nonzero room value of any kind to
+    compare indoor against outdoor. It only shows outdoors is not the
+    best-supported explanation for what has actually been observed, and
+    that a wiki source explicitly says the opposite of what this project
+    had been assuming. research/2026-09-23-room-and-zone-requirements.md
+    Q5.
+
+- id: noble-position-room-value-and-furniture-requirements
+  scope: world
+  status: verified
+  topics: [rooms]
+  sources:
+    - kind: live-read
+      ref: >-
+        Uniboslan fortress_entity.positions.own, every position's
+        required_office/_bedroom/_dining/_tomb, requires_population,
+        flags.HAS_MET_POP_REQ, required_boxes/_cabinets/_racks/_stands;
+        bounded read (14 positions), VM 103
+      describes: "53.16"
+      read: opened
+      accessed: 2026-09-23
+  statement: >-
+    Every noble or administrative position's room and furniture
+    requirements, read directly from this install's own entity_position
+    struct data (14 positions on Uniboslan's own fortress entity):
+    MILITIA_COMMANDER, MILITIA_CAPTAIN, EXPEDITION_LEADER,
+    CHIEF_MEDICAL_DWARF, BROKER, CHAMPION, HAMMERER and MESSENGER need no
+    room value and no population. MANAGER and BOOKKEEPER each need only
+    required_office=1 (any value above zero) and no population. SHERIFF
+    needs 100 in each of office/bedroom/dining and no population.
+    CAPTAIN_OF_THE_GUARD, DUNGEON_MASTER (250/250/250) and MAYOR
+    (500/500/500) each additionally require a population of 50, which this
+    fort has not yet met. No position on this fort requires a Tomb value.
+    Four positions (SHERIFF, CAPTAIN_OF_THE_GUARD, DUNGEON_MASTER, MAYOR)
+    also carry nonzero required_boxes/_cabinets/_racks/_stands (MAYOR needs
+    2 boxes, the rest 1 each of all four), a furniture-count requirement
+    distinct from room value that no tool in this repo reads today.
+  note: >-
+    research/2026-09-23-room-and-zone-requirements.md Q4, generalising the
+    single-position MANAGER finding in
+    handoffs/2026-09-21-nobles-appoint.md. Scope is world, not universal:
+    this is this civilization's own entity position data, drawn from the
+    raws this world was generated with; a differently modded or generated
+    world is not shown to carry the same numbers, only assumed to for
+    vanilla-raw play. The required-value numbers line up closely with a
+    wiki-sourced quality-tier table (100 Modest, 250, 500 Decent; see
+    room-value-quality-tier-table), which is corroborating, not
+    independently confirming, since the tier table itself remains a wiki
+    source.
+
+- id: room-value-quality-tier-table
+  scope: universal
+  status: prior
+  topics: [rooms]
+  sources:
+    - kind: wiki
+      ref: >-
+        Bedroom (https://dwarffortresswiki.org/index.php/Bedroom), version
+        banner "v53.16"; Dining_room
+        (https://dwarffortresswiki.org/index.php/Dining_room), version
+        banner "v53.16 · v0.47.05", identical figures
+      describes: "53.16"
+      read: opened
+      accessed: 2026-09-23
+  statement: >-
+    Room quality tiers by value, as given by two independently-fetched
+    current-namespace wiki pages agreeing exactly: Meager 0, Modest 100,
+    the kind's own base name at 250, Decent 500, Fine 1000, Great 1500,
+    Grand 2500, Royal 10000. A position's
+    required_office/_bedroom/_dining/_tomb value is a threshold into this
+    same scale (a required value of 1, as MANAGER and BOOKKEEPER both
+    carry, sits inside the Meager band: any positive value clears it).
+  note: >-
+    Wiki-sourced only; cannot be verified from this install, since DFHack
+    exposes no numeric room value at all
+    (room-value-not-computable-only-quality-word). Corroborated, not
+    confirmed, by three of these numbers (100/250/500) matching this
+    fort's own live position data exactly
+    (noble-position-room-value-and-furniture-requirements): a coincidence
+    this unlikely across three independent values is treated here as real
+    support, not proof.

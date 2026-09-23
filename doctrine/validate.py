@@ -46,6 +46,7 @@ TOPICS = {
     "labor",
     "health",
     "material",
+    "rooms",
 }
 SOURCE_KINDS = {
     "live-read",

@@ -123,4 +123,41 @@ outcomes are useful; a hedge is not.
 
 ## Result
 
-(to be filled by the stream)
+Done. `research/2026-09-23-room-and-zone-requirements.md` written, seven
+doctrine entries appended to `doctrine/seed.yaml`, a `rooms` topic added to
+`doctrine/validate.py` and its test (only code touched). `doctrine/tests`:
+14 passed. Ambient `python -m pytest`: 1372 passed, 3 skipped (baseline
+1371 passed, 3 skipped, plus the one new `rooms`-topic test). `python -m
+doctrine.validate`: ok.
+
+**The office question, answered plainly, not hedged**: the evidence names a
+requirement this fort's real offices fail, and it is not the one this
+project had been leaning on. Live this session, with the fort's Chair fully
+built, `dfhack.buildings.getRoomDescription` still read empty for both
+Office zones and for the Chair itself. A direct boundary read of all three
+objects found why: the Chair's own tile sits outside both zones' own
+rectangles (neither zone has ever had any furniture inside its footprint).
+"Outdoors" is unlikely to be the cause on its own: a current-namespace wiki
+page states an office does not need to be enclosed, and this project's own
+`prefer_indoors` is labelled its own preference, not a game rule. The
+geometry problem is sufficient by itself to explain a room value of zero;
+whether indoor status also matters independently was not and could not be
+tested without mutating the fort.
+
+Also found, read live and not previously known to this project: every
+noble/administrative position's room-value requirements in one table
+(`MANAGER`/`BOOKKEEPER` need only `required_office=1`; `SHERIFF` needs 100
+in office/bedroom/dining; `CAPTAIN_OF_THE_GUARD`/`DUNGEON_MASTER`/`MAYOR`
+need 250/250/250 or 500/500/500 plus a population of 50 this fort has not
+met; no position needs a Tomb value), and a second, previously unread
+requirement class on the same struct (`required_boxes`/`_cabinets`/
+`_racks`/`_stands`, nonzero on the same four value-requiring positions),
+which no tool in this repo reads today. Confirmed live: DFHack exposes no
+numeric room value anywhere, only a quality-word string through
+`getRoomDescription`, a checked negative (a full module key scan), not an
+assumption.
+
+Full detail, citations and what could not be verified (chiefly: whether an
+indoor, furniture-correct office would read nonzero; the exact value
+formula, since the only concrete formula text found is on a page the wiki
+itself now marks obsolete for this version) are in the research file.

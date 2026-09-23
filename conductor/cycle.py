@@ -59,6 +59,7 @@ from typing import Any, Callable, Dict, List, Mapping, Optional, Tuple
 from conductor.archive import CycleArchive
 from conductor.briefing import build_briefing
 from conductor.cursors import CursorStore
+from conductor.game_tick import GameTickError, game_tick_from_overview
 from conductor.mcp_client import MCPToolError, ToolCaller, tool_name
 from conductor.order_watch import OrderWatchResult, evaluate_orders
 from conductor.policy import FULL_SPEED, PAUSED, Policy
@@ -184,6 +185,7 @@ class CycleDeps:
 class CycleResult:
     cycle_index: int
     game_tick: Optional[int]
+    game_tick_error: Optional[str]
     signals: Signals
     clock_level: str
     roles_woken: tuple
@@ -310,18 +312,31 @@ async def _drain_all_cursors(
     return events_by_role
 
 
-def _game_tick(overview: Mapping[str, Any]) -> Optional[int]:
-    """Best-effort: `dfqueue.grade.game_tick_from_overview` is the real,
-    tested parser for this, but importing `dfqueue` here would pull a
-    fort-side package into a service that otherwise depends on nothing but
-    this repo's own `conductor/` and `mcp`/`yaml` -- kept as a soft,
-    non-fatal read instead (a cycle that cannot parse the tick still runs;
-    it just archives `game_tick: None` rather than refusing outright)."""
+def _game_tick(overview: Mapping[str, Any]) -> Tuple[Optional[int], Optional[str]]:
+    """`conductor/game_tick.py`'s own parser, vendored specifically so this
+    module never imports `dfqueue` (see that module's own docstring for why
+    -- the previous version of this function imported
+    `dfqueue.grade.game_tick_from_overview` inside a bare
+    `except Exception: return None`, which is how `game_tick` came to be
+    permanently `null` in production: `dfqueue` is not shipped alongside
+    `conductor/`, so that import failed every single cycle, silently, since
+    the service was first deployed. Confirmed live on VM 106 2026-09-23,
+    `handoffs/2026-09-23-conductor-game-tick.md`.
+
+    Still non-fatal -- a cycle that cannot parse the tick still runs, it
+    just cannot evaluate either time-based wake reason this cycle (see this
+    module's own `run_cycle` and `_game_days_since`, and
+    `conductor/order_watch.py`'s own `game_tick=None` handling) -- but no
+    longer silent: returns `(None, <reason>)` instead of a bare `None`, and
+    `run_cycle` logs the reason at ERROR and threads it into both the
+    archived record and `status.json` (`conductor/status.py`) every single
+    cycle it recurs, not just once. See this stream's own Result section for
+    why a parse failure is reported loudly rather than escalated/paused
+    outright."""
     try:
-        from dfqueue.grade import game_tick_from_overview
-        return game_tick_from_overview(overview)
-    except Exception:
-        return None
+        return game_tick_from_overview(overview), None
+    except GameTickError as exc:
+        return None, str(exc)
 
 
 async def run_cycle(cycle_index: int, deps: CycleDeps) -> CycleResult:
@@ -346,7 +361,14 @@ async def run_cycle(cycle_index: int, deps: CycleDeps) -> CycleResult:
     except MCPToolError as exc:
         raise CycleError(f"cycle {cycle_index}: could not complete this cycle's read: {exc}") from exc
 
-    game_tick = _game_tick(overview)
+    game_tick, game_tick_error = _game_tick(overview)
+    if game_tick_error is not None:
+        LOG.error(
+            "cycle %s: could not parse the game tick from overview.get: %s -- "
+            "both time-based wake reasons (routine review, the stalled-order "
+            "poller) cannot run this cycle",
+            cycle_index, game_tick_error,
+        )
     tripwire = clock_status.get("tripwire")
     armed = clock_status.get("armed")
 
@@ -413,7 +435,8 @@ async def run_cycle(cycle_index: int, deps: CycleDeps) -> CycleResult:
                 )
 
         result = CycleResult(
-            cycle_index=cycle_index, game_tick=game_tick, signals=Signals(),
+            cycle_index=cycle_index, game_tick=game_tick, game_tick_error=game_tick_error,
+            signals=Signals(),
             clock_level=PAUSED, roles_woken=(OVERSEER,), clock_changes=clock_changes,
             role_runs=role_runs, tripwire=tripwire, escalated=escalated, unexecuted=[],
             archived_path=None, dry_run=deps.dry_run,
@@ -536,7 +559,8 @@ async def run_cycle(cycle_index: int, deps: CycleDeps) -> CycleResult:
             )
 
     result = CycleResult(
-        cycle_index=cycle_index, game_tick=game_tick, signals=signals,
+        cycle_index=cycle_index, game_tick=game_tick, game_tick_error=game_tick_error,
+        signals=signals,
         clock_level=(PAUSED if ordinary_escalated else triage_result.clock),
         roles_woken=triage_result.roles_to_wake,
         clock_changes=clock_changes, role_runs=role_runs, tripwire=None,
@@ -588,6 +612,7 @@ def _archive(
     summary = {
         "cycle_index": cycle_index,
         "game_tick": result.game_tick,
+        "game_tick_error": result.game_tick_error,
         "clock_level": result.clock_level,
         "roles_woken": list(result.roles_woken),
         "tripwire": result.tripwire,

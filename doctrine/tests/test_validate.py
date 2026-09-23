@@ -111,6 +111,14 @@ def test_material_topic_is_accepted():
     assert validate([entry]) == []
 
 
+def test_rooms_topic_is_accepted():
+    # Added 2026-09-23 (research/2026-09-23-room-and-zone-requirements.md):
+    # room/zone value, ownership and noble-position requirements are not a
+    # fit for any existing topic, the same reasoning that added "material".
+    entry = _entry(topics=["rooms"])
+    assert validate([entry]) == []
+
+
 def test_bad_read_value_is_refused():
     entry = _entry(sources=[_source(read="skimmed")])
     errors = validate([entry])

@@ -12,6 +12,7 @@ Overseer is woken only when the queue holds something.
 from __future__ import annotations
 
 import json
+import logging
 
 import pytest
 
@@ -205,6 +206,58 @@ async def test_a_never_reviewed_fort_triggers_a_routine_review_on_its_first_cycl
     deps = _deps(tmp_path, just_reviewed=False)
     result = await run_cycle(1, deps)
     assert result.roles_woken == ("architect", "quartermaster")
+
+
+# ---------------------------------------------------------------------------
+# An unreadable game tick is reported loudly, never silently swallowed
+# (handoffs/2026-09-23-conductor-game-tick.md)
+# ---------------------------------------------------------------------------
+
+
+async def test_an_unreadable_tick_is_logged_at_error_and_recorded_not_swallowed(tmp_path, caplog):
+    tools = _base_tools()
+    tools["overview.get"] = {"tier1": {"population": 20}, "tier2": {"in_game_date": "not a date"}}
+    deps = _deps(tmp_path, tools=tools)
+
+    with caplog.at_level(logging.ERROR, logger="conductor.cycle"):
+        result = await run_cycle(1, deps)
+
+    assert result.game_tick is None
+    assert result.game_tick_error is not None
+    assert "in_game_date" in result.game_tick_error
+    assert any("could not parse the game tick" in rec.message for rec in caplog.records)
+
+
+async def test_an_unreadable_tick_still_completes_the_cycle_it_just_skips_time_based_reasons(tmp_path):
+    """Item 3's decision: an unreadable tick is reported loudly (see the
+    test above and conductor/status.py's own log_cycle) but does not by
+    itself pause or escalate the fort -- the cycle still runs, still wakes
+    whoever ordinary triage says to wake, it just cannot evaluate either
+    time-based reason (routine review, the stalled-order poller) this
+    cycle, exactly the same "read what you can, degrade only what you must"
+    contract order_watch.evaluate_orders already documents for
+    game_tick=None."""
+    tools = _base_tools()
+    tools["overview.get"] = {"tier1": {"population": 20}, "tier2": {"in_game_date": "not a date"}}
+    tools["orders.list"] = _orders_list([
+        {"id": 7, "validated": True, "active": False, "amount_left": 5,
+         "amount_total": 10, "finished_year": -1},
+    ])
+    deps = _deps(tmp_path, tools=tools, just_reviewed=False)
+    result = await run_cycle(1, deps)
+
+    assert result.game_tick is None
+    assert result.game_tick_error is not None
+    # Neither time-based reason fired: no routine review (would otherwise
+    # be due immediately, just_reviewed=False), no stalled-order wake
+    # (order 7 above is shaped exactly like this fort's real stalled
+    # orders).
+    assert result.roles_woken == ()
+    assert result.signals.stalled_order is False
+    assert result.clock_level == FULL_SPEED
+    # The cycle still archives normally -- an unreadable tick degrades what
+    # the cycle can evaluate, it does not abort the cycle.
+    assert result.archived_path is not None
 
 
 async def test_vital_nearing_threshold_slows_the_clock(tmp_path):

@@ -57,6 +57,7 @@ def status_from_cycle(result: CycleResult, *, state: str = "running") -> Dict[st
         "last_cycle": {
             "cycle_index": result.cycle_index,
             "game_tick": result.game_tick,
+            "game_tick_error": result.game_tick_error,
             "clock_level": result.clock_level,
             "roles_woken": list(result.roles_woken),
             "dry_run": result.dry_run,
@@ -90,7 +91,20 @@ def log_cycle(result: CycleResult) -> None:
     ORDINARY cycle if the Overseer calls `queue.escalate` outside a
     tripwire, so `escalated=True` with `tripwire=None` is a real, distinct
     case that must log at `ERROR` too, not fall through to the ordinary
-    `INFO` branch below."""
+    `INFO` branch below.
+
+    `game_tick_error`: `conductor/cycle.py`'s own `_game_tick` already logs
+    the parse failure at ERROR once, at the point it happens
+    (`handoffs/2026-09-23-conductor-game-tick.md`) -- logged again here so
+    it is not missed for a cycle whose OTHER outcome would otherwise only
+    warrant INFO, since a null tick silently disables both of this cycle's
+    time-based wake reasons regardless of anything else that happened."""
+    if result.game_tick_error is not None:
+        LOG.error(
+            "cycle %s: game_tick could not be read (%s); routine review and "
+            "the stalled-order poller were both skipped this cycle",
+            result.cycle_index, result.game_tick_error,
+        )
     if result.tripwire is not None and result.escalated:
         LOG.error(
             "ESCALATION: cycle %s's Overseer run did not resolve the tripwire; "

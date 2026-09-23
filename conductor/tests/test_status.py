@@ -13,7 +13,8 @@ from conductor.triage import Signals
 
 def _result(**overrides) -> CycleResult:
     base = dict(
-        cycle_index=1, game_tick=1000, signals=Signals(), clock_level="full_speed",
+        cycle_index=1, game_tick=1000, game_tick_error=None, signals=Signals(),
+        clock_level="full_speed",
         roles_woken=(), clock_changes=[], role_runs=[], tripwire=None, escalated=False,
         unexecuted=[], archived_path=None, dry_run=False,
     )
@@ -84,6 +85,42 @@ def test_log_cycle_an_ordinary_cycle_logs_at_info_only(caplog):
         log_cycle(result)
     assert any(rec.levelno == logging.INFO for rec in caplog.records)
     assert not any(rec.levelno >= logging.WARNING for rec in caplog.records)
+
+
+def test_status_from_cycle_carries_game_tick_error():
+    """handoffs/2026-09-23-conductor-game-tick.md: a null tick must be
+    distinguishable, from status.json alone, from "the tick genuinely could
+    not be read this cycle" vs "the tick really is None" -- the old code
+    made those look identical."""
+    status = status_from_cycle(_result(game_tick=None, game_tick_error="in_game_date missing"))
+    assert status["last_cycle"]["game_tick"] is None
+    assert status["last_cycle"]["game_tick_error"] == "in_game_date missing"
+
+
+def test_status_from_cycle_game_tick_error_is_none_on_a_normal_cycle():
+    status = status_from_cycle(_result())
+    assert status["last_cycle"]["game_tick_error"] is None
+
+
+def test_log_cycle_an_unreadable_tick_logs_at_error(caplog):
+    result = _result(game_tick=None, game_tick_error="in_game_date does not match")
+    with caplog.at_level(logging.ERROR, logger="conductor.status"):
+        log_cycle(result)
+    assert any(
+        rec.levelno == logging.ERROR and "game_tick could not be read" in rec.message
+        for rec in caplog.records
+    )
+
+
+def test_log_cycle_an_unreadable_tick_logs_error_even_on_an_otherwise_quiet_cycle(caplog):
+    """An unreadable tick must be loud even when nothing else about the
+    cycle would have warranted more than INFO -- it silently disables both
+    time-based wake reasons, so it is never allowed to hide behind an
+    otherwise-quiet cycle's own INFO line."""
+    result = _result(game_tick=None, game_tick_error="boom", roles_woken=())
+    with caplog.at_level(logging.INFO, logger="conductor.status"):
+        log_cycle(result)
+    assert any(rec.levelno == logging.ERROR for rec in caplog.records)
 
 
 def test_log_cycle_an_ordinary_cycle_escalation_with_no_tripwire_logs_at_error(caplog):
