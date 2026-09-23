@@ -330,3 +330,32 @@ IP/hostname was read or printed. `Working.md`/`decisions/DECISIONS.md`/
    (`DEFAULT_DECAY_WINDOW_TICKS`) are remotely the right order of
    magnitude on a real fort -- both stated as unresearched placeholders in
    the code, not measured.
+
+### Deploy note, 2026-09-23 (separate session, user go-ahead "yep deploy")
+
+Deployed live to VM 103 alongside the merged landmark-reachability batch.
+Full deploy record, hashes, and every live check:
+`evals/live/2026-09-23-attention-deploy/README.md`. Fort stayed paused,
+same tick before and after (107874).
+
+**Punch-list item 1 above is now answered, and the answer is "no, the
+field names are wrong"** -- checked directly against a live kea (unit 513),
+independent of this file's own code. All three of `class_flags()`'s
+premises miss: `LARGE_PREDATOR`/`BENIGN`/`MISCHIEVOUS` are caste-level
+fields (`cr.caste[unit.caste].flags.X`), not creature-level
+(`cr.flags.X`, the deployed read path, whose own enum has no per-tag
+members at all in this DFHack version, only aggregate `HAS_ANY_X`); the
+curious-beast names are missing an underscore (`CURIOUS_BEAST_ITEM`, not
+`CURIOUSBEAST_ITEM`); and `BUILDINGDESTROYER` is not a flag bit anywhere,
+it is a plain integer (`caste.misc.buildingdestroyer`, 0/1/2). pcall
+guards degrade every one of these to `false` silently -- no crash, no
+error surfaced to `threat.scan`'s caller. For this specific kea the
+degrade-to-false happens to still land it in `record_only` (none of the
+tags gating the *pause* tier are the ones affected), but
+`CURIOUS_BEAST_ITEM` genuinely reads `true` for a real kea and always
+reads `false` through the deployed code, so the *slow* tier ("a
+theft-tagged creature closing in") can never fire for the exact creature
+class this whole design exists to handle. Full derivation, live values,
+and the reflection technique that found `buildingdestroyer` are in the
+eval README above. Not fixed in this deploy; a dedicated follow-on stream
+owns the correction.
