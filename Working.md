@@ -184,6 +184,43 @@ otherwise. Note the interaction: the in-flight reachability stream
 tripwire uses. Two more address or hostname prints by that executor, neither
 reaching a tracked file; the shared ssh helper is now clearly overdue.
 
+**Reachability fixed, 2026-09-23, merged, NOT deployed**
+(`handoffs/2026-09-23-landmark-reachability.md`). New shared
+`df-overseer-reachability.lua`: resolve a landmark to a standable tile (itself,
+else its 8-neighbour ring), compare walkable groups, and report
+reachable/unreachable/**unknown** instead of a bare false. Wired into
+landmarks, connectivity and threat; the old boolean fields were removed after
+grepping for dependents, so `landmarks.list/get` and `connectivity.check*` now
+return a different shape and are marked unverified in TOOLS.yaml until
+deployed. Suites 1281/3 and 652. **Threat behaviour changes**: a unit standing
+on a ramp read as group 0 and could be missed entirely, so the scan becomes
+strictly more permissive, never less. **Not migrated**: nine other scripts call
+`getWalkableGroup` directly and carry the same ramp blind spot (breach,
+harvest, trees, openarea, diggable, chokepoints, building, zone, stocks).
+
+**Wildlife research in, 2026-09-23**
+(`research/2026-09-23-wildlife-threat-classes.md`). Verified from this
+install's own raws: a kea carries only the curious-beast tags, no
+LARGE_PREDATOR, no BUILDINGDESTROYER, and is not an invader, so **it should
+never pause the fort at any distance**. That overturns
+`df-overseer-clock.lua`'s current rule, which pauses on any reachable
+candidate. Recommended three tiers: record only, slowed with an Overseer wake,
+and pause for a large predator, a building destroyer or a confirmed invader
+that has actually reached the citizens' network. For the standing observation
+ledger the researcher recommends a small keyed store (race plus outcome, not
+per unit) that aggregates in place, decays presence-only rows, graduates theft
+or kill rows to the register, and **never calls pause or wake**; the existing
+per-role diff cursor is the wrong home because it truncates at 20 events with
+no aggregation. Confirmed gap: `CREATURE_STEALS_OBJECT` is not in
+`df-overseer-diff.lua`'s report categories, so thefts are currently invisible.
+Could not verify: any tick timing for how fast a threat develops, so the pause
+tier deliberately does not depend on a tick budget.
+
+**In flight:** the full announcement vocabulary, 357 types read live and saved
+at `research/data/2026-09-23-announcement-types.tsv`, being classified into
+pause/slow/notice/log only/ignore with a machine-readable YAML
+(`research/BRIEF-2026-09-23-announcement-severity.md`).
+
 **Design, paused mid-question 2026-09-22.** "The Overseer proposing to
 itself" is really two paths, since it holds no `queue.propose`: its own
 agenda edits, and its direct write actions outside any proposal. Proposed
