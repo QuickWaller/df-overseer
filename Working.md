@@ -35,6 +35,48 @@ researcher on objective-graph prior art. **At merge, owed by the orchestrator:**
 flip `quartermaster` to enabled in `ROSTER.yaml`; add the README and
 `infra/local.example.env` lines the streams report; re-run both suites.
 
+**Design input agreed 2026-09-24: fortress layout, and the user's call that
+the checker must score layouts that do not yet exist.** Raised by the user
+while looking ahead to fifty bedrooms. Agreed shape: a traffic hierarchy of
+hallways by class and width, doors treated as special tiles that furniture may
+not block, rooms required to be internally walkable, and wall reuse across
+adjacent rooms. Two findings already in hand. DF has a real per-tile
+`tile_designation.traffic` enum (High/Normal/Low/Restricted) that is a genuine
+pathfinding cost multiplier, and the flood research found **0 of 6,856,704
+tiles** carry a non-default value on this fort, so the mechanism exists and is
+untouched. And positions demand sharply different room values, read live:
+`MANAGER`/`BOOKKEEPER` 1, `SHERIFF` 100, `CAPTAIN_OF_THE_GUARD` and
+`DUNGEON_MASTER` 250, `MAYOR` 500, so smoothing and engraving are the value
+lever rather than decoration.
+
+**Two corrections the user made to the orchestrator's proposal, both
+accepted.** Wall reuse is a **metric, not an invariant**: "every shared wall
+must be exactly one tile thick" would reject a layout that shares half a wall
+and still wins, which is common when adjacent rooms differ in size, so it is
+measured (shared wall length over total) and ranked, never enforced. And the
+checker must be able to **score or create a layout that does not exist yet**,
+not only audit what is already placed, which is the larger build: it needs a
+model of the map rather than a read of it, and it is what lets the Architect
+compare options before a single dig order is issued.
+
+**Open, and blocking the invariant set:** whether a zone-defined room must be
+enclosed is a game requirement or only a design preference. Yesterday's
+research concluded from a current-namespace wiki page that an office need not
+be enclosed; the user believes it is required. Dispatched:
+`handoffs/2026-09-24-room-enclosure-and-value.md`. Recorded because a checker
+is about to encode whichever answer is true, and this project has twice
+mistaken a preference for a rule (`prefer_indoors`, the wiki's 20-citizen
+Manager).
+
+**Division of labour that falls out of the no-map commitment:** the model
+picks policy (how many rooms, which traffic class, which layout family) and a
+deterministic tool does the geometry. Parameterised layout families (spine
+with rooms either side, double-loaded corridor, courtyard block) are preferred
+over general rectangle packing, because shared walls then fall out of the
+family rather than out of a search nobody can reason about. Two objectives,
+build cost and movement cost, genuinely conflict, so the tool should return a
+small ranked set with both costs stated rather than a single answer.
+
 **Design input agreed 2026-09-23, for the agent design conversation: how
 knowledge reaches a role.** Found empirically, not theorised: the Architect
 derived the office rule from `zone.list-kinds`'s own metadata and **never
