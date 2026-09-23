@@ -33,6 +33,13 @@ write_authority: none      # enforced: this role has no FORT-mutating action too
                             # dfqueue's own ledger, never to the fort.
 
 read:
+  - id: "ledger.read"
+    status: exists
+    note: >-
+      Added handoffs/2026-09-23-attention-tiers-ingame.md. Per-race
+      observation ledger (sightings/outcomes, never per-unit). Research
+      doc S:E3(6): a confirmed theft pattern ("kea, 2 confirmed thefts") is
+      restock/threshold proposal material for this role.
   - id: "overview.get"
     status: exists
     note: Enough situational context to ground a proposal, same as every other advisor.

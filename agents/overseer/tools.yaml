@@ -19,6 +19,14 @@ role: overseer
 
 # The Overseer is the sole writer, so it is the only role with any write entry.
 read:
+  - id: "ledger.read"
+    status: exists
+    note: >-
+      Added handoffs/2026-09-23-attention-tiers-ingame.md. Per-race
+      observation ledger (sightings/outcomes, never per-unit): what the
+      record_only/slow tiers accumulated between tripwires, decayed at
+      read time (a pure "present" row older than the caller's window is
+      left out; a theft/kill row never decays).
   - id: "overview.get"
     status: exists
   - id: "landmarks.list"

@@ -236,6 +236,16 @@ df-overseer-diff.lua:
         gated on dfhack.units.isHidden of the unit(s) involved -- see the
         .lua file's own header. Not live-fired against a real death/attack
         this session (fort stays paused); verified by source reading only.
+        UPDATED 2026-09-23 (handoffs/2026-09-23-attention-tiers-ingame.md
+        item 3, offline, not deployed): REPORT_CATEGORY gained "theft"
+        (CREATURE_STEALS_OBJECT), "mischief" (MISCHIEF_LEVER/PLATE/CAGE/
+        CHAIN), "snatched" (CITIZEN_SNATCHED) and "crime_witness"
+        (CRIME_WITNESS_*) -- theft was previously invisible to this tool
+        entirely. A "theft" REPORT also writes a "theft" outcome into
+        df-overseer-ledger.lua, race "unknown" (report text carries no
+        structured race field; see the .lua file's own comment).
+        REGISTRATION_VERSION bumped so the live re-registration guard
+        replaces the pre-2026-09-23 listener closure on next load.
     "recent-combat [N]":
       lua_function: recent_combat
       effect: read
@@ -1269,6 +1279,21 @@ df-overseer-threat.lua:
         songbird inside the walkable network WILL appear, ranked low. How much
         wildlife noise that produces on a populated fort is unknown.
         Ranking weights and MAX_RESULTS are untuned guesses.
+        UPDATE 2026-09-23 (handoffs/2026-09-23-attention-tiers-ingame.md item
+        1, offline stream, not deployed): every result now also carries
+        `class_flags` (raw creature tags -- LARGE_PREDATOR/BUILDINGDESTROYER/
+        CURIOUSBEAST_ITEM/_EATER/_GUZZLER/BENIGN/MISCHIEVOUS, pcall-guarded,
+        false on any read failure), `tier` ("pause"|"slow"|"record_only",
+        research/2026-09-23-wildlife-threat-classes.md S:E1's rule) and
+        `tier_reasons`. Results are now sorted by tier first, the existing
+        score second, so df-overseer-clock.lua's own tripwire can keep
+        reading `results[1]` and get the worst TIER present, not merely the
+        highest heuristic score. Reads df-overseer-ledger.lua's
+        ledger_closest_distance (read-only) per candidate to evaluate the
+        "closing in" theft condition -- see classify_tier's own comment.
+        RAW-TAG FIELD NAMES ARE UNVERIFIED THIS SESSION (no VM, no live
+        DFHack) -- flagged in the .lua file's own header as a named gap to
+        confirm before trusting a live run's tier assignment.
 
 df-overseer-breach.lua:
   build_order_item: "not in the 0-9 spatial build order -- a safety gap found 2026-09-12, research/2026-09-12-dfhack-capability-checks.md sec5"
@@ -1814,7 +1839,11 @@ df-overseer-clock.lua:
         latch detail for a hunger/thirst trip carries a status CATEGORY
         derived from the raw timer, never the raw timer itself (see the
         .lua file's header).
-    "arm [HUNGER_CRITICAL THIRST_CRITICAL CHECK_INTERVAL_TICKS THREAT_CHECK_EVERY_N]":
+        ADDED 2026-09-23 (handoffs/2026-09-23-attention-tiers-ingame.md):
+        `advisory` -- the most recent SLOW-tier trip (reason "hostile_slow",
+        tick, detail), or nil. Purely informational; never blocks
+        clock_resume, which only ever checks the latch.
+    "arm [HUNGER_CRITICAL THIRST_CRITICAL CHECK_INTERVAL_TICKS THREAT_CHECK_EVERY_N THINK_FPS]":
       lua_function: clock_arm
       effect: mutate
       coordinate_bearing: false
@@ -1824,18 +1853,29 @@ df-overseer-clock.lua:
       notes: >
         Registers the in-game tripwire watcher via repeat-util (the same
         registration mechanism as overseer-autosave/overseer-sampler, per
-        onMapLoad.init), an all-or-nothing optional group of four numeric
-        args. Defaults: hunger/thirst critical 75000/50000, sourced from
+        onMapLoad.init), an all-or-nothing optional group of numeric args.
+        Defaults: hunger/thirst critical 75000/50000, sourced from
         hack/scripts/full-heal.lua's is_in_dire_need(), cross-validated
         against the wiki (research/2026-09-16-food-clock-and-farm-lead-time.md);
         check interval 100 ticks and threat-scan-every 10 checks are this
-        stream's own reasoned defaults, not sourced. Clears any existing
-        latch (a fresh arm is a clean start). Tripwires v1: a citizen death
-        since the last check, hunger/thirst past critical, a hostile
-        df-overseer-threat.lua's find_threats admits by reachability (every
-        threat_check_every_n-th check only, reqscript'd not copied). On a
-        trip: pauses and writes {reason, tick, detail} to a state file (see
-        header for why a file, not a Lua global). System-kind only.
+        stream's own reasoned defaults, not sourced. think_fps defaults to
+        10, sourced from docs/AGENT-LOOP.md ss2's own "Slowed" level. Clears
+        any existing latch AND advisory (a fresh arm is a clean start).
+        Tripwires, UPDATED 2026-09-23 (handoffs/2026-09-23-attention-tiers-
+        ingame.md, offline stream, not deployed): (1) a citizen death since
+        the last check (a getCitizens() roster diff, not the omniscient
+        UNIT_DEATH event -- see the .lua file's own step-1 comment), (2)
+        hunger/thirst past critical, (3) a hostile df-overseer-threat.lua's
+        find_threats admits by reachability, now branched on that
+        candidate's own TIER (pause latches and stops; slow sets FPS to
+        think_fps and writes a non-blocking advisory instead of pausing;
+        record_only only feeds df-overseer-ledger.lua) rather than pausing
+        on any candidate at all, (4) NEW: a newly-arrived report whose type
+        is one of df-overseer-announcement-levels.lua's 25 generated
+        PAUSE_REPORT_IDS -- a separate mechanism from (3), bounded to
+        reports newer than the last check. On a pause: latches and writes
+        {reason, tick, detail} to a state file (see header for why a file,
+        not a Lua global). System-kind only.
     disarm:
       lua_function: clock_disarm
       effect: mutate
@@ -1925,6 +1965,98 @@ df-overseer-vitals.lua:
         unlike a map sweep" rather than population-independent. Granted to
         the conductor as an ordinary read (no system-kind exception
         needed; effect: read).
+
+df-overseer-ledger.lua:
+  build_order_item: "handoffs/2026-09-23-attention-tiers-ingame.md item 4"
+  commands:
+    "record RACE TICK DISTANCE_TILES [OUTCOME]":
+      lua_function: record
+      effect: mutate
+      coordinate_bearing: false
+      live_deployed: false
+      verified: unverified
+      knowledge_scope: player_derivable
+      notes: >
+        Aggregates a sighting/outcome into the per-race observation ledger
+        (race, first/last seen tick, closest distance, an outcomes count
+        map). Never a per-unit row -- keyed on race, matching
+        research/2026-09-23-wildlife-threat-classes.md S:E3(2). Called
+        in-process (reqscript) by df-overseer-threat.lua's find_threats
+        (present) and df-overseer-diff.lua's onReport (theft, race
+        "unknown" -- see that file's own note) -- not granted to any role's
+        tools.yaml, since no external caller needs it; the CLI form exists
+        for manifest completeness and manual testing only.
+        STRUCTURAL GUARANTEE: this function, and everything it calls, never
+        references dfhack.world.SetPauseState, clock_pause/clock_resume or
+        repeatUtil.* -- the file does not even reqscript df-overseer-clock.
+        tests/test_observation_ledger.py greps the source for exactly those
+        names as the regression guard.
+    "read [MAX_AGE_TICKS]":
+      lua_function: read_ledger
+      effect: read
+      coordinate_bearing: false
+      live_deployed: false
+      verified: unverified
+      knowledge_scope: player_derivable
+      notes: >
+        Every ledger row, decayed at READ time only (never swept on write):
+        a row whose only outcome is "present" and whose last_seen_tick is
+        older than (now - MAX_AGE_TICKS) is left out; a row with any other
+        outcome (theft, kill, ...) always survives. Granted to overseer,
+        architect and quartermaster (agents/*/tools.yaml) per
+        research/2026-09-23-wildlife-threat-classes.md S:E3(6): a repeated-
+        sighting pattern is proposal material for the Architect
+        (fence/trap) and Quartermaster (restock), not only the Overseer.
+
+df-overseer-announcement-levels.lua:
+  build_order_item: "handoffs/2026-09-23-attention-tiers-ingame.md item 2 -- GENERATED, see scripts/gen_announcement_pause_slow.py"
+  commands:
+    pause-ids:
+      lua_function: (module-level table read, no dedicated function)
+      effect: read
+      coordinate_bearing: false
+      live_deployed: false
+      verified: unverified
+      knowledge_scope: player_derivable
+      notes: >
+        Dumps PAUSE_REPORT_IDS (25 ids, generated from
+        research/data/2026-09-23-announcement-severity.yaml) as
+        {"ids": [{"id": N, "name": "..."}, ...]}. Not itself called by any
+        other df-overseer-*.lua file (df-overseer-clock.lua's own step 4
+        reqscript's this module and reads PAUSE_REPORT_IDS/is_pause_report
+        directly, in-process) -- this CLI form exists for manifest
+        completeness and for a role/the conductor to introspect the table
+        without reading the generated .lua source.
+    slow-ids:
+      lua_function: (module-level table read, no dedicated function)
+      effect: read
+      coordinate_bearing: false
+      live_deployed: false
+      verified: unverified
+      knowledge_scope: player_derivable
+      notes: >
+        Dumps SLOW_REPORT_IDS (23 ids) as {"ids": [{"id": N, "name": "...",
+        "wake": ["overseer", ...]}, ...]}. Handoff item 2: these are NOT
+        acted on anywhere in this repo's Lua -- this command, and the
+        `announcement-levels.slow-ids` tool id it becomes, is exactly the
+        exposure point the sibling conductor stream
+        (handoffs/2026-09-23-stalled-order-poller.md and
+        docs/AGENT-LOOP.md ss3's still-owed routing) should read from,
+        without this stream touching conductor/. Granted to conductor
+        (agents/conductor/tools.yaml) so that wiring needs no further
+        TOOLS.yaml change.
+    "level TYPE_ID":
+      lua_function: (module-level table read, no dedicated function)
+      effect: read
+      coordinate_bearing: false
+      live_deployed: false
+      verified: unverified
+      knowledge_scope: player_derivable
+      notes: >
+        `level TYPE_ID` -> {"id", "level" ("pause"|"slow"|
+        "not_pause_or_slow"), "name", "wake"}. A convenience single-id
+        lookup over the same two generated tables; not load-bearing for any
+        tripwire.
 
 # Not yet built, flagged here rather than silently absent:
 #   - resource_summary (get_overview's remaining unbuilt field, needed to
