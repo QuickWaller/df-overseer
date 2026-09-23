@@ -6,7 +6,8 @@ not watching. Goal: job 2249 (`ConstructThrone` at the Masons, direct job,
 `order_id: -1`) runs and produces a CHAIR item, and the buildingplan-
 suspended Chair building (id 9) claims it and completes.
 
-**Status: in progress, filled in as the run goes.**
+**Status: DONE. The Chair completed.** First time this fort has carried a
+queued job through to a finished thing.
 
 ## Starting state, verified before any action
 
@@ -194,3 +195,109 @@ classifier friction.
     here, not two views of the same mechanism.
   - Quicksave issued (prior slot `autosave 2`), confirmed landed in
     **`autosave 3`**.
+
+### Window 3: the Chair completes
+
+- Resumed at `abs_tick 12611099` (`clock resume`, `paused: false`). The
+  `slow`-tier advisory (same kea, now camped at "Stockpile #2") was still
+  latched, so fps stayed at 10 throughout.
+- Polled every ~3-6s, checking both `clock status` and a direct bounded
+  read of building id 9 (`df.building.find(9)`, `flags.exists`/`#jobs`)
+  every iteration, so the run could stop the moment the building finished
+  rather than waiting out the full window.
+- **At `abs_tick 12611405`** (year 31, `cur_year_tick 112205`), the building
+  read flipped: `{"exists": true, "jobs_n": 0}`. **The fort was paused
+  immediately** to lock in the completed state before anything else
+  happened (`clock pause` -> `{ok: true, paused: true}`).
+
+**Read-back confirming completion, quoted in full** (all read after the
+pause, so nothing here can have changed since):
+
+- Building id 9 directly: `{"btype": "Chair", "construction_stage": 1,
+  "exists": true, "jobs_n": 0}` -- type Chair, `flags.exists` now `true`
+  (was `false` at the start and through windows 1-2), `construction_stage`
+  now `1` (was `0`), zero jobs left on the building (the suspended
+  `ConstructBuilding` job that sat there for the whole prior run and the
+  first two windows of this one is gone, because it finished, not because
+  it was cancelled).
+- `stocks availability CHAIR`: `total_item_count: 1`, **`in_building_item_count:
+  1`**, `in_building_units: 1`, `available_item_count: 0`, `in_job_item_count:
+  0` -- the one Chair item that job 2249 produced is now built into the
+  building, not sitting idle and not still in a job. This is the
+  strongest single line of evidence: the item moved from `in_job` (window
+  2's end state) to `in_building` (this read), which is exactly what
+  "claimed it and completed" means at the item-accounting level.
+- `clock status`: `paused: true`, `abs_tick: 12611557` (year 31,
+  `cur_year_tick: 112357`), still only the `slow`-tier `advisory` present
+  (`hostile_slow`, the same kea), **no `tripwire` field** -- confirms the
+  pause was mine, not a pause-tier trip.
+- `vitals summary`: alive 22, dead_total 1 (unchanged from the start of the
+  entire run), worst_hunger "fine", worst_thirst "fine", `warning_count: 0`.
+  **No death and no vital crossed a threshold at any point across the whole
+  run.**
+- `orders list`, final: unchanged from every prior read -- ids 0/1/2
+  `validated: true, active: false`; id 3 (`ConstructThrone`) `validated:
+  false, active: false`, exactly as it read at the start, before the office
+  was even placed (2026-09-23-office-and-first-real-build). **The manager
+  order was never the mechanism that made this Chair.**
+- Final quicksave issued (prior slot `autosave 3`), confirmed landed in
+  **`autosave 1`** (the pool has only three slots, `autosave 1/2/3`, and
+  rotates oldest-first per `docs/TRAPS.md`; there is no "autosave 4").
+
+## What this run settles and what it leaves open
+
+**Settled, for the first time on this fort**: a queued job can run to
+completion and a buildingplan-suspended building can claim the item and
+finish, entirely unattended, inside the tick-window/quicksave/tripwire
+safety envelope this project has built. Job 2249 (`ConstructThrone`, direct
+job, `order_id: -1`) produced one CHAIR item; building id 9 claimed it and
+now reads `flags.exists: true`. The chain the handoff set out to prove --
+"a tool queued a real job; does it ever turn into a finished thing" -- is
+proven, not designed, for the first time.
+
+**The office question is not settled, and this run adds real evidence
+against one branch of it, not for it.** The Chair was built entirely
+through the direct `workjob` route (job 2249), never through a manager
+order. Order id 3, `ConstructThrone`, created specifically so the fort's own
+Manager could supply this same Chair, sat `validated: false, active: false`
+for the entire run, including the ~3600 real ticks after the direct job had
+already finished the exact same production the order was asking for. Two
+readings remain open, and this run cannot distinguish them: (a) the office's
+room value genuinely is not enough for `required_office: 1` yet (still
+unsmoothed, still outdoors, `room_description` still null as of the last
+read in the prior run), so the order can never validate regardless of how
+long the fort runs; or (b) order validation needs something this run never
+exercised (more real time with no competing direct job soaking up the only
+boulder-consuming production slot at the Masons, a check this run did not
+attempt). **The Chair's completion is not evidence the office is
+sufficient** -- it is evidence the direct-job route works independently of
+the office, which is a different, narrower claim than the one
+`docs/AGENT-LOOP.md` still has open.
+
+**Not verified this run**: whether `world.manager_orders.all` ever drops a
+finished order (moot here, since none finished); the `slow`-tier advisory's
+own clearing behaviour (it never cleared across three straight windows on
+the same kea, so whether it self-clears when the creature actually leaves,
+versus needing an explicit `clear`/re-arm, is still open --
+`docs/AGENT-LOOP.md` §3's "still owed" list should probably note this);
+and whether the classifier refusals logged above recur on the identical
+commands in a future session (both `workjob cancel ... true` refusals were
+consistent across two tries; the other three were each one-off and
+succeeded on immediate retry, so they read as noise rather than a real
+per-command block, but that is an inference from a small sample, not a
+proven pattern).
+
+## Fort's final state
+
+**Paused.** `clock status`: `paused: true`, `armed: true`, `abs_tick
+12611557` (year 31, `cur_year_tick 112357`), `fps: 10.0` (the `slow`-tier
+throttle was never explicitly cleared; it is cosmetic while paused and does
+not affect anything at rest), only a `slow`-tier `advisory` latched, no
+`tripwire`/pause-tier latch. 22 alive, 1 dead (unchanged all run). A
+confirmed quicksave exists in slot **`autosave 1`**, DF's own record
+(`cur_savegame.save_dir`), landed after the completion was locked in by the
+manual pause.
+
+Windows used: 3 of the 10 allowed. Total ticks run: `12611557 - 12607074 =
+4483` of the 6000 (3 x 2000) allowed for three windows, well inside the
+20000-tick/10-window overall cap set for the whole run.
