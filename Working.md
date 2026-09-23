@@ -105,8 +105,12 @@ labour, and it is a property of the dig plan rather than of any build order.
 material it is dug into.** Smoothing and engraving are the levers that reach
 high room values (MAYOR needs 500 against MANAGER's 1), engraving requires a
 smoothed surface, and soil cannot be smoothed. So a room dug in soil can never
-be engraved and can never hold a high-value noble. **Needs verification**
-before encoding, specifically whether soil truly cannot be smoothed in 53.16.
+be engraved and can never hold a high-value noble. **Settled 2026-09-24 from the install's own tiletype data**, not the wiki: no
+SOIL-material tiletype carries a SMOOTH special anywhere, while STONE does, so
+soil genuinely cannot be smoothed in 53.16 and the smooth-or-build rule stands
+as written. Verified twice, by the perception stream and independently by the
+orchestrating session (14 SOIL tiletypes, 0 with SMOOTH, 21 STONE with
+SMOOTH).
 
 **And the act/sense rule makes this a post-dig property, not a siting input.**
 `df-overseer-diggable.lua` was omniscient until the 2026-09-16 knowledge-scope

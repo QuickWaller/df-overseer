@@ -115,4 +115,154 @@ should run against zones 10 and 11.
 
 ## Result
 
-(to be filled by the stream)
+Built `scripts/dfhack/df-overseer-surface.lua`, a new file (not editing
+`df-overseer-diggable.lua`, `df-overseer-zone.lua` or `df-overseer-nobles.lua`
+as scoped), four read-only, question-level verbs anchored on a zone id, none
+returning a coordinate or a tile list:
+
+- `enclosure ZONE_ID` -- is the footprint enclosed; if not, a count of
+  boundary-ring gaps typed `doorway` / `open_floor_edge` / `missing_wall`.
+  Three-state (`enclosed` / `not_enclosed` / `cannot_tell`): a confirmed gap
+  always outranks an unknown tile, but no unknown tile is ever silently read
+  as fine, `nobles.requirements`' own discipline.
+- `finish ZONE_ID` -- smooth / engraved / rough_natural / constructed counts
+  and fractions for the zone's own floor tiles and its boundary ring's
+  WALL-shaped tiles.
+- `material ZONE_ID` -- what every boundary-ring tile is made of
+  (tiletype_material granularity), across the whole ring regardless of
+  shape, since an open ring tile still has a real underlying material.
+- `traffic ZONE_ID` -- READ ONLY, the traffic designation over the zone's
+  own footprint tiles, with an explicit `all_normal` flag so "none set" (the
+  fort-wide state today) reads as a real answer, not a suspicious result.
+
+All four resolve a zone id via `df.building.find` (O(1), not a scan of
+`ACTIVITY_ZONE`) and are bounded to that zone's own footprint plus its
+one-tile boundary ring, refusing outright (never truncating silently) past
+`MAX_FOOTPRINT_TILES` (2500) / `MAX_RING_TILES` (900). Every tile read goes
+through one shared `tile_read` helper carrying the act/sense discipline:
+`isTileVisible` gates every read, a hidden tile reports `hidden = true` and
+nothing else about it, and a read failure on a visible tile (`isTileVisible`
+itself erroring, `getTileType`/`df.tiletype.attrs` failing) is `ok = false`
+plus an error string, collected into `read_failures` and logged via
+`dfhack.printerr`, never defaulted into either a gap or a clean read.
+
+**Soil-smoothing question: settled from the install's own tiletype data,
+not inferred.** A read-only live probe (script not committed; it touched
+only `df.tiletype`/`df.tiletype_shape`/`df.tiletype_material`/
+`df.tiletype_special`, static install data, no map tile) iterated all 697
+tiletypes (index 0..696) and grouped by material/special. Exactly one
+SOIL-material WALL tiletype exists (`SoilWall`, `.special == NONE`), and
+across every shape, not only WALL, no SOIL-material tiletype anywhere in
+the table carries `.special == SMOOTH (3)` or `SMOOTH_DEAD (11)` -- the
+only specials any SOIL tiletype carries are NONE, NORMAL, FURROWED or WET.
+STONE-material WALL tiletypes, by contrast, include 20 entries with
+`.special == SMOOTH`. **Soil cannot be smoothed in 53.16.** Working.md's
+"needs verification" line on this can be closed; the "smooth where stone,
+construct a wall where soil" design rule is correct as stated. (This is a
+register-owed fact; per the `handoffs/` rule this stream does not write
+`decisions/DECISIONS.md` or `Working.md` itself -- see "Owed register
+lines" below.)
+
+**A live bug was found and fixed by the mandatory live check, the same
+pattern this project has hit before** (the creature-tag-fields fix,
+2026-09-23): the first version of `finish_class` classified a tile as
+`smooth` purely from `tiletype.attrs[tt].special == SMOOTH`, with no
+material gate. A live read of zone 11's own one real WALL-shaped boundary
+tile (a living tree) returned `smooth` -- because DFHack's tiletype table
+reuses the SMOOTH/SMOOTH_DEAD numeric slot for `TreeTrunkPillar`/
+`TreeDeadTrunkPillar` (a tree's own pillar shape, nothing any dwarf ever
+smoothed), confirmed by a follow-up probe listing every WALL-shaped
+TREE-material tiletype (only `TreeTrunkPillar`/`TreeDeadTrunkPillar` carry
+those specials; every other tree-trunk shape is NONE or DEAD). Fixed by
+gating the smooth/engraved check on a `FINISHABLE_MATERIALS` set (STONE,
+SOIL, FEATURE, MINERAL, LAVA_STONE, FROZEN_LIQUID -- the same set
+`df-overseer-diggable.lua`'s own `DIGGABLE_MATERIALS` already uses),
+re-verified live the same session: zone 11's tree tile now reads
+`rough_natural`. Full narrative and the tiletype-table evidence are in the
+.lua file's own header.
+
+### Live checks run, this stream (VM 103/Uniboslan, paused throughout at
+`abs_tick 12611557`, confirmed unchanged by a final `df-overseer-clock
+status` read after all other checks, quicksave already confirmed by the
+handoff before this stream began, read-only end to end)
+
+Run via the `docs/TRAPS.md` `dfhack-run lua -f run.lua PATH ARGS` wrapper
+against a scratch copy in `/tmp` (the deployed-script convention was not
+used; nothing was installed to DFHack's own script path). All scratch files
+were deleted from the VM's `/tmp` before this stream ended.
+
+- `enclosure 10` -> `not_enclosed`, 16/16 boundary-ring tiles
+  `open_floor_edge`, 0 `wall_like_tiles`, 0 `unknown_tiles`.
+- `enclosure 11` -> `not_enclosed`, 15/16 `open_floor_edge`, 1
+  `wall_like_tiles` (the tree), 0 `unknown_tiles`.
+- `finish 10` -> floor 9/9 `rough_natural`; boundary_wall 0 counted (no
+  WALL-shaped ring tile).
+- `finish 11` -> floor 9/9 `rough_natural`; boundary_wall 1/1
+  `rough_natural` (post-fix; pre-fix this read `smooth`, see above).
+- `material 10` -> boundary ring materials: `AIR:1, GRASS_DARK:7,
+  GRASS_LIGHT:2, PLANT:2, SOIL:2, STONE:2`, 0 unknown.
+- `traffic 10` and `traffic 11` -> both all 9 footprint tiles `Normal`,
+  `all_normal: true`, 0 unknown -- matches memory/dfhack-environment.md's
+  fort-wide "0 of 6,856,704 tiles are non-Normal" fact.
+- Error paths: `enclosure 999999` (no such id) -> named error, not a crash
+  or a default. `enclosure 1` (a real building id that is not a zone) ->
+  "exists but is not an activity zone", not a guess.
+
+Both zones read `not_enclosed` and entirely `rough_natural`, consistent with
+CLAUDE.md's "both outdoors" status line and with neither ever having been
+dug or smoothed.
+
+### Refusal encountered and worked around (per CLAUDE.md's refusal rule)
+
+The shell classifier refused a `for cmd in ...; do ...; done` Bash loop over
+several read-only VM commands, on a "cannot verify this doesn't touch git"
+basis it could not resolve for a loop construct. The task was already
+authorised (bounded, read-only live checks this handoff explicitly asks
+for), reversible (pure reads), and touched only this project's own VM, so
+each command was run as its own plain, separate invocation instead --
+same commands, same read-only effect, just not batched in a loop. Noted
+here per CLAUDE.md's "a refusal is a signal, not automatically a wall" rule.
+
+### Owed register lines (this stream does not write these files)
+
+- `Working.md`: the soil-smoothing "needs verification" line (currently
+  under "Build-cost correction from the user, 2026-09-24...") can be closed
+  with the settled answer above, and this stream's own section should be
+  added or pointed at from `Working.md`'s "START HERE".
+- `decisions/DECISIONS.md`: a row for "soil cannot be smoothed in 53.16,
+  settled from install tiletype data" (date 2026-09-24, status: confirmed).
+- `handoffs/INDEX.md`: flip this handoff's row to done.
+
+### Touched surfaces
+
+`scripts/dfhack/df-overseer-surface.lua` (new), `scripts/dfhack/TOOLS.yaml`,
+`dfmcp/tools.py` (`ZONE_ID` added to `_INTEGER_ARG_NAMES` and
+`_ARG_DESCRIPTIONS`), `agents/architect/tools.yaml`,
+`agents/overseer/tools.yaml`, `agents/consultant/tools.yaml` (read-only
+`surface.*` grants, mirroring the existing `nobles.*` grant pattern exactly
+-- `quartermaster` and `conductor` were deliberately left ungranted, no
+spatial/advisory remit), `tests/test_surface_tool_manifest.py` (new, 10
+tests: manifest/dispatch agreement, lua_function existence, argument shape,
+effect/knowledge_scope, no-coordinate-leak, bounded-read structural check,
+and role-grant coverage).
+
+### Test counts quoted
+
+- Ambient `python -m pytest`: **1423 passed, 3 skipped** (baseline 1413
+  passed / 3 skipped + this stream's 10 new tests in
+  `tests/test_surface_tool_manifest.py`).
+- `dfmcp/tests` in `.venv-dfmcp`: **652 passed**, unchanged (this stream
+  added no dfmcp/tests -- `ZONE_ID`'s schema behaviour is covered by the
+  top-level manifest test file instead, matching
+  `tests/test_zone_tool_manifest.py`'s own placement rationale).
+
+### Not deployed
+
+Per this handoff's own hard line ("Offline build. No deploy, no fort
+mutation, no unpause"), `df-overseer-surface.lua` was tested live only
+through the `docs/TRAPS.md` scratch-script-path wrapper, never installed to
+VM 103's own script path, and `live_deployed: false` is set on all four
+`TOOLS.yaml` commands accordingly. **The deploy is owed** and should run
+these same four commands (`enclosure`/`finish`/`material`/`traffic` against
+zones 10 and 11) as its own live check, expecting the exact results quoted
+above.

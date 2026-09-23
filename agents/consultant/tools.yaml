@@ -103,6 +103,29 @@ read:
       Manager's office actually working") this role can now answer from a
       real read instead of a prior.
 
+  - id: "surface.enclosure"
+    status: planned
+    note: >-
+      Added handoffs/2026-09-24-surface-perception.md. Whether a zone's
+      footprint is enclosed, a fact-checking read against a claim like "the
+      Office is enclosed." Offline build, live read-only checks against
+      zones 10/11 (both not_enclosed), not deployed.
+  - id: "surface.finish"
+    status: planned
+    note: >-
+      Same handoff. Smooth / engraved / rough_natural / constructed counts
+      for a zone's floor and boundary wall. Offline build, not deployed.
+  - id: "surface.material"
+    status: planned
+    note: >-
+      Same handoff. What a zone's boundary is made of. Offline build, not
+      deployed.
+  - id: "surface.traffic"
+    status: planned
+    note: >-
+      Same handoff. Read-only traffic designation over a zone's own
+      footprint.
+
   - id: "web.search"
     status: exists
     note: >-

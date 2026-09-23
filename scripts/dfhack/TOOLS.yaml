@@ -1951,6 +1951,88 @@ df-overseer-nobles.lua:
         Removes the holder of a held, non-elected position. Same DRY_RUN and
         VERSION semantics as appoint. Refuses a vacant or elected position.
 
+df-overseer-surface.lua:
+  build_order_item: "the perception layer an audit found missing from the Architect's read grants; handoffs/2026-09-24-surface-perception.md"
+  commands:
+    "enclosure ZONE_ID":
+      lua_function: enclosure
+      effect: read
+      coordinate_bearing: false
+      live_deployed: false
+      verified: "2026-09-24 (offline build, live read-only checks through a scratch script path, VM 103, fort paused throughout: zone 10 -- not_enclosed, 16/16 ring tiles open_floor_edge, 0 wall_like_tiles; zone 11 -- not_enclosed, 15/16 open_floor_edge, 1 wall_like_tile (a living tree), 0 unknown_tiles on either). Not yet deployed."
+      knowledge_scope: player_derivable
+      notes: >
+        Is this zone's footprint enclosed, and if not how badly: a count of
+        boundary-ring gaps, each typed doorway / open_floor_edge /
+        missing_wall. Three-state result (enclosed / not_enclosed /
+        cannot_tell), nobles.requirements' own discipline -- a confirmed gap
+        always outranks an unknown (hidden or unreadable) tile, but no
+        unknown tile is ever silently read as fine. Bounded to the zone's
+        own footprint plus its one-tile boundary ring; refuses rather than
+        scanning a zone larger than 2500 footprint tiles or a 900-tile ring.
+        Both of this fort's real zones read not_enclosed live (both
+        effectively outdoors, per CLAUDE.md's status line).
+    "finish ZONE_ID":
+      lua_function: finish
+      effect: read
+      coordinate_bearing: false
+      live_deployed: false
+      verified: "2026-09-24 (offline build, live read-only checks through a scratch script path, VM 103, fort paused throughout: zone 10's 9 floor tiles all rough_natural, 0 boundary wall tiles (no WALL-shaped ring tile); zone 11's 9 floor tiles all rough_natural, its 1 boundary wall tile rough_natural -- see this command's own notes for the TreeTrunkPillar bug this same live check caught and this stream fixed). Not yet deployed."
+      knowledge_scope: player_derivable
+      notes: >
+        How many of the zone's own floor tiles, and how many of its
+        boundary ring's WALL-shaped tiles, are smooth, engraved,
+        rough_natural or constructed -- counts and fractions, never a tile
+        list. constructed means tiletype material CONSTRUCTION; engraved
+        means a smoothed tile whose position also appears in
+        world.event.engravings; smooth means tiletype special SMOOTH/
+        SMOOTH_DEAD on a material a mason could actually be asked to smooth
+        (STONE, SOIL, FEATURE, MINERAL, LAVA_STONE, FROZEN_LIQUID -- the
+        same set df-overseer-diggable.lua's own DIGGABLE_MATERIALS uses);
+        everything else, including a living tree's own WALL-shaped trunk
+        tile, is rough_natural. LIVE BUG FOUND AND FIXED THIS STREAM: the
+        first version checked tiletype special alone, and DFHack reuses the
+        SMOOTH/SMOOTH_DEAD numeric slot for TreeTrunkPillar/
+        TreeDeadTrunkPillar (a tree's own pillar shape, nothing a dwarf
+        smoothed) -- a live read against zone 11's one real WALL-shaped
+        ring tile (a living tree) caught it reading "smooth" before the
+        material gate was added. Fixed and re-verified live the same
+        session; see the .lua file's own header for the full tiletype
+        table evidence.
+    "material ZONE_ID":
+      lua_function: boundary_material
+      effect: read
+      coordinate_bearing: false
+      live_deployed: false
+      verified: "2026-09-24 (offline build, live read-only checks through a scratch script path, VM 103, fort paused throughout: zone 10's 16 boundary ring tiles read AIR:1, GRASS_DARK:7, GRASS_LIGHT:2, PLANT:2, SOIL:2, STONE:2, 0 unknown). Not yet deployed."
+      knowledge_scope: player_derivable
+      notes: >
+        What every boundary-ring tile is made of, at tiletype_material
+        granularity (SOIL, STONE, CONSTRUCTION, GRASS_LIGHT, TREE and so
+        on), counted per material name. Deliberately covers every ring
+        tile regardless of shape, not only WALL-shaped ones (unlike
+        finish's boundary_wall bucket): an open ring tile still has a real
+        underlying material, which is what actually decides whether a wall
+        could be built or smoothed there later, per the handoff's own
+        framing.
+    "traffic ZONE_ID":
+      lua_function: traffic
+      effect: read
+      coordinate_bearing: false
+      live_deployed: false
+      verified: "2026-09-24 (offline build, live read-only checks through a scratch script path, VM 103, fort paused throughout: zone 10 and zone 11 each read all 9 footprint tiles Normal, all_normal true, 0 unknown, matching memory/dfhack-environment.md's fort-wide '0 of 6,856,704 tiles are non-Normal' fact). Not yet deployed."
+      knowledge_scope: player_visible
+      notes: >
+        READ ONLY (handoffs/2026-09-24-surface-perception.md: "designating
+        traffic is an action and belongs with the stage 3 work, not here").
+        The traffic designation (Normal/Low/High/Restricted,
+        dfhack.maps.getTileFlags(pos).traffic) set over the zone's own
+        footprint tiles, counted per class. This fort has never had a
+        traffic designation set anywhere, so a uniform all-Normal result is
+        the expected, correct answer, not a sign the read failed --
+        `all_normal` says so explicitly rather than making a caller infer
+        it from the counts.
+
 df-overseer-clock.lua:
   build_order_item: "agent loop MVP items 1-2 (docs/AGENT-LOOP.md); handoffs/2026-09-22-loop-clock-conductor-role.md"
   commands:

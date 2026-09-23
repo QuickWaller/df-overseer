@@ -245,6 +245,41 @@ read:
       fiftieth bedroom is checked against what already exists rather than
       guessed at. Offline build, not deployed.
 
+  - id: "surface.enclosure"
+    status: planned
+    note: >-
+      Added handoffs/2026-09-24-surface-perception.md, closing the exact gap
+      this role's own audit found: it could not see a wall as a wall, so
+      enclosure was unanswerable. A count of the zone's boundary-ring gaps,
+      each typed doorway / open_floor_edge / missing_wall, three-state
+      (enclosed / not_enclosed / cannot_tell). Offline build, live read-only
+      checks against zones 10/11 (both not_enclosed), not deployed.
+  - id: "surface.finish"
+    status: planned
+    note: >-
+      Same handoff. How many of a zone's own floor tiles, and its boundary
+      ring's WALL-shaped tiles, are smooth / engraved / rough_natural /
+      constructed -- what makes the user's "every room at least smoothed,
+      or walls built" standard checkable at all. Offline build, live
+      read-only checks against zones 10/11 (both entirely rough_natural, as
+      expected for two never-dug outdoor zones), not deployed.
+  - id: "surface.material"
+    status: planned
+    note: >-
+      Same handoff. What every boundary-ring tile is made of (SOIL, STONE,
+      CONSTRUCTION, ...), which decides whether a wall there can be
+      smoothed or must be built -- soil cannot be smoothed on this install,
+      settled from the install's own tiletype data this same stream (see
+      the .lua file's own header). Offline build, not deployed.
+  - id: "surface.traffic"
+    status: planned
+    note: >-
+      Same handoff. Read-only: the traffic designation set over a zone's
+      own footprint tiles. This fort has never set one anywhere, so a
+      uniform Normal reading is the expected answer, not an error.
+      Designating traffic is a write and stays out of this role's reach
+      (write_authority: none, above). Offline build, not deployed.
+
 write:
   - id: "queue.propose"
     status: exists

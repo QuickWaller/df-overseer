@@ -269,6 +269,7 @@ _INTEGER_ARG_NAMES = frozenset(
         "CURSOR",
         "N",
         "MIN_IDLE_TICKS",
+        "ZONE_ID",
     }
 )
 
@@ -418,6 +419,12 @@ _ARG_DESCRIPTIONS: Dict[str, str] = {
         "dfhack-config/blueprints/ on the DF host, e.g. "
         "\"starter-room-5x5.csv\" -- not a path on this repo's own "
         "filesystem, and not a coordinate."
+    ),
+    "ZONE_ID": (
+        "An existing zone's own id, as zone.list gives it in its id field. "
+        "Never a coordinate -- the zone's id is resolved to its real "
+        "footprint server-side. An id that is not an activity zone (a "
+        "workshop id, for example) is a named error, not a guess."
     ),
 }
 
