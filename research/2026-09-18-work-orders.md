@@ -397,3 +397,14 @@ later)**:
   fallback this report recommends instead (§6), and it is sufficient for
   the stated measurement goal but is inference-by-matching, not a direct
   foreign key.
+
+  **CORRECTION, 2026-09-23** (`handoffs/2026-09-23-order-job-attribution-and-
+  checks.md`): this claim is wrong. `df.job` has an `order_id` field, found
+  by live introspection of `df.job._fields` on this install, and DFHack's own
+  shipped `/opt/df/game/hack/scripts/do-job-now.lua:106` matches jobs to
+  orders with `job.order_id == needle`. A direct foreign key exists; the
+  `job_type`/`reaction_name`/workshop-matching fallback above is not the
+  ceiling it was reported as. Not rewritten in place, per that handoff's own
+  instruction to correct by dated note, not silent edit. See
+  `research/2026-09-23-work-orders-vs-direct-jobs.md`'s own correction
+  section for what this changes downstream.

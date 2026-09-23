@@ -478,6 +478,61 @@ without new information.
   install-specific claim above is a re-read of prior live findings already
   on record in this repo, not a fresh check.
 
+## CORRECTION, 2026-09-23 (same date, later session)
+
+Written by the executor of `handoffs/2026-09-23-order-job-attribution-and-
+checks.md`, dispatched to act on this report. While reviewing it before
+building, the orchestrating session found one of this report's own
+load-bearing claims, carried over unchanged from
+`research/2026-09-18-work-orders.md`, is **wrong**: "no field was found
+linking a spawned `df.job` back to the `manager_order` that created it" (§C,
+§D, §E "What could not be verified", and the Sources list's own framing of it
+as "a real negative worth acting on"). **`df.job` has an `order_id` field**,
+found by the orchestrating session's live introspection of `df.job._fields`
+on this install, and DFHack's own shipped
+`/opt/df/game/hack/scripts/do-job-now.lua:106` matches jobs to orders with
+`job.order_id == needle` — DFHack's own attribution route, not something this
+project would have to build by inference. This section does not rewrite §C/
+§D/§E in place; it states what changes.
+
+**§C changes.** "Even a careful observer reading both `orders.list` and
+`stuckjobs.find` cannot currently tell... whether a given in-flight
+`ConstructBlocks` job came from the order queue or from a direct call" is
+wrong as stated: a job's own `order_id` field answers this directly once a
+tool reads and reports it (not yet done as of this report; see the dispatched
+handoff). The "real attribution gap" this section named is a **tooling gap,
+not a data gap** — the field already exists, only no tool reads it.
+
+**§D changes.** The "read that would have to be built, not found anywhere in
+this project's tools or in the web sources checked this session" (whether a
+spawned `df.job` carries any struct-level link back to its `manager_order`)
+is resolved: it does. This "resolves both the attribution gap in C and
+materially strengthens D" exactly as this report's own §D speculated it
+would if found. It does **not** resolve the separate, still-open §D question
+of whether DF removes a completed order from `world.manager_orders.all` —
+`order_id` says which order a job came from, not what happens to that order's
+list entry after the job finishes. That assumption remains unverified.
+
+**§E changes.** Recommendation 4's first check ("a duplicate-production
+check spanning both routes") no longer needs to fall back to job_type/
+workshop matching alone to approximate origin — it can use `order_id`
+directly to say, of an in-flight job, whether it came from the order route or
+was queued directly, which is a strictly stronger signal for exactly the
+"something already in flight for it" question that check exists to answer.
+The check itself was still worth building either way (§E's own reasoning:
+"knowing 'a ConstructBlocks job or order already exists' is enough to flag a
+likely duplicate even without knowing which route created it" already held
+before this correction); `order_id` makes its report more precise, not
+newly possible.
+
+**What this does not change.** `manager_order.status`'s `validated`/`active`
+bits (the fort's three stuck orders read `validated = true, active = false`)
+and `finished_year`/`finished_year_tick` (both -1 on those orders) are a
+separate, independently confirmed finding from this same live read, not
+touched by this correction. The `job.repeat` field's real name on this
+install (§A2, `Working.md` START HERE item 4) is also unaffected and remains
+to be confirmed, not guessed, by whoever builds it.
+
 ## Sources
 
 Repo (read in full or in cited sections this session):
