@@ -142,6 +142,7 @@ local eventful = require('plugins.eventful')
 local landmarks_mod = reqscript('df-overseer-landmarks')
 local textutil = reqscript('df-overseer-textutil')
 local ledger_mod = reqscript('df-overseer-ledger')
+local announcement_levels = reqscript('df-overseer-announcement-levels')
 
 -- df.announcement_type ids this fort-defense caller needs to distinguish,
 -- grouped into categories. Verified live against this install's real enum
@@ -345,6 +346,32 @@ if _G.__df_overseer_diff_registered_version ~= REGISTRATION_VERSION then
         -- aggregate write (see df-overseer-ledger.lua's own header).
         if cat == "theft" then
           pcall(ledger_mod.record, "unknown", dfhack.world.ReadCurrentTick(), nil, "theft")
+        end
+
+        -- RECONCILED 2026-09-23 with the already-merged sibling conductor
+        -- stream (handoffs/2026-09-23-stalled-order-poller.md): that stream
+        -- built conductor/cycle.py's _classify_slow_announcements against an
+        -- ASSUMED diff.since event shape for the 23 slow-level announcement
+        -- ids, since the two streams could not talk directly. This is that
+        -- shape, emitted for real: a newly-arrived report whose type is one
+        -- of df-overseer-announcement-levels.lua's SLOW_REPORT_IDS logs a
+        -- SEPARATE event (not folded into the "REPORT" event above, and not
+        -- gated on `cat` -- a slow id may or may not also carry a
+        -- REPORT_CATEGORY tag, e.g. AMBUSH_MISCHIEVOUS does via "ambush",
+        -- most others do not). Handoff item 2's own line ("not yours to act
+        -- on") is respected: this only LOGS the event into the same
+        -- diff.since stream every other role already reads through its own
+        -- cursor -- it never pauses, never changes FPS, never decides who
+        -- wakes. That decision is conductor/cycle.py's, already built.
+        local ok_slow, slow_info = pcall(function() return announcement_levels.SLOW_REPORT_IDS[rep.type] end)
+        if ok_slow and slow_info then
+          log_event({
+            type = "announcement_slow",
+            announcement_type = slow_info.name,
+            tick = dfhack.world.ReadCurrentTick(),
+            wake = slow_info.wake,
+            detail = slow_info.detail,
+          })
         end
         break
       elseif rep.id < report_id then

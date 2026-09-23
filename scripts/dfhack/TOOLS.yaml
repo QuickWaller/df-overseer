@@ -244,6 +244,16 @@ df-overseer-diff.lua:
         entirely. A "theft" REPORT also writes a "theft" outcome into
         df-overseer-ledger.lua, race "unknown" (report text carries no
         structured race field; see the .lua file's own comment).
+        ALSO ADDED 2026-09-23, reconciling with the already-merged sibling
+        conductor stream: a newly-arrived report whose type is one of
+        df-overseer-announcement-levels.lua's SLOW_REPORT_IDS now logs a
+        SEPARATE {"type": "announcement_slow", "announcement_type", "tick",
+        "wake", "detail"} event into this same diff.since stream -- the
+        exact shape conductor/cycle.py's _classify_slow_announcements
+        already assumed and coded against. Never gated on REPORT_CATEGORY
+        (a slow id may carry no REPORT_CATEGORY tag at all); never pauses
+        or changes FPS -- purely a log entry, same as every other event
+        type here.
         REGISTRATION_VERSION bumped so the live re-registration guard
         replaces the pre-2026-09-23 listener closure on next load.
     "recent-combat [N]":

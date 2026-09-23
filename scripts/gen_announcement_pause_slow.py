@@ -20,6 +20,17 @@ Only two levels are read out of the 357-entry classification (`pause` and
 `slow`); `notice`/`log_only`/`ignore` stay in the YAML only, per that
 research doc's own recommendation (S:E, "should never even reach the
 tripwire's own id check").
+
+RECONCILED 2026-09-23 with the sibling conductor stream
+(handoffs/2026-09-23-stalled-order-poller.md, already merged): that stream
+could not talk to this one directly, so it built
+conductor/cycle.py's `_classify_slow_announcements` against an ASSUMED
+diff.since event shape for the slow ids: `{"type": "announcement_slow",
+"announcement_type": <name>, "tick": <int>, "wake": [<role>, ...], "detail":
+<gloss>}`. This generator now also carries each slow id's own `reason`
+string from the YAML as `detail`, so df-overseer-diff.lua can emit exactly
+that event without a second data source. See this stream's own Result for
+confirmation this shape now matches on both sides.
 """
 
 from __future__ import annotations
@@ -55,17 +66,19 @@ HEADER = '''-- df-overseer-announcement-levels.lua
 -- df-overseer-diff.lua's own REPORT_CATEGORY already uses, generated here
 -- instead of hand-copied.
 --
--- SLOW_REPORT_IDS ({slow_count} ids): NOT acted on by this repo's Lua side
--- at all (handoffs/2026-09-23-attention-tiers-ingame.md item 2: "not yours
--- to act on"). Exposed read-only, via the `slow-ids` CLI command below and
--- the `announcement-levels.slow-ids` MCP tool that command becomes
--- (scripts/dfhack/TOOLS.yaml), so the sibling conductor stream
--- (docs/AGENT-LOOP.md ss3's "wake the role named in wake, through
--- conductor/triage.py's existing machinery") can route them without this
--- stream touching conductor/. Field shape (also recorded in this stream's
--- handoff Result):
+-- SLOW_REPORT_IDS ({slow_count} ids): NOT PAUSED anywhere in this repo's Lua
+-- (handoffs/2026-09-23-attention-tiers-ingame.md item 2: "not yours to act
+-- on"). Two consumers: (1) df-overseer-diff.lua's onReport emits a
+-- diff.since event `{{"type": "announcement_slow", "announcement_type":
+-- name, "tick": T, "wake": {{...}}, "detail": reason}}` for a newly-arrived
+-- slow-level report -- the exact shape the already-merged sibling conductor
+-- stream's conductor/cycle.py `_classify_slow_announcements` assumed and
+-- coded against, reconciled here (see this stream's own Result); (2) the
+-- `slow-ids`/`level` CLI commands below (and the `announcement-levels.*`
+-- MCP tools they become, scripts/dfhack/TOOLS.yaml) for direct
+-- introspection. Field shape:
 --   pause-ids -> {{"ids": [{{"id": N, "name": "..."}}, ...]}}
---   slow-ids  -> {{"ids": [{{"id": N, "name": "...", "wake": ["overseer", ...]}}, ...]}}
+--   slow-ids  -> {{"ids": [{{"id": N, "name": "...", "wake": ["overseer", ...], "detail": "..."}}, ...]}}
 
 local json = require('json')
 
@@ -105,7 +118,7 @@ elseif cmd == "slow-ids" then
   local out = {}
   for _, id in ipairs(sorted_ids(SLOW_REPORT_IDS)) do
     local info = SLOW_REPORT_IDS[id]
-    table.insert(out, { id = id, name = info.name, wake = info.wake })
+    table.insert(out, { id = id, name = info.name, wake = info.wake, detail = info.detail })
   end
   print(json.encode({ ids = out }))
 elseif cmd == "level" then
@@ -113,7 +126,7 @@ elseif cmd == "level" then
   if PAUSE_REPORT_IDS[id] then
     print(json.encode({ id = id, level = "pause", name = PAUSE_REPORT_IDS[id] }))
   elseif SLOW_REPORT_IDS[id] then
-    print(json.encode({ id = id, level = "slow", name = SLOW_REPORT_IDS[id].name, wake = SLOW_REPORT_IDS[id].wake }))
+    print(json.encode({ id = id, level = "slow", name = SLOW_REPORT_IDS[id].name, wake = SLOW_REPORT_IDS[id].wake, detail = SLOW_REPORT_IDS[id].detail }))
   else
     print(json.encode({ id = id, level = "not_pause_or_slow" }))
   end
@@ -143,7 +156,12 @@ def build_lua_source() -> str:
         if level == "pause":
             pause_rows.append({"id": entry["id"], "name": name})
         elif level == "slow":
-            slow_rows.append({"id": entry["id"], "name": name, "wake": entry.get("wake") or []})
+            slow_rows.append({
+                "id": entry["id"],
+                "name": name,
+                "wake": entry.get("wake") or [],
+                "detail": entry.get("reason") or "",
+            })
 
     pause_rows.sort(key=lambda r: r["id"])
     slow_rows.sort(key=lambda r: r["id"])
@@ -160,10 +178,13 @@ def build_lua_source() -> str:
     lines.append("}")
     lines.append("")
 
-    lines.append("SLOW_REPORT_IDS = { -- id -> { name = ..., wake = {role, ...} }")
+    lines.append("SLOW_REPORT_IDS = { -- id -> { name = ..., wake = {role, ...}, detail = \"...\" }")
     for row in slow_rows:
         wake_lua = "{" + ", ".join(_lua_string(w) for w in row["wake"]) + "}"
-        lines.append(f'  [{row["id"]}] = {{ name = {_lua_string(row["name"])}, wake = {wake_lua} }},')
+        lines.append(
+            f'  [{row["id"]}] = {{ name = {_lua_string(row["name"])}, wake = {wake_lua}, '
+            f'detail = {_lua_string(row["detail"])} }},'
+        )
     lines.append("}")
 
     lines.append(FOOTER)
