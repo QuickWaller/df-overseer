@@ -262,3 +262,121 @@ def test_port_mirrors_lua_source():
     # The two per-flag pause escalations this port hardcodes.
     assert '{ flag = "is_large_predator", tier = "pause" }' in source
     assert '{ flag = "is_buildingdestroyer", tier = "pause" }' in source
+
+
+# ----------------------------------------------------------------------------
+# handoffs/2026-09-23-creature-tag-fields-fix.md: the caste-level field names
+# and levels, pinned against the same live kea (unit 513, BIRD_KEA, DFHack
+# 53.16-r1.1) that found the original bug
+# (evals/live/2026-09-23-attention-deploy/README.md's "CRITICAL CHECK"
+# section). A future rename of any of these six fields must fail this test
+# loudly, not silently degrade class_flags back to reading the wrong level or
+# the wrong spelling.
+
+def test_class_flags_reads_caste_level_not_creature_level():
+    """The bug this file fixes: the old code read
+    df.global.world.raws.creatures.all[unit.race].flags.<NAME> -- the
+    CREATURE level, which live-verified has no per-tag members at all, only
+    HAS_ANY_* aggregates. The fix must index down to
+    craw.caste[unit.caste] first, then read .flags/.misc off THAT."""
+    source = THREAT_LUA.read_text(encoding="utf-8")
+    assert "craw.caste[unit.caste]" in source, (
+        "class_flags must index caste[unit.caste], not read craw.flags "
+        "directly -- the creature level has no per-tag flags (live-verified "
+        "against unit 513, BIRD_KEA)"
+    )
+    assert "caste.flags[name]" in source
+    assert "caste.misc.buildingdestroyer" in source
+
+
+def test_class_flags_uses_correct_curious_beast_spelling():
+    """Live-verified (unit 513): the real enum member is CURIOUS_BEAST_ITEM
+    (underscore between CURIOUS and BEAST), not CURIOUSBEAST_ITEM. Same for
+    _EATER/_GUZZLER. The old, wrong spelling must not reappear."""
+    source = THREAT_LUA.read_text(encoding="utf-8")
+    for correct in ("CURIOUS_BEAST_ITEM", "CURIOUS_BEAST_EATER", "CURIOUS_BEAST_GUZZLER"):
+        assert correct in source, f"{correct!r} (correct spelling) missing from threat.lua"
+    # The old, live-verified-wrong spelling must not appear as an actual
+    # quoted flag-name argument (i.e. live code, not the explanatory
+    # comments in the FIXED header that name the old bug on purpose for the
+    # historical record). A regex anchored on the quotes a real call site
+    # would use, so a match against "CURIOUS_BEAST_ITEM" (which contains
+    # "CURIOUSBEAST_ITEM" only if the underscore were removed) can't produce
+    # a false pass, and prose mentioning the old name in backticks doesn't
+    # trip it either.
+    import re
+    assert not re.search(r'"CURIOUSBEAST_(ITEM|EATER|GUZZLER)"', source), (
+        "the old, live-verified-wrong CURIOUSBEAST_* spelling (no "
+        "underscore) is used as a live quoted flag name in threat.lua"
+    )
+
+
+def test_class_flags_tests_buildingdestroyer_as_integer_not_flag_bit():
+    """Live-verified (unit 513): BUILDINGDESTROYER is not a flag bit
+    anywhere (creature or caste level) -- it is caste.misc.buildingdestroyer,
+    a plain integer (0/1/2), so the correct test is '> 0'."""
+    source = THREAT_LUA.read_text(encoding="utf-8")
+    assert "caste.misc.buildingdestroyer" in source
+    assert "v > 0" in source or "> 0" in source
+
+
+def test_class_flags_surfaces_read_failures_distinct_from_false():
+    """A failed read must be distinguishable from a genuine false -- the
+    silent-degradation-to-false is exactly what hid the original bug for a
+    whole deploy. class_flags must carry a read_failures collection and log
+    non-silently on a failure."""
+    source = THREAT_LUA.read_text(encoding="utf-8")
+    assert "read_failures" in source
+    assert "dfhack.printerr" in source
+
+
+# ----------------------------------------------------------------------------
+# The live kea's own recorded values
+# (evals/live/2026-09-23-attention-deploy/README.md): caste.flags.
+# LARGE_PREDATOR=false, caste.flags.CURIOUS_BEAST_ITEM=true, caste.flags.
+# BENIGN=false, caste.flags.MISCHIEVOUS=false, caste.misc.
+# buildingdestroyer=0. Fed through the SAME classify_tier port above (not a
+# new one) to confirm the corrected reads produce the tier S:E1's rule and
+# this task's own acceptance criteria require.
+
+def live_kea_flags(**overrides) -> Dict[str, bool]:
+    flags = empty_flags(
+        is_large_predator=False,
+        is_buildingdestroyer=False,
+        is_curiousbeast_item=True,  # CURIOUS_BEAST_ITEM=true, live-verified
+        is_curiousbeast_eater=False,
+        is_curiousbeast_guzzler=False,
+        is_benign=False,
+        is_mischievous=False,
+    )
+    flags.update(overrides)
+    return flags
+
+
+def test_live_kea_values_slow_tier_when_closing_in():
+    """With the corrected reads, the live kea's real CURIOUS_BEAST_ITEM=true
+    now actually reaches classify_tier's theft-tag branch (the old bug's
+    whole point: it never did). Closing in from 68 to 40 tiles must slow the
+    fort, not leave it at record_only."""
+    flags = live_kea_flags()
+    tier, reasons = classify_tier(
+        flags, is_invader=False, shares_group=True, within_radius=False,
+        distance_tiles=40, prior_closest_distance_tiles=68,
+    )
+    assert tier == "slow"
+    assert reasons == ["theft_tag_closing_in"]
+
+
+def test_live_kea_values_record_only_when_not_closing():
+    """Same live kea, same corrected CURIOUS_BEAST_ITEM=true, but at its
+    actual recorded 68 tiles with no prior (first sighting) and not within
+    close range: must stay record_only -- a kea merely present, even with
+    the tag now read correctly, still never pauses or slows on presence
+    alone (S:E1's own kea verdict)."""
+    flags = live_kea_flags()
+    tier, reasons = classify_tier(
+        flags, is_invader=False, shares_group=True, within_radius=True,
+        distance_tiles=68, prior_closest_distance_tiles=None,
+    )
+    assert tier == "record_only"
+    assert reasons == ["no_pause_or_slow_condition_met"]

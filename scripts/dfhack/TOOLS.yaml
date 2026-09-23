@@ -1292,8 +1292,9 @@ df-overseer-threat.lua:
         UPDATE 2026-09-23 (handoffs/2026-09-23-attention-tiers-ingame.md item
         1, offline stream, not deployed): every result now also carries
         `class_flags` (raw creature tags -- LARGE_PREDATOR/BUILDINGDESTROYER/
-        CURIOUSBEAST_ITEM/_EATER/_GUZZLER/BENIGN/MISCHIEVOUS, pcall-guarded,
-        false on any read failure), `tier` ("pause"|"slow"|"record_only",
+        CURIOUS_BEAST_ITEM/_EATER/_GUZZLER/BENIGN/MISCHIEVOUS, pcall-guarded,
+        read at the caste level, `caste.misc.buildingdestroyer > 0` for the
+        destroyer test -- see below), `tier` ("pause"|"slow"|"record_only",
         research/2026-09-23-wildlife-threat-classes.md S:E1's rule) and
         `tier_reasons`. Results are now sorted by tier first, the existing
         score second, so df-overseer-clock.lua's own tripwire can keep
@@ -1301,9 +1302,20 @@ df-overseer-threat.lua:
         highest heuristic score. Reads df-overseer-ledger.lua's
         ledger_closest_distance (read-only) per candidate to evaluate the
         "closing in" theft condition -- see classify_tier's own comment.
-        RAW-TAG FIELD NAMES ARE UNVERIFIED THIS SESSION (no VM, no live
-        DFHack) -- flagged in the .lua file's own header as a named gap to
-        confirm before trusting a live run's tier assignment.
+        UPDATE 2026-09-23 (handoffs/2026-09-23-creature-tag-fields-fix.md,
+        offline stream, not deployed): the six raw-tag reads were WRONG as
+        first deployed, found live against a real kea
+        (evals/live/2026-09-23-attention-deploy/README.md's "CRITICAL CHECK"
+        section) -- creature-level instead of caste-level, `CURIOUSBEAST_*`
+        instead of `CURIOUS_BEAST_*`, and `BUILDINGDESTROYER` tested as a
+        flag bit when it is a plain integer. Corrected in the .lua file; a
+        failed read is no longer indistinguishable from a genuine `false` --
+        `class_flags` now also carries a `read_failures` array naming any
+        caste field that could not be read this call, and a non-empty one is
+        also logged via `dfhack.printerr`. **Still not re-verified live**
+        (this was another offline stream) -- the next deploy must re-run the
+        same live kea check this bug was found by, per that handoff's own
+        Result section.
 
 df-overseer-breach.lua:
   build_order_item: "not in the 0-9 spatial build order -- a safety gap found 2026-09-12, research/2026-09-12-dfhack-capability-checks.md sec5"
