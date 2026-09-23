@@ -879,11 +879,14 @@ consultant 14** (were 25, 45 and 11) at that deploy, and `gotchas.get`, the
 37, quartermaster 23, consultant 21, conductor 15**
 (`evals/live/2026-09-23-attention-deploy/README.md`; `agents/ROSTER.yaml`
 and `scripts/dfhack/TOOLS.yaml` are the sources of truth for the exact
-tool ids, not this paragraph). Whether the labor-join shape fix mentioned
-below has since been redeployed was **not confirmed by this pass** -- none
-of the 2026-09-22/23 deploy batches this pass read touched
-`dfmcp/labor_join.py` or `dfmcp/tool_guidance.py`, so treat it as still
-open unless a later deploy record says otherwise. What that 2026-09-21
+tool ids, not this paragraph). **The labor-join shape fix mentioned below
+IS deployed**, settled 2026-09-23 by the orchestrating session after the
+doc pass could not confirm it from deploy records: the installed
+`/opt/df/dfmcp-smoke/dfmcp/labor_join.py` and the committed bytes at HEAD
+(`git -c core.autocrlf=false show HEAD:dfmcp/labor_join.py`) hash
+identically, `ba19138f70e7ff096e8c5043335844969f308b7ac36aa2f7255b676310acc63b`.
+No deploy batch record names the file, so the hash is the evidence, not a
+changelog line. What that 2026-09-21
 deploy needed, for the next one:
 
 - **The gotcha store must exist before the server starts** (`main()` refuses to

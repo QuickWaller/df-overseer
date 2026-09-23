@@ -22,7 +22,7 @@ deployed and live-verified (`evals/live/2026-09-22-loop-mvp-deploy/`).
 real 100 FPS cap; grading it would record wall-clock latency, not a
 verdict (see "What was graded" below). The Quartermaster role is now
 enabled and can call `queue.propose`/`queue.pass`/`queue.ask` too. **Still
-not built: the publisher and the feed page** (§8's steps 2 and 3) — no
+not built: the publisher and the feed page** (§8's steps 2 and 3): no
 model call happens on a schedule (the conductor exists and can trigger one,
 but has never run as a live service, only a manual `--dry-run`), and
 nothing publishes to a public page yet.

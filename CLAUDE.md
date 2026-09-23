@@ -18,8 +18,8 @@ learning architecture.
 >   21, conductor 15**. **Two Office zones exist** (id 10 unowned, id 11
 >   owned by the Manager, unit 345, read back twice), both outdoors (no
 >   fully indoor 3x3 site was available near a workshop or the Well). **A
->   Chair was built for real** — the first real, non-dry-run build of any
->   kind by the generic `building` tool — and sits buildingplan-suspended,
+>   Chair was built for real**, the first real, non-dry-run build of any
+>   kind by the generic `building` tool, and it sits buildingplan-suspended,
 >   pending a Chair item; a new manager order (id 3, ConstructThrone) was
 >   created to supply one. **Four manager orders exist**: three
 >   (`ConstructBlocks`, `ConstructMechanisms`, the brew-drink reaction)
@@ -55,7 +55,7 @@ learning architecture.
 >   six creature-tag reads in the tier classifier were at the wrong struct
 >   level and partly misspelled, silently returning `false` for every read
 >   (pcall-guarded); a kea still landed in the correct tier by luck, but the
->   slow tier — built for a thieving creature closing in — could never have
+>   slow tier, built for a thieving creature closing in, could never have
 >   fired. Fixed, redeployed and live-verified the same day against the
 >   same live kea.
 >
@@ -87,7 +87,7 @@ learning architecture.
 >   since 2026-09-15. `proposal-0001` (the only proposal a role has ever
 >   written for real) was voided during the 2026-09-22 MVP deploy rather
 >   than graded, since its 1200-tick prediction window elapses in well
->   under a minute at the fort's real 100 FPS cap — grading it now would
+>   under a minute at the fort's real 100 FPS cap: grading it now would
 >   record wall-clock latency, not a verdict on the proposal.
 > - **Incident capture** on VMs 103 and 106 (guest agent, persistent journal,
 >   a netwatch dump on gateway loss), with `docs/RUNBOOK-DARK-GUEST.md`. VM 106
