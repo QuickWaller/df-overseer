@@ -107,4 +107,67 @@ convention. Honest about what is convention and what is version-sensitive.
 
 ## Result
 
-(to be filled by the stream)
+Done, read-only, `research/2026-09-24-room-layout-best-practices.md` written
+(and only that file, plus this Result section). No VM commands were run;
+this session found the questions answerable from the repo's own prior
+research (`research/2026-09-23-room-and-zone-requirements.md`) and current
+v53.16-banner wiki pages, so no live query was needed and none was made.
+`doctrine/seed.yaml` and the enclosure question were not touched.
+
+**Verdict, restated briefly**: almost everything in DF layout folklore
+(corridor width numbers, named patterns like the line design, fractal
+families, staggered doorless rooms, workshop wings) is player convention,
+current-namespace-sourced (v53.16 banners) so not stale from the v50 zone
+transition, but never confirmed against this install's own data because
+DFHack exposes no congestion, travel-time or traffic-cost telemetry this
+project can read. Only a handful of things are verified game mechanic: the
+four-tier traffic designation system and its real per-tile pathfinding cost
+multiplier (1/2/5/25) plus its own stated limit (job choice itself ignores
+it); door behaviour as a floodgate-equivalent with no operating delay; stair
+vertical-alignment constraints; and, install-verified from yesterday's
+stream, that a room-value zone's own footprint must contain its
+value-bearing furniture (this fort's real, live failure).
+
+**The one finding worth flagging loudest**: `Bedroom_design` (current
+v53.16 banner) states plainly that dwarves take no penalty from others
+walking through their bedroom while sleeping, which directly undercuts the
+common "add a door for privacy" habit for bedrooms specifically. Proposed
+as a doctrine entry (not written) in the research file's own section, in
+the same family as the `prefer_indoors` correction this project has already
+made once.
+
+**The candidate rule set** (research file, final section before "What could
+not be verified") has 13 numbered rules, each tagged invariant/metric and
+game mechanic/convention, plus an explicit list of what was deliberately
+not proposed and why (door-for-value, meeting-hall/animal-conflict, any
+absolute travel-distance threshold, anything about enclosure). Two doctrine
+entries are proposed for the orchestrating session to route, not written
+here: traffic designation being real but unused on this fort, and the
+bedroom-door-privacy correction above.
+
+**Not verified, said plainly in the file**: live congestion/traffic-cost
+data from the actual fort (none readable from DFHack); whether a door
+contributes to room value (sibling stream's question); vermin/temperature
+door effects; any numeric stairwell-count-per-population threshold; the
+`Meeting_hall` page's animal-conflict claim (older-version banner, not
+independently confirmed); whether DF literally deadlocks two dwarves
+meeting on a 1-wide corridor versus one yielding (relied on this project's
+own prior working knowledge, not re-checked this session). A dedicated
+`Corridor` wiki page does not exist at the URL tried (404); corridor
+guidance was drawn from `Bedroom_design`, `Workshop_design` and search
+results instead.
+
+**Owed register lines** (not written here, per the `handoffs/` rule -- the
+orchestrating session owns `Working.md`, `decisions/DECISIONS.md`,
+`memory/` and `handoffs/INDEX.md`):
+- `Working.md`: this handoff done, read-only, research file at
+  `research/2026-09-24-room-layout-best-practices.md`; the next build
+  stream (layout checker) should start from its candidate rule set, and two
+  doctrine entries are proposed and awaiting routing (traffic-designation
+  status; bedroom-door-privacy correction).
+- `decisions/DECISIONS.md`: worth a row noting the bedroom-door-privacy
+  finding as a corrected assumption, parallel to the existing
+  `prefer_indoors` and 20-citizen-Manager rows, since it is the same shape
+  of mistake (folklore treated as requirement) caught before it was
+  encoded anywhere.
+- `handoffs/INDEX.md`: flip this handoff's row to done.
