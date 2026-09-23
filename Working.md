@@ -458,6 +458,23 @@ HANDOVER 2026-09-19 and the production-model work above.
 
 ## THE LOOP CLOSED, 2026-09-23 (read this first)
 
+**Blocking the first real conductor cycle, found 2026-09-23 after the clock
+deploy:** the conductor cannot read the game tick and fails silently doing it.
+A foreground `--dry-run --once` on VM 106 planned to wake nobody while four
+manager orders sat stalled, and `status.json` read `"game_tick": null`.
+`_game_tick` imports `dfqueue`, which the conductor deliberately does not
+depend on, and swallows the `ModuleNotFoundError`. A null tick disables the
+routine review (never due) and the stalled-order poller (returns empty before
+reading an order), so two of the conductor's wake reasons have never worked in
+production. Fix dispatched offline: `handoffs/2026-09-23-conductor-game-tick.md`.
+**The first real cycle is on hold until this lands**, because a cycle run now
+would be a conductor with half its triage switched off.
+
+**Also in flight:** `handoffs/2026-09-23-room-and-zone-requirements.md`, a
+read-only researcher on what each room and zone actually requires, read from
+the install's own data rather than the wiki, with doctrine entries as its
+output. The office question is its explicit target.
+
 **A tool queued a job, the fort ran it, and a building that was waiting on the
 item finished.** Job 2249 (`ConstructThrone`, direct job, `order_id: -1`) made
 a Chair; building id 9 claimed it and completed at year 31 tick 112205.
