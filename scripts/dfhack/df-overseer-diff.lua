@@ -141,6 +141,7 @@ local json = require('json')
 local eventful = require('plugins.eventful')
 local landmarks_mod = reqscript('df-overseer-landmarks')
 local textutil = reqscript('df-overseer-textutil')
+local ledger_mod = reqscript('df-overseer-ledger')
 
 -- df.announcement_type ids this fort-defense caller needs to distinguish,
 -- grouped into categories. Verified live against this install's real enum
@@ -170,6 +171,30 @@ tag_category("night_attack", 136, 137, 138)
 tag_category("undead_or_ghost", 139, 150)
 tag_category("berserk_or_tantrum", 96, 183, 285)
 tag_category("death", 106, 107)  -- CITIZEN_DEATH, PET_DEATH -- wild animals not covered, see header
+
+-- ADDED 2026-09-23 (handoffs/2026-09-23-attention-tiers-ingame.md item 3):
+-- theft was invisible to this file. CREATURE_STEALS_OBJECT (a kea actually
+-- taking something) was not tagged at all -- confirmed absent by grep before
+-- this change, consistent with research/2026-09-16-player-visibility.md's
+-- own S:9 listing it as a named grey zone. Added here plus every sibling id
+-- research/data/2026-09-23-announcement-severity.yaml's own `alert_type:
+-- CRIME` family marks `notice` or higher that this table omitted (checked
+-- against every CRIME-tagged id in that file, not just the one the handoff
+-- named): MISCHIEF_LEVER/PLATE/CAGE/CHAIN (a lever/plate/cage/chain pulled
+-- or triggered -- the vanilla-legal fallback for a MISCHIEVOUS-class
+-- creature research/2026-09-23-wildlife-threat-classes.md S:D/E2 says this
+-- project has no legal way to see directly), CITIZEN_SNATCHED (a citizen
+-- taken, already `pause`-level in that same file and in
+-- df-overseer-announcement-levels.lua's PAUSE_REPORT_IDS -- tagged here too
+-- so `since`/`recent-combat` can surface it in the full event log, not just
+-- the tripwire latch), and CRIME_WITNESS_HANDOFF/STOLEN/ITEM_MOVED/
+-- ITEM_MISSING (a witnessed theft-adjacent event). AMBUSH_THIEF/
+-- AMBUSH_SNATCHER (ids 55, 60) were already covered by the "ambush" tag
+-- above; not duplicated here.
+tag_category("theft", 145)  -- CREATURE_STEALS_OBJECT
+tag_category("mischief", 75, 76, 77, 78)  -- MISCHIEF_LEVER/PLATE/CAGE/CHAIN
+tag_category("snatched", 252)  -- CITIZEN_SNATCHED
+tag_category("crime_witness", 332, 333, 334, 335)  -- CRIME_WITNESS_*
 
 local function category_of(rtype)
   return REPORT_CATEGORY[rtype]
@@ -209,7 +234,13 @@ end
 -- live this stream (no VM in the offline-code phase); the live deploy step
 -- checks handler counts under each key before/after to catch layering if
 -- this assumption is wrong.
-local REGISTRATION_VERSION = "2026-09-22-diff-rereg-1"
+-- Bumped 2026-09-23 (handoffs/2026-09-23-attention-tiers-ingame.md item 3/4):
+-- REPORT_CATEGORY gained the theft/mischief/snatched/crime_witness tags and
+-- onReport's own closure gained the ledger write for a "theft" category --
+-- both are listener-code changes, so per this constant's own documented
+-- rule the guard below must re-run and replace the already-registered
+-- listeners on the next load, not keep serving the pre-2026-09-23 closure.
+local REGISTRATION_VERSION = "2026-09-23-diff-theft-ledger-1"
 
 if _G.__df_overseer_diff_registered_version ~= REGISTRATION_VERSION then
   _G.__df_overseer_diff_log = _G.__df_overseer_diff_log or {}
@@ -297,6 +328,23 @@ if _G.__df_overseer_diff_registered_version ~= REGISTRATION_VERSION then
             detail = string.format("category=%s type=%s text=%s", cat,
               df.announcement_type[rep.type] or tostring(rep.type), textutil.to_utf8(rep.text)),
           })
+        end
+        -- ADDED 2026-09-23 (handoffs/2026-09-23-attention-tiers-ingame.md
+        -- item 4, research/2026-09-23-wildlife-threat-classes.md S:E3(4)):
+        -- feed a theft outcome into the observation ledger from the SAME
+        -- report stream that already drives the "theft" category above,
+        -- rather than inventing a second detector. HONEST LIMITATION, named
+        -- rather than guessed around: df.report carries no structured race
+        -- field, only English text (rep.text) -- attributing "which race
+        -- did this" would need parsing that text against a species-name
+        -- dictionary, not attempted this stream (no VM to verify against
+        -- real report text, and a wrong guess is worse than an honest
+        -- "unknown"). Recorded under race "unknown" so the outcome is never
+        -- lost, flagged here and in this stream's Result as a real,
+        -- follow-on gap. Never pauses or wakes: record() is a pure
+        -- aggregate write (see df-overseer-ledger.lua's own header).
+        if cat == "theft" then
+          pcall(ledger_mod.record, "unknown", dfhack.world.ReadCurrentTick(), nil, "theft")
         end
         break
       elseif rep.id < report_id then
