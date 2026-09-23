@@ -157,6 +157,21 @@
 -- later. `place` is unchanged (no new argument, still rejects every
 -- occupied tile): this is `find`'s own capability, not a second write path.
 --
+-- RANKING AND TOP-LEVEL REPORTING. ADDED 2026-09-24 (handoffs/2026-09-24-
+-- furniture-aware-ranking.md). Informing only helps if the useful candidate
+-- is visible: a live 3x3 Office search found every returned site
+-- furniture-free, because ranking was distance-only and the overlap filter
+-- that keeps MAX_RESULTS non-overlapping discards a furniture-containing
+-- window once a merely-closer one is chosen first. A site containing the
+-- kind's qualifying furniture now sorts above one that does not (existing
+-- indoor/distance ranking stays the tiebreak within each group), so a
+-- furniture-containing site is chosen first and cannot be overlapped away.
+-- This only ever runs when AROUND_FURNITURE is true; a plain find keeps
+-- today's ranking exactly. When AROUND_FURNITURE is true the whole result
+-- is also wrapped as `{results = [...], any_contains_furniture = bool,
+-- furniture_note = "..." (only when false)}` instead of a bare array, so a
+-- caller learns "no candidate has it" without scanning every row.
+--
 -- Usage: ./dfhack-run df-overseer-zone list-kinds [FILTER]
 -- Usage: ./dfhack-run df-overseer-zone find KIND [W H] [LEVEL] NEAR_LANDMARK [RADIUS_TILES] [AROUND_FURNITURE]
 -- Usage: ./dfhack-run df-overseer-zone check-owner KIND OWNER
@@ -793,9 +808,12 @@ local function zone_tile(k, x, y, z, stats, furniture_type_ids)
   return true, g, not flags.outside, furniture_id
 end
 
--- Returns chosen (list of {x,y,dist,indoors,furniture_building_ids}),
--- search_stats, err, z. `furniture_type_ids`: see zone_tile -- nil for every
--- caller except find's own AROUND_FURNITURE path; place never passes it.
+-- Returns chosen (list of {x,y,dist,indoors,furniture_building_ids,
+-- has_furniture}), search_stats, err, z. `furniture_type_ids`: see
+-- zone_tile -- nil for every caller except find's own AROUND_FURNITURE
+-- path; place never passes it. When non-nil, a candidate whose window
+-- contains qualifying furniture sorts before one that does not (see the
+-- RANKING AND TOP-LEVEL REPORTING header comment above).
 local function ranked_rects(k, p, w, h, level, near, radius_tiles, furniture_type_ids)
   local ax, ay, az = landmarks_mod.get_landmark_centroid(near)
   if not ax then return nil, nil, "landmark not found: " .. tostring(near) end
@@ -864,12 +882,32 @@ local function ranked_rects(k, p, w, h, level, near, radius_tiles, furniture_typ
             dist = math.sqrt(ddx * ddx + ddy * ddy),
             indoors = (rect_sum(indoor_sat, i, j) == w * h),
             furniture_building_ids = furniture_ids,
+            has_furniture = furniture_ids ~= nil and #furniture_ids > 0,
           }
         end
       end
     end
   end
+  -- FURNITURE-FIRST RANKING. ADDED 2026-09-24 (handoffs/2026-09-24-
+  -- furniture-aware-ranking.md): a live 3x3 Office search found the one
+  -- site containing the fort's real Chair ranked below the MAX_RESULTS cut
+  -- and then discarded by the overlap filter below (every 3x3 window
+  -- touching that tile overlaps whichever window the old distance-only sort
+  -- chose first). furniture_type_ids is non-nil only when find's own
+  -- AROUND_FURNITURE path calls in (never place), and every kind that
+  -- reaches this branch already has a room_value_field: furniture_kinds is
+  -- only ever set in ZONE_POLICY alongside position_field (test
+  -- test_furniture_kinds_are_only_on_the_owner_capable_room_kinds), so
+  -- gating on furniture_type_ids here is exactly "room_value_field present
+  -- and AROUND_FURNITURE true". The has_furniture split runs FIRST, then
+  -- falls through to the existing indoor/distance tiebreak inside each
+  -- group -- both groups keep today's ordering among themselves, only their
+  -- relative order to each other changes. When furniture_type_ids is nil
+  -- every candidate's has_furniture is false, so the new branch never
+  -- fires and ranking is byte-for-byte the same as before this change
+  -- (test_default_ranking_is_unchanged_without_around_furniture).
   table.sort(candidates, function(a, b)
+    if furniture_type_ids and a.has_furniture ~= b.has_furniture then return a.has_furniture end
     if p.prefer_indoors and a.indoors ~= b.indoors then return a.indoors end
     return a.dist < b.dist
   end)
@@ -1228,13 +1266,36 @@ function find_zone_area(kind_name, w, h, level, near, radius_tiles, around_furni
   end
   local req = requirements_for(k, p)
   local results = {}
+  local any_furniture = false
   for rank, c in ipairs(chosen) do
     local r = rect_site_info(k, p, c, dw, dh, z, rank, furniture_requested)
     r.search = search
     r.requirements = req
     if p.caveat then r.caveat = p.caveat end
-    if furniture_requested then r.furniture_kinds_checked = furniture_names end
+    if furniture_requested then
+      r.furniture_kinds_checked = furniture_names
+      if r.contains_qualifying_furniture then any_furniture = true end
+    end
     results[#results + 1] = r
+  end
+  -- TOP-LEVEL FURNITURE SUMMARY. ADDED 2026-09-24 (handoffs/2026-09-24-
+  -- furniture-aware-ranking.md item 3): a caller asking for furniture-aware
+  -- siting should not have to scan every row's contains_qualifying_furniture
+  -- to learn none of the candidates has any. Only added when
+  -- AROUND_FURNITURE was actually requested (a plain find keeps returning
+  -- its bare array, unchanged). Wrapping the array in an object is a new
+  -- shape for AROUND_FURNITURE callers only: that flag has never been
+  -- deployed live (TOOLS.yaml), so nothing depends on its old shape yet.
+  if furniture_requested then
+    local wrapped = {results = results, any_contains_furniture = any_furniture}
+    if not any_furniture then
+      wrapped.furniture_note = string.format(
+        "none of the %d returned sites contain any of the qualifying furniture (%s) for %s; "
+          .. "the furniture may exist outside every candidate window -- a wider RADIUS_TILES or "
+          .. "different footprint may reach it",
+        #results, table.concat(furniture_names, ", "), k.token)
+    end
+    return wrapped
   end
   return results
 end

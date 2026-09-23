@@ -367,3 +367,92 @@ def test_owner_and_valid_filters_use_the_empty_string_sentinel():
     valid_resolver = src[
         src.index("local function resolve_valid_filter"): src.index("function list_zones")]
     assert 's == nil or s == ""' in valid_resolver
+
+
+# --------------------------------------------------------------------------
+# handoffs/2026-09-24-furniture-aware-ranking.md: a furniture-containing
+# site must outrank a furniture-free one for AROUND_FURNITURE, and a plain
+# find's ranking must be untouched. Same offline, source-level style: the
+# Lua cannot run without a live DFHack process.
+# --------------------------------------------------------------------------
+
+
+def _ranked_rects_body():
+    src = _text()
+    return src[src.index("local function ranked_rects"): src.index("local function rect_site_info")]
+
+
+def test_furniture_sorts_before_distance_and_indoors():
+    """The has_furniture split must run BEFORE the existing prefer_indoors/
+    distance comparison, and only when furniture_type_ids is truthy, so a
+    plain find (furniture_type_ids == nil) never takes this branch."""
+    body = _ranked_rects_body()
+    sort_call = body[body.index("table.sort(candidates"):]
+    furniture_line = "if furniture_type_ids and a.has_furniture ~= b.has_furniture then return a.has_furniture end"
+    indoors_line = "if p.prefer_indoors and a.indoors ~= b.indoors then return a.indoors end"
+    assert furniture_line in sort_call
+    assert indoors_line in sort_call
+    assert sort_call.index(furniture_line) < sort_call.index(indoors_line), (
+        "furniture must be sorted ahead of the indoor/distance tiebreak, not after it"
+    )
+
+
+def test_has_furniture_is_computed_from_the_same_furniture_ids_as_the_row_flag():
+    """has_furniture must track furniture_building_ids exactly (non-nil and
+    non-empty), the same test the per-row contains_qualifying_furniture flag
+    applies in rect_site_info, so the two never disagree."""
+    body = _ranked_rects_body()
+    assert "has_furniture = furniture_ids ~= nil and #furniture_ids > 0" in body
+
+
+def test_default_ranking_is_unchanged_without_around_furniture():
+    """place and a plain find both call ranked_rects with furniture_type_ids
+    nil (test_find_and_place_share_ranked_rects_but_only_find_passes_
+    furniture_ids already pins the call sites); this pins that the sort
+    comparator itself is a no-op for that case: the furniture branch is
+    gated on furniture_type_ids, and no other line in the comparator was
+    touched by this change."""
+    body = _ranked_rects_body()
+    sort_call = body[body.index("table.sort(candidates"): body.index("local chosen = {}")]
+    # exactly the three comparator lines: furniture guard, indoors, distance
+    assert sort_call.count("return a.has_furniture") == 1
+    assert sort_call.count("return a.indoors") == 1
+    assert sort_call.count("return a.dist < b.dist") == 1
+
+
+def test_overlap_filter_runs_after_the_furniture_sort():
+    """Item 2: confirms from the code that the greedy overlap dedup (which
+    eliminates any candidate overlapping an already-chosen one, stopping at
+    MAX_RESULTS) runs AFTER candidates are sorted, so sorting
+    furniture-containing sites first is what keeps one of them from being
+    overlapped away -- the mechanism the brief traced before dispatch."""
+    body = _ranked_rects_body()
+    sort_at = body.index("table.sort(candidates")
+    overlap_at = body.index("if overlaps(c, e, w, h) then ok = false")
+    assert sort_at < overlap_at
+
+
+def test_find_wraps_output_only_when_furniture_requested():
+    """A plain find (furniture_requested false) must keep returning the bare
+    `results` array unchanged; only AROUND_FURNITURE gets the new
+    {results, any_contains_furniture, furniture_note} wrapper, so existing
+    callers see byte-for-byte identical shape and ranking."""
+    src = _text()
+    find_fn = src[src.index("function find_zone_area"): src.index("function check_owner")]
+    assert "return results\nend" in find_fn
+    assert "if furniture_requested then" in find_fn
+    assert "any_contains_furniture = any_furniture" in find_fn
+    assert "wrapped.furniture_note" in find_fn
+    # the wrap happens strictly inside the furniture_requested branch, after
+    # the plain `return results` fallback is still reachable for the
+    # non-furniture path
+    wrap_block = find_fn[find_fn.index("if furniture_requested then\n    local wrapped"):]
+    assert "return wrapped" in wrap_block
+
+
+def test_furniture_note_only_appears_when_no_candidate_has_furniture():
+    src = _text()
+    find_fn = src[src.index("function find_zone_area"): src.index("function check_owner")]
+    note_block = find_fn[find_fn.index("if not any_furniture then"): find_fn.index("return wrapped")]
+    assert "furniture_note" in note_block
+    assert "none of the" in note_block

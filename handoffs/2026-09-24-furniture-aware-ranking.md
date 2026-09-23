@@ -98,4 +98,76 @@ true` that returned five furniture-free sites.
 
 ## Result
 
-(to be filled by the stream)
+Done, offline, `scripts/dfhack/df-overseer-zone.lua` and
+`scripts/dfhack/TOOLS.yaml` (`find` entry) and
+`tests/test_zone_tool_manifest.py`. Commit `8b054c6`.
+
+**Cause confirmed as argued.** `ranked_rects` sorted candidates by
+`prefer_indoors`/`dist` only, then walked the sorted list greedily,
+discarding any candidate that overlaps one already chosen
+(`table.sort(candidates...)` at the top of the function, the
+`overlaps(c, e, w, h)` loop below it). At 3x3 every window covering the
+Chair's tile overlaps whichever window the old distance-only sort put
+first, so once a closer empty window was chosen the Chair-containing one
+was eliminated before the caller ever saw it, not merely ranked low. At
+1x1 windows are small enough that this collision is rare, which is why the
+Chair survived to rank 2 there. `test_overlap_filter_runs_after_the_
+furniture_sort` pins that the sort still runs before the overlap walk, so
+the fix (sorting furniture-containing sites first) works by construction:
+whichever furniture-containing site is closest becomes the first chosen,
+and nothing already chosen can make it overlap away.
+
+**Fix.** `ranked_rects` now takes a `has_furniture` field per candidate
+(`furniture_ids ~= nil and #furniture_ids > 0`, tracking
+`furniture_building_ids` exactly) and sorts on it first, only when
+`furniture_type_ids` is non-nil (find's own AROUND_FURNITURE path; `place`
+never passes it). `furniture_kinds` in `ZONE_POLICY` is only ever set
+alongside `position_field` (already pinned by
+`test_furniture_kinds_are_only_on_the_owner_capable_room_kinds`), so
+gating on `furniture_type_ids` is exactly "room_value_field present and
+AROUND_FURNITURE true" as the brief asked, with no separate
+`room_value_field` check needed. Existing indoor/distance ranking stays
+the tiebreak inside each group. When `furniture_type_ids` is nil (every
+default caller) `has_furniture` is false for every candidate, the new
+branch never returns early, and the comparator is otherwise byte-for-byte
+what it was; `test_default_ranking_is_unchanged_without_around_furniture`
+and `test_furniture_sorts_before_distance_and_indoors` pin the ordering
+and the gating.
+
+**Top-level no-candidate report (item 3).** `find_zone_area` now wraps its
+output as `{results: [...], any_contains_furniture: bool, furniture_note:
+"..." }` (the note only present when false) whenever `AROUND_FURNITURE` was
+requested; a plain `find` still returns the bare `results` array,
+unchanged. AROUND_FURNITURE has never been deployed live (TOOLS.yaml:
+"offline build only, not deployed or live-verified"), so changing its
+shape now, before its first deploy, breaks no live caller.
+`test_find_wraps_output_only_when_furniture_requested` and
+`test_furniture_note_only_appears_when_no_candidate_has_furniture` pin
+this.
+
+**Tests.** `tests/test_zone_tool_manifest.py` gained 6 source-level tests
+(same style as the rest of the file: the Lua cannot run without a live
+DFHack process). Ambient `python -m pytest`: **1413 passed, 3 skipped**
+(baseline 1407 passed / 3 skipped, +6 for the new tests, 0 regressions).
+`dfmcp/tests` via `C:\website-projects\df-automation\.venv-dfmcp\Scripts\python.exe`:
+**652 passed** (baseline 652, untouched — this stream did not touch
+`dfmcp/**`).
+
+**Live check a deploy should run** (not run here, offline only): the same
+`find Office 3 3 0 "shale Throne" 10 true` that returned five
+furniture-free sites. Expect `any_contains_furniture: true` at the top
+level and the Chair-containing site (`furniture_building_ids: [9]`) at
+rank 1, ahead of any furniture-free window.
+
+**Owed register lines** (not written here, per the `handoffs/` rule --
+the orchestrating session owns `Working.md`, `decisions/DECISIONS.md`,
+`memory/` and `handoffs/INDEX.md`):
+- `Working.md`: this handoff done, offline, awaiting the live check above
+  before its next deploy.
+- `decisions/DECISIONS.md`: a decision worth a row -- AROUND_FURNITURE's
+  `find` response shape changed (bare array to a wrapped object) ahead of
+  its first live deploy, so no live caller breaks; reason: the brief's
+  item 3 (top-level no-candidate report) cannot be expressed inside an
+  array without ambiguous JSON encoding, and a precedent already exists
+  (`list_zones` wraps its own array the same way).
+- `handoffs/INDEX.md`: flip this handoff's row to done.

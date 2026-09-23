@@ -814,6 +814,22 @@ df-overseer-zone.lua:
         silently ignoring it. `place` is unchanged: no new argument, still
         rejects every occupied tile -- this is `find`'s own capability.
         Offline build only, not deployed or live-verified this stream.
+        RANKING FIXED 2026-09-24 (handoffs/2026-09-24-furniture-aware-
+        ranking.md): a live 3x3 Office search found every returned site
+        furniture-free because the old distance-only sort let a merely
+        closer, empty window get chosen first, and the overlap filter that
+        enforces non-overlapping results then discarded the furniture-
+        containing window as it overlapped that pick. A site containing the
+        kind's qualifying furniture now sorts above one that does not
+        (existing indoor/distance ranking is the tiebreak within each
+        group), so it cannot be overlapped away. Only takes effect when
+        AROUND_FURNITURE is true; a plain find's ranking is unchanged. When
+        AROUND_FURNITURE is true the whole response is also now
+        `{results: [...], any_contains_furniture: bool, furniture_note:
+        "..." (present only when false)}` instead of a bare array, so a
+        caller learns "no candidate has it" without scanning every row. A
+        plain find (no AROUND_FURNITURE) still returns the bare array.
+        Offline build only, not deployed or live-verified this stream.
     "check-owner KIND OWNER":
       lua_function: check_owner
       effect: read
