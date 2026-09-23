@@ -221,6 +221,26 @@ at `research/data/2026-09-23-announcement-types.tsv`, being classified into
 pause/slow/notice/log only/ignore with a machine-readable YAML
 (`research/BRIEF-2026-09-23-announcement-severity.md`).
 
+**Announcement taxonomy in, 2026-09-23**
+(`research/2026-09-23-announcement-severity.md`, data at
+`research/data/2026-09-23-announcement-severity.yaml`). All 357 types levelled,
+orchestrator validated the file: 357 entries, exact match with the live list,
+no gaps or extras. Counts: pause 25, slow 23, notice 139, log only 93, ignore
+77; confidence verified 74, likely 259, unverified 24, per entry. Joined by
+name against DFHack's `df-structures` `alert_type` attribute (all 357 matched
+with identical ids). Recommended: a fifth, separate tripwire firing on the 25
+pause ids as a literal table, the 23 slow ids routed through
+`conductor/triage.py`'s existing wake machinery, and the other 170 never
+reaching the tripwire at all. **DF's own vocabulary already splits the kea
+case**: `AMBUSH_MISCHIEVOUS` is a distinct id from `AMBUSH_SNATCHER` and
+`AMBUSH_AMBUSHER`. **Finding to act on:** the death tripwire listens to the
+raw `UNIT_DEATH` event, which `research/2026-09-16-player-visibility.md` tags
+omniscient; `CITIZEN_DEATH`/`PET_DEATH` are the player-visible channel, so
+re-point or dual-arm it. **The channel's hard limit:** a stalled manager order
+produces no announcement of any kind, because the layer only reports things
+that happen. That needs a poller in `conductor/triage.py`, the same shape as
+`stuck_job`, and no refinement of this classification can close it.
+
 **Design, paused mid-question 2026-09-22.** "The Overseer proposing to
 itself" is really two paths, since it holds no `queue.propose`: its own
 agenda edits, and its direct write actions outside any proposal. Proposed
