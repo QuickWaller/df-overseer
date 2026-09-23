@@ -241,6 +241,45 @@ produces no announcement of any kind, because the layer only reports things
 that happen. That needs a poller in `conductor/triage.py`, the same shape as
 `stuck_job`, and no refinement of this classification can close it.
 
+**Attention system built and deployed 2026-09-23**
+(`handoffs/2026-09-23-attention-tiers-ingame.md`,
+`handoffs/2026-09-23-stalled-order-poller.md`,
+`evals/live/2026-09-23-attention-deploy/`). Three tiers replace pause on any
+reachable creature; a fifth tripwire on the 25 pause-level announcements,
+generated from the severity YAML with a drift check; theft and the other crime
+announcements added to the report categories; an observation ledger keyed by
+race that aggregates in place and whose write path is proven by a test over the
+real file to be unable to pause or wake; a stalled versus blocked order poller
+in `conductor/order_watch.py` with thresholds in policy (1200 ticks, reasoned
+not measured); the 23 slow-level ids routed as wakes. The two halves agreed
+their event shape without talking: the in-game stream read the merged conductor
+code and emitted exactly what it assumed. Suites 1342/3 and 652. Deployed and
+re-checked: tool counts overseer 63, architect 37, quartermaster 23, consultant
+21, conductor 15, each delta explained; **the Well now reads reachable**, the
+regression that started this; fort paused at tick 107874 throughout. The
+research's claim that the death tripwire used an omniscient event was **wrong**
+and the executor said so: it already compared citizen rosters, and pet deaths
+are now covered too.
+
+**Bug found live by the mandatory check, fix in flight**
+(`handoffs/2026-09-23-creature-tag-fields-fix.md`). All six creature tag reads
+in `class_flags` were at the wrong level and partly misspelled:
+`creature.flags.X` raises on this install, the tags live on
+`creature.caste[unit.caste].flags`, the spelling is `CURIOUS_BEAST_ITEM` not
+`CURIOUSBEAST_ITEM`, and building destroyer is `caste.misc.buildingdestroyer`,
+an integer, not a flag. Verified twice against live kea unit 513, once by the
+deploy agent and once independently. Every read is pcall-guarded, so all six
+silently returned false: the kea still landed in `record_only` by luck, but the
+**slow tier could never fire for a thieving creature**, the exact case the
+design was built for. Three layers of offline tests passed; only a live
+creature caught it. **Owed:** redeploy after the fix and re-verify against a
+real kea, on the user's go-ahead.
+
+**Tooling:** `scripts/vm-ssh.sh` (committed, orchestrator-tested) is now the
+only sanctioned way for a stream to reach a VM: it reads the address by key,
+never echoes it, and masks address-shaped output. Four agents had leaked one by
+writing the same wrapper from scratch.
+
 **Design, paused mid-question 2026-09-22.** "The Overseer proposing to
 itself" is really two paths, since it holds no `queue.propose`: its own
 agenda edits, and its direct write actions outside any proposal. Proposed
