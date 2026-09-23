@@ -1,6 +1,18 @@
 # Roadmap
 
-**Last reviewed:** 2026-09-21, evening (twenty-third pass, targeted: a full re-read of the
+**Last reviewed:** 2026-09-23 (twenty-fourth pass, full: two very heavy days landed
+since the last pass -- the agent loop MVP built and deployed, a CP437 encoding
+bug found and fixed at its source, the conductor's Docker access granted, order/
+job attribution corrected and shipped, reachability fixed, an attention/tier
+system built and deployed with a live-caught bug fixed the same day, and the
+first unattended run placed the fort's first real Office zones and first real
+non-dry-run build. New top Now item records all of it. The rest of the Now,
+Next and Later buckets were keyword-scanned (agent loop, conductor, tripwire,
+office, manager, order, attention, ledger, tier) and nothing else quietly
+finished was found; that was a search, not a line-by-line read. Suite measured
+2026-09-23: **1348 passed / 3 skipped** ambient, **652** in `.venv-dfmcp`.)
+
+**Previously reviewed:** 2026-09-21, evening (twenty-third pass, targeted: a full re-read of the
 Now bucket's top items against `Working.md`, the register and the handoff index after a
 day of twelve streams. What moved is recorded in the new top Now item: the building,
 gotchas, labor-graph, nobles and zone tools are deployed (tool lists **34/57/14**), a
@@ -91,6 +103,51 @@ or `decisions/DECISIONS.md`, not here.
 ## Now
 <!-- Actively being worked, or the clear immediate next step. -->
 
+- **NEW 2026-09-23: the agent loop MVP is built and deployed, the fort's
+  first real Office zones and first real build landed, and what is next is
+  answering the office question and resuming the parked proposals design.**
+  Deployed and live-verified across 2026-09-22/23: the in-game clock and
+  tripwire script, a `conductor` dfmcp role, the conductor systemd service
+  on VM 106 (installed, Docker-capable, **never run live**, only a manual
+  `--dry-run`), the Quartermaster enabled as a fourth advisory role, local
+  and web Consultant retrieval, order-status/attribution fields
+  (`df.job.order_id` does link a job back to its order, correcting an
+  earlier research claim), a duplicate-production check, `workjob.cancel`,
+  a CP437 game-text encoding fix at its source, a tri-state reachability
+  helper (fixes a false negative on the Well's own ramp-top centre tile), a
+  three-tier attention system replacing "pause on any reachable creature",
+  a fifth announcement-level tripwire, an observation ledger, and a
+  stalled/blocked order poller. Role tool lists: **overseer 63, architect
+  37, quartermaster 23, consultant 21, conductor 15**. **A live-caught bug
+  in the tier classifier** (six creature-tag reads at the wrong struct
+  level, silently returning `false`) was found by the mandatory live check
+  and fixed the same day (`docs/TRAPS.md`, "A pcall-guarded read..."). **The
+  first unattended run** placed the fort's first two real Office zones (one
+  owned by the Manager) and its first real, non-dry-run build (a Chair, now
+  buildingplan-suspended pending an item), then stopped itself on its own
+  tripwire after 900 of a possible 2000 ticks, exactly as designed. **Still
+  open, in order:** (1) whether an outdoor, unfurnished Office carries
+  enough room value for `required_office: 1` -- the next unattended window
+  is the way to find out; (2) whether a completed manager order leaves
+  `world.manager_orders.all`, still unwitnessed since no order has gone
+  active; (3) a decision on whether harmless wildlife should stop an
+  unattended run at long range at all; (4) the conductor's first real
+  (non-dry-run) cycle, gated on the office question and a user decision to
+  proceed; (5) the parked proposals design ("the Overseer proposing to
+  itself"), tabled by the user pending the tool picture being clear, which
+  it now largely is. → `Working.md`, `decisions/DECISIONS.md` 2026-09-22/23
+  rows, `handoffs/INDEX.md`, `evals/live/2026-09-22-loop-*`,
+  `evals/live/2026-09-23-*`.
+- **SUPERSEDED 2026-09-23 by the item above (kept for the record):** the
+  item below, whose steps (1) and (3) are now done (the labor-join shape
+  fix redeployed with the rest of the 2026-09-21 batch; the fort's first
+  real build happened, a Chair) and whose step (2) is partly done (an
+  Office exists and is owned, but whether it is enough room value is still
+  open, per the new top item). Step (4), generalising `workjob`, is not
+  done: `workjob.lua`'s job vocabulary is still the original three kinds
+  (blocks/mechanisms/brew_drink); the Chair order was created through
+  `orders.create` instead, because `chair`/`table` only exist in that
+  tool's own `JOB_INFO` table.
 - **NEW 2026-09-21, evening: the building blocks are live, and the next job is proving
   them for real; the agent loop is the largest unbuilt piece.** Deployed and
   live-verified on VM 103 today: the generic `building` tool (dry runs only), `labor
