@@ -382,3 +382,28 @@ Each fact says how it is known. "Live" means read or run on VM 103 on 2026-09-21
   `df.global.world.cur_savegame.save_dir`. (live)
 - `dfhack-run lua -f file` does not provide `dfhack_flags`; a module-style script needs a
   small wrapper that sets it. (live)
+
+**Creature raws, announcements and jobs (2026-09-23)**
+- Per-tag creature flags live on the CASTE, not the creature:
+  `creature.caste[unit.caste].flags.LARGE_PREDATOR` and so on. At creature level only
+  aggregate `HAS_ANY_*` flags exist, and reading a per-tag name there raises. The
+  spelling is `CURIOUS_BEAST_ITEM`/`_EATER`/`_GUZZLER`, with the underscore.
+  `BUILDINGDESTROYER` is not a flag at all: `caste.misc.buildingdestroyer` is an integer
+  (0, 1 or 2). (live, against a real kea, twice)
+- `df.announcement_type` holds 357 fixed types on this install, ids -1 to 355. The full
+  list is at `research/data/2026-09-23-announcement-types.tsv` and the levelling at
+  `research/data/2026-09-23-announcement-severity.yaml`. A stalled manager order produces
+  no announcement of any kind: the channel reports events, never their absence. (live)
+- `df.job` has `order_id`, the link back to the manager order that spawned the job;
+  DFHack's own `do-job-now.lua` matches on it. `manager_order.status` carries `validated`
+  and `active`, and `finished_year`/`finished_year_tick`. (live)
+- `job.flags['repeat']` is the repeating-job flag, used by this install's own
+  `lever.lua` and `gui/workflow.lua`. (live)
+- A well's centre tile is a RampTop, which no unit can stand on, so a walkability check
+  from a landmark's centroid reports false for a well that is genuinely reachable from
+  beside it. Resolve a landmark to a standable tile (itself, else its neighbour ring) and
+  compare walkable groups. A unit standing on a ramp reads as group 0, so the old check
+  could miss a hostile entirely. (live)
+- `dfhack.df2utf` converts game text from CP437; no script used it before 2026-09-22, and
+  a name with byte 0x96 crashed `diff.since`. (live)
+
