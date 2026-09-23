@@ -134,3 +134,63 @@ classifier friction.
     false`, id 3 (ConstructThrone) `validated: false, active: false`.
   - Quicksave issued (prior slot `autosave 1`), confirmed landed in
     **`autosave 2`**.
+
+### Window 2
+
+- Resumed at `abs_tick 12609255` (`clock resume`, `paused: false`).
+- The `slow`-tier advisory from window 1 was still latched (it does not
+  self-clear on resume, matching design: only `clear`/`re-arm` reset it) and
+  fps stayed at 10 for the whole window, so this window ran roughly 4x
+  slower in wall-clock terms than window 1. The kea it tracks moved closer
+  over the window (from 7 tiles near the Farm Plot to `distance_tiles: 0`
+  at "Stockpile #2"), still only ever `tier: "slow"`, never escalating to
+  `pause`.
+- **Job 2249 vanished from the job list mid-window** -- caught by the
+  ad-hoc `id==2249` lookup this run uses in place of the classifier-refused
+  `workjob cancel ... true` dry-run check: `{job2249_found: false}`. Per the
+  handoff's own explicit stop condition ("job 2249 vanishing without a
+  Chair appearing"), **the fort was paused immediately**
+  (`clock pause` -> `{ok: true, paused: true}`), before checking anything
+  else, per "pause first and report second."
+- **Checked immediately after pausing, and the vanishing was benign**: a
+  Chair item now exists. `stocks availability CHAIR`:
+  ```
+  "total_item_count": 1, "available_item_count": 0,
+  "in_job_item_count": 1, "in_job_units": 1
+  ```
+  The item is `in_job` (held by the building-construction job), not sitting
+  idle -- job 2249 completed, produced the Chair, and was removed from the
+  job list the ordinary way a finished job is; it did not vanish without
+  producing anything. This resolves the run's one genuine ambiguity (a job
+  disappearing from `world.jobs.list` is indistinguishable, from that read
+  alone, between "finished" and "cancelled/errored"; the stocks read is
+  what tells them apart).
+- **Chair building id 9, re-read**: `{btype: "Chair", construction_stage: 0,
+  exists: false, jobs_n: 1}` -- not yet built (the Chair item has been
+  produced and is being carried/used, but the building itself has not
+  completed). `stuckjobs find` now returns `[]` (empty) -- the
+  `ConstructBuilding` job that was `waiting_on: "suspended"` at the start of
+  the run now has a worker: buildingplan un-suspended it once the item
+  became available, exactly as `df-overseer-building.lua`'s own header says
+  it should.
+- **Window end reads** (`abs_tick 12611099`, year 31, `cur_year_tick
+  111899`, window length 1844 ticks, under the 2000 cap):
+  - Job 2249: gone from the job list (completed, see above), Chair item
+    confirmed produced.
+  - Chair building id 9: `exists: false`, still 1 job, now in progress
+    (not suspended).
+  - `stocks availability CHAIR`: `total_item_count: 1`, all of it
+    `in_job_item_count` (none `available`, none `in_building` yet).
+  - `vitals summary`: alive 22, dead_total 1 (unchanged, no death),
+    worst_hunger "fine", **worst_thirst "fine"** (improved from "thirsty" at
+    the start of the run, `warning_count` dropped from 1 to 0) -- no vital
+    crossed a threshold in the bad direction.
+  - `orders list`: all four unchanged from baseline -- ids 0/1/2
+    `validated: true, active: false`, id 3 (ConstructThrone) `validated:
+    false, active: false`. **The Chair that got made came from job 2249,
+    the direct job, not from manager order 3** -- order 3 has still never
+    gone active or validated at any point in this run, direct evidence that
+    the direct-job route and the manager-order route are genuinely separate
+    here, not two views of the same mechanism.
+  - Quicksave issued (prior slot `autosave 2`), confirmed landed in
+    **`autosave 3`**.
