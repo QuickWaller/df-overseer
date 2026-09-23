@@ -38,7 +38,15 @@ WORKJOB_LUA = REPO_ROOT / "scripts" / "dfhack" / "df-overseer-workjob.lua"
 STUCKJOBS_LUA = REPO_ROOT / "scripts" / "dfhack" / "df-overseer-stuckjobs.lua"
 
 ORDERS_IDS = {"orders.list", "orders.create", "orders.cancel", "orders.check-duplicate"}
-WORKJOB_IDS = {"workjob.list", "workjob.queue", "workjob.cancel"}
+WORKJOB_IDS = {"workjob.list", "workjob.list-jobs", "workjob.queue", "workjob.cancel"}
+# workjob.list-jobs added by handoffs/2026-09-21-workjob-generalise.md
+# (dispatched 2026-09-23): the job vocabulary is now read live from DFHack's
+# own workshops.getJobs, not a hand-maintained table. See that file's own
+# header. This set, and workjob.queue's args below, were updated by that
+# stream to keep this manifest test accurate against the file it shares
+# with -- the invariants this file actually checks (job_origin reuse, the
+# `ok and v or nil` boolean trap, no coordinate leak, workjob.cancel's
+# refusal behaviour) are untouched by that stream and still hold.
 STUCKJOBS_IDS = {"stuckjobs.find"}
 
 
@@ -95,7 +103,7 @@ def test_check_duplicate_and_cancel_signatures():
     assert reg.get("orders.check-duplicate").args == ["JOB"]
     assert reg.get("workjob.cancel").args == ["JOB_ID", "[DRY_RUN]"]
     assert reg.get("workjob.queue").args == [
-        "JOB", "WORKSHOP_LANDMARK_NAME", "[DRY_RUN]", "[REPEAT]",
+        "JOB", "WORKSHOP_LANDMARK_NAME", "[DRY_RUN]", "[REPEAT]", "[COUNT]",
     ]
 
 

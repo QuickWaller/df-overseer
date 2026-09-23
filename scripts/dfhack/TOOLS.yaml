@@ -1045,93 +1045,104 @@ df-overseer-orders.lua:
         why. DEPLOYED 2026-09-23, see verified above.
 
 df-overseer-workjob.lua:
-  build_order_item: "handoffs/2026-09-19-workshop-add-job.md -- the honest alternative to a stalled manager order: a direct workshop job, no Manager needed, per handoffs/2026-09-19-well-and-harvest.md section 6 and handoffs/2026-09-19-well-finish.md sections 2-4"
+  build_order_item: "handoffs/2026-09-19-workshop-add-job.md -- the honest alternative to a stalled manager order: a direct workshop job, no Manager needed, per handoffs/2026-09-19-well-and-harvest.md section 6 and handoffs/2026-09-19-well-finish.md sections 2-4. GENERALISED handoffs/2026-09-21-workjob-generalise.md (dispatched 2026-09-23): the job vocabulary is now read live from DFHack's own workshops.getJobs, not a hand-maintained table -- see the .lua file's own header for the full coverage measurement and field-mapping citations."
   commands:
     list:
       lua_function: list_jobs
       effect: read
       coordinate_bearing: false
       live_deployed: true
-      verified: "2026-09-19 (deployed to VM 103, hash-verified, and loads and runs live: handoffs/2026-09-19-deploy-batch.md, decisions/DECISIONS.md 2026-09-19)"
+      verified: "2026-09-19 (deployed to VM 103, hash-verified, and loads and runs live: handoffs/2026-09-19-deploy-batch.md, decisions/DECISIONS.md 2026-09-19). UNCHANGED by the 2026-09-23 generalisation -- still returns exactly the three legacy tokens (see list-jobs below for the generic, per-workshop listing)."
       knowledge_scope: player_visible
-      notes: "Known JOB values (blocks/mechanisms/brew_drink), the same vocabulary the real 'q -> add job' menu offers at the matching workshop kind."
-    "queue JOB WORKSHOP_LANDMARK_NAME [DRY_RUN] [REPEAT]":
+      notes: >
+        Deliberately left as-is by handoffs/2026-09-21-workjob-generalise.md:
+        the three legacy short tokens only (blocks/mechanisms/brew_drink), so
+        an existing no-arg caller keeps working byte-for-byte. For every real
+        job a named workshop actually offers, from DFHack's own
+        workshops.getJobs, use `list-jobs WORKSHOP_LANDMARK_NAME` below.
+    "list-jobs WORKSHOP_LANDMARK_NAME":
+      lua_function: list_workshop_jobs
+      effect: read
+      coordinate_bearing: false
+      live_deployed: false
+      verified: "2026-09-23, dry-run/read-only live (handoffs/2026-09-21-workjob-generalise.md report): called against this fort's three real workshops (Still, Stoneworker's Workshop/Masons, Mechanic's Workshop/Mechanics), fort paused throughout, tick unchanged. See the handoff's own report section for exact quoted output. NOT yet deployed to VM 103 as the live tool (this stream is offline-build + read-only-live-verification only, per its own hard lines)."
+      knowledge_scope: player_visible
+      notes: >
+        NEW handoffs/2026-09-21-workjob-generalise.md deliverable 1. Every
+        job DFHack's own workshops.getJobs offers at the named workshop or
+        furnace (hard-coded job definitions PLUS every reaction the raws
+        attach to that specific building), each with a token to pass to
+        `queue`, its display name, and an items summary (item type if
+        concrete, quantity, mat_type/mat_index, class-filter flags, plus a
+        six-deduction availability read for any concrete item, REUSING
+        df-overseer-stocks.lua's own get_availability rather than
+        re-deriving it). A job whose only reagent is a wildcard/tag match
+        (item_type still -1 after defaults merge) is still LISTED here
+        (list-jobs never refuses), but `queue` will refuse it -- listing
+        and queuing have different honesty contracts by design, matching
+        the project's existing stocks/building tools. Coverage measured
+        live this stream, not estimated: 28 of 33 workshop_type+furnace_type
+        kinds on this install return at least one real job from getJobs;
+        5 do not (Bowyers, Clothiers, Kennels, Tool workshop; Custom
+        furnace at the wildcard scan) -- see the .lua file's own header for
+        the full breakdown and the exact probe used. Any field this tool
+        could not read is named in `read_failures`, also relayed via
+        `dfhack.printerr`, never silently defaulted (docs/TRAPS.md's
+        pcall-degrades-to-false entry).
+    "queue JOB WORKSHOP_LANDMARK_NAME [DRY_RUN] [REPEAT] [COUNT]":
       lua_function: queue_job
       effect: mutate
       coordinate_bearing: false
       live_deployed: true
-      verified: "2026-09-19 (live: blocks and a mechanism were queued for real and the well was built from them; brew_drink refuses on the container reagent by design; handoffs/2026-09-19-stone-blocks-well.md, register 2026-09-19). REPEAT param added 2026-09-23 (handoffs/2026-09-23-order-job-attribution-and-checks.md item 6), UNTESTED live -- see that command's own note."
+      verified: "2026-09-19 (live: blocks and a mechanism were queued for real and the well was built from them; brew_drink refuses on the container reagent by design; handoffs/2026-09-19-stone-blocks-well.md, register 2026-09-19), still true after the 2026-09-23 generalisation -- the generic path was cross-checked to reproduce the old blocks job_item spec field-for-field (see the .lua file's own header) before this rewrite, and the three legacy tokens still resolve through LEGACY_ALIASES. REPEAT param added 2026-09-23 (handoffs/2026-09-23-order-job-attribution-and-checks.md item 6) and COUNT param added by the same-numbered later stream (handoffs/2026-09-21-workjob-generalise.md); both remain UNTESTED live -- see that command's own note."
       # Deployed to VM 103 2026-09-19 and run live, including one real blocks job (decisions/DECISIONS.md 2026-09-19); still tagged unverified
       # here because dfmcp/tests/test_workjob_tool.py pins it; see handoffs/2026-09-21-doc-drift-pass-2.md.
       knowledge_scope: player_visible
       notes: >
-        UPDATE 2026-09-22: the opening sentence below (offline build, never run
-        live) is stale. The tool was deployed on 2026-09-19 and run live,
-        including one real blocks job (decisions/DECISIONS.md 2026-09-19).
-        DFHack's own workshops.getJobs would replace this three-job table
-        (handoffs/2026-09-21-workjob-generalise.md, written, not dispatched).
-        Offline build, never run against a live DFHack process (this
-        stream had no VM). DRY_RUN defaults to true. JOB is one of
-        blocks (ConstructBlocks @ Masons), mechanisms (ConstructMechanisms
-        @ Mechanics), brew_drink (CustomReaction BREW_DRINK_FROM_PLANT @
-        Still) -- see the .lua file's own header for the exact DFHack code
-        path cited (idle-crafting.lua's makeRockCraft,
-        library/lua/dfhack/workshops.lua's Masons/Mechanics job
-        definitions) for the first two, and this project's own honestly-
-        flagged reagent-field-copy code (not a reused DFHack path -- none
-        was found) for brew_drink, which REFUSES rather than guesses on
-        any reagent whose item_type is a wildcard/tag match (a generic
-        "any empty container" reagent is the suspected shape of brewing's
-        own second reagent on the vanilla wiki token, unconfirmed against
-        this install's live raws). Refuses explicitly on: an unknown JOB
-        name, an unknown workshop landmark, a landmark that is not a
-        workshop, a workshop of the wrong kind, a workshop still under
-        construction (`bld.flags.exists` false), and a full job queue
+        GENERALISED 2026-09-23 (handoffs/2026-09-21-workjob-generalise.md,
+        dispatched that day): JOB is no longer looked up in a hand-maintained
+        table. It is resolved against the NAMED workshop's own real
+        `workshops.getJobs` output, either as a generic token (a job_type
+        name lowercased, e.g. "constructthrone", or "reaction:<code>"
+        lowercased for a CustomReaction job, e.g. "reaction:make_mead") or
+        as one of the three legacy short aliases kept working unchanged:
+        blocks (ConstructBlocks), mechanisms (ConstructMechanisms),
+        brew_drink (CustomReaction BREW_DRINK_FROM_PLANT). A job not offered
+        at the named workshop is refused by name, listing what that
+        workshop DOES offer, rather than a fixed "wrong kind" message.
+        DRY_RUN defaults to true. Refuses explicitly on: an unknown JOB
+        (not offered at this workshop), an unknown workshop landmark, a
+        landmark that is not a workshop or furnace, a workshop still under
+        construction (`bld.flags.exists` false), a full job queue
         (`#bld.jobs >= 10`, dfhack.job.assignToWorkshop's own documented
-        cap). Never sets `status.validated` and never touches
+        cap), a COUNT that would push the queue over that cap, and any job
+        whose item resolves to a wildcard/tag-matched item_type (refusing
+        rather than guessing which concrete item to reserve). Never sets
+        `status.validated` and never touches
         `df.global.world.manager_orders.all` -- a wholly separate route
-        from df-overseer-orders.lua's queue, not a patch on it. The real
-        `dfhack.job.createLinked`/`assignToWorkshop` mutation path is
-        UNTESTED live; only the refusal logic and job_item construction
-        were reasoned through against this install's own prior live
-        findings (handoffs/2026-09-19-well-and-harvest.md section 6), not
-        exercised. First live run must check, in order: (1) `list` and
-        `queue blocks|mechanisms <workshop> true` (dry-run) resolve the
-        already-built Mason's/Mechanic's Workshop landmarks correctly and
-        report `job_item_count: 1`; (2) `queue brew_drink <still> true`
-        either resolves cleanly or names exactly which reagent it refuses
-        and why -- if it refuses, that is this tool doing its job, not a
-        bug; (3) only once both dry-runs look right, a single DRY_RUN=false
-        call for `blocks` or `mechanisms` (the simpler, single-reagent
-        case) with the fort paused immediately after, checking
-        `world.jobs.list` for the new job and `#bld.jobs` on the target
-        workshop before unpausing at all. **REAL FINDING, not fixed here
-        (dfmcp/tools.py is not a touched surface this stream)**: if driven
-        through the MCP server rather than the raw CLI,
+        from df-overseer-orders.lua's queue, not a patch on it. Every
+        result carries `read_failures` (also relayed via `dfhack.printerr`
+        when non-empty) naming any spec field this tool could not read,
+        per docs/TRAPS.md's pcall-degrades-to-false entry -- this file reads
+        reagents and job definitions off live raws, exactly that bug's
+        surface. The real `dfhack.job.createLinked`/`assignToWorkshop`
+        mutation path is UNTESTED live this stream either; only list-jobs
+        and queue's dry-run path were exercised against VM 103 (read-only,
+        per the handoff's hard lines) -- see the handoff's own report
+        section for the exact supervised test this owes, including COUNT
+        and REPEAT together. **REAL FINDING, still not fixed here
+        (dfmcp/tools.py is not a touched surface this stream either)**: if
+        driven through the MCP server rather than the raw CLI,
         `dfmcp/tools.py`'s own `_SHELL_METACHAR_RE` refuses any argument
         containing a literal apostrophe -- and this fort's actual Mason's
-        Workshop is named "Stoneworker's Workshop"
-        (handoffs/2026-09-19-well-and-harvest.md's own live write-up),
-        DF's vanilla default naming for a Masons subtype built of stone.
-        The very first live call for `blocks` will hit this if made via
-        MCP; the raw `./dfhack-run df-overseer-workjob ...` CLI has no such
-        restriction. See dfmcp/tests/test_workjob_tool.py's own
+        Workshop is named "Stoneworker's Workshop". See
+        dfmcp/tests/test_workjob_tool.py's own
         `test_apostrophed_workshop_names_are_refused_by_the_mcp_layer`.
-        UPDATE 2026-09-23 (handoffs/2026-09-23-order-job-attribution-and-
-        checks.md item 6): an optional trailing REPEAT arg, off by default
-        ("off unless explicitly asked for"), sets DFHack's own
-        `job.flags['repeat']` on the created job when DRY_RUN=false and
-        REPEAT is truthy. Confirmed against DFHack's own current shipped
-        `gui/workflow.lua` source (both a read and a write of
-        `job.flags['repeat']`), the same citation standard this file's
-        header already applies elsewhere -- NOT independently confirmed by
-        introspecting this install's own live `df.job._fields` (offline
-        build, no write verb exercised against the fort this stream). Every
-        result reports `repeat_requested`; a real queue additionally reports
-        `repeat_set` (whether the pcall'd write succeeded). REPEAT can only
-        be reached by also supplying DRY_RUN explicitly (dfmcp's own
-        positional-optional gap check, dfmcp/tools.py) -- "explicit when
-        asked" applies to both.
+        COUNT is appended as a NEW fifth positional argument, after REPEAT,
+        so the first four positions (JOB, WORKSHOP_LANDMARK_NAME, DRY_RUN,
+        REPEAT) are unchanged for any existing caller; a real queue reports
+        both `job_id` (the first job, for back-compat) and `job_ids` (all
+        of them).
     "cancel JOB_ID [DRY_RUN]":
       lua_function: cancel_job
       effect: mutate
