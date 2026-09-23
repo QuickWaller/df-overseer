@@ -489,9 +489,26 @@ earlier milestone either dry-ran or left something waiting.
    the dry path provably never deletes. The run worked around it with reads
    only, deployed nothing, and routed nothing through another session.
 
-**Owed now:** a `slow`-tier clearing rule in `docs/AGENT-LOOP.md` §3 and in the
-clock script; correcting `df-overseer-breach.lua`'s header and the `ROADMAP.md`
+**Owed now:** correcting `df-overseer-breach.lua`'s header and the `ROADMAP.md`
 line on the next Lua deploy; the user's open ruling on burrow confinement.
+
+**In flight, 2026-09-23 (dispatched after the push at `c58b9c7`):** two Sonnet
+streams, no shared surfaces, neither touching a VM.
+
+- **The `slow`-tier clearing rule**, finding 2 above turned into a fix:
+  `handoffs/2026-09-23-slow-tier-clearing.md`. Offline, owns
+  `df-overseer-clock.lua`, the `clock` entries in `TOOLS.yaml`, the clock and
+  tier tests and `docs/AGENT-LOOP.md` §3. **The deploy is deliberately not in
+  its scope** and needs its own go-ahead once it lands, so the fort stays at
+  10 FPS with the advisory latched until then, which costs nothing while
+  paused and keeps the evidence intact.
+- **Proposals and checks, evidence for the parked design conversation**:
+  `handoffs/2026-09-23-proposals-and-checks-prep.md`. Researcher, read-only,
+  produces `research/2026-09-23-proposals-and-checks.md` only. Assembles what
+  `proposal-0001`'s void exposed, what a check can actually read from today's
+  tools, what the three live runs showed about predicting mechanisms versus
+  outcomes, and what time unit a prediction can use at a 100 FPS cap. It does
+  not decide anything; the user does, afterwards.
 
 ## Both 2026-09-23 evening streams are DONE and merged (state below is history)
 
