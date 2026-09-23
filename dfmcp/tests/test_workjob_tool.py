@@ -97,11 +97,15 @@ def test_workjob_queue_argument_signature_matches_the_lua_dispatch():
     )
     tool = reg.get("workjob.queue")
     tokens = [t.strip("[]") for t in tool.args]
-    assert tokens == ["JOB", "WORKSHOP_LANDMARK_NAME", "DRY_RUN", "REPEAT"]
+    assert tokens == ["JOB", "WORKSHOP_LANDMARK_NAME", "DRY_RUN", "REPEAT", "COUNT"]
     assert tool.args[0] == "JOB"
     assert tool.args[1] == "WORKSHOP_LANDMARK_NAME"
     assert tool.args[2] == "[DRY_RUN]"  # optional, dry-run defaults true
     assert tool.args[3] == "[REPEAT]"  # optional, off by default (handoffs/2026-09-23)
+    # COUNT was appended fifth, deliberately AFTER REPEAT, so the first four
+    # positions stay unchanged for every existing caller
+    # (handoffs/2026-09-21-workjob-generalise.md, dispatched 2026-09-23).
+    assert tool.args[4] == "[COUNT]"
 
 
 # --------------------------------------------------------------------------

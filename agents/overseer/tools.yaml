@@ -121,6 +121,17 @@ read:
       Added handoffs/2026-09-19-workshop-add-job.md. The known JOB vocabulary
       (blocks/mechanisms/brew_drink) for workjob.queue below. Deployed
       2026-09-19 and run live.
+  - id: "workjob.list-jobs"
+    status: planned
+    note: >-
+      Added handoffs/2026-09-21-workjob-generalise.md (dispatched 2026-09-23).
+      Read-only: every job a named workshop actually offers, taken from
+      DFHack's own workshops.getJobs rather than a hand-maintained list, each
+      with its token, what it needs and a six-deduction availability read.
+      This is what makes workjob.queue's generalisation reachable: without it
+      a role can only guess job tokens. Measured coverage 28 of 33 workshop
+      and furnace kinds; the five without jobs are named in TOOLS.yaml.
+      Offline build plus read-only live verification, not deployed.
   - id: "orders.check-duplicate"
     status: planned
     note: >-
