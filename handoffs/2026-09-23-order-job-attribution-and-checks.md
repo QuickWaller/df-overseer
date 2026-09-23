@@ -247,3 +247,37 @@ or IP printed.
 DECISIONS.md`, `memory/` are intentionally untouched -- the orchestrating
 session owns those. `evals/live/2026-09-23-order-job-attribution/` was not
 created since nothing was deployed; the deploy procedure above names it.
+
+---
+
+**Deploy note, added 2026-09-23 by a second executor with VM 103 access.**
+**Status: deployed and live-verified.** All 7 files this section names
+deployed exactly as written above: quicksave taken and confirmed from
+`cur_savegame.save_dir` (`autosave 2` -> `autosave 3`, not by mtime, per
+`docs/TRAPS.md`), `git -c core.autocrlf=false archive HEAD` of the 7 files,
+sha256-verified against the committed blobs before upload, verified again
+on arrival on the VM and again at the installed path (all 7 `OK`, both
+times), backed up first to
+`/opt/df/deploy-backup-2026-09-23-orders-jobs/`, `dfmcp-server` restarted
+clean (`active (running)`, no restart loop). Live checks: `orders.list`
+shows all three orders' new status fields (`validated: true, active:
+false`, `finished_year(_tick): -1`, `frequency_raw: 0`, `max_workshops:
+0`); `orders.check-duplicate blocks` correctly names order id 0 as
+in-flight; `stuckjobs.find` returned `[]` (no live job exists on this fort
+right now to show a populated `order_id`/`from_order` field on -- the
+sentinel-value confirmation this section already listed as owed remains
+owed). Role tool counts over a real MCP client: **overseer 62** (was 60,
++`orders.check-duplicate`/+`workjob.cancel`), **architect 36** (was 35,
++`orders.check-duplicate`), **consultant 21** (unchanged), **quartermaster
+22** (was 21, +`orders.check-duplicate`), **conductor 13** (unchanged) --
+every delta matches this section's own account of what was granted to
+whom. Fort state before and after, identical: paused, year 31,
+cur_year_tick 106974, abs_tick 12606174, alive 22, dead_total 1. No write
+verb (`orders.cancel`, `workjob.cancel`, `workjob.queue`) was exercised;
+the commands this section lists as owed for the first supervised live run
+are unchanged and still owed. Full record:
+`evals/live/2026-09-23-order-job-attribution/README.md`, including two
+address/hostname prints this run made before its output-scrubbing helper
+existed (a `grep` of the CIDR address, one `hostname` call) -- flagged
+there and in this run's own report, not concealed; no further leak after
+the helper was built.
