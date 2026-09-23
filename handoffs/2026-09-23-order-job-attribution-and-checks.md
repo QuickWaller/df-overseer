@@ -103,4 +103,147 @@ duplicate check lands there, tests under `tests/`, `dfmcp/tests/`,
 
 ## Result
 
-(executor fills in)
+**Status: offline code and tests done and both suites green; NOT deployed.**
+This worktree carries no `.env`/`infra/local.*` secrets and no SSH access to
+VM 103 at all (checked: no `.env` anywhere under the worktree root, no
+`infra/local.env`) -- deploy is not something this executor could do from
+here regardless of authorization, not a refusal. The exact deploy procedure
+is below, unrun, for whoever has that access.
+
+**1. Research corrections** (item 1). `research/2026-09-18-work-orders.md`
+and `research/2026-09-23-work-orders-vs-direct-jobs.md` both got a dated
+2026-09-23 correction section (not a rewrite): `df.job.order_id` exists and
+is DFHack's own attribution route (cited to
+`do-job-now.lua:106`, per this handoff's own finding), which changes parts
+C/D/E of the 2026-09-23 report (attribution is a tooling gap now, not a data
+gap; the duplicate check does not need job_type/workshop matching as its
+ceiling).
+
+**2. Order status fields** (item 2). `list_orders()` in
+`scripts/dfhack/df-overseer-orders.lua` now reports `validated`, `active`
+(from `order.status`), `finished_year`, `finished_year_tick`, `frequency`/
+`frequency_raw`, and `max_workshops` per order, all read defensively
+(`pcall`) and left `nil` rather than guessed if a field does not resolve.
+`frequency`'s enum type name is NOT confirmed on this install (two candidate
+paths tried; `frequency_raw` is always present as a fallback). Fixed a real
+bug while writing this: the obvious `ok and v or nil` Lua idiom silently
+turns a real `false` into `nil`, which would have been exactly backwards for
+`validated`/`active`; both are built with plain `if ok then ... end`
+instead, and `tests/test_order_job_attribution_manifest.py::
+test_no_and_or_shortcut_on_the_new_boolean_fields` guards the regression.
+
+**3. Attribution in job reads** (item 3). Added one shared helper,
+`job_origin(job)`, exported from `scripts/dfhack/df-overseer-stuckjobs.lua`
+(a real, non-local function so `df-overseer-orders.lua` and
+`df-overseer-workjob.lua` can `reqscript` and reuse it rather than each
+re-implementing the `order_id` sentinel logic). `get_stuck_jobs` now reports
+`order_id`/`from_order` per job. **Flagged mismatch with this handoff's own
+wording, not silently patched over**: item 3 names "`df-overseer-
+workjob.lua`'s list verb" as a job reader to attribute, but that verb
+(`list_jobs`) returns the known JOB *kind* vocabulary (a static table:
+blocks/mechanisms/brew_drink), never a live job -- there is nothing there to
+attribute. Attribution for jobs `workjob.queue` creates is instead available
+through `workjob.cancel`'s own report (see below) and through
+`stuckjobs.find`, which sees jobs from either route. Worth a memory-audit
+flag for whoever owns `Working.md` next, per CLAUDE.md's "if the docs and
+the actual repo state disagree, flag it."
+
+**4. Duplicate-production check** (item 4). New read tool
+`orders.check-duplicate JOB` (`check_duplicate` in `df-overseer-orders.lua`),
+which reqscripts a new `find_jobs_by_type` in `df-overseer-stuckjobs.lua`
+(deliberately NOT reusing `get_stuck_jobs`, which filters to workerless jobs
+only -- a duplicate check that missed an already-working job would
+undercount real production). **Decision: a Lua tool, not a native dfmcp tool
+or dfqueue** -- both data sources it scans (`world.manager_orders.all`, the
+live job list) are already server-side DFHack data this file and
+`df-overseer-stuckjobs.lua` read directly; a native dfmcp tool would be an
+extra round trip re-fetching the same two Lua calls, and dfqueue has no live-
+game coupling today at all (SQLite plus schema validation at write time).
+Granted read-only to overseer, architect and quartermaster (matching the
+`orders.list`/`workjob.list` precedent); no consultant entry, also matching
+precedent.
+
+**5. `workjob.cancel`** (item 5). New write verb in
+`df-overseer-workjob.lua`: cancels a direct job by id
+(`dfhack.job.removeJob`), refusing any job with no resolvable workshop-
+building holder (a haul/eat/sleep job, anything not created the way
+`queue_job` creates jobs) rather than cancelling it -- the "not this fort's
+own queued work" refusal the handoff asked for. Reports the cancelled job's
+`order_id`/`from_order` via the shared `job_origin` helper. Sole-writer rule
+followed: granted only to `overseer.write`, explicit `deny` entries added to
+`agents/architect/tools.yaml` and `agents/quartermaster/tools.yaml`
+(consultant untouched, matching precedent). DRY_RUN defaults to true.
+
+**6. Repeat flag** (item 6). Confirmed the field name from DFHack's own
+current shipped source, not guessed: `job.flags['repeat']` (bracket
+notation required -- `repeat` is a Lua reserved word). Found by web search
+and confirmed by fetching `github.com/DFHack/scripts` `gui/workflow.lua`
+directly (both a read and a write of `job.flags['repeat']` in that file).
+**This is a DFHack-source-level confirmation, matching this project's own
+existing citation standard for job specs (e.g. the `fixed_boulder_job_item`
+spec's citation to `idle-crafting.lua`), NOT an install-level confirmation**
+-- nothing in this offline stream could introspect this install's own live
+`df.job._fields` for a `repeat` key inside its flags bitfield, since no
+write verb was exercised and no unbounded live query was made. Implemented
+as an optional, off-by-default `REPEAT` argument to `workjob.queue`,
+reachable only when `DRY_RUN` is also supplied explicitly (dfmcp's
+positional-optional gap check enforces this; `REPEAT` was deliberately not
+declared `skippable`). Every result reports `repeat_requested`; a real queue
+call additionally reports `repeat_set`.
+
+**7. Tests.** Ambient `python -m pytest`: **1266 passed, 3 skipped** (was
+1229/3). `.venv-dfmcp` (built fresh in this worktree -- the checked-in one
+lives only in the main checkout, not carried into a worktree; created with
+`python -m venv --system-site-packages .venv-dfmcp` per
+`dfmcp/requirements.txt`'s own instruction) running `dfmcp/tests`: **652
+passed** (was 630). New: 22 tests appended to
+`dfmcp/tests/test_workjob_tool.py` (workjob.cancel, workjob.queue's REPEAT
+arg and its gap-check refusal, orders.check-duplicate -- ids, effects,
+coordinate-bearing, role grants/denials, MCP name round-trips, argv
+construction), and a new top-level `tests/test_order_job_attribution_
+manifest.py` (15 tests: manifest/dispatch agreement for all three Lua files,
+`job_origin` defined once and reused by both `get_stuck_jobs` and
+`find_jobs_by_type` and by `workjob.cancel` -- not re-implemented, a
+regression guard for the `ok and v or nil` boolean bug, `workjob.cancel`'s
+refusal wording, no coordinate leaks in the new code).
+
+**What is owed for the first supervised live run** (no write verb was
+exercised against the fort this stream; hard line):
+```
+# quicksave first, confirm slot from cur_savegame.save_dir (not mtime)
+./dfhack-run df-overseer-orders list
+./dfhack-run df-overseer-orders check-duplicate blocks
+./dfhack-run df-overseer-stuckjobs find
+./dfhack-run df-overseer-workjob queue blocks <workshop landmark> true      # dry run
+./dfhack-run df-overseer-workjob cancel <job_id> true                       # dry run, on a real job id from stuckjobs find
+./dfhack-run df-overseer-workjob queue blocks <workshop landmark> false true  # REAL: queues + sets repeat -- read world.jobs.list/job.flags['repeat'] back before unpausing
+```
+Also owed: an independent check of `job.order_id`'s sentinel value (this
+stream assumed `>= 0` means "from an order," `< 0` means "not from an
+order," matching ordinary DF/DFHack convention, but did not and could not
+confirm it against a real order-spawned job on this fort, since none of the
+three stuck orders has ever produced one).
+
+**Deploy procedure, unrun** (recorded per the handoff's own instruction,
+this executor had no VM 103 access from this worktree):
+```
+# 1. quicksave; confirm slot from cur_savegame.save_dir, NOT mtime (docs/TRAPS.md)
+# 2. git -c core.autocrlf=false archive HEAD -- scripts/dfhack | (on VM 103) tar -x ...
+# 3. hash-verify each replaced file against `git -c core.autocrlf=false show HEAD:path`
+# 4. back up replaced files under /opt/df/deploy-backup-2026-09-23-orders-jobs/
+# 5. restart dfmcp-server
+# 6. read back, bounded and read-only:
+#    df-overseer-orders list        (check validated/active/frequency/max_workshops on the 3 stuck orders)
+#    df-overseer-orders check-duplicate blocks (and mechanisms, brew_drink)
+#    df-overseer-stuckjobs find     (check order_id/from_order on any live job)
+#    every role's tool count (orders.check-duplicate, workjob.cancel now present)
+# 7. write evals/live/2026-09-23-order-job-attribution/README.md with the results
+```
+The fort was never touched: no unpause, no `clock.resume`, no unbounded
+query, no write verb exercised, VM 106 untouched, no model call, no secret
+or IP printed.
+
+**Docs not written, per the hard lines**: `Working.md`, `decisions/
+DECISIONS.md`, `memory/` are intentionally untouched -- the orchestrating
+session owns those. `evals/live/2026-09-23-order-job-attribution/` was not
+created since nothing was deployed; the deploy procedure above names it.
