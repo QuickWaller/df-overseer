@@ -21,10 +21,15 @@
 --                          this file already used for warn-stranded's
 --                          getStrandedGroups). This replaces the original
 --                          stopgap now that the landmark system exists
---                          (build order item 3, 2026-09-10).
+--                          (build order item 3, 2026-09-10). Returns a
+--                          tri-state `status` ("reachable"/"unreachable"/
+--                          "unknown") via df-overseer-reachability.lua's
+--                          shared reachable_between -- see that file's own
+--                          header and the 2026-09-23 FIXED note below.
 --   check-units A B      -- the old unit-id-only form, kept for low-level
 --                          debugging (e.g. checking a specific citizen
---                          against another without naming a landmark).
+--                          against another without naming a landmark). Same
+--                          tri-state result shape as `check` above.
 --
 -- near_landmark was omitted in the first version of this file, not stubbed
 -- with raw coordinates: design commitment #1 (docs/PURPOSE.md) rules out
@@ -45,6 +50,7 @@ local json = require('json')
 local stranded = reqscript('warn-stranded')
 local landmarks = reqscript('df-overseer-landmarks')
 local textutil = reqscript('df-overseer-textutil')
+local reachability = reqscript('df-overseer-reachability')
 
 local function unit_name(unit)
   return textutil.to_utf8(dfhack.translation.translateName(dfhack.units.getVisibleName(unit)))
@@ -98,39 +104,37 @@ function get_connectivity_report()
   }
 end
 
+-- FIXED 2026-09-23 (handoffs/2026-09-23-landmark-reachability.md): both
+-- functions below used to call dfhack.maps.canWalkBetween/getWalkableGroup
+-- directly on the two raw positions, with a genuine miss (e.g. a landmark's
+-- own centroid not standable, or a RAMP/RAMP_TOP tile's known group-0 blind
+-- spot -- see df-overseer-reachability.lua's own header) reported as plain
+-- `reachable = false`, indistinguishable from "definitely disconnected".
+-- Now routed through the shared `reachable_between` helper, which resolves
+-- each side to a real standable tile first (falling back to its immediate
+-- 8-neighbour ring) and returns a `status` of "reachable" / "unreachable" /
+-- "unknown" -- never collapsing "couldn't resolve" into "unreachable".
 local function check_reachable(from_name, to_name)
   local ax, ay, az = landmarks.get_landmark_centroid(from_name)
   if not ax then
-    return { reachable = false, from_group = -1, to_group = -1,
-             note = "landmark not found: " .. from_name }
+    return { status = "unknown", reason = "landmark not found: " .. from_name }
   end
   local bx, by, bz = landmarks.get_landmark_centroid(to_name)
   if not bx then
-    return { reachable = false, from_group = -1, to_group = -1,
-             note = "landmark not found: " .. to_name }
+    return { status = "unknown", reason = "landmark not found: " .. to_name }
   end
-  local posA, posB = xyz2pos(ax, ay, az), xyz2pos(bx, by, bz)
-  return {
-    reachable = dfhack.maps.canWalkBetween(posA, posB),
-    from_group = dfhack.maps.getWalkableGroup(posA),
-    to_group = dfhack.maps.getWalkableGroup(posB),
-  }
+  return reachability.reachable_between(ax, ay, az, bx, by, bz)
 end
 
 local function check_reachable_units(unit_id_a, unit_id_b)
   local a = df.unit.find(unit_id_a)
   local b = df.unit.find(unit_id_b)
   if not a or not b then
-    return { reachable = false, from_group = -1, to_group = -1,
-             note = "unit id not found" }
+    return { status = "unknown", reason = "unit id not found" }
   end
-  local posA = xyz2pos(dfhack.units.getPosition(a))
-  local posB = xyz2pos(dfhack.units.getPosition(b))
-  return {
-    reachable = dfhack.maps.canWalkBetween(posA, posB),
-    from_group = dfhack.maps.getWalkableGroup(posA),
-    to_group = dfhack.maps.getWalkableGroup(posB),
-  }
+  local ax, ay, az = dfhack.units.getPosition(a)
+  local bx, by, bz = dfhack.units.getPosition(b)
+  return reachability.reachable_between(ax, ay, az, bx, by, bz)
 end
 
 -- Same module-load guard as df-overseer-landmarks.lua -- see its comment.
