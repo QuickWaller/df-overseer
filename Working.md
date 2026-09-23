@@ -456,6 +456,43 @@ historical.
 Moved wholesale to [`working-archive/Working_archive-2026-09-14.md`](working-archive/Working_archive-2026-09-14.md) on 2026-09-18, superseded by
 HANDOVER 2026-09-19 and the production-model work above.
 
+## THE LOOP CLOSED, 2026-09-23 (read this first)
+
+**A tool queued a job, the fort ran it, and a building that was waiting on the
+item finished.** Job 2249 (`ConstructThrone`, direct job, `order_id: -1`) made
+a Chair; building id 9 claimed it and completed at year 31 tick 112205.
+Verified independently after the run: `exists=true, jobs=0`, job 2249 gone
+from the live list, one CHAIR item `in_building`. Three windows of a permitted
+ten, 4483 ticks, no death, thirst improved from "thirsty" to "fine". Every
+earlier milestone either dry-ran or left something waiting.
+-> `evals/live/2026-09-23-chair-completion-run/README.md`.
+
+**Three findings from the run, in order of how much they change things:**
+
+1. **The office question now points away from the office.** In the first real
+   fort time the manager orders have ever had, nothing moved: ids 0/1/2 stayed
+   `validated: true, active: false` and id 3 stayed `validated: false` even
+   after the Chair it was meant to supply had been built by the other route.
+   "They just needed fort time" is now weak. Room value or an unidentified
+   requirement is more likely. Nothing varied the office, so it is not proven.
+2. **The `slow` tier fired for real and never cleared.** A kea tripped
+   `theft_tag_close_range`, correctly stayed at `slow`, and never escalated.
+   That is the first live proof the tier the creature-tag bug had disabled now
+   works. But nothing clears a `slow` advisory when its creature wanders off,
+   so **the fort is currently left at 10 FPS, not 100**, and every unattended
+   run would end throttled. `docs/AGENT-LOOP.md` §3 has no clearing rule and
+   needs one. The fort is paused, so this costs nothing until it resumes; the
+   advisory was deliberately left latched rather than cleared, so the evidence
+   is intact for whoever writes that rule.
+3. **A classifier refusal keyed on a word, not a code path.** `workjob cancel`
+   with its default dry run was refused twice as irreversible deletion, though
+   the dry path provably never deletes. The run worked around it with reads
+   only, deployed nothing, and routed nothing through another session.
+
+**Owed now:** a `slow`-tier clearing rule in `docs/AGENT-LOOP.md` §3 and in the
+clock script; correcting `df-overseer-breach.lua`'s header and the `ROADMAP.md`
+line on the next Lua deploy; the user's open ruling on burrow confinement.
+
 ## Both 2026-09-23 evening streams are DONE and merged (state below is history)
 
 **Outcomes, merged to main, not pushed and not deployed:**
