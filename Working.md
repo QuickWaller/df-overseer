@@ -35,6 +35,31 @@ researcher on objective-graph prior art. **At merge, owed by the orchestrator:**
 flip `quartermaster` to enabled in `ROSTER.yaml`; add the README and
 `infra/local.example.env` lines the streams report; re-run both suites.
 
+**Design input agreed 2026-09-23, for the agent design conversation: how
+knowledge reaches a role.** Found empirically, not theorised: the Architect
+derived the office rule from `zone.list-kinds`'s own metadata and **never
+called `doctrine.get`**, which it holds. Agreed framing: knowledge belonging
+to one action goes on that action (an office zone needs a chair inside it
+belongs on `zone.place`); knowledge spanning actions, or about when and
+whether rather than how, stays doctrine (a rule about seasons attaches to no
+single tool). The learning rule that falls out: when a role gets something
+wrong, attach the fact to the tool it had in its hands at the time.
+**Agreed constraint on going further:** tool definitions already cost 8,312
+tokens before a single call, paid on every run whether relevant or not, so
+pushing everything into manifests grows the bill with the number of tools
+rather than with the task. Doctrine is retrieved on demand, which is cheaper
+and ignorable, and those are the same property. Also noted: making
+`doctrine.get` mandatory buys compliance, not comprehension. **Not decided**,
+and the user's own framing is that this is "the layer in between" and may
+itself be code and part of the learning process, which makes it the same
+layer as the parked proposals-and-checks question rather than a separate one.
+**Cheap way to settle it, designed but not built:** `agents/architect/model.yaml`
+already says this role is the easiest to evaluate properly because it is
+read-only and idempotent, `selection.status: not built`. Three arms, same
+fort and prompt, about three cents each: manifest only (already run,
+`proposal-0002`), manifest plus a pointer to doctrine, and doctrine injected
+into the charter.
+
 **Held by the user, part of the framework design, not yet started:** how
 proposals work end to end: (1) the Overseer proposing to itself, with no
 second check; (2) which checks each kind of change needs (tactical,
