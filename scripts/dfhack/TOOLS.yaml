@@ -111,7 +111,7 @@ df-overseer-connectivity.lua:
       lua_function: check_reachable
       effect: read
       coordinate_bearing: false
-      live_deployed: true
+      live_deployed: false
       verified: unverified
       knowledge_scope: player_derivable
       notes: >
@@ -120,14 +120,26 @@ df-overseer-connectivity.lua:
         getWalkableGroup mechanism is verified via check-units below;
         this specific FROM/TO-by-name wrapper has no separate live-test
         claim on record.
+        FIXED 2026-09-23 (handoffs/2026-09-23-landmark-reachability.md,
+        offline stream, not deployed this stream): result shape changed
+        from {reachable: bool, from_group, to_group} to a tri-state
+        {status: "reachable"|"unreachable"|"unknown", reason?, from_via?,
+        to_via?, from_group?, to_group?} via the new shared
+        df-overseer-reachability.lua. live_deployed set false pending
+        deploy: VM 103's copy still returns the old boolean shape.
     "check-units UNIT_ID UNIT_ID":
       lua_function: check_reachable_units
       effect: read
       coordinate_bearing: false
-      live_deployed: true
-      verified: "2026-09-10"
+      live_deployed: false
+      verified: unverified
       knowledge_scope: player_derivable
-      notes: "Original stopgap, kept for low-level debugging. decisions/DECISIONS.md 2026-09-10."
+      notes: >
+        Original stopgap, kept for low-level debugging. decisions/DECISIONS.md
+        2026-09-10. FIXED 2026-09-23, same tri-state result shape and same
+        not-yet-deployed caveat as check FROM TO above -- verified reset to
+        unverified because the result shape changed and no live run has
+        exercised the new code.
 
 df-overseer-landmarks.lua:
   build_order_item: 3
@@ -136,18 +148,33 @@ df-overseer-landmarks.lua:
       lua_function: list_landmarks
       effect: read
       coordinate_bearing: false
-      live_deployed: true
-      verified: "2026-09-11"
+      live_deployed: false
+      verified: unverified
       knowledge_scope: player_visible
-      notes: "Seed + live buildings + live burrows, sorted by name for prefix-cache determinism. decisions/DECISIONS.md 2026-09-10/11."
+      notes: >
+        Seed + live buildings + live burrows, sorted by name for
+        prefix-cache determinism. decisions/DECISIONS.md 2026-09-10/11.
+        FIXED 2026-09-23 (handoffs/2026-09-23-landmark-reachability.md,
+        offline stream, not deployed this stream): each exit's `walkable`
+        bool (from canWalkBetween on the two CENTROID tiles) replaced with
+        `reachability` ("reachable"|"unreachable"|"unknown", `reachability_
+        reason` on the last two, `from_via`/`to_via` reporting "at" vs
+        "adjacent") via the new shared df-overseer-reachability.lua. Fixes a
+        live-found false negative: the fort's own Well (centre tile a
+        RampTop, standable by nobody) read walkable:false to every
+        neighbour despite being genuinely reachable from beside it.
+        live_deployed set false and verified reset to unverified pending
+        deploy -- VM 103's copy still returns the old boolean shape.
     "get NAME":
       lua_function: get_landmark
       effect: read
       coordinate_bearing: false
-      live_deployed: true
-      verified: "2026-09-10"
+      live_deployed: false
+      verified: unverified
       knowledge_scope: player_visible
-      notes: "Thin filter over list_landmarks."
+      notes: >
+        Thin filter over list_landmarks. Same not-yet-deployed caveat and
+        exit-shape change as list above (2026-09-23).
     "build NAME BLUEPRINT_FILE":
       lua_function: build_at_landmark
       effect: mutate
@@ -1188,6 +1215,21 @@ df-overseer-threat.lua:
       verified: unverified
       knowledge_scope: player_derivable
       notes: >
+        UPDATE 2026-09-23 (handoffs/2026-09-23-landmark-reachability.md,
+        offline stream, not deployed this stream): citizen_groups() and the
+        candidate scan loop now resolve reachability via the shared
+        df-overseer-reachability.lua (resolve_group/group_matches) instead
+        of a bare getWalkableGroup(x,y,z)~=0 on the exact tile. Fixes a real
+        blind spot (research/2026-09-17-pool-reachability.md, live-verified
+        against this install): a RAMP/RAMP_TOP tile reads walkable group 0
+        regardless of true walkability, so a citizen or candidate standing
+        on ordinary ramp terrain could be silently excluded before. This can
+        only ADD matches (never remove one), so `scan` becomes MORE, not
+        less, permissive about shares_walkable_group_with_citizens --
+        result entries also gain `reachable.shares_walkable_group_via`
+        ("at"/"adjacent") and a "(via_adjacent_tile)" suffix in `why` when
+        the match came from the neighbour-ring fallback. VM 103's deployed
+        copy still runs the pre-fix logic.
         UPDATE 2026-09-22: the closing sentences below that say NOT DEPLOYED AND
         NOT RUN are stale. The file was on VM 103 and byte-equal to main on
         2026-09-17 (handoffs/2026-09-17-farm-tools-deploy.md), and the

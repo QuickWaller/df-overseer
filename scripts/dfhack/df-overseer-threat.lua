@@ -24,15 +24,25 @@
 -- Two independent reachability criteria (OR, not AND -- see below for why
 -- each alone has a real blind spot):
 --   1. shares_walkable_group: the candidate's tile and at least one living
---      citizen's tile return the same nonzero dfhack.maps.getWalkableGroup
---      id. This is the mechanism df-overseer-connectivity.lua's
---      check_reachable already uses, unmodified. BLIND SPOT: getWalkableGroup
+--      citizen's tile resolve to the same nonzero walkable group, via
+--      df-overseer-reachability.lua's shared group_matches/resolve_group
+--      (reqscript'd, FIXED 2026-09-23, handoffs/2026-09-23-landmark-
+--      reachability.md -- see citizen_groups()'s and the scan loop's own
+--      inline notes below for exactly what changed and why: a RAMP/
+--      RAMP_TOP tile reads walkable group 0 in this build regardless of
+--      true walkability, research/2026-09-17-pool-reachability.md, so both
+--      a citizen's own tile and a candidate's own tile are now resolved
+--      with an immediate-neighbour fallback rather than trusted alone).
+--      BLIND SPOT, still open, NOT fixed by the above: getWalkableGroup
 --      models GROUND pathing connectivity only (Lua API.txt, quoted in
 --      df-overseer-openarea.lua's own comment: "only updated while the game
 --      is unpaused"). A flying or swimming creature can sit in open air or
 --      deep water with group 0 -- genuinely reachable, invisible to this
---      criterion alone. NOT independently verified this session (no live
---      flying-creature case observed) -- flagged as an open question below.
+--      criterion alone, and the 8-neighbour-ring fallback does not help
+--      here (open air/deep water's neighbours are typically also group 0,
+--      not a RAMP/RAMP_TOP false negative). NOT independently verified this
+--      session (no live flying-creature case observed) -- flagged as an
+--      open question below.
 --   2. near_a_landmark: dfhack.units.getPosition(candidate) resolves (via
 --      df-overseer-landmarks.lua's nearest_landmark, reqscript'd, same as
 --      every other perception tool) within radius_tiles of ANY named
@@ -124,28 +134,44 @@
 local json = require('json')
 local landmarks_mod = reqscript('df-overseer-landmarks')
 local textutil = reqscript('df-overseer-textutil')
+local reachability = reqscript('df-overseer-reachability')
 
 local MAX_RADIUS = 60
 local DEFAULT_RADIUS = 30
 local MAX_RESULTS = 15
 
-local function walkable_group(x, y, z)
-  local ok, group = pcall(dfhack.maps.getWalkableGroup, xyz2pos(x, y, z))
-  return ok and group or 0
-end
-
--- The set of walkable groups any living citizen currently occupies. Usually
--- one id, but a stranded/split fort (df-overseer-connectivity.lua's own
--- concern) can have more than one -- every group any citizen is standing in
--- counts, since a threat reaching ANY of them is real, not just the main one.
+-- FIXED 2026-09-23 (handoffs/2026-09-23-landmark-reachability.md): this used
+-- to call dfhack.maps.getWalkableGroup directly on each citizen's own tile
+-- and silently drop any citizen whose tile read group 0. Per
+-- df-overseer-reachability.lua's own header (research/2026-09-17-pool-
+-- reachability.md, live-verified against this exact install), a RAMP or
+-- RAMP_TOP shaped tile reads group 0 in this build REGARDLESS of true
+-- walkability -- so a citizen standing on ordinary ramp terrain (not an
+-- edge case: any dwarf climbing between two floors is on a RAMP tile) could
+-- be silently excluded from `groups` even though they are plainly part of
+-- the fort's own walkable network. Now resolved via the shared
+-- resolve_group, which falls back to the citizen's own immediate
+-- 8-neighbour ring before giving up -- a citizen physically standing
+-- somewhere always has SOME real neighbouring floor, so this should now
+-- capture every citizen's true group rather than only the ones whose exact
+-- tile happens not to be the blind-spot shape.
+--
+-- BEHAVIOUR CHANGE, stated plainly per the handoff's own instruction: a
+-- fort with any citizen standing on a RAMP/RAMP_TOP tile at scan time will
+-- now include that citizen's real group in `groups` where it previously did
+-- not. This can only ADD groups to the set (never remove one), so it can
+-- only make find_threats MORE permissive (more true reachable candidates
+-- recognised via shares_walkable_group_with_citizens), never less --- this
+-- fixes the same "reachable but unflagged" failure class the kea-attack
+-- miss this file's own header documents, it does not reintroduce it.
 local function citizen_groups()
   local groups = {}
   for _, unit in ipairs(dfhack.units.getCitizens()) do
     local x, y, z = dfhack.units.getPosition(unit)
     if x then
-      local g = walkable_group(x, y, z)
-      if g ~= 0 then
-        groups[g] = true
+      local resolved = reachability.resolve_group(x, y, z)
+      if resolved then
+        groups[resolved.group] = true
       end
     end
   end
@@ -214,8 +240,14 @@ function find_threats(radius_tiles)
     if not excluded then
       local x, y, z = dfhack.units.getPosition(unit)
       if x then
-        local group = walkable_group(x, y, z)
-        local shares_group = group ~= 0 and groups[group] == true
+        -- FIXED 2026-09-23: was a bare walkable_group(x,y,z) ~= 0 check on
+        -- the candidate's own tile only -- exactly the reading
+        -- research/2026-09-17-pool-reachability.md proved unreliable for
+        -- RAMP/RAMP_TOP shapes. group_matches also checks the candidate's
+        -- immediate 8-neighbour ring before concluding no match, using the
+        -- same shared primitive citizen_groups() above now uses. See that
+        -- function's own BEHAVIOUR CHANGE note.
+        local shares_group, shares_how = reachability.group_matches(x, y, z, groups)
 
         local near = describe_position(x, y, z)
         local within_radius = near ~= nil and near.distance_tiles <= radius
@@ -225,7 +257,13 @@ function find_threats(radius_tiles)
 
           local why = {}
           if shares_group then
-            table.insert(why, "shares_walkable_group_with_citizens")
+            -- shares_how is "at" (own tile is in the citizen network) or
+            -- "adjacent" (own tile wasn't, but its immediate 8-neighbour
+            -- ring is -- the RAMP/RAMP_TOP blind-spot case this file's
+            -- 2026-09-23 fix added).
+            table.insert(why, shares_how == "adjacent"
+              and "shares_walkable_group_with_citizens (via_adjacent_tile)"
+              or "shares_walkable_group_with_citizens")
           end
           if within_radius then
             table.insert(why, string.format(
@@ -260,6 +298,7 @@ function find_threats(radius_tiles)
             distance_tiles = near and near.distance_tiles or nil,
             reachable = {
               shares_walkable_group_with_citizens = shares_group,
+              shares_walkable_group_via = shares_group and shares_how or nil,
               within_bounded_distance_of_landmark = within_radius,
               reliability = "MECHANICAL",
             },

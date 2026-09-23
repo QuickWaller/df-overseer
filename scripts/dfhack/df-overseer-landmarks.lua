@@ -56,13 +56,26 @@
 --
 -- Exits: nearest-N by geometric distance (as
 -- research/2026-08-25-spatial-perception.md §10 sketches), each ALSO tagged
--- with a live-verified `walkable` bool from dfhack.maps.canWalkBetween on the
--- two centroid tiles -- the fix the research doc's own honest caveat asked
--- for ("a landmark on the other side of a wall could show up as a close
--- 'exit' it isn't actually possible to use"). A centroid tile is not
--- guaranteed walkable itself (an irregular burrow's mean point can land
--- outside it entirely), so canWalkBetween is called under pcall and a
--- failure is reported as walkable=false, never as a crash.
+-- with a `reachability` tri-state ("reachable" | "unreachable" | "unknown",
+-- plus a `reason` on the last two) from df-overseer-reachability.lua's
+-- shared `reachable_between`, reqscript'd below.
+--
+-- FIXED 2026-09-23 (handoffs/2026-09-23-landmark-reachability.md): this used
+-- to be a plain `walkable` bool from dfhack.maps.canWalkBetween on the two
+-- CENTROID tiles directly, with a pcall failure collapsed to walkable=false.
+-- A live read found the fort's own Well -- whose centre tile is a RampTop,
+-- standable by nobody -- reading walkable:false to all three of its
+-- neighbours, even though four of the tiles around it can walk to the
+-- Still: the centroid is simply the wrong tile to ask the question about,
+-- and collapsing "couldn't resolve a standable tile" into "unreachable" is
+-- a confident false negative, not a safe default. `reachable_between` fixes
+-- both: it resolves each side to a real standable tile (the centroid
+-- itself, or its immediate 8-neighbour ring) before comparing, and keeps
+-- "couldn't resolve either side" as its own "unknown" outcome instead of
+-- silently becoming "unreachable". See that file's own header for the
+-- second, independent reason (`dfhack.maps.getWalkableGroup` itself reads 0
+-- for RAMP/RAMP_TOP tiles regardless of true walkability in this build,
+-- research/2026-09-17-pool-reachability.md).
 --
 -- Module exports (via reqscript('df-overseer-landmarks'), same pattern
 -- warn-stranded.lua uses for getStrandedGroups -- a non-local function
@@ -94,6 +107,7 @@
 
 local json = require('json')
 local textutil = reqscript('df-overseer-textutil')
+local reachability = reqscript('df-overseer-reachability')
 
 local GLOBAL_KEY = 'df-overseer-landmarks_v1'
 local MAX_EXITS_PER_LANDMARK = 3
@@ -211,13 +225,19 @@ local function build_exits(landmarks, max_edges)
     for _, b in ipairs(landmarks) do
       if a ~= b and a.name ~= b.name then
         local dir, dist = direction_and_distance(a, b)
-        local ok_walk, walkable = pcall(
-          dfhack.maps.canWalkBetween, xyz2pos(a.x, a.y, a.z), xyz2pos(b.x, b.y, b.z))
+        local result = reachability.reachable_between(a.x, a.y, a.z, b.x, b.y, b.z)
         table.insert(candidates, {
           to = b.name,
           direction = dir,
           distance_tiles = dist,
-          walkable = ok_walk and walkable or false,
+          reachability = result.status,
+          reachability_reason = result.status ~= "reachable" and result.reason or nil,
+          -- "at" the landmark's own centroid, or "adjacent" (resolved via
+          -- its immediate 8-neighbour ring, the well/stair/bridge case) --
+          -- present only when that side actually resolved. Lets a reader
+          -- tell "reachable from beside it" from "reachable at it".
+          from_via = result.from_via,
+          to_via = result.to_via,
         })
       end
     end
