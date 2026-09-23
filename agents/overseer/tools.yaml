@@ -275,6 +275,15 @@ read:
     status: exists
     note: >-
       Same handoff. Read-only: whether a zone kind can be given this owner (a unit or a position).
+  - id: "zone.list"
+    status: planned
+    note: >-
+      Added handoffs/2026-09-23-zone-inventory-and-validity.md, the fix for
+      the exact gap that produced "there is no Office zone anywhere" (there
+      were two). Every zone this fort has, filterable by kind, owner,
+      validity and landmark; an unfiltered call summarises rather than
+      flooding the caller. Read this before zone.place, same pairing as
+      zone.find above. Offline build, not deployed.
 
 write:
   - id: "openarea.build"

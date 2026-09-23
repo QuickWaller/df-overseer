@@ -38,7 +38,7 @@ from dfmcp.tools import _arg_specs_for_tool  # noqa: E402
 
 ZONE_LUA = REPO_ROOT / "scripts" / "dfhack" / "df-overseer-zone.lua"
 
-ZONE_IDS = {"zone.list-kinds", "zone.find", "zone.check-owner", "zone.place"}
+ZONE_IDS = {"zone.list-kinds", "zone.find", "zone.check-owner", "zone.place", "zone.list"}
 
 
 def _text():
@@ -101,10 +101,13 @@ def test_argument_names_and_order():
     reg = load_registry()
     names = lambda i: [s.name for s in _arg_specs_for_tool(reg.get(i))]  # noqa: E731
     assert names("zone.list-kinds") == ["filter"]
-    assert names("zone.find") == ["kind", "w", "h", "level", "near_landmark", "radius_tiles"]
+    assert names("zone.find") == [
+        "kind", "w", "h", "level", "near_landmark", "radius_tiles", "around_furniture"]
     assert names("zone.check-owner") == ["kind", "owner"]
     assert names("zone.place") == [
         "kind", "w", "h", "level", "near_landmark", "rank", "radius_tiles", "dry_run", "owner"]
+    assert names("zone.list") == [
+        "kind_filter", "owner_filter", "valid_filter", "near_landmark_filter", "radius_tiles"]
 
 
 def test_footprint_is_an_optional_pair_and_owner_is_optional():
@@ -135,13 +138,20 @@ def test_manifest_signatures_match_the_lua_usage_lines():
 
 def test_w_h_is_skippable_because_the_lua_reads_leading_numbers_by_count():
     reg = load_registry()
-    for tool_id in ("zone.find", "zone.place"):
-        assert reg.get(tool_id).skippable == ("[W H]",)
+    assert reg.get("zone.place").skippable == ("[W H]",)
+    # zone.find also declares RADIUS_TILES skippable (2026-09-23,
+    # handoffs/2026-09-23-zone-inventory-and-validity.md item 3): the CLI
+    # tells RADIUS_TILES apart from AROUND_FURNITURE by whether the next
+    # word parses as a number, so AROUND_FURNITURE can be given without it.
+    assert reg.get("zone.find").skippable == ("[W H]", "[RADIUS_TILES]")
     src = _text()
     parser = src[src.index("local function parse_site_args"): src.index("local args = {...}")]
     assert "#nums == 1 then level = nums[1]" in parser
     assert "#nums == 2 then w, h = nums[1], nums[2]" in parser
     assert "#nums == 3 then w, h, level" in parser
+    furniture_parser = src[
+        src.index("local function parse_radius_and_furniture"): src.index("local args = {...}")]
+    assert "tonumber(args[i]) ~= nil" in furniture_parser
 
 
 def test_effects_and_scopes():
@@ -151,6 +161,8 @@ def test_effects_and_scopes():
     assert reg.get("zone.check-owner").effect == "read"
     assert reg.get("zone.place").effect == "mutate"
     assert reg.get("zone.place").coordinate_bearing == "internal-only"
+    assert reg.get("zone.list").effect == "read"
+    assert reg.get("zone.list").coordinate_bearing is False
     for tool_id in ZONE_IDS:
         assert not reg.get(tool_id).is_omniscient
         assert reg.get(tool_id).knowledge_scope in ("player_visible", "player_derivable")
@@ -232,3 +244,126 @@ def test_owner_refusals_are_named():
     for phrase in ("cannot have an owner", "is not alive", "is not a citizen", "no unit with id",
                    "unknown position code", "OWNER must be a unit id"):
         assert phrase in resolver, phrase
+
+
+# --------------------------------------------------------------------------
+# handoffs/2026-09-23-zone-inventory-and-validity.md: inventory, per-zone
+# validity, and AROUND_FURNITURE siting. Same offline, source-level style as
+# the tests above -- the Lua cannot run without a live DFHack process.
+# --------------------------------------------------------------------------
+
+
+def test_furniture_kinds_are_only_on_the_owner_capable_room_kinds():
+    """Data-driven, not a per-kind branch: furniture_kinds lives in the same
+    ZONE_POLICY entries as position_field/owner, and nowhere else names a
+    building kind like Chair/Bed/Table/Coffin."""
+    src = _text()
+    table = src[src.index("local ZONE_POLICY = {"): src.index("local function policy_for")]
+    expected = {"Office": "Chair", "Bedroom": "Bed", "DiningHall": "Table", "Tomb": "Coffin"}
+    for furniture in expected.values():
+        assert f'furniture_kinds = {{"{furniture}"}}' in table, furniture
+    # exactly these four kinds carry a furniture_kinds entry, nowhere else
+    assert table.count("furniture_kinds = {") == len(expected)
+    # not named anywhere else in the code (same discipline as kind tokens)
+    code = _code_without_comments_and_policy()
+    for building_kind in expected.values():
+        assert not re.search(rf'["\']{building_kind}["\']', code), (
+            f"building kind {building_kind!r} is named in code, not in ZONE_POLICY"
+        )
+
+
+def test_around_furniture_refuses_a_kind_with_no_furniture_kinds_entry():
+    src = _text()
+    find_fn = src[src.index("function find_zone_area"): src.index("function check_owner")]
+    assert "furniture_type_ids_for" in find_fn
+    assert "AROUND_FURNITURE is only meaningful for a kind with furniture_kinds" in find_fn
+    # the resolver itself never hardcodes a kind name -- it reads
+    # ZONE_POLICY[token].furniture_kinds through df.building_type at call time
+    resolver = src[src.index("local function furniture_type_ids_for"): src.index("local function overlaps")]
+    assert "df.building_type[token]" in resolver
+    for tok in ("Office", "Bedroom", "DiningHall", "Tomb", "Chair", "Bed", "Table", "Coffin"):
+        assert f'"{tok}"' not in resolver and f"'{tok}'" not in resolver
+
+
+def test_find_and_place_share_ranked_rects_but_only_find_passes_furniture_ids():
+    """zone.place keeps its current single-writer position (handoff scope):
+    no new argument, ranked_rects's furniture_type_ids stays nil for it."""
+    src = _text()
+    place_fn = src[src.index("function place_zone"): src.index("-- Same module-load guard")]
+    assert "furniture_type_ids" not in place_fn
+    assert "around_furniture" not in place_fn.lower()
+    find_fn = src[src.index("function find_zone_area"): src.index("function check_owner")]
+    assert "ranked_rects(k, p, dw, dh, level, near, radius_tiles, furniture_ids)" in find_fn
+
+
+def test_zone_tile_default_behaviour_is_unchanged_when_furniture_not_requested():
+    """Every existing caller (find without AROUND_FURNITURE, and place) still
+    passes nil, so an occupied tile is rejected exactly as before."""
+    src = _text()
+    tile_fn = src[src.index("local function zone_tile"): src.index("-- Returns chosen (list of")]
+    assert "if furniture_type_ids then" in tile_fn
+    assert "if not matched then" in tile_fn
+    assert "stats.occupied = stats.occupied + 1" in tile_fn
+
+
+def test_list_zones_uses_the_same_three_state_discipline_as_nobles():
+    src = _text()
+    # kinds_by_type_id through the end of list_zones: the helpers that define
+    # the state strings (zone_owner_status/zone_room_value_status) plus
+    # list_zones itself, which only ever compares against them by name.
+    fn = src[src.index("local function kinds_by_type_id"): src.index("-- DRY_RUN defaults to true. See the header")]
+    for status in ("not_applicable", "met", "not_met", "cannot_tell"):
+        assert f'"{status}"' in fn, status
+    assert "read_failures" in fn
+    # owner_status is reported separately from room_value_status, never
+    # collapsed into one field (handoff: "distinct from an invalid room value")
+    assert "owner_status" in fn and "room_value_status" in fn
+
+
+def test_list_zones_identity_is_the_zone_id_never_a_coordinate():
+    src = _text()
+    fn = src[src.index("function list_zones"): src.index("-- DRY_RUN defaults to true. See the header")]
+    assert "id = z.id" in fn
+    # centroid coordinates (z.x1/x2/y1/y2/z) are read only as transient
+    # locals to compute a distance/landmark lookup, same as ranked_rects
+    # elsewhere in this file -- never assigned to a `row.` field or a
+    # `x =`/`y =`/`z =` table key (the discipline
+    # test_no_raw_coordinates_in_result_tables pins for the site-search
+    # functions).
+    for line in fn.splitlines():
+        assert not re.match(r"^\s*row\.(x|y|z|pos)\s*=", line), f"coordinate leak: {line.strip()}"
+        assert not re.match(r"^\s*(x|y|z|pos)\s*=\s*z\.(x1|x2|y1|y2|z)\b", line), (
+            f"possible coordinate leak: {line.strip()}"
+        )
+
+
+def test_list_summarises_by_default_and_details_on_filter():
+    src = _text()
+    fn = src[src.index("function list_zones"): src.index("-- DRY_RUN defaults to true. See the header")]
+    assert "any_filter" in fn
+    assert "result.summary = true" in fn
+    assert "result.summary = false" in fn
+    assert "needs_attention" in fn
+    assert "MAX_LIST" in fn  # bounded detail, same cap used elsewhere in this file
+
+
+def test_list_is_one_bounded_pass_never_a_tile_scan():
+    src = _text()
+    fn = src[src.index("function list_zones"): src.index("-- DRY_RUN defaults to true. See the header")]
+    assert "ACTIVITY_ZONE" in fn
+    assert "MAX_ZONE_SCAN" in fn
+    # no tile-level call anywhere in the inventory path
+    for tile_call in ("isTileVisible", "getTileFlags", "getWalkableGroup", "xyz2pos"):
+        assert tile_call not in fn, f"list_zones appears to scan tiles ({tile_call})"
+
+
+def test_owner_and_valid_filters_use_the_empty_string_sentinel():
+    """Same convention check-owner's OWNER already established: '' means
+    'no filter', not an error."""
+    src = _text()
+    owner_resolver = src[
+        src.index("local function resolve_owner_filter"): src.index("local function owner_filter_matches")]
+    assert 's == nil or s == ""' in owner_resolver
+    valid_resolver = src[
+        src.index("local function resolve_valid_filter"): src.index("function list_zones")]
+    assert 's == nil or s == ""' in valid_resolver

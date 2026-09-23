@@ -368,6 +368,38 @@ _ARG_DESCRIPTIONS: Dict[str, str] = {
     "zone.FILTER": (
         "Optional substring of a kind's token or label."
     ),
+    "zone.AROUND_FURNITURE": (
+        "Optional, default false. true admits a site tile occupied by one "
+        "of the kind's own qualifying furniture (a Chair for Office, a Bed "
+        "for Bedroom, a Table for DiningHall, a Coffin for Tomb -- zone."
+        "list-kinds shows each kind's furniture_kinds) instead of rejecting "
+        "every occupied tile; any other occupied tile is still rejected. "
+        "Refused by name for a kind with no furniture_kinds. Needs "
+        "RADIUS_TILES given before it (or left as its default by omitting "
+        "it entirely, since it is also optional)."
+    ),
+    "zone.KIND_FILTER": (
+        "Optional, for zone.list. '' means any kind; otherwise a token from "
+        "zone.list-kinds (Office, Bedroom, ...). An unknown kind is an "
+        "error."
+    ),
+    "zone.OWNER_FILTER": (
+        "Optional, for zone.list. '' means no owner filter; 'owned' or "
+        "'unowned' filters by whether an owner-capable zone has one; a "
+        "digit string filters to zones owned by that exact unit id."
+    ),
+    "zone.VALID_FILTER": (
+        "Optional, for zone.list. '' means no filter; otherwise one of "
+        "not_applicable (the kind carries no room-value concept at all), "
+        "met (a real, non-empty room quality reading), not_met (the read "
+        "succeeded and came back empty -- a rectangle, not a room) or "
+        "cannot_tell (the read itself failed)."
+    ),
+    "zone.NEAR_LANDMARK_FILTER": (
+        "Optional, for zone.list. '' means no proximity filter; otherwise "
+        "the name of an existing landmark, narrowing to zones within "
+        "RADIUS_TILES of it. Never a raw coordinate."
+    ),
     "workshop.KIND": (
         "Which workshop: still, kitchen, mason, mechanic or carpenter."
     ),

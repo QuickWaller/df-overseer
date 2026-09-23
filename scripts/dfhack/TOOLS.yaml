@@ -743,7 +743,7 @@ df-overseer-building.lua:
         as in find.
 
 df-overseer-zone.lua:
-  build_order_item: "gap named 2026-09-17 (handoffs/2026-09-17-water-and-industry-tools.md item 1); generalised over every zone kind and given an optional owner by handoffs/2026-09-21-zone-tool-generalise.md"
+  build_order_item: "gap named 2026-09-17 (handoffs/2026-09-17-water-and-industry-tools.md item 1); generalised over every zone kind and given an optional owner by handoffs/2026-09-21-zone-tool-generalise.md; given an inventory, a per-zone validity check and furniture-aware siting by handoffs/2026-09-23-zone-inventory-and-validity.md"
   commands:
     "list-kinds [FILTER]":
       lua_function: list_kinds
@@ -765,13 +765,18 @@ df-overseer-zone.lua:
         position field asks this kind for a room value, or null),
         prefer_indoors, caveat and policy_source ("ZONE_POLICY entry" or
         "default (no entry)"). Scope: the zone menu a player already sees.
-    "find KIND [W H] [LEVEL] NEAR_LANDMARK [RADIUS_TILES]":
+        ADDED 2026-09-23 (handoffs/2026-09-23-zone-inventory-and-validity.md):
+        each row also carries `furniture_kinds` (the building.list-kinds
+        tokens `find`'s AROUND_FURNITURE flag will accept for this kind, `[]`
+        for a kind with none). Offline addition, not re-deployed or
+        re-verified live this stream.
+    "find KIND [W H] [LEVEL] NEAR_LANDMARK [RADIUS_TILES] [AROUND_FURNITURE]":
       lua_function: find_zone_area
-      skippable: ["[W H]"]
+      skippable: ["[W H]", "[RADIUS_TILES]"]
       effect: read
       coordinate_bearing: false
       live_deployed: true
-      verified: "2026-09-21 (deployed to VM 103 the same day, hash-verified; the checks below ran through a scratch script path before the deploy and were not repeated after it. Live on VM 103, fort paused, read only: Office, Bedroom, DiningHall with and without W H, level -1, and error cases; WaterSource returned the same five bodies as the deployed water-only tool, plus a `token` field)"
+      verified: "2026-09-21 (deployed to VM 103 the same day, hash-verified; the checks below ran through a scratch script path before the deploy and were not repeated after it. Live on VM 103, fort paused, read only: Office, Bedroom, DiningHall with and without W H, level -1, and error cases; WaterSource returned the same five bodies as the deployed water-only tool, plus a `token` field). AROUND_FURNITURE offline build only 2026-09-23, not deployed and not live-verified (handoffs/2026-09-23-zone-inventory-and-validity.md)."
       knowledge_scope: player_derivable
       notes: >
         Finds up to five non-overlapping sites for one zone kind near a
@@ -782,20 +787,33 @@ df-overseer-zone.lua:
         data). One bare number is read as LEVEL and two as W H, hence
         `skippable`. Rectangle kinds: every tile of the window must be
         revealed, pass quickfort's own tile rule for the kind, carry no
-        building or liquid, be walkable, sit in one walkable group and not
-        already be zoned with the same type. Kinds marked prefer_indoors list
-        fully indoor windows first (`indoors` on each result; the tile's
-        `outside` flag). Each result carries `search` (tiles checked,
-        eligible, and why others were rejected, so "nothing here" can be told
-        apart from a broken check), and `requirements.room_value` for room
-        kinds: the positions whose data asks for a value from this kind
-        (`required_office`, `_bedroom`, `_dining`, `_tomb`), whether each is
-        held and by whom, and a plain statement that what counts toward the
-        value is not exposed by the game (an external, older-version wiki
-        account is included and marked unverified). A `caveat` says when a
-        kind needs terrain this tool does not check. WaterSource keeps its
-        own finder (connected revealed water bodies, W H refused) and its old
-        output.
+        building or liquid (unless AROUND_FURNITURE admits it, below), be
+        walkable, sit in one walkable group and not already be zoned with the
+        same type. Kinds marked prefer_indoors list fully indoor windows first
+        (`indoors` on each result; the tile's `outside` flag). Each result
+        carries `search` (tiles checked, eligible, and why others were
+        rejected, so "nothing here" can be told apart from a broken check),
+        and `requirements.room_value` for room kinds: the positions whose data
+        asks for a value from this kind (`required_office`, `_bedroom`,
+        `_dining`, `_tomb`), whether each is held and by whom, and a plain
+        statement that what counts toward the value is not exposed by the
+        game (an external, older-version wiki account is included and marked
+        unverified). A `caveat` says when a kind needs terrain this tool does
+        not check. WaterSource keeps its own finder (connected revealed water
+        bodies, W H refused) and its old output.
+        ADDED 2026-09-23 (handoffs/2026-09-23-zone-inventory-and-validity.md
+        item 3): AROUND_FURNITURE (default false, RADIUS_TILES now
+        `skippable` too so it can be given without W H/LEVEL) admits a tile
+        occupied by one of the kind's own ZONE_POLICY `furniture_kinds`
+        (Office:Chair, Bedroom:Bed, DiningHall:Table, Tomb:Coffin) instead of
+        rejecting it as occupied; every other occupied tile is still
+        rejected. Each result then carries `contains_qualifying_furniture`
+        and `furniture_building_ids` (never a coordinate), and
+        `furniture_kinds_checked` names which kinds were looked for. A kind
+        with no furniture_kinds entry refuses the flag by name rather than
+        silently ignoring it. `place` is unchanged: no new argument, still
+        rejects every occupied tile -- this is `find`'s own capability.
+        Offline build only, not deployed or live-verified this stream.
     "check-owner KIND OWNER":
       lua_function: check_owner
       effect: read
@@ -852,6 +870,50 @@ df-overseer-zone.lua:
         assignment; a real run reads assigned_unit_id and the game's getOwner
         back under `owner_result`. Real placement first run 2026-09-23; see
         `verified` above.
+    "list KIND_FILTER OWNER_FILTER VALID_FILTER NEAR_LANDMARK_FILTER [RADIUS_TILES]":
+      lua_function: list_zones
+      effect: read
+      coordinate_bearing: false
+      live_deployed: false
+      verified: unverified
+      knowledge_scope: player_visible
+      notes: >
+        ADDED 2026-09-23 (handoffs/2026-09-23-zone-inventory-and-validity.md),
+        answering the gap the Architect's first real run found: nothing
+        could enumerate this fort's zones at all, so a real run reached
+        "there is no Office zone anywhere" when there were two (ids 10 and
+        11). One bounded pass over the fortress's own civzone vector, never
+        a tile scan. Four composable filters, each "" for "no filter" (same
+        convention check-owner's OWNER already uses): KIND_FILTER (a token
+        from list-kinds), OWNER_FILTER ("", owned, unowned, or a unit id),
+        VALID_FILTER ("", not_applicable, met, not_met, cannot_tell) and
+        NEAR_LANDMARK_FILTER (a landmark name, with RADIUS_TILES). Designed
+        for fifty bedrooms, not two offices: every filter "" summarises
+        (`summary: true`, `counts_by_kind` over the whole inventory, plus
+        `needs_attention`: the zones whose room_value_status reads
+        not_met/cannot_tell or whose owner_status reads unowned/cannot_tell)
+        rather than listing every zone; any filter given returns matching
+        zones' detail rows instead (capped at 500, `truncated` says so).
+        IDENTITY is the zone's own id (already this project's precedent:
+        place_zone's own read_back.id, order."ID".exists, landmark."NAME"),
+        never a coordinate. VALIDITY reuses nobles.requirements' own
+        met/not_met/cannot_tell discipline, per zone: `room_value_status`
+        (not_applicable for a kind with no room-value concept at all, met
+        for a non-empty getRoomDescription, not_met for a real read that
+        came back empty -- the exact condition that went unnoticed on this
+        fort for two days -- cannot_tell for a failed read, logged to
+        `read_failures` and dfhack.printerr) and a SEPARATE `owner_status`
+        (not_applicable/owned/unowned/cannot_tell), so an owner-capable
+        kind's unowned state is its own fact rather than folded into
+        "invalid" -- an owned zone can still read empty and a bare unowned
+        zone can still read a real quality word. Fleet-wide "which of my
+        rooms are not really rooms" is `KIND_FILTER="" OWNER_FILTER=""
+        VALID_FILTER="not_met" NEAR_LANDMARK_FILTER=""` in one call. Offline
+        build and structural review only; the first live check this needs is
+        named in this handoff's own Result section, starting with this
+        fort's two known zones (id 10 unowned, id 11 owned by the Manager,
+        both expected `room_value_status: not_met` per the same-day room
+        research, `research/2026-09-23-room-and-zone-requirements.md`).
 
 df-overseer-trees.lua:
   build_order_item: "gap named 2026-09-17, handoffs/2026-09-17-water-and-industry-tools.md item 2"
