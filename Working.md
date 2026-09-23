@@ -119,6 +119,25 @@ and a "proven on this fort" flag. **Still unverified:** whether DF removes a
 completed order from the list, which the `order."ID".exists` grading signal
 assumes.
 
+**Correction and tools built, 2026-09-23**
+(`handoffs/2026-09-23-order-job-attribution-and-checks.md`, merged, **not
+deployed**). The research's claim that nothing links a job to the order that
+made it is **wrong**: `df.job` has `order_id`, live-introspected on VM 103,
+and DFHack's own `do-job-now.lua:106` matches on it. Both research files now
+carry dated corrections. Built offline: order status in `orders.list`
+(`validated`, `active`, `finished_year`, `frequency`, `max_workshops`, read
+defensively), one shared `job_origin()` used by every live job reader, a new
+`orders.check-duplicate` read tool over both routes, `workjob.cancel`
+(Overseer only, explicitly denied to the advisors), and an optional repeat
+flag on `workjob.queue`. Suites 1266/3 and 652. The repeat flag name
+`job.flags['repeat']` is now **confirmed on this install** (orchestrator:
+`lever.lua:65` and `gui/workflow.lua:93,102` under `/opt/df/game/hack`), which
+the stream could only take from upstream source. Still unconfirmed:
+`order_id`'s no-order sentinel (no order has ever spawned a job here) and
+`frequency`'s enum type name (raw value always reported). **Deploy is owed
+and needs the user's go-ahead**; the exact procedure and the first-run write
+verb commands are in the handoff's Result.
+
 **Design, paused mid-question 2026-09-22.** "The Overseer proposing to
 itself" is really two paths, since it holds no `queue.propose`: its own
 agenda edits, and its direct write actions outside any proposal. Proposed
