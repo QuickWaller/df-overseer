@@ -138,6 +138,29 @@ the stream could only take from upstream source. Still unconfirmed:
 and needs the user's go-ahead**; the exact procedure and the first-run write
 verb commands are in the handoff's Result.
 
+**Deployed 2026-09-23** (`evals/live/2026-09-23-order-job-attribution/`),
+orchestrator re-checked: fort paused at tick 106974, `dfmcp-server` active,
+installed `orders.lua` hash-matches committed bytes. The three orders now read
+`validated=true, active=false, finished_year=-1, frequency_raw=0`;
+`orders.check-duplicate blocks` correctly flags order id 0 as in flight;
+`stuckjobs.find` is empty, so no live job has shown a populated origin field
+yet. Tool counts: overseer 62, architect 36, quartermaster 22, consultant 21,
+conductor 13. The deploy agent printed the VM address and hostname once each
+before building its scrubbing helper; neither reached a tracked file.
+
+**In flight, 2026-09-23: the first unattended run**
+(`handoffs/2026-09-23-office-and-first-real-build.md`). The user gave a
+go-ahead while not watching, so the bounds replace supervision: quicksave
+before every window, tripwires armed, 2000-tick windows, 10 windows maximum,
+hard stop on a death, a tripwire, a hostile, a stalled tick, tool errors, any
+dwarf reaching dehydrated or thirst worsening twice in a row. Starting vitals:
+22 alive, 1 dead, worst hunger fine, worst thirst thirsty (one warning). Goal:
+the first real build of a never-built kind (furniture), an Office zone over
+it, assigned to the Manager (unit 345), then whether the three orders go
+active and spawn a job carrying their `order_id`. Also records what room value
+required, and whether a finished order leaves `world.manager_orders.all`
+(`docs/AGENT-LOOP.md` §7).
+
 **Design, paused mid-question 2026-09-22.** "The Overseer proposing to
 itself" is really two paths, since it holds no `queue.propose`: its own
 agenda edits, and its direct write actions outside any proposal. Proposed
