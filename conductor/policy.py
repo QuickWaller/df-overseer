@@ -90,6 +90,10 @@ class Policy:
     closing_in_multiple: float
     expected_thinking_seconds: float
     routine_review_interval_game_days: int
+    #: handoffs/2026-09-23-stalled-order-poller.md, conductor/order_watch.py.
+    #: Raw game ticks, not game days -- see policy.yaml's own comment.
+    stalled_order_threshold_ticks: int
+    stalled_order_renotify_ticks: int
     wake_reasons: Dict[str, WakeReasonPolicy]
 
     def reason(self, name: str) -> WakeReasonPolicy:
@@ -153,6 +157,12 @@ def load_policy(path: "Path | str" = DEFAULT_POLICY_PATH) -> Policy:
         expected_thinking_seconds=float(_require(doc, "expected_thinking_seconds", path)),
         routine_review_interval_game_days=int(
             _require(doc, "routine_review_interval_game_days", path)
+        ),
+        stalled_order_threshold_ticks=int(
+            _require(doc, "stalled_order_threshold_ticks", path)
+        ),
+        stalled_order_renotify_ticks=int(
+            _require(doc, "stalled_order_renotify_ticks", path)
         ),
         wake_reasons=wake_reasons,
     )

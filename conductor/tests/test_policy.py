@@ -23,6 +23,8 @@ def _policy(**overrides) -> Policy:
         closing_in_multiple=3,
         expected_thinking_seconds=60,
         routine_review_interval_game_days=7,
+        stalled_order_threshold_ticks=1200,
+        stalled_order_renotify_ticks=1200,
         wake_reasons={
             "routine_review": WakeReasonPolicy(
                 reason="routine_review", clock=FULL_SPEED, wakes=("architect",),

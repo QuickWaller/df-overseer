@@ -71,6 +71,24 @@ read:
       role reads its OWN diff.since only for itself (agents/overseer/
       tools.yaml is still the only OTHER grant, for the Overseer's own use
       inside a real run).
+  - id: "orders.list"
+    status: exists
+    note: >-
+      Added handoffs/2026-09-23-stalled-order-poller.md. Already granted
+      read-only to overseer/architect/quartermaster
+      (evals/live/2026-09-23-order-job-attribution/README.md); granted here
+      too so conductor/cycle.py can poll validated/active/amount_left/
+      amount_total/finished_year once per cycle (conductor/order_watch.py)
+      -- the only route this project has to see a manager order that never
+      dispatches a job, since DF's own announcement channel has no event
+      for that failure at all (research/2026-09-23-announcement-
+      severity.md §C). Read-only, same DFHack-backed command every other
+      role already calls, no new surface. This edit falls slightly outside
+      this stream's own listed "touched surfaces" (conductor/,
+      conductor/tests/), flagged plainly in this stream's Result section
+      rather than silently added: it is necessary plumbing for the read
+      this handoff explicitly asks for, and does not touch anything the
+      sibling in-game stream owns.
 
 write:
   - id: "clock.set-speed"
