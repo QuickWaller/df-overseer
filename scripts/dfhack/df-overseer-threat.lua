@@ -234,32 +234,61 @@ end
 -- including a kea at any distance (the concrete case this file's own header
 -- names as its worst prior failure).
 --
--- RAW-TAG READS ARE UNVERIFIED THIS SESSION, STATED PLAINLY. This stream is
--- offline (no VM, no live DFHack -- the handoff's own hard line).
--- `df.global.world.raws.creatures.all[unit.race].flags.<NAME>` is the
--- standard DFHack idiom for a creature-level raw flag (Lua bitfields index
--- the flag name directly as a boolean, no `.bits` -- that indirection is a
--- C++-only detail, per Lua API.txt's documented bitfield behaviour, already
--- cited correctly in research/2026-09-16-player-visibility.md's C++ quote
--- vs. this project's own Lua call sites), and `df.creature_raw_flags` is
--- expected to carry LARGE_PREDATOR/BUILDINGDESTROYER/BENIGN/MISCHIEVOUS/
--- CURIOUSBEAST_ITEM/_EATER/_GUZZLER under the same name the raw token uses
--- (DF's raw parser maps a token to a same-named flag in the overwhelming
--- majority of cases, per the wildlife research's own A1-A5 reading of the
--- installed raw text) -- but the EXACT struct field and enum member names
--- were not independently confirmed against a live df-structures read this
--- session, unlike the isDanger/isInvader/isAgitated/isGreatDanger calls
--- below (documented dfhack.units wrapper functions, not raw struct access).
--- Every read here is pcall-wrapped and degrades to false, never errors the
--- scan, the same discipline danger_flags() below already has -- but this is
--- a REAL, NAMED GAP: confirm these six names against a live game
--- (e.g. `:lua =df.global.world.raws.creatures.all[SOME_KEA_UNIT.race].flags`)
--- before trusting a live run's tier assignment, and say so in the deploy
--- checklist. Not fixed here -- no VM this stream.
-local function safe_creature_flag(craw, name)
-  if not craw then return false end
-  local ok, v = pcall(function() return craw.flags[name] end)
-  return ok and v == true
+-- FIXED 2026-09-23 (handoffs/2026-09-23-creature-tag-fields-fix.md), over the
+-- deploy's own live finding (evals/live/2026-09-23-attention-deploy/README.md
+-- "CRITICAL CHECK: the six raw creature-tag field names -- WRONG, found
+-- live"). The prior code here read
+-- `df.global.world.raws.creatures.all[unit.race].flags.<NAME>` -- the
+-- CREATURE level. Verified live, twice, against a real kea (unit 513,
+-- BIRD_KEA, DFHack 53.16-r1.1): that level has no per-tag members at all,
+-- only aggregates (HAS_ANY_LARGE_PREDATOR, HAS_ANY_CURIOUS_BEAST,
+-- HAS_ANY_BENIGN, HAS_ANY_MISCHIEVOUS, no building-destroyer aggregate at
+-- all) -- `cr.flags.CURIOUSBEAST_ITEM` errors "not found", not "false". The
+-- real per-tag flags live one level down, on `cr.caste[unit.caste].flags`
+-- (`df.caste_raw_flags`, 179 entries). Two more things were wrong even once
+-- pointed at the right level: the deployed spelling `CURIOUSBEAST_ITEM` (no
+-- underscore between CURIOUS and BEAST) is not a member either -- the real
+-- names are `CURIOUS_BEAST_ITEM`/`CURIOUS_BEAST_EATER`/
+-- `CURIOUS_BEAST_GUZZLER` -- and `BUILDINGDESTROYER` is not a flag bit
+-- anywhere in either enum; it is a plain integer,
+-- `caste.misc.buildingdestroyer` (0/1/2), so the correct test is `> 0`, not
+-- a boolean flag read. `LARGE_PREDATOR`/`BENIGN`/`MISCHIEVOUS` were already
+-- correctly spelled, just at the wrong level (creature, not caste). Live
+-- values for that kea, quoted exactly for the regression test below:
+-- caste.flags.LARGE_PREDATOR=false, caste.flags.CURIOUS_BEAST_ITEM=true,
+-- caste.flags.BENIGN=false, caste.flags.MISCHIEVOUS=false,
+-- caste.misc.buildingdestroyer=0. Net effect the deploy's own postmortem
+-- names: because the old code always read is_curiousbeast_item as false
+-- regardless of truth, a real kea closing in on the fort could never
+-- escalate past record_only to the slow tier S:E1 designs for exactly that
+-- case -- a silent miss the pause-vs-record_only boundary happened to
+-- survive only by coincidence (none of the wrongly-read tags gate pause).
+--
+-- NON-SILENT ON A BAD READ, by design, because silent degradation-to-false
+-- is exactly what hid the bug above for a whole deploy cycle. Every read
+-- below still pcall-guards and still returns `false` as the safe default
+-- for gating (never invents a `true` from a failed read) -- but class_flags
+-- now also returns a `read_failures` array naming exactly which caste
+-- fields could not be read this call, which flows straight into `scan`'s
+-- JSON output on the affected candidate (`class_flags.read_failures`), and
+-- logs the race, caste index and failing field names via
+-- `dfhack.printerr` (pcall-wrapped, so a stubbed/offline dfhack table can't
+-- turn this into a crash) so a live run's own log/journal shows it too. A
+-- caller therefore sees one of three things per field: `true`/`false` (a
+-- real read) or the field's name inside `read_failures` (the read itself
+-- failed) -- never a bare `false` standing in for both.
+local function safe_caste_flag(caste, name)
+  if not caste then return false, false end
+  local ok, v = pcall(function() return caste.flags[name] end)
+  if not ok then return false, false end
+  return v == true, true
+end
+
+local function safe_caste_buildingdestroyer(caste)
+  if not caste then return false, false end
+  local ok, v = pcall(function() return caste.misc.buildingdestroyer end)
+  if not ok then return false, false end
+  return (v ~= nil and v > 0), true
 end
 
 -- Exported for testing/reuse, same convention as danger_flags below: read
@@ -268,23 +297,62 @@ end
 -- new raw-tag class here never requires a new branch in classify_tier,
 -- only a new row in TIER_ESCALATIONS.
 function class_flags(unit)
-  local ok, craw = pcall(function()
+  local ok_craw, craw = pcall(function()
     return df.global.world.raws.creatures.all[unit.race]
   end)
-  craw = ok and craw or nil
+  craw = ok_craw and craw or nil
+
+  -- Caste level, not creature level -- see the FIXED note above.
+  local ok_caste, caste = pcall(function()
+    return craw and craw.caste[unit.caste] or nil
+  end)
+  caste = ok_caste and caste or nil
+
+  local read_failures = {}
+  local function track(name, field_ok)
+    if not field_ok then table.insert(read_failures, name) end
+  end
+
+  local is_large_predator, ok1 = safe_caste_flag(caste, "LARGE_PREDATOR")
+  track("LARGE_PREDATOR", ok1)
+  local is_buildingdestroyer, ok2 = safe_caste_buildingdestroyer(caste)
+  track("BUILDINGDESTROYER", ok2)
+  local is_curiousbeast_item, ok3 = safe_caste_flag(caste, "CURIOUS_BEAST_ITEM")
+  track("CURIOUS_BEAST_ITEM", ok3)
+  local is_curiousbeast_eater, ok4 = safe_caste_flag(caste, "CURIOUS_BEAST_EATER")
+  track("CURIOUS_BEAST_EATER", ok4)
+  local is_curiousbeast_guzzler, ok5 = safe_caste_flag(caste, "CURIOUS_BEAST_GUZZLER")
+  track("CURIOUS_BEAST_GUZZLER", ok5)
+  local is_benign, ok6 = safe_caste_flag(caste, "BENIGN")
+  track("BENIGN", ok6)
+  -- Read and reported for the ledger's own informational record only
+  -- (research doc S:E2: this project has no legal way to gate a DECISION
+  -- on MISCHIEVOUS -- doing so would reproduce the exact isHidden
+  -- violation already ruled out, S:D). classify_tier below never reads
+  -- this field; TIER_ESCALATIONS deliberately carries no row for it.
+  local is_mischievous, ok7 = safe_caste_flag(caste, "MISCHIEVOUS")
+  track("MISCHIEVOUS", ok7)
+
+  if #read_failures > 0 then
+    -- See the FIXED note above: non-silent on purpose. Never allowed to
+    -- throw out of class_flags itself.
+    pcall(function()
+      dfhack.printerr(string.format(
+        "df-overseer-threat: class_flags read failure race=%s caste=%s fields=%s",
+        tostring(unit.race), tostring(unit.caste),
+        table.concat(read_failures, ",")))
+    end)
+  end
+
   return {
-    is_large_predator       = safe_creature_flag(craw, "LARGE_PREDATOR"),
-    is_buildingdestroyer    = safe_creature_flag(craw, "BUILDINGDESTROYER"),
-    is_curiousbeast_item    = safe_creature_flag(craw, "CURIOUSBEAST_ITEM"),
-    is_curiousbeast_eater   = safe_creature_flag(craw, "CURIOUSBEAST_EATER"),
-    is_curiousbeast_guzzler = safe_creature_flag(craw, "CURIOUSBEAST_GUZZLER"),
-    is_benign               = safe_creature_flag(craw, "BENIGN"),
-    -- Read and reported for the ledger's own informational record only
-    -- (research doc S:E2: this project has no legal way to gate a DECISION
-    -- on MISCHIEVOUS -- doing so would reproduce the exact isHidden
-    -- violation already ruled out, S:D). classify_tier below never reads
-    -- this field; TIER_ESCALATIONS deliberately carries no row for it.
-    is_mischievous          = safe_creature_flag(craw, "MISCHIEVOUS"),
+    is_large_predator       = is_large_predator,
+    is_buildingdestroyer    = is_buildingdestroyer,
+    is_curiousbeast_item    = is_curiousbeast_item,
+    is_curiousbeast_eater   = is_curiousbeast_eater,
+    is_curiousbeast_guzzler = is_curiousbeast_guzzler,
+    is_benign               = is_benign,
+    is_mischievous          = is_mischievous,
+    read_failures           = read_failures,
     reliability = "MECHANICAL",
   }
 end
