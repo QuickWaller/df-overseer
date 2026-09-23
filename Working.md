@@ -504,11 +504,14 @@ local only, nothing deployed and nothing pushed.**
   sets it, with no hysteresis; `clock.clear` now clears the advisory too and
   reports `had_latch` and `had_advisory` separately. Suites re-run in the main
   checkout: ambient **1371 passed / 3 skipped**, `dfmcp/tests` **652**.
-  **Until this deploys the fort is still on the old script**, so it stays at
-  10 FPS with the advisory latched, which costs nothing while paused and keeps
-  the reproducer intact. **Two live checks owed on that deploy:** an advisory
-  clearing naturally as a candidate recedes, and `clock.clear` reporting
-  `had_advisory: true` while one is latched.
+  **Deployed and live-verified the same day** (`evals/live/2026-09-23-clock-clearing-deploy/`):
+  the fort read `fps: 10.0` with the kea advisory still latched, `clock clear`
+  returned `had_advisory: true`, and an independent status read came back
+  `fps: 100.0` with no advisory and `base_fps: 100`. Re-armed, MCP server
+  restarted clean, fort unmoved at `abs_tick 12611557` and still paused.
+  **One check still owed:** an advisory clearing *by itself* as a candidate
+  recedes needs the fort to run, and its reproducer is now consumed, so it
+  belongs to the next unattended run.
 - **The proposals-and-checks evidence pass is merged**
   (`research/2026-09-23-proposals-and-checks.md`). Its verdict: this project
   already built two classical check shapes without naming either, a one-shot
