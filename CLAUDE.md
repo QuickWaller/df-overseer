@@ -92,13 +92,19 @@ learning architecture.
 > - **Incident capture** on VMs 103 and 106 (guest agent, persistent journal,
 >   a netwatch dump on gateway loss), with `docs/RUNBOOK-DARK-GUEST.md`. VM 106
 >   went dark on 2026-09-14, cause unknown; it was rebuilt in place.
-> - **Agents.** openclaw on VM 106 has run four roles one-shot via `agent
->   exec` on DeepSeek (architect, overseer, quartermaster, consultant), plus
->   a manual, foreground, `--dry-run` run of the conductor. No agent, and no
->   conductor cycle, has ever run as a live systemd service, and none has
->   made a real (non-dry-run) decision beyond the single `ruling-0001` from
->   2026-09-16. Everything in `docs/` and `research/` beyond the above is
->   design or proposal unless marked verified.
+> - **Agents.** openclaw on VM 106 is configured with four pinned roles
+>   (architect, overseer, quartermaster, consultant), each validated and
+>   probed live against the real MCP server (tool counts match exactly).
+>   Only architect and overseer are confirmed to have actually run a real
+>   `agent exec` decision (the architect's proposals, the Overseer's single
+>   ruling, `ruling-0001` from 2026-09-16); **unknown** whether quartermaster
+>   or consultant has ever run one for real, versus only being probed/
+>   validated -- no run record for either was found in the sources this pass
+>   read. The conductor has run once, manually, in the foreground, with
+>   `--dry-run --once`; it has never run as a live systemd service, and no
+>   agent or conductor cycle has ever made a real decision on this fort
+>   beyond `ruling-0001`. Everything in `docs/` and `research/` beyond the
+>   above is design or proposal unless marked verified.
 >
 > **Traps before running anything:**
 > - Ambient `python -m pytest` gives **1348 passed, 3 skipped** (measured 2026-09-23,

@@ -62,8 +62,19 @@ and the MCP role/token that service will hold.
 ## Confidence and gotchas
 
 Every DFHack-backed tool result carries a `tool_guidance` block (see
-`agents/CONFIDENCE-LEGEND.md`). As of this stream every tool this role holds
-is `live_deployed: false` and `verified: unverified` in
-`scripts/dfhack/TOOLS.yaml` -- built and reasoned offline, not yet run
-against the live fort. See this stream's handoff Result section for the
-exact live checks the deploy stream should run before trusting any of them.
+`agents/CONFIDENCE-LEGEND.md`). **UPDATED 2026-09-23**: this role's tools
+are deployed and live-verified, not merely offline-built. `clock.set-speed`,
+`clock.pause`, `clock.status`, `clock.arm`/`disarm`, `fort.quicksave` and
+`vitals.summary` were all called live during the 2026-09-22 deploy
+(`evals/live/2026-09-22-loop-mvp-deploy/`); `clock.resume` and `clock.clear`
+remain genuinely unexercised live (the fort has never been unpaused during
+any deploy or run to date) -- see `scripts/dfhack/TOOLS.yaml`'s own
+per-command `verified` fields for exact evidence, not a blanket claim here.
+The conductor SERVICE itself (`conductor.service` on VM 106) is installed,
+Docker-capable and has never run as a live systemd service -- only a
+manual, foreground `--dry-run --once`, most recently clean from a real
+unseeded cursor after the CP437 encoding fix
+(`evals/live/2026-09-22-loop-game-text-encoding/`). This role also now
+holds `ledger.read`, `announcement-levels.slow-ids` and `orders.list`
+(2026-09-23, for the stalled/blocked order poller), deployed and
+live-verified the same day (`evals/live/2026-09-23-attention-deploy/`).
