@@ -456,7 +456,38 @@ historical.
 Moved wholesale to [`working-archive/Working_archive-2026-09-14.md`](working-archive/Working_archive-2026-09-14.md) on 2026-09-18, superseded by
 HANDOVER 2026-09-19 and the production-model work above.
 
-## In flight: two streams dispatched 2026-09-23, evening
+## Both 2026-09-23 evening streams are DONE and merged (state below is history)
+
+**Outcomes, merged to main, not pushed and not deployed:**
+
+- **`workjob` is generalised.** The job vocabulary now comes from DFHack's own
+  `workshops.getJobs`; the three-entry table is gone, the three old tokens
+  survive as aliases, `list-jobs` is new, and `COUNT` was appended fifth so no
+  existing caller shifts. Coverage measured live: **28 of 33** workshop and
+  furnace kinds offer at least one job, the five that do not are named. The
+  stream left one failing pinned test in `dfmcp/tests` (the arg signature);
+  the orchestrator fixed it and granted `workjob.list-jobs` read-only to
+  overseer, architect and quartermaster, without which the generalisation is
+  unreachable. Ambient **1362 passed / 3 skipped**.
+- **Flood relevance answered.** The footprint sets the tier, not the poll
+  scope: traffic is 0 of 6,856,704 tiles non-Normal and burrows are 0, so a
+  scope filter would have watched nothing. Dig designations (36 tiles) are the
+  only populated element and the only predictive one. **And the breach
+  detector is not dead after all**: its `update_liquid` gate fires on 3
+  blocks, agreeing exactly with DFHack's own `flows` tool, re-verified
+  independently by the orchestrator. `df-overseer-breach.lua`'s own header and
+  the `ROADMAP.md` line still say the opposite.
+
+**Owed, in order:** (1) correct that breach header and the ROADMAP line on the
+next Lua-deploying stream, rather than drifting the installed hash for a
+comment; (2) deploy the generalised `workjob` (needs a go-ahead) and wire
+`list-jobs`/`COUNT` argument descriptions into `dfmcp/tools.py` if that layer
+needs them; (3) the supervised real-queue test the stream wrote out, which
+would make the actual Chair item the fort's built Chair is still waiting on,
+through the direct-job route instead of the stalled manager order; (4) the
+user's open decision on whether an agent may confine a citizen to a burrow.
+
+## History: the two streams as dispatched 2026-09-23, evening
 
 Both worktree-isolated, neither touching the other's files. Docs pass and the
 register/memory rows for the week are merged and **pushed** (`ba708e7`); the
