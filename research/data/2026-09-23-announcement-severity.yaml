@@ -1,0 +1,2224 @@
+# Announcement severity classification, 2026-09-23.
+# research/2026-09-23-announcement-severity.md is the prose report this
+# supports; read that first for method and caveats.
+#
+# Source: research/data/2026-09-23-announcement-types.tsv (357 ids/names,
+# read live from df.announcement_type on VM 103, 2026-09-23) joined by NAME
+# (not id -- verified to match exactly, see the report) against the real
+# df.announcement_type enum's own alert_type attribute, read from a fresh
+# shallow clone of DFHack/df-structures (df.g_src.basics.xml). All 357 names
+# and ids matched exactly between the live install and df-structures master,
+# confirming this classification's id numbering is the real installed one.
+#
+# level: pause | slow | notice | log_only | ignore (docs/AGENT-LOOP.md's own
+#   clock levels plus the two below-clock tiers the brief asked for).
+# alert_type: DF's own internal announcement-settings-menu category for this
+#   id (GENERAL, MONSTER, AMBUSH, CRIME, ...) -- background context, not a
+#   substitute for the level, since it answers 'which UI toggle' not 'how
+#   urgent'.
+# wake: role(s) this should wake when it applies (only set for slow/pause).
+# context_dependent: true if this type's real severity depends on something
+#   not in the announcement itself (see the report's section B).
+# confidence: verified | likely | unverified, per this entry's own reasoning,
+#   not a single blanket confidence for the whole file.
+
+schema_version: 1
+types:
+  NONE:
+    id: -1
+    level: ignore
+    alert_type: GENERAL
+    reason: "sentinel value, id -1, no real report ever carries this type"
+    confidence: verified
+  REACHED_PEAK:
+    id: 0
+    level: log_only
+    alert_type: GENERAL
+    reason: "a world-historical or landmark-reached event; harmless background, never decision-relevant to a running fort"
+    confidence: likely
+  ERA_CHANGE:
+    id: 1
+    level: log_only
+    alert_type: ERA_CHANGE
+    reason: "a world-historical or landmark-reached event; harmless background, never decision-relevant to a running fort"
+    confidence: likely
+  FEATURE_DISCOVERY:
+    id: 2
+    level: notice
+    alert_type: UNDERGROUND
+    reason: "an underground feature or notable mineral vein was discovered; positive, background-worthy, no urgency"
+    confidence: verified
+  STRUCK_DEEP_METAL:
+    id: 3
+    level: notice
+    alert_type: UNDERGROUND
+    reason: "an underground feature or notable mineral vein was discovered; positive, background-worthy, no urgency"
+    confidence: verified
+  STRUCK_MINERAL:
+    id: 4
+    level: notice
+    alert_type: UNDERGROUND
+    reason: "an underground feature or notable mineral vein was discovered; positive, background-worthy, no urgency"
+    confidence: verified
+  STRUCK_ECONOMIC_MINERAL:
+    id: 5
+    level: notice
+    alert_type: UNDERGROUND
+    reason: "an underground feature or notable mineral vein was discovered; positive, background-worthy, no urgency"
+    confidence: verified
+  COMBAT_TWIST_WEAPON:
+    id: 6
+    level: log_only
+    alert_type: GENERAL
+    reason: "blow-by-blow combat mechanic (strike/dodge/block/wrestle/status detail); already grouped by df-overseer-diff.lua's own REPORT_CATEGORY (strike/miss_or_block/charge/grapple/status) as combat detail, never the top-level signal -- the aggregate ('a fight is happening', already pause/slow via the ambush/undead/death families) is the signal, this is the full-report-text tier only"
+    confidence: verified
+  COMBAT_LET_ITEM_DROP:
+    id: 7
+    level: log_only
+    alert_type: GENERAL
+    reason: "blow-by-blow combat mechanic (strike/dodge/block/wrestle/status detail); already grouped by df-overseer-diff.lua's own REPORT_CATEGORY (strike/miss_or_block/charge/grapple/status) as combat detail, never the top-level signal -- the aggregate ('a fight is happening', already pause/slow via the ambush/undead/death families) is the signal, this is the full-report-text tier only"
+    confidence: verified
+  COMBAT_START_CHARGE:
+    id: 8
+    level: log_only
+    alert_type: GENERAL
+    reason: "blow-by-blow combat mechanic (strike/dodge/block/wrestle/status detail); already grouped by df-overseer-diff.lua's own REPORT_CATEGORY (strike/miss_or_block/charge/grapple/status) as combat detail, never the top-level signal -- the aggregate ('a fight is happening', already pause/slow via the ambush/undead/death families) is the signal, this is the full-report-text tier only"
+    confidence: verified
+  COMBAT_SURPRISE_CHARGE:
+    id: 9
+    level: log_only
+    alert_type: GENERAL
+    reason: "blow-by-blow combat mechanic (strike/dodge/block/wrestle/status detail); already grouped by df-overseer-diff.lua's own REPORT_CATEGORY (strike/miss_or_block/charge/grapple/status) as combat detail, never the top-level signal -- the aggregate ('a fight is happening', already pause/slow via the ambush/undead/death families) is the signal, this is the full-report-text tier only"
+    confidence: verified
+  COMBAT_JUMP_DODGE_PROJ:
+    id: 10
+    level: log_only
+    alert_type: GENERAL
+    reason: "blow-by-blow combat mechanic (strike/dodge/block/wrestle/status detail); already grouped by df-overseer-diff.lua's own REPORT_CATEGORY (strike/miss_or_block/charge/grapple/status) as combat detail, never the top-level signal -- the aggregate ('a fight is happening', already pause/slow via the ambush/undead/death families) is the signal, this is the full-report-text tier only"
+    confidence: verified
+  COMBAT_JUMP_DODGE_STRIKE:
+    id: 11
+    level: log_only
+    alert_type: GENERAL
+    reason: "blow-by-blow combat mechanic (strike/dodge/block/wrestle/status detail); already grouped by df-overseer-diff.lua's own REPORT_CATEGORY (strike/miss_or_block/charge/grapple/status) as combat detail, never the top-level signal -- the aggregate ('a fight is happening', already pause/slow via the ambush/undead/death families) is the signal, this is the full-report-text tier only"
+    confidence: verified
+  COMBAT_DODGE:
+    id: 12
+    level: log_only
+    alert_type: GENERAL
+    reason: "blow-by-blow combat mechanic (strike/dodge/block/wrestle/status detail); already grouped by df-overseer-diff.lua's own REPORT_CATEGORY (strike/miss_or_block/charge/grapple/status) as combat detail, never the top-level signal -- the aggregate ('a fight is happening', already pause/slow via the ambush/undead/death families) is the signal, this is the full-report-text tier only"
+    confidence: verified
+  COMBAT_COUNTERSTRIKE:
+    id: 13
+    level: log_only
+    alert_type: GENERAL
+    reason: "blow-by-blow combat mechanic (strike/dodge/block/wrestle/status detail); already grouped by df-overseer-diff.lua's own REPORT_CATEGORY (strike/miss_or_block/charge/grapple/status) as combat detail, never the top-level signal -- the aggregate ('a fight is happening', already pause/slow via the ambush/undead/death families) is the signal, this is the full-report-text tier only"
+    confidence: verified
+  COMBAT_BLOCK:
+    id: 14
+    level: log_only
+    alert_type: GENERAL
+    reason: "blow-by-blow combat mechanic (strike/dodge/block/wrestle/status detail); already grouped by df-overseer-diff.lua's own REPORT_CATEGORY (strike/miss_or_block/charge/grapple/status) as combat detail, never the top-level signal -- the aggregate ('a fight is happening', already pause/slow via the ambush/undead/death families) is the signal, this is the full-report-text tier only"
+    confidence: verified
+  COMBAT_PARRY:
+    id: 15
+    level: log_only
+    alert_type: GENERAL
+    reason: "blow-by-blow combat mechanic (strike/dodge/block/wrestle/status detail); already grouped by df-overseer-diff.lua's own REPORT_CATEGORY (strike/miss_or_block/charge/grapple/status) as combat detail, never the top-level signal -- the aggregate ('a fight is happening', already pause/slow via the ambush/undead/death families) is the signal, this is the full-report-text tier only"
+    confidence: verified
+  COMBAT_CHARGE_COLLISION:
+    id: 16
+    level: log_only
+    alert_type: GENERAL
+    reason: "blow-by-blow combat mechanic (strike/dodge/block/wrestle/status detail); already grouped by df-overseer-diff.lua's own REPORT_CATEGORY (strike/miss_or_block/charge/grapple/status) as combat detail, never the top-level signal -- the aggregate ('a fight is happening', already pause/slow via the ambush/undead/death families) is the signal, this is the full-report-text tier only"
+    confidence: verified
+  COMBAT_CHARGE_DEFENDER_TUMBLES:
+    id: 17
+    level: log_only
+    alert_type: GENERAL
+    reason: "blow-by-blow combat mechanic (strike/dodge/block/wrestle/status detail); already grouped by df-overseer-diff.lua's own REPORT_CATEGORY (strike/miss_or_block/charge/grapple/status) as combat detail, never the top-level signal -- the aggregate ('a fight is happening', already pause/slow via the ambush/undead/death families) is the signal, this is the full-report-text tier only"
+    confidence: verified
+  COMBAT_CHARGE_DEFENDER_KNOCKED_OVER:
+    id: 18
+    level: log_only
+    alert_type: GENERAL
+    reason: "blow-by-blow combat mechanic (strike/dodge/block/wrestle/status detail); already grouped by df-overseer-diff.lua's own REPORT_CATEGORY (strike/miss_or_block/charge/grapple/status) as combat detail, never the top-level signal -- the aggregate ('a fight is happening', already pause/slow via the ambush/undead/death families) is the signal, this is the full-report-text tier only"
+    confidence: verified
+  COMBAT_CHARGE_ATTACKER_TUMBLES:
+    id: 19
+    level: log_only
+    alert_type: GENERAL
+    reason: "blow-by-blow combat mechanic (strike/dodge/block/wrestle/status detail); already grouped by df-overseer-diff.lua's own REPORT_CATEGORY (strike/miss_or_block/charge/grapple/status) as combat detail, never the top-level signal -- the aggregate ('a fight is happening', already pause/slow via the ambush/undead/death families) is the signal, this is the full-report-text tier only"
+    confidence: verified
+  COMBAT_CHARGE_ATTACKER_BOUNCE_BACK:
+    id: 20
+    level: log_only
+    alert_type: GENERAL
+    reason: "blow-by-blow combat mechanic (strike/dodge/block/wrestle/status detail); already grouped by df-overseer-diff.lua's own REPORT_CATEGORY (strike/miss_or_block/charge/grapple/status) as combat detail, never the top-level signal -- the aggregate ('a fight is happening', already pause/slow via the ambush/undead/death families) is the signal, this is the full-report-text tier only"
+    confidence: verified
+  COMBAT_CHARGE_TANGLE_TOGETHER:
+    id: 21
+    level: log_only
+    alert_type: GENERAL
+    reason: "blow-by-blow combat mechanic (strike/dodge/block/wrestle/status detail); already grouped by df-overseer-diff.lua's own REPORT_CATEGORY (strike/miss_or_block/charge/grapple/status) as combat detail, never the top-level signal -- the aggregate ('a fight is happening', already pause/slow via the ambush/undead/death families) is the signal, this is the full-report-text tier only"
+    confidence: verified
+  COMBAT_CHARGE_TANGLE_TUMBLE:
+    id: 22
+    level: log_only
+    alert_type: GENERAL
+    reason: "blow-by-blow combat mechanic (strike/dodge/block/wrestle/status detail); already grouped by df-overseer-diff.lua's own REPORT_CATEGORY (strike/miss_or_block/charge/grapple/status) as combat detail, never the top-level signal -- the aggregate ('a fight is happening', already pause/slow via the ambush/undead/death families) is the signal, this is the full-report-text tier only"
+    confidence: verified
+  COMBAT_CHARGE_RUSH_BY:
+    id: 23
+    level: log_only
+    alert_type: GENERAL
+    reason: "blow-by-blow combat mechanic (strike/dodge/block/wrestle/status detail); already grouped by df-overseer-diff.lua's own REPORT_CATEGORY (strike/miss_or_block/charge/grapple/status) as combat detail, never the top-level signal -- the aggregate ('a fight is happening', already pause/slow via the ambush/undead/death families) is the signal, this is the full-report-text tier only"
+    confidence: verified
+  COMBAT_CHARGE_MANAGE_STOP:
+    id: 24
+    level: log_only
+    alert_type: GENERAL
+    reason: "blow-by-blow combat mechanic (strike/dodge/block/wrestle/status detail); already grouped by df-overseer-diff.lua's own REPORT_CATEGORY (strike/miss_or_block/charge/grapple/status) as combat detail, never the top-level signal -- the aggregate ('a fight is happening', already pause/slow via the ambush/undead/death families) is the signal, this is the full-report-text tier only"
+    confidence: verified
+  COMBAT_CHARGE_OBSTACLE_SLAM:
+    id: 25
+    level: log_only
+    alert_type: GENERAL
+    reason: "blow-by-blow combat mechanic (strike/dodge/block/wrestle/status detail); already grouped by df-overseer-diff.lua's own REPORT_CATEGORY (strike/miss_or_block/charge/grapple/status) as combat detail, never the top-level signal -- the aggregate ('a fight is happening', already pause/slow via the ambush/undead/death families) is the signal, this is the full-report-text tier only"
+    confidence: verified
+  COMBAT_WRESTLE_LOCK:
+    id: 26
+    level: log_only
+    alert_type: GENERAL
+    reason: "blow-by-blow combat mechanic (strike/dodge/block/wrestle/status detail); already grouped by df-overseer-diff.lua's own REPORT_CATEGORY (strike/miss_or_block/charge/grapple/status) as combat detail, never the top-level signal -- the aggregate ('a fight is happening', already pause/slow via the ambush/undead/death families) is the signal, this is the full-report-text tier only"
+    confidence: verified
+  COMBAT_WRESTLE_CHOKEHOLD:
+    id: 27
+    level: log_only
+    alert_type: GENERAL
+    reason: "blow-by-blow combat mechanic (strike/dodge/block/wrestle/status detail); already grouped by df-overseer-diff.lua's own REPORT_CATEGORY (strike/miss_or_block/charge/grapple/status) as combat detail, never the top-level signal -- the aggregate ('a fight is happening', already pause/slow via the ambush/undead/death families) is the signal, this is the full-report-text tier only"
+    confidence: verified
+  COMBAT_WRESTLE_TAKEDOWN:
+    id: 28
+    level: log_only
+    alert_type: GENERAL
+    reason: "blow-by-blow combat mechanic (strike/dodge/block/wrestle/status detail); already grouped by df-overseer-diff.lua's own REPORT_CATEGORY (strike/miss_or_block/charge/grapple/status) as combat detail, never the top-level signal -- the aggregate ('a fight is happening', already pause/slow via the ambush/undead/death families) is the signal, this is the full-report-text tier only"
+    confidence: verified
+  COMBAT_WRESTLE_THROW:
+    id: 29
+    level: log_only
+    alert_type: GENERAL
+    reason: "blow-by-blow combat mechanic (strike/dodge/block/wrestle/status detail); already grouped by df-overseer-diff.lua's own REPORT_CATEGORY (strike/miss_or_block/charge/grapple/status) as combat detail, never the top-level signal -- the aggregate ('a fight is happening', already pause/slow via the ambush/undead/death families) is the signal, this is the full-report-text tier only"
+    confidence: verified
+  COMBAT_WRESTLE_RELEASE_LOCK:
+    id: 30
+    level: log_only
+    alert_type: GENERAL
+    reason: "blow-by-blow combat mechanic (strike/dodge/block/wrestle/status detail); already grouped by df-overseer-diff.lua's own REPORT_CATEGORY (strike/miss_or_block/charge/grapple/status) as combat detail, never the top-level signal -- the aggregate ('a fight is happening', already pause/slow via the ambush/undead/death families) is the signal, this is the full-report-text tier only"
+    confidence: verified
+  COMBAT_WRESTLE_RELEASE_CHOKE:
+    id: 31
+    level: log_only
+    alert_type: GENERAL
+    reason: "blow-by-blow combat mechanic (strike/dodge/block/wrestle/status detail); already grouped by df-overseer-diff.lua's own REPORT_CATEGORY (strike/miss_or_block/charge/grapple/status) as combat detail, never the top-level signal -- the aggregate ('a fight is happening', already pause/slow via the ambush/undead/death families) is the signal, this is the full-report-text tier only"
+    confidence: verified
+  COMBAT_WRESTLE_RELEASE_GRIP:
+    id: 32
+    level: log_only
+    alert_type: GENERAL
+    reason: "blow-by-blow combat mechanic (strike/dodge/block/wrestle/status detail); already grouped by df-overseer-diff.lua's own REPORT_CATEGORY (strike/miss_or_block/charge/grapple/status) as combat detail, never the top-level signal -- the aggregate ('a fight is happening', already pause/slow via the ambush/undead/death families) is the signal, this is the full-report-text tier only"
+    confidence: verified
+  COMBAT_WRESTLE_STRUGGLE:
+    id: 33
+    level: log_only
+    alert_type: GENERAL
+    reason: "blow-by-blow combat mechanic (strike/dodge/block/wrestle/status detail); already grouped by df-overseer-diff.lua's own REPORT_CATEGORY (strike/miss_or_block/charge/grapple/status) as combat detail, never the top-level signal -- the aggregate ('a fight is happening', already pause/slow via the ambush/undead/death families) is the signal, this is the full-report-text tier only"
+    confidence: verified
+  COMBAT_WRESTLE_RELEASE_LATCH:
+    id: 34
+    level: log_only
+    alert_type: GENERAL
+    reason: "blow-by-blow combat mechanic (strike/dodge/block/wrestle/status detail); already grouped by df-overseer-diff.lua's own REPORT_CATEGORY (strike/miss_or_block/charge/grapple/status) as combat detail, never the top-level signal -- the aggregate ('a fight is happening', already pause/slow via the ambush/undead/death families) is the signal, this is the full-report-text tier only"
+    confidence: verified
+  COMBAT_WRESTLE_STRANGLE_KO:
+    id: 35
+    level: log_only
+    alert_type: GENERAL
+    reason: "blow-by-blow combat mechanic (strike/dodge/block/wrestle/status detail); already grouped by df-overseer-diff.lua's own REPORT_CATEGORY (strike/miss_or_block/charge/grapple/status) as combat detail, never the top-level signal -- the aggregate ('a fight is happening', already pause/slow via the ambush/undead/death families) is the signal, this is the full-report-text tier only"
+    confidence: verified
+  COMBAT_WRESTLE_ADJUST_GRIP:
+    id: 36
+    level: log_only
+    alert_type: GENERAL
+    reason: "blow-by-blow combat mechanic (strike/dodge/block/wrestle/status detail); already grouped by df-overseer-diff.lua's own REPORT_CATEGORY (strike/miss_or_block/charge/grapple/status) as combat detail, never the top-level signal -- the aggregate ('a fight is happening', already pause/slow via the ambush/undead/death families) is the signal, this is the full-report-text tier only"
+    confidence: verified
+  COMBAT_GRAB_TEAR:
+    id: 37
+    level: log_only
+    alert_type: GENERAL
+    reason: "blow-by-blow combat mechanic (strike/dodge/block/wrestle/status detail); already grouped by df-overseer-diff.lua's own REPORT_CATEGORY (strike/miss_or_block/charge/grapple/status) as combat detail, never the top-level signal -- the aggregate ('a fight is happening', already pause/slow via the ambush/undead/death families) is the signal, this is the full-report-text tier only"
+    confidence: verified
+  COMBAT_STRIKE_DETAILS:
+    id: 38
+    level: log_only
+    alert_type: GENERAL
+    reason: "blow-by-blow combat mechanic (strike/dodge/block/wrestle/status detail); already grouped by df-overseer-diff.lua's own REPORT_CATEGORY (strike/miss_or_block/charge/grapple/status) as combat detail, never the top-level signal -- the aggregate ('a fight is happening', already pause/slow via the ambush/undead/death families) is the signal, this is the full-report-text tier only"
+    confidence: verified
+  COMBAT_STRIKE_DETAILS_2:
+    id: 39
+    level: log_only
+    alert_type: GENERAL
+    reason: "blow-by-blow combat mechanic (strike/dodge/block/wrestle/status detail); already grouped by df-overseer-diff.lua's own REPORT_CATEGORY (strike/miss_or_block/charge/grapple/status) as combat detail, never the top-level signal -- the aggregate ('a fight is happening', already pause/slow via the ambush/undead/death families) is the signal, this is the full-report-text tier only"
+    confidence: verified
+  COMBAT_EVENT_ENRAGED:
+    id: 40
+    level: log_only
+    alert_type: GENERAL
+    reason: "blow-by-blow combat mechanic (strike/dodge/block/wrestle/status detail); already grouped by df-overseer-diff.lua's own REPORT_CATEGORY (strike/miss_or_block/charge/grapple/status) as combat detail, never the top-level signal -- the aggregate ('a fight is happening', already pause/slow via the ambush/undead/death families) is the signal, this is the full-report-text tier only"
+    confidence: verified
+  COMBAT_EVENT_STUCKIN:
+    id: 41
+    level: log_only
+    alert_type: GENERAL
+    reason: "blow-by-blow combat mechanic (strike/dodge/block/wrestle/status detail); already grouped by df-overseer-diff.lua's own REPORT_CATEGORY (strike/miss_or_block/charge/grapple/status) as combat detail, never the top-level signal -- the aggregate ('a fight is happening', already pause/slow via the ambush/undead/death families) is the signal, this is the full-report-text tier only"
+    confidence: verified
+  COMBAT_EVENT_LATCH_BP:
+    id: 42
+    level: log_only
+    alert_type: GENERAL
+    reason: "blow-by-blow combat mechanic (strike/dodge/block/wrestle/status detail); already grouped by df-overseer-diff.lua's own REPORT_CATEGORY (strike/miss_or_block/charge/grapple/status) as combat detail, never the top-level signal -- the aggregate ('a fight is happening', already pause/slow via the ambush/undead/death families) is the signal, this is the full-report-text tier only"
+    confidence: verified
+  COMBAT_EVENT_LATCH_GENERAL:
+    id: 43
+    level: log_only
+    alert_type: GENERAL
+    reason: "blow-by-blow combat mechanic (strike/dodge/block/wrestle/status detail); already grouped by df-overseer-diff.lua's own REPORT_CATEGORY (strike/miss_or_block/charge/grapple/status) as combat detail, never the top-level signal -- the aggregate ('a fight is happening', already pause/slow via the ambush/undead/death families) is the signal, this is the full-report-text tier only"
+    confidence: verified
+  COMBAT_EVENT_PROPELLED_AWAY:
+    id: 44
+    level: log_only
+    alert_type: GENERAL
+    reason: "blow-by-blow combat mechanic (strike/dodge/block/wrestle/status detail); already grouped by df-overseer-diff.lua's own REPORT_CATEGORY (strike/miss_or_block/charge/grapple/status) as combat detail, never the top-level signal -- the aggregate ('a fight is happening', already pause/slow via the ambush/undead/death families) is the signal, this is the full-report-text tier only"
+    confidence: verified
+  COMBAT_EVENT_KNOCKED_OUT:
+    id: 45
+    level: log_only
+    alert_type: GENERAL
+    reason: "blow-by-blow combat mechanic (strike/dodge/block/wrestle/status detail); already grouped by df-overseer-diff.lua's own REPORT_CATEGORY (strike/miss_or_block/charge/grapple/status) as combat detail, never the top-level signal -- the aggregate ('a fight is happening', already pause/slow via the ambush/undead/death families) is the signal, this is the full-report-text tier only"
+    confidence: verified
+  COMBAT_EVENT_STUNNED:
+    id: 46
+    level: log_only
+    alert_type: GENERAL
+    reason: "blow-by-blow combat mechanic (strike/dodge/block/wrestle/status detail); already grouped by df-overseer-diff.lua's own REPORT_CATEGORY (strike/miss_or_block/charge/grapple/status) as combat detail, never the top-level signal -- the aggregate ('a fight is happening', already pause/slow via the ambush/undead/death families) is the signal, this is the full-report-text tier only"
+    confidence: verified
+  COMBAT_EVENT_WINDED:
+    id: 47
+    level: log_only
+    alert_type: GENERAL
+    reason: "blow-by-blow combat mechanic (strike/dodge/block/wrestle/status detail); already grouped by df-overseer-diff.lua's own REPORT_CATEGORY (strike/miss_or_block/charge/grapple/status) as combat detail, never the top-level signal -- the aggregate ('a fight is happening', already pause/slow via the ambush/undead/death families) is the signal, this is the full-report-text tier only"
+    confidence: verified
+  COMBAT_EVENT_NAUSEATED:
+    id: 48
+    level: log_only
+    alert_type: GENERAL
+    reason: "blow-by-blow combat mechanic (strike/dodge/block/wrestle/status detail); already grouped by df-overseer-diff.lua's own REPORT_CATEGORY (strike/miss_or_block/charge/grapple/status) as combat detail, never the top-level signal -- the aggregate ('a fight is happening', already pause/slow via the ambush/undead/death families) is the signal, this is the full-report-text tier only"
+    confidence: verified
+  MIGRANT_ARRIVAL_NAMED:
+    id: 49
+    level: notice
+    alert_type: MIGRANT
+    reason: "a migrant wave arrived (or didn't); already covered by triage's own migrant_wave wake reason elsewhere, so the announcement itself is confirmatory, not a new signal"
+    confidence: verified
+  MIGRANT_ARRIVAL:
+    id: 50
+    level: notice
+    alert_type: MIGRANT
+    reason: "a migrant wave arrived (or didn't); already covered by triage's own migrant_wave wake reason elsewhere, so the announcement itself is confirmatory, not a new signal"
+    confidence: verified
+  DIG_CANCEL_WARM:
+    id: 51
+    level: notice
+    alert_type: UNDERGROUND
+    reason: "a dig job was auto-cancelled by the game for a hazard reason (warm/damp rock); directly actionable for the digging tool, worth a briefing line"
+    confidence: likely
+  DIG_CANCEL_DAMP:
+    id: 52
+    level: notice
+    alert_type: UNDERGROUND
+    reason: "a dig job was auto-cancelled by the game for a hazard reason (warm/damp rock); directly actionable for the digging tool, worth a briefing line"
+    confidence: likely
+  AMBUSH_DEFENDER:
+    id: 53
+    level: pause
+    alert_type: MONSTER
+    reason: "a real combat ambush is underway (not a thief or mischief-class actor); matches the project's own hostile_reachable tripwire's intent but via the report channel, which is the vanilla-legal way to know 'something is wrong' without resolving the still-hidden ambusher (research/2026-09-16-player-visibility.md)"
+    wake: [overseer]
+    confidence: likely
+  AMBUSH_RESIDENT:
+    id: 54
+    level: pause
+    alert_type: MONSTER
+    reason: "a real combat ambush is underway (not a thief or mischief-class actor); matches the project's own hostile_reachable tripwire's intent but via the report channel, which is the vanilla-legal way to know 'something is wrong' without resolving the still-hidden ambusher (research/2026-09-16-player-visibility.md)"
+    wake: [overseer]
+    confidence: likely
+  AMBUSH_THIEF:
+    id: 55
+    level: slow
+    alert_type: CRIME
+    reason: "a thief-class ambush is underway; item loss is real but not fort-ending, worth the Overseer's attention at thinking speed rather than a full stop"
+    wake: [overseer]
+    confidence: likely
+  AMBUSH_THIEF_SUPPORT_SKULKING:
+    id: 56
+    level: slow
+    alert_type: AMBUSH
+    reason: "a thief-class ambush is underway; item loss is real but not fort-ending, worth the Overseer's attention at thinking speed rather than a full stop"
+    wake: [overseer]
+    confidence: likely
+  AMBUSH_THIEF_SUPPORT_NATURE:
+    id: 57
+    level: slow
+    alert_type: AMBUSH
+    reason: "a thief-class ambush is underway; item loss is real but not fort-ending, worth the Overseer's attention at thinking speed rather than a full stop"
+    wake: [overseer]
+    confidence: likely
+  AMBUSH_THIEF_SUPPORT:
+    id: 58
+    level: slow
+    alert_type: AMBUSH
+    reason: "a thief-class ambush is underway; item loss is real but not fort-ending, worth the Overseer's attention at thinking speed rather than a full stop"
+    wake: [overseer]
+    confidence: likely
+  AMBUSH_MISCHIEVOUS:
+    id: 59
+    level: slow
+    alert_type: AMBUSH
+    reason: "a mischief-class ambusher (this is the announcement family a kea's approach would actually surface under, per the sibling wildlife-threat brief); slow and let the Quartermaster or Overseer glance at it rather than pausing the fort outright -- the concrete fix for the kea overreaction"
+    wake: [overseer]
+    confidence: likely
+  AMBUSH_SNATCHER:
+    id: 60
+    level: pause
+    alert_type: CRIME
+    reason: "a child-snatcher ambush; same consequence class as CITIZEN_SNATCHED"
+    wake: [overseer]
+    confidence: likely
+  AMBUSH_SNATCHER_SUPPORT:
+    id: 61
+    level: slow
+    alert_type: AMBUSH
+    reason: "a thief-class ambush is underway; item loss is real but not fort-ending, worth the Overseer's attention at thinking speed rather than a full stop"
+    wake: [overseer]
+    confidence: likely
+  AMBUSH_AMBUSHER_NATURE:
+    id: 62
+    level: pause
+    alert_type: AMBUSH
+    reason: "a real combat ambush is underway (not a thief or mischief-class actor); matches the project's own hostile_reachable tripwire's intent but via the report channel, which is the vanilla-legal way to know 'something is wrong' without resolving the still-hidden ambusher (research/2026-09-16-player-visibility.md)"
+    wake: [overseer]
+    confidence: likely
+  AMBUSH_AMBUSHER:
+    id: 63
+    level: pause
+    alert_type: AMBUSH
+    reason: "a real combat ambush is underway (not a thief or mischief-class actor); matches the project's own hostile_reachable tripwire's intent but via the report channel, which is the vanilla-legal way to know 'something is wrong' without resolving the still-hidden ambusher (research/2026-09-16-player-visibility.md)"
+    wake: [overseer]
+    confidence: likely
+  AMBUSH_INJURED:
+    id: 64
+    level: notice
+    alert_type: AMBUSH
+    reason: "a status update within an ongoing ambush (injury/incapacitation of a participant); the ambush itself is already pause/slow via AMBUSH_AMBUSHER etc, this is the follow-up detail once that signal has already fired"
+    confidence: likely
+  AMBUSH_OTHER:
+    id: 65
+    level: notice
+    alert_type: AMBUSH
+    reason: "a status update within an ongoing ambush (injury/incapacitation of a participant); the ambush itself is already pause/slow via AMBUSH_AMBUSHER etc, this is the follow-up detail once that signal has already fired"
+    confidence: likely
+  AMBUSH_INCAPACITATED:
+    id: 66
+    level: notice
+    alert_type: AMBUSH
+    reason: "a status update within an ongoing ambush (injury/incapacitation of a participant); the ambush itself is already pause/slow via AMBUSH_AMBUSHER etc, this is the follow-up detail once that signal has already fired"
+    confidence: likely
+  CARAVAN_ARRIVAL:
+    id: 67
+    level: notice
+    alert_type: TRADE
+    reason: "an NPC/caravan/noble arrival or departure; already covered by triage's caravan_present wake reason where relevant, otherwise routine background information for the next briefing"
+    confidence: likely
+  NOBLE_ARRIVAL:
+    id: 68
+    level: notice
+    alert_type: NOBLE
+    reason: "an NPC/caravan/noble arrival or departure; already covered by triage's caravan_present wake reason where relevant, otherwise routine background information for the next briefing"
+    confidence: likely
+  D_MIGRANTS_ARRIVAL:
+    id: 69
+    level: notice
+    alert_type: MIGRANT
+    reason: "a migrant wave arrived (or didn't); already covered by triage's own migrant_wave wake reason elsewhere, so the announcement itself is confirmatory, not a new signal"
+    confidence: verified
+  D_MIGRANT_ARRIVAL:
+    id: 70
+    level: notice
+    alert_type: MIGRANT
+    reason: "a migrant wave arrived (or didn't); already covered by triage's own migrant_wave wake reason elsewhere, so the announcement itself is confirmatory, not a new signal"
+    confidence: verified
+  D_MIGRANT_ARRIVAL_DISCOURAGED:
+    id: 71
+    level: notice
+    alert_type: MIGRANT
+    reason: "a migrant wave arrived (or didn't); already covered by triage's own migrant_wave wake reason elsewhere, so the announcement itself is confirmatory, not a new signal"
+    confidence: verified
+  D_NO_MIGRANT_ARRIVAL:
+    id: 72
+    level: notice
+    alert_type: MIGRANT
+    reason: "a migrant wave arrived (or didn't); already covered by triage's own migrant_wave wake reason elsewhere, so the announcement itself is confirmatory, not a new signal"
+    confidence: verified
+  ANIMAL_TRAP_CATCH:
+    id: 73
+    level: notice
+    alert_type: ANIMAL
+    reason: "a trap caught or lost an animal; routine production information"
+    confidence: likely
+  ANIMAL_TRAP_ROBBED:
+    id: 74
+    level: notice
+    alert_type: ANIMAL
+    reason: "a trap caught or lost an animal; routine production information"
+    confidence: likely
+  MISCHIEF_LEVER:
+    id: 75
+    level: notice
+    alert_type: CRIME
+    reason: "a mischievous creature interfered with a mechanism (a lever, plate, cage or chain); the kea-class nuisance case named in the sibling wildlife brief, disruptive but not dangerous"
+    confidence: likely
+  MISCHIEF_PLATE:
+    id: 76
+    level: notice
+    alert_type: CRIME
+    reason: "a mischievous creature interfered with a mechanism (a lever, plate, cage or chain); the kea-class nuisance case named in the sibling wildlife brief, disruptive but not dangerous"
+    confidence: likely
+  MISCHIEF_CAGE:
+    id: 77
+    level: notice
+    alert_type: CRIME
+    reason: "a mischievous creature interfered with a mechanism (a lever, plate, cage or chain); the kea-class nuisance case named in the sibling wildlife brief, disruptive but not dangerous"
+    confidence: likely
+  MISCHIEF_CHAIN:
+    id: 78
+    level: notice
+    alert_type: CRIME
+    reason: "a mischievous creature interfered with a mechanism (a lever, plate, cage or chain); the kea-class nuisance case named in the sibling wildlife brief, disruptive but not dangerous"
+    confidence: likely
+  DIPLOMAT_ARRIVAL:
+    id: 79
+    level: notice
+    alert_type: NOBLE
+    reason: "an NPC/caravan/noble arrival or departure; already covered by triage's caravan_present wake reason where relevant, otherwise routine background information for the next briefing"
+    confidence: likely
+  LIAISON_ARRIVAL:
+    id: 80
+    level: notice
+    alert_type: NOBLE
+    reason: "an NPC/caravan/noble arrival or departure; already covered by triage's caravan_present wake reason where relevant, otherwise routine background information for the next briefing"
+    confidence: likely
+  TRADE_DIPLOMAT_ARRIVAL:
+    id: 81
+    level: notice
+    alert_type: NOBLE
+    reason: "an NPC/caravan/noble arrival or departure; already covered by triage's caravan_present wake reason where relevant, otherwise routine background information for the next briefing"
+    confidence: likely
+  CAVE_COLLAPSE:
+    id: 82
+    level: pause
+    alert_type: UNDERGROUND
+    reason: "a cave-in occurred; can crush a citizen or open a breach, and STRUCK_DEEP_METAL/etc share this alert_type family (UNDERGROUND) but collapse specifically is the one with an immediate physical-harm risk"
+    wake: [overseer]
+    confidence: likely
+  BIRTH_CITIZEN:
+    id: 83
+    level: notice
+    alert_type: BIRTH
+    reason: "a routine population event (birth, coming of age, marriage); background demographic information"
+    confidence: likely
+  BIRTH_ANIMAL:
+    id: 84
+    level: notice
+    alert_type: BIRTH
+    reason: "a routine population event (birth, coming of age, marriage); background demographic information"
+    confidence: likely
+  STRANGE_MOOD:
+    id: 85
+    level: slow
+    alert_type: MOOD
+    reason: "a mood has struck a citizen; needs a workshop and materials routed to them within a bounded window or it turns bad (insanity/death), so worth acting on soon but not an instant pause"
+    wake: [architect, quartermaster]
+    confidence: verified
+  MADE_ARTIFACT:
+    id: 86
+    level: notice
+    alert_type: MOOD
+    reason: "an artifact was begun or completed; a real, positive fort event worth a briefing line, not urgent"
+    confidence: likely
+  NAMED_ARTIFACT:
+    id: 87
+    level: notice
+    alert_type: MILITARY
+    reason: "an artifact was begun or completed; a real, positive fort event worth a briefing line, not urgent"
+    confidence: likely
+  ITEM_ATTACHMENT:
+    id: 88
+    level: notice
+    alert_type: MILITARY
+    reason: "an artifact was begun or completed; a real, positive fort event worth a briefing line, not urgent"
+    confidence: likely
+  VERMIN_CAGE_ESCAPE:
+    id: 89
+    level: notice
+    alert_type: ANIMAL
+    reason: "a caged vermin escaped; low individual harm, but if repeated could mean a caging setup is broken"
+    confidence: likely
+  TRIGGER_WEB:
+    id: 90
+    level: notice
+    alert_type: MONSTER
+    reason: "a unit was caught in a web; usually recoverable, worth noting for the next wake rather than an immediate slow-down"
+    confidence: likely
+  MOOD_BUILDING_CLAIMED:
+    id: 91
+    level: slow
+    alert_type: MOOD
+    reason: "a moody citizen has claimed a workshop; the Quartermaster needs to route materials to them"
+    wake: [quartermaster]
+    confidence: likely
+  ARTIFACT_BEGUN:
+    id: 92
+    level: notice
+    alert_type: MOOD
+    reason: "an artifact was begun or completed; a real, positive fort event worth a briefing line, not urgent"
+    confidence: likely
+  MEGABEAST_ARRIVAL:
+    id: 93
+    level: pause
+    alert_type: MONSTER
+    reason: "a megabeast or werebeast has arrived; fort-ending class of threat, look now"
+    wake: [overseer]
+    confidence: likely
+  WEREBEAST_ARRIVAL:
+    id: 94
+    level: pause
+    alert_type: MONSTER
+    reason: "a megabeast or werebeast has arrived; fort-ending class of threat, look now"
+    wake: [overseer]
+    confidence: likely
+  BEAST_AMBUSH:
+    id: 95
+    level: pause
+    alert_type: MONSTER
+    reason: "a special/megabeast-tier creature is ambushing; same class as MEGABEAST_ARRIVAL"
+    wake: [overseer]
+    confidence: likely
+  BERSERK_CITIZEN:
+    id: 96
+    level: pause
+    alert_type: BERSERK
+    reason: "a citizen has gone berserk or is possessed; actively dangerous to every other citizen in the same way a reachable hostile is, and already tagged berserk_or_tantrum in df-overseer-diff.lua"
+    wake: [overseer]
+    confidence: verified
+  MAGMA_DEFACES_ENGRAVING:
+    id: 97
+    level: notice
+    alert_type: ART_DEFACEMENT
+    reason: "decorative work was damaged or lost; aesthetic/value loss only, no safety consequence"
+    confidence: likely
+  ENGRAVING_MELTS:
+    id: 98
+    level: notice
+    alert_type: ART_DEFACEMENT
+    reason: "decorative work was damaged or lost; aesthetic/value loss only, no safety consequence"
+    confidence: likely
+  MASTERPIECE_CONSTRUCTION:
+    id: 99
+    level: notice
+    alert_type: MASTERPIECE
+    reason: "a masterwork or skill-progression event; positive/neutral background information, no action needed"
+    confidence: likely
+  MASTER_ARCHITECTURE_LOST:
+    id: 100
+    level: slow
+    alert_type: ART_DEFACEMENT
+    reason: "a masterwork-tier structure was lost; a real, rare loss the Overseer should see soon but not a stop-the-world event"
+    wake: [overseer]
+    confidence: likely
+  MASTER_CONSTRUCTION_LOST:
+    id: 101
+    level: slow
+    alert_type: ART_DEFACEMENT
+    reason: "a masterwork-tier structure was lost; a real, rare loss the Overseer should see soon but not a stop-the-world event"
+    wake: [overseer]
+    confidence: likely
+  ADV_AWAKEN:
+    id: 102
+    level: ignore
+    alert_type: GENERAL
+    reason: "adventure-mode player-character action/failure text; this fort runs fortress mode only"
+    confidence: likely
+  ADV_SLEEP_INTERRUPTED:
+    id: 103
+    level: ignore
+    alert_type: GENERAL
+    reason: "adventure-mode player-character action/failure text; this fort runs fortress mode only"
+    confidence: likely
+  CANCEL_JOB:
+    id: 104
+    level: notice
+    alert_type: JOB_FAILED
+    reason: "a job was cancelled; docs/TRAPS.md already records that cancellation reports carry no linkage fields (speaker_id/activity_id/activity_event_id all -1), so this can only ever be surfaced as unparsed text, not joined to a job or unit -- a repeated cancel at the same spot is the sibling brief's 'construction suspended repeatedly' case and needs external correlation, not this field alone"
+    context_dependent: true
+    confidence: verified
+  ADV_CREATURE_DEATH:
+    id: 105
+    level: ignore
+    alert_type: GENERAL
+    reason: "adventure-mode death text (the adventurer's own kills/deaths), distinct from CITIZEN_DEATH/PET_DEATH which are the fortress-mode death tripwire's own events"
+    confidence: likely
+  CITIZEN_DEATH:
+    id: 106
+    level: pause
+    alert_type: DEATH
+    reason: "a citizen or pet death report; this is the player-visibility-gated death signal (df-overseer-diff.lua's own 'death' category), in contrast to the fort's existing death tripwire which is built on the raw UNIT_DEATH eventful event -- research/2026-09-16-player-visibility.md tags UNIT_DEATH itself 'omniscient' because it fires for ANY unit's death engine-wide, ungated by visibility, while this REPORT-based CITIZEN_DEATH/PET_DEATH is the actual vanilla-legal channel. Recommend switching the death tripwire to this report id (see recommendation section)"
+    wake: [overseer]
+    confidence: verified
+  PET_DEATH:
+    id: 107
+    level: pause
+    alert_type: DEATH
+    reason: "a citizen or pet death report; this is the player-visibility-gated death signal (df-overseer-diff.lua's own 'death' category), in contrast to the fort's existing death tripwire which is built on the raw UNIT_DEATH eventful event -- research/2026-09-16-player-visibility.md tags UNIT_DEATH itself 'omniscient' because it fires for ANY unit's death engine-wide, ungated by visibility, while this REPORT-based CITIZEN_DEATH/PET_DEATH is the actual vanilla-legal channel. Recommend switching the death tripwire to this report id (see recommendation section)"
+    wake: [overseer]
+    confidence: verified
+  ENDGAME_EVENT_1:
+    id: 108
+    level: slow
+    alert_type: MONSTER
+    reason: "a world-tier endgame event is happening; rare and consequential enough to slow for, though this fort has never triggered one to verify against"
+    wake: [overseer]
+    confidence: unverified
+  ENDGAME_EVENT_1B:
+    id: 109
+    level: slow
+    alert_type: MONSTER
+    reason: "a world-tier endgame event is happening; rare and consequential enough to slow for, though this fort has never triggered one to verify against"
+    wake: [overseer]
+    confidence: unverified
+  ENDGAME_EVENT_2:
+    id: 110
+    level: slow
+    alert_type: MONSTER
+    reason: "a world-tier endgame event is happening; rare and consequential enough to slow for, though this fort has never triggered one to verify against"
+    wake: [overseer]
+    confidence: unverified
+  FALL_OVER:
+    id: 111
+    level: log_only
+    alert_type: GENERAL
+    reason: "a physiological or minor-combat status detail; part of the full report text but not a decision-worthy signal on its own -- CREATURE_STEALS_OBJECT is the player-visibility report's own named grey zone ('something was stolen' is vanilla-legal even if the thief stays hidden), kept here since a single theft is low-stakes and the AMBUSH_THIEF family already carries the higher-level signal"
+    confidence: likely
+  CAUGHT_IN_FLAMES:
+    id: 112
+    level: slow
+    alert_type: GENERAL
+    reason: "a unit is on fire or breathing fire; fast-developing physical harm, worth waking the Overseer even without a full pause since the outcome (a burn death) is already covered by the death tripwire once it happens"
+    wake: [overseer]
+    confidence: likely
+  CAUGHT_IN_WEB:
+    id: 113
+    level: notice
+    alert_type: GENERAL
+    reason: "a unit was caught in a web; usually recoverable, worth noting for the next wake rather than an immediate slow-down"
+    confidence: likely
+  UNIT_PROJECTILE_SLAM_BLOW_APART:
+    id: 114
+    level: log_only
+    alert_type: GENERAL
+    reason: "a physiological or minor-combat status detail; part of the full report text but not a decision-worthy signal on its own -- CREATURE_STEALS_OBJECT is the player-visibility report's own named grey zone ('something was stolen' is vanilla-legal even if the thief stays hidden), kept here since a single theft is low-stakes and the AMBUSH_THIEF family already carries the higher-level signal"
+    confidence: likely
+  UNIT_PROJECTILE_SLAM:
+    id: 115
+    level: log_only
+    alert_type: GENERAL
+    reason: "a physiological or minor-combat status detail; part of the full report text but not a decision-worthy signal on its own -- CREATURE_STEALS_OBJECT is the player-visibility report's own named grey zone ('something was stolen' is vanilla-legal even if the thief stays hidden), kept here since a single theft is low-stakes and the AMBUSH_THIEF family already carries the higher-level signal"
+    confidence: likely
+  UNIT_PROJECTILE_SLAM_INTO_UNIT:
+    id: 116
+    level: log_only
+    alert_type: GENERAL
+    reason: "a physiological or minor-combat status detail; part of the full report text but not a decision-worthy signal on its own -- CREATURE_STEALS_OBJECT is the player-visibility report's own named grey zone ('something was stolen' is vanilla-legal even if the thief stays hidden), kept here since a single theft is low-stakes and the AMBUSH_THIEF family already carries the higher-level signal"
+    confidence: likely
+  VOMIT:
+    id: 117
+    level: log_only
+    alert_type: GENERAL
+    reason: "a physiological or minor-combat status detail; part of the full report text but not a decision-worthy signal on its own -- CREATURE_STEALS_OBJECT is the player-visibility report's own named grey zone ('something was stolen' is vanilla-legal even if the thief stays hidden), kept here since a single theft is low-stakes and the AMBUSH_THIEF family already carries the higher-level signal"
+    confidence: likely
+  LOSE_HOLD_OF_ITEM:
+    id: 118
+    level: log_only
+    alert_type: GENERAL
+    reason: "a physiological or minor-combat status detail; part of the full report text but not a decision-worthy signal on its own -- CREATURE_STEALS_OBJECT is the player-visibility report's own named grey zone ('something was stolen' is vanilla-legal even if the thief stays hidden), kept here since a single theft is low-stakes and the AMBUSH_THIEF family already carries the higher-level signal"
+    confidence: likely
+  REGAIN_CONSCIOUSNESS:
+    id: 119
+    level: log_only
+    alert_type: GENERAL
+    reason: "a physiological or minor-combat status detail; part of the full report text but not a decision-worthy signal on its own -- CREATURE_STEALS_OBJECT is the player-visibility report's own named grey zone ('something was stolen' is vanilla-legal even if the thief stays hidden), kept here since a single theft is low-stakes and the AMBUSH_THIEF family already carries the higher-level signal"
+    confidence: likely
+  FREE_FROM_WEB:
+    id: 120
+    level: log_only
+    alert_type: GENERAL
+    reason: "a physiological or minor-combat status detail; part of the full report text but not a decision-worthy signal on its own -- CREATURE_STEALS_OBJECT is the player-visibility report's own named grey zone ('something was stolen' is vanilla-legal even if the thief stays hidden), kept here since a single theft is low-stakes and the AMBUSH_THIEF family already carries the higher-level signal"
+    confidence: likely
+  PARALYZED:
+    id: 121
+    level: log_only
+    alert_type: GENERAL
+    reason: "a physiological or minor-combat status detail; part of the full report text but not a decision-worthy signal on its own -- CREATURE_STEALS_OBJECT is the player-visibility report's own named grey zone ('something was stolen' is vanilla-legal even if the thief stays hidden), kept here since a single theft is low-stakes and the AMBUSH_THIEF family already carries the higher-level signal"
+    confidence: likely
+  OVERCOME_PARALYSIS:
+    id: 122
+    level: log_only
+    alert_type: GENERAL
+    reason: "a physiological or minor-combat status detail; part of the full report text but not a decision-worthy signal on its own -- CREATURE_STEALS_OBJECT is the player-visibility report's own named grey zone ('something was stolen' is vanilla-legal even if the thief stays hidden), kept here since a single theft is low-stakes and the AMBUSH_THIEF family already carries the higher-level signal"
+    confidence: likely
+  NOT_STUNNED:
+    id: 123
+    level: log_only
+    alert_type: GENERAL
+    reason: "a physiological or minor-combat status detail; part of the full report text but not a decision-worthy signal on its own -- CREATURE_STEALS_OBJECT is the player-visibility report's own named grey zone ('something was stolen' is vanilla-legal even if the thief stays hidden), kept here since a single theft is low-stakes and the AMBUSH_THIEF family already carries the higher-level signal"
+    confidence: likely
+  EXHAUSTION:
+    id: 124
+    level: log_only
+    alert_type: GENERAL
+    reason: "a physiological or minor-combat status detail; part of the full report text but not a decision-worthy signal on its own -- CREATURE_STEALS_OBJECT is the player-visibility report's own named grey zone ('something was stolen' is vanilla-legal even if the thief stays hidden), kept here since a single theft is low-stakes and the AMBUSH_THIEF family already carries the higher-level signal"
+    confidence: likely
+  PAIN_KO:
+    id: 125
+    level: log_only
+    alert_type: GENERAL
+    reason: "a physiological or minor-combat status detail; part of the full report text but not a decision-worthy signal on its own -- CREATURE_STEALS_OBJECT is the player-visibility report's own named grey zone ('something was stolen' is vanilla-legal even if the thief stays hidden), kept here since a single theft is low-stakes and the AMBUSH_THIEF family already carries the higher-level signal"
+    confidence: likely
+  BREAK_GRIP:
+    id: 126
+    level: log_only
+    alert_type: GENERAL
+    reason: "a physiological or minor-combat status detail; part of the full report text but not a decision-worthy signal on its own -- CREATURE_STEALS_OBJECT is the player-visibility report's own named grey zone ('something was stolen' is vanilla-legal even if the thief stays hidden), kept here since a single theft is low-stakes and the AMBUSH_THIEF family already carries the higher-level signal"
+    confidence: likely
+  NO_BREAK_GRIP:
+    id: 127
+    level: log_only
+    alert_type: GENERAL
+    reason: "a physiological or minor-combat status detail; part of the full report text but not a decision-worthy signal on its own -- CREATURE_STEALS_OBJECT is the player-visibility report's own named grey zone ('something was stolen' is vanilla-legal even if the thief stays hidden), kept here since a single theft is low-stakes and the AMBUSH_THIEF family already carries the higher-level signal"
+    confidence: likely
+  BLOCK_FIRE:
+    id: 128
+    level: slow
+    alert_type: GENERAL
+    reason: "a unit is on fire or breathing fire; fast-developing physical harm, worth waking the Overseer even without a full pause since the outcome (a burn death) is already covered by the death tripwire once it happens"
+    wake: [overseer]
+    confidence: likely
+  BREATHE_FIRE:
+    id: 129
+    level: slow
+    alert_type: GENERAL
+    reason: "a unit is on fire or breathing fire; fast-developing physical harm, worth waking the Overseer even without a full pause since the outcome (a burn death) is already covered by the death tripwire once it happens"
+    wake: [overseer]
+    confidence: likely
+  SHOOT_WEB:
+    id: 130
+    level: log_only
+    alert_type: GENERAL
+    reason: "a physiological or minor-combat status detail; part of the full report text but not a decision-worthy signal on its own -- CREATURE_STEALS_OBJECT is the player-visibility report's own named grey zone ('something was stolen' is vanilla-legal even if the thief stays hidden), kept here since a single theft is low-stakes and the AMBUSH_THIEF family already carries the higher-level signal"
+    confidence: likely
+  PULL_OUT_DROP:
+    id: 131
+    level: log_only
+    alert_type: GENERAL
+    reason: "a physiological or minor-combat status detail; part of the full report text but not a decision-worthy signal on its own -- CREATURE_STEALS_OBJECT is the player-visibility report's own named grey zone ('something was stolen' is vanilla-legal even if the thief stays hidden), kept here since a single theft is low-stakes and the AMBUSH_THIEF family already carries the higher-level signal"
+    confidence: likely
+  STAND_UP:
+    id: 132
+    level: log_only
+    alert_type: GENERAL
+    reason: "a physiological or minor-combat status detail; part of the full report text but not a decision-worthy signal on its own -- CREATURE_STEALS_OBJECT is the player-visibility report's own named grey zone ('something was stolen' is vanilla-legal even if the thief stays hidden), kept here since a single theft is low-stakes and the AMBUSH_THIEF family already carries the higher-level signal"
+    confidence: likely
+  MARTIAL_TRANCE:
+    id: 133
+    level: log_only
+    alert_type: MARTIAL_TRANCE
+    reason: "a physiological or minor-combat status detail; part of the full report text but not a decision-worthy signal on its own -- CREATURE_STEALS_OBJECT is the player-visibility report's own named grey zone ('something was stolen' is vanilla-legal even if the thief stays hidden), kept here since a single theft is low-stakes and the AMBUSH_THIEF family already carries the higher-level signal"
+    confidence: likely
+  MAT_BREATH:
+    id: 134
+    level: log_only
+    alert_type: GENERAL
+    reason: "a physiological or minor-combat status detail; part of the full report text but not a decision-worthy signal on its own -- CREATURE_STEALS_OBJECT is the player-visibility report's own named grey zone ('something was stolen' is vanilla-legal even if the thief stays hidden), kept here since a single theft is low-stakes and the AMBUSH_THIEF family already carries the higher-level signal"
+    confidence: likely
+  ADV_REACTION_PRODUCTS:
+    id: 135
+    level: ignore
+    alert_type: GENERAL
+    reason: "adventure-mode player-character action/failure text; this fort runs fortress mode only"
+    confidence: likely
+  NIGHT_ATTACK_STARTS:
+    id: 136
+    level: pause
+    alert_type: GENERAL
+    reason: "a night attack (vampire/creature preying at night) has started; already tagged night_attack in df-overseer-diff.lua as a fort-defense signal, though its real fortress-mode delivery is unverified -- see confidence note"
+    wake: [overseer]
+    confidence: unverified
+  NIGHT_ATTACK_ENDS:
+    id: 137
+    level: ignore
+    alert_type: GENERAL
+    reason: "adventure-mode UI/action text; this fort runs fortress mode only, or (AMBUSH_HERO) is the adventure-mode hero-ambush variant distinct from the fortress AMBUSH_* family"
+    confidence: likely
+  NIGHT_ATTACK_TRAVEL:
+    id: 138
+    level: ignore
+    alert_type: GENERAL
+    reason: "adventure-mode UI/action text; this fort runs fortress mode only, or (AMBUSH_HERO) is the adventure-mode hero-ambush variant distinct from the fortress AMBUSH_* family"
+    confidence: likely
+  GHOST_ATTACK:
+    id: 139
+    level: pause
+    alert_type: GHOST
+    reason: "undead or a ghost is attacking; DF's own alert_type UNDEAD_ATTACK/GHOST confirm this is treated as a distinct severe class, and the player-visibility report already names this family as the vanilla-legal 'something is wrong' signal for a hidden actor"
+    wake: [overseer]
+    confidence: likely
+  FLAME_HIT:
+    id: 140
+    level: slow
+    alert_type: GENERAL
+    reason: "a unit is on fire or breathing fire; fast-developing physical harm, worth waking the Overseer even without a full pause since the outcome (a burn death) is already covered by the death tripwire once it happens"
+    wake: [overseer]
+    confidence: likely
+  TRAVEL_SITE_DISCOVERY:
+    id: 141
+    level: ignore
+    alert_type: GENERAL
+    reason: "adventure-mode UI/action text; this fort runs fortress mode only, or (AMBUSH_HERO) is the adventure-mode hero-ambush variant distinct from the fortress AMBUSH_* family"
+    confidence: likely
+  TRAVEL_SITE_BUMP:
+    id: 142
+    level: ignore
+    alert_type: GENERAL
+    reason: "adventure-mode UI/action text; this fort runs fortress mode only, or (AMBUSH_HERO) is the adventure-mode hero-ambush variant distinct from the fortress AMBUSH_* family"
+    confidence: likely
+  ADVENTURE_INTRO:
+    id: 143
+    level: ignore
+    alert_type: GENERAL
+    reason: "adventure-mode UI/action text; this fort runs fortress mode only, or (AMBUSH_HERO) is the adventure-mode hero-ambush variant distinct from the fortress AMBUSH_* family"
+    confidence: likely
+  CREATURE_SOUND:
+    id: 144
+    level: log_only
+    alert_type: GENERAL
+    reason: "flavor-tier unit/animal action text, no decision attached"
+    confidence: likely
+  CREATURE_STEALS_OBJECT:
+    id: 145
+    level: log_only
+    alert_type: CRIME
+    reason: "a physiological or minor-combat status detail; part of the full report text but not a decision-worthy signal on its own -- CREATURE_STEALS_OBJECT is the player-visibility report's own named grey zone ('something was stolen' is vanilla-legal even if the thief stays hidden), kept here since a single theft is low-stakes and the AMBUSH_THIEF family already carries the higher-level signal"
+    confidence: likely
+  FOUND_TRAP:
+    id: 146
+    level: notice
+    alert_type: GENERAL
+    reason: "a trap was found or triggered; situational, low frequency"
+    confidence: unverified
+  BODY_TRANSFORMATION:
+    id: 147
+    level: pause
+    alert_type: MONSTER
+    reason: "a unit is transforming (werebeast curse taking effect); the single most severe slow-burn threat DF has, must be caught immediately since the transformed unit becomes a fort-internal threat"
+    wake: [overseer]
+    confidence: likely
+  INTERACTION_ACTOR:
+    id: 148
+    level: pause
+    alert_type: GENERAL
+    reason: "a vampire/werebeast/other supernatural interaction fired on or by a unit; the precursor event to BODY_TRANSFORMATION and worth catching before the transformation itself"
+    wake: [overseer]
+    confidence: unverified
+  INTERACTION_TARGET:
+    id: 149
+    level: pause
+    alert_type: GENERAL
+    reason: "a vampire/werebeast/other supernatural interaction fired on or by a unit; the precursor event to BODY_TRANSFORMATION and worth catching before the transformation itself"
+    wake: [overseer]
+    confidence: unverified
+  UNDEAD_ATTACK:
+    id: 150
+    level: pause
+    alert_type: UNDEAD_ATTACK
+    reason: "undead or a ghost is attacking; DF's own alert_type UNDEAD_ATTACK/GHOST confirm this is treated as a distinct severe class, and the player-visibility report already names this family as the vanilla-legal 'something is wrong' signal for a hidden actor"
+    wake: [overseer]
+    confidence: likely
+  CITIZEN_MISSING:
+    id: 151
+    level: slow
+    alert_type: DEATH
+    reason: "a citizen is reported missing; could mean lost, trapped or dead off-screen, worth checking soon"
+    wake: [overseer]
+    confidence: likely
+  PET_MISSING:
+    id: 152
+    level: notice
+    alert_type: DEATH
+    reason: "a pet is missing; lower stakes than a citizen, worth noting"
+    confidence: likely
+  EMBRACE:
+    id: 153
+    level: slow
+    alert_type: GENERAL
+    reason: "a vampire has embraced a victim; a subtle, hard-to-detect precursor threat worth a look though not urgent in ticks"
+    wake: [overseer]
+    confidence: unverified
+  STRANGE_RAIN_SNOW:
+    id: 154
+    level: slow
+    alert_type: WEATHER
+    reason: "an unnatural weather event (syndrome-carrying rain/cloud) is occurring; can injure or transform any citizen caught outside, worth a look at thinking speed"
+    wake: [overseer]
+    confidence: likely
+  STRANGE_CLOUD:
+    id: 155
+    level: slow
+    alert_type: WEATHER
+    reason: "an unnatural weather event (syndrome-carrying rain/cloud) is occurring; can injure or transform any citizen caught outside, worth a look at thinking speed"
+    wake: [overseer]
+    confidence: likely
+  SIMPLE_ANIMAL_ACTION:
+    id: 156
+    level: log_only
+    alert_type: GENERAL
+    reason: "flavor-tier unit/animal action text, no decision attached"
+    confidence: likely
+  FLOUNDER_IN_LIQUID:
+    id: 157
+    level: log_only
+    alert_type: GENERAL
+    reason: "flavor-tier unit/animal action text, no decision attached"
+    confidence: likely
+  TRAINING_DOWN_TO_SEMI_WILD:
+    id: 158
+    level: log_only
+    alert_type: ANIMAL
+    reason: "flavor-tier unit/animal action text, no decision attached"
+    confidence: likely
+  TRAINING_FULL_REVERSION:
+    id: 159
+    level: log_only
+    alert_type: ANIMAL
+    reason: "flavor-tier unit/animal action text, no decision attached"
+    confidence: likely
+  ANIMAL_TRAINING_KNOWLEDGE:
+    id: 160
+    level: log_only
+    alert_type: ANIMAL
+    reason: "flavor-tier unit/animal action text, no decision attached"
+    confidence: likely
+  SKIP_ON_LIQUID:
+    id: 161
+    level: log_only
+    alert_type: GENERAL
+    reason: "flavor-tier unit/animal action text, no decision attached"
+    confidence: likely
+  DODGE_FLYING_OBJECT:
+    id: 162
+    level: log_only
+    alert_type: GENERAL
+    reason: "flavor-tier unit/animal action text, no decision attached"
+    confidence: likely
+  REGULAR_CONVERSATION:
+    id: 163
+    level: ignore
+    alert_type: RUMOR
+    reason: "adventure-mode UI/action text; this fort runs fortress mode only, or (AMBUSH_HERO) is the adventure-mode hero-ambush variant distinct from the fortress AMBUSH_* family"
+    confidence: likely
+  BANDIT_EMPTY_CONTAINER:
+    id: 164
+    level: ignore
+    alert_type: GENERAL
+    reason: "adventure-mode UI/action text; this fort runs fortress mode only, or (AMBUSH_HERO) is the adventure-mode hero-ambush variant distinct from the fortress AMBUSH_* family"
+    confidence: likely
+  BANDIT_GRAB_ITEM:
+    id: 165
+    level: ignore
+    alert_type: GENERAL
+    reason: "adventure-mode UI/action text; this fort runs fortress mode only, or (AMBUSH_HERO) is the adventure-mode hero-ambush variant distinct from the fortress AMBUSH_* family"
+    confidence: likely
+  COMBAT_EVENT_ATTACK_INTERRUPTED:
+    id: 166
+    level: log_only
+    alert_type: GENERAL
+    reason: "blow-by-blow combat mechanic (strike/dodge/block/wrestle/status detail); already grouped by df-overseer-diff.lua's own REPORT_CATEGORY (strike/miss_or_block/charge/grapple/status) as combat detail, never the top-level signal -- the aggregate ('a fight is happening', already pause/slow via the ambush/undead/death families) is the signal, this is the full-report-text tier only"
+    confidence: verified
+  COMBAT_WRESTLE_CATCH_ATTACK:
+    id: 167
+    level: log_only
+    alert_type: GENERAL
+    reason: "blow-by-blow combat mechanic (strike/dodge/block/wrestle/status detail); already grouped by df-overseer-diff.lua's own REPORT_CATEGORY (strike/miss_or_block/charge/grapple/status) as combat detail, never the top-level signal -- the aggregate ('a fight is happening', already pause/slow via the ambush/undead/death families) is the signal, this is the full-report-text tier only"
+    confidence: verified
+  FAIL_TO_GRAB_SURFACE:
+    id: 168
+    level: log_only
+    alert_type: GENERAL
+    reason: "climbing/grip status detail, part of a combat or accident sequence's full text"
+    confidence: likely
+  LOSE_HOLD_OF_SURFACE:
+    id: 169
+    level: log_only
+    alert_type: GENERAL
+    reason: "climbing/grip status detail, part of a combat or accident sequence's full text"
+    confidence: likely
+  TRAVEL_COMPLAINT:
+    id: 170
+    level: ignore
+    alert_type: GENERAL
+    reason: "adventure-mode UI/action text; this fort runs fortress mode only, or (AMBUSH_HERO) is the adventure-mode hero-ambush variant distinct from the fortress AMBUSH_* family"
+    confidence: likely
+  LOSE_EMOTION:
+    id: 171
+    level: log_only
+    alert_type: LOSE_EMOTION
+    reason: "flavor-tier unit/animal action text, no decision attached"
+    confidence: likely
+  REORGANIZE_POSSESSIONS:
+    id: 172
+    level: log_only
+    alert_type: GENERAL
+    reason: "flavor-tier unit/animal action text, no decision attached"
+    confidence: likely
+  PUSH_ITEM:
+    id: 173
+    level: log_only
+    alert_type: GENERAL
+    reason: "flavor-tier unit/animal action text, no decision attached"
+    confidence: likely
+  DRAW_ITEM:
+    id: 174
+    level: log_only
+    alert_type: GENERAL
+    reason: "flavor-tier unit/animal action text, no decision attached"
+    confidence: likely
+  STRAP_ITEM:
+    id: 175
+    level: log_only
+    alert_type: GENERAL
+    reason: "flavor-tier unit/animal action text, no decision attached"
+    confidence: likely
+  GAIN_SITE_CONTROL:
+    id: 176
+    level: notice
+    alert_type: GENERAL
+    reason: "the fort's civilization gained control of a site; background world event, worth a briefing line"
+    confidence: likely
+  CONFLICT_CONVERSATION:
+    id: 177
+    level: log_only
+    alert_type: GENERAL
+    reason: "conversational combat narration; already tagged hostile_speech in df-overseer-diff.lua as combat-detail, grouped with strike/miss_or_block rather than the higher ambush/undead signal"
+    confidence: verified
+  FORT_POSITION_SUCCESSION:
+    id: 178
+    level: notice
+    alert_type: NOBLE
+    reason: "a noble position changed hands; affects who holds an office (directly relevant to the fort's own stuck-Manager problem, docs/AGENT-LOOP.md), worth a briefing line but not urgent in ticks"
+    confidence: likely
+  MECHANISM_SOUND:
+    id: 179
+    level: log_only
+    alert_type: GENERAL
+    reason: "flavor-tier unit/animal action text, no decision attached"
+    confidence: likely
+  BIRTH_WILD_ANIMAL:
+    id: 180
+    level: notice
+    alert_type: BIRTH
+    reason: "a routine population event (birth, coming of age, marriage); background demographic information"
+    confidence: likely
+  STRESSED_CITIZEN:
+    id: 181
+    level: slow
+    alert_type: STRESS
+    reason: "a citizen is stressed or tantruming; a precursor to CITIZEN_LOST_TO_STRESS/BERSERK_CITIZEN, worth the Overseer noticing before it escalates to a pause-worthy event"
+    wake: [overseer]
+    confidence: likely
+  CITIZEN_LOST_TO_STRESS:
+    id: 182
+    level: pause
+    alert_type: STRESS
+    reason: "a citizen has broken down from stress (DF v50's tantrum-spiral endpoint: catatonic or worse); death-adjacent and irreversible"
+    wake: [overseer]
+    confidence: likely
+  CITIZEN_TANTRUM:
+    id: 183
+    level: slow
+    alert_type: STRESS
+    reason: "a citizen is stressed or tantruming; a precursor to CITIZEN_LOST_TO_STRESS/BERSERK_CITIZEN, worth the Overseer noticing before it escalates to a pause-worthy event"
+    wake: [overseer]
+    confidence: likely
+  MOVED_OUT_OF_RANGE:
+    id: 184
+    level: ignore
+    alert_type: GENERAL
+    reason: "adventure-mode UI/action text; this fort runs fortress mode only, or (AMBUSH_HERO) is the adventure-mode hero-ambush variant distinct from the fortress AMBUSH_* family"
+    confidence: likely
+  CANNOT_JUMP:
+    id: 185
+    level: ignore
+    alert_type: GENERAL
+    reason: "adventure-mode UI/action text; this fort runs fortress mode only, or (AMBUSH_HERO) is the adventure-mode hero-ambush variant distinct from the fortress AMBUSH_* family"
+    confidence: likely
+  NO_TRACKS:
+    id: 186
+    level: ignore
+    alert_type: GENERAL
+    reason: "adventure-mode UI/action text; this fort runs fortress mode only, or (AMBUSH_HERO) is the adventure-mode hero-ambush variant distinct from the fortress AMBUSH_* family"
+    confidence: likely
+  ALREADY_SEARCHED_AREA:
+    id: 187
+    level: ignore
+    alert_type: GENERAL
+    reason: "adventure-mode UI/action text; this fort runs fortress mode only, or (AMBUSH_HERO) is the adventure-mode hero-ambush variant distinct from the fortress AMBUSH_* family"
+    confidence: likely
+  SEARCH_FOUND_SOMETHING:
+    id: 188
+    level: ignore
+    alert_type: GENERAL
+    reason: "adventure-mode UI/action text; this fort runs fortress mode only, or (AMBUSH_HERO) is the adventure-mode hero-ambush variant distinct from the fortress AMBUSH_* family"
+    confidence: likely
+  SEARCH_FOUND_NOTHING:
+    id: 189
+    level: ignore
+    alert_type: GENERAL
+    reason: "adventure-mode UI/action text; this fort runs fortress mode only, or (AMBUSH_HERO) is the adventure-mode hero-ambush variant distinct from the fortress AMBUSH_* family"
+    confidence: likely
+  NOTHING_TO_INTERACT:
+    id: 190
+    level: ignore
+    alert_type: GENERAL
+    reason: "adventure-mode UI/action text; this fort runs fortress mode only, or (AMBUSH_HERO) is the adventure-mode hero-ambush variant distinct from the fortress AMBUSH_* family"
+    confidence: likely
+  NOTHING_TO_EXAMINE:
+    id: 191
+    level: ignore
+    alert_type: GENERAL
+    reason: "adventure-mode UI/action text; this fort runs fortress mode only, or (AMBUSH_HERO) is the adventure-mode hero-ambush variant distinct from the fortress AMBUSH_* family"
+    confidence: likely
+  YOU_YIELDED:
+    id: 192
+    level: ignore
+    alert_type: GENERAL
+    reason: "adventure-mode player-character action/failure text; this fort runs fortress mode only"
+    confidence: likely
+  YOU_UNYIELDED:
+    id: 193
+    level: ignore
+    alert_type: GENERAL
+    reason: "adventure-mode player-character action/failure text; this fort runs fortress mode only"
+    confidence: likely
+  YOU_STRAP_ITEM:
+    id: 194
+    level: ignore
+    alert_type: GENERAL
+    reason: "adventure-mode player-character action/failure text; this fort runs fortress mode only"
+    confidence: likely
+  YOU_DRAW_ITEM:
+    id: 195
+    level: ignore
+    alert_type: GENERAL
+    reason: "adventure-mode player-character action/failure text; this fort runs fortress mode only"
+    confidence: likely
+  NO_GRASP_TO_DRAW_ITEM:
+    id: 196
+    level: ignore
+    alert_type: GENERAL
+    reason: "adventure-mode player-character action/failure text; this fort runs fortress mode only"
+    confidence: likely
+  NO_ITEM_TO_STRAP:
+    id: 197
+    level: ignore
+    alert_type: GENERAL
+    reason: "adventure-mode player-character action/failure text; this fort runs fortress mode only"
+    confidence: likely
+  NO_INV_TO_REMOVE:
+    id: 198
+    level: ignore
+    alert_type: GENERAL
+    reason: "adventure-mode player-character action/failure text; this fort runs fortress mode only"
+    confidence: likely
+  NO_INV_TO_WEAR:
+    id: 199
+    level: ignore
+    alert_type: GENERAL
+    reason: "adventure-mode player-character action/failure text; this fort runs fortress mode only"
+    confidence: likely
+  NO_INV_TO_EAT:
+    id: 200
+    level: ignore
+    alert_type: GENERAL
+    reason: "adventure-mode player-character action/failure text; this fort runs fortress mode only"
+    confidence: likely
+  NO_INV_TO_CONTAIN:
+    id: 201
+    level: ignore
+    alert_type: GENERAL
+    reason: "adventure-mode player-character action/failure text; this fort runs fortress mode only"
+    confidence: likely
+  NO_INV_TO_DROP:
+    id: 202
+    level: ignore
+    alert_type: GENERAL
+    reason: "adventure-mode player-character action/failure text; this fort runs fortress mode only"
+    confidence: likely
+  NOTHING_TO_PICK_UP:
+    id: 203
+    level: ignore
+    alert_type: GENERAL
+    reason: "adventure-mode UI/action text; this fort runs fortress mode only, or (AMBUSH_HERO) is the adventure-mode hero-ambush variant distinct from the fortress AMBUSH_* family"
+    confidence: likely
+  NO_INV_TO_THROW:
+    id: 204
+    level: ignore
+    alert_type: GENERAL
+    reason: "adventure-mode player-character action/failure text; this fort runs fortress mode only"
+    confidence: likely
+  NO_INV_TO_FIRE:
+    id: 205
+    level: ignore
+    alert_type: GENERAL
+    reason: "adventure-mode player-character action/failure text; this fort runs fortress mode only"
+    confidence: likely
+  CURRENT_SMELL:
+    id: 206
+    level: ignore
+    alert_type: GENERAL
+    reason: "adventure-mode UI/action text; this fort runs fortress mode only, or (AMBUSH_HERO) is the adventure-mode hero-ambush variant distinct from the fortress AMBUSH_* family"
+    confidence: likely
+  CURRENT_WEATHER:
+    id: 207
+    level: ignore
+    alert_type: GENERAL
+    reason: "adventure-mode UI/action text; this fort runs fortress mode only, or (AMBUSH_HERO) is the adventure-mode hero-ambush variant distinct from the fortress AMBUSH_* family"
+    confidence: likely
+  CURRENT_TEMPERATURE:
+    id: 208
+    level: ignore
+    alert_type: GENERAL
+    reason: "adventure-mode UI/action text; this fort runs fortress mode only, or (AMBUSH_HERO) is the adventure-mode hero-ambush variant distinct from the fortress AMBUSH_* family"
+    confidence: likely
+  CURRENT_DATE:
+    id: 209
+    level: ignore
+    alert_type: GENERAL
+    reason: "adventure-mode UI/action text; this fort runs fortress mode only, or (AMBUSH_HERO) is the adventure-mode hero-ambush variant distinct from the fortress AMBUSH_* family"
+    confidence: likely
+  NO_GRASP_FOR_PICKUP:
+    id: 210
+    level: ignore
+    alert_type: GENERAL
+    reason: "adventure-mode player-character action/failure text; this fort runs fortress mode only"
+    confidence: likely
+  CANNOT_CHOP_TREE:
+    id: 211
+    level: ignore
+    alert_type: GENERAL
+    reason: "adventure-mode action-failure text (a UI response to a player-character command this automation never issues)"
+    confidence: likely
+  CANNOT_CLIMB:
+    id: 212
+    level: ignore
+    alert_type: GENERAL
+    reason: "adventure-mode action-failure text (a UI response to a player-character command this automation never issues)"
+    confidence: likely
+  CANNOT_STAND:
+    id: 213
+    level: ignore
+    alert_type: GENERAL
+    reason: "adventure-mode action-failure text (a UI response to a player-character command this automation never issues)"
+    confidence: likely
+  MUST_UNRETRACT_FIRST:
+    id: 214
+    level: ignore
+    alert_type: GENERAL
+    reason: "adventure-mode UI/action text; this fort runs fortress mode only, or (AMBUSH_HERO) is the adventure-mode hero-ambush variant distinct from the fortress AMBUSH_* family"
+    confidence: likely
+  CANNOT_REST:
+    id: 215
+    level: ignore
+    alert_type: GENERAL
+    reason: "adventure-mode action-failure text (a UI response to a player-character command this automation never issues)"
+    confidence: likely
+  CANNOT_MAKE_CAMPFIRE:
+    id: 216
+    level: ignore
+    alert_type: GENERAL
+    reason: "adventure-mode action-failure text (a UI response to a player-character command this automation never issues)"
+    confidence: likely
+  MADE_CAMPFIRE:
+    id: 217
+    level: ignore
+    alert_type: GENERAL
+    reason: "adventure-mode UI/action text; this fort runs fortress mode only, or (AMBUSH_HERO) is the adventure-mode hero-ambush variant distinct from the fortress AMBUSH_* family"
+    confidence: likely
+  CANNOT_SET_FIRE:
+    id: 218
+    level: ignore
+    alert_type: GENERAL
+    reason: "adventure-mode action-failure text (a UI response to a player-character command this automation never issues)"
+    confidence: likely
+  SET_FIRE:
+    id: 219
+    level: ignore
+    alert_type: GENERAL
+    reason: "adventure-mode UI/action text; this fort runs fortress mode only, or (AMBUSH_HERO) is the adventure-mode hero-ambush variant distinct from the fortress AMBUSH_* family"
+    confidence: likely
+  DAWN_BREAKS:
+    id: 220
+    level: ignore
+    alert_type: GENERAL
+    reason: "adventure-mode UI/action text; this fort runs fortress mode only, or (AMBUSH_HERO) is the adventure-mode hero-ambush variant distinct from the fortress AMBUSH_* family"
+    confidence: likely
+  NOON:
+    id: 221
+    level: ignore
+    alert_type: GENERAL
+    reason: "adventure-mode UI/action text; this fort runs fortress mode only, or (AMBUSH_HERO) is the adventure-mode hero-ambush variant distinct from the fortress AMBUSH_* family"
+    confidence: likely
+  NIGHTFALL:
+    id: 222
+    level: ignore
+    alert_type: GENERAL
+    reason: "adventure-mode UI/action text; this fort runs fortress mode only, or (AMBUSH_HERO) is the adventure-mode hero-ambush variant distinct from the fortress AMBUSH_* family"
+    confidence: likely
+  UNUSED_0001:
+    id: 223
+    level: ignore
+    alert_type: GENERAL
+    reason: "unused enum slots"
+    confidence: verified
+  EMPTY_CONTAINER:
+    id: 224
+    level: ignore
+    alert_type: GENERAL
+    reason: "adventure-mode UI/action text; this fort runs fortress mode only, or (AMBUSH_HERO) is the adventure-mode hero-ambush variant distinct from the fortress AMBUSH_* family"
+    confidence: likely
+  TAKE_OUT_OF_CONTAINER:
+    id: 225
+    level: ignore
+    alert_type: GENERAL
+    reason: "adventure-mode UI/action text; this fort runs fortress mode only, or (AMBUSH_HERO) is the adventure-mode hero-ambush variant distinct from the fortress AMBUSH_* family"
+    confidence: likely
+  UNUSED_0002:
+    id: 226
+    level: ignore
+    alert_type: GENERAL
+    reason: "unused enum slots"
+    confidence: verified
+  PUT_INTO_CONTAINER:
+    id: 227
+    level: ignore
+    alert_type: GENERAL
+    reason: "adventure-mode UI/action text; this fort runs fortress mode only, or (AMBUSH_HERO) is the adventure-mode hero-ambush variant distinct from the fortress AMBUSH_* family"
+    confidence: likely
+  EAT_ITEM:
+    id: 228
+    level: ignore
+    alert_type: GENERAL
+    reason: "adventure-mode UI/action text; this fort runs fortress mode only, or (AMBUSH_HERO) is the adventure-mode hero-ambush variant distinct from the fortress AMBUSH_* family"
+    confidence: likely
+  DRINK_ITEM:
+    id: 229
+    level: ignore
+    alert_type: GENERAL
+    reason: "adventure-mode UI/action text; this fort runs fortress mode only, or (AMBUSH_HERO) is the adventure-mode hero-ambush variant distinct from the fortress AMBUSH_* family"
+    confidence: likely
+  CONSUME_FAILURE:
+    id: 230
+    level: ignore
+    alert_type: GENERAL
+    reason: "adventure-mode UI/action text; this fort runs fortress mode only, or (AMBUSH_HERO) is the adventure-mode hero-ambush variant distinct from the fortress AMBUSH_* family"
+    confidence: likely
+  DROP_ITEM:
+    id: 231
+    level: ignore
+    alert_type: GENERAL
+    reason: "adventure-mode UI/action text; this fort runs fortress mode only, or (AMBUSH_HERO) is the adventure-mode hero-ambush variant distinct from the fortress AMBUSH_* family"
+    confidence: likely
+  PICK_UP_ITEM:
+    id: 232
+    level: ignore
+    alert_type: GENERAL
+    reason: "adventure-mode UI/action text; this fort runs fortress mode only, or (AMBUSH_HERO) is the adventure-mode hero-ambush variant distinct from the fortress AMBUSH_* family"
+    confidence: likely
+  YOU_BUILDING_INTERACTION:
+    id: 233
+    level: ignore
+    alert_type: GENERAL
+    reason: "adventure-mode player-character action/failure text; this fort runs fortress mode only"
+    confidence: likely
+  YOU_ITEM_INTERACTION:
+    id: 234
+    level: ignore
+    alert_type: GENERAL
+    reason: "adventure-mode player-character action/failure text; this fort runs fortress mode only"
+    confidence: likely
+  YOU_TEMPERATURE_EFFECTS:
+    id: 235
+    level: ignore
+    alert_type: GENERAL
+    reason: "adventure-mode player-character action/failure text; this fort runs fortress mode only"
+    confidence: likely
+  PROFESSION_CHANGES:
+    id: 236
+    level: notice
+    alert_type: LABOR_CHANGE
+    reason: "a citizen's role or rank changed; background labor/military information relevant to the Quartermaster's next labor pass"
+    confidence: likely
+  RECRUIT_PROMOTED:
+    id: 237
+    level: notice
+    alert_type: MILITARY
+    reason: "a citizen's role or rank changed; background labor/military information relevant to the Quartermaster's next labor pass"
+    confidence: likely
+  SOLDIER_BECOMES_MASTER:
+    id: 238
+    level: notice
+    alert_type: MILITARY
+    reason: "a citizen's role or rank changed; background labor/military information relevant to the Quartermaster's next labor pass"
+    confidence: likely
+  RESOLVE_SHARED_ITEMS:
+    id: 239
+    level: log_only
+    alert_type: GENERAL
+    reason: "a physiological or minor-combat status detail; part of the full report text but not a decision-worthy signal on its own -- CREATURE_STEALS_OBJECT is the player-visibility report's own named grey zone ('something was stolen' is vanilla-legal even if the thief stays hidden), kept here since a single theft is low-stakes and the AMBUSH_THIEF family already carries the higher-level signal"
+    confidence: likely
+  COUGH_BLOOD:
+    id: 240
+    level: log_only
+    alert_type: GENERAL
+    reason: "a physiological or minor-combat status detail; part of the full report text but not a decision-worthy signal on its own -- CREATURE_STEALS_OBJECT is the player-visibility report's own named grey zone ('something was stolen' is vanilla-legal even if the thief stays hidden), kept here since a single theft is low-stakes and the AMBUSH_THIEF family already carries the higher-level signal"
+    confidence: likely
+  VOMIT_BLOOD:
+    id: 241
+    level: log_only
+    alert_type: GENERAL
+    reason: "a physiological or minor-combat status detail; part of the full report text but not a decision-worthy signal on its own -- CREATURE_STEALS_OBJECT is the player-visibility report's own named grey zone ('something was stolen' is vanilla-legal even if the thief stays hidden), kept here since a single theft is low-stakes and the AMBUSH_THIEF family already carries the higher-level signal"
+    confidence: likely
+  MERCHANTS_UNLOADING:
+    id: 242
+    level: notice
+    alert_type: TRADE
+    reason: "caravan/trade-timing information; useful for the Quartermaster's own trade decisions but not urgent"
+    confidence: likely
+  MERCHANTS_NEED_DEPOT:
+    id: 243
+    level: notice
+    alert_type: TRADE
+    reason: "caravan/trade-timing information; useful for the Quartermaster's own trade decisions but not urgent"
+    confidence: likely
+  MERCHANT_WAGONS_BYPASSED:
+    id: 244
+    level: notice
+    alert_type: TRADE
+    reason: "caravan/trade-timing information; useful for the Quartermaster's own trade decisions but not urgent"
+    confidence: likely
+  MERCHANTS_LEAVING_SOON:
+    id: 245
+    level: notice
+    alert_type: TRADE
+    reason: "caravan/trade-timing information; useful for the Quartermaster's own trade decisions but not urgent"
+    confidence: likely
+  MERCHANTS_EMBARKED:
+    id: 246
+    level: notice
+    alert_type: TRADE
+    reason: "caravan/trade-timing information; useful for the Quartermaster's own trade decisions but not urgent"
+    confidence: likely
+  PET_LOSES_DEAD_OWNER:
+    id: 247
+    level: notice
+    alert_type: ANIMAL
+    reason: "a routine animal-population event"
+    confidence: likely
+  PET_ADOPTS_OWNER:
+    id: 248
+    level: notice
+    alert_type: ANIMAL
+    reason: "a routine animal-population event"
+    confidence: likely
+  VERMIN_BITE:
+    id: 249
+    level: log_only
+    alert_type: VERMIN
+    reason: "a physiological or minor-combat status detail; part of the full report text but not a decision-worthy signal on its own -- CREATURE_STEALS_OBJECT is the player-visibility report's own named grey zone ('something was stolen' is vanilla-legal even if the thief stays hidden), kept here since a single theft is low-stakes and the AMBUSH_THIEF family already carries the higher-level signal"
+    confidence: likely
+  UNABLE_TO_COMPLETE_BUILDING:
+    id: 250
+    level: notice
+    alert_type: JOB_FAILED
+    reason: "a building lost power or a build job cannot complete; worth the Quartermaster's next look, not urgent enough to slow the fort by itself"
+    confidence: likely
+  JOBS_REMOVED_FROM_UNPOWERED_BUILDING:
+    id: 251
+    level: notice
+    alert_type: JOB_FAILED
+    reason: "a building lost power or a build job cannot complete; worth the Quartermaster's next look, not urgent enough to slow the fort by itself"
+    confidence: likely
+  CITIZEN_SNATCHED:
+    id: 252
+    level: pause
+    alert_type: CRIME
+    reason: "a citizen (almost always a child) has been snatched; equivalent in consequence to a death, and irreversible once the snatcher leaves the map"
+    wake: [overseer]
+    confidence: verified
+  VERMIN_DISTURBED:
+    id: 253
+    level: notice
+    alert_type: VERMIN
+    reason: "vermin were disturbed (often a sign something is digging where it shouldn't, or triggered a swarm); low individual severity"
+    confidence: likely
+  LAND_GAINS_STATUS:
+    id: 254
+    level: notice
+    alert_type: NOBLE
+    reason: "a world/site-status change touching the fort's civilization; background"
+    confidence: likely
+  LAND_ELEVATED_STATUS:
+    id: 255
+    level: notice
+    alert_type: NOBLE
+    reason: "a world/site-status change touching the fort's civilization; background"
+    confidence: likely
+  MASTERPIECE_CRAFTED:
+    id: 256
+    level: notice
+    alert_type: MASTERPIECE
+    reason: "a masterwork or skill-progression event; positive/neutral background information, no action needed"
+    confidence: likely
+  ARTWORK_DEFACED:
+    id: 257
+    level: notice
+    alert_type: ART_DEFACEMENT
+    reason: "decorative work was damaged or lost; aesthetic/value loss only, no safety consequence"
+    confidence: likely
+  POWER_LEARNED:
+    id: 258
+    level: notice
+    alert_type: GENERAL
+    reason: "a supernatural power was learned, or a vampire fed; YOU_FEED_ON_SUCKEE reads like adventure-mode text but appears in this fort-relevant id range so is kept as notice rather than ignore, flagged low confidence"
+    confidence: unverified
+  YOU_FEED_ON_SUCKEE:
+    id: 259
+    level: ignore
+    alert_type: GENERAL
+    reason: "adventure-mode player-character action/failure text; this fort runs fortress mode only"
+    confidence: likely
+  ANIMAL_TRAINED:
+    id: 260
+    level: notice
+    alert_type: ANIMAL
+    reason: "a routine animal-population event"
+    confidence: likely
+  DYED_MASTERPIECE:
+    id: 261
+    level: notice
+    alert_type: MASTERPIECE
+    reason: "a masterwork or skill-progression event; positive/neutral background information, no action needed"
+    confidence: likely
+  COOKED_MASTERPIECE:
+    id: 262
+    level: notice
+    alert_type: MASTERPIECE
+    reason: "a masterwork or skill-progression event; positive/neutral background information, no action needed"
+    confidence: likely
+  MANDATE_ENDS:
+    id: 263
+    level: notice
+    alert_type: NOBLE
+    reason: "a noble mandate or guild-economy event; the fort's own noble-facing bookkeeping, worth surfacing but not urgent -- and the fort's nobles.* tool already reads this domain directly, so this may be redundant with an existing read rather than a new signal"
+    confidence: likely
+  SLOWDOWN_ENDS:
+    id: 264
+    level: notice
+    alert_type: AGREEMENT
+    reason: "a noble mandate or guild-economy event; the fort's own noble-facing bookkeeping, worth surfacing but not urgent -- and the fort's nobles.* tool already reads this domain directly, so this may be redundant with an existing read rather than a new signal"
+    confidence: likely
+  FAREWELL_HELPER:
+    id: 265
+    level: notice
+    alert_type: GENERAL
+    reason: "a minor social/flavor event"
+    confidence: likely
+  ELECTION_RESULTS:
+    id: 266
+    level: notice
+    alert_type: NOBLE
+    reason: "a noble position changed hands; affects who holds an office (directly relevant to the fort's own stuck-Manager problem, docs/AGENT-LOOP.md), worth a briefing line but not urgent in ticks"
+    confidence: likely
+  SITE_PRESENT:
+    id: 267
+    level: notice
+    alert_type: UNDERGROUND
+    reason: "a world/site-status change touching the fort's civilization; background"
+    confidence: likely
+  CONSTRUCTION_SUSPENDED:
+    id: 268
+    level: notice
+    alert_type: JOB_FAILED
+    reason: "a build job stalled; worth the Quartermaster's attention if it repeats (a construction suspended that the fort is waiting on is explicitly named in the brief as context-dependent) but a single instance is routine and often self-resolves"
+    context_dependent: true
+    confidence: likely
+  LINKAGE_SUSPENDED:
+    id: 269
+    level: notice
+    alert_type: JOB_FAILED
+    reason: "a build job stalled; worth the Quartermaster's attention if it repeats (a construction suspended that the fort is waiting on is explicitly named in the brief as context-dependent) but a single instance is routine and often self-resolves"
+    context_dependent: true
+    confidence: likely
+  QUOTA_FILLED:
+    id: 270
+    level: notice
+    alert_type: AGREEMENT
+    reason: "a noble mandate or guild-economy event; the fort's own noble-facing bookkeeping, worth surfacing but not urgent -- and the fort's nobles.* tool already reads this domain directly, so this may be redundant with an existing read rather than a new signal"
+    confidence: likely
+  JOB_OVERWRITTEN:
+    id: 271
+    level: notice
+    alert_type: JOB_FAILED
+    reason: "a build job stalled; worth the Quartermaster's attention if it repeats (a construction suspended that the fort is waiting on is explicitly named in the brief as context-dependent) but a single instance is routine and often self-resolves"
+    context_dependent: true
+    confidence: likely
+  NOTHING_TO_CATCH_IN_WATER:
+    id: 272
+    level: log_only
+    alert_type: JOB_FAILED
+    reason: "a fishing job found nothing; routine job-level noise"
+    confidence: likely
+  DEMAND_FORGOTTEN:
+    id: 273
+    level: notice
+    alert_type: NOBLE
+    reason: "a noble mandate or guild-economy event; the fort's own noble-facing bookkeeping, worth surfacing but not urgent -- and the fort's nobles.* tool already reads this domain directly, so this may be redundant with an existing read rather than a new signal"
+    confidence: likely
+  NEW_DEMAND:
+    id: 274
+    level: notice
+    alert_type: NOBLE
+    reason: "a noble mandate or guild-economy event; the fort's own noble-facing bookkeeping, worth surfacing but not urgent -- and the fort's nobles.* tool already reads this domain directly, so this may be redundant with an existing read rather than a new signal"
+    confidence: likely
+  NEW_MANDATE:
+    id: 275
+    level: notice
+    alert_type: NOBLE
+    reason: "a noble mandate or guild-economy event; the fort's own noble-facing bookkeeping, worth surfacing but not urgent -- and the fort's nobles.* tool already reads this domain directly, so this may be redundant with an existing read rather than a new signal"
+    confidence: likely
+  PRICES_ALTERED:
+    id: 276
+    level: notice
+    alert_type: NOBLE
+    reason: "a noble mandate or guild-economy event; the fort's own noble-facing bookkeeping, worth surfacing but not urgent -- and the fort's nobles.* tool already reads this domain directly, so this may be redundant with an existing read rather than a new signal"
+    confidence: likely
+  NAMED_RESIDENT_CREATURE:
+    id: 277
+    level: notice
+    alert_type: MONSTER
+    reason: "a routine animal-population event"
+    confidence: likely
+  SOMEBODY_GROWS_UP:
+    id: 278
+    level: notice
+    alert_type: BIRTH
+    reason: "a routine population event (birth, coming of age, marriage); background demographic information"
+    confidence: likely
+  GUILD_REQUEST_TAKEN:
+    id: 279
+    level: notice
+    alert_type: AGREEMENT
+    reason: "a noble mandate or guild-economy event; the fort's own noble-facing bookkeeping, worth surfacing but not urgent -- and the fort's nobles.* tool already reads this domain directly, so this may be redundant with an existing read rather than a new signal"
+    confidence: likely
+  GUILD_WAGES_CHANGED:
+    id: 280
+    level: notice
+    alert_type: NOBLE
+    reason: "a noble mandate or guild-economy event; the fort's own noble-facing bookkeeping, worth surfacing but not urgent -- and the fort's nobles.* tool already reads this domain directly, so this may be redundant with an existing read rather than a new signal"
+    confidence: likely
+  NEW_WORK_MANDATE:
+    id: 281
+    level: notice
+    alert_type: AGREEMENT
+    reason: "a noble mandate or guild-economy event; the fort's own noble-facing bookkeeping, worth surfacing but not urgent -- and the fort's nobles.* tool already reads this domain directly, so this may be redundant with an existing read rather than a new signal"
+    confidence: likely
+  CITIZEN_BECOMES_SOLDIER:
+    id: 282
+    level: notice
+    alert_type: MILITARY
+    reason: "a citizen's role or rank changed; background labor/military information relevant to the Quartermaster's next labor pass"
+    confidence: likely
+  CITIZEN_BECOMES_NONSOLDIER:
+    id: 283
+    level: notice
+    alert_type: LABOR_CHANGE
+    reason: "a citizen's role or rank changed; background labor/military information relevant to the Quartermaster's next labor pass"
+    confidence: likely
+  PARTY_ORGANIZED:
+    id: 284
+    level: notice
+    alert_type: AGREEMENT
+    reason: "a minor social/flavor event"
+    confidence: likely
+  POSSESSED_TANTRUM:
+    id: 285
+    level: pause
+    alert_type: GHOST
+    reason: "a citizen has gone berserk or is possessed; actively dangerous to every other citizen in the same way a reachable hostile is, and already tagged berserk_or_tantrum in df-overseer-diff.lua"
+    wake: [overseer]
+    confidence: verified
+  BUILDING_TOPPLED_BY_GHOST:
+    id: 286
+    level: pause
+    alert_type: GHOST
+    reason: "a building was destroyed; structural loss, may be load-bearing for production or defense"
+    wake: [overseer]
+    confidence: likely
+  MASTERFUL_IMPROVEMENT:
+    id: 287
+    level: notice
+    alert_type: MASTERPIECE
+    reason: "a masterwork or skill-progression event; positive/neutral background information, no action needed"
+    confidence: likely
+  MASTERPIECE_ENGRAVING:
+    id: 288
+    level: notice
+    alert_type: MASTERPIECE
+    reason: "a masterwork or skill-progression event; positive/neutral background information, no action needed"
+    confidence: likely
+  MARRIAGE:
+    id: 289
+    level: notice
+    alert_type: MARRIAGE
+    reason: "a routine population event (birth, coming of age, marriage); background demographic information"
+    confidence: likely
+  NO_MARRIAGE_CELEBRATION:
+    id: 290
+    level: notice
+    alert_type: MARRIAGE
+    reason: "a routine population event (birth, coming of age, marriage); background demographic information"
+    confidence: likely
+  CURIOUS_GUZZLER:
+    id: 291
+    level: notice
+    alert_type: CURIOUS_GUZZLER
+    reason: "a minor social/flavor event"
+    confidence: likely
+  WEATHER_BECOMES_CLEAR:
+    id: 292
+    level: notice
+    alert_type: WEATHER
+    reason: "ordinary weather change; background calendar information"
+    confidence: verified
+  WEATHER_BECOMES_SNOW:
+    id: 293
+    level: notice
+    alert_type: WEATHER
+    reason: "ordinary weather change; background calendar information"
+    confidence: verified
+  WEATHER_BECOMES_RAIN:
+    id: 294
+    level: notice
+    alert_type: WEATHER
+    reason: "ordinary weather change; background calendar information"
+    confidence: verified
+  SEASON_WET:
+    id: 295
+    level: notice
+    alert_type: WEATHER
+    reason: "a wet/dry season sub-state changed; relevant to doctrine/seed.yaml crop timing"
+    confidence: likely
+  SEASON_DRY:
+    id: 296
+    level: notice
+    alert_type: WEATHER
+    reason: "a wet/dry season sub-state changed; relevant to doctrine/seed.yaml crop timing"
+    confidence: likely
+  SEASON_SPRING:
+    id: 297
+    level: notice
+    alert_type: WEATHER
+    reason: "a season changed; already covered by triage's own season_change wake reason, so this announcement is confirmatory"
+    confidence: verified
+  SEASON_SUMMER:
+    id: 298
+    level: notice
+    alert_type: WEATHER
+    reason: "a season changed; already covered by triage's own season_change wake reason, so this announcement is confirmatory"
+    confidence: verified
+  SEASON_AUTUMN:
+    id: 299
+    level: notice
+    alert_type: WEATHER
+    reason: "a season changed; already covered by triage's own season_change wake reason, so this announcement is confirmatory"
+    confidence: verified
+  SEASON_WINTER:
+    id: 300
+    level: notice
+    alert_type: WEATHER
+    reason: "a season changed; already covered by triage's own season_change wake reason, so this announcement is confirmatory"
+    confidence: verified
+  GUEST_ARRIVAL:
+    id: 301
+    level: notice
+    alert_type: GUEST_ARRIVAL
+    reason: "an NPC/caravan/noble arrival or departure; already covered by triage's caravan_present wake reason where relevant, otherwise routine background information for the next briefing"
+    confidence: likely
+  CANNOT_SPEAK:
+    id: 302
+    level: ignore
+    alert_type: GENERAL
+    reason: "adventure-mode UI/action text; this fort runs fortress mode only, or (AMBUSH_HERO) is the adventure-mode hero-ambush variant distinct from the fortress AMBUSH_* family"
+    confidence: likely
+  RESEARCH_BREAKTHROUGH:
+    id: 303
+    level: notice
+    alert_type: RESEARCH_BREAKTHROUGH
+    reason: "a scholarship/performance/rumor event; DF v50 social-mechanics flavor, background only"
+    confidence: unverified
+  SERVICE_ORDER_DELIVERY:
+    id: 304
+    level: notice
+    alert_type: GENERAL
+    reason: "a scholarship/performance/rumor event; DF v50 social-mechanics flavor, background only"
+    confidence: unverified
+  PERFORMANCE_START_FAILURE:
+    id: 305
+    level: notice
+    alert_type: GENERAL
+    reason: "a scholarship/performance/rumor event; DF v50 social-mechanics flavor, background only"
+    confidence: unverified
+  BEGIN_ACTIVITY:
+    id: 306
+    level: notice
+    alert_type: GENERAL
+    reason: "a scholarship/performance/rumor event; DF v50 social-mechanics flavor, background only"
+    confidence: unverified
+  MIDDLE_OF_ACTIVITY:
+    id: 307
+    level: notice
+    alert_type: GENERAL
+    reason: "a scholarship/performance/rumor event; DF v50 social-mechanics flavor, background only"
+    confidence: unverified
+  ACTIVITY_SECTION_CHANGE:
+    id: 308
+    level: notice
+    alert_type: GENERAL
+    reason: "a scholarship/performance/rumor event; DF v50 social-mechanics flavor, background only"
+    confidence: unverified
+  CONCLUDE_ACTIVITY:
+    id: 309
+    level: notice
+    alert_type: GENERAL
+    reason: "a scholarship/performance/rumor event; DF v50 social-mechanics flavor, background only"
+    confidence: unverified
+  LEARNED_WRITTEN_CONTENT:
+    id: 310
+    level: notice
+    alert_type: GENERAL
+    reason: "a masterwork or skill-progression event; positive/neutral background information, no action needed"
+    confidence: likely
+  LEARNED_ART_FORM:
+    id: 311
+    level: notice
+    alert_type: GENERAL
+    reason: "a masterwork or skill-progression event; positive/neutral background information, no action needed"
+    confidence: likely
+  PERFORMER_UPDATE:
+    id: 312
+    level: notice
+    alert_type: GENERAL
+    reason: "a scholarship/performance/rumor event; DF v50 social-mechanics flavor, background only"
+    confidence: unverified
+  BUILDING_DESTROYED_OR_TOPPLED:
+    id: 313
+    level: pause
+    alert_type: ART_DEFACEMENT
+    reason: "a building was destroyed; structural loss, may be load-bearing for production or defense"
+    wake: [overseer]
+    confidence: likely
+  DEITY_CURSE:
+    id: 314
+    level: pause
+    alert_type: DEITY_CURSE
+    reason: "a deity has cursed a unit; can be the werebeast-curse trigger itself, high-consequence and rare enough that surfacing every instance costs nothing"
+    wake: [overseer]
+    confidence: likely
+  COMPOSITION_COMPLETE:
+    id: 315
+    level: notice
+    alert_type: GENERAL
+    reason: "a masterwork or skill-progression event; positive/neutral background information, no action needed"
+    confidence: likely
+  COMPOSITION_FAILED:
+    id: 316
+    level: notice
+    alert_type: GENERAL
+    reason: "a masterwork or skill-progression event; positive/neutral background information, no action needed"
+    confidence: likely
+  NEW_APPRENTICESHIP:
+    id: 317
+    level: notice
+    alert_type: AGREEMENT
+    reason: "a masterwork or skill-progression event; positive/neutral background information, no action needed"
+    confidence: likely
+  PETITION_IGNORED:
+    id: 318
+    level: notice
+    alert_type: AGREEMENT
+    reason: "a petition to a noble was ignored; noble-facing bookkeeping, background"
+    confidence: likely
+  CHOP_TREE:
+    id: 319
+    level: log_only
+    alert_type: GENERAL
+    reason: "a tree was chopped; routine job completion, already covered by JOB_COMPLETED diff events for the fort's own dwarf"
+    confidence: likely
+  CANNOT_CONSTRUCT:
+    id: 320
+    level: ignore
+    alert_type: GENERAL
+    reason: "adventure-mode action-failure text (a UI response to a player-character command this automation never issues)"
+    confidence: likely
+  RUMOR_SPREAD:
+    id: 321
+    level: notice
+    alert_type: RUMOR
+    reason: "a scholarship/performance/rumor event; DF v50 social-mechanics flavor, background only"
+    confidence: unverified
+  AMBUSH_HERO:
+    id: 322
+    level: ignore
+    alert_type: CRIME
+    reason: "adventure-mode UI/action text; this fort runs fortress mode only, or (AMBUSH_HERO) is the adventure-mode hero-ambush variant distinct from the fortress AMBUSH_* family"
+    confidence: likely
+  SERVICE_ORDER_RUMOR_RECEIVED:
+    id: 323
+    level: notice
+    alert_type: RUMOR
+    reason: "a scholarship/performance/rumor event; DF v50 social-mechanics flavor, background only"
+    confidence: unverified
+  RETURNING_RUMOR_RECEIVED:
+    id: 324
+    level: notice
+    alert_type: RUMOR
+    reason: "a scholarship/performance/rumor event; DF v50 social-mechanics flavor, background only"
+    confidence: unverified
+  NEW_HOLDING:
+    id: 325
+    level: notice
+    alert_type: HOLDINGS
+    reason: "a world/site-status change touching the fort's civilization; background"
+    confidence: likely
+  NEW_MARKET_LINK:
+    id: 326
+    level: notice
+    alert_type: HOLDINGS
+    reason: "a world/site-status change touching the fort's civilization; background"
+    confidence: likely
+  EMERGENCY_TACTICAL_CONTROL:
+    id: 327
+    level: pause
+    alert_type: GENERAL
+    reason: "DF is offering manual tactical control of a unit during an emergency (typically an active siege/combat crisis); this is DF's own signal that something requires an immediate decision, the clearest possible pause case in the whole vocabulary"
+    wake: [overseer]
+    confidence: likely
+  AGREEMENT_SATISFIED:
+    id: 328
+    level: notice
+    alert_type: AGREEMENT
+    reason: "a diplomatic agreement's status changed; AGREEMENT_WARNING in particular is worth the Overseer eventually knowing it is close to abandonment, but nothing in this fort's history has touched agreements yet"
+    context_dependent: true
+    confidence: unverified
+  AGREEMENT_WARNING:
+    id: 329
+    level: notice
+    alert_type: AGREEMENT
+    reason: "a diplomatic agreement's status changed; AGREEMENT_WARNING in particular is worth the Overseer eventually knowing it is close to abandonment, but nothing in this fort's history has touched agreements yet"
+    context_dependent: true
+    confidence: unverified
+  AGREEMENT_ABANDONED:
+    id: 330
+    level: notice
+    alert_type: AGREEMENT
+    reason: "a diplomatic agreement's status changed; AGREEMENT_WARNING in particular is worth the Overseer eventually knowing it is close to abandonment, but nothing in this fort's history has touched agreements yet"
+    context_dependent: true
+    confidence: unverified
+  NEW_GUILD:
+    id: 331
+    level: notice
+    alert_type: AGREEMENT
+    reason: "a noble mandate or guild-economy event; the fort's own noble-facing bookkeeping, worth surfacing but not urgent -- and the fort's nobles.* tool already reads this domain directly, so this may be redundant with an existing read rather than a new signal"
+    confidence: likely
+  CRIME_WITNESS_HANDOFF:
+    id: 332
+    level: notice
+    alert_type: CRIME
+    reason: "a citizen witnessed a theft-adjacent event; useful context for investigating a missing item, low urgency"
+    confidence: likely
+  CRIME_WITNESS_STOLEN:
+    id: 333
+    level: notice
+    alert_type: CRIME
+    reason: "a citizen witnessed a theft-adjacent event; useful context for investigating a missing item, low urgency"
+    confidence: likely
+  CRIME_WITNESS_ITEM_MOVED:
+    id: 334
+    level: notice
+    alert_type: CRIME
+    reason: "a citizen witnessed a theft-adjacent event; useful context for investigating a missing item, low urgency"
+    confidence: likely
+  CRIME_WITNESS_ITEM_MISSING:
+    id: 335
+    level: notice
+    alert_type: CRIME
+    reason: "a citizen witnessed a theft-adjacent event; useful context for investigating a missing item, low urgency"
+    confidence: likely
+  MOUNT:
+    id: 336
+    level: ignore
+    alert_type: GENERAL
+    reason: "adventure-mode UI/action text; this fort runs fortress mode only, or (AMBUSH_HERO) is the adventure-mode hero-ambush variant distinct from the fortress AMBUSH_* family"
+    confidence: likely
+  CANNOT_MOUNT:
+    id: 337
+    level: ignore
+    alert_type: GENERAL
+    reason: "adventure-mode UI/action text; this fort runs fortress mode only, or (AMBUSH_HERO) is the adventure-mode hero-ambush variant distinct from the fortress AMBUSH_* family"
+    confidence: likely
+  FAILED_MOUNT:
+    id: 338
+    level: ignore
+    alert_type: GENERAL
+    reason: "adventure-mode UI/action text; this fort runs fortress mode only, or (AMBUSH_HERO) is the adventure-mode hero-ambush variant distinct from the fortress AMBUSH_* family"
+    confidence: likely
+  DISMOUNT:
+    id: 339
+    level: ignore
+    alert_type: GENERAL
+    reason: "adventure-mode UI/action text; this fort runs fortress mode only, or (AMBUSH_HERO) is the adventure-mode hero-ambush variant distinct from the fortress AMBUSH_* family"
+    confidence: likely
+  FAILED_DISMOUNT:
+    id: 340
+    level: ignore
+    alert_type: GENERAL
+    reason: "adventure-mode UI/action text; this fort runs fortress mode only, or (AMBUSH_HERO) is the adventure-mode hero-ambush variant distinct from the fortress AMBUSH_* family"
+    confidence: likely
+  DIPLOMAT_LEFT_UNHAPPY:
+    id: 341
+    level: notice
+    alert_type: GENERAL
+    reason: "an NPC/caravan/noble arrival or departure; already covered by triage's caravan_present wake reason where relevant, otherwise routine background information for the next briefing"
+    confidence: likely
+  EMBARK_MESSAGE:
+    id: 342
+    level: ignore
+    alert_type: GENERAL
+    reason: "the embark-screen welcome message; fires once, pre-fort, outside this project's design commitment #1 scope"
+    confidence: likely
+  FIRST_CARAVAN_ARRIVAL:
+    id: 343
+    level: notice
+    alert_type: GENERAL
+    reason: "an NPC/caravan/noble arrival or departure; already covered by triage's caravan_present wake reason where relevant, otherwise routine background information for the next briefing"
+    confidence: likely
+  MONARCH_ARRIVAL:
+    id: 344
+    level: notice
+    alert_type: GENERAL
+    reason: "an NPC/caravan/noble arrival or departure; already covered by triage's caravan_present wake reason where relevant, otherwise routine background information for the next briefing"
+    confidence: likely
+  HASTY_MONARCH:
+    id: 345
+    level: notice
+    alert_type: GENERAL
+    reason: "an NPC/caravan/noble arrival or departure; already covered by triage's caravan_present wake reason where relevant, otherwise routine background information for the next briefing"
+    confidence: likely
+  SATISFIED_MONARCH:
+    id: 346
+    level: notice
+    alert_type: GENERAL
+    reason: "an NPC/caravan/noble arrival or departure; already covered by triage's caravan_present wake reason where relevant, otherwise routine background information for the next briefing"
+    confidence: likely
+  MOUNTAINHOME:
+    id: 347
+    level: notice
+    alert_type: GENERAL
+    reason: "an NPC/caravan/noble arrival or departure; already covered by triage's caravan_present wake reason where relevant, otherwise routine background information for the next briefing"
+    confidence: likely
+  FOOD_WARNING:
+    id: 348
+    level: notice
+    alert_type: DEATH
+    reason: "DF's own built-in low-food warning; directly relevant to this fort's worst-observed failure mode (starved before fed), should feed the vitals/cover-days figures already in the briefing rather than being a new separate signal"
+    confidence: likely
+  PUT_ON_ITEM:
+    id: 349
+    level: log_only
+    alert_type: GENERAL
+    reason: "a citizen equipped or removed an item; routine"
+    confidence: likely
+  TAKE_OFF_ITEM:
+    id: 350
+    level: log_only
+    alert_type: GENERAL
+    reason: "a citizen equipped or removed an item; routine"
+    confidence: likely
+  DEITY_PRONOUNCEMENT:
+    id: 351
+    level: notice
+    alert_type: GENERAL
+    reason: "a deity made a pronouncement; flavor, background"
+    confidence: unverified
+  CREATURE_STUCK:
+    id: 352
+    level: notice
+    alert_type: GENERAL
+    reason: "a creature or citizen is stuck (pathing/furniture issue); already covered by df-overseer-stuckjobs.lua's own stuck-job detection, likely a duplicate signal"
+    confidence: likely
+  CITIZEN_STUCK:
+    id: 353
+    level: notice
+    alert_type: GENERAL
+    reason: "a creature or citizen is stuck (pathing/furniture issue); already covered by df-overseer-stuckjobs.lua's own stuck-job detection, likely a duplicate signal"
+    confidence: likely
+  BARTENDER_SLACKING:
+    id: 354
+    level: notice
+    alert_type: GENERAL
+    reason: "the bartender job is not being worked; a labor-assignment gap worth a Quartermaster look"
+    wake: [quartermaster]
+    confidence: likely
+  UNUSED_50:
+    id: 355
+    level: ignore
+    alert_type: GENERAL
+    reason: "unused enum slot, no real event fires this id"
+    confidence: verified
