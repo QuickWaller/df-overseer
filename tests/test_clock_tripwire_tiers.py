@@ -140,3 +140,122 @@ def test_theft_and_crime_family_ids_are_tagged_in_report_category():
     assert 'tag_category("mischief", 75, 76, 77, 78)' in source
     assert 'tag_category("snatched", 252)' in source
     assert 'tag_category("crime_witness", 332, 333, 334, 335)' in source
+
+
+# ----------------------------------------------------------------------------
+# handoffs/2026-09-23-slow-tier-clearing.md: the missing half of the slow
+# tier. Live example: the Chair completion run's kea (theft_tag_close_range)
+# stayed latched, unchanging, across all three windows, right through to the
+# final paused read (evals/live/2026-09-23-chair-completion-run/README.md).
+
+
+def _step3_body() -> str:
+    source = _clock_source()
+    start = source.index("-- 3. Hostile reachable")
+    end = source.index("\n    -- 4. A newly-arrived announcement")
+    return source[start:end]
+
+
+def test_step3_clears_a_stale_slow_advisory_when_nothing_slow_or_worse_remains():
+    """The regression this stream exists to fix: a slow-tier advisory that
+    outlives the threat that set it. Clearing must be reachable both when
+    the top candidate has downgraded to record_only and when the scan finds
+    no candidates at all -- `top` is nil in that second case, so the branch
+    must not require `top` to be truthy to fire."""
+    body = _step3_body()
+    assert 'elseif read_advisory() then' in body
+    assert "clock_set_speed(read_base_fps())" in body
+    assert "write_advisory({})" in body
+    # The clearing branch must come after the pause/slow branches in the
+    # same if/elseif chain (same scan, same cadence), not a separate check.
+    pause_idx = body.index('top and top.tier == "pause"')
+    slow_idx = body.index('top and top.tier == "slow"')
+    clear_idx = body.index('elseif read_advisory() then')
+    assert pause_idx < slow_idx < clear_idx
+
+
+def test_step3_no_longer_requires_threats_nonempty_to_reach_the_tier_branch():
+    """#threats == 0 must clear too (judgement call 2): the old `if #threats
+    > 0 then` gate is gone, and `top` is looked up unconditionally so a
+    nil top (no candidates) still reaches the clearing branch."""
+    body = _step3_body()
+    assert "if #threats > 0 then" not in body
+    assert "local top = threats[1]" in body
+
+
+def test_clearing_runs_at_the_same_cadence_as_setting_not_a_separate_one():
+    """Judgement call 3: no second `fire_count %` gate anywhere in the
+    clearing logic -- it lives inside the same `threat_check_every_n`
+    branch that sets the advisory."""
+    source = _clock_source()
+    step3_start = source.index("-- 3. Hostile reachable")
+    step4_start = source.index("\n    -- 4. A newly-arrived announcement")
+    between = source[step3_start:step4_start]
+    assert between.count("fire_count %") == 1
+
+
+def test_base_fps_is_persisted_to_its_own_state_file_not_a_lua_local():
+    """Judgement call 1: base_fps is captured once at arm time and read
+    from a file (BASE_FPS_FILE), the same discipline LATCH_FILE/
+    ADVISORY_FILE already use, and for the same reason (the header's own
+    'why the latch is a file, not a Lua global') -- clock_clear runs as a
+    separate CLI invocation and cannot see a value the check closure
+    captured."""
+    source = _clock_source()
+    assert 'BASE_FPS_FILE = STATE_DIR .. "/base_fps.json"' in source
+    assert "local function read_base_fps()" in source
+    assert "local function write_base_fps(base_fps)" in source
+    assert "DEFAULT_BASE_FPS = 100" in source
+
+
+def test_clock_arm_takes_and_persists_base_fps():
+    source = _clock_source()
+    fn_start = source.index("function clock_arm(")
+    header_end = source.index("\n", fn_start)
+    assert "base_fps" in source[fn_start:header_end]
+    fn_end = source.index("\nend", fn_start)
+    body = source[fn_start:fn_end]
+    assert "write_base_fps(base_fps)" in body
+    # Persisted before the check_fn closure is created, and passed into it.
+    write_idx = body.index("write_base_fps(base_fps)")
+    check_fn_idx = body.index("make_check_fn(")
+    assert write_idx < check_fn_idx
+    assert "make_check_fn(hunger_critical, thirst_critical, threat_check_every_n, think_fps, base_fps)" in body
+
+
+def test_clock_arm_validates_base_fps_range():
+    source = _clock_source()
+    fn_start = source.index("function clock_arm(")
+    fn_end = source.index("\nend", fn_start)
+    body = source[fn_start:fn_end]
+    assert "base_fps < MIN_FPS or base_fps > MAX_FPS" in body
+
+
+def test_clock_clear_also_clears_the_advisory_and_reports_both():
+    """Judgement call 5: clear() now clears the slow-tier advisory too and
+    restores base_fps, and its return value names what was actually
+    cleared (had_latch, had_advisory) rather than only had_latch as
+    before."""
+    source = _clock_source()
+    fn_start = source.index("function clock_clear()")
+    fn_end = source.index("\nend", fn_start)
+    body = source[fn_start:fn_end]
+    assert "had_advisory" in body
+    assert "read_advisory() ~= nil" in body
+    assert "clock_set_speed(read_base_fps())" in body
+    assert "write_advisory({})" in body
+    assert "had_latch = had_latch, had_advisory = had_advisory" in body
+
+
+def test_clock_status_exposes_base_fps():
+    source = _clock_source()
+    fn_start = source.index("function clock_status()")
+    fn_end = source.index("\nend", fn_start)
+    body = source[fn_start:fn_end]
+    assert "base_fps = read_base_fps()" in body
+
+
+def test_cli_dispatch_passes_base_fps_through_to_arm():
+    source = _clock_source()
+    assert 'clock_arm(args[2], args[3], args[4], args[5], args[6], args[7])' in source
+    assert "BASE_FPS" in source

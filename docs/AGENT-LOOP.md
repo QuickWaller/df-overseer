@@ -164,6 +164,60 @@ first unattended run, against the PRE-fix tier code
 (`evals/live/2026-09-23-office-and-first-real-build/`); no tripwire has yet
 fired against the corrected code.
 
+**The `slow` tier clears, as a rule, not just an implementation note**
+(`handoffs/2026-09-23-slow-tier-clearing.md`). `pause` and `record_only`
+each have a natural way back (a human/conductor clears and resumes; a
+`record_only` candidate simply never latches anything). `slow` did not:
+until this fix, nothing in `df-overseer-clock.lua` ever restored FPS or
+emptied the advisory except a fresh `arm`. The bug was found live, not in
+design: the Chair completion run's kea (`theft_tag_close_range`) tripped
+`slow` once and then stayed latched, unchanging, across all three windows
+of that run, right through to the final paused read
+(`evals/live/2026-09-23-chair-completion-run/README.md`) -- every
+unattended run from there would have ended throttled, with the conductor's
+triage reading a stale reason to be careful long after the threat had
+gone.
+
+The rule, now built:
+
+1. **What the fort restores to.** `base_fps` is a new, explicit `clock.arm`
+   argument (default 100, the same "Full speed" starting value from the
+   table above), captured once at arm time and persisted to its own state
+   file, never inferred from whatever FPS happened to be in effect at the
+   moment of a drop -- a fort already slowed for an unrelated reason must
+   not have that incidental value adopted as its new "normal". `clock.status`
+   now exposes `base_fps` so the restore target is always visible.
+2. **What counts as cleared.** `find_threats` sorts its candidates by the
+   worst tier present first, so the code's own `threats[1]` already
+   reflects the worst tier anywhere in a scan's whole candidate list; no
+   separate whole-list scan is needed. Clearing fires the moment a scan
+   finds nothing at `slow` tier or worse: either the top candidate has
+   downgraded to `record_only`, or there were no candidates at all
+   (`#threats == 0`). Both are the same case.
+3. **Cadence.** Clearing runs inside the exact same `threat_check_every_n`
+   branch that sets the advisory, never a separate schedule -- setting and
+   clearing always see the same scan.
+4. **Sticky or immediate.** Immediate, no hysteresis. This mirrors how the
+   `pause` tier already behaves (no debounce there either), and the coarse
+   threat-scan cadence itself is the only smoothing either tier gets; giving
+   `slow` a stricter debounce than `pause` would be an inconsistency, not a
+   safety improvement.
+5. **`clock.clear`'s contract.** `clear` now clears a latched slow-tier
+   advisory too (restoring `base_fps`), not only the pause latch, since
+   `clear` is this project's one "I have seen this, carry on" verb and
+   leaving it unable to answer for the other kind of latch would be half a
+   fix. Its return value now reports `had_latch` and `had_advisory`
+   separately, so a caller can tell what was actually cleared.
+
+**Owed, from this fix, offline-only** (`handoffs/2026-09-23-slow-tier-
+clearing.md`): a live re-arm under the new argument, and a live clearing
+event both ways -- naturally, by watching the same kea (or a fresh
+candidate) recede out of `slow` range without any human action, and
+explicitly, via a live `clock.clear` call while an advisory is latched. A
+live check should confirm `clock.status`'s `advisory` field actually goes
+back to nil and `fps` actually returns to `base_fps`, not just that the
+fort no longer looks throttled.
+
 ## 4. Build items
 
 All **default** unless marked.

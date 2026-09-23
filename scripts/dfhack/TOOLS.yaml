@@ -1884,7 +1884,7 @@ df-overseer-clock.lua:
       effect: read
       coordinate_bearing: false
       live_deployed: true
-      verified: "2026-09-22/23 (evals/live/2026-09-22-loop-mvp-deploy/, 2026-09-23-office-and-first-real-build/, 2026-09-23-attention-deploy/): called repeatedly across three separate live runs, paused/armed/tick fields all read consistently; the `advisory` field itself has not yet been seen populated live (no slow-tier trip has fired against the real fort as of this deploy)"
+      verified: "2026-09-22/23 (evals/live/2026-09-22-loop-mvp-deploy/, 2026-09-23-office-and-first-real-build/, 2026-09-23-attention-deploy/, 2026-09-23-chair-completion-run/): called repeatedly across four separate live runs, paused/armed/tick fields all read consistently; `advisory` was seen populated live for the first time in the Chair completion run (a slow-tier kea, unchanging across three windows -- the bug this stream fixes). The new `base_fps` field is unverified live as of this stream (offline-only)."
       knowledge_scope: player_derivable
       notes: >
         paused, fps, cur_year/cur_year_tick/abs_tick, whether the tripwire
@@ -1895,14 +1895,19 @@ df-overseer-clock.lua:
         .lua file's header).
         ADDED 2026-09-23 (handoffs/2026-09-23-attention-tiers-ingame.md):
         `advisory` -- the most recent SLOW-tier trip (reason "hostile_slow",
-        tick, detail), or nil. Purely informational; never blocks
-        clock_resume, which only ever checks the latch.
-    "arm [HUNGER_CRITICAL THIRST_CRITICAL CHECK_INTERVAL_TICKS THREAT_CHECK_EVERY_N THINK_FPS]":
+        tick, detail), or nil once cleared. Purely informational; never
+        blocks clock_resume, which only ever checks the latch.
+        ADDED 2026-09-23 (handoffs/2026-09-23-slow-tier-clearing.md):
+        `base_fps` -- the fps a cleared slow-tier advisory restores the
+        fort to (what this arm configured, DEFAULT_BASE_FPS 100 if never
+        armed on a fresh install). Exposed so "what does the fort go back
+        to" is answerable from status alone.
+    "arm [HUNGER_CRITICAL THIRST_CRITICAL CHECK_INTERVAL_TICKS THREAT_CHECK_EVERY_N THINK_FPS BASE_FPS]":
       lua_function: clock_arm
       effect: mutate
       coordinate_bearing: false
       live_deployed: true
-      verified: "2026-09-22 (evals/live/2026-09-22-loop-mvp-deploy/README.md): armed with the stated defaults, confirmed via clock.status, then disarmed. The 2026-09-23 tier/announcement additions to this command's own tripwire logic are deployed (evals/live/2026-09-23-attention-deploy/) but not yet independently re-armed and tripped live under this stream's own sources; the one real trip this fort has seen (evals/live/2026-09-23-office-and-first-real-build/, a kea at 68 tiles) was against the PRE-fix version, and the CRITICAL CHECK in the 2026-09-23 attention-deploy README found the tier-gating creature-tag reads were wrong at that time (fixed and live-verified separately, handoffs/2026-09-23-creature-tag-fields-fix.md)"
+      verified: "2026-09-22 (evals/live/2026-09-22-loop-mvp-deploy/README.md): armed with the stated defaults, confirmed via clock.status, then disarmed. The 2026-09-23 tier/announcement additions to this command's own tripwire logic are deployed (evals/live/2026-09-23-attention-deploy/) and the slow tier itself fired live for the first time in the Chair completion run (evals/live/2026-09-23-chair-completion-run/), which exposed the clearing bug this stream fixes. The new BASE_FPS argument and the clearing behaviour it enables are unverified live as of this stream (offline-only, handoffs/2026-09-23-slow-tier-clearing.md) -- a live re-arm and a live clear (both a natural clear on a receding threat and an explicit clock.clear call) are owed."
       knowledge_scope: player_derivable
       notes: >
         Registers the in-game tripwire watcher via repeat-util (the same
@@ -1913,8 +1918,12 @@ df-overseer-clock.lua:
         against the wiki (research/2026-09-16-food-clock-and-farm-lead-time.md);
         check interval 100 ticks and threat-scan-every 10 checks are this
         stream's own reasoned defaults, not sourced. think_fps defaults to
-        10, sourced from docs/AGENT-LOOP.md ss2's own "Slowed" level. Clears
-        any existing latch AND advisory (a fresh arm is a clean start).
+        10 and BASE_FPS defaults to 100, both sourced from docs/AGENT-LOOP.md
+        ss2's own "Three levels" table. Clears any existing latch AND
+        advisory (a fresh arm is a clean start), and persists BASE_FPS to
+        its own state file so a slow-tier clear (see step 3 below and
+        `clear`) always restores to what THIS arm configured, never a
+        value read off the fort at the moment of the drop.
         Tripwires, UPDATED 2026-09-23 (handoffs/2026-09-23-attention-tiers-
         ingame.md; DEPLOYED 2026-09-23, evals/live/2026-09-23-attention-deploy/):
         (1) a citizen death since
@@ -1925,8 +1934,15 @@ df-overseer-clock.lua:
         candidate's own TIER (pause latches and stops; slow sets FPS to
         think_fps and writes a non-blocking advisory instead of pausing;
         record_only only feeds df-overseer-ledger.lua) rather than pausing
-        on any candidate at all, (4) NEW: a newly-arrived report whose type
-        is one of df-overseer-announcement-levels.lua's 25 generated
+        on any candidate at all -- UPDATED 2026-09-23
+        (handoffs/2026-09-23-slow-tier-clearing.md): the same step now also
+        CLEARS a slow-tier advisory, at the same cadence it was set, the
+        moment a scan finds nothing at slow tier or worse (no candidates at
+        all, or the worst candidate present has downgraded to
+        record_only), restoring fps to BASE_FPS -- immediate, no
+        hysteresis, docs/AGENT-LOOP.md ss3 has the rule written up, (4) a
+        newly-arrived report whose type is one of
+        df-overseer-announcement-levels.lua's 25 generated
         PAUSE_REPORT_IDS -- a separate mechanism from (3), bounded to
         reports newer than the last check. On a pause: latches and writes
         {reason, tick, detail} to a state file (see header for why a file,
@@ -1940,7 +1956,7 @@ df-overseer-clock.lua:
       knowledge_scope: player_visible
       notes: >
         Cancels the repeat-util schedule. Does not touch an existing latch
-        (clear is the dedicated op for that). System-kind only.
+        or advisory (clear is the dedicated op for those). System-kind only.
     clear:
       lua_function: clock_clear
       effect: mutate
@@ -1949,8 +1965,15 @@ df-overseer-clock.lua:
       verified: unverified
       knowledge_scope: player_visible
       notes: >
-        Clears a latched tripwire so resume is no longer refused. Does not
-        itself resume. System-kind only.
+        Clears a latched tripwire so resume is no longer refused. UPDATED
+        2026-09-23 (handoffs/2026-09-23-slow-tier-clearing.md, judgement
+        call 5): also clears a slow-tier advisory if one is latched,
+        restoring fps to the BASE_FPS the current arm configured -- clear
+        is this project's one "I have seen this, carry on" verb, so it now
+        answers for both kinds of latch this file can set, not just the
+        pause one. Returns {ok, had_latch, had_advisory} so a caller can
+        tell what was actually cleared. Does not itself resume the fort.
+        System-kind only.
 
 df-overseer-fort.lua:
   build_order_item: "agent loop MVP item 2 (docs/AGENT-LOOP.md); handoffs/2026-09-22-loop-clock-conductor-role.md"

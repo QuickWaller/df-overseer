@@ -492,23 +492,38 @@ earlier milestone either dry-ran or left something waiting.
 **Owed now:** correcting `df-overseer-breach.lua`'s header and the `ROADMAP.md`
 line on the next Lua deploy; the user's open ruling on burrow confinement.
 
-**In flight, 2026-09-23 (dispatched after the push at `c58b9c7`):** two Sonnet
-streams, no shared surfaces, neither touching a VM.
+**Both streams dispatched after the push at `c58b9c7` are DONE and merged,
+local only, nothing deployed and nothing pushed.**
 
-- **The `slow`-tier clearing rule**, finding 2 above turned into a fix:
-  `handoffs/2026-09-23-slow-tier-clearing.md`. Offline, owns
-  `df-overseer-clock.lua`, the `clock` entries in `TOOLS.yaml`, the clock and
-  tier tests and `docs/AGENT-LOOP.md` §3. **The deploy is deliberately not in
-  its scope** and needs its own go-ahead once it lands, so the fort stays at
-  10 FPS with the advisory latched until then, which costs nothing while
-  paused and keeps the evidence intact.
-- **Proposals and checks, evidence for the parked design conversation**:
-  `handoffs/2026-09-23-proposals-and-checks-prep.md`. Researcher, read-only,
-  produces `research/2026-09-23-proposals-and-checks.md` only. Assembles what
-  `proposal-0001`'s void exposed, what a check can actually read from today's
-  tools, what the three live runs showed about predicting mechanisms versus
-  outcomes, and what time unit a prediction can use at a 100 FPS cap. It does
-  not decide anything; the user does, afterwards.
+- **The `slow`-tier clearing rule is built and tested, not deployed**
+  (`handoffs/2026-09-23-slow-tier-clearing.md`). `base_fps` is now an explicit
+  `clock.arm` argument, default 100, persisted to its own state file, so the
+  restore target is a value someone chose rather than one read off the fort at
+  the moment of the drop. The threat scan clears the advisory and restores FPS
+  as soon as a scan finds nothing at `slow` or worse, at the same cadence that
+  sets it, with no hysteresis; `clock.clear` now clears the advisory too and
+  reports `had_latch` and `had_advisory` separately. Suites re-run in the main
+  checkout: ambient **1371 passed / 3 skipped**, `dfmcp/tests` **652**.
+  **Until this deploys the fort is still on the old script**, so it stays at
+  10 FPS with the advisory latched, which costs nothing while paused and keeps
+  the reproducer intact. **Two live checks owed on that deploy:** an advisory
+  clearing naturally as a candidate recedes, and `clock.clear` reporting
+  `had_advisory: true` while one is latched.
+- **The proposals-and-checks evidence pass is merged**
+  (`research/2026-09-23-proposals-and-checks.md`). Its verdict: this project
+  already built two classical check shapes without naming either, a one-shot
+  postcondition (`dfqueue`'s `prediction`, the design-by-contract shape) and a
+  continuous invariant (the tripwire and vitals layer), so `proposal-0001`'s
+  void was an anchoring bug rather than a flaw in the record. One claim was
+  corrected on merge: it counted ten signals in `learning/live_signals.py`
+  where `SIGNAL_KINDS` holds twelve. It ends with five decisions phrased as
+  choices, which is where the parked design conversation should start.
+
+**Also found, and now a register row:** a subagent worktree cannot see a
+handoff brief that has not been committed yet, and its branch predates any
+dispatch commits, so merging one wholesale reverts the orchestrator's own
+work. Both branches this round would have deleted the sibling's brief. Commit
+briefs before dispatching; take only a stream's owned files on merge.
 
 ## Both 2026-09-23 evening streams are DONE and merged (state below is history)
 

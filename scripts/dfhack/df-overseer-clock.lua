@@ -133,6 +133,12 @@ local LATCH_FILE = STATE_DIR .. "/tripwire_latch.json"
 -- lifecycles (a latch is cleared once acknowledged; this is just
 -- overwritten by the next slow-tier trip).
 local ADVISORY_FILE = STATE_DIR .. "/tripwire_advisory.json"
+-- The base_fps the current arm configured (see DEFAULT_BASE_FPS's own
+-- comment above for why this is a file, written once by clock_arm, and not
+-- a Lua local or global). Read by both the periodic check (to know what to
+-- restore to when a slow-tier advisory clears) and clock_clear (a separate
+-- CLI invocation, so it cannot see the check closure's own copy).
+local BASE_FPS_FILE = STATE_DIR .. "/base_fps.json"
 
 local MIN_FPS = 1
 -- Arbitrary, generous ceiling well above any base_fps/think_fps value this
@@ -154,6 +160,24 @@ local DEFAULT_THIRST_CRITICAL = 50000   -- "Dehydrated" flash
 -- deliberately NOT acted on here at all, see that file's header and this
 -- stream's Result.
 local DEFAULT_THINK_FPS = 10
+
+-- Sourced: docs/AGENT-LOOP.md ss2's own "Three levels" table, "Full speed:
+-- base_fps, starting value 100". handoffs/2026-09-23-slow-tier-clearing.md,
+-- judgement call 1: the fort must go back to a value someone actually
+-- chose, not a value invented at the moment of restore. base_fps is
+-- therefore an explicit clock_arm argument, captured ONCE at arm time and
+-- persisted to BASE_FPS_FILE (see header, "why the latch is a file, not a
+-- Lua global" -- the same reload hazard applies to this value: a fresh
+-- top-level chunk execution on every separate dfhack-run call cannot read
+-- a plain Lua local left over from a PRIOR call, only a closure already
+-- held alive by repeat-util, or a file). clock_clear runs as its own,
+-- separate CLI invocation and is not part of that closure, so it reads
+-- this file rather than a captured-at-drop-time value: the target is "what
+-- was configured when armed", never "whatever fps happened to be in effect
+-- the instant a slow tier tripped" (that would let a fort already slowed
+-- for an unrelated reason get silently bumped to think_fps' floor as its
+-- own new normal).
+local DEFAULT_BASE_FPS = 100
 
 -- Default periodic-check cadence and the threat-scan cadence multiple.
 -- Reasoned, not sourced: getCitizens()+two numeric comparisons per citizen
@@ -222,6 +246,23 @@ local function write_advisory(advisory)
   json.encode_file(advisory, ADVISORY_FILE)
 end
 
+-- DEFAULT_BASE_FPS on a missing/unreadable file (the same fallback
+-- discipline as read_latch/read_advisory) -- this can only happen before
+-- the first-ever arm on a fresh install; every arm since writes this file.
+local function read_base_fps()
+  ensure_state_dir()
+  local ok, data = pcall(json.decode_file, BASE_FPS_FILE)
+  if not ok or type(data) ~= "table" or type(data.base_fps) ~= "number" then
+    return DEFAULT_BASE_FPS
+  end
+  return data.base_fps
+end
+
+local function write_base_fps(base_fps)
+  ensure_state_dir()
+  json.encode_file({ base_fps = base_fps }, BASE_FPS_FILE)
+end
+
 -- ----------------------------------------------------------------------------
 -- set-speed FPS
 
@@ -284,6 +325,11 @@ function clock_status()
     -- slow-tier trip, if any -- purely informational, never blocks resume
     -- (see read_advisory's own comment).
     advisory = read_advisory(),
+    -- Added handoffs/2026-09-23-slow-tier-clearing.md: what a slow-tier
+    -- advisory restores the fort to once it clears -- visible on purpose,
+    -- so "what does the fort go back to" is answerable from status alone,
+    -- not just from the arm call that configured it.
+    base_fps = read_base_fps(),
   }
 end
 
@@ -361,7 +407,7 @@ local function new_pause_reports(last_seen_id)
   return hits, max_id
 end
 
-local function make_check_fn(hunger_critical, thirst_critical, threat_check_every_n, think_fps)
+local function make_check_fn(hunger_critical, thirst_critical, threat_check_every_n, think_fps, base_fps)
   local known_ids = select(2, citizen_ids_now())
   local fire_count = 0
   local last_seen_report_id = current_max_report_id()
@@ -471,6 +517,27 @@ local function make_check_fn(hunger_critical, thirst_critical, threat_check_ever
     -- ledger_closest_distance); the record() calls below happen strictly
     -- AFTER that computation, for every scan, so a single scan's own
     -- candidates never see each other's fresh writes mid-computation.
+    --
+    -- CLEARING (handoffs/2026-09-23-slow-tier-clearing.md): the missing
+    -- half of the slow tier. `threats` is sorted by the worst tier present
+    -- first (df-overseer-threat.lua's own table.sort, "tier dominates the
+    -- ranking"), so `threats[1]` already reflects the worst tier anywhere
+    -- in this scan's WHOLE candidate list -- a separate loop over every
+    -- candidate would just re-derive what the sort already guarantees.
+    -- Judgement call 2: "cleared" means neither `pause` nor `slow` is
+    -- present in this scan, which covers both a `record_only`-or-nothing
+    -- top entry AND `#threats == 0` (no candidates at all) as the same
+    -- case, below. Judgement call 3: this runs at the SAME cadence as the
+    -- code that sets the advisory (this same `threat_check_every_n`
+    -- branch), never a different one, so setting and clearing can never
+    -- observe a different picture of the fort. Judgement call 4: clearing
+    -- is IMMEDIATE, no added hysteresis -- it mirrors the pause tier's own
+    -- immediate behaviour, and the coarse threat-scan cadence
+    -- (threat_check_every_n periodic checks, not every tick) is already
+    -- the only smoothing this project gives the pause tier, so giving slow
+    -- a stricter debounce than pause would be an inconsistency, not a
+    -- safety improvement. See this stream's Result for the full reasoning
+    -- and what a live check should look for.
     if fire_count % threat_check_every_n == 0 then
       local ok_scan, threats = pcall(threat_mod.find_threats)
       if ok_scan and threats then
@@ -478,43 +545,48 @@ local function make_check_fn(hunger_critical, thirst_critical, threat_check_ever
           pcall(ledger_mod.record, candidate.race, tick_now, candidate.distance_tiles, "present")
         end
 
-        if #threats > 0 then
-          local top = threats[1]
-          if top.tier == "pause" then
-            write_latch({
-              reason = "hostile_reachable",
-              tick = tick_now,
-              detail = {
-                race = top.race,
-                near_landmark = top.near_landmark,
-                direction = top.direction,
-                distance_tiles = top.distance_tiles,
-                tier = top.tier,
-                tier_reasons = top.tier_reasons,
-                why = top.why,
-              },
-            })
-            dfhack.world.SetPauseState(true)
-            return
-          elseif top.tier == "slow" then
-            clock_set_speed(think_fps)
-            write_advisory({
-              reason = "hostile_slow",
-              tick = tick_now,
-              detail = {
-                race = top.race,
-                near_landmark = top.near_landmark,
-                direction = top.direction,
-                distance_tiles = top.distance_tiles,
-                tier = top.tier,
-                tier_reasons = top.tier_reasons,
-                why = top.why,
-              },
-            })
-          end
-          -- record_only: already written to the ledger above; nothing else
-          -- to do here.
+        local top = threats[1]
+        if top and top.tier == "pause" then
+          write_latch({
+            reason = "hostile_reachable",
+            tick = tick_now,
+            detail = {
+              race = top.race,
+              near_landmark = top.near_landmark,
+              direction = top.direction,
+              distance_tiles = top.distance_tiles,
+              tier = top.tier,
+              tier_reasons = top.tier_reasons,
+              why = top.why,
+            },
+          })
+          dfhack.world.SetPauseState(true)
+          return
+        elseif top and top.tier == "slow" then
+          clock_set_speed(think_fps)
+          write_advisory({
+            reason = "hostile_slow",
+            tick = tick_now,
+            detail = {
+              race = top.race,
+              near_landmark = top.near_landmark,
+              direction = top.direction,
+              distance_tiles = top.distance_tiles,
+              tier = top.tier,
+              tier_reasons = top.tier_reasons,
+              why = top.why,
+            },
+          })
+        elseif read_advisory() then
+          -- Nothing at slow tier or worse this scan (top is nil, i.e.
+          -- #threats == 0, or top.tier == "record_only"), and a slow-tier
+          -- advisory is still latched from an earlier scan: clear it and
+          -- restore the fort to the base_fps this arm configured.
+          clock_set_speed(read_base_fps())
+          write_advisory({})
         end
+        -- record_only with no prior advisory: already written to the
+        -- ledger above; nothing else to do here.
       end
     end
 
@@ -551,14 +623,15 @@ local function make_check_fn(hunger_critical, thirst_critical, threat_check_ever
 end
 
 -- ----------------------------------------------------------------------------
--- arm [HUNGER_CRITICAL THIRST_CRITICAL CHECK_INTERVAL_TICKS THREAT_CHECK_EVERY_N THINK_FPS]
+-- arm [HUNGER_CRITICAL THIRST_CRITICAL CHECK_INTERVAL_TICKS THREAT_CHECK_EVERY_N THINK_FPS BASE_FPS]
 
-function clock_arm(hunger_critical, thirst_critical, check_interval_ticks, threat_check_every_n, think_fps)
+function clock_arm(hunger_critical, thirst_critical, check_interval_ticks, threat_check_every_n, think_fps, base_fps)
   hunger_critical = tonumber(hunger_critical) or DEFAULT_HUNGER_CRITICAL
   thirst_critical = tonumber(thirst_critical) or DEFAULT_THIRST_CRITICAL
   check_interval_ticks = tonumber(check_interval_ticks) or DEFAULT_CHECK_INTERVAL_TICKS
   threat_check_every_n = tonumber(threat_check_every_n) or DEFAULT_THREAT_CHECK_EVERY_N
   think_fps = tonumber(think_fps) or DEFAULT_THINK_FPS
+  base_fps = tonumber(base_fps) or DEFAULT_BASE_FPS
 
   if hunger_critical <= 0 or thirst_critical <= 0 then
     return { ok = false, error = "hunger_critical/thirst_critical must be positive tick counts" }
@@ -570,10 +643,19 @@ function clock_arm(hunger_critical, thirst_critical, check_interval_ticks, threa
     return { ok = false, error = string.format(
       "think_fps %s outside sane range [%d, %d]", tostring(think_fps), MIN_FPS, MAX_FPS) }
   end
+  if base_fps < MIN_FPS or base_fps > MAX_FPS then
+    return { ok = false, error = string.format(
+      "base_fps %s outside sane range [%d, %d]", tostring(base_fps), MIN_FPS, MAX_FPS) }
+  end
 
   clear_latch_file()
   write_advisory({})
-  local check_fn = make_check_fn(hunger_critical, thirst_critical, threat_check_every_n, think_fps)
+  -- Persisted BEFORE the check_fn closure is created, so a slow-tier clear
+  -- on this arm always restores to the value this exact arm call configured
+  -- (judgement call 1), read fresh from the file by clock_clear too, which
+  -- runs as its own separate CLI invocation and cannot see this closure.
+  write_base_fps(base_fps)
+  local check_fn = make_check_fn(hunger_critical, thirst_critical, threat_check_every_n, think_fps, base_fps)
   -- scheduleEvery cancels any existing schedule of the same name first
   -- (repeat-util.lua's own scheduleEvery), so re-arming is safe and clean.
   repeatUtil.scheduleEvery(TRIPWIRE_NAME, check_interval_ticks, "ticks", check_fn)
@@ -586,6 +668,7 @@ function clock_arm(hunger_critical, thirst_critical, check_interval_ticks, threa
     check_interval_ticks = check_interval_ticks,
     threat_check_every_n = threat_check_every_n,
     think_fps = think_fps,
+    base_fps = base_fps,
   }
 end
 
@@ -596,9 +679,24 @@ function clock_disarm()
 end
 
 function clock_clear()
+  -- Judgement call 5: clear() now clears the slow-tier advisory too, not
+  -- just the pause latch, and restores base_fps if it did. This changes
+  -- clear's existing contract (it used to touch only the latch), decided
+  -- because clear is this project's one "I have seen this, carry on" verb
+  -- (the header's own words for what clock_resume expects a human/conductor
+  -- to have done first) and a stale, never-clearing advisory is exactly the
+  -- bug this whole stream exists to fix -- leaving the human-facing verb
+  -- unable to clear the other kind of latch would be a half fix. The
+  -- return value reports what was actually cleared, per the handoff's own
+  -- instruction, so a caller can tell a no-op clear from a real one.
   local had_latch = read_latch() ~= nil
+  local had_advisory = read_advisory() ~= nil
   clear_latch_file()
-  return { ok = true, had_latch = had_latch }
+  if had_advisory then
+    clock_set_speed(read_base_fps())
+    write_advisory({})
+  end
+  return { ok = true, had_latch = had_latch, had_advisory = had_advisory }
 end
 
 -- ----------------------------------------------------------------------------
@@ -619,11 +717,11 @@ elseif cmd == "resume" then
 elseif cmd == "status" then
   print(json.encode(clock_status()))
 elseif cmd == "arm" then
-  print(json.encode(clock_arm(args[2], args[3], args[4], args[5], args[6])))
+  print(json.encode(clock_arm(args[2], args[3], args[4], args[5], args[6], args[7])))
 elseif cmd == "disarm" then
   print(json.encode(clock_disarm()))
 elseif cmd == "clear" then
   print(json.encode(clock_clear()))
 else
-  print("usage: df-overseer-clock <set-speed FPS|pause|resume|status|arm [HUNGER_CRITICAL THIRST_CRITICAL CHECK_INTERVAL_TICKS THREAT_CHECK_EVERY_N THINK_FPS]|disarm|clear>")
+  print("usage: df-overseer-clock <set-speed FPS|pause|resume|status|arm [HUNGER_CRITICAL THIRST_CRITICAL CHECK_INTERVAL_TICKS THREAT_CHECK_EVERY_N THINK_FPS BASE_FPS]|disarm|clear>")
 end
