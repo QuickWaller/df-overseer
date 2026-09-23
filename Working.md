@@ -456,6 +456,47 @@ historical.
 Moved wholesale to [`working-archive/Working_archive-2026-09-14.md`](working-archive/Working_archive-2026-09-14.md) on 2026-09-18, superseded by
 HANDOVER 2026-09-19 and the production-model work above.
 
+## In flight: two streams dispatched 2026-09-23, evening
+
+Both worktree-isolated, neither touching the other's files. Docs pass and the
+register/memory rows for the week are merged and **pushed** (`ba708e7`); the
+push batch was checked for sibling-session commits and held only this
+session's own.
+
+1. **Generalise `workjob`** ([`handoffs/2026-09-21-workjob-generalise.md`](handoffs/2026-09-21-workjob-generalise.md),
+   written 2026-09-21, dispatched today on the user's call). The repo's known
+   standing violation of the generalisability rule: three job tokens against
+   `orders.create`'s twelve, which is why the fort's first Chair had to be
+   ordered through `orders.create`. Target is the game's own vocabulary via
+   DFHack's `workshops.getJobs`, not a bigger hand-maintained table. Owns
+   `df-overseer-workjob.lua`, `TOOLS.yaml` and its manifest tests. Live on
+   VM 103 but **read-only, dry runs only, no real job, fort stays paused**.
+2. **Flood relevance research** ([`handoffs/2026-09-23-flood-relevance-traffic-burrows.md`](handoffs/2026-09-23-flood-relevance-traffic-burrows.md)).
+   `df-overseer-breach.lua` covers nothing: its `update_liquid` gate read
+   zero of 26,784 blocks over 11 polls, which cannot distinguish "DF never
+   sets it" from "nothing changed". Tests the user's hypothesis that traffic
+   designations and burrows are both the relevance filter and the response
+   (reroute, confine), and pay for themselves on hauling logistics alone.
+   Read-only, no code, owns only its research file and its own Result.
+
+**Design steer sent to stream 2 mid-run, worth keeping if the stream agrees
+with it:** the footprint should set the **tier, not the poll scope**. A pure
+occupancy filter fails exactly where flooding starts, because a breach
+happens in a tile seconds old that belongs to no zone, burrow or route. So
+keep a cheap global rising-liquid check and let the footprint decide
+loudness: burrow or hauling route is pause, the **active dig frontier** is
+slow, an unvisited cavern is ledger-only. Corridors and stairwells sit in no
+zone, burrows are optional and often absent, and traffic defaults to
+"normal" everywhere, so zones plus burrows alone would under-cover; but
+workshops and stockpiles are fine, being real objects with known tiles.
+
+**Next after these two, in the user's own priority order:** an unattended
+fort window (answers whether an outdoor unfurnished Office carries enough
+room value for `required_office: 1`, and would witness an order's full life
+for the first time), and then the parked proposals/checks design
+conversation, which the user has said should fold into higher-level design
+now that the tool picture is clear.
+
 ## HANDOVER 2026-09-21, evening (read this first after a /clear)
 
 The first half of the earlier 2026-09-21 handover (the 2026-09-20 fort figures, the
