@@ -425,3 +425,12 @@ Each fact says how it is known. "Live" means read or run on VM 103 on 2026-09-21
   Both plausibly tick-gated on a paused fort; unconfirmed. Do not use it as a cheap
   block-level gate for the dig frontier without re-testing on a running fort. (live,
   2026-09-23)
+- Item type `THRONE` does not exist on this build; the item is `CHAIR`. The JOB kept the
+  legacy name `ConstructThrone` (caption "Construct Throne"), and DFHack's own
+  buildingplan plugin states the mapping: `[df.item_type.CHAIR] = 'ConstructThrone'`. A
+  Chair building's own job requirement reads `item_type=CHAIR`. Same renaming pattern as
+  `MECHANISM`, which this build superseded with `TRAPPARTS` (found by the workjob stream,
+  whose hard-coded traction bench job still cites the dead name). Expect more of these:
+  a job name is not evidence of the item type it produces. (live, 2026-09-23)
+- `job.job_items` is not directly iterable in Lua (`attempt to get length of a userdata
+  value`); read `job.job_items.elements`. (live, 2026-09-23)
