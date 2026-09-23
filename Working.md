@@ -272,8 +272,16 @@ deploy agent and once independently. Every read is pcall-guarded, so all six
 silently returned false: the kea still landed in `record_only` by luck, but the
 **slow tier could never fire for a thieving creature**, the exact case the
 design was built for. Three layers of offline tests passed; only a live
-creature caught it. **Owed:** redeploy after the fix and re-verify against a
-real kea, on the user's go-ahead.
+creature caught it. **Fixed, redeployed and live-verified 2026-09-23** (orchestrator, one file,
+committed bytes hash-matched at the installed path, quicksave confirmed in
+`autosave 2` first, backup at `/opt/df/deploy-backup-2026-09-23-tagfix/`):
+`threat.scan` now reads kea unit 513 as `is_curiousbeast_item: true` and
+`is_curiousbeast_eater: true` with `read_failures: []`, tier `record_only` at
+68 tiles and not closing, and the moose as `is_benign: true`. Before the fix
+every one of those read false. Fort paused at tick 107874, 100 FPS,
+`dfmcp-server` active. **Still owed:** a live check that a deliberately broken
+field name actually surfaces in `read_failures`, which only a failing read can
+prove.
 
 **Tooling:** `scripts/vm-ssh.sh` (committed, orchestrator-tested) is now the
 only sanctioned way for a stream to reach a VM: it reads the address by key,
