@@ -14,8 +14,16 @@ learning architecture.
 >   `evals/live/2026-09-23-attention-deploy/` plus the orchestrator's
 >   single-file redeploy that followed it).** Uniboslan is paused at year 31,
 >   tick 107874, 22 alive and 1 dead, 100 FPS, `dfmcp-server` active. Role
->   tool lists: **overseer 63, architect 37, quartermaster 23, consultant
->   21, conductor 15**. **Two Office zones exist** (id 10 unowned, id 11
+>   tool lists: **overseer 70, architect 44, quartermaster 24, consultant
+>   26, conductor 15** (read plus write lists, measured 2026-09-24 from the
+>   roster; figures above this line predate the zone, nobles and surface tools). Since then the zone inventory,
+>   `nobles.requirements`, furniture-aware siting and a zone-anchored surface
+>   perception layer (enclosure, finish, material, traffic) are deployed. The
+>   Architect ran on the office task with no hints and produced a sound
+>   proposal (`evals/live/2026-09-24-architect-rematch/`); agents stay
+>   propose-only (register 2026-09-24) and the hands, a quickfort-backed
+>   template-plus-site verb, are in build. Both offices are still empty and
+>   unenclosed; `nobles requirements MANAGER` still reads `not_met`. **Two Office zones exist** (id 10 unowned, id 11
 >   owned by the Manager, unit 345, read back twice), both outdoors (no
 >   fully indoor 3x3 site was available near a workshop or the Well). **A
 >   Chair was built for real**, the first real, non-dry-run build of any

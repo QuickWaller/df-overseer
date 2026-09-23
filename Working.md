@@ -4,6 +4,22 @@ What's currently in progress. Remove an item once it's done, tabled, or
 shelved, don't mark it paused. Any session should read this and know what's
 actually going on right now.
 
+## Current state, 2026-09-24 (read this first)
+
+**Deployed today (user go-ahead, all hashes matched three ways, fort paused at abs_tick 12611557, MCP restart clean):** the surface perception layer (`df-overseer-surface.lua`, four zone-anchored reads: enclosure, finish, material, traffic) and the furniture-aware ranking change. Live checks: zones 10 and 11 read `not_enclosed`, floors 9/9 rough natural, traffic all Normal, `nobles requirements MANAGER` Office `not_met`. Record: `evals/live/2026-09-24-surface-deploy/`.
+
+**One live check failed, and it is understood.** `zone find Office 3 3 0 ...` does not surface the Chair because the Chair (building 9) sits in the single gap between the two zones: every 3x3 window containing it overlaps a zone or fails walkability, so `ranked_rects` never builds that candidate. The 1x1 search still finds it. Left unfixed on purpose: the pipeline builds furniture before zoning, and the Architect routed around it. Revisit only if it recurs.
+
+**Architect rematch (Pro, $0.063, 28 calls, 0 failures, `proposal-0003`):** identical prompt plus one enclosure policy sentence, no hints. Diagnosed the bare-grass office, concluded soil cannot be smoothed so the room must be carved from stone, ordered stair, carve, smooth, throne, zone, assign. Weak: vague 5x5 footprint and a prediction (`landmarks.count >= 13`) that cannot confirm the goal. Future proposals should state the goal as a checkable read (`nobles requirements MANAGER` reads `met`). Record: `evals/live/2026-09-24-architect-rematch/`.
+
+**Ruled 2026-09-24:** agents stay propose-only; autonomy is earned per job type, not granted by role.
+
+**In flight:** `handoffs/2026-09-24-blueprint-hands.md`, a Sonnet in a worktree: reads quickfort from the installed source (`research/2026-09-24-quickfort-hands.md`) and builds one generic template-plus-site verb with a surface re-read. Offline; no deploy.
+
+**Next concrete step:** on that stream's merge, ask for go-ahead plus a quicksave to deploy the verb and build the office from `proposal-0003` as its first use. Acceptance: `nobles requirements MANAGER` flips to `met`.
+
+**Still open:** the tiling generator for `bedroom-cell-v1`; burrow confinement ruling; `df-overseer-breach.lua` header and ROADMAP line correction; leaked key rotation (below); commits unpushed. This file exceeds the 400-line archive threshold (1075 lines); an archive pass is owed, not done here.
+
 ## Open: rotate leaked keys (2026-09-17)
 
 A session ran `cat .env | grep -v SECRET` while looking up the VM 103 SSH

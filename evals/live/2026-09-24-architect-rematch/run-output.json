@@ -1,0 +1,32 @@
+{
+  "ok": true,
+  "status": "ok",
+  "timed_out": false,
+  "cost_usd": 0.063389679,
+  "wall_clock_seconds": 422.6,
+  "tool_summary": {
+    "calls": 28,
+    "tools": [
+      "<host>__nobles__list",
+      "<host>__nobles__requirements",
+      "<host>__zone__list",
+      "<host>__zone__list-kinds",
+      "<host>__landmarks__list",
+      "<host>__surface__enclosure",
+      "<host>__surface__finish",
+      "<host>__surface__material",
+      "<host>__gotchas__get",
+      "<host>__openarea__find",
+      "<host>__diggable__find",
+      "<host>__diggable__find-stair",
+      "<host>__orders__list",
+      "<host>__stuckjobs__find",
+      "<host>__labor__enabled-counts",
+      "<host>__stocks__availability",
+      "<host>__queue__propose"
+    ],
+    "failures": 0
+  },
+  "error": null,
+  "final_answer": null
+}
