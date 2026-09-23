@@ -111,35 +111,32 @@ df-overseer-connectivity.lua:
       lua_function: check_reachable
       effect: read
       coordinate_bearing: false
-      live_deployed: false
-      verified: unverified
+      live_deployed: true
+      verified: "2026-09-23 (evals/live/2026-09-23-attention-deploy/README.md): called live as the overseer role for {from: Well, to: Still}, returned {status: reachable, from_group: 3478, to_group: 3478, from_via: adjacent, to_via: at} -- the tri-state shape confirmed live, matching the landmark-reachability handoff's own design exactly"
       knowledge_scope: player_derivable
       notes: >
         Landmark-name form, added once the landmark system existed
         (2026-09-10). The underlying dfhack.maps.canWalkBetween/
-        getWalkableGroup mechanism is verified via check-units below;
-        this specific FROM/TO-by-name wrapper has no separate live-test
-        claim on record.
-        FIXED 2026-09-23 (handoffs/2026-09-23-landmark-reachability.md,
-        offline stream, not deployed this stream): result shape changed
-        from {reachable: bool, from_group, to_group} to a tri-state
-        {status: "reachable"|"unreachable"|"unknown", reason?, from_via?,
-        to_via?, from_group?, to_group?} via the new shared
-        df-overseer-reachability.lua. live_deployed set false pending
-        deploy: VM 103's copy still returns the old boolean shape.
+        getWalkableGroup mechanism is verified via check-units below.
+        FIXED 2026-09-23 (handoffs/2026-09-23-landmark-reachability.md): result
+        shape changed from {reachable: bool, from_group, to_group} to a
+        tri-state {status: "reachable"|"unreachable"|"unknown", reason?,
+        from_via?, to_via?, from_group?, to_group?} via the new shared
+        df-overseer-reachability.lua. DEPLOYED and live-verified 2026-09-23
+        (evals/live/2026-09-23-attention-deploy/), see verified above.
     "check-units UNIT_ID UNIT_ID":
       lua_function: check_reachable_units
       effect: read
       coordinate_bearing: false
-      live_deployed: false
+      live_deployed: true
       verified: unverified
       knowledge_scope: player_derivable
       notes: >
         Original stopgap, kept for low-level debugging. decisions/DECISIONS.md
-        2026-09-10. FIXED 2026-09-23, same tri-state result shape and same
-        not-yet-deployed caveat as check FROM TO above -- verified reset to
-        unverified because the result shape changed and no live run has
-        exercised the new code.
+        2026-09-10. Same tri-state result shape as check FROM TO above, and
+        the same underlying df-overseer-reachability.lua is deployed and
+        live-verified (see check FROM TO's verified line), but this specific
+        unit-id wrapper has no separate live-call on record as of 2026-09-23.
 
 df-overseer-landmarks.lua:
   build_order_item: 3
@@ -148,33 +145,34 @@ df-overseer-landmarks.lua:
       lua_function: list_landmarks
       effect: read
       coordinate_bearing: false
-      live_deployed: false
-      verified: unverified
+      live_deployed: true
+      verified: "2026-09-23 (evals/live/2026-09-23-attention-deploy/README.md): called live as the overseer role. The Well's three exits (Activity Zone #1, Activity Zone #2, its own exit list) all now read reachability: reachable, with to_via/from_via: adjacent on the Well side -- confirms the fix. No landmark in the fort's current list reported unreachable or unknown"
       knowledge_scope: player_visible
       notes: >
         Seed + live buildings + live burrows, sorted by name for
         prefix-cache determinism. decisions/DECISIONS.md 2026-09-10/11.
-        FIXED 2026-09-23 (handoffs/2026-09-23-landmark-reachability.md,
-        offline stream, not deployed this stream): each exit's `walkable`
-        bool (from canWalkBetween on the two CENTROID tiles) replaced with
-        `reachability` ("reachable"|"unreachable"|"unknown", `reachability_
-        reason` on the last two, `from_via`/`to_via` reporting "at" vs
-        "adjacent") via the new shared df-overseer-reachability.lua. Fixes a
-        live-found false negative: the fort's own Well (centre tile a
-        RampTop, standable by nobody) read walkable:false to every
-        neighbour despite being genuinely reachable from beside it.
-        live_deployed set false and verified reset to unverified pending
-        deploy -- VM 103's copy still returns the old boolean shape.
+        FIXED 2026-09-23 (handoffs/2026-09-23-landmark-reachability.md): each
+        exit's `walkable` bool (from canWalkBetween on the two CENTROID
+        tiles) replaced with `reachability` ("reachable"|"unreachable"|
+        "unknown", `reachability_reason` on the last two, `from_via`/`to_via`
+        reporting "at" vs "adjacent") via the new shared
+        df-overseer-reachability.lua. Fixes a live-found false negative: the
+        fort's own Well (centre tile a RampTop, standable by nobody) read
+        walkable:false to every neighbour despite being genuinely reachable
+        from beside it. DEPLOYED and live-verified 2026-09-23
+        (evals/live/2026-09-23-attention-deploy/), see verified above.
     "get NAME":
       lua_function: get_landmark
       effect: read
       coordinate_bearing: false
-      live_deployed: false
+      live_deployed: true
       verified: unverified
       knowledge_scope: player_visible
       notes: >
-        Thin filter over list_landmarks. Same not-yet-deployed caveat and
-        exit-shape change as list above (2026-09-23).
+        Thin filter over list_landmarks. The underlying list_landmarks call
+        and shape are deployed and live-verified (see list above); this
+        single-name filter itself has no separate live-call on record as of
+        2026-09-23.
     "build NAME BLUEPRINT_FILE":
       lua_function: build_at_landmark
       effect: mutate
@@ -725,7 +723,7 @@ df-overseer-building.lua:
       effect: mutate
       coordinate_bearing: internal-only
       live_deployed: true
-      verified: "2026-09-21 (DRY_RUN path only, live on VM 103: quickfort's own --dry-run validated the generated blueprint for workshop, furnace, furniture and variable-size kinds, first through a /tmp script path and again after the deploy over a real MCP client as the overseer for Masons, Kiln, Craftsdwarfs, Smelter, Bed and FarmPlot 5x5; the real path is UNTESTED live)"
+      verified: "2026-09-21 (DRY_RUN path only, live on VM 103: quickfort's own --dry-run validated the generated blueprint for workshop, furnace, furniture and variable-size kinds, first through a /tmp script path and again after the deploy over a real MCP client as the overseer for Masons, Kiln, Craftsdwarfs, Smelter, Bed and FarmPlot 5x5). REAL PATH FIRST EXERCISED 2026-09-23 (evals/live/2026-09-23-office-and-first-real-build/README.md): `building.build Chair Well 1 20 false` against the same site the dry run validated -- quickfort_ok:true, quickfort_problems:[], read_back confirmed building_found:true and type_matches:true. This is the first real, non-dry-run build of any kind this tool has ever made. Not yet a complete loop: the Chair sits buildingplan-suspended (stocks CHAIR read 0 before and after; the job is stuckjobs-visible as waiting_on:\"suspended\"), since the fort owns no Chair item yet; a manager order (ConstructThrone) was created to try to supply one and had not gone active after 900 ticks"
       knowledge_scope: player_derivable
       notes: >
         Places one building of KIND at the RANK-th site near a landmark.
@@ -823,7 +821,7 @@ df-overseer-zone.lua:
       effect: mutate
       coordinate_bearing: internal-only
       live_deployed: true
-      verified: "2026-09-21 (deployed to VM 103 the same day, hash-verified, and not called after the deploy. DRY_RUN run live on VM 103 by the orchestrator from a scratch script path, fort paused and unchanged at tick 106974: Office with owner MANAGER gave quickfort validation ok with 1 zone and 9 tiles designated; Bedroom, Dining Hall and Water Source dry runs returned well-formed results, but their validation blocks were not read. The real placement, the read-back and both owner assignments have never been run: see handoffs/2026-09-21-zone-tool-generalise.md)"
+      verified: "2026-09-21 (deployed to VM 103, hash-verified. DRY_RUN run live on VM 103: Office with owner MANAGER gave quickfort validation ok with 1 zone and 9 tiles designated; Bedroom, Dining Hall and Water Source dry runs returned well-formed results). REAL PLACEMENT FIRST RUN 2026-09-23 (evals/live/2026-09-23-office-and-first-real-build/README.md): two real Office zones placed. Zone id 10, no owner (room_description read back null both times). Zone id 11, owner unit 345 (the Manager): owner_result.read_back confirmed get_owner_unit_id:345 immediately after placement, and a later check-owner call after the run window still reported unit_id:345 -- the ownership held. Both zones report indoors:false (no fully indoor 3x3 site existed near any workshop or the Well within a 20-tile radius; prefer_indoors:true is a preference, not a filter). Whether an outdoor, no-furniture office carries enough room value for required_office:1 is unsettled: order id 3 (the new furniture order) stayed validated:false through 900 ticks, which cannot yet distinguish 'needs more time' from 'needs more room value'"
       knowledge_scope: player_derivable
       notes: >
         Places one zone of KIND at the RANK-th site near a landmark. DRY_RUN
@@ -841,8 +839,8 @@ df-overseer-zone.lua:
         before anything is touched. quickfort's own dry run stops before it
         assigns, so a dry run proves the owner checks but not the
         assignment; a real run reads assigned_unit_id and the game's getOwner
-        back under `owner_result`. NEVER RUN FOR REAL yet: the first real
-        placement needs the user's go-ahead.
+        back under `owner_result`. Real placement first run 2026-09-23; see
+        `verified` above.
 
 df-overseer-trees.lua:
   build_order_item: "gap named 2026-09-17, handoffs/2026-09-17-water-and-industry-tools.md item 2"
@@ -945,7 +943,7 @@ df-overseer-orders.lua:
       effect: read
       coordinate_bearing: false
       live_deployed: true
-      verified: "2026-09-18 (live, post-redeploy: manager_appointed false, orders []); status/frequency/max_workshops fields added 2026-09-23 (handoffs/2026-09-23-order-job-attribution-and-checks.md), UNTESTED live -- see that file's own notes"
+      verified: "2026-09-18 (live, post-redeploy: manager_appointed false, orders []); status/frequency/max_workshops fields added 2026-09-23 (handoffs/2026-09-23-order-job-attribution-and-checks.md) and DEPLOYED and live-verified 2026-09-23 (evals/live/2026-09-23-order-job-attribution/README.md): all three live orders (ConstructBlocks id 0, ConstructMechanisms id 1, CustomReaction/BREW_DRINK id 2) report validated:true, active:false, finished_year:-1, finished_year_tick:-1, frequency_raw:0, max_workshops:0. frequency's enum type name is still not independently confirmed (frequency_raw is what was actually read)"
       knowledge_scope: player_visible
       notes: >
         Reads `df.global.world.manager_orders.all` directly (a plain
@@ -957,15 +955,17 @@ df-overseer-orders.lua:
         UPDATE 2026-09-23: each order now also reports `validated`, `active`
         (from `order.status`), `finished_year`, `finished_year_tick`,
         `frequency`/`frequency_raw` and `max_workshops`. Live-read on this
-        fort's three stuck orders (by the orchestrating session, not this
-        tool) found `validated=true, active=false`,
+        fort's three stuck orders found `validated=true, active=false`,
         `finished_year=finished_year_tick=-1` -- the failure is a missing
         announcement, not a missing state. `frequency`'s enum type name is
         NOT confirmed on this install (tried defensively, `frequency_raw`
         always present as a fallback); `max_workshops` is read defensively
-        and reported nil if the field does not resolve. None of this new
-        reporting is exercised live yet (offline build); see the .lua
-        file's own header for the exact defensive-read reasoning.
+        and reported nil if the field does not resolve. DEPLOYED and
+        live-verified 2026-09-23 through the tool itself, over a real MCP
+        client (see `verified` above); the fourth order (id 3,
+        ConstructThrone, created 2026-09-23) read `validated: false`
+        throughout a 900-tick run and did not change state
+        (evals/live/2026-09-23-office-and-first-real-build/).
     "create JOB AMOUNT [DRY_RUN]":
       lua_function: create_order
       effect: mutate
@@ -1029,8 +1029,8 @@ df-overseer-orders.lua:
       lua_function: check_duplicate
       effect: read
       coordinate_bearing: false
-      live_deployed: false
-      verified: unverified
+      live_deployed: true
+      verified: "2026-09-23 (evals/live/2026-09-23-order-job-attribution/README.md): called live as blocks, returned duplicate_risk:true, orders_in_flight correctly naming order id 0 (ConstructBlocks), jobs_in_flight empty (no live job assigned right now). Granted read-only to overseer, architect and quartermaster; no consultant entry"
       knowledge_scope: player_visible
       notes: >
         Added handoffs/2026-09-23-order-job-attribution-and-checks.md item 4:
@@ -1042,7 +1042,7 @@ df-overseer-orders.lua:
         Never refuses; `duplicate_risk` is a plain boolean summary, the
         caller decides what to do with it. Lives here (a Lua tool), not a
         native dfmcp tool or dfqueue -- see the .lua file's own header for
-        why. Offline build, UNTESTED live.
+        why. DEPLOYED 2026-09-23, see verified above.
 
 df-overseer-workjob.lua:
   build_order_item: "handoffs/2026-09-19-workshop-add-job.md -- the honest alternative to a stalled manager order: a direct workshop job, no Manager needed, per handoffs/2026-09-19-well-and-harvest.md section 6 and handoffs/2026-09-19-well-finish.md sections 2-4"
@@ -1136,7 +1136,7 @@ df-overseer-workjob.lua:
       lua_function: cancel_job
       effect: mutate
       coordinate_bearing: false
-      live_deployed: false
+      live_deployed: true
       verified: unverified
       knowledge_scope: player_visible
       notes: >
@@ -1151,8 +1151,13 @@ df-overseer-workjob.lua:
         see whether it was cancelling direct-route or order-route production.
         DRY_RUN defaults to true, same contract as every other write tool
         here. Write tool: sole_writer overseer only (agents/ROSTER.yaml),
-        denied to every advisor. Offline build, UNTESTED live -- the exact
-        first-live-run command is recorded as owed.
+        denied to every advisor -- confirmed live 2026-09-23
+        (evals/live/2026-09-23-order-job-attribution/README.md): granted only
+        to the overseer's tool listing (+1 delta), absent from architect and
+        quartermaster's listings (the deny works at the listing layer, not
+        merely a call-time refusal). DEPLOYED 2026-09-23; the write verb
+        itself was explicitly NOT exercised that run, per its own hard
+        lines -- the exact first-live-run command is still owed.
 
 df-overseer-stockpile.lua:
   build_order_item: "handoffs/2026-09-18-lever-gap-tools.md deliverable 2, docs/PRODUCTION-MODEL.md sec8/sec13 (leading indicator, stockpile-link lever gap)"
@@ -1208,7 +1213,7 @@ df-overseer-stuckjobs.lua:
       effect: read
       coordinate_bearing: false
       live_deployed: true
-      verified: "2026-09-11; order_id/from_order attribution fields added 2026-09-23 (handoffs/2026-09-23-order-job-attribution-and-checks.md), UNTESTED live"
+      verified: "2026-09-11; order_id/from_order attribution fields added 2026-09-23 (handoffs/2026-09-23-order-job-attribution-and-checks.md), DEPLOYED 2026-09-23 (evals/live/2026-09-23-order-job-attribution/) and callable live ([] returned, correctly, since no live job exists on this fort right now), but the populated-field shape itself remains UNTESTED live -- needs a real order-spawned job, which needs the still-open office/manager question to resolve first"
       knowledge_scope: player_visible
       notes: >
         Traversal idiom (utils.listpairs over world.jobs.list) confirmed
@@ -1235,21 +1240,23 @@ df-overseer-threat.lua:
       verified: unverified
       knowledge_scope: player_derivable
       notes: >
-        UPDATE 2026-09-23 (handoffs/2026-09-23-landmark-reachability.md,
-        offline stream, not deployed this stream): citizen_groups() and the
-        candidate scan loop now resolve reachability via the shared
-        df-overseer-reachability.lua (resolve_group/group_matches) instead
-        of a bare getWalkableGroup(x,y,z)~=0 on the exact tile. Fixes a real
-        blind spot (research/2026-09-17-pool-reachability.md, live-verified
-        against this install): a RAMP/RAMP_TOP tile reads walkable group 0
-        regardless of true walkability, so a citizen or candidate standing
-        on ordinary ramp terrain could be silently excluded before. This can
-        only ADD matches (never remove one), so `scan` becomes MORE, not
-        less, permissive about shares_walkable_group_with_citizens --
-        result entries also gain `reachable.shares_walkable_group_via`
-        ("at"/"adjacent") and a "(via_adjacent_tile)" suffix in `why` when
-        the match came from the neighbour-ring fallback. VM 103's deployed
-        copy still runs the pre-fix logic.
+        UPDATE 2026-09-23 (handoffs/2026-09-23-landmark-reachability.md):
+        citizen_groups() and the candidate scan loop now resolve reachability
+        via the shared df-overseer-reachability.lua (resolve_group/
+        group_matches) instead of a bare getWalkableGroup(x,y,z)~=0 on the
+        exact tile. Fixes a real blind spot (research/2026-09-17-
+        pool-reachability.md, live-verified against this install): a
+        RAMP/RAMP_TOP tile reads walkable group 0 regardless of true
+        walkability, so a citizen or candidate standing on ordinary ramp
+        terrain could be silently excluded before. This can only ADD matches
+        (never remove one), so `scan` becomes MORE, not less, permissive
+        about shares_walkable_group_with_citizens -- result entries also gain
+        `reachable.shares_walkable_group_via` ("at"/"adjacent") and a
+        "(via_adjacent_tile)" suffix in `why` when the match came from the
+        neighbour-ring fallback. DEPLOYED 2026-09-23
+        (evals/live/2026-09-23-attention-deploy/), live-checked: two candidates
+        returned, both correctly `tier: record_only` for a kea 68 tiles away
+        and a moose 77 tiles away.
         UPDATE 2026-09-22: the closing sentences below that say NOT DEPLOYED AND
         NOT RUN are stale. The file was on VM 103 and byte-equal to main on
         2026-09-17 (handoffs/2026-09-17-farm-tools-deploy.md), and the
@@ -1290,7 +1297,7 @@ df-overseer-threat.lua:
         wildlife noise that produces on a populated fort is unknown.
         Ranking weights and MAX_RESULTS are untuned guesses.
         UPDATE 2026-09-23 (handoffs/2026-09-23-attention-tiers-ingame.md item
-        1, offline stream, not deployed): every result now also carries
+        1; DEPLOYED 2026-09-23): every result now also carries
         `class_flags` (raw creature tags -- LARGE_PREDATOR/BUILDINGDESTROYER/
         CURIOUS_BEAST_ITEM/_EATER/_GUZZLER/BENIGN/MISCHIEVOUS, pcall-guarded,
         read at the caste level, `caste.misc.buildingdestroyer > 0` for the
@@ -1302,20 +1309,29 @@ df-overseer-threat.lua:
         highest heuristic score. Reads df-overseer-ledger.lua's
         ledger_closest_distance (read-only) per candidate to evaluate the
         "closing in" theft condition -- see classify_tier's own comment.
-        UPDATE 2026-09-23 (handoffs/2026-09-23-creature-tag-fields-fix.md,
-        offline stream, not deployed): the six raw-tag reads were WRONG as
-        first deployed, found live against a real kea
-        (evals/live/2026-09-23-attention-deploy/README.md's "CRITICAL CHECK"
-        section) -- creature-level instead of caste-level, `CURIOUSBEAST_*`
-        instead of `CURIOUS_BEAST_*`, and `BUILDINGDESTROYER` tested as a
-        flag bit when it is a plain integer. Corrected in the .lua file; a
-        failed read is no longer indistinguishable from a genuine `false` --
-        `class_flags` now also carries a `read_failures` array naming any
-        caste field that could not be read this call, and a non-empty one is
-        also logged via `dfhack.printerr`. **Still not re-verified live**
-        (this was another offline stream) -- the next deploy must re-run the
-        same live kea check this bug was found by, per that handoff's own
-        Result section.
+        UPDATE 2026-09-23 (handoffs/2026-09-23-creature-tag-fields-fix.md):
+        the six raw-tag reads were WRONG as first deployed, found live
+        against a real kea (evals/live/2026-09-23-attention-deploy/README.md's
+        "CRITICAL CHECK" section) -- creature-level instead of caste-level,
+        `CURIOUSBEAST_*` instead of `CURIOUS_BEAST_*`, and
+        `BUILDINGDESTROYER` tested as a flag bit when it is a plain integer.
+        Every one of the six pcall-guarded reads silently returned `false`
+        before the fix; the kea still landed in `record_only` by luck (none
+        of the six tags gate the pause tier), but the SLOW tier -- built
+        specifically for a theft-tagged creature closing in -- could never
+        have fired. Corrected in the .lua file; a failed read is no longer
+        indistinguishable from a genuine `false` -- `class_flags` now also
+        carries a `read_failures` array naming any caste field that could
+        not be read this call, and a non-empty one is also logged via
+        `dfhack.printerr`. FIXED, REDEPLOYED AND LIVE-VERIFIED 2026-09-23
+        (orchestrator, single-file redeploy, committed bytes hash-matched at
+        the installed path): `threat.scan` now reads kea unit 513 as
+        `is_curiousbeast_item: true` and `is_curiousbeast_eater: true` with
+        `read_failures: []`, tier still correctly `record_only` at 68 tiles
+        (not closing), and a moose as `is_benign: true`. **Still owed**: a
+        live check that a deliberately broken field name actually surfaces
+        in `read_failures` -- only a failing read can prove the guard fires,
+        and none has failed live yet.
 
 df-overseer-breach.lua:
   build_order_item: "not in the 0-9 spatial build order -- a safety gap found 2026-09-12, research/2026-09-12-dfhack-capability-checks.md sec5"
@@ -1811,8 +1827,8 @@ df-overseer-clock.lua:
       lua_function: clock_set_speed
       effect: mutate
       coordinate_bearing: false
-      live_deployed: false
-      verified: unverified
+      live_deployed: true
+      verified: "2026-09-22 (evals/live/2026-09-22-loop-mvp-deploy/README.md): set to 10 then back to 100, independently confirmed both times via df.global.enabler.fps, pause/tick unchanged throughout"
       knowledge_scope: player_visible
       notes: >
         Writes df.global.enabler.fps directly, mirroring setfps.lua's own
@@ -1827,8 +1843,8 @@ df-overseer-clock.lua:
       lua_function: clock_pause
       effect: mutate
       coordinate_bearing: false
-      live_deployed: false
-      verified: unverified
+      live_deployed: true
+      verified: "2026-09-22 (evals/live/2026-09-22-loop-mvp-deploy/README.md): called on an already-paused fort, ok:true paused:true. Only the trivial already-paused case is exercised; a real pause-from-running call is not on record"
       knowledge_scope: player_visible
       notes: >
         dfhack.world.SetPauseState(true). Always allowed (pausing is the
@@ -1837,8 +1853,13 @@ df-overseer-clock.lua:
       lua_function: clock_resume
       effect: mutate
       coordinate_bearing: false
-      live_deployed: false
+      live_deployed: true
       verified: unverified
+      # Still genuinely unexercised as of 2026-09-23: every deploy and eval run
+      # this stream read kept the fort paused throughout and never called resume.
+      # Owed: a true-positive (refused while latched) and true-negative (succeeds
+      # once cleared) live test, per evals/live/2026-09-22-loop-mvp-deploy/README.md
+      # "owed, not run".
       knowledge_scope: player_visible
       notes: >
         dfhack.world.SetPauseState(false), refused with the latch detail
@@ -1851,8 +1872,8 @@ df-overseer-clock.lua:
       lua_function: clock_status
       effect: read
       coordinate_bearing: false
-      live_deployed: false
-      verified: unverified
+      live_deployed: true
+      verified: "2026-09-22/23 (evals/live/2026-09-22-loop-mvp-deploy/, 2026-09-23-office-and-first-real-build/, 2026-09-23-attention-deploy/): called repeatedly across three separate live runs, paused/armed/tick fields all read consistently; the `advisory` field itself has not yet been seen populated live (no slow-tier trip has fired against the real fort as of this deploy)"
       knowledge_scope: player_derivable
       notes: >
         paused, fps, cur_year/cur_year_tick/abs_tick, whether the tripwire
@@ -1869,8 +1890,8 @@ df-overseer-clock.lua:
       lua_function: clock_arm
       effect: mutate
       coordinate_bearing: false
-      live_deployed: false
-      verified: unverified
+      live_deployed: true
+      verified: "2026-09-22 (evals/live/2026-09-22-loop-mvp-deploy/README.md): armed with the stated defaults, confirmed via clock.status, then disarmed. The 2026-09-23 tier/announcement additions to this command's own tripwire logic are deployed (evals/live/2026-09-23-attention-deploy/) but not yet independently re-armed and tripped live under this stream's own sources; the one real trip this fort has seen (evals/live/2026-09-23-office-and-first-real-build/, a kea at 68 tiles) was against the PRE-fix version, and the CRITICAL CHECK in the 2026-09-23 attention-deploy README found the tier-gating creature-tag reads were wrong at that time (fixed and live-verified separately, handoffs/2026-09-23-creature-tag-fields-fix.md)"
       knowledge_scope: player_derivable
       notes: >
         Registers the in-game tripwire watcher via repeat-util (the same
@@ -1884,7 +1905,8 @@ df-overseer-clock.lua:
         10, sourced from docs/AGENT-LOOP.md ss2's own "Slowed" level. Clears
         any existing latch AND advisory (a fresh arm is a clean start).
         Tripwires, UPDATED 2026-09-23 (handoffs/2026-09-23-attention-tiers-
-        ingame.md, offline stream, not deployed): (1) a citizen death since
+        ingame.md; DEPLOYED 2026-09-23, evals/live/2026-09-23-attention-deploy/):
+        (1) a citizen death since
         the last check (a getCitizens() roster diff, not the omniscient
         UNIT_DEATH event -- see the .lua file's own step-1 comment), (2)
         hunger/thirst past critical, (3) a hostile df-overseer-threat.lua's
@@ -1902,8 +1924,8 @@ df-overseer-clock.lua:
       lua_function: clock_disarm
       effect: mutate
       coordinate_bearing: false
-      live_deployed: false
-      verified: unverified
+      live_deployed: true
+      verified: "2026-09-22 (evals/live/2026-09-22-loop-mvp-deploy/README.md): called after clock.arm, armed flipped true to false, confirmed via clock.status, no game time passed"
       knowledge_scope: player_visible
       notes: >
         Cancels the repeat-util schedule. Does not touch an existing latch
@@ -1912,7 +1934,7 @@ df-overseer-clock.lua:
       lua_function: clock_clear
       effect: mutate
       coordinate_bearing: false
-      live_deployed: false
+      live_deployed: true
       verified: unverified
       knowledge_scope: player_visible
       notes: >
@@ -1926,8 +1948,8 @@ df-overseer-fort.lua:
       lua_function: fort_quicksave
       effect: mutate
       coordinate_bearing: false
-      live_deployed: false
-      verified: unverified
+      live_deployed: true
+      verified: "2026-09-22/23: fired and confirmed via cur_savegame.save_dir in every one of the 2026-09-22/23 deploy and run evals (rotating through autosave 1/2/3 as expected). One live miss on record too, correctly flagged rather than hidden: the 2026-09-22-loop-game-text-encoding run's own slot-prediction heuristic named the wrong slot once (predicted autosave 1, landed autosave 2), worked around by using cur_savegame.save_dir directly rather than trusting the prediction; that heuristic bug is unfixed and not this file's own read path"
       knowledge_scope: player_visible
       notes: >
         No args: fires quicksave and returns
@@ -1968,8 +1990,8 @@ df-overseer-vitals.lua:
       lua_function: vitals_summary
       effect: read
       coordinate_bearing: false
-      live_deployed: false
-      verified: unverified
+      live_deployed: true
+      verified: "2026-09-22/23: read at the start and end of every 2026-09-22/23 live run (mvp-deploy, encoding, office-and-first-real-build, order-job-attribution, attention-deploy), alive/dead/hunger/thirst figures consistent across all of them"
       knowledge_scope: player_derivable
       notes: >
         Tier 0 figures for the conductor's per-cycle briefing: alive count,
@@ -1995,8 +2017,13 @@ df-overseer-ledger.lua:
       lua_function: record
       effect: mutate
       coordinate_bearing: false
-      live_deployed: false
+      live_deployed: true
       verified: unverified
+      # Not called directly live as of 2026-09-23 (no external caller holds this
+      # id; it runs in-process from threat.lua/diff.lua, neither of which has
+      # fired for real against this paused fort). The write path's inability to
+      # pause or wake is proven by a test over the real deployed file
+      # (tests/test_observation_ledger.py), not by a live trigger.
       knowledge_scope: player_derivable
       notes: >
         Aggregates a sighting/outcome into the per-race observation ledger
@@ -2017,8 +2044,8 @@ df-overseer-ledger.lua:
       lua_function: read_ledger
       effect: read
       coordinate_bearing: false
-      live_deployed: false
-      verified: unverified
+      live_deployed: true
+      verified: "2026-09-23 (evals/live/2026-09-23-attention-deploy/README.md): called live as the overseer role, {rows: []} -- correct, since the fort has been paused throughout this deploy and no tripwire scan has run to write a row. The non-empty shape is unverified live"
       knowledge_scope: player_derivable
       notes: >
         Every ledger row, decayed at READ time only (never swept on write):
@@ -2037,8 +2064,13 @@ df-overseer-announcement-levels.lua:
       lua_function: (module-level table read, no dedicated function)
       effect: read
       coordinate_bearing: false
-      live_deployed: false
+      live_deployed: true
       verified: unverified
+      # Not called as a CLI/MCP command live as of 2026-09-23. The underlying
+      # table was confirmed in-process instead (evals/live/2026-09-23-attention-deploy/):
+      # reqscript loads with no error and PAUSE_REPORT_IDS has exactly 25 entries,
+      # matching research/data/2026-09-23-announcement-severity.yaml's own count.
+      # This CLI/MCP wrapper itself is unexercised.
       knowledge_scope: player_derivable
       notes: >
         Dumps PAUSE_REPORT_IDS (25 ids, generated from
@@ -2053,8 +2085,8 @@ df-overseer-announcement-levels.lua:
       lua_function: (module-level table read, no dedicated function)
       effect: read
       coordinate_bearing: false
-      live_deployed: false
-      verified: unverified
+      live_deployed: true
+      verified: "2026-09-23 (evals/live/2026-09-23-attention-deploy/README.md): called live over real MCP as the conductor role, returned the 23-entry table with id/name/wake/detail per row, spot-checked id 59 (AMBUSH_MISCHIEVOUS)"
       knowledge_scope: player_derivable
       notes: >
         Dumps SLOW_REPORT_IDS (23 ids) as {"ids": [{"id": N, "name": "...",
@@ -2071,7 +2103,7 @@ df-overseer-announcement-levels.lua:
       lua_function: (module-level table read, no dedicated function)
       effect: read
       coordinate_bearing: false
-      live_deployed: false
+      live_deployed: true
       verified: unverified
       knowledge_scope: player_derivable
       notes: >
