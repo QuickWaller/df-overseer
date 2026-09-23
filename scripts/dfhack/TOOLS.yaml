@@ -898,7 +898,7 @@ df-overseer-orders.lua:
       effect: read
       coordinate_bearing: false
       live_deployed: true
-      verified: "2026-09-18 (live, post-redeploy: manager_appointed false, orders [])"
+      verified: "2026-09-18 (live, post-redeploy: manager_appointed false, orders []); status/frequency/max_workshops fields added 2026-09-23 (handoffs/2026-09-23-order-job-attribution-and-checks.md), UNTESTED live -- see that file's own notes"
       knowledge_scope: player_visible
       notes: >
         Reads `df.global.world.manager_orders.all` directly (a plain
@@ -907,6 +907,18 @@ df-overseer-orders.lua:
         entry) alongside the order list so a caller can see the
         precondition rather than assume it. LIVE-VERIFIED: 0 orders
         queued, manager_appointed false, on this fort today.
+        UPDATE 2026-09-23: each order now also reports `validated`, `active`
+        (from `order.status`), `finished_year`, `finished_year_tick`,
+        `frequency`/`frequency_raw` and `max_workshops`. Live-read on this
+        fort's three stuck orders (by the orchestrating session, not this
+        tool) found `validated=true, active=false`,
+        `finished_year=finished_year_tick=-1` -- the failure is a missing
+        announcement, not a missing state. `frequency`'s enum type name is
+        NOT confirmed on this install (tried defensively, `frequency_raw`
+        always present as a fallback); `max_workshops` is read defensively
+        and reported nil if the field does not resolve. None of this new
+        reporting is exercised live yet (offline build); see the .lua
+        file's own header for the exact defensive-read reasoning.
     "create JOB AMOUNT [DRY_RUN]":
       lua_function: create_order
       effect: mutate
@@ -966,6 +978,24 @@ df-overseer-orders.lua:
         for a df.manager_order object. Reversibility is the point (the
         handoff's own "orders.cancel ID for reversibility"), but the
         mechanism itself was never exercised on a real order this session.
+    "check-duplicate JOB":
+      lua_function: check_duplicate
+      effect: read
+      coordinate_bearing: false
+      live_deployed: false
+      verified: unverified
+      knowledge_scope: player_visible
+      notes: >
+        Added handoffs/2026-09-23-order-job-attribution-and-checks.md item 4:
+        for JOB, reports open manager orders (job_type/reaction match) and
+        live jobs (df-overseer-stuckjobs.lua's find_jobs_by_type,
+        reqscript'd) already in flight, using `job.order_id` (see
+        df-overseer-stuckjobs.lua's own header) to tell the two routes
+        apart rather than falling back to job_type/workshop matching alone.
+        Never refuses; `duplicate_risk` is a plain boolean summary, the
+        caller decides what to do with it. Lives here (a Lua tool), not a
+        native dfmcp tool or dfqueue -- see the .lua file's own header for
+        why. Offline build, UNTESTED live.
 
 df-overseer-workjob.lua:
   build_order_item: "handoffs/2026-09-19-workshop-add-job.md -- the honest alternative to a stalled manager order: a direct workshop job, no Manager needed, per handoffs/2026-09-19-well-and-harvest.md section 6 and handoffs/2026-09-19-well-finish.md sections 2-4"
@@ -978,12 +1008,12 @@ df-overseer-workjob.lua:
       verified: "2026-09-19 (deployed to VM 103, hash-verified, and loads and runs live: handoffs/2026-09-19-deploy-batch.md, decisions/DECISIONS.md 2026-09-19)"
       knowledge_scope: player_visible
       notes: "Known JOB values (blocks/mechanisms/brew_drink), the same vocabulary the real 'q -> add job' menu offers at the matching workshop kind."
-    "queue JOB WORKSHOP_LANDMARK_NAME [DRY_RUN]":
+    "queue JOB WORKSHOP_LANDMARK_NAME [DRY_RUN] [REPEAT]":
       lua_function: queue_job
       effect: mutate
       coordinate_bearing: false
       live_deployed: true
-      verified: "2026-09-19 (live: blocks and a mechanism were queued for real and the well was built from them; brew_drink refuses on the container reagent by design; handoffs/2026-09-19-stone-blocks-well.md, register 2026-09-19)"
+      verified: "2026-09-19 (live: blocks and a mechanism were queued for real and the well was built from them; brew_drink refuses on the container reagent by design; handoffs/2026-09-19-stone-blocks-well.md, register 2026-09-19). REPEAT param added 2026-09-23 (handoffs/2026-09-23-order-job-attribution-and-checks.md item 6), UNTESTED live -- see that command's own note."
       # Deployed to VM 103 2026-09-19 and run live, including one real blocks job (decisions/DECISIONS.md 2026-09-19); still tagged unverified
       # here because dfmcp/tests/test_workjob_tool.py pins it; see handoffs/2026-09-21-doc-drift-pass-2.md.
       knowledge_scope: player_visible
@@ -1040,6 +1070,42 @@ df-overseer-workjob.lua:
         MCP; the raw `./dfhack-run df-overseer-workjob ...` CLI has no such
         restriction. See dfmcp/tests/test_workjob_tool.py's own
         `test_apostrophed_workshop_names_are_refused_by_the_mcp_layer`.
+        UPDATE 2026-09-23 (handoffs/2026-09-23-order-job-attribution-and-
+        checks.md item 6): an optional trailing REPEAT arg, off by default
+        ("off unless explicitly asked for"), sets DFHack's own
+        `job.flags['repeat']` on the created job when DRY_RUN=false and
+        REPEAT is truthy. Confirmed against DFHack's own current shipped
+        `gui/workflow.lua` source (both a read and a write of
+        `job.flags['repeat']`), the same citation standard this file's
+        header already applies elsewhere -- NOT independently confirmed by
+        introspecting this install's own live `df.job._fields` (offline
+        build, no write verb exercised against the fort this stream). Every
+        result reports `repeat_requested`; a real queue additionally reports
+        `repeat_set` (whether the pcall'd write succeeded). REPEAT can only
+        be reached by also supplying DRY_RUN explicitly (dfmcp's own
+        positional-optional gap check, dfmcp/tools.py) -- "explicit when
+        asked" applies to both.
+    "cancel JOB_ID [DRY_RUN]":
+      lua_function: cancel_job
+      effect: mutate
+      coordinate_bearing: false
+      live_deployed: false
+      verified: unverified
+      knowledge_scope: player_visible
+      notes: >
+        Added handoffs/2026-09-23-order-job-attribution-and-checks.md item 5.
+        Cancels a direct job by id (`dfhack.job.removeJob`), refusing any job
+        with no resolvable workshop-building holder or whose holder is not a
+        Workshop (a haul/eat/sleep job, or anything not created the way
+        queue_job creates jobs) rather than cancelling it -- "refusing to
+        cancel a job that is not this fort's own queued work", the handoff's
+        own phrasing. Reports the cancelled job's `order_id`/`from_order`
+        (df-overseer-stuckjobs.lua's job_origin, reqscript'd) so a caller can
+        see whether it was cancelling direct-route or order-route production.
+        DRY_RUN defaults to true, same contract as every other write tool
+        here. Write tool: sole_writer overseer only (agents/ROSTER.yaml),
+        denied to every advisor. Offline build, UNTESTED live -- the exact
+        first-live-run command is recorded as owed.
 
 df-overseer-stockpile.lua:
   build_order_item: "handoffs/2026-09-18-lever-gap-tools.md deliverable 2, docs/PRODUCTION-MODEL.md sec8/sec13 (leading indicator, stockpile-link lever gap)"
@@ -1095,7 +1161,7 @@ df-overseer-stuckjobs.lua:
       effect: read
       coordinate_bearing: false
       live_deployed: true
-      verified: "2026-09-11"
+      verified: "2026-09-11; order_id/from_order attribution fields added 2026-09-23 (handoffs/2026-09-23-order-job-attribution-and-checks.md), UNTESTED live"
       knowledge_scope: player_visible
       notes: >
         Traversal idiom (utils.listpairs over world.jobs.list) confirmed
@@ -1103,6 +1169,13 @@ df-overseer-stuckjobs.lua:
         the research spec's own "unverified-locally-but-standard" flag.
         idle_ticks is honestly null for any job that existed before this
         script's first registration this process lifetime, never guessed.
+        UPDATE 2026-09-23: each result now also reports `order_id` (nil if
+        not from an order) and `from_order` (boolean), from `job.order_id`
+        -- see the .lua file's own header for the field's DFHack source
+        citation and the sentinel-value caveat (not independently confirmed
+        live this stream). The file also exports `find_jobs_by_type`
+        (reqscript'd by df-overseer-orders.lua's check_duplicate), not
+        wired to any CLI command of its own.
 
 df-overseer-threat.lua:
   build_order_item: "not in the 0-9 spatial build order -- a safety gap found 2026-09-12, research/2026-09-12-dfhack-capability-checks.md sec5"

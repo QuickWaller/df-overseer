@@ -97,10 +97,11 @@ def test_workjob_queue_argument_signature_matches_the_lua_dispatch():
     )
     tool = reg.get("workjob.queue")
     tokens = [t.strip("[]") for t in tool.args]
-    assert tokens == ["JOB", "WORKSHOP_LANDMARK_NAME", "DRY_RUN"]
+    assert tokens == ["JOB", "WORKSHOP_LANDMARK_NAME", "DRY_RUN", "REPEAT"]
     assert tool.args[0] == "JOB"
     assert tool.args[1] == "WORKSHOP_LANDMARK_NAME"
     assert tool.args[2] == "[DRY_RUN]"  # optional, dry-run defaults true
+    assert tool.args[3] == "[REPEAT]"  # optional, off by default (handoffs/2026-09-23)
 
 
 # --------------------------------------------------------------------------
@@ -258,3 +259,193 @@ def test_argv_for_queue_with_dry_run(registry):
         },
     )
     assert argv == ["df-overseer-workjob", "queue", "brew_drink", "Still", "false"]
+
+
+def test_argv_for_queue_with_repeat(registry):
+    """handoffs/2026-09-23-order-job-attribution-and-checks.md item 6: REPEAT
+    is only reachable once DRY_RUN is also given explicitly (dfmcp's own
+    positional-optional gap check), matching "explicit when asked" for both."""
+    tool = registry.get("workjob.queue")
+    argv = argv_for_call(
+        tool,
+        {
+            "job": "blocks",
+            "workshop_landmark_name": "North Workshop",
+            "dry_run": "false",
+            "repeat": "true",
+        },
+    )
+    assert argv == ["df-overseer-workjob", "queue", "blocks", "North Workshop", "false", "true"]
+
+
+def test_repeat_cannot_be_supplied_without_dry_run():
+    """The positional-optional gap check (dfmcp/tools.py) refuses skipping
+    DRY_RUN while supplying REPEAT -- REPEAT was not declared `skippable` in
+    TOOLS.yaml, on purpose: the handoff's own "explicit when asked" applies
+    to DRY_RUN too."""
+    from dfmcp.tools import ArgumentError
+
+    reg = load_registry(
+        native_tools={**NATIVE_TOOLS, **DOCTRINE_NATIVE_TOOLS, **SERIES_NATIVE_TOOLS, **GOTCHAS_NATIVE_TOOLS, **KNOWLEDGE_NATIVE_TOOLS}
+    )
+    tool = reg.get("workjob.queue")
+    with pytest.raises(ArgumentError):
+        argv_for_call(
+            tool,
+            {"job": "blocks", "workshop_landmark_name": "North Workshop", "repeat": "true"},
+        )
+
+
+# --------------------------------------------------------------------------
+# workjob.cancel: the new direct-job cancel verb
+# (handoffs/2026-09-23-order-job-attribution-and-checks.md item 5)
+# --------------------------------------------------------------------------
+
+
+def test_workjob_cancel_id_exists_in_the_real_manifest(registry):
+    assert "workjob.cancel" in registry
+
+
+def test_workjob_cancel_is_flagged_mutating(registry):
+    tool = registry.get("workjob.cancel")
+    assert tool.effect == "mutate"
+    assert tool.mutates
+
+
+def test_workjob_cancel_carries_no_coordinates(registry):
+    assert registry.get("workjob.cancel").coordinate_bearing is False
+
+
+def test_workjob_cancel_argument_signature_matches_the_lua_dispatch():
+    """Ground truth: df-overseer-workjob.lua's own dispatch block reads
+    `args[2], args[3]` as job_id/dry_run in that order for `cancel`."""
+    reg = load_registry(
+        native_tools={**NATIVE_TOOLS, **DOCTRINE_NATIVE_TOOLS, **SERIES_NATIVE_TOOLS, **GOTCHAS_NATIVE_TOOLS, **KNOWLEDGE_NATIVE_TOOLS}
+    )
+    tool = reg.get("workjob.cancel")
+    tokens = [t.strip("[]") for t in tool.args]
+    assert tokens == ["JOB_ID", "DRY_RUN"]
+
+
+def test_only_the_overseer_can_cancel_a_workjob(roster):
+    """Same sole-writer rule as workjob.queue."""
+    assert "workjob.cancel" in roster.roles["overseer"].write
+    assert "workjob.cancel" not in roster.roles["architect"].write
+    assert "workjob.cancel" not in roster.roles["architect"].read
+    assert "workjob.cancel" not in roster.roles["consultant"].write
+    assert "workjob.cancel" not in roster.roles["consultant"].read
+
+
+def test_workjob_cancel_denied_to_architect_is_denied_with_a_reason():
+    import yaml
+    from pathlib import Path
+
+    path = Path(__file__).resolve().parents[2] / "agents" / "architect" / "tools.yaml"
+    data = yaml.safe_load(path.read_text(encoding="utf-8"))
+    deny_ids = {entry["id"] for entry in data.get("deny", [])}
+    assert "workjob.cancel" in deny_ids
+
+
+def test_quartermaster_explicitly_denies_workjob_cancel():
+    """agents/quartermaster/tools.yaml is not loaded by load_roster (the role
+    is disabled) -- checked directly against the YAML, matching the same
+    file's own pre-existing workjob.queue check."""
+    import yaml
+    from pathlib import Path
+
+    path = Path(__file__).resolve().parents[2] / "agents" / "quartermaster" / "tools.yaml"
+    data = yaml.safe_load(path.read_text(encoding="utf-8"))
+    deny_ids = {entry["id"] for entry in data.get("deny", [])}
+    assert "workjob.cancel" in deny_ids
+
+
+def test_consultant_has_no_workjob_cancel_grant(roster):
+    assert "workjob.cancel" not in roster.roles["consultant"].read
+    assert "workjob.cancel" not in roster.roles["consultant"].write
+
+
+def test_workjob_cancel_ids_get_legal_reversible_mcp_names(registry):
+    id_to_name, name_to_id = build_tool_names(registry)
+    assert id_to_name["workjob.cancel"] == "workjob__cancel"
+    assert name_to_id["workjob__cancel"] == "workjob.cancel"
+
+
+def test_workjob_cancel_appears_only_in_overseers_tool_definitions(registry, roster):
+    overseer_names = {d["name"] for d in tool_definitions(registry, roster, "overseer")}
+    architect_names = {d["name"] for d in tool_definitions(registry, roster, "architect")}
+    assert "workjob__cancel" in overseer_names
+    assert "workjob__cancel" not in architect_names
+
+
+def test_argv_for_cancel_required_only(registry):
+    tool = registry.get("workjob.cancel")
+    assert argv_for_call(tool, {"job_id": "42"}) == ["df-overseer-workjob", "cancel", "42"]
+
+
+def test_argv_for_cancel_with_dry_run(registry):
+    tool = registry.get("workjob.cancel")
+    argv = argv_for_call(tool, {"job_id": "42", "dry_run": "false"})
+    assert argv == ["df-overseer-workjob", "cancel", "42", "false"]
+
+
+# --------------------------------------------------------------------------
+# orders.check-duplicate: the duplicate-production check
+# (handoffs/2026-09-23-order-job-attribution-and-checks.md item 4)
+# --------------------------------------------------------------------------
+
+
+def test_orders_check_duplicate_id_exists_in_the_real_manifest(registry):
+    assert "orders.check-duplicate" in registry
+
+
+def test_orders_check_duplicate_is_a_read_that_never_mutates(registry):
+    tool = registry.get("orders.check-duplicate")
+    assert tool.effect == "read"
+    assert not tool.mutates
+
+
+def test_orders_check_duplicate_carries_no_coordinates(registry):
+    assert registry.get("orders.check-duplicate").coordinate_bearing is False
+
+
+def test_orders_check_duplicate_argument_signature():
+    reg = load_registry(
+        native_tools={**NATIVE_TOOLS, **DOCTRINE_NATIVE_TOOLS, **SERIES_NATIVE_TOOLS, **GOTCHAS_NATIVE_TOOLS, **KNOWLEDGE_NATIVE_TOOLS}
+    )
+    tool = reg.get("orders.check-duplicate")
+    assert tool.args == ["JOB"]
+
+
+def test_orders_check_duplicate_granted_to_overseer_architect_and_quartermaster(roster):
+    """Read-only, so it follows the orders.list/workjob.list precedent
+    (visible to every advisor whose domain touches production), not the
+    sole-writer boundary."""
+    assert "orders.check-duplicate" in roster.roles["overseer"].read
+    assert "orders.check-duplicate" in roster.roles["architect"].read
+
+
+def test_orders_check_duplicate_quartermaster_yaml_grants_it():
+    """quartermaster is disabled in ROSTER.yaml so load_roster does not
+    resolve it -- checked directly against the YAML, matching this file's
+    own precedent for the other quartermaster checks."""
+    import yaml
+    from pathlib import Path
+
+    path = Path(__file__).resolve().parents[2] / "agents" / "quartermaster" / "tools.yaml"
+    data = yaml.safe_load(path.read_text(encoding="utf-8"))
+    read_ids = {entry["id"] for entry in data.get("read", [])}
+    assert "orders.check-duplicate" in read_ids
+
+
+def test_orders_check_duplicate_consultant_has_no_grant(roster):
+    """Matches the orders.*/workjob.* precedent: consultant's domain is
+    knowledge, not fort action or work-order administration."""
+    assert "orders.check-duplicate" not in roster.roles["consultant"].read
+    assert "orders.check-duplicate" not in roster.roles["consultant"].write
+
+
+def test_argv_for_check_duplicate(registry):
+    tool = registry.get("orders.check-duplicate")
+    assert argv_for_call(tool, {"job": "blocks"}) == [
+        "df-overseer-orders", "check-duplicate", "blocks",
+    ]

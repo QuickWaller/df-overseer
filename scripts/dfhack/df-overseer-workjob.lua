@@ -123,11 +123,32 @@
 -- building object server-side and never returns or prints its x/y/z; the
 -- caller only ever sees the landmark NAME back.
 --
+-- CANCEL, added handoffs/2026-09-23-order-job-attribution-and-checks.md item
+-- 5: a write tool, sole_writer overseer only (agents/ROSTER.yaml), same as
+-- queue above -- kept out of every advisor's allowlist. Takes a job id (not
+-- a workshop landmark: cancelling addresses the specific job, the same
+-- granularity `dfhack.job.removeJob` itself works at). REFUSES, rather than
+-- cancelling, any job that is not this fort's own queued workshop-production
+-- work: a job with no resolvable workshop holder (a haul job, an eat/sleep
+-- job, anything not a "q -> add job" style production job) is out of this
+-- tool's domain by construction, the same boundary queue_job's own job_items
+-- only ever build for a workshop job. Reuses
+-- df-overseer-stuckjobs.lua's `job_origin` (reqscript'd, see that file's own
+-- header) rather than a second attribution implementation, per CLAUDE.md's
+-- generalisability rule. DRY_RUN defaults to true, same contract as
+-- queue_job. UNTESTED live: this stream never sets DRY_RUN to false against
+-- a live DFHack process (Hard lines: no unbounded query, and no write verb
+-- in this stream is exercised against the fort -- the exact command is
+-- recorded as owed for the first supervised run).
+--
 -- Usage: ./dfhack-run df-overseer-workjob list
--- Usage: ./dfhack-run df-overseer-workjob queue JOB WORKSHOP_LANDMARK_NAME [DRY_RUN]
+-- Usage: ./dfhack-run df-overseer-workjob queue JOB WORKSHOP_LANDMARK_NAME [DRY_RUN] [REPEAT]
+-- Usage: ./dfhack-run df-overseer-workjob cancel JOB_ID [DRY_RUN]
 
 local json = require('json')
+local utils = require('utils')
 local textutil = reqscript('df-overseer-textutil')
+local stuckjobs_mod = reqscript('df-overseer-stuckjobs')
 
 -- Per DFHack's own documented cap on dfhack.job.assignToWorkshop (see
 -- header): it silently does nothing and returns false past this many jobs
@@ -314,10 +335,34 @@ function list_jobs()
   return {jobs = known}
 end
 
+-- REPEAT, added handoffs/2026-09-23-order-job-attribution-and-checks.md item
+-- 6: "let workjob.queue set it, off by default, explicit when asked."
+-- Confirmed from DFHack's own current shipped source, not guessed: both
+-- `gui/workflow.lua` and (independently) a search of DFHack's df-structures
+-- job_flags bitfield agree the field is `job.flags['repeat']` (bracket
+-- notation required -- `repeat` is a Lua reserved word, so `job.flags.repeat`
+-- would not even parse). This is a source-code-level confirmation, the same
+-- standard this file's header already applies to the fixed_boulder_job_item
+-- spec (cited to idle-crafting.lua/workshops.lua by name), NOT an
+-- introspection of THIS install's own live df.job._fields for a `repeat` key
+-- inside its flags bitfield -- that live confirmation was out of reach this
+-- stream (offline build; the hard lines forbid any write verb being
+-- exercised against the fort before deploy). If a live read ever shows this
+-- field does not exist or behaves differently on this build, that is a real
+-- finding to record, not a silent assumption to keep making.
+local function truthy_repeat(v)
+  if v == nil then
+    return false
+  end
+  local s = tostring(v):lower()
+  return s == "true" or s == "1" or s == "yes"
+end
+
 -- DRY_RUN defaults to true. See header for the exact call sequence this
 -- mirrors when DRY_RUN is false, and why that path is UNTESTED live this
--- stream.
-function queue_job(job_name, workshop_name, dry_run)
+-- stream. REPEAT defaults to false (off unless explicitly asked for; see
+-- the REPEAT comment above) and is only meaningful when DRY_RUN is false.
+function queue_job(job_name, workshop_name, dry_run, repeat_flag)
   local key = tostring(job_name):lower()
   local info = JOB_INFO[key]
   if not info then
@@ -352,6 +397,8 @@ function queue_job(job_name, workshop_name, dry_run)
   end
   local diagnostics = items_or_err
 
+  local want_repeat = truthy_repeat(repeat_flag)
+
   local base = {
     dry_run = dry,
     job = info.job_type,
@@ -362,6 +409,7 @@ function queue_job(job_name, workshop_name, dry_run)
     max_workshop_jobs = MAX_WORKSHOP_JOBS,
     job_item_count = #job_items,
     job_item_diagnostics = diagnostics,
+    repeat_requested = want_repeat,
   }
 
   if dry then
@@ -408,8 +456,74 @@ function queue_job(job_name, workshop_name, dry_run)
     return base
   end
 
+  if want_repeat then
+    local ok_repeat = pcall(function() job.flags['repeat'] = true end)
+    base.repeat_set = ok_repeat
+  end
+
   base.create_ok = true
   base.job_id = job.id
+  return base
+end
+
+-- Finds a live job by id in df.global.world.jobs.list. Returns the job
+-- object plus its resolved workshop holder (nil if none), or nil plus an
+-- error if no such job exists.
+local function find_job_by_id(job_id)
+  for _, job in utils.listpairs(df.global.world.jobs.list) do
+    if job.id == job_id then
+      local ok_holder, holder = pcall(dfhack.job.getHolder, job)
+      return job, (ok_holder and holder) or nil
+    end
+  end
+  return nil, "no job with id " .. tostring(job_id)
+end
+
+-- See header: refuses any job that is not a workshop-held production job,
+-- rather than cancelling it -- this tool's domain is workshop jobs
+-- (queue_job's own creation contract), not any job on world.jobs.list.
+-- DRY_RUN defaults to true. UNTESTED live -- see header.
+function cancel_job(job_id, dry_run)
+  job_id = tonumber(job_id)
+  if not job_id then
+    return nil, "JOB_ID must be a number"
+  end
+  local dry = truthy_dry_run(dry_run)
+
+  local job, holder_or_err = find_job_by_id(job_id)
+  if not job then
+    return nil, holder_or_err
+  end
+  local holder = holder_or_err
+  if not holder then
+    return nil, "job " .. job_id .. " has no workshop holder"
+      .. " (not this fort's own queued workshop-production work;"
+      .. " this tool only cancels jobs created at a workshop)"
+  end
+  local ok_btype, btype = pcall(function() return holder:getType() end)
+  if not ok_btype or btype ~= df.building_type.Workshop then
+    return nil, "job " .. job_id .. " is held by a non-workshop building,"
+      .. " refusing (not this fort's own queued workshop-production work)"
+  end
+
+  local ok_type, jtype = pcall(function() return df.job_type[job.job_type] end)
+  local origin = stuckjobs_mod.job_origin(job)
+  local base = {
+    dry_run = dry,
+    job_id = job_id,
+    job_type = ok_type and jtype or "unknown",
+    order_id = origin.order_id,
+    from_order = origin.from_order,
+  }
+
+  if dry then
+    base.would_cancel = true
+    return base
+  end
+
+  -- Real mutation. UNTESTED live -- see header.
+  local ok_remove = pcall(dfhack.job.removeJob, job)
+  base.cancel_ok = ok_remove
   return base
 end
 
@@ -424,14 +538,23 @@ local cmd = args[1]
 if cmd == "list" then
   print(json.encode(list_jobs()))
 elseif cmd == "queue" then
-  local job, workshop, dry_run = args[2], args[3], args[4]
+  local job, workshop, dry_run, repeat_flag = args[2], args[3], args[4], args[5]
   if not (job and workshop) then
-    print("usage: df-overseer-workjob queue JOB WORKSHOP_LANDMARK_NAME [DRY_RUN]")
+    print("usage: df-overseer-workjob queue JOB WORKSHOP_LANDMARK_NAME [DRY_RUN] [REPEAT]")
   else
-    local result, err = queue_job(job, workshop, dry_run)
+    local result, err = queue_job(job, workshop, dry_run, repeat_flag)
+    print(json.encode(err and {error = err} or result))
+  end
+elseif cmd == "cancel" then
+  local job_id, dry_run = args[2], args[3]
+  if not job_id then
+    print("usage: df-overseer-workjob cancel JOB_ID [DRY_RUN]")
+  else
+    local result, err = cancel_job(job_id, dry_run)
     print(json.encode(err and {error = err} or result))
   end
 else
   print("usage: df-overseer-workjob list")
-  print("usage: df-overseer-workjob queue JOB WORKSHOP_LANDMARK_NAME [DRY_RUN]")
+  print("usage: df-overseer-workjob queue JOB WORKSHOP_LANDMARK_NAME [DRY_RUN] [REPEAT]")
+  print("usage: df-overseer-workjob cancel JOB_ID [DRY_RUN]")
 end

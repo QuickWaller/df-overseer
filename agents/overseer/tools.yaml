@@ -113,6 +113,13 @@ read:
       Added handoffs/2026-09-19-workshop-add-job.md. The known JOB vocabulary
       (blocks/mechanisms/brew_drink) for workjob.queue below. Deployed
       2026-09-19 and run live.
+  - id: "orders.check-duplicate"
+    status: planned
+    note: >-
+      Added handoffs/2026-09-23-order-job-attribution-and-checks.md item 4.
+      Given a JOB, what is already in flight for it across both routes
+      (open orders and live jobs, told apart by job.order_id). Read this
+      before orders.create/workjob.queue below. Offline build, not deployed.
   - id: "stockpile.list"
     status: exists
     note: >-
@@ -347,6 +354,15 @@ write:
       2026-09-19 and run for real: a blocks job and a mechanisms job made the
       parts for the well (decisions/DECISIONS.md 2026-09-19). TOOLS.yaml still
       tags the command unverified (a registry test pins that).
+  - id: "workjob.cancel"
+    status: planned
+    note: >-
+      Added handoffs/2026-09-23-order-job-attribution-and-checks.md item 5.
+      Cancels a direct job by id, refusing any job that is not a workshop-
+      held production job (the boundary queue_job's own job_items already
+      draw). Granted to the Overseer only, as the sole writer, same as
+      workjob.queue above. Offline build, not deployed, DRY_RUN defaults to
+      true.
   - id: "labor.set-labor"
     status: exists
     hazard: >-
