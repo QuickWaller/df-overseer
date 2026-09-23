@@ -90,4 +90,58 @@ order are stated from the install's own guide, not from memory.
 
 ## Result
 
-(to be filled by the stream)
+Done, data and documentation only. `blueprints/` already existed (eleven
+hand-authored, single-purpose "starter" `.csv` files anchored per-tool,
+predating this brief and not mentioned in `CLAUDE.md`'s `## Structure`);
+this brief's own "Create `blueprints/` (new directory)" instruction was
+stale against the live repo. Rather than overwrite, added a second,
+clearly delineated tier, `blueprints/templates/`, for versioned generic
+reusable cells, and documented the distinction and the reason for it in
+`blueprints/README.md` rather than silently patching over the mismatch
+(`CLAUDE.md`, "if the docs and the actual repo state disagree, flag it").
+
+Produced:
+- `blueprints/README.md`: new "Template library" section defining the
+  format (per-template `id`/`revision` pair, `<id>-v<n>.yaml` metadata +
+  `<id>-v<n>.csv` blueprint, `edges`/`walls`/`requires`/
+  `does_not_include`/`quickfort_blueprints`/`sources` fields, the seam
+  -versus-own-versus-entrance edge vocabulary, how the "finished" wall
+  intent resolves to `#dig` `s` (smooth) or `#build` `Cw` (construct) per
+  tile, and why a door was left out), plus a full rationale section for
+  `bedroom-cell` v1.
+- `blueprints/templates/bedroom-cell-v1.yaml`: metadata for one bedroom
+  cell, 5x5 footprint / 3x3 interior, north edge `own`, east/west edges
+  `seam`, south edge `entrance` (1-tile gap, no door), `requires: [bed]`,
+  `status: designed` (not yet applied or build-tested).
+- `blueprints/templates/bedroom-cell-v1.csv`: the quickfort blueprint,
+  `#notes` (orientation) + `#dig` (dig interior, smooth wall ring) +
+  `#zone` (bedroom zone over the interior only) + `#build` (one bed) +
+  `#meta` (bundles zone+build, applied only after the dig/smooth
+  blueprint's jobs finish) — order taken directly from
+  `quickfort-user-guide.txt`'s own "Tips and tricks" line ("smooth and/or
+  engrave... before starting the build phase, as dwarves may be unable to
+  access walls or floors that are behind/under built objects") and its
+  "Packaging a set of blueprints" section, both read on VM 103
+  (`scripts/vm-ssh.sh df`), not from memory. Verified the CSV parses as
+  intended (Python's `csv` module: 6 columns per grid row, single-cell
+  modelines/notes lines) after finding and fixing a real bug of my own:
+  unquoted commas in the `#notes` prose and in three modeline comments
+  would have silently split those rows into extra spurious columns.
+
+No door: `research/2026-09-24-room-layout-best-practices.md` Q4/rule 11
+(current-version wiki: no penalty for a sleeping dwarf from others passing
+through) removes the usual justification, and no other verified ground
+applied, so it was left out rather than justified on habit.
+
+Verified: `python -m pytest -q` from the worktree root, 1413 passed, 3
+skipped, matching this brief's stated baseline exactly. Read-only against
+VM 103 throughout (`scripts/vm-ssh.sh df '<cmd>'`, guide file reads only);
+no fort mutation, no `TOOLS.yaml`, no `.lua`, no `dfmcp/`, no `agents/`
+touched. No push.
+
+Not done here, left for a future stream: the actual tiling generator (out
+of scope per the brief), applying/build-testing this template live, and
+reconciling `CLAUDE.md`'s `## Structure` list, which does not mention
+`blueprints/` at all despite it existing since 2026-09-10 — flagged here
+rather than fixed, since this brief's own rules say executors do not write
+`Working.md`/`decisions/DECISIONS.md`/`memory/`/`handoffs/INDEX.md`.

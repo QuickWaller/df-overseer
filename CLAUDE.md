@@ -192,6 +192,17 @@ file first in any session.
   because a local `queue/` would shadow Python's stdlib module, the same
   trap as `dfmcp`.
 
+- **`blueprints/`** — quickfort blueprints. Two tiers: the original
+  single-purpose starter files (`starter-*.csv`, one per tool, since
+  2026-09-10), and `blueprints/templates/`, the versioned reusable template
+  library added 2026-09-24 (`<id>-v<n>.yaml` metadata plus its `.csv`, with
+  `doctrine/`-style provenance). A template declares its seam edges so tiling
+  copies share walls instead of doubling them, and declares walls as
+  `finished` intent rather than naming a material. **Templates are generic by
+  rule**: no fort coordinates, no landmark names. A small generic pattern may
+  be shown to a model; this fort's own map may not (`docs/PURPOSE.md`
+  commitment 1, user's call 2026-09-24).
+
 - **`evals/live/`** — output of real agent runs against the live fort, kept
   for the public report (one directory per run, with a README and a charter
   check).

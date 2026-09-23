@@ -1,0 +1,56 @@
+#notes label(bedroom_cell_v1_notes) orientation and edge roles; see blueprints/templates/bedroom-cell-v1.yaml
+"This file is one tileable bedroom cell; not a placed room. It carries no"
+"coordinates and no fort-specific anchor; a caller supplies the anchor"
+"when applying it: quickfort run bedroom-cell-v1.csv -c X Y Z."
+""
+"Grid orientation; 5 columns by 5 rows; row 1 is the top (north) edge as"
+"displayed below:"
+"  - column 1 (all rows): west seam edge; shared with a neighbour cell"
+"    tiled to the west. Do not re-designate this column's wall if a"
+"    neighbour cell already owns it."
+"  - column 5 (all rows): east seam edge; same rule; shared with a"
+"    neighbour cell tiled to the east."
+"  - row 1; columns 2-4: north edge; this cell's own; never shared."
+"  - row 5; columns 2-4: south edge; the entrance edge. Column 3 of row 5"
+"    is the entrance gap: open floor; no wall; no door. Columns 2 and 4 of"
+"    row 5 are this cell's own wall; not shared (the entrance edge is not"
+"    a seam; nothing tiles against it; a corridor does)."
+"  - rows 2-4; columns 2-4: the 3x3 interior."
+""
+"Every s cell below is a finished-wall intent; not a material. This"
+"concrete file resolves that intent as smooth (s; #dig mode) because it"
+"assumes the wall tile is standing natural rock; the common case for a"
+"freshly carved room. A tile that is not standing rock (most likely a"
+"seam edge where the neighbour cell's own dig already removed the"
+"material there) resolves instead as a constructed wall (Cw; #build"
+"mode) at the same coordinate. See blueprints/README.md; Resolving the"
+"wall intent; before applying this template somewhere that assumption"
+"may not hold."
+
+#dig label(bedroom_cell_v1_shell) dig the 3x3 interior and the entrance gap; smooth the finished wall ring
+s,s,s,s,s,#
+s,d,d,d,s,#
+s,d,d,d,s,#
+s,d,d,d,s,#
+s,s,d,s,s,#
+#,#,#,#,#,#
+
+#zone label(bedroom_cell_v1_zone) declare the bedroom zone over the interior only; never over the wall ring
+`,`,`,`,`,#
+`,b,b,b,`,#
+`,b,b,b,`,#
+`,b,b,b,`,#
+`,`,`,`,`,#
+#,#,#,#,#,#
+
+#build label(bedroom_cell_v1_build) place the one required bed
+`,`,`,`,`,#
+`,b,`,`,`,#
+`,`,`,`,`,#
+`,`,`,`,`,#
+`,`,`,`,`,#
+#,#,#,#,#,#
+
+#meta label(bedroom_cell_v1_finish) zone then bed; apply only after the shell blueprint's dig and smooth jobs are both complete
+/bedroom_cell_v1_zone
+/bedroom_cell_v1_build

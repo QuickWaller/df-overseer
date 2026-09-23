@@ -1,0 +1,113 @@
+# Template metadata for blueprints/templates/bedroom-cell-v1.csv.
+# Format defined in blueprints/README.md, "Template library format" section.
+# Read that section before editing this file or adding a second template.
+
+id: bedroom-cell
+revision: 1
+kind: bedroom
+status: designed          # designed | applied-live | verified-live (see README)
+generic: true              # no fort coordinates, no landmark names, per docs/PURPOSE.md #1
+
+quickfort_file: bedroom-cell-v1.csv
+
+dimensions:
+  footprint: { width: 5, depth: 5 }   # includes the wall ring
+  interior: { width: 3, depth: 3 }    # usable floor, matches the #zone footprint
+
+edges:
+  north:
+    role: own
+    shared: false
+    note: >-
+      This cell's own back wall. Never shared with a neighbour in the
+      single-row-off-a-corridor layout this cell is designed for.
+  south:
+    role: entrance
+    shared: false
+    entrance:
+      width: 1
+      position: middle       # the single gap tile, column 3 of row 5
+      feature: none           # no door; see rationale in README
+  east:
+    role: seam
+    shared: true
+    note: >-
+      Shared with a neighbour cell tiled immediately to the east. Whichever
+      of the two cells is placed first owns the wall designation; a tiling
+      generator must not re-designate it from the second cell.
+  west:
+    role: seam
+    shared: true
+    note: >-
+      Same rule as the east edge, mirrored. A row of N tiled cells has N-1
+      shared seams, not 2N independent wall rings.
+
+walls:
+  intent: finished
+  material: unspecified
+  resolution: >-
+    "Finished" is declared once per wall tile, never as a material. The
+    concrete .csv in this revision resolves every wall-ring tile as
+    "smooth" (#dig mode, symbol "s"), which is only correct when the tile
+    is standing natural rock. A tile that is open space instead (most
+    likely a seam edge after the neighbour cell's own dig already cleared
+    it) must resolve as a constructed wall (#build mode, symbol "Cw") at
+    the same coordinate instead. Per-tile resolution is a future
+    generator's job, not this file's; this template only declares the
+    intent and documents both resolutions.
+
+requires:
+  - bed
+
+does_not_include:
+  - door            # see README rationale: not required for sleeping-dwarf privacy
+  - engraving        # out of scope; only smoothing is declared
+  - furniture beyond the bed
+
+quickfort_blueprints:
+  - label: bedroom_cell_v1_shell
+    mode: dig
+    order: 1
+    note: >-
+      Digs the 3x3 interior and the entrance gap, smooths the wall ring.
+      Apply first and wait for both the dig and the smooth jobs to finish
+      before applying anything else (quickfort-user-guide.txt lines 25 and
+      1242: zones cannot apply to hidden tiles, and furniture built before
+      smoothing can block a dwarf's access to the wall behind it).
+  - label: bedroom_cell_v1_zone
+    mode: zone
+    order: 2
+    depends_on: bedroom_cell_v1_shell
+  - label: bedroom_cell_v1_build
+    mode: build
+    order: 2
+    depends_on: bedroom_cell_v1_shell
+    note: >-
+      Same order as the zone blueprint; neither depends on the other, both
+      depend only on the shell being dug and smoothed.
+  - label: bedroom_cell_v1_finish
+    mode: meta
+    order: 2
+    note: Bundles the zone and build blueprints above into one applied step.
+
+sources:
+  - kind: research
+    ref: research/2026-09-24-room-layout-best-practices.md
+    describes: "53.16, convention + wiki, see that file's own per-claim provenance"
+    read: opened
+    accessed: '2026-09-24'
+    note: >-
+      Q1 (line design, bedrooms off a corridor, one row deep) is this
+      cell's shape. Q4/rule 11 (no door required for sleeping-dwarf
+      privacy) is why this cell has no door.
+  - kind: live-read
+    ref: /opt/df/game/hack/docs/docs/guides/quickfort-user-guide.txt (this install)
+    describes: '53.16'
+    read: opened
+    accessed: '2026-09-24'
+    note: >-
+      Mode list and symbol tables (#dig, #zone, #build, #meta), the
+      smooth-before-build ordering rule (line 1242), and the multi
+      -blueprint-per-file packaging convention (line ~1153) are all taken
+      directly from this file, read via scripts/vm-ssh.sh df, not from
+      memory.
