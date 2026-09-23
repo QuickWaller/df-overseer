@@ -407,3 +407,21 @@ Each fact says how it is known. "Live" means read or run on VM 103 on 2026-09-21
 - `dfhack.df2utf` converts game text from CP437; no script used it before 2026-09-22, and
   a name with byte 0x96 crashed `diff.since`. (live)
 
+- Burrows live at `df.global.plotinfo.burrows.list`, not `world.burrows` (that path does
+  not resolve at all on this install: "Cannot read field world.burrows: not found").
+  Uniboslan has 0 burrows. (live, 2026-09-23)
+- Traffic is a per-tile designation (`tile_designation.traffic`, a 0-3 enum), not a zone
+  and not a building. Every tile defaults to Normal, so the designation only carries
+  intent where a player actually set one: 0 of 6,856,704 tiles are non-Normal on this
+  fort. (live, 2026-09-23)
+- `block.flags.update_liquid` DOES fire on this install: 3 of 26,784 blocks on a settled,
+  paused map, traced to the fort's own Well, and DFHack's own `flows` tool agrees exactly.
+  This contradicts `df-overseer-breach.lua`'s header, which records zero across 11 polls
+  and concludes the gate might be dead; the gate works. The earlier reading is best
+  explained as a snapshot artefact, which is reasoned, not confirmed. (live, 2026-09-23,
+  re-verified independently by the orchestrator)
+- `block.flags.designated` does NOT track live dig designations: 0 flagged blocks against
+  36 genuinely designated tiles, and the job list held 0 dig-type jobs at the same moment.
+  Both plausibly tick-gated on a paused fort; unconfirmed. Do not use it as a cheap
+  block-level gate for the dig frontier without re-testing on a running fort. (live,
+  2026-09-23)
