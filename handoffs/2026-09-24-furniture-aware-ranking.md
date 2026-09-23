@@ -38,12 +38,20 @@ helps when the useful candidate is visible.
    existing ranking (landmark, distance, walkable group, indoor preference) as
    the tiebreak within each group rather than replacing it. A kind with no
    `room_value_field` must rank exactly as it does today.
-2. **Work out why no 3x3 window contained the Chair and say so in the
-   Result.** Two possibilities and they need different answers: either no
-   legal 3x3 window containing that tile exists (a geometry fact, and the tool
-   should be able to say so rather than silently returning other sites), or
-   one exists and was ranked out below the result cap (a ranking bug that item
-   1 fixes). Determine which from the code; you cannot read the fort.
+2. **The likely cause is the overlap filter, not the result cap.** The
+   orchestrating session traced this before dispatching, so do not re-derive
+   it, but do confirm it from the code. After sorting, `ranked_rects` walks
+   candidates greedily and discards any that overlaps one already chosen,
+   stopping at `MAX_RESULTS`. That dedup is right in itself (it stops five
+   near-identical rectangles one tile apart) but it means a chair-containing
+   3x3 window is not merely ranked low, it is **eliminated** once a slightly
+   closer window is chosen first, because every 3x3 window containing that
+   tile overlaps it. At 1x1 the windows are small enough that overlap is rare,
+   which is exactly why the Chair survives to rank 2 there and vanishes at
+   3x3. Item 1 fixes this as a side effect: sorting furniture-containing sites
+   first makes one of them the first chosen, so nothing can overlap it away.
+   Confirm that reasoning holds and say so in the Result; if the code says
+   otherwise, say that instead and fix what is actually wrong.
 3. **If a caller asks for furniture-aware siting for a room-value kind and no
    candidate contains any, say so explicitly** in the returned structure, at
    the top level rather than only per row. A caller scanning rank 1 should not
