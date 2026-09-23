@@ -112,4 +112,53 @@ fort's final state, which must be **paused**.
 
 ## Result
 
-(executor fills in)
+**Status: partial, stopped on schedule by the in-game tripwire.** Full
+record: `evals/live/2026-09-23-office-and-first-real-build/README.md`.
+
+Ran one bounded window (900 of the 2000-tick cap, 1 of the 10 allowed
+windows) after quicksaving (`autosave 1`, confirmed from
+`cur_savegame.save_dir`) and arming the tripwires (confirmed `armed: true`
+before unpausing). The tripwire fired on `hostile_reachable` (a kea bird, 68
+tiles away, sharing the citizens' walkable group) and paused the fort
+itself, exactly as `docs/AGENT-LOOP.md` §3 designs it to. Per this doc's own
+hard line ("a hostile appears ... Do not push on to finish the task"), the
+run stopped there: no further windows, no override of the tripwire, no
+judgement call that a kea is harmless in practice. Quicksaved again after
+(`autosave 2`, confirmed). Fort ended paused, 22 alive, 1 dead (unchanged
+from the start), hunger fine, thirst thirsty (warning only, unchanged).
+
+Built the first real, non-dry-run instance of a never-built kind
+(`building.build Chair`), dry run and real run identical in site and
+quickfort stats, real run's read-back confirming the building exists. It is
+not yet finished: `buildingplan` accepted it with zero Chair items on hand
+and holds the construction job suspended pending one. Created a matching
+manager order (`orders.create chair 1`, id 3) to supply that item via the
+existing Stoneworker's (Masons) Workshop and boulder stock, since this fort
+has no Carpenter's Workshop. Placed two Office zones (no indoor site existed
+within a 20-tile radius at levels 0 or -1, so both are outdoor, the finder's
+best available): one unowned near the Chair, one owned by the Manager (unit
+345, confirmed via `owner_result.read_back` and a later `check-owner` call)
+near the Well, since the first zone's footprint already claimed the tiles
+nearest the Chair.
+
+**The open question is still open.** In 900 ticks, order id 3 stayed
+`validated: false` and the three pre-existing orders stayed unchanged
+(`validated: true, active: false`), so whether an office (with or without
+the chair inside it) actually unblocks manager-order validation on this
+version was not settled — not enough game time passed for either the
+engine's validation pass or the Manager's own pathing to the office. Next
+supervised session: more ticks (after deciding whether to touch the
+wildlife tripwire threshold), then re-check `orders.list` id 3 and the two
+zones' owner/room-value state.
+
+Two secrets-handling slips are recorded verbatim in the eval README's
+"Refusals" section (an ineffective `sed` redaction and a `hostname` echo,
+both in this session's own tool output only, neither committed anywhere,
+both before the address-hiding wrapper existed) rather than concealed, per
+this repo's own verify-the-verification and no-armok honesty norms. Three
+harness refusals (all shell-construct-complexity refusals, none security-
+relevant) are also quoted verbatim there and were routed around with plain,
+literal commands.
+
+No agent or model call, no `conductor.service`, VM 106 untouched,
+`workjob.cancel` not used, no unbounded live query, no push.
