@@ -1,7 +1,57 @@
 # Handoff: generalise `workjob` over every workshop and job, with a count and repeat
 
-Date: 2026-09-21. **WRITTEN for review, not dispatched.** Live but read-only on
-VM 103 (fort paused, dry runs only); no real job is queued by this stream.
+Date: 2026-09-21. Live but read-only on VM 103 (fort paused, dry runs only);
+no real job is queued by this stream.
+
+**DISPATCHED 2026-09-23** (user's call: "lets generalise workjob"), after
+sitting written but undispatched for two days. Five things changed under it
+in the meantime, and they narrow the work rather than widening it:
+
+1. **A `REPEAT` param already landed** on `workjob queue` 2026-09-23
+   (`handoffs/2026-09-23-order-job-attribution-and-checks.md` item 6),
+   untested live. Deliverable 2 below still stands, but REPEAT is now an
+   existing parameter to verify and keep working, not one to invent.
+2. **`orders.create` already covers twelve job kinds** (blocks, mechanisms,
+   barrels, brew_drink, bucket, bed, door, table, chair, splint, crutch,
+   soap) while `workjob` still knows three. That asymmetry is the concrete
+   shape of the problem: the fort's Chair had to be ordered through
+   `orders.create` on 2026-09-23 because `workjob` had no token for it.
+   **Twelve is the floor, not the target**: `getJobs` should make the
+   vocabulary the game's, not a second hand-maintained table. If you end up
+   with a table of twelve, the stream has failed its own point.
+3. **Manager orders are no longer hypothetical.** Two real Office zones
+   exist (one owned by the Manager, unit 345) and four manager orders exist,
+   none yet active. So the "until manager orders work" framing in Why below
+   is softened: both routes will be used together, and the user has said so
+   explicitly. Direct jobs remain the route that does not depend on a
+   Manager, an Office or room value, which is exactly why this tool matters.
+4. **`df.job.order_id` links a spawned job back to its manager order**,
+   correcting an earlier research claim. If your generic path touches job
+   creation, do not break or fake that field: a direct job legitimately has
+   no order, and must not pretend to have one.
+5. **Suite baselines have moved** since this doc was written. Current:
+   ambient **1348 passed / 3 skipped**, `.venv-dfmcp` **652 passed** (both
+   measured 2026-09-23). Report before and after against these, not the
+   834/475 figures in Done means below.
+
+Two rules to add to the Rules section below, both learned the hard way since
+this doc was written: **use `bash scripts/vm-ssh.sh df '<cmd>'` for every VM
+command** (do not write your own ssh wrapper and do not read the address from
+`.env` yourself: four separate agents have leaked a VM address doing exactly
+that), and **no attribution lines in any commit message** (no Co-Authored-By,
+no "Generated with Claude Code"). Also: a concurrent research stream owns
+`research/2026-09-23-flood-relevance-and-traffic.md` and touches no code, so
+`scripts/dfhack/TOOLS.yaml` is yours alone this cycle.
+
+One warning from the most expensive bug of the week, which your work is
+directly exposed to: **a `pcall`-guarded read that returns a default on
+failure is indistinguishable from a genuine negative reading.** Six creature
+tag reads shipped silently broken that way and passed three offline test
+layers, because none held a real creature raw. You will be reading reagents,
+job definitions and item fields off live raws. Report unreadable fields
+explicitly (the pattern is a `read_failures` array plus `dfhack.printerr`),
+and treat `docs/TRAPS.md`'s "A pcall-guarded read..." entry as required
+reading before you write a single guarded read.
 
 Read `CLAUDE.md` (especially "Tools must be generalisable"),
 `scripts/dfhack/df-overseer-workjob.lua` (the three-job tool this replaces, and
