@@ -82,12 +82,31 @@
 -- finding that `:erase(idx)` is a supported vector operation on this
 -- structure -- NOT independently proven by a real removal this session.
 --
+-- CHECK_DUPLICATE, added handoffs/2026-09-23-order-job-attribution-and-
+-- checks.md item 4: a duplicate-production check in code, not left to a
+-- model's judgement. Decision, stated per that handoff's own instruction:
+-- this lives in a LUA TOOL (here), not a native dfmcp tool and not dfqueue.
+-- Reasoning: the two things it must scan (world.manager_orders.all and the
+-- live job list) are both already server-side, DFHack-only data this file
+-- and df-overseer-stuckjobs.lua already read directly; a native dfmcp tool
+-- would just be an extra network round trip re-fetching the same two Lua
+-- calls dfmcp already exposes as orders.list/stuckjobs.find, and dfqueue has
+-- no live-game coupling at all today (SQLite plus schema validation at write
+-- time, decisions/DECISIONS.md 2026-09-15) -- giving it one just for this
+-- check would be new architecture, not a cheap addition. Both the Overseer
+-- (before it writes an order or a direct job) and the queue's own validation
+-- path (by calling this MCP tool before a `work_order` proposal is written
+-- or ruled on, the same way any other precondition is read today) can call
+-- it as an ordinary read tool.
+--
 -- Usage: ./dfhack-run df-overseer-orders list
 -- Usage: ./dfhack-run df-overseer-orders create JOB AMOUNT [DRY_RUN]
 -- Usage: ./dfhack-run df-overseer-orders cancel ID [DRY_RUN]
+-- Usage: ./dfhack-run df-overseer-orders check-duplicate JOB
 
 local json = require('json')
 local workorder_mod = reqscript('workorder')
+local stuckjobs_mod = reqscript('df-overseer-stuckjobs')
 
 -- 2026-09-18 (handoffs/2026-09-18-lever-gap-tools.md): added bucket, bed,
 -- door, table, chair, splint, crutch, soap.
@@ -256,6 +275,70 @@ local function resolve_job_name(id_or_reaction)
   return ok and name or nil
 end
 
+-- Enum type name for order.frequency is NOT confirmed live on this install
+-- (research/2026-09-18-work-orders.md/2026-09-23 both only ever read
+-- job_type/status-style fields, not this one). manager_order.frequency is a
+-- struct-nested enum (research/2026-09-23-work-orders-vs-direct-jobs.md §A1:
+-- "NONE/OneTime/Daily/Monthly/Seasonally/Yearly, a plain enum"), and this
+-- project's own precedent for a struct-nested enum is
+-- `df.<struct>.T_<field>` (DFHack's usual naming for an enum declared
+-- inline). Tried here defensively, in order, never guessed past a raw
+-- number: a caller told `frequency_name = nil, frequency = <int>` knows
+-- exactly as much as this tool could confirm, not a silently wrong label.
+local FREQUENCY_ENUM_CANDIDATES = {
+  "manager_order.T_frequency",
+  "manager_order_frequency",
+}
+
+local function resolve_frequency_name(raw)
+  if raw == nil then
+    return nil
+  end
+  for _, path in ipairs(FREQUENCY_ENUM_CANDIDATES) do
+    local enum = df
+    for part in path:gmatch("[^.]+") do
+      if enum == nil then break end
+      enum = enum[part]
+    end
+    if enum then
+      local ok, name = pcall(function() return enum[raw] end)
+      if ok and name then
+        return name
+      end
+    end
+  end
+  return nil
+end
+
+-- Order status/progress fields, added handoffs/2026-09-23-order-job-
+-- attribution-and-checks.md: `manager_order.status` carries `validated`/
+-- `active` bits (live-verified on this fort's three stuck orders:
+-- validated=true, active=false -- the failure is a missing announcement,
+-- not a missing state); `finished_year`/`finished_year_tick` are both -1 on
+-- those same orders. Every field is read defensively (pcall) and reported
+-- as nil, never a guessed default, if the struct shape does not match what
+-- this comment documents.
+-- NOTE: deliberately NOT the usual `ok and v or nil` shortcut anywhere in
+-- here -- `validated`/`active` are booleans, and that idiom silently turns a
+-- real `false` into `nil` (Lua's `false or nil` is `nil`), which would be
+-- exactly backwards for a status bit. Every field below is set with a plain
+-- `if ok then out.field = v end` instead.
+local function order_status_fields(order)
+  local out = {validated = nil, active = nil, finished_year = nil, finished_year_tick = nil}
+  local ok_status, status = pcall(function() return order.status end)
+  if ok_status and status then
+    local ok_v, v = pcall(function() return status.validated end)
+    if ok_v then out.validated = v end
+    local ok_a, a = pcall(function() return status.active end)
+    if ok_a then out.active = a end
+  end
+  local ok_fy, fy = pcall(function() return order.finished_year end)
+  if ok_fy then out.finished_year = fy end
+  local ok_fyt, fyt = pcall(function() return order.finished_year_tick end)
+  if ok_fyt then out.finished_year_tick = fyt end
+  return out
+end
+
 function list_orders()
   local out = {}
   local vec = df.global.world.manager_orders.all
@@ -264,14 +347,24 @@ function list_orders()
     local ok_job, job_type = pcall(function() return order.job_type end)
     local job_name = ok_job and resolve_job_name(job_type) or nil
     local ok_reaction, reaction = pcall(function() return order.reaction_name end)
-    table.insert(out, {
+    local ok_freq, freq_raw = pcall(function() return order.frequency end)
+    local ok_maxws, max_workshops = pcall(function() return order.max_workshops end)
+    local status_fields = order_status_fields(order)
+    local row = {
       id = order.id,
       queue_position = i + 1,
       job = job_name,
       reaction = (ok_reaction and reaction ~= "") and reaction or nil,
       amount_left = order.amount_left,
       amount_total = order.amount_total,
-    })
+      frequency = ok_freq and resolve_frequency_name(freq_raw) or nil,
+      frequency_raw = ok_freq and freq_raw or nil,
+      max_workshops = ok_maxws and max_workshops or nil,
+    }
+    for k, v in pairs(status_fields) do
+      row[k] = v
+    end
+    table.insert(out, row)
   end
   return {
     orders = out,
@@ -381,6 +474,61 @@ function cancel_order(id, dry_run)
   }
 end
 
+-- Scans both routes for something already in flight for JOB: open manager
+-- orders (world.manager_orders.all, this file's own JOB_INFO for the
+-- job_type/reaction mapping) and live jobs (df-overseer-stuckjobs.lua's
+-- find_jobs_by_type, reqscript'd -- see the header for why this lives here
+-- rather than in a native dfmcp tool or dfqueue). Read-only; never refuses,
+-- only reports, so the caller (the Overseer, before it writes) decides what
+-- "duplicate" means for its own action.
+function check_duplicate(job_name)
+  local info = JOB_INFO[tostring(job_name):lower()]
+  if not info then
+    local known = {}
+    for k in pairs(JOB_INFO) do table.insert(known, k) end
+    table.sort(known)
+    return nil, "unknown job: " .. tostring(job_name)
+      .. " (expected one of: " .. table.concat(known, ", ") .. ")"
+  end
+
+  local orders_in_flight = {}
+  local vec = df.global.world.manager_orders.all
+  for i = 0, #vec - 1 do
+    local order = vec[i]
+    local ok_job, job_type = pcall(function() return order.job_type end)
+    local job_name_live = ok_job and resolve_job_name(job_type) or nil
+    local reaction_match = true
+    if info.reaction then
+      local ok_r, r = pcall(function() return order.reaction_name end)
+      reaction_match = ok_r and r == info.reaction
+    end
+    if ok_job and job_name_live == info.job and reaction_match then
+      local status_fields = order_status_fields(order)
+      table.insert(orders_in_flight, {
+        id = order.id,
+        amount_left = order.amount_left,
+        amount_total = order.amount_total,
+        validated = status_fields.validated,
+        active = status_fields.active,
+      })
+    end
+  end
+
+  local ok_jobs, jobs_in_flight = pcall(
+    stuckjobs_mod.find_jobs_by_type, info.job, info.reaction)
+  if not ok_jobs then
+    jobs_in_flight = nil
+  end
+
+  return {
+    job = job_name,
+    orders_in_flight = orders_in_flight,
+    jobs_in_flight = jobs_in_flight,
+    duplicate_risk = (#orders_in_flight > 0)
+      or (jobs_in_flight ~= nil and #jobs_in_flight > 0),
+  }
+end
+
 -- Same module-load guard as every other df-overseer-*.lua script.
 if dfhack_flags.module then
   return
@@ -399,6 +547,14 @@ elseif cmd == "create" then
     local result, err = create_order(job, amount, dry_run)
     print(json.encode(err and {error = err} or result))
   end
+elseif cmd == "check-duplicate" then
+  local job = args[2]
+  if not job then
+    print("usage: df-overseer-orders check-duplicate JOB")
+  else
+    local result, err = check_duplicate(job)
+    print(json.encode(err and {error = err} or result))
+  end
 elseif cmd == "cancel" then
   local id, dry_run = args[2], args[3]
   if not id then
@@ -410,5 +566,6 @@ elseif cmd == "cancel" then
 else
   print("usage: df-overseer-orders list")
   print("usage: df-overseer-orders create JOB AMOUNT [DRY_RUN]")
+  print("usage: df-overseer-orders check-duplicate JOB")
   print("usage: df-overseer-orders cancel ID [DRY_RUN]")
 end

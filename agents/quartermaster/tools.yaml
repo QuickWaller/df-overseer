@@ -65,6 +65,12 @@ read:
       Read-only job vocabulary (blocks/mechanisms/brew_drink) for the direct-
       workshop-job route, the honest alternative when a manager order stalls
       (this fort's own history: queued manager orders do not currently run).
+  - id: "orders.check-duplicate"
+    status: planned
+    note: >-
+      Added handoffs/2026-09-23-order-job-attribution-and-checks.md item 4.
+      Read this before proposing a work_order: what is already in flight for
+      the product across both routes. Offline build, not deployed.
   - id: "farm.list"
     status: exists
     note: >-
@@ -162,6 +168,8 @@ deny:
       anything, more squarely this role's future domain than manager orders
       are (brewing is literally "food and drink security"), so it is listed
       explicitly rather than left an implicit gap.
+  - id: "workjob.cancel"
+    reason: Same as workjob.queue above.
   - id: "farm.build"
     reason: >-
       Siting a NEW farm plot is the Architect's (role.md, "Would NOT own":

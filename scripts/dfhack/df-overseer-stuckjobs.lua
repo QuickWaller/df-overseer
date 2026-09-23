@@ -43,6 +43,50 @@
 -- hiding it would be worse than surfacing it with an honest "don't know
 -- how long" marker.
 --
+-- ATTRIBUTION, added handoffs/2026-09-23-order-job-attribution-and-checks.md:
+-- `df.job` has an `order_id` field, found by the orchestrating session's live
+-- introspection of `df.job._fields` on this install and matching DFHack's own
+-- `/opt/df/game/hack/scripts/do-job-now.lua:106` (`job.order_id == needle`).
+-- CORRECTS `research/2026-09-18-work-orders.md`'s own explicit "no field
+-- found" negative (dated correction note added there, not a silent edit).
+-- `job_origin` below is the one shared way this project describes a job's
+-- origin -- `get_stuck_jobs` and `find_jobs_by_type` both use it, so a caller
+-- never sees two different shapes for the same fact. The sentinel value for
+-- "no order" is NOT independently confirmed live this stream (offline build,
+-- no VM in this session's write-access window before deploy); read
+-- defensively and report both the raw field and the derived boolean, so a
+-- wrong assumption about the sentinel is visible in `order_id_raw` rather
+-- than silently baked into `from_order`. Treated as "from an order" only
+-- when `order_id` reads as a non-nil integer >= 0, the ordinary DF/DFHack
+-- convention for "no id" (order ids for orders created via
+-- df-overseer-orders.lua's own create_order are always >= 0 by the time
+-- `preprocess_orders` finishes -- see that file's own header -- so a
+-- negative order_id is not mistaken for a real order this project created).
+-- A real (non-local) function so other df-overseer-*.lua tools can
+-- reqscript this file and reuse the one shared shape -- see the comment
+-- above. df-overseer-workjob.lua's cancel_job does exactly this.
+-- NOTE: no `ok and v or nil` shortcut for `from_order` -- it is a boolean,
+-- and that idiom silently turns a real `false` into `nil` (Lua's
+-- `false or nil` is `nil`), backwards for a yes/no field. Built with a plain
+-- if/else instead.
+function job_origin(job)
+  local ok, raw = pcall(function() return job.order_id end)
+  if not ok or raw == nil then
+    return {order_id = nil, order_id_raw = nil, from_order = nil}
+  end
+  local from_order
+  if raw >= 0 then
+    from_order = true
+  else
+    from_order = false
+  end
+  return {
+    order_id = from_order and raw or nil,
+    order_id_raw = raw,
+    from_order = from_order,
+  }
+end
+
 -- Usage: ./dfhack-run df-overseer-stuckjobs find [MIN_IDLE_TICKS]
 
 local json = require('json')
@@ -84,6 +128,7 @@ function get_stuck_jobs(min_idle_ticks)
         local ok_near, near_info = pcall(
           landmarks_mod.nearest_landmark, job.pos.x, job.pos.y, job.pos.z)
         local info = ok_near and near_info
+        local origin = job_origin(job)
         table.insert(results, {
           job_type = ok_type and jtype or "unknown",
           detail = ok_name and textutil.to_utf8(name) or nil,
@@ -93,6 +138,44 @@ function get_stuck_jobs(min_idle_ticks)
           near_landmark = info and info.name or nil,
           direction = info and info.direction or nil,
           distance_tiles = info and info.distance_tiles or nil,
+          order_id = origin.order_id,
+          from_order = origin.from_order,
+        })
+      end
+    end
+  end
+  return results
+end
+
+-- Added handoffs/2026-09-23-order-job-attribution-and-checks.md item 4 (the
+-- duplicate-production check): unlike get_stuck_jobs above, this does NOT
+-- filter to workerless jobs -- a job already being worked is still "in
+-- flight" and a duplicate check that missed it would undercount real
+-- production. Matches by job_type name (and reaction_name, when the job
+-- type is CustomReaction) against every live job on this site, stuck or not.
+-- Exported and reqscript'd by df-overseer-orders.lua's check_duplicate so
+-- both routes' in-flight production use the one traversal and the one
+-- job_origin helper, per CLAUDE.md's generalisability rule ("one shared way
+-- of describing a job's origin, not a special case per tool").
+function find_jobs_by_type(job_type_name, reaction_name)
+  local results = {}
+  for _, job in utils.listpairs(df.global.world.jobs.list) do
+    local ok_type, jtype = pcall(function() return df.job_type[job.job_type] end)
+    if ok_type and jtype == job_type_name then
+      local reaction_ok = true
+      if reaction_name then
+        local ok_r, r = pcall(function() return job.reaction_name end)
+        reaction_ok = ok_r and r == reaction_name
+      end
+      if reaction_ok then
+        local ok_worker, worker = pcall(dfhack.job.getWorker, job)
+        local origin = job_origin(job)
+        table.insert(results, {
+          job_id = job.id,
+          job_type = jtype,
+          has_worker = ok_worker and worker ~= nil,
+          order_id = origin.order_id,
+          from_order = origin.from_order,
         })
       end
     end
