@@ -35,6 +35,33 @@ expected_thinking_seconds: 90
 # own GAME_TICKS_PER_YEAR comment cites the same wiki source).
 routine_review_interval_game_days: 7
 
+# handoffs/2026-09-23-stalled-order-poller.md: research/2026-09-23-
+# announcement-severity.md §C found that a manager order which never
+# dispatches produces no announcement of any kind -- the only way to see it
+# is to poll orders.list and diff validated/active across cycles
+# (conductor/order_watch.py). Both values are in raw game ticks (not game
+# days), matching this file's own "every rule below is written in ticks"
+# convention for the closing-in rule above.
+#
+# stalled_order_threshold_ticks: how long an order must sit validated=true,
+# active=false (or validated=false, "blocked" -- see order_watch.py) before
+# it counts as a genuine stall rather than an ordinary between-cycles wait.
+# 1200 ticks = 1 game day: this fort's own real incident sat stalled for
+# WEEKS (CLAUDE.md's status line), so a one-day gate is conservative in the
+# direction of catching a real stall fast without firing off a single
+# cycle's normal dispatch lag. Not measured against a real run (no VM this
+# stream) -- worth retuning once a real cycle cadence is observed.
+#
+# stalled_order_renotify_ticks: once an order has fired once, how long
+# before the SAME order id is allowed to fire again while it stays
+# stalled/blocked. Set equal to the threshold (also 1 game day): a stalled
+# order is worth a daily reminder while unresolved, not a one-time-only
+# notice that could be silently forgotten, but never every single cycle
+# (handoffs/2026-09-23-stalled-order-poller.md item 1: "how not to wake
+# every cycle for the same order stalled for a known reason").
+stalled_order_threshold_ticks: 1200
+stalled_order_renotify_ticks: 1200
+
 # Every wake reason this conductor build knows about. `clock` is the
 # fallback table entry (§2); `computable: true` means conductor/cycle.py
 # will prefer the ticks-to-consequence rule over this fallback whenever it
@@ -74,6 +101,39 @@ wake_reasons:
     clock: slowed
     wakes: [quartermaster]
   hostile_seen_unreachable:
+    clock: slowed
+    wakes: []
+  # handoffs/2026-09-23-stalled-order-poller.md item 1: same production
+  # domain as stuck_job/stock_below_target above (both wake only the
+  # quartermaster), so this reuses that same precedent rather than
+  # inventing a new role assignment -- the Quartermaster proposes orders,
+  # the Overseer (the queue's sole writer) already wakes separately,
+  # through queue_holds_for_overseer, once the Quartermaster has actually
+  # written a proposal addressing it.
+  stalled_order:
+    clock: slowed
+    wakes: [quartermaster]
+  # A validated:false order (the Manager could not validate it at all) is a
+  # more fundamental failure than an ordinary stall, but this build has no
+  # live evidence yet that it needs a different role or clock level, so it
+  # is deliberately given the same table entry as stalled_order rather than
+  # a guessed escalation -- see conductor/order_watch.py's own docstring.
+  blocked_order:
+    clock: slowed
+    wakes: [quartermaster]
+  # handoffs/2026-09-23-attention-tiers-ingame.md item 2 / this stream's
+  # item 4: the sibling in-game stream's fifth tripwire exposes the 23
+  # `slow`-level announcement ids (research/2026-09-23-announcement-
+  # severity.md) rather than pausing on them. `wakes` here is deliberately
+  # empty and UNUSED for role selection -- which role(s) wake is read per
+  # event from that event's own `wake` field (copied from the severity
+  # YAML's own per-type `wake` list, which can differ by announcement type),
+  # not a single fixed role list the way every other reason above works.
+  # Only `clock` is read from this entry. See conductor/cycle.py's
+  # `_classify_slow_announcements` for the assumed event shape -- not yet
+  # confirmed against a real payload from that stream, recorded as an
+  # assumed interface in this stream's Result section.
+  slow_announcement:
     clock: slowed
     wakes: []
   tripwire:

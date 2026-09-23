@@ -86,12 +86,19 @@ def _queue_overview(**overrides):
     return base
 
 
+def _orders_list(orders=None, **overrides):
+    base = {"orders": orders or [], "manager_appointed": True}
+    base.update(overrides)
+    return base
+
+
 def _base_tools(**overrides):
     results = {
         "vitals.summary": _vitals(),
         "clock.status": _clock_status(),
         "overview.get": _overview(),
         "queue.overview": _queue_overview(),
+        "orders.list": _orders_list(),
         "diff.since": _diff_sequence(),
         "queue.grade": _grade_result(),
         "clock.set-speed": {"ok": True, "old_fps": 100, "new_fps": 100},
@@ -522,6 +529,100 @@ def _run_that_called(*tool_ids: str, ok: bool = True) -> RunResult:
         timed_out=False, tool_summary={"calls": len(tool_ids), "tools": [tool_name(t) for t in tool_ids]},
         final_answer="handled" if ok else None, raw={}, error=None if ok else "refused",
     )
+
+
+# ---------------------------------------------------------------------------
+# handoffs/2026-09-23-stalled-order-poller.md: stalled/blocked orders,
+# slow-tier announcements
+# ---------------------------------------------------------------------------
+
+
+def _order(id=0, validated=True, active=False, amount_left=5, amount_total=5, finished_year=-1):
+    return {
+        "id": id, "validated": validated, "active": active,
+        "amount_left": amount_left, "amount_total": amount_total,
+        "finished_year": finished_year,
+    }
+
+
+async def test_a_freshly_stalled_order_does_not_wake_before_the_threshold(tmp_path):
+    tools = _base_tools()
+    tools["orders.list"] = _orders_list([_order(id=0)])
+    deps = _deps(tmp_path, tools=tools)  # game_tick 1000, first sighting this cycle
+    result = await run_cycle(1, deps)
+
+    assert "quartermaster" not in result.roles_woken
+
+
+async def test_an_order_stalled_past_the_threshold_wakes_the_quartermaster(tmp_path):
+    cursor_store = CursorStore(tmp_path / "cursors.json")
+    cursor_store.set("__routine_review__", 403200 + 1000)
+    # Pre-seed the order as already having been first seen stalled 1300
+    # ticks before this cycle's own tick (403200 + 1000), past the 1200-tick
+    # policy threshold -- exercising run_cycle's own wiring of orders.list
+    # into conductor/order_watch.py without needing two real cycles here
+    # (test_order_watch.py already covers the threshold/renotify logic
+    # itself in isolation).
+    cursor_store.set("__order_first_seen_0", 403200 + 1000 - 1300)
+
+    tools = _base_tools()
+    tools["orders.list"] = _orders_list([_order(id=0)])
+    deps = CycleDeps(
+        tool_caller=FakeToolCaller(tools), role_runner=FakeRoleRunner(), policy=POLICY,
+        cursor_store=cursor_store, archive=CycleArchive(tmp_path / "cycles"),
+        charters=CHARTERS, models=MODELS, dry_run=False,
+    )
+    result = await run_cycle(1, deps)
+
+    assert "quartermaster" in result.roles_woken
+    assert result.clock_level == SLOWED
+
+
+async def test_a_blocked_order_wakes_the_quartermaster_distinctly_from_a_stalled_one(tmp_path):
+    cursor_store = CursorStore(tmp_path / "cursors.json")
+    cursor_store.set("__routine_review__", 403200 + 1000)
+    cursor_store.set("__order_first_seen_2", 403200 + 1000 - 1300)
+
+    tools = _base_tools()
+    tools["orders.list"] = _orders_list([_order(id=2, validated=False)])
+    deps = CycleDeps(
+        tool_caller=FakeToolCaller(tools), role_runner=FakeRoleRunner(), policy=POLICY,
+        cursor_store=cursor_store, archive=CycleArchive(tmp_path / "cycles"),
+        charters=CHARTERS, models=MODELS, dry_run=False,
+    )
+    result = await run_cycle(1, deps)
+
+    assert "quartermaster" in result.roles_woken
+
+
+async def test_a_slow_announcement_event_wakes_its_named_role_at_slowed(tmp_path):
+    tools = _base_tools()
+    tools["diff.since"] = _diff_sequence([
+        [],  # architect
+        [],  # quartermaster
+        [],  # consultant
+        [{"type": "announcement_slow", "announcement_type": "AMBUSH_MISCHIEVOUS",
+          "tick": 999, "wake": ["overseer"], "detail": "a kea is closing in"}],  # overseer
+    ])
+    deps = _deps(tmp_path, tools=tools)
+    result = await run_cycle(1, deps)
+
+    assert OVERSEER in result.roles_woken
+    assert result.clock_level == SLOWED
+
+
+async def test_a_slow_announcement_seen_by_two_roles_diffs_is_not_double_counted(tmp_path):
+    """The same real report can drain into more than one role's own
+    diff.since cursor -- must be deduplicated by (announcement_type, tick),
+    not treated as two separate events."""
+    event = {"type": "announcement_slow", "announcement_type": "AMBUSH_MISCHIEVOUS",
+              "tick": 999, "wake": ["quartermaster"], "detail": "a kea is closing in"}
+    tools = _base_tools()
+    tools["diff.since"] = _diff_sequence([[event], [event], [], []])
+    deps = _deps(tmp_path, tools=tools)
+    result = await run_cycle(1, deps)
+
+    assert result.roles_woken == ("quartermaster",)
 
 
 async def test_a_tripwire_stays_paused_when_a_clean_run_calls_queue_escalate(tmp_path):

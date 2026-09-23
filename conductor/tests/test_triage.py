@@ -107,3 +107,60 @@ def test_the_most_urgent_of_several_live_reasons_wins():
 def test_wake_for_returns_none_for_an_unwoken_role():
     result = triage(Signals(caravan_present=True), POLICY)
     assert result.wake_for(OVERSEER) is None
+
+
+# ---------------------------------------------------------------------------
+# handoffs/2026-09-23-stalled-order-poller.md: stalled/blocked orders,
+# slow-tier announcements
+# ---------------------------------------------------------------------------
+
+
+def test_stalled_order_slows_the_clock_and_wakes_only_the_quartermaster():
+    result = triage(Signals(stalled_order=True, stalled_order_ids=(0, 1)), POLICY)
+    assert result.clock == SLOWED
+    assert result.roles_to_wake == ("quartermaster",)
+    wake = result.wake_for("quartermaster")
+    assert "0" in wake.detail and "1" in wake.detail
+
+
+def test_blocked_order_slows_the_clock_and_wakes_only_the_quartermaster():
+    result = triage(Signals(blocked_order=True, blocked_order_ids=(4,)), POLICY)
+    assert result.clock == SLOWED
+    assert result.roles_to_wake == ("quartermaster",)
+    wake = result.wake_for("quartermaster")
+    assert "4" in wake.detail
+
+
+def test_a_quiet_order_watch_wakes_nobody():
+    result = triage(Signals(), POLICY)
+    assert result.wake_for("quartermaster") is None
+
+
+def test_slow_announcement_wakes_the_roles_named_on_the_event_at_slowed():
+    result = triage(
+        Signals(
+            slow_announcement=True,
+            slow_announcement_roles=("overseer",),
+            slow_announcement_detail="a mischief-class creature is closing in",
+        ),
+        POLICY,
+    )
+    assert result.clock == SLOWED
+    assert result.roles_to_wake == (OVERSEER,)
+    wake = result.wake_for(OVERSEER)
+    assert wake.detail == "a mischief-class creature is closing in"
+
+
+def test_slow_announcement_never_pauses_even_alongside_nothing_else():
+    result = triage(Signals(slow_announcement=True, slow_announcement_roles=()), POLICY)
+    assert result.clock == SLOWED
+    assert result.roles_to_wake == ()
+
+
+def test_a_ledger_row_alone_is_never_a_wake_reason():
+    """Signals carries no ledger field at all -- the hard rule
+    (handoffs/2026-09-23-stalled-order-poller.md item 5: 'a ledger row must
+    never become a wake reason on its own') is enforced structurally: there
+    is nothing here for a ledger row to set."""
+    assert not hasattr(Signals(), "ledger")
+    assert not hasattr(Signals(), "ledger_rows")

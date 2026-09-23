@@ -75,6 +75,27 @@ class Signals:
     season_change: bool = False
     hostile_seen_unreachable: bool = False
 
+    # handoffs/2026-09-23-stalled-order-poller.md: polled from orders.list
+    # via conductor/order_watch.py, never from a diff.since event -- there
+    # is no announcement to drain for this failure mode (research/2026-09-
+    # 23-announcement-severity.md §C). See that module's own docstring for
+    # the stalled-vs-blocked distinction and the dedup/renotify rule.
+    stalled_order: bool = False
+    stalled_order_ids: Tuple[int, ...] = ()
+    blocked_order: bool = False
+    blocked_order_ids: Tuple[int, ...] = ()
+
+    # handoffs/2026-09-23-attention-tiers-ingame.md item 2 / this stream's
+    # item 4: a `slow`-level announcement, drained through diff.since and
+    # classified by conductor/cycle.py's `_classify_slow_announcements`.
+    # Unlike every other reason above, WHICH role(s) wake is data carried on
+    # the event itself (each announcement type's own `wake` list in
+    # research/data/2026-09-23-announcement-severity.yaml), not a fixed
+    # policy.yaml role list -- see this module's own triage() handling below.
+    slow_announcement: bool = False
+    slow_announcement_roles: Tuple[str, ...] = ()
+    slow_announcement_detail: str = ""
+
     # This cycle's own queue.grade result.
     prediction_due: bool = False
     prediction_graded: bool = False
@@ -164,6 +185,39 @@ def triage(signals: Signals, policy: Policy, *, base_fps: Optional[int] = None) 
             f"{signals.game_days_since_routine_review:.1f} game days since the last "
             f"routine review (interval {policy.routine_review_interval_game_days})",
             rp.wakes, clock_for_reason("routine_review", policy),
+        ))
+
+    # handoffs/2026-09-23-stalled-order-poller.md item 1. Dedicated blocks
+    # (not the generic _BOOLEAN_REASONS loop above) because the detail
+    # string names the actual order ids, the same way routine_review's own
+    # detail names the actual figure rather than a bare reason name.
+    if signals.stalled_order:
+        rp = policy.reason("stalled_order")
+        ids = ", ".join(str(i) for i in signals.stalled_order_ids)
+        wakes.append(Wake(
+            "stalled_order",
+            f"order(s) {ids} validated but not dispatched for at least the stall threshold",
+            rp.wakes, clock_for_reason("stalled_order", policy),
+        ))
+    if signals.blocked_order:
+        rp = policy.reason("blocked_order")
+        ids = ", ".join(str(i) for i in signals.blocked_order_ids)
+        wakes.append(Wake(
+            "blocked_order",
+            f"order(s) {ids} could not be validated by the Manager",
+            rp.wakes, clock_for_reason("blocked_order", policy),
+        ))
+
+    # handoffs/2026-09-23-attention-tiers-ingame.md item 2 / this stream's
+    # item 4. Roles come from the event data (signals.slow_announcement_roles,
+    # already ordered/deduped by conductor/cycle.py), not from
+    # policy.reason("slow_announcement").wakes -- that entry's own `wakes`
+    # field is deliberately unused for role selection, see policy.yaml.
+    if signals.slow_announcement:
+        wakes.append(Wake(
+            "slow_announcement",
+            signals.slow_announcement_detail or "a slow-tier announcement fired",
+            signals.slow_announcement_roles, clock_for_reason("slow_announcement", policy),
         ))
 
     # docs/AGENT-LOOP.md §4: "wake the Overseer only when the queue holds

@@ -54,12 +54,13 @@ import json
 import logging
 import time
 from dataclasses import dataclass
-from typing import Any, Callable, Dict, List, Mapping, Optional
+from typing import Any, Callable, Dict, List, Mapping, Optional, Tuple
 
 from conductor.archive import CycleArchive
 from conductor.briefing import build_briefing
 from conductor.cursors import CursorStore
 from conductor.mcp_client import MCPToolError, ToolCaller, tool_name
+from conductor.order_watch import OrderWatchResult, evaluate_orders
 from conductor.policy import FULL_SPEED, PAUSED, Policy
 from conductor.runner import RoleRunner, RunResult
 from conductor.triage import ADVISORS, CONSULTANT, OVERSEER, Signals, Wake, triage
@@ -85,6 +86,22 @@ EVENT_TYPE_TO_SIGNAL: Dict[str, str] = {
     "job_stalled": "stuck_job",
     "stock_below_threshold": "stock_below_target",
 }
+
+#: handoffs/2026-09-23-attention-tiers-ingame.md item 2 / this stream's item
+#: 4. The event `type` this stream ASSUMES the sibling in-game stream's
+#: still-owed fifth tripwire (the 23 `slow`-level announcement ids,
+#: research/2026-09-23-announcement-severity.md) will drain through
+#: diff.since as, once it lands: `{"type": "announcement_slow",
+#: "announcement_type": <df.announcement_type name>, "tick": <int>,
+#: "wake": [<role>, ...], "detail": <one-clause gloss>}` -- `wake` copied
+#: from the severity YAML's own per-type `wake` field (may be empty; that
+#: type still slows the clock, wakes nobody, same shape as
+#: hostile_seen_unreachable). **Not verified against a real payload from
+#: that stream** -- recorded as an assumed interface in this stream's own
+#: Result section, to be confirmed or corrected once that stream's build
+#: lands, the same "unverified, flagged plainly" discipline
+#: EVENT_TYPE_TO_SIGNAL above already uses for diff.since's general shape.
+SLOW_ANNOUNCEMENT_EVENT_TYPE = "announcement_slow"
 
 #: vitals.summary's own status categories that count as "nearing" rather
 #: than "fine" -- the critical end of each scale is what the in-game
@@ -225,6 +242,45 @@ def _classify_diff_events(events: List[Mapping[str, Any]]) -> Dict[str, bool]:
     return hits
 
 
+def _classify_slow_announcements(
+    events_by_role: Mapping[str, List[Mapping[str, Any]]],
+) -> Tuple[bool, Tuple[str, ...], str]:
+    """See `SLOW_ANNOUNCEMENT_EVENT_TYPE`'s own docstring for the assumed
+    event shape. The same real announcement can appear in more than one
+    role's own diff.since drain (each role drains the same underlying event
+    log through its own cursor), so events are deduplicated by
+    `(announcement_type, tick)` before the role set and detail are built --
+    otherwise one real announcement seen by two roles' drains would look
+    like two, and could double-wake or double-count in the briefing.
+    """
+    seen: Dict[Tuple[Any, Any], Mapping[str, Any]] = {}
+    for events in events_by_role.values():
+        for event in events:
+            if event.get("type") != SLOW_ANNOUNCEMENT_EVENT_TYPE:
+                continue
+            key = (event.get("announcement_type"), event.get("tick"))
+            seen[key] = event
+
+    if not seen:
+        return False, (), ""
+
+    roles: List[str] = []
+    for event in seen.values():
+        for role in event.get("wake") or ():
+            if role not in roles:
+                roles.append(role)
+    ordered_roles = tuple(r for r in (*ADVISORS, CONSULTANT, OVERSEER) if r in roles)
+
+    latest = max(seen.values(), key=lambda e: e.get("tick") or 0)
+    detail = (
+        f"{len(seen)} slow-tier announcement(s), most recent "
+        f"{latest.get('announcement_type')} at tick {latest.get('tick')}"
+    )
+    if latest.get("detail"):
+        detail += f": {latest['detail']}"
+    return True, ordered_roles, detail
+
+
 def _vital_nearing(vitals: Mapping[str, Any]) -> bool:
     return (
         vitals.get("worst_hunger_status") in _NEARING_STATUSES
@@ -285,6 +341,7 @@ async def run_cycle(cycle_index: int, deps: CycleDeps) -> CycleResult:
         clock_status = await call("clock.status", {})
         overview = await call("overview.get", {})
         queue_state = await call("queue.overview", {})  # see module docstring, gap 1 (fixed)
+        orders_state = await call("orders.list", {})  # handoffs/2026-09-23-stalled-order-poller.md
         events_by_role = await _drain_all_cursors(call, deps.cursor_store, dry_run=deps.dry_run)
     except MCPToolError as exc:
         raise CycleError(f"cycle {cycle_index}: could not complete this cycle's read: {exc}") from exc
@@ -385,6 +442,16 @@ async def run_cycle(cycle_index: int, deps: CycleDeps) -> CycleResult:
     for role in ALL_ROLES:
         event_hits.update(_classify_diff_events(events_by_role.get(role, [])))
 
+    order_watch: OrderWatchResult = evaluate_orders(
+        (orders_state.get("orders") or []),
+        game_tick=game_tick,
+        threshold_ticks=deps.policy.stalled_order_threshold_ticks,
+        renotify_ticks=deps.policy.stalled_order_renotify_ticks,
+        cursor_store=deps.cursor_store,
+        dry_run=deps.dry_run,
+    )
+    slow_hit, slow_roles, slow_detail = _classify_slow_announcements(events_by_role)
+
     signals = Signals(
         vital_nearing_threshold=_vital_nearing(vitals),
         vital_ticks_to_consequence=None,  # see module docstring: vitals.summary carries no timer
@@ -394,6 +461,13 @@ async def run_cycle(cycle_index: int, deps: CycleDeps) -> CycleResult:
         caravan_present=event_hits.get("caravan_present", False),
         season_change=event_hits.get("season_change", False),
         hostile_seen_unreachable=False,  # gap 2, see module docstring (documented, not fixable here)
+        stalled_order=bool(order_watch.stalled_ids),
+        stalled_order_ids=order_watch.stalled_ids,
+        blocked_order=bool(order_watch.blocked_ids),
+        blocked_order_ids=order_watch.blocked_ids,
+        slow_announcement=slow_hit,
+        slow_announcement_roles=slow_roles,
+        slow_announcement_detail=slow_detail,
         prediction_due=False,             # folded into prediction_graded, see module docstring
         prediction_graded=prediction_graded,
         game_days_since_routine_review=_game_days_since(deps.cursor_store, game_tick, deps.policy),

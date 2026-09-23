@@ -19,7 +19,7 @@ is always small in the worst case (a role that slept for a very long time).
 
 from __future__ import annotations
 
-from typing import Any, Dict, Mapping, Sequence
+from typing import Any, Dict, Mapping, Optional, Sequence
 
 from conductor.triage import Wake
 
@@ -30,6 +30,17 @@ from conductor.triage import Wake
 #: stream); worth revisiting once real cycle sizes are observed.
 MAX_DIFF_EVENTS = 20
 MAX_QUEUE_IDS = 20
+
+#: handoffs/2026-09-23-stalled-order-poller.md item 5: the sibling in-game
+#: stream's observation ledger (creature race + outcome, aggregated, never
+#: acted on -- see that stream's own Result section) MAY be worth a digest
+#: in the briefing. Capped the same way every other list here is, so its
+#: presence never makes the briefing's own size depend on how many rows the
+#: ledger has accumulated. Rows past this cap are dropped in ROW ORDER as
+#: handed in (the caller is expected to have already sorted "most worth
+#: seeing first" -- this function does not re-sort, matching every other
+#: `_capped()` use here), never re-ranked by this function.
+MAX_LEDGER_ROWS = 10
 
 
 def _capped(items: Sequence[Any], cap: int) -> Dict[str, Any]:
@@ -44,6 +55,7 @@ def _capped(items: Sequence[Any], cap: int) -> Dict[str, Any]:
 def build_briefing(
     *, role: str, game_tick: int, wake: Wake, vitals: Mapping[str, Any],
     diff_events: Sequence[Mapping[str, Any]], queue_summary: Mapping[str, Any],
+    ledger_digest: Optional[Sequence[Mapping[str, Any]]] = None,
 ) -> Dict[str, Any]:
     """One role's briefing for this cycle. `vitals` is `vitals.summary`'s own
     result, passed through as-is (already Tier 0 by construction -- see
@@ -51,8 +63,22 @@ def build_briefing(
     own drained `diff.since` events (already scoped to its cursor). `wake`
     carries why this role was woken this cycle -- never omitted, so a role
     never has to guess why it was disturbed.
+
+    `ledger_digest`: `None` (the default) omits the `"ledger"` key entirely
+    -- no caller today has a ledger read verb to supply one, since the
+    sibling in-game stream's observation ledger
+    (handoffs/2026-09-23-attention-tiers-ingame.md item 4) had not landed a
+    read tool at the time this was written. When a caller does have rows to
+    show, they are capped exactly like every other list in this function
+    (`MAX_LEDGER_ROWS`) -- this parameter exists so `conductor/cycle.py` can
+    start passing real rows the moment that read exists, with no further
+    change to this function. **The ledger is read-only input here, same as
+    everywhere else in this package: nothing about receiving or capping it
+    ever pauses the fort or wakes anyone by itself** -- that is decided
+    entirely by `conductor/triage.py`'s own reasons, never by what shows up
+    in a briefing.
     """
-    return {
+    briefing: Dict[str, Any] = {
         "role": role,
         "game_tick": game_tick,
         "wake_reason": wake.reason,
@@ -74,3 +100,6 @@ def build_briefing(
             ),
         },
     }
+    if ledger_digest is not None:
+        briefing["ledger"] = _capped(ledger_digest, MAX_LEDGER_ROWS)
+    return briefing
