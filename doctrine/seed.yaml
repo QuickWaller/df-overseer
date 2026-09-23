@@ -1281,3 +1281,123 @@
     (noble-position-room-value-and-furniture-requirements): a coincidence
     this unlikely across three independent values is treated here as real
     support, not proof.
+
+- id: room-enclosure-not-required-to-count
+  scope: universal
+  status: prior
+  topics: [rooms]
+  sources:
+    - kind: wiki
+      ref: >-
+        Office (https://dwarffortresswiki.org/index.php/Office), version
+        banner "v53.16": "does not (necessarily) have to be a separate
+        enclosed space separated from other areas by walls and a door"
+      describes: "53.16"
+      read: opened
+      accessed: 2026-09-24
+    - kind: forum
+      ref: >-
+        Steam Community, "Does enclosing rooms impact value?"
+        (steamcommunity.com/app/975370/discussions/0/5828254882201086677/):
+        a player reports testing this directly in the current version by
+        poking holes in a fully-enclosed room's walls and by building
+        interior walls instead of perimeter walls, observing no value
+        difference either way; top reply: "rooms are zones now and don't
+        care about doors. It's just the value of whatever's in the green
+        area you paint."
+      describes: "53.16"
+      read: opened
+      accessed: 2026-09-24
+  statement: >-
+    A room-kind zone does not need to be enclosed by walls, a roof or a
+    door to exist or to register a value at all. This is corroborated two
+    ways this pass: a current-namespace wiki page states it directly for
+    Office, and an informal but directly-described player test in a Steam
+    Community thread reports zero value difference from enclosure in the
+    current (post-v50, zone-based) mechanic, consistent with
+    rooms-are-zones-not-furniture (a zone's value comes from its painted
+    contents, not a walled-room boundary scan).
+  note: >-
+    research/2026-09-24-room-enclosure-and-value.md Q1. The user's own
+    belief going into this pass was that enclosure is a requirement; this
+    is the specific claim this entry does not support, stated plainly
+    rather than smoothed over. Still `prior`, not `verified`: no install
+    data or DFHack API can confirm or deny a value effect either way
+    (room-value-not-computable-only-quality-word), and the Steam source is
+    one player's informal report, not independently reproduced by this
+    project. What would settle it: build two otherwise-matched sites, one
+    enclosed and one open, and compare getRoomDescription (would mutate
+    the fort; not run this pass).
+
+- id: room-value-enclosure-bonus-claim-is-stale-page
+  scope: universal
+  status: prior
+  topics: [rooms]
+  sources:
+    - kind: wiki
+      ref: >-
+        How do I increase the value of a room
+        (https://dwarffortresswiki.org/index.php/How_do_I_increase_the_value_of_a_room),
+        filed under the current unprefixed title but carrying its own
+        in-page caveat: "This article was migrated from DF2014... and may
+        be inaccurate for the current version of DF (v53.16)"; body text
+        throughout describes per-item furniture stacking, weapon traps and
+        levers-with-mechanisms, the pre-v50 furniture-defined room
+        mechanic rooms-are-zones-not-furniture already found gone in
+        53.16. The explicit DF2014: namespace copy of the same page
+        (dwarffortresswiki.org/index.php/DF2014:How_do_I_increase_the_value_of_a_room)
+        reads identically on the enclosure sentence, i.e. the
+        current-namespace page is an uncorrected copy of the old one.
+      describes: unknown
+      read: opened
+      accessed: 2026-09-24
+  statement: >-
+    A wiki page claiming "gaps in the perimeter reduce the value of
+    certain features of the room by a percentage" exists under a
+    current-version title, but it self-identifies as migrated DF2014
+    content that may not describe 53.16, and its surrounding advice is
+    written for the retired furniture-defined room mechanic throughout.
+    This is why room-enclosure-not-required-to-count treats the
+    no-enclosure-effect reading as the better-supported side of a
+    contested pair of sources, not why the two are equally weighted.
+  note: >-
+    research/2026-09-24-room-enclosure-and-value.md Q3. Kept as its own
+    entry rather than folded into room-enclosure-not-required-to-count so
+    the specific reason for distrusting this source is not lost:
+    "current-version URL" is not the same claim as "describes the current
+    version," and this is the concrete instance that taught that
+    distinction on this project. The page's other levers (smoothing,
+    engraving, furniture quality, room size) are still reported in
+    research/2026-09-24-room-enclosure-and-value.md Q4 as the best
+    available account, same treatment yesterday's pass gave the obsolete
+    DF2014:Room formula page: folklore about a related mechanic, not
+    confirmed current behaviour.
+
+- id: room-value-no-second-gate-found-beyond-population
+  scope: world
+  status: prior
+  topics: [rooms]
+  sources:
+    - kind: research
+      ref: research/2026-09-24-room-enclosure-and-value.md Q5
+      describes: "53.16"
+      read: opened
+      accessed: 2026-09-24
+  statement: >-
+    Beyond a position's required room value and, for four positions
+    (SHERIFF, CAPTAIN_OF_THE_GUARD, DUNGEON_MASTER, MAYOR), the population
+    gate already verified in
+    noble-position-room-value-and-furniture-requirements, no wiki or
+    forum source found this pass names any further gate (assignment
+    timing, distance, room count) a position applies before accepting a
+    room. Zone overlap reduces a room's own value (the stale-but-otherwise
+    corroborated 75% overlap claim) rather than gating a position's
+    acceptance of it directly.
+  note: >-
+    A negative search result, stated as such rather than padded: this pass
+    looked for a second gate and did not find one, beyond the
+    already-verified population gate and the still-unresolved question of
+    whether required_boxes/_cabinets/_racks/_stands gate order validation
+    independently (noted, not settled, in
+    noble-position-room-value-and-furniture-requirements and unchanged by
+    this pass).

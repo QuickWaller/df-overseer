@@ -104,4 +104,50 @@ with yesterday's pass is stated rather than smoothed over.
 
 ## Result
 
-(to be filled by the stream)
+**Enclosure is not a game requirement for a zone-defined room to count or
+have value.** This corrects the user's working belief, stated plainly, not
+smoothed over: no install data, DFHack API, or current-version source found
+supports it. Confidence is `prior`, not `verified` (no install data can
+settle a value question at all, per yesterday's Q3/Q6), but it is now
+corroborated two independent ways rather than one: the Office wiki page
+(re-fetched, fuller context) plus an informal but directly-described player
+test in a Steam Community thread, both saying the same thing for the
+mechanical reason yesterday's Q1 already established (rooms are zones,
+valued by contents, not a walled-boundary scan).
+
+The one source claiming an enclosure value *penalty* ("How do I increase
+the value of a room") turned out, on closer reading, to carry its own
+caveat that it was migrated from DF2014 and may not describe 53.16, and its
+body text is written throughout for the pre-v50 furniture-defined room
+mechanic. That is reported as its own doctrine entry
+(`room-value-enclosure-bonus-claim-is-stale-page`) rather than silently
+discarded, since "sits under a current-version URL" turned out not to mean
+"describes the current version," which is worth keeping as a named trap.
+
+No yesterday entry was contradicted; all four new entries build on
+yesterday's `rooms` topic rather than refuting it (`rooms-are-zones-not-furniture`
+predicted exactly this result). Value levers were enumerated
+(`research/2026-09-24-room-enclosure-and-value.md` Q4: furniture volume,
+quality, smoothing, engraving, size, weapon traps, levers/mechanisms,
+artifacts, roughly cheap-to-expensive), all `prior`, from the same
+stale-flagged page, so reported as folklore, not confirmed current
+mechanics. "Smallest office per position" remains uncomputable, as the
+brief allowed: no absolute per-tile or per-furniture-piece values exist in
+any source read. Checked for a second gate beyond room value and found
+none beyond the already-known population gate; that negative result is its
+own doctrine entry.
+
+Four new `doctrine/seed.yaml` entries under `rooms`:
+`room-enclosure-not-required-to-count` (prior),
+`room-value-enclosure-bonus-claim-is-stale-page` (prior),
+`room-value-no-second-gate-found-beyond-population` (prior). `doctrine/tests`
+14 passed; ambient suite 1413 passed, 3 skipped, matching the stated
+baseline exactly. Full findings, sources and quotes:
+`research/2026-09-24-room-enclosure-and-value.md`.
+
+**For the layout checker this brief exists to inform: do not encode
+enclosure as a requirement or as a value bonus/penalty.** If a checker
+wants firmer ground than `prior`, the only route found is the live test
+named in the research file's "What would settle it" (build one enclosed
+and one open zone with matching contents, compare
+`getRoomDescription`), which this read-only pass did not run.
