@@ -144,4 +144,66 @@ not gestured at. No code is written and nothing on the fort has changed.
 
 ## Result
 
-<!-- The stream fills this in as it goes. -->
+**Done.** `research/2026-09-23-flood-relevance-and-traffic.md` answers all six
+questions with live verification on VM 103 (fort paused throughout, nothing
+written, nothing unpaused). Summary:
+
+- **Hypothesis**: refuted as a poll-scope filter (a pure occupancy filter
+  would gate away the exact breach case it exists for), confirmed as a tier
+  signal once reframed the way the coordinator's mid-task note asked —
+  footprint sets loudness, stage 1 stays unconditional and global.
+- **Q1 (gate)**: yes, a usable gate exists. `update_liquid` is source-confirmed
+  (`Maps::enableBlockUpdates`, `FLOW_ADJUST`) as a real engine-consumed flag,
+  and DFHack's own `flows` tool and this project's own `df-overseer-breach.lua`
+  agree exactly live (3/3/3 blocks, all the fort's Well). The earlier
+  "zero of 26,784" reading was a false negative of that session's sampling
+  window, not proof the flag never fires — flagged and explained, not
+  glossed over.
+- **Q2 (shapes)**: traffic is a per-tile `tile_designation.traffic` field
+  (0=Normal..3=Restricted), burrows are a real object with a unit vector and
+  a per-block tile bitmask. Both confirmed empty live (0 non-Normal tiles of
+  6,856,704; 0 burrows).
+- **Q3 (armok)**: neither `burrow` nor `filltraffic` is DFHack-armok-tagged,
+  and writing traffic/burrow-tile state is not a banned capability under
+  CLAUDE.md's actual rule (mechanically identical to the mouse action).
+  Confining a specific dwarf to a burrow is flagged explicitly, per the
+  brief's instruction, as its own decision line for the register, separate
+  from the armok question, which this research answers no to.
+- **Q4 (footprint)**: adopts the coordinator's refinement. Adds active dig
+  designations (`designation.dig`, verified live: 36 tiles, the only
+  populated element of the footprint today) as the predictive element,
+  cited against the mine-water-inrush literature's own working-face siting
+  logic. Reports a genuine checked negative: `block.flags.designated`
+  (HAS_DESJOB) does **not** correlate with the 36 live designations while
+  paused (0 flagged blocks), and neither does the live job list (0 dig-type
+  jobs) — both plausibly tick-gated, unconfirmed. Resolves the apparent cost
+  tension: footprint classification is per-finding (O(findings), typically
+  zero), not per-map, so the expensive full-tile sweep used only as a
+  one-off diagnostic here is never needed on the poll hot path.
+- **Q5 (tiers)**: a five-row table mapping to the existing
+  pause/slow/record_only system, argued from the evidence, magma-reachable
+  unchanged at pause, burrow/traffic-tagged water promoted to pause, the
+  dig-frontier case to slow, general reachability unchanged at slow,
+  everything else to record_only. No tick-rate number is given; none was
+  measured.
+- **Q6 (logistics)**: real and independent of the flood case, but
+  unmeasurable on this fort today (no configured stockpile links, no
+  Manager). One section, as instructed.
+- **Cross-domain**: four fields read and cited with URLs (flood gauge
+  siting, fire/gas detector occupancy placement, ISA-18.2 alarm management,
+  mine water inrush working-face monitoring), each with an explicit
+  what-transfers/what-doesn't.
+- **Not verified**, listed with what would settle each: whether
+  `update_liquid` clears reliably under real active flow; whether
+  `designated`/job-list catch up to designations once ticking resumes;
+  whether `onJobCompleted` fires for Dig-class jobs specifically; the native
+  semantics of `liquid_static`/`flow_forbid` (write-only in every tool
+  read); any tick-rate figure; whether a real breach is reliably within the
+  proposed footprint versus starting from an undesignated collapse (reasoned
+  likely via the existing `CAVE_COLLAPSE` channel, not confirmed).
+
+No `.lua` file, `TOOLS.yaml`, `dfmcp/**`, `agents/**`, `Working.md`,
+`decisions/DECISIONS.md`, `memory/` or `handoffs/INDEX.md` was touched. All
+live VM commands used `scripts/vm-ssh.sh df`. Three scratch Lua diagnostics
+were copied to `/tmp` on the VM, run once each, and deleted; none is part of
+this commit.
