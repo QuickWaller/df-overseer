@@ -49,6 +49,33 @@ untouched. And positions demand sharply different room values, read live:
 `DUNGEON_MASTER` 250, `MAYOR` 500, so smoothing and engraving are the value
 lever rather than decoration.
 
+**Build-cost correction from the user, 2026-09-24, and the constraint it
+exposes.** Digging a room in rock gives you its walls for free: the undug
+stone is the wall, so build cost is tiles excavated plus a door plus
+furniture, with constructed walls needed only where the natural material will
+not do (soil, or ore that should be mined rather than left standing). This
+reframes wall reuse: between two rock rooms the shared wall is a tile nobody
+digs, so reuse avoids **wasted undug tiles** rather than saving construction
+labour, and it is a property of the dig plan rather than of any build order.
+
+**The consequence nobody had stated: a room's value ceiling is set by the
+material it is dug into.** Smoothing and engraving are the levers that reach
+high room values (MAYOR needs 500 against MANAGER's 1), engraving requires a
+smoothed surface, and soil cannot be smoothed. So a room dug in soil can never
+be engraved and can never hold a high-value noble. **Needs verification**
+before encoding, specifically whether soil truly cannot be smoothed in 53.16.
+
+**And the act/sense rule makes this a post-dig property, not a siting input.**
+`df-overseer-diggable.lua` was omniscient until the 2026-09-16 knowledge-scope
+fix and its act/sense refinement: an agent may designate a dig into unrevealed
+ground, because every player does, but may not know an unrevealed tile's
+material first. So "site high-value rooms in stone" cannot simply be planned.
+Agreed direction: **plan, then verify.** The planner proposes, the dig
+reveals, and a check afterwards reports whether the room can be smoothed and
+engraved, which decides whether it can ever hold a high-value noble. Material
+reads themselves need no new primitive: `diggable` already reports STONE,
+SOIL, FEATURE, MINERAL, LAVA_STONE and FROZEN_LIQUID per tile.
+
 **Two corrections the user made to the orchestrator's proposal, both
 accepted.** Wall reuse is a **metric, not an invariant**: "every shared wall
 must be exactly one tile thick" would reject a layout that shares half a wall
