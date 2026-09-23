@@ -259,3 +259,86 @@ already marked superseded or updated by a later one; the register holds the subs
 >   the job yet either way). Fort-owned food is 17 units, drink still 0, 60
 >   seeds (35 plump helmet). → `Working.md` HANDOVER 2026-09-19 (the 2026-09-17 one is archived).
 >
+
+## Archived 2026-09-23: superseded bullets from the CLAUDE.md status block
+
+Moved wholesale from `CLAUDE.md`'s status block when it was compacted during the
+third doc-drift pass (`handoffs/2026-09-23-doc-drift-pass-3.md`). Every entry
+was superseded by the agent loop MVP, its deploy, the office-and-first-build
+run, order/job attribution and the attention system, all landing 2026-09-22/23.
+The register and `evals/live/` hold the substance.
+
+> - **Current state, as last recorded 2026-09-21 (fort re-read live at the deploy).**
+>   Uniboslan is paused at year 31, tick 106974, 22 alive and 1 dead, with
+>   **MANAGER appointed (unit 345)** by the new `nobles` tool; the queued manager
+>   orders still do not run, and the leading cause (the game's position data and
+>   the user's play experience agree) is that the Manager needs an **Office**,
+>   which the fort lacks (no zones at all). The 2026-09-21 batch is deployed and
+>   live-verified on VM 103: role tool lists **architect 34, overseer 57,
+>   consultant 14**, including the generic `building` tool (dry runs only: no
+>   never-built kind has been built for real), `gotchas.*`, the labor graph join,
+>   `nobles.*` and the generalised `zone` tool, on top of the six-deduction
+>   `stocks.availability`, `doctrine.get` and the `series.*`
+>   history tools (the fort is sampled once per game day into `dfseries`).
+>   Open next, in order: redeploy the labor-join shape fix, place an Office for
+>   the Manager and watch the orders, the first real build of a never-built
+>   kind, then generalise `workjob`. Against the user's minimum bar for
+>   openclaw only wells are done; the agent loop is unbuilt. → `Working.md`
+>   HANDOVER 2026-09-21, evening.
+> - **Recent history, each in full in the register and `working-archive/`:** the fort
+>   could not drink and the well was built (2026-09-19, from blocks and a mechanism
+>   made through `df-overseer-workjob`, since manager orders never run without a
+>   Manager); it **starved before it was fed** (first death, unit 454, tick 15143;
+>   reporting had counted only drinks) and was then fed by marking 429 wild plants;
+>   the production graph went from designed to built to filled with the real corpus
+>   and, on 2026-09-21, to a labor graph over 33 building kinds (5 known, 23
+>   partial, 5 unknown). The superseded status bullets are archived in
+>   `working-archive/Working_archive-2026-09-21.md`.
+>
+> - **The fort.** VM 103 (`df-colony-01`) runs **Uniboslan, "Ragwind,"** the
+>   one fort, on DF Classic plus DFHack under Xvfb, built by
+>   `scripts/provision_vm.py` and `scripts/install_df.py`. A first fort,
+>   Artobcatten, was lost founding it (register 2026-09-10). It is genuinely
+>   paused, the safe state. The user chose to continue on this fort; it is
+>   expendable, and rescuing it is worth trying for the tools it forces us to
+>   build. → `Working.md` HANDOVER 2026-09-21, evening.
+> - **Perception and action.** `scripts/dfhack/` holds the coordinate-free
+>   tools: connectivity, landmarks, overview, diff, open-area and diggable
+>   find/build, chokepoints, stuck jobs, labor, farm, workshop, zone, trees,
+>   well, manager work orders, the generic `building` tool, `nobles` and a
+>   `zone` tool over every zone kind, all live on VM 103. Role tool lists:
+>   architect 34, overseer 57, consultant 14 (2026-09-21, live-verified per role over a real MCP client, after the building, gotchas, nobles and zone tools landed). Closed loops ran for real:
+>   Stockpile #2 built, a 41-tile dig completed, a farm plot built and its crop
+>   set,
+>   and a `WaterSource` zone placed, none needing a raw coordinate to reach
+>   the decision-maker. **`doctrine/`** holds game knowledge (crop and water
+>   rules) the agents should eventually read; only the consultant reads it, through `doctrine.get` (deployed 2026-09-20), and it is
+>   never a repo decision, so it never goes in the register.
+> - **`dfmcp/`**, the MCP server: `dfmcp-server.service` on VM 103,
+>   LAN-bound, **bearer tokens the only guard until Tailscale**. Per-role
+>   allowlists enforced server-side, role from the credential, every call
+>   logged to journald.
+> - **`dfqueue/`**, the proposal queue: SQLite, validated at write time, live
+>   since 2026-09-15 (`queue.propose`/`pass` for the architect,
+>   `queue.rule`/`pending` for the Overseer). Architect run #3 wrote the first
+>   real proposal; the Overseer accepted it 2026-09-16 (`ruling-0001`, one
+>   sample on a cheap model, not evidence of good arbitration). The fort was
+>   kept paused at tick 12274877 under the user's standing rule until
+>   2026-09-15 23:03 UTC, then unpaused and left running unattended with no
+>   Sentry (register), before stopping paused behind a dialog the user
+>   dismissed the same day. At the fort's
+>   real cap (`FPS_CAP` 100, not the 5 several docs assumed)
+>   `proposal-0001`'s 1200-tick prediction window elapsed within about a
+>   minute, unexecuted, so grading it now would record a miss caused by
+>   wall-clock latency between ruling and execution, not a bad proposal. It is
+>   left ungraded on purpose; no grader runs on a schedule regardless. It also
+>   could not be executed on 2026-09-15 even with write tools switched on, because no
+>   tool built what it asks for (a generic `building` tool is live now, dry runs only).
+> - **Incident capture** on VMs 103 and 106 (guest agent, persistent journal,
+>   a netwatch dump on gateway loss), with `docs/RUNBOOK-DARK-GUEST.md`. VM 106
+>   went dark on 2026-09-14, cause unknown; it was rebuilt in place.
+> - **Agents.** openclaw on VM 106 has run two agents one-shot via `agent
+>   exec` on DeepSeek: architect (proposals) and overseer (rulings). No agent
+>   runs as a service. Everything in `docs/` and `research/` beyond the above
+>   is design or proposal unless marked verified.
+
