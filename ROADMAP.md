@@ -806,9 +806,9 @@ or `decisions/DECISIONS.md`, not here.
   `load-save` is unavailable in 53.16 (`memory/dfhack-environment.md`), most
   likely the service-restart plus title-screen bootstrap path, unverified;
   outcome measures taken from the proposal queue's existing prediction
-  grading; and a ruling that reloading is a test-harness power only, never
-  available to a playing agent (reloading to undo a bad outcome in play is
-  save-scumming, `docs/ARMOK-RULINGS.md`). Feeds the public report
+  grading. **Ruled (user, 2026-09-25): reloading is a test-harness power
+  only, never available to a playing agent** (`docs/ARMOK-RULINGS.md`).
+  First intended use: testing architect tools. Feeds the public report
   directly. Not designed yet.
 - **District/zoning planning as the fix for the site-ranking system.**
   2026-09-24: the ghost's coffin landed in a poor spot because `zone`/
