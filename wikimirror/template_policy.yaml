@@ -1,0 +1,101 @@
+# Template policy for wikimirror/text.py (wiki mirror stage S2).
+#
+# One entry per MediaWiki template, keyed by the normalised template name
+# (lowercase, underscores as spaces, no "Template:" prefix). Adding a template
+# is a data entry here, never a code change.
+#
+# Fields per entry:
+#   action   drop             emit nothing (navigation, decoration, editor notes)
+#            keep_body        emit the parameter values as text ("v1; v2")
+#            keep_parameters  emit "Name: key: value; key: value"
+#            name_only        emit the template's own name (a transcluded list
+#                             we cannot expand, so the reader can see it exists)
+#            category         the values name categories; they go to the page's
+#                             categories field, not the text
+#   label    text used in place of the template name (optional)
+#   only     parameter keys to keep, fnmatch patterns; positional are "1","2".. (optional)
+#   exclude  parameter keys to drop, fnmatch patterns (optional)
+#   positional_labels  names for positional parameters, in order (optional)
+#   block    true: emit as its own paragraph. Default: inline, and keep_parameters
+#            output is wrapped in [square brackets] so it reads as an aside.
+#   source   the sampled page the entry was written from (documentation only)
+#
+# Sampled pages (research/2026-09-24-wiki-mirror-feasibility.md, request 29, plus
+# one re-fetch of the same shapes for fixtures): Well, Aquifer, Ghost, Engraver,
+# Mason, Dwarf, Cavern, Trading, DF2014:Well, Water_buffalo/raw.
+#
+# An unknown template gets `default`: keep_parameters, inline. A template with no
+# parameters at all therefore emits nothing (there is nothing to keep), and
+# text.py reports every unlisted name it met in PageText.unlisted_templates so a
+# pull can measure what to add next.
+
+version: 1
+
+default:
+  action: keep_parameters
+
+templates:
+  # ---- decoration and page banners: drop ----
+  quality:            {action: drop, source: "Well, Mason, Ghost: {{Quality|Masterwork}} page grade banner"}
+  av:                 {action: drop, source: "Well, Mason, Ghost: version banner, alias of ArticleVersion"}
+  articleversion:     {action: drop, source: "Template:ArticleVersion, the banner logic behind {{av}}"}
+  minorspoiler:       {action: drop, source: "Ghost: spoiler banner"}
+  buggy:              {action: drop, source: "Trading: bug banner"}
+  clear:              {action: drop, source: "Trading: float clear, layout only"}
+  tile:               {action: drop, source: "Ghost, Cavern: {{Tile|glyph|colour}} in-game glyph, mangled by the CP437 encoding"}
+  check:              {action: drop, source: "Cavern: {{check}} tick mark inside tables, 170 uses on one page"}
+  bug:                {action: drop, source: "Ghost, Trading: {{bug|6354}} bug tracker number"}
+  verify:             {action: drop, source: "Ghost, Mason: {{verify}} editor note"}
+  mod:                {action: drop, source: "Ghost, Aquifer: {{mod}} modding-note marker"}
+  creaturedesc:       {action: drop, source: "Dwarf: creature description banner, no parameters"}
+  "dual image":       {action: drop, source: "Trading: two-image layout, captions are decoration"}
+  shortcut:           {action: drop, source: "design doc 8.3 drop list"}
+  "raw footer":       {action: drop, source: "Water_buffalo/raw: duplicate of the raw header token"}
+
+  # ---- navigation boxes: drop ----
+  skills:             {action: drop, source: "Mason, Engraver: skills navigation box"}
+  buildings:          {action: drop, source: "Well, DF2014:Well: buildings navigation box"}
+  creatures:          {action: drop, source: "Dwarf: creatures navigation box"}
+  world:              {action: drop, source: "Aquifer, Cavern: world navigation box, {{World|Biomes}}"}
+  "d for dwarf":      {action: drop, source: "Well, Trading: 'D for Dwarf' navigation footer"}
+  gamedata:           {action: keep_parameters, source: "Dwarf: {{gamedata|title=Entity (civilization) Raws|{{raw|...}}}} frame, its title and nested raw reference are kept"}
+
+  # ---- categories: routed to the categories field ----
+  category:           {action: category, source: "Dwarf: {{Category|Races}}"}
+  catlink:            {action: keep_body, only: ["2"], source: "Dwarf: {{Catlink|Humanoids|humanoid}}, the second parameter is the display word"}
+
+  # ---- facts held in parameters: keep ----
+  building:           {action: keep_parameters, block: true, source: "Well, DF2014:Well: infobox with construction, purpose, hotkey"}
+  v50_skill:
+    action: keep_parameters
+    block: true
+    exclude: [color, graphic]
+    label: Skill
+    source: "Mason, Engraver: skill infobox (job name, tasks, attributes)"
+  creaturelookup/0:
+    action: keep_parameters
+    block: true
+    exclude: [image, portrait, contrib]
+    label: Creature
+    source: "Dwarf: creature infobox, sprite and portrait files are decoration"
+  translation:        {action: keep_parameters, source: "Cavern, Trading: per-language word list"}
+  raw:                {action: keep_parameters, positional_labels: [file, type, token], source: "Dwarf: {{raw|v50:entity_default.txt|ENTITY|MOUNTAIN}}"}
+  "raw header":       {action: keep_parameters, positional_labels: [kind, token], source: "Water_buffalo/raw: identifies the raw object"}
+  "variation raw":    {action: keep_parameters, positional_labels: [file, type, token, variant, base], block: true, source: "Water_buffalo/raw: the raw-file transclusion stub"}
+  "columns-list":     {action: keep_body, exclude: [colwidth, cols], block: true, source: "Aquifer: multi-column bullet lists of soil and stone types"}
+
+  # ---- short inline templates whose parameter is the text: keep_body ----
+  dftext:             {action: keep_body, only: ["1"], label: "In-game text", source: "Ghost, Trading: {{DFtext|message|colour}}, the second parameter is a colour code"}
+  quote:              {action: keep_body, label: Quote, source: "Trading: in-game merchant quotes"}
+  token:              {action: keep_body, source: "Ghost, Trading: {{token|NOFEAR}} raw token name"}
+  k:                  {action: keep_body, source: "Well, Cavern: {{k|d}} keyboard key"}
+  "menu icon":        {action: keep_body, source: "Ghost, Well: {{menu icon|q}} menu key"}
+  "adv menu icon":    {action: keep_body, source: "Ghost: adventure-mode menu key"}
+  main:               {action: keep_body, exclude: ["l?", "l??"], label: "Main article", source: "Aquifer, Engraver, Trading: {{main|Page|l1=Label}}"}
+  "for/see":          {action: keep_body, label: "See", source: "Well: {{For/see|description|[[Page]]}}"}
+  version:            {action: keep_body, label: "Version", source: "Aquifer: {{version|53.12}}, the game version a fact applies from"}
+  v:                  {action: keep_body, label: "Version", source: "Dwarf: {{v|51.01}}"}
+  forum:              {action: keep_body, only: ["2"], source: "Aquifer: {{Forum|thread id|link text}}, the id is not a fact"}
+
+  # ---- transcluded content we cannot expand: name only ----
+  "material-specific building labors": {action: name_only, source: "Well: nested inside {{Building|construction_job=...}}"}

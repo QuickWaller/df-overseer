@@ -1,0 +1,23 @@
+<!-- Source: Dwarf Fortress Wiki, page "Dwarf" (dwarffortresswiki.org), excerpt. Licence: MIT and GFDL. -->
+{{Quality|Masterwork}}
+{{Creaturelookup/0
+|image=Dwarf sprite.png
+|portrait=dwarf_portrait_anim.gif
+|death=nobutcher
+|contrib=no
+|wiki=Dwarf (mythology)
+}}
+{{av}}
+{{creaturedesc}}
+[[File:Bersek dwarf.png|thumb|right|«''Berserk Dwarf''». Art by [[User:Jeff Agudelo|Jeff Agudelo]]]]
+'''Dwarves''' (singular, '''Dwarf''') are [[Stupid dwarf trick|"intelligent"]], {{Catlink|Humanoids|humanoid}} [[creature]]s that are the featured [[civilization|race]] of [[fortress mode]].
+
+== Needs ==
+As living creatures, dwarves need to drink, eat food, and sleep to survive.
+
+{{Creatures}}
+{{gamedata|title=Entity ([[civilization]]) Raws|{{raw|v50:entity_default.txt|ENTITY|MOUNTAIN}}
+}}
+{{Category|Races}}
+{{Category|Humanoids}}
+[[Category:Creatures]]

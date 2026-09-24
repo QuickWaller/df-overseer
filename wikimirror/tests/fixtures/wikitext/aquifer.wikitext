@@ -1,0 +1,24 @@
+<!-- Source: Dwarf Fortress Wiki, page "Aquifer" (dwarffortresswiki.org), excerpt. Licence: MIT and GFDL. -->
+{{Quality|Superior}}
+{{av}}
+[[File:aquifer_preview.png|right]]
+An '''aquifer''' is a subterranean [[layer]] of [[soil]] or [[stone]] that holds groundwater. Each [[embark]] tile within the embark rectangle might contain an aquifer.
+
+== Identifying ==
+If you are digging an up/down staircase in the downward direction and you hit an aquifer, the aquifer tile will be revealed as [[damp stone|damp soil]] or stone, though the cancellation can be disabled in [[Standing_orders#Other|Standing orders]]{{version|53.12}}.
+
+== Where they are found ==
+Layers which '''can''' contain aquifers:
+{{columns-list|colwidth=20em|
+* [[sandy clay loam]]
+* [[silty clay loam]]
+* [[sand (tan)|sand]]
+}}
+
+== Breaching ==
+=== The double slit method ===
+{{Main|Double-slit method}}
+This is one of the most commonly-used methods, due to its convenience and power.
+
+==== "Chicken-Run" plug ====
+The procedure is described in detail {{Forum|129994.msg4620421#msg4620421|in this and the following posts}}.

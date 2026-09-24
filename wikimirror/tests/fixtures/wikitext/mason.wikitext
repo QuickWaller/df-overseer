@@ -1,0 +1,23 @@
+<!-- Source: Dwarf Fortress Wiki, page "Mason" (dwarffortresswiki.org), excerpt. Licence: MIT and GFDL. -->
+{{Quality|Exceptional}}
+{{av}}
+{{v50_skill
+| color      = 7:1
+| graphic    = [[File:mason_sprite.png]]
+| skill      = Mason
+| profession = [[Stoneworker]]
+| job name   = [[Masonry]]
+| tasks      =
+* [[Construction]] (stone)
+| attributes =
+* Strength
+* Agility
+* Endurance
+* Creativity
+* Spatial Sense
+* Kinesthetic Sense
+}}
+'''Mason''' is the skill associated with the '''masonry''' [[labor]]. Masons are responsible for constructing certain [[building]]s out of [[stone]], specifically [[trade depot]]s, [[bridge]]s, [[furnace]]s, and [[well]]s, and their building quality and value{{verify}} are influenced by the mason's skill.
+
+[[File:Ponte romano Mérida 2019.jpg|thumb|330px|center|[[Human]]-made masonry of the Puente Romano.]]
+{{Skills}}

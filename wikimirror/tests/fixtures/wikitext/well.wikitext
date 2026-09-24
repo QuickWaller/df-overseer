@@ -1,0 +1,25 @@
+<!-- Source: Dwarf Fortress Wiki, page "Well" (dwarffortresswiki.org), excerpt. Licence: MIT and GFDL. -->
+{{Quality|Masterwork}}{{Building|name=Well|key=m|key2=L
+|construction=
+* [[Block]]s
+* [[Bucket]] (lye/milk-free)
+* [[Chain]] or [[Rope]]
+* [[Mechanism]]
+|construction_job={{Material-specific building labors}}
+|purpose=
+* Provide clean [[water]]
+}}{{av}}
+
+{{For/see|a more advanced look at wells|[[Well guide]]}}
+:''It is recommended to read the entirety of this article first.''
+
+'''Wells''' are [[building]]s that provide access to a [[water]] source for your dwarves. A well can be an important feature of a fortress.
+
+== Building a well ==
+A mason/carpenter/metalsmith is needed for construction. Alternatively, you can make rock mechanisms using the {{k|d}}etail function at a [[mechanic's workshop]].
+
+=== Placement ===
+Wells must have a clear vertical pathway straight down to their water source.
+
+{{Buildings}}
+[[Category:Buildings]]

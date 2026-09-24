@@ -75,4 +75,78 @@ what was checked only against fixtures.
 
 ## Result
 
-(to be filled by the executor)
+(filled by the executor, 2026-09-24)
+
+**Public function for S3, S4 and S5:**
+
+```python
+from wikimirror.text import extract_page
+page = extract_page(wikitext, policy=None, max_chunk_chars=2000)   # -> PageText
+```
+
+`PageText` (frozen dataclasses, `to_dict()` for JSON): `chunks` (tuple of `Chunk`: `index`,
+`section_path` tuple, `part`, `parts`, `text`, `degraded`, `degraded_reasons`), `categories`,
+`degraded_reasons` (page union), `unlisted_templates` ({normalised name: count}, for measuring
+what to add to the policy), `is_redirect`, `redirect_target`. `load_policy(path)` loads an
+alternative policy file; `PolicyError` is raised at load only. `extract_page` never raises on
+page content (only `ValueError` for `max_chunk_chars` under 100). Output carries no revid or
+fetch time. Text is entity-decoded, so S4 must still escape it when embedding in a prompt.
+
+**Files (all new, all mine):** `wikimirror/text.py`, `wikimirror/template_policy.yaml` (43 entries,
+each with a `source:` note naming the sampled page), `wikimirror/tests/test_text.py` (59 tests),
+`wikimirror/tests/fixtures/wikitext/*.wikitext` (well, mason, ghost, water_buffalo_raw, dwarf,
+aquifer, hostile; each with a source and licence header comment). I created no
+`wikimirror/__init__.py`; the test file puts the repo root on `sys.path` and imports
+`wikimirror.text` as a namespace package, so it works with or without S1's `__init__.py`.
+The old `scripts/build_wiki_snapshot.py` is untouched.
+
+**Behaviour worth knowing:**
+- Split on `=`..`======` headings, path kept, lead is "Introduction". Chunks are bounded by
+  paragraph, then line and sentence, then whitespace, then a hard cut; no overlap (the design
+  asks for none).
+- Templates: policy actions `drop`, `keep_body`, `keep_parameters`, `name_only`, `category`,
+  with per-entry `label`, `only`/`exclude` (fnmatch), `positional_labels`, `block`. Unknown
+  template: default `keep_parameters`, rendered inline as ` [Name: key: value; ...]`
+  (parentheses when nested). Depth cap 4 (flagged, text kept).
+- Never evaluated: `{{#if:}}`, `{{#invoke:}}`, magic functions and variables, `{{:Page}}`
+  transclusions. Each is flagged `degraded` (reason names it) and rendered as plain text where
+  honest. A section whose text is entirely lost emits a one-line "(no text could be
+  extracted)" chunk flagged `section_text_lost`, never nothing.
+- Other degraded reasons: `unbalanced_template_open`, `unbalanced_braces`, `unbalanced_link`,
+  `unclosed_table`, `unclosed_comment`, `unclosed_nowiki_tag`/`unclosed_pre_tag`,
+  `html_table_flattened`, `link_depth_exceeded`, `template_depth_exceeded:<name>`,
+  `no_text_extracted`.
+- `<nowiki>` and `<pre>` bodies are stashed and restored literally, unparsed. Control, zero-width
+  and bidi characters are stripped; private-use characters in input are stripped so a page
+  cannot forge the stash placeholder. Unknown tags (e.g. `<system>`, `</wiki_page>`) stay as
+  literal text. HTML comments and `<ref>` are removed (documented policy, not silent loss of
+  facts).
+- Parsing is linear (single-pass brace and link pair maps): 20,000 unclosed `{{` runs in 10 ms.
+  The first draft was quadratic (27 to 83 s on 40 KB of hostile input); found by a fuzz run,
+  fixed, and pinned by tests.
+
+**Verified (real runs):**
+- `python -m pytest wikimirror/tests/test_text.py`: 59 passed.
+- Ambient `python -m pytest` with lupa on PYTHONPATH: **1580 passed, 3 skipped** (baseline 1521
+  plus my 59, no regression). Without lupa: 1513 passed, 6 skipped.
+- `python -m pytest tests/test_no_leaked_addresses.py`: 19 passed.
+- `dfmcp/tests` in `.venv-dfmcp` not re-run (untouched, no dfmcp file changed).
+- Ran the stage over the ten real sampled pages (fetched by hand: 2 API requests, well under
+  the 15 allowed, project-style User-Agent, no bulk): 9 of 10 clean with zero unlisted
+  templates; `Trading` is flagged (its `{{:Trading/Flowchart}}` transclusion cannot be
+  expanded here, its section says so). Scratch copies in the session scratchpad, not
+  committed. Old-stripper defect proved by test: `_strip_markup` deletes a template with no
+  nested template whole, parameters included; the new stage keeps them.
+- A 3,000-case seeded random markup fuzz (never raises, deterministic) and six pathological
+  inputs (time bound 5 s).
+
+**Checked only against fixtures, not against the whole wiki:** the template policy covers the
+templates seen in ten pages; the real main namespace has 1,000+ templates. Expect a long tail
+of unlisted templates on the first full pull (they get the default rule and are counted in
+`unlisted_templates`), so S3 should aggregate that field and report the top of it. The ratio of
+facts kept (research unverified item 3) is unmeasured. `Cavern` and `Engraver` were run for
+crashes and cleanliness only, with no fixture assertions. HTML `<table>` markup is flattened
+without cell separators (flagged). Nothing about `{{#invoke}}` (Lua modules) beyond being
+inert. `PyYAML` is the one non-stdlib import (already used by `dfmcp` and `doctrine`); "stdlib
+only" in the design should read "stdlib plus PyYAML".
+

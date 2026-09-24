@@ -1,0 +1,28 @@
+<!-- Source: Dwarf Fortress Wiki, page "Ghost" (dwarffortresswiki.org), excerpt. Licence: MIT and GFDL. -->
+{{Quality|Exceptional}}
+{{av}}
+{{minorspoiler}}
+{{DFtext|Urist McGhost, Ghostly Cheesemaker has risen and is haunting the fortress!|4:1}}
+[[File:ghost_v50_preview.png|right]]
+'''Ghosts''' {{Tile|X|7:1}} are a type of [[night creature]] and the spiritual essence of an intelligent [[creature]]. Some even continue to perform their jobs.{{bug|6354}} However, not all ghosts bear their anguish calmly.
+
+Ghosts are generally immune to harm. Note that creatures with {{token|NOFEAR}} are immune to this attack.
+
+== Paranormal Activity ==
+The ghost's activities may be determined by the nature of its death and its [[personality trait]]s using the following table, ''in order'':
+
+{| class="wikitable" width="70%" align="center"
+! scope="col" align="left" width="17%" | Type
+! scope="col" align="left" width="17%" | Cause
+! scope="col" align="left" width="66%" | Effect
+|-
+|Murderous Ghost
+|Had a [[Strange_mood#Fell|fell mood]], had low [[Personality facet#ALTRUISM|ALTRUISM]], or slab/grave was deconstructed
+|Murders dwarves.
+|-
+|Moaning Spirit
+|Was [[insanity|melancholic]], or had high [[Personality facet#DEPRESSION_PROPENSITY|DEPRESSION_PROPENSITY]]
+|Troubles one unfortunate dwarf at a time.
+|}
+
+{{mod}}

@@ -1,0 +1,2 @@
+<!-- Source: Dwarf Fortress Wiki, page "Water buffalo/raw" (dwarffortresswiki.org), complete page. Licence: MIT and GFDL. -->
+<noinclude>{{raw header|creature|WATER_BUFFALO}}</noinclude>{{variation raw|v50:creature_domestic.txt|CREATURE|WATER_BUFFALO|{{{1|}}}|v50:c_variation_default.txt}}<noinclude>{{raw footer|creature|WATER_BUFFALO}}</noinclude>
