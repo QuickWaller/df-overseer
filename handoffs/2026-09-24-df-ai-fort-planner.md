@@ -67,3 +67,25 @@ All seven questions answered or declared unanswerable with what was tried,
 sources marked, and the transfer section written.
 
 ## Result
+
+Done. `research/2026-09-24-df-ai-fort-planner.md` written, all seven
+questions answered, each claim marked read-in-source (path, commit
+`701ea36e0673c0b28572613a64287da585bbdfa3` on df-ai's `develop` branch,
+cloned to a scratch directory outside this worktree and never committed).
+
+**Verdict**: df-ai plans by placing one fixed, hand-authored plan
+(`plans/generic01.json`, thirty room templates) as a whole at embark,
+fitting it to terrain by randomized placement attempts checked against a
+fixed geometric pass/fail checklist, retried up to `max_failures`/
+`max_retries` before abandoning the fort outright. No search, no scoring,
+no distance-based adjacency. Growth is not re-planning: the whole plan,
+with generous static `limits` (e.g. up to 300 bedrooms), is laid out once
+at embark as unbuilt placeholders; a citizen need beyond that ceiling just
+logs an error. Last commit (2022-10-10) predates DF's v50/Steam release by
+about two months and targets DF `0.47.05`; strong source evidence it was
+never ported to v50+/53.x Classic.
+
+Full answers, the "What transfers to df-overseer" section (map-free
+constraint applied explicitly per idea), and "What could not be verified"
+are in the research file. No VM commands run, no permission or classifier
+refusals encountered.
