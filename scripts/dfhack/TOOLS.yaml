@@ -2033,6 +2033,101 @@ df-overseer-surface.lua:
         `all_normal` says so explicitly rather than making a caller infer
         it from the counts.
 
+df-overseer-blueprint.lua:
+  build_order_item: "the Architect's hands; handoffs/2026-09-24-blueprint-hands.md. Research: research/2026-09-24-quickfort-hands.md"
+  commands:
+    "plan TEMPLATE":
+      lua_function: plan_template
+      effect: read
+      coordinate_bearing: false
+      live_deployed: false
+      verified: "unverified (offline build, 2026-09-24; no Lua could be run, no live call made). Reads only a .csv on the guest, never the map."
+      knowledge_scope: player_visible
+      notes: >
+        What a blueprint declares, from its own .csv (dfhack-config/blueprints/
+        templates/TEMPLATE.csv, else dfhack-config/blueprints/TEMPLATE.csv; a
+        bare identifier, never a path): its footprint, the room rectangle (the
+        bounding box of its zone section, or null), how many cells ask for a
+        smooth finish, and every phase (a quickfort section label) with its
+        mode, cell count, and for a #meta the sections it applies. Each phase
+        says whether it needs a finished dug shell first (any build, zone or
+        place section). Read this first: PHASE in preview and apply is one of
+        the labels it lists. Generic: any template or blueprint, no per-room
+        branches.
+    "preview TEMPLATE PHASE SITE [LEVEL] [RANK] [RADIUS_TILES]":
+      lua_function: preview_phase
+      effect: read
+      coordinate_bearing: internal-only
+      live_deployed: false
+      verified: "unverified (offline build, 2026-09-24). Read by source only: quickfort -d writes nothing in dig, build or zone modes (research/2026-09-24-quickfort-hands.md section 5); never observed live."
+      knowledge_scope: player_derivable
+      notes: >
+        A dry run of one phase against a site: what quickfort would designate
+        (`designated`, `would_designate`, its raw `stats`, any `problems`), the
+        soil rule (`finish_plan`, `finish_required_met`, `remedy`), and for a
+        build, zone or place phase whether the order guard would refuse it
+        (`blocked`). SITE is a landmark name (find a new site near it for a
+        phase that starts by digging; LEVEL, RANK and RADIUS_TILES then apply,
+        RANK N being the same candidate diggable.find lists at rank N) or a
+        site-N handle from a real apply or blueprint.sites (LEVEL, RANK and
+        RADIUS_TILES are then an error). No coordinate is ever asked for or
+        returned. Read-only: the sole effect is asking quickfort with -d.
+    "apply TEMPLATE PHASE SITE [DRY_RUN] [LEVEL] [RANK] [RADIUS_TILES]":
+      lua_function: apply_phase
+      effect: mutate
+      coordinate_bearing: internal-only
+      live_deployed: false
+      verified: "unverified (offline build, 2026-09-24). The real path has never run anywhere."
+      knowledge_scope: player_derivable
+      notes: >
+        Applies one phase of a blueprint to a site through quickfort. DRY_RUN
+        defaults to true (same result as preview); only an explicit "false"
+        writes. Same SITE rules as preview; DRY_RUN comes before LEVEL, RANK
+        and RADIUS_TILES so a real apply against a handle is just `... site-3
+        false`. A real run of a dig phase on a new site registers a site-N
+        handle (returned as site.handle; its real tile stays in DFHack's own
+        per-site persistent state) so every later phase names the site by it.
+        A real run returns `read_back`: the count of outstanding dig/smooth
+        designations in the site (`designations_landed` is false when quickfort
+        said it designated tiles and the game shows none), the finish state of
+        every cell the blueprint asks to be smoothed, and the surface layer's
+        own enclosure, finish and material reads of the room rectangle
+        (`surface`). Those reads describe the site as it stands right after
+        the call, before dwarves have worked; run status later. `ok` is true
+        only when quickfort ran, designated something, every non-progress
+        counter was zero and (for a #meta) every named section was applied.
+        Granted to the overseer only (the roster's sole writer); the Architect
+        proposes and previews.
+    sites:
+      lua_function: list_sites
+      effect: read
+      coordinate_bearing: false
+      live_deployed: false
+      verified: "unverified (offline build, 2026-09-24)"
+      knowledge_scope: player_visible
+      notes: >
+        Every site handle a real apply has issued: its blueprint, the phases
+        applied so far, footprint size and nearest landmark with direction
+        and distance. Never a tile position.
+    "status SITE_ID":
+      lua_function: site_status
+      effect: read
+      coordinate_bearing: internal-only
+      live_deployed: false
+      verified: "unverified (offline build, 2026-09-24)"
+      knowledge_scope: player_derivable
+      notes: >
+        Is the carved room done, and is it finished? For a site handle: the
+        shell (outstanding dig/smooth designations, carve cells still solid),
+        the finish state of every cell the blueprint asks to be smoothed
+        (`finish_state`, with anything that cannot be smoothed listed by
+        material and a `remedy`), and the surface layer's enclosure, finish
+        and material reads of the room rectangle. `finish_required_met` is
+        true only when nothing is left to smooth and nothing is blocked. The
+        surface reads use a rectangle-anchored shim over df-overseer-surface's
+        zone-anchored functions (see the .lua header); if the shim cannot be
+        applied `surface.error` says so.
+
 df-overseer-clock.lua:
   build_order_item: "agent loop MVP items 1-2 (docs/AGENT-LOOP.md); handoffs/2026-09-22-loop-clock-conductor-role.md"
   commands:

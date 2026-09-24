@@ -280,6 +280,37 @@ read:
       Designating traffic is a write and stays out of this role's reach
       (write_authority: none, above). Offline build, not deployed.
 
+  - id: "blueprint.plan"
+    status: planned
+    note: >-
+      Added handoffs/2026-09-24-blueprint-hands.md. What a template declares,
+      from its own .csv: footprint, room rectangle, how many cells ask for a
+      smooth finish, and its phases. Reads a file, never the map. Offline
+      build, not deployed.
+  - id: "blueprint.preview"
+    status: planned
+    note: >-
+      Same handoff. A dry run of one phase against a site: what quickfort would
+      designate, whether the soil rule blocks the finish (a wall of a material
+      that cannot be smoothed), and whether the order guard would refuse it.
+      This is the Architect's whole reach into the carving verb: it
+      previews and proposes, the overseer applies (write_authority: none,
+      and dfmcp/roles.py rule 2 refuses a mutating grant here; register
+      2026-09-24, the Architect stays propose-only). Offline build, not
+      deployed.
+  - id: "blueprint.sites"
+    status: planned
+    note: >-
+      Same handoff. The site handles a real apply has issued, with the phases
+      applied to each and the nearest landmark. Never a coordinate.
+  - id: "blueprint.status"
+    status: planned
+    note: >-
+      Same handoff. Is a carved room done and finished: outstanding designations,
+      the finish state of every cell asked to be smoothed, and the surface
+      layer's enclosure, finish and material reads of the room. The read a
+      proposal to extend or fix a room should start from.
+
 write:
   - id: "queue.propose"
     status: exists

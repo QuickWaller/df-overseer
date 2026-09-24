@@ -315,6 +315,26 @@ read:
       footprint. This fort has none set anywhere, so a uniform Normal
       reading is expected, not an error.
 
+  - id: "blueprint.plan"
+    status: planned
+    note: >-
+      Added handoffs/2026-09-24-blueprint-hands.md. What a template declares
+      (footprint, room rectangle, smooth-finish cells, phases). Reads a file.
+  - id: "blueprint.preview"
+    status: planned
+    note: >-
+      Same handoff. A dry run of one phase against a site. Read the soil rule
+      (`finish_plan`, `remedy`) and the order guard (`blocked`) before
+      ruling a proposal into an apply.
+  - id: "blueprint.sites"
+    status: planned
+    note: Same handoff. Site handles a real apply has issued.
+  - id: "blueprint.status"
+    status: planned
+    note: >-
+      Same handoff. Is a carved room done and finished, with the surface
+      layer's enclosure, finish and material reads of it.
+
 write:
   - id: "openarea.build"
     status: exists
@@ -508,6 +528,15 @@ write:
     status: exists
     note: >-
       Same handoff. Removes a position's holder; dry run by default.
+
+  - id: "blueprint.apply"
+    status: planned
+    note: >-
+      Added handoffs/2026-09-24-blueprint-hands.md, the carving, smoothing and
+      furnishing verb the Architect proposes and only this role may run.
+      DRY_RUN defaults to true. Offline build: the real path has never run
+      anywhere; the first real apply needs its own go-ahead and the live check
+      in that handoff's Result (throwaway site, dry run first).
 
 planned:
   - id: "queue.plan"

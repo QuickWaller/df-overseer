@@ -401,6 +401,37 @@ _ARG_DESCRIPTIONS: Dict[str, str] = {
         "the name of an existing landmark, narrowing to zones within "
         "RADIUS_TILES of it. Never a raw coordinate."
     ),
+    "blueprint.TEMPLATE": (
+        "The blueprint's bare name, as blueprint.plan takes it: a template id "
+        "with its revision (bedroom-cell-v1) or a starter blueprint name "
+        "(starter-room-5x5). Letters, digits, underscore and hyphen only; never "
+        "a path and never a coordinate. It must already be deployed on the game "
+        "host, else the error says so."
+    ),
+    "blueprint.PHASE": (
+        "One quickfort section label from blueprint.plan's `phases` list "
+        "(a shell's dig phase, a zone phase, a #meta bundle). Apply phases in "
+        "the order plan shows: a phase that needs a dug shell is refused while "
+        "the shell's dig and smooth designations are still outstanding."
+    ),
+    "blueprint.SITE": (
+        "Where. Either a site handle (site-3, from blueprint.sites or a real "
+        "blueprint.apply), which every phase after the first uses, or, for the "
+        "first phase of a new room (one that starts by digging), the name of an "
+        "existing landmark to find the site near (see landmarks.list); LEVEL, "
+        "RANK and RADIUS_TILES then apply, RANK N being the same candidate "
+        "diggable.find lists at rank N. Never a raw coordinate; giving LEVEL, "
+        "RANK or RADIUS_TILES with a handle is an error."
+    ),
+    "blueprint.SITE_ID": (
+        "A site handle such as site-3, as blueprint.sites lists it. Never a "
+        "coordinate."
+    ),
+    "blueprint.DRY_RUN": (
+        "Optional. true (the default when omitted) asks quickfort what it "
+        "would do and writes nothing; only the word false performs the real "
+        "apply. Give it before LEVEL, RANK and RADIUS_TILES."
+    ),
     "workshop.KIND": (
         "Which workshop: still, kitchen, mason, mechanic or carpenter."
     ),
