@@ -798,6 +798,24 @@ or `decisions/DECISIONS.md`, not here.
 ## Later
 <!-- Real, worth tracking, but genuinely further out or gated on scale/decisions not yet made. -->
 
+- **After the MVP runs: make the tools and agents visible.** User,
+  2026-09-25: "the tools are a bit of a black box". Three linked ideas,
+  filed until the conductor is running for real:
+  (1) **an agent activity feed**, scrollable and in order: every tool call
+  (when, which role, which tool, arguments, result), who is talking to whom
+  (conductor wakes, advisor proposals, Overseer rulings, Consultant
+  questions) with filters, and each agent's short stated rationale, not raw
+  chain-of-thought (`docs/AGENT-ARCHITECTURE.md` §8). Two views over one
+  joined stream: a private operator view with everything, and the public
+  stream panel already agreed 2026-09-14 (allowlisted fields, kill switch).
+  Data mostly exists (the `dfmcp` call log, the queue, the conductor's wake
+  reasons); missing is the join and the page. (2) **per-call traces** in
+  `dfmcp` (arguments, the DFHack command, raw output, what was cleaned or
+  refused, the result), which the feed's operator view would click into.
+  (3) **a generated tool catalogue** (per tool: what it reads and writes,
+  its Lua file, arguments, fixes, tests). **n8n** as a visible layer over
+  `dfmcp` stays an option for (1) and (2), not a rewrite of the tools;
+  research in `research/2026-09-25-n8n-*.md`.
 - **Save-and-reload comparison testing for tools and proposals.** User's
   idea, 2026-09-25: quicksave, run a proposal or tool, observe the outcome,
   reload the same save, run a variation, repeat a couple of times each, and
