@@ -1,0 +1,13 @@
+[0m{"ok": true,"paused": true}[0m
+final tick 12647598
+[0mPICK	OK	192
+[0mCATS	2 2 4 8 2 3 1 
+[0mCAT0	2	345,455
+[0mMAXREPORT	411
+	"alive": 22,
+	"dead_total": 1,
+[0m[0mCOFFINITEM	4036	inbld	true	ongr	false
+[0mCOFFINITEMS	1
+[0mCORPSE	2804	ongr	true	inbld	false	inv	false	injob	false	hidden	false
+[0mGHOST	true	type	10	active	true
+[0mKEASAMEZ	999

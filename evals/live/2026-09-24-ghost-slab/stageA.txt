@@ -1,0 +1,19 @@
+[0mGHOST	454	Kadol Zulbanurdim "Bannertower", Ghostly Gem Setter	dead	true	ghost_info	present
+[0m  type	10	name	Forlorn haunt
+[0m  z_rel_to_fort_center	169
+[0mGHOSTCOUNT	1
+[0mNAMED	454	ghostly	true	dead	true	flags2.slaughter	false	killed	false	body.missing?	true
+[0m  corpse_flags: dead	false
+[0m  hfid	343
+[0mCORPSE item	2804	z	169	onground	true	inbuilding	false	forbid	false	dump	false	inv	false
+[0mBLD	Workshop	3
+[0mSLABS	0
+[0mENGRAVER	197	Olin Bekarbomrek "Dipwhipped", Mason	skill	0	job	none
+[0mCITIZENS	22
+[0mJOB2419	ConstructBlocks	worker	194	timer	139	working	true
+[0mBOULDERS	10
+[0mPICK	192
+[0mMASONS_ENABLED	2
+[0mCORPSE_EXTRA
+[0mcorpse item	pos z	169	flags.dead?
+[0m

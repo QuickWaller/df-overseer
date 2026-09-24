@@ -1,0 +1,71 @@
+[0m{
+	"blueprint": {
+		"cells": "1x1",
+		"file": "_tmp-building-Coffin-1x1-1790223752.csv",
+		"key": "n",
+		"mode": "build",
+		"removed": true
+	},
+	"dims": [ 1, 1 ],
+	"dry_run": false,
+	"gaps": [ "needs 1 of COFFIN, 0 available" ],
+	"kind": {
+		"key": "n",
+		"label": "Burial Receptacle",
+		"subtype": null,
+		"token": "Coffin",
+		"type": "Coffin"
+	},
+	"quickfort_error": null,
+	"quickfort_ok": true,
+	"quickfort_problems": [],
+	"quickfort_stats": {
+		"Buildings designated": 1
+	},
+	"read_back": {
+		"building_found": true,
+		"error": null,
+		"type_matches": true
+	},
+	"requirements": {
+		"building_material": {
+			"buildingplan_enabled": true,
+			"filters": [ {
+				"available": 0,
+				"count_scope": "item type only; the filter's own flags are not applied",
+				"flags": [],
+				"index": 1,
+				"item_type": "COFFIN",
+				"need": "COFFIN",
+				"quantity": 1,
+				"stock": {
+					"COFFIN": {
+						"available": 0,
+						"in_building": 0,
+						"in_job": 1,
+						"total": 1,
+						"unnetted": 0
+					}
+				}
+			} ],
+			"source": "dfhack.buildings.getFiltersByType"
+		}
+	},
+	"search": {
+		"check_errors": 0,
+		"eligible_note": null,
+		"eligible_tiles": 24,
+		"first_check_error": null,
+		"fitting_sites": 24,
+		"radius_tiles": 10,
+		"tiles_checked": 441,
+		"windows_checked": 441
+	},
+	"site": {
+		"direction": "N",
+		"distance_tiles": 2,
+		"near_landmark": "Stoneworker's Workshop",
+		"rank": 1
+	}
+}
+[0m

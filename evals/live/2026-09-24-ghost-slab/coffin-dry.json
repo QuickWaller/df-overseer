@@ -1,0 +1,21 @@
+[0m{
+	"count": 1,
+	"dry_run": true,
+	"job": "ConstructCoffin",
+	"job_item_count": 1,
+	"job_item_diagnostics": [ {
+		"index": 1,
+		"item_type": "BOULDER",
+		"quantity": 1,
+		"resolved": true
+	} ],
+	"job_name": "construct coffin",
+	"jobs_queued_before": 1,
+	"max_workshop_jobs": 10,
+	"read_failures": [],
+	"repeat_requested": false,
+	"workshop": "Stoneworker's Workshop",
+	"workshop_kind": "Masons",
+	"would_queue": true
+}
+[0m
