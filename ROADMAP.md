@@ -1,6 +1,20 @@
 # Roadmap
 
-**Last reviewed:** 2026-09-23 (twenty-fourth pass, full: two very heavy days landed
+**Last reviewed:** 2026-09-25 (twenty-fifth pass, full: two more heavy days
+landed since the last pass -- the office built and accepted, the ghost laid
+to rest, the site-ranking system judged in need of a redesign rather than a
+patch, the Consultant's offline wiki mirror designed, built, deployed and
+(after one blocked-and-rolled-back attempt) switched over live, and the
+districting design session's prior-art research completed across two passes.
+New top Now item records all of it and folds the site-ranking item into the
+districting session. The Next and Later buckets were keyword-scanned (wiki,
+consultant, office, ghost, district, zoning, observability, conductor,
+manager) and nothing else quietly finished was found beyond what the new
+top item already states; that was a search, not a line-by-line read. Suite
+measured 2026-09-25: **1845 passed / 3 skipped** ambient, **692** in
+`.venv-dfmcp`.)
+
+**Previously reviewed:** 2026-09-23 (twenty-fourth pass, full: two very heavy days landed
 since the last pass -- the agent loop MVP built and deployed, a CP437 encoding
 bug found and fixed at its source, the conductor's Docker access granted, order/
 job attribution corrected and shipped, reachability fixed, an attention/tier
@@ -103,6 +117,43 @@ or `decisions/DECISIONS.md`, not here.
 ## Now
 <!-- Actively being worked, or the clear immediate next step. -->
 
+- **NEW 2026-09-25: the office and ghost are resolved, the Consultant reads
+  the full wiki mirror live, and the recommended next step is a real,
+  supervised conductor run.** Deployed and live-verified across 2026-09-24/
+  25: the office (built, furnished, owned by the Manager, accepted by the
+  game; the room-value proxy's false negative fixed), the ghost's burial (a
+  Tomb zone over its coffin, confirmed by direct struct reads and the
+  game's own report), and the Consultant's offline wiki mirror on VM 103
+  (4,450 pages, SQLite plus FTS5) -- deployed and first-pulled 2026-09-24,
+  then a 2026-09-25 switch-over attempt blocked on undeployed reader code
+  and rolled back cleanly, followed by the reader deploy that actually
+  switched the Consultant over. Role tool lists: **overseer 79, architect
+  49, consultant 28, quartermaster 24, conductor 15**. Manager work orders
+  still never dispatch a job; the user's ruling is to set this aside. The
+  site-ranking system (`ranked_rects`) is judged to need a real design pass
+  rather than a patch, and folds into the districting design session, whose
+  prior-art research is now complete across two passes (df-ai; then
+  Systematic Layout Planning, adjacency and zoning); observability (every
+  inter-agent message with sender, recipient, type, one-line rationale,
+  joinable to its tool calls) is an agreed input to that session's agenda.
+  Reloading a save is ruled a test-harness power only, never an agent's.
+  **Still open, in order: (1) a real, supervised (non-dry-run) conductor
+  run** -- the conductor has never run live, and no agent or conductor
+  cycle has ever made a real decision on this fort beyond `ruling-0001`;
+  **(2)** the districting design session, waiting on the user; **(3)** the
+  wiki refresh timers (S8) and the small S1 `store.py` follow-up, or the
+  mirror only refreshes by hand; **(4)** the ore/hematite fix, deferred by
+  the user; **(5)** leaked-key rotation, not urgent. → `Working.md`,
+  `decisions/DECISIONS.md` 2026-09-24/25 rows, `handoffs/INDEX.md`,
+  `evals/live/2026-09-24-wiki-mirror-deploy/`,
+  `evals/live/2026-09-24-ghost-slab/`.
+- **SUPERSEDED 2026-09-25 by the item above (kept for the record):** the
+  item below's remaining open questions (1) and (3) are answered (an
+  outdoor Office turned out not to be the issue -- the real office, built
+  and furnished, is accepted by the game; wildlife tripwire tuning shipped
+  as the tier system, already noted done further down this item); its (4)
+  the conductor's first real cycle is still not run, now the top open item
+  above; its (5) proposals design is untouched, not part of this pass.
 - **NEW 2026-09-23: the agent loop MVP is built and deployed, the fort's
   first real Office zones and first real build landed, and what is next is
   answering the office question and resuming the parked proposals design.**
