@@ -384,3 +384,10 @@ now, but the underlying gaps are unresolved):**
 - Cycle wall-clock time, and so the right `think_fps`, is unmeasured
   (`docs/AGENT-ARCHITECTURE.md` §14 item 8). Instrument it from the first
   real (non-dry-run) run.
+
+**2026-09-25 addition:** observability (every inter-agent message with
+sender, recipient, type and a one-line rationale, joinable to its tool
+calls) is now an agreed requirement, not yet built (`docs/AGENT-ARCHITECTURE.md`
+§8, `ROADMAP.md` Later's agent activity feed). The loop above produces the
+wake reasons and calls that feed would join; nothing in this document's
+shape changes because of it.

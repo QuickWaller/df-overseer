@@ -948,6 +948,15 @@ checks.
 Publishing is outward-facing, so it needs explicit go-ahead and its own register
 row at the time, not merely this design note.
 
+**2026-09-25 addition, agreed as a requirement, not yet built:** every
+inter-agent message (conductor wakes, advisor proposals, Overseer rulings,
+Consultant questions) must carry sender, recipient, type and a one-line
+rationale, and must be joinable to the tool calls it caused. This is what
+lets the agent activity feed (`ROADMAP.md` Later) show who talked to whom,
+not just what a role did in isolation; see `Working.md`'s current-state
+section for the agenda context (an input to the districting design
+session, agreed by the user and orchestrator, not yet a register row).
+
 ---
 
 ## 9. Reliability
