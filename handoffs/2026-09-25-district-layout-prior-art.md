@@ -77,3 +77,30 @@ gap addressed directly in Q1, and a synthesis the design session can argue
 with.
 
 ## Result
+
+Done. All six questions answered in
+`research/2026-09-25-district-layout-prior-art.md`, none skipped.
+
+Bottom line: every field surveyed (Systematic Layout Planning, architectural
+adjacency matrices, land-use zoning) converges on deciding relationships
+between named areas before anything geometric, and SLP's own current
+literature states directly that its qualitative closeness-rating chart is
+"suitable... once the layout planning objectives are not quantifiable," i.e.
+built for exactly this project's missing-flow-data situation rather than a
+degraded stand-in for a number. No colony/city-builder game surveyed (Q4)
+computes or recommends adjacency between areas the way SLP or an
+architectural matrix does; that question has no game-industry precedent to
+borrow from. On representation (Q5), relational/topological graphs measurably
+help LLM performance in the fresh literature checked this session, but direct
+formal topological reasoning (RCC-8) has a real ceiling, not a clean win,
+which argues for tools stating relations directly rather than expecting a
+model to compose them.
+
+The proposal (Q6, marked explicitly as a proposal, not a decision): a small
+closeness table between named district *kinds* (not instances) carrying a
+reason per judgment, plus a per-district-instance list of contained
+landmarks and tool-computed relation facts (reachability, overlap/violation
+against the closeness table), reusing this project's own existing
+reachability and geometric-containment tooling rather than adding new
+primitives. Which closeness judgment to assign, when to split a district,
+and how to resolve a reported violation stay with the agent.
