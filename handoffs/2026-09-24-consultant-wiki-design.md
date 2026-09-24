@@ -111,4 +111,65 @@ they could not be answered.
 
 ## Result
 
-(to be filled by the executor)
+**Status: done (design and research, no code, no deploy, no VM or fort contact).**
+Deliverables: `docs/CONSULTANT-WIKI.md` (design) and
+`research/2026-09-24-wiki-mirror-feasibility.md` (evidence, exact request log).
+
+**Probe.** 51 requests (limit 60; one wasted on an identical duplicate), at least
+1.2 s apart, descriptive project User-Agent, no refusal, 429 or block on any. Answers:
+1. Anonymous `recentchanges`: **allowed**, 500 per request, retention about **90
+   days** (oldest entry 2026-06-25 at probe time 2026-09-24). About 28 entries a day
+   overall, 15 main-namespace edits a day. `logevents` (delete, move) is also
+   anonymous.
+2. XML dumps: **none found** (`/dumps/` leads to a nonexistent page, wiki search
+   finds nothing). Route is the anonymous API. Third-party archives not checked.
+3. robots: wiki publishes **none**; `docs.dfhack.org` says `Allow: /en/stable/` only.
+   Licence: **MIT and GFDL** confirmed on the wiki's own page. Limits: 50 titles per
+   request anonymous, 500 per list or generator page, no throttling seen. MediaWiki
+   1.35.11.
+Also: main namespace = current game (wiki's `Template:Current/version` = 53.16,
+matching the install), 4,450 non-redirect pages, 16.1 MB wikitext (1,574 are tiny
+`/raw` stubs); old namespaces (DF2014, v0.34, 40d at least 1,500 pages each, plus
+v0.31, 23a, Masterwork) outnumber it. DFHack docs have `53.16-r1` but **no
+`53.16-r1.1`** slug, so the design indexes the installed tree instead of crawling.
+Full pull is about 110 requests. Every claim in the research note is marked V, I or U.
+
+**Design decisions (for the register).** Ingest ns 0 by namespace id allow-list (v1),
+templates later, DF2014 optional and hidden by default, everything else excluded.
+SQLite with FTS5 replacing the JSON snapshot behind an unchanged
+`knowledge.wiki_lookup` contract (dispatch on `.sqlite3` suffix, additive result
+fields, existing tests untouched), plus new `knowledge.wiki_search` and
+`knowledge.wiki_changes`. Refresh on VM 103 by systemd timer every 6 h over
+`recentchanges` plus `logevents`, weekly `generator=allpages&prop=info` revid sweep (9
+requests for ns 0), deliberate full re-pull into a new file on a version bump, never
+automatic. Staleness computed by the reader from timestamps and shown on every
+result. Changelog as SQLite rows plus immutable JSONL plus Markdown digest. Doctrine
+sources gain optional `revid` and `page_ns`; a check flags changed, moved, deleted or
+legacy pages at `doctrine.get` time and in the digest; doctrine is never edited.
+Cited-page previous bodies archived before overwrite.
+
+**Build plan.** S1 client/schema/store and S2 text stage (parallel), then S3 full
+pull, S4 reader plus search tool, S5 refresh/changelog, S6 doctrine link (parallel),
+then S7 changes tool and doctrine flags, then S8 deploy artifacts and runbook (deploy
+itself gated), optional S9. Minimum useful first slice: S1 to S4 plus the first pull.
+File sets in `docs/CONSULTANT-WIKI.md` section 11 are disjoint within each wave.
+
+**Register lines owed (orchestrator writes them).**
+- 2026-09-24 the three unverified items from the 2026-09-22 row are resolved (above).
+- 2026-09-24 design settled: scope, SQLite/FTS5, cadence, VM 103, doctrine `revid`
+  citation, build order; user-facing open items: attribution wording, and whether
+  to ever build the hold window against vandalism.
+- Correction to build-time assumptions: `scripts/build_wiki_snapshot.py`'s
+  `_strip_markup` drops template parameters, which is where key facts live, and its
+  colon-split namespace heuristic is replaced by API `ns` ids.
+- `ROADMAP.md` Next: the wiki item now has a build plan (S1 to S8).
+- Note for the roster owner: adding `wiki_search` and `wiki_changes` moves the
+  Consultant tool count (21 to 23) and the counts stated in `CLAUDE.md`.
+
+**Not done, on purpose.** No code, no `Working.md`, register, memory or INDEX edits.
+Unverified and listed in the design: FTS5 in the VM's Python, VM user/group layout,
+whether the installed DFHack tree has `.rst` docs, redirect and template counts,
+per-request byte ceiling on 50-page body batches, legal reading of attribution.
+
+Checks: `python -m pytest tests/test_no_leaked_addresses.py` 19 passed; no em dashes
+in either document.
