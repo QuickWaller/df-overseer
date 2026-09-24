@@ -1,0 +1,1 @@
+for _,u in ipairs(dfhack.units.getCitizens()) do local c=dfhack.units.getStressCategory(u) if c<=1 then print(u.id,dfhack.units.getReadableName(u),'cat',c,'job',u.job.current_job and df.job_type[u.job.current_job.job_type] or 'none', 'mood',u.mood) end end

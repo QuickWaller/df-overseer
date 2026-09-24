@@ -1,0 +1,6 @@
+[0mITEM3946	forbid	false	in_job	false	in_bld	true	unit	none	bld	12	on_ground	false	in_stockpile?	true
+[0mCHAIRBLD	9	stage	1	/	1	in_footprint	false	in_zone13	false	contained	1	jobs	0
+[0mCHAIRBLD	12	stage	1	/	1	in_footprint	true	in_zone13	true	contained	1	jobs	0
+[0mROOMDESC	true	[]	zone13 size	3x3
+[0m	"abs_tick": 12637400,
+	"paused": true

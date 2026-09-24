@@ -1,0 +1,43 @@
+start 12618754
+[0m{"ok": true,"paused": false}[0m
+[0m{"ok": true,"paused": true}[0m
+	"abs_tick": 12619842,
+	"paused": true
+	"abs_tick": 12619842,
+	"alive": 22,
+	"dead_total": 1,
+	"worst_hunger_status": "fine",
+	"worst_thirst_status": "fine"
+[0mDigx	3
+[0mDigW	1
+[0mStoreItemInStockpileW	2
+[0mstart 12619842
+[0m{"ok": true,"paused": false}[0m
+[0m{"ok": true,"paused": true}[0m
+	"abs_tick": 12620965,
+	"paused": true
+	"abs_tick": 12620965,
+	"alive": 22,
+	"dead_total": 1,
+	"worst_hunger_status": "fine",
+	"worst_thirst_status": "fine"
+[0mDigx	2
+[0mStoreItemInStockpileW	2
+[0mDigW	1
+[0mDrinkW	1
+[0mEatW	2
+[0mstart 12620965
+[0m{"ok": true,"paused": false}[0m
+[0m{"ok": true,"paused": true}[0m
+	"abs_tick": 12621992,
+	"paused": true
+	"abs_tick": 12621992,
+	"alive": 22,
+	"dead_total": 1,
+	"worst_hunger_status": "fine",
+	"worst_thirst_status": "fine"
+[0mDigx	2
+[0mDigW	1
+[0mDrinkW	1
+[0mEatW	1
+[0m

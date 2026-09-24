@@ -1,0 +1,20 @@
+[0m{
+	"abs_tick": 12623957,
+	"armed": true,
+	"base_fps": 100,
+	"cur_year": 31,
+	"cur_year_tick": 124757,
+	"fps": 100.0,
+	"paused": true,
+	"tripwire": {
+		"detail": {
+			"new_pause_report_count": 1,
+			"report_id": 411,
+			"type_id": 139,
+			"type_name": "GHOST_ATTACK"
+		},
+		"reason": "announcement",
+		"tick": 12623957
+	}
+}
+[0m

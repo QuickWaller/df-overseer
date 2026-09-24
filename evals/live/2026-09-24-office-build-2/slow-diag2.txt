@@ -1,0 +1,10 @@
+[0munit	192	stress_cat	4	mood	-1
+[0mjob id	2333	type	Dig	timer	-1	pos_delta	5	6	-1
+[0mflags	suspend	false	repeat	false	do_now	false	working	false	bymgr	-1	material_category	false
+[0munit path len	13	dest_delta	5	5	-1
+[0mtick now	313036	cur_year_tick	123458
+[0mcounters: sleepiness	6320	hunger	5333	thirst	21371	exhaust	0
+[0mDIG id	2303	worker	none	suspend	false	delta_from_zuglar	7	5	-1
+[0mDIG id	2333	worker	192	suspend	false	delta_from_zuglar	5	6	-1
+[0mDIG id	2334	worker	none	suspend	false	delta_from_zuglar	6	6	-1
+[0mDIG id	2337	worker	none	suspend	false	delta_from_zuglar	6	5	-1

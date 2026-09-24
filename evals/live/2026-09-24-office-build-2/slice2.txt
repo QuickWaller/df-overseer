@@ -1,0 +1,59 @@
+start 12614468
+[0m{"ok": true,"paused": false}[0m
+ALERT
+[0m{
+	"abs_tick": 12614509,
+	"advisory": {
+		"detail": {
+			"direction": "N",
+			"distance_tiles": 3,
+			"near_landmark": "Still",
+			"race": "BIRD_KEA",
+			"tier": "slow",
+			"tier_reasons": [ "theft_tag_close_range" ],
+			"why": [ "within_30_tiles_of_Still" ]
+		},
+		"reason": "hostile_slow",
+		"tick": 12614457
+	},
+	"armed": true,
+	"base_fps": 100,
+	"cur_year": 31,
+	"cur_year_tick": 115309,
+	"fps": 10.0,
+	"paused": false
+}
+[0m
+[0m{"ok": true,"paused": true}[0m
+	"abs_tick": 12614521,
+	"advisory": {
+			"tier_reasons": [ "theft_tag_close_range" ],
+		"reason": "hostile_slow",
+	"paused": true
+	"abs_tick": 12614521,
+	"alive": 22,
+	"dead_total": 1,
+	"worst_hunger_status": "fine",
+	"worst_thirst_status": "fine"
+[0mDigx	1
+[0mSleepW	2
+[0mEatW	1
+[0mstart 12614521
+[0m{"ok": true,"paused": false}[0m
+[0m{"ok": true,"paused": true}[0m
+	"abs_tick": 12614848,
+			"direction": "N",
+			"distance_tiles": 3,
+			"race": "BIRD_KEA",
+		"reason": "hostile_slow",
+		"tick": 12614457
+	"paused": true
+	"abs_tick": 12614848,
+	"alive": 22,
+	"dead_total": 1,
+	"worst_hunger_status": "fine",
+	"worst_thirst_status": "fine"
+[0mDigx	1
+[0mSleepW	2
+[0mEatW	1
+[0m

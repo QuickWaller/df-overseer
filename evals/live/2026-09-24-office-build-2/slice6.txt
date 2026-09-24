@@ -1,0 +1,109 @@
+start 12623957
+[0m{"error": "refused: a tripwire is latched (reason=announcement); call clock.clear first","ok": false,"tripwire": {"detail": {"new_pause_report_count": 1,"report_id": 411,"type_id": 139,"type_name": "GHOST_ATTACK"},"reason": "announcement","tick": 12623957}}[0m
+self-paused
+[0m{"ok": true,"paused": true}[0m
+	"abs_tick": 12623957,
+	"paused": true,
+			"report_id": 411,
+	"abs_tick": 12623957,
+	"alive": 22,
+	"dead_total": 1,
+	"worst_hunger_status": "fine",
+	"worst_thirst_status": "fine"
+[0m[0mPICK	OK	192 Zuglar Nakuthuzol "Braidoils", Miner
+[0mSTRESS	0:1 1:3 2:5 3:7 4:2 5:3 6:1 
+BASE [0mSTRESS	0:1 1:3 2:5 3:7 4:2 5:3 6:1 
+[0mDigx	2
+[0mDigW	1
+[0m		"pending_dig_designations": 1,
+	"finish_required_met": false,
+		"smoothable": 8,
+		"still_solid": 4
+	"shell_done": false,
+start 12623957
+[0m{"ok": true,"paused": false}[0m
+[0m{"ok": true,"paused": true}[0m
+	"abs_tick": 12624627,
+	"paused": true
+	"abs_tick": 12624627,
+	"alive": 22,
+	"dead_total": 1,
+	"worst_hunger_status": "fine",
+	"worst_thirst_status": "fine"
+[0m[0mPICK	OK	192 Zuglar Nakuthuzol "Braidoils", Miner
+[0mSTRESS	0:1 1:3 2:4 3:8 4:2 5:3 6:1 
+BASE [0mSTRESS	0:1 1:3 2:5 3:7 4:2 5:3 6:1 
+[0mDigx	2
+[0mDigW	1
+[0mStoreItemInStockpileW	1
+[0m		"pending_dig_designations": 0,
+	"finish_required_met": false,
+		"smoothable": 9,
+		"still_solid": 3
+	"shell_done": false,
+start 12624627
+[0m{"ok": true,"paused": false}[0m
+[0m{"ok": true,"paused": true}[0m
+	"abs_tick": 12625390,
+	"paused": true
+	"abs_tick": 12625390,
+	"alive": 22,
+	"dead_total": 1,
+	"worst_hunger_status": "fine",
+	"worst_thirst_status": "fine"
+[0m[0mPICK	OK	192 Zuglar Nakuthuzol "Braidoils", Miner
+[0mSTRESS	0:2 1:2 2:4 3:8 4:2 5:3 6:1 
+BASE [0mSTRESS	0:1 1:3 2:4 3:8 4:2 5:3 6:1 
+[0mStoreItemInStockpileW	1
+[0mHarvestPlantsW	1
+[0mDrinkW	1
+[0mDigx	2
+[0m		"pending_dig_designations": 0,
+	"finish_required_met": false,
+		"smoothable": 9,
+		"still_solid": 2
+	"shell_done": false,
+start 12625390
+[0m{"ok": true,"paused": false}[0m
+[0m{"ok": true,"paused": true}[0m
+	"abs_tick": 12626181,
+	"paused": true
+	"abs_tick": 12626181,
+	"alive": 22,
+	"dead_total": 1,
+	"worst_hunger_status": "fine",
+	"worst_thirst_status": "fine"
+[0m[0mPICK	OK	192 Zuglar Nakuthuzol "Braidoils", Miner
+[0mSTRESS	0:2 1:2 2:4 3:8 4:2 5:3 6:1 
+BASE [0mSTRESS	0:2 1:2 2:4 3:8 4:2 5:3 6:1 
+[0mDigx	1
+[0mStoreItemInStockpileW	1
+[0mDigW	1
+[0mSleepW	1
+[0mEatW	1
+[0m		"pending_dig_designations": 0,
+	"finish_required_met": false,
+		"smoothable": 9,
+		"still_solid": 2
+	"shell_done": false,
+start 12626181
+[0m{"ok": true,"paused": false}[0m
+[0m{"ok": true,"paused": true}[0m
+	"abs_tick": 12626923,
+	"paused": true
+	"abs_tick": 12626923,
+	"alive": 22,
+	"dead_total": 1,
+	"worst_hunger_status": "fine",
+	"worst_thirst_status": "fine"
+[0m[0mPICK	OK	192 Zuglar Nakuthuzol "Braidoils", Miner
+[0mSTRESS	0:2 1:2 2:4 3:8 4:2 5:3 6:1 
+BASE [0mSTRESS	0:2 1:2 2:4 3:8 4:2 5:3 6:1 
+[0mDigx	1
+[0mDigW	1
+[0mSleepW	2
+[0m		"pending_dig_designations": 0,
+	"finish_required_met": false,
+		"smoothable": 9,
+		"still_solid": 2
+	"shell_done": false,

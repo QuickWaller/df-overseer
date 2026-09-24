@@ -1,0 +1,5 @@
+[0mITEM3946	forbid	false	in_job	true	in_bld	false	unit	192	bld	none	on_ground	false	in_stockpile?	false
+[0mCHAIRBLD	9	stage	1	/	1	in_footprint	false	in_zone13	false	contained	1	jobs	0
+[0mCHAIRBLD	12	stage	0	/	1	in_footprint	true	in_zone13	true	contained	0	jobs	1
+[0mROOMDESC	true	[]	zone13 size	3x3
+[0m

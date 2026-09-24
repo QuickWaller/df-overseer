@@ -1,0 +1,11 @@
+[0m411	GHOST_ATTACK	Kadol Zulbanurdim, Ghostly Gem Setter has risen and is haunting the fortress!
+[0m410	WEATHER_BECOMES_RAIN	It has started raining.
+[0m409	NOTHING_TO_CATCH_IN_WATER	There is nothing to catch in the central swamps.
+[0m408	CREATURE_STEALS_OBJECT	A kea has stolen a (iron pick)!
+[0m407	CREATURE_STEALS_OBJECT	A kea has stolen a (giant cave spider silk sock)!
+[0m406	CONFLICT_CONVERSATION	Meng Kantekkud, expedition leader: I must withdraw!
+	"alive": 22,
+	"dead_total": 1,
+	"warning_count": 0,
+	"worst_hunger_status": "fine",
+	"worst_thirst_status": "fine"

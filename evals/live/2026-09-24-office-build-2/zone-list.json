@@ -1,0 +1,50 @@
+[0m{
+	"counts_by_kind": {
+		"Office": 3
+	},
+	"needs_attention": [ {
+		"direction": "S",
+		"distance_tiles": 0,
+		"id": 10,
+		"kind": "Office",
+		"near_landmark": "Activity Zone #1",
+		"needs_attention": true,
+		"owner_capable": true,
+		"owner_status": "unowned",
+		"owner_unit_id": null,
+		"room_value_field": "required_office",
+		"room_value_status": "not_met",
+		"token": "Office"
+	}, {
+		"direction": "S",
+		"distance_tiles": 0,
+		"id": 11,
+		"kind": "Office",
+		"near_landmark": "Activity Zone #2",
+		"needs_attention": true,
+		"owner_capable": true,
+		"owner_status": "owned",
+		"owner_unit_id": 345,
+		"room_value_field": "required_office",
+		"room_value_status": "not_met",
+		"token": "Office"
+	}, {
+		"direction": "S",
+		"distance_tiles": 0,
+		"id": 13,
+		"kind": "Office",
+		"near_landmark": "unknown material Throne",
+		"needs_attention": true,
+		"owner_capable": true,
+		"owner_status": "unowned",
+		"owner_unit_id": null,
+		"room_value_field": "required_office",
+		"room_value_status": "not_met",
+		"token": "Office"
+	} ],
+	"needs_attention_note": "Zones whose room value reads not_met/cannot_tell, or whose owner-capable kind reads unowned/cannot_tell. Every other zone in this fort's inventory is not shown here -- narrow with a filter (kind, owner, valid or a landmark) to see the rest.",
+	"read_failures": [],
+	"summary": true,
+	"total_zones": 3
+}
+[0m

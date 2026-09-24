@@ -1,0 +1,6 @@
+[0mZuglar Nakuthuzol "Braidoils", Miner	pick=true	MINE=true	job=Sleep
+[0mSolon Tabarsazir "Faithfulbridge", Fisherdwarf	pick=false	MINE=true	job=none
+[0mStukos Ish‰mshem "Ultraplanks", Miner	pick=false	MINE=true	job=Sleep
+[0mBesmar S krith•nul "Blazesmirrored", Gem Cutter	pick=false	MINE=true	job=none
+[0mpick item	118	inv	true	job	false	forbid	false
+[0m

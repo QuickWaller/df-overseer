@@ -1,0 +1,23 @@
+[0mPICK	OK	192 Zuglar Nakuthuzol "Braidoils", Miner
+[0mSTRESS	0:1 1:3 2:5 3:7 4:2 5:3 6:1 
+[0mMOOD	0
+[0m[0m{
+	"abs_tick": 12623957,
+	"armed": true,
+	"base_fps": 100,
+	"cur_year": 31,
+	"cur_year_tick": 124757,
+	"fps": 100.0,
+	"paused": true,
+	"tripwire": {
+		"detail": {
+			"new_pause_report_count": 1,
+			"report_id": 411,
+			"type_id": 139,
+			"type_name": "GHOST_ATTACK"
+		},
+		"reason": "announcement",
+		"tick": 12623957
+	}
+}
+[0m

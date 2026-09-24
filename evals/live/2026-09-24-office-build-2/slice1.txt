@@ -1,0 +1,13 @@
+start 12613978
+[0m{"ok": true,"paused": false}[0m
+[0m{"ok": true,"paused": true}[0m
+	"abs_tick": 12614468,
+	"advisory": {
+			"tier_reasons": [ "theft_tag_close_range" ],
+		"reason": "hostile_slow",
+	"paused": true
+	"abs_tick": 12614468,
+	"alive": 22,
+	"dead_total": 1,
+	"worst_hunger_status": "fine",
+	"worst_thirst_status": "fine"

@@ -1,0 +1,23 @@
+[0m{
+	"abs_tick": 12614468,
+	"advisory": {
+		"detail": {
+			"direction": "N",
+			"distance_tiles": 3,
+			"near_landmark": "Still",
+			"race": "BIRD_KEA",
+			"tier": "slow",
+			"tier_reasons": [ "theft_tag_close_range" ],
+			"why": [ "within_30_tiles_of_Still" ]
+		},
+		"reason": "hostile_slow",
+		"tick": 12614457
+	},
+	"armed": true,
+	"base_fps": 100,
+	"cur_year": 31,
+	"cur_year_tick": 115268,
+	"fps": 10.0,
+	"paused": true
+}
+[0m

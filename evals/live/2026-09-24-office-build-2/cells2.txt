@@ -1,0 +1,6 @@
+[0m0	[WALL/SMOOTH/v/dig=No] [WALL/SMOOTH/v/dig=No] [FLOOR/NORMAL/v/dig=No] [WALL/SMOOTH/v/dig=No] [WALL/SMOOTH/v/dig=No] 
+[0m1	[WALL/NORMAL/v/dig=No] [FLOOR/NORMAL/v/dig=No] [FLOOR/NORMAL/v/dig=No] [FLOOR/NORMAL/v/dig=No] [WALL/NORMAL/v/dig=No] 
+[0m2	[WALL/NORMAL/v/dig=No] [FLOOR/NORMAL/v/dig=No] [FLOOR/NORMAL/v/dig=No] [FLOOR/NORMAL/v/dig=No] [WALL/NORMAL/v/dig=No] 
+[0m3	[WALL/NORMAL/v/dig=No] [FLOOR/NORMAL/v/dig=No] [FLOOR/NORMAL/v/dig=No] [FLOOR/NORMAL/v/dig=No] [WALL/NORMAL/v/dig=No] 
+[0m4	[WALL/NORMAL/v/dig=No] [WALL/NORMAL/v/dig=No] [WALL/NORMAL/v/dig=No] [WALL/NORMAL/v/dig=No] [WALL/NORMAL/v/dig=No] 
+[0m

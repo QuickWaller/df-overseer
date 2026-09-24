@@ -1,0 +1,54 @@
+[0m{
+	"assignments": [ {
+		"assignment_id": 6,
+		"assignment_index": 6,
+		"furniture": {
+			"required_boxes": {
+				"required": 0,
+				"status": "not_required"
+			},
+			"required_cabinets": {
+				"required": 0,
+				"status": "not_required"
+			},
+			"required_racks": {
+				"required": 0,
+				"status": "not_required"
+			},
+			"required_stands": {
+				"required": 0,
+				"status": "not_required"
+			}
+		},
+		"holder_unit_id": 345,
+		"room_value": {
+			"Bedroom": {
+				"position_field": "required_bedroom",
+				"required": 0,
+				"status": "not_required"
+			},
+			"DiningHall": {
+				"position_field": "required_dining",
+				"required": 0,
+				"status": "not_required"
+			},
+			"Office": {
+				"detail": "every owned zone's getRoomDescription read succeeded and returned empty; the strongest evidence available that this room's value has not cleared the lowest quality tier, not proof of an exact number (no numeric room value is exposed anywhere this project can read; research/2026-09-23-room-and-zone-requirements.md Q3/Q6)",
+				"position_field": "required_office",
+				"required": 1,
+				"status": "not_met",
+				"zone_ids": [ 11 ]
+			},
+			"Tomb": {
+				"position_field": "required_tomb",
+				"required": 0,
+				"status": "not_required"
+			}
+		},
+		"vacant": false
+	} ],
+	"entity_id": 36,
+	"position": "MANAGER",
+	"read_failures": []
+}
+[0m

@@ -1,0 +1,26 @@
+[0munit	192	stress_cat	4	mood	-1
+[0mjob id	2324	type	Dig	timer	16	pos_delta	0	1	0
+[0mflags	suspend	false	repeat	false	do_now	false	working	false	bymgr	-1	material_category	false
+[0munit path len	0	dest_delta	0	0	0
+[0mtick now	312370	cur_year_tick	122792
+[0mcounters: sleepiness	5654	hunger	4667	thirst	20705	exhaust	0
+[0mDIG id	2298	worker	none	suspend	false	delta_from_zuglar	1	1	0
+[0mDIG id	2303	worker	none	suspend	false	delta_from_zuglar	2	1	0
+[0mDIG id	2324	worker	192	suspend	false	delta_from_zuglar	0	1	0
+[0mreports scanned	400	matches	29
+[0m R:	Urist Ralushul, Herbalist cancels Drink: Interrupted by a kea.
+[0m R:	Solon Tabarsazir, Fisherdwarf cancels Make unknown material blocks: Needs hard stone boulders.
+[0m R:	Urist Ralushul, Gem Cutter cancels Give food: No food available.
+[0m R:	Solon Tabarsazir, Fisherdwarf cancels Give food: Hunting vermin for food.
+[0m R:	Ral Identeshkad, Metalcrafter cancels Pickup equipment: Hunting vermin for food.
+[0m R:	Rith Sanusinod, Woodworker cancels Give food: No food available.
+[0m R:	Meng Kantekkud, expedition leader cancels Give food: No food available.
+[0m R:	Kosoth Lòrlolor, Craftsdwarf cancels Give food: No food available.
+[0m R:	Fath Ledakam, Metalsmith cancels Give food: No food available.
+[0m R:	Kadol Zulbanurdim, Gem Setter cancels Give food: No food available.
+[0m R:	Tun Konosamem, Stonecrafter cancels Give water: Need empty bucket.
+[0m R:	Zutthan Odshithinod, Metalcrafter cancels Give water: Need empty bucket.
+[0m R:	Dakost Amugvutok, Woodcutter cancels Give water: Need empty bucket.
+[0m R:	Olin Bekarbomrek, Mason cancels Give water: Hunting vermin for food.
+[0m R:	Dakost Amugvutok, Woodcutter cancels Give food: No food available.
+[0m

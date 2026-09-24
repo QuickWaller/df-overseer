@@ -22,7 +22,7 @@ learning architecture.
 >   Architect ran on the office task with no hints and produced a sound
 >   proposal (`evals/live/2026-09-24-architect-rematch/`); agents stay
 >   propose-only (register 2026-09-24) and the hands, a quickfort-backed
->   template-plus-site verb, are in build. Both offices are still empty and
+>   template-plus-site verb, are in build. A new smoothed stone office (zone 13, chair building 12 with a stone throne) now exists but is unowned; nothing yet counts for the Manager. Building 9 is a complete Chair holding an item, not a suspended plan. Both old offices are still empty and
 >   unenclosed; `nobles requirements MANAGER` still reads `not_met`. **Two Office zones exist** (id 10 unowned, id 11
 >   owned by the Manager, unit 345, read back twice), both outdoors (no
 >   fully indoor 3x3 site was available near a workshop or the Well). **A

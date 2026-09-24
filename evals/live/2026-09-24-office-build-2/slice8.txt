@@ -1,0 +1,82 @@
+[0m{"ok": true,"paused": true}[0m
+final tick 12631144
+[0mPICK	OK	192
+[0mCATS	2 2 4 8 2 3 1 
+[0mCAT0	2	345,455
+	"alive": 22,
+	"dead_total": 1,
+	"worst_hunger_status": "fine",
+	"worst_thirst_status": "fine"
+[0mSleepW	2
+[0mSmoothWallW	9
+[0m[0m{"ok": true,"paused": true}[0m
+final tick 12631699
+[0mPICK	OK	192
+[0mCATS	2 2 4 8 2 3 1 
+[0mCAT0	2	345,455
+	"alive": 22,
+	"dead_total": 1,
+	"worst_hunger_status": "fine",
+	"worst_thirst_status": "fine"
+[0mDrinkW	1
+[0mSleepW	2
+[0mSmoothWallW	3
+[0m[0m{"ok": true,"paused": true}[0m
+final tick 12632167
+[0mPICK	OK	192
+[0mCATS	2 2 4 7 3 3 1 
+[0mCAT0	2	345,455
+	"alive": 22,
+	"dead_total": 1,
+	"worst_hunger_status": "fine",
+	"worst_thirst_status": "fine"
+[0mDrinkW	1
+[0mEatW	2
+[0mSleepW	1
+[0mSmoothWallW	1
+[0m[0m{"ok": true,"paused": true}[0m
+final tick 12632399
+[0mPICK	OK	192
+[0mCATS	2 2 4 7 3 3 1 
+[0mCAT0	2	345,455
+	"alive": 22,
+	"dead_total": 1,
+	"worst_hunger_status": "fine",
+	"worst_thirst_status": "fine"
+[0mEatW	2
+[0mSleepW	1
+[0mSmoothWallW	1
+[0m[0m{"ok": true,"paused": true}[0m
+final tick 12632949
+[0mPICK	OK	192
+[0mCATS	2 2 4 8 2 3 1 
+[0mCAT0	2	345,455
+	"alive": 22,
+	"dead_total": 1,
+	"worst_hunger_status": "fine",
+	"worst_thirst_status": "fine"
+[0mDrinkW	1
+[0mConstructThroneW	1
+[0m[0m{"ok": true,"paused": true}[0m
+final tick 12633178
+[0mPICK	OK	192
+[0mCATS	2 2 4 8 2 3 1 
+[0mCAT0	2	345,455
+	"alive": 22,
+	"dead_total": 1,
+	"worst_hunger_status": "fine",
+	"worst_thirst_status": "fine"
+[0mSleepW	1
+[0mConstructThroneW	1
+[0m[0m{"ok": true,"paused": true}[0m
+final tick 12633657
+[0mPICK	OK	192
+[0mCATS	2 2 4 8 2 3 1 
+[0mCAT0	2	345,455
+	"alive": 22,
+	"dead_total": 1,
+	"worst_hunger_status": "fine",
+	"worst_thirst_status": "fine"
+[0mSleepW	1
+[0mConstructThroneW	1
+[0m

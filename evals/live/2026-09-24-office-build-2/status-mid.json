@@ -1,0 +1,109 @@
+[0m{
+	"blueprint": "office-room-v1",
+	"dig": {
+		"blind_no_walkable_neighbour": 0,
+		"designations_with_a_job": 0,
+		"designations_without_a_job": 0,
+		"job_census_error": null,
+		"pending_dig_designations": 0,
+		"startable_no_job_yet": 0,
+		"state": "none_pending",
+		"ticks_since_apply": 15028,
+		"unreadable": 0
+	},
+	"finish_required_met": false,
+	"finish_state": {
+		"already_finished": 4,
+		"blocked_by_material": {
+
+		},
+		"blocked_total": 0,
+		"hidden": 0,
+		"occupied_by_building": 0,
+		"other_shape": 0,
+		"required_cells": 15,
+		"smoothable": 11,
+		"unreadable": 0
+	},
+	"handle": "site-2",
+	"orientation": "rot180",
+	"phases_applied": [ "office_room_v1_shell" ],
+	"read_failures": [],
+	"remedy": null,
+	"shell": {
+		"carve_cells": 10,
+		"pending_designations": 0,
+		"still_solid": 0
+	},
+	"shell_done": true,
+	"site": {
+		"direction": "NE",
+		"distance_tiles": 2,
+		"footprint": {
+			"height": 5,
+			"width": 5
+		},
+		"near_landmark": "Stockpile #2"
+	},
+	"stall_remedy": null,
+	"stalled": false,
+	"surface": {
+		"by": "<host>, room rectangle from the blueprint's own zone section",
+		"enclosure": {
+			"boundary_ring_tiles": 16,
+			"footprint": {
+				"height": 3,
+				"width": 3
+			},
+			"gap_count": 1,
+			"gaps_by_type": {
+				"doorway": 0,
+				"missing_wall": 0,
+				"open_floor_edge": 1
+			},
+			"read_failures": [],
+			"status": "not_enclosed",
+			"unknown_tiles": 0,
+			"wall_like_tiles": 15
+		},
+		"finish": {
+			"boundary_wall": {
+				"constructed": 0,
+				"counted": 15,
+				"engraved": 0,
+				"rough_natural": 11,
+				"smooth": 4,
+				"unknown": 0
+			},
+			"boundary_wall_fraction_finished": 0.26666666666667,
+			"engravings_scan_truncated": false,
+			"floor": {
+				"constructed": 0,
+				"counted": 9,
+				"engraved": 0,
+				"rough_natural": 9,
+				"smooth": 0,
+				"unknown": 0
+			},
+			"floor_fraction_finished": 0.0,
+			"footprint": {
+				"height": 3,
+				"width": 3
+			},
+			"read_failures": []
+		},
+		"material": {
+			"boundary_ring_tiles": 16,
+			"by_material": {
+				"MINERAL": 5,
+				"STONE": 11
+			},
+			"read_failures": [],
+			"unknown_tiles": 0
+		},
+		"shim_restored": true
+	}
+}
+[0m[0mSleepW	2
+[0mHarvestPlantsx	1
+[0m

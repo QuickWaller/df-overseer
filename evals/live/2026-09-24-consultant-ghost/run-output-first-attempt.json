@@ -1,0 +1,21 @@
+{
+  "ok": true,
+  "status": "ok",
+  "timed_out": false,
+  "cost_usd": 0.045212594999999994,
+  "wall_clock_seconds": 287.6,
+  "tool_summary": {
+    "calls": 18,
+    "tools": [
+      "<host>__knowledge__wiki_lookup",
+      "<host>__doctrine__get",
+      "<host>__dfhack__source_search",
+      "<host>__dfhack__source_read",
+      "<host>__web__search",
+      "<host>__web__fetch"
+    ],
+    "failures": 2
+  },
+  "error": null,
+  "final_answer": null
+}

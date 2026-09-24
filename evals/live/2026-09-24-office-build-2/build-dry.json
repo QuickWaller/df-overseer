@@ -1,0 +1,55 @@
+[0m{
+	"blueprint": "office-room-v1",
+	"designated": {
+		"buildings": 1,
+		"dig_tiles": 0,
+		"zones": 0
+	},
+	"dry_run": true,
+	"finish_plan": {
+		"already_finished": 0,
+		"blocked_by_material": {
+
+		},
+		"blocked_total": 0,
+		"hidden": 0,
+		"occupied_by_building": 0,
+		"other_shape": 0,
+		"required_cells": 0,
+		"smoothable": 0,
+		"unreadable": 0
+	},
+	"finish_required_met": true,
+	"mode": "build",
+	"ok": true,
+	"phase": "office_room_v1_build",
+	"prerequisites": {
+		"carve_cells": 10,
+		"pending_designations": 0,
+		"still_solid": 0
+	},
+	"quickfort": {
+		"error": null,
+		"problems": [],
+		"ran": true,
+		"result_ok": true,
+		"stats": {
+			"Buildings designated": 1
+		}
+	},
+	"read_failures": [],
+	"site": {
+		"direction": "NE",
+		"distance_tiles": 2,
+		"footprint": {
+			"height": 5,
+			"width": 5
+		},
+		"handle": "site-2",
+		"near_landmark": "Stockpile #2",
+		"orientation": "rot180",
+		"source": "stored"
+	},
+	"would_designate": 1
+}
+[0m

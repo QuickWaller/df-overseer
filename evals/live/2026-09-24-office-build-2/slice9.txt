@@ -1,0 +1,93 @@
+[0m{"ok": true,"paused": true}[0m
+final tick 12633973
+[0mPICK	OK	192
+[0mCATS	2 2 4 8 2 3 1 
+[0mCAT0	2	345,455
+	"alive": 22,
+	"dead_total": 1,
+	"worst_hunger_status": "fine",
+	"worst_thirst_status": "fine"
+[0mConstructThroneW	1
+[0mSleepW	1
+[0mDrinkW	2
+[0m[0mTHRONE job	2397	worker	194 Erush Kogandalzat "Boatsmatch", Woodworker	dist_to_workshop	0 z0	suspend	false	items	1	job_items	1	timer	170	working	true
+[0mCHAIR item	3757	type	9	forbid	false	in_bld	true	in_job	false	refs	BUILDING_HOLDER 	mat	INORGANIC:SHALE
+[0m{"ok": true,"paused": true}[0m
+final tick 12634279
+[0mPICK	OK	192
+[0mCATS	2 2 4 8 2 3 1 
+[0mCAT0	2	345,455
+	"alive": 22,
+	"dead_total": 1,
+	"worst_hunger_status": "fine",
+	"worst_thirst_status": "fine"
+[0mSleepW	4
+[0mConstructThroneW	1
+[0m[0mTHRONE job	2397	worker	194 Erush Kogandalzat "Boatsmatch", Woodworker	dist_to_workshop	0 z0	suspend	false	items	1	job_items	1	timer	142	working	true
+[0mCHAIR item	3757	type	9	forbid	false	in_bld	true	in_job	false	refs	BUILDING_HOLDER 	mat	INORGANIC:SHALE
+[0m{"ok": true,"paused": true}[0m
+final tick 1263495
+[0mPICK	OK	192
+[0mCATS	2 2 4 8 2 3 1 
+[0mCAT0	2	345,455
+	"alive": 22,
+	"dead_total": 1,
+	"worst_hunger_status": "fine",
+	"worst_thirst_status": "fine"
+[0mSleepW	6
+[0mConstructThroneW	1
+[0m[0mTHRONE job	2397	worker	194 Erush Kogandalzat "Boatsmatch", Woodworker	dist_to_workshop	0 z0	suspend	false	items	1	job_items	1	timer	81	working	true
+[0mCHAIR item	3757	type	9	forbid	false	in_bld	true	in_job	false	refs	BUILDING_HOLDER 	mat	INORGANIC:SHALE
+[0m{"ok": true,"paused": true}[0m
+final tick 12634983
+[0mPICK	OK	192
+[0mCATS	2 2 4 8 2 3 1 
+[0mCAT0	2	345,455
+	"alive": 22,
+	"dead_total": 1,
+	"worst_hunger_status": "fine",
+	"worst_thirst_status": "fine"
+[0mSleepW	6
+[0mConstructThroneW	1
+[0m[0mTHRONE job	2397	worker	194 Erush Kogandalzat "Boatsmatch", Woodworker	dist_to_workshop	0 z0	suspend	false	items	1	job_items	1	timer	78	working	true
+[0mCHAIR item	3757	type	9	forbid	false	in_bld	true	in_job	false	refs	BUILDING_HOLDER 	mat	INORGANIC:SHALE
+[0m{"ok": true,"paused": true}[0m
+final tick 12635375
+[0mPICK	OK	192
+[0mCATS	2 2 4 8 2 3 1 
+[0mCAT0	2	345,455
+	"alive": 22,
+	"dead_total": 1,
+	"worst_hunger_status": "fine",
+	"worst_thirst_status": "fine"
+[0mSleepW	7
+[0mConstructThroneW	1
+[0m[0mTHRONE job	2397	worker	194 Erush Kogandalzat "Boatsmatch", Woodworker	dist_to_workshop	0 z0	suspend	false	items	1	job_items	1	timer	42	working	true
+[0mCHAIR item	3757	type	9	forbid	false	in_bld	true	in_job	false	refs	BUILDING_HOLDER 	mat	INORGANIC:SHALE
+[0m{"ok": true,"paused": true}[0m
+final tick 12635768
+[0mPICK	OK	192
+[0mCATS	2 2 4 8 2 3 1 
+[0mCAT0	2	345,455
+	"alive": 22,
+	"dead_total": 1,
+	"worst_hunger_status": "fine",
+	"worst_thirst_status": "fine"
+[0mSleepW	9
+[0mConstructThroneW	1
+[0m[0mTHRONE job	2397	worker	194 Erush Kogandalzat "Boatsmatch", Woodworker	dist_to_workshop	0 z0	suspend	false	items	1	job_items	1	timer	6	working	true
+[0mCHAIR item	3757	type	9	forbid	false	in_bld	true	in_job	false	refs	BUILDING_HOLDER 	mat	INORGANIC:SHALE
+[0m{"ok": true,"paused": true}[0m
+final tick 12636118
+[0mPICK	OK	192
+[0mCATS	2 2 4 8 2 3 1 
+[0mCAT0	2	345,455
+	"alive": 22,
+	"dead_total": 1,
+	"worst_hunger_status": "fine",
+	"worst_thirst_status": "fine"
+[0mSleepW	10
+[0mStoreItemInStockpileW	1
+[0m[0mTHRONE job absent
+[0mCHAIR item	3757	type	9	forbid	false	in_bld	true	in_job	false	refs	BUILDING_HOLDER 	mat	INORGANIC:SHALE
+[0mCHAIR item	3946	type	9	forbid	false	in_bld	false	in_job	true	refs	UNIT_HOLDER 	mat	INORGANIC:SHALE

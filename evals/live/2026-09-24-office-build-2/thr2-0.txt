@@ -1,0 +1,10 @@
+[0mTHRONE job	2397	worker	194 Erush Kogandalzat "Boatsmatch", Woodworker	dist_to_workshop	0 z0	suspend	false	items	1	job_items	1	timer	198	working	true
+[0mCHAIR item	3757	type	9	forbid	false	in_bld	true	in_job	false	refs	BUILDING_HOLDER 	mat	INORGANIC:SHALE
+[0m  holder bld	9
+[0mBLD9	Chair	stage	1	max	1	contained	1	jobs	0
+[0m planned	true	false
+[0m desc	0	true	INVALID
+[0m desc	1	true	INVALID
+[0m desc	2	true	INVALID
+[0m desc	3	true	INVALID
+[0m

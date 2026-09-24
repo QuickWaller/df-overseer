@@ -1,0 +1,129 @@
+[0m{
+	"blueprint": "office-room-v1",
+	"designated": {
+		"buildings": 0,
+		"dig_tiles": 0,
+		"zones": 1
+	},
+	"dry_run": false,
+	"finish_plan": {
+		"already_finished": 0,
+		"blocked_by_material": {
+
+		},
+		"blocked_total": 0,
+		"hidden": 0,
+		"occupied_by_building": 0,
+		"other_shape": 0,
+		"required_cells": 0,
+		"smoothable": 0,
+		"unreadable": 0
+	},
+	"finish_required_met": true,
+	"mode": "zone",
+	"ok": true,
+	"phase": "office_room_v1_zone",
+	"prerequisites": {
+		"carve_cells": 10,
+		"pending_designations": 0,
+		"still_solid": 0
+	},
+	"quickfort": {
+		"error": null,
+		"problems": [],
+		"ran": true,
+		"result_ok": true,
+		"stats": {
+			"Zone tiles designated": 9,
+			"Zones designated": 1
+		}
+	},
+	"read_back": {
+		"designations_landed": true,
+		"finish_state": {
+			"already_finished": 15,
+			"blocked_by_material": {
+
+			},
+			"blocked_total": 0,
+			"hidden": 0,
+			"occupied_by_building": 0,
+			"other_shape": 0,
+			"required_cells": 15,
+			"smoothable": 0,
+			"unreadable": 0
+		},
+		"note": "surface reads are only meaningful once dwarves have finished the work; right after apply they describe the site as it stands, not as designated",
+		"pending_designations": 0,
+		"surface": {
+			"by": "<host>, room rectangle from the blueprint's own zone section",
+			"enclosure": {
+				"boundary_ring_tiles": 16,
+				"footprint": {
+					"height": 3,
+					"width": 3
+				},
+				"gap_count": 1,
+				"gaps_by_type": {
+					"doorway": 0,
+					"missing_wall": 0,
+					"open_floor_edge": 1
+				},
+				"read_failures": [],
+				"status": "not_enclosed",
+				"unknown_tiles": 0,
+				"wall_like_tiles": 15
+			},
+			"finish": {
+				"boundary_wall": {
+					"constructed": 0,
+					"counted": 15,
+					"engraved": 0,
+					"rough_natural": 0,
+					"smooth": 15,
+					"unknown": 0
+				},
+				"boundary_wall_fraction_finished": 1.0,
+				"engravings_scan_truncated": false,
+				"floor": {
+					"constructed": 0,
+					"counted": 9,
+					"engraved": 0,
+					"rough_natural": 9,
+					"smooth": 0,
+					"unknown": 0
+				},
+				"floor_fraction_finished": 0.0,
+				"footprint": {
+					"height": 3,
+					"width": 3
+				},
+				"read_failures": []
+			},
+			"material": {
+				"boundary_ring_tiles": 16,
+				"by_material": {
+					"MINERAL": 5,
+					"STONE": 11
+				},
+				"read_failures": [],
+				"unknown_tiles": 0
+			},
+			"shim_restored": true
+		}
+	},
+	"read_failures": [],
+	"site": {
+		"direction": "S",
+		"distance_tiles": 0,
+		"footprint": {
+			"height": 5,
+			"width": 5
+		},
+		"handle": "site-2",
+		"near_landmark": "unknown material Throne",
+		"orientation": "rot180",
+		"source": "stored"
+	}
+}
+[0m

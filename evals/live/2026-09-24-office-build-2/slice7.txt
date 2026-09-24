@@ -1,0 +1,103 @@
+start 12626923
+[0m{"ok": true,"paused": false}[0m
+[0m{"ok": true,"paused": true}[0m
+	"abs_tick": 12627741,
+	"paused": true
+[0mPICK	OK	192
+[0mCATS	2 2 4 8 2 3 1 
+[0mCAT0	2	345,455
+[0mMAXREPORT	411
+	"alive": 22,
+	"dead_total": 1,
+	"worst_hunger_status": "fine",
+	"worst_thirst_status": "fine"
+[0mSleepW	2
+[0mDigW	1
+[0m		"pending_dig_designations": 0,
+	"finish_required_met": false,
+		"smoothable": 10,
+		"still_solid": 1
+	"shell_done": false,
+start 12627741
+[0m{"ok": true,"paused": false}[0m
+[0m{"ok": true,"paused": true}[0m
+	"abs_tick": 12628448,
+	"paused": true
+[0mPICK	OK	192
+[0mCATS	2 2 4 8 2 3 1 
+[0mCAT0	2	345,455
+[0mMAXREPORT	411
+	"alive": 22,
+	"dead_total": 1,
+	"worst_hunger_status": "fine",
+	"worst_thirst_status": "fine"
+[0mSleepW	4
+[0m		"pending_dig_designations": 0,
+	"finish_required_met": false,
+		"smoothable": 11,
+		"still_solid": 0
+	"shell_done": true,
+start 12628448
+[0m{"ok": true,"paused": false}[0m
+[0m{"ok": true,"paused": true}[0m
+	"abs_tick": 12629006,
+	"paused": true
+[0mPICK	OK	192
+[0mCATS	2 2 4 8 2 3 1 
+[0mCAT0	2	345,455
+[0mMAXREPORT	411
+	"alive": 22,
+	"dead_total": 1,
+	"worst_hunger_status": "fine",
+	"worst_thirst_status": "fine"
+[0mSleepW	2
+[0mHarvestPlantsx	1
+[0m		"pending_dig_designations": 0,
+	"finish_required_met": false,
+		"smoothable": 11,
+		"still_solid": 0
+	"shell_done": true,
+start 12629006
+[0m{"ok": true,"paused": false}[0m
+[0m{"ok": true,"paused": true}[0m
+	"abs_tick": 12629807,
+	"paused": true
+[0mPICK	OK	192
+[0mCATS	2 2 4 8 2 3 1 
+[0mCAT0	2	345,455
+[0mMAXREPORT	411
+	"alive": 22,
+	"dead_total": 1,
+	"worst_hunger_status": "fine",
+	"worst_thirst_status": "fine"
+[0mSmoothWallx	2
+[0mSmoothWallW	9
+[0mStoreItemInBagW	1
+[0mEatW	1
+[0mSleepW	3
+[0mStoreItemInBarrelW	1
+[0m		"pending_dig_designations": 0,
+	"finish_required_met": false,
+		"smoothable": 11,
+		"still_solid": 0
+	"shell_done": true,
+start 12629807
+[0m{"ok": true,"paused": false}[0m
+[0m{"ok": true,"paused": true}[0m
+	"abs_tick": 12630638,
+	"paused": true
+[0mPICK	OK	192
+[0mCATS	2 2 4 8 2 3 1 
+[0mCAT0	2	345,455
+[0mMAXREPORT	411
+	"alive": 22,
+	"dead_total": 1,
+	"worst_hunger_status": "fine",
+	"worst_thirst_status": "fine"
+[0mSleepW	3
+[0mSmoothWallW	11
+[0m		"pending_dig_designations": 0,
+	"finish_required_met": false,
+		"smoothable": 11,
+		"still_solid": 0
+	"shell_done": true,

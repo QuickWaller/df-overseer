@@ -1,0 +1,80 @@
+start 12614848
+[0m{"ok": true,"paused": false}[0m
+[0m{"ok": true,"paused": true}[0m
+	"abs_tick": 12615387,
+			"direction": "N",
+			"distance_tiles": 3,
+			"race": "BIRD_KEA",
+		"reason": "hostile_slow",
+		"tick": 12614457
+	"paused": true
+	"abs_tick": 12615387,
+	"alive": 22,
+	"dead_total": 1,
+	"worst_hunger_status": "fine",
+	"worst_thirst_status": "fine"
+[0mDigx	1
+[0mStoreItemInBagW	1
+[0mSleepW	2
+[0mEatW	1
+[0m[0mZuglar Nakuthuzol "Braidoils", Miner	Sleep
+[0mStukos Ish‰mshem "Ultraplanks", Miner	Sleep
+[0mstart 12615387
+[0m{"ok": true,"paused": false}[0m
+[0m{"ok": true,"paused": true}[0m
+	"abs_tick": 12616370,
+	"paused": true
+	"abs_tick": 12616370,
+	"alive": 22,
+	"dead_total": 1,
+	"worst_hunger_status": "fine",
+	"worst_thirst_status": "fine"
+[0mDigx	1
+[0mSleepW	2
+[0mEatW	1
+[0m[0mZuglar Nakuthuzol "Braidoils", Miner	Sleep
+[0mStukos Ish‰mshem "Ultraplanks", Miner	Sleep
+[0mstart 12616370
+[0m{"ok": true,"paused": false}[0m
+[0m{"ok": true,"paused": true}[0m
+	"abs_tick": 12617452,
+	"paused": true
+	"abs_tick": 12617452,
+	"alive": 22,
+	"dead_total": 1,
+	"worst_hunger_status": "fine",
+	"worst_thirst_status": "fine"
+[0mPlantSeedsW	1
+[0mDigW	1
+[0mStoreItemInBagW	2
+[0m[0mZuglar Nakuthuzol "Braidoils", Miner	Dig
+[0mstart 12617452
+[0m{"ok": true,"paused": false}[0m
+[0m{"ok": true,"paused": true}[0m
+	"abs_tick": 12618117,
+	"paused": true
+	"abs_tick": 12618117,
+	"alive": 22,
+	"dead_total": 1,
+	"worst_hunger_status": "fine",
+	"worst_thirst_status": "fine"
+[0mPlantSeedsW	1
+[0mDigW	1
+[0mStoreItemInBagW	1
+[0m[0mZuglar Nakuthuzol "Braidoils", Miner	Dig
+[0mstart 12618117
+[0m{"ok": true,"paused": false}[0m
+[0m{"ok": true,"paused": true}[0m
+	"abs_tick": 12618754,
+	"paused": true
+	"abs_tick": 12618754,
+	"alive": 22,
+	"dead_total": 1,
+	"worst_hunger_status": "fine",
+	"worst_thirst_status": "fine"
+[0mPlantSeedsW	1
+[0mDigW	1
+[0mStoreItemInStockpileW	1
+[0mDigx	2
+[0m[0mZuglar Nakuthuzol "Braidoils", Miner	Dig
+[0m

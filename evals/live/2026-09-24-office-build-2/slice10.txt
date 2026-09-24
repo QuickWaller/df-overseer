@@ -1,0 +1,61 @@
+[0m{"ok": true,"paused": true}[0m
+final tick 12636432
+[0mPICK	OK	192
+[0mCATS	2 2 4 8 2 3 1 
+[0mCAT0	2	345,455
+	"alive": 22,
+	"dead_total": 1,
+	"worst_hunger_status": "fine",
+	"worst_thirst_status": "fine"
+[0mConstructBuildingx	1
+[0mSleepW	10
+[0mDrinkW	1
+[0m[0mITEM3946	forbid	false	in_job	false	in_bld	false	unit	none	bld	none	on_ground	true	in_stockpile?	false
+[0mCHAIRBLD	9	stage	1	/	1	in_footprint	false	in_zone13	false	contained	1	jobs	0
+[0mCHAIRBLD	12	stage	0	/	1	in_footprint	true	in_zone13	true	contained	0	jobs	1
+[0mROOMDESC	true	[]	zone13 size	3x3
+[0m[0m{"ok": true,"paused": true}[0m
+final tick 1263674
+[0mPICK	OK	192
+[0mCATS	2 2 4 8 2 3 1 
+[0mCAT0	2	345,455
+	"alive": 22,
+	"dead_total": 1,
+	"worst_hunger_status": "fine",
+	"worst_thirst_status": "fine"
+[0mSleepW	9
+[0mConstructBuildingW	1
+[0m[0mITEM3946	forbid	false	in_job	true	in_bld	false	unit	none	bld	none	on_ground	true	in_stockpile?	false
+[0mCHAIRBLD	9	stage	1	/	1	in_footprint	false	in_zone13	false	contained	1	jobs	0
+[0mCHAIRBLD	12	stage	0	/	1	in_footprint	true	in_zone13	true	contained	0	jobs	1
+[0mROOMDESC	true	[]	zone13 size	3x3
+[0m[0m{"ok": true,"paused": true}[0m
+final tick 12637128
+[0mPICK	OK	192
+[0mCATS	2 2 4 8 2 3 1 
+[0mCAT0	2	345,455
+	"alive": 22,
+	"dead_total": 1,
+	"worst_hunger_status": "fine",
+	"worst_thirst_status": "fine"
+[0mSleepW	6
+[0mConstructBuildingW	1
+[0m[0mITEM3946	forbid	false	in_job	true	in_bld	false	unit	none	bld	12	on_ground	false	in_stockpile?	true
+[0mCHAIRBLD	9	stage	1	/	1	in_footprint	false	in_zone13	false	contained	1	jobs	0
+[0mCHAIRBLD	12	stage	0	/	1	in_footprint	true	in_zone13	true	contained	1	jobs	1
+[0mROOMDESC	true	[]	zone13 size	3x3
+[0m[0m{"ok": true,"paused": true}[0m
+final tick 126374
+[0mPICK	OK	192
+[0mCATS	2 2 4 8 2 3 1 
+[0mCAT0	2	345,455
+	"alive": 22,
+	"dead_total": 1,
+	"worst_hunger_status": "fine",
+	"worst_thirst_status": "fine"
+[0mSleepW	6
+[0m[0mITEM3946	forbid	false	in_job	false	in_bld	true	unit	none	bld	12	on_ground	false	in_stockpile?	true
+[0mCHAIRBLD	9	stage	1	/	1	in_footprint	false	in_zone13	false	contained	1	jobs	0
+[0mCHAIRBLD	12	stage	1	/	1	in_footprint	true	in_zone13	true	contained	1	jobs	0
+[0mROOMDESC	true	[]	zone13 size	3x3
+[0m
