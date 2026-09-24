@@ -983,6 +983,34 @@ df-overseer-zone.lua:
         role reservation (that plugin's state is not readable from Lua, and
         it may re-apply its own choice on its next cycle). DRY_RUN defaults
         to true. Offline build, not deployed.
+    "contents ZONE_ID":
+      lua_function: zone_contents
+      effect: read
+      coordinate_bearing: false
+      live_deployed: false
+      verified: unverified
+      knowledge_scope: player_visible
+      notes: >
+        ADDED 2026-09-24 (handoffs/2026-09-24-room-proxy-fix.md). Which
+        buildings sit inside one zone: per building its kind (the game's
+        building_type name), id, `exists` (flags.exists), `build_stage` of
+        `build_stage_max`, `holds_items` (any contained item), `tiles_inside`,
+        and `matches_zone_kind` (the kind is one of the zone kind's
+        ZONE_POLICY `furniture_kinds`: Chair for Office, Bed for Bedroom,
+        Table for DiningHall, Coffin for Tomb; no per-kind branch, the kind is
+        read from the zone's own civzone_type). Also matching_count and
+        complete_matching_count. It exists because getRoomDescription
+        returned empty on a working office, so nothing else could say whether
+        the zone holds its defining furniture; nobles.requirements calls the
+        same helper (zone_furniture_report) for its independent evidence.
+        TILE TEST, reused: the zone's rectangular footprint (the set
+        df-overseer-surface.lua walks) and dfhack.buildings.findAtTile (the
+        lookup zone_tile uses). It cannot see a non-rectangular zone extents
+        bitmap (the rectangle over-reads it) or anything findAtTile does not
+        return (civzones). Bounded: a zone over 625 tiles is refused. Output
+        carries ids and dimensions, never a coordinate. Failed reads are
+        NULL fields plus read_failures. Read only. Offline build, not
+        deployed.
 
 df-overseer-trees.lua:
   build_order_item: "gap named 2026-09-17, handoffs/2026-09-17-water-and-industry-tools.md item 2"
@@ -1963,17 +1991,26 @@ df-overseer-nobles.lua:
         game's own exposed data says whether they are satisfied). A
         room-value status is met only when at least one zone of the needed
         kind, owned by the holder, reads back a nonempty quality word;
-        not_met when the holder owns no such zone at all, or every owned
-        zone's read succeeded and came back empty; cannot_tell when the
-        position is vacant, its holder cannot be resolved to a live unit,
-        or a read itself failed (never collapsed into not_met). Deliberately
+        not_met ONLY with evidence independent of the description (the
+        holder owns no such zone at all, or every owned zone contains none
+        of the furniture kinds ZONE_POLICY lists for the kind, read by the
+        same helper as `zone contents`); cannot_tell when the position is
+        vacant, its holder cannot be resolved to a live unit, a read itself
+        failed, or the description was EMPTY while the zone does contain
+        qualifying furniture (never collapsed into not_met).
+        CORRECTED 2026-09-24 (handoffs/2026-09-24-room-proxy-fix.md): an
+        earlier version called an empty description not_met, and
+        getRoomDescription returned empty on the Manager's owned, furnished
+        office that the game's own nobles screen accepted, so empty is no
+        evidence of a bad room; the game's nobles screen is the arbiter
+        for cannot_tell. Deliberately
         a separate verb from verify, not folded into it: verify checks
         whether an appointment is internally consistent (histfig links,
         getNoblePositions) and never read a single requirement field, which
         is exactly how this fort's Manager read as "set up" with no working
         Office. Offline-built; the deploy and the live check against
-        MANAGER on this fort (must report the office requirement unmet or
-        undeterminable, never met) are both owed.
+        MANAGER on this fort (must now report the Office cannot_tell, never
+        not_met, while the chair stands in the owned zone) are both owed.
     "appoint POSITION_CODE UNIT_ID [DRY_RUN] [VERSION]":
       lua_function: appoint
       effect: mutate

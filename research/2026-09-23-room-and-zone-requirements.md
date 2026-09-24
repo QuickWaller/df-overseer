@@ -451,3 +451,33 @@ Buildings C++ source is not installed there, so the behaviour of
   logic against a fake, not the game); that the Manager's requirement then reads
   `met`; and whether a room with a nonempty quality word is enough for
   `required_office` of 1 (Q6 stays open).
+
+## Addendum 2026-09-24 (later): empty `getRoomDescription` is not evidence of a bad room
+
+Falsifies the inference this document's Q3/Q6 left in place and the first
+`nobles requirements` built on it: "every owned zone's description read came
+back empty, so `not_met`".
+
+- **Observed.** On the Manager's owned Office (zone 13 after the blueprint
+  build, a chair inside), `getRoomDescription` returned an empty string,
+  including with the Manager passed as the unit argument and on the outdoor
+  zone 11, with the fort paused. In the game the Manager is assigned to that
+  office and the nobles screen accepts it. So empty does not mean the
+  requirement is unmet; the description cannot stand in for the game's own
+  judgement in either direction (a non-empty word remains a fair `met`).
+- **What changed** (`handoffs/2026-09-24-room-proxy-fix.md`, offline build).
+  `nobles requirements` reports `not_met` only with independent evidence: no
+  owned zone of the kind, or no building of the kind's defining furniture
+  (`ZONE_POLICY` `furniture_kinds`) inside any owned zone. Empty description
+  plus qualifying furniture is `cannot_tell`, and the game's nobles screen is
+  the arbiter. The evidence comes from the new `zone contents ZONE_ID`, which
+  lists the buildings inside a zone by the surface layer's rectangular
+  footprint and `dfhack.buildings.findAtTile` (the lookup `zone_tile` uses).
+- **What it cannot see.** Whether the game counts the room valuable enough
+  (still no numeric room value anywhere), a non-rectangular zone extents
+  bitmap, and any building `findAtTile` does not return. An unbuilt chair
+  counts as "furniture present", so it yields `cannot_tell`, never `not_met`.
+- **Same inference elsewhere.** `zone list`'s per-zone `room_value_status`
+  (`zone_room_value_status` in `df-overseer-zone.lua`) still maps an empty
+  description to `not_met`. It was outside the handoff's scope and is not
+  changed here; it carries the same false-negative risk.

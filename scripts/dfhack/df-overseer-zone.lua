@@ -1360,8 +1360,23 @@ local function zone_room_value_status(p, z, read_failures)
     end)
     return "cannot_tell"
   end
-  if desc == "" then return "not_met" end
-  return "met"
+  if desc ~= "" then return "met" end
+  -- An empty description alone is NOT evidence the room is not counting: the
+  -- game itself accepted an owned office whose description read empty
+  -- (register 2026-09-24). not_met only with independent evidence, no
+  -- qualifying furniture inside the zone; otherwise cannot_tell.
+  local ok_r, rep, rerr = pcall(zone_furniture_report, z)
+  if not ok_r then rerr = rep; rep = nil end
+  if not rep then
+    table.insert(read_failures, "zone " .. z.id .. ": contents read failed: " .. tostring(rerr))
+    return "cannot_tell"
+  end
+  if rep.read_failures and #rep.read_failures > 0 then
+    for _, f in ipairs(rep.read_failures) do table.insert(read_failures, "zone " .. z.id .. ": " .. f) end
+    return "cannot_tell"
+  end
+  if rep.matching_count == 0 then return "not_met" end
+  return "cannot_tell"
 end
 
 -- OWNER_FILTER: "" (no filter), "owned", "unowned", or a unit id (digits).
@@ -1965,6 +1980,126 @@ function clear_owner(zone_id, dry_run)
   return res
 end
 
+-- ---------------------------------------------------------------------------
+-- zone contents (handoffs/2026-09-24-room-proxy-fix.md)
+--
+-- What buildings sit inside one zone. The room-value proxy (getRoomDescription)
+-- returned empty on a working, owned office, so "the description is empty" is
+-- not evidence of a bad room. This is the independent evidence: does the zone
+-- contain the defining furniture ZONE_POLICY lists for its kind (Office:Chair,
+-- Bedroom:Bed, ...). No per-kind branch: the kind's ZONE_POLICY furniture_kinds
+-- is the only per-kind data, and the kind is read from the zone's own
+-- civzone_type.
+--
+-- TILE-IN-ZONE TEST, REUSED NOT INVENTED: the tile set is the zone's
+-- rectangular footprint (x1..x2, y1..y2 at its own z), exactly the set
+-- df-overseer-surface.lua's footprint_tiles walks; the building at each tile
+-- is dfhack.buildings.findAtTile, exactly the lookup zone_tile uses for
+-- AROUND_FURNITURE. A zone with a non-rectangular extents bitmap would be
+-- over-read by the rectangle, the same limit the surface layer has; quickfort
+-- (this project's only zone maker) only ever makes rectangles. findAtTile does
+-- not return civzones, so the zone itself never lists as its own content.
+-- Bounded by MAX_CONTENTS_TILES: a bigger zone is refused, not sampled.
+-- ---------------------------------------------------------------------------
+
+local MAX_CONTENTS_TILES = 625   -- 25x25; no real room comes near it
+
+local function zone_kind_token(z)
+  local ok, name = pcall(function() return df.civzone_type[z.type] end)
+  if ok and type(name) == "string" then return name end
+  return nil
+end
+
+-- One building's row. Every read is pcall-guarded; a failed read is a NULL
+-- field plus an entry in read_failures, never a default.
+local function content_row(bld, furniture_ids, read_failures)
+  local row = {id = bld.id}
+  local ok_t, btype = pcall(function() return bld:getType() end)
+  if ok_t then
+    local ok_n, name = pcall(function() return df.building_type[btype] end)
+    row.kind = (ok_n and type(name) == "string") and name or ("type_" .. tostring(btype))
+    row.matches_zone_kind = (furniture_ids ~= nil and furniture_ids[btype]) and true or false
+  else
+    row.kind = NULL
+    row.matches_zone_kind = false
+    read_failures[#read_failures + 1] = "building " .. tostring(bld.id) .. ": getType failed: " .. tostring(btype)
+  end
+  local ok_e, exists = pcall(function() return bld.flags.exists end)
+  if ok_e then row.exists = exists and true or false else row.exists = NULL end
+  if not ok_e then read_failures[#read_failures + 1] = "building " .. tostring(bld.id) .. ": flags.exists failed" end
+  local ok_s, stage = pcall(function() return bld:getBuildStage() end)
+  local ok_m, max_stage = pcall(function() return bld:getMaxBuildStage() end)
+  row.build_stage = ok_s and stage or NULL
+  row.build_stage_max = ok_m and max_stage or NULL
+  local ok_i, items = pcall(function() return #bld.contained_items end)
+  if ok_i then row.holds_items = items > 0 else row.holds_items = NULL end
+  return row
+end
+
+-- Returns report, err. report = {kind, width, height, tiles_scanned,
+-- furniture_kinds, buildings = {rows}, matching_count, complete_matching_count,
+-- read_failures}. Exported (global) so df-overseer-nobles.lua's requirements
+-- uses this one implementation of "is furniture inside this zone".
+function zone_furniture_report(z)
+  local token = zone_kind_token(z)
+  local p = token and ZONE_POLICY[token] or {}
+  local furniture_ids, names, ferr = furniture_type_ids_for(p)
+  if ferr then return nil, ferr end
+  local w, h = z.x2 - z.x1 + 1, z.y2 - z.y1 + 1
+  if w < 1 or h < 1 or w * h > MAX_CONTENTS_TILES then
+    return nil, string.format("refused: zone is %dx%d, over the %d-tile bound for a contents read", w, h, MAX_CONTENTS_TILES)
+  end
+  local read_failures = {}
+  local seen, rows, tile_counts = {}, {}, {}
+  for x = z.x1, z.x2 do
+    for y = z.y1, z.y2 do
+      local ok_b, bld = pcall(dfhack.buildings.findAtTile, xyz2pos(x, y, z.z))
+      if not ok_b then
+        read_failures[#read_failures + 1] = "findAtTile failed: " .. tostring(bld)
+      elseif bld then
+        if not seen[bld.id] then
+          seen[bld.id] = true
+          rows[#rows + 1] = content_row(bld, furniture_ids, read_failures)
+        end
+        tile_counts[bld.id] = (tile_counts[bld.id] or 0) + 1
+      end
+    end
+  end
+  local matching, complete_matching = 0, 0
+  for _, r in ipairs(rows) do
+    r.tiles_inside = tile_counts[r.id]
+    if r.matches_zone_kind then
+      matching = matching + 1
+      if r.exists == true then complete_matching = complete_matching + 1 end
+    end
+  end
+  table.sort(rows, function(a, b) return a.id < b.id end)
+  return {
+    kind = token or NULL,
+    width = w, height = h, tiles_scanned = w * h,
+    furniture_kinds = names or NULL,
+    buildings = rows,
+    matching_count = matching,
+    complete_matching_count = complete_matching,
+    read_failures = read_failures,
+  }
+end
+
+function zone_contents(zone_id)
+  local id = tonumber(zone_id)
+  if not id then return nil, "ZONE_ID must be a number" end
+  local ok, b = pcall(df.building.find, id)
+  if not ok or not b then return nil, "no building with id " .. tostring(zone_id) end
+  local ok_i, is_zone = pcall(function() return df.building_civzonest:is_instance(b) end)
+  if not ok_i or not is_zone then
+    return nil, "building id " .. id .. " exists but is not an activity zone"
+  end
+  local rep, err = zone_furniture_report(b)
+  if not rep then return nil, err end
+  rep.zone_id = id
+  return rep
+end
+
 -- Same module-load guard as every other df-overseer-*.lua script.
 if dfhack_flags.module then
   return
@@ -1978,6 +2113,7 @@ local USAGE = {
   "usage: df-overseer-zone list KIND_FILTER OWNER_FILTER VALID_FILTER NEAR_LANDMARK_FILTER [RADIUS_TILES]",
   "usage: df-overseer-zone assign-owner ZONE_ID UNIT_ID [DRY_RUN] [OVERRIDE]",
   "usage: df-overseer-zone clear-owner ZONE_ID [DRY_RUN]",
+  "usage: df-overseer-zone contents ZONE_ID",
 }
 
 -- After KIND: up to three leading numbers (1 = LEVEL, 2 = W H, 3 = W H LEVEL),
@@ -2059,6 +2195,13 @@ elseif cmd == "clear-owner" then
     print(encode({error = USAGE[7]}))
   else
     print(encode(clear_owner(args[2], args[3])))
+  end
+elseif cmd == "contents" then
+  if args[2] == nil then
+    print(encode({error = USAGE[8]}))
+  else
+    local res, err = zone_contents(args[2])
+    print(encode(err and {error = err} or res))
   end
 else
   for _, l in ipairs(USAGE) do print(l) end

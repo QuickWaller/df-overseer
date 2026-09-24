@@ -59,13 +59,21 @@
 -- compared against one:
 --   met         at least one zone of the needed kind, owned by the holder,
 --               read back a non-empty quality word.
---   not_met     either the holder owns no zone of that kind at all (a
---               positive requirement definitely fails with no room), or
---               every owned zone's read succeeded and came back empty (the
---               strongest available evidence of no value, not proof of an
---               exact number -- see the .lua's own room_value_status).
+--   not_met     ONLY with evidence independent of the description: the
+--               holder owns no zone of that kind at all, or every owned
+--               zone contains none of the furniture kinds ZONE_POLICY lists
+--               for that kind (df-overseer-zone.lua's zone_furniture_report,
+--               the one implementation of "is furniture inside this zone").
+--               An EMPTY DESCRIPTION ALONE NEVER YIELDS not_met: on this
+--               fort (2026-09-24) getRoomDescription returned "" on the
+--               Manager's owned office (unit passed or not, paused fort)
+--               while the game's own nobles screen accepted the room, so
+--               empty is not evidence of a bad room
+--               (handoffs/2026-09-24-room-proxy-fix.md).
 --   cannot_tell the position is vacant, its holder cannot be resolved to a
---               live unit, or a getRoomDescription read itself failed.
+--               live unit, a read failed, or the description was empty and
+--               the zone does contain qualifying furniture (the game's own
+--               nobles screen is the arbiter then).
 -- cannot_tell is never collapsed into not_met or met: a failed read reports
 -- itself as a failed read (read_failures, dfhack.printerr), same discipline
 -- df-overseer-threat.lua's class_flags uses.
@@ -307,6 +315,7 @@ local function owned_zones_of_kind(kind_name, unit_id)
         local ok_d, desc = pcall(dfhack.buildings.getRoomDescription, z)
         table.insert(out, {
           id = z.id,
+          zone = z,
           description_ok = ok_d,
           description = (ok_d and desc ~= "") and desc or NULL,
           description_error = (not ok_d) and tostring(desc) or nil,
@@ -315,6 +324,14 @@ local function owned_zones_of_kind(kind_name, unit_id)
     end
   end
   return out
+end
+
+-- df-overseer-zone.lua, for zone_furniture_report. Lazy and pcall-guarded so a
+-- failure to load it is a cannot_tell with a read failure, never a crash.
+local function zone_module()
+  local ok, mod = pcall(reqscript, 'df-overseer-zone')
+  if ok then return mod end
+  return nil
 end
 
 -- One room-value requirement's status. `holder_uid` nil plus `holder_reason`
@@ -360,15 +377,53 @@ local function room_value_status(kind, field, required, holder_uid, holder_reaso
     return {position_field = field, required = required, status = "met", zone_ids = zone_ids,
       detail = "at least one owned zone reports a nonempty quality word"}
   end
-  if any_read_ok then
-    return {position_field = field, required = required, status = "not_met", zone_ids = zone_ids,
-      detail = "every owned zone's getRoomDescription read succeeded and returned empty; the "
-        .. "strongest evidence available that this room's value has not cleared the lowest "
-        .. "quality tier, not proof of an exact number (no numeric room value is exposed anywhere "
-        .. "this project can read; research/2026-09-23-room-and-zone-requirements.md Q3/Q6)"}
+  -- No owned zone has a non-empty description. An empty description is NOT
+  -- evidence of a bad room (see the header), so look for independent
+  -- evidence: the defining furniture inside each owned zone.
+  local zmod = zone_module()
+  local any_furniture, any_unknown = false, false
+  local qualifying_detail = {}
+  for _, z in ipairs(zones) do
+    local rep, rerr
+    if zmod and zmod.zone_furniture_report then
+      local ok_r, r1, r2 = pcall(zmod.zone_furniture_report, z.zone)
+      if ok_r then rep, rerr = r1, r2 else rerr = tostring(r1) end
+    else
+      rerr = "df-overseer-zone.lua's zone_furniture_report is not available"
+    end
+    if not rep then
+      any_unknown = true
+      table.insert(read_failures, kind .. " zone " .. z.id .. ": contents read failed: " .. tostring(rerr))
+    else
+      for _, f in ipairs(rep.read_failures or {}) do
+        any_unknown = true
+        table.insert(read_failures, kind .. " zone " .. z.id .. ": contents: " .. tostring(f))
+      end
+      if rep.furniture_kinds == nil or rep.furniture_kinds == NULL then
+        -- No defining furniture is listed for this kind: no independent evidence.
+        any_unknown = true
+      elseif rep.matching_count > 0 then
+        any_furniture = true
+        table.insert(qualifying_detail, string.format("zone %s holds %d qualifying building(s), %d complete",
+          tostring(z.id), rep.matching_count, rep.complete_matching_count))
+      end
+    end
   end
-  return {position_field = field, required = required, status = "cannot_tell", zone_ids = zone_ids,
-    detail = "every owned zone's getRoomDescription read failed; see read_failures"}
+  if any_furniture then
+    return {position_field = field, required = required, status = "cannot_tell", zone_ids = zone_ids,
+      detail = (any_read_ok and "getRoomDescription came back empty" or "getRoomDescription could not be read")
+        .. " but the owned zone does contain qualifying furniture (" .. table.concat(qualifying_detail, "; ")
+        .. "). An empty description is not evidence of a bad room (it read empty on a room the game's "
+        .. "own nobles screen accepted, 2026-09-24): the game's own nobles screen is the arbiter."}
+  end
+  if any_unknown then
+    return {position_field = field, required = required, status = "cannot_tell", zone_ids = zone_ids,
+      detail = "the description was not a non-empty word and the independent furniture check could not "
+        .. "be completed; see read_failures"}
+  end
+  return {position_field = field, required = required, status = "not_met", zone_ids = zone_ids,
+    detail = "every owned zone contains none of the furniture kinds ZONE_POLICY lists for " .. kind
+      .. " (independent of getRoomDescription, which is not evidence either way when empty)"}
 end
 
 local function furniture_status(field, required)
@@ -383,7 +438,7 @@ end
 -- Every requirement field of one position code, per assignment slot (a code
 -- can have more than one). No per-position branch: the two field tables
 -- above are the only place a specific field name appears.
-local function requirements(code)
+function requirements(code)
   local e, err = entity()
   if not e then return {error = err} end
   local items = assignments_for(e, code)

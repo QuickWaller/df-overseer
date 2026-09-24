@@ -39,7 +39,7 @@ from dfmcp.tools import _arg_specs_for_tool  # noqa: E402
 ZONE_LUA = REPO_ROOT / "scripts" / "dfhack" / "df-overseer-zone.lua"
 
 ZONE_IDS = {"zone.list-kinds", "zone.find", "zone.check-owner", "zone.place", "zone.list",
-            "zone.assign-owner", "zone.clear-owner"}
+            "zone.assign-owner", "zone.clear-owner", "zone.contents"}
 
 
 def _text():
@@ -111,6 +111,7 @@ def test_argument_names_and_order():
         "kind_filter", "owner_filter", "valid_filter", "near_landmark_filter", "radius_tiles"]
     assert names("zone.assign-owner") == ["zone_id", "unit_id", "dry_run", "override"]
     assert names("zone.clear-owner") == ["zone_id", "dry_run"]
+    assert names("zone.contents") == ["zone_id"]
 
 
 def test_footprint_is_an_optional_pair_and_owner_is_optional():
@@ -167,6 +168,8 @@ def test_effects_and_scopes():
     assert reg.get("zone.list").effect == "read"
     assert reg.get("zone.assign-owner").effect == "mutate"
     assert reg.get("zone.clear-owner").effect == "mutate"
+    assert reg.get("zone.contents").effect == "read"
+    assert reg.get("zone.contents").coordinate_bearing is False
     assert reg.get("zone.list").coordinate_bearing is False
     for tool_id in ZONE_IDS:
         assert not reg.get(tool_id).is_omniscient
@@ -294,7 +297,8 @@ def test_find_and_place_share_ranked_rects_but_only_find_passes_furniture_ids():
     """zone.place keeps its current single-writer position (handoff scope):
     no new argument, ranked_rects's furniture_type_ids stays nil for it."""
     src = _text()
-    place_fn = src[src.index("function place_zone"): src.index("-- Same module-load guard")]
+    # ends where the zone contents block begins (2026-09-24): that block is not place's code
+    place_fn = src[src.index("function place_zone"): src.index("-- zone contents (handoffs")]
     assert "furniture_type_ids" not in place_fn
     assert "around_furniture" not in place_fn.lower()
     find_fn = src[src.index("function find_zone_area"): src.index("function check_owner")]
@@ -461,3 +465,18 @@ def test_furniture_note_only_appears_when_no_candidate_has_furniture():
     note_block = find_fn[find_fn.index("if not any_furniture then"): find_fn.index("return wrapped")]
     assert "furniture_note" in note_block
     assert "none of the" in note_block
+
+
+def test_zone_list_room_value_status_never_reads_an_empty_description_as_not_met():
+    """Register 2026-09-24: an empty getRoomDescription on an owned office was a false
+    negative (the game accepted the room). zone list's room_value_status must not map
+    empty to not_met by itself; it needs the independent evidence zone_furniture_report
+    gives. A source-level guard (list_zones needs a zone-vector stub the harness lacks),
+    so it proves the mapping was removed and the helper is consulted, not the runtime
+    behaviour, which is the live check in handoffs/2026-09-24-room-proxy-fix.md."""
+    src = ZONE_LUA.read_text(encoding="utf-8")
+    start = src.index("local function zone_room_value_status")
+    fn = src[start: src.index("\nend\n", start)]
+    assert 'if desc == "" then return "not_met" end' not in fn
+    assert "zone_furniture_report" in fn
+    assert 'return "cannot_tell"' in fn

@@ -244,6 +244,15 @@ read:
       flooding the caller. Read this before proposing a new room, so a
       fiftieth bedroom is checked against what already exists rather than
       guessed at. Offline build, not deployed.
+  - id: "zone.contents"
+    status: planned
+    note: >-
+      Added handoffs/2026-09-24-room-proxy-fix.md. Which buildings sit inside
+      one zone (kind, id, completion, whether it holds an item, whether it is
+      the defining furniture for the zone's kind). Read only. The independent
+      evidence for a room: an empty getRoomDescription is not evidence of a
+      bad room, so whether the chair is actually there is asked here. Offline
+      build, not deployed.
 
   - id: "surface.enclosure"
     status: planned

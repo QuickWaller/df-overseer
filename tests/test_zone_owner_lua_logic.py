@@ -106,9 +106,11 @@ def test_real_run_sets_both_directions_and_the_read_back_confirms_them(w):
     assert h["holder_link_resolves"] == "resolved"
     assert h["positions_asking_this_room_value"] == ["MANAGER"]
     assert h["unit_holds_a_position_asking_this_room_value"] == "yes"
-    # an empty quality word still reads not_met: the link is not the gap
-    assert h["room_value_status"] == "not_met"
-    assert not r["read_failures"]
+    # An empty quality word alone is NOT not_met (register 2026-09-24: the game accepted an
+    # owned office whose description read empty). This fake world has no furniture data to
+    # consult, so the honest state is cannot_tell, with the contents read failure logged.
+    assert h["room_value_status"] == "cannot_tell"
+    assert r["read_failures"]
 
 
 def test_room_value_met_when_the_room_has_a_quality_word(w):

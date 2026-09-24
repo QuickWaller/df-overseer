@@ -464,7 +464,8 @@ _ARG_DESCRIPTIONS: Dict[str, str] = {
         "kind. Leave it out otherwise; the refusal names what it would have unlocked."
     ),
     "ZONE_ID": (
-        "An existing zone's own id, as zone.list gives it in its id field. "
+        "An existing zone's own id, as zone.list gives it in its id field "
+        "(used by zone.assign-owner, zone.clear-owner and zone.contents). "
         "Never a coordinate -- the zone's id is resolved to its real "
         "footprint server-side. An id that is not an activity zone (a "
         "workshop id, for example) is a named error, not a guess."

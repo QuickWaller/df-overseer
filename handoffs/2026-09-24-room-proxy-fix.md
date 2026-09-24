@@ -73,4 +73,50 @@ names the live check and says what it cannot see.
 
 ## Result
 
-(to be filled by the executor)
+Offline build done, on the worktree branch; nothing deployed, no fort change.
+
+- `df-overseer-zone.lua`: new exported `zone_furniture_report(zone)` and
+  `zone_contents(id)`, new verb `contents ZONE_ID`. Per building: kind, id,
+  `exists`, `build_stage` of `build_stage_max`, `holds_items`, `tiles_inside`,
+  `matches_zone_kind`; plus `matching_count`, `complete_matching_count`,
+  `read_failures`. Kind-generic: the kind is the zone's own civzone_type name
+  and the furniture comes from `ZONE_POLICY[kind].furniture_kinds`, no Office
+  branch. Refuses a zone over 625 tiles. Output has ids and width/height, no
+  coordinates.
+- Tile-in-zone test reused, not invented: the zone's rectangular footprint
+  (the set `df-overseer-surface.lua` `footprint_tiles` walks) and
+  `dfhack.buildings.findAtTile` (the lookup `zone_tile` uses).
+- `df-overseer-nobles.lua`: `room_value_status` now calls the same helper via
+  `reqscript('df-overseer-zone')`. met if any description is non-empty;
+  not_met only if no owned zone of the kind, or every owned zone has zero
+  buildings of the kind's furniture; otherwise cannot_tell (detail says the
+  description was empty, the zone holds qualifying furniture, and the game's
+  nobles screen is the arbiter). An unbuilt chair still gives cannot_tell.
+  Failed reads (description or contents) give cannot_tell, `read_failures` and
+  `dfhack.printerr` (kept). `requirements` is now a global function so tests
+  and reqscript can call it.
+- Manifest `TOOLS.yaml` (new `contents` entry, corrected `requirements`
+  notes), `dfmcp/tools.py` (ZONE_ID description), `zone.contents` granted
+  read-only to architect, consultant and overseer as `planned`.
+- Tests: `tests/test_room_proxy_lua_logic.py` (17 cases, lupa) and
+  `tests/test_zone_tool_manifest.py` extended. One existing assertion's slice
+  end marker moved (`place_fn` used to run to the module-load guard, which now
+  follows the contents block).
+- Baselines: ambient 1511 passed, 3 skipped (was 1494, +17); `dfmcp/tests` in
+  `.venv-dfmcp` 652 passed.
+- Incident test proven: run against the pre-change nobles.lua
+  (`git show HEAD:...` via `NOBLES_LUA_OVERRIDE`), `test_empty_description_
+  with_furniture_inside_is_cannot_tell` FAILS (as do the failed-contents-read
+  and unbuilt-chair cases); all 17 pass on the new script.
+- Research addendum appended to `research/2026-09-23-room-and-zone-requirements.md`.
+
+Live check owed (not run; the deployed script has neither verb): after deploy,
+`nobles requirements MANAGER` must report the Office `cannot_tell` (owned zone,
+chair inside, description empty), never `not_met`, and `zone contents 13` must
+list the chair building. What it cannot see: the fake world proves the logic,
+not that the real `findAtTile`, `getBuildStage`/`getMaxBuildStage` and
+`contained_items` behave as stubbed, and not whether the game accepts the room.
+
+Flagged, not changed (out of scope): `zone_room_value_status` in
+`df-overseer-zone.lua` (`zone list`'s `room_value_status`) still maps an empty
+description to `not_met`, the same false-negative inference.
