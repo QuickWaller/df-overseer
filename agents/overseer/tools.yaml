@@ -538,6 +538,15 @@ write:
       anywhere; the first real apply needs its own go-ahead and the live check
       in that handoff's Result (throwaway site, dry run first).
 
+  - id: "blueprint.release"
+    status: planned
+    note: >-
+      Added handoffs/2026-09-24-blueprint-access.md. Withdraws the dig
+      designations of a stalled site (blueprint.status dig.state stalled) via
+      quickfort undo; refuses a site that is not stalled. Mutating, so the
+      overseer only (dfmcp/roles.py rule 2). DRY_RUN defaults to true. Never
+      run live.
+
 planned:
   - id: "queue.plan"
     status: planned

@@ -25,7 +25,8 @@ import pytest
 lupa = pytest.importorskip("lupa")
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
-LUA = REPO_ROOT / "scripts" / "dfhack" / "df-overseer-blueprint.lua"
+LUA = Path(os.environ.get("BLUEPRINT_LUA_UNDER_TEST")
+           or REPO_ROOT / "scripts" / "dfhack" / "df-overseer-blueprint.lua")
 STUB = REPO_ROOT / "tests" / "lua_stubs" / "dfhack_blueprint_world.lua"
 TEMPLATE = REPO_ROOT / "blueprints" / "templates" / "bedroom-cell-v1.csv"
 
@@ -67,11 +68,23 @@ class World:
             return _py(r[0]), (_py(r[1]) if len(r) > 1 else None)
         return _py(r), None
 
-    def stone_block(self, x0, y0, z=5, soil_column=False):
+    def stone_block(self, x0, y0, z=5, soil_column=False, open_sides="nsew", hidden_below_north=False):
+        """A 5x5 standing-stone block, with revealed walkable floor touching the
+        sides named in open_sides (n, s, e, w). hidden_below_north reproduces
+        the live site-1 pattern: only the north ring row is revealed, the other
+        20 cells are unrevealed solid rock."""
         self.lua.eval(
-            "function(x0, y0, z, soil) for x = x0, x0 + 4 do for y = y0, y0 + 4 do "
-            "set_tile(x, y, z, 'WALL', (soil and x == x0) and 'SOIL' or 'STONE') end end end"
-        )(x0, y0, z, soil_column)
+            "function(x0, y0, z, soil, sides, hide) "
+            "for x = x0, x0 + 4 do for y = y0, y0 + 4 do "
+            "set_tile(x, y, z, 'WALL', (soil and x == x0) and 'SOIL' or 'STONE', 'NORMAL', "
+            "{hidden = hide and y > y0}) end end "
+            "for i = 0, 4 do "
+            "if sides:find('n') then set_tile(x0 + i, y0 - 1, z, 'FLOOR', 'STONE') end "
+            "if sides:find('s') then set_tile(x0 + i, y0 + 5, z, 'FLOOR', 'STONE') end "
+            "if sides:find('w') then set_tile(x0 - 1, y0 + i, z, 'FLOOR', 'STONE') end "
+            "if sides:find('e') then set_tile(x0 + 5, y0 + i, z, 'FLOOR', 'STONE') end "
+            "end end"
+        )(x0, y0, z, soil_column, open_sides, hidden_below_north)
 
     def qf_output(self, text):
         self.lua.execute("QF_OUTPUT = %r" % text)
@@ -280,3 +293,167 @@ def test_no_result_carries_a_coordinate_key(world):
     for o in outs:
         walk(o)
     assert "10,10,5" not in json.dumps(outs)
+
+
+# ---------------------------------------------------------------------------
+# handoffs/2026-09-24-blueprint-access.md: orientation, the access gate, stall
+# ---------------------------------------------------------------------------
+
+CARVE = [(x, y) for x in (11, 12, 13) for y in (11, 12, 13)] + [(12, 14)]   # site at (10,10)
+
+
+def incident(world):
+    """The live site-1 pattern: only the north ring row revealed (with open floor
+    beyond it), the other 20 cells unrevealed solid rock, and the template's one
+    entrance facing SOUTH, into the hidden side."""
+    world.stone_block(10, 10, open_sides="n", hidden_below_north=True)
+    world.qf_output(DIG_OK)
+
+
+def test_the_incident_site_flips_to_face_the_reachable_side(world):
+    incident(world)
+    r, err = world.call("preview_phase", BP, SHELL, "Well")
+    assert err is None
+    assert r["site"]["orientation"] == "rot180"
+    assert r["entrance_reachable"] is True and r["dig_can_start"] is True and r["ok"] is True
+    tried = {t["orientation"]: t for t in r["site"]["orientations_tried"]}
+    assert tried["none"]["entrance_reachable"] is False
+    assert tried["rot180"]["entrance_reachable"] is True and tried["rot180"]["carve_cells_unreachable"] == 0
+    assert world.calls() == ["quickfort run templates/bedroom-cell-v1.csv -c 14,14,5 -n /" + SHELL + " -t rotcw,rotcw -d"]
+
+
+@pytest.mark.parametrize("side,orient,cursor,flag", [
+    ("s", "none", "10,10,5", None),
+    ("n", "rot180", "14,14,5", "rotcw,rotcw"),
+    ("w", "rotcw", "14,10,5", "rotcw"),     # rotcw sends the south entrance to the west edge
+    ("e", "rotccw", "10,14,5", "rotccw"),   # rotccw sends it to the east edge
+])
+def test_each_open_side_picks_the_orientation_that_faces_it(world, side, orient, cursor, flag):
+    world.stone_block(10, 10, open_sides=side)
+    world.qf_output(DIG_OK)
+    r, _ = world.call("preview_phase", BP, SHELL, "Well")
+    assert r["site"]["orientation"] == orient and r["dig_can_start"] is True
+    call = world.calls()[-1]
+    assert " -c " + cursor + " " in call
+    assert (" -t " + flag + " " in call) if flag else (" -t " not in call)
+
+
+def test_a_fully_hidden_site_is_refused_on_apply_and_flagged_in_preview(world):
+    world.stone_block(10, 10, open_sides="")
+    world.qf_output(DIG_OK)
+    pv, _ = world.call("preview_phase", BP, SHELL, "Well")
+    assert pv["ok"] is False and pv["entrance_reachable"] is False and pv["dig_can_start"] is False
+    assert "cannot start" in pv["would_strand"]
+    n = len(world.calls())
+    r, _ = world.call("apply_phase", BP, SHELL, "Well", "false")
+    assert r["blocked"] is True and r["ok"] is False and r["stranded_override_used"] is False
+    assert "cannot start" in r["blocked_reason"]
+    assert len(world.calls()) == n, "quickfort must not run on a refused apply"
+    assert not world.call("list_sites")[0], "a refused apply must register no site"
+
+
+def test_the_override_is_explicit_named_and_reported(world):
+    world.stone_block(10, 10, open_sides="")
+    world.qf_output(DIG_OK)
+    r, _ = world.call("apply_phase", BP, SHELL, "Well", "false", None, None, None, "true")
+    assert r.get("blocked") is None and r["stranded_override_used"] is True
+    assert r["site"]["handle"] == "site-1" and "cannot start" in r["would_strand"]
+    # anything but an explicit true is not an override
+    w2, _ = world.call("apply_phase", BP, SHELL, "Well", "false", None, None, None, "maybe")
+    assert w2["blocked"] is True
+
+
+def _stalled_site(world):
+    world.stone_block(10, 10, open_sides="")
+    world.qf_output(DIG_OK)
+    world.call("apply_phase", BP, SHELL, "Well", "false", None, None, None, "true")
+    for x, y in CARVE:
+        world.lua.eval("set_dig")(x, y, 5, 1)
+
+
+def test_status_names_a_stall_when_designations_have_no_job_and_no_walkable_neighbour(world):
+    _stalled_site(world)
+    st, err = world.call("site_status", "site-1")
+    assert err is None
+    assert st["stalled"] is True and st["dig"]["state"] == "stalled"
+    assert st["dig"]["pending_dig_designations"] == 10 and st["dig"]["designations_without_a_job"] == 10
+    assert st["dig"]["blind_no_walkable_neighbour"] == 10
+    assert "release" in st["stall_remedy"]
+
+
+def test_status_reads_in_progress_when_a_dig_job_exists(world):
+    _stalled_site(world)
+    world.lua.execute('set_jobs({{job_type = "Dig", x = 12, y = 14, z = 5}})')
+    st, _ = world.call("site_status", "site-1")
+    assert st["stalled"] is False and st["dig"]["state"] == "in_progress"
+    assert st["dig"]["designations_with_a_job"] == 1
+
+
+def test_startable_designations_without_a_job_stall_only_after_the_grace_period(world):
+    world.stone_block(10, 10, open_sides="s")
+    world.qf_output(DIG_OK)
+    world.call("apply_phase", BP, SHELL, "Well", "false")
+    for x, y in CARVE:
+        world.lua.eval("set_dig")(x, y, 5, 1)
+    world.lua.execute("NOW = 1234 + 100")
+    st, _ = world.call("site_status", "site-1")
+    assert st["dig"]["state"] == "in_progress" and st["dig"]["startable_no_job_yet"] >= 1
+    world.lua.execute("NOW = 1234 + 5000")
+    st, _ = world.call("site_status", "site-1")
+    assert st["dig"]["state"] == "stalled" and st["dig"]["blind_no_walkable_neighbour"] < 10
+    assert st["dig"]["designations_with_a_job"] == 0
+
+
+def test_no_pending_designations_is_none_pending_not_stalled(world):
+    world.stone_block(10, 10, open_sides="s")
+    world.qf_output(DIG_OK)
+    world.call("apply_phase", BP, SHELL, "Well", "false")
+    st, _ = world.call("site_status", "site-1")
+    assert st["dig"]["state"] == "none_pending" and st["stalled"] is False
+
+
+def test_release_undoes_only_a_stalled_sites_dig_phases_in_its_orientation(world):
+    _stalled_site(world)
+    dry, err = world.call("release_site", "site-1")
+    assert err is None and dry["dry_run"] is True and dry["released"] is False
+    assert world.calls()[-1] == "quickfort undo templates/bedroom-cell-v1.csv -c 10,10,5 -n /" + SHELL + " -d"
+
+    def clear(cmd, args):
+        for x, y in CARVE:
+            world.lua.eval("set_dig")(x, y, 5, 0)
+    world.lua.globals().ON_QF = clear
+    real, _ = world.call("release_site", "site-1", "false")
+    assert real["released"] is True and real["site_forgotten"] is True
+    assert "already dug out" in real["cannot_undo"]
+    assert not world.call("list_sites")[0]
+
+
+def test_release_refuses_a_site_that_is_not_stalled(world):
+    world.stone_block(10, 10, open_sides="s")
+    world.qf_output(DIG_OK)
+    world.call("apply_phase", BP, SHELL, "Well", "false")
+    n = len(world.calls())
+    r, _ = world.call("release_site", "site-1", "false")
+    assert r["released"] is False and "not stalled" in r["refused"]
+    assert len(world.calls()) == n
+
+
+def test_release_will_not_undo_a_zone_or_building_phase(world):
+    world.stone_block(10, 10, open_sides="s")
+    world.qf_output(DIG_OK)
+    world.call("apply_phase", BP, SHELL, "Well", "false")
+    world.carve_and_smooth()
+    world.qf_output(FINISH_OK)
+    world.call("apply_phase", BP, FINISH, "site-1", "false")
+    r, _ = world.call("release_site", "site-1", "false")
+    assert r["released"] is False and "not a dig phase" in r["refused"]
+
+
+def test_a_second_dig_on_a_stored_site_is_gated_by_its_stored_orientation(world):
+    incident(world)
+    world.call("apply_phase", BP, SHELL, "Well", "false")     # flips to rot180, registers it
+    listing, _ = world.call("list_sites")
+    assert listing[0]["handle"] == "site-1"
+    r, _ = world.call("preview_phase", BP, SHELL, "site-1")
+    assert r["site"]["orientation"] == "rot180" and r["dig_can_start"] is True
+    assert " -t rotcw,rotcw" in world.calls()[-1]

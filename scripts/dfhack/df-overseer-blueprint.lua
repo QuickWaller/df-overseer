@@ -112,9 +112,10 @@
 --
 -- Usage: ./dfhack-run df-overseer-blueprint plan TEMPLATE
 -- Usage: ./dfhack-run df-overseer-blueprint preview TEMPLATE PHASE SITE [LEVEL] [RANK] [RADIUS_TILES]
--- Usage: ./dfhack-run df-overseer-blueprint apply TEMPLATE PHASE SITE [DRY_RUN] [LEVEL] [RANK] [RADIUS_TILES]
+-- Usage: ./dfhack-run df-overseer-blueprint apply TEMPLATE PHASE SITE [DRY_RUN] [LEVEL] [RANK] [RADIUS_TILES] [ALLOW_STRANDED]
 -- Usage: ./dfhack-run df-overseer-blueprint sites
 -- Usage: ./dfhack-run df-overseer-blueprint status SITE_ID
+-- Usage: ./dfhack-run df-overseer-blueprint release SITE_ID [DRY_RUN]
 
 local json = require('json')
 local landmarks_mod = reqscript('df-overseer-landmarks')
@@ -141,6 +142,56 @@ local NEEDS_DUG_SHELL = {build = true, place = true, zone = true}
 -- Symbols whose meaning in a `dig` section is "this cell is carved out".
 local CARVE_SYMBOLS = {d = true, h = true, u = true, j = true, i = true, r = true}
 local SMOOTH_SYMBOL = 's'
+
+-- ORIENTATION (handoffs/2026-09-24-blueprint-access.md). Quickfort's
+-- `-t/--transform` (command.lua:301-303) takes names from transform.lua:57-68
+-- (rotcw, rotccw, fliph, flipv), comma or space separated
+-- (parse.lua:345-348), and rotates every cell about the CURSOR (-c), not
+-- about the blueprint's own centre (transform.lua:40-49): a rotated blueprint
+-- therefore lands up and to the left of the cursor unless the cursor is moved.
+-- `cursor_for` and `orient_cell` below are the closed forms of that, for a
+-- blueprint whose cell (1,1) is its origin (start() is refused at load).
+-- Four rotations only: they reach every edge, so an entrance can face any
+-- side. Flips are never tried: a template's .csv carries no "may be mirrored"
+-- marker (a mirrored bed or door direction is a different design).
+-- Preference order is the order here: no transform first.
+local ORIENT_BY_NAME = {}
+local ORIENTS = {
+  {name = "none", t = nil, swap = false},
+  {name = "rotcw", t = "rotcw", swap = true},
+  {name = "rot180", t = "rotcw,rotcw", swap = false},
+  {name = "rotccw", t = "rotccw", swap = true},
+}
+for _, o in ipairs(ORIENTS) do ORIENT_BY_NAME[o.name] = o end
+local LABEL_UNDIG ="Tiles undesignated for digging"
+-- A startable designation with no job after this many game ticks since the
+-- apply is reported as stalled too (a dwarf should have claimed it by then).
+local STALL_TICKS = 600
+
+-- Blueprint cell (cx,cy), 1-based, in a blueprint of bw x bh cells -> the same
+-- cell, 1-based, relative to the top-left of the (oriented) site rectangle.
+local function orient_cell(oname, cx, cy, bw, bh)
+  local dx, dy = cx - 1, cy - 1
+  if oname == "rotcw" then return (bh - 1) - dy + 1, dx + 1
+  elseif oname == "rot180" then return (bw - 1) - dx + 1, (bh - 1) - dy + 1
+  elseif oname == "rotccw" then return dy + 1, (bw - 1) - dx + 1 end
+  return cx, cy
+end
+
+-- The -c cursor that makes the transformed blueprint fill the site rectangle.
+local function cursor_for(oname, site)
+  local bw, bh = site.bw or site.w, site.bh or site.h
+  if oname == "rotcw" then return site.x + bh - 1, site.y
+  elseif oname == "rot180" then return site.x + bw - 1, site.y + bh - 1
+  elseif oname == "rotccw" then return site.x, site.y + bw - 1 end
+  return site.x, site.y
+end
+
+-- World tile of a blueprint cell for a site (its orientation is on the site).
+local function cell_xy(site, cx, cy)
+  local rx, ry = orient_cell(site.orient or "none", cx, cy, site.bw or site.w, site.bh or site.h)
+  return site.x + rx - 1, site.y + ry - 1
+end
 
 -- What quickfort prints that is progress, not a problem (command.lua:183-196,
 -- dig.lua:890-901, build.lua:1321-1324, zone.lua:388-395, meta.lua:83).
@@ -439,7 +490,8 @@ local function finish_state(site, leaves, failures)
       for _, c in ipairs(sec.cells) do
         if c.text == SMOOTH_SYMBOL then
           out.required_cells = out.required_cells + 1
-          local t = tile_info(site.x + c.x - 1, site.y + c.y - 1, site.z)
+          local cxw, cyw = cell_xy(site, c.x, c.y)
+          local t = tile_info(cxw, cyw, site.z)
           if not t.ok then
             out.unreadable = out.unreadable + 1
             note_failure(failures, "finish cell", t.err)
@@ -489,7 +541,8 @@ local function shell_prerequisites(site, leaves_all, failures)
       for _, c in ipairs(sec.cells) do
         if CARVE_SYMBOLS[c.text] then
           checked = checked + 1
-          local t = tile_info(site.x + c.x - 1, site.y + c.y - 1, site.z)
+          local cxw, cyw = cell_xy(site, c.x, c.y)
+          local t = tile_info(cxw, cyw, site.z)
           if not t.ok then note_failure(failures, "carve cell", t.err)
           elseif t.hidden or t.shape == df.tiletype_shape.WALL then undug = undug + 1 end
         end
@@ -501,6 +554,218 @@ local function shell_prerequisites(site, leaves_all, failures)
 end
 
 -- ---------------------------------------------------------------------------
+-- Access: can the dig start at all? (handoffs/2026-09-24-blueprint-access.md)
+--
+-- The live failure (handoffs/2026-09-24-blueprint-access.md, the stalled 2026-09-24 dig): designations on
+-- hidden solid rock with no walkable neighbour never get a dig job, ever.
+-- DF only makes a job for a tile a dwarf can path next to. Tri-state reads
+-- throughout: true / false / nil (nil = the read failed, recorded in
+-- read_failures; never defaulted to either answer).
+-- ---------------------------------------------------------------------------
+
+-- Is this tile revealed and part of a walkable group?
+local function walkable_at(x, y, z, failures)
+  if not dfhack.maps.isValidTilePos(x, y, z) then return false end
+  local okv, visible = pcall(dfhack.maps.isTileVisible, x, y, z)
+  if not okv then note_failure(failures, "walkable neighbour visibility", visible); return nil end
+  if not visible then return false end
+  local ok, group = pcall(dfhack.maps.getWalkableGroup, xyz2pos(x, y, z))
+  if not ok then note_failure(failures, "walkable group", group); return nil end
+  return group ~= nil and group ~= 0
+end
+
+-- true if any of the 8 neighbours is revealed walkable ground; nil if none is
+-- and some read failed; false if none is and every read succeeded.
+local function walkable_neighbour(x, y, z, failures)
+  local unknown = false
+  for dx = -1, 1 do
+    for dy = -1, 1 do
+      if dx ~= 0 or dy ~= 0 then
+        local w = walkable_at(x + dx, y + dy, z, failures)
+        if w == true then return true end
+        if w == nil then unknown = true end
+      end
+    end
+  end
+  if unknown then return nil end
+  return false
+end
+
+-- Entrance analysis of a dig phase in ONE orientation. The carve cells are the
+-- dig sections' own `d`-type cells; the entrances are those on the oriented
+-- footprint's outer edge. Reachable = at least one entrance is already open
+-- ground or touches revealed walkable ground; every carve cell then has to be
+-- connected to a reachable entrance through carve cells (8-neighbour, the way
+-- digging proceeds). Data-driven: no room kind is named.
+local function entrance_analysis(site, dig_sections, failures)
+  local cells, key_of = {}, {}
+  for _, sec in ipairs(dig_sections) do
+    for _, c in ipairs(sec.cells) do
+      if CARVE_SYMBOLS[c.text] then
+        local rx, ry = orient_cell(site.orient or "none", c.x, c.y, site.bw or site.w, site.bh or site.h)
+        local k = rx .. "," .. ry
+        if not key_of[k] then
+          key_of[k] = true
+          cells[#cells + 1] = {rx = rx, ry = ry, x = site.x + rx - 1, y = site.y + ry - 1}
+        end
+      end
+    end
+  end
+  local out = {carve_cells = #cells, entrances = 0, entrance_reachable = false,
+    carve_cells_reachable = 0, carve_cells_unreachable = #cells}
+  if #cells == 0 then
+    out.entrance_reachable = NULL
+    out.carve_cells_unreachable = 0
+    return out
+  end
+  local reach, queue, unknown = {}, {}, false
+  for _, c in ipairs(cells) do
+    if c.rx == 1 or c.ry == 1 or c.rx == site.w or c.ry == site.h then
+      out.entrances = out.entrances + 1
+      local t = tile_info(c.x, c.y, site.z)
+      local open
+      if not t.ok then note_failure(failures, "entrance tile", t.err); open = nil
+      elseif not t.hidden and t.shape ~= df.tiletype_shape.WALL then open = true
+      else
+        open = false
+        -- neighbours outside the site rectangle only: the ring inside it is the
+        -- room's own wall
+        local sawunknown = false
+        for dx = -1, 1 do
+          for dy = -1, 1 do
+            local nx, ny = c.x + dx, c.y + dy
+            local inside = nx >= site.x and nx <= site.x + site.w - 1
+              and ny >= site.y and ny <= site.y + site.h - 1
+            if (dx ~= 0 or dy ~= 0) and not inside then
+              local w = walkable_at(nx, ny, site.z, failures)
+              if w == true then open = true end
+              if w == nil then sawunknown = true end
+            end
+          end
+        end
+        if not open and sawunknown then open = nil end
+      end
+      if open == true then
+        reach[c.rx .. "," .. c.ry] = true
+        queue[#queue + 1] = c
+      elseif open == nil then
+        unknown = true
+      end
+    end
+  end
+  local n = 0
+  while #queue > 0 do
+    local c = table.remove(queue)
+    n = n + 1
+    for _, d in ipairs(cells) do
+      local k = d.rx .. "," .. d.ry
+      if not reach[k] and math.abs(d.rx - c.rx) <= 1 and math.abs(d.ry - c.ry) <= 1 then
+        reach[k] = true
+        queue[#queue + 1] = d
+      end
+    end
+  end
+  out.carve_cells_reachable = n
+  out.carve_cells_unreachable = #cells - n
+  if n > 0 then out.entrance_reachable = true
+  elseif unknown then out.entrance_reachable = NULL
+  else out.entrance_reachable = false end
+  return out
+end
+
+-- Every dig job (dig, carve, smooth) currently in the game inside the site
+-- rectangle, as a set keyed "x,y". Bounded by MAX_JOBS_SCANNED. Returns
+-- set, count, err.
+local MAX_JOBS_SCANNED = 20000
+local function dig_jobs_in_site(site, failures)
+  local set, count = {}, 0
+  local ok, err = pcall(function()
+    local link = df.global.world.jobs.list.next
+    local scanned = 0
+    while link and scanned < MAX_JOBS_SCANNED do
+      scanned = scanned + 1
+      local job = link.item
+      if job and job.pos.z == site.z
+          and job.pos.x >= site.x and job.pos.x <= site.x + site.w - 1
+          and job.pos.y >= site.y and job.pos.y <= site.y + site.h - 1 then
+        local name = df.job_type[job.job_type] or ""
+        if name:match('^Dig') or name:match('^Carve') or name:match('^Smooth') then
+          local k = job.pos.x .. "," .. job.pos.y
+          if not set[k] then count = count + 1 end
+          set[k] = true
+        end
+      end
+      link = link.next
+    end
+  end)
+  if not ok then
+    note_failure(failures, "job census", err)
+    return nil, 0, tostring(err)
+  end
+  return set, count, nil
+end
+
+-- The post-apply proof: designations landed vs dig jobs that exist. Per
+-- pending dig designation: has_job / blind (no walkable neighbour) /
+-- startable (a dwarf can reach it, no job yet). Four states, never a default:
+--   none_pending, in_progress, stalled, unknown.
+-- stalled: nothing is pending that has a job, and either every pending
+-- designation is blind (it can never start), or startable ones have sat
+-- without a job for STALL_TICKS game ticks since the apply.
+local function dig_progress(site, failures, applied_tick)
+  local jobs, _, jerr = dig_jobs_in_site(site, failures)
+  local pending, with_job, blind, startable, unknown = 0, 0, 0, 0, 0
+  for x = site.x, site.x + site.w - 1 do
+    for y = site.y, site.y + site.h - 1 do
+      local ok, flags = pcall(dfhack.maps.getTileFlags, xyz2pos(x, y, site.z))
+      if not ok or not flags then
+        note_failure(failures, "dig progress designation", flags)
+        unknown = unknown + 1
+      elseif flags.dig ~= df.tile_dig_designation.No then
+        pending = pending + 1
+        if jobs and jobs[x .. "," .. y] then
+          with_job = with_job + 1
+        else
+          local nb = walkable_neighbour(x, y, site.z, failures)
+          if nb == true then startable = startable + 1
+          elseif nb == false then blind = blind + 1
+          else unknown = unknown + 1 end
+        end
+      end
+    end
+  end
+  local okt, tick = pcall(dfhack.world.ReadCurrentTick)
+  local since = (okt and applied_tick) and (tick - applied_tick) or nil
+  local state
+  if pending == 0 and unknown == 0 then state = "none_pending"
+  elseif jerr and with_job == 0 and blind < pending then state = "unknown"
+  elseif with_job > 0 then state = "in_progress"
+  elseif blind == pending and unknown == 0 then state = "stalled"
+  elseif startable > 0 and since and since >= STALL_TICKS and unknown == 0 then state = "stalled"
+  elseif startable > 0 and unknown == 0 then state = "in_progress"
+  else state = "unknown" end
+  return {
+    state = state,
+    pending_dig_designations = pending,
+    designations_with_a_job = with_job,
+    designations_without_a_job = pending - with_job,
+    blind_no_walkable_neighbour = blind,
+    startable_no_job_yet = startable,
+    unreadable = unknown,
+    ticks_since_apply = nn(since),
+    job_census_error = nn(jerr),
+  }
+end
+
+local function stall_remedy(dp)
+  if dp.state ~= "stalled" then return NULL end
+  return "quickfort designated tiles that no dwarf can reach or has claimed: " .. tostring(dp.designations_without_a_job)
+    .. " dig designations have no job (" .. tostring(dp.blind_no_walkable_neighbour)
+    .. " touch no revealed walkable ground, so DF will never make a job for them). Do not wait: "
+    .. "`release` the site to withdraw the designations, then apply again where preview shows entrance_reachable true"
+end
+
+-- ---------------------------------------------------------------------------
 -- Surface re-read through the zone-id shim (see header)
 -- ---------------------------------------------------------------------------
 
@@ -508,10 +773,12 @@ local function surface_reread(site, room)
   if not room then
     return {skipped = "the blueprint has no zone section, so it declares no room rectangle to re-read"}
   end
+  local ax, ay = cell_xy(site, room.x1, room.y1)
+  local bx, by = cell_xy(site, room.x2, room.y2)
   local rect = {
     id = 0,
-    x1 = site.x + room.x1 - 1, y1 = site.y + room.y1 - 1,
-    x2 = site.x + room.x2 - 1, y2 = site.y + room.y2 - 1, z = site.z,
+    x1 = math.min(ax, bx), y1 = math.min(ay, by),
+    x2 = math.max(ax, bx), y2 = math.max(ay, by), z = site.z,
   }
   local fns = {enclosure = surface_mod.enclosure, finish = surface_mod.finish,
     material = surface_mod.boundary_material}
@@ -565,9 +832,12 @@ local function parse_stats(output)
   return stats
 end
 
-local function run_quickfort(qname, label, site, dry)
-  local coord = string.format('%d,%d,%d', site.x, site.y, site.z)
-  local argv = {'run', qname, '-c', coord, '-n', '/' .. label}
+local function run_quickfort(qname, label, site, dry, verb)
+  local o = ORIENT_BY_NAME[site.orient or "none"]
+  local cx, cy = cursor_for(o.name, site)
+  local coord = string.format('%d,%d,%d', cx, cy, site.z)
+  local argv = {verb or 'run', qname, '-c', coord, '-n', '/' .. label}
+  if o.t then argv[#argv + 1] = '-t'; argv[#argv + 1] = o.t end
   if dry then argv[#argv + 1] = '-d' end
   local ok, output, res = pcall(dfhack.run_command_silent, 'quickfort', table.unpack(argv))
   local stats = ok and parse_stats(output) or {}
@@ -650,7 +920,7 @@ function plan_template(name)
 end
 
 -- The one implementation behind `preview` (always dry) and `apply`.
-local function run_phase(name, phase, site_arg, level, rank, radius, dry)
+local function run_phase(name, phase, site_arg, level, rank, radius, dry, allow_stranded)
   local bp, err = load_blueprint(name)
   if not bp then return nil, err end
   if not valid_name(phase) then return nil, "PHASE must be a section label from `plan`" end
@@ -673,6 +943,17 @@ local function run_phase(name, phase, site_arg, level, rank, radius, dry)
     read_failures = failures,
   }
 
+  -- Which cells of this phase are carved out (the entrances, and so the
+  -- reachability question, come from the blueprint's own `d`-type cells).
+  local dig_leaves, carve_needed = {}, false
+  for _, l in ipairs(leaves) do
+    if l.mode == "dig" then
+      dig_leaves[#dig_leaves + 1] = l
+      for _, c in ipairs(l.cells) do if CARVE_SYMBOLS[c.text] then carve_needed = true end end
+    end
+  end
+  local tried, chosen_ok, analysis = {}, false, nil
+
   -- Site: a stored handle, or a new one found near a landmark.
   local site, handle, state
   if is_handle(site_arg) then
@@ -692,13 +973,81 @@ local function run_phase(name, phase, site_arg, level, rank, radius, dry)
     if sec.mode ~= "dig" and not (sec.mode == "meta" and leaves[1] and leaves[1].mode == "dig") then
       return nil, "a new site can only be found for a phase that starts by digging; give a site-N handle for phase '" .. phase .. "'"
     end
-    local found, ferr = find_new_site(bp, site_arg, level, rank, radius)
-    if not found then return nil, ferr end
-    site = found
+    -- Try every orientation the template can take, and choose the first whose
+    -- entrance touches revealed walkable ground (see "Access" above). Sites
+    -- are found per footprint shape: a quarter turn of a non-square template
+    -- swaps width and height, so its rectangle is searched for separately.
+    local by_dims, first_err = {}, nil
+    for _, o in ipairs(ORIENTS) do
+      if o.name == "none" or carve_needed then
+        local w, h = bp.w, bp.h
+        if o.swap then w, h = h, w end
+        local dkey = w .. "x" .. h
+        if by_dims[dkey] == nil then
+          local f, ferr = find_new_site({w = w, h = h}, site_arg, level, rank, radius)
+          by_dims[dkey] = f or {err = ferr}
+        end
+        local f = by_dims[dkey]
+        if f.err then
+          if o.name == "none" then return nil, f.err end
+          tried[#tried + 1] = {orientation = o.name, entrance_reachable = NULL, error = f.err}
+        else
+          local cand = {x = f.x, y = f.y, z = f.z, w = w, h = h, any_hidden = f.any_hidden,
+            orient = o.name, bw = bp.w, bh = bp.h}
+          local ea = carve_needed and entrance_analysis(cand, dig_leaves, failures) or nil
+          local entry = {orientation = o.name, entrance_reachable = NULL,
+            carve_cells_reachable = NULL, carve_cells_unreachable = NULL,
+            interior_fully_revealed = not f.any_hidden}
+          if ea then   -- (no and/or idiom here: a false answer must stay false)
+            entry.entrance_reachable = ea.entrance_reachable
+            entry.carve_cells_reachable = ea.carve_cells_reachable
+            entry.carve_cells_unreachable = ea.carve_cells_unreachable
+          end
+          tried[#tried + 1] = entry
+          if not site then site, analysis = cand, ea end   -- fallback: the first
+          if ea and ea.entrance_reachable == true and ea.carve_cells_unreachable == 0
+              and not chosen_ok then
+            site, analysis, chosen_ok = cand, ea, true
+          end
+        end
+      end
+    end
     result.site = {handle = NULL, source = "found", rank = rank or 1,
       note = dry and "a real apply registers this as a new site-N handle"
         or "registered below on success",
-      interior_fully_revealed = not found.any_hidden}
+      interior_fully_revealed = not site.any_hidden,
+      orientation = site.orient, orientations_tried = tried}
+  end
+  if handle then
+    analysis = carve_needed and entrance_analysis(site, dig_leaves, failures) or nil
+    result.site.orientation = site.orient or "none"
+  end
+  -- The access gate: a dig whose entrance touches no revealed walkable ground
+  -- (in the chosen orientation, or in any, for a new site) can be designated
+  -- but no dwarf can start it. Never applied silently.
+  local dig_can_start = true
+  if carve_needed and analysis then
+    dig_can_start = (analysis.entrance_reachable == true and analysis.carve_cells_unreachable == 0)
+    result.access = analysis
+    result.entrance_reachable = analysis.entrance_reachable
+    result.dig_can_start = dig_can_start
+  end
+  if not dig_can_start then
+    local why = string.format(
+      "the dig cannot start: in the chosen orientation the template's entrance touches no revealed walkable ground "
+      .. "(%d of %d carve cells reachable) and no tried orientation is better. quickfort would designate the tiles "
+      .. "and DF would never make a dig job for them (handoffs/2026-09-24-blueprint-access.md, the stalled 2026-09-24 dig). Pick another RANK, RADIUS "
+      .. "or landmark, or open a corridor to the site first",
+      analysis.carve_cells_reachable, analysis.carve_cells)
+    if not dry and not allow_stranded then
+      result.blocked = true
+      result.blocked_reason = why
+      result.ok = false
+      result.stranded_override_used = false
+      return result
+    end
+    result.would_strand = why
+    result.stranded_override_used = (not dry) and allow_stranded and true or false
   end
   if site.w * site.h > MAX_SITE_TILES then
     return nil, "site footprint is over this tool's " .. MAX_SITE_TILES .. "-tile bound"
@@ -744,7 +1093,7 @@ local function run_phase(name, phase, site_arg, level, rank, radius, dry)
     problems = problems,
   }
   result.designated = designated
-  result.ok = ok
+  result.ok = ok and dig_can_start
 
   if dry then
     result.would_designate = total
@@ -757,6 +1106,7 @@ local function run_phase(name, phase, site_arg, level, rank, radius, dry)
     handle = "site-" .. tostring(state.next_id)
     state.next_id = state.next_id + 1
     state.sites[handle] = {x = site.x, y = site.y, z = site.z, w = site.w, h = site.h,
+      orient = site.orient or "none", bw = site.bw or site.w, bh = site.bh or site.h,
       blueprint = bp.name, phases = {}}
     result.site.handle = handle
   end
@@ -782,8 +1132,15 @@ function preview_phase(name, phase, site_arg, level, rank, radius)
   return run_phase(name, phase, site_arg, level, rank, radius, true)
 end
 
-function apply_phase(name, phase, site_arg, dry_run, level, rank, radius)
-  return run_phase(name, phase, site_arg, level, rank, radius, truthy_dry_run(dry_run))
+local function explicit_true(v)
+  if v == nil then return false end
+  local s = tostring(v):lower()
+  return s == "true" or s == "1" or s == "yes"
+end
+
+function apply_phase(name, phase, site_arg, dry_run, level, rank, radius, allow_stranded)
+  return run_phase(name, phase, site_arg, level, rank, radius, truthy_dry_run(dry_run),
+    explicit_true(allow_stranded))
 end
 
 function list_sites()
@@ -816,8 +1173,14 @@ function site_status(handle)
   local pre = shell_prerequisites(site, all_leaves, failures)
   local fin = finish_state(site, all_leaves, failures)
   local b = site_brief(site)
+  local last = (site.phases or {})[#(site.phases or {})]
+  local dp = dig_progress(site, failures, last and last.tick or nil)
   return {
     handle = handle, blueprint = site.blueprint, phases_applied = phases,
+    orientation = site.orient or "none",
+    dig = dp,
+    stalled = dp.state == "stalled",
+    stall_remedy = stall_remedy(dp),
     site = {near_landmark = b.near_landmark, direction = b.direction, distance_tiles = b.distance_tiles,
       footprint = {width = site.w, height = site.h}},
     shell = pre,
@@ -829,6 +1192,75 @@ function site_status(handle)
     surface = surface_reread(site, bp.room),
     read_failures = failures,
   }
+end
+
+-- release SITE_ID [DRY_RUN]: withdraw the dig designations of a STALLED site
+-- (handoffs/2026-09-24-blueprint-access.md item 4). Uses quickfort's own
+-- `undo` (command.lua:23-27) on each dig phase applied to the site, in the
+-- site's own orientation, so it clears exactly the tiles the apply set.
+-- dig.lua:139-141: undo "just sets a sensible default" (dig No, smooth 0),
+-- it does not restore whatever the tile held before. dig.lua:870-876: a real
+-- run removes an existing job at each tile first, so a claimed job goes too.
+-- CAN undo: outstanding dig/smooth designations and their unstarted jobs.
+-- CANNOT undo: a tile already dug out, a wall already smoothed (the tile
+-- stays as DF made it), an item, a zone or a building. Refused unless the site
+-- is stalled (it is the stall's remedy, not a general cancel) and unless every
+-- phase applied to it was a dig phase. The default is a dry run.
+function release_site(handle, dry_run)
+  if not is_handle(handle) then return nil, "SITE_ID must look like site-3 (see sites)" end
+  local state = load_state()
+  local site = state.sites[handle]
+  if not site then return nil, "no site '" .. handle .. "' (see sites)" end
+  local bp, err = load_blueprint(site.blueprint)
+  if not bp then return nil, err end
+  local dry = truthy_dry_run(dry_run)
+  local failures = {}
+  local result = {handle = handle, blueprint = bp.name, dry_run = dry, read_failures = failures}
+  local labels = {}
+  for _, p in ipairs(site.phases or {}) do
+    local sec = section_by_label(bp.sections, p.label)
+    if not sec or sec.mode ~= "dig" then
+      result.released = false
+      result.refused = "phase '" .. tostring(p.label) .. "' is not a dig phase; release withdraws dig designations only "
+        .. "and will not undo a zone, a building or a #meta bundle"
+      return result
+    end
+    labels[#labels + 1] = p.label
+  end
+  local last = (site.phases or {})[#(site.phases or {})]
+  local dp = dig_progress(site, failures, last and last.tick or nil)
+  result.dig_before = dp
+  if dp.state ~= "stalled" then
+    result.released = false
+    result.refused = "the site is '" .. dp.state .. "', not stalled; release only withdraws designations no dwarf can start"
+    return result
+  end
+  local undone = 0
+  local runs = {}
+  for i = #labels, 1, -1 do
+    local run = run_quickfort(bp.qname, labels[i], site, dry, 'undo')
+    runs[#runs + 1] = {phase = labels[i], ran = run.ran, result_ok = run.ran and run.result == CR_OK,
+      error = nn(run.error), stats = next(run.stats) and run.stats or empty_object()}
+    undone = undone + (run.stats[LABEL_UNDIG] or 0)
+  end
+  result.runs = runs
+  result.undesignated = undone
+  if dry then
+    result.released = false
+    result.note = "dry run: nothing was withdrawn. Run again with DRY_RUN false"
+    return result
+  end
+  local pending = count_pending(site, failures)
+  result.read_back = {pending_designations = pending, dig_after = dig_progress(site, failures, nil)}
+  result.released = pending == 0
+  if result.released then
+    state = load_state()
+    state.sites[handle] = nil
+    save_state(state)
+    result.site_forgotten = true
+  end
+  result.cannot_undo = "tiles already dug out and walls already smoothed stay as DF made them"
+  return result
 end
 
 -- ---------------------------------------------------------------------------
@@ -845,9 +1277,10 @@ local cmd = args[1]
 local USAGE = {
   "usage: df-overseer-blueprint plan TEMPLATE",
   "usage: df-overseer-blueprint preview TEMPLATE PHASE SITE [LEVEL] [RANK] [RADIUS_TILES]",
-  "usage: df-overseer-blueprint apply TEMPLATE PHASE SITE [DRY_RUN] [LEVEL] [RANK] [RADIUS_TILES]",
+  "usage: df-overseer-blueprint apply TEMPLATE PHASE SITE [DRY_RUN] [LEVEL] [RANK] [RADIUS_TILES] [ALLOW_STRANDED]",
   "usage: df-overseer-blueprint sites",
   "usage: df-overseer-blueprint status SITE_ID",
+  "usage: df-overseer-blueprint release SITE_ID [DRY_RUN]",
 }
 
 local function emit(res, err)
@@ -861,11 +1294,13 @@ elseif cmd == "preview" then
   else emit(preview_phase(args[2], args[3], args[4], tonumber(args[5]), tonumber(args[6]), tonumber(args[7]))) end
 elseif cmd == "apply" then
   if not (args[2] and args[3] and args[4]) then print(USAGE[3])
-  else emit(apply_phase(args[2], args[3], args[4], args[5], tonumber(args[6]), tonumber(args[7]), tonumber(args[8]))) end
+  else emit(apply_phase(args[2], args[3], args[4], args[5], tonumber(args[6]), tonumber(args[7]), tonumber(args[8]), args[9])) end
 elseif cmd == "sites" then
   print(encode(list_sites()))
 elseif cmd == "status" then
   if not args[2] then print(USAGE[5]) else emit(site_status(args[2])) end
+elseif cmd == "release" then
+  if not args[2] then print(USAGE[6]) else emit(release_site(args[2], args[3])) end
 else
   for _, l in ipairs(USAGE) do print(l) end
 end

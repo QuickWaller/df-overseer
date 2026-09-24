@@ -12,9 +12,22 @@ df = {
   tiletype_special = enum({"NORMAL","SMOOTH"}),
   tile_dig_designation = {No = 0, Default = 1},
   tiletype = {attrs = {}},
+  job_type = enum({"Dig","DigChannel","SmoothWall","ConstructBuilding"}),
+  global = {world = {jobs = {list = {next = nil}}}},
 }
+-- set_jobs({{job_type="Dig", x=, y=, z=}, ...}) rebuilds the linked list
+-- DFHack exposes at df.global.world.jobs.list.
+function set_jobs(list)
+  local head = nil
+  for i = #list, 1, -1 do
+    local j = list[i]
+    head = {item = {job_type = df.job_type[j.job_type], pos = {x = j.x, y = j.y, z = j.z}}, next = head}
+  end
+  df.global.world.jobs.list.next = head
+end
 CR_OK = 0
 function xyz2pos(x, y, z) return {x = x, y = y, z = z} end
+function set_dig(x, y, z, v) TILES[x .. ',' .. y .. ',' .. z].dig = v end
 -- tiles: key "x,y,z" -> {shape, material, special, dig, smooth, occupied}
 TILES = {}
 local function key(x, y, z) return x .. "," .. y .. "," .. z end
@@ -28,6 +41,12 @@ dfhack = {
     isValidTilePos = function(x, y, z) return TILES[key(x, y, z)] ~= nil end,
     isTileVisible = function(x, y, z) return not TILES[key(x, y, z)].hidden end,
     getTileType = function(x, y, z) return TILES[key(x, y, z)].tt end,
+    getWalkableGroup = function(pos)
+      local t = TILES[key(pos.x, pos.y, pos.z)]
+      if not t or t.hidden then return 0 end
+      local shape = df.tiletype.attrs[t.tt].shape
+      return (shape == df.tiletype_shape.FLOOR or shape == df.tiletype_shape.RAMP) and 1 or 0
+    end,
     getTileFlags = function(pos) local t = TILES[key(pos.x, pos.y, pos.z)]; return {dig = t.dig, smooth = t.smooth} end,
   },
   buildings = {findAtTile = function(pos) return TILES[key(pos.x, pos.y, pos.z)].occupied and {} or nil end},
@@ -36,12 +55,13 @@ dfhack = {
     getSiteData = function(k, default) if not dfhack.persistent._s then dfhack.persistent._s = default end return dfhack.persistent._s end,
     saveSiteData = function(k, v) dfhack.persistent._s = v end,
   },
-  world = {ReadCurrentTick = function() return 1234 end},
+  world = {ReadCurrentTick = function() return NOW or 1234 end},
   printerr = function(m) ERRS = (ERRS or "") .. m .. "\n" end,
   run_command_silent = function(cmd, ...)
     local a = {...}
     CALLS = CALLS or {}
     CALLS[#CALLS + 1] = cmd .. " " .. table.concat(a, " ")
+    if ON_QF then ON_QF(cmd, a) end
     return QF_OUTPUT or "", CR_OK
   end,
 }

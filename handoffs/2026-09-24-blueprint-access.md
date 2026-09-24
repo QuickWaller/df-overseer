@@ -68,4 +68,79 @@ the new tests fail on the old behaviour.
 
 ## Result
 
-(to be filled by the executor)
+STATUS: done offline. Nothing deployed, no live call, fort untouched.
+
+Built (all in `scripts/dfhack/df-overseer-blueprint.lua`):
+- **Orientation.** Four rotations tried in preference order (none, rotcw,
+  rot180, rotccw), each with its own site rectangle (swapped for quarter
+  turns), the -c cursor moved to the right corner and the cell mapping
+  rotated (`orient_cell`, `cursor_for`, `cell_xy`). Flips are never tried (the
+  csv carries no mirror permission). The chosen orientation and every
+  candidate come back as `site.orientation` and `site.orientations_tried`.
+  Orientation, blueprint size and footprint are stored on the site, so later
+  phases and status use the same mapping (including the room rectangle).
+- **Access gate.** `entrance_analysis`: entrances are the dig sections' own
+  carve cells on the footprint edge; reachable means open ground, or touching
+  revealed walkable ground outside the rectangle, with every carve cell
+  connected to one. Tri-state (false, true, null on a read failure recorded in
+  `read_failures`). `entrance_reachable`, `dig_can_start`, `access` are on
+  every preview and apply of a dig phase. A real dig that cannot start in any
+  orientation is REFUSED (`blocked`, no quickfort call, no handle); a preview
+  returns `ok:false` plus `would_strand`. The override is the explicit 8th
+  argument `ALLOW_STRANDED=true` only, and the result carries
+  `stranded_override_used`.
+- **Post-apply proof.** `status` now has `dig` (none_pending, in_progress,
+  stalled, unknown) from a bounded job census of dig, carve and smooth jobs in
+  the site against pending dig designations, split into with-a-job, blind (no
+  walkable neighbour) and startable. Startable-without-job becomes `stalled`
+  600 ticks after the recorded apply tick. Top-level `stalled` and
+  `stall_remedy`.
+- **`release SITE_ID [DRY_RUN]`** (mutating, overseer only, dry run default):
+  quickfort undo of each dig phase in the site's orientation; refuses a site
+  that is not stalled or has any non-dig phase; forgets the handle when no
+  designation remains. Cannot undo tiles already dug or walls already smoothed.
+- Manifest: `apply` gains `[ALLOW_STRANDED]`, new `release` command,
+  `blueprint.ALLOW_STRANDED` arg text in `dfmcp/tools.py`, `blueprint.release`
+  on the overseer allowlist only (status planned, like apply). The overseer's
+  granted tool count therefore rises by one once the registry is deployed.
+
+How to release site-1 (needs its own go-ahead, not run): after deploying the
+new script, `status site-1` (expect `dig.state: stalled`), `release site-1`
+(dry run), then `release site-1 false`. The 5 smoothed north wall tiles cannot
+be undone and are harmless. Without the deploy: `quickfort undo
+templates/office-room-v1.csv -c X,Y,Z -n /office_room_v1_shell` with the
+site's coordinates, unrotated (research doc section 9).
+
+Verified: `tests/test_blueprint_lua_logic.py` has 31 tests (16 old, 15 new)
+that run the real Lua in lupa. Negative control: the same 31 tests against
+the pre-change script (`git show main:scripts/dfhack/df-overseer-blueprint.lua`,
+via `BLUEPRINT_LUA_UNDER_TEST`) give 15 failed, 16 passed, including the
+site-1 pattern test (5 visible north tiles, 20 hidden, entrance facing the
+hidden side), which the old code applies unrotated with no warning. Ambient
+`python -m pytest` 1480 passed, 3 skipped (lupa on PYTHONPATH);
+`dfmcp/tests` in `.venv-dfmcp` 652 passed. Read-only ssh source reads of
+transform.lua, parse.lua, command.lua and dig.lua on VM 103; nothing else.
+
+Not proven (offline only): real `getWalkableGroup` on unrevealed tiles (the
+code requires revealed first), iteration of `df.global.world.jobs.list`, and
+quickfort's actual `-t` combined with `-n /label` and with `undo`. For a
+non-square template a quarter turn searches a separate rectangle for the
+swapped shape, so RANK is not strictly the same candidate across
+orientations (the bedroom and office are square).
+
+Live check to run after deploy (each needs its own go-ahead):
+1. `plan`, then `preview` the office shell near the Still, ranks 1 to 3:
+   expect `orientation` and `orientations_tried`; note whether rank 1 now says
+   `entrance_reachable: true`.
+2. NEGATIVE CONTROL, dry run first: preview a site with no revealed walkable
+   ground touching its ring (or a candidate where only the forced-bad
+   orientation is offered). It must report `dig_can_start: false`, `ok: false`,
+   `would_strand`. Then `apply ... false` on it without ALLOW_STRANDED must
+   return `blocked` with no new handle in `sites`. If either does not refuse,
+   stop.
+3. `status site-1`: expect `dig.state: stalled`, 10 blind. Then `release
+   site-1` dry run, review, real run with go-ahead; expect pending 0 and the
+   handle gone.
+4. One real apply where preview shows `entrance_reachable: true`; run a tick
+   window; `status` must show `in_progress` with jobs. Success is jobs
+   existing, never `designations_landed` alone.

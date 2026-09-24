@@ -2072,7 +2072,7 @@ df-overseer-blueprint.lua:
         site-N handle from a real apply or blueprint.sites (LEVEL, RANK and
         RADIUS_TILES are then an error). No coordinate is ever asked for or
         returned. Read-only: the sole effect is asking quickfort with -d.
-    "apply TEMPLATE PHASE SITE [DRY_RUN] [LEVEL] [RANK] [RADIUS_TILES]":
+    "apply TEMPLATE PHASE SITE [DRY_RUN] [LEVEL] [RANK] [RADIUS_TILES] [ALLOW_STRANDED]":
       lua_function: apply_phase
       effect: mutate
       coordinate_bearing: internal-only
@@ -2098,6 +2098,17 @@ df-overseer-blueprint.lua:
         counter was zero and (for a #meta) every named section was applied.
         Granted to the overseer only (the roster's sole writer); the Architect
         proposes and previews.
+        ACCESS GATE (handoffs/2026-09-24-blueprint-access.md): for a new site
+        the verb tries the four rotations and picks the first whose entrance
+        (a carve cell on the footprint edge) touches revealed walkable ground,
+        with every carve cell connected to it; the choice and every candidate
+        are returned (`site.orientation`, `site.orientations_tried`,
+        `entrance_reachable`, `dig_can_start`). A real dig whose entrance
+        cannot be reached in ANY orientation is REFUSED (`blocked`,
+        `blocked_reason`, nothing designated, no handle issued), and a preview
+        of it returns `ok: false` with `would_strand`. The only way past is
+        ALLOW_STRANDED set to the word true; the result then says
+        `stranded_override_used: true`. Never the default.
     sites:
       lua_function: list_sites
       effect: read
@@ -2127,6 +2138,33 @@ df-overseer-blueprint.lua:
         surface reads use a rectangle-anchored shim over df-overseer-surface's
         zone-anchored functions (see the .lua header); if the shim cannot be
         applied `surface.error` says so.
+        `dig` is the post-apply proof (handoffs/2026-09-24-blueprint-access.md):
+        pending dig designations against dig jobs that actually exist in the
+        game (a bounded job census), each counted as having a job, blind (no
+        revealed walkable neighbour, so DF will never make a job) or
+        startable. `dig.state` is one of none_pending, in_progress, stalled,
+        unknown, never a bare default; `stalled` (also a top-level boolean,
+        with a `stall_remedy`) means no designation has a job and either every
+        one is blind or startable ones have sat jobless for 600 ticks since the
+        apply. Designations landing is not success: run this after some ticks
+        have passed.
+    "release SITE_ID [DRY_RUN]":
+      lua_function: release_site
+      effect: mutate
+      coordinate_bearing: internal-only
+      live_deployed: false
+      verified: "unverified (offline build, 2026-09-24). Source-read only: quickfort undo (command.lua:23-27, dig.lua:139-141, 917-921). Never run."
+      knowledge_scope: player_derivable
+      notes: >
+        Withdraws the dig designations of a STALLED site (status reports
+        dig.state stalled) by running quickfort's own undo on each dig phase
+        applied to it, in the site's own orientation, so it clears exactly the
+        tiles the apply set; an existing dig job at a tile is removed too. It
+        CANNOT undo a tile already dug, a wall already smoothed, or a zone or
+        building: it refuses a site that is not stalled and a site with any
+        non-dig phase. DRY_RUN defaults to true. On a real run that leaves no
+        designation, the site handle is forgotten. Granted to the overseer
+        only.
 
 df-overseer-clock.lua:
   build_order_item: "agent loop MVP items 1-2 (docs/AGENT-LOOP.md); handoffs/2026-09-22-loop-clock-conductor-role.md"

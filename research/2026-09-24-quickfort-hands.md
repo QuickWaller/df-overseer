@@ -244,3 +244,40 @@ game, not trust the counters alone.
   counter).
 - Refuse to run a build/zone phase while the site still has outstanding dig
   designations or an un-dug `d` cell, since quickfort will not.
+
+
+## 9. Addendum 2026-09-24 (blueprint-access): orientation, undo, and why a dig can stall
+
+Read from the installed source (`/opt/df/game/hack/scripts/internal/quickfort/`,
+read-only over ssh), not run.
+
+- **Transform.** `-t` takes names `rotcw|cw`, `rotccw|ccw`, `fliph`, `flipv`, comma,
+  semicolon or space separated (`transform.lua:57-68`, `parse.lua:345-358`). Every cell
+  is rotated about the CURSOR (`-c`), not the blueprint's centre (`transform.lua:40-49`,
+  `command.lua:109-131`). DF's y axis is inverted, so `rotcw` sends (dx,dy) to
+  (-dy,dx): a south-facing entrance ends up on the WEST edge, `rotccw` puts it on
+  the east, `rotcw,rotcw` on the north. A rotated blueprint lands up and left of
+  the cursor, so the cursor must be moved to the site's corner: for a blueprint of
+  bw x bh cells and site top-left (sx,sy): rotcw -> (sx+bh-1, sy), rot180 ->
+  (sx+bw-1, sy+bh-1), rotccw -> (sx, sy+bw-1). The verb's cell mapping is the
+  matching closed form. VERIFIED from source; the mapping is tested offline (each
+  open side picks the rotation whose entrance faces it), never yet run live.
+- **Why a dig stalls.** DF makes a dig job for a designated tile only if a dwarf
+  can path next to it. A designation on unrevealed or enclosed solid rock with no
+  walkable neighbour is accepted by quickfort (`Tiles designated` counts it) and
+  never gets a job. INFERRED from the live run (`evals/live/2026-09-24-office-build`).
+- **Undo.** `quickfort undo` runs the same mode code with `values_undo`
+  (`dig.lua:142-160`, `917-921`): dig designation No, smooth 0, and in a real run
+  `dig.lua:870-876` removes an existing job at each tile first. `-c`, `-n`, `-t` and
+  `-d` all apply. It "just sets a sensible default" (`dig.lua:139-141`): it cannot
+  restore a prior designation, and it cannot un-dig a tile or un-smooth a wall
+  already worked. VERIFIED from source, not run. Undo of a `#zone` or `#build`
+  would remove real zones and buildings, so `release` refuses any site that has
+  had a non-dig phase applied.
+- **Releasing site-1 (the stalled office site).** With the verb deployed: `status
+  site-1` should report `dig.state: stalled`; `release site-1` (dry run) shows the
+  undo it would run; `release site-1 false` withdraws the 10 blind dig
+  designations. It cannot undo the 5 north-ring walls already smoothed (they stay
+  smooth, harmless). Without the verb: `quickfort undo templates/office-room-v1.csv
+  -c X,Y,Z -n /office_room_v1_shell` with the site's own coordinates and no
+  transform (site-1 was applied unrotated). Both paths need their own go-ahead.

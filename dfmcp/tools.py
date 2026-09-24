@@ -427,6 +427,13 @@ _ARG_DESCRIPTIONS: Dict[str, str] = {
         "A site handle such as site-3, as blueprint.sites lists it. Never a "
         "coordinate."
     ),
+    "blueprint.ALLOW_STRANDED": (
+        "Optional, give it last. Almost never. The word true overrides the "
+        "access gate: a real dig whose entrance touches no revealed walkable "
+        "ground in any orientation is refused by default, because DF would "
+        "never make a dig job for it. Anything but the word true, or omitting "
+        "it, keeps the gate. When used, the result says stranded_override_used."
+    ),
     "blueprint.DRY_RUN": (
         "Optional. true (the default when omitted) asks quickfort what it "
         "would do and writes nothing; only the word false performs the real "

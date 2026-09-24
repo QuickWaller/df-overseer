@@ -49,7 +49,8 @@ TEMPLATE_CSV = REPO_ROOT / "blueprints" / "templates" / "bedroom-cell-v1.csv"
 
 READ_IDS = {"blueprint.plan", "blueprint.preview", "blueprint.sites", "blueprint.status"}
 APPLY_ID = "blueprint.apply"
-ALL_IDS = READ_IDS | {APPLY_ID}
+RELEASE_ID = "blueprint.release"
+ALL_IDS = READ_IDS | {APPLY_ID, RELEASE_ID}
 
 
 def _text():
@@ -124,8 +125,9 @@ def test_only_apply_mutates():
         tool = reg.get(tool_id)
         assert tool.effect == "read" and not tool.mutates, tool_id
         assert not tool.is_omniscient, tool_id
-    apply_tool = reg.get(APPLY_ID)
-    assert apply_tool.effect == "mutate" and apply_tool.mutates
+    for mid in (APPLY_ID, RELEASE_ID):
+        tool = reg.get(mid)
+        assert tool.effect == "mutate" and tool.mutates, mid
 
 
 def test_no_tool_is_coordinate_bearing_in_the_open():
@@ -139,8 +141,9 @@ def test_architect_gets_the_reads_and_never_apply():
     for tool_id in READ_IDS:
         allowed, reason = roster.check("architect", tool_id)
         assert allowed, f"architect should be granted {tool_id}: {reason}"
-    allowed, _ = roster.check("architect", APPLY_ID)
-    assert not allowed, "the Architect stays propose-only; apply is the overseer's"
+    for mid in (APPLY_ID, RELEASE_ID):
+        allowed, _ = roster.check("architect", mid)
+        assert not allowed, "the Architect stays propose-only; " + mid + " is the overseer's"
 
 
 def test_overseer_gets_everything():
