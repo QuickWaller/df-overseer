@@ -1,0 +1,71 @@
+{
+  "ok": false,
+  "status": "timeout",
+  "timed_out": false,
+  "cost_usd": 0.058715807,
+  "wall_clock_seconds": 606.5,
+  "tool_summary": {
+    "calls": 21,
+    "tools": [
+      "<host>__dfhack__source_search",
+      "<host>__doctrine__get",
+      "<host>__nobles__list",
+      "<host>__nobles__requirements",
+      "<host>__nobles__verify",
+      "<host>__queue__pending",
+      "<host>__knowledge__wiki_lookup",
+      "<host>__dfhack__source_read"
+    ],
+    "failures": 0
+  },
+  "error": null,
+  "final_answer": "Request timed out before a response was generated. Please try again, or increase `agents.defaults.timeoutSeconds` in your config.",
+  "envelope_final": "",
+  "raw": {
+    "ok": false,
+    "status": "timeout",
+    "final": "",
+    "payloads": [
+      {
+        "text": "Request timed out before a response was generated. Please try again, or increase `agents.defaults.timeoutSeconds` in your config.",
+        "mediaUrl": null,
+        "isError": true
+      }
+    ],
+    "usage": {
+      "input": 90055,
+      "output": 21959,
+      "cacheRead": 120704,
+      "cacheWrite": 0,
+      "reasoningTokens": 20488,
+      "total": 232718,
+      "cost": {
+        "total": 0.058715807
+      }
+    },
+    "costUsd": 0.058715807,
+    "codeModeEngaged": false,
+    "assistantTurns": 5,
+    "toolSummary": {
+      "calls": 21,
+      "tools": [
+        "<host>__dfhack__source_search",
+        "<host>__doctrine__get",
+        "<host>__nobles__list",
+        "<host>__nobles__requirements",
+        "<host>__nobles__verify",
+        "<host>__queue__pending",
+        "<host>__knowledge__wiki_lookup",
+        "<host>__dfhack__source_read"
+      ],
+      "failures": 0
+    },
+    "model": "deepseek-v4-pro",
+    "provider": "deepseek",
+    "sessionId": "852b043a-e012-4c13-97c5-95a551bd6c61",
+    "error": {
+      "message": "Request timed out before a response was generated. Please try again, or increase `agents.defaults.timeoutSeconds` in your config.",
+      "kind": "timeout"
+    }
+  }
+}
