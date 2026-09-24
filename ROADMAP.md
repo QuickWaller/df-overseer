@@ -798,6 +798,22 @@ or `decisions/DECISIONS.md`, not here.
 ## Later
 <!-- Real, worth tracking, but genuinely further out or gated on scale/decisions not yet made. -->
 
+- **District/zoning planning as the fix for the site-ranking system.**
+  2026-09-24: the ghost's coffin landed in a poor spot because `zone`/
+  `building`'s site ranker is one static sort (furniture-match, then a
+  kind-level `prefer_indoors` boolean, then raw distance to a caller-picked
+  landmark), the same mechanism for a production building and a one-time
+  furniture placement, with no notion that different areas of a fort should
+  be designated for different purposes over time. The user's instinct is
+  that this connects to an earlier, not-yet-designed idea: districting the
+  fort (areas for production, areas for living/tombs, areas for misc) rather
+  than ranking every placement independently against a landmark. **Needs its
+  own dedicated design session with an Opus model and the user, intense and
+  in depth** (user's words, 2026-09-24) — folded together with the broader
+  openclaw agent-architecture design, not a quick fix to the ranker. Do not
+  attempt a partial fix to `ranked_rects`/`prefer_indoors` before that
+  session. → `decisions/DECISIONS.md` 2026-09-24 "ranking system" row.
+
 - **Resource claims, proposal variants and computed bundles** for arbitrating
   competing proposals (user's call 2026-09-15). Research brief first
   (resource-constrained scheduling, portfolio selection, inventory and
