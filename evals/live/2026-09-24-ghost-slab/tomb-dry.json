@@ -1,0 +1,53 @@
+[0m{
+	"blueprint": {
+		"cells": "1x2",
+		"file": "_tmp-zone-Tomb-1x2-1790225029.csv",
+		"key": "T",
+		"mode": "zone",
+		"removed": true
+	},
+	"dims": [ 1, 2 ],
+	"direction": "NW",
+	"distance_tiles": 1,
+	"dry_run": true,
+	"kind": "Tomb",
+	"near_landmark": "shale Coffin",
+	"rank": 1,
+	"requirements": {
+		"room_value": {
+			"applies": true,
+			"position_field": "required_tomb",
+			"positions": [],
+			"read_back_after_placement": "dfhack.buildings.getRoomDescription on the placed zone",
+			"what_counts": "Not exposed by this game's data or DFHack: there is no room-value function, only dfhack.buildings.getRoomDescription (the quality word the room's screen shows). External, UNVERIFIED on this install and written for the older DF2014 (0.47) wiki page 'Room': value is the total of the floor and walls (smoothing and engraving add value), plus the value of furniture and other constructions inside the room; quality words start at 1 (Meager), 100 (Modest), 250, 500, 1000, 1500, 2500 and 10000 (Royal), and the same steps apply to offices, dining rooms and tombs. A required value of 1 would then mean any positive room value; whether a bare, unsmoothed office floor is worth 0 on this version is unknown."
+		}
+	},
+	"search": {
+		"check_errors": 0,
+		"eligible_tiles": 10,
+		"first_check_error": null,
+		"fitting_sites": 6,
+		"radius_tiles": 3,
+		"rejected": {
+			"already_zoned_same_type": 0,
+			"liquid": 0,
+			"not_walkable": 10,
+			"occupied": 24
+		},
+		"tiles_checked": 49,
+		"windows_checked": 42
+	},
+	"tile_count": 2,
+	"token": "Tomb",
+	"validation": {
+		"by": "quickfort run --dry-run",
+		"error": null,
+		"ok": true,
+		"problems": [],
+		"stats": {
+			"Zone tiles designated": 2,
+			"Zones designated": 1
+		}
+	}
+}
+[0m

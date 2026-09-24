@@ -157,3 +157,65 @@ coffin. No manager-order change. No repo edit.
 Authorise a Tomb zone over building 14 (the only remaining gap) to actually test whether burial lays
 this Forlorn haunt to rest, or accept that the ghost stays as-is (low risk, per its type) until that
 authorisation is given.
+
+---
+
+# Stage C: Tomb zone attempt (user's "go ahead"), STOPPED before real placement
+
+## Result up front
+**STOPPED. No mutation made this pass**: only two read-only checks and one dry run were run. Fort
+unchanged, still PAUSED at abs_tick 12652646. Reason: `zone place` cannot put a Tomb zone over the
+coffin's own tile, and DFHack's own `burial` tool text confirms that overlap is exactly what a working
+tomb needs ("Creates a 1x1 tomb zone for each built coffin that isn't already contained in a zone.").
+Placing the zone at the only site `place` can actually reach (adjacent to, not on, building 14) would
+consume the sole authorised Tomb zone on a placement very unlikely to link to the coffin at all, so I
+did not run it for real and am reporting instead of guessing.
+
+## Two checks done first, both read-only, as the ruling asked
+
+**OWNER with a dead unit**: `zone check-owner Tomb 454` -> `{"error": "refused: unit 454 is not alive"}`.
+Confirmed: OWNER does not accept a dead unit/historical-figure id. Per the ruling, the zone would be
+created UNOWNED if placement went ahead -- consistent with "do not guess or force it."
+
+**Whether `place` can land on building 14's own tile**: `df-overseer-zone find Tomb "shale Coffin" 3 true`
+(read-only, AROUND_FURNITURE=true) shows the coffin itself IS visible to `find`'s furniture-aware search:
+rank 1, distance 0, `contains_qualifying_furniture: true`, `furniture_building_ids: [14]`. But `place`
+(`df-overseer-zone.lua` source, `place_zone` at line 1563) calls the same underlying `ranked_rects`
+helper WITHOUT the furniture-exemption argument that `find` passes (line 1261) -- confirmed by reading
+the .lua file directly, not inferred from the CLI usage line alone. `place`'s own dry run
+(`tomb-dry.json`) proves it live: rank 1 for `place Tomb "shale Coffin" 1 3 true` comes back at distance
+1, direction NW (`search.rejected.occupied: 24` -- the coffin's own tile is one of the 24 tiles `place`
+throws out as occupied, same as any other building). This matches TOOLS.yaml's own documented note that
+`place` "is unchanged (no new argument, still rejects every occupied tile)" -- AROUND_FURNITURE is
+`find`-only, not a hidden capability of `place`.
+
+## Why this matters, not just a technicality
+DFHack's own `burial` script (installed on this box, `hack/docs/docs/tools/burial.txt`) exists
+specifically to "create tomb zones for unzoned coffins" and creates a "1x1 tomb zone for each built
+coffin" -- i.e., the vanilla, correct mechanic is a zone whose tile(s) are exactly the coffin's tile(s),
+not an adjacent empty rectangle. This is the same room/furniture-overlap requirement already documented
+in this repo for Office/Chair (the Chair at this fort "sits outside both real Office zones for exactly
+this reason", `df-overseer-zone.lua` header). A Tomb zone placed one tile away, over empty floor with no
+coffin in it, would not be "the zone containing the coffin" and, by the same established pattern, should
+not be expected to make building 14 usable for burial. Running it for real would spend the one
+authorised Tomb zone on a placement that (on the evidence in hand) tests nothing.
+
+## What I did not do
+Did not run `place Tomb ... false` (the real placement). Did not touch labor, zones 10/11/13, order,
+repo, or a second coffin/zone. Did not unpause the fort (no ticks spent this pass; abs_tick unchanged at
+12652646).
+
+## Options for the user
+1. Authorise a small, scoped fix to `place_zone` (pass the same furniture-exemption `find` already has)
+   so it can actually site the zone on building 14's tile, then rerun this stage. This is a repo edit,
+   not authorised in this pass.
+2. Authorise the DFHack `burial` command directly (outside this repo's `zone` tool contract) to create
+   the 1x1 tomb zone in the vanilla, coffin-covering way, and/or `entomb --unit 454` to assign it. Not
+   authorised in this pass; flagged as a possible alternate route, not taken.
+3. Accept placing the zone one tile away anyway, as a live test of whether adjacency (not containment) is
+   sufficient in this DF version -- contradicts DFHack's own `burial` tool description, so treated here as
+   "forcing/guessing," which the ruling said not to do.
+4. Leave the ghost as-is: still a Forlorn haunt, unchanged and non-dangerous through the whole run so far.
+
+## Files this stage
+`tomb-dry.json` (the one dry run). No other new files; no slices were run (no ticks spent).

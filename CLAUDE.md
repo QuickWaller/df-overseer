@@ -5,40 +5,41 @@ story without you. See **[docs/PURPOSE.md](docs/PURPOSE.md)** for what this is
 and why, and **[docs/MEMORY-ARCHITECTURE.md](docs/MEMORY-ARCHITECTURE.md)** for the overseer's memory and
 learning architecture.
 
-> **Status, 2026-09-23.** Current work and next steps: `Working.md` ("START
-> HERE"). History: `decisions/DECISIONS.md`, `working-archive/`, `evals/live/`.
-> Game knowledge (crop and water rules the agents should use) goes in
-> `doctrine/seed.yaml`, not the register.
+> **Status, 2026-09-24 evening.** Current work and next steps: `Working.md`
+> ("Current state", top of file). History: `decisions/DECISIONS.md`,
+> `working-archive/`, `evals/live/`. Game knowledge (crop and water rules
+> the agents should use) goes in `doctrine/seed.yaml`, not the register.
 >
-> - **Current state, as last verified live 2026-09-23 (the tag-fix redeploy,
->   `evals/live/2026-09-23-attention-deploy/` plus the orchestrator's
->   single-file redeploy that followed it).** Uniboslan is paused at year 31,
->   tick 107874, 22 alive and 1 dead, 100 FPS, `dfmcp-server` active. Role
->   tool lists: **overseer 70, architect 44, quartermaster 24, consultant
->   26, conductor 15** (read plus write lists, measured 2026-09-24 from the
->   roster; figures above this line predate the zone, nobles and surface tools). Since then the zone inventory,
->   `nobles.requirements`, furniture-aware siting and a zone-anchored surface
->   perception layer (enclosure, finish, material, traffic) are deployed. The
->   Architect ran on the office task with no hints and produced a sound
->   proposal (`evals/live/2026-09-24-architect-rematch/`); agents stay
->   propose-only (register 2026-09-24) and the hands, a quickfort-backed
->   template-plus-site verb, are in build. A new smoothed stone office (zone 13, chair building 12 with a stone throne) now exists but is unowned; nothing yet counts for the Manager. Building 9 is a complete Chair holding an item, not a suspended plan. Both old offices are still empty and
->   unenclosed; `nobles requirements MANAGER` still reads `not_met`. **Two Office zones exist** (id 10 unowned, id 11
->   owned by the Manager, unit 345, read back twice), both outdoors (no
->   fully indoor 3x3 site was available near a workshop or the Well). **A
->   Chair was built for real**, the first real, non-dry-run build of any
->   kind by the generic `building` tool, and it sits buildingplan-suspended,
->   pending a Chair item; a new manager order (id 3, ConstructThrone) was
->   created to supply one. **Four manager orders exist**: three
->   (`ConstructBlocks`, `ConstructMechanisms`, the brew-drink reaction)
->   `validated: true, active: false`; the new Chair order `validated: false`.
->   None has ever produced a job with a populated `order_id`, so whether the
->   office is enough room value for the Manager, and whether a completed
->   order actually starts a job, are both still open. The conductor is
->   installed on VM 106 (`conductor.service`), **disabled and inactive**; it
->   has run only as a manual dry run, never for real. → `Working.md`, whose
->   own top section is current as of this pass and was not rewritten here
->   (`handoffs/` rule: the orchestrating session owns it).
+> - **Current state, as last verified live 2026-09-24 (a long single-day
+>   session: the office, a ghost, the manager-order question, and the
+>   Consultant's offline wiki mirror; full detail in `Working.md` and the
+>   day's register rows).** Uniboslan is paused, 22 alive and 1 dead, one
+>   fort tick unresolved (a live abs_tick figure is stale by the time this
+>   is read; check `Working.md`), `dfmcp-server` active. Role tool lists
+>   (read plus write, measured from the roster): **overseer 79, architect
+>   49, consultant 28, quartermaster 24, conductor 15** (a same-day
+>   increase from the morning's 70/44/26/24/15, driven by `zone.contents`,
+>   `zone.assign-owner`/`clear-owner`, the blueprint verb, and the
+>   Consultant's `knowledge.wiki_search`. **The office is built, furnished
+>   and owned by the Manager, and the game itself accepts it** (confirmed
+>   by the user in the game's nobles screen); this project's own room-value
+>   proxy (`getRoomDescription`) read empty for the same room and was
+>   therefore giving a **false negative**, now fixed (an empty description
+>   alone no longer resolves to `not_met`; it needs independent evidence
+>   from the new `zone.contents` read). Building 9 is a complete Chair
+>   holding an item, not a suspended plan (the old offices, zones 10/11,
+>   are still empty). **Manager work orders still never dispatch a job**
+>   (`nobles verify MANAGER` is a live, consistent appointment, ruling out
+>   the obvious cause; a direct job with no manager involved dispatches and
+>   completes normally); the user's ruling is to set this aside rather
+>   than keep chasing it. **A ghost is being laid to rest** (a Forlorn
+>   haunt, not dangerous); the coffin is built but burial is blocked on a
+>   Tomb-zone placement bug just fixed offline, not yet deployed. The
+>   Consultant's offline, refreshable wiki mirror (`wikimirror/`) is built
+>   end to end offline, not yet deployed; the first real pull needs the
+>   user's go-ahead and a contact string. The conductor is installed on VM
+>   106 (`conductor.service`), **disabled and inactive**; it has run only
+>   as a manual dry run, never for real.
 > - **Recent history, each in full in the register, `Working.md` and
 >   `evals/live/`:** the agent loop MVP (clock/tripwire script, a
 >   `conductor` dfmcp role, the conductor service, the Quartermaster
@@ -78,15 +79,29 @@ learning architecture.
 >   tools: connectivity, landmarks, overview, diff, open-area and diggable
 >   find/build, chokepoints, stuck jobs, labor, farm, workshop, zone, trees,
 >   well, manager work orders and a direct-job route, the generic
->   `building` tool (now with one real non-dry-run build to its name),
->   `nobles`, a `zone` tool over every zone kind, a shared tri-state
->   reachability helper (fixes a false negative where the Well's own centre
->   tile, a ramp top, read unreachable to every neighbour), an observation
->   ledger, and the in-game clock/tripwire/vitals/quicksave tools the
->   conductor uses, all live on VM 103. **`doctrine/`** holds game knowledge
->   (crop and water rules) the agents should eventually read; only the
->   consultant reads it, through `doctrine.get`, and it is never a repo
->   decision, so it never goes in the register.
+>   `building` tool, `nobles` (including `requirements`, a per-position
+>   check with three honest states, never a bare number), a `zone` tool
+>   over every zone kind (`list`, `contents`, `assign-owner`/`clear-owner`,
+>   `place` with the same opt-in `AROUND_FURNITURE` flag `find` has, added
+>   2026-09-24 after it blocked a Tomb-zone placement), a zone-anchored
+>   `surface` perception layer (enclosure, finish, material, traffic), a
+>   quickfort-backed `blueprint` verb (plan/preview/apply/sites/status/
+>   release, orientation-aware, refuses a dig it can prove will strand),
+>   a shared tri-state reachability helper (fixes a false negative where
+>   the Well's own centre tile, a ramp top, read unreachable to every
+>   neighbour), an observation ledger, and the in-game clock/tripwire/
+>   vitals/quicksave tools the conductor uses, all live on VM 103. Several
+>   fixes from 2026-09-24 (the `zone.place` furniture flag, a
+>   `jobs_claimed_by_a_worker` null-vs-zero fix) are built and tested but
+>   **not yet deployed**, see `Working.md`. **`doctrine/`** holds game
+>   knowledge (crop and water rules) the agents should eventually read;
+>   only the consultant reads it, through `doctrine.get`, and it is never a
+>   repo decision, so it never goes in the register. **`wikimirror/`** (new
+>   2026-09-24, offline, not yet deployed) is a self-refreshing offline
+>   copy of the DF wiki for the consultant: recent edits are held back one
+>   week before they're visible (user's call), everything is provenance-
+>   and revision-tagged, and doctrine can cite a wiki revision and get
+>   flagged if it drifts. See `docs/CONSULTANT-WIKI.md`.
 > - **`dfmcp/`**, the MCP server: `dfmcp-server.service` on VM 103,
 >   LAN-bound, **bearer tokens the only guard until Tailscale**. Per-role
 >   allowlists enforced server-side, role from the credential, every call
@@ -115,11 +130,18 @@ learning architecture.
 >   above is design or proposal unless marked verified.
 >
 > **Traps before running anything:**
-> - Ambient `python -m pytest` gives **1348 passed, 3 skipped** (measured 2026-09-23,
->   `handoffs/2026-09-23-creature-tag-fields-fix.md`); the
->   skips are correct (transport tests guard their pinned SDK import). Run `dfmcp/tests`
->   in `.venv-dfmcp` for all **652** (measured 2026-09-23). `py -3` here is a 3.13 without pytest:
->   use `python`.
+> - Ambient `python -m pytest` gives **1844 passed, 3 skipped** with `lupa`
+>   installed on `PYTHONPATH` (measured 2026-09-24, end of day; `lupa` is
+>   not a repo dependency, `pip install --target <scratch dir>` then add it
+>   to `PYTHONPATH`; without it several Lua-logic test files skip instead).
+>   Run `dfmcp/tests` in `.venv-dfmcp` for all **691** (measured 2026-09-24).
+>   One test, `test_queue_tools.py::TestWriteSerialisation::
+>   test_concurrent_raw_appends_without_serialization_can_collide`, is a
+>   deliberate race and has flaked under load (failed once in a full run,
+>   passed 3/3 and 2/2 alone immediately after); a lone failure there on
+>   an otherwise-green run is very likely that, not a regression; rerun it
+>   alone before concluding otherwise. `py -3` here is a 3.13 without
+>   pytest: use `python`.
 > - Packages are `dfmcp` and `dfqueue`, never `mcp` or `queue`: a local
 >   directory of either name shadows the MCP SDK or the stdlib module.
 > - Deploy with `git -c core.autocrlf=false archive`; this workstation's
