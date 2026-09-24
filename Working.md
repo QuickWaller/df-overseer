@@ -25,9 +25,11 @@ actually going on right now.
 - Design thoughts from the user, recorded as open, not decided: rooms need not always be smoothed or enclosed (agent/kind judgement call); doors are per-kind policy, not a blanket rule; a "remove furniture → smooth → replace furniture" later-hands capability is needed; dormitories are a candidate second template.
 - Two self-pauses during an early run were never explained (no tripwire, no advisory); did not recur in later runs. Watch for it.
 
-**Deployed and live-verified today, in order:** surface perception layer + furniture-aware ranking; access fix (`zone find`/`apply` orientation, stall detection) + `release`; the owner tool (`zone assign-owner`/`clear-owner`); the room-proxy fix + `zone contents`; the blueprint status fixes (`dig_progress`, `shell_done`) + the runner `final` envelope fix.
+**Deployed and live-verified today, in order:** surface perception layer + furniture-aware ranking; access fix (`zone find`/`apply` orientation, stall detection) + `release`; the owner tool (`zone assign-owner`/`clear-owner`); the room-proxy fix + `zone contents`; the blueprint status fixes (`dig_progress`, `shell_done`) + the runner `final` envelope fix; `zone place`'s `AROUND_FURNITURE` flag + `jobs_claimed_by_a_worker`'s zero-vs-null fix, live-checked by placing the ghost's Tomb zone for real.
 
-**Still open, unchanged from before today:** the tiling generator for `bedroom-cell-v1`; burrow confinement ruling; `df-overseer-breach.lua` header and ROADMAP line correction; leaked key rotation (below); commits unpushed.
+**Pushed to `origin/main`** at `275700d` (75 commits, all one author, checked before push): today's full day of work plus everything queued since the last push.
+
+**Still open:** the tiling generator for `bedroom-cell-v1`; burrow confinement ruling; `df-overseer-breach.lua` header and ROADMAP line correction; leaked key rotation (below); the site-ranking redesign (above, gated on a dedicated Opus session); consultant's live-vs-recorded tool count discrepancy (27 read live vs. 28 recorded, unrelated to today's deploy, not investigated); the small wiki S1 follow-up (four gaps in `store.py`); the first real wiki pull (gated on the user's go-ahead plus a `DFWIKI_UA_CONTACT` value); wiki S7/S8 not yet dispatched; the ore/hematite fix (mine the vein, build a constructed wall, deferred by the user).
 
 **Archived this pass:** everything before today's work (the agent-loop MVP design history, the learning-loop discussion, and older handovers) moved wholesale to [`working-archive/Working_archive-2026-09-24.md`](working-archive/Working_archive-2026-09-24.md); the file was 1091 lines, well past the 400-line threshold, and none of it was still-open work.
 
