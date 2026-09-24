@@ -1,0 +1,21 @@
+{
+	"buildings": [ {
+		"build_stage": 1,
+		"build_stage_max": 1,
+		"exists": true,
+		"holds_items": true,
+		"id": 14,
+		"kind": "Coffin",
+		"matches_zone_kind": true,
+		"tiles_inside": 1
+	} ],
+	"complete_matching_count": 1,
+	"furniture_kinds": [ "Coffin" ],
+	"height": 2,
+	"kind": "Tomb",
+	"matching_count": 1,
+	"read_failures": [],
+	"tiles_scanned": 2,
+	"width": 1,
+	"zone_id": 16
+}

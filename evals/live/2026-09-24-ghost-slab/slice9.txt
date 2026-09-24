@@ -1,0 +1,27 @@
+Slice 9 (Stage D, burial test): run.sh 12654146 412 "InterCorpse|CORPSE 2804 ongr false"
+Start: abs_tick 12652646 (baseline, same as README end state). Fort resumed after clear.
+
+ALERT-tripwire
+{"ok": true,"paused": true}
+final tick 12653657
+PICK	OK	192
+CATS	2 2 3 8 3 3 1
+CAT0	2	345,455
+MAXREPORT	413
+	"alive": 22,
+	"dead_total": 1,
+COFFINITEM	4036	inbld	true	ongr	false
+COFFINITEMS	1
+COFFINBLD	14	stage	1	exists	true	contained	2
+CORPSE	2804	ongr	false	inbld	true	inv	false	injob	false	hidden	false
+GHOST	false	type	10	active	false
+REPORT	413	Kadol Zulbanurdim, Ghostly Gem Setter has been put to rest.
+KEASAMEZ	999
+
+Tripwire detail (df-overseer-clock status): reason "announcement", type_id 106
+type_name "CITIZEN_DEATH", report_id 413, new_pause_report_count 1. This is
+DFHack's own announcement-type classification for the "put to rest" report,
+not a new citizen death: alive stayed 22, dead_total stayed 1 throughout.
+Cleared with `df-overseer-clock clear` (had_latch: true) before resuming.
+
+Ticks used this slice: 1011 (12652646 -> 12653657).

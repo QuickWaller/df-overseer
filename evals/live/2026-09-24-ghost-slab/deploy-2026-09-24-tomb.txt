@@ -1,0 +1,64 @@
+Deploy record: the two pending fixes (commits 15d0bf1, 92c628a), 2026-09-24.
+
+Pre-check: dfmcp-server/df-fortress/df-xvfb all active. Fort paused
+(dfhack.world.ReadPauseState() true), year 31, cur_year_tick 153446,
+abs_tick 12652646 -- matches evals/live/2026-09-24-ghost-slab/README.md's
+recorded end state exactly, confirming no game time passed since the last
+eval stage.
+
+Backup: /opt/df/deploy-backup-2026-09-24-tomb/ (df-overseer-zone.lua,
+df-overseer-blueprint.lua, TOOLS.yaml -- the pre-deploy content of each file
+about to be overwritten), owned df:df.
+
+Files deployed, hashes verified twice (once immediately after transfer at
+/tmp, once at the final installed path), byte-identical to
+`git -c core.autocrlf=false show HEAD:<path>` in both cases:
+- scripts/dfhack/df-overseer-zone.lua ->
+  /opt/df/game/hack/scripts/df-overseer-zone.lua
+  sha256 772e4819ba9ed0f42995943a7feed51b7a5626baac3a2c173efe2701ffa2f6ea
+- scripts/dfhack/df-overseer-blueprint.lua ->
+  /opt/df/game/hack/scripts/df-overseer-blueprint.lua
+  sha256 40e5d0befdd3e4a622f4ef761a93003eacb7e658bf20ebaa9405e53526c492ec
+- scripts/dfhack/TOOLS.yaml -> /opt/df/dfmcp-smoke/scripts/dfhack/TOOLS.yaml
+  sha256 5134f595191d4104148451a6e8529a34902a082a8514358034d5a91ac124f8e9
+
+Ownership df:df at every installed path (verified with ls -la).
+
+Restart: dfmcp-server only, via `systemctl restart`. NRestarts=0 after,
+ActiveState=active, SubState=running, journal clean around the restart
+(no errors/tracebacks), Uvicorn back up within 1 second. df-fortress and
+df-xvfb's ActiveEnterTimestamp unchanged throughout (2026-09-18 12:27:14 UTC
+and 2026-09-11 02:26:46 UTC respectively, NRestarts 0 on both) -- neither
+was touched.
+
+Role tool counts, live tools/list over a real MCP client
+(streamable_http_client + httpx2.AsyncClient, this SDK build yields a
+2-tuple not 3 -- had to fix a scratch script's unpacking to match;
+server listens on the VM's LAN address on :8443 over plain HTTP, not
+127.0.0.1/https as a first guess assumed), tokens read by key from
+/opt/df/dfmcp-smoke/.env, never printed:
+
+  role           before   after   delta
+  OVERSEER       79       79      0
+  ARCHITECT      49       49      0
+  CONSULTANT     27       27      0
+  QUARTERMASTER  24       24      0
+  CONDUCTOR      15       15      0
+
+Unchanged in shape as expected -- this deploy adds an argument to an
+existing tool (zone.place's AROUND_FURNITURE) and fixes a bug
+(jobs_claimed_by_a_worker), neither is a new tool. Confirmed by inspecting
+the live zone__place schema on the overseer role after restart: the
+`around_furniture` property is present with the description matching the
+committed .lua source, proving the new code is actually loaded and served,
+not just present on disk.
+
+Note: CLAUDE.md's status block states consultant's count as 28; this live
+read got 27, both before and after this deploy (so the deploy did not cause
+the discrepancy). Not investigated further here -- flagging for the
+orchestrator, since this stream does not own CLAUDE.md or Working.md.
+
+Quicksave check (per the handoff, required before any live fort action):
+cur_savegame.save_dir read as "autosave 2" before, quicksave fired via
+`dfhack-run quicksave`, save_dir read again 5s later as "autosave 3" --
+confirmed changed, not verified by mtime.

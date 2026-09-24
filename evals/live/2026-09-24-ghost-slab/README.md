@@ -219,3 +219,125 @@ repo, or a second coffin/zone. Did not unpause the fort (no ticks spent this pas
 
 ## Files this stage
 `tomb-dry.json` (the one dry run). No other new files; no slices were run (no ticks spent).
+
+---
+
+# Stage D: deploy the AROUND_FURNITURE fix, place the Tomb zone for real, and confirm burial
+
+## Result up front
+**Burial happened.** The `zone.place` fix (commit `15d0bf1`) was deployed and verified live, the Tomb
+zone was placed for real directly over building 14 (zone id 16), and a bounded unpause of 2,041 ticks
+(well under the 6000-tick budget) confirmed both the corpse's interment and the ghost's resolution.
+Report 413, in the game's own words: **"Kadol Zulbanurdim, Ghostly Gem Setter has been put to rest."**
+
+## Step 1: deploy, verified by execution
+Both pending fixes (`df-overseer-zone.lua` commit `15d0bf1`, `df-overseer-blueprint.lua` commit
+`92c628a`) plus `TOOLS.yaml` deployed to VM 103. Pre-check confirmed the fort was exactly where Stage C
+left it: paused, abs_tick 12652646, year 31, `cur_year_tick` 153446 -- no time passed between stages.
+Backed up to `/opt/df/deploy-backup-2026-09-24-tomb/`. All three files hash-identical to
+`git -c core.autocrlf=false show HEAD:<path>`, verified twice (post-transfer and at final installed
+path). `dfmcp-server` restarted alone (`NRestarts=0`, journal clean); `df-fortress`/`df-xvfb`
+`ActiveEnterTimestamp` unchanged, confirming neither was touched. Live per-role `tools/list` over a real
+MCP client (`streamable_http_client` + `httpx2.AsyncClient`, this SDK build yields a 2-tuple; server on
+the VM's LAN `:8443` over plain HTTP): **overseer 79, architect 49, consultant 27, quartermaster 24,
+conductor 15**, identical before and after (an arg add and a bug fix, not a new tool, so no count change
+expected). Confirmed the new code actually loaded (not just deployed to disk) by reading the live
+`zone__place` schema: the `around_furniture` property is present with wording matching the committed
+source. Full detail: `deploy-2026-09-24-tomb.txt`.
+
+One discrepancy noted, not chased down: CLAUDE.md's status block states consultant's tool count as 28;
+this live read got 27, both before and after this deploy, so this deploy did not cause it. Flagged for
+the orchestrator below.
+
+## Step 2: quicksave, verified by save_dir change
+`cur_savegame.save_dir` read "autosave 2" before, quicksave fired, read "autosave 3" five seconds later
+-- confirmed changed, not inferred from mtime.
+
+## Step 3: dry run, then real placement
+`zone find Tomb "shale Coffin" 3 true` (read-only) re-confirmed the coffin visible to the
+furniture-aware search: rank 1, `contains_qualifying_furniture: true`, `furniture_building_ids: [14]`,
+`distance_tiles: 0`.
+
+Dry run (`zone place Tomb "shale Coffin" 1 3 true "" true`, i.e. `AROUND_FURNITURE=true`):
+`tomb-place-dry2.json`. Rank 1 now comes back at **`distance_tiles: 0`, `contains_qualifying_furniture:
+true`, `furniture_building_ids: [14]`** -- the fix works: `place` now reaches the coffin's own tile,
+unlike Stage C's `tomb-dry.json` (same site, before the fix, `distance_tiles: 1`, occupied-tile
+rejection). `validation.ok: true`, no problems.
+
+Real placement (`dry_run=false`, same args): `tomb-real.json`. `quickfort_ok: true`,
+`quickfort_error: null`, **Tomb zone id 16 created**, `read_back.zone_found: true`,
+`read_back.type_matches: true`. `zone contents 16` (`zone16-contents.json`) confirms the zone owns
+building 14: `matches_zone_kind: true`, `complete_matching_count: 1`, `buildings: [{id: 14, kind:
+"Coffin", exists: true}]`. The coffin's own site (2 tiles north of the Stoneworker's Workshop, the
+haul-distance heuristic's choice) was not moved or re-sited, per the standing ruling -- the zone was
+placed on top of it exactly where it already stood.
+
+`zone.check-owner Tomb 454` was not re-run this stage (Stage C already established a dead unit is
+refused as owner, `{"error": "refused: unit 454 is not alive"}`); the zone was placed UNOWNED, matching
+that finding and the ruling's "do not guess or force it."
+
+## Step 4: bounded unpause, burial observed directly
+
+**Slice 9** (`slice9.txt`): `run.sh 12654146 412 "InterCorpse|CORPSE 2804 ongr false"`, resumed from
+abs_tick 12652646. Stopped itself on its own `ALERT-tripwire` after **1,011 ticks** (12653657). The
+tripwire's own detail: `reason: "announcement"`, `type_id 106 / CITIZEN_DEATH`, `report_id 413` -- this
+is DFHack's announcement-type table filing "put to rest" under the same type id as a death, **not** a
+new citizen death: `alive` stayed 22, `dead_total` stayed 1 throughout, matching every prior slice in
+this eval. The slice's own output, read directly, not inferred:
+- `CORPSE 2804 ongr false inbld true` -- the corpse left the ground and entered a building (was `ongr
+  true inbld false` in every prior slice back to Stage B).
+- `COFFINBLD 14 ... contained 2` -- the coffin building now holds two contained items (was 1, the
+  coffin item itself as building material; the corpse is the second).
+- `GHOST false type 10 active false` -- unit 454's `flags3.ghostly` flipped to **false** and it is no
+  longer `active` (was `true`/`true` in every prior slice, Stage B through C).
+- `REPORT 413 Kadol Zulbanurdim, Ghostly Gem Setter has been put to rest.` -- the game's own text,
+  read directly from `df.global.world.status.reports`, not paraphrased.
+
+Cleared the latched tripwire (`df-overseer-clock clear`, `had_latch: true`) and ran **slice 10**
+(`slice10.txt`) as a stability check: `run.sh 12654657 413 "NEVERMATCH_STOP_CONDITION"`, target reached
+after **1,030 more ticks** (12654687) with no tripwire and no new alert. State unchanged from
+immediately post-burial: corpse still interred, ghost still resolved, pick 118 still held by 192, stress
+cat0 still exactly `{345, 455}`, no new report beyond 413.
+
+**Total ticks used, Stage D: 2,041** (12652646 -> 12654687) -- well inside the 6000-tick budget named in
+the handoff, unlike Stage B's run (which honestly overran its own budget). Fort left **PAUSED** at
+abs_tick 12654687.
+
+## Honest conclusion
+**Burial happened, and it laid the ghost to rest.** This is a direct observation, not an inference from
+absence: the corpse's own flags changed from on-ground to inside the building, the coffin building's
+`contained_items` count incremented, unit 454's `ghostly` flag flipped false and it left the active-unit
+list, and the game generated its own report saying so in plain text. This closes the "cannot conclude"
+line from Stage B/C -- the Consultant's wiki-sourced claim (coffin burial resolves a Forlorn haunt) is
+now verified live on this fort, not just cited.
+
+The root cause identified in Stage B (no Tomb zone can be created directly on a built Coffin's tile,
+because `zone.place`'s search never passed the furniture exemption `zone.find` already had) is now fixed
+and deployed, and this stage is the live proof the fix does what it was meant to do -- not just that the
+schema shows a new argument.
+
+## What was NOT done
+No labor change. No second coffin or second zone. No manager-order change. No repo `.lua` edit live (the
+already-reviewed, already-committed fix was deployed as-is). This stream did not update `Working.md`,
+`decisions/DECISIONS.md`, or `memory/`, per the handoff's "what you do NOT own" and this repo's
+executor/handoff convention -- flagging the outcome for the orchestrator to record there.
+
+## Flags for the orchestrator
+- **Consultant tool count discrepancy**: CLAUDE.md's status block says 28, this stage's live read (both
+  before and after the deploy) says 27. Not this deploy's doing (identical before/after), not
+  investigated further since this stream doesn't own that doc.
+- **`ListAgents` was not available as a tool in this executor's environment** (searched via `ToolSearch`,
+  no match). The handoff's step-1 peer check-in could not be performed as specified; proceeded on the
+  orchestrator's own note that none was expected, since the fort's tick/pause state on arrival matched
+  Stage C's recorded end state exactly (no other session had touched the fort in the interim).
+- Ghost unit 454's resolution is now the fort's second "watch a tool actually change the game" proof
+  point after the earlier coffin-build stage; worth citing in `Working.md`'s current-state summary and
+  possibly as a mutation-2 candidate alongside the coffin build itself, but that's the orchestrator's
+  call.
+- The coffin's known-suboptimal site was left exactly as it was (per the standing ruling) and is now
+  permanently load-bearing (a live Tomb zone sits on it); if a future stream ever wants to relocate it,
+  that is a new zone-plus-building operation, not a simple move.
+
+## Files this stage
+`deploy-2026-09-24-tomb.txt`, `tomb-place-dry2.json`, `tomb-real.json`, `zone16-contents.json`,
+`slice9.txt`, `slice10.txt`.

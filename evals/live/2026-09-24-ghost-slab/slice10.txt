@@ -1,0 +1,27 @@
+Slice 10 (Stage D, stability check after burial): run.sh 12654657 413 "NEVERMATCH_STOP_CONDITION"
+Start: abs_tick 12653657 (end of slice 9, post-burial, tripwire cleared).
+
+{"ok": true,"paused": true}
+final tick 12654687
+PICK	OK	192
+CATS	2 2 4 7 3 3 1
+CAT0	2	345,455
+MAXREPORT	413
+	"alive": 22,
+	"dead_total": 1,
+COFFINITEM	4036	inbld	true	ongr	false
+COFFINITEMS	1
+COFFINBLD	14	stage	1	exists	true	contained	2
+CORPSE	2804	ongr	false	inbld	true	inv	false	injob	false	hidden	false
+GHOST	false	type	10	active	false
+KEASAMEZ	999
+
+Target reached, no tripwire, no new alerts. State stable and unchanged from
+slice 9's post-burial reading: corpse still interred, ghost still resolved
+(flags3.ghostly false, active false), no report text beyond MAXREPORT 413
+(no new report), pick 118 still held by 192, stress cat0 unchanged (345,455),
+alive/dead unchanged.
+
+Ticks used this slice: 1030 (12653657 -> 12654687).
+Total ticks used, Stage D: 2041 (12652646 -> 12654687), well within the
+6000-tick budget named in the handoff.
