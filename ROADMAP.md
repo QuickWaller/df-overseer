@@ -812,7 +812,13 @@ or `decisions/DECISIONS.md`, not here.
   rotations, do hallways connect, is that room in a shit spot", judged by
   the user eyeballing the live viewer (the no-map rule binds models, not
   the user) with tool checks alongside (connectivity, entrance faces a
-  corridor, reachability per rotation). The user's ratings and reasons are
+  corridor, reachability per rotation), and "is the room actually
+  functional" in three layers: the game counts it (zone, furniture inside,
+  owner; `zone contents`, `nobles requirements`), dwarves can use it
+  (reachable, nothing blocked), and dwarves do use it (someone sleeps,
+  eats, the noble's need clears), the last only observable by running the
+  game for a while after building, which is where a reload earns its
+  keep. The user's ratings and reasons are
   labelled examples for the districting design's checker. Some of it may
   need no reload at all (the `blueprint` verb's plan and preview). Feeds
   the public report directly. Not designed yet.
