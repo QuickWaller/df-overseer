@@ -1,13 +1,13 @@
-# Template metadata for blueprints/templates/office-room-v1.csv.
+# Template metadata for blueprints/templates/office-room-v2.csv.
 # Format defined in blueprints/README.md, "Template library format" section.
 
 id: office-room
-revision: 1
+revision: 2
 kind: office
-status: applied-live      # applied once, live, 2026-09-24 (site-2); superseded by office-room-v2, which adds the floor phase
+status: designed          # designed | applied-live | verified-live (see README)
 generic: true              # no fort coordinates, no landmark names, per docs/PURPOSE.md #1
 
-quickfort_file: office-room-v1.csv
+quickfort_file: office-room-v2.csv
 
 dimensions:
   footprint: { width: 5, depth: 5 }   # includes the wall ring
@@ -34,6 +34,16 @@ walls:
     tile is standing natural rock. A standing soil wall cannot take a
     constructed wall in one blueprint (research/2026-09-24-quickfort-hands.md);
     the blueprint verb reports such tiles instead of leaving them rough.
+
+floor:
+  intent: smoothed
+  phase: office_room_v2_floor   # apply after the interior dig, before any furniture
+  note: >-
+    Added in revision 2. Revision 1 smoothed only the wall ring, so its floor
+    stayed rough; furniture blocks smoothing, so this phase must precede the
+    build phase.
+
+supersedes: office-room-v1
 
 requires:
   - chair

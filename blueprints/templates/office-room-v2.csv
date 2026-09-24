@@ -1,0 +1,63 @@
+#notes label(office_room_v2_notes) orientation and edge roles; see blueprints/templates/office-room-v2.yaml
+"This file is one standalone office room; not a placed room. It carries no"
+"coordinates and no fort-specific anchor; a caller supplies the anchor when"
+"applying it."
+""
+"Grid orientation; 5 columns by 5 rows; row 1 is the top (north) edge as"
+"displayed below:"
+"  - the outer ring (rows 1 and 5, columns 1 and 5): this room's own wall;"
+"    nothing tiles against it."
+"  - row 5; column 3: the entrance gap; open floor; no wall; no door."
+"  - rows 2-4; columns 2-4: the 3x3 interior; the chair sits in its centre."
+""
+"Every s cell is a finished-wall intent; not a material. This concrete file"
+"resolves that intent as smooth (s; #dig mode) because it assumes the ring is"
+"standing natural rock, the common case for a room carved into solid stone."
+"Where a ring tile is soil or not standing rock, smoothing cannot apply; a"
+"standing wall of soil cannot be finished by one blueprint (dig it out, wait,"
+"then place a constructed wall). See blueprints/README.md; Resolving the wall"
+"intent. The verb reports such tiles rather than leaving them rough."
+""
+"Phase order matters: dig and smooth the ring (shell), then smooth the interior"
+"floor (floor), then place furniture and the zone (finish). Furniture blocks"
+"smoothing, so the floor phase must be applied only after the interior is dug"
+"and before the chair is built. v1 lacked the floor phase; its floor stayed rough."
+""
+"Access to the room (a stair or corridor to the entrance gap) is a separate"
+"concern; this template is the room only."
+
+#dig label(office_room_v2_shell) dig the 3x3 interior and the entrance gap; smooth the finished wall ring
+s,s,s,s,s,#
+s,d,d,d,s,#
+s,d,d,d,s,#
+s,d,d,d,s,#
+s,s,d,s,s,#
+#,#,#,#,#,#
+
+#dig label(office_room_v2_floor) smooth the 3x3 interior floor; apply only after the shell's interior dig is complete and before any furniture
+`,`,`,`,`,#
+`,s,s,s,`,#
+`,s,s,s,`,#
+`,s,s,s,`,#
+`,`,`,`,`,#
+#,#,#,#,#,#
+
+#build label(office_room_v2_build) place the one required chair in the centre of the interior
+`,`,`,`,`,#
+`,`,`,`,`,#
+`,`,c,`,`,#
+`,`,`,`,`,#
+`,`,`,`,`,#
+#,#,#,#,#,#
+
+#zone label(office_room_v2_zone) declare the office zone over the interior only; never over the wall ring
+`,`,`,`,`,#
+`,o,o,o,`,#
+`,o,o,o,`,#
+`,o,o,o,`,#
+`,`,`,`,`,#
+#,#,#,#,#,#
+
+#meta label(office_room_v2_finish) chair then zone; apply only after the shell and the floor phase are both complete
+/office_room_v2_build
+/office_room_v2_zone
