@@ -86,3 +86,86 @@ map that keeps logic in nodes rather than code, the gating facts settled with
 versions, and the two worked sketches.
 
 ## Result
+
+Done. `research/2026-09-25-n8n-testing-vc-nodes.md` written and committed
+(`66b5f0d`, branch `worktree-agent-a9e407a5179bd48ae`).
+
+**Bottom line.** A pilot is workable under the hard constraint (control
+flow in nodes, not Code blocks), but three gating facts (whether Execute
+Command can be turned on, MCP Server Trigger auth, whether one tool
+workflow can serve several triggers) need checking against the actual
+installed n8n version before building. The single biggest design call the
+research surfaced: have n8n's tool workflows call `dfmcp-server`'s own MCP
+HTTP endpoint (as just another authenticated role-scoped client) rather
+than reimplementing `dfhack-run` argv construction, JSON parsing and the
+CP437 backstop as native n8n nodes, so every bug already fixed in
+`dfmcp/` stays fixed once, not twice.
+
+**Testing.** Two layers: (1) static `pytest` checks with no Docker or n8n,
+diffing each workflow's declared schema against `dfmcp.tools.tool_definitions`
+and checking no mutating node reaches a read-tool workflow or a
+non-Overseer trigger; (2) `n8n execute-batch --snapshot`/`--compare`
+against test-tagged twin workflows with `Code`-node fixtures standing in
+for the HTTP call to `dfmcp`, never `pinData` (confirmed CLI-ignored). A
+third, un-gated contract test (a real MCP client against a real running
+n8n instance) is named as the one thing neither layer can prove.
+
+**Version control.** Git as sole source of truth, one-directional
+(git to n8n), adopting the other project's pattern: a stable hand-chosen
+workflow `id`, a field-stripping diff (top-level only, never at node
+depth), one-file-at-a-time import (a real n8n 2.x tag-table bug), and a
+deploy step that reads n8n back afterward because `import:workflow`'s exit
+code proves nothing.
+
+**Gating facts, with versions (n8n docs, fetched 2026-09-25; stable line
+2.40.6 per the docs changelog page):**
+- Execute Command disabled by default since n8n 2.0; re-enabled only by
+  clearing the whole `NODES_EXCLUDE` list (`NODES_EXCLUDE=[]`), no
+  narrower per-node toggle documented.
+- MCP Server Trigger: three auth options (None, Bearer auth, Header auth),
+  one configuration per trigger node, so a per-role trigger design can
+  give each role its own credential.
+- Typed tool input schema: a "Workflow Input Schema" declared in the
+  called sub-workflow, pulled into the calling tool node. Confirmed for
+  the AI Agent's Tool Workflow sub-node; not independently confirmed this
+  is the same path the MCP Server Trigger uses.
+- Whether one tool workflow can attach to several triggers: not stated
+  either way in n8n's docs. Architecturally plausible, not verified.
+- `execute-batch` and its snapshot/compare flags do not appear in n8n's
+  published docs at all; this project's own reliance on it is entirely
+  secondhand from the other project's tested-against-2.40.5 findings, not
+  independently re-run here.
+
+**Node map.** MCP Server Trigger (one per role) to a typed tool node, `If`/
+`Switch` for argument validation and the three-way unknown-vs-false
+routing, `HTTP Request` to `dfmcp-server`'s own endpoint (or `Execute
+Command`/`SSH` if calling `dfhack-run` directly), `Switch` into `Stop and
+Error` on failure, shared `Execute Workflow` sub-workflows for logging and
+any other cross-cutting concern. One Code node is genuinely earned (a
+small argument-reshaping expression with no branch inside it); the
+constraint that mattered was "zero decisions inside a Code node," not
+"zero Code nodes."
+
+**Worked sketches.** `zone.list` (read) and `zone.place` (write), each
+node-by-node with their static and snapshot-compare tests, in the research
+file's §5. The write sketch's most load-bearing test fixture: a real
+placement response with `read_back` missing, which must not be silently
+treated as success, mirroring this project's own `getRoomDescription`
+false-negative history.
+
+**What could not be verified:** multi-trigger reuse of one tool workflow;
+whether the MCP-specific schema path matches the AI-Agent-facing one;
+whether n8n's evaluation feature needs a paid tier; `execute-batch`'s
+exact behaviour on whatever version this project actually installs;
+whether `pinData` is ignored on the current release line versus only the
+2.40.5 the other project tested; the n8n source-control feature's exact
+license gate. All listed in the research file's own section.
+
+**Pre-commit leak grep.** Ran a grep for the other project's name and a vendor/workflow-
+name pattern grep (accounting-API and supplier-billing vendor names, host
+ids) against the committed research file before committing: zero hits.
+Every reference to the other project is in pattern form (an accounting
+API, a supplier-billing pull, a workflow test directory) with no name,
+host, vendor, or workflow/file identifier carried over.
+
+No permission refusals encountered. No VM commands or installs were run.
