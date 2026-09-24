@@ -281,3 +281,28 @@ read-only over ssh), not run.
   smooth, harmless). Without the verb: `quickfort undo templates/office-room-v1.csv
   -c X,Y,Z -n /office_room_v1_shell` with the site's own coordinates and no
   transform (site-1 was applied unrotated). Both paths need their own go-ahead.
+
+## Addendum 2026-09-24: two status misreads found live, and the rule that replaces them
+
+Both came from reading DF state through a proxy instead of the thing itself.
+
+- **A dig flag is not a job.** DF clears a tile's dig designation flag once it
+  has made a job for that tile, so counting flagged tiles undercounts work in
+  flight. Site-2's entrance gap had a real, unclaimed Dig job with the flag
+  clear, while its 9 interior cells were flagged, job-less and blind until the
+  gap was dug; status read `stalled`. Rule now: a site with any dig, carve or
+  smooth job in it is never `stalled`; `dig` reports `jobs_in_site` and
+  `jobs_claimed_by_a_worker`. `stalled` is only for a site with no job at all
+  whose designations are all blind, or startable ones past the grace period.
+- **Completion is per-cell, not a count.** `shell_done` read true with 11 of 15
+  ring tiles rough and undesignated, because it tested "no outstanding
+  designations and no solid carve cells", which is also true of a shell nobody
+  ever designated the smoothing of. Rule now: `shell_done` is computed from the
+  cells the template requires, read directly (carve cells dug, `s` cells smoothed
+  or constructed), and `status.shell_cells` returns the counts so a caller sees
+  why: `carve_required/dug/solid`, `smooth_required/done`, `rough`,
+  `undesignated`, `hidden`, `unreadable`.
+
+Tests: `tests/test_blueprint_lua_logic.py` (five new, all failing on the prior
+file). Unverified: `dfhack.job.getWorker` on the live build (a failed read is
+reported as unknown, never as unclaimed).

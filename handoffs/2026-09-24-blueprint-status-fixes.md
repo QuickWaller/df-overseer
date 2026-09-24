@@ -60,4 +60,11 @@ check.
 
 ## Result
 
-(to be filled by the executor)
+Done offline, three commits on the executor branch. Ambient 1503 passed, 3 skipped (baseline 1494 plus 5 Lua plus 4 runner).
+- dig_progress: any dig/carve/smooth job in the site means in_progress, never stalled. New dig fields: jobs_in_site, jobs_claimed_by_a_worker (null if getWorker unreadable).
+- site_status: shell_done now from shell_cells (per-cell read): carve_required/dug/solid, smooth_required/done, rough, undesignated, hidden, unreadable.
+- runner: _final_answer reads finalAnswer, final_answer, final, payloads[].text in that order.
+- Old code fails the new tests (5 Lua via BLUEPRINT_LUA_UNDER_TEST on the prior file; 2 runner tests on the prior runner).
+- TOOLS.yaml notes to update by its owner: status gains dig.jobs_in_site, dig.jobs_claimed_by_a_worker, shell_cells; shell_done semantics changed (per-cell, needs smoothing done).
+- Post-deploy live check: status on site-2 (Dig job on the gap) must read in_progress with jobs_in_site >= 1; status on the site with 11 rough ring tiles must read shell_done false, rough 11, undesignated 11 (or current live equivalents); confirm jobs_claimed_by_a_worker is a number, not null (proves dfhack.job.getWorker exists on the build); a Consultant run must return a non-null final_answer.
+

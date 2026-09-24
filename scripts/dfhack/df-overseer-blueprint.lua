@@ -553,6 +553,58 @@ local function shell_prerequisites(site, leaves_all, failures)
     pending_designations = count_pending(site, failures)}
 end
 
+-- The shell, read cell by cell against what the template requires (no
+-- designation or job counts): a `d`-type cell must be dug out, an `s` cell
+-- must be smoothed or constructed. Live 2026-09-24: shell_done read true while
+-- 11 of 15 ring tiles were rough and undesignated, because it only asked
+-- whether designations were outstanding and carve cells solid.
+local function shell_cells(site, leaves_all, failures)
+  local out = {carve_required = 0, carve_dug = 0, carve_solid = 0,
+    smooth_required = 0, smooth_done = 0, rough = 0, undesignated = 0,
+    hidden = 0, unreadable = 0}
+  local seen = {}
+  for _, sec in ipairs(leaves_all) do
+    if sec.mode == "dig" then
+      for _, c in ipairs(sec.cells) do
+        local carve, smooth = CARVE_SYMBOLS[c.text], c.text == SMOOTH_SYMBOL
+        if carve or smooth then
+          local cxw, cyw = cell_xy(site, c.x, c.y)
+          local k = (carve and "d" or "s") .. cxw .. "," .. cyw
+          if not seen[k] then
+            seen[k] = true
+            local t = tile_info(cxw, cyw, site.z)
+            if carve then out.carve_required = out.carve_required + 1 else out.smooth_required = out.smooth_required + 1 end
+            if not t.ok then
+              out.unreadable = out.unreadable + 1
+              note_failure(failures, "shell cell", t.err)
+            elseif t.hidden then
+              out.hidden = out.hidden + 1
+              if carve then out.carve_solid = out.carve_solid + 1 end
+            elseif carve then
+              if t.shape == df.tiletype_shape.WALL then out.carve_solid = out.carve_solid + 1
+              else out.carve_dug = out.carve_dug + 1 end
+            elseif t.material == df.tiletype_material.CONSTRUCTION
+                or (t.special == df.tiletype_special.SMOOTH and SMOOTHABLE_MATERIALS[t.material]) then
+              out.smooth_done = out.smooth_done + 1
+            else
+              out.rough = out.rough + 1
+              local okf, flags = pcall(dfhack.maps.getTileFlags, xyz2pos(cxw, cyw, site.z))
+              if not okf or not flags then
+                out.unreadable = out.unreadable + 1
+                note_failure(failures, "shell cell designation", flags)
+              elseif flags.dig == df.tile_dig_designation.No and flags.smooth == 0 then
+                out.undesignated = out.undesignated + 1
+              end
+            end
+          end
+        end
+      end
+    end
+  end
+  out.done = out.carve_solid == 0 and out.rough == 0 and out.hidden == 0 and out.unreadable == 0
+  return out
+end
+
 -- ---------------------------------------------------------------------------
 -- Access: can the dig start at all? (handoffs/2026-09-24-blueprint-access.md)
 --
@@ -675,10 +727,11 @@ end
 
 -- Every dig job (dig, carve, smooth) currently in the game inside the site
 -- rectangle, as a set keyed "x,y". Bounded by MAX_JOBS_SCANNED. Returns
--- set, count, err.
+-- set, count, err, claimed (jobs with a worker; nil if unreadable).
 local MAX_JOBS_SCANNED = 20000
 local function dig_jobs_in_site(site, failures)
   local set, count = {}, 0
+  local claimed, claimed_known = 0, 0
   local ok, err = pcall(function()
     local link = df.global.world.jobs.list.next
     local scanned = 0
@@ -693,6 +746,13 @@ local function dig_jobs_in_site(site, failures)
           local k = job.pos.x .. "," .. job.pos.y
           if not set[k] then count = count + 1 end
           set[k] = true
+          -- claimed = a unit is working it. A failed read leaves it unknown
+          -- (never defaulted to unclaimed).
+          local okw, worker = pcall(function() return dfhack.job.getWorker(job) end)
+          if okw then
+            claimed_known = claimed_known + 1
+            if worker then claimed = claimed + 1 end
+          end
         end
       end
       link = link.next
@@ -700,20 +760,26 @@ local function dig_jobs_in_site(site, failures)
   end)
   if not ok then
     note_failure(failures, "job census", err)
-    return nil, 0, tostring(err)
+    return nil, 0, tostring(err), nil
   end
-  return set, count, nil
+  -- claimed is nil unless every job's worker read succeeded
+  local claimed_out = (claimed_known > 0) and claimed or nil
+  return set, count, nil, claimed_out
 end
 
 -- The post-apply proof: designations landed vs dig jobs that exist. Per
 -- pending dig designation: has_job / blind (no walkable neighbour) /
 -- startable (a dwarf can reach it, no job yet). Four states, never a default:
 --   none_pending, in_progress, stalled, unknown.
--- stalled: nothing is pending that has a job, and either every pending
--- designation is blind (it can never start), or startable ones have sat
--- without a job for STALL_TICKS game ticks since the apply.
+-- A site with ANY dig/carve/smooth job in it is never stalled: DF clears the
+-- tile's dig flag once a job exists, so a flag-only count cannot see it
+-- (live 2026-09-24: an entrance gap with a real, unclaimed Dig job read
+-- stalled while the interior was correctly job-less until the gap was dug).
+-- stalled: the site has NO job, and either every pending designation is
+-- blind (it can never start), or startable ones have sat without a job for
+-- STALL_TICKS game ticks since the apply.
 local function dig_progress(site, failures, applied_tick)
-  local jobs, _, jerr = dig_jobs_in_site(site, failures)
+  local jobs, njobs, jerr, nclaimed = dig_jobs_in_site(site, failures)
   local pending, with_job, blind, startable, unknown = 0, 0, 0, 0, 0
   for x = site.x, site.x + site.w - 1 do
     for y = site.y, site.y + site.h - 1 do
@@ -737,7 +803,8 @@ local function dig_progress(site, failures, applied_tick)
   local okt, tick = pcall(dfhack.world.ReadCurrentTick)
   local since = (okt and applied_tick) and (tick - applied_tick) or nil
   local state
-  if pending == 0 and unknown == 0 then state = "none_pending"
+  if jobs and njobs > 0 then state = "in_progress"
+  elseif pending == 0 and unknown == 0 then state = "none_pending"
   elseif jerr and with_job == 0 and blind < pending then state = "unknown"
   elseif with_job > 0 then state = "in_progress"
   elseif blind == pending and unknown == 0 then state = "stalled"
@@ -752,6 +819,8 @@ local function dig_progress(site, failures, applied_tick)
     blind_no_walkable_neighbour = blind,
     startable_no_job_yet = startable,
     unreadable = unknown,
+    jobs_in_site = jerr and NULL or njobs,
+    jobs_claimed_by_a_worker = nn(nclaimed),
     ticks_since_apply = nn(since),
     job_census_error = nn(jerr),
   }
@@ -1171,6 +1240,7 @@ function site_status(handle)
   local phases = {}
   for _, p in ipairs(site.phases or {}) do phases[#phases + 1] = p.label end
   local pre = shell_prerequisites(site, all_leaves, failures)
+  local shc = shell_cells(site, all_leaves, failures)
   local fin = finish_state(site, all_leaves, failures)
   local b = site_brief(site)
   local last = (site.phases or {})[#(site.phases or {})]
@@ -1184,7 +1254,8 @@ function site_status(handle)
     site = {near_landmark = b.near_landmark, direction = b.direction, distance_tiles = b.distance_tiles,
       footprint = {width = site.w, height = site.h}},
     shell = pre,
-    shell_done = pre.pending_designations == 0 and pre.still_solid == 0,
+    shell_cells = shc,
+    shell_done = shc.done,
     finish_state = fin,
     finish_required_met = fin.blocked_total == 0 and fin.smoothable == 0 and fin.hidden == 0
       and fin.occupied_by_building == 0 and fin.unreadable == 0,

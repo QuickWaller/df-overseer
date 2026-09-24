@@ -51,6 +51,22 @@ DEFAULT_IMAGE = "ghcr.io/openclaw/openclaw:latest"
 DEFAULT_TIMEOUT_SECONDS = 600.0
 
 
+def _final_answer(envelope: dict) -> Optional[str]:
+    """The agent's answer text. Order: `finalAnswer`, `final_answer`, `final`
+    (the shape the real openclaw envelope returns, seen 2026-09-24), then the
+    first non-empty `payloads[].text`. First non-empty string wins."""
+    for key in ("finalAnswer", "final_answer", "final"):
+        v = envelope.get(key)
+        if isinstance(v, str) and v:
+            return v
+    payloads = envelope.get("payloads")
+    if isinstance(payloads, list):
+        for p in payloads:
+            if isinstance(p, dict) and isinstance(p.get("text"), str) and p["text"]:
+                return p["text"]
+    return None
+
+
 @dataclass(frozen=True)
 class RunResult:
     """The one shape every `RoleRunner` returns, real or fake. Mirrors
@@ -246,6 +262,6 @@ class DockerOpenClawRunner:
             wall_clock_seconds=wall_clock,
             timed_out=False,
             tool_summary=envelope.get("toolSummary", {}) or {},
-            final_answer=envelope.get("finalAnswer") or envelope.get("final_answer"),
+            final_answer=_final_answer(envelope),
             raw=envelope,
         )

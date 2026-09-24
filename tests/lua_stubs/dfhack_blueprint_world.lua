@@ -21,7 +21,7 @@ function set_jobs(list)
   local head = nil
   for i = #list, 1, -1 do
     local j = list[i]
-    head = {item = {job_type = df.job_type[j.job_type], pos = {x = j.x, y = j.y, z = j.z}}, next = head}
+    head = {item = {job_type = df.job_type[j.job_type], pos = {x = j.x, y = j.y, z = j.z}, worker = j.worker}, next = head}
   end
   df.global.world.jobs.list.next = head
 end
@@ -37,6 +37,7 @@ function set_tile(x, y, z, shape, mat, special, extra)
   TILES[key(x, y, z)] = {tt = id, dig = 0, smooth = 0, occupied = extra and extra.occupied, hidden = extra and extra.hidden}
 end
 dfhack = {
+  job = {getWorker = function(job) return job.worker end},
   maps = {
     isValidTilePos = function(x, y, z) return TILES[key(x, y, z)] ~= nil end,
     isTileVisible = function(x, y, z) return not TILES[key(x, y, z)].hidden end,

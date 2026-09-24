@@ -457,3 +457,75 @@ def test_a_second_dig_on_a_stored_site_is_gated_by_its_stored_orientation(world)
     r, _ = world.call("preview_phase", BP, SHELL, "site-1")
     assert r["site"]["orientation"] == "rot180" and r["dig_can_start"] is True
     assert " -t rotcw,rotcw" in world.calls()[-1]
+
+
+# ---- 2026-09-24 live status fixes (handoffs/2026-09-24-blueprint-status-fixes.md) ----
+
+def test_a_dig_job_with_the_flag_already_cleared_is_never_stalled(world):
+    """Incident: site-2's entrance gap had a real, unclaimed Dig job (DF clears
+    the tile's dig flag once a job exists) while the 9 interior cells were
+    correctly job-less and blind until the gap was dug. Status read stalled."""
+    world.stone_block(10, 10, open_sides="")
+    world.qf_output(DIG_OK)
+    world.call("apply_phase", BP, SHELL, "Well", "false", None, None, None, "true")
+    for x in range(11, 14):
+        for y in range(11, 14):
+            world.lua.eval("set_dig")(x, y, 5, 1)          # interior: flagged, job-less
+    world.lua.execute('set_jobs({{job_type = "Dig", x = 12, y = 14, z = 5}})')  # gap: job, flag clear
+    st, err = world.call("site_status", "site-1")
+    assert err is None
+    assert st["stalled"] is False and st["dig"]["state"] == "in_progress"
+    assert st["dig"]["jobs_in_site"] == 1 and st["dig"]["jobs_claimed_by_a_worker"] == 0
+    assert st["stall_remedy"] in (None, chr(0))
+
+
+def test_a_claimed_job_is_reported_as_worked(world):
+    world.stone_block(10, 10, open_sides="")
+    world.qf_output(DIG_OK)
+    world.call("apply_phase", BP, SHELL, "Well", "false", None, None, None, "true")
+    world.lua.execute('set_jobs({{job_type = "Dig", x = 12, y = 14, z = 5, worker = {}}})')
+    st, _ = world.call("site_status", "site-1")
+    assert st["dig"]["state"] == "in_progress" and st["dig"]["jobs_claimed_by_a_worker"] == 1
+
+
+def _ring_partly_rough(world, smooth_tiles):
+    """Interior and gap dug, no designation anywhere, and only `smooth_tiles`
+    of the 15 ring cells smoothed (the live site-2 pattern: 4 smooth, 11 rough)."""
+    world.stone_block(10, 10)
+    world.qf_output(DIG_OK)
+    world.call("apply_phase", BP, SHELL, "Well", "false")
+    world.carve_and_smooth()
+    ring = [(x, y) for x in range(10, 15) for y in range(10, 15)
+            if not (11 <= x <= 13 and 11 <= y <= 13) and (x, y) != (12, 14)]
+    assert len(ring) == 15
+    for x, y in ring[smooth_tiles:]:
+        world.lua.eval("set_tile")(x, y, 5, "WALL", "STONE", "NORMAL")
+
+
+def test_a_shell_with_rough_undesignated_ring_tiles_is_not_done(world):
+    """Incident: shell_done read true with 11 of 15 ring tiles rough and
+    undesignated, because it only asked about designations and solid carve cells."""
+    _ring_partly_rough(world, 4)
+    st, err = world.call("site_status", "site-1")
+    assert err is None
+    assert st["shell_done"] is False
+    c = st["shell_cells"]
+    assert c["carve_required"] == 10 and c["carve_dug"] == 10 and c["carve_solid"] == 0
+    assert c["smooth_required"] == 15 and c["smooth_done"] == 4
+    assert c["rough"] == 11 and c["undesignated"] == 11
+
+
+def test_rough_ring_tiles_that_are_designated_are_rough_but_not_undesignated(world):
+    _ring_partly_rough(world, 4)
+    world.lua.execute("TILES['14,14,5'].smooth = 1")
+    st, _ = world.call("site_status", "site-1")
+    assert st["shell_done"] is False
+    assert st["shell_cells"]["rough"] == 11 and st["shell_cells"]["undesignated"] == 10
+
+
+def test_a_fully_smoothed_shell_is_done_and_counts_add_up(world):
+    _ring_partly_rough(world, 15)
+    st, _ = world.call("site_status", "site-1")
+    assert st["shell_done"] is True
+    c = st["shell_cells"]
+    assert c["smooth_done"] == 15 and c["rough"] == 0 and c["undesignated"] == 0
