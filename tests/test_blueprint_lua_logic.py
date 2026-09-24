@@ -488,6 +488,40 @@ def test_a_claimed_job_is_reported_as_worked(world):
     assert st["dig"]["state"] == "in_progress" and st["dig"]["jobs_claimed_by_a_worker"] == 1
 
 
+def test_zero_jobs_reports_zero_claimed_not_null(world):
+    """Live 2026-09-24: with no job in the site the field read null, which could
+    not be told apart from an unreadable worker read. No jobs is a real answer: 0."""
+    world.stone_block(10, 10, open_sides="")
+    world.qf_output(DIG_OK)
+    world.call("apply_phase", BP, SHELL, "Well", "false", None, None, None, "true")
+    world.lua.execute("set_jobs({})")
+    st, err = world.call("site_status", "site-1")
+    assert err is None
+    assert st["dig"]["jobs_in_site"] == 0
+    assert st["dig"]["jobs_claimed_by_a_worker"] == 0
+
+
+def test_an_unreadable_worker_read_is_null_never_zero(world):
+    """A failed getWorker must stay null (unknown), never be counted as unclaimed."""
+    world.stone_block(10, 10, open_sides="")
+    world.qf_output(DIG_OK)
+    world.call("apply_phase", BP, SHELL, "Well", "false", None, None, None, "true")
+    world.lua.execute('set_jobs({{job_type = "Dig", x = 12, y = 14, z = 5, worker_fails = true}})')
+    st, _ = world.call("site_status", "site-1")
+    assert st["dig"]["jobs_in_site"] == 1
+    assert st["dig"]["jobs_claimed_by_a_worker"] in (None, chr(0))
+
+
+def test_one_unreadable_worker_among_readable_ones_makes_the_count_null(world):
+    world.stone_block(10, 10, open_sides="")
+    world.qf_output(DIG_OK)
+    world.call("apply_phase", BP, SHELL, "Well", "false", None, None, None, "true")
+    world.lua.execute('set_jobs({{job_type = "Dig", x = 12, y = 14, z = 5, worker = {}},'
+                      ' {job_type = "Dig", x = 11, y = 11, z = 5, worker_fails = true}})')
+    st, _ = world.call("site_status", "site-1")
+    assert st["dig"]["jobs_claimed_by_a_worker"] in (None, chr(0))
+
+
 def _ring_partly_rough(world, smooth_tiles):
     """Interior and gap dug, no designation anywhere, and only `smooth_tiles`
     of the 15 ring cells smoothed (the live site-2 pattern: 4 smooth, 11 rough)."""

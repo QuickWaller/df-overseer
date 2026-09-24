@@ -731,7 +731,7 @@ end
 local MAX_JOBS_SCANNED = 20000
 local function dig_jobs_in_site(site, failures)
   local set, count = {}, 0
-  local claimed, claimed_known = 0, 0
+  local claimed, claimed_known, jobs_seen = 0, 0, 0
   local ok, err = pcall(function()
     local link = df.global.world.jobs.list.next
     local scanned = 0
@@ -743,6 +743,7 @@ local function dig_jobs_in_site(site, failures)
           and job.pos.y >= site.y and job.pos.y <= site.y + site.h - 1 then
         local name = df.job_type[job.job_type] or ""
         if name:match('^Dig') or name:match('^Carve') or name:match('^Smooth') then
+          jobs_seen = jobs_seen + 1
           local k = job.pos.x .. "," .. job.pos.y
           if not set[k] then count = count + 1 end
           set[k] = true
@@ -762,8 +763,12 @@ local function dig_jobs_in_site(site, failures)
     note_failure(failures, "job census", err)
     return nil, 0, tostring(err), nil
   end
-  -- claimed is nil unless every job's worker read succeeded
-  local claimed_out = (claimed_known > 0) and claimed or nil
+  -- claimed: 0 when the site has no job at all (nothing to claim, a real answer);
+  -- a count when every job's worker read succeeded; nil ONLY when at least one
+  -- worker read failed. nil must never stand for "no jobs" (the silent-degradation
+  -- shape in docs/TRAPS.md): live 2026-09-24 it did, and could not be told apart
+  -- from an unreadable read.
+  local claimed_out = (claimed_known == jobs_seen) and claimed or nil
   return set, count, nil, claimed_out
 end
 
