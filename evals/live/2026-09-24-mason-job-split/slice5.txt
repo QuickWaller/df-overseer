@@ -1,0 +1,18 @@
+final tick 12642236
+[0mPICK	OK	192
+[0mCATS	2 2 4 8 2 3 1 
+[0mCAT0	2	345,455
+[0mMAXREPORT	411
+	"alive": 22,
+	"dead_total": 1,
+	"worst_hunger_status": "fine",
+	"worst_thirst_status": "fine"
+[0m[0mORDER	0	v	true	a	false	left	1	/	1
+[0mORDER	1	v	true	a	false	left	1	/	1
+[0mORDER	2	v	true	a	false	left	8	/	8
+[0mORDER	3	v	false	a	false	left	1	/	1
+[0mMJOB	2419	worker	194	Erush Kogandalzat "Boatsmatch", Woodworker	ws	5	susp	false	working	true	timer	139	items	1
+[0mMJOBS	1	total	2
+[0mMGR345	Drink
+[0mBLOCKS	4	BOULDERS	10
+[0mKEASAMEZ	999
