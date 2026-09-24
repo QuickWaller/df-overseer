@@ -35,7 +35,7 @@ actually going on right now.
 
 **Deployed and live-verified today, in order:** surface perception layer + furniture-aware ranking; access fix (`zone find`/`apply` orientation, stall detection) + `release`; the owner tool (`zone assign-owner`/`clear-owner`); the room-proxy fix + `zone contents`; the blueprint status fixes (`dig_progress`, `shell_done`) + the runner `final` envelope fix; `zone place`'s `AROUND_FURNITURE` flag + `jobs_claimed_by_a_worker`'s zero-vs-null fix, live-checked by placing the ghost's Tomb zone for real.
 
-**Pushed to `origin/main`** at `275700d` (75 commits, all one author, checked before push): today's full day of work plus everything queued since the last push.
+**Pushed to `origin/main`** at `b92d2d8` on 2026-09-25 (36 commits, all this session's, scanned for the user's other-project names and addresses before push; unpushed history was rewritten once beforehand to remove a leaked company name, see memory).
 
 **Still open:** the tiling generator for `bedroom-cell-v1`; burrow confinement ruling; `df-overseer-breach.lua` header and ROADMAP line correction; leaked key rotation (below); the site-ranking redesign (above, gated on a dedicated Opus session);  the small wiki S1 follow-up (four gaps in `store.py`); the wiki refresh timers (S8; until then the mirror only refreshes by hand, and the reader reports `stale` after 24 hours); wiki S7/S8 not yet dispatched; the districting design session (prior art complete, needs the user); the ore/hematite fix (mine the vein, build a constructed wall, deferred by the user).
 
