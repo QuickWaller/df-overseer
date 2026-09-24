@@ -5,77 +5,47 @@ story without you. See **[docs/PURPOSE.md](docs/PURPOSE.md)** for what this is
 and why, and **[docs/MEMORY-ARCHITECTURE.md](docs/MEMORY-ARCHITECTURE.md)** for the overseer's memory and
 learning architecture.
 
-> **Status, 2026-09-24 evening.** Current work and next steps: `Working.md`
+> **Status, 2026-09-25.** Current work and next steps: `Working.md`
 > ("Current state", top of file). History: `decisions/DECISIONS.md`,
 > `working-archive/`, `evals/live/`. Game knowledge (crop and water rules
 > the agents should use) goes in `doctrine/seed.yaml`, not the register.
 >
-> - **Current state, as last verified live 2026-09-24 (a long single-day
->   session: the office, a ghost, the manager-order question, and the
->   Consultant's offline wiki mirror; full detail in `Working.md` and the
->   day's register rows).** Uniboslan is paused, 22 alive and 1 dead, one
->   fort tick unresolved (a live abs_tick figure is stale by the time this
->   is read; check `Working.md`), `dfmcp-server` active. Role tool lists
+> - **Current state, as last verified live 2026-09-25.** Uniboslan is
+>   paused, 22 alive and 1 dead, `dfmcp-server` active. Role tool lists
 >   (read plus write, measured from the roster): **overseer 79, architect
->   49, consultant 27, quartermaster 24, conductor 15** (a same-day
->   increase from the morning's 70/44/26/24/15, driven by `zone.contents`,
->   `zone.assign-owner`/`clear-owner`, the blueprint verb, and the
->   Consultant's `knowledge.wiki_search`; consultant is **28 live since
->   2026-09-25**, when the never-deployed wiki reader shipped. **The
->   Consultant now answers from the full offline wiki mirror** (4,450 pages
->   on VM 103, first real pull 2026-09-24), verified by real consultant
->   calls; refresh timers (S8) are not built yet, so it goes stale until a
->   manual refresh. **The office is built, furnished
->   and owned by the Manager, and the game itself accepts it** (confirmed
->   by the user in the game's nobles screen); this project's own room-value
->   proxy (`getRoomDescription`) read empty for the same room and was
->   therefore giving a **false negative**, now fixed (an empty description
->   alone no longer resolves to `not_met`; it needs independent evidence
->   from the new `zone.contents` read). Building 9 is a complete Chair
->   holding an item, not a suspended plan (the old offices, zones 10/11,
->   are still empty). **Manager work orders still never dispatch a job**
->   (`nobles verify MANAGER` is a live, consistent appointment, ruling out
->   the obvious cause; a direct job with no manager involved dispatches and
->   completes normally); the user's ruling is to set this aside rather
->   than keep chasing it. **The ghost has been laid to rest**, resolved: a
->   Tomb zone was placed over its coffin once `zone place` gained the
->   furniture-exemption flag `zone find` already had, and burial was
->   confirmed live by direct struct reads (the corpse moving into the
->   coffin, the ghost's own flags clearing) plus the game's own report
->   text, not inferred from an absent haunt. The coffin's known-suboptimal
->   site is now permanently load-bearing. The Consultant's offline,
->   refreshable wiki mirror (`wikimirror/`) is built end to end offline,
->   not yet deployed; the first real pull needs the
->   user's go-ahead and a contact string. The conductor is installed on VM
->   106 (`conductor.service`), **disabled and inactive**; it has run only
->   as a manual dry run, never for real.
-> - **Recent history, each in full in the register, `Working.md` and
->   `evals/live/`:** the agent loop MVP (clock/tripwire script, a
->   `conductor` dfmcp role, the conductor service, the Quartermaster
->   enabled, Consultant web/wiki/source retrieval) was designed, built and
->   deployed 2026-09-22, with two live bugs found and fixed (the
->   conductor's MCP client against the real SDK; a missing `diff.since`
->   grant) and a CP437 game-text encoding bug found and fixed at its
->   source (`df-overseer-textutil.lua`, a Python-side backstop in
->   `dfmcp/dfhack_client.py`). `df.job.order_id` was found to link a
->   spawned job back to the manager order that made it, correcting an
->   earlier research claim that no such link existed; order-status fields
->   and a duplicate-production check (`orders.check-duplicate`) shipped and
->   were deployed and live-verified 2026-09-23. The first unattended run
->   (900 of a possible 2000-tick window) placed the first two real Office
->   zones and the first real Chair, then stopped itself on its own
->   `hostile_reachable` tripwire (a kea 68 tiles away) exactly as designed.
->   A three-tier attention system (record/slow/pause, replacing "pause on
->   any reachable creature"), a fifth tripwire on 25 pause-level
->   announcements, an observation ledger, and a stalled/blocked order
->   poller were designed from two research passes and deployed the same
->   day. **The mandatory live check on that deploy caught a real bug**: all
->   six creature-tag reads in the tier classifier were at the wrong struct
->   level and partly misspelled, silently returning `false` for every read
->   (pcall-guarded); a kea still landed in the correct tier by luck, but the
->   slow tier, built for a thieving creature closing in, could never have
->   fired. Fixed, redeployed and live-verified the same day against the
->   same live kea.
+>   49, consultant 28, quartermaster 24, conductor 15**. The office is
+>   built, furnished and owned by the Manager, and the game itself accepts
+>   it (the room-value proxy's earlier false negative is fixed). The ghost
+>   has been laid to rest (a Tomb zone over its coffin, confirmed by direct
+>   struct reads and the game's own report). **Manager work orders still
+>   never dispatch a job**; the user's ruling is to set this aside rather
+>   than keep chasing it. **The Consultant now answers from the full
+>   offline wiki mirror** on VM 103 (4,450 pages, SQLite plus FTS5,
+>   one-week hold on recent edits); it goes stale without a manual refresh,
+>   since the refresh timers (S8) are not built. The conductor is
+>   installed on VM 106 (`conductor.service`), **disabled and inactive**,
+>   run only once as a manual `--dry-run --once`; no agent or conductor
+>   cycle has ever made a real decision on this fort beyond `ruling-0001`.
+>   **Reloading a save is ruled a test-harness power only, never an
+>   agent's** (`docs/ARMOK-RULINGS.md`). The districting design session's
+>   prior-art research is complete (df-ai, then Systematic Layout Planning/
+>   adjacency/zoning), and observability (every inter-agent message with
+>   sender, recipient, type, one-line rationale, joinable to its tool
+>   calls) is now an agreed input to that session's agenda alongside
+>   blueprint connector properties; the session, and a real supervised
+>   conductor run, both wait on the user.
+> - **Recent history**, each in full in the register, `Working.md` and
+>   `evals/live/`: the 2026-09-22/23 agent loop MVP (clock/tripwire,
+>   `conductor` role, Quartermaster enabled, Consultant retrieval) and its
+>   live-caught tier-classifier bug, fixed the same day; the 2026-09-24
+>   zone/nobles/furniture-siting deploy and the room-value proxy's
+>   false-negative fix (`zone contents`); the ghost's diagnosis and burial;
+>   the Consultant's offline wiki mirror designed, built (S1-S6) and given
+>   its first real pull on VM 103; a 2026-09-25 switch-over attempt
+>   (blocked on undeployed reader code, rolled back cleanly, explaining a
+>   day's 27-vs-28 tool-count mismatch) followed by the reader deploy that
+>   actually switched the Consultant over, both live-verified by the
+>   orchestrator.
 >
 > - **The fort.** VM 103 (`df-colony-01`) runs **Uniboslan, "Ragwind,"** the
 >   one fort, on DF Classic plus DFHack under Xvfb, built by
@@ -106,12 +76,13 @@ learning architecture.
 >   real). **`doctrine/`** holds game
 >   knowledge (crop and water rules) the agents should eventually read;
 >   only the consultant reads it, through `doctrine.get`, and it is never a
->   repo decision, so it never goes in the register. **`wikimirror/`** (new
->   2026-09-24, offline, not yet deployed) is a self-refreshing offline
->   copy of the DF wiki for the consultant: recent edits are held back one
->   week before they're visible (user's call), everything is provenance-
->   and revision-tagged, and doctrine can cite a wiki revision and get
->   flagged if it drifts. See `docs/CONSULTANT-WIKI.md`.
+>   repo decision, so it never goes in the register. **`wikimirror/`**
+>   (deployed 2026-09-24/25, live) is a self-refreshing offline copy of the
+>   DF wiki for the consultant, currently only refreshed by hand (the S8
+>   timers are not built): recent edits are held back one week before
+>   they're visible (user's call), everything is provenance- and
+>   revision-tagged, and doctrine can cite a wiki revision and get flagged
+>   if it drifts. See `docs/CONSULTANT-WIKI.md`.
 > - **`dfmcp/`**, the MCP server: `dfmcp-server.service` on VM 103,
 >   LAN-bound, **bearer tokens the only guard until Tailscale**. Per-role
 >   allowlists enforced server-side, role from the credential, every call
@@ -140,11 +111,11 @@ learning architecture.
 >   above is design or proposal unless marked verified.
 >
 > **Traps before running anything:**
-> - Ambient `python -m pytest` gives **1844 passed, 3 skipped** with `lupa`
->   installed on `PYTHONPATH` (measured 2026-09-24, end of day; `lupa` is
+> - Ambient `python -m pytest` gives **1845 passed, 3 skipped** with `lupa`
+>   installed on `PYTHONPATH` (measured 2026-09-25; `lupa` is
 >   not a repo dependency, `pip install --target <scratch dir>` then add it
 >   to `PYTHONPATH`; without it several Lua-logic test files skip instead).
->   Run `dfmcp/tests` in `.venv-dfmcp` for all **691** (measured 2026-09-24).
+>   Run `dfmcp/tests` in `.venv-dfmcp` for all **692** (measured 2026-09-25).
 >   One test, `test_queue_tools.py::TestWriteSerialisation::
 >   test_concurrent_raw_appends_without_serialization_can_collide`, is a
 >   deliberate race and has flaked under load (failed once in a full run,
