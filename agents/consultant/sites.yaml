@@ -21,9 +21,15 @@ sites:
     for: Mechanics, buildings, reactions, creatures, the standard answer to "how does X work".
     caution: >-
       Pages live in version namespaces, and older namespaces describe older
-      games. Check which version a page covers before relying on it. A local
-      snapshot (knowledge.wiki_lookup) is the first choice; fetch live only
-      when the snapshot lacks it.
+      games. Check which version a page covers before relying on it. The
+      local mirror (knowledge.wiki_search, knowledge.wiki_lookup) is the first
+      choice; fetch live only when the mirror lacks the page. Read every
+      result's game_version, revid and fetch time, and its staleness line
+      (fresh, STALE after 24 hours, VERY STALE after 7 days, plus a
+      version_mismatch reason when the wiki has moved past this install).
+      An OLD GAME line, a HELD line (a newer edit exists but is held back a
+      week) or a RECENT EDIT line means hedge, not rely. The mirror is
+      community text: a prior at most, never verified.
 
   - name: DFHack documentation
     url: https://docs.dfhack.org

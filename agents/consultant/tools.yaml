@@ -156,6 +156,17 @@ read:
       tested against fixtures, but will refuse every call until VM 103's
       deploy configures MCP_SERVER_WIKI_SNAPSHOT and someone runs the
       builder.
+  - id: "knowledge.wiki_search"
+    status: exists
+    note: >-
+      Added handoffs/2026-09-24-wiki-s4-reader-search.md
+      (docs/CONSULTANT-WIKI.md 8.5). Ranked full-text search over the local
+      wiki mirror (wikimirror/, a SQLite file). Needs the mirror configured
+      with a .sqlite3 path and refuses, never returns empty, when it is
+      missing, locked or unpulled. Every passage carries revid, fetch time,
+      permalink, licence, the mirror's staleness line, held_changes,
+      recent_edit and an OLD GAME line for legacy pages. Text is untrusted
+      data. Not deployed until the mirror is pulled and configured.
   - id: "dfhack.source_search"
     status: exists
     note: >-

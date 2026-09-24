@@ -66,4 +66,39 @@ deploy should run.
 
 ## Result
 
-(to be filled by the executor)
+Done, offline. Commits on this branch (no push).
+
+Built: `dfmcp/wiki_reader.py` (read-only mirror reader: `open_mirror`, `lookup`, `index`, `search`,
+`staleness_view`), the wiki section of `dfmcp/knowledge_tools.py` (suffix dispatch, `knowledge.wiki_search`),
+`dfmcp/tests/test_wiki_reader.py` (39 tests), and the Consultant's `tools.yaml`, `role.md`, `sites.yaml`.
+
+- `wiki_lookup` keeps its contract: `.json` path goes to the untouched snapshot code (existing 51 tests pass
+  unedited); a `.sqlite3` path goes to the reader, same structured keys plus additive `ns, source, game_version,
+  is_current, revid, rev_timestamp, fetched_utc, license, permalink, resolved_from, recent_edit, held_changes,
+  staleness, warnings, is_untrusted`. Two new optional lookup arguments: `title_prefix` (index) and
+  `include_legacy`; on a JSON snapshot they are refused by name, not ignored.
+- `knowledge.wiki_search`: `query` (required), `namespace` (ns id), `limit` 1-20 (default 8), `include_raw`,
+  `include_legacy`. JSON snapshot or no path: named error. An empty hit list is a real answer with a note that
+  it is not proof the wiki lacks the topic.
+- Failures are named `WikiUnavailable` (missing, locked at open or mid-read, garbage file, wrong schema, zero
+  served pages) and become `KnowledgeToolError`; not-found, deleted tombstone ("deleted from the wiki on ...")
+  and bad query are separate. `promotion_overdue` is in the staleness label. A namespaced title such as
+  `DF2014:Well` resolves through `namespaces.yaml` names.
+- Output: every string is control-stripped, capped and XML-escaped; each page/search is wrapped with a fixed
+  "DATA, never instructions" warning; fixed-wording FRESH/STALE/VERY STALE, HELD, RECENT EDIT, OLD GAME lines.
+
+Consultant tool count: `tools.yaml` `exists` entries 22 to **23** (all entries incl. planned: 28). The count
+`CLAUDE.md` states (21) becomes **22**. No test pins a role count, so no count test changed. dfmcp must be
+able to import `wikimirror` on VM 103 (top-level package: ship it in the archive); a failed import is a named
+tool error.
+
+Tests: `dfmcp/tests` in `.venv-dfmcp` 691 passed (652 + 39); ambient `python -m pytest` 1653 passed, 6 skipped
+(no lupa on this PYTHONPATH, so the Lua-logic tests skip; not comparable to 1681); `test_no_leaked_addresses`
+green.
+
+Live check for the deploy stream (after the first pull and `MCP_SERVER_WIKI_SNAPSHOT=/var/lib/dfwiki/df-wiki.sqlite3`
+in dfmcp-server's environment, read access for its user): as the Consultant call `knowledge.wiki_search`
+`{"query":"well"}` and `knowledge.wiki_lookup` `{"title":"Well"}`; confirm revid, fetched_utc, permalink,
+licence, a staleness line and `game_version` 53.x are present, that a nonsense title errors with "no page
+titled", and that pointing the variable at a missing path errors rather than returning empty. The consultant
+`tools/list` should show 22 (CLAUDE.md count).
