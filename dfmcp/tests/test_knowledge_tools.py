@@ -368,6 +368,17 @@ async def test_wiki_lookup_malformed_json_refused(tmp_path):
 
 
 @pytest.mark.asyncio
+async def test_wiki_lookup_non_utf8_file_refused_not_a_raw_unicode_error(tmp_path):
+    # A binary SQLite file mistakenly configured under a non-.sqlite3 name (so
+    # `_is_sqlite_mirror` does not route it to the mirror reader) must not let
+    # `UnicodeDecodeError` escape as a raw, unhandled MCP error.
+    bad = tmp_path / "bad.json"
+    bad.write_bytes(b"SQLite format 3\x00\xff\xfe\x00\x01binary-not-utf8\x80\x81")
+    with pytest.raises(kt.KnowledgeToolError, match="not valid UTF-8"):
+        await kt._wiki_lookup("consultant", {}, wiki_snapshot_path=str(bad))
+
+
+@pytest.mark.asyncio
 async def test_wiki_lookup_missing_pages_key_refused(tmp_path):
     bad = tmp_path / "bad.json"
     bad.write_text(json.dumps({"generated_utc": "x"}), encoding="utf-8")

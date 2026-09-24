@@ -648,6 +648,11 @@ def _load_wiki_snapshot(path: Optional[str]) -> dict:
             data = json.load(fh)
         except json.JSONDecodeError as exc:
             raise KnowledgeToolError(f"{WIKI_LOOKUP}: {p} is not valid JSON: {exc}") from exc
+        except UnicodeDecodeError as exc:
+            raise KnowledgeToolError(
+                f"{WIKI_LOOKUP}: {p} is not valid UTF-8 text, so it cannot be the JSON snapshot "
+                f"(is MCP_SERVER_WIKI_SNAPSHOT pointing at a .sqlite3 mirror by mistake?): {exc}"
+            ) from exc
     if "pages" not in data or not isinstance(data["pages"], dict):
         raise KnowledgeToolError(f"{WIKI_LOOKUP}: {p} is missing a top-level 'pages' object")
     return data
