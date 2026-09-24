@@ -393,6 +393,19 @@ write:
       2026-09-21. Only dry runs have been run through this tool (an Office dry
       run validated in quickfort); the real placement, the read-back and both
       owner assignments have never been run.
+  - id: "zone.assign-owner"
+    status: planned
+    note: >-
+      Added handoffs/2026-09-24-zone-owner-assign.md. Gives an existing zone an
+      owner (place could only do it at creation), both link directions read
+      back. DRY_RUN defaults to true. Overseer only, it mutates. Offline build,
+      not deployed.
+  - id: "zone.clear-owner"
+    status: planned
+    note: >-
+      Same handoff. Removes an existing zone's owner and returns the previous
+      one; cannot undo the unit's lost-room reaction or a preserve-rooms role
+      reservation. DRY_RUN defaults to true. Offline build, not deployed.
   - id: "trees.fell"
     status: exists
     note: >-

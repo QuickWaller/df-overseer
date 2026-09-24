@@ -38,7 +38,8 @@ from dfmcp.tools import _arg_specs_for_tool  # noqa: E402
 
 ZONE_LUA = REPO_ROOT / "scripts" / "dfhack" / "df-overseer-zone.lua"
 
-ZONE_IDS = {"zone.list-kinds", "zone.find", "zone.check-owner", "zone.place", "zone.list"}
+ZONE_IDS = {"zone.list-kinds", "zone.find", "zone.check-owner", "zone.place", "zone.list",
+            "zone.assign-owner", "zone.clear-owner"}
 
 
 def _text():
@@ -108,6 +109,8 @@ def test_argument_names_and_order():
         "kind", "w", "h", "level", "near_landmark", "rank", "radius_tiles", "dry_run", "owner"]
     assert names("zone.list") == [
         "kind_filter", "owner_filter", "valid_filter", "near_landmark_filter", "radius_tiles"]
+    assert names("zone.assign-owner") == ["zone_id", "unit_id", "dry_run", "override"]
+    assert names("zone.clear-owner") == ["zone_id", "dry_run"]
 
 
 def test_footprint_is_an_optional_pair_and_owner_is_optional():
@@ -162,6 +165,8 @@ def test_effects_and_scopes():
     assert reg.get("zone.place").effect == "mutate"
     assert reg.get("zone.place").coordinate_bearing == "internal-only"
     assert reg.get("zone.list").effect == "read"
+    assert reg.get("zone.assign-owner").effect == "mutate"
+    assert reg.get("zone.clear-owner").effect == "mutate"
     assert reg.get("zone.list").coordinate_bearing is False
     for tool_id in ZONE_IDS:
         assert not reg.get(tool_id).is_omniscient

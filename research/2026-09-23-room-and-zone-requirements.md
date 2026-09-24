@@ -417,3 +417,37 @@ exists in v53.16"), [Office](https://dwarffortresswiki.org/index.php/Office)
 (banner: "v53.16"). A local wiki snapshot path recorded in `Working.md`
 (`/var/lib/dfwiki/` on VM 106) was checked and does not exist on that guest;
 the web fetches above were used instead, each individually version-labelled.
+
+## Addendum 2026-09-24: how a zone's owner link works on this install (Q7)
+
+Read from the installed DFHack scripts on the game VM over ssh (read-only), and
+from the live struct field lists via `dfhack-run lua` (reads only). The
+Buildings C++ source is not installed there, so the behaviour of
+`dfhack.buildings.setOwner` itself is inferred from its callers, not read.
+
+- **What links exist.** `building_civzonest` has `assigned_unit_id` (zone to
+  unit), `owner_unit_cached_index` and `retained_owner`. The unit has
+  `owned_buildings`, a vector of building pointers (unit to zone). No other
+  field on the zone, the unit or `entity_position` holds a room link:
+  `entity_position` carries only `required_office`, `required_bedroom`,
+  `required_dining` and `required_tomb` values. A noble's "room" is therefore
+  not a game link at all; it is whichever zone names the holder, plus the
+  preserve-rooms plugin's own reservation state.
+- **What sets them.** `fix/ownership.lua` finds zones where `getOwner` names a
+  unit but the unit's `owned_buildings` lacks the zone, and repairs it with
+  `setOwner(zone, nil)` then `setOwner(zone, unit)`: evidence that `setOwner`
+  is the call that maintains the unit-side vector, and that the two sides can
+  drift apart. `entomb.lua` writes `assigned_unit_id` and inserts into
+  `owned_buildings` by hand for a tomb. `emigration/unit-link-utils.lua` frees
+  a leaving unit's rooms with `setOwner(bld, nil)` over `owned_buildings`.
+  `gui/room-list.lua` lists rooms by `owned_buildings` filtered on
+  `v.owner == unit`, so a one-sided link shows as a missing room.
+- **Consequence.** `zone assign-owner` and `clear-owner` call `setOwner` only
+  and read every link back in both directions, so a one-sided result is
+  reported (`one_direction_only`) rather than trusted, and the fix named is the
+  game's own `fix/ownership`. The tool never writes a field by hand.
+- **What is still unverified live.** That `setOwner` writes both sides for a
+  zone that already exists and is currently unowned (the fixture proves the tool
+  logic against a fake, not the game); that the Manager's requirement then reads
+  `met`; and whether a room with a nonempty quality word is enough for
+  `required_office` of 1 (Q6 stays open).

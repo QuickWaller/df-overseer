@@ -177,6 +177,8 @@
 -- Usage: ./dfhack-run df-overseer-zone check-owner KIND OWNER
 -- Usage: ./dfhack-run df-overseer-zone place KIND [W H] [LEVEL] NEAR_LANDMARK [RANK] [RADIUS_TILES] [DRY_RUN] [OWNER]
 -- Usage: ./dfhack-run df-overseer-zone list KIND_FILTER OWNER_FILTER VALID_FILTER NEAR_LANDMARK_FILTER [RADIUS_TILES]
+-- Usage: ./dfhack-run df-overseer-zone assign-owner ZONE_ID UNIT_ID [DRY_RUN] [OVERRIDE]
+-- Usage: ./dfhack-run df-overseer-zone clear-owner ZONE_ID [DRY_RUN]
 --   W H are optional (a kind's default size is used); one bare number is
 --   LEVEL, two are W H, three are W H LEVEL. A positional CLI cannot skip a
 --   slot once a later one is given, so OWNER needs RANK RADIUS DRY_RUN
@@ -1646,6 +1648,323 @@ function place_zone(kind_name, w, h, level, near, rank, radius_tiles, dry_run, o
   return result
 end
 
+-- ---------------------------------------------------------------------------
+-- assign-owner / clear-owner (handoffs/2026-09-24-zone-owner-assign.md).
+--
+-- WHY. `place ... OWNER` is the only other thing that sets an owner, and only
+-- at creation. A zone made another way (the blueprint verb makes a zone with
+-- none) had no route to an owner, and nobles.requirements counts only zones
+-- the holder owns, so a built, furnished office read not_met for that alone.
+--
+-- THE LINKS (read from this install's own scripts over ssh, 2026-09-24):
+--   * zone.assigned_unit_id                      (zone -> unit)
+--   * unit.owned_buildings, a vector of building pointers  (unit -> zone)
+--   * zone.owner_unit_cached_index               (a cache the game keeps)
+-- fix/ownership.lua repairs exactly the second link by clearing then setting
+-- the owner through dfhack.buildings.setOwner, which shows setOwner is the
+-- call that maintains the pair; entomb.lua writes the pair by hand for a
+-- tomb. This tool calls setOwner only and never writes a field itself
+-- ("every link the game itself sets, and nothing more"), then READS BACK
+-- every link in both directions and reports each. The Buildings C++ source is
+-- not installed on the game VM, so that setOwner sets both directions is the
+-- script-evidenced behaviour, proved live by the read-back and not assumed.
+-- The noble's "room link" is NOT a game link: entity_position holds only
+-- required_* values and no room field, and a role reservation is
+-- preserve-rooms' own state (an assignToRole call, not written here).
+-- ---------------------------------------------------------------------------
+
+local function note_failure(read_failures, msg)
+  table.insert(read_failures, msg)
+  pcall(function() dfhack.printerr("df-overseer-zone: " .. msg) end)
+end
+
+-- Named refusal: a result table, never a bare default and never a partial write.
+local function owner_refusal(name, reason, extra)
+  local r = {applied = false, refused = name, reason = "refused: " .. reason}
+  for k, v in pairs(extra or {}) do r[k] = v end
+  return r
+end
+
+-- Resolves a zone id to a civzone of an owner-capable kind. Returns zone, p,
+-- token or nil, refusal.
+local function resolve_owner_zone(zone_id)
+  local id = tonumber(zone_id)
+  if not id or id < 0 or id % 1 ~= 0 then
+    return nil, owner_refusal("bad_zone_id", "ZONE_ID must be a zone's own id (a whole number)")
+  end
+  local ok, b = pcall(df.building.find, id)
+  if not ok then
+    return nil, owner_refusal("zone_read_failed", "reading building " .. id .. " failed: " .. tostring(b))
+  end
+  if not b then return nil, owner_refusal("zone_not_found", "no building with id " .. id) end
+  if not df.building_civzonest:is_instance(b) then
+    return nil, owner_refusal("not_a_civzone", "building " .. id .. " is not an activity zone")
+  end
+  local token = df.civzone_type[b.type]
+  local p = policy_for({token = token})
+  if not p.owner then
+    return nil, owner_refusal("kind_has_no_owner", "zone " .. id .. " is a " .. tostring(token)
+      .. " zone, and that kind cannot have an owner (list-kinds shows owner_capable per kind)")
+  end
+  return b, p, token
+end
+
+-- The zone's own two owner reads. status: owned / unowned / inconsistent (the
+-- two reads disagree) / cannot_tell (a read failed).
+local function read_zone_owner(zone, read_failures)
+  local assigned = zone.assigned_unit_id
+  local a = (assigned ~= nil and assigned >= 0) and assigned or nil
+  local ok, o = pcall(dfhack.buildings.getOwner, zone)
+  if not ok then
+    note_failure(read_failures, "zone " .. zone.id .. ": getOwner failed: " .. tostring(o))
+    return {status = "cannot_tell", assigned_unit_id = nn(a), get_owner_unit_id = NULL}
+  end
+  local g = o and o.id or nil
+  local status = "unowned"
+  if a ~= g then status = "inconsistent"
+  elseif a ~= nil then status = "owned" end
+  return {status = status, assigned_unit_id = nn(a), get_owner_unit_id = nn(g),
+    owner_unit_id = nn(g or a)}
+end
+
+-- Does unit.owned_buildings hold this zone? true / false / nil (unreadable).
+local function unit_holds_zone(unit, zone_id, read_failures)
+  local ok, res = pcall(function()
+    local v = unit.owned_buildings
+    for i = 0, #v - 1 do
+      if v[i].id == zone_id then return true end
+    end
+    return false
+  end)
+  if not ok then
+    note_failure(read_failures, "unit " .. tostring(unit.id) .. ": owned_buildings read failed: " .. tostring(res))
+    return nil
+  end
+  return res
+end
+
+local function tri(v)
+  if v == nil then return "cannot_tell" end
+  return v and "yes" or "no"
+end
+
+-- Other zones of the same kind already owned by unit_id. Returns ids or nil, err.
+local function other_owned_zone_ids(zone, unit_id)
+  local ok_v, zv = pcall(function() return df.global.world.buildings.other.ACTIVITY_ZONE end)
+  if not ok_v or not zv then return nil, "could not read the fortress's zone vector: " .. tostring(zv) end
+  local out = {}
+  for i = 0, math.min(#zv, MAX_ZONE_SCAN) - 1 do
+    local z = zv[i]
+    if z.type == zone.type and z.id ~= zone.id then
+      local ok_o, o = pcall(dfhack.buildings.getOwner, z)
+      if not ok_o then return nil, "getOwner failed on zone " .. z.id .. ": " .. tostring(o) end
+      if z.assigned_unit_id == unit_id or (o and o.id == unit_id) then out[#out + 1] = z.id end
+    end
+  end
+  return out
+end
+
+-- Both directions of the link for `unit` (nil = only the zone side).
+local function read_links(zone, unit, read_failures)
+  local links = {zone_side = read_zone_owner(zone, read_failures)}
+  if unit then
+    links.unit_side_holds_zone = tri(unit_holds_zone(unit, zone.id, read_failures))
+  end
+  return links
+end
+
+-- Whether the holder link a position's requirement counts now resolves. Same
+-- test nobles.requirements applies to a zone: assigned_unit_id or getOwner
+-- names the unit; then the room-value word is read through the same
+-- zone_room_value_status the inventory uses. Three states, never a default.
+local function holder_readback(zone, p, unit, owner, read_failures)
+  local link
+  if owner.status == "cannot_tell" then link = "cannot_tell"
+  elseif owner.assigned_unit_id == unit.id or owner.get_owner_unit_id == unit.id then link = "resolved"
+  else link = "not_resolved" end
+  local codes, held_status = {}, "cannot_tell"
+  if p.position_field then
+    local e, err = fort_entity()
+    if e then
+      local ok_h, by_id, held = pcall(holders_by_code, e)
+      if ok_h then
+        held_status = "no"
+        for _, pos in pairs(by_id) do
+          local need = pos[p.position_field]
+          for _, uid in ipairs(held[pos.code] or {}) do
+            if uid == unit.id and need and need > 0 then
+              codes[#codes + 1] = pos.code
+              held_status = "yes"
+            end
+          end
+        end
+        table.sort(codes)
+      else
+        note_failure(read_failures, "positions read failed: " .. tostring(by_id))
+      end
+    else
+      note_failure(read_failures, "positions read failed: " .. tostring(err))
+    end
+  else
+    held_status = "not_applicable"
+  end
+  return {unit_id = unit.id, holder_link_resolves = link,
+    unit_holds_a_position_asking_this_room_value = held_status,
+    positions_asking_this_room_value = codes,
+    room_value_status = zone_room_value_status(p, zone, read_failures),
+    note = "holder_link_resolves is the test nobles.requirements applies (the zone names the "
+      .. "unit); room_value_status not_met with a resolved link means the room itself is the gap, "
+      .. "not the owner link"}
+end
+
+local OWNER_CAVEATS = {
+  "a role reservation held by the preserve-rooms plugin is its own state and this tool cannot read "
+    .. "it: if a role is reserved for this zone the plugin may re-apply its own choice on its next cycle",
+  "the game's room-value word is read through getRoomDescription only; nothing here can see the "
+    .. "value number a position's requirement is compared against",
+}
+
+-- assign-owner. Dry run by default (truthy_dry_run: only an explicit false writes).
+function assign_owner(zone_id, unit_id, dry_run, override)
+  local dry = truthy_dry_run(dry_run)
+  local allow = tostring(override or ""):lower() == "true"
+  local zone, p, token = resolve_owner_zone(zone_id)
+  if not zone then return p end
+  local read_failures = {}
+  local uid = tonumber(unit_id)
+  if not uid or uid < 0 or uid % 1 ~= 0 then
+    return owner_refusal("bad_unit_id", "UNIT_ID must be a unit's own id (a whole number)")
+  end
+  local ok_u, unit = pcall(df.unit.find, uid)
+  if not ok_u then
+    return owner_refusal("unit_read_failed", "reading unit " .. uid .. " failed: " .. tostring(unit))
+  end
+  if not unit then return owner_refusal("unit_not_found", "no unit with id " .. uid) end
+  if not dfhack.units.isAlive(unit) then return owner_refusal("unit_not_alive", "unit " .. uid .. " is not alive") end
+  if not dfhack.units.isCitizen(unit) then
+    return owner_refusal("unit_not_citizen", "unit " .. uid .. " is not a citizen of this fortress")
+  end
+
+  local before = read_links(zone, unit, read_failures)
+  local cur = before.zone_side
+  if cur.status == "cannot_tell" or cur.status == "inconsistent" then
+    return owner_refusal("zone_owner_unreadable", "zone " .. zone.id .. "'s owner reads " .. cur.status
+      .. " (assigned_unit_id " .. tostring(cur.assigned_unit_id) .. ", getOwner " .. tostring(cur.get_owner_unit_id)
+      .. "); repair or read it first rather than write over an unclear state",
+      {before = before, read_failures = read_failures})
+  end
+  local prev = (cur.status == "owned") and cur.owner_unit_id or nil
+  if prev == uid then
+    return owner_refusal("already_owner", "unit " .. uid .. " already owns zone " .. zone.id, {before = before})
+  end
+  if prev ~= nil and not allow then
+    return owner_refusal("zone_has_other_owner", "zone " .. zone.id .. " is already owned by unit " .. prev
+      .. "; changing an existing owner needs OVERRIDE true (this tool never replaces an owner implicitly)",
+      {before = before, previous_owner_unit_id = prev})
+  end
+  local others, oerr = other_owned_zone_ids(zone, uid)
+  if not others then
+    return owner_refusal("duplicate_check_unreadable", "could not check whether unit " .. uid
+      .. " already owns another " .. tostring(token) .. " zone: " .. tostring(oerr), {before = before})
+  end
+  if #others > 0 and not allow then
+    return owner_refusal("unit_already_owns_kind_zone", "unit " .. uid .. " already owns " .. tostring(token)
+      .. " zone(s) " .. table.concat(others, ",") .. "; a unit normally has one room of a kind, "
+      .. "so a second needs OVERRIDE true", {before = before, other_zone_ids = others})
+  end
+
+  local plan = {"dfhack.buildings.setOwner(zone " .. zone.id .. ", unit " .. uid .. ")"}
+  if prev ~= nil then
+    table.insert(plan, 1, "dfhack.buildings.setOwner(zone " .. zone.id .. ", nil) to release unit " .. prev)
+  end
+  local res = {dry_run = dry, zone_id = zone.id, kind = token, unit_id = uid,
+    previous_owner_unit_id = nn(prev), overrides_used = (allow and (prev ~= nil or #others > 0)) or false,
+    would_write = {"zone.assigned_unit_id", "unit " .. uid .. " owned_buildings gains the zone",
+      "zone owner cache (all three set by setOwner, never by hand)"},
+    calls = plan, before = before, caveats = OWNER_CAVEATS}
+  if dry then
+    res.applied = false
+    res.note = "dry run: nothing written; every refusal above was already checked"
+    res.read_failures = read_failures
+    return res
+  end
+
+  local prev_unit = prev ~= nil and df.unit.find(prev) or nil
+  if prev ~= nil then
+    local ok_c, cres = pcall(dfhack.buildings.setOwner, zone, nil)
+    if not ok_c then
+      res.applied = false
+      res.error = "releasing the previous owner failed: " .. tostring(cres)
+      res.read_failures = read_failures
+      return res
+    end
+  end
+  local ok_s, sres = pcall(dfhack.buildings.setOwner, zone, unit)
+  res.set_owner_call = {ok = ok_s, returned = ok_s and tostring(sres) or NULL,
+    error = (not ok_s) and tostring(sres) or nil}
+  local after = read_links(zone, unit, read_failures)
+  res.after = after
+  local zs = after.zone_side
+  local zone_ok = (zs.status == "owned" and zs.assigned_unit_id == uid and zs.get_owner_unit_id == uid)
+  local unit_ok = (after.unit_side_holds_zone == "yes")
+  local prev_released = NULL
+  if prev_unit then prev_released = tri(unit_holds_zone(prev_unit, zone.id, read_failures) == false) end
+  res.links_confirmed = {zone_side = zone_ok, unit_side = unit_ok, previous_owner_released = prev_released}
+  res.applied = ok_s and zone_ok and unit_ok
+  if ok_s and (zone_ok ~= unit_ok) then
+    res.one_direction_only = true
+    res.error = "only one direction of the owner link reads back; the game's own repair is "
+      .. "the fix/ownership script (clear then set through setOwner); nothing else was written"
+  end
+  res.holder = holder_readback(zone, p, unit, zs, read_failures)
+  res.read_failures = read_failures
+  return res
+end
+
+-- clear-owner. Cannot undo (see the note in the result): the previous owner is
+-- returned so a caller can restore it with assign-owner.
+function clear_owner(zone_id, dry_run)
+  local dry = truthy_dry_run(dry_run)
+  local zone, p, token = resolve_owner_zone(zone_id)
+  if not zone then return p end
+  local read_failures = {}
+  local before = read_links(zone, nil, read_failures)
+  local cur = before.zone_side
+  if cur.status == "cannot_tell" or cur.status == "inconsistent" then
+    return owner_refusal("zone_owner_unreadable", "zone " .. zone.id .. "'s owner reads " .. cur.status
+      .. "; repair or read it first", {before = before, read_failures = read_failures})
+  end
+  if cur.status == "unowned" then
+    return owner_refusal("zone_has_no_owner", "zone " .. zone.id .. " has no owner to clear", {before = before})
+  end
+  local prev = cur.owner_unit_id
+  local prev_unit = df.unit.find(prev)
+  local res = {dry_run = dry, zone_id = zone.id, kind = token, previous_owner_unit_id = prev,
+    calls = {"dfhack.buildings.setOwner(zone " .. zone.id .. ", nil)"},
+    would_write = {"zone.assigned_unit_id back to none", "unit " .. prev .. " owned_buildings loses the zone"},
+    before = before,
+    cannot_undo = {"the previous owner is returned in previous_owner_unit_id and assign-owner can set it "
+      .. "again, but the unit's lost-room reaction and any preserve-rooms role reservation (not readable "
+      .. "here) are not restored"},
+    caveats = OWNER_CAVEATS}
+  if dry then
+    res.applied = false
+    res.note = "dry run: nothing written"
+    res.read_failures = read_failures
+    return res
+  end
+  local ok_c, cres = pcall(dfhack.buildings.setOwner, zone, nil)
+  res.set_owner_call = {ok = ok_c, error = (not ok_c) and tostring(cres) or nil}
+  local after = read_links(zone, nil, read_failures)
+  res.after = after
+  local zone_ok = (after.zone_side.status == "unowned")
+  local unit_gone = prev_unit and tri(unit_holds_zone(prev_unit, zone.id, read_failures) == false) or "cannot_tell"
+  res.links_confirmed = {zone_side_cleared = zone_ok, previous_owner_released = unit_gone}
+  res.applied = ok_c and zone_ok and unit_gone == "yes"
+  res.read_failures = read_failures
+  return res
+end
+
 -- Same module-load guard as every other df-overseer-*.lua script.
 if dfhack_flags.module then
   return
@@ -1657,6 +1976,8 @@ local USAGE = {
   "usage: df-overseer-zone check-owner KIND OWNER",
   "usage: df-overseer-zone place KIND [W H] [LEVEL] NEAR_LANDMARK [RANK] [RADIUS_TILES] [DRY_RUN] [OWNER]",
   "usage: df-overseer-zone list KIND_FILTER OWNER_FILTER VALID_FILTER NEAR_LANDMARK_FILTER [RADIUS_TILES]",
+  "usage: df-overseer-zone assign-owner ZONE_ID UNIT_ID [DRY_RUN] [OVERRIDE]",
+  "usage: df-overseer-zone clear-owner ZONE_ID [DRY_RUN]",
 }
 
 -- After KIND: up to three leading numbers (1 = LEVEL, 2 = W H, 3 = W H LEVEL),
@@ -1726,6 +2047,18 @@ elseif cmd == "list" then
   else
     local res, err = list_zones(args[2], args[3], args[4], args[5], tonumber(args[6]))
     print(encode(err and {error = err} or res))
+  end
+elseif cmd == "assign-owner" then
+  if not (args[2] ~= nil and args[3] ~= nil) then
+    print(encode({error = USAGE[6]}))
+  else
+    print(encode(assign_owner(args[2], args[3], args[4], args[5])))
+  end
+elseif cmd == "clear-owner" then
+  if args[2] == nil then
+    print(encode({error = USAGE[7]}))
+  else
+    print(encode(clear_owner(args[2], args[3])))
   end
 else
   for _, l in ipairs(USAGE) do print(l) end

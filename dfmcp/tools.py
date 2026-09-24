@@ -458,6 +458,11 @@ _ARG_DESCRIPTIONS: Dict[str, str] = {
         "\"starter-room-5x5.csv\" -- not a path on this repo's own "
         "filesystem, and not a coordinate."
     ),
+    "OVERRIDE": (
+        "Optional, for zone.assign-owner. Only the exact word true overrides: it allows "
+        "replacing a zone's existing owner or giving a unit a second zone of the same "
+        "kind. Leave it out otherwise; the refusal names what it would have unlocked."
+    ),
     "ZONE_ID": (
         "An existing zone's own id, as zone.list gives it in its id field. "
         "Never a coordinate -- the zone's id is resolved to its real "

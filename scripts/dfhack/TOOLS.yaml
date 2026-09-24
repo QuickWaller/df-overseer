@@ -930,6 +930,59 @@ df-overseer-zone.lua:
         fort's two known zones (id 10 unowned, id 11 owned by the Manager,
         both expected `room_value_status: not_met` per the same-day room
         research, `research/2026-09-23-room-and-zone-requirements.md`).
+    "assign-owner ZONE_ID UNIT_ID [DRY_RUN] [OVERRIDE]":
+      lua_function: assign_owner
+      effect: mutate
+      coordinate_bearing: false
+      live_deployed: false
+      verified: unverified
+      knowledge_scope: player_visible
+      notes: >
+        ADDED 2026-09-24 (handoffs/2026-09-24-zone-owner-assign.md). Gives
+        an EXISTING zone an owner: `place ... OWNER` could only set one at
+        creation, so a zone made another way (the blueprint verb makes zone
+        13 with none) had no route to one, and nobles.requirements counts
+        only zones the holder owns. Generic over every owner-capable kind
+        (ZONE_POLICY's owner flag, no per-kind branch). DRY_RUN defaults to
+        true; only the exact word false writes. Named refusals, each a
+        result and never a write: zone_not_found, not_a_civzone,
+        kind_has_no_owner, unit_not_found, unit_not_alive,
+        unit_not_citizen, already_owner, zone_has_other_owner (an existing
+        different owner is never replaced implicitly), unit_already_owns_
+        kind_zone, zone_owner_unreadable, duplicate_check_unreadable. OVERRIDE
+        (the word true) unlocks exactly two of those: zone_has_other_owner (the
+        old owner is released first, as the read-back confirms) and unit_already_owns_kind_zone. It
+        calls dfhack.buildings.setOwner only and never writes a field, then
+        READS BACK both directions of the link (zone.assigned_unit_id and
+        getOwner on the zone side, unit.owned_buildings on the unit side,
+        and the previous owner's release) under links_confirmed, and
+        `holder`: whether the zone now names the unit (the test
+        nobles.requirements applies), whether the unit holds a position
+        asking this kind's room value, and room_value_status (met / not_met /
+        cannot_tell). A failed read is cannot_tell with read_failures and
+        dfhack.printerr, never a default. If only one direction reads back
+        the result says one_direction_only and applied false. Lives in
+        `zone` because the zone is the thing it changes and its owner
+        policy and read helpers are this file's; mutating, so Overseer only
+        (dfmcp/roles.py rule 2). Offline build, not deployed.
+    "clear-owner ZONE_ID [DRY_RUN]":
+      lua_function: clear_owner
+      effect: mutate
+      coordinate_bearing: false
+      live_deployed: false
+      verified: unverified
+      knowledge_scope: player_visible
+      notes: >
+        ADDED 2026-09-24 (handoffs/2026-09-24-zone-owner-assign.md). Removes
+        an existing zone's owner through dfhack.buildings.setOwner(zone,
+        nil), then reads both directions back (zone owner gone, previous
+        owner's owned_buildings no longer holds the zone). Same refusals as
+        assign-owner where they apply, plus zone_has_no_owner. Returns
+        previous_owner_unit_id so assign-owner can restore it. WHAT IT
+        CANNOT UNDO: the unit's lost-room reaction, and any preserve-rooms
+        role reservation (that plugin's state is not readable from Lua, and
+        it may re-apply its own choice on its next cycle). DRY_RUN defaults
+        to true. Offline build, not deployed.
 
 df-overseer-trees.lua:
   build_order_item: "gap named 2026-09-17, handoffs/2026-09-17-water-and-industry-tools.md item 2"
