@@ -590,3 +590,192 @@ way); `df-fortress`, `df-xvfb`, the fort, and no code file were touched.
 **Next step for the orchestrator: schedule a code-deploy stream for
 `dfmcp/wiki_reader.py` + the `knowledge_tools.py` wiki-search wiring +
 `agents/consultant/tools.yaml`, then re-run this switch-over's steps 4-5.**
+
+## Reader deploy and switch-over, 2026-09-25
+
+Date 2026-09-25. Executor. User's go-ahead given this session for the loader
+bug fix, deploying the S4 reader code, repointing
+`MCP_SERVER_WIKI_SNAPSHOT`, and a `dfmcp-server` restart. This is the
+"schedule a code-deploy stream" step the prior section called for, run to
+completion in the same stream as the switch-over it re-attempts.
+
+### The fix, offline first
+
+`dfmcp/knowledge_tools.py`'s `_load_wiki_snapshot` opened the configured path
+with `p.open(encoding="utf-8")` then `json.load(fh)`, catching only
+`json.JSONDecodeError`. The prior section's step 4 found this lets a raw
+`UnicodeDecodeError` escape as an unhandled `mcp.shared.exceptions.McpError`
+when the configured path is binary (a SQLite file under a non-`.sqlite3`
+name, or -- as happened live -- the old code running against the new path
+before the reader module existed). Fixed by also catching
+`UnicodeDecodeError` and raising the same `KnowledgeToolError` shape, with a
+message naming the likely cause. Added
+`test_wiki_lookup_non_utf8_file_refused_not_a_raw_unicode_error` in
+`dfmcp/tests/test_knowledge_tools.py` (fails without the fix). `dfmcp/tests`
+in `.venv-dfmcp`: **692 passed** (691 baseline + 1 new). Ambient
+`python -m pytest` with `lupa` on `PYTHONPATH`: **1845 passed, 3 skipped**
+(1844 baseline + 1 new). Committed separately before the deploy.
+
+### What was shipped, and why nothing else
+
+Diffed the live VM tree against `git -c core.autocrlf=false show HEAD:<path>`
+for every file the handoff named:
+
+- `dfmcp/knowledge_tools.py`: the only difference from the live file was
+  exactly the S4 `knowledge.wiki_search` wiring (`WIKI_SEARCH` added to
+  `NATIVE_TOOL_IDS`, the `_is_sqlite_mirror`/`_mirror_call`/`_mirror_lookup`
+  dispatch, the `_wiki_search` handler, schema and registration) plus this
+  stream's own fix. Nothing else had drifted.
+- `agents/consultant/tools.yaml`: the only difference was the
+  `knowledge.wiki_search` allowlist entry.
+- `dfmcp/wiki_reader.py`: absent on the VM entirely (new file).
+
+No other undeployed change was found in the diff, so nothing was held back.
+
+**One additional gap found, not named in the handoff, and fixed as part of
+this deploy rather than reported and stopped on:** `dfmcp/wiki_reader.py`
+does `from wikimirror import schema` / `from wikimirror.store import Store,
+StoreError` (lazy imports, inside `open_mirror`). The `wikimirror` package
+is deployed on VM 103, but at `/opt/df/wikimirror/wikimirror/`, not on
+`dfmcp-server`'s own venv's `sys.path`
+(`/opt/df/dfmcp-smoke/.venv/bin/python -c "import wikimirror"` ->
+`ModuleNotFoundError` before this change). Checked before touching anything:
+the deployed `wikimirror/{__init__,store,schema,api}.py` hash identically to
+`git -c core.autocrlf=false show HEAD:wikimirror/<file>` (sha256 matches on
+all four files), so this is a missing import path, not stale or drifted
+code. All of `wikimirror`'s own imports are stdlib only (`sqlite3`, `json`,
+`urllib`, etc.), so no extra package install is needed. `/opt/df/wikimirror`
+and everything under it is world-readable and world-traversable
+(`namei -l` confirmed `drwxr-xr-x` down the whole path), so `df` can read it
+without any group or ownership change. Fix: added `PYTHONPATH=/opt/df/wikimirror`
+as a new line in `/opt/df/dfmcp-smoke/.env`. Judged trivially safe (additive,
+read-only, points at code already verified byte-identical to this repo's
+HEAD) rather than a "stop and report" case under the handoff's step 3 rule,
+which is about shipping unreviewed drifted files, not about a missing
+import-path config for code that does match. Reported here plainly per that
+same step's "report every difference" instruction.
+
+### Before state
+
+Via `scripts/vm-ssh.sh df` and a throwaway MCP probe script (run on VM 103
+itself with `dfmcp-smoke`'s own installed `mcp==2.2.0` SDK, using
+`conductor/mcp_client.py`'s already-live-verified pattern: `streamable_http_client`
+2-tuple, snake_case `is_error`/`structured_content`; script and its shell
+wrapper copied to `/tmp`, both deleted after use, never left on the VM):
+
+- `dfmcp-server`: `MainPID=989174`, `ActiveState=active` (unchanged from the
+  prior section's end state).
+- Live per-role `tools/list`, real MCP client, real bearer tokens read by key
+  from the VM's own `.env`: **overseer 79, architect 49, consultant 27,
+  quartermaster 24, conductor 15** -- matches CLAUDE.md and the prior
+  section's read exactly.
+- Consultant `knowledge.wiki_lookup {"title": "Tomb"}` on the old snapshot:
+  clean `KnowledgeToolError`, `"no page titled 'Tomb' in the snapshot..."`
+  plus the real 30-title index (`Aquifer` .. `Workshop`) -- same baseline the
+  prior section recorded.
+- Consultant `knowledge.wiki_search` (by its MCP name, `knowledge__wiki_search`):
+  `"unknown tool 'knowledge__wiki_search'"` -- confirms not yet registered.
+
+### Deploy
+
+`git -c core.autocrlf=false archive --format=tar` of exactly
+`dfmcp/knowledge_tools.py`, `dfmcp/wiki_reader.py`,
+`agents/consultant/tools.yaml` from HEAD, sha256
+`7501e1617b403f9780a107c36fc0c1daa7086b8c59bd114351c71f29f6a04e4c`, scp'd to
+`/tmp`, hash re-verified identical on the VM before extracting. Backed up the
+two overwritten files first: `sudo cp -a` into a new
+`/opt/df/deploy-backup-20260925-wiki-reader/` (root-owned, following this
+repo's existing `deploy-backup-*` convention). Copied the three extracted
+files into place and verified each landed file's sha256 matches the
+committed blob exactly:
+
+- `dfmcp/knowledge_tools.py`: `a2287ecc73e93c7710a6a1dba11e8080a8933d95c59a8e234b03a8063dce054d`
+- `dfmcp/wiki_reader.py`: `6e8602c46b4c3b0999d2b52b69f45c0b00544f877f0fdbebac36823f02a0f66e`
+- `agents/consultant/tools.yaml`: `5a818bec4f41ba01c6c8e670125ad3d1367c27a88326be3cc1e4872fc11e8e2e`
+
+Env change: backed up `.env` was already present and byte-identical to the
+live file (the prior section's own
+`.env.bak-2026-09-25-wiki-switchover`, sha256 `729651b9...` both sides,
+re-verified before reuse rather than assumed current). Edited the live
+`.env` in place with `sed` on the exact key
+(`MCP_SERVER_WIKI_SNAPSHOT=/var/lib/dfwiki/df-wiki.sqlite3`) and appended the
+new `PYTHONPATH=/opt/df/wikimirror` line. Restarted only `dfmcp-server`:
+`sudo systemctl restart dfmcp-server`. New `MainPID=993695`,
+`ActiveState=active`, `NRestarts=0`, journal shows a clean
+`Application startup complete` / `Uvicorn running` sequence, no error.
+`df-fortress` (`ActiveEnterTimestamp` 2026-09-18, unchanged) and `df-xvfb`
+(`ActiveEnterTimestamp` 2026-09-11, unchanged) confirmed untouched.
+
+### After: real calls through the server
+
+Per-role `tools/list` again: **overseer 79, architect 49, consultant 28,
+quartermaster 24, conductor 15** -- consultant gained exactly the one
+expected tool (`knowledge__wiki_search`), every other role unchanged.
+Consultant's full 28-tool list confirmed to contain both
+`knowledge__wiki_lookup` and `knowledge__wiki_search` alongside the same 26
+tools the prior section's 27-tool list already had.
+
+**`knowledge.wiki_lookup {"title": "Tomb"}` as consultant**, against the new
+mirror: `is_error=false`, `revid=315152`, `game_version="53.16"`,
+`is_current=true`, `staleness.status="fresh"` ("FRESH: last refreshed 11
+hours ago"), 3 real sections (Introduction / Fortress mode / Adventure
+mode) with real wiki prose (tomb quality-level table, burial mechanics).
+
+**`knowledge.wiki_lookup {"title": "Office"}` as consultant**: `is_error=false`,
+`revid=314166`, `staleness.status="fresh"`, 2 real sections (Introduction /
+Reducing Office Space) with real prose (office zone-value rank table,
+meager-office mechanics).
+
+**`knowledge.wiki_search {"query": "office room"}` as consultant**:
+`is_error=false`, 8 results, top hit `title="Office"`,
+`heading="Introduction"`, `revid=314166`, `staleness.status="fresh"`, a real
+excerpt of the same Office article text.
+
+**Non-consultant refusal, same tool, both directions checked:**
+`knowledge.wiki_lookup {"title": "Tomb"}` as `overseer`: `is_error=true`,
+`"'knowledge.wiki_lookup' is not on overseer's allowlist."`. As
+`quartermaster`: `is_error=true`, `"'knowledge.wiki_lookup' is not on
+quartermaster's allowlist. Advisors do not act; propose it instead."` --
+same wording the prior section recorded, unaffected by the deploy.
+
+**`doctrine.get {}` as consultant**: `is_error=false`, returns the real
+10-topic index (`drink`, `farming`, `fishing`, `food`, `health`, `labor`,
+`material`, `rooms`, `seeds`, `water`) with real per-topic prior/verified/
+refuted counts -- confirms `doctrine.get` (a different file,
+`doctrine/seed.yaml`, untouched by this deploy) still works exactly as
+before.
+
+### Cleanup
+
+The throwaway probe script and its wrapper, the shipped tar, and its
+extraction directory were all removed from `/tmp` on the VM after use
+(`rm -rf`); nothing from this stream was left there. `/tmp` on VM 103 holds
+substantial pre-existing debris from unrelated past sessions (dozens of
+`.lua`/`.py`/log files); out of scope for this stream, not touched.
+
+### Anything that looks wrong
+
+1. The `PYTHONPATH` gap above: `wikimirror` was deployed to `/opt/df/wikimirror/`
+   in the 2026-09-24 stream but never made importable from `dfmcp-server`'s
+   own venv. Nothing in `docs/CONSULTANT-WIKI.md` names this as a deploy
+   step; worth a one-line addition there so a future redeploy of
+   `dfmcp-smoke` (a fresh venv, a new host) does not silently reintroduce it.
+2. The fixed `_load_wiki_snapshot` bug was real and live-reproduced by the
+   prior section before this stream started (a raw `McpError` on a
+   misconfigured path); it is now a clean `KnowledgeToolError` in both the
+   unit test and, implicitly, in the live deploy (the failure mode can no
+   longer occur with the reader code in place, but the fix also protects the
+   JSON-snapshot code path independently, e.g. if `MCP_SERVER_WIKI_SNAPSHOT`
+   is ever pointed at a non-JSON file by mistake again).
+3. Nothing else found undeployed.
+
+## Result, reader deploy stage
+
+**Done.** The Consultant's `knowledge.wiki_lookup` and `knowledge.wiki_search`
+both answer from the new mirror, proven by real calls through the real MCP
+server with revid, `fresh` staleness and real wiki text; consultant is at 28
+tools, every other role unchanged; the loader bug is fixed with a passing
+regression test; the one additional undeployed dependency found
+(`wikimirror` not on `dfmcp-server`'s import path) is named above and fixed
+as part of this deploy. `df-fortress`, `df-xvfb`, the fort, timers, and
+`/var/lib/dfwiki/` permissions were not touched.
