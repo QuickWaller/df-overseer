@@ -1,0 +1,107 @@
+[0m{
+	"blueprint": "office-room-v1",
+	"dig": {
+		"blind_no_walkable_neighbour": 10,
+		"designations_with_a_job": 0,
+		"designations_without_a_job": 10,
+		"job_census_error": null,
+		"pending_dig_designations": 10,
+		"startable_no_job_yet": 0,
+		"state": "stalled",
+		"ticks_since_apply": 2421,
+		"unreadable": 0
+	},
+	"finish_required_met": false,
+	"finish_state": {
+		"already_finished": 5,
+		"blocked_by_material": {
+
+		},
+		"blocked_total": 0,
+		"hidden": 10,
+		"occupied_by_building": 0,
+		"other_shape": 0,
+		"required_cells": 15,
+		"smoothable": 0,
+		"unreadable": 0
+	},
+	"handle": "site-1",
+	"orientation": "none",
+	"phases_applied": [ "office_room_v1_shell" ],
+	"read_failures": [],
+	"remedy": null,
+	"shell": {
+		"carve_cells": 10,
+		"pending_designations": 10,
+		"still_solid": 10
+	},
+	"shell_done": false,
+	"site": {
+		"direction": "NE",
+		"distance_tiles": 2,
+		"footprint": {
+			"height": 5,
+			"width": 5
+		},
+		"near_landmark": "Stockpile #2"
+	},
+	"stall_remedy": "quickfort designated tiles that no dwarf can reach or has claimed: 10 dig designations have no job (10 touch no revealed walkable ground, so DF will never make a job for them). Do not wait: `release` the site to withdraw the designations, then apply again where preview shows entrance_reachable true",
+	"stalled": true,
+	"surface": {
+		"by": "<host>, room rectangle from the blueprint's own zone section",
+		"enclosure": {
+			"boundary_ring_tiles": 16,
+			"footprint": {
+				"height": 3,
+				"width": 3
+			},
+			"gap_count": 0,
+			"gaps_by_type": {
+				"doorway": 0,
+				"missing_wall": 0,
+				"open_floor_edge": 0
+			},
+			"read_failures": [],
+			"status": "cannot_tell",
+			"unknown_tiles": 11,
+			"wall_like_tiles": 5
+		},
+		"finish": {
+			"boundary_wall": {
+				"constructed": 0,
+				"counted": 5,
+				"engraved": 0,
+				"rough_natural": 0,
+				"smooth": 5,
+				"unknown": 11
+			},
+			"boundary_wall_fraction_finished": 1.0,
+			"engravings_scan_truncated": false,
+			"floor": {
+				"constructed": 0,
+				"counted": 9,
+				"engraved": 0,
+				"rough_natural": 0,
+				"smooth": 0,
+				"unknown": 9
+			},
+			"floor_fraction_finished": 0.0,
+			"footprint": {
+				"height": 3,
+				"width": 3
+			},
+			"read_failures": []
+		},
+		"material": {
+			"boundary_ring_tiles": 16,
+			"by_material": {
+				"MINERAL": 2,
+				"STONE": 3
+			},
+			"read_failures": [],
+			"unknown_tiles": 11
+		},
+		"shim_restored": true
+	}
+}
+[0m

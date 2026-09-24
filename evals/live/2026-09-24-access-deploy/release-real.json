@@ -1,0 +1,46 @@
+[0m{
+	"blueprint": "office-room-v1",
+	"cannot_undo": "tiles already dug out and walls already smoothed stay as DF made them",
+	"dig_before": {
+		"blind_no_walkable_neighbour": 10,
+		"designations_with_a_job": 0,
+		"designations_without_a_job": 10,
+		"job_census_error": null,
+		"pending_dig_designations": 10,
+		"startable_no_job_yet": 0,
+		"state": "stalled",
+		"ticks_since_apply": 2421,
+		"unreadable": 0
+	},
+	"dry_run": false,
+	"handle": "site-1",
+	"read_back": {
+		"dig_after": {
+			"blind_no_walkable_neighbour": 0,
+			"designations_with_a_job": 0,
+			"designations_without_a_job": 0,
+			"job_census_error": null,
+			"pending_dig_designations": 0,
+			"startable_no_job_yet": 0,
+			"state": "none_pending",
+			"ticks_since_apply": null,
+			"unreadable": 0
+		},
+		"pending_designations": 0
+	},
+	"read_failures": [],
+	"released": true,
+	"runs": [ {
+		"error": null,
+		"phase": "office_room_v1_shell",
+		"ran": true,
+		"result_ok": true,
+		"stats": {
+			"Tiles that could not be designated for digging": 15,
+			"Tiles undesignated for digging": 10
+		}
+	} ],
+	"site_forgotten": true,
+	"undesignated": 10
+}
+[0m

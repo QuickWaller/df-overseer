@@ -1,0 +1,31 @@
+[0m{
+	"blueprint": "office-room-v1",
+	"dig_before": {
+		"blind_no_walkable_neighbour": 10,
+		"designations_with_a_job": 0,
+		"designations_without_a_job": 10,
+		"job_census_error": null,
+		"pending_dig_designations": 10,
+		"startable_no_job_yet": 0,
+		"state": "stalled",
+		"ticks_since_apply": 2421,
+		"unreadable": 0
+	},
+	"dry_run": true,
+	"handle": "site-1",
+	"note": "dry run: nothing was withdrawn. Run again with DRY_RUN false",
+	"read_failures": [],
+	"released": false,
+	"runs": [ {
+		"error": null,
+		"phase": "office_room_v1_shell",
+		"ran": true,
+		"result_ok": true,
+		"stats": {
+			"Tiles that could not be designated for digging": 15,
+			"Tiles undesignated for digging": 10
+		}
+	} ],
+	"undesignated": 10
+}
+[0m

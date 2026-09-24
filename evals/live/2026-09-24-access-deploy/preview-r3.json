@@ -1,0 +1,89 @@
+[0m{
+	"access": {
+		"carve_cells": 10,
+		"carve_cells_reachable": 10,
+		"carve_cells_unreachable": 0,
+		"entrance_reachable": true,
+		"entrances": 1
+	},
+	"blueprint": "office-room-v1",
+	"designated": {
+		"buildings": 0,
+		"dig_tiles": 14,
+		"zones": 0
+	},
+	"dig_can_start": true,
+	"dry_run": true,
+	"entrance_reachable": true,
+	"finish_plan": {
+		"already_finished": 0,
+		"blocked_by_material": {
+
+		},
+		"blocked_total": 0,
+		"hidden": 11,
+		"occupied_by_building": 0,
+		"other_shape": 0,
+		"required_cells": 15,
+		"smoothable": 4,
+		"unreadable": 0
+	},
+	"finish_required_met": false,
+	"mode": "dig",
+	"ok": false,
+	"phase": "office_room_v1_shell",
+	"quickfort": {
+		"error": null,
+		"problems": [ "Tiles that could not be designated for digging: 11" ],
+		"ran": true,
+		"result_ok": true,
+		"stats": {
+			"Tiles designated for digging": 14,
+			"Tiles that could not be designated for digging": 11
+		}
+	},
+	"read_failures": [],
+	"remedy": null,
+	"site": {
+		"direction": "E",
+		"distance_tiles": 2,
+		"footprint": {
+			"height": 5,
+			"width": 5
+		},
+		"handle": null,
+		"interior_fully_revealed": false,
+		"near_landmark": "Activity Zone #2",
+		"note": "a real apply registers this as a new site-N handle",
+		"orientation": "none",
+		"orientations_tried": [ {
+			"carve_cells_reachable": 10,
+			"carve_cells_unreachable": 0,
+			"entrance_reachable": true,
+			"interior_fully_revealed": false,
+			"orientation": "none"
+		}, {
+			"carve_cells_reachable": 0,
+			"carve_cells_unreachable": 10,
+			"entrance_reachable": false,
+			"interior_fully_revealed": false,
+			"orientation": "rotcw"
+		}, {
+			"carve_cells_reachable": 0,
+			"carve_cells_unreachable": 10,
+			"entrance_reachable": false,
+			"interior_fully_revealed": false,
+			"orientation": "rot180"
+		}, {
+			"carve_cells_reachable": 0,
+			"carve_cells_unreachable": 10,
+			"entrance_reachable": false,
+			"interior_fully_revealed": false,
+			"orientation": "rotccw"
+		} ],
+		"rank": 3,
+		"source": "found"
+	},
+	"would_designate": 14
+}
+[0m
