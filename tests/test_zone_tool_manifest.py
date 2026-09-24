@@ -106,7 +106,8 @@ def test_argument_names_and_order():
         "kind", "w", "h", "level", "near_landmark", "radius_tiles", "around_furniture"]
     assert names("zone.check-owner") == ["kind", "owner"]
     assert names("zone.place") == [
-        "kind", "w", "h", "level", "near_landmark", "rank", "radius_tiles", "dry_run", "owner"]
+        "kind", "w", "h", "level", "near_landmark", "rank", "radius_tiles", "dry_run", "owner",
+        "around_furniture"]
     assert names("zone.list") == [
         "kind_filter", "owner_filter", "valid_filter", "near_landmark_filter", "radius_tiles"]
     assert names("zone.assign-owner") == ["zone_id", "unit_id", "dry_run", "override"]
@@ -293,14 +294,17 @@ def test_around_furniture_refuses_a_kind_with_no_furniture_kinds_entry():
         assert f'"{tok}"' not in resolver and f"'{tok}'" not in resolver
 
 
-def test_find_and_place_share_ranked_rects_but_only_find_passes_furniture_ids():
-    """zone.place keeps its current single-writer position (handoff scope):
-    no new argument, ranked_rects's furniture_type_ids stays nil for it."""
+def test_place_now_takes_the_same_opt_in_around_furniture_flag_as_find():
+    """Fixed live 2026-09-24: place shared ranked_rects with find but was never given
+    find's furniture exemption, so it could never choose a site whose tile already held
+    the furniture a room needs (e.g. a Tomb zone over an already-built Coffin -- the
+    same room-over-furniture pattern this fort's Office/Chair case already showed).
+    The flag is opt-in and defaults false, so an ordinary place is unchanged."""
     src = _text()
-    # ends where the zone contents block begins (2026-09-24): that block is not place's code
     place_fn = src[src.index("function place_zone"): src.index("-- zone contents (handoffs")]
-    assert "furniture_type_ids" not in place_fn
-    assert "around_furniture" not in place_fn.lower()
+    assert "truthy_around_furniture(around_furniture)" in place_fn
+    assert "ranked_rects(k, p, dw, dh, level, near, radius_tiles, furniture_ids)" in place_fn
+    assert "result.contains_qualifying_furniture" in place_fn
     find_fn = src[src.index("function find_zone_area"): src.index("function check_owner")]
     assert "ranked_rects(k, p, dw, dh, level, near, radius_tiles, furniture_ids)" in find_fn
 
@@ -415,12 +419,12 @@ def test_has_furniture_is_computed_from_the_same_furniture_ids_as_the_row_flag()
 
 
 def test_default_ranking_is_unchanged_without_around_furniture():
-    """place and a plain find both call ranked_rects with furniture_type_ids
-    nil (test_find_and_place_share_ranked_rects_but_only_find_passes_
-    furniture_ids already pins the call sites); this pins that the sort
-    comparator itself is a no-op for that case: the furniture branch is
-    gated on furniture_type_ids, and no other line in the comparator was
-    touched by this change."""
+    """A plain find or place (AROUND_FURNITURE omitted or false) both call
+    ranked_rects with furniture_type_ids nil (both now share the identical
+    call, test_place_now_takes_the_same_opt_in_around_furniture_flag_as_find
+    pins the call sites); this pins that the sort comparator itself is a
+    no-op for that case: the furniture branch is gated on furniture_type_ids,
+    and no other line in the comparator was touched by this change."""
     body = _ranked_rects_body()
     sort_call = body[body.index("table.sort(candidates"): body.index("local chosen = {}")]
     # exactly the three comparator lines: furniture guard, indoors, distance

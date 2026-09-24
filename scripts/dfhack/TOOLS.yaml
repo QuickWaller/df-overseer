@@ -849,7 +849,7 @@ df-overseer-zone.lua:
         dead or is not a citizen, a kind that cannot have an owner (only
         Bedroom, DiningHall, Office and Tomb), or a malformed token. Reads
         the Nobles screen's data (positions and holders) and nothing hidden.
-    "place KIND [W H] [LEVEL] NEAR_LANDMARK [RANK] [RADIUS_TILES] [DRY_RUN] [OWNER]":
+    "place KIND [W H] [LEVEL] NEAR_LANDMARK [RANK] [RADIUS_TILES] [DRY_RUN] [OWNER] [AROUND_FURNITURE]":
       lua_function: place_zone
       skippable: ["[W H]"]
       effect: mutate
@@ -886,6 +886,21 @@ df-overseer-zone.lua:
         assignment; a real run reads assigned_unit_id and the game's getOwner
         back under `owner_result`. Real placement first run 2026-09-23; see
         `verified` above.
+        ADDED 2026-09-24 (live-blocking bug found placing a Tomb over a
+        built Coffin, evals/live/2026-09-24-ghost-slab/README.md): AROUND_FURNITURE
+        (last argument, so OWNER must be given before it, "" if none), the
+        same opt-in flag `find` already had. Without it place shared
+        ranked_rects with find but was never given find's furniture
+        exemption, so it could never choose a site whose tile already held
+        the qualifying furniture (a Tomb over an already-built Coffin is
+        the same room-over-furniture pattern this fort's Office/Chair case
+        already showed; an occupied tile like that was rejected exactly
+        like any other occupied tile). Default false: an ordinary place
+        keeps ranking bare sites exactly as before. When true, the result
+        carries furniture_kinds, contains_qualifying_furniture and
+        furniture_building_ids, the same fields `find`'s AROUND_FURNITURE
+        result carries per site. Offline fix, not yet deployed or
+        live-verified.
     "list KIND_FILTER OWNER_FILTER VALID_FILTER NEAR_LANDMARK_FILTER [RADIUS_TILES]":
       lua_function: list_zones
       effect: read

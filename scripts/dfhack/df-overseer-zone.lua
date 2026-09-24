@@ -1541,7 +1541,7 @@ function list_zones(kind_filter, owner_filter, valid_filter, near, radius_tiles)
 end
 
 -- DRY_RUN defaults to true. See the header for what each mode does.
-function place_zone(kind_name, w, h, level, near, rank, radius_tiles, dry_run, owner)
+function place_zone(kind_name, w, h, level, near, rank, radius_tiles, dry_run, owner, around_furniture)
   local k, kerr = resolve_kind(kind_name)
   if not k then return nil, kerr end
   local p = policy_for(k)
@@ -1560,7 +1560,27 @@ function place_zone(kind_name, w, h, level, near, rank, radius_tiles, dry_run, o
   local dw, dh = resolve_dims(k, p, w, h)
   if not dw then return nil, dh end
   rank = rank or 1
-  local chosen, search, err, z = ranked_rects(k, p, dw, dh, level, near, radius_tiles)
+
+  -- Same opt-in AROUND_FURNITURE flag `find` already has (docs/DECISIONS 2026-09-24:
+  -- `place` shared ranked_rects with `find` but was never given the furniture
+  -- exemption, so it could never choose a site whose tile already holds the
+  -- furniture a room needs, e.g. a Tomb zone over an already-built Coffin, the
+  -- same room-over-furniture pattern this fort's Office/Chair case already showed).
+  -- Default false: an ordinary place keeps ranking bare sites exactly as before.
+  local furniture_requested = truthy_around_furniture(around_furniture)
+  local furniture_ids, furniture_names
+  if furniture_requested then
+    local ferr
+    furniture_ids, furniture_names, ferr = furniture_type_ids_for(p)
+    if ferr then return nil, ferr end
+    if not furniture_ids then
+      return nil, string.format(
+        "refused: AROUND_FURNITURE is only meaningful for a kind with furniture_kinds in "
+          .. "ZONE_POLICY (Office, Bedroom, DiningHall, Tomb); %s has none", k.token)
+    end
+  end
+
+  local chosen, search, err, z = ranked_rects(k, p, dw, dh, level, near, radius_tiles, furniture_ids)
   if err then return nil, err end
   if rank < 1 or rank > #chosen then
     return nil, string.format("no candidate at rank %d (found %d near %s); search: %s",
@@ -1568,6 +1588,11 @@ function place_zone(kind_name, w, h, level, near, rank, radius_tiles, dry_run, o
   end
   local c = chosen[rank]
   local result = rect_site_info(k, p, c, dw, dh, z, rank)
+  if furniture_requested then
+    result.furniture_kinds = furniture_names or NULL
+    result.contains_qualifying_furniture = c.has_furniture == true
+    result.furniture_building_ids = c.furniture_building_ids or {}
+  end
   result.dry_run = dry
   result.search = search
   result.requirements = requirements_for(k, p)
@@ -2109,7 +2134,7 @@ local USAGE = {
   "usage: df-overseer-zone list-kinds [FILTER]",
   "usage: df-overseer-zone find KIND [W H] [LEVEL] NEAR_LANDMARK [RADIUS_TILES] [AROUND_FURNITURE]",
   "usage: df-overseer-zone check-owner KIND OWNER",
-  "usage: df-overseer-zone place KIND [W H] [LEVEL] NEAR_LANDMARK [RANK] [RADIUS_TILES] [DRY_RUN] [OWNER]",
+  "usage: df-overseer-zone place KIND [W H] [LEVEL] NEAR_LANDMARK [RANK] [RADIUS_TILES] [DRY_RUN] [OWNER] [AROUND_FURNITURE]",
   "usage: df-overseer-zone list KIND_FILTER OWNER_FILTER VALID_FILTER NEAR_LANDMARK_FILTER [RADIUS_TILES]",
   "usage: df-overseer-zone assign-owner ZONE_ID UNIT_ID [DRY_RUN] [OVERRIDE]",
   "usage: df-overseer-zone clear-owner ZONE_ID [DRY_RUN]",
@@ -2174,7 +2199,7 @@ elseif cmd == "place" then
     print(encode({error = USAGE[4]}))
   else
     local res, err = place_zone(kind, w, h, level, near, tonumber(args[nxt]),
-      tonumber(args[nxt + 1]), args[nxt + 2], args[nxt + 3])
+      tonumber(args[nxt + 1]), args[nxt + 2], args[nxt + 3], args[nxt + 4])
     print(encode(err and {error = err} or res))
   end
 elseif cmd == "list" then
