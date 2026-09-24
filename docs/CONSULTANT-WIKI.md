@@ -655,3 +655,29 @@ edits are the orchestrator's (`handoffs/` rule).
    they fit.
 6. Whether to build the hold window against vandalism (9). Not built until a real
    vandalised revision is observed in the changelog.
+
+## 13. Rulings by the user (2026-09-24), which amend the sections above
+
+**Hold recent edits back by one week.** This settles the open question in section 12 about
+a hold window against vandalised or half-finished recent edits. Rule: an edit, move, delete
+or new page fetched by a refresh at time T becomes visible to readers at T plus 7 days. Until
+then the reader keeps serving the previously visible revision (or, for a new page, nothing),
+and the change is recorded in the changelog as `held` with its `visible_after` time. A held
+change becomes `visible` on the first refresh or reader call after `visible_after`, and the
+changelog records that transition. Consequences the build must honour:
+
+- **Schema (S1):** each page keeps the served revision and, separately, the latest seen revision
+  with `latest_seen_at` and `visible_after`. Readers always join on the served revision.
+- **Baseline:** the first full pull is visible immediately (there is nothing to serve otherwise);
+  the hold applies to changes after that baseline. A deliberate re-pull on a version bump is
+  visible on promotion, as it is an explicit human act.
+- **Deletes and moves are held too**, so a vandal blanking a page does not remove it from the
+  Consultant for a week. A page deleted for good is removed at `visible_after`.
+- **Freshness labels** (section 5.2) describe the refresh job, as before. Add a second field on
+  every result, `held_changes`, the number of pending changes for that page (0 normally), so a
+  reader can see a newer revision exists and is not yet trusted. The changelog digest lists
+  held changes separately from visible ones.
+- **Cost:** served content can lag the wiki by up to seven days. That is accepted: about 15
+  main-namespace edits a day, and every result carries its revision and fetch time.
+- **The doctrine check (section 7)** compares a cited revision with the *served* revision, and
+  also reports a newer held revision, so a re-read can be planned before it goes live.
