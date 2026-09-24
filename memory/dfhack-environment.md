@@ -434,3 +434,55 @@ Each fact says how it is known. "Live" means read or run on VM 103 on 2026-09-21
   a job name is not evidence of the item type it produces. (live, 2026-09-23)
 - `job.job_items` is not directly iterable in Lua (`attempt to get length of a userdata
   value`); read `job.job_items.elements`. (live, 2026-09-23)
+
+## Added 2026-09-24/25 (wiki mirror deploy, surface perception, ghost burial)
+
+- **VM 103's Python is 3.12.3 and has the FTS5 module.** Confirmed at the wiki
+  mirror's first deploy by its own startup check (`CREATE VIRTUAL TABLE ...
+  USING fts5` succeeds); this was previously an open assumption
+  (`docs/CONSULTANT-WIKI.md` §12). (live, 2026-09-24)
+- **The wiki mirror runs as a new unprivileged system user `dfwiki`**, no
+  group path to the fort's saves. It owns `/var/lib/dfwiki/` at mode 750
+  (the sqlite mirror, `df-wiki.sqlite3`). `dfmcp-server` itself runs as `df`,
+  which was added to the `dfwiki` group **read-only** so the server can open
+  the file; this grant was needed a day later than the mirror deploy itself,
+  during the switch-over stream. `dfwiki.env` (the fetch contact string and
+  similar config) lives root-owned at `/etc/dfwiki.env`. (live, 2026-09-24/25)
+- **`dfmcp-server`'s environment needs `PYTHONPATH=/opt/df/wikimirror`** for
+  `dfmcp/wiki_reader.py` to import the `wikimirror` package; this was an
+  import gap the reader-deploy handoff missed on its first pass and had to
+  add after the fact. Anyone redeploying `wiki_reader.py` from a clean env
+  should check this before assuming an `ImportError` means something else.
+  (live, 2026-09-25)
+- **The wiki mirror's own database is not WAL** (journal mode `delete`, no
+  sidecar files), which is why adding a second reader (`dfmcp-server` as
+  `df`) needed only a group grant, not a WAL-mode change. (live, 2026-09-25)
+- **A permissions change on a path another live service reads is not proven
+  safe by that deploy's own checks if those checks only watch the deploying
+  service.** The 2026-09-24 wiki mirror deploy locking `/var/lib/dfwiki/` to
+  750 `dfwiki` silently broke the Consultant's old JSON-snapshot read (a
+  different file, `snapshot.json`, but the same directory) for about a day;
+  the deploy's own checks looked only at `dfmcp-server`'s PID and state,
+  never at a real Consultant call, so they could not have caught it. Any
+  future deploy that changes permissions on a path another service reads
+  should re-run a real call through that other service before calling it
+  verified. (root-caused live, 2026-09-25, `decisions/DECISIONS.md` that
+  date)
+- **No SOIL tiletype carries the SMOOTH material flag on this install; only
+  STONE does** (14 SOIL, 0 SOIL+SMOOTH, 21 STONE+SMOOTH tiletypes, checked
+  twice independently), settling the open assumption that soil cannot be
+  smoothed in 53.16 and soil rooms must be built (a constructed wall/floor)
+  rather than smoothed. (live, 2026-09-24, re-verified independently by the
+  orchestrator)
+- **A living tree can read as `smooth`**: DFHack reuses the same numeric
+  SMOOTH slot for tree trunk pillars, so a naive material-flag read on a
+  tile with a tree on it gives a false positive. The surface tool gates on
+  a finishable-materials set to avoid this. (live, 2026-09-24)
+- **A ghost needs a Tomb zone over its coffin to be laid to rest, not just
+  the coffin itself.** `zone place` lacked the furniture-exemption flag
+  `zone find` already had, which blocked placing a Tomb zone directly over
+  an existing coffin; adding the same opt-in `AROUND_FURNITURE` flag to
+  `place` fixed it. Burial was then confirmed by direct struct reads (the
+  corpse item moving into the coffin building, the ghost's `flags3.ghostly`
+  clearing and the unit leaving the active-unit list) plus the game's own
+  report text. (live, 2026-09-24)
