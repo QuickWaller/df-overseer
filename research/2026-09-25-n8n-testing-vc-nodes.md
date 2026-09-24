@@ -686,3 +686,229 @@ vendor, workflow id, or the repository's own name.
   and `docs/n8n-integration-depth.md`, its `scripts/test-n8n.sh`, and one
   workflow's `.test.ts` file, read-only, pattern-only, no names, hosts,
   vendors, or workflow/file identifiers carried into this report.
+
+## Gating facts checked, 2026-09-25
+
+Method: cloned `n8n-io/n8n` (shallow, `blob:none`) into a scratch directory
+outside any repo worktree, checked out the `stable` tag, which resolves to
+**`n8n@2.40.6`** (`package.json` at that commit reads `"version": "2.40.6"`),
+read the actual node/CLI source at that tag, then deleted the clone. No
+Docker run: the workstation has Docker running, but the only container
+already up is the user's other n8n project's own instance, which the brief
+forbids touching or reading;
+spinning up a separate throwaway container was judged unnecessary because the
+source read gave direct, primary-source answers to all three questions
+without needing a live client. This is a deliberate choice, not a Docker
+unavailability, and is flagged here per the "verify the verification" rule
+so the gap is visible rather than papered over.
+
+### Fact 1: can one tool workflow serve several MCP Server Triggers?
+
+**Yes, with a nuance on what "the same tool workflow" means structurally.**
+
+Source, read at `n8n@2.40.6`:
+`packages/@n8n/nodes-langchain/nodes/mcp/McpTrigger/McpTrigger.node.ts`. The
+trigger's tool list comes from
+`getConnectedTools(context, ...)` (line 44 in `getConnectedToolsRespectingCredentialGate`),
+which in turn (`packages/@n8n/nodes-langchain/utils/helpers.ts:218-229`) calls
+`ctx.getInputConnectionData(NodeConnectionTypes.AiTool, 0, options)`: it reads
+whatever nodes are wired into **this trigger node's own `ai_tool` input**, a
+per-canvas graph read, not a lookup against any shared or global tool
+registry. Two different `McpTrigger` nodes (in the same workflow, or in two
+different workflows) each build their tool list independently from their own
+connections.
+
+The actual re-use unit is the **Tool Workflow node** (`ToolWorkflow` /
+`n8n-nodes-langchain.toolWorkflow`,
+`packages/@n8n/nodes-langchain/nodes/tools/ToolWorkflow/v2/ToolWorkflowV2.node.ts`
+and `.../utils/WorkflowToolService.ts`), which is a thin wrapper: it holds a
+`workflowId` reference to a separate sub-workflow and, on each tool call,
+executes that sub-workflow via `runFunction`/Execute-Workflow-style dispatch
+(`WorkflowToolService.ts` lines 116-200; `subWorkflowId`/`subExecutionId`
+fields track the call). **What gets duplicated per trigger is the thin
+ToolWorkflow node instance and its wiring, never the sub-workflow's logic**:
+the logic lives once, in the referenced sub-workflow, and every ToolWorkflow
+instance pointing at that same `workflowId`, wherever it is wired, calls the
+same code. Two ways to expose one tool workflow on two triggers:
+- one ToolWorkflow node instance with its `ai_tool` output connected to two
+  different `McpTrigger` nodes on the same canvas (n8n's connection format,
+  confirmed against the fixture
+  `packages/testing/playwright/workflows/mcp-trigger/mcp-trigger-multi-tool.json`,
+  is an arbitrary graph: `"ai_tool": [[{destinations}]]` supports fan-out to
+  multiple targets from one source node); or
+- two separate ToolWorkflow node instances, one per trigger/workflow, each
+  set to the same `workflowId`, which duplicates the thin node (name,
+  description, field-mapping parameters) but still calls one shared
+  sub-workflow body.
+
+**Name collisions across triggers**: not a real risk structurally, because
+each trigger's `tools/list` is built only from its own `ai_tool` connections
+(no cross-trigger, cross-workflow namespace exists in the source read). A
+collision is only possible **within one trigger's own tool list**, if two
+sibling tool nodes on the same canvas share a `name` parameter; nothing in
+`McpTrigger.node.ts` or `helpers.ts` was found deduplicating or rejecting
+that case, so it is left to the workflow author, not something this pass
+found enforced.
+
+**Confidence**: source-confirmed at the pinned tag for the connection model,
+the ToolWorkflow re-use mechanism, and the absence of a cross-trigger
+registry. Not independently exercised live (no MCP client run against a real
+trigger this pass); the reasoning is a direct read of the dispatch code, not
+an inference from docs.
+
+### Fact 2: does the MCP Server Trigger expose typed arguments from the tool workflow's declared input schema in `tools/list`?
+
+**Yes, and the mechanism is confirmed end to end from trigger down to the
+sub-workflow's own schema, though it is mediated through `$fromAI()`
+expressions rather than a direct schema pass-through.**
+
+`packages/@n8n/nodes-langchain/nodes/mcp/McpTrigger/McpServer.ts:46-52`:
+
+```
+function toolDescriptors(tools: Tool[]) {
+	return tools.map((tool) => ({
+		name: tool.name,
+		description: tool.description,
+		inputSchema: zodToDraft202012(tool.schema, { removeAdditionalStrategy: 'strict' }),
+	}));
+}
+```
+
+Every tool surfaced through `tools/list`, whatever node type supplied it, is
+converted from a Zod schema to a real draft 2020-12 JSON Schema
+(`inputSchema`), not a bare untyped blob. For the ToolWorkflow node
+specifically, that Zod schema is built in
+`packages/@n8n/nodes-langchain/nodes/tools/ToolWorkflow/v2/utils/WorkflowToolService.ts`:
+`createStructuredTool` (lines 452-471) calls
+`extractFromAIParameters(this.baseContext.getNode().parameters)` then
+`createZodSchemaFromArgs(collectedArguments)`
+(`packages/@n8n/ai-utilities/src/utils/fromai-helpers.ts:20-42`), which maps
+each collected `$fromAI(key, description, type)` placeholder through
+`generateZodSchema` (from `n8n-workflow`) into a typed Zod field and returns
+`z.object(schemaObj).required()`, so required-ness, per-field type, and
+per-field description all carry through into the final JSON Schema.
+
+The `$fromAI()` placeholders are not hand-written from scratch by the
+workflow author in the common case: `useSchema` is set from
+`this.baseContext.getNode().parameters.workflowInputs` (a `ResourceMapperValue`,
+`WorkflowToolService.ts` lines 58-60), and the resource-mapper's field list
+is populated by `loadSubWorkflowInputs`
+(`packages/@n8n/nodes-langchain/nodes/tools/ToolWorkflow/v2/methods/localResourceMapping.ts`),
+which calls n8n-base's `loadWorkflowInputMappings` to pull field name and
+type **from the referenced sub-workflow's own declared Workflow Input
+Schema**. The UI's "Refresh" action populates each mapped field's value with
+a `$fromAI(...)` expression carrying that type forward. So the typed
+`tools/list` entry traces back to the sub-workflow's own schema, just via
+this fromAI-expression relay rather than the trigger reading the
+sub-workflow's schema directly at request time.
+
+This is the **same mechanism the AI Agent's own tool sub-nodes use**: the
+same `extractFromAIParameters`/`createZodSchemaFromArgs` pair lives in
+`@n8n/ai-utilities` and is reused by `createToolFromNode`
+(`fromai-tool-factory.ts`), the generic path other AI Agent tool sub-nodes
+call, confirming the research file's earlier "not independently verified"
+flag on this exact point (line ~307) can now be closed: the MCP Server
+Trigger is not a second, weaker schema path, it is the same typed-schema
+pipeline, just reached through the ToolWorkflow node's fromAI-expression
+relay of the sub-workflow's declared schema.
+
+**Confidence**: source-confirmed at the pinned tag for every link in the
+chain (trigger's `zodToDraft202012` call, `WorkflowToolService`'s Zod
+construction, `fromai-helpers.ts`'s type mapping, and the resource-mapper's
+pull from the sub-workflow's own schema). Not independently observed against
+a live `tools/list` response (no MCP client run this pass); this is a
+primary-source code read, not an inference from n8n's docs, which say much
+less about this than the source does.
+
+### Fact 3: `n8n execute-batch` with `--snapshot`/`--compare`, and `pinData` ignored by CLI execution
+
+**Yes to all three parts, now confirmed directly from source at
+`n8n@2.40.6` rather than secondhand from the other project's finding.**
+
+`packages/cli/src/commands/execute-batch.ts` registers a real `@Command`:
+
+```
+@Command({
+	name: 'execute-batch',
+	description: 'Executes multiple workflows once',
+	examples: [ ... '--snapshot=/data/snapshots --shallow', '--compare=/data/previousExecutionData --retries=2' ],
+	flagsSchema,
+})
+export class ExecuteBatch extends BaseCommand<z.infer<typeof flagsSchema>> {
+```
+
+`flagsSchema` (lines 36-95) is a `zod` object declaring exactly the flag set
+the earlier pass reported secondhand: `debug`, `ids`, `concurrency`,
+`output`, `snapshot`, `compare`, `shallow`, `githubWorkflow`, `skipList`,
+`retries`, `shortOutput`. `snapshot` writes a per-workflow
+`<id>-snapshot.json` after running (lines 849-856); `compare` reads that same
+file and diffs the fresh run against it with `json-diff`, treating
+deletions as errors and pure additions as warnings (lines 803-846). This is
+a real, supported, first-class CLI command (not an internal/undocumented
+one from the code's own point of view: it has a `@Command` decorator,
+declared flags with `.describe()` strings, and example usage baked into the
+decorator), even though (as the rest of this report already noted) it does
+not appear in n8n's own published docs site.
+
+**`pinData` is ignored by CLI execution, and the source shows exactly why,
+not just that it is absent from the CLI's own files.**
+`packages/cli/src/workflow-runner.ts:388-393`:
+
+```
+private resolvePinData(data: IWorkflowExecutionDataProcess): IPinData | undefined {
+	if (['manual', 'evaluation'].includes(data.executionMode)) {
+		return data.pinData ?? data.workflowData.pinData;
+	}
+	return undefined;
+}
+```
+
+Both `packages/cli/src/commands/execute.ts` (line 90) and
+`packages/cli/src/commands/execute-batch.ts` (line 663, inside
+`startThread`'s `runData`) construct their `IWorkflowExecutionDataProcess`
+with `executionMode: 'cli'`. `resolvePinData` only returns pinned data for
+`'manual'` or `'evaluation'` execution modes; for `'cli'` it unconditionally
+returns `undefined`, and that `undefined` is what gets threaded into the
+`Workflow` construction (`pinData` at line 451) and into
+`manualExecutionService.runManually(...)` (line 518) for the actual run.
+This is a stronger result than the research file's earlier
+**[other project, pattern]** citation of `execute.js`/`execute-batch.js`
+having zero string references to `pinData`: it shows the exclusion is
+explicit and mode-gated in the runner itself, not merely that the CLI
+command files happen not to mention the word.
+
+**Confidence**: all three parts source-confirmed at the pinned tag,
+first-hand for this pass (previously the pinData claim was one level short,
+attributed to the other project's finding; it is now this project's own
+primary-source read). Not independently run against a live installed CLI
+binary this pass (no `n8n execute-batch --help` invocation); the source
+read is direct enough on both the flag set and the pinData gating that a
+live run would confirm but not add new information here, so it was not
+judged worth spinning up a container for.
+
+### What this means for the pilot design
+
+- **Fact 1** supports the brief's "one MCP trigger per role, one workflow
+  per tool" design directly: put the actual dfmcp-calling logic in a single
+  sub-workflow per tool, then wire thin ToolWorkflow nodes into each role's
+  trigger that needs it. No logic fork, no copy-paste of the `dfhack-run`
+  call itself, and no cross-role name-collision risk since each trigger's
+  tool list is its own connections only. The one thing to watch is naming
+  discipline within a single trigger's own canvas (two tool nodes sharing a
+  `name` there is not caught by n8n itself).
+- **Fact 2** means the "validate args" step this project's tool pipeline
+  needs can lean on n8n's own typed schema (declared once, on the
+  sub-workflow's trigger, via Workflow Input Schema) rather than reinventing
+  argument validation in a Code node: the MCP client sees real typed,
+  required, described fields, matching this project's "no armok, no hidden
+  logic in Code blocks" preference for keeping control flow in nodes.
+  Practical implication: build the sub-workflow's input schema first, then
+  let each ToolWorkflow node's "Refresh" pull it in, rather than typing
+  `$fromAI()` calls by hand.
+- **Fact 3** confirms `execute-batch --snapshot`/`--compare` is real,
+  current, and stable enough at `2.40.6` to use as the workflow-level
+  regression layer this report's bottom line already recommended, and
+  confirms from the runner itself (not just CLI-file silence) that pinned
+  fixtures must go through `Code`-node mocks of `dfhack-run`'s output, never
+  `pinData`, for any CLI-driven test path (`execute` or `execute-batch`);
+  `pinData` stays a UI-only, interactive-development convenience.
