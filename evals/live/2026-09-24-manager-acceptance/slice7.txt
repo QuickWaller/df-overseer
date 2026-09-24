@@ -1,0 +1,17 @@
+[0m{"ok": true,"paused": true}[0m
+final tick 12639772
+[0mPICK	OK	192
+[0mCATS	2 2 4 8 2 3 1 
+[0mCAT0	2	345,455
+[0mMAXREPORT	411
+	"alive": 22,
+	"dead_total": 1,
+	"worst_hunger_status": "fine",
+	"worst_thirst_status": "fine"
+[0m[0mORDER	0	ConstructBlocks		validated	true	active	false	left	1	/	1	ic	0	oc	0	ws	-1	maxws	0
+[0mORDER	1	ConstructMechanisms		validated	true	active	false	left	1	/	1	ic	0	oc	0	ws	-1	maxws	0
+[0mORDER	2	CustomReaction	BREW_DRINK_FROM_PLANT	validated	true	active	false	left	8	/	8	ic	0	oc	0	ws	-1	maxws	0
+[0mORDER	3	ConstructThrone		validated	false	active	false	left	1	/	1	ic	0	oc	0	ws	-1	maxws	0
+[0mJOBS	EatW=1 	total	1
+[0mMGR345	Eat	stress	0
+[0mKEASAMEZ	999
