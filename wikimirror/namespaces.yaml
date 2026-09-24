@@ -1,0 +1,91 @@
+# Namespace-id allow-list for the wiki mirror (docs/CONSULTANT-WIKI.md 2.2, 2.3).
+#
+# Ingestion is by namespace ID, taken from the API's `ns` field, never by a
+# title prefix: a main-namespace title that happens to contain a colon stays
+# main. One data row per namespace; adding one is a row, not a code branch.
+#
+# Fields:
+#   name          the wiki's own namespace name ("" for main)
+#   ingest        true only for namespaces whose pages the mirror may store
+#   is_current    1 when the namespace holds current-game (53.x) content
+#   game_version  a fixed version string, or null when `from_template` is set
+#   from_template a page whose text is the version (read at pull time), or null
+#   label         short human label used in results
+#   reason        why it is excluded (required when ingest is false)
+#
+# v1 ingests the main namespace only. Template (ns 10) is stored by slice 2 of
+# the design as parameter-reading support and is NOT searchable; it is listed
+# here as excluded until that slice flips it, so v1 cannot ingest it by accident.
+version: 1
+namespaces:
+  0:
+    name: ""
+    ingest: true
+    is_current: 1
+    game_version: null
+    from_template: "Template:Current/version"
+    label: "DF wiki main namespace (current game)"
+  10:
+    name: "Template"
+    ingest: false
+    is_current: 0
+    game_version: null
+    from_template: null
+    label: "DF wiki templates"
+    reason: "Design slice 2: stored only as template-parameter support, never searchable. Off in v1 so it cannot be ingested by accident."
+  116:
+    name: "DF2014"
+    ingest: false
+    is_current: 0
+    game_version: "0.47.05"
+    from_template: null
+    label: "DF2014 (0.47.05), OLD GAME"
+    reason: "Older game (last pre-Steam line). Off in v1; if added later it is stored with is_current 0 and hidden unless include_legacy is passed (design 2.2, slice 9)."
+  114:
+    name: "v0.34"
+    ingest: false
+    is_current: 0
+    game_version: "0.34.11"
+    from_template: null
+    label: "v0.34 (0.34.11), OLD GAME"
+    reason: "Older game, never fetched."
+  112:
+    name: "v0.31"
+    ingest: false
+    is_current: 0
+    game_version: "0.31.25"
+    from_template: null
+    label: "v0.31 (0.31.25), OLD GAME"
+    reason: "Older game, never fetched."
+  106:
+    name: "40d"
+    ingest: false
+    is_current: 0
+    game_version: "0.28.181.40d"
+    from_template: null
+    label: "40d (0.28.181.40d), OLD GAME"
+    reason: "Older game, never fetched."
+  110:
+    name: "23a"
+    ingest: false
+    is_current: 0
+    game_version: "0.23.130.23a"
+    from_template: null
+    label: "23a (0.23.130.23a), OLD GAME"
+    reason: "Older game, never fetched."
+  1000:
+    name: "Masterwork"
+    ingest: false
+    is_current: 0
+    game_version: null
+    from_template: null
+    label: "Masterwork mod"
+    reason: "A mod, not vanilla. Its pages must never read as vanilla 53.16 knowledge."
+  4:
+    name: "Dwarf Fortress Wiki"
+    ingest: false
+    is_current: 0
+    game_version: null
+    from_template: null
+    label: "Project pages"
+    reason: "Project and licence pages, not game knowledge."
