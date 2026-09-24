@@ -25,7 +25,7 @@ are explicit that this decision is qualitative and made by judgment, not
 measurement, and all three have a mature answer for exactly the situation
 this project is in: **no flow data.** Facility layout's own literature is
 direct on this point (cited in Q1): "SLP-based approaches are suitable
-alternatives once the layout planning objectives are not quantifiable" — the
+alternatives once the layout planning objectives are not quantifiable." The
 letter-rating chart exists specifically to substitute for a flow number that
 does not exist, not as a simplified stand-in for one that does. This
 project's proxy (workshop kind implies stockpile kind,
@@ -66,22 +66,22 @@ the original monograph.**
 The method, as consistently described across sources: start from **Product,
 Quantity, Routing, Supporting services, Timing (the "P-Q-R-S-T" inputs)**,
 then build an **activity relationship chart**: every pair of activities
-(departments, workshops, functions) gets a **closeness rating** — A
+(departments, workshops, functions) gets a **closeness rating**: A
 (absolutely necessary), E (especially important), I (important), O
-(ordinary), U (unimportant), X (undesirable/prohibited) — each with a coded
+(ordinary), U (unimportant), X (undesirable/prohibited), each with a coded
 **reason** (shared personnel, shared equipment, sequence of process, noise,
 convenience, safety). The ratings feed a **relationship diagram** (activities
 placed so that high-closeness pairs sit near each other, low or negative
 pairs sit apart), which is then converted to a **space relationship diagram**
 once each activity's own area requirement is known, and finally to a
-**block layout** — named areas with approximate shape and adjacency, still
+**block layout**: named areas with approximate shape and adjacency, still
 not a dimensioned floor plan.
 
 **What SLP needs as input, restated:** a list of activities, a closeness
 judgment for every pair (or enough pairs to matter), a reason for each
 judgment, and each activity's approximate space requirement. Flow
 (quantity moved, trips per period) is one *source* of closeness judgment,
-not the only one — the method's own reason codes include several that have
+not the only one; the method's own reason codes include several that have
 nothing to do with material flow (shared personnel, noise, safety, sequence
 convenience).
 
@@ -108,7 +108,7 @@ reliance on "expert judgment and iterative manual adjustments," which does
 not scale cleanly to "highly complex problems," and a structural tension
 between qualitative closeness ratings (easy to elicit, hard to optimise
 formally) and quantitative flow scores (easy to optimise, hard to elicit
-honestly when the real flow is unknown or unmeasured) — the same tension
+honestly when the real flow is unknown or unmeasured), the same tension
 Q7 of the 2026-09-24 layout report already named for this project
 specifically, now confirmed as a tension the source field names about
 itself, not one unique to DF.
@@ -119,7 +119,7 @@ and "quantity/timing" (how much of what, how often) is exactly the flow
 data this project has already said it does not have. What transfers
 cleanly is the **chart structure itself**: a small set of named district
 kinds, a closeness judgment between every pair worth judging, and a reason
-recorded per judgment — reasons that, for DF, would be things like "shares
+recorded per judgment: reasons that, for DF, would be things like "shares
 a workforce" (a farmer's district near its dining hall), "produces for"
 (a smithing district near an ore-processing district), "must stay apart"
 (a tomb district away from anywhere living dwarves gather; the fort's own
@@ -128,7 +128,7 @@ would have flagged in advance), or "no relation" (most pairs, honestly,
 which SLP's own U rating exists to record rather than force a decision on).
 **What does not transfer**: block layout's later stages (space relationship
 diagram, block layout proper) assume a floor plan is eventually drawn and
-areas are shaped and sized geometrically — legitimate for the humans who
+areas are shaped and sized geometrically, legitimate for the humans who
 will read the fort's map, but exactly the step this project's agents must
 never be asked to reason about directly (`docs/PURPOSE.md` commitment 1).
 The chart stops being useful to hand to the model the moment it turns into
@@ -148,7 +148,7 @@ after case-by-case review against stated criteria, because it might be
 compatible or might not depending on specifics), or **prohibited**. Where
 two adjacent districts hold **incompatible** permitted uses (the recurring
 example found: a multi-family building next to a single-family district),
-a governing body can require a **buffer** — a strip of land, planting, or a
+a governing body can require a **buffer**: a strip of land, planting, or a
 use restriction between them, reducing the conflict without requiring
 either district to change. **Mixed-use** districts deliberately allow
 several use classes together (rejecting the separation premise for that
@@ -172,7 +172,7 @@ directly:**
   urban buffering exists to prevent, not merely an aesthetic preference.
 - **Conditional use** maps onto "a district kind is normally excluded from
   overlapping another kind, but a specific, checkable exception can allow
-  it" — a useful vocabulary for cases like a small workshop legitimately
+  it," a useful vocabulary for cases like a small workshop legitimately
   sitting inside a district otherwise reserved for a different purpose,
   reviewed against a stated rule rather than either forbidden outright or
   silently allowed.
@@ -184,7 +184,7 @@ directly:**
   eventually make the original district assignment meaningless. This is
   the zoning-field's version of df-ai's own worst-named failure mode
   (`research/2026-09-24-df-ai-fort-planner.md` Q4, Q6: a fixed plan
-  silently exhausting its own ceiling with no re-planning step) — zoning
+  silently exhausting its own ceiling with no re-planning step); zoning
   answers "how do you grow" with an explicit amendment step; df-ai answers
   it with nothing, and breaks.
 - **What does not transfer**: permitted-by-right versus conditional-review
@@ -206,7 +206,7 @@ against every other, each cell recording whether (and how strongly) the two
 should be near each other. It is explicitly one of the **first** documents
 an architectural programme produces, before any sketch. The **bubble
 diagram** takes the matrix's relationships and gives them a rough,
-non-dimensioned spatial arrangement — circles ("bubbles") sized loosely by
+non-dimensioned spatial arrangement: circles ("bubbles") sized loosely by
 importance or area, connected by lines showing the desired adjacency,
 deliberately still abstract, still easy to redraw wholesale. Only after
 the bubble diagram is agreed does a schematic plan introduce real
@@ -220,7 +220,7 @@ later relationship change forces a geometric rework, while committing to
 relationships first means the geometry that follows only has to satisfy
 constraints that are already agreed. The factors driving a relationship
 judgment, per the same sources: frequency of interaction, operational
-dependency, privacy, and security — a superset that includes and extends
+dependency, privacy, and security, a superset that includes and extends
 SLP's own reason-code list (Q1) with two entries (privacy, security) that
 have direct DF analogues (a noble's office wanting separation from general
 traffic; a vault or prison wanting controlled access).
@@ -232,7 +232,7 @@ project's own stated design question directly: "decide the districts and
 how they relate" **is** the adjacency-matrix step, word for word. The
 distinguishing value architecture adds over SLP is the explicit two-stage
 separation of *relationship* (the matrix) from *rough spatial gesture*
-(the bubble diagram) from *real geometry* (the schematic plan) — three
+(the bubble diagram) from *real geometry* (the schematic plan): three
 separate artifacts, each with a different level of commitment. For this
 project, the matrix is exactly the artifact worth keeping model-facing;
 the bubble diagram's "rough spatial gesture" stage is precisely the one
@@ -295,7 +295,7 @@ or forum, web search this session, no game installed or run.
   itself computes (demand as a function of the other zones' population and
   balance) rather than leaving entirely to the player, and it is worth
   naming as the nearest thing to an automated relationship judgment found
-  in this whole games survey — though it optimises population/economic
+  in this whole games survey, though it optimises population/economic
   balance, not spatial adjacency, and still says nothing about which zone
   should sit *near* which other zone; SimCity's zones can be anywhere,
   demand is not a proximity term.
@@ -322,7 +322,7 @@ this session.**
 
 **Qualitative spatial reasoning, briefly.** RCC-8 (Region Connection
 Calculus) formalises spatial relationships between regions using eight
-jointly exhaustive, mutually exclusive base relations — commonly named
+jointly exhaustive, mutually exclusive base relations, commonly named
 disconnected, externally connected, partial overlap, equal, tangential
 proper part, non-tangential proper part, and the two inverse "part of"
 relations. The formalism deliberately avoids coordinates: two regions'
@@ -336,7 +336,7 @@ relationships, not coordinates, are the unit of representation.
 
 **Graph representations of buildings.** Room-adjacency graphs (nodes are
 rooms, edges are direct connections, sometimes annotated with what
-separates them — a door, an open threshold, a wall) and space syntax
+separates them: a door, an open threshold, a wall) and space syntax
 (covered already, in more depth, in `research/2026-08-25-spatial-
 perception.md` §2.6) are both established as the standard way to reduce a
 building's geometry to something a non-geometric reasoner can use. Nothing
@@ -371,7 +371,7 @@ therefore reported at more depth than the above:**
   RCC-8 question correctly. **This matters for design, not just as a
   caveat**: it means a tool should not lean on a model to *derive* new
   topological facts by chaining given relations together (composing "A
-  connects to B" and "B connects to C" into a claim about A and C) — that
+  connects to B" and "B connects to C" into a claim about A and C), that
   composition step is exactly where the cited paper found models weakest.
   A tool should hand the model whichever relations it needs already
   computed and stated, not rely on the model to infer an unstated one from
@@ -382,7 +382,7 @@ therefore reported at more depth than the above:**
   One grid-reasoning benchmark found this session notes text descriptions
   of space carry their own cost (multiple ways to phrase the same
   relationship, creating "descriptive bias," and a granularity limit before
-  the description becomes unwieldy) — a real caution about relational text
+  the description becomes unwieldy), a real caution about relational text
   specifically, not just a point in its favour, and worth carrying into
   the synthesis below: a relational representation must still be
   **canonical** (one fixed way to state a given relationship, not left to
@@ -409,17 +409,17 @@ relationships and classification before anything geometric.**
 from Q1 to Q3 to an agent, in words:**
 
 1. A small, fixed vocabulary of **district kinds** (production, living,
-   storage, tomb/memorial, administrative, and so on — the exact list is
+   storage, tomb/memorial, administrative, and so on; the exact list is
    the design session's to set, not this report's). Each district a named
    instance of exactly one kind, the same "kind selects behaviour, data not
    code" principle this project already holds as a standing rule
    (`CLAUDE.md`, "tools must be generalisable").
 2. A **closeness table** between every pair of district *kinds* (not
-   instances — the table is small and fixed even as the fort grows), each
+   instances; the table is small and fixed even as the fort grows), each
    cell one of a small ordered set of judgments (drawn from SLP's own
    vocabulary, Q1: something like "wants to be near," "no preference,"
    "wants to be apart," "must not overlap"), each judgment carrying a short
-   stated **reason** — shared workforce, shared material, noise/disruption,
+   stated **reason**: shared workforce, shared material, noise/disruption,
    or safety, mirroring both SLP's reason codes and architecture's
    adjacency factors (Q1, Q3). This table is small (kinds squared, not
    instances squared) and is exactly the artifact `docs/PRODUCTION-MODEL.md`
@@ -429,7 +429,7 @@ from Q1 to Q3 to an agent, in words:**
 3. Per **district instance**: its kind, a short list of the buildings or
    zones (already-named landmarks, per `research/2026-08-25-spatial-
    perception.md`'s existing landmark/exit vocabulary) it currently
-   contains, and — critically — a small set of **tool-computed relation
+   contains, and, critically, a small set of **tool-computed relation
    facts** to its neighbouring districts: whether it is reachable from each
    neighbour (this project's existing `check_reachable`), and whether any
    closeness-table rule it participates in is currently satisfied or
@@ -456,7 +456,7 @@ a given pair of district kinds in the first place (a genuinely qualitative
 call, same as SLP's own reason-coded ratings, not something a tool can
 derive); which kind a new district should be, and roughly how large it
 should grow before a new district of the same kind is declared instead of
-extending the existing one (the zoning field's "amendment" idea, Q2 — an
+extending the existing one (the zoning field's "amendment" idea, Q2: an
 explicit, agent-visible decision point rather than silent drift, and the
 same anti-df-ai lesson `research/2026-09-24-df-ai-fort-planner.md` already
 drew about fixed ceilings failing silently); and how to resolve a reported
