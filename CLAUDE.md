@@ -17,10 +17,13 @@ learning architecture.
 >   fort tick unresolved (a live abs_tick figure is stale by the time this
 >   is read; check `Working.md`), `dfmcp-server` active. Role tool lists
 >   (read plus write, measured from the roster): **overseer 79, architect
->   49, consultant 28, quartermaster 24, conductor 15** (a same-day
+>   49, consultant 27, quartermaster 24, conductor 15** (a same-day
 >   increase from the morning's 70/44/26/24/15, driven by `zone.contents`,
 >   `zone.assign-owner`/`clear-owner`, the blueprint verb, and the
->   Consultant's `knowledge.wiki_search`. **The office is built, furnished
+>   Consultant's `knowledge.wiki_search`; consultant's figure is a live read
+>   from the ghost-tomb deploy, one below this file's own prior count of 28,
+>   not caused by that deploy (same both sides of it) and not yet
+>   investigated. **The office is built, furnished
 >   and owned by the Manager, and the game itself accepts it** (confirmed
 >   by the user in the game's nobles screen); this project's own room-value
 >   proxy (`getRoomDescription`) read empty for the same room and was
@@ -32,11 +35,15 @@ learning architecture.
 >   (`nobles verify MANAGER` is a live, consistent appointment, ruling out
 >   the obvious cause; a direct job with no manager involved dispatches and
 >   completes normally); the user's ruling is to set this aside rather
->   than keep chasing it. **A ghost is being laid to rest** (a Forlorn
->   haunt, not dangerous); the coffin is built but burial is blocked on a
->   Tomb-zone placement bug just fixed offline, not yet deployed. The
->   Consultant's offline, refreshable wiki mirror (`wikimirror/`) is built
->   end to end offline, not yet deployed; the first real pull needs the
+>   than keep chasing it. **The ghost has been laid to rest**, resolved: a
+>   Tomb zone was placed over its coffin once `zone place` gained the
+>   furniture-exemption flag `zone find` already had, and burial was
+>   confirmed live by direct struct reads (the corpse moving into the
+>   coffin, the ghost's own flags clearing) plus the game's own report
+>   text, not inferred from an absent haunt. The coffin's known-suboptimal
+>   site is now permanently load-bearing. The Consultant's offline,
+>   refreshable wiki mirror (`wikimirror/`) is built end to end offline,
+>   not yet deployed; the first real pull needs the
 >   user's go-ahead and a contact string. The conductor is installed on VM
 >   106 (`conductor.service`), **disabled and inactive**; it has run only
 >   as a manual dry run, never for real.
@@ -90,10 +97,11 @@ learning architecture.
 >   a shared tri-state reachability helper (fixes a false negative where
 >   the Well's own centre tile, a ramp top, read unreachable to every
 >   neighbour), an observation ledger, and the in-game clock/tripwire/
->   vitals/quicksave tools the conductor uses, all live on VM 103. Several
+>   vitals/quicksave tools the conductor uses, all live on VM 103. Two
 >   fixes from 2026-09-24 (the `zone.place` furniture flag, a
->   `jobs_claimed_by_a_worker` null-vs-zero fix) are built and tested but
->   **not yet deployed**, see `Working.md`. **`doctrine/`** holds game
+>   `jobs_claimed_by_a_worker` null-vs-zero fix) are deployed and
+>   live-verified (the furniture flag by placing the ghost's Tomb zone for
+>   real). **`doctrine/`** holds game
 >   knowledge (crop and water rules) the agents should eventually read;
 >   only the consultant reads it, through `doctrine.get`, and it is never a
 >   repo decision, so it never goes in the register. **`wikimirror/`** (new
