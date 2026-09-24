@@ -69,3 +69,34 @@ through the server, with before/after tool counts and the consultant's tool
 list recorded, and nothing else on the VM changed.
 
 ## Result
+
+**Not completed as scoped; blocked on a real code-deploy gap, not a
+permissions problem.** Full detail and every command/output:
+`evals/live/2026-09-24-wiki-mirror-deploy/README.md`, "Switch-over,
+2026-09-25" section.
+
+Summary: step 2's before-state read matched CLAUDE.md's live counts
+(overseer 79, architect 49, consultant 27, quartermaster 24, conductor 15).
+The 27-vs-28 discrepancy is explained: `dfmcp/wiki_reader.py` and the
+`knowledge.wiki_search` dispatch in `dfmcp/knowledge_tools.py` (both
+committed to this repo, the S4 stream) have never been deployed to VM 103 --
+the deployed `NATIVE_TOOL_IDS` tuple omits `WIKI_SEARCH` entirely and
+`wiki_reader.py` does not exist on disk there. Step 3 (read access) was
+completed and kept: `df` added to the `dfwiki` group (group membership only,
+no mode/ownership change; the database is confirmed journal_mode `delete`,
+not WAL, so no `-wal`/`-shm` sidecar concern). Step 4 was attempted for real
+per the handoff's own design (env pointed at the new mirror, `dfmcp-server`
+restarted) and failed exactly as step 6 anticipates: `knowledge.wiki_lookup`
+throws an unhandled `UnicodeDecodeError` (old code tries to `json.load` the
+binary SQLite file) and `knowledge.wiki_search` is `"unknown tool"` --
+confirming the tool was never registered, not merely stale. Rolled back per
+step 6, verified clean (old snapshot behaviour returned, tool counts
+unchanged, `df-fortress`/`df-xvfb` untouched throughout). One accidental
+finding: the old `snapshot.json` read had been silently broken by the prior
+day's wikimirror deploy locking down `/var/lib/dfwiki/`'s directory mode;
+this stream's group grant plus restart fixed that as a side effect.
+
+**Next step for the orchestrator:** schedule a code-deploy stream to ship
+`dfmcp/wiki_reader.py`, the `knowledge_tools.py` wiki-search wiring, and
+`agents/consultant/tools.yaml` to VM 103, then re-run this switch-over's
+steps 4-5. The `dfwiki` group grant from step 3 does not need to be redone.

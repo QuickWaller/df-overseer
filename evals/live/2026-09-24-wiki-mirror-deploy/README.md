@@ -334,3 +334,259 @@ known pages with real revids and body text). One manual refresh ran cleanly
 after a fresh pull). `dfmcp-server`, `df-fortress`, `df-xvfb` and the fort
 were untouched throughout; no timer exists. The switch-over and timer needs
 are listed above, not built.
+
+## Switch-over, 2026-09-25
+
+Date 2026-09-25. Executor, live on VM 103, `handoffs/2026-09-25-wiki-switchover.md`.
+User's go-ahead given this session for the switch-over, including a `dfmcp-server`
+restart and adding `df` to the `dfwiki` group. Orchestrator confirmed via
+`ListAgents` that no other df-automation session was running.
+
+**Result up front: the read-access grant (step 3) is done and kept. The env
+switch-over (step 4) was attempted for real, failed exactly as the handoff's
+own step 6 anticipates, and was rolled back. The root cause is not a
+permissions problem: `dfmcp/wiki_reader.py` and the `knowledge.wiki_search`
+wiring in `dfmcp/knowledge_tools.py` were never deployed to VM 103 at all.**
+The deployed `dfmcp` package predates the whole S4 stream. This is reported as
+a bug, not fixed here (out of scope: "any code change").
+
+### Step 2: before state
+
+Read via `scripts/vm-ssh.sh df` (worktrees do not carry the gitignored
+top-level `.env`; `DF_ENV_FILE` was pointed at the main checkout's copy to
+read `DF_VM_IP` by key, same trick used for role tokens below):
+
+- `dfmcp-server`: `MainPID=962879`, `ActiveState=active`,
+  `FragmentPath=/etc/systemd/system/dfmcp-server.service`.
+- `MCP_SERVER_WIKI_SNAPSHOT` is set in `EnvironmentFile=/opt/df/dfmcp-smoke/.env`
+  (referenced from the unit file, no drop-in), value
+  `/var/lib/dfwiki/snapshot.json`. No `.service.d/` override directory exists.
+- Live per-role `tools/list`, real MCP client (`mcp` SDK, `streamable_http_client`
+  + `create_mcp_http_client`, role bearer tokens read by key from the VM's own
+  `/opt/df/dfmcp-smoke/.env`, never the workstation's): **overseer 79, architect
+  49, consultant 27, quartermaster 24, conductor 15** -- matches CLAUDE.md's
+  status block for every role except consultant (28 stated, 27 live), the same
+  discrepancy the 2026-09-24 ghost-slab deploy flagged and did not chase down.
+
+  Two SDK-version notes hit while building the probe script (the client used
+  here, not the conductor's `StreamableHTTPMCPClient`, since this stream
+  needed a throwaway script, not a package change): `streamable_http_client`
+  yields a 3-tuple on the installed SDK build (`mcp` on the workstation Python),
+  not the 2-tuple `docs/TRAPS.md` and `conductor/mcp_client.py` record from
+  2026-09-22's finding; and `CallToolResult` exposes `isError`/`structuredContent`
+  (camelCase), not the snake_case aliases `conductor/mcp_client.py` reads --
+  both worked around locally, neither touches any committed module, so
+  `docs/TRAPS.md` is left alone rather than adding a possibly workstation-Python-
+  specific note without checking VM 103's own installed SDK build.
+
+**Consultant's live tool list (27), full, alphabetical:**
+
+```
+dfhack__source_read       landmarks__list           series__timelines
+dfhack__source_search     nobles__list              stocks__food-drink
+doctrine__get             nobles__requirements      stocks__seeds
+gotchas__get              nobles__verify            surface__enclosure
+knowledge__wiki_lookup    overview__get             surface__finish
+queue__answer             queue__pending            surface__material
+series__dwarf_day_events  series__get               surface__traffic
+series__latest            series__rate              web__fetch
+series__resets            web__search               zone__contents
+```
+
+**Why 27, not 28 -- explained, not guessed:** `knowledge__wiki_search` is
+simply absent from the live list. Diffing the deployed source against this
+worktree's committed source shows why:
+
+- `grep -n "NATIVE_TOOL_IDS" /opt/df/dfmcp-smoke/dfmcp/knowledge_tools.py` on
+  the VM returns `NATIVE_TOOL_IDS = (WEB_SEARCH, WEB_FETCH, WIKI_LOOKUP,
+  DFHACK_SOURCE_SEARCH, DFHACK_SOURCE_READ)` -- no `WIKI_SEARCH` in the tuple
+  at all, versus this worktree's committed
+  `NATIVE_TOOL_IDS = (WEB_SEARCH, WEB_FETCH, WIKI_LOOKUP, WIKI_SEARCH,
+  DFHACK_SOURCE_SEARCH, DFHACK_SOURCE_READ)`.
+- `grep -n "WIKI_SEARCH\|_wiki_search\|wiki_reader" /opt/df/dfmcp-smoke/dfmcp/knowledge_tools.py`
+  returns nothing at all: the deployed file has never had the wiki-search
+  dispatch, schema or handler added.
+- `/opt/df/dfmcp-smoke/dfmcp/wiki_reader.py` does not exist on the VM
+  (`ls`: "No such file or directory").
+- The deployed `agents/consultant/tools.yaml` has no `knowledge.wiki_search`
+  entry either (only `knowledge.wiki_lookup`), unlike this worktree's copy.
+- Cross-checking `/opt/df/deploy-backup-*` directories on the VM: the last
+  deploy that touched `dfmcp/` files was `deploy-backup-20260924-fixes`
+  (consultant/architect/overseer `tools.yaml`, `dfmcp/tools.py`,
+  `scripts/dfhack/TOOLS.yaml`) and `deploy-backup-20260924-surface`
+  (`dfmcp_tools.py`); neither shipped `knowledge_tools.py` or
+  `wiki_reader.py`. The `wikimirror/` package itself (the offline
+  pull/refresh tool from the prior stream) was deployed separately to
+  `/opt/df/wikimirror/`, which is a different directory from `dfmcp/` and
+  never touches it.
+
+So: CLAUDE.md's "28" is not a stale live count from before some later change
+removed a tool -- it looks like it was written from this worktree's own
+`tools.yaml` (which does list `knowledge.wiki_search` as `status: exists`,
+23 read/write entries at `exists` including that one, plus the 5
+`surface.*`/`zone.contents` entries marked `status: planned` in the yaml
+text but actually already deployed and live -- 22 "genuinely live and
+labelled exists" + 5 "live despite being labelled planned" = 27, matching
+the real count exactly), rather than from a live probe that happened after
+`knowledge.wiki_search` was live. `knowledge.wiki_search` has never been
+live on VM 103 in this project's history to date.
+
+### Step 3: read access (kept, not rolled back)
+
+Checked before granting anything:
+
+- `wikimirror/store.py`'s `Store.open_readonly` opens with URI `mode=ro` and a
+  busy timeout, no `immutable=1`.
+- Journal mode of the live promoted database, read directly (not assumed):
+  `sudo -u dfwiki /opt/df/wikimirror/.venv/bin/python -c
+  "sqlite3.connect(...).execute('PRAGMA journal_mode').fetchone()"` ->
+  `('delete',)`. **Not WAL** -- so no `-wal`/`-shm` sidecar files are needed
+  for a read-only cross-user open; `ls -la /var/lib/dfwiki/` confirmed only
+  `df-wiki.sqlite3`, `.manifest.json` and `.pull-report.json` exist, no WAL
+  sidecars.
+- File mode on `df-wiki.sqlite3` was already `644` (world-readable file
+  bits); the blocker was the containing directory, `750 dfwiki:dfwiki`
+  (`drwxr-x---`), which denies traversal to anyone not `dfwiki` or in its
+  group, regardless of the file's own mode.
+
+Granted: `sudo usermod -aG dfwiki df`. Verified: `groups df` and `id df` both
+show `dfwiki` (gid 988) added, group membership only, no mode or ownership
+change made to anything under `/var/lib/dfwiki/` (still `dfwiki:dfwiki`,
+still `750`/`644`; `dfwiki` remains the only writer). This is read-only by
+group construction: the directory has no group-write bit and `df` was never
+added as an owner or given any write path.
+
+### Step 4: the switch-over, attempted for real, and its failure
+
+Backed up the env file before editing: `sudo cp -a /opt/df/dfmcp-smoke/.env
+/opt/df/dfmcp-smoke/.env.bak-2026-09-25-wiki-switchover`, sha256 verified
+identical to the live file both immediately after the copy and again after
+rollback (`729651b9...` both times, both files).
+
+Changed the one line (`sed -i` on the exact key, not a rewrite of the file):
+`MCP_SERVER_WIKI_SNAPSHOT=/var/lib/dfwiki/df-wiki.sqlite3`. Restarted only
+`dfmcp-server`: `sudo systemctl restart dfmcp-server`. New `MainPID=988892`,
+`ActiveState=active`, `NRestarts=0`, journal clean start (`Application
+startup complete`, `Uvicorn running`). `df-fortress`
+(`ActiveEnterTimestamp` 2026-09-18, unchanged) and `df-xvfb`
+(`ActiveEnterTimestamp` 2026-09-11, unchanged) confirmed untouched by the
+restart.
+
+**Real calls through the MCP server as the consultant role, against the new
+mirror:**
+
+- `knowledge.wiki_lookup {"title": "Tomb"}` -> not a clean refusal: an
+  **unhandled `mcp.shared.exceptions.McpError`**, `'utf-8' codec can't decode
+  byte 0x80 in position 27: invalid start byte`. Root cause read from the
+  server's own journal: the deployed `_load_wiki_snapshot` still does
+  `p.open(encoding="utf-8")` then `json.load(fh)`, with only
+  `except json.JSONDecodeError` caught -- opening the 59 MB SQLite file as
+  UTF-8 text raises `UnicodeDecodeError` first, which nothing catches. This
+  is not the graceful `WikiUnavailable`/`KnowledgeToolError` the design
+  promises; it is exactly the kind of failure `dfmcp/wiki_reader.py` was
+  written to prevent, reached here because that module isn't the code
+  running.
+- `knowledge.wiki_search {"query": "office room"}` -> `is_error: true`,
+  `"unknown tool 'knowledge__wiki_search'"`. Confirms step 2's live
+  `tools/list` finding directly: the tool is not registered server-side at
+  all, so this is not a staleness or config problem, it is an absent tool.
+
+Neither call produced a `revid`, a staleness line, or real section text.
+**Step 5 as scoped cannot be completed**: there is no working "real call
+through the MCP server as the consultant role" to show against the new
+mirror, because the code that would serve it is not on the VM.
+
+### Step 6: rollback, verified
+
+Restored the backed-up env file (`cp -a` back over the live one; sha256
+identical, `729651b9...`, to both the pre-change live file and the backup).
+Restarted `dfmcp-server` again: `MainPID=989174`, `ActiveState=active`,
+`NRestarts=0`.
+
+Confirmed old behaviour returned, for real, not assumed:
+
+- `knowledge.wiki_lookup {"title": "Tomb"}` as consultant -> clean
+  `KnowledgeToolError` text, `"no page titled 'Tomb' in the snapshot..."`
+  plus the real 30-title index from the old JSON snapshot (`Aquifer`,
+  `Bedroom`, ... `Workshop`). **Tomb was never one of the old snapshot's 30
+  pages**, so this "not found" is the same as before this stream touched
+  anything -- not a new failure.
+- Live per-role `tools/list` again: **overseer 79, architect 49, consultant
+  27, quartermaster 24, conductor 15** -- identical to the before-state, no
+  count change at any point in this stream (expected: nothing that changes a
+  tool count was deployed).
+- `df-fortress`/`df-xvfb` `ActiveEnterTimestamp` unchanged from step 2's read.
+- No `*wiki*` timer or unit file exists (`systemctl list-timers --all` /
+  `list-unit-files`, both empty for `wiki`).
+
+**One accidental finding, worth recording plainly:** the old
+`snapshot.json`-based `knowledge.wiki_lookup` was **silently broken before
+this stream started**, by the 2026-09-24 wikimirror deploy locking
+`/var/lib/dfwiki/` down to `750 dfwiki:dfwiki`. A same-session probe of
+`knowledge.wiki_lookup` as consultant, taken between step 3 (group grant)
+and step 4 (env edit) while still pointed at the old snapshot but *before*
+`dfmcp-server` had been restarted to pick up the new group membership,
+returned `PermissionError: [Errno 13] Permission denied:
+'/var/lib/dfwiki/snapshot.json'` -- confirmed independently in the server's
+own journal for the same timestamp. Restarting `dfmcp-server` in step 4 (for
+the switch-over attempt) incidentally picked up `df`'s new `dfwiki` group
+membership and fixed this old-snapshot read as a side effect, which is why
+the step 6 rollback check above shows a clean "not found" rather than a
+repeat of the permission error. **This means the previously-undetected
+regression is now fixed**, even though the intended switch-over itself was
+not achieved. Not chased further back than this stream's own read: nobody
+appears to have tried `knowledge.wiki_lookup` live between the 2026-09-24
+deploy and this stream.
+
+### Non-consultant refusal check
+
+`knowledge.wiki_lookup {"title": "Tomb"}` as `overseer`: `is_error: true`,
+`"'knowledge.wiki_lookup' is not on overseer's allowlist."`. Same call as
+`quartermaster`: `is_error: true`, `"'knowledge.wiki_lookup' is not on
+quartermaster's allowlist. Advisors do not act; propose it instead."`.
+Checked once before the env edit and once after rollback; identical both
+times.
+
+### Anything that looks wrong
+
+1. **The real blocker, restated plainly:** this handoff's premise (an
+   env-var-and-restart switch-over) assumed the reader code was already on
+   VM 103. It is not. `dfmcp/wiki_reader.py` and the `knowledge.wiki_search`
+   half of `dfmcp/knowledge_tools.py`, both committed to this repo (S4,
+   `handoffs/2026-09-24-wiki-s4-reader-search.md`), have never been deployed.
+   A real switch-over needs a `dfmcp/` code deploy (`knowledge_tools.py`,
+   `wiki_reader.py`, `agents/consultant/tools.yaml`) first, which is outward
+   of this stream's explicit scope ("any code change... report bugs, don't
+   fix"). That deploy is a separate, gated action for the orchestrator to
+   schedule; this stream does not attempt it.
+2. `_load_wiki_snapshot`'s old-code failure mode (an unhandled
+   `UnicodeDecodeError` reaching the client as a raw `McpError` rather than a
+   clean tool refusal) is itself worth fixing whenever `dfmcp/` is next
+   touched, independent of the mirror switch-over: pointing a stale
+   `MCP_SERVER_WIKI_SNAPSHOT` at any non-JSON file trips it, not just a
+   SQLite mirror.
+3. The silently-broken `snapshot.json` permission regression (above) is now
+   fixed as a side effect of step 3's group grant plus the step-4/step-6
+   restarts, but it was live and undetected for about 24 hours
+   (2026-09-24 wikimirror deploy to this stream). Worth a one-line note in
+   `Working.md` for the orchestrator, not added here (out of this stream's
+   file ownership).
+4. The 27-vs-28 discrepancy CLAUDE.md's status block names is now explained
+   (above), not just re-confirmed: it is not a live count that changed, it
+   is a documentation figure that was never live.
+
+## Result, switch-over stage
+
+**Not done: the Consultant's wiki tools do not yet answer from the new
+mirror.** Read access is granted and correct (`df` in `dfwiki` group,
+read-only by group construction, verified against the database's actual
+journal mode rather than assumed). The env-and-restart switch-over was
+attempted for real, failed for a verified, non-permissions reason (the
+reader code and the `wiki_search` tool registration were never deployed to
+VM 103), and was rolled back cleanly and verified. `dfmcp-server` ends this
+stream on the original `snapshot.json` configuration, active, with the
+`dfwiki` group grant now permanently in place (harmless and needed either
+way); `df-fortress`, `df-xvfb`, the fort, and no code file were touched.
+**Next step for the orchestrator: schedule a code-deploy stream for
+`dfmcp/wiki_reader.py` + the `knowledge_tools.py` wiki-search wiring +
+`agents/consultant/tools.yaml`, then re-run this switch-over's steps 4-5.**
