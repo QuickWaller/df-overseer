@@ -670,3 +670,24 @@ while writing about leaks**, fails the suite. Found 2026-09-19, when exactly
 that happened to a note about the leaked addresses. **Run the full suite before
 committing doc edits too**, and write addresses as placeholders
 (`<df-vm-ip>`, `<relay-vm-ip>`, `<pve-host>`).
+
+## A dig designation with no walkable neighbour is accepted and never becomes a job
+
+Found 2026-09-24, the first real blueprint apply. A quickfort `#dig` blueprint
+whose interior and entrance sit in hidden solid rock, with the only opening
+facing away from the revealed ground, **lands every designation and produces no
+dig job, ever**. Dwarves smoothed the five visible wall tiles and did nothing
+else; `status` read "pending" for 2421 ticks. Nothing errors: the designations
+are real, so a check that counts designations reports success.
+
+Three things make it invisible. Quickfort skips hidden tiles it cannot
+designate but the rest still land. DF makes no job for a designation nobody can
+reach. And a blueprint has no orientation, so a template with one opening is
+right or wrong depending on which side of the site is open.
+
+**How to avoid it:** never treat designations landed as progress; count dig
+jobs that exist. Before a dig apply, prove the entrance tile touches revealed
+walkable ground in the chosen orientation. Offline tests cannot catch this
+because a fake world has no reachability, so the pre-deploy live check needs a
+negative control that must be refused. → `handoffs/2026-09-24-blueprint-access.md`,
+`evals/live/2026-09-24-office-build/`.
