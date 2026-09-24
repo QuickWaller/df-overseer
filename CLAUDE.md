@@ -20,11 +20,12 @@ learning architecture.
 >   49, consultant 27, quartermaster 24, conductor 15** (a same-day
 >   increase from the morning's 70/44/26/24/15, driven by `zone.contents`,
 >   `zone.assign-owner`/`clear-owner`, the blueprint verb, and the
->   Consultant's `knowledge.wiki_search`; consultant is 27 live against 28
->   in the repo **because `knowledge.wiki_search` and `dfmcp/wiki_reader.py`
->   were never deployed** (explained 2026-09-25, confirmed on the VM). The
->   wiki mirror itself is on VM 103 with a full first pull, but the
->   Consultant still reads the old 30-page snapshot until that code ships. **The office is built, furnished
+>   Consultant's `knowledge.wiki_search`; consultant is **28 live since
+>   2026-09-25**, when the never-deployed wiki reader shipped. **The
+>   Consultant now answers from the full offline wiki mirror** (4,450 pages
+>   on VM 103, first real pull 2026-09-24), verified by real consultant
+>   calls; refresh timers (S8) are not built yet, so it goes stale until a
+>   manual refresh. **The office is built, furnished
 >   and owned by the Manager, and the game itself accepts it** (confirmed
 >   by the user in the game's nobles screen); this project's own room-value
 >   proxy (`getRoomDescription`) read empty for the same room and was

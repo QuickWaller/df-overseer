@@ -584,8 +584,12 @@ lines 275 to 375, all built on a JSON fixture and the `wiki_snapshot_path` keywo
 - **Layout:** `/var/lib/dfwiki/{df-wiki.sqlite3, changelog/, digest/, run.lock}`;
   `dfmcp-server`'s environment sets `MCP_SERVER_WIKI_SNAPSHOT=/var/lib/dfwiki/df-wiki.sqlite3`
   (the existing setting, kept for compatibility; a `.sqlite3` suffix selects the
-  reader), read access for the dfmcp service user by group. **[U]:** the user and
-  group layout on the VM; the deploy stream checks it and does not assume it.
+  reader), read access for the dfmcp service user by group. **[V] 2026-09-25:**
+  `dfmcp-server` runs as `df`, which is in the `dfwiki` group (read only); the
+  database uses journal mode `delete`, so no WAL sidecars are needed. The
+  server's environment also needs `PYTHONPATH=/opt/df/wikimirror`, because
+  `dfmcp/wiki_reader.py` imports the separately deployed `wikimirror`
+  package; this was missed by the original design and found at deploy.
 - **Units** follow the series importer precedent: `infra/dfwiki-refresh.service.example`,
   `infra/dfwiki-refresh.timer.example` (every 6 hours, randomised delay),
   `infra/dfwiki-sweep.timer.example` (weekly), `infra/dfwiki.example.env`
