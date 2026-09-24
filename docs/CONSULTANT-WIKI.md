@@ -1,12 +1,23 @@
 # The Consultant's offline wiki: design
 
-**Status: design, 2026-09-24. Nothing here is built.** Evidence for every factual
-claim about the wiki is in `research/2026-09-24-wiki-mirror-feasibility.md` (marks
-**[V]** verified, **[I]** inferred, **[U]** unverified); this document cites it as
-"the research note" and repeats a mark only where a decision hangs on it.
-Handoff: `handoffs/2026-09-24-consultant-wiki-design.md`. Agreed direction:
-register 2026-09-22, "The whole wiki, kept current by incremental updates, is
-agreed but deferred".
+**Status: deployed and live, 2026-09-25.** S1 through S6 are built, merged and
+deployed to VM 103 as `/opt/df/wikimirror/` (4,450 main-namespace pages, SQLite
+plus FTS5, first real pull and one manual refresh both confirmed live), and
+the Consultant answers from it (`dfmcp/wiki_reader.py`, `knowledge.wiki_search`,
+consultant tool count 28), deployed after one blocked-and-rolled-back
+switch-over attempt (`handoffs/2026-09-25-wiki-switchover.md`,
+`handoffs/2026-09-25-wiki-reader-deploy.md`). **Still open:** S7 (the changes
+tool and doctrine flags at point of use) is designed but not dispatched; S8's
+refresh and sweep timers are not built, so the mirror only refreshes by hand
+and a reader result turns `stale` after 24 hours; four small gaps S6 found in
+S1's `store.py` are recorded but not fixed. Evidence for every factual claim
+about the wiki below section 13 is in
+`research/2026-09-24-wiki-mirror-feasibility.md` (marks **[V]** verified,
+**[I]** inferred, **[U]** unverified); this document cites it as "the research
+note" and repeats a mark only where a decision hangs on it. Design handoff:
+`handoffs/2026-09-24-consultant-wiki-design.md`. Agreed direction: register
+2026-09-22, "The whole wiki, kept current by incremental updates, is agreed
+but deferred".
 
 ## 1. What this is for, and the one rule that governs it
 
@@ -648,8 +659,11 @@ edits are the orchestrator's (`handoffs/` rule).
 ## 12. Open items and assumptions to confirm
 
 1. Attribution wording and the GFDL history requirement (3.3): the user's call.
-2. FTS5 presence in the VM's Python (8.1) and the user and group layout for the
-   read-only database (10). Verified at deploy, not assumed.
+2. FTS5 presence in the VM's Python (8.1): confirmed on VM 103's Python 3.12.3
+   at deploy, 2026-09-24 (`decisions/DECISIONS.md` that date). The user and
+   group layout for the read-only database (10) is also settled: `dfwiki`
+   owns `/var/lib/dfwiki/` at 750, `df` was added to the `dfwiki` group
+   read-only for the switch-over (`decisions/DECISIONS.md` 2026-09-25).
 3. Redirect count and template dependence (research note, unverified items 2 and 3).
 4. Whether a 50-title body batch hits a byte ceiling on the largest pages (research
    note, item 1): the client must handle a `continue` inside a batch either way.
@@ -657,8 +671,10 @@ edits are the orchestrator's (`handoffs/` rule).
    chosen from the observed edit rate (about 15 main-namespace edits a day **[V]**);
    they are configuration, and the first weeks of `refresh_runs` will show whether
    they fit.
-6. Whether to build the hold window against vandalism (9). Not built until a real
-   vandalised revision is observed in the changelog.
+6. Whether to build the hold window against vandalism (9): settled by the user's
+   ruling in section 13 (hold recent edits back one week) and built into S1/S5;
+   whether a real vandalised revision has ever actually been held is still
+   unobserved, since the changelog has not yet caught one.
 
 ## 13. Rulings by the user (2026-09-24), which amend the sections above
 
