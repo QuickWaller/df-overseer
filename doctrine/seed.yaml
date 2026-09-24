@@ -29,6 +29,17 @@
 #               search engine's summary was seen) | recalled (someone's memory)
 #               | unrecorded (the entry predates provenance tracking)
 #     accessed  date the source was read, where known
+#     revid, page_ns, page_title
+#               optional, `kind: wiki` sources only (docs/CONSULTANT-WIKI.md 7.1;
+#               anything else carrying them is a validation error). revid is the
+#               wiki revision that was read (a positive integer), page_ns its
+#               namespace id (an integer, default 0), page_title the page title
+#               when `ref` is not exactly the title. With a revid, the mirror
+#               check (doctrine/wiki_check.py) flags the entry when the served
+#               revision moves on, a newer one is held, or the page is moved,
+#               deleted or legacy. Without one the source is simply uncited:
+#               never required, never reported as unchanged. The check only
+#               flags; revisions to an entry are proposals (7.5).
 #   statement  the rule itself
 #   note       open questions, risks, what would settle it
 #

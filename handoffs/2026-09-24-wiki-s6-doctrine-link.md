@@ -59,4 +59,45 @@ revision moved, a newer one is held, or the page moved, was deleted or is legacy
 
 ## Result
 
-(to be filled by the executor)
+Built offline; 231 passed (`doctrine`, `wikimirror`, `tests/test_no_leaked_addresses.py`).
+`python -m doctrine.validate` on the real `seed.yaml`: ok (no entry edited, header comment only).
+
+**Validator** (`doctrine/validate.py`): `kind: wiki` sources accept optional `revid` (positive
+int, bool rejected), `page_ns` (int), `page_title` (non-empty str); the same fields on a
+non-wiki source are an error; none required. Section 7.1's "opened should carry revid" warning
+and the `describes` vs `game_version` check were left out (handoff: never required); they
+belong with the migration slice.
+
+**`doctrine/wiki_check.py`**: `check_doctrine(entries, store_reader)` where `store_reader` is an
+open `Store`, a path (opened `open_readonly`, closed after), or None. Also `wiki_flags_for_entry(entry,
+reader)` (what S7 attaches as `wiki_flags`), `check_archive`, `read_archived_revision`,
+`cited_page_ids` (for S5's "is this page cited" test before `archive_served_revision`), and a CLI
+`python -m doctrine.wiki_check --db P [--doctrine P] [--json]` (exit 1 if anything needs re-read
+or cannot be checked).
+
+Report, for S7 (also in the module docstring):
+`{mirror:{available,reason,freshness:{status,age_hours,reasons,promotion_overdue}|None},
+summary:{state:count}, sources:[...], uncited:[{entry_id,source_index,ref,read}],
+flags_by_entry:{entry_id:[flag]}, needing_reread:[entry_id]}`.
+States: `unchanged, changed, held_newer, moved, deleted, legacy, missing, cannot_check`
+(doc 7.2 says `current`/`uncheckable`; this uses the handoff's names). Flag keys: source_index, ref,
+title, ns, cited_revid, state, severity (`reread` changed/moved/deleted, `warn` held_newer/legacy/
+missing, `info` cannot_check, `note` for a `verified` entry), served_revid, newer_held_revid,
+visible_after, moved_to, held_kinds, cited_revision_archived (True/False/None), reason, message.
+`unchanged` yields no flag. Compares with the SERVED `revid` from `get_page`, never `latest_revid`.
+Choices: a very_stale or never-pulled mirror downgrades `unchanged` to `cannot_check`
+(`mirror_very_stale`) but keeps positive findings; a cited revid above the served one is
+`cannot_check` (`cited_revision_not_yet_served`); a pending held move/delete shows in
+`held_changes`/`held_kinds` while the state stays as served.
+
+**7.3 archive check**: `check_archive` is True only if the cited revision is in `revision_archive`
+and its sha256 matches its text; changed/moved/deleted results carry `cited_revision_archived`,
+so a refresh that skipped `archive_served_revision` is visible as False.
+
+**Change wanted in `wikimirror/store.py` (not edited)**: no public getter for `revision_archive`;
+I SELECT through `store.conn`. Add e.g. `Store.get_archived_revision(page_id, revid)`, then swap
+`read_archived_revision`. Also `Store.get_page` on a legacy namespace returns None (no NamespaceNotIngested),
+so legacy detection uses `store.namespaces` first.
+
+**Mutation**: `test_reads_the_served_revision_not_the_latest_seen` monkeypatches `_served_revid`
+to return `latest_revid`; the state flips from `held_newer` to a false `changed`.

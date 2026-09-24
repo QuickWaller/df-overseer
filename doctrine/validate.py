@@ -71,7 +71,11 @@ ENTRY_OPTIONAL = {"note"}
 ENTRY_ALLOWED = ENTRY_REQUIRED | ENTRY_OPTIONAL
 
 SOURCE_REQUIRED = {"kind", "ref", "describes", "read"}
-SOURCE_OPTIONAL = {"accessed"}
+# `revid`, `page_ns` and `page_title` are the wiki citation fields
+# (docs/CONSULTANT-WIKI.md 7.1): optional, allowed on `kind: wiki` sources
+# only, never required, so a source written before they existed stays valid.
+WIKI_CITATION_FIELDS = {"revid", "page_ns", "page_title"}
+SOURCE_OPTIONAL = {"accessed"} | WIKI_CITATION_FIELDS
 SOURCE_ALLOWED = SOURCE_REQUIRED | SOURCE_OPTIONAL
 
 
@@ -135,6 +139,36 @@ def _validate_source(entry_label: str, index: int, source: Any) -> list[str]:
         else:
             errors.append(f"{prefix}.accessed: {accessed!r} is not an ISO date")
 
+    errors.extend(_validate_wiki_citation(prefix, source))
+
+    return errors
+
+
+def _is_int(value: Any) -> bool:
+    # bool is an int subclass; `revid: true` is a typo, not a revision.
+    return isinstance(value, int) and not isinstance(value, bool)
+
+
+def _validate_wiki_citation(prefix: str, source: dict) -> list[str]:
+    errors = []
+    present = [k for k in sorted(WIKI_CITATION_FIELDS) if k in source]
+    if present and source.get("kind") != "wiki":
+        for key in present:
+            errors.append(
+                f"{prefix}.{key}: only a source of kind 'wiki' may carry this field, "
+                f"got kind {source.get('kind')!r}"
+            )
+        return errors
+    if "revid" in source and not (_is_int(source["revid"]) and source["revid"] > 0):
+        errors.append(
+            f"{prefix}.revid: expected a positive integer, got {source['revid']!r}"
+        )
+    if "page_ns" in source and not _is_int(source["page_ns"]):
+        errors.append(f"{prefix}.page_ns: expected an integer, got {source['page_ns']!r}")
+    if "page_title" in source and not _non_empty_str(source["page_title"]):
+        errors.append(
+            f"{prefix}.page_title: expected a non-empty string, got {source['page_title']!r}"
+        )
     return errors
 
 

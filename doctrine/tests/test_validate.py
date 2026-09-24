@@ -149,3 +149,57 @@ def test_unknown_source_key_is_refused():
     entry = _entry(sources=[_source(extra="not part of the schema")])
     errors = validate([entry])
     assert _errors_mentioning(errors, "sources[0].extra: unknown field")
+
+
+# ---- wiki citation fields (docs/CONSULTANT-WIKI.md 7.1) -----------------------
+
+
+def _wiki_source(**overrides) -> dict:
+    fields = {"kind": "wiki", "ref": "Alcohol", "describes": "unknown", "read": "opened"}
+    fields.update(overrides)
+    return _source(**fields)
+
+
+def test_old_wiki_source_without_citation_fields_stays_valid():
+    old = _wiki_source()
+    assert validate([_entry(sources=[old])]) == []
+    unrecorded = _wiki_source(read="unrecorded")
+    assert validate([_entry(sources=[unrecorded])]) == []
+
+
+def test_new_wiki_source_with_citation_fields_is_valid():
+    src = _wiki_source(revid=123456, page_ns=0, page_title="Alcohol")
+    assert validate([_entry(sources=[src])]) == []
+
+
+def test_revid_alone_is_valid_and_none_of_the_fields_is_required():
+    assert validate([_entry(sources=[_wiki_source(revid=1)])]) == []
+    assert validate([_entry(sources=[_wiki_source(page_ns=116)])]) == []
+
+
+def test_revid_must_be_a_positive_integer():
+    for bad in (0, -5, "100", 1.5, True, None):
+        errors = validate([_entry(sources=[_wiki_source(revid=bad)])])
+        assert _errors_mentioning(errors, "revid: expected a positive integer"), bad
+
+
+def test_page_ns_must_be_an_integer():
+    for bad in ("0", 1.0, True):
+        errors = validate([_entry(sources=[_wiki_source(page_ns=bad)])])
+        assert _errors_mentioning(errors, "page_ns: expected an integer"), bad
+
+
+def test_page_title_must_be_a_non_empty_string():
+    errors = validate([_entry(sources=[_wiki_source(page_title="  ")])])
+    assert _errors_mentioning(errors, "page_title: expected a non-empty string")
+
+
+def test_citation_fields_on_a_non_wiki_source_are_an_error():
+    for field, value in (("revid", 5), ("page_ns", 0), ("page_title", "X")):
+        errors = validate([_entry(sources=[_source(**{field: value})])])
+        assert _errors_mentioning(errors, f"{field}: only a source of kind 'wiki'"), field
+
+
+def test_a_wiki_source_with_a_revid_still_cannot_verify():
+    entry = _entry(status="verified", sources=[_wiki_source(revid=7, describes="53.16")])
+    assert _errors_mentioning(validate([entry]), "status is 'verified'")
