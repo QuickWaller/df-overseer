@@ -808,8 +808,14 @@ or `decisions/DECISIONS.md`, not here.
   outcome measures taken from the proposal queue's existing prediction
   grading. **Ruled (user, 2026-09-25): reloading is a test-harness power
   only, never available to a playing agent** (`docs/ARMOK-RULINGS.md`).
-  First intended use: testing architect tools. Feeds the public report
-  directly. Not designed yet.
+  First intended use, in the user's words: architect tools, "comparing
+  rotations, do hallways connect, is that room in a shit spot", judged by
+  the user eyeballing the live viewer (the no-map rule binds models, not
+  the user) with tool checks alongside (connectivity, entrance faces a
+  corridor, reachability per rotation). The user's ratings and reasons are
+  labelled examples for the districting design's checker. Some of it may
+  need no reload at all (the `blueprint` verb's plan and preview). Feeds
+  the public report directly. Not designed yet.
 - **District/zoning planning as the fix for the site-ranking system.**
   2026-09-24: the ghost's coffin landed in a poor spot because `zone`/
   `building`'s site ranker is one static sort (furniture-match, then a
