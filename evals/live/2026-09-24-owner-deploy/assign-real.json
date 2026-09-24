@@ -1,0 +1,49 @@
+[0m{
+	"after": {
+		"unit_side_holds_zone": "yes",
+		"zone_side": {
+			"assigned_unit_id": 345,
+			"get_owner_unit_id": 345,
+			"owner_unit_id": 345,
+			"status": "owned"
+		}
+	},
+	"applied": true,
+	"before": {
+		"unit_side_holds_zone": "no",
+		"zone_side": {
+			"assigned_unit_id": null,
+			"get_owner_unit_id": null,
+			"owner_unit_id": null,
+			"status": "unowned"
+		}
+	},
+	"calls": [ "dfhack.buildings.setOwner(zone 13, unit 345)" ],
+	"caveats": [ "a role reservation held by the preserve-rooms plugin is its own state and this tool cannot read it: if a role is reserved for this zone the plugin may re-apply its own choice on its next cycle", "the game's room-value word is read through getRoomDescription only; nothing here can see the value number a position's requirement is compared against" ],
+	"dry_run": false,
+	"holder": {
+		"holder_link_resolves": "resolved",
+		"note": "holder_link_resolves is the test nobles.requirements applies (the zone names the unit); room_value_status not_met with a resolved link means the room itself is the gap, not the owner link",
+		"positions_asking_this_room_value": [ "MANAGER" ],
+		"room_value_status": "not_met",
+		"unit_holds_a_position_asking_this_room_value": "yes",
+		"unit_id": 345
+	},
+	"kind": "Office",
+	"links_confirmed": {
+		"previous_owner_released": null,
+		"unit_side": true,
+		"zone_side": true
+	},
+	"overrides_used": false,
+	"previous_owner_unit_id": null,
+	"read_failures": [],
+	"set_owner_call": {
+		"ok": true,
+		"returned": "true"
+	},
+	"unit_id": 345,
+	"would_write": [ "zone.assigned_unit_id", "unit 345 owned_buildings gains the zone", "zone owner cache (all three set by setOwner, never by hand)" ],
+	"zone_id": 13
+}
+[0m

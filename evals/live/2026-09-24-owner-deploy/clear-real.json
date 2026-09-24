@@ -1,0 +1,36 @@
+[0m{
+	"after": {
+		"zone_side": {
+			"assigned_unit_id": null,
+			"get_owner_unit_id": null,
+			"owner_unit_id": null,
+			"status": "unowned"
+		}
+	},
+	"applied": true,
+	"before": {
+		"zone_side": {
+			"assigned_unit_id": 345,
+			"get_owner_unit_id": 345,
+			"owner_unit_id": 345,
+			"status": "owned"
+		}
+	},
+	"calls": [ "dfhack.buildings.setOwner(zone 11, nil)" ],
+	"cannot_undo": [ "the previous owner is returned in previous_owner_unit_id and assign-owner can set it again, but the unit's lost-room reaction and any preserve-rooms role reservation (not readable here) are not restored" ],
+	"caveats": [ "a role reservation held by the preserve-rooms plugin is its own state and this tool cannot read it: if a role is reserved for this zone the plugin may re-apply its own choice on its next cycle", "the game's room-value word is read through getRoomDescription only; nothing here can see the value number a position's requirement is compared against" ],
+	"dry_run": false,
+	"kind": "Office",
+	"links_confirmed": {
+		"previous_owner_released": "yes",
+		"zone_side_cleared": true
+	},
+	"previous_owner_unit_id": 345,
+	"read_failures": [],
+	"set_owner_call": {
+		"ok": true
+	},
+	"would_write": [ "zone.assigned_unit_id back to none", "unit 345 owned_buildings loses the zone" ],
+	"zone_id": 11
+}
+[0m
