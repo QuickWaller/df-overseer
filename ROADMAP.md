@@ -798,6 +798,18 @@ or `decisions/DECISIONS.md`, not here.
 ## Later
 <!-- Real, worth tracking, but genuinely further out or gated on scale/decisions not yet made. -->
 
+- **Save-and-reload comparison testing for tools and proposals.** User's
+  idea, 2026-09-25: quicksave, run a proposal or tool, observe the outcome,
+  reload the same save, run a variation, repeat a couple of times each, and
+  compare. Needs: replicates per variant (DF is not deterministic, so one run
+  each cannot separate effect from noise); a reload route, since DFHack's
+  `load-save` is unavailable in 53.16 (`memory/dfhack-environment.md`), most
+  likely the service-restart plus title-screen bootstrap path, unverified;
+  outcome measures taken from the proposal queue's existing prediction
+  grading; and a ruling that reloading is a test-harness power only, never
+  available to a playing agent (reloading to undo a bad outcome in play is
+  save-scumming, `docs/ARMOK-RULINGS.md`). Feeds the public report
+  directly. Not designed yet.
 - **District/zoning planning as the fix for the site-ranking system.**
   2026-09-24: the ghost's coffin landed in a poor spot because `zone`/
   `building`'s site ranker is one static sort (furniture-match, then a
