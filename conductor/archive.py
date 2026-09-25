@@ -86,29 +86,41 @@ class CycleArchive:
 
         return cycle_dir
 
-    def append_daily_cost(self, date: str, cost_usd: float) -> float:
+    def append_daily_cost(self, date: str, cost_usd: Optional[float]) -> float:
         """Add `cost_usd` to `date`'s running total
-        (`<root>/cost/<date>.json: {"date": ..., "cost_usd": <total>}`) and
-        return the new total. A durable counter across process restarts, not
-        a database -- `docs/AGENT-LOOP.md`'s own "a daily cost total in the
-        log" is satisfied by `conductor/service.py` logging this return
-        value each time a role run's cost is recorded; this method only
-        keeps the running number itself correct."""
+        (`<root>/cost/<date>.json: {"date", "cost_usd", "unknown_runs"}`) and
+        return the new KNOWN total. `cost_usd=None` (a killed or otherwise
+        cost-less run) adds nothing to the total and increments
+        `unknown_runs` instead: an unknown cost is never recorded as 0.0, so
+        the total is a floor, and `daily_unknown_runs` says how many runs it
+        does not cover. A durable counter across process restarts, not a
+        database."""
         cost_dir = self.root / "cost"
         cost_dir.mkdir(parents=True, exist_ok=True)
         path = cost_dir / f"{date}.json"
 
-        total = 0.0
+        total, unknown = 0.0, 0
         if path.is_file():
             existing = json.loads(path.read_text(encoding="utf-8"))
             total = float(existing.get("cost_usd", 0.0))
-        total += float(cost_usd)
+            unknown = int(existing.get("unknown_runs", 0))
+        if cost_usd is None:
+            unknown += 1
+        else:
+            total += float(cost_usd)
 
-        _write_json(path, {"date": date, "cost_usd": total})
+        _write_json(path, {"date": date, "cost_usd": total, "unknown_runs": unknown})
         return total
 
     def daily_cost(self, date: str) -> float:
+        """The known total (a floor when `daily_unknown_runs` is nonzero)."""
         path = self.root / "cost" / f"{date}.json"
         if not path.is_file():
             return 0.0
         return float(json.loads(path.read_text(encoding="utf-8")).get("cost_usd", 0.0))
+
+    def daily_unknown_runs(self, date: str) -> int:
+        path = self.root / "cost" / f"{date}.json"
+        if not path.is_file():
+            return 0
+        return int(json.loads(path.read_text(encoding="utf-8")).get("unknown_runs", 0))

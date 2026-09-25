@@ -34,8 +34,16 @@ class _FakeProcess:
 
 
 def _fake_exec(process: _FakeProcess):
+    """Returns `process` for the run; any `docker kill` gets a quick benign
+    process (recorded on `_exec.calls`), so a hanging run's kill never hangs."""
+    calls = []
+
     async def _exec(*args, **kwargs):
+        calls.append(args)
+        if args[:2] == ("docker", "kill"):
+            return _FakeProcess(b"")
         return process
+    _exec.calls = calls
     return _exec
 
 
@@ -47,6 +55,7 @@ def _runner(tmp_path, subprocess_exec) -> DockerOpenClawRunner:
         secrets_env_file=tmp_path / "secrets.env",
         subprocess_exec=subprocess_exec,
         clock=lambda: 0.0,
+        outer_kill_grace_seconds=0.0,
     )
 
 
@@ -137,6 +146,35 @@ class TestRun:
         assert result.timed_out is True
         assert result.status == "timeout"
         assert process.killed is True
+
+    async def test_a_timeout_kills_the_named_container_not_just_the_client(self, tmp_path):
+        process = _FakeProcess(b"", hang=True)
+        fake = _fake_exec(process)
+        runner = _runner(tmp_path, fake)
+        result = await runner.run("architect", "x", model="m", timeout_seconds=0.01)
+        run_cmd = fake.calls[0]
+        name = run_cmd[run_cmd.index("--name") + 1]
+        assert name.startswith("conductor-architect-")
+        assert ("docker", "kill", name) in fake.calls
+        assert result.cost_usd is None  # unknown, never 0.0
+
+    async def test_inner_deadline_is_passed_to_agent_exec(self, tmp_path):
+        fake = _fake_exec(_FakeProcess(json.dumps(_OK_ENVELOPE).encode()))
+        runner = _runner(tmp_path, fake)
+        await runner.run("architect", "x", model="m", timeout_seconds=600)
+        cmd = list(fake.calls[0])
+        assert cmd[cmd.index("--timeout") + 1] == "600"
+        assert cmd.index("--timeout") > cmd.index("exec")
+
+    async def test_failed_launches_and_missing_cost_are_unknown_not_zero(self, tmp_path):
+        no_out = _runner(tmp_path, _fake_exec(_FakeProcess(b"")))
+        assert (await no_out.run("architect", "x", model="m")).cost_usd is None
+        bad = _runner(tmp_path, _fake_exec(_FakeProcess(b"nope")))
+        assert (await bad.run("architect", "x", model="m")).cost_usd is None
+        nocost = _runner(tmp_path, _fake_exec(_FakeProcess(b'{"ok": true, "status": "ok"}')))
+        assert (await nocost.run("architect", "x", model="m")).cost_usd is None
+        zero = _runner(tmp_path, _fake_exec(_FakeProcess(b'{"ok": true, "status": "ok", "costUsd": 0}')))
+        assert (await zero.run("architect", "x", model="m")).cost_usd == 0.0
 
     async def test_launch_failure_is_a_refusal_not_a_crash(self, tmp_path):
         async def _broken_exec(*args, **kwargs):

@@ -68,3 +68,21 @@ def test_daily_cost_is_scoped_per_date(tmp_path):
     archive.append_daily_cost("2026-09-23", 5.0)
     assert archive.daily_cost("2026-09-22") == 1.0
     assert archive.daily_cost("2026-09-23") == 5.0
+
+
+def test_unknown_cost_is_counted_not_recorded_as_zero(tmp_path):
+    archive = CycleArchive(tmp_path / "cycles")
+    assert archive.append_daily_cost("2026-09-25", 0.02) == pytest.approx(0.02)
+    assert archive.append_daily_cost("2026-09-25", None) == pytest.approx(0.02)
+    assert archive.daily_cost("2026-09-25") == pytest.approx(0.02)
+    assert archive.daily_unknown_runs("2026-09-25") == 1
+    assert archive.daily_unknown_runs("2026-01-01") == 0
+
+
+def test_a_none_cost_serialises_as_null_in_the_run_file(tmp_path):
+    archive = CycleArchive(tmp_path / "cycles")
+    d = archive.write_cycle(
+        1, summary={}, briefings={}, clock_changes=[],
+        role_runs=[{"role": "overseer", "ok": False, "cost_usd": None}],
+    )
+    assert json.loads((d / "run-overseer.json").read_text(encoding="utf-8"))["cost_usd"] is None

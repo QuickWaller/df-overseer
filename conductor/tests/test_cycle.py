@@ -737,3 +737,80 @@ async def test_an_ordinary_cycle_with_no_escalate_call_never_pauses(tmp_path):
 
     assert result.escalated is False
     assert not any(c["tool"] == "clock.pause" for c in result.clock_changes)
+
+
+# ---------------------------------------------------------------------------
+# 2026-09-25 first-real-cycle fixes: failed runs must not advance state, and
+# an ask filed mid-cycle wakes the Consultant in the same cycle
+# ---------------------------------------------------------------------------
+
+def _failed(role, status="timeout"):
+    return RunResult(
+        role=role, ok=False, status=status, cost_usd=None, wall_clock_seconds=1.0,
+        timed_out=status == "timeout", tool_summary={}, final_answer=None, raw={},
+    )
+
+
+async def test_a_failed_run_does_not_advance_the_routine_review_cursor(tmp_path):
+    runner = FakeRoleRunner({"architect": _failed("architect"), "quartermaster": _failed("quartermaster")})
+    deps = _deps(tmp_path, runner=runner, just_reviewed=False)  # never reviewed: due now
+    await run_cycle(1, deps)
+    assert deps.cursor_store.get("__routine_review__") == 0  # still due next cycle
+
+
+async def test_a_successful_run_advances_the_routine_review_cursor(tmp_path):
+    deps = _deps(tmp_path, just_reviewed=False)
+    await run_cycle(1, deps)
+    assert deps.cursor_store.get("__routine_review__") == 403200 + 1000
+
+
+async def test_a_failed_run_keeps_its_roles_diff_events_unconsumed(tmp_path):
+    tools = _base_tools()
+    tools["diff.since"] = _diff_sequence([[{"id": 1, "type": "migrant_wave"}], [{"id": 2}, {"id": 3}]])
+    runner = FakeRoleRunner({"architect": _failed("architect", "no_output")})
+    deps = _deps(tmp_path, tools=tools, runner=runner)
+    await run_cycle(1, deps)
+    assert deps.cursor_store.get("architect") == 0       # woken, failed: not advanced
+    assert deps.cursor_store.get("quartermaster") == 2   # woken, ok: advanced
+
+
+async def test_an_ask_filed_by_an_advisor_mid_cycle_wakes_the_consultant_this_cycle(tmp_path):
+    calls = {"n": 0}
+
+    def _queue(arguments):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            return _queue_overview()
+        return _queue_overview(asks={"count": 1, "ask_ids": ["ask-0001"]})
+
+    tools = _base_tools()
+    tools["queue.overview"] = _queue
+    tools["diff.since"] = _diff_sequence([[{"id": 1, "type": "migrant_wave"}]])
+    runner = FakeRoleRunner()
+    deps = _deps(tmp_path, tools=tools, runner=runner)
+    result = await run_cycle(1, deps)
+    ran = [c["role"] for c in runner.calls]
+    assert CONSULTANT in ran
+    assert ran.index(CONSULTANT) > ran.index("architect")
+    assert CONSULTANT in result.roles_woken
+
+
+async def test_no_new_ask_means_no_consultant_wake(tmp_path):
+    tools = _base_tools()
+    tools["diff.since"] = _diff_sequence([[{"id": 1, "type": "migrant_wave"}]])
+    runner = FakeRoleRunner()
+    await run_cycle(1, _deps(tmp_path, tools=tools, runner=runner))
+    assert CONSULTANT not in [c["role"] for c in runner.calls]
+
+
+def test_the_overseer_has_its_own_timeout_in_policy_data():
+    assert POLICY.role_timeout_seconds["overseer"] > 600
+    assert "architect" not in POLICY.role_timeout_seconds
+
+
+async def test_the_per_role_timeout_from_policy_reaches_the_runner(tmp_path):
+    tools = _base_tools(**{"queue.overview": _queue_overview(proposals={"count": 1, "proposal_ids": ["p"]})})
+    runner = FakeRoleRunner()
+    await run_cycle(1, _deps(tmp_path, tools=tools, runner=runner))
+    by_role = {c["role"]: c["timeout_seconds"] for c in runner.calls}
+    assert by_role[OVERSEER] == POLICY.role_timeout_seconds["overseer"]

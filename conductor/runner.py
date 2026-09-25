@@ -37,6 +37,7 @@ from __future__ import annotations
 import asyncio
 import json
 import time
+import uuid
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Awaitable, Callable, Dict, List, Optional, Protocol
@@ -49,6 +50,17 @@ DEFAULT_IMAGE = "ghcr.io/openclaw/openclaw:latest"
 #: deadline; kept the same here rather than invented, and overridable per
 #: role by the caller.
 DEFAULT_TIMEOUT_SECONDS = 600.0
+
+#: The inner deadline handed to `agent exec --timeout` is the role cap; the
+#: outer (conductor-side) kill fires this many seconds later. The point is
+#: that openclaw gets to hit its own deadline first and, if it prints its
+#: envelope then, `costUsd` and `toolSummary` survive. Not verified live
+#: that the envelope is printed on an inner deadline; if it is not, the
+#: outer kill still applies and cost stays unknown (None).
+OUTER_KILL_GRACE_SECONDS = 60.0
+
+#: Bound on the best-effort `docker kill` after a timeout.
+DOCKER_KILL_WAIT_SECONDS = 30.0
 
 
 def _final_answer(envelope: dict) -> Optional[str]:
@@ -67,6 +79,15 @@ def _final_answer(envelope: dict) -> Optional[str]:
     return None
 
 
+def _cost_from(envelope: dict) -> Optional[float]:
+    """`costUsd` if the envelope carries a number, else None (unknown).
+    A present 0 is a real zero; an absent or malformed field is not."""
+    v = envelope.get("costUsd")
+    if isinstance(v, bool) or not isinstance(v, (int, float)):
+        return None
+    return float(v)
+
+
 @dataclass(frozen=True)
 class RunResult:
     """The one shape every `RoleRunner` returns, real or fake. Mirrors
@@ -79,7 +100,8 @@ class RunResult:
     role: str
     ok: bool
     status: str
-    cost_usd: float
+    #: None means UNKNOWN (killed run, missing `costUsd`), never 0.0.
+    cost_usd: Optional[float]
     wall_clock_seconds: float
     timed_out: bool
     tool_summary: Dict[str, Any]
@@ -140,6 +162,7 @@ class DockerOpenClawRunner:
         secrets_env_file: Path, image: str = DEFAULT_IMAGE,
         subprocess_exec: SubprocessExec = asyncio.create_subprocess_exec,
         clock: Callable[[], float] = time.monotonic,
+        outer_kill_grace_seconds: float = OUTER_KILL_GRACE_SECONDS,
     ):
         self.pinned_config_dir = Path(pinned_config_dir)
         self.openclaw_state_dir = Path(openclaw_state_dir)
@@ -148,6 +171,7 @@ class DockerOpenClawRunner:
         self.image = image
         self._subprocess_exec = subprocess_exec
         self._clock = clock
+        self._grace = outer_kill_grace_seconds
 
     def _workspace_dir(self, role: str) -> Path:
         return self.workspace_root / f"{role}-workspace"
@@ -170,7 +194,10 @@ class DockerOpenClawRunner:
         reversal"). Never raises if already gone."""
         (self._workspace_dir(role) / "SOUL.md").unlink(missing_ok=True)
 
-    def build_command(self, role: str, prompt: str, *, model: str) -> List[str]:
+    def build_command(
+        self, role: str, prompt: str, *, model: str,
+        container_name: Optional[str] = None, timeout_seconds: Optional[float] = None,
+    ) -> List[str]:
         """The exact docker invocation: `--rm`, `--entrypoint node`, the
         persisted openclaw state dir bind-mounted read-write at
         `/home/node/.openclaw` (shares the auth profile and plugin registry
@@ -181,15 +208,28 @@ class DockerOpenClawRunner:
         takes it verbatim on the command line in every real run this
         project has done, never over stdin.
         """
+        name_args = ["--name", container_name] if container_name else []
+        timeout_args = ["--timeout", str(int(timeout_seconds))] if timeout_seconds else []
         return [
-            "docker", "run", "--rm", "--entrypoint", "node",
+            "docker", "run", "--rm", *name_args, "--entrypoint", "node",
             "--env-file", str(self.secrets_env_file),
             "-v", f"{self.openclaw_state_dir}:/home/node/.openclaw",
             "-v", f"{self.pinned_config_dir / (role + '.json')}:/home/node/.openclaw/openclaw.json:ro",
             "-v", f"{self._workspace_dir(role)}:{self._workspace_dir(role)}",
             self.image, "openclaw.mjs", "agent", "exec", "--json",
-            "--model", model, prompt,
+            *timeout_args, "--model", model, prompt,
         ]
+
+    async def _kill_container(self, container_name: str) -> None:
+        """`docker kill <name>`, best effort: never raises, bounded wait."""
+        try:
+            proc = await self._subprocess_exec(
+                "docker", "kill", container_name,
+                stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
+            )
+            await asyncio.wait_for(proc.communicate(), timeout=DOCKER_KILL_WAIT_SECONDS)
+        except Exception:
+            pass
 
     async def run(
         self, role: str, prompt: str, *, model: str,
@@ -202,7 +242,11 @@ class DockerOpenClawRunner:
         `cleanup_workspace`'s own docstrings). `charter=None` (a role whose
         deploy config already carries a persisted charter another way) skips
         both steps."""
-        command = self.build_command(role, prompt, model=model)
+        container_name = f"conductor-{role}-{uuid.uuid4().hex[:12]}"
+        command = self.build_command(
+            role, prompt, model=model, container_name=container_name,
+            timeout_seconds=timeout_seconds,
+        )
         started = self._clock()
 
         if charter is not None:
@@ -215,21 +259,27 @@ class DockerOpenClawRunner:
                 )
             except Exception as exc:  # docker itself missing, permission denied, etc.
                 return RunResult(
-                    role=role, ok=False, status="launch_failed", cost_usd=0.0,
+                    role=role, ok=False, status="launch_failed", cost_usd=None,
                     wall_clock_seconds=self._clock() - started, timed_out=False,
                     tool_summary={}, final_answer=None, raw={}, error=f"{type(exc).__name__}: {exc}",
                 )
 
             try:
-                stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=timeout_seconds)
+                stdout, stderr = await asyncio.wait_for(
+                    process.communicate(), timeout=timeout_seconds + self._grace,
+                )
             except asyncio.TimeoutError:
                 process.kill()
                 await process.wait()
+                # Killing the `docker run` client does NOT stop the
+                # container (it keeps running, and spending, detached from
+                # the client). Stop it by name, best effort.
+                await self._kill_container(container_name)
                 return RunResult(
-                    role=role, ok=False, status="timeout", cost_usd=0.0,
+                    role=role, ok=False, status="timeout", cost_usd=None,
                     wall_clock_seconds=self._clock() - started, timed_out=True,
                     tool_summary={}, final_answer=None, raw={},
-                    error=f"timed out after {timeout_seconds}s",
+                    error=f"timed out after {timeout_seconds + self._grace}s (cost unknown)",
                 )
         finally:
             if charter is not None:
@@ -239,7 +289,7 @@ class DockerOpenClawRunner:
         text = stdout.decode("utf-8", errors="replace").strip()
         if not text:
             return RunResult(
-                role=role, ok=False, status="no_output", cost_usd=0.0,
+                role=role, ok=False, status="no_output", cost_usd=None,
                 wall_clock_seconds=wall_clock, timed_out=False, tool_summary={}, final_answer=None,
                 raw={"stderr": stderr.decode("utf-8", errors="replace")},
                 error="agent exec --json printed nothing",
@@ -248,7 +298,7 @@ class DockerOpenClawRunner:
             envelope = json.loads(text)
         except json.JSONDecodeError:
             return RunResult(
-                role=role, ok=False, status="bad_json", cost_usd=0.0,
+                role=role, ok=False, status="bad_json", cost_usd=None,
                 wall_clock_seconds=wall_clock, timed_out=False, tool_summary={}, final_answer=None,
                 raw={"stdout": text, "stderr": stderr.decode("utf-8", errors="replace")},
                 error="agent exec --json did not print valid JSON",
@@ -258,7 +308,7 @@ class DockerOpenClawRunner:
             role=role,
             ok=bool(envelope.get("ok", False)),
             status=str(envelope.get("status", "unknown")),
-            cost_usd=float(envelope.get("costUsd") or 0.0),
+            cost_usd=_cost_from(envelope),
             wall_clock_seconds=wall_clock,
             timed_out=False,
             tool_summary=envelope.get("toolSummary", {}) or {},

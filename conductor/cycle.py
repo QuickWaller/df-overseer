@@ -292,24 +292,37 @@ def _vital_nearing(vitals: Mapping[str, Any]) -> bool:
 
 async def _drain_all_cursors(
     call: Callable, cursor_store: CursorStore, *, dry_run: bool,
-) -> Dict[str, List[dict]]:
+) -> Tuple[Dict[str, List[dict]], Dict[str, int]]:
     """One `diff.since` call per role in `ALL_ROLES`, each against that
     role's own persisted cursor (`docs/AGENT-ARCHITECTURE.md` §4: "each
-    role keeps its own cursor"). The cursor is only ADVANCED
-    (`cursor_store.set`) for a real cycle -- a dry run reads the same
-    window it would for real but never moves anyone's cursor, so a
-    following real cycle sees the same events a dry run already showed."""
+    role keeps its own cursor"). This function only READS: it returns
+    `(events_by_role, new_cursors)` and never moves a cursor. The caller
+    commits a role's new cursor (`_commit_cursor`) only once that role has
+    actually consumed its events (its run was ok) or was not woken at all;
+    a failed run (launch_failed, no_output, timeout) must not silently drop
+    the events it never processed. A dry run never commits, so a following
+    real cycle sees the same events a dry run already showed."""
     events_by_role: Dict[str, List[dict]] = {}
+    new_cursors: Dict[str, int] = {}
     for role in ALL_ROLES:
         cursor = cursor_store.get(role)
         drained = await call("diff.since", {"cursor": cursor})
-        events = list(drained.get("events") or [])
-        events_by_role[role] = events
-        if not dry_run:
-            new_cursor = drained.get("cursor")
-            if new_cursor is not None:
-                cursor_store.set(role, int(new_cursor))
-    return events_by_role
+        events_by_role[role] = list(drained.get("events") or [])
+        new_cursor = drained.get("cursor")
+        if new_cursor is not None:
+            new_cursors[role] = int(new_cursor)
+    return events_by_role, new_cursors
+
+
+def _timeout_for(deps: "CycleDeps", role: str) -> float:
+    """Per-role cap from `policy.yaml` (`role_timeout_seconds`) if set, else the
+    service-wide cap."""
+    return deps.policy.role_timeout_seconds.get(role, deps.role_timeout_seconds)
+
+
+def _commit_cursor(deps: "CycleDeps", new_cursors: Mapping[str, int], role: str) -> None:
+    if not deps.dry_run and role in new_cursors:
+        deps.cursor_store.set(role, new_cursors[role])
 
 
 def _game_tick(overview: Mapping[str, Any]) -> Tuple[Optional[int], Optional[str]]:
@@ -357,7 +370,7 @@ async def run_cycle(cycle_index: int, deps: CycleDeps) -> CycleResult:
         overview = await call("overview.get", {})
         queue_state = await call("queue.overview", {})  # see module docstring, gap 1 (fixed)
         orders_state = await call("orders.list", {})  # handoffs/2026-09-23-stalled-order-poller.md
-        events_by_role = await _drain_all_cursors(call, deps.cursor_store, dry_run=deps.dry_run)
+        events_by_role, new_cursors = await _drain_all_cursors(call, deps.cursor_store, dry_run=deps.dry_run)
     except MCPToolError as exc:
         raise CycleError(f"cycle {cycle_index}: could not complete this cycle's read: {exc}") from exc
 
@@ -389,6 +402,9 @@ async def run_cycle(cycle_index: int, deps: CycleDeps) -> CycleResult:
         )
         overseer_run: Optional[RunResult] = None
         escalated = False
+        for other in ALL_ROLES:  # everyone but the woken Overseer consumes nothing this cycle
+            if other != OVERSEER:
+                _commit_cursor(deps, new_cursors, other)
 
         if not deps.dry_run:
             await _call_write(call, "fort.quicksave", {}, clock_changes=clock_changes, cycle_index=cycle_index)
@@ -400,9 +416,11 @@ async def run_cycle(cycle_index: int, deps: CycleDeps) -> CycleResult:
             )
             overseer_run = await deps.role_runner.run(
                 OVERSEER, json.dumps(briefing, default=str), model=deps.models[OVERSEER],
-                timeout_seconds=deps.role_timeout_seconds, charter=deps.charters.get(OVERSEER),
+                timeout_seconds=_timeout_for(deps, OVERSEER), charter=deps.charters.get(OVERSEER),
             )
             role_runs.append(overseer_run)
+            if overseer_run.ok:
+                _commit_cursor(deps, new_cursors, OVERSEER)  # a failed run keeps its events
             # Fix 3: two independent reasons the fort might stay paused, no
             # longer conflated into one proxy (see _overseer_called_escalate's
             # own docstring). "A failed or timed-out run still leaves the
@@ -499,13 +517,15 @@ async def run_cycle(cycle_index: int, deps: CycleDeps) -> CycleResult:
     )
     triage_result = triage(signals, deps.policy, base_fps=clock_status.get("fps"))
 
-    # The routine-review cursor advances whenever that reason actually
-    # fires this cycle (never on a dry run) -- self-contained here rather
-    # than pushed onto conductor/service.py, so _game_days_since's own
-    # state stays entirely owned by this module.
-    if not deps.dry_run and game_tick is not None:
-        if any(w.reason == "routine_review" for w in triage_result.wakes):
-            deps.cursor_store.set("__routine_review__", game_tick)
+    # Cursors of roles NOT woken this cycle advance as before (they are not
+    # going to consume their events). A woken role's cursor, and the
+    # routine-review cursor, advance only after a run that actually
+    # completed (see the role loop below): a failed run must not advance
+    # state, or the next review/diff window is silently skipped.
+    woken_now = set(triage_result.roles_to_wake)
+    for role in ALL_ROLES:
+        if role not in woken_now:
+            _commit_cursor(deps, new_cursors, role)
 
     # ---- Set the clock (never paused from ordinary triage -- see triage.py) --
     target_fps = deps.policy.base_fps if triage_result.clock == FULL_SPEED else deps.policy.think_fps
@@ -518,8 +538,47 @@ async def run_cycle(cycle_index: int, deps: CycleDeps) -> CycleResult:
     # ---- 4/5. Advise, then decide-and-act, in the fixed roster order ---------
     briefings: Dict[str, dict] = {}
     ordinary_escalated = False
-    for role in triage_result.roles_to_wake:
-        wake = triage_result.wake_for(role)
+    roles_to_run: List[str] = list(triage_result.roles_to_wake)
+    roles_woken_out: List[str] = list(roles_to_run)
+    extra_wakes: Dict[str, Wake] = {}
+    queue_refreshed = False
+    idx = 0
+    while True:
+        # Advisors have run; anything they filed (an ask above all) is not in
+        # the queue read taken at the top of the cycle. Re-read once, at the
+        # point where the next role (if any) is no longer an advisor, and wake
+        # the Consultant for a newly open ask (first real cycle 2026-09-25:
+        # ask-0001 was filed mid-cycle and waited a whole cycle).
+        next_role = roles_to_run[idx] if idx < len(roles_to_run) else None
+        if (
+            not queue_refreshed and not deps.dry_run and deps.policy.consultant_rewake_after_advisors
+            and next_role not in ADVISORS and any(r.role in ADVISORS for r in role_runs)
+        ):
+            queue_refreshed = True
+            try:
+                queue_state = await call("queue.overview", {})
+            except MCPToolError as exc:
+                LOG.error("cycle %s: queue re-read after the advisors failed: %s", cycle_index, exc)
+            else:
+                if (
+                    bool((queue_state.get("asks") or {}).get("count", 0))
+                    and CONSULTANT not in roles_to_run
+                ):
+                    extra_wakes[CONSULTANT] = Wake(
+                        "open_ask", "an ask filed earlier this cycle is open for the Consultant",
+                        (CONSULTANT,), FULL_SPEED,
+                    )
+                    # Inserted at idx: the Consultant runs before the Overseer
+                    # (if any) and after every advisor.
+                    roles_to_run.insert(idx, CONSULTANT)
+                    roles_woken_out.append(CONSULTANT)
+
+        if idx >= len(roles_to_run):
+            break
+        role = roles_to_run[idx]
+        idx += 1
+
+        wake = extra_wakes.get(role) or triage_result.wake_for(role)
         briefing = build_briefing(
             role=role, game_tick=game_tick or 0, wake=wake, vitals=vitals,
             diff_events=events_by_role.get(role, []),
@@ -537,9 +596,18 @@ async def run_cycle(cycle_index: int, deps: CycleDeps) -> CycleResult:
 
         run_result = await deps.role_runner.run(
             role, json.dumps(briefing, default=str), model=deps.models[role],
-            timeout_seconds=deps.role_timeout_seconds, charter=deps.charters.get(role),
+            timeout_seconds=_timeout_for(deps, role), charter=deps.charters.get(role),
         )
         role_runs.append(run_result)
+
+        # Only a run that completed consumes its diff window and counts as
+        # having performed a routine review.
+        if run_result.ok:
+            _commit_cursor(deps, new_cursors, role)
+            if game_tick is not None and any(
+                w.reason == "routine_review" and role in w.roles for w in triage_result.wakes
+            ):
+                deps.cursor_store.set("__routine_review__", game_tick)
 
         # Fix 3: the Overseer's own Escalation section
         # (agents/overseer/role.md) is not tripwire-specific -- an
@@ -562,7 +630,7 @@ async def run_cycle(cycle_index: int, deps: CycleDeps) -> CycleResult:
         cycle_index=cycle_index, game_tick=game_tick, game_tick_error=game_tick_error,
         signals=signals,
         clock_level=(PAUSED if ordinary_escalated else triage_result.clock),
-        roles_woken=triage_result.roles_to_wake,
+        roles_woken=tuple(roles_woken_out),
         clock_changes=clock_changes, role_runs=role_runs, tripwire=None,
         escalated=ordinary_escalated,
         unexecuted=unexecuted, archived_path=None, dry_run=deps.dry_run,
@@ -629,10 +697,13 @@ def _archive(
     ]
     for r in result.role_runs:
         today = time.strftime("%Y-%m-%d", time.gmtime())
-        deps.archive.append_daily_cost(today, r.cost_usd)
+        total = deps.archive.append_daily_cost(today, r.cost_usd)
+        unknown = deps.archive.daily_unknown_runs(today)
+        cost_text = "UNKNOWN" if r.cost_usd is None else f"{r.cost_usd:.6f}"
         LOG.info(
-            "cycle %s: role=%s cost_usd=%.6f wall_clock_seconds=%.1f",
-            cycle_index, r.role, r.cost_usd, r.wall_clock_seconds,
+            "cycle %s: role=%s cost_usd=%s wall_clock_seconds=%.1f "
+            "daily_total_usd=%.6f (known only; %d run(s) today with unknown cost)",
+            cycle_index, r.role, cost_text, r.wall_clock_seconds, total, unknown,
         )
     return deps.archive.write_cycle(
         cycle_index, summary=summary, briefings=briefings,

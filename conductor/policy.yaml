@@ -139,3 +139,21 @@ wake_reasons:
   tripwire:
     clock: paused
     wakes: [overseer]
+
+# Per-role cap (real seconds) on one `agent exec` run; roles not listed use
+# CONDUCTOR_ROLE_TIMEOUT_SECONDS (default 600). First real cycle 2026-09-25
+# (evals/live/2026-09-25-first-real-conductor-cycle): the Architect took 158 s
+# and the Quartermaster 93 s for one proposal each; the Overseer, ruling on
+# four proposals with six failed tool calls on top, hit 600 s after its work
+# had landed. MEASURED afterwards from the dfmcp journal (per-call timestamps):
+# the Overseer's calls ran 02:36:48 to 02:46:20 with 1 to 3 minute gaps of model
+# thinking between them, its last write (queue.executed) came at about 583 s and
+# the kill 17 s later. So it was working the whole time, not lingering: the cap
+# was too tight, and 1200 gives headroom. Retune from the next run's cost and
+# wall clock.
+role_timeout_seconds:
+  overseer: 1200
+
+# After the advisors run, re-read the queue and wake the Consultant for an ask
+# they filed this cycle (otherwise it waits a whole cycle; ask-0001 did).
+consultant_rewake_after_advisors: true

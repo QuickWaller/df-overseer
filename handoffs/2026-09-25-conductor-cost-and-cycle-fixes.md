@@ -53,4 +53,47 @@ has the findings and the evidence), then `conductor/runner.py`,
 
 ## Result
 
-(pending)
+Tests: `python -m pytest conductor`, 178 passed before, 190 after. Nothing run against docker or a VM.
+
+1. **Cost.** `RunResult.cost_usd` is now `Optional[float]`; `None` means unknown
+   (timeout, launch_failed, no_output, bad_json, or an envelope with no numeric
+   `costUsd`); a real `costUsd: 0` stays 0.0. The archive's daily total counts
+   unknown runs separately (`unknown_runs`, `daily_unknown_runs`) instead of
+   adding 0.0, and the per-run log line prints UNKNOWN plus the known daily
+   total and the unknown count. Containers now carry `--name conductor-<role>-<id>`
+   and a timeout runs best-effort `docker kill <name>`; before this, killing the
+   `docker run` client left the container running and spending. The inner
+   `agent exec --timeout` is now set to the role cap and the outer kill fires 60 s
+   later, so openclaw can hit its own deadline first and print its envelope
+   (UNVERIFIED that it does; if not, cost stays unknown).
+   **1b, recovery from openclaw's records: not done.** The only recorded evidence
+   (`evals/live/2026-09-14-architect-second-charter/README.md`) is that a headless
+   `agent exec` persists nothing in `openclaw-agent.sqlite` (`transcript_events` and
+   every transcript-shaped table had zero rows) and openclaw's aggregate
+   `usage-cost` needs a running Gateway. Not re-checked on VM 106 (no VM this
+   stream), so treat as "no reliable read-only source known", not proven absent.
+   The tool-call side of a killed run is recoverable server-side from dfmcp's
+   `tool-calls.jsonl` journal (role, tool, time), which is a separate join.
+2. **Failed runs do not advance state.** `_drain_all_cursors` now only reads;
+   a woken role's diff cursor commits only after an ok run, unwoken roles commit
+   as before, and `__routine_review__` advances only when a role woken by
+   `routine_review` ran ok. The per-role diff cursors had the same flaw (advanced
+   at read time, losing a failed role's events); fixed, tripwire path included.
+3. **Consultant wake.** `triage` already woke the Consultant for an open ask;
+   the real cause is ordering. The queue is read once at cycle start and the ask
+   was filed by an advisor during the cycle, so it could not be seen until the
+   next cycle. The cycle now re-reads `queue.overview` once after the advisors
+   run and wakes the Consultant (before the Overseer) for a newly open ask.
+   Policy flag `consultant_rewake_after_advisors` (default true). Not done, noted:
+   the same re-read could wake the Overseer for proposals filed mid-cycle; left
+   alone as a cost decision.
+4. **600 s cap.** The repo evidence cannot separate "too tight" from "lingers
+   after its last write": the README has wall clocks (Architect 158 s, Quartermaster
+   93 s, one proposal each) but no per-call timestamps for the Overseer, which
+   ruled four proposals and made six failed calls. Note 600 s is also openclaw's
+   own default deadline, so the two clocks raced. Set `role_timeout_seconds:
+   overseer: 1200` in `policy.yaml` (per-role override, new) as a recommendation
+   with headroom, flagged unmeasured. Next step: compare the Overseer's last
+   tool-call time in the dfmcp journal with its wall clock.
+
+Could not verify: the envelope on an inner-deadline timeout; openclaw state on VM 106.

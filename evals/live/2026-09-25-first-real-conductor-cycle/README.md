@@ -52,9 +52,10 @@ access was granted. All three roles woke: Architect (routine review), Quartermas
 2. **Tool ergonomics cost real calls:** positional optional arguments ("cannot
    supply `dry_run` without also supplying `level`") caused three failed
    `diggable.dig-stair` and three failed `workjob.queue` calls before success.
-3. **Overseer timeout:** 600 s was hit even though the work landed. Either
-   the cap is too tight for a multi-decision wake or the run stalls after
-   finishing. Unresolved.
+3. **Overseer timeout, resolved from the MCP journal:** 600 s was too tight, not
+   lingering. Its 25 calls ran 02:36:48 to 02:46:20 with 1 to 3 minute model-thinking
+   gaps; the last write came at about 583 s and the kill 17 s later. The cap is now
+   1200 s for the Overseer (`conductor/policy.yaml`).
 4. **The Overseer filed an `ask` to the Consultant** (`ask-0001`) but the
    Consultant was not woken this cycle. An open ask should wake it next cycle.
 5. **A failed run still advances the routine-review cursor**, which would

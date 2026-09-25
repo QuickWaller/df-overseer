@@ -42,7 +42,7 @@ fast run does not itself become next cycle's whole expectation.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Dict, Iterable, Mapping, Optional, Tuple
 
@@ -95,6 +95,12 @@ class Policy:
     stalled_order_threshold_ticks: int
     stalled_order_renotify_ticks: int
     wake_reasons: Dict[str, WakeReasonPolicy]
+    #: Re-read the queue after the advisors run and wake the Consultant for an
+    #: ask they filed this cycle (see conductor/cycle.py's role loop).
+    consultant_rewake_after_advisors: bool = True
+    #: Per-role cap on one `agent exec` run, seconds. Roles absent here use
+    #: the service-wide `CONDUCTOR_ROLE_TIMEOUT_SECONDS`.
+    role_timeout_seconds: Dict[str, float] = field(default_factory=dict)
 
     def reason(self, name: str) -> WakeReasonPolicy:
         try:
@@ -165,6 +171,8 @@ def load_policy(path: "Path | str" = DEFAULT_POLICY_PATH) -> Policy:
             _require(doc, "stalled_order_renotify_ticks", path)
         ),
         wake_reasons=wake_reasons,
+        consultant_rewake_after_advisors=bool(doc.get("consultant_rewake_after_advisors", True)),
+        role_timeout_seconds={str(k): float(v) for k, v in (doc.get("role_timeout_seconds") or {}).items()},
     )
 
 
