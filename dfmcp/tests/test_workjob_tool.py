@@ -97,7 +97,7 @@ def test_workjob_queue_argument_signature_matches_the_lua_dispatch():
     )
     tool = reg.get("workjob.queue")
     tokens = [t.strip("[]") for t in tool.args]
-    assert tokens == ["JOB", "WORKSHOP_LANDMARK_NAME", "DRY_RUN", "REPEAT", "COUNT"]
+    assert tokens == ["JOB", "WORKSHOP_LANDMARK_NAME", "DRY_RUN", "REPEAT", "COUNT", "REAGENT_CHOICE..."]
     assert tool.args[0] == "JOB"
     assert tool.args[1] == "WORKSHOP_LANDMARK_NAME"
     assert tool.args[2] == "[DRY_RUN]"  # optional, dry-run defaults true
@@ -282,22 +282,21 @@ def test_argv_for_queue_with_repeat(registry):
     assert argv == ["df-overseer-workjob", "queue", "blocks", "North Workshop", "false", "true"]
 
 
-def test_repeat_cannot_be_supplied_without_dry_run():
-    """The positional-optional gap check (dfmcp/tools.py) refuses skipping
-    DRY_RUN while supplying REPEAT -- REPEAT was not declared `skippable` in
-    TOOLS.yaml, on purpose: the handoff's own "explicit when asked" applies
-    to DRY_RUN too."""
-    from dfmcp.tools import ArgumentError
-
+def test_repeat_without_dry_run_fills_the_safe_dry_run_default():
+    """Skipping DRY_RUN while supplying REPEAT (or COUNT) is filled with
+    DRY_RUN's declared default, "true": the safe direction, so the skipped
+    slot can never turn a preview into a real write. Was a refusal until
+    handoffs/2026-09-25-tool-gaps-from-first-cycle.md item 2."""
     reg = load_registry(
         native_tools={**NATIVE_TOOLS, **DOCTRINE_NATIVE_TOOLS, **SERIES_NATIVE_TOOLS, **GOTCHAS_NATIVE_TOOLS, **KNOWLEDGE_NATIVE_TOOLS}
     )
     tool = reg.get("workjob.queue")
-    with pytest.raises(ArgumentError):
-        argv_for_call(
-            tool,
-            {"job": "blocks", "workshop_landmark_name": "North Workshop", "repeat": "true"},
-        )
+    assert argv_for_call(
+        tool, {"job": "blocks", "workshop_landmark_name": "North Workshop", "repeat": "true"}
+    ) == ["df-overseer-workjob", "queue", "blocks", "North Workshop", "true", "true"]
+    assert argv_for_call(
+        tool, {"job": "blocks", "workshop_landmark_name": "North Workshop", "count": 2}
+    ) == ["df-overseer-workjob", "queue", "blocks", "North Workshop", "true", "false", "2"]
 
 
 # --------------------------------------------------------------------------

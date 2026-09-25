@@ -89,8 +89,13 @@
 #     NAME  required        [NAME]  optional        NAME...  one or more
 #     [NAME...]  zero or more (must be last)    [A B]  optional pair or
 #     group, all or nothing    a|b  a literal choice
-#     Optional tokens are positional: a later one cannot be given while an
-#     earlier one is left out. Only a command whose Lua CLI works out which
+#     Optional tokens are positional, so a skipped optional that precedes a
+#     supplied one must be filled. `arg_defaults:` (script level) and
+#     `defaults:` (per command, overriding) map an optional placeholder to its
+#     documented default word, e.g. {LEVEL: "0", DRY_RUN: "true"}, quoted; the
+#     server fills a skipped slot with it. It must equal what the Lua does when
+#     the argument is omitted. A skipped optional with no declared default is
+#     still refused. Only a command whose Lua CLI works out which
 #     optionals were given some other way may say so with
 #       skippable: ["[W H]"]
 #     (a list of optional tokens exactly as written in the signature, checked
@@ -280,6 +285,10 @@ df-overseer-diff.lua:
 
 df-overseer-openarea.lua:
   build_order_item: 6
+  # Documented defaults (each the value the Lua script already uses when the
+  # argument is omitted), used by dfmcp/tools.py to fill a slot an agent
+  # skipped while naming a later optional argument by name.
+  arg_defaults: {LEVEL: "0", RANK: "1", RADIUS_TILES: "30", DRY_RUN: "true"}
   commands:
     "find W H [LEVEL] NEAR_LANDMARK [RADIUS_TILES]":
       lua_function: find_open_area
@@ -322,6 +331,10 @@ df-overseer-openarea.lua:
 
 df-overseer-chokepoints.lua:
   build_order_item: "7 (first half)"
+  # Documented defaults (each the value the Lua script already uses when the
+  # argument is omitted), used by dfmcp/tools.py to fill a slot an agent
+  # skipped while naming a later optional argument by name.
+  arg_defaults: {LEVEL: "0", RANK: "1", RADIUS_TILES: "30", DRY_RUN: "true"}
   commands:
     "find [LEVEL] NEAR_LANDMARK [RADIUS_TILES]":
       lua_function: find_chokepoints
@@ -346,6 +359,10 @@ df-overseer-chokepoints.lua:
 
 df-overseer-diggable.lua:
   build_order_item: "gap found 2026-09-11, not in the original 0-9 order"
+  # Documented defaults (each the value the Lua script already uses when the
+  # argument is omitted), used by dfmcp/tools.py to fill a slot an agent
+  # skipped while naming a later optional argument by name.
+  arg_defaults: {LEVEL: "0", RANK: "1", RADIUS_TILES: "30", DRY_RUN: "true"}
   commands:
     "find W H [LEVEL] NEAR_LANDMARK [RADIUS_TILES]":
       lua_function: find_diggable_area
@@ -488,6 +505,10 @@ df-overseer-diggable.lua:
 
 df-overseer-farm.lua:
   build_order_item: "gap named 2026-09-16, handoffs/2026-09-16-farm-and-still-tools.md Part 2"
+  # Documented defaults (each the value the Lua script already uses when the
+  # argument is omitted), used by dfmcp/tools.py to fill a slot an agent
+  # skipped while naming a later optional argument by name.
+  arg_defaults: {LEVEL: "0", RANK: "1", RADIUS_TILES: "30", DRY_RUN: "true"}
   commands:
     "find W H [LEVEL] NEAR_LANDMARK [RADIUS_TILES]":
       lua_function: find_farm_plot_area
@@ -586,6 +607,10 @@ df-overseer-farm.lua:
 
 df-overseer-workshop.lua:
   build_order_item: "gap named 2026-09-16, handoffs/2026-09-16-farm-and-still-tools.md Part 3"
+  # Documented defaults (each the value the Lua script already uses when the
+  # argument is omitted), used by dfmcp/tools.py to fill a slot an agent
+  # skipped while naming a later optional argument by name.
+  arg_defaults: {LEVEL: "0", RANK: "1", RADIUS_TILES: "30", DRY_RUN: "true"}
   commands:
     "find W H [LEVEL] NEAR_LANDMARK KIND [RADIUS_TILES]":
       lua_function: find_workshop_area
@@ -663,6 +688,10 @@ df-overseer-workshop.lua:
 
 df-overseer-building.lua:
   build_order_item: "the user's minimum bar for openclaw (build workshops, rooms, furniture); docs/BUILDING-TOOL.md, handoffs/2026-09-21-building-tool-lua.md"
+  # Documented defaults (each the value the Lua script already uses when the
+  # argument is omitted), used by dfmcp/tools.py to fill a slot an agent
+  # skipped while naming a later optional argument by name.
+  arg_defaults: {LEVEL: "0", RANK: "1", RADIUS_TILES: "30", DRY_RUN: "true"}
   commands:
     "list-kinds [FILTER]":
       lua_function: list_kinds
@@ -744,6 +773,10 @@ df-overseer-building.lua:
 
 df-overseer-zone.lua:
   build_order_item: "gap named 2026-09-17 (handoffs/2026-09-17-water-and-industry-tools.md item 1); generalised over every zone kind and given an optional owner by handoffs/2026-09-21-zone-tool-generalise.md; given an inventory, a per-zone validity check and furniture-aware siting by handoffs/2026-09-23-zone-inventory-and-validity.md"
+  # Documented defaults (each the value the Lua script already uses when the
+  # argument is omitted), used by dfmcp/tools.py to fill a slot an agent
+  # skipped while naming a later optional argument by name.
+  arg_defaults: {LEVEL: "0", RANK: "1", RADIUS_TILES: "30", DRY_RUN: "true", AROUND_FURNITURE: "false"}
   commands:
     "list-kinds [FILTER]":
       lua_function: list_kinds
@@ -1029,6 +1062,10 @@ df-overseer-zone.lua:
 
 df-overseer-trees.lua:
   build_order_item: "gap named 2026-09-17, handoffs/2026-09-17-water-and-industry-tools.md item 2"
+  # Documented defaults (each the value the Lua script already uses when the
+  # argument is omitted), used by dfmcp/tools.py to fill a slot an agent
+  # skipped while naming a later optional argument by name.
+  arg_defaults: {LEVEL: "0", RANK: "1", RADIUS_TILES: "30", DRY_RUN: "true"}
   commands:
     "find [LEVEL] NEAR_LANDMARK [RADIUS_TILES]":
       lua_function: find_trees
@@ -1079,6 +1116,10 @@ df-overseer-trees.lua:
 
 df-overseer-well.lua:
   build_order_item: "gap named 2026-09-17, handoffs/2026-09-17-water-and-industry-tools.md item 5"
+  # Documented defaults (each the value the Lua script already uses when the
+  # argument is omitted), used by dfmcp/tools.py to fill a slot an agent
+  # skipped while naming a later optional argument by name.
+  arg_defaults: {LEVEL: "0", RANK: "1", RADIUS_TILES: "30", DRY_RUN: "true"}
   commands:
     "find [LEVEL] NEAR_LANDMARK [RADIUS_TILES]":
       lua_function: find_well
@@ -1231,6 +1272,10 @@ df-overseer-orders.lua:
 
 df-overseer-workjob.lua:
   build_order_item: "handoffs/2026-09-19-workshop-add-job.md -- the honest alternative to a stalled manager order: a direct workshop job, no Manager needed, per handoffs/2026-09-19-well-and-harvest.md section 6 and handoffs/2026-09-19-well-finish.md sections 2-4. GENERALISED handoffs/2026-09-21-workjob-generalise.md (dispatched 2026-09-23): the job vocabulary is now read live from DFHack's own workshops.getJobs, not a hand-maintained table -- see the .lua file's own header for the full coverage measurement and field-mapping citations."
+  # Documented defaults (each the value the Lua script already uses when the
+  # argument is omitted), used by dfmcp/tools.py to fill a slot an agent
+  # skipped while naming a later optional argument by name.
+  arg_defaults: {DRY_RUN: "true", REPEAT: "false", COUNT: "1"}
   commands:
     list:
       lua_function: list_jobs
@@ -1274,7 +1319,7 @@ df-overseer-workjob.lua:
         could not read is named in `read_failures`, also relayed via
         `dfhack.printerr`, never silently defaulted (docs/TRAPS.md's
         pcall-degrades-to-false entry).
-    "queue JOB WORKSHOP_LANDMARK_NAME [DRY_RUN] [REPEAT] [COUNT]":
+    "queue JOB WORKSHOP_LANDMARK_NAME [DRY_RUN] [REPEAT] [COUNT] [REAGENT_CHOICE...]":
       lua_function: queue_job
       effect: mutate
       coordinate_bearing: false
@@ -1323,6 +1368,16 @@ df-overseer-workjob.lua:
         Workshop is named "Stoneworker's Workshop". See
         dfmcp/tests/test_workjob_tool.py's own
         `test_apostrophed_workshop_names_are_refused_by_the_mcp_layer`.
+        REAGENT_CHOICE (2026-09-25, handoffs/2026-09-25-tool-gaps-from-first-cycle.md
+        item 1) resolves a wildcard reagent, e.g. the empty food storage
+        container every brew reaction carries: words `N:ITEM_ID` or `N:auto`,
+        N the 1-based reagent number list-jobs shows (with the free candidate
+        items it found). Without a choice the call still refuses, now naming
+        the argument that would resolve it and the candidates. The candidate
+        rules are data in the .lua (per-flag checks); a flag it cannot verify
+        is refused, never guessed. OFFLINE-VERIFIED ONLY (fake-world Lua
+        tests): the live item flags, the job_item narrowing and the game
+        accepting the resulting brew job need a live check after deploy.
         COUNT is appended as a NEW fifth positional argument, after REPEAT,
         so the first four positions (JOB, WORKSHOP_LANDMARK_NAME, DRY_RUN,
         REPEAT) are unchanged for any existing caller; a real queue reports
@@ -1960,6 +2015,10 @@ df-overseer-ui.lua:
 
 df-overseer-nobles.lua:
   build_order_item: "the user's minimum bar for openclaw (appoint a Manager and other nobles); handoffs/2026-09-21-nobles-appoint.md"
+  # Documented defaults (each the value the Lua script already uses when the
+  # argument is omitted), used by dfmcp/tools.py to fill a slot an agent
+  # skipped while naming a later optional argument by name.
+  arg_defaults: {DRY_RUN: "true", VERSION: "minimal"}
   commands:
     list:
       lua_function: list
@@ -2140,6 +2199,10 @@ df-overseer-surface.lua:
 
 df-overseer-blueprint.lua:
   build_order_item: "the Architect's hands; handoffs/2026-09-24-blueprint-hands.md. Research: research/2026-09-24-quickfort-hands.md"
+  # Documented defaults (each the value the Lua script already uses when the
+  # argument is omitted), used by dfmcp/tools.py to fill a slot an agent
+  # skipped while naming a later optional argument by name.
+  arg_defaults: {DRY_RUN: "true"}
   commands:
     "plan TEMPLATE":
       lua_function: plan_template

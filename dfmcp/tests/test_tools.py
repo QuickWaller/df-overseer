@@ -418,41 +418,87 @@ def test_enum_argument_accepts_a_valid_choice(registry):
 # --------------------------------------------------------------------------
 
 
-def test_supplying_a_later_optional_without_an_earlier_one_raises(registry):
-    """The exact scenario named in the task brief: RANK supplied, LEVEL
-    omitted (this argument was named Z until 2026-09-14, see
-    handoffs/2026-09-14-relative-level-args.md)."""
+def test_supplying_a_later_optional_without_an_earlier_one_fills_the_default(registry):
+    """RANK supplied, LEVEL omitted (this argument was named Z until
+    2026-09-14, see handoffs/2026-09-14-relative-level-args.md). Until
+    2026-09-25 this was refused; TOOLS.yaml now declares LEVEL's default (0),
+    so the skipped slot is filled with it (handoffs/2026-09-25-tool-gaps-
+    from-first-cycle.md item 2)."""
     tool = registry.get("openarea.build")
+    argv = argv_for_call(
+        tool,
+        {"w": 5, "h": 4, "near_landmark": "MainHall", "blueprint_file": "stock.csv", "rank": 1},
+    )
+    assert argv == ["df-overseer-openarea", "build", "5", "4", "0", "MainHall", "stock.csv", "1"]
+
+
+def test_a_skipped_slot_with_no_declared_default_is_still_refused(registry):
+    """zone.place's OWNER has no declared default (there is no safe value to
+    guess), so naming the later AROUND_FURNITURE without it is still a named
+    gap that says why."""
+    tool = registry.get("zone.place")
+    assert "OWNER" not in tool.defaults
     with pytest.raises(ArgumentError) as exc:
         argv_for_call(
-            tool,
-            {
-                "w": 5,
-                "h": 4,
-                "near_landmark": "MainHall",
-                "blueprint_file": "stock.csv",
-                "rank": 1,
-            },
+            tool, {"kind": "Tomb", "near_landmark": "Wagon", "around_furniture": "true"}
         )
     msg = str(exc.value)
-    assert "rank" in msg and "level" in msg
+    assert "around_furniture" in msg and "owner" in msg and "no default" in msg
 
 
-def test_trailing_optionals_cannot_skip_a_middle_slot(registry):
-    """RADIUS_TILES supplied while RANK (and LEVEL) are omitted -- same trap,
-    entirely among trailing optionals this time."""
-    tool = registry.get("openarea.build")
-    with pytest.raises(ArgumentError):
-        argv_for_call(
-            tool,
-            {
-                "w": 5,
-                "h": 4,
-                "near_landmark": "MainHall",
-                "blueprint_file": "stock.csv",
-                "radius_tiles": 30,
-            },
+def test_dry_run_alone_skips_every_earlier_optional_with_its_default(registry):
+    """The Overseer's six failed calls: dig-stair with only dry_run named."""
+    tool = registry.get("diggable.dig-stair")
+    assert argv_for_call(tool, {"near_landmark": "Wagon", "dry_run": "false"}) == [
+        "df-overseer-diggable", "dig-stair", "0", "Wagon", "1", "30", "false"
+    ]
+    # nothing optional named: unchanged, nothing filled
+    assert argv_for_call(tool, {"near_landmark": "Wagon"}) == [
+        "df-overseer-diggable", "dig-stair", "Wagon"
+    ]
+    # every optional named in order: unchanged
+    assert argv_for_call(
+        tool, {"level": -1, "near_landmark": "Wagon", "rank": 2, "radius_tiles": 9, "dry_run": "true"}
+    ) == ["df-overseer-diggable", "dig-stair", "-1", "Wagon", "2", "9", "true"]
+
+
+def test_defaults_declared_in_the_manifest_only_name_optional_placeholders(tmp_path):
+    from dfmcp.registry import RegistryError, load_registry as _load
+
+    def manifest(defaults):
+        p = tmp_path / "t.yaml"
+        p.write_text(
+            "df-overseer-x.lua:\n  commands:\n    \"go NAME [A] [B]\":\n"
+            "      lua_function: f\n      effect: read\n      coordinate_bearing: false\n"
+            f"      knowledge_scope: player_visible\n      defaults: {defaults}\n",
+            encoding="utf-8",
         )
+        return p
+
+    tool = _load(manifest('{A: "1"}')).get("x.go")
+    assert tool.defaults == {"A": "1"}
+    assert argv_for_call(tool, {"name": "n", "b": "z"}) == ["df-overseer-x", "go", "n", "1", "z"]
+    with pytest.raises(RegistryError):
+        _load(manifest('{NAME: "1"}'))  # required, not optional
+    with pytest.raises(RegistryError):
+        _load(manifest('{A: true}'))  # unquoted boolean is not a command-line word
+
+
+def test_trailing_optionals_fill_every_skipped_middle_slot(registry):
+    """RADIUS_TILES supplied while RANK (and LEVEL) are omitted: both skipped
+    slots are filled from TOOLS.yaml's declared defaults, in signature order."""
+    tool = registry.get("openarea.build")
+    argv = argv_for_call(
+        tool,
+        {
+            "w": 5,
+            "h": 4,
+            "near_landmark": "MainHall",
+            "blueprint_file": "stock.csv",
+            "radius_tiles": 20,
+        },
+    )
+    assert argv == ["df-overseer-openarea", "build", "5", "4", "0", "MainHall", "stock.csv", "1", "20"]
 
 
 def test_omitting_all_optionals_is_fine(registry):
@@ -817,11 +863,13 @@ def test_real_building_build_only_stays_positional_after_the_landmark(registry):
         tool,
         {"kind": "Still", "level": 0, "near_landmark": "Wagon", "rank": 2, "radius_tiles": 20, "dry_run": "false"},
     ) == ["df-overseer-building", "build", "Still", "0", "Wagon", "2", "20", "false"]
-    # RANK without LEVEL is still the positional gap: only [W H] is skippable
-    with pytest.raises(ArgumentError):
-        argv_for_call(tool, {"kind": "Still", "near_landmark": "Wagon", "rank": 2})
-    with pytest.raises(ArgumentError):
-        argv_for_call(tool, {"kind": "Still", "near_landmark": "Wagon", "dry_run": "false"})
+    # RANK without LEVEL: LEVEL's declared default (0) fills the skipped slot
+    assert argv_for_call(tool, {"kind": "Still", "near_landmark": "Wagon", "rank": 2}) == [
+        "df-overseer-building", "build", "Still", "0", "Wagon", "2"
+    ]
+    assert argv_for_call(tool, {"kind": "Still", "near_landmark": "Wagon", "dry_run": "false"}) == [
+        "df-overseer-building", "build", "Still", "0", "Wagon", "1", "30", "false"
+    ]
 
 
 def test_real_enabled_counts_takes_several_labors(registry):

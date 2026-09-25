@@ -502,16 +502,19 @@ class TestOptionalAndRepeatedArgsOverTheWire:
         assert result.is_error is True and "kind" in texts(result)[0]
         assert fake_dfhack.received_requests == []
 
-    async def test_a_rank_without_a_level_is_still_a_named_gap(self, rr, pool, fake_dfhack, tmp_path, gdb):
-        """Only [W H] is skippable; the other positional slots still cannot be jumped."""
+    async def test_a_rank_without_a_level_fills_the_declared_level_default(self, rr, pool, fake_dfhack, tmp_path, gdb):
+        """A skipped earlier optional with a TOOLS.yaml default is filled
+        (handoffs/2026-09-25-tool-gaps-from-first-cycle.md item 2), not refused."""
+        fake_dfhack.queue_actions(make_ok_action(BUILD_RESULT))
         app = make_app(rr, pool, tmp_path, gdb)
         async with mcp_session(app, OVERSEER_TOKEN) as session:
             result = await session.call_tool(
                 "building__build", {"kind": "Still", "near_landmark": "Wagon", "rank": 2}
             )
-        assert result.is_error is True
-        assert "'rank'" in texts(result)[0] and "'level'" in texts(result)[0]
-        assert fake_dfhack.received_requests == []
+        assert result.is_error is False
+        assert fake_dfhack.received_requests == [
+            _encode_run_command_request("df-overseer-building", ["build", "Still", "0", "Wagon", "2"])
+        ]
 
     async def test_the_overseers_build_with_only_kind_and_landmark(self, rr, pool, fake_dfhack, tmp_path, gdb):
         fake_dfhack.queue_actions(make_ok_action(BUILD_RESULT))

@@ -159,6 +159,13 @@
 -- guarded read here silently becomes a default value without a matching
 -- entry in `read_failures`.
 --
+-- REAGENT_CHOICE (handoffs/2026-09-25-tool-gaps-from-first-cycle.md item 1):
+-- `queue` takes trailing `N:ITEM_ID` / `N:auto` words to resolve a wildcard
+-- reagent to a real free item (see "Wildcard reagents" below); with none it
+-- still refuses, now naming the exact argument. Offline-verified only
+-- (tests/test_workjob_wildcard_lua_logic.py); the real item flags, the
+-- job_item narrowing and the brew job's acceptance are a live check.
+--
 -- COUNT, added this stream: `queue` now takes an optional trailing COUNT
 -- (default 1), queuing that many IDENTICAL jobs, refusing (never
 -- truncating) if the workshop's current queue plus COUNT would exceed
@@ -195,7 +202,7 @@
 --
 -- Usage: ./dfhack-run df-overseer-workjob list
 -- Usage: ./dfhack-run df-overseer-workjob list-jobs WORKSHOP_LANDMARK_NAME
--- Usage: ./dfhack-run df-overseer-workjob queue JOB WORKSHOP_LANDMARK_NAME [DRY_RUN] [REPEAT] [COUNT]
+-- Usage: ./dfhack-run df-overseer-workjob queue JOB WORKSHOP_LANDMARK_NAME [DRY_RUN] [REPEAT] [COUNT] [REAGENT_CHOICE...]
 -- Usage: ./dfhack-run df-overseer-workjob cancel JOB_ID [DRY_RUN]
 
 local json = require('json')
@@ -412,13 +419,198 @@ local function job_item_from_spec(spec)
   return jitem, read_failures
 end
 
+-- ============================================================================
+-- Wildcard (tag-matched) reagents: choosing a concrete item.
+--
+-- A reagent whose item_type is still -1 after defaults merge matches by
+-- flags alone (the three brew reactions' "empty food storage container" is
+-- the case that surfaced this, evals/live/2026-09-25-first-real-conductor-
+-- cycle/README.md). The tool never guesses one silently. It offers the
+-- fort's own real, currently free items that satisfy every flag on the spec,
+-- and takes the caller's choice: `N:ITEM_ID` (an item from that list) or
+-- `N:auto` (the lowest-id candidate, reported as such), N being the 1-based
+-- reagent index shown in list-jobs. This is exactly what a player does at the
+-- job menu: choose an existing empty barrel or pot. Nothing is created.
+--
+-- POLICY IS DATA, not branches: WILDCARD_FLAG_CHECKS maps a job_item flag
+-- name to the predicate that decides whether an item satisfies it; a flag on
+-- the spec with no entry there is UNVERIFIABLE, and the tool then refuses to
+-- pick (auto or explicit) and names the flag rather than pretend. A new kind
+-- of tag-matched reagent costs one entry in the table, no new code path.
+-- ITEM_EXCLUDE_FLAGS lists the item flags that make an item not free to take.
+local ITEM_EXCLUDE_FLAGS = {
+  "in_job", "forbid", "dump", "trader", "foreign", "hostile", "removed",
+  "garbage_collect", "melt", "owned", "construction",
+}
+
+-- Each check returns true / false, or nil when the game would not say
+-- (an unknown is never treated as a yes).
+local WILDCARD_FLAG_CHECKS = {
+  empty = function(item)
+    local ok, contained = pcall(dfhack.items.getContainedItems, item)
+    if not ok or type(contained) ~= "table" then return nil end
+    return #contained == 0
+  end,
+  food_storage = function(item)
+    local ok, v = pcall(function() return item:isFoodStorage() end)
+    if not ok then return nil end
+    return v and true or false
+  end,
+}
+
+-- Names of every true flag on a getJobs() item spec, across flags1/2/3.
+local function spec_true_flags(spec)
+  local names = {}
+  for _, field in ipairs(FLAG_TABLE_FIELDS) do
+    local ok, tbl = pcall(function() return spec[field] end)
+    if ok and type(tbl) == "table" then
+      for k, v in pairs(tbl) do
+        if v then table.insert(names, tostring(k)) end
+      end
+    end
+  end
+  table.sort(names)
+  return names
+end
+
+-- Returns (ok, reason). ok is true only when the item is free and satisfies
+-- every flag; ok == nil means a check could not be read (reason says which).
+local function item_satisfies_wildcard(item, flag_names)
+  for _, f in ipairs(ITEM_EXCLUDE_FLAGS) do
+    local okf, v = pcall(function() return item.flags[f] end)
+    if okf and v then return false, "item flag " .. f end
+  end
+  for _, name in ipairs(flag_names) do
+    local check = WILDCARD_FLAG_CHECKS[name]
+    if check then
+      local r = check(item)
+      if r == nil then return nil, "flag " .. name .. " could not be read" end
+      if not r then return false, "does not satisfy " .. name end
+    end
+  end
+  return true
+end
+
+-- All eligible items for one wildcard spec, lowest id first.
+-- Returns { candidates = {item...}, flags = {names}, unverifiable = {names},
+-- read_failures = {strings} }.
+local function wildcard_candidates(spec)
+  local flag_names = spec_true_flags(spec)
+  local out = {candidates = {}, flags = flag_names, unverifiable = {}, read_failures = {}}
+  for _, name in ipairs(flag_names) do
+    if not WILDCARD_FLAG_CHECKS[name] then table.insert(out.unverifiable, name) end
+  end
+  -- Nothing to match on (no flags at all) is not a filter a player could
+  -- honour either: never offer "every item in the fort".
+  if #flag_names == 0 then
+    table.insert(out.unverifiable, "(the reagent carries no flags at all)")
+  end
+  if #out.unverifiable > 0 then return out end
+  local ok_all, all_items = pcall(function() return df.global.world.items.all end)
+  if not ok_all or not all_items then
+    table.insert(out.read_failures, "world.items.all could not be read")
+    return out
+  end
+  local unreadable = 0
+  for _, item in ipairs(all_items) do
+    local ok, why = item_satisfies_wildcard(item, flag_names)
+    if ok then
+      table.insert(out.candidates, item)
+    elseif ok == nil and why then
+      unreadable = unreadable + 1
+    end
+  end
+  if unreadable > 0 then
+    table.insert(out.read_failures, unreadable .. " item(s) skipped: a required flag check could not be read")
+  end
+  table.sort(out.candidates, function(a, b) return a.id < b.id end)
+  return out
+end
+
+local function describe_candidate(item)
+  local ok_t, tname = pcall(function() return df.item_type[item:getType()] end)
+  return {id = item.id, item_type = ok_t and tname or nil}
+end
+
+-- CLI words "N:ITEM_ID" / "N:auto" -> {[N] = "auto" | id}. Refuses malformed
+-- words by naming them.
+local function parse_reagent_choices(words)
+  local choices = {}
+  for _, w in ipairs(words or {}) do
+    local n, what = tostring(w):match("^(%d+):(.+)$")
+    n = tonumber(n)
+    if not n or n < 1 then
+      return nil, "REAGENT_CHOICE '" .. tostring(w) .. "' must look like N:ITEM_ID or N:auto (N the reagent number, from 1)"
+    end
+    if what:lower() == "auto" then
+      choices[n] = "auto"
+    elseif tonumber(what) and tonumber(what) >= 0 and tonumber(what) == math.floor(tonumber(what)) then
+      choices[n] = tonumber(what)
+    else
+      return nil, "REAGENT_CHOICE '" .. tostring(w) .. "': the part after ':' must be an item id or auto"
+    end
+    -- One choice per reagent: a duplicate would silently override.
+  end
+  return choices
+end
+
+local function wildcard_refusal(idx, spec)
+  local cand = wildcard_candidates(spec)
+  local head = string.format(
+    "item %d is a wildcard reagent (flags: %s) with no concrete item_type; refusing to guess.",
+    idx, #cand.flags > 0 and table.concat(cand.flags, ", ") or "none")
+  if #cand.unverifiable > 0 then
+    return head .. " This tool cannot verify " .. table.concat(cand.unverifiable, ", ")
+      .. " against an item, so it cannot offer a choice for it."
+  end
+  if #cand.candidates == 0 then
+    return head .. " No free item in the fort satisfies it right now, so there is nothing to choose;"
+      .. " make one (for example craft an empty barrel or pot) and retry."
+  end
+  local shown = {}
+  for i = 1, math.min(#cand.candidates, 5) do
+    local d = describe_candidate(cand.candidates[i])
+    table.insert(shown, tostring(d.id) .. (d.item_type and (" (" .. d.item_type .. ")") or ""))
+  end
+  return string.format(
+    "%s %d free candidate(s), lowest ids first: %s. Resolve it by passing reagent_choice"
+      .. " [\"%d:%d\"] to use item %d, or [\"%d:auto\"] to take the lowest id (%d).",
+    head, #cand.candidates, table.concat(shown, ", "),
+    idx, cand.candidates[1].id, cand.candidates[1].id, idx, cand.candidates[1].id)
+end
+
+-- Turns one wildcard spec + a choice into (concrete item, how) or (nil, err).
+local function choose_wildcard_item(idx, spec, choice)
+  local cand = wildcard_candidates(spec)
+  if #cand.unverifiable > 0 then
+    return nil, "item " .. idx .. ": cannot verify " .. table.concat(cand.unverifiable, ", ")
+      .. " against an item, so no choice can be honoured"
+  end
+  if choice == "auto" then
+    local first = cand.candidates[1]
+    if not first then
+      return nil, "item " .. idx .. ": auto found no free item satisfying " .. table.concat(cand.flags, ", ")
+    end
+    return first, string.format("auto: lowest id of %d free candidate(s) satisfying %s",
+      #cand.candidates, table.concat(cand.flags, ", "))
+  end
+  for _, item in ipairs(cand.candidates) do
+    if item.id == choice then
+      return item, string.format("caller chose item %d (one of %d free candidate(s) satisfying %s)",
+        choice, #cand.candidates, table.concat(cand.flags, ", "))
+    end
+  end
+  return nil, string.format("item %d: item %d is not a free item satisfying %s (%d such candidate(s) exist)",
+    idx, choice, table.concat(cand.flags, ", "), #cand.candidates)
+end
+
 -- Builds every job_item this job entry needs (never partially -- either all
--- resolve to a concrete item or nothing is returned), refusing rather than
--- guessing on the first wildcard/tag-matched item (item_type still -1
--- after all defaults merged). This is the exact refusal contract the old
--- reagent_job_item already had for brew_drink's own container reagent,
--- generalised over every job this tool now reaches.
-local function build_job_items_from_spec(job_entry)
+-- resolve to a concrete item or nothing is returned). A wildcard/tag-matched
+-- reagent (item_type still -1 after all defaults merged) is resolved through
+-- `choices` ({[index] = "auto" | item_id}, see above); with no choice for it
+-- the call refuses, saying which argument would resolve it. `choices` may be
+-- nil (the old behaviour: refuse every wildcard).
+local function build_job_items_from_spec(job_entry, choices)
   local items = job_entry.items or {}
   local job_items, diagnostics, read_failures = {}, {}, {}
   for idx, spec in ipairs(items) do
@@ -426,24 +618,47 @@ local function build_job_items_from_spec(job_entry)
     if not ok_it then
       return nil, string.format("item %d: item_type could not be read", idx)
     end
+    local chosen, how
     if item_type == nil or item_type < 0 then
-      return nil, string.format(
-        "item %d has no concrete item_type (a wildcard/tag-matched reagent"
-          .. " -- e.g. a generic container match -- is not supported by this"
-          .. " tool; refusing rather than guessing a filter for it)", idx)
+      local choice = choices and choices[idx]
+      if choice == nil then
+        return nil, wildcard_refusal(idx, spec)
+      end
+      chosen, how = choose_wildcard_item(idx, spec, choice)
+      if not chosen then
+        return nil, how
+      end
     end
     local jitem, item_read_failures = job_item_from_spec(spec)
     for _, f in ipairs(item_read_failures) do
       table.insert(read_failures, "item " .. idx .. ": " .. f)
     end
+    if chosen then
+      -- Narrow the job's filter to the chosen item's own type/subtype; the
+      -- spec's flags stay, so the game still demands what the recipe demands.
+      local ok_ty, ty = pcall(function() return chosen:getType() end)
+      local ok_st, st = pcall(function() return chosen:getSubtype() end)
+      if not ok_ty or type(ty) ~= "number" or ty < 0 then
+        return nil, "item " .. idx .. ": the chosen item's type could not be read"
+      end
+      jitem.item_type = ty
+      if ok_st and type(st) == "number" then jitem.item_subtype = st end
+      item_type = ty
+    end
     local ok_name, type_name = pcall(function() return df.item_type[item_type] end)
     table.insert(job_items, jitem)
-    table.insert(diagnostics, {
+    local diag = {
       resolved = true,
       index = idx,
       item_type = ok_name and type_name or nil,
       quantity = jitem.quantity,
-    })
+    }
+    if chosen then
+      diag.chosen_item_id = chosen.id
+      diag.chosen_how = how
+      diag.pinned = "item_type/subtype only; the game picks which matching item, so the instance may differ"
+    end
+    table.insert(diagnostics, diag)
   end
   if #job_items == 0 then
     return nil, "this job has no items defined (unexpected)"
@@ -515,6 +730,26 @@ local function summarise_item_spec(spec)
       and has_mat_reaction_product ~= "") and has_mat_reaction_product or nil,
     min_dimension = (min_dimension and min_dimension >= 0) and min_dimension or nil,
   }
+
+  if not summary.concrete then
+    -- A wildcard reagent: say what could resolve it, and how to ask for it.
+    local okc, cand = pcall(wildcard_candidates, spec)
+    if okc and cand then
+      summary.wildcard = {
+        flags = cand.flags,
+        unverifiable_flags = cand.unverifiable,
+        free_candidate_count = #cand.candidates,
+        first_candidates = {},
+        resolve_with = "queue ... reagent_choice [\"<this item's number>:<item id>\"] or \"<n>:auto\"",
+      }
+      for i = 1, math.min(#cand.candidates, 5) do
+        table.insert(summary.wildcard.first_candidates, describe_candidate(cand.candidates[i]))
+      end
+      for _, f in ipairs(cand.read_failures) do table.insert(read_failures, f) end
+    else
+      table.insert(read_failures, "wildcard candidate scan failed")
+    end
+  end
 
   if summary.concrete and item_type_name then
     local ok_avail, avail = pcall(stocks_mod.get_availability, item_type_name)
@@ -638,7 +873,7 @@ end
 -- truncating if the workshop's current queue plus COUNT would exceed
 -- MAX_WORKSHOP_JOBS. See header for the full call sequence real mutation
 -- reproduces, and for why this path remains UNTESTED live this stream.
-function queue_job(job_name, workshop_name, dry_run, repeat_flag, count)
+function queue_job(job_name, workshop_name, dry_run, repeat_flag, count, reagent_choices)
   if not job_name or job_name == "" then
     return nil, "JOB is required"
   end
@@ -648,6 +883,10 @@ function queue_job(job_name, workshop_name, dry_run, repeat_flag, count)
   local n = tonumber(count) or 1
   if n < 1 or n ~= math.floor(n) then
     return nil, "COUNT must be a whole number of at least 1"
+  end
+  local choices, choices_err = parse_reagent_choices(reagent_choices)
+  if not choices then
+    return nil, choices_err
   end
 
   local bld, resolve_err = resolve_building_generic(workshop_name)
@@ -685,7 +924,7 @@ function queue_job(job_name, workshop_name, dry_run, repeat_flag, count)
     end
   end
 
-  local job_items, diag_or_err, read_failures = build_job_items_from_spec(matched)
+  local job_items, diag_or_err, read_failures = build_job_items_from_spec(matched, choices)
   if not job_items then
     return nil, diag_or_err
   end
@@ -727,7 +966,7 @@ function queue_job(job_name, workshop_name, dry_run, repeat_flag, count)
   -- DRY_RUN=false.
   local queued_ids = {}
   for i = 1, n do
-    local items_i, err_i = build_job_items_from_spec(matched)
+    local items_i, err_i = build_job_items_from_spec(matched, choices)
     if not items_i then
       base.create_ok = false
       base.create_error = "job " .. i .. " of " .. n .. ": " .. tostring(err_i)
@@ -858,10 +1097,12 @@ elseif cmd == "list-jobs" then
   print(json.encode(err and {error = err} or result))
 elseif cmd == "queue" then
   local job, workshop, dry_run, repeat_flag, count = args[2], args[3], args[4], args[5], args[6]
+  local reagent_choices = {}
+  for i = 7, #args do table.insert(reagent_choices, args[i]) end
   if not (job and workshop) then
-    print("usage: df-overseer-workjob queue JOB WORKSHOP_LANDMARK_NAME [DRY_RUN] [REPEAT] [COUNT]")
+    print("usage: df-overseer-workjob queue JOB WORKSHOP_LANDMARK_NAME [DRY_RUN] [REPEAT] [COUNT] [REAGENT_CHOICE...]")
   else
-    local result, err = queue_job(job, workshop, dry_run, repeat_flag, count)
+    local result, err = queue_job(job, workshop, dry_run, repeat_flag, count, reagent_choices)
     print(json.encode(err and {error = err} or result))
   end
 elseif cmd == "cancel" then
@@ -875,6 +1116,6 @@ elseif cmd == "cancel" then
 else
   print("usage: df-overseer-workjob list")
   print("usage: df-overseer-workjob list-jobs WORKSHOP_LANDMARK_NAME")
-  print("usage: df-overseer-workjob queue JOB WORKSHOP_LANDMARK_NAME [DRY_RUN] [REPEAT] [COUNT]")
+  print("usage: df-overseer-workjob queue JOB WORKSHOP_LANDMARK_NAME [DRY_RUN] [REPEAT] [COUNT] [REAGENT_CHOICE...]")
   print("usage: df-overseer-workjob cancel JOB_ID [DRY_RUN]")
 end

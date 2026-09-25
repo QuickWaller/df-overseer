@@ -49,4 +49,12 @@ capabilities".
 
 ## Result
 
-(pending)
+Branch `worktree-agent-aa7c31b8951b82735`, two commits, not pushed, nothing deployed, no live call.
+
+**Fix 2 (named optionals), commit 2cdb6b0.** TOOLS.yaml gained script-level `arg_defaults` (per-command `defaults` overrides), a quoted map of optional placeholder to its documented default (LEVEL 0, RANK 1, RADIUS_TILES 30, DRY_RUN true, REPEAT false, COUNT 1, VERSION minimal, AROUND_FURNITURE false), each checked against the Lua's own `x or default`. `dfmcp/registry.py` parses and validates it (`Tool.defaults`); `dfmcp/tools.py` `argv_for_call` fills a skipped optional that precedes a supplied one from it, and still refuses (now saying no default is declared) when there is none (zone.place OWNER; blueprint LEVEL/RANK/RADIUS are deliberately not declared, since the Lua treats a non-nil value there differently). Calls that worked before are unchanged (nothing is filled unless a later optional is supplied). Four tests that pinned the old refusal now pin the fill.
+
+**Fix 1 (wildcard reagent).** `queue` gained a trailing `[REAGENT_CHOICE...]`: `N:ITEM_ID` or `N:auto`. Candidates are free fort items satisfying every flag on the reagent, decided by a per-flag check table in the Lua (empty, food_storage): data, one entry per new tag. A flag with no check is refused, never guessed. The chosen item's type/subtype narrows the job_item and the result reports chosen id and why. No choice still refuses, now naming the exact words to pass plus candidates. `list-jobs` shows wildcard candidates.
+
+**Tests.** Ambient (lupa on PYTHONPATH): 1848 passed 3 skipped before, 1860 passed 3 skipped after. dfmcp/tests: 692 before, 695 after. New: `tests/test_workjob_wildcard_lua_logic.py` (9, fake world).
+
+**Live check owed after deploy:** the real item flags and `isFoodStorage`/`getContainedItems` reads; that DF accepts a job_item narrowed to a barrel/pot type with the recipe's flags and the brew job actually runs (only type/subtype is pinned, not the instance); list-jobs on the Still; the MCP server needs redeploy for fix 2, the fort for fix 1.

@@ -81,6 +81,7 @@ def test_queue_args_gained_count_after_the_existing_four():
     reg = load_registry()
     assert reg.get("workjob.queue").args == [
         "JOB", "WORKSHOP_LANDMARK_NAME", "[DRY_RUN]", "[REPEAT]", "[COUNT]",
+        "[REAGENT_CHOICE...]",
     ]
 
 

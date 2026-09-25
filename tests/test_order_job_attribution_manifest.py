@@ -104,6 +104,7 @@ def test_check_duplicate_and_cancel_signatures():
     assert reg.get("workjob.cancel").args == ["JOB_ID", "[DRY_RUN]"]
     assert reg.get("workjob.queue").args == [
         "JOB", "WORKSHOP_LANDMARK_NAME", "[DRY_RUN]", "[REPEAT]", "[COUNT]",
+        "[REAGENT_CHOICE...]",
     ]
 
 

@@ -83,6 +83,13 @@ class Tool:
     # positional. See dfmcp/tools.py's "Optional groups and repeated
     # arguments" section for what the gap check does with it.
     skippable: tuple = ()
+    # Documented default value (as the command line word) for an optional
+    # argument, keyed by its upper-case placeholder name ("LEVEL", "DRY_RUN").
+    # Declared in TOOLS.yaml (script-level `arg_defaults`, overridden per
+    # command by `defaults`) and used by dfmcp/tools.py to fill a slot the
+    # caller skipped while naming a later optional argument. Only a value the
+    # Lua script itself treats as identical to omission belongs here.
+    defaults: dict = field(default_factory=dict)
 
     @property
     def mutates(self) -> bool:
@@ -193,6 +200,44 @@ def _parse_args(command_signature: str, verb: str) -> list:
     return _ARG_TOKEN_RE.findall(rest)
 
 
+def _parse_defaults(script_name, command_sig, args, script_defaults, command_defaults) -> dict:
+    """Merge a script's `arg_defaults` with a command's own `defaults`.
+
+    Script-level entries naming a placeholder this command does not have as an
+    optional token are ignored (one table serves every command of the script);
+    a command-level entry that does not name an optional placeholder of its own
+    signature is a RegistryError, since it could never take effect."""
+    optional = set()
+    for tok in args:
+        if tok.startswith("[") and tok.endswith("]"):
+            for word in tok[1:-1].split():
+                optional.add(word.rstrip("."))
+    merged: dict = {}
+    for label, table, strict in (
+        ("arg_defaults", script_defaults, False),
+        ("defaults", command_defaults, True),
+    ):
+        if table is None:
+            continue
+        if not isinstance(table, dict):
+            raise RegistryError(f"{script_name} {command_sig!r}: {label} must be a mapping")
+        for key, value in table.items():
+            if key not in optional:
+                if strict:
+                    raise RegistryError(
+                        f"{script_name} {command_sig!r}: {label} names {key!r}, which is not "
+                        f"an optional argument of this signature ({sorted(optional)})"
+                    )
+                continue
+            if isinstance(value, bool) or value is None or isinstance(value, (dict, list)):
+                raise RegistryError(
+                    f"{script_name} {command_sig!r}: {label}[{key}] must be a quoted string or "
+                    f"number (the exact command-line word), got {value!r}"
+                )
+            merged[key] = str(value)
+    return merged
+
+
 def load_registry(path=DEFAULT_TOOLS_YAML, *, native_tools: Optional[Mapping[str, Any]] = None) -> Registry:
     """Load and validate scripts/dfhack/TOOLS.yaml.
 
@@ -275,6 +320,14 @@ def load_registry(path=DEFAULT_TOOLS_YAML, *, native_tools: Optional[Mapping[str
                         f"optional (bracketed) token of this signature; its tokens are {args}"
                     )
 
+            defaults = _parse_defaults(
+                script_name, command_sig, args, script_body.get("arg_defaults"), spec.get("defaults")
+            )
+
+            defaults = _parse_defaults(
+                script_name, command_sig, args, script_body.get("arg_defaults"), spec.get("defaults")
+            )
+
             tools[tool_id] = Tool(
                 id=tool_id,
                 script=script_name,
@@ -289,6 +342,7 @@ def load_registry(path=DEFAULT_TOOLS_YAML, *, native_tools: Optional[Mapping[str
                 args=args,
                 build_order_item=build_order_item,
                 skippable=tuple(skippable),
+                defaults=defaults,
             )
 
     collisions = {tid: sigs for tid, sigs in seen.items() if len(sigs) > 1}

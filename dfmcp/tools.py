@@ -115,6 +115,16 @@ Two forms beyond `NAME` and `[NAME]`, and nothing else:
 A token that is none of these (`[w`, `LAB OR`, `A..B`) is a `ToolSchemaError`
 when the schema or argv is built, not a property with a junk name.
 
+**Declared defaults fill a skipped slot** (2026-09-25,
+`handoffs/2026-09-25-tool-gaps-from-first-cycle.md`). An agent may name any
+optional argument in any combination. A skipped optional that precedes a
+supplied one is filled with the default TOOLS.yaml declares for it
+(script-level `arg_defaults`, overridden per command by `defaults`, keyed by
+the upper-case placeholder), and refused, saying no default is declared, only
+when it has none. A declared default must be exactly what the Lua script does
+when the argument is omitted, so a call that worked before is byte-for-byte
+unchanged (nothing is filled unless a later optional was supplied).
+
 **Why the gap check needs a declaration for groups.** The rule below (a
 later optional cannot be given while an earlier one is omitted) stops a
 positional command line from silently shifting. An omitted `[W H]` followed
@@ -318,6 +328,16 @@ _ARG_DESCRIPTIONS: Dict[str, str] = {
     # Scoped entries ("<script short name>.<TOKEN>") win over the bare token
     # for that script's commands: KIND and W/H mean different things in
     # building, workshop and zone. Added 2026-09-21.
+    "workjob.REAGENT_CHOICE": (
+        "Optional, repeatable. Resolves a reagent the job matches by tag "
+        "rather than by item type (for example the empty food storage "
+        "container every brewing job needs). Each word is N:ITEM_ID (use that "
+        "free item) or N:auto (take the lowest-id free candidate), N being the "
+        "1-based reagent number workjob.list-jobs shows for that job, which "
+        "also lists the free candidates. Nothing is created: it can only pick "
+        "an existing free item. Without a choice such a job is refused, and "
+        "the refusal names the exact words to pass."
+    ),
     "building.KIND": (
         "The building kind, exactly as building.list-kinds gives it in its "
         "`token` field (Still, Carpenters, Bed, FarmPlot), or quickfort's own "
@@ -812,6 +832,10 @@ def argv_for_call(tool: Tool, arguments: Mapping[str, Any]) -> List[str]:
     # `skippable` (the CLI works out what was given by how many leading
     # numbers it sees) does not block a later one.
     skippable = set(getattr(tool, "skippable", ()) or ())
+    defaults = dict(getattr(tool, "defaults", {}) or {})
+    # Spec index -> the documented default word to put on the command line for
+    # a slot the caller skipped while naming a later optional argument.
+    filled: Dict[int, str] = {}
     unit_supplied = [any(supplied[i] for i in indices) for _raw, indices, _r in units]
     optional_units = [u for u, (_raw, _idx, required) in enumerate(units) if not required]
     supplied_optionals = [u for u in optional_units if unit_supplied[u]]
@@ -820,21 +844,30 @@ def argv_for_call(tool: Tool, arguments: Mapping[str, Any]) -> List[str]:
         for u in optional_units:
             if u >= last:
                 break
-            if not unit_supplied[u] and units[u][0] not in skippable:
-                first_name = specs[units[u][1][0]].name
-                last_name = specs[units[last][1][0]].name
-                raise ArgumentError(
-                    f"{tool.id}: cannot supply {last_name!r} without also supplying the "
-                    f"earlier optional argument {first_name!r} ({units[u][0]}) -- DFHack's "
-                    "command line is positional and cannot skip a slot. Pass a value for it "
-                    "explicitly, or omit both."
-                )
+            if unit_supplied[u] or units[u][0] in skippable:
+                continue
+            members = units[u][1]
+            member_defaults = {i: defaults.get(specs[i].name.upper()) for i in members}
+            if all(v is not None for v in member_defaults.values()):
+                filled.update(member_defaults)
+                continue
+            first_name = specs[members[0]].name
+            last_name = specs[units[last][1][0]].name
+            raise ArgumentError(
+                f"{tool.id}: cannot supply {last_name!r} without also supplying the "
+                f"earlier optional argument {first_name!r} ({units[u][0]}) -- DFHack's "
+                "command line is positional and cannot skip a slot, and TOOLS.yaml declares "
+                "no default for it to be filled with. Pass a value for it "
+                "explicitly, or omit both."
+            )
 
     script = tool.script[: -len(".lua")] if tool.script.endswith(".lua") else tool.script
     verb = tool.id.split(".", 1)[1]
     argv = [script, verb]
-    for spec, has in zip(specs, supplied):
+    for i, (spec, has) in enumerate(zip(specs, supplied)):
         if has:
             for item in _items_of(spec, arguments[spec.name]):
                 argv.append(_validate_value(tool.id, spec, item))
+        elif i in filled:
+            argv.append(_validate_value(tool.id, spec, filled[i]))
     return argv
