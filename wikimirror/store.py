@@ -533,7 +533,15 @@ class Store:
                 change_kind, op, old_revid, old_len, old_title = "added", "new", None, None, None
             else:
                 latest = row["latest_revid"] or row["revid"] or 0
-                if rev.revid <= latest:
+                if row["state"] == "deleted":
+                    # A restored page keeps its revid, so the revid test cannot apply to a
+                    # tombstone; only a restore already held for this revid is a repeat.
+                    if self.conn.execute(
+                        "SELECT 1 FROM held_changes WHERE page_id = ? AND op = 'restore' AND revid = ?",
+                        (rev.page_id, rev.revid),
+                    ).fetchone():
+                        return ApplyResult("unchanged", rev.page_id)
+                elif rev.revid <= latest:
                     return ApplyResult("unchanged", rev.page_id)
                 if row["state"] == "deleted":
                     change_kind, op = "restored", "restore"
@@ -658,6 +666,43 @@ class Store:
             page_id, "delete", title=None, ns=None, reason=reason, run_id=run_id, seq=seq,
             source=source, wiki_timestamp=wiki_timestamp, edit_summary=edit_summary,
         )
+
+    def cancel_held(self, page_id: int, ops: Sequence[str] = ("delete",)) -> int:
+        """Drop held changes of the given ops for a page (e.g. a held delete when the
+        page reappears). Their changelog rows never became visible and are removed with
+        them. Returns how many were cancelled."""
+        if not ops:
+            return 0
+        marks = ",".join("?" for _ in ops)
+        with self.transaction():
+            ids = [
+                r["change_id"]
+                for r in self.conn.execute(
+                    f"SELECT change_id FROM held_changes WHERE page_id = ? AND op IN ({marks})",
+                    (page_id, *ops),
+                ).fetchall()
+            ]
+            for cid in ids:
+                self.conn.execute("DELETE FROM held_changes WHERE change_id = ?", (cid,))
+                self.conn.execute("DELETE FROM changes WHERE id = ? AND state = 'held'", (cid,))
+            if ids and self.conn.execute("SELECT 1 FROM pages WHERE page_id = ?", (page_id,)).fetchone():
+                self._refresh_page_visible_after(page_id)
+            return len(ids)
+
+    def replace_redirects(self, rows: Iterable[Sequence[Any]], ns_ids: Sequence[int]) -> int:
+        """Replace the redirect rows whose `from_ns` is in `ns_ids` with `rows`, each
+        `(from_title, from_ns, to_title, to_ns)`. One transaction (re-entrant)."""
+        marks = ",".join("?" for _ in ns_ids)
+        n = 0
+        with self.transaction():
+            self.conn.execute(f"DELETE FROM redirects WHERE from_ns IN ({marks})", list(ns_ids))
+            for ft, fns, tt, tns in rows:
+                self.conn.execute(
+                    "INSERT OR REPLACE INTO redirects(from_title, from_ns, from_page_id, to_title, to_ns) "
+                    "VALUES (?,?,?,?,?)", (ft, fns, None, tt, tns),
+                )
+                n += 1
+        return n
 
     def archive_served_revision(self, page_id: int) -> bool:
         """Copy the served body to `revision_archive` (design 7.3). Caller decides when

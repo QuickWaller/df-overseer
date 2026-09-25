@@ -272,6 +272,7 @@ def test_log_events_keep_the_move_target(make_client):
     client, _ = make_client({"query": {"logevents": [row]}})
     ev = client.log_events(log_type="move")
     assert ev[0].target_title == "New" and ev[0].page_id == 4
+    assert ev[0].target_ns == 0
 
 
 def test_all_redirects_joins_sources_to_targets_and_keeps_unresolved(make_client):

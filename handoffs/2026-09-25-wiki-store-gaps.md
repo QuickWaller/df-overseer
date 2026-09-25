@@ -26,4 +26,9 @@ not needed. Report pass counts before and after.
 
 ## Result
 
-(pending)
+Gaps (from the S5 register row, 2026-09-24; S6 noted a fifth wish, `get_archived_revision`, not done):
+1. Restore of a tombstone with an unchanged revid was 'unchanged': `apply_revision` now skips the revid test for a deleted page (repeat of an already-held restore stays idempotent).
+2. No way to cancel a held change: added `Store.cancel_held(page_id, ops)`.
+3. `api.LogEvent` dropped `target_ns`: added `target_ns` (this one lives in `api.py`, not `store.py`; touched deliberately, minimal).
+4. No redirect write method: added `Store.replace_redirects(rows, ns_ids)`.
+Not wired: `refresh.py` still writes redirects by raw SQL and does not call `cancel_held`; its restore test was updated (the warning is gone). Tests: wikimirror 243 passed before, 246 after.

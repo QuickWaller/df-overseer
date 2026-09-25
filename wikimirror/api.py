@@ -223,6 +223,7 @@ class LogEvent:
     comment: str
     target_title: str | None
     fetched_utc: str
+    target_ns: int | None = None
 
 
 @dataclass(frozen=True)
@@ -623,6 +624,10 @@ class WikiClient:
                     comment=str(row.get("comment", "")),
                     target_title=(row.get("params") or {}).get("target_title"),
                     fetched_utc=fetched,
+                    target_ns=(
+                        int((row.get("params") or {})["target_ns"])
+                        if (row.get("params") or {}).get("target_ns") is not None else None
+                    ),
                 )
             )
         return out

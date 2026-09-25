@@ -409,7 +409,7 @@ def test_delete_then_restore_inside_one_window_holds_nothing(world):
     assert res.status == "ok" and not world.changes()
 
 
-def test_a_restore_of_an_already_deleted_page_is_named_not_silently_lost(world):
+def test_a_restore_of_an_already_deleted_page_is_held_and_applied(world):
     world.wiki.delete(3, at(1))
     world.wall.advance(hours=6)
     world.run()
@@ -418,9 +418,9 @@ def test_a_restore_of_an_already_deleted_page_is_named_not_silently_lost(world):
     world.wiki.restore(3, at(24 * 8 + 1))
     world.wall.advance(hours=6)
     res = world.run()
-    # S1's store compares revids and a restored page keeps its old one, so it cannot apply
-    # the restore; the run must SAY so (this asserts the warning, and documents the gap).
-    assert any(w.startswith("restore_not_applied:") for w in res.warnings)
+    # The store now holds the restore (its revid equals the tombstone's), no warning.
+    assert not any(w.startswith("restore_not_applied:") for w in res.warnings)
+    assert world.changes()
 
 
 def test_a_move_without_a_target_asks_for_a_sweep(world):

@@ -497,3 +497,44 @@ def test_failed_swap_restores_the_previous_database(tmp_path, wall, monkeypatch)
         promote(staged, live)
     monkeypatch.setattr(store_mod.os, "replace", real_replace)
     assert live.read_bytes() == before
+
+
+# ---- S5 follow-up gaps -------------------------------------------------------------
+
+
+def test_restore_with_the_same_revid_is_held_and_applied(store, wall):
+    baseline(store, make_rev(revid=100, text="water source"))
+    store.apply_delete(1)
+    wall.advance(days=7)
+    store.promote_due()
+    assert store.get_page("Well")["state"] == "deleted"
+    res = hold(store, make_rev(revid=100, text="water source"))
+    assert res.action == "held"
+    # a second sight of the same restore is idempotent, not a second held row
+    assert hold(store, make_rev(revid=100, text="water source")).action == "unchanged"
+    wall.advance(days=7)
+    store.promote_due()
+    p = store.get_page("Well")
+    assert p["state"] == "live" and p["revid"] == 100 and "water" in p["wikitext"]
+    assert store.search("water")
+
+
+def test_a_held_delete_can_be_cancelled_and_never_promotes(store, wall):
+    baseline(store, make_rev(text="water source"))
+    store.apply_delete(1)
+    assert store.cancel_held(1, ops=("delete",)) == 1
+    assert store.held_change_count(1) == 0
+    assert store.get_page("Well")["visible_after"] is None
+    assert store.changes_since(state="held") == []
+    wall.advance(days=7)
+    assert store.promote_due() == []
+    assert store.get_page("Well")["state"] == "live"
+    assert store.cancel_held(1, ops=("delete",)) == 0
+
+
+def test_set_redirects_replaces_the_namespace_rows_in_the_store(store):
+    store.replace_redirects([("Old", 0, "Well", 0), ("Gone", 0, "Well", 0)], [0])
+    assert store._read("SELECT COUNT(*) FROM redirects").fetchone()[0] == 2
+    store.replace_redirects([("Old", 0, "Well", 0)], [0])
+    rows = store._read("SELECT from_title, to_title FROM redirects").fetchall()
+    assert [tuple(r) for r in rows] == [("Old", "Well")]
