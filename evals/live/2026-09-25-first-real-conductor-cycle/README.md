@@ -69,3 +69,9 @@ After the cycle the fort was re-read independently: paused, tick 174297 (no
 game time passed), 22 alive, 0 warnings, worst hunger and thirst "fine", the
 tripwire armed on defaults. The queue rows above were read from the queue
 database directly, not taken from the roles' own reports.
+
+## Second cycle, same day: crashed before the Consultant ran
+
+After deploying the conductor fixes (16 files hash-verified, old copy backed up), a dry run planned one wake, the Consultant for the open `ask-0001` (the re-wake fix works). The real run then **crashed** with `PermissionError` writing `SOUL.md` into the Consultant's workspace directory, which is owned by root while the other three role workspaces are owned by the service account. Fort untouched (paused, tick 174297), no containers, cursors not advanced.
+
+Two findings: (1) the Consultant workspace ownership is drift from the other roles and blocks its first real run; (2) **`write_soul` in `conductor/runner.py` sits outside the runner's `launch_failed` handling**, so a charter write failure crashes the whole service instead of being recorded as a failed run, and under `Restart=on-failure` that would loop. Cost recording for a successful run is still unobserved.
