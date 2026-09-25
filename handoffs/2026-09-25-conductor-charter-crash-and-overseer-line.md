@@ -44,4 +44,7 @@ say exactly what must be copied to the VM for fix 2 to take effect.
 
 ## Result
 
-(pending)
+Done on branch worktree-agent-aa7e7ed7388f550ce. conductor tests 190 -> 193 passed (plus a cycle-level cursor test); dfmcp roster/charter tests 35 passed.
+1. `DockerOpenClawRunner.run` now wraps write_soul (failure -> RunResult launch_failed, cost None, error with type and message, logged ERROR) and cleanup_workspace (failure -> cleanup_failed, ok False, cost kept). Cursor not advanced, tested.
+2. One rule added to agents/overseer/role.md and a mirror line in agents/consultant/role.md.
+Charters: conductor/service.py load_charters reads agents/<role>/role.md from the conductor's own checkout (REPO_ROOT/agents) fresh each cycle; pinned_config_dir holds only per-role openclaw json. Copy agents/overseer/role.md and agents/consultant/role.md plus conductor/runner.py to the VM checkout; no restart needed for charters, restart for runner.py.

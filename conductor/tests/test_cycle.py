@@ -814,3 +814,24 @@ async def test_the_per_role_timeout_from_policy_reaches_the_runner(tmp_path):
     await run_cycle(1, _deps(tmp_path, tools=tools, runner=runner))
     by_role = {c["role"]: c["timeout_seconds"] for c in runner.calls}
     assert by_role[OVERSEER] == POLICY.role_timeout_seconds["overseer"]
+
+
+async def test_a_soul_write_failure_is_a_recorded_failed_run_and_keeps_the_cursor(tmp_path):
+    from conductor.runner import DockerOpenClawRunner
+
+    blocker = tmp_path / "not-a-dir"
+    blocker.write_text("x")  # workspace_root is a file: mkdir raises, like a root-owned dir
+
+    async def _never(*a, **k):
+        raise AssertionError("must not launch after a failed write_soul")
+
+    runner = DockerOpenClawRunner(
+        pinned_config_dir=tmp_path / "c", openclaw_state_dir=tmp_path / "s",
+        workspace_root=blocker / "ws", secrets_env_file=tmp_path / "e",
+        subprocess_exec=_never,
+    )
+    tools = _base_tools()
+    tools["diff.since"] = _diff_sequence([[{"id": 1, "type": "migrant_wave"}], [{"id": 2}]])
+    deps = _deps(tmp_path, tools=tools, runner=runner)
+    await run_cycle(1, deps)  # must not raise
+    assert deps.cursor_store.get("architect") == 0  # failed run: not advanced

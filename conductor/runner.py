@@ -36,11 +36,14 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import time
 import uuid
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any, Awaitable, Callable, Dict, List, Optional, Protocol
+
+LOG = logging.getLogger("conductor.runner")
 
 #: The image every real run so far has used, unchanged 2026-09-14 through
 #: 2026-09-18 (research/2026-09-18-openclaw-capabilities.md).
@@ -242,48 +245,78 @@ class DockerOpenClawRunner:
         `cleanup_workspace`'s own docstrings). `charter=None` (a role whose
         deploy config already carries a persisted charter another way) skips
         both steps."""
+        started = self._clock()
+        if charter is not None:
+            try:
+                self.write_soul(role, charter)
+            except Exception as exc:  # e.g. root-owned workspace (PermissionError)
+                return self._failed_run(role, "launch_failed", started, "write_soul failed", exc)
+        result = await self._run_launched(
+            role, prompt, model=model, timeout_seconds=timeout_seconds, started=started,
+        )
+        if charter is not None:
+            try:
+                self.cleanup_workspace(role)
+            except Exception as exc:
+                # The run happened and may have cost money: keep its cost and
+                # timing, but record the run as failed so it is never trusted.
+                failed = self._failed_run(role, "cleanup_failed", started, "cleanup_workspace failed", exc)
+                return replace(
+                    failed, cost_usd=result.cost_usd, timed_out=result.timed_out,
+                    tool_summary=result.tool_summary, final_answer=result.final_answer,
+                    raw=result.raw,
+                )
+        return result
+
+    def _failed_run(
+        self, role: str, status: str, started: float, what: str, exc: Exception,
+    ) -> RunResult:
+        LOG.error("conductor runner: %s for role %s: %s: %s", what, role, type(exc).__name__, exc)
+        return RunResult(
+            role=role, ok=False, status=status, cost_usd=None,
+            wall_clock_seconds=self._clock() - started, timed_out=False,
+            tool_summary={}, final_answer=None, raw={},
+            error=f"{what}: {type(exc).__name__}: {exc}",
+        )
+
+    async def _run_launched(
+        self, role: str, prompt: str, *, model: str, timeout_seconds: float, started: float,
+    ) -> RunResult:
         container_name = f"conductor-{role}-{uuid.uuid4().hex[:12]}"
         command = self.build_command(
             role, prompt, model=model, container_name=container_name,
             timeout_seconds=timeout_seconds,
         )
-        started = self._clock()
 
-        if charter is not None:
-            self.write_soul(role, charter)
         try:
-            try:
-                process = await self._subprocess_exec(
-                    *command,
-                    stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
-                )
-            except Exception as exc:  # docker itself missing, permission denied, etc.
-                return RunResult(
-                    role=role, ok=False, status="launch_failed", cost_usd=None,
-                    wall_clock_seconds=self._clock() - started, timed_out=False,
-                    tool_summary={}, final_answer=None, raw={}, error=f"{type(exc).__name__}: {exc}",
-                )
+            process = await self._subprocess_exec(
+                *command,
+                stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
+            )
+        except Exception as exc:  # docker itself missing, permission denied, etc.
+            return RunResult(
+                role=role, ok=False, status="launch_failed", cost_usd=None,
+                wall_clock_seconds=self._clock() - started, timed_out=False,
+                tool_summary={}, final_answer=None, raw={}, error=f"{type(exc).__name__}: {exc}",
+            )
 
-            try:
-                stdout, stderr = await asyncio.wait_for(
-                    process.communicate(), timeout=timeout_seconds + self._grace,
-                )
-            except asyncio.TimeoutError:
-                process.kill()
-                await process.wait()
-                # Killing the `docker run` client does NOT stop the
-                # container (it keeps running, and spending, detached from
-                # the client). Stop it by name, best effort.
-                await self._kill_container(container_name)
-                return RunResult(
-                    role=role, ok=False, status="timeout", cost_usd=None,
-                    wall_clock_seconds=self._clock() - started, timed_out=True,
-                    tool_summary={}, final_answer=None, raw={},
-                    error=f"timed out after {timeout_seconds + self._grace}s (cost unknown)",
-                )
-        finally:
-            if charter is not None:
-                self.cleanup_workspace(role)
+        try:
+            stdout, stderr = await asyncio.wait_for(
+                process.communicate(), timeout=timeout_seconds + self._grace,
+            )
+        except asyncio.TimeoutError:
+            process.kill()
+            await process.wait()
+            # Killing the `docker run` client does NOT stop the
+            # container (it keeps running, and spending, detached from
+            # the client). Stop it by name, best effort.
+            await self._kill_container(container_name)
+            return RunResult(
+                role=role, ok=False, status="timeout", cost_usd=None,
+                wall_clock_seconds=self._clock() - started, timed_out=True,
+                tool_summary={}, final_answer=None, raw={},
+                error=f"timed out after {timeout_seconds + self._grace}s (cost unknown)",
+            )
 
         wall_clock = self._clock() - started
         text = stdout.decode("utf-8", errors="replace").strip()

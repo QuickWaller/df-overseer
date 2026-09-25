@@ -232,6 +232,39 @@ class TestRunWithCharter:
         assert not soul_path.is_file()
 
 
+@pytest.mark.asyncio
+class TestCharterIoFailures:
+    async def test_a_failing_write_soul_is_a_recorded_failed_run_not_a_crash(self, tmp_path, caplog):
+        async def _never(*a, **k):
+            raise AssertionError("must not launch")
+        runner = _runner(tmp_path, _never)
+
+        def _boom(role, text):
+            raise PermissionError("root-owned")
+        runner.write_soul = _boom
+        with caplog.at_level("ERROR"):
+            result = await runner.run("consultant", "x", model="m", charter="# C")
+        assert result.ok is False
+        assert result.status == "launch_failed"
+        assert result.cost_usd is None
+        assert "PermissionError" in result.error and "root-owned" in result.error
+        assert any(r.levelname == "ERROR" for r in caplog.records)
+
+    async def test_a_failing_cleanup_marks_the_run_failed_but_keeps_its_cost(self, tmp_path, caplog):
+        runner = _runner(tmp_path, _fake_exec(_FakeProcess(json.dumps(_OK_ENVELOPE).encode())))
+
+        def _boom(role):
+            raise PermissionError("cannot unlink")
+        runner.cleanup_workspace = _boom
+        with caplog.at_level("ERROR"):
+            result = await runner.run("overseer", "x", model="m", charter="# C")
+        assert result.ok is False
+        assert result.status == "cleanup_failed"
+        assert result.cost_usd == 0.0068  # real spend is not discarded
+        assert "PermissionError" in result.error
+        assert any(r.levelname == "ERROR" for r in caplog.records)
+
+
 # ---------------------------------------------------------------------------
 # FakeRoleRunner: the double conductor/cycle.py's own tests use
 # ---------------------------------------------------------------------------

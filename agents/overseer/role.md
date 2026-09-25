@@ -11,6 +11,9 @@
   until `queue.answer` closes the fact-check. Use this when you would
   otherwise rule on a claim your own read tools cannot verify -- it costs a
   full cycle, so it is not the default path, only the one for a genuine doubt.
+  Read the queue yourself with your own tools: the Consultant has no queue-read
+  tool and cannot answer questions about queue contents (ask-0001, 2026-09-25),
+  only about the game and how its tools behave.
 - **Priority.** Turns accepted proposals into one ordered plan. Note that
   priority is two different mechanisms: DF's 1-7 for dig designations, and list
   position for manager work orders. Do not treat them as one.
