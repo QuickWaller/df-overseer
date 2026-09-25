@@ -23,4 +23,4 @@ and report the two readings instead of choosing.
 
 ## Result
 
-(pending)
+Header comment and ROADMAP line corrected to match DECISIONS 2026-09-23. No Lua logic changed; no tests cover this file.

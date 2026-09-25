@@ -445,13 +445,12 @@ or `decisions/DECISIONS.md`, not here.
   shared walkable group with no danger flag, and correctly excluded the two
   demons that DO carry danger flags, confirmed by direct query rather than by
   trusting the scan's silence. Reachability gates admission; flags do not.
-  `df-overseer-breach.lua` is **INCONCLUSIVE and must be treated as covering
-  nothing**: its cheap first stage keys off a block flag that was set on zero
-  of 26,784 blocks across 11 polls, on a map whose water is fully settled, so
-  that cannot distinguish "DF never sets it" from "nothing changed". **So flood
-  response is still covered by nothing**, exactly as before the detector
-  existed, and the opportunistic test (rain, or an animal fording water)
-  remains the way to settle it. Original text follows.
+  `df-overseer-breach.lua`'s stage-1 gate **works** (corrected 2026-09-23):
+  the earlier zero-of-26,784 reading was a settled map, not a dead flag; live
+  re-check flagged 3 blocks at the Well, matching DFHack's `flows` tool, and
+  the baseline-delta design reports it as `info`. A real rising breach has not
+  yet been observed, so response is untested, not uncovered.
+  -> `decisions/DECISIONS.md` 2026-09-23. Original text follows.
 - **Superseded. NOW, required work rather than polish: two safety detectors do
   not exist.** Verified from DFHack source 2026-09-12. **Water or magma breach
   has no event and no announcement type at all**, a checked negative, so

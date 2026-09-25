@@ -52,8 +52,14 @@
 --     exterminate.lua:13, modtools/spawn-liquid.lua:33 (all WRITE this field
 --     to mark a block for liquid-flow simulation -- confirms it's a real,
 --     settable, per-block bit, not a derived/read-only value)
--- No live DFHack command was run to confirm this project's OWN fort ever
--- sets these fields during real play -- see the honest-gap list below.
+-- CORRECTED 2026-09-23 (decisions/DECISIONS.md 2026-09-23): this header once
+-- recorded update_liquid set on zero of 26,784 blocks across 11 polls and
+-- concluded the detector might cover nothing. That was wrong: re-checked live,
+-- 3 blocks were flagged, traced to the fort's Well, and DFHack's own `flows`
+-- tool agreed exactly; the orchestrator re-ran it independently. The stage-1
+-- gate works. Earlier polls saw zero because the map's water was fully
+-- settled. The baseline-delta design already treats the Well as severity
+-- `info` (nothing rose). A rising real breach has still not been observed.
 --
 -- TWO-STAGE DESIGN, because cost matters (the task's own framing, and this
 -- project's own experience: df-overseer-diff.lua already flags
