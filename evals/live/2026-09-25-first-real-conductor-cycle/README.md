@@ -103,3 +103,19 @@ Nothing was suggested to the agents. The routine review was made due (cursor key
 **Supervised unpause afterwards (10 FPS, 600 s, tick 180208 to 186326):** nothing built, as expected; the dwarves slept, ate and drank (9 polls with `Drink` jobs), 22 alive, 0 warnings, re-paused, no stuck jobs.
 
 **Finding:** the Overseer's final answer, which is a question for the user, is delivered nowhere except the run archive. An escalation to the human needs a delivery path (the agent activity feed, `ROADMAP.md` Later, or a notification).
+
+## Fifth cycle, 2026-09-28: bedroom dig accepted and executed; a genuine duplicate-proposal gap found
+
+Fort untouched since the last window (paused, tick 192334, 22 alive). Dry run showed the routine review was due on its own (10.1 game days) plus stalled/blocked manager orders (0, 1, 2); ran for real, all four roles woke, cost recorded throughout (day total $0.121, 0 unknown).
+
+**Architect** ($0.024, 170s): filed `proposal-0008`, the first bedroom cell's dig shell near the Farm Plot, reasoning that 22 dwarves have no beds or bedroom zone. Asked the Consultant what `proposal-0007` (still open from 2026-09-25, deferred not rejected) asks for.
+
+**Quartermaster** ($0.017, 101s): asked the Consultant to report the whole queue (a queue-read tool it does not have). **Filed `proposal-0009`, a near-duplicate of the still-open `proposal-0007`** (queue brewing directly at the Still), without checking that an equivalent proposal already existed, and got a specific fact wrong: it described the barrels as already empty, when they hold the fort's plant stock.
+
+**Consultant** ($0.023, 115s): correctly refused both queue-content questions (no queue-read tool, by design), and for the Architect's second question gave a real, correct read of what's missing (no bedrooms, etc).
+
+**Overseer** ($0.057, 343s): **rejected `proposal-0007`** (deferred since cycle B) and **rejected `proposal-0009`**, both for the same live-verified reason (`workjob.list-jobs` container reagent has 0 free candidates), and for 0009 explicitly caught the Quartermaster's wrong claim that barrels were empty. **Accepted and executed `proposal-0008`**: previewed the bedroom shell (10/10 tiles reachable, no unsmoothable material), verified labor (2 miners, 2 masons, 3 stonecutters) and 0 beds/bedrooms in stock, then designated the dig for real (`blueprint.apply`, 12 tiles, `designations_landed: true`).
+
+**Finding: a real duplicate-proposal gap, not just staleness.** The Quartermaster filed `proposal-0009` without checking `proposal-0007` was still open, and it also introduced a factual error the earlier proposal didn't have. `orders.check-duplicate` (gotcha-0002) only covers manager orders; there is no equivalent check against the architect/quartermaster's own open proposals before filing a new one. Worth a queue-side duplicate check, generalisable across proposal types, not specific to brewing.
+
+Fort re-read after: paused, tick 192334 unchanged (fps left at 10 by the conductor's own clock policy, not a manual change), stuck-job list shows the same lone unassigned `FellTree` from the prior window (only one woodcutter).
