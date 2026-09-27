@@ -70,11 +70,43 @@
 -- df-overseer-stocks.lua's availability read (the six-deduction one; the
 -- plain fort-owned count this file's sibling used to report ignored
 -- in_building and was found to overstate boulders, register 2026-09-19).
--- Counts are by ITEM TYPE ONLY: a filter's own flags (empty, screw, fire_safe,
--- non_economic) are listed but not applied, and the result says so.
+-- Counts are by ITEM TYPE ONLY for a plain item-type filter: a filter's own
+-- flags (empty, screw, fire_safe, non_economic) are listed but not applied,
+-- and the result says so.
 -- NB the filters' `vector_id` is a df.job_item_vector_id, whose numbers do
 -- NOT line up with df.items_other_id (54 is BED in one and CHAIN in the
 -- other); this file maps by NAME, from the filter's item_type.
+--
+-- MATERIAL CHOICE (2026-09-28, handoffs/2026-09-28-building-material-choice-
+-- and-repeat-kind.md). A `building_material`-class filter (boulder/log/
+-- block, any of them) is broken down by decoded material name
+-- (dfhack.matinfo.decode), not just item type, so counts distinguish, say,
+-- SHALE boulders from HEMATITE boulders. Whether a material is the game's
+-- own "economic" stone (has at least one entry in its raws'
+-- `economic_uses`, UNVERIFIED LIVE: read the real DFHack API before relying
+-- on this field name, see the Result section) is read per material, and the
+-- tool DEFAULTS to excluding economic materials from the material it would
+-- actually build with -- the motivating case is the 2026-09-25 live run
+-- building the fort's first Carpenter's Workshop out of 8 hematite blocks
+-- (economic) while shale sat available. MATERIAL_CHOICE, the tool's last
+-- argument, overrides this: "allow_economic" opts back in, or naming a
+-- material directly (e.g. SHALE) picks it explicitly even if it is
+-- economic -- an explicit choice is never second-guessed, same shape as
+-- df-overseer-workjob.lua's `reagent_choice` fix (2026-09-25): candidates
+-- listed, resolved by explicit choice or a safe default, never silently
+-- guessed. If the filter's own flags already require non_economic, that
+-- always wins over an "allow_economic" override (the game would refuse
+-- economic material there regardless).
+--
+-- KIND_PREVIOUSLY_BUILT (2026-09-28, same handoff). `find` and `build` both
+-- report whether a real (non-dry-run) building of this exact kind
+-- (type/subtype/custom) already exists at full build stage
+-- (bld:getBuildStage() == bld:getMaxBuildStage(), the same live-verified
+-- fields df-overseer-zone.lua's content_row already reads) -- true, false,
+-- or null when a matching building's stage or subtype could not be read.
+-- This replaces a static "never build live" note that stayed stale after
+-- the fort's first real build (see TOOLS.yaml): the caller (or the MCP
+-- layer's go-ahead gate) reads this field instead of trusting fixed text.
 --
 -- `gaps` is a plain list of strings (docs/BUILDING-TOOL.md decision 5): the
 -- tool reports and never refuses, so "build now, barrels later" still works.
@@ -99,11 +131,14 @@
 -- quickfort's -c argument.
 --
 -- Usage: ./dfhack-run df-overseer-building list-kinds [FILTER]
--- Usage: ./dfhack-run df-overseer-building find KIND [W H] [LEVEL] NEAR_LANDMARK [RADIUS_TILES]
--- Usage: ./dfhack-run df-overseer-building build KIND [W H] [LEVEL] NEAR_LANDMARK [RANK] [RADIUS_TILES] [DRY_RUN]
+-- Usage: ./dfhack-run df-overseer-building find KIND [W H] [LEVEL] NEAR_LANDMARK [RADIUS_TILES] [MATERIAL_CHOICE]
+-- Usage: ./dfhack-run df-overseer-building build KIND [W H] [LEVEL] NEAR_LANDMARK [RANK] [RADIUS_TILES] [DRY_RUN] [MATERIAL_CHOICE]
 --   W H are optional for fixed-size kinds and validated against the kind's
 --   min/max for the rest; one bare number is LEVEL, two are W H, three are
 --   W H LEVEL. A positional CLI cannot skip a slot once a later one is given.
+--   MATERIAL_CHOICE is optional and only affects a building_material filter:
+--   omit it to exclude economic materials by default, pass "allow_economic"
+--   to allow them, or name a material (e.g. SHALE) to pick it explicitly.
 
 local json = require('json')
 local landmarks_mod = reqscript('df-overseer-landmarks')
@@ -316,6 +351,95 @@ local function resolve_kind(name)
   local msg = "unknown building kind: " .. s .. " (run list-kinds)"
   if #hints > 0 then msg = msg .. "; did you mean: " .. table.concat(hints, ", ") end
   return nil, msg
+end
+
+-- ---------------------------------------------------------------------------
+-- Has a real building of this kind already been built? (see header,
+-- "KIND_PREVIOUSLY_BUILT")
+-- ---------------------------------------------------------------------------
+
+-- want == nil: no constraint, trivially matches. ok == false: the instance's
+-- own field could not be read, so the match is unknown (nil), never guessed
+-- either way. Otherwise a plain equality.
+local function tri_match(want, ok, have)
+  if want == nil then return true end
+  if not ok then return nil end
+  return have == want
+end
+
+-- Subtype field name is genuinely per-type in df-structures: Workshop and
+-- Furnace instances carry it as `.type` (df-overseer-workjob.lua's
+-- workshop_kind_ids already reads it this way, live-verified there); other
+-- subtyped classes may expose a getSubtype() method instead. Both are tried;
+-- neither existing is an honest "could not read", not a guess.
+local function instance_subtype(bld, btype)
+  if SUBTYPE_ENUMS[btype] == nil then return nil, true end
+  local ok, sub = pcall(function() return bld.type end)
+  if ok and sub ~= nil then return sub, true end
+  local ok2, sub2 = pcall(function() return bld:getSubtype() end)
+  if ok2 and sub2 ~= nil then return sub2, true end
+  return nil, false
+end
+
+-- `bld.custom_type`, an index into df.global.world.raws.buildings.workshops
+-- for a Custom workshop: the same field df-overseer-workjob.lua's
+-- workshop_kind_ids and df-overseer-orders.lua's workshop_exists_count
+-- already read live.
+local function instance_custom(bld, btype, sub)
+  if not (btype == df.building_type.Workshop and sub == df.workshop_type.Custom) then
+    return nil, true
+  end
+  local ok, c = pcall(function() return bld.custom_type end)
+  if ok then return c, true end
+  return nil, false
+end
+
+-- Returns true/false/NULL (unknown) plus a note (nil when the answer is a
+-- plain true/false). true requires at least one matching building at full
+-- build stage (bld:getBuildStage() == bld:getMaxBuildStage(), the same
+-- fields df-overseer-zone.lua's content_row already reads live). NULL means
+-- every matching building's subtype or build stage could not be confirmed
+-- -- never reported as false, which would be a guess.
+local function kind_previously_built(k)
+  local e = k.entry
+  local ok_b, buildings = pcall(function() return df.global.world.buildings.all end)
+  if not ok_b then
+    return NULL, "could not read df.global.world.buildings.all: " .. tostring(buildings)
+  end
+  local matched, completed, unreadable = 0, 0, 0
+  for i = 1, #buildings do
+    local bld = buildings[i]
+    local ok_t, btype = pcall(function() return bld:getType() end)
+    if ok_t and btype == e.type then
+      local sub, sub_ok = instance_subtype(bld, btype)
+      local sub_match = tri_match(e.subtype, sub_ok, sub)
+      if sub_match ~= false then
+        local cust, cust_ok = instance_custom(bld, btype, sub)
+        local cust_match = tri_match(e.custom, cust_ok, cust)
+        if cust_match ~= false then
+          matched = matched + 1
+          if sub_match == nil or cust_match == nil then
+            unreadable = unreadable + 1
+          else
+            local ok_s, stage = pcall(function() return bld:getBuildStage() end)
+            local ok_m, max_stage = pcall(function() return bld:getMaxBuildStage() end)
+            if ok_s and ok_m then
+              if stage >= max_stage then completed = completed + 1 end
+            else
+              unreadable = unreadable + 1
+            end
+          end
+        end
+      end
+    end
+  end
+  if completed > 0 then return true, nil end
+  if unreadable > 0 then
+    return NULL, string.format(
+      "checked %d matching building(s), could not confirm subtype/build-stage for %d of them",
+      matched, unreadable)
+  end
+  return false, nil
 end
 
 function list_kinds(filter)
@@ -535,6 +659,205 @@ end
 
 local BUILDING_MATERIAL_TYPES = {"BOULDER", "WOOD", "BLOCKS"}
 
+-- ---------------------------------------------------------------------------
+-- Material breakdown and choice for building_material filters (see header,
+-- "MATERIAL CHOICE"). A second, narrower item scan: df-overseer-stocks.lua's
+-- own fort-owned/marginal-flag helpers are `local` and not exported through
+-- reqscript, so this repeats the same five-flag "available" gate (in_job,
+-- forbid, owned, in_building, construction) plus the trader/garbage_collect/
+-- removed fort-ownership check, WITHOUT that file's connectivity/hidden-tile
+-- check -- a caveat this file reports (`material_scan_errors` never hides a
+-- read failure, but an unreachable-yet-otherwise-free item can still count
+-- here where stocks_mod's own availability read would exclude it).
+-- ---------------------------------------------------------------------------
+
+local function item_is_available(item)
+  local ok_f, f = pcall(function() return item.flags end)
+  if not ok_f then return nil, "could not read item.flags" end
+  local ok_own, trader = pcall(function() return f.trader end)
+  if not ok_own then return nil, "could not read item.flags.trader" end
+  if trader then return false end
+  local ok_gc, gc = pcall(function() return f.garbage_collect end)
+  if ok_gc and gc then return false end
+  local ok_rm, rm = pcall(function() return f.removed end)
+  if ok_rm and rm then return false end
+  for _, flag in ipairs({"in_job", "forbid", "owned", "in_building", "construction"}) do
+    local ok, v = pcall(function() return f[flag] end)
+    if not ok then return nil, "could not read item.flags." .. flag end
+    if v then return false end
+  end
+  return true
+end
+
+local function item_units_simple(item)
+  local ok, n = pcall(function() return item.stack_size end)
+  if ok and type(n) == "number" and n > 0 then return n end
+  return 1
+end
+
+-- Decodes one item's material. UNVERIFIED LIVE (2026-09-28): this reads
+-- mi.material.id for the display name and mi.inorganic.economic_uses (a
+-- vector of reaction/use names; non-empty means "economic stone" in the
+-- game's own sense, the stone type haulers do not move by default) for the
+-- economic flag. Confirm both field names against a real DFHack install
+-- before trusting this in production; a read failure here is reported, not
+-- guessed around.
+local function decode_item_material(item)
+  if type(dfhack.matinfo) ~= 'table' or type(dfhack.matinfo.decode) ~= 'function' then
+    return nil, "dfhack.matinfo.decode is not available on this DFHack Lua"
+  end
+  local ok, mi = pcall(dfhack.matinfo.decode, item)
+  if not ok or mi == nil then
+    return nil, "dfhack.matinfo.decode failed: " .. tostring(mi)
+  end
+  local name
+  local ok_n, id = pcall(function() return mi.material and mi.material.id end)
+  if ok_n and id and id ~= "" then name = tostring(id) end
+  if not name then
+    local ok_ti, t = pcall(function() return mi.type end)
+    local ok_ix, ix = pcall(function() return mi.index end)
+    name = "material_" .. tostring(ok_ti and t or "?") .. "_" .. tostring(ok_ix and ix or "?")
+  end
+  local economic, economic_error
+  local ok_i, inorg = pcall(function() return mi.inorganic end)
+  if ok_i and inorg then
+    local ok_u, uses = pcall(function() return inorg.economic_uses end)
+    if ok_u and uses ~= nil then
+      economic = (#uses > 0)
+    else
+      economic_error = "could not read inorganic.economic_uses: " .. tostring(uses)
+    end
+  else
+    -- Not an inorganic (stone/ore) material at all: wood and other organics
+    -- are never "economic stone" in this sense.
+    economic = false
+  end
+  return {name = name, economic = economic, economic_error = economic_error}
+end
+
+-- Scans the given df.global.world.items.other[TYPE] vectors for fort-owned,
+-- unclaimed items and groups them by decoded material name. Returns
+-- by_name (map name -> {name, item_type, units, item_count, economic,
+-- economic_error}), errors (bounded list of strings, never abandons the
+-- whole scan for one bad item).
+local function material_breakdown(type_names)
+  local by_name, errors = {}, {}
+  for _, type_name in ipairs(type_names) do
+    local ok_vec, vec = pcall(function() return df.global.world.items.other[type_name] end)
+    if ok_vec and vec then
+      for i = 0, #vec - 1 do
+        local item = vec[i]
+        local avail, avail_err = item_is_available(item)
+        if avail == nil then
+          errors[#errors + 1] = type_name .. " item: " .. tostring(avail_err)
+        elseif avail then
+          local mat, mat_err = decode_item_material(item)
+          if not mat then
+            errors[#errors + 1] = type_name .. " item: " .. tostring(mat_err)
+          else
+            local rec = by_name[mat.name]
+            if not rec then
+              rec = {name = mat.name, item_type = type_name, units = 0, item_count = 0,
+                     economic = mat.economic, economic_error = mat.economic_error}
+              by_name[mat.name] = rec
+            end
+            rec.units = rec.units + item_units_simple(item)
+            rec.item_count = rec.item_count + 1
+          end
+        end
+      end
+    else
+      errors[#errors + 1] = "no df.global.world.items.other vector named " .. tostring(type_name)
+    end
+  end
+  return by_name, errors
+end
+
+local function flags_request_non_economic(flags)
+  for _, f in ipairs(flags) do
+    if f:find("non_economic", 1, true) then return true end
+  end
+  return false
+end
+
+-- Applies the caller's MATERIAL_CHOICE (or the safe default) to a
+-- building_material filter's stock breakdown, writing straight into `rec`.
+-- `choice` is nil (default: exclude economic materials), "allow_economic"
+-- (caller opts in), or a material name (caller names one directly, honoured
+-- even if it is economic, unless the filter's own flags require
+-- non_economic -- an explicit choice is never second-guessed except by the
+-- game's own rule). Same shape as df-overseer-workjob.lua's reagent_choice:
+-- candidates listed, resolved by explicit choice or a safe default, never
+-- silently guessed.
+local function resolve_material_choice(rec, by_name, errors, flags, choice)
+  local materials = {}
+  for _, m in pairs(by_name) do materials[#materials + 1] = m end
+  table.sort(materials, function(a, b)
+    if a.units ~= b.units then return a.units > b.units end
+    return a.name < b.name
+  end)
+  rec.materials = materials
+  if #errors > 0 then rec.material_scan_errors = errors end
+
+  local must_non_economic = flags_request_non_economic(flags)
+  local requested_name, allow_economic = nil, false
+  if choice ~= nil and tostring(choice) ~= "" then
+    if tostring(choice):lower() == "allow_economic" then
+      allow_economic = true
+    else
+      requested_name = tostring(choice)
+    end
+  end
+
+  if requested_name then
+    local m
+    for _, cand in ipairs(materials) do
+      if cand.name:lower() == requested_name:lower() then m = cand end
+    end
+    if not m then
+      rec.material_choice_error = "requested material " .. requested_name
+        .. " is not among the available materials for this filter"
+      rec.available = 0
+      return
+    end
+    if m.economic and must_non_economic then
+      rec.material_choice_error = "requested material " .. m.name
+        .. " is economic, but this filter's own flags require non_economic"
+      rec.available = 0
+      return
+    end
+    rec.chosen_material = m.name
+    rec.material_choice = "caller named " .. m.name .. " explicitly"
+    rec.available = m.units
+    return
+  end
+
+  local excluded, eligible = {}, {}
+  for _, m in ipairs(materials) do
+    if m.economic == true and not (allow_economic and not must_non_economic) then
+      excluded[#excluded + 1] = m.name
+    else
+      eligible[#eligible + 1] = m
+    end
+  end
+  if #excluded > 0 then rec.excluded_materials = excluded end
+
+  if #eligible == 0 then
+    rec.available = 0
+    if #excluded > 0 then
+      rec.material_choice_error = "only economic material(s) available (" .. table.concat(excluded, ", ")
+        .. "); pass allow_economic or name one explicitly to use them"
+    end
+    return
+  end
+  local best = eligible[1]
+  rec.chosen_material = best.name
+  rec.available = best.units
+  rec.material_choice = allow_economic
+    and "default: highest-stock material, economic materials allowed by caller"
+    or "default: highest-stock non-economic material"
+end
+
 local function true_flags(t, prefix)
   local out = {}
   if t == nil then return out end
@@ -571,7 +894,7 @@ local function stock_for(type_name, cache)
   return rec
 end
 
-local function requirements_for(k)
+local function requirements_for(k, material_choice)
   local e = k.entry
   local sub = e.subtype
   if sub == nil then sub = -1 end
@@ -606,14 +929,15 @@ local function requirements_for(k)
     for _, x in ipairs(true_flags(f.flags2, "flags2.")) do flags[#flags + 1] = x end
     for _, x in ipairs(true_flags(f.flags3, "flags3.")) do flags[#flags + 1] = x end
     rec.flags = flags
-    rec.count_scope = "item type only; the filter's own flags are not applied"
 
     local names = nil
     local class_flag = f.flags2 and f.flags2.building_material
     if class_flag then
       rec.need = "any building material (boulder, log or block)"
+      rec.count_scope = "item type and decoded material; economic materials excluded by default (see material_choice)"
       names = BUILDING_MATERIAL_TYPES
     elseif f.item_type ~= nil and f.item_type >= 0 then
+      rec.count_scope = "item type only; the filter's own flags are not applied"
       local tname = enum_name(df.item_type, f.item_type)
       rec.need = tname or ("item_type " .. tostring(f.item_type))
       rec.item_type = tname
@@ -626,6 +950,7 @@ local function requirements_for(k)
         rec.count_error = "no df.global.world.items.other vector named " .. tostring(tname)
       end
     else
+      rec.count_scope = "item type only; the filter's own flags are not applied"
       rec.need = (#flags > 0) and ("an item matching " .. table.concat(flags, ", "))
         or "an item (the filter names no type and no flags)"
       rec.count_error = "the filter has no item type and is not the building_material class, "
@@ -649,6 +974,23 @@ local function requirements_for(k)
           gaps[#gaps + 1] = string.format("needs %d of %s, %d available", rec.quantity, rec.need, avail_sum)
         elseif rec.quantity < 0 then
           gaps[#gaps + 1] = string.format("%s: quantity depends on size, %d available", rec.need, avail_sum)
+        end
+      end
+
+      if class_flag then
+        -- Overrides rec.available with the material-aware figure (post
+        -- economic exclusion, or the caller's explicit choice): this is
+        -- what the build path will actually select, so it is what gating
+        -- gaps should be checked against, not the raw item-type sum above.
+        local by_name, mat_errors = material_breakdown(names)
+        resolve_material_choice(rec, by_name, mat_errors, flags, material_choice)
+        if rec.material_choice_error then
+          gaps[#gaps + 1] = rec.material_choice_error .. " (" .. rec.need .. ")"
+        elseif rec.excluded_materials and rec.quantity >= 0 and rec.chosen_material
+            and rec.available < rec.quantity then
+          gaps[#gaps + 1] = string.format(
+            "needs %d of %s, only %d available once economic material(s) (%s) are excluded by default",
+            rec.quantity, rec.need, rec.available, table.concat(rec.excluded_materials, ", "))
         end
       end
     else
@@ -732,7 +1074,7 @@ local function elig_str(search)
   return tostring(search.eligible_tiles)
 end
 
-function find_kind(kind_name, w, h, level, near, radius_tiles)
+function find_kind(kind_name, w, h, level, near, radius_tiles, material_choice)
   local k, kerr = resolve_kind(kind_name)
   if not k then return nil, kerr end
   local dw, dh = resolve_dims(k, w, h)
@@ -744,7 +1086,8 @@ function find_kind(kind_name, w, h, level, near, radius_tiles)
       k.token, dw, dh, tostring(near), search.tiles_checked, elig_str(search), search.check_errors,
       search.first_check_error ~= NULL and (" (first: " .. search.first_check_error .. ")") or "")
   end
-  local req, gaps = requirements_for(k)
+  local req, gaps = requirements_for(k, material_choice)
+  local prev_built, prev_note = kind_previously_built(k)
   local results = {}
   for rank, c in ipairs(chosen) do
     results[#results + 1] = {
@@ -754,12 +1097,14 @@ function find_kind(kind_name, w, h, level, near, radius_tiles)
       search = search,
       requirements = req,
       gaps = #gaps > 0 and gaps or {},
+      kind_previously_built = prev_built,
+      kind_previously_built_note = nn(prev_note),
     }
   end
   return results
 end
 
-function build_kind(kind_name, w, h, level, near, rank, radius_tiles, dry_run)
+function build_kind(kind_name, w, h, level, near, rank, radius_tiles, dry_run, material_choice)
   local k, kerr = resolve_kind(kind_name)
   if not k then return nil, kerr end
   local dw, dh = resolve_dims(k, w, h)
@@ -773,7 +1118,8 @@ function build_kind(kind_name, w, h, level, near, rank, radius_tiles, dry_run)
       rank, #chosen, tostring(near), search.tiles_checked, elig_str(search), search.check_errors)
   end
   local c = chosen[rank]
-  local req, gaps = requirements_for(k)
+  local req, gaps = requirements_for(k, material_choice)
+  local prev_built, prev_note = kind_previously_built(k)
   local result = {
     kind = kind_brief(k),
     dims = {dw, dh},
@@ -782,6 +1128,8 @@ function build_kind(kind_name, w, h, level, near, rank, radius_tiles, dry_run)
     search = search,
     requirements = req,
     gaps = #gaps > 0 and gaps or {},
+    kind_previously_built = prev_built,
+    kind_previously_built_note = nn(prev_note),
   }
 
   -- Blueprint on the guest. The top-left (c.x, c.y, z) is used only in the -c
@@ -843,8 +1191,8 @@ end
 
 local USAGE = {
   "usage: df-overseer-building list-kinds [FILTER]",
-  "usage: df-overseer-building find KIND [W H] [LEVEL] NEAR_LANDMARK [RADIUS_TILES]",
-  "usage: df-overseer-building build KIND [W H] [LEVEL] NEAR_LANDMARK [RANK] [RADIUS_TILES] [DRY_RUN]",
+  "usage: df-overseer-building find KIND [W H] [LEVEL] NEAR_LANDMARK [RADIUS_TILES] [MATERIAL_CHOICE]",
+  "usage: df-overseer-building build KIND [W H] [LEVEL] NEAR_LANDMARK [RANK] [RADIUS_TILES] [DRY_RUN] [MATERIAL_CHOICE]",
 }
 
 -- After KIND: up to three leading numbers (1 = LEVEL, 2 = W H, 3 = W H LEVEL),
@@ -874,7 +1222,7 @@ elseif cmd == "find" then
   if not (kind and near) then
     print(encode({error = USAGE[2]}))
   else
-    local res, err = find_kind(kind, w, h, level, near, tonumber(args[nxt]))
+    local res, err = find_kind(kind, w, h, level, near, tonumber(args[nxt]), args[nxt + 1])
     print(encode(err and {error = err} or res))
   end
 elseif cmd == "build" then
@@ -883,7 +1231,7 @@ elseif cmd == "build" then
   if not (kind and near) then
     print(encode({error = USAGE[3]}))
   else
-    local res, err = build_kind(kind, w, h, level, near, tonumber(args[nxt]), tonumber(args[nxt + 1]), args[nxt + 2])
+    local res, err = build_kind(kind, w, h, level, near, tonumber(args[nxt]), tonumber(args[nxt + 1]), args[nxt + 2], args[nxt + 3])
     print(encode(err and {error = err} or res))
   end
 else

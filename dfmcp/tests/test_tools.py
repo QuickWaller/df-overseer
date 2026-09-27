@@ -819,11 +819,11 @@ def test_real_building_signatures_use_the_optional_footprint_group(registry):
     for tool_id, expected in (
         (
             "building.find",
-            ["kind", "w", "h", "level", "near_landmark", "radius_tiles"],
+            ["kind", "w", "h", "level", "near_landmark", "radius_tiles", "material_choice"],
         ),
         (
             "building.build",
-            ["kind", "w", "h", "level", "near_landmark", "rank", "radius_tiles", "dry_run"],
+            ["kind", "w", "h", "level", "near_landmark", "rank", "radius_tiles", "dry_run", "material_choice"],
         ),
     ):
         tool = registry.get(tool_id)

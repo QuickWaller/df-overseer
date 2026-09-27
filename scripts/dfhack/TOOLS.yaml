@@ -711,13 +711,13 @@ df-overseer-building.lua:
         type (Workshop, Furnace, Bed, Bridge). An unmatched FILTER gives an
         empty list; a table that cannot be read gives an error object, never
         an empty list.
-    "find KIND [W H] [LEVEL] NEAR_LANDMARK [RADIUS_TILES]":
+    "find KIND [W H] [LEVEL] NEAR_LANDMARK [RADIUS_TILES] [MATERIAL_CHOICE]":
       lua_function: find_kind
       skippable: ["[W H]"]
       effect: read
       coordinate_bearing: false
       live_deployed: true
-      verified: "2026-09-21 (live on VM 103, fort paused, read only: workshop, furnace, 1x1 and 5x5 kinds, furniture, variable-size kinds and error cases. After the deploy the same day, over a real MCP client as the overseer: Masons, Still, Smelter, Kiln, Bed, Well and FarmPlot each returned five sites, and the unknown kind, near-miss name, wrong footprint, missing W H and unknown landmark cases each errored with a named reason)"
+      verified: "2026-09-21 (live on VM 103, fort paused, read only: workshop, furnace, 1x1 and 5x5 kinds, furniture, variable-size kinds and error cases. After the deploy the same day, over a real MCP client as the overseer: Masons, Still, Smelter, Kiln, Bed, Well and FarmPlot each returned five sites, and the unknown kind, near-miss name, wrong footprint, missing W H and unknown landmark cases each errored with a named reason). Material choice and kind_previously_built (2026-09-28) are code/offline-tested only; NOT yet live-verified -- see the register for the exact DFHack field names (dfhack.matinfo.decode, inorganic.economic_uses) that need confirming against a real install"
       knowledge_scope: player_derivable
       notes: >
         Finds up to five non-overlapping sites for one building kind near a
@@ -738,21 +738,33 @@ df-overseer-building.lua:
         a wall, farm plots on soil), with a walkable tile in or beside it.
         Each result carries `requirements` (what the game says the kind needs
         to be built, from dfhack.buildings.getFiltersByType, with stock
-        counts from the six-deduction availability read; counts are by item
-        type only, the filter's own flags are not applied), a plain `gaps`
-        list of what is short (report only, it never refuses a build), and a
-        `search` block of how many tiles were checked. No site gives an
+        counts from the six-deduction availability read; a plain item-type
+        filter is still counted by item type only, its own flags listed but
+        not applied). A `building_material` filter (boulder/log/block) is
+        instead broken down by decoded material name under
+        `requirements.building_material.filters[i].materials`, each tagged
+        `economic` when the game's own raws mark it an economic stone;
+        economic materials are excluded from `chosen_material`/`available` by
+        default (`excluded_materials` says which and why). MATERIAL_CHOICE,
+        the last argument, previews the override this filter would use if
+        `build` were called the same way: "allow_economic" to allow economic
+        materials, or a material name (e.g. SHALE) to name one directly.
+        Also carries a plain `gaps` list of what is short (report only, it
+        never refuses a build), a `search` block of how many tiles were
+        checked, and `kind_previously_built` (true/false/null): whether a
+        real building of this exact kind already exists at full build stage,
+        read live from the game rather than a fixed note. No site gives an
         error object that says how many tiles were checked and eligible, so
         "nothing here" can be told apart from a broken check. Result shape is
         contract C1 of docs/BUILDING-TOOL.md. No labor names and no
         confidence level: the MCP layer adds those.
-    "build KIND [W H] [LEVEL] NEAR_LANDMARK [RANK] [RADIUS_TILES] [DRY_RUN]":
+    "build KIND [W H] [LEVEL] NEAR_LANDMARK [RANK] [RADIUS_TILES] [DRY_RUN] [MATERIAL_CHOICE]":
       lua_function: build_kind
       skippable: ["[W H]"]
       effect: mutate
       coordinate_bearing: internal-only
       live_deployed: true
-      verified: "2026-09-21 (DRY_RUN path only, live on VM 103: quickfort's own --dry-run validated the generated blueprint for workshop, furnace, furniture and variable-size kinds, first through a /tmp script path and again after the deploy over a real MCP client as the overseer for Masons, Kiln, Craftsdwarfs, Smelter, Bed and FarmPlot 5x5). REAL PATH FIRST EXERCISED 2026-09-23 (evals/live/2026-09-23-office-and-first-real-build/README.md): `building.build Chair Well 1 20 false` against the same site the dry run validated -- quickfort_ok:true, quickfort_problems:[], read_back confirmed building_found:true and type_matches:true. This is the first real, non-dry-run build of any kind this tool has ever made. Not yet a complete loop: the Chair sits buildingplan-suspended (stocks CHAIR read 0 before and after; the job is stuckjobs-visible as waiting_on:\"suspended\"), since the fort owns no Chair item yet; a manager order (ConstructThrone) was created to try to supply one and had not gone active after 900 ticks"
+      verified: "2026-09-21 (DRY_RUN path only, live on VM 103: quickfort's own --dry-run validated the generated blueprint for workshop, furnace, furniture and variable-size kinds, first through a /tmp script path and again after the deploy over a real MCP client as the overseer for Masons, Kiln, Craftsdwarfs, Smelter, Bed and FarmPlot 5x5). REAL PATH FIRST EXERCISED 2026-09-23 (evals/live/2026-09-23-office-and-first-real-build/README.md): `building.build Chair Well 1 20 false` against the same site the dry run validated -- quickfort_ok:true, quickfort_problems:[], read_back confirmed building_found:true and type_matches:true. This is the first real, non-dry-run build of any kind this tool has ever made. Not yet a complete loop: the Chair sits buildingplan-suspended (stocks CHAIR read 0 before and after; the job is stuckjobs-visible as waiting_on:\"suspended\"), since the fort owns no Chair item yet; a manager order (ConstructThrone) was created to try to supply one and had not gone active after 900 ticks. A second real kind, the Carpenter's Workshop, was built live 2026-09-25 (out of economic hematite blocks, the gap this stream's material-choice fix addresses -- evals/live/2026-09-25-first-real-conductor-cycle/README.md). Material choice and kind_previously_built (2026-09-28) are code/offline-tested only; NOT yet live-verified"
       knowledge_scope: player_derivable
       notes: >
         Places one building of KIND at the RANK-th site near a landmark.
@@ -766,10 +778,18 @@ df-overseer-building.lua:
         removed straight after. The real path runs the blueprint, reports
         quickfort_ok/quickfort_error/quickfort_stats, and reads the tile
         back (`read_back`) because quickfort can succeed without a building.
-        NEVER RUN LIVE for any kind yet: the first real build of a kind this
-        project has not built before needs the user's go-ahead. Same
-        requirements, gaps, search and site fields as find. Footprint rules
-        as in find.
+        MATERIAL_CHOICE (last argument) controls which material a
+        `building_material` filter resolves to: omitted, it excludes economic
+        materials by default (see find's notes); "allow_economic" opts back
+        in; naming a material (e.g. SHALE) picks it explicitly even if it is
+        economic, unless the game's own filter flags require non_economic, in
+        which case that always wins. `kind_previously_built` (true/false/
+        null, read live, not a fixed note) says whether this exact kind has a
+        real building already at full build stage: ask the user before the
+        real build of a kind that is not yet built for real; once it is true
+        for a kind, proceed on your own judgement like any other accepted
+        proposal. Same requirements, gaps, search and site fields as find.
+        Footprint rules as in find.
 
 df-overseer-zone.lua:
   build_order_item: "gap named 2026-09-17 (handoffs/2026-09-17-water-and-industry-tools.md item 1); generalised over every zone kind and given an optional owner by handoffs/2026-09-21-zone-tool-generalise.md; given an inventory, a per-zone validity check and furniture-aware siting by handoffs/2026-09-23-zone-inventory-and-validity.md"

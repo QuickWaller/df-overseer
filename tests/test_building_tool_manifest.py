@@ -101,8 +101,10 @@ def test_building_find_and_build_take_kind_first_and_site_arguments():
     reg = load_registry()
     find = [s.name for s in _arg_specs_for_tool(reg.get("building.find"))]
     build = [s.name for s in _arg_specs_for_tool(reg.get("building.build"))]
-    assert find == ["kind", "w", "h", "level", "near_landmark", "radius_tiles"]
-    assert build == ["kind", "w", "h", "level", "near_landmark", "rank", "radius_tiles", "dry_run"]
+    assert find == ["kind", "w", "h", "level", "near_landmark", "radius_tiles", "material_choice"]
+    assert build == [
+        "kind", "w", "h", "level", "near_landmark", "rank", "radius_tiles", "dry_run", "material_choice",
+    ]
 
 
 def test_building_footprint_is_an_optional_pair_and_labor_is_repeated():
