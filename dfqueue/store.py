@@ -57,7 +57,7 @@ from learning.predictions.schema import PENDING
 
 from .schema import (
     ACCEPT, ANSWER, ASK, EXECUTED, PROPOSAL, REJECT, RULING, fort_name,
-    sole_writer, validate,
+    near_duplicate_reason, sole_writer, validate,
 )
 
 #: A ruling's `decision` values that close a proposal for good. `defer`
@@ -235,6 +235,39 @@ def _ruling_id_already_flagged(errors: list[str]) -> bool:
 def _ask_id_already_flagged(errors: list[str]) -> bool:
     """Same idea again, for `answer`'s own `ask_id`."""
     return any(e.startswith("record.ask_id:") for e in errors)
+
+
+def _duplicate_of_already_flagged(errors: list[str]) -> bool:
+    """Same idea again, for a proposal's own `duplicate_of`."""
+    return any(e.startswith("record.duplicate_of:") for e in errors)
+
+
+def _find_duplicate_proposal(conn: sqlite3.Connection, record: dict) -> tuple[str, str] | None:
+    """The first still-open proposal of the same `type` as `record` that
+    `schema.near_duplicate_reason` judges a near-duplicate of it, as
+    `(existing_id, reason)`, or `None`.
+
+    "Still open" is exactly `pending_proposals`'s own definition (no ruling
+    with a FINAL decision -- accept/reject -- yet; a proposal ruled only
+    `defer` is still a live duplicate candidate, same as it is still a live
+    ruling candidate). `records.type` is already its own indexed column
+    (`_insert_record`), so this is a plain column filter, not a
+    `json_extract` scan. Oldest first, so two proposals both duplicating a
+    third are each flagged against the original, not against each other.
+    """
+    rows = conn.execute(
+        "SELECT r.id, r.payload FROM records r WHERE r.kind = ? AND r.type = ? "
+        "AND NOT EXISTS (SELECT 1 FROM records r2 WHERE r2.kind = ? AND "
+        "r2.proposal_id = r.id AND json_extract(r2.payload, '$.decision') IN (?, ?)) "
+        "ORDER BY r.ts ASC, r.rowid ASC",
+        (PROPOSAL, record.get("type"), RULING, *FINAL_DECISIONS),
+    ).fetchall()
+    for row in rows:
+        existing = json.loads(row["payload"])
+        reason = near_duplicate_reason(record, existing)
+        if reason:
+            return row["id"], reason
+    return None
 
 
 def _insert_record(conn: sqlite3.Connection, record: dict) -> None:
@@ -437,12 +470,38 @@ def append(record: dict, path: str | Path, *, game_tick: int | None = None) -> d
                         "one answer, no threads"
                     )
 
+        duplicate_reason: str | None = None
         if kind == PROPOSAL:
             if isinstance(game_tick, bool) or not isinstance(game_tick, int):
                 errors.append(
                     "game_tick: a proposal must be appended with an integer "
                     f"game_tick (its prediction's due_game_tick depends on it), got {game_tick!r}"
                 )
+
+            if record.get("duplicate_of") is not None and not _duplicate_of_already_flagged(errors):
+                # A caller (or a re-append) already set duplicate_of itself;
+                # validate it the same way a ruling's proposal_id is
+                # validated -- must name a real proposal already here.
+                found = conn.execute(
+                    "SELECT 1 FROM records WHERE id = ? AND kind = ?",
+                    (record["duplicate_of"], PROPOSAL),
+                ).fetchone()
+                if found is None:
+                    errors.append(
+                        f"record.duplicate_of: {record['duplicate_of']!r} does not "
+                        "refer to an existing proposal in this queue"
+                    )
+            elif "duplicate_of" not in record and not errors:
+                # `handoffs/2026-09-28-queue-duplicate-proposal-check.md`:
+                # never silently refuse a duplicate (unlike gotchas) -- still
+                # write it, but flag it so the Overseer's ruling and the
+                # history can see the relationship. Only run once the record
+                # is otherwise valid: a malformed `type`/`summary` is
+                # reported as its own error, not compared against anything.
+                found_dup = _find_duplicate_proposal(conn, record)
+                if found_dup is not None:
+                    dup_id, duplicate_reason = found_dup
+                    record["duplicate_of"] = dup_id
 
         if errors:
             raise QueueError("refusing to append an invalid record:\n  " + "\n  ".join(errors))
@@ -464,6 +523,12 @@ def append(record: dict, path: str | Path, *, game_tick: int | None = None) -> d
             elif kind == EXECUTED:
                 _arm_prediction_on_first_execution(conn, record)
 
+        if duplicate_reason is not None:
+            # The reason is reported to the caller of THIS append() so the
+            # tool layer can surface it in the write's own result -- it is
+            # not persisted (only `duplicate_of`, a real schema field, is:
+            # see `_insert_record` above, called before this copy is made).
+            return {**record, "duplicate_reason": duplicate_reason}
         return record
 
 

@@ -179,6 +179,143 @@ def test_ruling_against_a_real_proposal_from_a_different_db_is_still_dangling(tm
     assert store.load(path) == []
 
 
+# ---- duplicate-proposal detection -----------------------------------------------
+#
+# `handoffs/2026-09-28-queue-duplicate-proposal-check.md`: `proposal-0009`
+# duplicated the still-open `proposal-0007` (both queuing brewing directly at
+# the Still) without either advisor knowing the other existed. A near-
+# duplicate is never refused (unlike a gotcha, `dfmcp/gotchas_store.py`'s
+# `add_entry`) -- it is still written, flagged with `duplicate_of` naming the
+# existing open proposal.
+
+
+def test_a_near_duplicate_proposal_is_written_and_flagged_not_refused(tmp_path):
+    path = _db(tmp_path)
+    first = store.append(make_proposal(), path, game_tick=100)
+    assert "duplicate_of" not in first
+
+    second = store.append(
+        make_proposal(
+            summary="Site the next workshop on the open ground south of Embark Site.",
+        ),
+        path, game_tick=100,
+    )
+
+    assert second["duplicate_of"] == first["id"]
+    assert second["duplicate_reason"]  # reported to the caller of append()
+    # But the reason is NOT persisted -- only duplicate_of, a real schema
+    # field, is. Reading it back must not carry the transient key.
+    loaded = store.load(path)
+    assert len(loaded) == 2
+    assert loaded[1]["duplicate_of"] == first["id"]
+    assert "duplicate_reason" not in loaded[1]
+
+
+def test_a_near_duplicate_proposal_still_lands_in_pending_proposals(tmp_path):
+    """Never silently dropped, never refused: both the original and its
+    duplicate stay visible to the Overseer."""
+    path = _db(tmp_path)
+    first = store.append(make_proposal(), path, game_tick=100)
+    second = store.append(
+        make_proposal(summary="Site the next workshop on the open ground south of Embark Site."),
+        path, game_tick=100,
+    )
+    pending_ids = [r["id"] for r in store.pending_proposals(path)]
+    assert pending_ids == [first["id"], second["id"]]
+
+
+def test_unrelated_proposals_of_the_same_type_are_not_flagged_as_duplicates(tmp_path):
+    path = _db(tmp_path)
+    first = store.append(make_proposal(), path, game_tick=100)
+    second = store.append(
+        make_proposal(
+            summary="Dig a second stairwell down to the ore vein two levels below.",
+            rationale="The single stairwell is already a haul bottleneck for miners.",
+        ),
+        path, game_tick=100,
+    )
+    assert "duplicate_of" not in second
+    assert first["id"] != second["id"]
+
+
+def test_proposals_of_a_different_type_are_never_compared_even_with_the_same_summary(tmp_path):
+    """`type` scopes the candidate pool (`dfqueue/store.py`'s
+    `_find_duplicate_proposal`): identical text under a different `type`
+    must not collide."""
+    path = _db(tmp_path)
+    first = store.append(make_proposal(type="workshop_siting"), path, game_tick=100)
+    second = store.append(make_proposal(type="stockpile_siting"), path, game_tick=100)
+    assert first["summary"] == second["summary"]
+    assert "duplicate_of" not in second
+
+
+def test_a_duplicate_is_not_flagged_once_the_original_has_a_final_ruling(tmp_path):
+    """"Still open" mirrors `pending_proposals`'s own definition: once the
+    original is finally ruled (accept/reject), it is no longer a live
+    duplicate candidate -- the second proposal is its own, independent one."""
+    path = _db(tmp_path)
+    first = store.append(make_proposal(), path, game_tick=100)
+    store.append(make_ruling(proposal_id=first["id"], decision="accept"), path)
+
+    second = store.append(
+        make_proposal(summary="Site the next workshop on the open ground south of Embark Site."),
+        path, game_tick=100,
+    )
+    assert "duplicate_of" not in second
+
+
+def test_a_duplicate_is_still_flagged_against_a_merely_deferred_original(tmp_path):
+    """A `defer` ruling ("decide later") never closes a proposal -- it stays
+    a live duplicate candidate, same as it stays open to a further ruling."""
+    path = _db(tmp_path)
+    first = store.append(make_proposal(), path, game_tick=100)
+    store.append(make_ruling(proposal_id=first["id"], decision="defer"), path)
+
+    second = store.append(
+        make_proposal(summary="Site the next workshop on the open ground south of Embark Site."),
+        path, game_tick=100,
+    )
+    assert second["duplicate_of"] == first["id"]
+
+
+def test_duplicate_of_rendered_in_the_proposal_xml(tmp_path):
+    path = _db(tmp_path)
+    first = store.append(make_proposal(), path, game_tick=100)
+    second = store.append(
+        make_proposal(summary="Site the next workshop on the open ground south of Embark Site."),
+        path, game_tick=100,
+    )
+    xml = render.to_xml(store.load(path)[1])
+    assert f"<duplicate_of>{first['id']}</duplicate_of>" in xml
+    assert second["id"]  # sanity: it was written, not refused
+
+
+def test_a_caller_supplied_duplicate_of_must_name_a_real_proposal(tmp_path):
+    path = _db(tmp_path)
+    bad = make_proposal(duplicate_of="proposal-9999")
+    with pytest.raises(store.QueueError, match="does not refer to an existing proposal"):
+        store.append(bad, path, game_tick=100)
+    assert store.load(path) == []
+
+
+def test_a_caller_supplied_duplicate_of_naming_a_real_proposal_is_accepted_as_is(tmp_path):
+    """A caller (or a future admin tool) may set `duplicate_of` directly;
+    when it already names a real proposal, auto-detection is skipped rather
+    than overriding the caller's own value."""
+    path = _db(tmp_path)
+    first = store.append(make_proposal(), path, game_tick=100)
+    second = store.append(
+        make_proposal(
+            summary="Completely unrelated dig order for the eastern cavern.",
+            rationale="Nothing to do with the first proposal at all.",
+            duplicate_of=first["id"],
+        ),
+        path, game_tick=100,
+    )
+    assert second["duplicate_of"] == first["id"]
+    assert "duplicate_reason" not in second  # auto-detection never ran
+
+
 def test_duplicate_explicit_id_is_refused(tmp_path):
     path = _db(tmp_path)
     store.append(make_proposal(id="dupe"), path, game_tick=100)

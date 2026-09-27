@@ -47,6 +47,11 @@ def _proposal_xml(record: dict) -> str:
     lines.append(f"  <type>{escape(record['type'])}</type>")
     lines.append(f"  <summary>{escape(record['summary'])}</summary>")
     lines.append(f"  <rationale>{escape(record['rationale'])}</rationale>")
+    if record.get("duplicate_of") is not None:
+        # `handoffs/2026-09-28-queue-duplicate-proposal-check.md`: flagged,
+        # never silently refused -- shown here so the Overseer's ruling (and
+        # anyone reading the queue's history) sees the relationship plainly.
+        lines.append(f"  <duplicate_of>{escape(record['duplicate_of'])}</duplicate_of>")
 
     pred = record["prediction"]
     pred_attrs = (

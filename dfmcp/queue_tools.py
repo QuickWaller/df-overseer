@@ -360,7 +360,12 @@ def _propose_description(role: str) -> str:
         "problem found, and nothing is written. This is the only way to "
         "record a decision -- prose in your final answer is never read into "
         "the queue. role/id/ts/cycle/snapshot are stamped by the server; do "
-        f"not pass them. Your closed `type` vocabulary: {vocab_text}."
+        f"not pass them. Your closed `type` vocabulary: {vocab_text}. "
+        "Checked against every other still-open proposal of the same type: a "
+        "near-duplicate is NOT refused, but is still written flagged with "
+        "duplicate_of (the existing proposal's id) so the Overseer sees both "
+        "and decides on the merits; this call's own result reports which "
+        "proposal it matched and why."
     )
 
 

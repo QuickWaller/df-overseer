@@ -90,6 +90,7 @@ named landmarks and relative directions (`docs/PURPOSE.md` commitment #3).
 
 from __future__ import annotations
 
+import difflib
 import re
 from functools import lru_cache
 from pathlib import Path
@@ -218,6 +219,7 @@ KIND_FIELDS: dict[str, tuple[str, ...]] = {
     PROPOSAL: (
         "type", "summary", "rationale", "prediction", "cost",
         "suggested_priority", "preconditions", "public_rationale",
+        "duplicate_of",
     ),
     PASS: ("reason",),
     RULING: ("decision", "proposal_id", "reason", "public_rationale"),
@@ -239,6 +241,79 @@ _COORDINATE_PATTERN = re.compile(
 def _find_coordinate(text: str) -> str | None:
     m = _COORDINATE_PATTERN.search(text)
     return m.group(0) if m else None
+
+
+# ---- duplicate-proposal detection ----------------------------------------------
+#
+# `handoffs/2026-09-28-queue-duplicate-proposal-check.md`: `proposal-0009`
+# duplicated the still-open `proposal-0007` (both proposing to queue brewing
+# directly at the Still) without either advisor knowing the other existed.
+# `dfmcp/gotchas_store.py`'s `near_duplicate_reason(candidate, existing)`
+# already solves the identical problem for gotchas (same tool/list, near-
+# duplicate title or body); this is that same shape, applied to a proposal's
+# own declared fields (`summary`, then `rationale`) instead of a gotcha's
+# (`title`, then `body`). Deliberately generalised across every proposal
+# `type` rather than hardcoded to one action: the caller (`dfqueue/store.py`)
+# scopes the candidate pool to proposals of the SAME `type` that are still
+# open, and this function only ever compares the two records' own text
+# fields, never a fixed string list keyed to a particular type.
+#
+# Unlike gotchas, a match here is never a refusal (`dfqueue/store.py`'s own
+# docstring on `append()`): a duplicate proposal is still written, flagged
+# with `duplicate_of`, so the Overseer's ruling sees both and decides on the
+# merits, the way `proposal-0009` should have been but was not.
+
+_WORD_RE = re.compile(r"[a-z0-9]+")
+
+#: A candidate proposal is a near-duplicate of an existing one (same `type`,
+#: still open) when either bound is reached. Same values and same two-pass
+#: shape (word-set Jaccard, then a full sequence-match ratio) as
+#: `dfmcp.gotchas_store`'s `TITLE_DUP_JACCARD`/`TITLE_DUP_RATIO`/
+#: `BODY_DUP_RATIO` -- not re-imported from there, since a gotcha and a
+#: proposal are different record kinds in different packages (this module's
+#: own docstring's "no armok tools"-style rule doesn't apply, but crossing
+#: `dfmcp` -> `dfqueue` for one constant is a worse coupling than repeating
+#: three floats).
+SUMMARY_DUP_JACCARD = 0.75
+SUMMARY_DUP_RATIO = 0.85
+RATIONALE_DUP_RATIO = 0.85
+
+
+def _normalise_words(text) -> list[str]:
+    return _WORD_RE.findall(str(text).lower())
+
+
+def near_duplicate_reason(candidate: dict, existing: dict) -> str | None:
+    """Why `candidate` (a would-be new proposal) is a near-duplicate of
+    `existing` (an already-queued proposal), or `None`. Pure and stateless:
+    the caller (`dfqueue/store.py`'s `_find_duplicate_proposal`) is what
+    scopes the comparison to proposals of the same `type` that are still
+    open -- this function only ever reads `summary` and `rationale` off the
+    two dicts it is given.
+
+    Checked in order, cheapest and most literal first: an identical summary
+    (ignoring case and punctuation), a summary sharing most of its words, a
+    summary that is nearly the same text character-for-character, then --
+    only if the summaries differ enough to reach here -- a rationale that is
+    nearly the same text. A `type` match on its own is not enough: two
+    unrelated proposals of the same `type` (two different `workshop_siting`
+    proposals for two different workshops) must not collide.
+    """
+    cw, ew = _normalise_words(candidate.get("summary", "")), _normalise_words(existing.get("summary", ""))
+    if cw and cw == ew:
+        return "its summary is identical to an existing open proposal's (ignoring case and punctuation)"
+    cset, eset = set(cw), set(ew)
+    if cset and eset:
+        jaccard = len(cset & eset) / len(cset | eset)
+        if jaccard >= SUMMARY_DUP_JACCARD:
+            return f"its summary shares {jaccard:.0%} of its words with an existing open proposal's"
+    if cw and ew and difflib.SequenceMatcher(None, " ".join(cw), " ".join(ew)).ratio() >= SUMMARY_DUP_RATIO:
+        return "its summary is nearly the same text as an existing open proposal's"
+    cr = " ".join(_normalise_words(candidate.get("rationale", "")))
+    er = " ".join(_normalise_words(existing.get("rationale", "")))
+    if cr and er and difflib.SequenceMatcher(None, cr, er).ratio() >= RATIONALE_DUP_RATIO:
+        return "its rationale is nearly the same text as an existing open proposal's"
+    return None
 
 
 # ---- roster (agents/ROSTER.yaml), read-only ------------------------------------
@@ -460,6 +535,14 @@ def _validate_proposal_fields(record: dict, role, errors: list[str]) -> None:
         errors.append("record.prediction: required field is missing")
     else:
         _validate_prediction(record["prediction"], errors, "record.prediction")
+
+    if "duplicate_of" in record:
+        dup = record["duplicate_of"]
+        if not isinstance(dup, str) or not dup:
+            errors.append(
+                "record.duplicate_of: expected a non-empty string when given (the id "
+                "of the existing open proposal this one duplicates)"
+            )
 
 
 def _validate_ruling_fields(record: dict, errors: list[str]) -> None:

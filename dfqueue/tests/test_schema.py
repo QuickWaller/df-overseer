@@ -572,3 +572,93 @@ def test_quartermaster_proposal_is_accepted_by_the_real_on_disk_roster_today():
     record = make_proposal(role="quartermaster", type=schema.WORK_ORDER)
     errors = schema.validate(record)
     assert not _errors_mentioning(errors, "not an enabled role")
+
+
+# ---- duplicate_of: the stateless (type-only) half of write-time validation ------
+#
+# `duplicate_of`'s *existence* check (must name a real proposal already in
+# the queue) needs the loaded database, so it lives in
+# `dfqueue/store.py::append()` (same split as `ruling`'s own `proposal_id`)
+# and is covered in `test_store.py`. This file only covers what `validate()`
+# itself can check without a database: the field is optional, and when given
+# it must be a non-empty string.
+
+
+def test_proposal_without_duplicate_of_validates_clean():
+    assert "duplicate_of" not in make_proposal()
+    assert schema.validate(make_proposal()) == []
+
+
+def test_proposal_with_a_string_duplicate_of_validates_clean():
+    record = make_proposal(duplicate_of="proposal-0001")
+    assert schema.validate(record) == []
+
+
+def test_proposal_with_an_empty_duplicate_of_is_refused():
+    record = make_proposal(duplicate_of="")
+    errors = schema.validate(record)
+    assert _errors_mentioning(errors, "record.duplicate_of")
+
+
+def test_proposal_with_a_non_string_duplicate_of_is_refused():
+    record = make_proposal(duplicate_of=42)
+    errors = schema.validate(record)
+    assert _errors_mentioning(errors, "record.duplicate_of")
+
+
+# ---- near_duplicate_reason: pure text comparison, no database ------------------
+#
+# `handoffs/2026-09-28-queue-duplicate-proposal-check.md`: the same shape as
+# `dfmcp.gotchas_store.near_duplicate_reason` (title/body), applied to a
+# proposal's own `summary`/`rationale`. The caller (`dfqueue/store.py`'s
+# `_find_duplicate_proposal`) is what scopes candidates to the same `type`
+# and "still open" -- this function itself never looks at `type` at all, so
+# these tests exercise it directly with plain dicts.
+
+
+def test_near_duplicate_reason_none_for_unrelated_summaries():
+    candidate = {"summary": "Site the next workshop south of the wagon.", "rationale": "Short haul."}
+    existing = {"summary": "Dig a well in the eastern cavern.", "rationale": "Water access."}
+    assert schema.near_duplicate_reason(candidate, existing) is None
+
+
+def test_near_duplicate_reason_catches_an_identical_summary():
+    candidate = {"summary": "Queue brewing directly at the Still.", "rationale": "We are low on drink."}
+    existing = {"summary": "Queue brewing directly at the Still.", "rationale": "Booze stock is falling."}
+    reason = schema.near_duplicate_reason(candidate, existing)
+    assert reason is not None
+    assert "identical" in reason
+
+
+def test_near_duplicate_reason_catches_a_reworded_summary_by_word_overlap():
+    """proposal-0009 vs proposal-0007's own real shape: same underlying
+    action, different phrasing -- caught by word-set Jaccard, not an exact
+    string match."""
+    candidate = {
+        "summary": "Queue a direct brewing job at the Still to cover the drink shortfall.",
+        "rationale": "Drink stock is under the safety margin.",
+    }
+    existing = {
+        "summary": "Queue a direct job at the Still to brew and cover the drink shortfall.",
+        "rationale": "We are projected to run dry within the season.",
+    }
+    reason = schema.near_duplicate_reason(candidate, existing)
+    assert reason is not None
+
+
+def test_near_duplicate_reason_catches_a_near_identical_rationale_with_a_different_summary():
+    candidate = {
+        "summary": "Build a still at the north workshop row.",
+        "rationale": "Drink stock has fallen under the safety margin for this season.",
+    }
+    existing = {
+        "summary": "Site a new brewery workshop north of the stockpile.",
+        "rationale": "Drink stock has fallen under the safety margin for this season, roughly.",
+    }
+    reason = schema.near_duplicate_reason(candidate, existing)
+    assert reason is not None
+    assert "rationale" in reason
+
+
+def test_near_duplicate_reason_ignores_missing_fields_without_raising():
+    assert schema.near_duplicate_reason({}, {}) is None

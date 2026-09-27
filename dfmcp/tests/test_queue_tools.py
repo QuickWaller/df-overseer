@@ -111,6 +111,63 @@ class TestStorageErrorsAreRefusals:
 
 
 # ==========================================================================
+# Duplicate-proposal detection: `handoffs/2026-09-28-queue-duplicate-
+# proposal-check.md`. Never a refusal -- a near-duplicate is still written,
+# flagged with `duplicate_of`, and the tool's own result reports why.
+# ==========================================================================
+
+
+class TestProposeDuplicateDetection:
+    async def test_a_near_duplicate_proposal_is_written_and_reported_not_refused(self, tmp_path):
+        path = tmp_path / "queue.sqlite3"
+        _first_text, first = await queue_tools.call(
+            queue_tools.QUEUE_PROPOSE, "architect", _propose_args(),
+            db_path=path, call_dfhack=_ok_call_dfhack, write_lock=asyncio.Lock(),
+        )
+
+        _second_text, second = await queue_tools.call(
+            queue_tools.QUEUE_PROPOSE, "architect",
+            _propose_args(summary="Site the next workshop on open ground near the Wagon, please."),
+            db_path=path, call_dfhack=_ok_call_dfhack, write_lock=asyncio.Lock(),
+        )
+
+        # Written, not refused: both proposals are in the queue.
+        assert store.load(path)[1]["id"] == second["id"]
+        # Flagged, and the tool's own result reports which one and why.
+        assert second["duplicate_of"] == first["id"]
+        assert second["duplicate_reason"]
+
+    async def test_an_unrelated_proposal_of_the_same_type_is_not_flagged(self, tmp_path):
+        path = tmp_path / "queue.sqlite3"
+        await queue_tools.call(
+            queue_tools.QUEUE_PROPOSE, "architect", _propose_args(),
+            db_path=path, call_dfhack=_ok_call_dfhack, write_lock=asyncio.Lock(),
+        )
+        _text, second = await queue_tools.call(
+            queue_tools.QUEUE_PROPOSE, "architect",
+            _propose_args(
+                summary="Dig a second stairwell down to the ore vein two levels below.",
+                rationale="The single stairwell is already a haul bottleneck for miners.",
+            ),
+            db_path=path, call_dfhack=_ok_call_dfhack, write_lock=asyncio.Lock(),
+        )
+        assert "duplicate_of" not in second
+
+    async def test_duplicate_of_cannot_be_smuggled_in_as_a_propose_argument(self, tmp_path):
+        """role/id/ts/cycle/snapshot are stamped by the server and refused
+        as arguments (`_reject_unknown_arguments`); `duplicate_of` is the
+        same kind of server-computed field and must be refused the same way
+        -- a caller cannot hand-pick which existing proposal it duplicates."""
+        path = tmp_path / "queue.sqlite3"
+        with pytest.raises(queue_tools.QueueToolError, match="unexpected argument"):
+            await queue_tools.call(
+                queue_tools.QUEUE_PROPOSE, "architect",
+                _propose_args(duplicate_of="proposal-0001"),
+                db_path=path, call_dfhack=_ok_call_dfhack, write_lock=asyncio.Lock(),
+            )
+
+
+# ==========================================================================
 # Write serialisation: the _next_id race, forced deterministic and fixed
 # ==========================================================================
 
