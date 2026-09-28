@@ -138,3 +138,113 @@ conventions rather than inventing new response shapes.
 
 ## Result
 
+**Status: done.** Both guards built in `scripts/dfhack/df-overseer-construction.lua`'s
+`build_construction`, as pure tool-layer refusals, no schema or `dfqueue`
+change. Commit `f65d923` on this branch (`worktree-agent-a4614d85a3d5698a6`).
+
+**What was built:**
+- `item_present`: scans `df.global.world.items.all` for a fort-owned item
+  (trader/garbage_collect/removed excluded, the same three-flag check
+  `df-overseer-well.lua`'s `is_fort_owned_item` already uses) sitting on a
+  candidate target's tile, via `dfhack.items.getPosition` (an
+  already-verified call site elsewhere in this repo: stockpile.lua,
+  stocks.lua, trees.lua, well.lua, workshop.lua, sampler.lua). Holds the
+  target and names the item type, never a coordinate. A read failure on the
+  item scan holds too (`unknown`, never a silent pass).
+- `keeps_access`: for every exposed, not-hidden, still-WALL ore/gem tile
+  orthogonally adjacent to any of the step's own build targets, reads that
+  ore tile's own four orthogonal neighbours live. If at least one open
+  neighbour is not one of this step's targets, the ore stays reachable
+  regardless: pass. If every currently-open orthogonal neighbour of that ore
+  tile IS a target, holds just one of them (fixed N,E,S,W tie-break) to keep
+  one approach open; the rest of the step's other targets proceed. Diagonal
+  neighbours are never trusted as an escape route or held against (see
+  below). An unreadable (not hidden) neighbour holds defensively rather than
+  assuming it is a safe escape.
+- `held`, a new bucket in `build`'s result, structurally separate from
+  `refused` (bad input) and `results` (designated): `"ring tile N: held
+  (item_present|keeps_access) -- <reason>"`. Both guards run regardless of
+  `dry_run` (they read live world state either way), so a dry run and a real
+  run report holds identically. `item_present` runs first (no open technical
+  question, cheaper), `keeps_access` second, over whatever survived
+  `item_present`.
+
+**(a) vs (b), and why (a):** picked **(a)**, the narrower conservative
+check, no map mutation. Read `df-overseer-reachability.lua` in full first:
+every exported function (`resolve_group`, `reachable_between`,
+`group_matches`) resolves against the world's *own current*
+`dfhack.maps.getWalkableGroup` cache. There is no parameter anywhere in that
+file, or any hypothetical-obstacle pathfind call anywhere else in this repo,
+for "pretend tile X is a wall, is Y still reachable". It genuinely cannot
+answer the hypothetical the design's step 6 wanted, not without actually
+building the wall and re-reading (option (b)), which would mean this exact
+guard mutating the map to decide whether to mutate the map, contradicting
+this same file's own header discipline ("ORDER IS ENFORCED BY WHAT `build`
+READS, NOT BY BOOKKEEPING" -- never guess, but also never act-then-check).
+So `keeps_access` does not call `df-overseer-reachability.lua` at all; it is
+a self-contained live neighbour scan using only `tile_read`/`decode_vein_tile`
+(reached via the existing `surface_hooks()` upvalue extraction, same as
+`mine_vein`/`build_construction` already use).
+
+**Deliberate narrowing versus the design's yaml sketch** (documented in the
+code, `research/2026-09-28-job-dependency-graph.md` section 4.2): the
+design's `protects:` list also names `pending_designations` (a queued dig/
+channel/smooth/engrave elsewhere, mirroring `suspendmanager`'s
+`ERASE_DESIGNATION`). Not built here -- it needs the project/step model the
+parallel `dfqueue` schema stream owns, not a tool-layer read. Only the
+ore/gem case this handoff asked for is built.
+
+**Orthogonal-only, on purpose:** the design's own section 7 point 2 flags
+"whether a miner can dig from a diagonal neighbour" as unverified. This
+guard never relies on that assumption in either direction -- it only ever
+trusts, or proposes holding, an orthogonal neighbour of an ore tile, never a
+diagonal one. This also means the guard is deliberately less thorough than
+a full 8-neighbour check would be (a diagonal-only escape route would not be
+recognised as one, and diagonal ore exposure this step doesn't touch is
+never scanned at all); flagging this rather than silently claiming full
+coverage.
+
+**Unverified DFHack API shapes used, flagged per the handoff's instruction:**
+`dfhack.items.getPosition` and the `item.flags.{trader,garbage_collect,
+removed}` triad are NOT new here -- both are already live call sites
+elsewhere in this repo (see above), so this stream treats them as
+established, not fresh guesses. `df.item_type[item:getType()]` (the ordinal
+-> token-name round trip `item_present`'s reason text uses) mirrors
+`df-overseer-construction.lua`'s own pre-existing, already-flagged-unverified
+`decode_item_material`/`dfhack.matinfo.decode` caveat in spirit, but was not
+independently re-verified live this stream either; if it reads wrong on the
+real install, only the item's *name in a hold reason* is affected, not
+whether the hold fires (the hold fires on flag state alone).
+
+**Tests:** extended `tests/lua_stubs/dfhack_construction_world.lua` with a
+fake item world (`ITEMS`, `add_item`, `df.global.world.items.all`,
+`dfhack.items.getPosition`, `df.item_type` enum) and added 5 new lupa tests
+to `tests/test_construction_lua_logic.py` (14 total in that file, all
+passing): a build held by `keeps_access` with a named-mineral reason, a
+build kept clear because a second open approach survives, an `item_present`
+hold naming the item type (and asserting no coordinate leaks into the
+reason string), a trader/garbage-collect item correctly ignored so the build
+still proceeds, and an unreadable ore-neighbour holding rather than guessing
+pass. Ambient `python -m pytest` (repo root, `lupa` importable): **1935
+passed, 3 skipped** (up from the `Working.md`-cited 1845/3 baseline by
+exactly the 90 tests other already-committed work since 2026-09-25 added
+plus this stream's own 5; nothing here reduced the count). `dfmcp/tests` was
+not touched and was not re-run (out of scope, no `dfmcp` file touched).
+
+**Found but not fixed, noted per the handoff's instruction, not silently
+dropped:**
+- The `from_step`/explicit-targets refactor (the doorway hazard: `build`
+  still treats every currently-open ring tile as a candidate, which would
+  wall a room's own doorway) is unchanged. Explicitly out of scope per this
+  handoff; needs the project/step data model from the parallel `dfqueue`
+  schema stream.
+- `building.build`'s own separate `economic_uses` bug is untouched (a third
+  parallel stream owns it).
+- No live VM verification was performed or attempted (out of scope per the
+  handoff's "no live mutation" rule; only read-only `dfhack-run` calls were
+  even permitted, and none were needed since nothing here required
+  confirming an API shape not already used elsewhere in this repo). The
+  orchestrator should live-verify `item_present`'s and `keeps_access`'s
+  actual behaviour against the real fort before trusting either guard on a
+  real `build` call, per the handoff's own caution about a fake world
+  modelling the wrong API shape and passing anyway.

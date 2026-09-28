@@ -64,6 +64,16 @@ class World:
         arr = self.lua.table_from([self.lua.table_from(k) for k in kinds])
         self.lua.eval("function(k) return set_kinds(k) end")(arr)
 
+    def add_item(self, id_, item_type, x=None, y=None, z=None, no_pos=False,
+                 trader=False, garbage_collect=False, removed=False):
+        opts = self.lua.table_from({
+            "no_pos": no_pos, "trader": trader,
+            "garbage_collect": garbage_collect, "removed": removed,
+        })
+        self.lua.eval("function(id, t, x, y, z, o) return add_item(id, t, x, y, z, o) end")(
+            id_, item_type, x, y, z, opts
+        )
+
     def queue_quickfort(self, output, res=0):
         self.lua.eval("function(o, r) return queue_quickfort(o, r) end")(output, res)
 
@@ -202,6 +212,103 @@ def test_build_refuses_a_hidden_tile_rather_than_guessing_it_is_open(w):
     assert res["open_tiles_found"] == 0
     assert len(res["refused"]) == 1
     assert "hidden" in res["refused"][0]
+    assert len(w.quickfort_calls()) == 0
+
+
+# ---------------------------------------------------------------------------
+# build guards: keeps_access, item_present
+# (handoffs/2026-09-28-keeps-access-guard.md)
+# ---------------------------------------------------------------------------
+
+
+def test_build_holds_a_target_that_would_seal_off_reachable_ore(w):
+    w.add_zone(13)
+    w.set_kinds([{"type": "Construction", "subtype": "Wall", "token": "Wall", "key": "Cw"}])
+    # Ring has one build target, (5,4,0), the ore tile's only currently-open
+    # orthogonal neighbour -- its other three neighbours are ordinary,
+    # already-known walls (not ore, not open), so building the ring target
+    # would cut off the only approach.
+    w.set_ring(13, [(5, 4, 0)])
+    w.set_tile(5, 4, 0, "FLOOR")           # the ring/build target
+    w.set_tile(5, 5, 0, "WALL")            # the ore tile itself
+    w.set_vein(5, 5, 0, "ore_or_gem", "HEMATITE")
+    w.set_tile(6, 5, 0, "WALL")            # ore's other 3 neighbours: plain
+    w.set_tile(5, 6, 0, "WALL")            # rock, already known, not open
+    w.set_tile(4, 5, 0, "WALL")
+
+    res = w.build(13, "Wall")
+    assert res["open_tiles_found"] == 1
+    assert len(res["results"]) == 0
+    assert len(res["held"]) == 1
+    assert "keeps_access" in res["held"][0]
+    assert "HEMATITE" in res["held"][0]
+    assert len(w.quickfort_calls()) == 0
+
+
+def test_build_does_not_hold_when_ore_keeps_another_open_approach(w):
+    w.add_zone(13)
+    w.set_kinds([{"type": "Construction", "subtype": "Wall", "token": "Wall", "key": "Cw"}])
+    w.set_ring(13, [(5, 4, 0)])
+    w.set_tile(5, 4, 0, "FLOOR")            # the ring/build target
+    w.set_tile(5, 5, 0, "WALL")             # the ore tile
+    w.set_vein(5, 5, 0, "ore_or_gem", "HEMATITE")
+    w.set_tile(6, 5, 0, "FLOOR")            # a SECOND open approach, not in
+    w.set_tile(5, 6, 0, "WALL")             # this step's targets -- ore
+    w.set_tile(4, 5, 0, "WALL")             # stays reachable regardless
+    w.queue_quickfort("  Buildings designated: 1\n", res=0)
+
+    res = w.build(13, "Wall")
+    assert len(res["held"]) == 0
+    assert len(res["results"]) == 1
+    assert res["results"][0]["ok"] is True
+
+
+def test_build_holds_on_item_present_and_names_the_item_not_a_coordinate(w):
+    w.add_zone(13)
+    w.set_kinds([{"type": "Construction", "subtype": "Wall", "token": "Wall", "key": "Cw"}])
+    w.set_ring(13, [(1, 1, 0)])
+    w.set_tile(1, 1, 0, "FLOOR")
+    w.add_item(1, "BOULDER", 1, 1, 0)
+
+    res = w.build(13, "Wall")
+    assert len(res["results"]) == 0
+    assert len(res["held"]) == 1
+    assert "item_present" in res["held"][0]
+    assert "BOULDER" in res["held"][0]
+    assert "1,1,0" not in res["held"][0]
+    assert len(w.quickfort_calls()) == 0
+
+
+def test_build_ignores_a_trader_or_garbage_item_and_still_proceeds(w):
+    w.add_zone(13)
+    w.set_kinds([{"type": "Construction", "subtype": "Wall", "token": "Wall", "key": "Cw"}])
+    w.set_ring(13, [(1, 1, 0)])
+    w.set_tile(1, 1, 0, "FLOOR")
+    w.add_item(1, "BOULDER", 1, 1, 0, trader=True)
+    w.add_item(2, "BOULDER", 1, 1, 0, garbage_collect=True)
+    w.queue_quickfort("  Buildings designated: 1\n", res=0)
+
+    res = w.build(13, "Wall")
+    assert len(res["held"]) == 0
+    assert res["results"][0]["ok"] is True
+
+
+def test_build_holds_rather_than_guess_when_an_ore_neighbour_is_unreadable(w):
+    w.add_zone(13)
+    w.set_kinds([{"type": "Construction", "subtype": "Wall", "token": "Wall", "key": "Cw"}])
+    w.set_ring(13, [(5, 4, 0)])
+    w.set_tile(5, 4, 0, "FLOOR")            # the ring/build target
+    w.set_tile(5, 5, 0, "WALL")             # the ore tile
+    w.set_vein(5, 5, 0, "ore_or_gem", "HEMATITE")
+    # (6, 5, 0) deliberately left unset: tile_read fails "no test tile set"
+    w.set_tile(5, 6, 0, "WALL")
+    w.set_tile(4, 5, 0, "WALL")
+
+    res = w.build(13, "Wall")
+    assert len(res["results"]) == 0
+    assert len(res["held"]) == 1
+    assert "keeps_access" in res["held"][0]
+    assert "could not confirm" in res["held"][0]
     assert len(w.quickfort_calls()) == 0
 
 

@@ -21,8 +21,44 @@ end
 
 local NULL = "\0"
 
+-- ---------------------------------------------------------------------------
+-- Fake item world, for the item_present guard
+-- (handoffs/2026-09-28-keeps-access-guard.md). ITEMS holds every fake item;
+-- add_item(id, item_type, x, y, z, opts) registers one at a real position,
+-- with the same trader/garbage_collect/removed flags the guard's
+-- is_fort_owned_item_flags checks. An item with no position at all (opts.no_pos)
+-- proves dfhack.items.getPosition failing/returning nil is handled, not just
+-- items elsewhere on the map.
+-- ---------------------------------------------------------------------------
+
+ITEMS = {}
+
+-- `item_type` is the TOKEN NAME ("BOULDER"), converted here to the enum
+-- ordinal df.item_type expects `item:getType()` to return -- the real
+-- df.item_type[ordinal] -> name round trip df-overseer-construction.lua's
+-- item_present_at relies on, not just the name handed straight back.
+function add_item(id, item_type, x, y, z, opts)
+  opts = opts or {}
+  local it = {
+    id = id,
+    _item_type_ordinal = df.item_type[item_type],
+    _x = opts.no_pos and nil or x,
+    _y = opts.no_pos and nil or y,
+    _z = opts.no_pos and nil or z,
+    flags = {
+      trader = opts.trader == true,
+      garbage_collect = opts.garbage_collect == true,
+      removed = opts.removed == true,
+    },
+  }
+  function it:getType() return self._item_type_ordinal end
+  ITEMS[#ITEMS + 1] = it
+end
+
 df = {
   tiletype_shape = enum({"WALL", "FLOOR", "RAMP", "EMPTY"}),
+  item_type = enum({"BOULDER", "ROUGH", "WOOD", "BLOCKS"}),
+  global = {world = {items = {all = ITEMS}}},
 }
 
 CR_OK = 0
@@ -145,6 +181,12 @@ dfhack = {
     if resp == nil then return "", CR_OK end
     return resp.output, resp.res
   end,
+  items = {
+    getPosition = function(item)
+      if item._x == nil then return nil end
+      return item._x, item._y, item._z
+    end,
+  },
 }
 
 WRITTEN_FILES = {}

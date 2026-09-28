@@ -2269,7 +2269,7 @@ df-overseer-construction.lua:
       effect: mutate
       coordinate_bearing: internal-only
       live_deployed: false
-      verified: "unverified (offline build, lupa-tested against a fake world only, 2026-09-28). The real quickfort `#build`/`Cw` path (research/2026-09-24-quickfort-hands.md section 3) has never been run by this tool. DRY_RUN defaults to true."
+      verified: "unverified (offline build, lupa-tested against a fake world only, 2026-09-28; guards added and lupa-tested the same way, handoffs/2026-09-28-keeps-access-guard.md). The real quickfort `#build`/`Cw` path (research/2026-09-24-quickfort-hands.md section 3) has never been run by this tool. DRY_RUN defaults to true."
       knowledge_scope: player_derivable
       notes: >
         For a zone's own boundary-ring tiles, designates a construction of
@@ -2280,8 +2280,22 @@ df-overseer-construction.lua:
         blueprint per tile applied via quickfort `-c`. A ring tile still
         shaped WALL is refused by name ("not yet mined"), never silently
         skipped or guessed open -- this verb re-reads live shape itself,
-        it does not assume mine-vein already ran. `material_report` is
-        advisory only (df-overseer-building.lua's own 2026-09-28
+        it does not assume mine-vein already ran. Before designating,
+        every candidate target also passes two tool-layer guards (added
+        2026-09-28, handoffs/2026-09-28-keeps-access-guard.md, modelled on
+        DFHack's own suspendmanager reasons): `item_present` holds a
+        target with an unhauled fort-owned item on it (named by item type,
+        never a coordinate), and `keeps_access` holds just enough targets,
+        jointly over the whole call, to keep at least one live orthogonal
+        approach open to any exposed, not-hidden, still-unmined ore/gem
+        tile that would otherwise be sealed (a narrow, no-map-mutation
+        live check, not a hypothetical reachability pathfind -- see that
+        handoff's Result section for why). A held target is reported in a
+        new `held` list, distinct from `refused` (bad input) and `results`
+        (designated); the rest of the call's targets proceed normally.
+        Neither guard is gated by DRY_RUN: both read live world state and
+        report holds identically on a dry or a real call. `material_report`
+        is advisory only (df-overseer-building.lua's own 2026-09-28
         economic-material-exclusion policy, reapplied here rather than a
         new one; quickfort/buildingplan make the real material choice at
         build time regardless, the same way building.lua's own build_kind

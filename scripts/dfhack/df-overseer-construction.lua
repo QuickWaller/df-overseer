@@ -72,6 +72,19 @@
 -- makes repeatedly (df-overseer-diggable.lua's parse_quickfort_stats,
 -- df-overseer-building.lua's own stock scan next to stocks_mod).
 --
+-- GUARDS (added by handoffs/2026-09-28-keeps-access-guard.md, building on
+-- research/2026-09-28-job-dependency-graph.md section 4.2): `build` now runs
+-- two tool-layer refusal guards over its candidate targets before
+-- designating anything -- `item_present` (an unhauled item sits on the
+-- target tile) and `keeps_access` (building all of this step's targets
+-- together would seal off exposed, reachable ore). A held target is neither
+-- built nor counted as `refused`; it appears in a new `held` list with a
+-- named reason, and the rest of the step proceeds. See the guard section
+-- below (just above build_construction) for the full reasoning, including
+-- why keeps_access does NOT call df-overseer-reachability.lua's hypothetical
+-- pathfinding (it can't answer one) and instead uses a narrower, live,
+-- no-mutation neighbour check.
+--
 -- Usage: ./dfhack-run df-overseer-construction mine-vein ZONE_ID [DRY_RUN]
 -- Usage: ./dfhack-run df-overseer-construction build ZONE_ID KIND [DRY_RUN]
 
@@ -394,6 +407,262 @@ local function material_report()
 end
 
 -- ---------------------------------------------------------------------------
+-- Guards: keeps_access, item_present
+--
+-- handoffs/2026-09-28-keeps-access-guard.md, building on
+-- research/2026-09-28-job-dependency-graph.md section 4.2: a guard is a
+-- closed, data-listed predicate over the world, evaluated PER TARGET,
+-- JOINTLY OVER THE WHOLE STEP, returning pass/hold/unknown -- never
+-- defaulting to pass on a read failure. A `held` target is structurally
+-- different from a `refused` one: `refused` means "this input is wrong, fix
+-- your call"; `held` means "this input is fine, but designating it now would
+-- cause a specific, named harm, try again once that changes." Both a dry
+-- run and a real run report holds identically (guards read live world state,
+-- never dry/real branching); only actually-held targets are skipped, the
+-- rest of the step proceeds normally.
+--
+-- OUT OF SCOPE HERE (per the handoff): the `from_step`/explicit-targets
+-- refactor (the "doorway hazard" -- `build` still treats every open ring
+-- tile as a candidate); `dfqueue`/project/step records of any kind; a third
+-- guard kind or attaching either guard to a different tool. These guards
+-- are pure tool-layer refusals with no persistent record beyond the
+-- `held`/`refused` response shape below.
+-- ---------------------------------------------------------------------------
+
+local ORTHOGONAL_OFFSETS = {
+  {dx = 0, dy = -1}, {dx = 1, dy = 0}, {dx = 0, dy = 1}, {dx = -1, dy = 0},
+}
+
+local function guard_key(x, y, z) return x .. "," .. y .. "," .. z end
+
+-- ---- item_present (haul-before-seal) ---------------------------------------
+--
+-- Working.md's boulder-yield finding: "a build step must never proceed
+-- while an un-hauled ore/valuable item sits on its target tile." No open
+-- technical question, per the handoff; this is the simpler of the two
+-- guards.
+--
+-- Duplicated three-flag ownership check (trader/garbage_collect/removed),
+-- the same one df-overseer-well.lua's is_fort_owned_item and this file's own
+-- item_is_available (above) already use, file-local in all three -- not
+-- reqscript'd, matching this file's own established duplication policy
+-- (header: "MATERIAL CHOICE").
+
+local function is_fort_owned_item_flags(item)
+  local ok_f, f = pcall(function() return item.flags end)
+  if not ok_f or not f then return nil, "could not read item.flags" end
+  local ok_t, trader = pcall(function() return f.trader end)
+  local ok_g, gc = pcall(function() return f.garbage_collect end)
+  local ok_r, rm = pcall(function() return f.removed end)
+  if not (ok_t and ok_g and ok_r) then
+    return nil, "could not read item.flags.trader/garbage_collect/removed"
+  end
+  return not trader and not gc and not rm
+end
+
+-- Returns {item_type = "..."} if a fort-owned item sits on (x, y, z); false
+-- if none does; nil, reason if the scan itself could not be trusted (this
+-- is the guard's own "unknown" case -- never silently "false" on a read
+-- failure).
+local function item_present_at(x, y, z)
+  local ok_all, all_items = pcall(function() return df.global.world.items.all end)
+  if not ok_all or not all_items then
+    return nil, "world.items.all could not be read"
+  end
+  local unreadable = 0
+  for _, item in ipairs(all_items) do
+    local ok_pos, ix, iy, iz = pcall(dfhack.items.getPosition, item)
+    if ok_pos and ix ~= nil and ix == x and iy == y and iz == z then
+      local owned, oerr = is_fort_owned_item_flags(item)
+      if owned == nil then
+        unreadable = unreadable + 1
+      elseif owned then
+        local ok_t, tname = pcall(function() return df.item_type[item:getType()] end)
+        return {item_type = ok_t and tname or "unknown_item"}
+      end
+    end
+  end
+  if unreadable > 0 then
+    return nil, unreadable .. " item(s) on this tile could not be classified"
+  end
+  return false
+end
+
+-- Runs item_present over every candidate target (never a coordinate in the
+-- reason, per this repo's coordinate rule -- names the item instead).
+-- Returns (held, kept): `held` a list of {ring_position, reason}; `kept` the
+-- candidates the guard did not hold, in original order.
+local function apply_item_present_guard(candidates)
+  local held, kept = {}, {}
+  for _, c in ipairs(candidates) do
+    local found, err = item_present_at(c.x, c.y, c.z)
+    if found == nil then
+      held[#held + 1] = {ring_position = c.ring_position,
+        reason = "could not confirm whether an item sits here (" .. tostring(err)
+          .. "); holding rather than guessing"}
+    elseif found then
+      held[#held + 1] = {ring_position = c.ring_position,
+        reason = "an unhauled " .. tostring(found.item_type) .. " sits on this tile; haul it before sealing"}
+    else
+      kept[#kept + 1] = c
+    end
+  end
+  return held, kept
+end
+
+-- ---- keeps_access -----------------------------------------------------
+--
+-- research/2026-09-28-job-dependency-graph.md section 5.1's flagged open
+-- question ("what step 6 needs that does not exist today") and section 7
+-- point 1: whether df-overseer-reachability.lua's tri-state helper can
+-- answer a HYPOTHETICAL ("if these tiles became walls, is this tile still
+-- reachable") without mutating the map.
+--
+-- READ IN FULL FOR THIS HANDOFF, ANSWER: NO. Every exported function there
+-- (resolve_group, reachable_between, group_matches) resolves against the
+-- world's OWN CURRENT dfhack.maps.getWalkableGroup cache -- there is no
+-- parameter anywhere in that file for "pretend tile X is a wall", and no
+-- pathfind-with-a-hypothetical-obstacle call exists in this codebase at
+-- all. Answering the hypothetical for real would mean actually building the
+-- wall, re-reading, and deconstructing the ones that fail (the handoff's
+-- option (b)) -- which contradicts this very file's own header discipline
+-- ("ORDER IS ENFORCED BY WHAT `build` READS, NOT BY BOOKKEEPING" -- never
+-- mutate the map just to find out). So this guard takes option (a): a
+-- narrower, conservative check with NO pathfinding hypothetical at all, and
+-- no reqscript of df-overseer-reachability.lua.
+--
+-- THE CHECK: for every exposed, not-hidden, still-unmined (WALL-shaped) ore/
+-- gem tile orthogonally adjacent to one of this step's own build targets,
+-- read that ore tile's own four orthogonal neighbours live. If at least one
+-- of them is open (not hidden, shape ~= WALL) and is NOT one of this step's
+-- own targets, the ore stays reachable through it regardless of what this
+-- step does: pass. If every currently-open orthogonal neighbour of that ore
+-- tile IS one of this step's targets, building all of them would seal it:
+-- hold just enough of them (the deterministic tie-break below) to leave one
+-- approach open, per the handoff's "hold only the tiles needed to keep at
+-- least one approach open".
+--
+-- WHY ORTHOGONAL ONLY, NOT ALL 8 NEIGHBOURS: research/2026-09-28's own
+-- section 7 point 2 flags "whether a miner can dig from a diagonal
+-- neighbour" as UNVERIFIED. This guard never relies on that assumption
+-- either way: it only ever trusts, or proposes holding, an orthogonal
+-- neighbour, never a diagonal one.
+--
+-- WHY A HIDDEN NEIGHBOUR IS NEVER TREATED AS AN ESCAPE ROUTE OR AS UNKNOWN:
+-- the no-armok rule (CLAUDE.md) -- a hidden tile is simply excluded from the
+-- approach count (neither "open" nor grounds for "unknown"), the same
+-- `hidden_tiles: ignore` the design's own yaml sketch states.
+--
+-- DELIBERATE NARROWING versus the design's yaml sketch, stated per the
+-- handoff's "state your reasoning": the design's `protects:` list also
+-- names `pending_designations` (a dig/channel/smooth/engrave queued
+-- elsewhere, mirroring suspendmanager's ERASE_DESIGNATION). This guard does
+-- not track pending designations -- that needs the project/step model a
+-- parallel stream owns (handoffs/2026-09-28-dfqueue-project-step-schema.md),
+-- not a tool-layer read. Only the ore/gem case this handoff asked for is
+-- built here.
+
+-- Tri-state: true (open, safe to trust or to hold-avoid), false (not open:
+-- still a wall), nil (unreadable -- distinct from hidden, which is excluded
+-- entirely, never counted as "unknown").
+local function tile_open(hooks, x, y, z)
+  local t = hooks.tile_read(x, y, z)
+  if not t.ok then return nil, "unreadable" end
+  if t.hidden then return nil, "hidden" end
+  return t.shape ~= df.tiletype_shape.WALL, nil
+end
+
+-- All exposed, not-hidden, still-WALL ore/gem tiles orthogonally adjacent to
+-- ANY of `candidates`, deduped by coordinate: "jointly over the step" means
+-- never evaluating the same ore tile once per neighbouring target.
+local function protected_ore_tiles(hooks, candidates)
+  local seen, ore = {}, {}
+  for _, c in ipairs(candidates) do
+    for _, off in ipairs(ORTHOGONAL_OFFSETS) do
+      local ox, oy, oz = c.x + off.dx, c.y + off.dy, c.z
+      local k = guard_key(ox, oy, oz)
+      if not seen[k] then
+        local t = hooks.tile_read(ox, oy, oz)
+        if t.ok and not t.hidden and t.shape == df.tiletype_shape.WALL then
+          local rec = hooks.decode_vein_tile(ox, oy, oz)
+          if rec.vein_status == "ore_or_gem" then
+            seen[k] = true
+            ore[#ore + 1] = {x = ox, y = oy, z = oz, mineral_name = rec.mineral_name}
+          end
+        end
+      end
+    end
+  end
+  return ore
+end
+
+-- Runs keeps_access over `candidates` (the targets that survived
+-- item_present -- see build_construction for why item_present runs first).
+-- Returns (held, kept) in the same shape apply_item_present_guard does.
+local function apply_keeps_access_guard(hooks, candidates)
+  local target_set = {}
+  for _, c in ipairs(candidates) do target_set[guard_key(c.x, c.y, c.z)] = c end
+
+  local ore_tiles = protected_ore_tiles(hooks, candidates)
+  local held_keys, held_reason = {}, {}
+
+  for _, ore in ipairs(ore_tiles) do
+    local approaches = {}
+    local any_open_free = false
+    local unknown_here = false
+    for _, off in ipairs(ORTHOGONAL_OFFSETS) do
+      local nx, ny, nz = ore.x + off.dx, ore.y + off.dy, ore.z
+      local open, why = tile_open(hooks, nx, ny, nz)
+      if open == nil then
+        if why == "unreadable" then unknown_here = true end
+        -- hidden: silently excluded, per the no-armok rule (header above)
+      elseif open then
+        local nk = guard_key(nx, ny, nz)
+        if target_set[nk] then
+          if not held_keys[nk] then approaches[#approaches + 1] = nk end
+        else
+          any_open_free = true
+        end
+      end
+    end
+    if not any_open_free and unknown_here then
+      -- Could not fully confirm this ore tile's escape route: hold every
+      -- target-set neighbour found so far rather than guess it stays
+      -- reachable (three-valued rule: unknown never defaults to pass).
+      for _, nk in ipairs(approaches) do
+        if not held_keys[nk] then
+          held_keys[nk] = true
+          held_reason[nk] = "could not confirm every neighbour of exposed "
+            .. tostring(ore.mineral_name) .. " ore; holding rather than guessing it stays reachable"
+        end
+      end
+    elseif not any_open_free and #approaches > 0 then
+      -- Every currently-open orthogonal neighbour of this ore tile is one of
+      -- this step's own targets: hold the first one found, in the fixed
+      -- N,E,S,W scan order (ORTHOGONAL_OFFSETS' own order) -- this guard's
+      -- deterministic tie-break, since every approach considered here is
+      -- already orthogonal-only (see header on diagonal mining). The rest
+      -- of this ore tile's neighbouring targets proceed.
+      local nk = approaches[1]
+      held_keys[nk] = true
+      held_reason[nk] = "would cut off exposed " .. tostring(ore.mineral_name)
+        .. " ore that is still to be worked"
+    end
+  end
+
+  local held, kept = {}, {}
+  for _, c in ipairs(candidates) do
+    local nk = guard_key(c.x, c.y, c.z)
+    if held_keys[nk] then
+      held[#held + 1] = {ring_position = c.ring_position, reason = held_reason[nk]}
+    else
+      kept[#kept + 1] = c
+    end
+  end
+  return held, kept
+end
+
+-- ---------------------------------------------------------------------------
 -- build ZONE_ID KIND [DRY_RUN]
 -- ---------------------------------------------------------------------------
 
@@ -459,8 +728,30 @@ function build_construction(zone_id, kind_name, dry_run)
     end
   end
 
+  -- Guards, in this order (per the handoff: item_present is the simpler
+  -- guard with no open technical question; run it first for an early,
+  -- cheap hold before keeps_access's more involved neighbour scan). Both
+  -- read live world state regardless of `dry`, so a dry run and a real run
+  -- report holds identically -- a hold is not a run-level failure (`ok`
+  -- stays true below, `results` simply omits the held targets).
+  local item_held, after_item_present = apply_item_present_guard(candidates)
+  local access_held, final_candidates = apply_keeps_access_guard(hooks, after_item_present)
+
+  local held_records = {}
+  for _, h in ipairs(item_held) do
+    held_records[#held_records + 1] = {ring_position = h.ring_position, guard = "item_present", reason = h.reason}
+  end
+  for _, h in ipairs(access_held) do
+    held_records[#held_records + 1] = {ring_position = h.ring_position, guard = "keeps_access", reason = h.reason}
+  end
+  table.sort(held_records, function(a, b) return a.ring_position < b.ring_position end)
+  local held = {}
+  for _, h in ipairs(held_records) do
+    held[#held + 1] = string.format("ring tile %d: held (%s) -- %s", h.ring_position, h.guard, h.reason)
+  end
+
   local results = {}
-  for _, c in ipairs(candidates) do
+  for _, c in ipairs(final_candidates) do
     local r = apply_single_cell('build', k.key, c.x, c.y, c.z, dry, 'Buildings designated', 'build')
     results[#results + 1] = {
       ring_position = c.ring_position,
@@ -478,6 +769,7 @@ function build_construction(zone_id, kind_name, dry_run)
     boundary_ring_tiles = #ring,
     open_tiles_found = #candidates,
     refused = refused,
+    held = held,
     dry_run = dry,
     material_report = material_report(),
     results = results,
