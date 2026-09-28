@@ -70,9 +70,8 @@ class World:
     def set_block_read_error(self, x, y, z):
         self.lua.eval("function(x, y, z) return set_block_read_error(x, y, z) end")(x, y, z)
 
-    def set_inorganic(self, idx, id_, economic_uses=None):
-        arr = self.lua.table_from(economic_uses or [])
-        self.lua.eval("function(i, id, u) return set_inorganic(i, id, u) end")(idx, id_, arr)
+    def set_inorganic(self, idx, id_, is_ore=False, is_gem=False):
+        self.lua.eval("function(i, id, o, g) return set_inorganic(i, id, o, g) end")(idx, id_, is_ore, is_gem)
 
     def vein_material(self, zone_id):
         r = self.g["vein_material"](zone_id)
@@ -113,7 +112,7 @@ def test_hidden_tile_is_reported_hidden_never_guessed(w):
 def test_a_real_economic_ore_is_decoded_and_classified(w):
     w.set_tile(0, 0, 0, "WALL", "MINERAL")
     w.set_vein_event(0, 0, 0, 7, present=True)
-    w.set_inorganic(7, "HEMATITE", economic_uses=["SMELT_ORE"])
+    w.set_inorganic(7, "HEMATITE", is_ore=True)
     rec = w.decode_vein_tile(0, 0, 0)
     assert rec["vein_status"] == "ore_or_gem"
     assert rec["mineral_name"] == "HEMATITE"
@@ -123,7 +122,7 @@ def test_a_real_economic_ore_is_decoded_and_classified(w):
 def test_a_non_economic_mineral_is_named_but_not_ore(w):
     w.set_tile(0, 0, 0, "WALL", "MINERAL")
     w.set_vein_event(0, 0, 0, 3, present=True)
-    w.set_inorganic(3, "SOME_MINERAL", economic_uses=[])
+    w.set_inorganic(3, "SOME_MINERAL")
     rec = w.decode_vein_tile(0, 0, 0)
     assert rec["vein_status"] == "not_economic"
     assert rec["mineral_name"] == "SOME_MINERAL"
@@ -144,7 +143,7 @@ def test_a_vein_event_present_false_does_not_match_this_tile(w):
     # tile's block has A vein event, but not covering this specific tile.
     w.set_tile(0, 0, 0, "WALL", "MINERAL")
     w.set_vein_event(0, 0, 0, 7, present=False)
-    w.set_inorganic(7, "HEMATITE", economic_uses=["SMELT_ORE"])
+    w.set_inorganic(7, "HEMATITE", is_ore=True)
     rec = w.decode_vein_tile(0, 0, 0)
     assert rec["vein_status"] == "unknown"
 
@@ -199,7 +198,7 @@ def test_ring_finds_the_ore_tile_among_ordinary_stone(w):
     # One ring tile is real hematite ore.
     w.set_tile(4, 4, 0, "WALL", "MINERAL")
     w.set_vein_event(4, 4, 0, 1, present=True)
-    w.set_inorganic(1, "HEMATITE", economic_uses=["SMELT_ORE"])
+    w.set_inorganic(1, "HEMATITE", is_ore=True)
 
     res = w.vein_material(13)
     assert res["counts"]["ore_or_gem"] == 1

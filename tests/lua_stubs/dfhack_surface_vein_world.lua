@@ -6,12 +6,15 @@
 -- This proves the FILE'S OWN LOGIC (how it walks a zone's boundary ring, how
 -- it classifies a tile once it has a shape/material/vein-event answer, how
 -- it degrades to "unknown" rather than guessing on any read failure) against
--- a fake world whose shape matches this stream's best understanding of the
--- real API. It proves NOTHING about whether `dfhack.maps.getTileBlock`,
--- `block.block_events`, `df.block_square_event_mineralst`, `.tile_bitmask:
--- get(x, y)` or `.inorganic_mat` are the real field names DFHack uses --
--- that is an unverified live check, called out in this stream's Result and
--- in the .lua file's own header comment for `decode_vein_tile`.
+-- a fake world shaped to match the REAL API, live-verified 2026-09-28
+-- (research/2026-09-28-ore-detection.md): `tile_bitmask.bits[y % 16]`, bit
+-- `x % 16` within that row, and `inorg:isOre()`/`inorg.material:isGem()`
+-- for ore/gem classification. An earlier version of this stub (and the real
+-- script) modeled a guessed, wrong shape (`tile_bitmask:get(x, y)`,
+-- `economic_uses`) that happened to still pass its own tests -- this file's
+-- shape is now checked against the real game, not just internally
+-- consistent with a guess. See the .lua file's own header comment on
+-- `decode_vein_tile` for the live evidence.
 
 local function enum(names)
   local t = {}
@@ -81,12 +84,18 @@ function set_hidden(x, y, z, hidden)
   HIDDEN[key(x, y, z)] = (hidden ~= false)
 end
 
--- A real vein event at (x, y, z): `present` (default true) simulates
--- tile_bitmask:get(...) returning true for this exact tile.
+-- A real vein event at (x, y, z): `present` (default true) simulates the
+-- real `tile_bitmask.bits[ly]` row having its `lx` bit set for this exact
+-- tile (rows indexed by Y, bit position is X within the row -- the real
+-- shape, live-confirmed 2026-09-28 against a known hematite tile: the
+-- reverse indexing reads 0 for it, checked both ways before picking one).
 function set_vein_event(x, y, z, inorganic_idx, present)
+  local lx, ly = x % 16, y % 16
   local ev = {_mineral_event = true, inorganic_mat = inorganic_idx}
-  local p = (present ~= false)
-  ev.tile_bitmask = {get = function(_, lx, ly) return p end}
+  local bits = {}
+  for i = 0, 15 do bits[i] = 0 end
+  if present ~= false then bits[ly] = (1 << lx) end
+  ev.tile_bitmask = {bits = bits}
   BLOCK_EVENTS[key(x, y, z)] = {ev}
 end
 
@@ -101,8 +110,17 @@ function set_block_read_error(x, y, z)
   BLOCK_EVENTS[key(x, y, z)] = "ERROR"
 end
 
-function set_inorganic(idx, id, economic_uses)
-  INORGANICS[idx] = {id = id, material = {economic_uses = vec(economic_uses or {})}}
+-- Live-verified 2026-09-28 (research/2026-09-28-ore-detection.md): the real
+-- classification is `inorg:isOre()` / `inorg.material:isGem()`, not
+-- economic_uses (that field isn't even at this path on the real object, and
+-- answers a different question -- which reactions reference this material --
+-- even where it is readable).
+function set_inorganic(idx, id, is_ore, is_gem)
+  INORGANICS[idx] = {
+    id = id,
+    isOre = function() return is_ore == true end,
+    material = {isGem = function() return is_gem == true end},
+  }
 end
 
 dfhack = {

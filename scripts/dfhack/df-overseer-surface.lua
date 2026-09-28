@@ -652,33 +652,43 @@ end
 -- carries (not an item's material -- `dfhack.matinfo.decode` in
 -- df-overseer-building.lua's material-choice fix is a different code path,
 -- for an ITEM; a map tile's vein material comes from the map block's own
--- `block_events`, read below) and classify it economic (ore/gem) or not,
--- using the same "non-empty economic_uses" rule building.lua's
--- material-choice fix already established for an item's material.
+-- `block_events`, read below) and classify it ore/gem or not.
 --
--- THE REAL API, AS BEST DETERMINED WITHOUT LIVE ACCESS -- SINGLE HIGHEST-
--- RISK UNVERIFIED PIECE IN THIS STREAM (per the handoff's own instruction
--- to flag it, not hide it behind a confident-sounding comment): this
--- stream had no VM/DFHack process to read the installed
--- `hack/scripts/internal/...`/`hack/lua/...` source against, the way
--- research/2026-09-24-quickfort-hands.md did for quickfort. The chain below
--- is DFHack's well-documented, long-stable vein mechanism (the same one
--- underlying its own bundled `prospector`-style scripts): a map block
--- (`dfhack.maps.getTileBlock(x, y, z)`) carries a `block_events` vector;
--- a vein tile's event is a `df.block_square_event_mineralst` (checked via
--- `:is_instance`, the same idiom this codebase already uses for
--- `df.building_civzonest` in `find_zone` above), which carries
--- `inorganic_mat` (an index into `df.global.world.raws.inorganics`) and a
--- `tile_bitmask` covering the block's 16x16 tiles, queried by
--- `tile_bitmask:get(x % 16, y % 16)`. The earlier orchestrator attempt this
--- handoff references crashed on a wrong field name and was abandoned rather
--- than shipped; this version is written so THE SAME kind of mistake
--- degrades to an honest `unknown` result (every hop is `pcall`-guarded,
--- exactly like `tile_read` above), never a crash and never a guess. DO NOT
--- treat `vein_status` as ground truth until the orchestrator has run this
--- against a real MINERAL-class tile (zone 13's 5 hematite tiles are the
--- known live positive to check first) and confirmed a real mineral name
--- comes back instead of `unknown`.
+-- LIVE-VERIFIED 2026-09-28 (`research/2026-09-28-ore-detection.md`, ground-
+-- truthed against this world's own raw text file and DFHack's `isOre`/
+-- `isGem`, the same calls its bundled `prospector` plugin uses): the
+-- original "non-empty economic_uses" rule (copied from building.lua's
+-- material-choice fix, which classifies an ITEM's material) is simply the
+-- wrong signal here -- `inorg.material.economic_uses` isn't even a valid
+-- path (`economic_uses` is a top-level `inorganic_raw` field, not nested
+-- under `.material`), and even read correctly it answers "which reactions
+-- reference this material", not ore-worthiness: hematite (a real ore,
+-- `[METAL_ORE:IRON:100]` in its raw) reads empty economic_uses either way.
+-- The correct check is `inorg:isOre()` (metal ore) or `inorg.material:
+-- isGem()` (gem), both live-confirmed true/false correctly against known
+-- ore (hematite, native gold) and known non-ore vein minerals (microcline,
+-- kaolinite). A bare `material_class == MINERAL` fallback was considered
+-- and rejected on the same evidence: microcline and kaolinite are both
+-- MINERAL-class and both non-ore, so that fallback would flag every vein
+-- tile, exactly what this classification exists to avoid.
+--
+-- THE VEIN-EVENT LOOKUP, LIVE-VERIFIED 2026-09-28 against zone 13's known
+-- hematite ring tiles: a map block (`dfhack.maps.getTileBlock(x, y, z)`)
+-- carries a `block_events` vector; a vein tile's event is a
+-- `df.block_square_event_mineralst` (checked via `:is_instance`, the same
+-- idiom this codebase already uses for `df.building_civzonest` in
+-- `find_zone` above), which carries `inorganic_mat` (an index into
+-- `df.global.world.raws.inorganics`) and a `tile_bitmask` covering the
+-- block's 16x16 tiles. **`tile_bitmask:get(x, y)` does not exist** (an
+-- earlier attempt crashed on it) -- the real shape is `tile_bitmask.bits`,
+-- a 16-entry array of 16-bit rows **indexed by Y**, each bit position
+-- **the X coordinate within that row**: membership is
+-- `(tile_bitmask.bits[y % 16] >> (x % 16)) & 1 == 1`, live-confirmed against
+-- (103,101,167), a known hematite tile (the reverse indexing, rows by X,
+-- reads 0 for this same tile -- checked both ways live before picking one).
+-- Every hop stays `pcall`-guarded (never a crash, never a guessed name):
+-- a read failure or an unmatched bitmask still comes back `vein_status`
+-- "unknown" with `error` set.
 -- ---------------------------------------------------------------------------
 
 local VEIN_MATERIAL_CLASSES = {
@@ -725,7 +735,9 @@ local function decode_vein_tile(x, y, z)
       local ev = events[i]
       local ok_is, is_mineral = pcall(function() return df.block_square_event_mineralst:is_instance(ev) end)
       if ok_is and is_mineral then
-        local ok_bit, present = pcall(function() return ev.tile_bitmask:get(lx, ly) end)
+        local ok_bit, present = pcall(function()
+          return (ev.tile_bitmask.bits[ly] >> lx) & 1 == 1
+        end)
         if ok_bit and present then
           found = ev
           break
@@ -755,12 +767,13 @@ local function decode_vein_tile(x, y, z)
   local ok_id, id = pcall(function() return inorg.id end)
   local name = (ok_id and id and tostring(id) ~= "") and tostring(id) or ("inorganic_" .. tostring(idx))
 
-  local ok_uses, uses = pcall(function() return inorg.material.economic_uses end)
-  if not ok_uses or uses == nil then
+  local ok_ore, is_ore = pcall(function() return inorg:isOre() end)
+  local ok_gem, is_gem = pcall(function() return inorg.material:isGem() end)
+  if not ok_ore or not ok_gem then
     return {ok = true, material_class = mclass, mineral_name = name, vein_status = "unknown",
-      error = "inorganic.material.economic_uses unreadable: " .. tostring(uses)}
+      error = "isOre/isGem unreadable: " .. tostring(is_ore) .. " / " .. tostring(is_gem)}
   end
-  local economic = (#uses > 0)
+  local economic = is_ore or is_gem
   return {
     ok = true, material_class = mclass, mineral_name = name, economic = economic,
     vein_status = economic and "ore_or_gem" or "not_economic",
