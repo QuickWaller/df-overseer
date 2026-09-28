@@ -79,4 +79,27 @@ present for this specific world, say so plainly.
 
 ## Result
 
-(pending)
+Ground-truthed live on VM 103. Hematite's raw does carry `[METAL_ORE:IRON:100]`
+(vanilla_materials/objects/inorganic_stone_mineral.txt), so it is ore under
+DF's own rules; the code's reads were wrong, not the game. Two separate bugs:
+`inorg.material.economic_uses` doesn't exist as a path at all (errors: nested
+under the wrong sub-compound; `economic_uses` is top-level on `inorganic_raw`),
+and `inorg.metal_ore` is a compound, not a vector -- the real tag data is one
+level down at `metal_ore.mat_index` (live-confirmed: 1 entry, IRON, for
+hematite). Even read correctly, top-level `economic_uses` is genuinely empty
+for hematite (confirmed live) -- it means "reactions registered against this
+material," not ore-worthiness, so it was never the right field regardless of
+access path.
+
+The orchestrator's MINERAL-vs-STONE hypothesis is not a good substitute:
+MICROCLINE and KAOLINITE are both `MINERAL`-class vein tiles and both
+non-ore (live-tested); it would flag every vein tile as ore, the exact
+false positive "economic" classification existed to avoid.
+
+Correct, already-built, live-verified mechanism: `inorganic_raw:isOre()` and
+`.material:isGem()`, the same calls DFHack's own bundled `prospector` plugin
+uses. Live-tested against hematite (true), native gold (true), microcline
+and kaolinite (false/false) -- all correct. Recommendation: keep
+`material_class == MINERAL` only as the "is this a vein tile" pre-filter,
+replace the `economic_uses` block with `isOre()`/`isGem()`, drop
+`economic_uses` entirely. Full report: `research/2026-09-28-ore-detection.md`.
