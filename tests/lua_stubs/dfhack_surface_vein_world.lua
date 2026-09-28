@@ -124,6 +124,15 @@ function set_inorganic(idx, id, is_ore, is_gem)
 end
 
 dfhack = {
+  matinfo = {
+    -- Real signature (live-verified 2026-09-28): dfhack.matinfo.decode(0, idx)
+    -- for an inorganic, mat_type 0. `.inorganic` is the raw itself.
+    decode = function(mat_type, idx)
+      local inorg = INORGANICS[idx]
+      if not inorg then return nil end
+      return {inorganic = inorg}
+    end,
+  },
   maps = {
     isValidTilePos = function(x, y, z) return true end,
     isTileVisible = function(x, y, z) return not HIDDEN[key(x, y, z)] end,

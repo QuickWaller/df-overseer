@@ -759,11 +759,19 @@ local function decode_vein_tile(x, y, z)
     return {ok = true, material_class = mclass, vein_status = "unknown",
       error = "vein event's inorganic_mat unreadable: " .. tostring(idx)}
   end
-  local ok_inorg, inorg = pcall(function() return df.global.world.raws.inorganics[idx] end)
-  if not ok_inorg or not inorg then
+  -- Direct `df.global.world.raws.inorganics[idx]` indexing errors live
+  -- ("Cannot read field inorganic_material_definition_handlerst.<idx>: not
+  -- found") -- live-confirmed 2026-09-28 against zone 13's own hematite
+  -- tiles. `dfhack.matinfo.decode(0, idx)` (mat_type 0 = inorganic) is the
+  -- real, live-verified way to reach the raw: `.inorganic` is the raw
+  -- itself (`:isOre()`, `.id`), `.inorganic.material` is the nested
+  -- material struct (`:isGem()`).
+  local ok_mi, mi = pcall(function() return dfhack.matinfo.decode(0, idx) end)
+  if not ok_mi or not mi or not mi.inorganic then
     return {ok = true, material_class = mclass, vein_status = "unknown",
-      error = "raws.inorganics[" .. tostring(idx) .. "] unreadable: " .. tostring(inorg)}
+      error = "matinfo.decode(0, " .. tostring(idx) .. ") unreadable: " .. tostring(mi)}
   end
+  local inorg = mi.inorganic
   local ok_id, id = pcall(function() return inorg.id end)
   local name = (ok_id and id and tostring(id) ~= "") and tostring(id) or ("inorganic_" .. tostring(idx))
 
