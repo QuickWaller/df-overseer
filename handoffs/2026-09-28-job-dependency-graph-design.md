@@ -123,3 +123,28 @@ green-lit build — do not write implementation code, do not touch
 
 ## Result
 
+Done, design only: `research/2026-09-28-job-dependency-graph.md`.
+
+Recommendation: four layers. A proposal (decision) becomes a **project** when
+accepted (the `plan` record §9 already says is missing), made of **steps**
+(one generic tool action over a target set); DF jobs are observed evidence
+attached to steps, never graph nodes. Three edge kinds: `requires`
+(finish-to-start, recorded explicitly, `executed` reused with a `step_id`),
+**guards** (closed, data-listed world predicates checked per target by code,
+modelled on DFHack `suspendmanager`'s reason enum), and soft `prefer_after`.
+Recorded and observed state stay separate fields; mismatch is drift for the
+Overseer, never auto-overwritten (Terraform refresh, Kubernetes conditions).
+Scope: one store per fort in `dfqueue`, organised by project; guards
+fort-wide.
+
+A reachability-based `keeps_access` guard in `construction.build`, evaluated
+jointly over the step, would have refused building 22 at designation time.
+Proposed build order: that guard first (no schema change), then projects,
+then the reconciler.
+
+Live findings (read-only): mined vein floor still reads HEMATITE, so the
+premise is partly wrong (the ruling stands on who/when/intent instead);
+`build` walls any open ring tile, a doorway hazard; `suspendmanager`
+(currently off) would unsuspend job 2705 if enabled; the "26 ore tiles"
+scan counted hidden tiles, which no agent-facing tool may.
+
