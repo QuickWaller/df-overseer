@@ -66,6 +66,16 @@
 --                       material once something is built or dug there) is
 --                       made of, at the game's own tiletype_material
 --                       granularity (SOIL, STONE, CONSTRUCTION, ...).
+--   vein-material ZONE_ID  (added 2026-09-28) per boundary-ring tile: the
+--                       tiletype_material class, plus -- for a MINERAL/
+--                       FEATURE tile -- the REAL decoded mineral name and
+--                       whether it is economic (ore/gem) or not. Reports
+--                       ring_position (1-based, sequential; never a
+--                       coordinate), never guesses a name it could not
+--                       decode (vein_status "unknown", never a fabricated
+--                       mineral). See this section's own header comment
+--                       below for the exact API this reads and how
+--                       unverified it is.
 --   traffic ZONE_ID     the traffic designation (Normal/Low/High/
 --                       Restricted) set over the zone's own footprint
 --                       tiles. READ ONLY: this fort has never had a
@@ -137,6 +147,9 @@
 local json = require('json')
 
 local NULL = "\0"
+-- nil (and only nil) -> the JSON-null sentinel; `false` is a real value
+-- (e.g. vein_material's `economic`), never conflated with "unknown".
+local function nn(v) if v == nil then return NULL end return v end
 local MAX_FOOTPRINT_TILES = 2500   -- 50x50; no real room on this fort comes close
 local MAX_RING_TILES = 900         -- perimeter of a MAX_FOOTPRINT_TILES square, generous
 local MAX_ENGRAVINGS = 20000       -- bounded scan of world.event.engravings, not the map
@@ -149,6 +162,35 @@ local MAX_ENGRAVINGS = 20000       -- bounded scan of world.event.engravings, no
 -- vector (df-overseer-zone.lua's list_zones walks ACTIVITY_ZONE bounded by
 -- its own MAX_ZONE_SCAN because IT enumerates; this file only ever
 -- resolves one caller-named id).
+--
+-- STAYS LOCAL, REUSED BY UPVALUE, NOT PROMOTED TO GLOBAL (2026-09-28,
+-- handoffs/2026-09-28-ore-vein-recovery-and-construction-tool.md): the new
+-- construction tool (df-overseer-construction.lua) needs this file's own
+-- zone-resolution, ring-walk and vein-decode to designate real tiles (mine
+-- an ore vein, then build a wall in its place) -- the brief's own
+-- instruction is to EXTEND this machinery, not duplicate it. The first cut
+-- of this change promoted find_zone/ring_tiles/tile_read to plain `function`
+-- (global, hence exported through reqscript) -- and broke
+-- tests/test_blueprint_tool_manifest.py's own `test_shim_contract_holds_in_
+-- the_surface_layer`: df-overseer-blueprint.lua's rectangle-anchored shim
+-- (its own header, "surface reads use a rectangle-anchored shim over
+-- df-overseer-surface's zone-anchored functions") depends on find_zone
+-- staying a `local function` so that `enclosure`/`finish`/
+-- `boundary_material` close over it as a genuine Lua upvalue it can swap
+-- with `debug.setupvalue` for a synthetic rectangle, then restore. A global
+-- find_zone would not be an upvalue of those functions at all, silently
+-- breaking that swap. Fixed the same way df-overseer-building.lua already
+-- reaches into quickfort's own local table (`upvalue_by_name`,
+-- `debug.getupvalue`) and the same way this repo's own Lua-logic tests
+-- already reach into a file's locals (test_building_material_and_
+-- previously_built_lua_logic.py's `upvalue_by_name`): find_zone,
+-- footprint_dims, footprint_tiles, ring_tiles, tile_read and
+-- decode_vein_tile (below) all stay `local`; df-overseer-construction.lua
+-- extracts them as upvalues of this file's own exported `vein_material`
+-- (which closes over all of them), never duplicates their logic. This is a
+-- READ-ONLY extraction (get, never set) unlike the blueprint shim's
+-- swap-and-restore, so it carries none of that mechanism's own restore-on-
+-- error risk.
 local function find_zone(zone_id)
   local id = tonumber(zone_id)
   if not id then return nil, "ZONE_ID must be a number" end
@@ -599,6 +641,171 @@ function traffic(zone_id)
 end
 
 -- ---------------------------------------------------------------------------
+-- vein-material ZONE_ID (2026-09-28, handoffs/2026-09-28-ore-vein-recovery-
+-- and-construction-tool.md)
+--
+-- WHY THIS EXISTS: decisions/DECISIONS.md 2026-09-24 found that an ore vein
+-- smoothed into a room's wall reads as ordinary MINERAL-class stone to
+-- every existing tool (`material` above reports the tiletype_material
+-- class only, never which mineral). This closes that gap: for each of a
+-- zone's own boundary-ring tiles, decode the REAL mineral the tile's vein
+-- carries (not an item's material -- `dfhack.matinfo.decode` in
+-- df-overseer-building.lua's material-choice fix is a different code path,
+-- for an ITEM; a map tile's vein material comes from the map block's own
+-- `block_events`, read below) and classify it economic (ore/gem) or not,
+-- using the same "non-empty economic_uses" rule building.lua's
+-- material-choice fix already established for an item's material.
+--
+-- THE REAL API, AS BEST DETERMINED WITHOUT LIVE ACCESS -- SINGLE HIGHEST-
+-- RISK UNVERIFIED PIECE IN THIS STREAM (per the handoff's own instruction
+-- to flag it, not hide it behind a confident-sounding comment): this
+-- stream had no VM/DFHack process to read the installed
+-- `hack/scripts/internal/...`/`hack/lua/...` source against, the way
+-- research/2026-09-24-quickfort-hands.md did for quickfort. The chain below
+-- is DFHack's well-documented, long-stable vein mechanism (the same one
+-- underlying its own bundled `prospector`-style scripts): a map block
+-- (`dfhack.maps.getTileBlock(x, y, z)`) carries a `block_events` vector;
+-- a vein tile's event is a `df.block_square_event_mineralst` (checked via
+-- `:is_instance`, the same idiom this codebase already uses for
+-- `df.building_civzonest` in `find_zone` above), which carries
+-- `inorganic_mat` (an index into `df.global.world.raws.inorganics`) and a
+-- `tile_bitmask` covering the block's 16x16 tiles, queried by
+-- `tile_bitmask:get(x % 16, y % 16)`. The earlier orchestrator attempt this
+-- handoff references crashed on a wrong field name and was abandoned rather
+-- than shipped; this version is written so THE SAME kind of mistake
+-- degrades to an honest `unknown` result (every hop is `pcall`-guarded,
+-- exactly like `tile_read` above), never a crash and never a guess. DO NOT
+-- treat `vein_status` as ground truth until the orchestrator has run this
+-- against a real MINERAL-class tile (zone 13's 5 hematite tiles are the
+-- known live positive to check first) and confirmed a real mineral name
+-- comes back instead of `unknown`.
+-- ---------------------------------------------------------------------------
+
+local VEIN_MATERIAL_CLASSES = {
+  [df.tiletype_material.MINERAL] = true,
+  [df.tiletype_material.FEATURE] = true,
+}
+
+-- One tile's vein classification. Never guesses: any read failure or any
+-- MINERAL/FEATURE tile whose vein event cannot be matched comes back
+-- vein_status "unknown" with `error` set, not a fabricated name or a
+-- silent "not economic". Coordinates are function PARAMETERS here (an
+-- internal geometry primitive, the same shape as `tile_read` above and
+-- landmarks.get_landmark_centroid's return) -- never printed or placed in
+-- a result table.
+local function decode_vein_tile(x, y, z)
+  local t = tile_read(x, y, z)
+  if not t.ok then
+    return {ok = false, vein_status = "unreadable", error = t.err}
+  end
+  if t.hidden then
+    return {ok = true, hidden = true, vein_status = "hidden"}
+  end
+  local mclass = material_name(t.material)
+  if not VEIN_MATERIAL_CLASSES[t.material] then
+    return {ok = true, hidden = false, material_class = mclass, vein_status = "not_mineral",
+      economic = false}
+  end
+
+  local ok_blk, blk = pcall(dfhack.maps.getTileBlock, x, y, z)
+  if not ok_blk or not blk then
+    return {ok = true, material_class = mclass, vein_status = "unknown",
+      error = "dfhack.maps.getTileBlock failed: " .. tostring(blk)}
+  end
+  local ok_ev, events = pcall(function() return blk.block_events end)
+  if not ok_ev or not events then
+    return {ok = true, material_class = mclass, vein_status = "unknown",
+      error = "block.block_events unreadable: " .. tostring(events)}
+  end
+
+  local lx, ly = x % 16, y % 16
+  local found
+  local ok_iter, iter_err = pcall(function()
+    for i = 0, #events - 1 do
+      local ev = events[i]
+      local ok_is, is_mineral = pcall(function() return df.block_square_event_mineralst:is_instance(ev) end)
+      if ok_is and is_mineral then
+        local ok_bit, present = pcall(function() return ev.tile_bitmask:get(lx, ly) end)
+        if ok_bit and present then
+          found = ev
+          break
+        end
+      end
+    end
+  end)
+  if not ok_iter then
+    return {ok = true, material_class = mclass, vein_status = "unknown",
+      error = "block_events scan failed: " .. tostring(iter_err)}
+  end
+  if not found then
+    return {ok = true, material_class = mclass, vein_status = "unknown",
+      error = "tile reads " .. mclass .. " but no block_square_event_mineralst tile_bitmask bit matched it"}
+  end
+
+  local ok_idx, idx = pcall(function() return found.inorganic_mat end)
+  if not ok_idx or idx == nil then
+    return {ok = true, material_class = mclass, vein_status = "unknown",
+      error = "vein event's inorganic_mat unreadable: " .. tostring(idx)}
+  end
+  local ok_inorg, inorg = pcall(function() return df.global.world.raws.inorganics[idx] end)
+  if not ok_inorg or not inorg then
+    return {ok = true, material_class = mclass, vein_status = "unknown",
+      error = "raws.inorganics[" .. tostring(idx) .. "] unreadable: " .. tostring(inorg)}
+  end
+  local ok_id, id = pcall(function() return inorg.id end)
+  local name = (ok_id and id and tostring(id) ~= "") and tostring(id) or ("inorganic_" .. tostring(idx))
+
+  local ok_uses, uses = pcall(function() return inorg.material.economic_uses end)
+  if not ok_uses or uses == nil then
+    return {ok = true, material_class = mclass, mineral_name = name, vein_status = "unknown",
+      error = "inorganic.material.economic_uses unreadable: " .. tostring(uses)}
+  end
+  local economic = (#uses > 0)
+  return {
+    ok = true, material_class = mclass, mineral_name = name, economic = economic,
+    vein_status = economic and "ore_or_gem" or "not_economic",
+  }
+end
+
+function vein_material(zone_id)
+  local b, err = find_zone(zone_id)
+  if not b then return {error = err} end
+  local ring = ring_tiles(b)
+  if #ring > MAX_RING_TILES then
+    return {error = "zone " .. b.id .. "'s boundary ring is " .. #ring
+      .. " tiles, over this tool's " .. MAX_RING_TILES .. "-tile bound; refusing rather than scanning it"}
+  end
+
+  local tiles = {}
+  local counts = {ore_or_gem = 0, not_economic = 0, not_mineral = 0, hidden = 0, unknown = 0}
+  local read_failures = {}
+  for i, xyz in ipairs(ring) do
+    local rec = decode_vein_tile(xyz[1], xyz[2], xyz[3])
+    local status = rec.vein_status or "unknown"
+    counts[status] = (counts[status] or 0) + 1
+    if rec.error then
+      table.insert(read_failures, "ring tile " .. i .. ": " .. rec.error)
+      pcall(function() dfhack.printerr("df-overseer-surface: vein-material zone=" .. b.id .. " ring tile " .. i .. ": " .. rec.error) end)
+    end
+    tiles[#tiles + 1] = {
+      ring_position = i,
+      material_class = nn(rec.material_class),
+      vein_status = status,
+      mineral_name = nn(rec.mineral_name),
+      economic = nn(rec.economic),
+    }
+  end
+
+  return {
+    zone_id = b.id,
+    boundary_ring_tiles = #ring,
+    tiles = tiles,
+    counts = counts,
+    read_failures = read_failures,
+  }
+end
+
+-- ---------------------------------------------------------------------------
 -- CLI
 -- ---------------------------------------------------------------------------
 
@@ -631,6 +838,12 @@ elseif cmd == "material" then
   else
     emit(boundary_material(args[2]))
   end
+elseif cmd == "vein-material" then
+  if not args[2] then
+    print("usage: df-overseer-surface vein-material ZONE_ID")
+  else
+    emit(vein_material(args[2]))
+  end
 elseif cmd == "traffic" then
   if not args[2] then
     print("usage: df-overseer-surface traffic ZONE_ID")
@@ -641,5 +854,6 @@ else
   print("usage: df-overseer-surface enclosure ZONE_ID")
   print("usage: df-overseer-surface finish ZONE_ID")
   print("usage: df-overseer-surface material ZONE_ID")
+  print("usage: df-overseer-surface vein-material ZONE_ID")
   print("usage: df-overseer-surface traffic ZONE_ID")
 end

@@ -125,6 +125,14 @@ read:
     note: >-
       Same handoff. Read-only traffic designation over a zone's own
       footprint.
+  - id: "surface.vein-material"
+    status: planned
+    note: >-
+      Added handoffs/2026-09-28-ore-vein-recovery-and-construction-tool.md.
+      Per boundary-ring tile, the decoded mineral name and whether it is
+      economic (ore/gem) -- a fact-checking read for a claim like "those
+      ring tiles are ordinary stone." HIGH RISK, unverified: the tile-level
+      vein decode chain has never run against a real DFHack process.
 
   - id: "web.search"
     status: exists

@@ -102,4 +102,112 @@ fort yourself.
 
 ## Result
 
-(pending)
+**Built, both pieces, code and tests only, no live call.**
+
+1. `surface.vein-material` (`scripts/dfhack/df-overseer-surface.lua`): per
+   boundary-ring tile, the decoded mineral name and whether it is economic
+   (ore/gem), via `dfhack.maps.getTileBlock(x,y,z).block_events`, matched
+   against `df.block_square_event_mineralst:is_instance`, its
+   `tile_bitmask:get(x%16, y%16)`, its `inorganic_mat` index into
+   `df.global.world.raws.inorganics`, and that raw's `.material.economic_uses`
+   (non-empty = economic, the same rule `df-overseer-building.lua`'s
+   2026-09-28 material-choice fix already established for an item's
+   material). Three-plus-state `vein_status`: not_mineral / ore_or_gem /
+   not_economic / hidden / unreadable / unknown -- unknown covers a
+   MINERAL/FEATURE tile whose vein event could not be matched or decoded,
+   never a guessed name (mirrors the earlier orchestrator crash this handoff
+   references: every hop here is `pcall`-guarded so the same class of
+   mistake degrades to `unknown`, not a crash).
+2. `df-overseer-construction.lua` (new file): `mine-vein ZONE_ID [DRY_RUN]`
+   designates a real dig on every ring tile `vein-material` confidently
+   calls ore/gem and that is still shaped WALL (refusing, by name, any tile
+   it cannot classify confidently); `build ZONE_ID KIND [DRY_RUN]` resolves
+   KIND generically through `df-overseer-building.lua`'s own exported
+   `list_kinds` (Wall today, any construction subtype at no new-code cost)
+   and designates it on every ring tile that reads open ground right now,
+   refusing a still-WALL tile ("not yet mined") rather than assuming
+   mine-vein already ran. Each identified tile gets its own single-cell
+   `#dig`/`#build` blueprint applied via `quickfort run -c x,y,z` -- the
+   same already-verified one-tile-at-a-time shape
+   `df-overseer-diggable.lua`'s dig-stair and `df-overseer-building.lua`'s
+   build_kind already use, chosen over an untested sparse/blank-cell
+   blueprint. `build`'s `material_report` reuses building.lua's
+   default-non-economic policy as pure advisory reporting (duplicated, not
+   invented fresh) since quickfort itself has no parameter to force a
+   material choice from outside -- true of building.lua's own build_kind
+   too.
+3. **Reuse without breaking the blueprint shim.** The first cut promoted
+   `find_zone`/`ring_tiles`/`tile_read` from `local` to global in
+   `surface.lua` so `construction.lua` could call them directly. That broke
+   `tests/test_blueprint_tool_manifest.py::test_shim_contract_holds_in_the_
+   surface_layer`: `df-overseer-blueprint.lua`'s rectangle-anchored site
+   shim depends on `find_zone` staying a real Lua upvalue of
+   `enclosure`/`finish`/`boundary_material` so it can swap it with
+   `debug.setupvalue` and restore it. Fixed by keeping everything `local`
+   in `surface.lua` and having `construction.lua` extract
+   `find_zone`/`ring_tiles`/`decode_vein_tile` (and, one hop further,
+   `tile_read`) via `debug.getupvalue` against the one exported function
+   that closes over them (`vein_material`) -- the same idiom
+   `df-overseer-building.lua` already uses to reach quickfort's own local
+   table. Read-only extraction, no swap-and-restore risk.
+
+**The real DFHack API for tile-level mineral decoding -- HIGHEST-RISK
+UNVERIFIED PIECE, exactly as flagged.** This stream had no VM/DFHack process
+to read source against (unlike research/2026-09-24-quickfort-hands.md,
+which read the installed `hack/scripts/internal/quickfort/*.lua` directly
+over SSH). The chain implemented -- `dfhack.maps.getTileBlock` ->
+`block.block_events` -> `df.block_square_event_mineralst:is_instance` ->
+`.tile_bitmask:get(x%16,y%16)` -> `.inorganic_mat` ->
+`df.global.world.raws.inorganics[idx]` -> `.id`/`.material.economic_uses`
+-- is DFHack's well-known, long-stable vein mechanism from general
+knowledge, not a source read this session performed. It has been proven
+only against a fake world (`tests/test_surface_vein_material_lua_logic.py`);
+it has never touched a real DFHack process. Every hop is `pcall`-guarded so
+a wrong field name degrades to `vein_status: "unknown"` with `error` set,
+never a crash and never a fabricated mineral name -- but "degrades safely"
+is not "correct", and this must be checked against zone 13's real 5
+hematite tiles before anything downstream trusts it.
+
+**Test counts** (`python -m pytest`, `lupa` installed to a scratch
+`--target` dir and put on `PYTHONPATH`, per `CLAUDE.md`'s traps section;
+`dfmcp/tests` already included in the top-level count on this repo layout):
+**before, 1910 passed, 3 skipped** (measured at this handoff's own commit,
+`8f019a5`, before any of this stream's edits); **after, 1930 passed, 3
+skipped** -- the 20 new tests are
+`tests/test_surface_vein_material_lua_logic.py` (11) and
+`tests/test_construction_lua_logic.py` (9), both against fake worlds in
+`tests/lua_stubs/`. `tests/test_surface_tool_manifest.py` and
+`tests/test_blueprint_tool_manifest.py` (the shim-contract guard above)
+both still pass.
+
+**Exact two commands for the orchestrator to run live on zone 13** (dry run
+first, then real; both need their own go-ahead per this repo's mutation
+rules -- not run by this stream):
+
+```
+./dfhack-run df-overseer-surface vein-material 13
+```
+(read-only sanity check first: confirm the 5 known hematite tiles actually
+come back `vein_status: "ore_or_gem"`, `mineral_name: "HEMATITE"` -- if this
+reads `unknown` instead, the API chain above is wrong and nothing past this
+point should be trusted.)
+
+```
+./dfhack-run df-overseer-construction mine-vein 13 true
+```
+then, only if that dry run's `ore_tiles_found` is 5 and every result's `ok`
+is true:
+```
+./dfhack-run df-overseer-construction mine-vein 13 false
+```
+and once the dig jobs have actually completed (re-check with
+`surface.finish`/a direct tile read, not just quickfort's own stats -- see
+`research/2026-09-24-quickfort-hands.md`'s "a dig flag is not a job"
+finding):
+```
+./dfhack-run df-overseer-construction build 13 Wall true
+```
+then, if `open_tiles_found` matches and every result's `ok` is true:
+```
+./dfhack-run df-overseer-construction build 13 Wall false
+```

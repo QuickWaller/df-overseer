@@ -323,6 +323,18 @@ read:
       Same handoff. Read-only traffic designation over a zone's own
       footprint. This fort has none set anywhere, so a uniform Normal
       reading is expected, not an error.
+  - id: "surface.vein-material"
+    status: planned
+    note: >-
+      Added handoffs/2026-09-28-ore-vein-recovery-and-construction-tool.md.
+      Per boundary-ring tile: the decoded mineral name and whether it is
+      economic (ore/gem), closing the gap that let an ore vein get smoothed
+      into a wall instead of mined. HIGH RISK, unverified: the tile-level
+      vein decode chain (dfhack.maps.getTileBlock, block_events,
+      block_square_event_mineralst, tile_bitmask, inorganic_mat) has never
+      run against a real DFHack process -- live-verify against zone 13's
+      known 5 hematite ring tiles before trusting it elsewhere. Read this
+      before construction.mine-vein/construction.build below.
 
   - id: "blueprint.plan"
     status: planned
@@ -568,6 +580,32 @@ write:
       quickfort undo; refuses a site that is not stalled. Mutating, so the
       overseer only (dfmcp/roles.py rule 2). DRY_RUN defaults to true. Never
       run live.
+
+  - id: "construction.mine-vein"
+    status: planned
+    note: >-
+      Added handoffs/2026-09-28-ore-vein-recovery-and-construction-tool.md,
+      recovering the fort's known ore veins that got smoothed into walls
+      instead of mined (decisions/DECISIONS.md 2026-09-24). Designates a
+      real dig on each of a zone's own ring tiles that surface.vein-material
+      classifies confidently as ore/gem and that is still shaped WALL;
+      refuses (named why) anything it cannot classify confidently rather
+      than guessing. DRY_RUN defaults to true. Mutating, overseer only.
+      Offline build, lupa-tested against a fake world only; the real vein
+      decode this depends on has never run live -- HIGH RISK, verify
+      surface.vein-material against zone 13's real 5 hematite tiles first.
+  - id: "construction.build"
+    status: planned
+    note: >-
+      Same handoff -- the missing "construct" capability: no tool in this
+      codebase could build a wall/floor/etc. at all before this. For a
+      zone's ring tiles now open (post mine-vein), designates a
+      construction of KIND (generic, resolved through building.list-kinds,
+      not hard-coded to Wall). Refuses a still-WALL tile ("not yet mined")
+      rather than assuming mine-vein already ran. DRY_RUN defaults to true.
+      Mutating, overseer only. Offline build, lupa-tested against a fake
+      world only; the real quickfort #build/Cw path has never run through
+      this tool.
 
 planned:
   - id: "queue.plan"

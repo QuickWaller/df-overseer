@@ -2216,6 +2216,74 @@ df-overseer-surface.lua:
         the expected, correct answer, not a sign the read failed --
         `all_normal` says so explicitly rather than making a caller infer
         it from the counts.
+    "vein-material ZONE_ID":
+      lua_function: vein_material
+      effect: read
+      coordinate_bearing: false
+      live_deployed: false
+      verified: "unverified (offline build, lupa-tested against a fake world only, 2026-09-28; handoffs/2026-09-28-ore-vein-recovery-and-construction-tool.md). The tile-level vein decode chain (dfhack.maps.getTileBlock, block.block_events, df.block_square_event_mineralst, tile_bitmask:get, inorganic_mat, raws.inorganics) has never been run against a real DFHack process. HIGH RISK: live-verify against zone 13's own 5 known hematite ring tiles before trusting vein_status anywhere else."
+      knowledge_scope: player_derivable
+      notes: >
+        Closes the gap decisions/DECISIONS.md 2026-09-24 found (an ore vein
+        smoothed into a wall reads as plain MINERAL-class stone to every
+        other tool). Per boundary-ring tile: the tiletype_material class,
+        plus -- for a MINERAL/FEATURE tile -- the decoded mineral name and
+        whether it is economic (ore/gem, `dfhack.matinfo`-style non-empty
+        economic_uses, the same rule df-overseer-building.lua's material-
+        choice fix already established for an ITEM's material, applied here
+        to a map tile's own vein). vein_status is one of not_mineral /
+        ore_or_gem / not_economic / hidden / unreadable / unknown -- unknown
+        covers a MINERAL/FEATURE tile whose vein event could not be matched
+        or decoded, NEVER a guessed name. Reports `ring_position` (a 1-based
+        sequence number, never a coordinate) per tile, matching design
+        commitment #1. Bounded to the zone's own 900-tile ring cap, same as
+        `material` above.
+
+df-overseer-construction.lua:
+  build_order_item: "the missing 'construct' capability; handoffs/2026-09-28-ore-vein-recovery-and-construction-tool.md, decisions/DECISIONS.md 2026-09-24"
+  commands:
+    "mine-vein ZONE_ID [DRY_RUN]":
+      lua_function: mine_vein
+      effect: mutate
+      coordinate_bearing: internal-only
+      live_deployed: false
+      verified: "unverified (offline build, lupa-tested against a fake world only, 2026-09-28). Depends on surface.vein-material's own unverified tile-decode chain; never run against a real DFHack process. DRY_RUN defaults to true."
+      knowledge_scope: player_derivable
+      notes: >
+        For a zone's own boundary-ring tiles, identifies which are ore/gem
+        (via df-overseer-surface.lua's decode_vein_tile, reused not
+        duplicated) and designates a real dig on each one still shaped
+        WALL, one single-cell #dig blueprint per tile applied via quickfort
+        `-c` (never a raw coordinate returned). Reports what it found
+        (ore_tiles_found), what was already open (already_open, not
+        re-designated), and refuses (refused, named why) any tile it could
+        not classify confidently rather than guessing it is ore. DRY_RUN
+        defaults to true; only the word false performs the real
+        designation. Granted to the overseer only (mutates fort state,
+        dfmcp/roles.py rule 2).
+    "build ZONE_ID KIND [DRY_RUN]":
+      lua_function: build_construction
+      effect: mutate
+      coordinate_bearing: internal-only
+      live_deployed: false
+      verified: "unverified (offline build, lupa-tested against a fake world only, 2026-09-28). The real quickfort `#build`/`Cw` path (research/2026-09-24-quickfort-hands.md section 3) has never been run by this tool. DRY_RUN defaults to true."
+      knowledge_scope: player_derivable
+      notes: >
+        For a zone's own boundary-ring tiles, designates a construction of
+        KIND (resolved to quickfort's own key through
+        df-overseer-building.lua's exported list_kinds -- generic, any
+        construction subtype the install knows, not hard-coded to Wall)
+        wherever a tile is now open ground, one single-cell #build
+        blueprint per tile applied via quickfort `-c`. A ring tile still
+        shaped WALL is refused by name ("not yet mined"), never silently
+        skipped or guessed open -- this verb re-reads live shape itself,
+        it does not assume mine-vein already ran. `material_report` is
+        advisory only (df-overseer-building.lua's own 2026-09-28
+        economic-material-exclusion policy, reapplied here rather than a
+        new one; quickfort/buildingplan make the real material choice at
+        build time regardless, the same way building.lua's own build_kind
+        already works). DRY_RUN defaults to true. Granted to the overseer
+        only (mutates fort state, dfmcp/roles.py rule 2).
 
 df-overseer-blueprint.lua:
   build_order_item: "the Architect's hands; handoffs/2026-09-24-blueprint-hands.md. Research: research/2026-09-24-quickfort-hands.md"

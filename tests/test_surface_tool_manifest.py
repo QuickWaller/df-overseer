@@ -43,7 +43,10 @@ from dfmcp.knowledge_tools import NATIVE_TOOLS as KNOWLEDGE_NATIVE_TOOLS  # noqa
 
 SURFACE_LUA = REPO_ROOT / "scripts" / "dfhack" / "df-overseer-surface.lua"
 
-SURFACE_IDS = {"surface.enclosure", "surface.finish", "surface.material", "surface.traffic"}
+SURFACE_IDS = {
+    "surface.enclosure", "surface.finish", "surface.material", "surface.vein-material",
+    "surface.traffic",
+}
 
 
 def _text():
@@ -138,7 +141,7 @@ def test_no_raw_coordinates_in_result_tables():
     whole file (the per-tile helpers legitimately hold x/y/z locals to do
     the reads; they never appear inside a `{ ... }` result table)."""
     src = _text()
-    for fn in ("enclosure", "finish", "boundary_material", "traffic"):
+    for fn in ("enclosure", "finish", "boundary_material", "vein_material", "traffic"):
         start = src.index(f"\nfunction {fn}(")
         end = src.index("\nend", start)
         body = src[start:end]
@@ -157,7 +160,7 @@ def test_ring_and_footprint_helpers_are_bounded():
     src = _text()
     assert "local MAX_FOOTPRINT_TILES = " in src
     assert "local MAX_RING_TILES = " in src
-    for fn in ("enclosure", "finish", "boundary_material", "traffic"):
+    for fn in ("enclosure", "finish", "boundary_material", "vein_material", "traffic"):
         start = src.index(f"\nfunction {fn}(")
         end = src.index("\nend", start)
         body = src[start:end]
