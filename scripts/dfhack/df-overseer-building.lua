@@ -407,8 +407,7 @@ local function kind_previously_built(k)
     return NULL, "could not read df.global.world.buildings.all: " .. tostring(buildings)
   end
   local matched, completed, unreadable = 0, 0, 0
-  for i = 1, #buildings do
-    local bld = buildings[i]
+  for _, bld in ipairs(buildings) do
     local ok_t, btype = pcall(function() return bld:getType() end)
     if ok_t and btype == e.type then
       local sub, sub_ok = instance_subtype(bld, btype)
