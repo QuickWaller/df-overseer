@@ -717,7 +717,7 @@ df-overseer-building.lua:
       effect: read
       coordinate_bearing: false
       live_deployed: true
-      verified: "2026-09-21 (live on VM 103, fort paused, read only: workshop, furnace, 1x1 and 5x5 kinds, furniture, variable-size kinds and error cases. After the deploy the same day, over a real MCP client as the overseer: Masons, Still, Smelter, Kiln, Bed, Well and FarmPlot each returned five sites, and the unknown kind, near-miss name, wrong footprint, missing W H and unknown landmark cases each errored with a named reason). Material choice and kind_previously_built (2026-09-28) are code/offline-tested only; NOT yet live-verified -- see the register for the exact DFHack field names (dfhack.matinfo.decode, inorganic.economic_uses) that need confirming against a real install"
+      verified: "2026-09-21 (live on VM 103, fort paused, read only: workshop, furnace, 1x1 and 5x5 kinds, furniture, variable-size kinds and error cases. After the deploy the same day, over a real MCP client as the overseer: Masons, Still, Smelter, Kiln, Bed, Well and FarmPlot each returned five sites, and the unknown kind, near-miss name, wrong footprint, missing W H and unknown landmark cases each errored with a named reason). Material choice and kind_previously_built (2026-09-28) are code/offline-tested only; NOT yet live-verified. The economic-material check was corrected the same day (handoffs/2026-09-28-building-economic-uses-fix.md) from a wrong field (inorganic.economic_uses, proved live to answer a different question in research/2026-09-28-ore-detection.md) to inorganic:isOre()/inorganic.material:isGem() -- see the register for those exact DFHack field names still needing live confirmation against a real install"
       knowledge_scope: player_derivable
       notes: >
         Finds up to five non-overlapping sites for one building kind near a
@@ -743,8 +743,11 @@ df-overseer-building.lua:
         not applied). A `building_material` filter (boulder/log/block) is
         instead broken down by decoded material name under
         `requirements.building_material.filters[i].materials`, each tagged
-        `economic` when the game's own raws mark it an economic stone;
-        economic materials are excluded from `chosen_material`/`available` by
+        `economic` when the game's own raws mark it ore or gem
+        (inorganic:isOre() / inorganic.material:isGem(), corrected
+        2026-09-28 from a wrong economic_uses-based check -- see
+        handoffs/2026-09-28-building-economic-uses-fix.md); economic
+        materials are excluded from `chosen_material`/`available` by
         default (`excluded_materials` says which and why). MATERIAL_CHOICE,
         the last argument, previews the override this filter would use if
         `build` were called the same way: "allow_economic" to allow economic
@@ -764,7 +767,7 @@ df-overseer-building.lua:
       effect: mutate
       coordinate_bearing: internal-only
       live_deployed: true
-      verified: "2026-09-21 (DRY_RUN path only, live on VM 103: quickfort's own --dry-run validated the generated blueprint for workshop, furnace, furniture and variable-size kinds, first through a /tmp script path and again after the deploy over a real MCP client as the overseer for Masons, Kiln, Craftsdwarfs, Smelter, Bed and FarmPlot 5x5). REAL PATH FIRST EXERCISED 2026-09-23 (evals/live/2026-09-23-office-and-first-real-build/README.md): `building.build Chair Well 1 20 false` against the same site the dry run validated -- quickfort_ok:true, quickfort_problems:[], read_back confirmed building_found:true and type_matches:true. This is the first real, non-dry-run build of any kind this tool has ever made. Not yet a complete loop: the Chair sits buildingplan-suspended (stocks CHAIR read 0 before and after; the job is stuckjobs-visible as waiting_on:\"suspended\"), since the fort owns no Chair item yet; a manager order (ConstructThrone) was created to try to supply one and had not gone active after 900 ticks. A second real kind, the Carpenter's Workshop, was built live 2026-09-25 (out of economic hematite blocks, the gap this stream's material-choice fix addresses -- evals/live/2026-09-25-first-real-conductor-cycle/README.md). Material choice and kind_previously_built (2026-09-28) are code/offline-tested only; NOT yet live-verified"
+      verified: "2026-09-21 (DRY_RUN path only, live on VM 103: quickfort's own --dry-run validated the generated blueprint for workshop, furnace, furniture and variable-size kinds, first through a /tmp script path and again after the deploy over a real MCP client as the overseer for Masons, Kiln, Craftsdwarfs, Smelter, Bed and FarmPlot 5x5). REAL PATH FIRST EXERCISED 2026-09-23 (evals/live/2026-09-23-office-and-first-real-build/README.md): `building.build Chair Well 1 20 false` against the same site the dry run validated -- quickfort_ok:true, quickfort_problems:[], read_back confirmed building_found:true and type_matches:true. This is the first real, non-dry-run build of any kind this tool has ever made. Not yet a complete loop: the Chair sits buildingplan-suspended (stocks CHAIR read 0 before and after; the job is stuckjobs-visible as waiting_on:\"suspended\"), since the fort owns no Chair item yet; a manager order (ConstructThrone) was created to try to supply one and had not gone active after 900 ticks. A second real kind, the Carpenter's Workshop, was built live 2026-09-25 (out of economic hematite blocks, the gap this stream's material-choice fix addresses -- evals/live/2026-09-25-first-real-conductor-cycle/README.md). Material choice and kind_previously_built (2026-09-28) are code/offline-tested only; NOT yet live-verified. The economic-material check itself was corrected the same day (handoffs/2026-09-28-building-economic-uses-fix.md) from inorganic.economic_uses (wrong field, live-proved in research/2026-09-28-ore-detection.md) to inorganic:isOre()/inorganic.material:isGem()"
       knowledge_scope: player_derivable
       notes: >
         Places one building of KIND at the RANK-th site near a landmark.

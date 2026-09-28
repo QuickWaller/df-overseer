@@ -72,3 +72,74 @@ different tool.**
 
 ## Result
 
+Done, offline. Fixed `decode_item_material` in
+`scripts/dfhack/df-overseer-building.lua` to classify an item's material as
+"economic" using `inorganic:isOre()` or `inorganic.material:isGem()` (both
+called only when `mi.inorganic` reads truthy, i.e. the material is
+inorganic at all), replacing the non-empty-`inorganic.economic_uses` check
+that `research/2026-09-28-ore-detection.md` proved wrong for this exact
+question. `materials`/`excluded_materials`/`chosen_material` and every other
+field name from the 2026-09-25 fix are unchanged; only the classification
+feeding `economic` changed.
+
+**Item-material access path vs. surface.lua's tile-material path.** They
+differ in how the material index is obtained, not in the shape of what
+comes back. `surface.lua`'s `decode_vein_tile` calls
+`dfhack.matinfo.decode(0, idx)` (mat_type 0 = inorganic, `idx` read off a
+map tile's vein event) and gets `.inorganic` (the raw itself) and
+`.inorganic.material` (the nested material struct) from that. This file's
+`decode_item_material` calls the item-based overload,
+`dfhack.matinfo.decode(item)`, which DFHack's own API resolves through the
+item's own material/index pair before doing the identical lookup -- per
+DFHack's documented `matinfo.decode` contract, both overloads return the
+same `MaterialInfo` shape, so `.inorganic` should carry the same
+`inorganic_raw` type either way and the same `:isOre()`/`.material:
+isGem()` accessors should apply unchanged. **This is not live-verified**: no
+`.env`/VM credentials are present in this worktree, so `scripts/vm-ssh.sh df`
+cannot reach VM 103 from here (tried; it correctly refused with "no
+readable .env at the expected path" rather than guessing at connection
+details). The header comment above `decode_item_material` says so plainly
+and asks for the same live confirmation `decode_vein_tile`'s tile path
+already got, before either code path is trusted in a real decision. Per
+this handoff's own rules, that live check is left to the orchestrator's
+post-merge pass, the same way `surface.lua`'s fix was verified live
+independently after landing.
+
+**Tests.** `tests/test_building_material_and_previously_built_lua_logic.py`
+modelled the exact same wrong-field mistake in its own STUB
+(`MATINFO`/`set_matinfo` built a `{economic_uses = {...}}` table) --
+exactly the "known, recurring risk in this codebase" flagged in the handoff
+rules (this is the second time: `tests/lua_stubs/dfhack_surface_vein_world.lua`
+was the first, already fixed for `surface.lua`). Fixed the stub to build a
+fake `inorganic_raw` via a new `make_inorganic(is_ore, is_gem)` Lua helper
+exposing `:isOre()` and `.material:isGem()` methods, and updated
+`World.set_matinfo` to take `is_ore`/`is_gem`/`inorganic` instead of
+`economic_uses`. Converted every existing call site
+(`economic_uses=["SMELT_ORE"]` -> `is_ore=True`, `economic_uses=[]` ->
+`is_ore=False`) and added two new tests: one gem material that is
+`isGem()`-true but `isOre()`-false is still classified economic (proving
+the fix reads both accessors, not just `isOre`), and one non-inorganic
+material (no `.inorganic` at all, the wood/organics branch) is classified
+`economic: false` and never excluded or errored. All 16 tests in this file
+pass. Also updated `scripts/dfhack/TOOLS.yaml`'s `find`/`build` entries
+(the `verified` and `notes` fields) to describe the corrected
+`isOre()`/`isGem()` check and point at this handoff instead of the old
+`economic_uses` language; the `vein-material` entry for `surface.lua`
+(around line 2231) still describes the pre-fix "non-empty economic_uses"
+rule even though that file's own code comment says it was corrected --
+that entry is `surface.lua`'s, out of this handoff's scope, but is worth a
+follow-up doc fix since it is now misleading about both tools.
+
+**Ambient `python -m pytest`** (lupa installed to a scratch dir on
+`PYTHONPATH`, not the repo, per CLAUDE.md): **1932 passed, 3 skipped**, one
+run, no flake in the deliberate-race test this run. This is higher than the
+2026-09-25-measured 1845 passed/3 skipped baseline in CLAUDE.md, consistent
+with the intervening commits (job-dependency-graph research/handoffs, zone
+work) adding tests since that baseline was taken, not a regression from
+this change.
+
+No live deploy or VM mutation was made or attempted (worktree has no VM
+credentials at all, so this was never in reach here regardless of the
+handoff's scope limit). No permission refusal encountered other than the
+expected `.env`-missing message from `vm-ssh.sh` itself.
+

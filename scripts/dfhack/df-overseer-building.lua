@@ -78,25 +78,36 @@
 -- other); this file maps by NAME, from the filter's item_type.
 --
 -- MATERIAL CHOICE (2026-09-28, handoffs/2026-09-28-building-material-choice-
--- and-repeat-kind.md). A `building_material`-class filter (boulder/log/
--- block, any of them) is broken down by decoded material name
--- (dfhack.matinfo.decode), not just item type, so counts distinguish, say,
--- SHALE boulders from HEMATITE boulders. Whether a material is the game's
--- own "economic" stone (has at least one entry in its raws'
--- `economic_uses`, UNVERIFIED LIVE: read the real DFHack API before relying
--- on this field name, see the Result section) is read per material, and the
--- tool DEFAULTS to excluding economic materials from the material it would
--- actually build with -- the motivating case is the 2026-09-25 live run
--- building the fort's first Carpenter's Workshop out of 8 hematite blocks
--- (economic) while shale sat available. MATERIAL_CHOICE, the tool's last
--- argument, overrides this: "allow_economic" opts back in, or naming a
--- material directly (e.g. SHALE) picks it explicitly even if it is
--- economic -- an explicit choice is never second-guessed, same shape as
--- df-overseer-workjob.lua's `reagent_choice` fix (2026-09-25): candidates
--- listed, resolved by explicit choice or a safe default, never silently
--- guessed. If the filter's own flags already require non_economic, that
--- always wins over an "allow_economic" override (the game would refuse
--- economic material there regardless).
+-- and-repeat-kind.md; corrected 2026-09-28,
+-- handoffs/2026-09-28-building-economic-uses-fix.md). A `building_material`-
+-- class filter (boulder/log/block, any of them) is broken down by decoded
+-- material name (dfhack.matinfo.decode), not just item type, so counts
+-- distinguish, say, SHALE boulders from HEMATITE boulders. Whether a
+-- material is worth treating as "economic" (ore or gem, the stone type
+-- haulers do not move by default) is read per material using
+-- `inorganic:isOre()` / `inorganic.material:isGem()` -- NOT the
+-- `economic_uses` field the first version of this fix used. That field was
+-- proved wrong for exactly this question, live, on this same install
+-- (`research/2026-09-28-ore-detection.md`): `economic_uses` answers "which
+-- reactions are registered against this material", not "is this ore/gem
+-- worth treating specially", and it read empty for hematite even though
+-- hematite is definitely iron ore. `isOre()`/`isGem()` are the calls
+-- DFHack's own bundled `prospector` plugin uses, and are already the
+-- live-verified fix applied to the identical question over a map tile's
+-- vein material in `df-overseer-surface.lua`'s `decode_vein_tile`
+-- (commits `be0ab31`, `365f17b`). The tool DEFAULTS to excluding economic
+-- materials from the material it would actually build with -- the
+-- motivating case is the 2026-09-25 live run building the fort's first
+-- Carpenter's Workshop out of 8 hematite blocks (economic) while shale sat
+-- available. MATERIAL_CHOICE, the tool's last argument, overrides this:
+-- "allow_economic" opts back in, or naming a material directly (e.g.
+-- SHALE) picks it explicitly even if it is economic -- an explicit choice
+-- is never second-guessed, same shape as df-overseer-workjob.lua's
+-- `reagent_choice` fix (2026-09-25): candidates listed, resolved by
+-- explicit choice or a safe default, never silently guessed. If the
+-- filter's own flags already require non_economic, that always wins over
+-- an "allow_economic" override (the game would refuse economic material
+-- there regardless).
 --
 -- KIND_PREVIOUSLY_BUILT (2026-09-28, same handoff). `find` and `build` both
 -- report whether a real (non-dry-run) building of this exact kind
@@ -694,13 +705,23 @@ local function item_units_simple(item)
   return 1
 end
 
--- Decodes one item's material. UNVERIFIED LIVE (2026-09-28): this reads
--- mi.material.id for the display name and mi.inorganic.economic_uses (a
--- vector of reaction/use names; non-empty means "economic stone" in the
--- game's own sense, the stone type haulers do not move by default) for the
--- economic flag. Confirm both field names against a real DFHack install
--- before trusting this in production; a read failure here is reported, not
--- guessed around.
+-- Decodes one item's material. `mi.material.id` gives the display name.
+-- The economic (ore/gem) flag is `inorganic:isOre()` or
+-- `inorganic.material:isGem()` -- NOT `inorganic.economic_uses`, which
+-- research/2026-09-28-ore-detection.md live-proved answers a different
+-- question (registered reactions, not ore-worthiness) and read empty for
+-- known iron ore. `dfhack.matinfo.decode(item)` (the item-based overload
+-- used here) and `dfhack.matinfo.decode(0, idx)` (the tile/vein-event-based
+-- overload df-overseer-surface.lua's decode_vein_tile uses) both return a
+-- MaterialInfo whose `.inorganic` is the same `inorganic_raw` struct type
+-- when the material is inorganic, so the same `:isOre()`/`.material:
+-- isGem()` accessors apply -- this is DFHack's documented decode() contract
+-- (one decoder, several ways to name the material), not re-derived here.
+-- UNVERIFIED LIVE as of this fix (no VM access from this worktree): confirm
+-- with a read-only `dfhack-run lua` call against a real inorganic item
+-- before trusting this in a live decision, the same way decode_vein_tile's
+-- tile-based path was confirmed in research/2026-09-28-ore-detection.md. A
+-- read failure here is reported, not guessed around.
 local function decode_item_material(item)
   if type(dfhack.matinfo) ~= 'table' or type(dfhack.matinfo.decode) ~= 'function' then
     return nil, "dfhack.matinfo.decode is not available on this DFHack Lua"
@@ -720,11 +741,13 @@ local function decode_item_material(item)
   local economic, economic_error
   local ok_i, inorg = pcall(function() return mi.inorganic end)
   if ok_i and inorg then
-    local ok_u, uses = pcall(function() return inorg.economic_uses end)
-    if ok_u and uses ~= nil then
-      economic = (#uses > 0)
+    local ok_ore, is_ore = pcall(function() return inorg:isOre() end)
+    local ok_gem, is_gem = pcall(function() return inorg.material and inorg.material:isGem() end)
+    if ok_ore and ok_gem then
+      economic = is_ore or is_gem
     else
-      economic_error = "could not read inorganic.economic_uses: " .. tostring(uses)
+      economic_error = "could not read inorganic:isOre()/inorganic.material:isGem(): " ..
+        tostring(is_ore) .. " / " .. tostring(is_gem)
     end
   else
     -- Not an inorganic (stone/ore) material at all: wood and other organics

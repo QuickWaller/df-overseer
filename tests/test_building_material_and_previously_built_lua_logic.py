@@ -9,8 +9,17 @@ or economic status. This proves the fix's own logic (material breakdown,
 default economic exclusion, an explicit override, the `kind_previously_built`
 live fact) against a fake world. It proves nothing about the real game: the
 exact DFHack field names (`dfhack.matinfo.decode`, `.material.id`,
-`.inorganic.economic_uses`, `bld.type`/`bld.custom_type`/
-`bld:getBuildStage()`) are a live check, called out in this stream's Result.
+`inorganic:isOre()`, `inorganic.material:isGem()`, `bld.type`/
+`bld.custom_type`/`bld:getBuildStage()`) are a live check, called out in this
+stream's Result.
+
+handoffs/2026-09-28-building-economic-uses-fix.md: the original version of
+this test (and the stub it drove) modelled the economic flag as a non-empty
+`inorganic.economic_uses`, mirroring the exact wrong-field mistake
+research/2026-09-28-ore-detection.md later proved live and that
+df-overseer-surface.lua's decode_vein_tile already had to correct once. The
+stub and every test below now model `inorganic:isOre()` /
+`inorganic.material:isGem()` instead, matching the corrected .lua code.
 
 Skipped when lupa is not installed (it is not a repo dependency).
 """
@@ -50,7 +59,18 @@ df = {
   },
 }
 
-MATINFO = {}   -- item id -> {material = {id=...}, inorganic = {economic_uses = {...}}} or "error"
+MATINFO = {}   -- item id -> {material = {id=...}, inorganic = {isOre=fn, material={isGem=fn}}} or "error"
+
+-- Builds a fake `inorganic_raw`-shaped table: `:isOre()` and
+-- `.material:isGem()` are the two live-verified accessors the real .lua
+-- code calls (see df-overseer-building.lua's decode_item_material).
+function make_inorganic(is_ore, is_gem)
+  local inorg = {}
+  function inorg:isOre() return is_ore end
+  inorg.material = {}
+  function inorg.material:isGem() return is_gem end
+  return inorg
+end
 
 dfhack = {
   matinfo = {
@@ -193,14 +213,18 @@ class World:
         arr = self.lua.table_from(items)
         self.lua.eval("function(t, items) set_items(t, items) end")(type_name, arr)
 
-    def set_matinfo(self, id_, material=None, economic_uses=None, error=False):
+    def set_matinfo(self, id_, material=None, is_ore=False, is_gem=False, inorganic=True,
+                     error=False):
         if error:
             self.lua.globals()["MATINFO"][id_] = "error"
             return
-        mi = {"material": {"id": material}}
-        if economic_uses is not None:
-            mi["inorganic"] = {"economic_uses": self.lua.table_from(economic_uses)}
-        self.lua.globals()["MATINFO"][id_] = self.lua.table_from(mi, recursive=True)
+        mi = self.lua.table_from({"material": {"id": material}}, recursive=True)
+        if inorganic:
+            make_inorganic = self.lua.eval(
+                "function(is_ore, is_gem) return make_inorganic(is_ore, is_gem) end"
+            )
+            mi["inorganic"] = make_inorganic(is_ore, is_gem)
+        self.lua.globals()["MATINFO"][id_] = mi
 
     def set_filter(self, **f):
         self.lua.eval("function(f) set_filter(f) end")(self.lua.table_from(f, recursive=True))
@@ -252,9 +276,9 @@ def test_economic_material_is_excluded_by_default_and_reported_why(w):
     b = w.item(2)  # SHALE
     c = w.item(3)  # SHALE
     w.set_items("BOULDER", [a, b, c])
-    w.set_matinfo(1, material="HEMATITE", economic_uses=["SMELT_ORE"])
-    w.set_matinfo(2, material="SHALE", economic_uses=[])
-    w.set_matinfo(3, material="SHALE", economic_uses=[])
+    w.set_matinfo(1, material="HEMATITE", is_ore=True)
+    w.set_matinfo(2, material="SHALE", is_ore=False)
+    w.set_matinfo(3, material="SHALE", is_ore=False)
 
     req, gaps = w.requirements()
     f = req["building_material"]["filters"][0]
@@ -268,18 +292,54 @@ def test_economic_material_is_excluded_by_default_and_reported_why(w):
     assert not gaps
 
 
+def test_a_gem_material_is_economic_via_isGem_even_when_not_an_ore(w):
+    # handoffs/2026-09-28-building-economic-uses-fix.md: the fix reads BOTH
+    # inorganic:isOre() and inorganic.material:isGem(), not isOre() alone --
+    # a material can be a gem (economic) without being a metal ore.
+    a = w.item(1)  # a gem, not an ore
+    b = w.item(2)  # neither ore nor gem
+    w.set_items("BOULDER", [a, b])
+    w.set_matinfo(1, material="ROCK_SALT_VAR", is_ore=False, is_gem=True)
+    w.set_matinfo(2, material="SHALE", is_ore=False, is_gem=False)
+
+    req, gaps = w.requirements()
+    f = req["building_material"]["filters"][0]
+    by_name = {m["name"]: m for m in f["materials"]}
+    assert by_name["ROCK_SALT_VAR"]["economic"] is True
+    assert by_name["SHALE"]["economic"] is False
+    assert f["chosen_material"] == "SHALE"
+    assert not gaps
+
+
+def test_a_non_inorganic_material_is_never_economic(w):
+    # Wood and other organics have no `.inorganic` at all: decode_item_material
+    # must treat that as economic=false (never an unreadable error, never
+    # excluded). BUILDING_MATERIAL_TYPES scans WOOD as well as BOULDER for a
+    # building_material-class filter (the default filter this stub sets up).
+    a = w.item(1)
+    w.set_items("WOOD", [a])
+    w.set_matinfo(1, material="WILLOW", inorganic=False)
+
+    req, gaps = w.requirements()
+    f = req["building_material"]["filters"][0]
+    by_name = {m["name"]: m for m in f["materials"]}
+    assert by_name["WILLOW"]["economic"] is False
+    assert f["chosen_material"] == "WILLOW"
+    assert not gaps
+
+
 def test_allow_economic_overrides_the_default_and_can_pick_the_economic_material(w):
     a = w.item(1)  # HEMATITE, more stock than the non-economic option
     b = w.item(2)  # SHALE
     w.set_items("BOULDER", [a, b])
-    w.set_matinfo(1, material="HEMATITE", economic_uses=["SMELT_ORE"])
-    w.set_matinfo(2, material="SHALE", economic_uses=[])
+    w.set_matinfo(1, material="HEMATITE", is_ore=True)
+    w.set_matinfo(2, material="SHALE", is_ore=False)
     # stack_size defaults to 1 unit per item; add extra HEMATITE items to
     # make it the higher-stock material once allowed.
     extra = [w.item(10 + i) for i in range(4)]
     for it in extra:
         w.set_matinfo(int(w.lua.eval("function(i) return i.id end")(it)), material="HEMATITE",
-                       economic_uses=["SMELT_ORE"])
+                       is_ore=True)
     w.set_items("BOULDER", [a, b] + extra)
 
     req_default, _ = w.requirements()
@@ -297,8 +357,8 @@ def test_naming_a_material_explicitly_is_honoured_even_if_economic(w):
     a = w.item(1)
     b = w.item(2)
     w.set_items("BOULDER", [a, b])
-    w.set_matinfo(1, material="HEMATITE", economic_uses=["SMELT_ORE"])
-    w.set_matinfo(2, material="SHALE", economic_uses=[])
+    w.set_matinfo(1, material="HEMATITE", is_ore=True)
+    w.set_matinfo(2, material="SHALE", is_ore=False)
 
     req, gaps = w.requirements(choice="hematite")  # case-insensitive
     f = req["building_material"]["filters"][0]
@@ -311,7 +371,7 @@ def test_naming_a_material_explicitly_is_honoured_even_if_economic(w):
 def test_a_filters_own_non_economic_flag_beats_an_allow_economic_override(w):
     a = w.item(1)
     w.set_items("BOULDER", [a])
-    w.set_matinfo(1, material="HEMATITE", economic_uses=["SMELT_ORE"])
+    w.set_matinfo(1, material="HEMATITE", is_ore=True)
     w.set_filter(quantity=1, flags1={}, flags2={"building_material": True, "non_economic": True}, flags3={})
 
     req, gaps = w.requirements(choice="hematite")
@@ -323,7 +383,7 @@ def test_a_filters_own_non_economic_flag_beats_an_allow_economic_override(w):
 def test_only_economic_material_available_is_a_named_gap_not_a_silent_zero(w):
     a = w.item(1)
     w.set_items("BOULDER", [a])
-    w.set_matinfo(1, material="HEMATITE", economic_uses=["SMELT_ORE"])
+    w.set_matinfo(1, material="HEMATITE", is_ore=True)
 
     req, gaps = w.requirements()
     f = req["building_material"]["filters"][0]
@@ -337,7 +397,7 @@ def test_an_unreadable_material_is_reported_not_silently_dropped_or_crashed(w):
     b = w.item(2)
     w.set_items("BOULDER", [a, b])
     w.set_matinfo(1, error=True)
-    w.set_matinfo(2, material="SHALE", economic_uses=[])
+    w.set_matinfo(2, material="SHALE", is_ore=False)
 
     req, gaps = w.requirements()
     f = req["building_material"]["filters"][0]
@@ -355,8 +415,8 @@ def test_items_that_are_not_available_never_count_toward_any_material(w):
     free = w.item(7)
     w.set_items("BOULDER", [a, b, c, d, e, f_, free])
     for i in range(1, 7):
-        w.set_matinfo(i, material="SHALE", economic_uses=[])
-    w.set_matinfo(7, material="SHALE", economic_uses=[])
+        w.set_matinfo(i, material="SHALE", is_ore=False)
+    w.set_matinfo(7, material="SHALE", is_ore=False)
 
     req, _ = w.requirements()
     f = req["building_material"]["filters"][0]
