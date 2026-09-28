@@ -691,3 +691,32 @@ walkable ground in the chosen orientation. Offline tests cannot catch this
 because a fake world has no reachability, so the pre-deploy live check needs a
 negative control that must be refused. → `handoffs/2026-09-24-blueprint-access.md`,
 `evals/live/2026-09-24-office-build/`.
+
+## A fort can self-pause on a vanilla event the announcement-level system doesn't control
+
+**Found 2026-09-28.** During a supervised unpause window, Uniboslan paused
+itself mid-run with no tripwire latched and healthy vitals. Cause: announcement
+`FORT_POSITION_SUCCESSION` (a noble succession, e.g. gaining a Queen). This is
+**not** governed by `df-overseer-announcement-levels`: `level
+FORT_POSITION_SUCCESSION` reads `not_pause_or_slow`, and it isn't in
+`pause-ids` at all. Some vanilla DF events force a pause independent of that
+system entirely.
+
+**Distinguishing it from the 2026-09-16 stuck-viewscreen case (both look
+identical from `clock status` alone: `paused: true`, no `tripwire` key) is
+only safe one way: try `resume`, then verify the tick actually advances.**
+Verified live 2026-09-28: `resume` → `paused: false`, tick advanced 690 ticks
+in ~3 seconds → `pause` cleanly. **But that test ran after the user had
+already clicked through whatever the game showed on VNC** — so it proves
+resuming works once the pause is already clear, not that a fresh, unattended
+occurrence of this event never needs a human click. Treat the two cases as
+indistinguishable until proven otherwise on a case nobody has touched first.
+
+`scripts/supervised-unpause.sh` implements the safe version of this: one
+resume-and-verify attempt on an untripwired pause, and if the tick doesn't
+move, it stops and asks for a human rather than looping or assuming success.
+**This logic must never move into `conductor.service`** — the unattended loop
+has no "someone unstuck it on VNC first" fallback, and a real tripwire pause
+is told apart from this case only by the `tripwire` key, a check that must
+stay strict. See `handoffs/2026-09-28-noble-succession-popup-research.md` and
+`decisions/DECISIONS.md` 2026-09-16/2026-09-28.
