@@ -15,8 +15,8 @@ from xml.etree import ElementTree as ET
 
 from dfqueue import render
 from dfqueue.tests._helpers import (
-    make_answer, make_ask, make_escalation, make_executed, make_pass,
-    make_proposal, make_ruling,
+    make_answer, make_ask, make_escalation, make_executed, make_observation,
+    make_pass, make_project, make_proposal, make_ruling,
 )
 
 
@@ -180,3 +180,44 @@ def test_public_view_of_escalation_carries_only_the_common_allowlisted_fields():
     assert "ruling_id" not in view
     assert "actions" not in view
     assert "notes" not in view
+
+
+def test_project_xml_round_trips_summary_because_and_steps():
+    record = make_project(id="project-0001", ts="2026-09-28T00:00:00+00:00")
+    xml = render.to_xml(record)
+    root = ET.fromstring(xml)
+    assert root.tag == "project"
+    assert root.find("from_ruling").text == record["from_ruling"]
+    assert root.find("summary").text == record["summary"]
+    assert root.find("because").text == record["because"]
+    steps = root.find("steps").findall("step")
+    assert len(steps) == 2
+    assert steps[0].get("id") == record["steps"][0]["id"]
+    assert steps[0].get("tool") == record["steps"][0]["tool"]
+
+
+def test_project_xml_renders_an_implicit_step_with_no_tool_attribute():
+    record = make_project(id="project-0001", steps=[{
+        "id": "project-0001/s1", "tool": None, "implicit": True, "args": {},
+        "targets": {"set": []}, "requires": [], "trigger": "all_success",
+        "prefer_after": [], "guards": "default",
+    }])
+    xml = render.to_xml(record)
+    root = ET.fromstring(xml)
+    step = root.find("steps").find("step")
+    assert step.get("id") == "project-0001/s1"
+    assert step.get("tool") is None
+
+
+def test_observation_xml_round_trips():
+    record = make_observation(id="observation-0001")
+    xml = render.to_xml(record)
+    root = ET.fromstring(xml)
+    assert root.tag == "observation"
+    assert root.find("project_id").text == record["project_id"]
+    assert root.find("step_id").text == record["step_id"]
+    assert root.find("game_tick").text == str(record["game_tick"])
+    result = root.find("results").find("result")
+    assert result.get("target") == record["results"][0]["target"]
+    assert result.get("status") == record["results"][0]["status"]
+    assert result.text == record["results"][0]["reason"]

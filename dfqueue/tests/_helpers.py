@@ -131,6 +131,67 @@ def make_answer(ask_id: str = "ask-0001", **overrides) -> dict:
     return record
 
 
+def make_project(from_ruling: str = "ruling-0001", **overrides) -> dict:
+    """A two-step project (`construction.mine-vein` then `construction.build`,
+    both real tool ids in `scripts/dfhack/TOOLS.yaml`), mirroring the
+    research doc's own zone-13 worked example (§5.1). Pass `steps=[]` (or
+    `steps=None`) to get the "no steps block" legacy case instead --
+    `store.append()`'s `normalize_project` fills in the implicit single step,
+    it is not built here."""
+    record = {
+        "kind": "project",
+        "role": "overseer",
+        "cycle": 1,
+        "snapshot": "tick 209571",
+        "from_ruling": from_ruling,
+        "objective_id": None,
+        "template": None,
+        "summary": "Recover the exposed hematite and finish the office ring's walls.",
+        "because": "The ring's own smoothing pass exposed a vein tile that a plain wall would seal.",
+        "steps": [
+            {
+                "id": "project-0001/s1",
+                "tool": "construction.mine-vein",
+                "args": {},
+                "targets": {"set": ["ring-13-ore-1", "ring-13-ore-2", "ring-13-ore-3"]},
+                "requires": [],
+                "trigger": "all_success",
+                "prefer_after": [],
+                "guards": "default",
+            },
+            {
+                "id": "project-0001/s2",
+                "tool": "construction.build",
+                "args": {"kind": "Wall"},
+                "targets": {"from_step": "project-0001/s1", "select": "done"},
+                "requires": ["project-0001/s1"],
+                "trigger": "all_done",
+                "prefer_after": [],
+                "guards": "default",
+            },
+        ],
+    }
+    record.update(overrides)
+    return record
+
+
+def make_observation(project_id: str = "project-0001", step_id: str = "project-0001/s1", **overrides) -> dict:
+    record = {
+        "kind": "observation",
+        "role": "conductor",
+        "cycle": 3,
+        "snapshot": "tick 209600",
+        "project_id": project_id,
+        "step_id": step_id,
+        "game_tick": 209600,
+        "results": [
+            {"target": "ring-13-ore-1", "status": "consistent", "reason": "tile reads open over hematite"},
+        ],
+    }
+    record.update(overrides)
+    return record
+
+
 def make_escalation(**overrides) -> dict:
     """Added handoffs/2026-09-22-loop-conductor-fixes.md item 3."""
     record = {

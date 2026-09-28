@@ -56,8 +56,10 @@ from typing import Iterator
 from learning.predictions.schema import PENDING
 
 from .schema import (
-    ACCEPT, ANSWER, ASK, EXECUTED, PROPOSAL, REJECT, RULING, fort_name,
-    near_duplicate_reason, sole_writer, validate,
+    ABANDONED, ACCEPT, ANSWER, ASK, DONE, EXECUTED, FAILED, HELD, ISSUED,
+    OBSERVATION, PROJECT, PROPOSAL, READY, REJECT, RULING,
+    TRIGGER_ALL_DONE, TRIGGER_ALL_SUCCESS, WAITING, fort_name,
+    near_duplicate_reason, normalize_project, sole_writer, validate,
 )
 
 #: A ruling's `decision` values that close a proposal for good. `defer`
@@ -129,6 +131,27 @@ CREATE TABLE IF NOT EXISTS predictions (
 );
 
 CREATE INDEX IF NOT EXISTS idx_predictions_pending_due ON predictions(status, due_game_tick);
+
+-- Added handoffs/2026-09-28-dfqueue-project-step-schema.md: the
+-- target-level state fold (design §4.4/§4.5), materialised the same way
+-- `predictions` already is -- append-only records in `records` remain the
+-- single source of truth; this table is a derived, updated-in-place
+-- projection of them, rebuildable from `records` alone if it were ever
+-- dropped. One row per (project, step, target). `last_tick` is the `cycle`
+-- of the `executed` record that last set this row's state -- what
+-- `rollback_drift` below compares against the fort's current tick.
+CREATE TABLE IF NOT EXISTS step_targets (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    project_id TEXT NOT NULL REFERENCES records(id),
+    step_id TEXT NOT NULL,
+    target TEXT NOT NULL,
+    state TEXT NOT NULL,
+    reason TEXT,
+    last_tick INTEGER,
+    UNIQUE(project_id, step_id, target)
+);
+
+CREATE INDEX IF NOT EXISTS idx_step_targets_project ON step_targets(project_id);
 """
 
 #: Schema migrations, keyed by the version they upgrade FROM. Applied in
@@ -240,6 +263,38 @@ def _ask_id_already_flagged(errors: list[str]) -> bool:
 def _duplicate_of_already_flagged(errors: list[str]) -> bool:
     """Same idea again, for a proposal's own `duplicate_of`."""
     return any(e.startswith("record.duplicate_of:") for e in errors)
+
+
+def _from_ruling_already_flagged(errors: list[str]) -> bool:
+    """Same idea again, for a `project`'s own `from_ruling`."""
+    return any(e.startswith("record.from_ruling:") for e in errors)
+
+
+def _project_step_ids_already_flagged(errors: list[str]) -> bool:
+    """Same idea again, for `executed`'s own `step_id` and `observation`'s
+    own `project_id`/`step_id`."""
+    return any(
+        e.startswith("record.step_id:") or e.startswith("record.project_id:")
+        for e in errors
+    )
+
+
+def _find_project_for_ruling(conn: sqlite3.Connection, ruling_id: str) -> dict | None:
+    """The `project` record whose `from_ruling` names `ruling_id`, or
+    `None`. `records.type` is not populated for a `project` (it is not a
+    `proposal`), so this is a `json_extract` scan over `kind = project`
+    rows -- the same shape `_find_duplicate_proposal` already uses for a
+    field the store has no dedicated indexed column for."""
+    row = conn.execute(
+        "SELECT payload FROM records WHERE kind = ? AND "
+        "json_extract(payload, '$.from_ruling') = ?",
+        (PROJECT, ruling_id),
+    ).fetchone()
+    return json.loads(row["payload"]) if row is not None else None
+
+
+def _step_ids(project: dict) -> set:
+    return {s["id"] for s in project.get("steps", []) if isinstance(s, dict) and "id" in s}
 
 
 def _find_duplicate_proposal(conn: sqlite3.Connection, record: dict) -> tuple[str, str] | None:
@@ -358,6 +413,14 @@ def append(record: dict, path: str | Path, *, game_tick: int | None = None) -> d
         if not record.get("ts"):
             record["ts"] = datetime.now(timezone.utc).isoformat()
 
+        if record.get("kind") == PROJECT:
+            # Design §5.3: "a proposal with no steps block is a one-step
+            # project, so every existing proposal type keeps working
+            # unchanged." Normalisation, not validation -- must run before
+            # `validate()` below, once `id` is assigned (the implicit step's
+            # own id is derived from the project's id).
+            record = normalize_project(record)
+
         errors = validate(record)
         kind = record.get("kind")
 
@@ -437,6 +500,74 @@ def append(record: dict, path: str | Path, *, game_tick: int | None = None) -> d
                         f"is {ruling_payload.get('decision')!r}, not {ACCEPT!r}; only "
                         "an accepted proposal may be executed"
                     )
+
+                # `step_id` added handoffs/2026-09-28-dfqueue-project-step-schema.md:
+                # must name a real step of `ruling_id`'s own project. Only
+                # checked once `ruling_id` itself resolves to something real.
+                if record.get("step_id") is not None and not _project_step_ids_already_flagged(errors):
+                    step_id = record["step_id"]
+                    project = _find_project_for_ruling(conn, ruling_id)
+                    if project is None:
+                        errors.append(
+                            f"record.step_id: {ruling_id!r} has no project yet "
+                            "(write a 'project' record for this ruling first)"
+                        )
+                    elif step_id not in _step_ids(project):
+                        errors.append(
+                            f"record.step_id: {step_id!r} is not a step of "
+                            f"{project['id']!r}, the project for {ruling_id!r}"
+                        )
+
+        if kind == PROJECT and not _from_ruling_already_flagged(errors):
+            from_ruling = record.get("from_ruling")
+            ruling_row = conn.execute(
+                "SELECT payload FROM records WHERE id = ? AND kind = ?", (from_ruling, RULING)
+            ).fetchone()
+            if ruling_row is None:
+                errors.append(
+                    f"record.from_ruling: {from_ruling!r} does not refer to an "
+                    "existing ruling in this queue"
+                )
+            else:
+                ruling_payload = json.loads(ruling_row["payload"])
+                if ruling_payload.get("decision") != ACCEPT:
+                    errors.append(
+                        f"record.from_ruling: {from_ruling!r} is a ruling whose "
+                        f"decision is {ruling_payload.get('decision')!r}, not "
+                        f"{ACCEPT!r}; only an accepted proposal has a project"
+                    )
+                elif _find_project_for_ruling(conn, from_ruling) is not None:
+                    # §9: the Overseer "writes its ordered plan... before
+                    # executing" -- once, not per retry. A second `project`
+                    # for the same ruling would leave `_find_project_for_ruling`
+                    # ambiguous about which one an `executed`/`observation`
+                    # record's `step_id` belongs to.
+                    errors.append(
+                        f"record.from_ruling: {from_ruling!r} already has a "
+                        "project; a ruling gets exactly one"
+                    )
+
+        if kind == OBSERVATION:
+            project = None
+            if not _project_step_ids_already_flagged(errors):
+                project_id = record.get("project_id")
+                row = conn.execute(
+                    "SELECT payload FROM records WHERE id = ? AND kind = ?",
+                    (project_id, PROJECT),
+                ).fetchone()
+                if row is None:
+                    errors.append(
+                        f"record.project_id: {project_id!r} does not refer to an "
+                        "existing project in this queue"
+                    )
+                else:
+                    project = json.loads(row["payload"])
+                    step_id = record.get("step_id")
+                    if step_id not in _step_ids(project):
+                        errors.append(
+                            f"record.step_id: {step_id!r} is not a step of "
+                            f"{project_id!r}"
+                        )
 
         if kind == ASK and "proposal_id" in record and not _proposal_id_already_flagged(errors):
             proposal_id = record.get("proposal_id")
@@ -522,6 +653,9 @@ def append(record: dict, path: str | Path, *, game_tick: int | None = None) -> d
                 )
             elif kind == EXECUTED:
                 _arm_prediction_on_first_execution(conn, record)
+                _apply_executed_target_states(conn, record)
+            elif kind == PROJECT:
+                _seed_step_targets(conn, record)
 
         if duplicate_reason is not None:
             # The reason is reported to the caller of THIS append() so the
@@ -579,6 +713,219 @@ def _arm_prediction_on_first_execution(conn: sqlite3.Connection, record: dict) -
         "UPDATE predictions SET status = ?, due_game_tick = ? WHERE id = ?",
         (PENDING, due_game_tick, pred_row["id"]),
     )
+
+
+# ---- target-level state fold (design §4.4/§4.5) -----------------------------
+#
+# `handoffs/2026-09-28-dfqueue-project-step-schema.md` item 4: "fold from
+# append-only records into a materialised table the same way `predictions`
+# already works." `records` (the append-only log) stays the single source of
+# truth; `step_targets` is a derived, updated-in-place projection of it,
+# maintained incrementally inside the SAME transaction as the record that
+# changes it -- exactly `predictions`'s own pattern, never a periodic
+# rebuild.
+
+
+def _seed_step_targets(conn: sqlite3.Connection, project: dict) -> None:
+    """Called once, when a `project` record is inserted: for every step
+    whose `targets` is a literal `set` (not a `from_step`/query spec, which
+    has no targets known yet -- design §4.3's dynamic-discovery case),
+    insert one row per declared target at `ready` (no `requires`) or
+    `waiting` (an unmet `requires` edge). A step's `requires` is checked
+    against every OTHER step in the same project having at least one target
+    row already `done`/`abandoned` -- but at project-creation time nothing
+    has run yet, so any step with a non-empty `requires` starts `waiting`
+    unconditionally; `all_done` vs `all_success` and requires-satisfaction
+    are evaluated at read time (`project_status` below), not baked into the
+    seed.
+    """
+    project_id = project["id"]
+    for step in project.get("steps", []):
+        targets = step.get("targets", {})
+        target_set = targets.get("set") if isinstance(targets, dict) else None
+        if not target_set:
+            continue  # dynamic (`from_step`) or the empty implicit-step set
+        initial_state = WAITING if step.get("requires") else READY
+        for target in target_set:
+            conn.execute(
+                "INSERT OR IGNORE INTO step_targets "
+                "(project_id, step_id, target, state, reason, last_tick) "
+                "VALUES (?, ?, ?, ?, NULL, NULL)",
+                (project_id, step["id"], str(target), initial_state),
+            )
+
+
+def _apply_executed_target_states(conn: sqlite3.Connection, record: dict) -> None:
+    """Called for every `executed` record that carries a `step_id`: each of
+    its `actions` that names `targets` + `target_state` (schema.py's
+    both-or-neither pair) upserts that target's row in `step_targets`,
+    recording `record["cycle"]` (the execution tick) as `last_tick` --
+    `rollback_drift` below compares this against the fort's current tick.
+    An `executed` record with no `step_id` (every pre-existing record, and
+    an implicit-step project's own executions) touches nothing here, which
+    is deliberate: there is nothing at that granularity to fold.
+    """
+    step_id = record.get("step_id")
+    if step_id is None:
+        return
+    project = _find_project_for_ruling(conn, record["ruling_id"])
+    if project is None:  # pragma: no cover -- append() already refused this
+        return
+    project_id = project["id"]
+    tick = record["cycle"]
+
+    for action in record.get("actions", []):
+        targets = action.get("targets")
+        state = action.get("target_state")
+        if not targets or state is None:
+            continue
+        reason = action.get("detail")
+        for target in targets:
+            conn.execute(
+                "INSERT INTO step_targets "
+                "(project_id, step_id, target, state, reason, last_tick) "
+                "VALUES (?, ?, ?, ?, ?, ?) "
+                "ON CONFLICT(project_id, step_id, target) DO UPDATE SET "
+                "state = excluded.state, reason = excluded.reason, "
+                "last_tick = excluded.last_tick",
+                (project_id, step_id, str(target), state, reason, tick),
+            )
+
+
+#: States that count as "finished, with any outcome" for an `all_done`
+#: trigger (design §2.2). `held`/`issued`/`waiting`/`ready` do not.
+_FINISHED_STATES = (DONE, FAILED, ABANDONED)
+
+
+def step_prerequisites_satisfied(step: dict, target_states_by_step: dict) -> bool:
+    """True if every step id in `step['requires']` counts as finished, per
+    THIS step's own `trigger` (design §2.2: the trigger belongs to the
+    dependent step, applied to its prerequisites) -- `all_success` (default)
+    requires every one of a prerequisite's own targets to be `done`;
+    `all_done` only requires each to have reached ANY finished state
+    (`done`/`failed`/`abandoned`): "mine the vein" can end with some tiles
+    unmineable and the wall step should still run on the ones that were.
+
+    `target_states_by_step` maps a step id to the list of its targets'
+    current state strings (`target_states()`'s own rows, grouped by
+    `step_id`) -- a required step with no tracked targets at all yet (never
+    seeded, or a `from_step` step whose predecessor has not run) is treated
+    as NOT satisfied, never vacuously true.
+    """
+    trigger = step.get("trigger", TRIGGER_ALL_SUCCESS)
+    for req in step.get("requires", []):
+        states = target_states_by_step.get(req)
+        if not states:
+            return False
+        if trigger == TRIGGER_ALL_DONE:
+            if not all(s in _FINISHED_STATES for s in states):
+                return False
+        elif not all(s == DONE for s in states):
+            return False
+    return True
+
+
+def target_states(path: str | Path, project_id: str) -> list[dict]:
+    """Every `step_targets` row for `project_id`, in insertion order --
+    "4 of 5 issued, 1 held" made queryable, per design §4.4's own example.
+    """
+    with _connect(path) as conn:
+        rows = conn.execute(
+            "SELECT step_id, target, state, reason, last_tick FROM step_targets "
+            "WHERE project_id = ? ORDER BY id ASC",
+            (project_id,),
+        ).fetchall()
+    return [
+        {
+            "step_id": r["step_id"], "target": r["target"], "state": r["state"],
+            "reason": r["reason"], "last_tick": r["last_tick"],
+        }
+        for r in rows
+    ]
+
+
+def rollback_drift(path: str | Path, project_id: str, current_tick: int) -> list[dict]:
+    """design §4.4, "Rollback": every target of `project_id` whose latest
+    recorded `last_tick` is AFTER `current_tick` -- the fort's own absolute
+    tick, read live and passed in by the caller; this function never calls
+    out to DFHack itself (keeps the queue store's existing separation from
+    any live-game access intact, per the handoff). Each entry is tagged
+    `contradicted: world_rolled_back`, matching design §2.3/§4.4's
+    three-valued observation vocabulary -- this is the code-computable half
+    of that call; the fuller "and re-observe" half is the reconciler's job
+    (out of scope here, see this handoff's Result section).
+    """
+    with _connect(path) as conn:
+        rows = conn.execute(
+            "SELECT step_id, target, state, last_tick FROM step_targets "
+            "WHERE project_id = ? AND last_tick IS NOT NULL AND last_tick > ? "
+            "ORDER BY id ASC",
+            (project_id, current_tick),
+        ).fetchall()
+    return [
+        {
+            "step_id": r["step_id"], "target": r["target"],
+            "recorded_state": r["state"], "recorded_tick": r["last_tick"],
+            "current_tick": current_tick, "status": "contradicted",
+            "reason": "world_rolled_back",
+        }
+        for r in rows
+    ]
+
+
+def project_status(path: str | Path, project_id: str) -> dict:
+    """One project's status line, design §6: "the Overseer sees one line per
+    active project (status, counts, the top blocker's reason)". Never the
+    whole graph.
+
+    `status` is `"done"` when every tracked target is `done`/`abandoned`
+    (there is at least one tracked target), `"active"` otherwise -- except
+    for a project with NO tracked targets at all (an implicit-step project,
+    design §5.3's legacy path), where `"done"` instead means "at least one
+    `executed` record references this project's ruling" -- the same
+    legacy-unchanged behaviour `dfqueue`'s own `unexecuted_accepted_proposals`
+    already reports on for a plain `ruling`. A project-level `abandoned`
+    decision is NOT computed here -- design §4.4 calls it "a decision," and
+    this stream does not implement writing one (see this handoff's Result
+    section)."""
+    with _connect(path) as conn:
+        proj_row = conn.execute(
+            "SELECT payload FROM records WHERE id = ? AND kind = ?", (project_id, PROJECT)
+        ).fetchone()
+        if proj_row is None:
+            raise QueueError(f"no such project: {project_id!r}")
+        project = json.loads(proj_row["payload"])
+
+        rows = conn.execute(
+            "SELECT id, step_id, target, state, reason FROM step_targets "
+            "WHERE project_id = ? ORDER BY id ASC",
+            (project_id,),
+        ).fetchall()
+
+        counts: dict[str, int] = {}
+        top_blocker = None
+        for r in rows:
+            counts[r["state"]] = counts.get(r["state"], 0) + 1
+            if top_blocker is None and r["state"] == HELD:
+                top_blocker = {"step_id": r["step_id"], "target": r["target"], "reason": r["reason"]}
+
+        if rows:
+            status = "done" if all(r["state"] in (DONE, ABANDONED) for r in rows) else "active"
+        else:
+            executed = conn.execute(
+                "SELECT 1 FROM records WHERE kind = ? AND "
+                "json_extract(payload, '$.ruling_id') = ?",
+                (EXECUTED, project["from_ruling"]),
+            ).fetchone()
+            status = "done" if executed is not None else "active"
+
+    return {
+        "project_id": project_id,
+        "summary": project.get("summary"),
+        "status": status,
+        "counts": counts,
+        "top_blocker": top_blocker,
+    }
 
 
 def load(path: str | Path) -> list[dict]:

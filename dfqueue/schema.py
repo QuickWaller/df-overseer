@@ -97,6 +97,7 @@ from pathlib import Path
 
 import yaml
 
+from dfmcp.registry import load_registry
 from learning import live_signals
 from learning.ledger.store import field_source as ledger_field_source
 from learning.predictions.schema import PREDICATE_OPS, PRESENCE_OPS
@@ -112,7 +113,16 @@ PROPOSAL, PASS, RULING = "proposal", "pass", "ruling"
 EXECUTED, ASK, ANSWER = "executed", "ask", "answer"
 #: Added handoffs/2026-09-22-loop-conductor-fixes.md item 3.
 ESCALATION = "escalation"
-KINDS = (PROPOSAL, PASS, RULING, EXECUTED, ASK, ANSWER, ESCALATION)
+#: Added handoffs/2026-09-28-dfqueue-project-step-schema.md, the missing
+#: `plan` record `docs/AGENT-ARCHITECTURE.md` §9 and this module's own
+#: docstring (above) said was absent. `PROJECT` is the Overseer's ordered
+#: plan, written once per accepted ruling, same write-authority restriction
+#: as `RULING`/`EXECUTED`/`ESCALATION` (§9: "writes its ordered plan to the
+#: queue before executing"). `OBSERVATION` is code's own view of the world,
+#: written only by the `conductor` role (never a model), see
+#: `OBSERVATION_ROLE` below.
+PROJECT, OBSERVATION = "project", "observation"
+KINDS = (PROPOSAL, PASS, RULING, EXECUTED, ASK, ANSWER, ESCALATION, PROJECT, OBSERVATION)
 
 # ---- ruling decisions ---------------------------------------------------------
 
@@ -136,6 +146,63 @@ ASK_ROLES = ("architect", "quartermaster", "overseer")
 #: names the Overseer -- this is a second, independent single-role
 #: restriction, not the same one reused.
 ANSWER_ROLE = "consultant"
+
+#: `observation` is written only by code, never a model (design §4.4:
+#: "written only by code, the conductor role, never by a model"). Same
+#: single-role-restriction shape as `ANSWER_ROLE`, distinct from
+#: `sole_writer()` -- the conductor is `kind: system` in `agents/ROSTER.yaml`,
+#: not the sole_writer (the overseer). This is the mechanical enforcement the
+#: handoff asked for: a role field is still just a string an MCP token maps
+#: to, so this check is the schema-layer half of "never a model-authored
+#: field"; the other half is that no model ever holds the conductor's own
+#: MCP token (agents/ROSTER.yaml's own comment on the conductor role).
+OBSERVATION_ROLE = "conductor"
+
+# ---- project step vocabulary --------------------------------------------------
+#
+# `research/2026-09-28-job-dependency-graph.md` §4.1-4.2.
+
+#: A step's `trigger`: `all_success` (default) requires every `requires`
+#: step to have finished with every target `done`; `all_done` (design
+#: §2.2's one kept Airflow trigger rule) relaxes that to "finished, with
+#: any outcome" -- "mine the vein" can end with some tiles unmineable and
+#: the wall step should still run on the ones that were.
+TRIGGER_ALL_SUCCESS, TRIGGER_ALL_DONE = "all_success", "all_done"
+TRIGGERS = (TRIGGER_ALL_SUCCESS, TRIGGER_ALL_DONE)
+
+#: The literal sentinel a step's `guards` field may hold instead of a list:
+#: "use this tool's own default guard set, no extras" (design §4.1's
+#: `guards: default`). A step may otherwise only ADD named guards from the
+#: vocabulary on top of the tool's defaults, never remove one (design §6,
+#: Architect row: "Cannot remove a default guard").
+GUARDS_DEFAULT = "default"
+
+#: Target-level state inside a step (design §4.4's table). `waiting`/`ready`
+#: are structural (derived from `requires`, never written by a record
+#: directly); `held`/`issued`/`done`/`failed`/`abandoned` are the states an
+#: `executed` action's `target_state` may report for a target it names
+#: (see `_validate_action` below). This is the closed vocabulary
+#: `store.py`'s target-state fold (the `predictions`-style materialised
+#: table, design §4.5) is built from.
+WAITING, READY, HELD, ISSUED, DONE, FAILED, ABANDONED = (
+    "waiting", "ready", "held", "issued", "done", "failed", "abandoned",
+)
+TARGET_STATES = (WAITING, READY, HELD, ISSUED, DONE, FAILED, ABANDONED)
+#: States an `executed` action may itself assert for a target it names.
+#: `waiting`/`ready` are never asserted by a record -- they are computed
+#: from a step's own `requires` graph at project-creation time.
+ACTION_TARGET_STATES = (HELD, ISSUED, DONE, FAILED, ABANDONED)
+
+#: An `observation`'s three-valued read of the world (design §2.3/§4.4,
+#: Kubernetes' condition `Status` "True/False/Unknown" adopted by name for
+#: this domain): `consistent` (the world matches recorded state),
+#: `contradicted` (it does not -- drift, including a rolled-back world),
+#: `not_observable` (a read failed or the fact is outside what a player-
+#: visible read can determine; never defaults to `consistent`).
+OBS_CONSISTENT, OBS_CONTRADICTED, OBS_NOT_OBSERVABLE = (
+    "consistent", "contradicted", "not_observable",
+)
+OBSERVATION_STATUSES = (OBS_CONSISTENT, OBS_CONTRADICTED, OBS_NOT_OBSERVABLE)
 
 # ---- cost unit vocabulary, small and starting here ---------------------------
 
@@ -223,10 +290,22 @@ KIND_FIELDS: dict[str, tuple[str, ...]] = {
     ),
     PASS: ("reason",),
     RULING: ("decision", "proposal_id", "reason", "public_rationale"),
-    EXECUTED: ("ruling_id", "actions", "notes"),
+    #: `step_id` added handoffs/2026-09-28-dfqueue-project-step-schema.md:
+    #: which step of `from_ruling`'s project this execution is for. Optional
+    #: -- a `ruling` whose project has no real steps (see `normalize_project`)
+    #: is executed exactly as before, with no `step_id` at all.
+    EXECUTED: ("ruling_id", "step_id", "actions", "notes"),
     ASK: ("question", "proposal_id"),
     ANSWER: ("ask_id", "answer"),
     ESCALATION: ("reason",),
+    #: `research/2026-09-28-job-dependency-graph.md` §4.1.
+    PROJECT: (
+        "from_ruling", "objective_id", "template", "summary", "because",
+        "steps",
+    ),
+    #: §4.4. One `observation` record reports on one or more targets read at
+    #: the same game tick (one reconcile pass, one tick).
+    OBSERVATION: ("project_id", "step_id", "game_tick", "results"),
 }
 
 # ---- the raw-coordinate pattern -----------------------------------------------
@@ -562,11 +641,32 @@ def _validate_ruling_fields(record: dict, errors: list[str]) -> None:
     _validate_text_field(record, "public_rationale", errors)
 
 
+def _validate_handle_list(value, errors: list[str], prefix: str) -> None:
+    """A non-empty list of non-empty, coordinate-free opaque handle strings
+    (target handles, or `game_refs` job/building ids -- both are code-only,
+    never a raw coordinate, per design §4.1: "Targets are named code-side by
+    opaque handles... never by a coordinate in any field an agent sees.")."""
+    if not isinstance(value, list) or not value:
+        errors.append(f"{prefix}: expected a non-empty list")
+        return
+    for i, v in enumerate(value):
+        # game_refs may be job/building ids (ints) as well as handle strings.
+        if isinstance(v, bool) or not isinstance(v, (str, int)) or v == "":
+            errors.append(f"{prefix}.{i}: expected a non-empty string or integer")
+            continue
+        coord = _find_coordinate(str(v))
+        if coord:
+            errors.append(
+                f"{prefix}.{i}: contains a raw-coordinate pattern ({coord!r}); "
+                "design commitment #1 forbids coordinates in this field"
+            )
+
+
 def _validate_action(item, errors: list[str], prefix: str) -> None:
     if not isinstance(item, dict):
         errors.append(f"{prefix}: expected an object")
         return
-    known = {"tool", "outcome", "detail"}
+    known = {"tool", "outcome", "detail", "targets", "game_refs", "target_state"}
     for key in item:
         if key not in known:
             errors.append(f"{prefix}.{key}: not a field in the schema")
@@ -595,17 +695,47 @@ def _validate_action(item, errors: list[str], prefix: str) -> None:
                     "design commitment #1 forbids coordinates in text fields"
                 )
 
+    # `targets`/`game_refs`/`target_state` added
+    # handoffs/2026-09-28-dfqueue-project-step-schema.md item 2 (design
+    # §4.4). `targets` and `target_state` are both-or-neither: a
+    # `target_state` with no `targets` names nothing, and a `targets` list
+    # with no `target_state` leaves the fold unable to say what happened to
+    # them (see `store.py`'s target-state fold).
+    has_targets, has_state = "targets" in item, "target_state" in item
+    if "targets" in item:
+        _validate_handle_list(item["targets"], errors, f"{prefix}.targets")
+    if has_targets != has_state:
+        errors.append(
+            f"{prefix}: 'targets' and 'target_state' must be given together "
+            "or not at all"
+        )
+    if has_state:
+        v = item["target_state"]
+        if v not in ACTION_TARGET_STATES:
+            errors.append(
+                f"{prefix}.target_state: {v!r} is not in {ACTION_TARGET_STATES}"
+            )
+    if "game_refs" in item:
+        _validate_handle_list(item["game_refs"], errors, f"{prefix}.game_refs")
+
 
 def _validate_executed_fields(record: dict, errors: list[str]) -> None:
     """`ruling_id`'s existence and its ruling's `decision` (must be
     `accept`) need the rest of the queue, so — same split as `ruling`'s own
-    `proposal_id` — that check lives in `store.append()`, not here."""
+    `proposal_id` — that check lives in `store.append()`, not here.
+    `step_id`'s existence (must name a real step of `ruling_id`'s own
+    project) is the same kind of split, also in `store.append()`."""
     if "ruling_id" not in record:
         errors.append("record.ruling_id: required field is missing")
     else:
         rid = record["ruling_id"]
         if not isinstance(rid, str) or not rid:
             errors.append("record.ruling_id: expected a non-empty string")
+
+    if "step_id" in record:
+        sid = record["step_id"]
+        if not isinstance(sid, str) or not sid:
+            errors.append("record.step_id: expected a non-empty string")
 
     if "actions" not in record:
         errors.append("record.actions: required field is missing")
@@ -618,6 +748,371 @@ def _validate_executed_fields(record: dict, errors: list[str]) -> None:
                 _validate_action(item, errors, f"record.actions.{i}")
 
     _validate_text_field(record, "notes", errors)
+
+
+@lru_cache(maxsize=1)
+def _tool_registry():
+    """`dfmcp.registry.load_registry()`, cached the same way `_load_roster`
+    is: this module is re-imported per test process, not per call, and the
+    registry is a pure read of `scripts/dfhack/TOOLS.yaml` with no reason to
+    reload it per validation. Reused rather than reinvented, per the
+    handoff's own instruction: "validate against `scripts/dfhack/TOOLS.yaml`
+    or however this codebase already validates a tool reference elsewhere".
+    `dfmcp.registry` imports nothing from `dfqueue`, so this import direction
+    (`dfqueue` -> `dfmcp.registry`) does not create a cycle -- only
+    `dfmcp.queue_tools` imports `dfqueue`, not `dfmcp.registry` itself."""
+    return load_registry()
+
+
+def _validate_target_spec(spec, step_ids: set, errors: list[str], prefix: str) -> None:
+    """Design §4.3: a target set is either a literal `set` of opaque handles
+    or `{from_step, select}` ("this step's done targets"). Only `select:
+    "done"` is built (the design's own worked example); a query-shaped
+    target set (§4.3's dynamic-discovery case) is not schema-representable
+    yet -- flagged in this stream's Result section, not built here."""
+    if not isinstance(spec, dict):
+        errors.append(f"{prefix}: expected an object")
+        return
+    has_set, has_from = "set" in spec, "from_step" in spec
+    if has_set == has_from:
+        errors.append(f"{prefix}: exactly one of 'set' or 'from_step' is required")
+        return
+    if has_set:
+        for key in spec:
+            if key != "set":
+                errors.append(f"{prefix}.{key}: not a field when 'set' is given")
+        _validate_handle_list(spec["set"], errors, f"{prefix}.set")
+    else:
+        known = {"from_step", "select"}
+        for key in spec:
+            if key not in known:
+                errors.append(f"{prefix}.{key}: not a field when 'from_step' is given")
+        fs = spec["from_step"]
+        if not isinstance(fs, str) or not fs:
+            errors.append(f"{prefix}.from_step: expected a non-empty string")
+        elif fs not in step_ids:
+            errors.append(
+                f"{prefix}.from_step: {fs!r} is not a step id declared in this project"
+            )
+        if "select" not in spec:
+            errors.append(f"{prefix}.select: required field is missing")
+        elif spec["select"] != "done":
+            errors.append(f"{prefix}.select: {spec['select']!r} is not in ('done',)")
+
+
+_IMPLICIT_STEP_TARGETS = {"set": []}
+
+
+def _validate_step(step, step_ids: set, errors: list[str], prefix: str) -> None:
+    """One step of a `project` record (design §4.1). `step_ids` is every
+    step id declared anywhere in the same project's `steps` list -- needed
+    statelessly (no database) because `requires`/`prefer_after`/`from_step`
+    only ever reference a sibling step in the same record."""
+    if not isinstance(step, dict):
+        errors.append(f"{prefix}: expected an object")
+        return
+
+    known = {
+        "id", "tool", "args", "targets", "requires", "trigger",
+        "prefer_after", "guards", "implicit",
+    }
+    for key in step:
+        if key not in known:
+            errors.append(f"{prefix}.{key}: not a field in the step schema")
+
+    if "id" not in step:
+        errors.append(f"{prefix}.id: required field is missing")
+    else:
+        sid = step["id"]
+        if not isinstance(sid, str) or not sid:
+            errors.append(f"{prefix}.id: expected a non-empty string")
+
+    implicit = step.get("implicit") is True
+    if "implicit" in step and not isinstance(step["implicit"], bool):
+        errors.append(f"{prefix}.implicit: expected a boolean")
+
+    if "tool" not in step:
+        errors.append(f"{prefix}.tool: required field is missing")
+    elif implicit:
+        # The auto-synthesised single step of a project whose ruling's
+        # proposal carried no `steps` block at all (`normalize_project`
+        # below) -- "the whole proposal is the step", not a real granular
+        # tool call, so it is deliberately exempt from the real-tool-id
+        # check: never free text an agent wrote, only code-generated.
+        if step["tool"] is not None:
+            errors.append(f"{prefix}.tool: an implicit step's tool must be null")
+    else:
+        tool = step["tool"]
+        if not isinstance(tool, str) or not tool:
+            errors.append(f"{prefix}.tool: expected a non-empty string")
+        elif tool not in _tool_registry().ids():
+            errors.append(
+                f"{prefix}.tool: {tool!r} is not a real tool id "
+                "(scripts/dfhack/TOOLS.yaml, via dfmcp.registry)"
+            )
+
+    if "args" in step and not isinstance(step["args"], dict):
+        errors.append(f"{prefix}.args: expected an object")
+
+    if "targets" not in step:
+        errors.append(f"{prefix}.targets: required field is missing")
+    elif implicit:
+        if step["targets"] != _IMPLICIT_STEP_TARGETS:
+            errors.append(
+                f"{prefix}.targets: an implicit step's targets must be "
+                f"{_IMPLICIT_STEP_TARGETS!r} (nothing tracked at this granularity)"
+            )
+    else:
+        _validate_target_spec(step["targets"], step_ids, errors, f"{prefix}.targets")
+
+    if "requires" in step:
+        requires = step["requires"]
+        if not isinstance(requires, list):
+            errors.append(f"{prefix}.requires: expected a list")
+        else:
+            for i, r in enumerate(requires):
+                if not isinstance(r, str) or not r:
+                    errors.append(f"{prefix}.requires.{i}: expected a non-empty string")
+                elif r not in step_ids:
+                    errors.append(
+                        f"{prefix}.requires.{i}: {r!r} is not a step id in this project"
+                    )
+                elif isinstance(step.get("id"), str) and r == step["id"]:
+                    errors.append(f"{prefix}.requires.{i}: a step may not require itself")
+
+    if "trigger" in step and step["trigger"] not in TRIGGERS:
+        errors.append(f"{prefix}.trigger: {step['trigger']!r} is not in {TRIGGERS}")
+
+    if "prefer_after" in step:
+        pa = step["prefer_after"]
+        if not isinstance(pa, list):
+            errors.append(f"{prefix}.prefer_after: expected a list")
+        else:
+            for i, r in enumerate(pa):
+                if not isinstance(r, str) or not r:
+                    errors.append(f"{prefix}.prefer_after.{i}: expected a non-empty string")
+                elif r not in step_ids:
+                    errors.append(
+                        f"{prefix}.prefer_after.{i}: {r!r} is not a step id in this project"
+                    )
+
+    if "guards" in step:
+        g = step["guards"]
+        if g != GUARDS_DEFAULT:
+            if not isinstance(g, list):
+                errors.append(
+                    f"{prefix}.guards: expected {GUARDS_DEFAULT!r} or a list of guard names"
+                )
+            else:
+                for i, name in enumerate(g):
+                    if not isinstance(name, str) or not name:
+                        errors.append(f"{prefix}.guards.{i}: expected a non-empty string")
+
+
+def _find_requires_cycle(steps: list) -> list[str] | None:
+    """The first `requires` cycle found (finish-to-start edges only, design
+    §2.2's chosen link type), as the offending path, or `None`. Dangling
+    references are skipped here -- `_validate_step` already reports those as
+    their own error; this only walks edges that point at a real sibling."""
+    graph: dict[str, list[str]] = {}
+    for s in steps:
+        if isinstance(s, dict) and isinstance(s.get("id"), str) and s["id"]:
+            reqs = s.get("requires", [])
+            graph[s["id"]] = [r for r in reqs if isinstance(r, str)] if isinstance(reqs, list) else []
+
+    WHITE, GRAY, BLACK = 0, 1, 2
+    color = {node: WHITE for node in graph}
+    path: list[str] = []
+
+    def visit(node: str) -> list[str] | None:
+        color[node] = GRAY
+        path.append(node)
+        for nxt in graph.get(node, []):
+            if nxt not in graph:
+                continue
+            if color.get(nxt) == GRAY:
+                return path[path.index(nxt):] + [nxt]
+            if color.get(nxt) == WHITE:
+                found = visit(nxt)
+                if found:
+                    return found
+        path.pop()
+        color[node] = BLACK
+        return None
+
+    for node in list(graph):
+        if color[node] == WHITE:
+            found = visit(node)
+            if found:
+                return found
+    return None
+
+
+def _validate_project_fields(record: dict, errors: list[str]) -> None:
+    if "from_ruling" not in record:
+        errors.append("record.from_ruling: required field is missing")
+    else:
+        v = record["from_ruling"]
+        if not isinstance(v, str) or not v:
+            errors.append("record.from_ruling: expected a non-empty string")
+
+    for name in ("objective_id", "template"):
+        if name in record and record[name] is not None:
+            v = record[name]
+            if not isinstance(v, str) or not v:
+                errors.append(f"record.{name}: expected a non-empty string or null")
+
+    _validate_text_field(record, "summary", errors)
+    _validate_text_field(record, "because", errors)
+
+    if "steps" not in record:
+        errors.append("record.steps: required field is missing")
+        return
+    steps = record["steps"]
+    if not isinstance(steps, list):
+        errors.append("record.steps: expected a list")
+        return
+    if not steps:
+        # `store.normalize_project` fills an absent/empty `steps` in with
+        # one implicit step before this function ever runs on the real
+        # write path (`store.append()`) -- reaching here with zero steps
+        # means a caller validated a raw record directly, skipping
+        # normalisation. Refused rather than silently accepted as a
+        # zero-step (vacuously "done") project.
+        errors.append("record.steps: expected at least one step (see normalize_project)")
+        return
+
+    step_ids = {
+        s["id"] for s in steps
+        if isinstance(s, dict) and isinstance(s.get("id"), str) and s["id"]
+    }
+
+    ids_seen = []
+    for i, step in enumerate(steps):
+        _validate_step(step, step_ids, errors, f"record.steps.{i}")
+        if isinstance(step, dict) and isinstance(step.get("id"), str) and step["id"]:
+            ids_seen.append(step["id"])
+
+    dupes = sorted({sid for sid in ids_seen if ids_seen.count(sid) > 1})
+    if dupes:
+        errors.append(f"record.steps: duplicate step ids: {dupes}")
+
+    cycle = _find_requires_cycle([s for s in steps if isinstance(s, dict)])
+    if cycle:
+        errors.append(f"record.steps: a 'requires' cycle exists: {' -> '.join(cycle)}")
+
+
+def normalize_project(record: dict) -> dict:
+    """Return `record` (a `project` record whose `id` is already assigned)
+    with an absent or empty `steps` filled in with exactly one **implicit**
+    step -- design §5.3's "a proposal with no steps block is a one-step
+    project, so every existing proposal type keeps working unchanged." The
+    implicit step wraps the whole ruling's own accepted proposal the way an
+    `executed` record already does today (no `step_id`, no per-target
+    tracking): its `tool` is `null` and it is exempt from the real-tool-id
+    check (`_validate_step`), because it does not represent one granular
+    tool call, only "this project is one undecomposed unit of work", the
+    same shape execution already had before this stream. Never mutates its
+    argument. Called from `store.append()`, after `id` is assigned and
+    before `validate()` -- this is normalisation, not validation, so it
+    stays in this module for `store.py` and any future caller to share
+    rather than being duplicated at each write site.
+    """
+    record = dict(record)
+    if record.get("steps"):
+        return record
+    record["steps"] = [{
+        "id": f"{record['id']}/s1",
+        "tool": None,
+        "implicit": True,
+        "args": {},
+        "targets": dict(_IMPLICIT_STEP_TARGETS),
+        "requires": [],
+        "trigger": TRIGGER_ALL_SUCCESS,
+        "prefer_after": [],
+        "guards": GUARDS_DEFAULT,
+    }]
+    return record
+
+
+def _validate_observation_result(item, errors: list[str], prefix: str) -> None:
+    if not isinstance(item, dict):
+        errors.append(f"{prefix}: expected an object")
+        return
+    known = {"target", "status", "reason"}
+    for key in item:
+        if key not in known:
+            errors.append(f"{prefix}.{key}: not a field in the schema")
+
+    if "target" not in item:
+        errors.append(f"{prefix}.target: required field is missing")
+    else:
+        v = item["target"]
+        if isinstance(v, bool) or not isinstance(v, (str, int)) or v == "":
+            errors.append(f"{prefix}.target: expected a non-empty string or integer")
+        else:
+            coord = _find_coordinate(str(v))
+            if coord:
+                errors.append(
+                    f"{prefix}.target: contains a raw-coordinate pattern ({coord!r}); "
+                    "design commitment #1 forbids coordinates in this field"
+                )
+
+    if item.get("status") not in OBSERVATION_STATUSES:
+        errors.append(
+            f"{prefix}.status: {item.get('status')!r} is not in {OBSERVATION_STATUSES}"
+        )
+
+    if "reason" not in item:
+        errors.append(f"{prefix}.reason: required field is missing")
+    else:
+        v = item["reason"]
+        if not isinstance(v, str) or not v:
+            errors.append(f"{prefix}.reason: expected a non-empty string")
+        else:
+            coord = _find_coordinate(v)
+            if coord:
+                errors.append(
+                    f"{prefix}.reason: contains a raw-coordinate pattern ({coord!r}); "
+                    "design commitment #1 forbids coordinates in text fields"
+                )
+
+
+def _validate_observation_fields(record: dict, errors: list[str]) -> None:
+    """`project_id`'s and `step_id`'s existence (must name a real project and
+    one of its real steps) needs the rest of the queue, so — same split as
+    everywhere else in this module — that check lives in `store.append()`,
+    not here."""
+    if "project_id" not in record:
+        errors.append("record.project_id: required field is missing")
+    else:
+        v = record["project_id"]
+        if not isinstance(v, str) or not v:
+            errors.append("record.project_id: expected a non-empty string")
+
+    if "step_id" not in record:
+        errors.append("record.step_id: required field is missing")
+    else:
+        v = record["step_id"]
+        if not isinstance(v, str) or not v:
+            errors.append("record.step_id: expected a non-empty string")
+
+    if "game_tick" not in record:
+        errors.append("record.game_tick: required field is missing")
+    else:
+        v = record["game_tick"]
+        if isinstance(v, bool) or not isinstance(v, int) or v < 0:
+            errors.append("record.game_tick: expected a non-negative integer")
+
+    if "results" not in record:
+        errors.append("record.results: required field is missing")
+    else:
+        results = record["results"]
+        if not isinstance(results, list) or not results:
+            errors.append("record.results: expected a non-empty list")
+        else:
+            for i, r in enumerate(results):
+                _validate_observation_result(r, errors, f"record.results.{i}")
 
 
 def _validate_ask_fields(record: dict, errors: list[str]) -> None:
@@ -690,7 +1185,7 @@ def validate(record) -> list[str]:
             errors.append(
                 f"record.role: {role!r} is not an enabled role in agents/ROSTER.yaml"
             )
-        if kind in (RULING, EXECUTED, ESCALATION):
+        if kind in (RULING, EXECUTED, ESCALATION, PROJECT):
             writer = sole_writer()
             if role != writer:
                 errors.append(
@@ -704,6 +1199,11 @@ def validate(record) -> list[str]:
         if kind == ANSWER and role != ANSWER_ROLE:
             errors.append(
                 f"record.role: only {ANSWER_ROLE!r} may write an answer; got {role!r}"
+            )
+        if kind == OBSERVATION and role != OBSERVATION_ROLE:
+            errors.append(
+                f"record.role: only {OBSERVATION_ROLE!r} may write an observation; "
+                f"got {role!r}"
             )
 
     if "cycle" not in record:
@@ -734,5 +1234,9 @@ def validate(record) -> list[str]:
         _validate_answer_fields(record, errors)
     elif kind == ESCALATION:
         _validate_text_field(record, "reason", errors)
+    elif kind == PROJECT:
+        _validate_project_fields(record, errors)
+    elif kind == OBSERVATION:
+        _validate_observation_fields(record, errors)
 
     return errors

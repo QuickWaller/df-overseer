@@ -13,8 +13,8 @@ import pytest
 
 from dfqueue import schema
 from dfqueue.tests._helpers import (
-    make_answer, make_ask, make_escalation, make_executed, make_pass,
-    make_proposal, make_ruling,
+    make_answer, make_ask, make_escalation, make_executed, make_observation,
+    make_pass, make_project, make_proposal, make_ruling,
 )
 
 
@@ -662,3 +662,195 @@ def test_near_duplicate_reason_catches_a_near_identical_rationale_with_a_differe
 
 def test_near_duplicate_reason_ignores_missing_fields_without_raising():
     assert schema.near_duplicate_reason({}, {}) is None
+
+
+# ---- project / step schema (handoffs/2026-09-28-dfqueue-project-step-schema.md) ---
+
+
+def test_valid_project_validates_clean():
+    assert schema.validate(make_project()) == []
+
+
+def test_project_role_restricted_to_sole_writer():
+    """Same restriction as ruling/executed/escalation (§9: the project is
+    the Overseer's own ordered plan)."""
+    record = make_project(role="architect")
+    errors = _errors_mentioning(schema.validate(record), "record.role")
+    assert errors, "an architect-authored project should be refused"
+
+
+def test_project_step_tool_must_be_a_real_registry_id():
+    record = make_project()
+    record["steps"][0]["tool"] = "not_a_real_tool.frobnicate"
+    errors = _errors_mentioning(schema.validate(record), "steps.0.tool")
+    assert errors, "a made-up tool id should be refused"
+    assert "not a real tool id" in errors[0]
+
+
+def test_project_step_requires_must_reference_a_sibling_step():
+    record = make_project()
+    record["steps"][1]["requires"] = ["no-such-step"]
+    errors = _errors_mentioning(schema.validate(record), "steps.1.requires")
+    assert errors
+
+
+def test_project_step_cannot_require_itself():
+    record = make_project()
+    record["steps"][0]["requires"] = [record["steps"][0]["id"]]
+    errors = schema.validate(record)
+    assert _errors_mentioning(errors, "may not require itself")
+
+
+def test_project_requires_cycle_is_refused():
+    record = make_project()
+    record["steps"][0]["requires"] = [record["steps"][1]["id"]]
+    # s1 now requires s2, and s2 already requires s1: a two-step cycle.
+    errors = schema.validate(record)
+    assert _errors_mentioning(errors, "cycle")
+
+
+def test_project_step_trigger_vocabulary():
+    record = make_project()
+    record["steps"][1]["trigger"] = "one_success"  # not in the closed vocab
+    errors = _errors_mentioning(schema.validate(record), "steps.1.trigger")
+    assert errors
+
+
+def test_project_step_trigger_all_success_and_all_done_both_valid():
+    record = make_project()
+    record["steps"][0]["trigger"] = "all_success"
+    record["steps"][1]["trigger"] = "all_done"
+    assert schema.validate(record) == []
+
+
+def test_project_zero_steps_refused_by_validate_directly():
+    """`store.normalize_project` fills this in on the real write path
+    (`store.append()`, tested in `test_store.py`); calling `validate()`
+    directly on a raw empty-steps record is refused rather than silently
+    treated as a vacuously-done project."""
+    record = make_project(steps=[])
+    errors = _errors_mentioning(schema.validate(record), "record.steps")
+    assert errors
+
+
+def test_project_summary_coordinate_scan():
+    record = make_project(summary="Wall off the tile at (4, 9, -2).")
+    errors = _errors_mentioning(schema.validate(record), "record.summary")
+    assert errors
+
+
+def test_project_targets_set_coordinate_scan():
+    """design §4.3: target handles are opaque, never a raw coordinate. The
+    existing coordinate filter must cover this new field."""
+    record = make_project()
+    record["steps"][0]["targets"]["set"] = ["x=12"]
+    errors = _errors_mentioning(schema.validate(record), "steps.0.targets.set")
+    assert errors
+
+
+def test_project_guards_default_sentinel_and_extra_list_both_valid():
+    record = make_project()
+    record["steps"][0]["guards"] = "default"
+    record["steps"][1]["guards"] = ["keeps_access", "not_over_pending_designation"]
+    assert schema.validate(record) == []
+
+
+def test_project_guards_rejects_junk():
+    record = make_project()
+    record["steps"][0]["guards"] = "not-default-and-not-a-list"
+    errors = _errors_mentioning(schema.validate(record), "steps.0.guards")
+    assert errors
+
+
+# ---- executed: step_id, targets, game_refs, target_state ---------------------
+
+
+def test_executed_with_step_id_and_targets_validates_clean():
+    record = make_executed(
+        step_id="project-0001/s1",
+        actions=[
+            {
+                "tool": "construction.mine-vein", "outcome": "success",
+                "targets": ["ring-13-ore-1", "ring-13-ore-2"],
+                "target_state": "issued",
+                "game_refs": [2701, 2702],
+            },
+        ],
+    )
+    assert schema.validate(record) == []
+
+
+def test_executed_action_targets_requires_target_state():
+    record = make_executed(
+        actions=[{"tool": "construction.build", "outcome": "success", "targets": ["ring-13-ore-1"]}],
+    )
+    errors = _errors_mentioning(schema.validate(record), "actions.0")
+    assert errors, "targets without a target_state should be refused"
+
+
+def test_executed_action_target_state_vocabulary():
+    record = make_executed(
+        actions=[{
+            "tool": "construction.build", "outcome": "success",
+            "targets": ["ring-13-ore-1"], "target_state": "waiting",
+        }],
+    )
+    errors = _errors_mentioning(schema.validate(record), "target_state")
+    assert errors, "'waiting'/'ready' are structural, never asserted by a record"
+
+
+def test_executed_action_targets_coordinate_scan():
+    record = make_executed(
+        actions=[{
+            "tool": "construction.build", "outcome": "success",
+            "targets": ["(4, 9, -2)"], "target_state": "issued",
+        }],
+    )
+    errors = _errors_mentioning(schema.validate(record), "actions.0.targets")
+    assert errors
+
+
+def test_executed_action_game_refs_coordinate_scan():
+    record = make_executed(
+        actions=[{
+            "tool": "construction.build", "outcome": "success",
+            "targets": ["ring-13-ore-1"], "target_state": "issued",
+            "game_refs": ["z=-3"],
+        }],
+    )
+    errors = _errors_mentioning(schema.validate(record), "actions.0.game_refs")
+    assert errors
+
+
+# ---- observation ---------------------------------------------------------------
+
+
+def test_valid_observation_validates_clean():
+    assert schema.validate(make_observation()) == []
+
+
+def test_observation_role_restricted_to_conductor():
+    record = make_observation(role="overseer")
+    errors = _errors_mentioning(schema.validate(record), "record.role")
+    assert errors, "only the conductor (code) may write an observation"
+
+
+def test_observation_status_vocabulary():
+    record = make_observation()
+    record["results"][0]["status"] = "probably_fine"
+    errors = _errors_mentioning(schema.validate(record), "results.0.status")
+    assert errors
+
+
+def test_observation_target_coordinate_scan():
+    record = make_observation()
+    record["results"][0]["target"] = "(4, 9, -2)"
+    errors = _errors_mentioning(schema.validate(record), "results.0.target")
+    assert errors
+
+
+def test_observation_reason_coordinate_scan():
+    record = make_observation()
+    record["results"][0]["reason"] = "still pending at x=12"
+    errors = _errors_mentioning(schema.validate(record), "results.0.reason")
+    assert errors

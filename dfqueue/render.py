@@ -14,7 +14,10 @@ from __future__ import annotations
 
 from xml.sax.saxutils import escape, quoteattr
 
-from .schema import ANSWER, ASK, ESCALATION, EXECUTED, PASS, PROPOSAL, RULING
+from .schema import (
+    ANSWER, ASK, ESCALATION, EXECUTED, OBSERVATION, PASS, PROJECT, PROPOSAL,
+    RULING,
+)
 
 #: §8's allowlist, plus id/ts/kind "so the feed can order and thread items"
 #: (this stream's brief). Nothing else is ever published, by construction:
@@ -106,6 +109,8 @@ def _ruling_xml(record: dict) -> str:
 def _executed_xml(record: dict) -> str:
     lines = [_open_tag("executed", record)]
     lines.append(f"  <ruling_id>{escape(record['ruling_id'])}</ruling_id>")
+    if record.get("step_id") is not None:
+        lines.append(f"  <step_id>{escape(record['step_id'])}</step_id>")
     lines.append("  <actions>")
     for action in record["actions"]:
         attrs = (
@@ -114,11 +119,78 @@ def _executed_xml(record: dict) -> str:
         )
         if action.get("detail") is not None:
             attrs += f" detail={quoteattr(str(action['detail']))}"
+        if action.get("target_state") is not None:
+            attrs += f" target_state={quoteattr(str(action['target_state']))}"
+        if action.get("targets"):
+            attrs += f" targets={quoteattr(','.join(str(t) for t in action['targets']))}"
+        if action.get("game_refs"):
+            attrs += f" game_refs={quoteattr(','.join(str(t) for t in action['game_refs']))}"
         lines.append(f"    <action{attrs}/>")
     lines.append("  </actions>")
     lines.append(f"  <notes>{escape(record['notes'])}</notes>")
     lines.append("</executed>")
     return "\n".join(lines)
+
+
+def _step_xml(step: dict) -> str:
+    attrs = f" id={quoteattr(str(step['id']))}"
+    if step.get("tool") is not None:
+        attrs += f" tool={quoteattr(str(step['tool']))}"
+    if step.get("trigger"):
+        attrs += f" trigger={quoteattr(str(step['trigger']))}"
+    lines = [f"    <step{attrs}>"]
+    requires = step.get("requires") or []
+    if requires:
+        lines.append(f"      <requires>{escape(','.join(requires))}</requires>")
+    lines.append("    </step>")
+    return "\n".join(lines)
+
+
+def _project_xml(record: dict) -> str:
+    lines = [_open_tag("project", record)]
+    lines.append(f"  <from_ruling>{escape(record['from_ruling'])}</from_ruling>")
+    if record.get("objective_id") is not None:
+        lines.append(f"  <objective_id>{escape(record['objective_id'])}</objective_id>")
+    if record.get("template") is not None:
+        lines.append(f"  <template>{escape(record['template'])}</template>")
+    lines.append(f"  <summary>{escape(record['summary'])}</summary>")
+    lines.append(f"  <because>{escape(record['because'])}</because>")
+    lines.append("  <steps>")
+    for step in record.get("steps", []):
+        lines.append(_step_xml(step))
+    lines.append("  </steps>")
+    lines.append("</project>")
+    return "\n".join(lines)
+
+
+def _observation_xml(record: dict) -> str:
+    lines = [_open_tag("observation", record)]
+    lines.append(f"  <project_id>{escape(record['project_id'])}</project_id>")
+    lines.append(f"  <step_id>{escape(record['step_id'])}</step_id>")
+    lines.append(f"  <game_tick>{record['game_tick']}</game_tick>")
+    lines.append("  <results>")
+    for r in record.get("results", []):
+        attrs = (
+            f" target={quoteattr(str(r['target']))}"
+            f" status={quoteattr(str(r['status']))}"
+        )
+        lines.append(f"    <result{attrs}>{escape(r['reason'])}</result>")
+    lines.append("  </results>")
+    lines.append("</observation>")
+    return "\n".join(lines)
+
+
+def project_status_line(status: dict) -> str:
+    """One line for the Overseer's prompt, design §6: "status, target counts
+    by state, and the top blocker's reason if any is held." Never the whole
+    graph -- see `dfqueue.store.project_status`, this function's only
+    caller-shaped input."""
+    counts = ", ".join(f"{n} {state}" for state, n in sorted(status["counts"].items())) or "no tracked targets"
+    line = f"{status['project_id']}: {status['status']} ({counts})"
+    blocker = status.get("top_blocker")
+    if blocker:
+        line += f"; held: {blocker['target']} ({blocker['reason']})"
+    return line
 
 
 def _ask_xml(record: dict) -> str:
@@ -150,7 +222,8 @@ def _escalation_xml(record: dict) -> str:
 _RENDERERS = {
     PROPOSAL: _proposal_xml, PASS: _pass_xml, RULING: _ruling_xml,
     EXECUTED: _executed_xml, ASK: _ask_xml, ANSWER: _answer_xml,
-    ESCALATION: _escalation_xml,
+    ESCALATION: _escalation_xml, PROJECT: _project_xml,
+    OBSERVATION: _observation_xml,
 }
 
 
