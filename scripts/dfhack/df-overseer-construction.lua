@@ -85,8 +85,8 @@
 -- pathfinding (it can't answer one) and instead uses a narrower, live,
 -- no-mutation neighbour check.
 --
--- Usage: ./dfhack-run df-overseer-construction mine-vein ZONE_ID [DRY_RUN]
--- Usage: ./dfhack-run df-overseer-construction build ZONE_ID KIND [DRY_RUN]
+-- Usage: ./dfhack-run df-overseer-construction mine-vein ZONE_ID [DRY_RUN] [RES_ID] [OVERRIDE]
+-- Usage: ./dfhack-run df-overseer-construction build ZONE_ID KIND [DRY_RUN] [RES_ID] [OVERRIDE]
 
 local json = require('json')
 local surface_mod = reqscript('df-overseer-surface')
@@ -244,10 +244,16 @@ end
 -- `local function` is only visible from its definition point onward) can
 -- see it -- item_present/keeps_access are defined right before their own
 -- caller (build_construction) for the identical reason.
-local function apply_reservation_guard(candidates)
+-- res_id/kind/override (handoffs/2026-09-30-reservation-holding.md items
+-- 2-3): threaded straight into check_tiles, which already does the RES_ID/
+-- kind/override-reason gating (see that file). A held candidate here is
+-- exactly "check_tiles refused this one tile" -- either it belongs to an
+-- unrelated reservation, or it belongs to res_id's own reservation but this
+-- call's kind is not one it allows and no override was given.
+local function apply_reservation_guard(candidates, res_id, kind, override)
   local held, kept = {}, {}
   for _, c in ipairs(candidates) do
-    local conflict = reservations_mod.check_tiles({{x = c.x, y = c.y, z = c.z}}, nil)
+    local conflict = reservations_mod.check_tiles({{x = c.x, y = c.y, z = c.z}}, nil, res_id, kind, override)
     if conflict then
       held[#held + 1] = {ring_position = c.ring_position, reason = conflict.message}
     else
@@ -261,7 +267,15 @@ end
 -- mine-vein ZONE_ID [DRY_RUN]
 -- ---------------------------------------------------------------------------
 
-function mine_vein(zone_id, dry_run)
+-- RES_ID/OVERRIDE (handoffs/2026-09-30-reservation-holding.md item 2):
+-- mine-vein has no KIND at all -- checked against the fixed literal
+-- "mine_vein". No template declares it: mining out a vein IN a reserved
+-- wall ring is destructive to that wall, never a template's own intent, so
+-- it is always held unless OVERRIDE.
+function mine_vein(zone_id, dry_run, res_id, override)
+  if override ~= nil and res_id == nil then
+    return {error = "OVERRIDE requires RES_ID"}
+  end
   local hooks, herr = surface_hooks()
   if not hooks then return {error = herr} end
   local b, err = hooks.find_zone(zone_id)
@@ -302,10 +316,24 @@ function mine_vein(zone_id, dry_run)
   -- run before digging any candidate: this tool already reports a `held`
   -- bucket separate from `refused`, so a reservation conflict holds just
   -- that ring tile rather than refusing the whole call.
-  local reservation_held, kept_candidates = apply_reservation_guard(candidates)
+  local reservation_held, kept_candidates = apply_reservation_guard(candidates, res_id, "mine_vein", override)
   local held = {}
   for _, h in ipairs(reservation_held) do
     held[#held + 1] = string.format("ring tile %d: held (reservation) -- %s", h.ring_position, h.reason)
+  end
+
+  -- Which kept candidates only got through BECAUSE of OVERRIDE (handoff
+  -- review, 2026-09-30): recording must happen only once, only for a real
+  -- (non-dry) run, and only if a tile that actually needed the override was
+  -- actually designated successfully below -- never merely because OVERRIDE
+  -- was passed.
+  local override_candidates = {}
+  if override ~= nil then
+    for _, c in ipairs(kept_candidates) do
+      if reservations_mod.override_needed({{x = c.x, y = c.y, z = c.z}}, res_id, "mine_vein") then
+        override_candidates[#override_candidates + 1] = c
+      end
+    end
   end
 
   local results = {}
@@ -320,6 +348,15 @@ function mine_vein(zone_id, dry_run)
       error = nn(r.error),
       stats = (r.stats and next(r.stats)) and r.stats or {},
     }
+    if not dry and r.ok then
+      for _, oc in ipairs(override_candidates) do
+        if oc == c then
+          reservations_mod.record_override(res_id, "construction.mine-vein", "mine_vein", override)
+          override_candidates = {}  -- record at most once per call
+          break
+        end
+      end
+    end
   end
 
   return {
@@ -739,7 +776,16 @@ local function resolve_construction_kind(kind_name)
   return matches[1]
 end
 
-function build_construction(zone_id, kind_name, dry_run)
+-- RES_ID/OVERRIDE (handoffs/2026-09-30-reservation-holding.md items 2-3):
+-- k.token is df-overseer-building.lua's own generic per-subtype token
+-- (e.g. "Wall") -- the identical domain df-overseer-blueprint.lua's
+-- template_allowed_kinds derives a template's #build cells through, so no
+-- vocabulary mismatch here (unlike df-overseer-workshop.lua's own local
+-- kind keys, see that file's comment).
+function build_construction(zone_id, kind_name, dry_run, res_id, override)
+  if override ~= nil and res_id == nil then
+    return {error = "OVERRIDE requires RES_ID"}
+  end
   local k, kerr = resolve_construction_kind(kind_name)
   if not k then return {error = kerr} end
   local hooks, herr = surface_hooks()
@@ -774,7 +820,19 @@ function build_construction(zone_id, kind_name, dry_run)
   -- read live world state regardless of `dry`, so a dry run and a real run
   -- report holds identically -- a hold is not a run-level failure (`ok`
   -- stays true below, `results` simply omits the held targets).
-  local reservation_held, after_reservation = apply_reservation_guard(candidates)
+  local reservation_held, after_reservation = apply_reservation_guard(candidates, res_id, k.token, override)
+  -- Which of the candidates that passed the reservation guard only did so
+  -- BECAUSE of OVERRIDE (handoff review, 2026-09-30) -- computed here,
+  -- before the other two guards or any designation, so a later guard
+  -- dropping one is not mistaken for it never having needed the override.
+  local override_candidates = {}
+  if override ~= nil then
+    for _, c in ipairs(after_reservation) do
+      if reservations_mod.override_needed({{x = c.x, y = c.y, z = c.z}}, res_id, k.token) then
+        override_candidates[#override_candidates + 1] = c
+      end
+    end
+  end
   local item_held, after_item_present = apply_item_present_guard(after_reservation)
   local access_held, final_candidates = apply_keeps_access_guard(hooks, after_item_present)
 
@@ -805,6 +863,15 @@ function build_construction(zone_id, kind_name, dry_run)
       error = nn(r.error),
       stats = (r.stats and next(r.stats)) and r.stats or {},
     }
+    if not dry and r.ok then
+      for _, oc in ipairs(override_candidates) do
+        if oc == c then
+          reservations_mod.record_override(res_id, "construction.build", k.token, override)
+          override_candidates = {}  -- record at most once per call
+          break
+        end
+      end
+    end
   end
 
   return {
@@ -837,17 +904,17 @@ end
 
 if cmd == "mine-vein" then
   if not args[2] then
-    print("usage: df-overseer-construction mine-vein ZONE_ID [DRY_RUN]")
+    print("usage: df-overseer-construction mine-vein ZONE_ID [DRY_RUN] [RES_ID] [OVERRIDE]")
   else
-    emit(mine_vein(args[2], args[3]))
+    emit(mine_vein(args[2], args[3], args[4], args[5]))
   end
 elseif cmd == "build" then
   if not (args[2] and args[3]) then
-    print("usage: df-overseer-construction build ZONE_ID KIND [DRY_RUN]")
+    print("usage: df-overseer-construction build ZONE_ID KIND [DRY_RUN] [RES_ID] [OVERRIDE]")
   else
-    emit(build_construction(args[2], args[3], args[4]))
+    emit(build_construction(args[2], args[3], args[4], args[5], args[6]))
   end
 else
-  print("usage: df-overseer-construction mine-vein ZONE_ID [DRY_RUN]")
-  print("usage: df-overseer-construction build ZONE_ID KIND [DRY_RUN]")
+  print("usage: df-overseer-construction mine-vein ZONE_ID [DRY_RUN] [RES_ID] [OVERRIDE]")
+  print("usage: df-overseer-construction build ZONE_ID KIND [DRY_RUN] [RES_ID] [OVERRIDE]")
 end

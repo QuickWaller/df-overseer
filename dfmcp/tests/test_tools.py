@@ -433,17 +433,22 @@ def test_supplying_a_later_optional_without_an_earlier_one_fills_the_default(reg
 
 
 def test_a_skipped_slot_with_no_declared_default_is_still_refused(registry):
-    """zone.place's OWNER has no declared default (there is no safe value to
-    guess), so naming the later AROUND_FURNITURE without it is still a named
-    gap that says why."""
+    """OWNER now has a declared default (2026-09-30, handoffs/2026-09-30-
+    reservation-holding.md review item 2: RES_ID/OVERRIDE were added after
+    OWNER/AROUND_FURNITURE in zone.place's own signature, so a caller
+    supplying only RES_ID needs every earlier optional, including OWNER, to
+    have a usable default) -- "" is exactly what place_zone's own
+    resolve_owner treats as no owner, so this is safe, not guessed. Naming
+    the later AROUND_FURNITURE while skipping OWNER now succeeds, filling
+    OWNER with "". A slot that genuinely has no declared default is still
+    refused by the same mechanism (see
+    test_defaults_declared_in_the_manifest_only_name_optional_placeholders
+    below for the registry-level shape of that refusal)."""
     tool = registry.get("zone.place")
-    assert "OWNER" not in tool.defaults
-    with pytest.raises(ArgumentError) as exc:
-        argv_for_call(
-            tool, {"kind": "Tomb", "near_landmark": "Wagon", "around_furniture": "true"}
-        )
-    msg = str(exc.value)
-    assert "around_furniture" in msg and "owner" in msg and "no default" in msg
+    assert tool.defaults["OWNER"] == ""
+    assert argv_for_call(
+        tool, {"kind": "Tomb", "near_landmark": "Wagon", "around_furniture": "true"}
+    ) == ["df-overseer-zone", "place", "Tomb", "0", "Wagon", "1", "30", "true", "", "true"]
 
 
 def test_dry_run_alone_skips_every_earlier_optional_with_its_default(registry):
@@ -823,7 +828,8 @@ def test_real_building_signatures_use_the_optional_footprint_group(registry):
         ),
         (
             "building.build",
-            ["kind", "w", "h", "level", "near_landmark", "rank", "radius_tiles", "dry_run", "material_choice"],
+            ["kind", "w", "h", "level", "near_landmark", "rank", "radius_tiles", "dry_run", "material_choice",
+             "res_id", "override"],
         ),
     ):
         tool = registry.get(tool_id)
@@ -833,6 +839,60 @@ def test_real_building_signatures_use_the_optional_footprint_group(registry):
         by = {s.name: s for s in specs}
         assert by["w"].required is False and by["h"].required is False
         assert by["kind"].required and by["near_landmark"].required
+
+
+def test_res_id_and_override_reachable_for_every_real_command_that_declares_them(registry):
+    """handoffs/2026-09-30-reservation-holding.md review, item 2: dfmcp only
+    fills a skipped optional slot when TOOLS.yaml declares a default for it
+    (module docstring, 'Declared defaults fill a skipped slot'); otherwise it
+    refuses. Every command whose real signature carries [RES_ID] must be
+    callable with nothing but its own required arguments plus RES_ID (proving
+    every optional ahead of it has a usable declared default), and, where it
+    also carries [OVERRIDE], with RES_ID and OVERRIDE both. This does not
+    replicate dfmcp's own positional-filling logic: it only checks that the
+    call succeeds and that RES_ID's (and OVERRIDE's) own word ends up last in
+    the produced argv, which holds for every one of these commands because
+    RES_ID/OVERRIDE are always the final one or two tokens of their own
+    signature and nothing after them is ever supplied here."""
+    checked = []
+    for tool_id in registry.ids():
+        tool = registry.get(tool_id)
+        if "[RES_ID]" not in tool.args:
+            continue
+        checked.append(tool_id)
+        specs = _arg_specs_for_tool(tool)
+        by_name = {s.name: s for s in specs}
+        assert by_name["res_id"].required is False, tool_id
+
+        required_args = {}
+        seen_groups = set()
+        for s in specs:
+            if not s.required:
+                continue
+            if s.group is not None:
+                if s.group in seen_groups:
+                    continue
+                seen_groups.add(s.group)
+                for s2 in specs:
+                    if s2.group == s.group:
+                        required_args[s2.name] = 7 if s2.json_type == "integer" else "x"
+            else:
+                required_args[s.name] = 7 if s.json_type == "integer" else "x"
+
+        argv_res = argv_for_call(tool, {**required_args, "res_id": "res-1"})
+        assert argv_res[-1] == "res-1", (tool_id, argv_res)
+
+        if "override" in by_name:
+            argv_over = argv_for_call(
+                tool, {**required_args, "res_id": "res-1", "override": "needed for X"}
+            )
+            assert argv_over[-2:] == ["res-1", "needed for X"], (tool_id, argv_over)
+
+    # The nine designating tools from the handoff, at minimum (diggable and
+    # openarea's own find/find-stair also carry a bare RES_ID with no
+    # OVERRIDE, so the real count is higher; not pinned exactly here to
+    # avoid re-breaking this test on the next tool this pattern is added to).
+    assert len(checked) >= 9, checked
 
 
 def test_real_building_find_with_only_kind_and_landmark(registry):

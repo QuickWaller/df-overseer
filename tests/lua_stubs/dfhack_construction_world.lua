@@ -158,21 +158,59 @@ local FAKE_BUILDING = {
 -- `holding`, in the real module's own coordinate-free shape.
 RESERVED = {}
 function set_reserved(list) RESERVED = list end
+-- override_needed/record_override (handoffs/2026-09-30-reservation-holding.md
+-- review, item 1): this fake does not model allowed_kinds at all (no
+-- construction test needs kind-gating, only the reservation guard itself),
+-- so override_needed here is simply "some tile is covered by a RESERVED
+-- entry matching res_id" -- good enough to prove the OVERRIDE/RES_ID pairing
+-- plumbing (guard clause, and the caller's own needs_override/
+-- record_override wiring) without re-modelling the real allowed_kinds logic,
+-- which is already fully covered by tests/test_reservations_lua_logic.py
+-- against the REAL reservations.lua.
+OVERRIDES = {}
 local FAKE_RESERVATIONS = {
-  check_tiles = function(tiles, holding)
+  check_tiles = function(tiles, holding, res_id, kind, override)
     for _, t in ipairs(tiles) do
       for _, r in ipairs(RESERVED) do
-        if r.handle ~= holding and r.x == t.x and r.y == t.y and r.z == t.z then
-          return {
-            handle = r.handle, purpose = r.purpose,
-            near_landmark = r.near_landmark or "Well", direction = r.direction or "N",
-            distance_tiles = r.distance_tiles or 1,
-            message = "tile(s) here are reserved as " .. r.handle .. " (" .. tostring(r.purpose) .. ")",
-          }
+        if r.x == t.x and r.y == t.y and r.z == t.z then
+          if r.handle == holding then
+            -- held: fine regardless of kind/override
+          elseif r.handle == res_id then
+            if override == nil then
+              return {
+                handle = r.handle, purpose = r.purpose,
+                message = "tile(s) here are reserved as " .. r.handle .. " (" .. tostring(r.purpose)
+                  .. "); this call's kind is not one this reservation allows",
+              }
+            end
+            -- override given: fine
+          else
+            return {
+              handle = r.handle, purpose = r.purpose,
+              near_landmark = r.near_landmark or "Well", direction = r.direction or "N",
+              distance_tiles = r.distance_tiles or 1,
+              message = "tile(s) here are reserved as " .. r.handle .. " (" .. tostring(r.purpose) .. ")",
+            }
+          end
         end
       end
     end
     return nil
+  end,
+  override_needed = function(tiles, res_id, kind)
+    if res_id == nil then return false end
+    for _, t in ipairs(tiles) do
+      for _, r in ipairs(RESERVED) do
+        if r.handle == res_id and r.x == t.x and r.y == t.y and r.z == t.z then
+          return true
+        end
+      end
+    end
+    return false
+  end,
+  record_override = function(handle, tool, kind, reason)
+    OVERRIDES[#OVERRIDES + 1] = {handle = handle, tool = tool, kind = kind, reason = reason}
+    return true
   end,
   rect_tiles = function(x, y, z, w, h)
     local out = {}

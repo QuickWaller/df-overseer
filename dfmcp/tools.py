@@ -468,6 +468,15 @@ _ARG_DESCRIPTIONS: Dict[str, str] = {
         "A reservation handle such as res-3, as blueprint.reservations lists "
         "it. Never a coordinate."
     ),
+    "RES_ID": (
+        "Optional. A reservation handle such as res-3, as blueprint.reservations lists "
+        "it. Without it, a tile inside any reservation is refused outright. With it, a "
+        "tile inside THAT reservation is allowed if this call's own kind is one the "
+        "reservation lists as belonging there (blueprint.reservations shows the list, "
+        "derived from the room's own template); a tile inside any OTHER reservation is "
+        "still refused. Pair with OVERRIDE for a one-off exception when the kind is not "
+        "on the list. Never a coordinate."
+    ),
     "workshop.KIND": (
         "Which workshop: still, kitchen, mason, mechanic or carpenter."
     ),
@@ -488,9 +497,17 @@ _ARG_DESCRIPTIONS: Dict[str, str] = {
         "filesystem, and not a coordinate."
     ),
     "OVERRIDE": (
-        "Optional, for zone.assign-owner. Only the exact word true overrides: it allows "
-        "replacing a zone's existing owner or giving a unit a second zone of the same "
-        "kind. Leave it out otherwise; the refusal names what it would have unlocked."
+        "Two unrelated meanings depending on the tool. For zone.assign-owner: only the "
+        "exact word true overrides -- it allows replacing a zone's existing owner or "
+        "giving a unit a second zone of the same kind. For every OTHER designating "
+        "tool's own OVERRIDE (building.build, zone.place, workshop.build, farm.build, "
+        "well.build, openarea.build, diggable.dig/dig-stair, construction.mine-vein/"
+        "build, landmarks.build): a free-text reason string for a one-off exception to "
+        "RES_ID's own allowed-kinds gate, valid only together with RES_ID, recorded on "
+        "the reservation (see blueprint.reservations); it never changes the "
+        "reservation's own purpose or allowed kinds -- re-purposing a room is unreserve "
+        "plus a new reserve, never this. Leave it out otherwise; the refusal names the "
+        "handle, its purpose and the kinds it does allow."
     ),
     "ZONE_ID": (
         "An existing zone's own id, as zone.list gives it in its id field "

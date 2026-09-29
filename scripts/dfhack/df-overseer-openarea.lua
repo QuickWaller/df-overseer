@@ -122,8 +122,8 @@
 -- case checked, already revealed, so the fix is not expected to change any
 -- result today -- it closes the structural gap rather than a live leak.
 --
--- Usage: ./dfhack-run df-overseer-openarea find W H [LEVEL] NEAR_LANDMARK [RADIUS_TILES]
--- Usage: ./dfhack-run df-overseer-openarea build W H [LEVEL] NEAR_LANDMARK BLUEPRINT_FILE [RANK] [RADIUS_TILES]
+-- Usage: ./dfhack-run df-overseer-openarea find W H [LEVEL] NEAR_LANDMARK [RADIUS_TILES] [RES_ID]
+-- Usage: ./dfhack-run df-overseer-openarea build W H [LEVEL] NEAR_LANDMARK BLUEPRINT_FILE [RANK] [RADIUS_TILES] [RES_ID] [OVERRIDE]
 
 local json = require('json')
 local landmarks_mod = reqscript('df-overseer-landmarks')
@@ -223,7 +223,14 @@ end
 -- needs the real coordinate to anchor quickfort) -- one ranking
 -- implementation, so "candidate rank 1" can never mean two different tiles
 -- depending which entry point asked.
-local function ranked_candidates(w, h, level, near, radius_tiles)
+-- res_id (handoffs/2026-09-30-reservation-holding.md item 4): a candidate
+-- window overlapping a reservation this call does not hold is dropped
+-- before ranking, so RANK N never lands on reserved ground and then
+-- refuses at build_open_area's own check_tiles below -- via
+-- reservations_mod's own shared `filter_reserved` (also used by
+-- df-overseer-diggable.lua's two ranking functions, so the drop logic lives
+-- in exactly one place).
+local function ranked_candidates(w, h, level, near, radius_tiles, res_id)
   local ax, ay, az = landmarks_mod.get_landmark_centroid(near)
   if not ax then
     return nil, "landmark not found: " .. near
@@ -234,8 +241,10 @@ local function ranked_candidates(w, h, level, near, radius_tiles)
   end
   local radius = math.min(radius_tiles or DEFAULT_RADIUS, MAX_RADIUS)
 
-  local candidates = find_candidates(
+  local raw_candidates = find_candidates(
     w, h, z, ax - radius, ax + radius, ay - radius, ay + radius)
+  local candidates = reservations_mod.filter_reserved(raw_candidates, res_id,
+    function(c) return reservations_mod.rect_tiles(c.x, c.y, z, w, h) end)
 
   for _, c in ipairs(candidates) do
     local dx, dy = c.x - ax, c.y - ay
@@ -264,8 +273,8 @@ local function ranked_candidates(w, h, level, near, radius_tiles)
   return chosen, nil, z
 end
 
-function find_open_area(w, h, level, near, radius_tiles)
-  local chosen, err, resolved_z = ranked_candidates(w, h, level, near, radius_tiles)
+function find_open_area(w, h, level, near, radius_tiles, res_id)
+  local chosen, err, resolved_z = ranked_candidates(w, h, level, near, radius_tiles, res_id)
   if err then
     return nil, err
   end
@@ -320,9 +329,16 @@ end
 -- relative to dfhack-config/blueprints/, not the working directory or an
 -- absolute path (Working.md's own documented trap) -- pass a bare filename
 -- for a blueprint already deployed there.
-function build_open_area(w, h, level, near, blueprint_file, rank, radius_tiles)
+-- RES_ID/OVERRIDE (handoffs/2026-09-30-reservation-holding.md item 2): open
+-- area placement has no KIND argument; checked against the fixed literal
+-- "open_area" -- no template in this repo declares it, so any open-area
+-- placement inside a reservation is refused unless OVERRIDE.
+function build_open_area(w, h, level, near, blueprint_file, rank, radius_tiles, res_id, override)
+  if override ~= nil and res_id == nil then
+    return nil, "OVERRIDE requires RES_ID"
+  end
   rank = rank or 1
-  local chosen, err, resolved_z = ranked_candidates(w, h, level, near, radius_tiles)
+  local chosen, err, resolved_z = ranked_candidates(w, h, level, near, radius_tiles, res_id)
   if err then
     return nil, err
   end
@@ -340,8 +356,18 @@ function build_open_area(w, h, level, near, blueprint_file, rank, radius_tiles)
   local ok_group, group = pcall(dfhack.maps.getWalkableGroup, xyz2pos(cx, cy, z))
   local info = ok_near and near_info
 
-  local conflict = reservations_mod.check_tiles(
-    reservations_mod.rect_tiles(c.x, c.y, z, w, h), nil)
+  local tiles = reservations_mod.rect_tiles(c.x, c.y, z, w, h)
+  -- Computed BEFORE check_tiles/the real designation (handoff review,
+  -- 2026-09-30): an override is only ever worth recording if it was
+  -- actually consumed -- some tile lies inside res_id and "open_area" is
+  -- not on its allowed_kinds -- and only once the designation this call
+  -- made has actually succeeded (below). Never here: this tool has no dry
+  -- run, but computing/recording at this point would still log an override
+  -- that never got used (kind was fine, or no tile was even in res_id) or
+  -- one whose designation then failed.
+  local needs_override = override ~= nil
+    and reservations_mod.override_needed(tiles, res_id, "open_area")
+  local conflict = reservations_mod.check_tiles(tiles, nil, res_id, "open_area", override)
   if conflict then return nil, conflict.message end
 
   -- The one place a real coordinate exists in this file: assembled
@@ -371,6 +397,11 @@ function build_open_area(w, h, level, near, blueprint_file, rank, radius_tiles)
     dfhack.run_command_silent, 'quickfort', 'run', blueprint_file, '-c',
     string.format('%d,%d,%d', c.x, c.y, z))
 
+  local quickfort_ok = ok_run and result == CR_OK
+  if needs_override and quickfort_ok then
+    reservations_mod.record_override(res_id, "openarea.build", "open_area", override)
+  end
+
   return {
     rank = rank,
     dims = {w, h},
@@ -379,7 +410,7 @@ function build_open_area(w, h, level, near, blueprint_file, rank, radius_tiles)
     distance_tiles = info and info.distance_tiles or nil,
     walkable_group = ok_group and group or -1,
     blueprint = blueprint_file,
-    quickfort_ok = ok_run and result == CR_OK,
+    quickfort_ok = quickfort_ok,
     quickfort_error = (not ok_run) and tostring(output) or nil,
     quickfort_stats = ok_run and parse_quickfort_stats(output) or nil,
   }
@@ -399,37 +430,37 @@ local cmd = args[1]
 -- ranked_candidates defaults it to 0 (the landmark's own level).
 if cmd == "find" then
   local w, h = tonumber(args[2]), tonumber(args[3])
-  local level, near, radius
+  local level, near, radius, res_id
   if tonumber(args[4]) then
-    level, near, radius = tonumber(args[4]), args[5], tonumber(args[6])
+    level, near, radius, res_id = tonumber(args[4]), args[5], tonumber(args[6]), args[7]
   else
-    near, radius = args[4], tonumber(args[5])
+    near, radius, res_id = args[4], tonumber(args[5]), args[6]
   end
   if not (w and h and near) then
-    print("usage: df-overseer-openarea find W H [LEVEL] NEAR_LANDMARK [RADIUS_TILES]")
+    print("usage: df-overseer-openarea find W H [LEVEL] NEAR_LANDMARK [RADIUS_TILES] [RES_ID]")
   else
-    local results, err = find_open_area(w, h, level, near, radius)
+    local results, err = find_open_area(w, h, level, near, radius, res_id)
     print(json.encode(err and {error = err} or results))
   end
 elseif cmd == "build" then
   local w, h = tonumber(args[2]), tonumber(args[3])
-  local level, near, blueprint, rank, radius
+  local level, near, blueprint, rank, radius, res_id, override
   if tonumber(args[4]) then
-    level, near, blueprint, rank, radius =
-      tonumber(args[4]), args[5], args[6], tonumber(args[7]), tonumber(args[8])
+    level, near, blueprint, rank, radius, res_id, override =
+      tonumber(args[4]), args[5], args[6], tonumber(args[7]), tonumber(args[8]), args[9], args[10]
   else
-    near, blueprint, rank, radius =
-      args[4], args[5], tonumber(args[6]), tonumber(args[7])
+    near, blueprint, rank, radius, res_id, override =
+      args[4], args[5], tonumber(args[6]), tonumber(args[7]), args[8], args[9]
   end
   if not (w and h and near and blueprint) then
     print("usage: df-overseer-openarea build W H [LEVEL] NEAR_LANDMARK"
-      .. " BLUEPRINT_FILE [RANK] [RADIUS_TILES]")
+      .. " BLUEPRINT_FILE [RANK] [RADIUS_TILES] [RES_ID] [OVERRIDE]")
   else
-    local result, err = build_open_area(w, h, level, near, blueprint, rank, radius)
+    local result, err = build_open_area(w, h, level, near, blueprint, rank, radius, res_id, override)
     print(json.encode(err and {error = err} or result))
   end
 else
-  print("usage: df-overseer-openarea find W H [LEVEL] NEAR_LANDMARK [RADIUS_TILES]")
+  print("usage: df-overseer-openarea find W H [LEVEL] NEAR_LANDMARK [RADIUS_TILES] [RES_ID]")
   print("usage: df-overseer-openarea build W H [LEVEL] NEAR_LANDMARK"
-    .. " BLUEPRINT_FILE [RANK] [RADIUS_TILES]")
+    .. " BLUEPRINT_FILE [RANK] [RADIUS_TILES] [RES_ID] [OVERRIDE]")
 end

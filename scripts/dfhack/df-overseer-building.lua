@@ -143,7 +143,7 @@
 --
 -- Usage: ./dfhack-run df-overseer-building list-kinds [FILTER]
 -- Usage: ./dfhack-run df-overseer-building find KIND [W H] [LEVEL] NEAR_LANDMARK [RADIUS_TILES] [MATERIAL_CHOICE]
--- Usage: ./dfhack-run df-overseer-building build KIND [W H] [LEVEL] NEAR_LANDMARK [RANK] [RADIUS_TILES] [DRY_RUN] [MATERIAL_CHOICE]
+-- Usage: ./dfhack-run df-overseer-building build KIND [W H] [LEVEL] NEAR_LANDMARK [RANK] [RADIUS_TILES] [DRY_RUN] [MATERIAL_CHOICE] [RES_ID] [OVERRIDE]
 --   W H are optional for fixed-size kinds and validated against the kind's
 --   min/max for the rest; one bare number is LEVEL, two are W H, three are
 --   W H LEVEL. A positional CLI cannot skip a slot once a later one is given.
@@ -323,6 +323,19 @@ local function enumerate_kinds()
     return a.token < b.token
   end)
   return kinds, by_token, by_key
+end
+
+-- Exported (handoffs/2026-09-30-reservation-holding.md item 1): given a
+-- quickfort #build-mode cell key (e.g. "b"), the building kind TOKEN that
+-- key designates (e.g. "bed"), or nil if the key resolves to nothing known.
+-- df-overseer-blueprint.lua's reserve_site calls this once per distinct
+-- #build cell in a template, rather than a second key->kind table living
+-- there -- the same by_key this file's own resolve_kind already reads.
+function kind_token_for_key(key)
+  local kinds, _, by_key, err = enumerate_kinds()
+  if not kinds then return nil, err end
+  local k = by_key[key]
+  return k and k.token or nil
 end
 
 local function kind_summary(k)
@@ -1129,7 +1142,10 @@ function find_kind(kind_name, w, h, level, near, radius_tiles, material_choice)
   return results
 end
 
-function build_kind(kind_name, w, h, level, near, rank, radius_tiles, dry_run, material_choice)
+function build_kind(kind_name, w, h, level, near, rank, radius_tiles, dry_run, material_choice, res_id, override)
+  if override ~= nil and res_id == nil then
+    return nil, "OVERRIDE requires RES_ID"
+  end
   local k, kerr = resolve_kind(kind_name)
   if not k then return nil, kerr end
   local dw, dh = resolve_dims(k, w, h)
@@ -1172,8 +1188,16 @@ function build_kind(kind_name, w, h, level, near, rank, radius_tiles, dry_run, m
   end
   result.blueprint.file = filename
 
-  local conflict = reservations_mod.check_tiles(
-    reservations_mod.rect_tiles(c.x, c.y, z, dw, dh), nil)
+  -- Computed BEFORE check_tiles/designating (handoff review, 2026-09-30):
+  -- record_override below must fire only if this override was actually
+  -- consumed (some tile is in res_id and k.token was not on its own
+  -- allowed_kinds), the run is real, and the designation then succeeds --
+  -- never on a dry run, never for an override that was not needed, never
+  -- for a designation that failed.
+  local rect_tiles = reservations_mod.rect_tiles(c.x, c.y, z, dw, dh)
+  local needs_override = override ~= nil
+    and reservations_mod.override_needed(rect_tiles, res_id, k.token)
+  local conflict = reservations_mod.check_tiles(rect_tiles, nil, res_id, k.token, override)
   if conflict then
     pcall(os.remove, "dfhack-config/blueprints/" .. filename)
     return nil, conflict.message
@@ -1205,6 +1229,9 @@ function build_kind(kind_name, w, h, level, near, rank, radius_tiles, dry_run, m
   result.quickfort_error = (not ok_run) and tostring(output) or NULL
   result.quickfort_stats = (stats and next(stats)) and stats or empty_object()
   result.quickfort_problems = problems
+  if needs_override and ok_v then
+    reservations_mod.record_override(res_id, "building.build", k.token, override)
+  end
   -- Read the tile back: quickfort can report success without a building
   -- (TRAPS.md), so look at the game. UNTESTED live, like the whole real path.
   local ok_b, bld = pcall(dfhack.buildings.findAtTile, xyz2pos(c.x, c.y, z))
@@ -1224,7 +1251,7 @@ end
 local USAGE = {
   "usage: df-overseer-building list-kinds [FILTER]",
   "usage: df-overseer-building find KIND [W H] [LEVEL] NEAR_LANDMARK [RADIUS_TILES] [MATERIAL_CHOICE]",
-  "usage: df-overseer-building build KIND [W H] [LEVEL] NEAR_LANDMARK [RANK] [RADIUS_TILES] [DRY_RUN] [MATERIAL_CHOICE]",
+  "usage: df-overseer-building build KIND [W H] [LEVEL] NEAR_LANDMARK [RANK] [RADIUS_TILES] [DRY_RUN] [MATERIAL_CHOICE] [RES_ID] [OVERRIDE]",
 }
 
 -- After KIND: up to three leading numbers (1 = LEVEL, 2 = W H, 3 = W H LEVEL),
@@ -1263,7 +1290,7 @@ elseif cmd == "build" then
   if not (kind and near) then
     print(encode({error = USAGE[3]}))
   else
-    local res, err = build_kind(kind, w, h, level, near, tonumber(args[nxt]), tonumber(args[nxt + 1]), args[nxt + 2], args[nxt + 3])
+    local res, err = build_kind(kind, w, h, level, near, tonumber(args[nxt]), tonumber(args[nxt + 1]), args[nxt + 2], args[nxt + 3], args[nxt + 4], args[nxt + 5])
     print(encode(err and {error = err} or res))
   end
 else

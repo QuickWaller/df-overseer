@@ -60,13 +60,26 @@ class World:
             t[k] = True
         return t
 
-    def create(self, x, y, z, w, h, wall_cells=(), blueprint="bp", purpose="test", orient="none"):
+    def create(self, x, y, z, w, h, wall_cells=(), blueprint="bp", purpose="test", orient="none",
+               allowed_kinds=()):
         rec = self.lua.table_from({
             "x": x, "y": y, "z": z, "w": w, "h": h, "orient": orient,
             "bw": w, "bh": h, "blueprint": blueprint, "purpose": purpose,
             "wall_cells": self._cells(wall_cells),
+            "allowed_kinds": self.lua.table_from(list(allowed_kinds)),
         })
         return self.g["create"](rec)
+
+    def kind_allowed(self, handle, kind):
+        return self.g["kind_allowed"](handle, kind)
+
+    def record_override(self, handle, tool, kind, reason):
+        res = self.g["record_override"](handle, tool, kind, reason)
+        if isinstance(res, tuple):
+            ok, err = res
+        else:
+            ok, err = res, None
+        return _py(ok), _py(err)
 
     def get_raw(self, handle):
         return _py(self.g["get_raw"](handle))
@@ -86,9 +99,24 @@ class World:
         ofs = self.lua.table_from([self.lua.table_from(f) for f in other_footprints])
         return _py(self.g["find_conflicts"](x, y, z, w, h, wc, ofs, None))
 
-    def check_tiles(self, tiles, holding=None):
+    def check_tiles(self, tiles, holding=None, res_id=None, kind=None, override=None):
         ts = self.lua.table_from([self.lua.table_from(t) for t in tiles])
-        return _py(self.g["check_tiles"](ts, holding))
+        return _py(self.g["check_tiles"](ts, holding, res_id, kind, override))
+
+    def override_needed(self, tiles, res_id, kind):
+        ts = self.lua.table_from([self.lua.table_from(t) for t in tiles])
+        return self.g["override_needed"](ts, res_id, kind)
+
+    def filter_reserved_rects(self, candidates, w, h, z, res_id=None):
+        """candidates: a list of (x, y) top-left corners of a shared w x h
+        window at level z -- the exact shape df-overseer-diggable.lua's and
+        df-overseer-openarea.lua's own ranking functions filter."""
+        cs = self.lua.table_from([self.lua.table_from({"x": x, "y": y}) for x, y in candidates])
+        tiles_for = self.lua.eval(
+            "function(rect_tiles, w, h, z) return function(c) return rect_tiles(c.x, c.y, z, w, h) end end"
+        )(self.g["rect_tiles"], w, h, z)
+        kept = self.g["filter_reserved"](cs, res_id, tiles_for)
+        return [(c["x"], c["y"]) for c in _py(kept)]
 
     def rect_tiles(self, x, y, z, w, h):
         return _py(self.g["rect_tiles"](x, y, z, w, h))
@@ -298,3 +326,155 @@ def test_abs_tick_is_nil_when_the_year_cannot_be_read():
     w = World()
     w.lua.execute("YEAR = nil")
     assert w.g["abs_tick"]() is None
+
+
+# ---------------------------------------------------------------------------
+# handoffs/2026-09-30-reservation-holding.md: allowed_kinds, RES_ID/OVERRIDE
+# ---------------------------------------------------------------------------
+
+
+def test_kind_allowed_reads_the_stored_list_and_is_false_for_unknown_handle_or_kind(w):
+    handle = w.create(10, 10, 0, 5, 5, purpose="planned bedroom", allowed_kinds=["bed", "bedroom"])
+    assert w.kind_allowed(handle, "bed") is True
+    assert w.kind_allowed(handle, "bedroom") is True
+    assert w.kind_allowed(handle, "carpenter") is False
+    assert w.kind_allowed("res-999", "bed") is False
+
+
+def test_create_defaults_allowed_kinds_and_overrides_to_empty_never_nil(w):
+    handle = w.create(10, 10, 0, 5, 5)
+    rec = w.get_raw(handle)
+    assert rec["allowed_kinds"] == []
+    assert rec["overrides"] == []
+
+
+def test_check_tiles_with_res_id_allows_a_kind_the_reservation_lists(w):
+    handle = w.create(10, 10, 0, 5, 5, purpose="planned bedroom", allowed_kinds=["bed", "bedroom"])
+    tile = [{"x": 11, "y": 11, "z": 0}]
+    assert w.check_tiles(tile, res_id=handle, kind="bed") is None
+    assert w.check_tiles(tile, res_id=handle, kind="bedroom") is None
+
+
+def test_check_tiles_with_res_id_refuses_a_kind_not_on_the_list_naming_the_allowed_ones(w):
+    handle = w.create(10, 10, 0, 5, 5, purpose="planned bedroom", allowed_kinds=["bed", "bedroom"])
+    conflict = w.check_tiles([{"x": 11, "y": 11, "z": 0}], res_id=handle, kind="carpenter")
+    assert conflict is not None
+    assert conflict["handle"] == handle
+    assert "carpenter" in conflict["message"]
+    assert "bed" in conflict["message"] and "bedroom" in conflict["message"]
+    assert "OVERRIDE" in conflict["message"]
+    # no coordinate leaked
+    assert "10" not in conflict["message"] and "11" not in conflict["message"]
+
+
+def test_check_tiles_with_res_id_and_override_allows_any_kind_and_does_not_record_by_itself(w):
+    handle = w.create(10, 10, 0, 5, 5, purpose="planned bedroom", allowed_kinds=["bed"])
+    tile = [{"x": 11, "y": 11, "z": 0}]
+    assert w.check_tiles(tile, res_id=handle, kind="carpenter", override="needed for X") is None
+    # check_tiles is a pure query: it never appends to overrides on its own.
+    assert w.get_raw(handle)["overrides"] == []
+
+
+def test_record_override_appends_tick_tool_kind_reason_and_leaves_purpose_and_kinds_unchanged(w):
+    handle = w.create(10, 10, 0, 5, 5, purpose="planned bedroom", allowed_kinds=["bed"])
+    ok, err = w.record_override(handle, "workshop.build", "carpenter", "needed for X")
+    assert ok is True and err is None
+    rec = w.get_raw(handle)
+    assert len(rec["overrides"]) == 1
+    o = rec["overrides"][0]
+    assert o["tool"] == "workshop.build" and o["kind"] == "carpenter" and o["reason"] == "needed for X"
+    assert o["tick"] == 1000
+    # A one-off override never changes the reservation's own purpose or its
+    # allowed kinds -- re-purposing is unreserve plus a new reserve, never this.
+    assert rec["purpose"] == "planned bedroom"
+    assert rec["allowed_kinds"] == ["bed"]
+
+    ok2, err2 = w.record_override(handle, "workshop.build", "carpenter", "a second one-off")
+    assert ok2 is True
+    assert len(w.get_raw(handle)["overrides"]) == 2
+
+
+def test_record_override_rejects_a_malformed_or_unknown_handle(w):
+    ok, err = w.record_override("not-a-handle", "t", "k", "r")
+    assert ok is False and "RES_ID" in err
+    ok2, err2 = w.record_override("res-999", "t", "k", "r")
+    assert ok2 is False and "no reservation" in err2
+
+
+def test_check_tiles_res_id_does_not_exempt_a_tile_covered_by_a_different_reservation(w):
+    other = w.create(0, 0, 0, 3, 3, purpose="office", allowed_kinds=["chair", "office"])
+    mine = w.create(10, 10, 0, 5, 5, purpose="planned bedroom", allowed_kinds=["bed"])
+    # A tile inside `other`'s footprint, checked with `mine`'s own RES_ID and
+    # a kind `other` would have allowed: still refused, naming `other`.
+    conflict = w.check_tiles([{"x": 1, "y": 1, "z": 0}], res_id=mine, kind="chair")
+    assert conflict is not None
+    assert conflict["handle"] == other
+
+
+def test_check_tiles_rejects_a_malformed_or_unknown_res_id(w):
+    conflict = w.check_tiles([{"x": 0, "y": 0, "z": 0}], res_id="not-a-handle", kind="bed")
+    assert conflict is not None and "RES_ID" in conflict["message"]
+    conflict2 = w.check_tiles([{"x": 0, "y": 0, "z": 0}], res_id="res-999", kind="bed")
+    assert conflict2 is not None and "no reservation" in conflict2["message"]
+
+
+def test_override_needed_true_only_when_a_tile_is_in_res_id_and_kind_is_not_allowed(w):
+    handle = w.create(10, 10, 0, 5, 5, purpose="planned bedroom", allowed_kinds=["bed", "bedroom"])
+    tile_inside = [{"x": 11, "y": 11, "z": 0}]
+    tile_outside = [{"x": 0, "y": 0, "z": 0}]
+    # kind not allowed, tile inside res_id -> needed.
+    assert w.override_needed(tile_inside, handle, "carpenter") is True
+    # kind already allowed -> never needed, even though the tile is inside.
+    assert w.override_needed(tile_inside, handle, "bed") is False
+    assert w.override_needed(tile_inside, handle, "bedroom") is False
+    # tile not inside res_id at all -> never needed, whatever the kind.
+    assert w.override_needed(tile_outside, handle, "carpenter") is False
+    # a mixed tile list: needed if AT LEAST ONE tile is inside and unallowed.
+    assert w.override_needed(tile_outside + tile_inside, handle, "carpenter") is True
+
+
+def test_override_needed_is_false_for_a_malformed_or_unknown_res_id(w):
+    tile = [{"x": 0, "y": 0, "z": 0}]
+    assert w.override_needed(tile, "not-a-handle", "carpenter") is False
+    assert w.override_needed(tile, "res-999", "carpenter") is False
+    assert w.override_needed(tile, None, "carpenter") is False
+
+
+def test_filter_reserved_drops_a_candidate_overlapping_any_reservation_without_res_id(w):
+    # A 3x3 reservation at (10, 10); one candidate window overlaps it, two
+    # do not.
+    w.create(10, 10, 0, 3, 3, purpose="planned bedroom")
+    candidates = [(0, 0), (9, 9), (100, 100)]  # (9,9)-(11,11) overlaps (10,10)-(12,12)
+    kept = w.filter_reserved_rects(candidates, 3, 3, 0)
+    assert kept == [(0, 0), (100, 100)]
+
+
+def test_filter_reserved_keeps_a_candidate_inside_res_id_but_still_drops_others(w):
+    mine = w.create(10, 10, 0, 3, 3, purpose="planned bedroom")
+    other = w.create(50, 50, 0, 3, 3, purpose="planned office")
+    candidates = [(9, 9), (49, 49), (100, 100)]
+    kept = w.filter_reserved_rects(candidates, 3, 3, 0, res_id=mine)
+    assert kept == [(9, 9), (100, 100)], "the OTHER reservation's candidate is still dropped"
+
+
+def test_filter_reserved_never_ranks_a_reserved_candidate_a_finder_would_have_offered(w):
+    # The exact scenario the handoff names: a finder's raw candidate list
+    # includes one sitting on reserved ground; filter_reserved is what a
+    # finder calls BEFORE ranking/choosing, so RANK 1 never lands there.
+    w.create(5, 5, 0, 4, 4, purpose="planned bedroom row 3")
+    raw_candidates_by_distance = [(5, 5), (20, 20), (40, 40)]  # closest first
+    kept = w.filter_reserved_rects(raw_candidates_by_distance, 4, 4, 0)
+    assert kept[0] == (20, 20), "the closest candidate was reserved and must not become rank 1"
+
+
+def test_filter_reserved_returns_everything_unchanged_when_nothing_is_reserved(w):
+    candidates = [(0, 0), (10, 10)]
+    assert w.filter_reserved_rects(candidates, 2, 2, 0) == candidates
+
+
+def test_holding_handle_still_bypasses_every_check_regardless_of_res_id_kind(w):
+    # The TRUE holder (df-overseer-blueprint.lua's own apply) is unaffected
+    # by the new res_id/kind/override machinery: it was, and remains, a full
+    # bypass on its own reservation's own tiles.
+    handle = w.create(10, 10, 0, 5, 5, allowed_kinds=["bed"])
+    assert w.check_tiles([{"x": 11, "y": 11, "z": 0}], holding=handle, kind="anything-at-all") is None

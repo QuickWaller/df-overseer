@@ -178,7 +178,7 @@ df-overseer-landmarks.lua:
         and shape are deployed and live-verified (see list above); this
         single-name filter itself has no separate live-call on record as of
         2026-09-23.
-    "build NAME BLUEPRINT_FILE":
+    "build NAME BLUEPRINT_FILE [RES_ID] [OVERRIDE]":
       lua_function: build_at_landmark
       effect: mutate
       coordinate_bearing: internal-only
@@ -290,7 +290,7 @@ df-overseer-openarea.lua:
   # skipped while naming a later optional argument by name.
   arg_defaults: {LEVEL: "0", RANK: "1", RADIUS_TILES: "30", DRY_RUN: "true"}
   commands:
-    "find W H [LEVEL] NEAR_LANDMARK [RADIUS_TILES]":
+    "find W H [LEVEL] NEAR_LANDMARK [RADIUS_TILES] [RES_ID]":
       lua_function: find_open_area
       effect: read
       coordinate_bearing: false
@@ -311,7 +311,7 @@ df-overseer-openarea.lua:
         df-overseer-*.lua against the committed bytes (read-only, VM 103) found
         this file identical to main apart from one trailing blank line, the
         known 2026-09-17 artifact, so the export change is deployed.
-    "build W H [LEVEL] NEAR_LANDMARK BLUEPRINT_FILE [RANK] [RADIUS_TILES]":
+    "build W H [LEVEL] NEAR_LANDMARK BLUEPRINT_FILE [RANK] [RADIUS_TILES] [RES_ID] [OVERRIDE]":
       lua_function: build_open_area
       effect: mutate
       coordinate_bearing: internal-only
@@ -364,7 +364,7 @@ df-overseer-diggable.lua:
   # skipped while naming a later optional argument by name.
   arg_defaults: {LEVEL: "0", RANK: "1", RADIUS_TILES: "30", DRY_RUN: "true"}
   commands:
-    "find W H [LEVEL] NEAR_LANDMARK [RADIUS_TILES]":
+    "find W H [LEVEL] NEAR_LANDMARK [RADIUS_TILES] [RES_ID]":
       lua_function: find_diggable_area
       effect: read
       coordinate_bearing: false
@@ -394,7 +394,7 @@ df-overseer-diggable.lua:
         for the full before/after and the grass-tile-stair investigation
         (source-read, not live-designated; unresolved against the recorded
         trap, documented rather than guessed at).
-    "dig W H [LEVEL] NEAR_LANDMARK BLUEPRINT_FILE [RANK] [RADIUS_TILES]":
+    "dig W H [LEVEL] NEAR_LANDMARK BLUEPRINT_FILE [RANK] [RADIUS_TILES] [RES_ID] [OVERRIDE]":
       lua_function: dig_diggable_area
       effect: mutate
       coordinate_bearing: internal-only
@@ -413,7 +413,7 @@ df-overseer-diggable.lua:
         re-exercised live this session (mutation forbidden); the shared
         `is_diggable`/`ranked_candidates` code path is what find above
         verified.
-    "find-stair [LEVEL] NEAR_LANDMARK [RADIUS_TILES]":
+    "find-stair [LEVEL] NEAR_LANDMARK [RADIUS_TILES] [RES_ID]":
       lua_function: find_stair_down
       effect: read
       coordinate_bearing: false
@@ -454,7 +454,7 @@ df-overseer-diggable.lua:
         (distance_tiles:1, direction:NW) with the occupied tile absent from
         all 5 results. A direct read confirmed why: `occupancy.building == 2`
         at the old rank-1 tile.
-    "dig-stair [LEVEL] NEAR_LANDMARK [RANK] [RADIUS_TILES] [DRY_RUN]":
+    "dig-stair [LEVEL] NEAR_LANDMARK [RANK] [RADIUS_TILES] [DRY_RUN] [RES_ID] [OVERRIDE]":
       lua_function: dig_stair_down
       effect: mutate
       coordinate_bearing: internal-only
@@ -532,7 +532,7 @@ df-overseer-farm.lua:
         listing all 6 fort-owned seeds as valid; LEVEL 0 (surface, outside)
         found 5 candidates, each with an empty valid_crops list -- correct,
         since every seed this fort owns is subterranean-only.
-    "build W H [LEVEL] NEAR_LANDMARK BLUEPRINT_FILE [RANK] [RADIUS_TILES] [DRY_RUN]":
+    "build W H [LEVEL] NEAR_LANDMARK BLUEPRINT_FILE [RANK] [RADIUS_TILES] [DRY_RUN] [RES_ID] [OVERRIDE]":
       lua_function: build_farm_plot
       effect: mutate
       coordinate_bearing: internal-only
@@ -661,7 +661,7 @@ df-overseer-workshop.lua:
         produced the confirming result above. A durable trap for any future
         "verify via a /tmp shadow copy" session once the real script has
         already loaded once.
-    "build W H [LEVEL] NEAR_LANDMARK KIND BLUEPRINT_FILE [RANK] [RADIUS_TILES] [DRY_RUN]":
+    "build W H [LEVEL] NEAR_LANDMARK KIND BLUEPRINT_FILE [RANK] [RADIUS_TILES] [DRY_RUN] [RES_ID] [OVERRIDE]":
       lua_function: build_workshop
       effect: mutate
       coordinate_bearing: internal-only
@@ -690,8 +690,13 @@ df-overseer-building.lua:
   build_order_item: "the user's minimum bar for openclaw (build workshops, rooms, furniture); docs/BUILDING-TOOL.md, handoffs/2026-09-21-building-tool-lua.md"
   # Documented defaults (each the value the Lua script already uses when the
   # argument is omitted), used by dfmcp/tools.py to fill a slot an agent
-  # skipped while naming a later optional argument by name.
-  arg_defaults: {LEVEL: "0", RANK: "1", RADIUS_TILES: "30", DRY_RUN: "true"}
+  # skipped while naming a later optional argument by name. MATERIAL_CHOICE:
+  # "" is exactly what build_kind's own resolve_material_choice treats as
+  # "not given" (choice == nil or tostring(choice) == "" both take the same
+  # default-material branch) -- needed (2026-09-30) so a caller can supply
+  # RES_ID/OVERRIDE, both added after MATERIAL_CHOICE in build's own
+  # signature, while skipping MATERIAL_CHOICE itself.
+  arg_defaults: {LEVEL: "0", RANK: "1", RADIUS_TILES: "30", DRY_RUN: "true", MATERIAL_CHOICE: ""}
   commands:
     "list-kinds [FILTER]":
       lua_function: list_kinds
@@ -761,7 +766,7 @@ df-overseer-building.lua:
         "nothing here" can be told apart from a broken check. Result shape is
         contract C1 of docs/BUILDING-TOOL.md. No labor names and no
         confidence level: the MCP layer adds those.
-    "build KIND [W H] [LEVEL] NEAR_LANDMARK [RANK] [RADIUS_TILES] [DRY_RUN] [MATERIAL_CHOICE]":
+    "build KIND [W H] [LEVEL] NEAR_LANDMARK [RANK] [RADIUS_TILES] [DRY_RUN] [MATERIAL_CHOICE] [RES_ID] [OVERRIDE]":
       lua_function: build_kind
       skippable: ["[W H]"]
       effect: mutate
@@ -798,8 +803,12 @@ df-overseer-zone.lua:
   build_order_item: "gap named 2026-09-17 (handoffs/2026-09-17-water-and-industry-tools.md item 1); generalised over every zone kind and given an optional owner by handoffs/2026-09-21-zone-tool-generalise.md; given an inventory, a per-zone validity check and furniture-aware siting by handoffs/2026-09-23-zone-inventory-and-validity.md"
   # Documented defaults (each the value the Lua script already uses when the
   # argument is omitted), used by dfmcp/tools.py to fill a slot an agent
-  # skipped while naming a later optional argument by name.
-  arg_defaults: {LEVEL: "0", RANK: "1", RADIUS_TILES: "30", DRY_RUN: "true", AROUND_FURNITURE: "false"}
+  # skipped while naming a later optional argument by name. OWNER: "" is
+  # exactly what place_zone's own resolve_owner treats as "no owner" (owner
+  # == nil or owner == "" both return nil early) -- needed (2026-09-30) so a
+  # caller can supply RES_ID/OVERRIDE, both added after OWNER/AROUND_FURNITURE
+  # in place's own signature, while skipping OWNER itself.
+  arg_defaults: {LEVEL: "0", RANK: "1", RADIUS_TILES: "30", DRY_RUN: "true", AROUND_FURNITURE: "false", OWNER: ""}
   commands:
     "list-kinds [FILTER]":
       lua_function: list_kinds
@@ -905,7 +914,7 @@ df-overseer-zone.lua:
         dead or is not a citizen, a kind that cannot have an owner (only
         Bedroom, DiningHall, Office and Tomb), or a malformed token. Reads
         the Nobles screen's data (positions and holders) and nothing hidden.
-    "place KIND [W H] [LEVEL] NEAR_LANDMARK [RANK] [RADIUS_TILES] [DRY_RUN] [OWNER] [AROUND_FURNITURE]":
+    "place KIND [W H] [LEVEL] NEAR_LANDMARK [RANK] [RADIUS_TILES] [DRY_RUN] [OWNER] [AROUND_FURNITURE] [RES_ID] [OVERRIDE]":
       lua_function: place_zone
       skippable: ["[W H]"]
       effect: mutate
@@ -1168,7 +1177,7 @@ df-overseer-well.lua:
         sibling stream's own water-source zone), depth 7/7, stagnant true,
         salt false, fort_owned BUCKET 3 / CHAIN 3 / BLOCKS 0 / TRAPPARTS 0
         -- matching the handoff's own live figures exactly.
-    "build [LEVEL] NEAR_LANDMARK BLUEPRINT_FILE [RANK] [RADIUS_TILES] [DRY_RUN]":
+    "build [LEVEL] NEAR_LANDMARK BLUEPRINT_FILE [RANK] [RADIUS_TILES] [DRY_RUN] [RES_ID] [OVERRIDE]":
       lua_function: build_well
       effect: mutate
       coordinate_bearing: internal-only
@@ -2244,8 +2253,13 @@ df-overseer-surface.lua:
 
 df-overseer-construction.lua:
   build_order_item: "the missing 'construct' capability; handoffs/2026-09-28-ore-vein-recovery-and-construction-tool.md, decisions/DECISIONS.md 2026-09-24"
+  # Documented default (the value both commands' own truthy_dry_run treats
+  # as unset), needed (2026-09-30) so a caller can supply RES_ID/OVERRIDE,
+  # both added after DRY_RUN in each command's own signature, while skipping
+  # DRY_RUN itself.
+  arg_defaults: {DRY_RUN: "true"}
   commands:
-    "mine-vein ZONE_ID [DRY_RUN]":
+    "mine-vein ZONE_ID [DRY_RUN] [RES_ID] [OVERRIDE]":
       lua_function: mine_vein
       effect: mutate
       coordinate_bearing: internal-only
@@ -2264,7 +2278,7 @@ df-overseer-construction.lua:
         defaults to true; only the word false performs the real
         designation. Granted to the overseer only (mutates fort state,
         dfmcp/roles.py rule 2).
-    "build ZONE_ID KIND [DRY_RUN]":
+    "build ZONE_ID KIND [DRY_RUN] [RES_ID] [OVERRIDE]":
       lua_function: build_construction
       effect: mutate
       coordinate_bearing: internal-only

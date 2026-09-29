@@ -96,10 +96,28 @@ function surface.boundary_material(id) local b = find_zone(id); return {zone_id 
 SURFACE_ORIG = function() return find_zone end
 SURFACE = surface
 local RESERVATIONS_MOD = nil
+-- handoffs/2026-09-30-reservation-holding.md item 1: fake, minimal
+-- kind_token_for_key tables, the same shape df-overseer-building.lua's and
+-- df-overseer-zone.lua's own exported kind_token_for_key have -- NOT the
+-- real files (unlike df-overseer-reservations.lua above, building.lua and
+-- zone.lua are not dependency-free: they need dfhack.buildings/df.civzone_type
+-- and the rest of the real game API this stub does not model). Keys match
+-- the real bedroom-cell-v1.csv ("b" in #build is the bed, "b" in #zone is
+-- the bedroom) and office-room-v2.csv ("c"/"o") fixtures this test suite
+-- copies onto the guest, so a test reserving either template gets a
+-- realistic, non-empty allowed_kinds list.
+local BUILD_KIND_BY_KEY = {b = "bed", c = "chair"}
+local ZONE_KIND_BY_KEY = {b = "bedroom", o = "office"}
 function reqscript(n)
   if n == "df-overseer-landmarks" then return landmarks end
   if n == "df-overseer-diggable" then return {find_diggable_area = function() return ranked_candidates() end} end
   if n == "df-overseer-surface" then return surface end
+  if n == "df-overseer-building" then
+    return {kind_token_for_key = function(key) return BUILD_KIND_BY_KEY[key] end}
+  end
+  if n == "df-overseer-zone" then
+    return {kind_token_for_key = function(key) return ZONE_KIND_BY_KEY[key] end}
+  end
   if n == "df-overseer-reservations" then
     -- Loads the REAL df-overseer-reservations.lua (a dependency-free leaf:
     -- it only reqscripts df-overseer-landmarks, already stubbed above, and

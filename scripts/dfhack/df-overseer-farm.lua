@@ -125,7 +125,7 @@
 -- was verified live in dry-run mode specifically.
 --
 -- Usage: ./dfhack-run df-overseer-farm find W H [LEVEL] NEAR_LANDMARK [RADIUS_TILES]
--- Usage: ./dfhack-run df-overseer-farm build W H [LEVEL] NEAR_LANDMARK BLUEPRINT_FILE [RANK] [RADIUS_TILES] [DRY_RUN]
+-- Usage: ./dfhack-run df-overseer-farm build W H [LEVEL] NEAR_LANDMARK BLUEPRINT_FILE [RANK] [RADIUS_TILES] [DRY_RUN] [RES_ID] [OVERRIDE]
 -- Usage: ./dfhack-run df-overseer-farm list
 -- Usage: ./dfhack-run df-overseer-farm set-crop ID SEASON CROP [DRY_RUN]
 
@@ -483,7 +483,16 @@ end
 
 -- DRY_RUN defaults to true. A dry run resolves the candidate and returns
 -- exactly what would be built, without calling quickfort. See header.
-function build_farm_plot(w, h, level, near, blueprint_file, rank, radius_tiles, dry_run)
+-- RES_ID/OVERRIDE (handoffs/2026-09-30-reservation-holding.md item 2): a
+-- farm plot has no KIND argument at all, so the fixed literal "farmplot" is
+-- what gets checked against a reservation's allowed_kinds -- no template in
+-- this repo declares it (a farm plot inside a bedroom or office is never
+-- legitimate), so this always refuses inside any reservation unless
+-- OVERRIDE, by construction rather than a special case.
+function build_farm_plot(w, h, level, near, blueprint_file, rank, radius_tiles, dry_run, res_id, override)
+  if override ~= nil and res_id == nil then
+    return nil, "OVERRIDE requires RES_ID"
+  end
   rank = rank or 1
   local dry = truthy_dry_run(dry_run)
   local chosen, err, resolved_z = ranked_candidates(w, h, level, near, radius_tiles)
@@ -502,8 +511,11 @@ function build_farm_plot(w, h, level, near, blueprint_file, rank, radius_tiles, 
   local ok_near, near_info = pcall(landmarks_mod.nearest_landmark, cx, cy, z)
   local info = ok_near and near_info
 
-  local conflict = reservations_mod.check_tiles(
-    reservations_mod.rect_tiles(c.x, c.y, z, w, h), nil)
+  -- Computed before check_tiles/designating; recorded only at the real
+  -- success point below (handoff review, 2026-09-30).
+  local tiles = reservations_mod.rect_tiles(c.x, c.y, z, w, h)
+  local needs_override = override ~= nil and reservations_mod.override_needed(tiles, res_id, "farmplot")
+  local conflict = reservations_mod.check_tiles(tiles, nil, res_id, "farmplot", override)
   if conflict then return nil, conflict.message end
 
   if dry then
@@ -537,7 +549,8 @@ function build_farm_plot(w, h, level, near, blueprint_file, rank, radius_tiles, 
   -- for an unnamed plot, e.g. "Farm Plot" -- NOT unique, NEVER usable to
   -- look this plot back up).
   local plot_id, default_name = nil, nil
-  if ok_run and result == CR_OK then
+  local quickfort_ok = ok_run and result == CR_OK
+  if quickfort_ok then
     local ok_bld, bld = pcall(dfhack.buildings.findAtTile, xyz2pos(c.x, c.y, z))
     if ok_bld and bld then
       local ok_id, id = pcall(function() return bld.id end)
@@ -545,6 +558,9 @@ function build_farm_plot(w, h, level, near, blueprint_file, rank, radius_tiles, 
       local ok_name, gname = pcall(dfhack.buildings.getName, bld)
       default_name = ok_name and textutil.to_utf8(gname) or nil
     end
+  end
+  if needs_override and quickfort_ok then
+    reservations_mod.record_override(res_id, "farm.build", "farmplot", override)
   end
 
   return {
@@ -556,7 +572,7 @@ function build_farm_plot(w, h, level, near, blueprint_file, rank, radius_tiles, 
     distance_tiles = info and info.distance_tiles or nil,
     outside = c.outside,
     blueprint = blueprint_file,
-    quickfort_ok = ok_run and result == CR_OK,
+    quickfort_ok = quickfort_ok,
     quickfort_error = (not ok_run) and tostring(output) or nil,
     quickfort_stats = ok_run and parse_quickfort_stats(output) or nil,
     id = plot_id,
@@ -767,19 +783,19 @@ if cmd == "find" then
   end
 elseif cmd == "build" then
   local w, h = tonumber(args[2]), tonumber(args[3])
-  local level, near, blueprint, rank, radius, dry_run
+  local level, near, blueprint, rank, radius, dry_run, res_id, override
   if tonumber(args[4]) then
-    level, near, blueprint, rank, radius, dry_run =
-      tonumber(args[4]), args[5], args[6], tonumber(args[7]), tonumber(args[8]), args[9]
+    level, near, blueprint, rank, radius, dry_run, res_id, override =
+      tonumber(args[4]), args[5], args[6], tonumber(args[7]), tonumber(args[8]), args[9], args[10], args[11]
   else
-    near, blueprint, rank, radius, dry_run =
-      args[4], args[5], tonumber(args[6]), tonumber(args[7]), args[8]
+    near, blueprint, rank, radius, dry_run, res_id, override =
+      args[4], args[5], tonumber(args[6]), tonumber(args[7]), args[8], args[9], args[10]
   end
   if not (w and h and near and blueprint) then
     print("usage: df-overseer-farm build W H [LEVEL] NEAR_LANDMARK"
-      .. " BLUEPRINT_FILE [RANK] [RADIUS_TILES] [DRY_RUN]")
+      .. " BLUEPRINT_FILE [RANK] [RADIUS_TILES] [DRY_RUN] [RES_ID] [OVERRIDE]")
   else
-    local result, err = build_farm_plot(w, h, level, near, blueprint, rank, radius, dry_run)
+    local result, err = build_farm_plot(w, h, level, near, blueprint, rank, radius, dry_run, res_id, override)
     print(json.encode(err and {error = err} or result))
   end
 elseif cmd == "list" then
@@ -795,7 +811,7 @@ elseif cmd == "set-crop" then
 else
   print("usage: df-overseer-farm find W H [LEVEL] NEAR_LANDMARK [RADIUS_TILES]")
   print("usage: df-overseer-farm build W H [LEVEL] NEAR_LANDMARK"
-    .. " BLUEPRINT_FILE [RANK] [RADIUS_TILES] [DRY_RUN]")
+    .. " BLUEPRINT_FILE [RANK] [RADIUS_TILES] [DRY_RUN] [RES_ID] [OVERRIDE]")
   print("usage: df-overseer-farm list")
   print("usage: df-overseer-farm set-crop ID SEASON CROP [DRY_RUN]")
 end

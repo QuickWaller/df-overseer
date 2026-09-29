@@ -175,7 +175,7 @@
 -- Usage: ./dfhack-run df-overseer-zone list-kinds [FILTER]
 -- Usage: ./dfhack-run df-overseer-zone find KIND [W H] [LEVEL] NEAR_LANDMARK [RADIUS_TILES] [AROUND_FURNITURE]
 -- Usage: ./dfhack-run df-overseer-zone check-owner KIND OWNER
--- Usage: ./dfhack-run df-overseer-zone place KIND [W H] [LEVEL] NEAR_LANDMARK [RANK] [RADIUS_TILES] [DRY_RUN] [OWNER]
+-- Usage: ./dfhack-run df-overseer-zone place KIND [W H] [LEVEL] NEAR_LANDMARK [RANK] [RADIUS_TILES] [DRY_RUN] [OWNER] [AROUND_FURNITURE] [RES_ID] [OVERRIDE]
 -- Usage: ./dfhack-run df-overseer-zone list KIND_FILTER OWNER_FILTER VALID_FILTER NEAR_LANDMARK_FILTER [RADIUS_TILES]
 -- Usage: ./dfhack-run df-overseer-zone assign-owner ZONE_ID UNIT_ID [DRY_RUN] [OVERRIDE]
 -- Usage: ./dfhack-run df-overseer-zone clear-owner ZONE_ID [DRY_RUN]
@@ -363,6 +363,19 @@ local function enumerate_kinds()
   end
   table.sort(kinds, function(a, b) return a.token < b.token end)
   return kinds, by_norm, by_key
+end
+
+-- Exported (handoffs/2026-09-30-reservation-holding.md item 1): given a
+-- quickfort #zone-mode cell key (e.g. "b"), the zone kind TOKEN that key
+-- designates (e.g. "Bedroom"), or nil if the key resolves to nothing known.
+-- Reused by df-overseer-blueprint.lua's reserve_site the same way
+-- df-overseer-building.lua's own kind_token_for_key is, rather than a
+-- second key->kind table living there.
+function kind_token_for_key(key)
+  local kinds, _, by_key, err = enumerate_kinds()
+  if not kinds then return nil, err end
+  local k = by_key[key]
+  return k and k.token or nil
 end
 
 local function finite(n)
@@ -676,7 +689,7 @@ local function find_water(k, level, near, radius_tiles)
   return results
 end
 
-local function place_water(k, level, near, rank, radius_tiles, dry)
+local function place_water(k, level, near, rank, radius_tiles, dry, res_id, override)
   rank = rank or 1
   local chosen, err, z = ranked_water_bodies(level, near, radius_tiles)
   if err then return nil, err end
@@ -691,7 +704,10 @@ local function place_water(k, level, near, rank, radius_tiles, dry)
 
   local water_tiles = {}
   for _, t in ipairs(c.tiles) do water_tiles[#water_tiles + 1] = {x = t[1], y = t[2], z = z} end
-  local water_conflict = reservations_mod.check_tiles(water_tiles, nil)
+  -- Computed before check_tiles/designating; recorded only at the real
+  -- success point below (handoff review, 2026-09-30) -- never on a dry run.
+  local needs_override = override ~= nil and reservations_mod.override_needed(water_tiles, res_id, k.token)
+  local water_conflict = reservations_mod.check_tiles(water_tiles, nil, res_id, k.token, override)
   if water_conflict then return nil, water_conflict.message end
 
   if dry then
@@ -719,6 +735,9 @@ local function place_water(k, level, near, rank, radius_tiles, dry)
 
   base.quickfort_ok = ok_run and result == CR_OK
   base.quickfort_error = (not ok_run) and tostring(output) or nil
+  if needs_override and base.quickfort_ok then
+    reservations_mod.record_override(res_id, "zone.place", k.token, override)
+  end
   return base
 end
 
@@ -1551,7 +1570,17 @@ function list_zones(kind_filter, owner_filter, valid_filter, near, radius_tiles)
 end
 
 -- DRY_RUN defaults to true. See the header for what each mode does.
-function place_zone(kind_name, w, h, level, near, rank, radius_tiles, dry_run, owner, around_furniture)
+-- RES_ID/OVERRIDE (handoffs/2026-09-30-reservation-holding.md items 2-3):
+-- the kind checked against a reservation's own allowed_kinds is k.token,
+-- the same generic zone kind a template's #zone cell resolves to through
+-- df-overseer-zone.lua's own kind table -- exactly what
+-- df-overseer-blueprint.lua's template_allowed_kinds derived it with, so a
+-- bedroom-cell-v1 reservation's "bedroom" zone phase and a caller's
+-- zone.place(Bedroom, ..., RES_ID=res-N) name the identical token.
+function place_zone(kind_name, w, h, level, near, rank, radius_tiles, dry_run, owner, around_furniture, res_id, override)
+  if override ~= nil and res_id == nil then
+    return nil, "OVERRIDE requires RES_ID"
+  end
   local k, kerr = resolve_kind(kind_name)
   if not k then return nil, kerr end
   local p = policy_for(k)
@@ -1563,7 +1592,7 @@ function place_zone(kind_name, w, h, level, near, rank, radius_tiles, dry_run, o
     if w ~= nil or h ~= nil then
       return nil, k.token .. " takes no W H: its footprint follows the water body"
     end
-    local res, err = place_water(k, level, near, rank, radius_tiles, dry)
+    local res, err = place_water(k, level, near, rank, radius_tiles, dry, res_id, override)
     return res, err
   end
 
@@ -1624,8 +1653,11 @@ function place_zone(kind_name, w, h, level, near, rank, radius_tiles, dry_run, o
   end
   result.blueprint.file = filename
 
-  local zone_conflict = reservations_mod.check_tiles(
-    reservations_mod.rect_tiles(c.x, c.y, z, dw, dh), nil)
+  -- Computed before check_tiles/designating; recorded only at the real
+  -- success point below (handoff review, 2026-09-30) -- never on a dry run.
+  local rect_tiles = reservations_mod.rect_tiles(c.x, c.y, z, dw, dh)
+  local needs_override = override ~= nil and reservations_mod.override_needed(rect_tiles, res_id, k.token)
+  local zone_conflict = reservations_mod.check_tiles(rect_tiles, nil, res_id, k.token, override)
   if zone_conflict then
     pcall(os.remove, "dfhack-config/blueprints/" .. filename)
     return nil, zone_conflict.message
@@ -1663,6 +1695,9 @@ function place_zone(kind_name, w, h, level, near, rank, radius_tiles, dry_run, o
   result.quickfort_error = (not ok_run) and tostring(output) or NULL
   result.quickfort_stats = (stats and next(stats)) and stats or empty_object()
   result.quickfort_problems = problems
+  if needs_override and ok_v then
+    reservations_mod.record_override(res_id, "zone.place", k.token, override)
+  end
 
   -- Read the zone back: quickfort can report success without a zone. Find it
   -- as the newest civzone of this type over the window's centre tile.
@@ -2151,7 +2186,7 @@ local USAGE = {
   "usage: df-overseer-zone list-kinds [FILTER]",
   "usage: df-overseer-zone find KIND [W H] [LEVEL] NEAR_LANDMARK [RADIUS_TILES] [AROUND_FURNITURE]",
   "usage: df-overseer-zone check-owner KIND OWNER",
-  "usage: df-overseer-zone place KIND [W H] [LEVEL] NEAR_LANDMARK [RANK] [RADIUS_TILES] [DRY_RUN] [OWNER] [AROUND_FURNITURE]",
+  "usage: df-overseer-zone place KIND [W H] [LEVEL] NEAR_LANDMARK [RANK] [RADIUS_TILES] [DRY_RUN] [OWNER] [AROUND_FURNITURE] [RES_ID] [OVERRIDE]",
   "usage: df-overseer-zone list KIND_FILTER OWNER_FILTER VALID_FILTER NEAR_LANDMARK_FILTER [RADIUS_TILES]",
   "usage: df-overseer-zone assign-owner ZONE_ID UNIT_ID [DRY_RUN] [OVERRIDE]",
   "usage: df-overseer-zone clear-owner ZONE_ID [DRY_RUN]",
@@ -2216,7 +2251,7 @@ elseif cmd == "place" then
     print(encode({error = USAGE[4]}))
   else
     local res, err = place_zone(kind, w, h, level, near, tonumber(args[nxt]),
-      tonumber(args[nxt + 1]), args[nxt + 2], args[nxt + 3], args[nxt + 4])
+      tonumber(args[nxt + 1]), args[nxt + 2], args[nxt + 3], args[nxt + 4], args[nxt + 5], args[nxt + 6])
     print(encode(err and {error = err} or res))
   end
 elseif cmd == "list" then

@@ -90,7 +90,10 @@ function abs_tick()
   return y * TICKS_PER_YEAR + t
 end
 
-local function is_handle(s)
+-- Exported (handoffs/2026-09-30-reservation-holding.md): every OTHER
+-- designating tool's own RES_ID argument validation reuses this, rather than
+-- a second regex per file.
+function is_handle(s)
   return type(s) == 'string' and s:match('^res%-%d+$') ~= nil
 end
 
@@ -217,9 +220,70 @@ function create(rec)
   for k, v in pairs(rec) do stored[k] = v end
   stored.created_tick = abs_tick()
   stored.site_handle = nil
+  -- allowed_kinds (handoffs/2026-09-30-reservation-holding.md item 1): a list
+  -- of kind tokens the caller (df-overseer-blueprint.lua's reserve_site)
+  -- derived from the template's own #build/#zone cells -- never invented
+  -- here. Defaults to an empty list, never nil, so kind_allowed below never
+  -- has to guess whether "no list" means "everything" or "nothing" (it means
+  -- nothing -- the strict, never-default-permissive rule this codebase
+  -- already uses everywhere else).
+  stored.allowed_kinds = stored.allowed_kinds or {}
+  stored.overrides = stored.overrides or {}
   state.reservations[handle] = stored
   save_state(state)
   return handle
+end
+
+-- True if `kind` is one of `handle`'s own declared allowed kinds. False (not
+-- nil) on an unknown handle or an unlisted kind -- there is nothing "unknown"
+-- about "no reservation says this kind is fine here".
+function kind_allowed(handle, kind)
+  local rec = get_raw(handle)
+  if not rec or kind == nil then return false end
+  for _, k in ipairs(rec.allowed_kinds or {}) do
+    if k == kind then return true end
+  end
+  return false
+end
+
+-- True only if OVERRIDE would actually be consumed: some tile in `tiles`
+-- lies inside `res_id`'s own reservation AND `kind` is NOT one of that
+-- reservation's allowed_kinds. False for a malformed/unknown res_id, for a
+-- kind that is already allowed (no override needed), and for a call whose
+-- tiles never touch res_id at all (there is nothing here for an override to
+-- have overridden). Callers use this BEFORE designating anything to decide
+-- whether a later successful, real (non-dry) call is worth recording --
+-- see handoff review, 2026-09-30: recording must never happen for a dry
+-- run, for an override that was not actually needed, or for a designation
+-- that then failed, so this is deliberately a separate, side-effect-free
+-- query from check_tiles/record_override, computed once up front and
+-- carried by the caller to its own success point.
+function override_needed(tiles, res_id, kind)
+  if res_id == nil or not is_handle(res_id) then return false end
+  local rec = get_raw(res_id)
+  if not rec then return false end
+  if kind_allowed(res_id, kind) then return false end
+  for _, t in ipairs(tiles) do
+    if contains(rec, t.x, t.y, t.z) then
+      return true
+    end
+  end
+  return false
+end
+
+-- Appends a one-off override record to `handle` (item 3): {tick (absolute),
+-- tool, kind, reason}. Never changes allowed_kinds or purpose -- a
+-- re-purposed room is unreserve plus a new reserve, never this. Returns
+-- (true) or (false, err).
+function record_override(handle, tool, kind, reason)
+  if not is_handle(handle) then return false, "RES_ID must look like res-3" end
+  local state = load_state()
+  local rec = state.reservations[handle]
+  if not rec then return false, "no reservation '" .. handle .. "'" end
+  rec.overrides = rec.overrides or {}
+  rec.overrides[#rec.overrides + 1] = {tick = abs_tick(), tool = nn(tool), kind = nn(kind), reason = tostring(reason)}
+  save_state(state)
+  return true
 end
 
 -- Marks a reservation "in use": a blueprint apply carved/built from it
@@ -294,30 +358,69 @@ end
 -- correction).
 --
 -- Returns nil if every tile is clear of a reservation this call does not
--- hold; otherwise the FIRST conflicting tile's reservation info, never a
--- coordinate: {handle =, purpose =, near_landmark =, direction =,
--- distance_tiles =, message =}.
-function check_tiles(tiles, holding_handle)
+-- hold or is not otherwise entitled to; otherwise the FIRST conflicting
+-- tile's reservation info, never a coordinate: {handle =, purpose =,
+-- near_landmark =, direction =, distance_tiles =, message =}.
+--
+-- holding_handle (decision 4, room-reservations handoff): the TRUE holder --
+-- only df-overseer-blueprint.lua's own apply ever passes one (the
+-- reservation SITE was resolved from), and it bypasses every check on that
+-- reservation's own tiles regardless of kind. Unchanged by this handoff.
+--
+-- res_id, kind, override_reason (handoffs/2026-09-30-reservation-holding.md
+-- items 2-3): every OTHER designating tool's optional RES_ID/OVERRIDE. A
+-- tile inside the res_id reservation is allowed if override_reason is given
+-- (one-off exception, recorded by the CALLER via record_override once this
+-- returns nil -- this function stays a pure query, no side effects) or if
+-- `kind` is one of that reservation's own allowed_kinds. A tile inside any
+-- OTHER reservation is still refused, exactly as if res_id had not been
+-- given at all.
+function check_tiles(tiles, holding_handle, res_id, kind, override_reason)
+  if res_id ~= nil and not is_handle(res_id) then
+    return {message = "RES_ID must look like res-3"}
+  end
+  local claim_rec = nil
+  if res_id ~= nil then
+    claim_rec = get_raw(res_id)
+    if not claim_rec then
+      return {message = "no reservation '" .. res_id .. "'"}
+    end
+  end
   local state = load_state()
   for _, t in ipairs(tiles) do
     -- Collect every reservation covering this tile FIRST: a shared wall
-    -- tile can be covered by more than one, and holding just one of them is
-    -- enough (the user's correction) -- checking handle-by-handle and
+    -- tile can be covered by more than one, and holding (or being entitled
+    -- to) just one of them is enough -- checking handle-by-handle and
     -- bailing on the first non-held match would wrongly refuse a tile the
-    -- caller's own held reservation also covers.
-    local held_here, first_other = false, nil
+    -- caller's own held/claimed reservation also covers.
+    local held_here, claim_here, first_other = false, false, nil
     for handle, rec in pairs(state.reservations) do
       if contains(rec, t.x, t.y, t.z) then
         if handle == holding_handle then
           held_here = true
+        elseif res_id ~= nil and handle == res_id then
+          claim_here = true
         elseif not first_other then
           first_other = {handle = handle, rec = rec}
         end
       end
     end
-    if not held_here and first_other then
-      local handle, rec = first_other.handle, first_other.rec
-      do
+    if not held_here then
+      if claim_here then
+        if override_reason == nil and not kind_allowed(res_id, kind) then
+          local allowed = claim_rec.allowed_kinds or {}
+          return {
+            handle = res_id, purpose = claim_rec.purpose,
+            message = "tile(s) here are reserved as " .. res_id .. " (" .. tostring(claim_rec.purpose)
+              .. "); this call's kind (" .. tostring(kind) .. ") is not one this reservation allows ("
+              .. (#allowed > 0 and table.concat(allowed, ", ") or "none")
+              .. "); pass OVERRIDE with a reason for a one-off exception",
+          }
+        end
+        -- else: kind is allowed, or an override reason was given -- this
+        -- tile is fine; keep checking the rest.
+      elseif first_other then
+        local handle, rec = first_other.handle, first_other.rec
         local brief = rect_brief(rec)
         local where = (brief.near_landmark ~= NULL)
           and (tostring(brief.near_landmark) .. " " .. tostring(brief.direction) .. " "
@@ -328,12 +431,41 @@ function check_tiles(tiles, holding_handle)
           near_landmark = brief.near_landmark, direction = brief.direction,
           distance_tiles = brief.distance_tiles,
           message = "tile(s) here are reserved as " .. handle .. " (" .. tostring(rec.purpose)
-            .. "), near " .. where .. "; this tool is not that reservation's holder",
+            .. "), near " .. where .. "; this tool is not that reservation's holder"
+            .. (res_id ~= nil and " (RES_ID named a different reservation)" or ""),
         }
       end
     end
   end
   return nil
+end
+
+-- ---------------------------------------------------------------------------
+-- Finder-skip (handoffs/2026-09-30-reservation-holding.md item 4): "a
+-- finder never ranks a reserved candidate", factored ONCE here rather than
+-- duplicated per finder, so df-overseer-diggable.lua's own two ranking
+-- functions (WxH windows, and single-point stair-pair candidates) and
+-- df-overseer-openarea.lua's ranking function all share one filter instead
+-- of three near-identical loops.
+-- ---------------------------------------------------------------------------
+
+-- Drops any candidate from `candidates` whose own tiles (tiles_for(c),
+-- called once per candidate) overlap a reservation this call does not hold
+-- -- reusing check_tiles's own holding_handle bypass slot for `res_id`
+-- (nil: refuse any reservation at all; a handle: keep a candidate inside
+-- THAT reservation, still drop one inside any OTHER). `tiles_for` is a
+-- function so this works for a WxH rectangle candidate (df-overseer-
+-- diggable.lua's/df-overseer-openarea.lua's `{x=, y=}` windows) and for a
+-- single-point, two-z-level candidate (df-overseer-diggable.lua's stair
+-- pairs) alike, without this file knowing either shape.
+function filter_reserved(candidates, res_id, tiles_for)
+  local kept = {}
+  for _, c in ipairs(candidates) do
+    if not check_tiles(tiles_for(c), res_id) then
+      kept[#kept + 1] = c
+    end
+  end
+  return kept
 end
 
 -- No dfhack_flags.module guard, no CLI section -- see header, "Usage".

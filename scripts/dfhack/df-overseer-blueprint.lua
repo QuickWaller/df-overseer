@@ -130,6 +130,14 @@ local surface_mod = reqscript('df-overseer-surface')
 -- own header explains why -- a cycle here would depend on load order to
 -- avoid a nil function).
 local reservations_mod = reqscript('df-overseer-reservations')
+-- handoffs/2026-09-30-reservation-holding.md item 1: a reservation's own
+-- allowed kinds are derived from the template's #build/#zone cells at
+-- reserve time, through these two files' own kind tables (their
+-- kind_token_for_key), never a second, hard-coded kind list here. One
+-- directional, same as reservations_mod above: this file reqscripts these;
+-- neither reqscripts this file back.
+local building_mod = reqscript('df-overseer-building')
+local zone_mod = reqscript('df-overseer-zone')
 
 local NULL = "\0"
 local function encode(v) return json.encode(v, {null = NULL}) end
@@ -471,6 +479,46 @@ function classify_footprint_cells(bp, orient)
     end
   end
   return wall
+end
+
+-- handoffs/2026-09-30-reservation-holding.md item 1: what a template's own
+-- #build and #zone sections say belongs in the finished room, as a sorted
+-- list of kind TOKENS (e.g. {"bed"}, or {"bed", "bedroom"} once both a build
+-- and a zone section are scanned) -- never a hard-coded per-room-kind list
+-- (CLAUDE.md, "tools must be generalisable"). This file never reads a
+-- template's .yaml metadata (see this file's own header, "WHERE THE
+-- BLUEPRINT FILE COMES FROM": the guest has no YAML parser and the .csv is
+-- the single source of truth) -- so "requires: [bed]" is not read from
+-- bedroom-cell-v1.yaml at all. Instead, each distinct cell key actually used
+-- in a #build or #zone section is resolved to its real kind token through
+-- df-overseer-building.lua's / df-overseer-zone.lua's own kind tables (the
+-- same tables building.build/zone.place already resolve a caller's KIND
+-- argument through) -- the template's .csv already says everything that
+-- differs per room; this just reads it the same generic way the rest of
+-- this file does. A key that does not resolve (should not happen for a
+-- valid #build/#zone cell, but read failures are never silently dropped
+-- elsewhere in this file either) is skipped, not guessed.
+function template_allowed_kinds(bp)
+  local mod_for_mode = {build = building_mod, zone = zone_mod}
+  local seen_key, seen_token, kinds = {}, {}, {}
+  for _, sec in ipairs(bp.sections) do
+    local mod = mod_for_mode[sec.mode]
+    if mod then
+      for _, c in ipairs(sec.cells) do
+        local seen_as = sec.mode .. ":" .. c.text
+        if not seen_key[seen_as] then
+          seen_key[seen_as] = true
+          local ok, token = pcall(mod.kind_token_for_key, c.text)
+          if ok and token and not seen_token[token] then
+            seen_token[token] = true
+            kinds[#kinds + 1] = token
+          end
+        end
+      end
+    end
+  end
+  table.sort(kinds)
+  return kinds
 end
 
 -- Same classification, for an already-carved site record (blueprint.lua's
@@ -1537,6 +1585,7 @@ function reserve_site(template, purpose, site_arg, dry_run, level, rank, radius)
     dig_can_start = (analysis.entrance_reachable == true and analysis.carve_cells_unreachable == 0)
   end
   local wall_cells = classify_footprint_cells(bp, site.orient)
+  local allowed_kinds = template_allowed_kinds(bp)
   local other_footprints = {}
   for _, s in ipairs(all_sites_raw()) do
     other_footprints[#other_footprints + 1] = {x = s.x, y = s.y, z = s.z, w = s.w, h = s.h,
@@ -1551,6 +1600,7 @@ function reserve_site(template, purpose, site_arg, dry_run, level, rank, radius)
     orientation = site.orient or "none",
     dig_can_start = dig_can_start,
     read_failures = failures,
+    allowed_kinds = allowed_kinds,
   }
   if #conflicts > 0 then
     local names = {}
@@ -1575,6 +1625,7 @@ function reserve_site(template, purpose, site_arg, dry_run, level, rank, radius)
     x = site.x, y = site.y, z = site.z, w = site.w, h = site.h,
     orient = site.orient or "none", bw = site.bw or site.w, bh = site.bh or site.h,
     blueprint = bp.name, purpose = purpose, wall_cells = wall_cells,
+    allowed_kinds = allowed_kinds,
   })
   result.handle = handle
   return result
@@ -1589,12 +1640,17 @@ function list_reservations()
   local out = {}
   for _, rec in ipairs(reservations_mod.list_raw()) do
     local brief = site_brief(rec)
+    local overrides = rec.overrides or {}
+    local last = overrides[#overrides]
     out[#out + 1] = {
       handle = rec.handle, blueprint = rec.blueprint, purpose = rec.purpose,
       footprint = {width = rec.w, height = rec.h},
       near_landmark = brief.near_landmark, direction = brief.direction, distance_tiles = brief.distance_tiles,
       in_use = rec.site_handle ~= nil, site_handle = nn(rec.site_handle),
       age_ticks = (now_tick and rec.created_tick) and (now_tick - rec.created_tick) or NULL,
+      allowed_kinds = rec.allowed_kinds or {},
+      override_count = #overrides,
+      last_override_reason = nn(last and last.reason),
     }
   end
   return out

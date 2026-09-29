@@ -685,3 +685,32 @@ def test_unreserve_defaults_to_a_dry_run(world):
     assert r["dry_run"] is True and r["would_release"] is True
     listing, _ = world.call("list_reservations")
     assert len(listing) == 1
+
+
+# ---------------------------------------------------------------------------
+# handoffs/2026-09-30-reservation-holding.md item 1: allowed_kinds derived
+# from the template's own #build/#zone cells, through the (fake, for this
+# offline stub -- see tests/lua_stubs/dfhack_blueprint_world.lua's own
+# comment) building/zone kind_token_for_key tables.
+# ---------------------------------------------------------------------------
+
+
+def test_reserve_derives_allowed_kinds_from_the_templates_own_build_and_zone_cells(world):
+    world.stone_block(10, 10)
+    r, err = world.call("reserve_site", BP, "planned bedroom row 3", "Well", "false")
+    assert err is None, err
+    # bedroom-cell-v1's #build cell key "b" -> "bed" (building.lua's own
+    # table) and its #zone cell key "b" -> "bedroom" (zone.lua's own table),
+    # never a hard-coded per-room-kind list here.
+    assert sorted(r["allowed_kinds"]) == ["bed", "bedroom"]
+    listing, _ = world.call("list_reservations")
+    assert sorted(listing[0]["allowed_kinds"]) == ["bed", "bedroom"]
+    assert listing[0]["override_count"] == 0
+    assert listing[0]["last_override_reason"] == "\x00"  # NULL sentinel: never a real reason
+
+
+def test_reserve_dry_run_still_reports_allowed_kinds(world):
+    world.stone_block(10, 10)
+    r, _ = world.call("reserve_site", BP, "planned bedroom", "Well")
+    assert r["dry_run"] is True
+    assert sorted(r["allowed_kinds"]) == ["bed", "bedroom"]

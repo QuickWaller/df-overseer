@@ -104,6 +104,7 @@ def test_building_find_and_build_take_kind_first_and_site_arguments():
     assert find == ["kind", "w", "h", "level", "near_landmark", "radius_tiles", "material_choice"]
     assert build == [
         "kind", "w", "h", "level", "near_landmark", "rank", "radius_tiles", "dry_run", "material_choice",
+        "res_id", "override",
     ]
 
 

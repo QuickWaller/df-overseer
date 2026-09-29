@@ -107,7 +107,7 @@ def test_argument_names_and_order():
     assert names("zone.check-owner") == ["kind", "owner"]
     assert names("zone.place") == [
         "kind", "w", "h", "level", "near_landmark", "rank", "radius_tiles", "dry_run", "owner",
-        "around_furniture"]
+        "around_furniture", "res_id", "override"]
     assert names("zone.list") == [
         "kind_filter", "owner_filter", "valid_filter", "near_landmark_filter", "radius_tiles"]
     assert names("zone.assign-owner") == ["zone_id", "unit_id", "dry_run", "override"]

@@ -114,7 +114,7 @@
 -- verified vs proposed" rule.
 --
 -- Usage: ./dfhack-run df-overseer-workshop find W H [LEVEL] NEAR_LANDMARK KIND [RADIUS_TILES]
--- Usage: ./dfhack-run df-overseer-workshop build W H [LEVEL] NEAR_LANDMARK KIND BLUEPRINT_FILE [RANK] [RADIUS_TILES] [DRY_RUN]
+-- Usage: ./dfhack-run df-overseer-workshop build W H [LEVEL] NEAR_LANDMARK KIND BLUEPRINT_FILE [RANK] [RADIUS_TILES] [DRY_RUN] [RES_ID] [OVERRIDE]
 
 local json = require('json')
 local landmarks_mod = reqscript('df-overseer-landmarks')
@@ -471,7 +471,20 @@ end
 -- DRY_RUN defaults to true. A dry run resolves the candidate and returns
 -- exactly what would be built, without calling quickfort. See header --
 -- the real path is UNTESTED live (mutation forbidden this session).
-function build_workshop(w, h, level, near, kind, blueprint_file, rank, radius_tiles, dry_run)
+-- RES_ID/OVERRIDE (handoffs/2026-09-30-reservation-holding.md item 2): the
+-- kind checked against a reservation's own allowed_kinds is this tool's own
+-- lowercase kind key (e.g. "carpenter"), NOT df-overseer-building.lua's
+-- generic per-subtype token (which a template's #build cell resolves to,
+-- e.g. "Carpenters") -- the two vocabularies are not guaranteed to agree
+-- (this file's five kind keys predate the reservation work and are its own
+-- labor/container-aware lookup, not building.lua's generic one). No
+-- template in this repo declares a workshop phase today, so this has no
+-- live effect either way; flagged rather than silently assumed correct for
+-- when one does.
+function build_workshop(w, h, level, near, kind, blueprint_file, rank, radius_tiles, dry_run, res_id, override)
+  if override ~= nil and res_id == nil then
+    return nil, "OVERRIDE requires RES_ID"
+  end
   local kind_info = KIND_INFO[tostring(kind):lower()]
   if not kind_info then
     return nil, "unknown workshop kind: " .. tostring(kind) .. " (expected still/kitchen/mason/mechanic/carpenter)"
@@ -495,8 +508,12 @@ function build_workshop(w, h, level, near, kind, blueprint_file, rank, radius_ti
   local info = ok_near and near_info
   local req = requirements_for(kind_info)
 
-  local conflict = reservations_mod.check_tiles(
-    reservations_mod.rect_tiles(c.x, c.y, z, w, h), nil)
+  -- Computed before check_tiles/designating; recorded only at the real
+  -- success point below (handoff review, 2026-09-30).
+  local tiles = reservations_mod.rect_tiles(c.x, c.y, z, w, h)
+  local kind_key = tostring(kind):lower()
+  local needs_override = override ~= nil and reservations_mod.override_needed(tiles, res_id, kind_key)
+  local conflict = reservations_mod.check_tiles(tiles, nil, res_id, kind_key, override)
   if conflict then return nil, conflict.message end
 
   if dry then
@@ -519,6 +536,11 @@ function build_workshop(w, h, level, near, kind, blueprint_file, rank, radius_ti
     dfhack.run_command_silent, 'quickfort', 'run', blueprint_file, '-c',
     string.format('%d,%d,%d', c.x, c.y, z))
 
+  local quickfort_ok = ok_run and result == CR_OK
+  if needs_override and quickfort_ok then
+    reservations_mod.record_override(res_id, "workshop.build", kind_key, override)
+  end
+
   return {
     dry_run = false,
     rank = rank,
@@ -529,7 +551,7 @@ function build_workshop(w, h, level, near, kind, blueprint_file, rank, radius_ti
     distance_tiles = info and info.distance_tiles or nil,
     requirements = req,
     blueprint = blueprint_file,
-    quickfort_ok = ok_run and result == CR_OK,
+    quickfort_ok = quickfort_ok,
     quickfort_error = (not ok_run) and tostring(output) or nil,
     quickfort_stats = ok_run and parse_quickfort_stats(output) or nil,
   }
@@ -562,23 +584,23 @@ if cmd == "find" then
   end
 elseif cmd == "build" then
   local w, h = tonumber(args[2]), tonumber(args[3])
-  local level, near, kind, blueprint, rank, radius, dry_run
+  local level, near, kind, blueprint, rank, radius, dry_run, res_id, override
   if tonumber(args[4]) then
-    level, near, kind, blueprint, rank, radius, dry_run =
-      tonumber(args[4]), args[5], args[6], args[7], tonumber(args[8]), tonumber(args[9]), args[10]
+    level, near, kind, blueprint, rank, radius, dry_run, res_id, override =
+      tonumber(args[4]), args[5], args[6], args[7], tonumber(args[8]), tonumber(args[9]), args[10], args[11], args[12]
   else
-    near, kind, blueprint, rank, radius, dry_run =
-      args[4], args[5], args[6], tonumber(args[7]), tonumber(args[8]), args[9]
+    near, kind, blueprint, rank, radius, dry_run, res_id, override =
+      args[4], args[5], args[6], tonumber(args[7]), tonumber(args[8]), args[9], args[10], args[11]
   end
   if not (w and h and near and kind and blueprint) then
     print("usage: df-overseer-workshop build W H [LEVEL] NEAR_LANDMARK KIND"
-      .. " BLUEPRINT_FILE [RANK] [RADIUS_TILES] [DRY_RUN]")
+      .. " BLUEPRINT_FILE [RANK] [RADIUS_TILES] [DRY_RUN] [RES_ID] [OVERRIDE]")
   else
-    local result, err = build_workshop(w, h, level, near, kind, blueprint, rank, radius, dry_run)
+    local result, err = build_workshop(w, h, level, near, kind, blueprint, rank, radius, dry_run, res_id, override)
     print(json.encode(err and {error = err} or result))
   end
 else
   print("usage: df-overseer-workshop find W H [LEVEL] NEAR_LANDMARK KIND [RADIUS_TILES]")
   print("usage: df-overseer-workshop build W H [LEVEL] NEAR_LANDMARK KIND"
-    .. " BLUEPRINT_FILE [RANK] [RADIUS_TILES] [DRY_RUN]")
+    .. " BLUEPRINT_FILE [RANK] [RADIUS_TILES] [DRY_RUN] [RES_ID] [OVERRIDE]")
 end

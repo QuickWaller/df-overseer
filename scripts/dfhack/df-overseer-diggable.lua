@@ -280,10 +280,10 @@
 -- the question is actually settled by a live designation test, without
 -- this tool asserting either answer for them.
 --
--- Usage: ./dfhack-run df-overseer-diggable find W H [LEVEL] NEAR_LANDMARK [RADIUS_TILES]
--- Usage: ./dfhack-run df-overseer-diggable dig W H [LEVEL] NEAR_LANDMARK BLUEPRINT_FILE [RANK] [RADIUS_TILES]
--- Usage: ./dfhack-run df-overseer-diggable find-stair [LEVEL] NEAR_LANDMARK [RADIUS_TILES]
--- Usage: ./dfhack-run df-overseer-diggable dig-stair [LEVEL] NEAR_LANDMARK [RANK] [RADIUS_TILES] [DRY_RUN]
+-- Usage: ./dfhack-run df-overseer-diggable find W H [LEVEL] NEAR_LANDMARK [RADIUS_TILES] [RES_ID]
+-- Usage: ./dfhack-run df-overseer-diggable dig W H [LEVEL] NEAR_LANDMARK BLUEPRINT_FILE [RANK] [RADIUS_TILES] [RES_ID] [OVERRIDE]
+-- Usage: ./dfhack-run df-overseer-diggable find-stair [LEVEL] NEAR_LANDMARK [RADIUS_TILES] [RES_ID]
+-- Usage: ./dfhack-run df-overseer-diggable dig-stair [LEVEL] NEAR_LANDMARK [RANK] [RADIUS_TILES] [DRY_RUN] [RES_ID] [OVERRIDE]
 
 local json = require('json')
 local landmarks_mod = reqscript('df-overseer-landmarks')
@@ -490,7 +490,15 @@ end
 -- Server-side only: ranked, deduplicated, non-overlapping, network-adjacent
 -- top-left corners (real x,y coordinates, never stripped here) for a
 -- WxH diggable region near `near`, closest-to-anchor first.
-local function ranked_candidates(w, h, level, near, radius_tiles)
+-- res_id (handoffs/2026-09-30-reservation-holding.md item 4): a candidate
+-- window overlapping a reservation this call does not hold is dropped
+-- before ranking, so RANK N never lands on reserved ground and then
+-- refuses at dig_diggable_area's own check_tiles below -- via
+-- reservations_mod's own shared `filter_reserved` (also used by
+-- df-overseer-openarea.lua's ranked_candidates and this file's own
+-- ranked_stair_candidates below, so the drop logic lives in exactly one
+-- place, not three near-identical loops).
+local function ranked_candidates(w, h, level, near, radius_tiles, res_id)
   local ax, ay, az = landmarks_mod.get_landmark_centroid(near)
   if not ax then
     return nil, "landmark not found: " .. near
@@ -506,8 +514,10 @@ local function ranked_candidates(w, h, level, near, radius_tiles)
     anchor_group = nil
   end
 
-  local candidates = find_candidates(
+  local raw_candidates = find_candidates(
     w, h, z, ax - radius, ax + radius, ay - radius, ay + radius)
+  local candidates = reservations_mod.filter_reserved(raw_candidates, res_id,
+    function(c) return reservations_mod.rect_tiles(c.x, c.y, z, w, h) end)
 
   local adjacent = {}
   for _, c in ipairs(candidates) do
@@ -543,8 +553,8 @@ local function ranked_candidates(w, h, level, near, radius_tiles)
   return chosen, nil, z
 end
 
-function find_diggable_area(w, h, level, near, radius_tiles)
-  local chosen, err, resolved_z = ranked_candidates(w, h, level, near, radius_tiles)
+function find_diggable_area(w, h, level, near, radius_tiles, res_id)
+  local chosen, err, resolved_z = ranked_candidates(w, h, level, near, radius_tiles, res_id)
   if err then
     return nil, err
   end
@@ -606,9 +616,18 @@ end
 -- caller. `blueprint_file` resolves relative to dfhack-config/blueprints/
 -- on the guest (quickfort's own resolution rule, not this repo's tree) --
 -- pass a bare filename already deployed there, e.g. `starter-room-5x5.csv`.
-function dig_diggable_area(w, h, level, near, blueprint_file, rank, radius_tiles)
+-- RES_ID/OVERRIDE (handoffs/2026-09-30-reservation-holding.md item 2): a
+-- plain dig has no KIND; checked against the fixed literal "dig" -- no
+-- template declares it (a template's own #dig phase runs through
+-- df-overseer-blueprint.lua's apply RES_ID path, which is the true holder,
+-- not this generic tool), so a dig inside any reservation is refused unless
+-- OVERRIDE.
+function dig_diggable_area(w, h, level, near, blueprint_file, rank, radius_tiles, res_id, override)
+  if override ~= nil and res_id == nil then
+    return nil, "OVERRIDE requires RES_ID"
+  end
   rank = rank or 1
-  local chosen, err, resolved_z = ranked_candidates(w, h, level, near, radius_tiles)
+  local chosen, err, resolved_z = ranked_candidates(w, h, level, near, radius_tiles, res_id)
   if err then
     return nil, err
   end
@@ -628,8 +647,9 @@ function dig_diggable_area(w, h, level, near, blueprint_file, rank, radius_tiles
     return c.material and df.tiletype_material[c.material] or nil
   end)
 
-  local conflict = reservations_mod.check_tiles(
-    reservations_mod.rect_tiles(c.x, c.y, z, w, h), nil)
+  local tiles = reservations_mod.rect_tiles(c.x, c.y, z, w, h)
+  local needs_override = override ~= nil and reservations_mod.override_needed(tiles, res_id, "dig")
+  local conflict = reservations_mod.check_tiles(tiles, nil, res_id, "dig", override)
   if conflict then return nil, conflict.message end
 
   -- The one place a real coordinate exists in this file: assembled
@@ -656,6 +676,11 @@ function dig_diggable_area(w, h, level, near, blueprint_file, rank, radius_tiles
     dfhack.run_command_silent, 'quickfort', 'run', blueprint_file, '-c',
     string.format('%d,%d,%d', c.x, c.y, z))
 
+  local quickfort_ok = ok_run and result == CR_OK
+  if needs_override and quickfort_ok then
+    reservations_mod.record_override(res_id, "diggable.dig", "dig", override)
+  end
+
   return {
     rank = rank,
     dims = {w, h},
@@ -665,7 +690,7 @@ function dig_diggable_area(w, h, level, near, blueprint_file, rank, radius_tiles
     material = ok_mat_name and mat_name or nil,
     interior_fully_revealed = not c.any_hidden,
     blueprint = blueprint_file,
-    quickfort_ok = ok_run and result == CR_OK,
+    quickfort_ok = quickfort_ok,
     quickfort_error = (not ok_run) and tostring(output) or nil,
     quickfort_stats = ok_run and parse_quickfort_stats(output) or nil,
   }
@@ -680,7 +705,12 @@ end
 -- rectangles -- a stair connector is inherently a column, not an area --
 -- so there is no overlap-dedup pass (distinct points cannot overlap).
 -- Server-side only: real x,y coordinates never leave this function.
-local function ranked_stair_candidates(level, near, radius_tiles)
+-- res_id (handoffs/2026-09-30-reservation-holding.md item 4): a candidate
+-- point is dropped if either its upper or lower tile overlaps a reservation
+-- this call does not hold (with RES_ID, a candidate inside that reservation
+-- is kept) -- same reuse of check_tiles's holding_handle bypass as
+-- ranked_candidates above.
+local function ranked_stair_candidates(level, near, radius_tiles, res_id)
   local ax, ay, az = landmarks_mod.get_landmark_centroid(near)
   if not ax then
     return nil, "landmark not found: " .. near
@@ -740,6 +770,9 @@ local function ranked_stair_candidates(level, near, radius_tiles)
     end
   end
 
+  candidates = reservations_mod.filter_reserved(candidates, res_id,
+    function(c) return {{x = c.x, y = c.y, z = upper_z}, {x = c.x, y = c.y, z = lower_z}} end)
+
   for _, c in ipairs(candidates) do
     local dx, dy = c.x - ax, c.y - ay
     c.dist_to_anchor = math.sqrt(dx * dx + dy * dy)
@@ -783,8 +816,8 @@ local function describe_stair_candidate(c, upper_z)
   }
 end
 
-function find_stair_down(level, near, radius_tiles)
-  local chosen, err, upper_z = ranked_stair_candidates(level, near, radius_tiles)
+function find_stair_down(level, near, radius_tiles, res_id)
+  local chosen, err, upper_z = ranked_stair_candidates(level, near, radius_tiles, res_id)
   if err then
     return nil, err
   end
@@ -823,10 +856,17 @@ end
 -- candidate exactly as the real path would, and returns exactly what it
 -- would designate, without calling quickfort at all. Only an explicit
 -- dry_run=false performs the real double designation.
-function dig_stair_down(level, near, rank, radius_tiles, dry_run)
+-- RES_ID/OVERRIDE (handoffs/2026-09-30-reservation-holding.md item 2): a
+-- stair pair has no KIND; checked against the fixed literal "stairs" -- no
+-- template declares it, so a stair pair inside any reservation is refused
+-- unless OVERRIDE.
+function dig_stair_down(level, near, rank, radius_tiles, dry_run, res_id, override)
+  if override ~= nil and res_id == nil then
+    return nil, "OVERRIDE requires RES_ID"
+  end
   rank = rank or 1
   local dry = truthy_dry_run(dry_run)
-  local chosen, err, upper_z, lower_z = ranked_stair_candidates(level, near, radius_tiles)
+  local chosen, err, upper_z, lower_z = ranked_stair_candidates(level, near, radius_tiles, res_id)
   if err then
     return nil, err
   end
@@ -841,8 +881,9 @@ function dig_stair_down(level, near, rank, radius_tiles, dry_run)
   -- Both halves of the pair, checked together before either is designated
   -- (handoffs/2026-09-30-room-reservations.md decision 3) -- no holding
   -- concept for this tool (decision 4).
-  local conflict = reservations_mod.check_tiles(
-    {{x = c.x, y = c.y, z = upper_z}, {x = c.x, y = c.y, z = lower_z}}, nil)
+  local tiles = {{x = c.x, y = c.y, z = upper_z}, {x = c.x, y = c.y, z = lower_z}}
+  local needs_override = override ~= nil and reservations_mod.override_needed(tiles, res_id, "stairs")
+  local conflict = reservations_mod.check_tiles(tiles, nil, res_id, "stairs", override)
   if conflict then return nil, conflict.message end
 
   if dry then
@@ -938,6 +979,10 @@ function dig_stair_down(level, near, rank, radius_tiles, dry_run)
           .. " directly, this tool never returns its coordinate")
   end
 
+  if needs_override then
+    reservations_mod.record_override(res_id, "diggable.dig-stair", "stairs", override)
+  end
+
   return described
 end
 
@@ -955,68 +1000,69 @@ local cmd = args[1]
 -- ranked_candidates defaults it to 0 (the landmark's own level).
 if cmd == "find" then
   local w, h = tonumber(args[2]), tonumber(args[3])
-  local level, near, radius
+  local level, near, radius, res_id
   if tonumber(args[4]) then
-    level, near, radius = tonumber(args[4]), args[5], tonumber(args[6])
+    level, near, radius, res_id = tonumber(args[4]), args[5], tonumber(args[6]), args[7]
   else
-    near, radius = args[4], tonumber(args[5])
+    near, radius, res_id = args[4], tonumber(args[5]), args[6]
   end
   if not (w and h and near) then
-    print("usage: df-overseer-diggable find W H [LEVEL] NEAR_LANDMARK [RADIUS_TILES]")
+    print("usage: df-overseer-diggable find W H [LEVEL] NEAR_LANDMARK [RADIUS_TILES] [RES_ID]")
   else
-    local results, err = find_diggable_area(w, h, level, near, radius)
+    local results, err = find_diggable_area(w, h, level, near, radius, res_id)
     print(json.encode(err and {error = err} or results))
   end
 elseif cmd == "dig" then
   local w, h = tonumber(args[2]), tonumber(args[3])
-  local level, near, blueprint, rank, radius
+  local level, near, blueprint, rank, radius, res_id, override
   if tonumber(args[4]) then
-    level, near, blueprint, rank, radius =
-      tonumber(args[4]), args[5], args[6], tonumber(args[7]), tonumber(args[8])
+    level, near, blueprint, rank, radius, res_id, override =
+      tonumber(args[4]), args[5], args[6], tonumber(args[7]), tonumber(args[8]), args[9], args[10]
   else
-    near, blueprint, rank, radius =
-      args[4], args[5], tonumber(args[6]), tonumber(args[7])
+    near, blueprint, rank, radius, res_id, override =
+      args[4], args[5], tonumber(args[6]), tonumber(args[7]), args[8], args[9]
   end
   if not (w and h and near and blueprint) then
     print("usage: df-overseer-diggable dig W H [LEVEL] NEAR_LANDMARK"
-      .. " BLUEPRINT_FILE [RANK] [RADIUS_TILES]")
+      .. " BLUEPRINT_FILE [RANK] [RADIUS_TILES] [RES_ID] [OVERRIDE]")
   else
-    local result, err = dig_diggable_area(w, h, level, near, blueprint, rank, radius)
+    local result, err = dig_diggable_area(w, h, level, near, blueprint, rank, radius, res_id, override)
     print(json.encode(err and {error = err} or result))
   end
 elseif cmd == "find-stair" then
-  local level, near, radius
+  local level, near, radius, res_id
   if tonumber(args[2]) then
-    level, near, radius = tonumber(args[2]), args[3], tonumber(args[4])
+    level, near, radius, res_id = tonumber(args[2]), args[3], tonumber(args[4]), args[5]
   else
-    near, radius = args[2], tonumber(args[3])
+    near, radius, res_id = args[2], tonumber(args[3]), args[4]
   end
   if not near then
-    print("usage: df-overseer-diggable find-stair [LEVEL] NEAR_LANDMARK [RADIUS_TILES]")
+    print("usage: df-overseer-diggable find-stair [LEVEL] NEAR_LANDMARK [RADIUS_TILES] [RES_ID]")
   else
-    local results, err = find_stair_down(level, near, radius)
+    local results, err = find_stair_down(level, near, radius, res_id)
     print(json.encode(err and {error = err} or results))
   end
 elseif cmd == "dig-stair" then
-  local level, near, rank, radius, dry_run
+  local level, near, rank, radius, dry_run, res_id, override
   if tonumber(args[2]) then
-    level, near, rank, radius, dry_run =
-      tonumber(args[2]), args[3], tonumber(args[4]), tonumber(args[5]), args[6]
+    level, near, rank, radius, dry_run, res_id, override =
+      tonumber(args[2]), args[3], tonumber(args[4]), tonumber(args[5]), args[6], args[7], args[8]
   else
-    near, rank, radius, dry_run = args[2], tonumber(args[3]), tonumber(args[4]), args[5]
+    near, rank, radius, dry_run, res_id, override =
+      args[2], tonumber(args[3]), tonumber(args[4]), args[5], args[6], args[7]
   end
   if not near then
     print("usage: df-overseer-diggable dig-stair [LEVEL] NEAR_LANDMARK"
-      .. " [RANK] [RADIUS_TILES] [DRY_RUN]")
+      .. " [RANK] [RADIUS_TILES] [DRY_RUN] [RES_ID] [OVERRIDE]")
   else
-    local result, err = dig_stair_down(level, near, rank, radius, dry_run)
+    local result, err = dig_stair_down(level, near, rank, radius, dry_run, res_id, override)
     print(json.encode(err and {error = err} or result))
   end
 else
-  print("usage: df-overseer-diggable find W H [LEVEL] NEAR_LANDMARK [RADIUS_TILES]")
+  print("usage: df-overseer-diggable find W H [LEVEL] NEAR_LANDMARK [RADIUS_TILES] [RES_ID]")
   print("usage: df-overseer-diggable dig W H [LEVEL] NEAR_LANDMARK"
-    .. " BLUEPRINT_FILE [RANK] [RADIUS_TILES]")
-  print("usage: df-overseer-diggable find-stair [LEVEL] NEAR_LANDMARK [RADIUS_TILES]")
+    .. " BLUEPRINT_FILE [RANK] [RADIUS_TILES] [RES_ID] [OVERRIDE]")
+  print("usage: df-overseer-diggable find-stair [LEVEL] NEAR_LANDMARK [RADIUS_TILES] [RES_ID]")
   print("usage: df-overseer-diggable dig-stair [LEVEL] NEAR_LANDMARK"
-    .. " [RANK] [RADIUS_TILES] [DRY_RUN]")
+    .. " [RANK] [RADIUS_TILES] [DRY_RUN] [RES_ID] [OVERRIDE]")
 end

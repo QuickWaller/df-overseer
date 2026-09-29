@@ -84,11 +84,14 @@ class World:
     def quickfort_calls(self):
         return _py(self.g["QUICKFORT_CALLS"]) or []
 
-    def mine_vein(self, zone_id, dry_run=None):
-        return _py(self.g["mine_vein"](zone_id, dry_run))
+    def mine_vein(self, zone_id, dry_run=None, res_id=None, override=None):
+        return _py(self.g["mine_vein"](zone_id, dry_run, res_id, override))
 
-    def build(self, zone_id, kind, dry_run=None):
-        return _py(self.g["build_construction"](zone_id, kind, dry_run))
+    def build(self, zone_id, kind, dry_run=None, res_id=None, override=None):
+        return _py(self.g["build_construction"](zone_id, kind, dry_run, res_id, override))
+
+    def overrides(self):
+        return _py(self.g["OVERRIDES"]) or []
 
 
 @pytest.fixture
@@ -369,3 +372,70 @@ def test_build_reports_a_material_report_without_gating_the_real_call(w):
     # No stock configured in this fake world at all -> reports that, and
     # still designates the building regardless (advisory only, see header).
     assert res["results"][0]["ok"] is True
+
+
+# ---------------------------------------------------------------------------
+# handoffs/2026-09-30-reservation-holding.md item 2/review: OVERRIDE is only
+# ever valid together with RES_ID -- both verbs refuse it up front, before
+# any zone/ring resolution runs, if OVERRIDE is given without RES_ID.
+# ---------------------------------------------------------------------------
+
+
+def test_mine_vein_rejects_override_without_res_id(w):
+    # No zone registered at all: if this reached zone resolution it would
+    # fail with a different error ("no zone"), so getting exactly the
+    # OVERRIDE/RES_ID message proves the guard runs first.
+    res = w.mine_vein(13, override="needed for X")
+    assert res == {"error": "OVERRIDE requires RES_ID"}
+
+
+def test_build_rejects_override_without_res_id(w):
+    res = w.build(13, "Wall", override="needed for X")
+    assert res == {"error": "OVERRIDE requires RES_ID"}
+
+
+def test_build_accepts_override_together_with_res_id_and_records_it_once_on_success(w):
+    w.add_zone(13)
+    w.set_kinds([{"type": "Construction", "subtype": "Wall", "token": "Wall", "key": "Cw"}])
+    w.set_ring(13, [(1, 1, 0)])
+    w.set_tile(1, 1, 0, "FLOOR")
+    w.set_reserved([{"x": 1, "y": 1, "z": 0, "handle": "res-1", "purpose": "planned corridor"}])
+    w.queue_quickfort("  Buildings designated: 1\n", res=0)
+
+    res = w.build(13, "Wall", dry_run="false", res_id="res-1", override="needed for X")
+    assert res != {"error": "OVERRIDE requires RES_ID"}
+    # the tile was held-then-let-through by the override, not refused, and
+    # actually got designated -- so the override is recorded exactly once.
+    assert len(res["held"]) == 0
+    assert res["results"][0]["ok"] is True
+    assert w.overrides() == [
+        {"handle": "res-1", "tool": "construction.build", "kind": "Wall", "reason": "needed for X"}
+    ]
+
+
+def test_build_does_not_record_an_override_never_actually_needed(w):
+    # RES_ID given, but nothing in this call is actually reserved at all --
+    # the override is never consumed, so it must never be recorded (handoff
+    # review, 2026-09-30: recording only when it was actually needed).
+    w.add_zone(13)
+    w.set_kinds([{"type": "Construction", "subtype": "Wall", "token": "Wall", "key": "Cw"}])
+    w.set_ring(13, [(1, 1, 0)])
+    w.set_tile(1, 1, 0, "FLOOR")
+    w.queue_quickfort("  Buildings designated: 1\n", res=0)
+
+    res = w.build(13, "Wall", dry_run="false", res_id="res-1", override="needed for X")
+    assert res["results"][0]["ok"] is True
+    assert w.overrides() == []
+
+
+def test_build_does_not_record_an_override_on_a_dry_run(w):
+    w.add_zone(13)
+    w.set_kinds([{"type": "Construction", "subtype": "Wall", "token": "Wall", "key": "Cw"}])
+    w.set_ring(13, [(1, 1, 0)])
+    w.set_tile(1, 1, 0, "FLOOR")
+    w.set_reserved([{"x": 1, "y": 1, "z": 0, "handle": "res-1", "purpose": "planned corridor"}])
+    w.queue_quickfort("  Buildings designated: 1\n", res=0)
+
+    res = w.build(13, "Wall", dry_run="true", res_id="res-1", override="needed for X")
+    assert res["dry_run"] is True
+    assert w.overrides() == [], "a dry run must never write to persistent reservation state"

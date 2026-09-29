@@ -103,7 +103,7 @@
 --     `quickfort run BLUEPRINT_FILE -c cx,cy,z` directly against it,
 --     without ever returning the resolved coordinate.
 --
--- Usage: ./dfhack-run df-overseer-landmarks <list|get NAME|build NAME BLUEPRINT_FILE>
+-- Usage: ./dfhack-run df-overseer-landmarks <list|get NAME|build NAME BLUEPRINT_FILE [RES_ID] [OVERRIDE]>
 
 local json = require('json')
 -- handoffs/2026-09-30-room-reservations.md decision 3/4: build_at_landmark
@@ -347,7 +347,15 @@ end
 -- (get_landmark_centroid's return value) lives only in this function's own
 -- local scope for the instant it takes to build quickfort's argument list,
 -- never assigned into, printed, or returned.
-function build_at_landmark(name, blueprint_file)
+-- RES_ID/OVERRIDE (handoffs/2026-09-30-reservation-holding.md item 2): no
+-- KIND concept here either -- checked against the fixed literal
+-- "landmark_build". Out of scope per that handoff: still only the anchor
+-- tile, not the blueprint's full footprint (see the header comment above on
+-- why this tool cannot check that).
+function build_at_landmark(name, blueprint_file, res_id, override)
+  if override ~= nil and res_id == nil then
+    return nil, "OVERRIDE requires RES_ID"
+  end
   local cx, cy, cz = get_landmark_centroid(name)
   if not cx then
     return nil, "landmark not found: " .. name
@@ -355,17 +363,24 @@ function build_at_landmark(name, blueprint_file)
 
   -- Anchor-tile-only check -- see header on why this tool cannot check a
   -- full footprint.
-  local conflict = reservations_mod.check_tiles({{x = cx, y = cy, z = cz}}, nil)
+  local tiles = {{x = cx, y = cy, z = cz}}
+  local needs_override = override ~= nil and reservations_mod.override_needed(tiles, res_id, "landmark_build")
+  local conflict = reservations_mod.check_tiles(tiles, nil, res_id, "landmark_build", override)
   if conflict then return nil, conflict.message end
 
   local ok_run, output, result = pcall(
     dfhack.run_command_silent, 'quickfort', 'run', blueprint_file, '-c',
     string.format('%d,%d,%d', cx, cy, cz))
 
+  local quickfort_ok = ok_run and result == CR_OK
+  if needs_override and quickfort_ok then
+    reservations_mod.record_override(res_id, "landmarks.build", "landmark_build", override)
+  end
+
   return {
     landmark = name,
     blueprint = blueprint_file,
-    quickfort_ok = ok_run and result == CR_OK,
+    quickfort_ok = quickfort_ok,
     quickfort_error = (not ok_run) and tostring(output) or nil,
     quickfort_stats = ok_run and parse_quickfort_stats(output) or nil,
   }
@@ -415,11 +430,11 @@ elseif cmd == "get" then
   end
 elseif cmd == "build" then
   if not (args[2] and args[3]) then
-    print("usage: df-overseer-landmarks build NAME BLUEPRINT_FILE")
+    print("usage: df-overseer-landmarks build NAME BLUEPRINT_FILE [RES_ID] [OVERRIDE]")
   else
-    local result, err = build_at_landmark(args[2], args[3])
+    local result, err = build_at_landmark(args[2], args[3], args[4], args[5])
     print(json.encode(err and {error = err} or result))
   end
 else
-  print("usage: df-overseer-landmarks <list|get NAME|build NAME BLUEPRINT_FILE>")
+  print("usage: df-overseer-landmarks <list|get NAME|build NAME BLUEPRINT_FILE [RES_ID] [OVERRIDE]>")
 end

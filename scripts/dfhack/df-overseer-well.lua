@@ -37,7 +37,7 @@
 -- exact install, v53.16: "at least 3/7 deep").
 --
 -- Usage: ./dfhack-run df-overseer-well find [LEVEL] NEAR_LANDMARK [RADIUS_TILES]
--- Usage: ./dfhack-run df-overseer-well build [LEVEL] NEAR_LANDMARK BLUEPRINT_FILE [RANK] [RADIUS_TILES] [DRY_RUN]
+-- Usage: ./dfhack-run df-overseer-well build [LEVEL] NEAR_LANDMARK BLUEPRINT_FILE [RANK] [RADIUS_TILES] [DRY_RUN] [RES_ID] [OVERRIDE]
 
 local json = require('json')
 local landmarks_mod = reqscript('df-overseer-landmarks')
@@ -311,7 +311,13 @@ end
 -- exactly what would be built, without calling quickfort. Only an explicit
 -- false performs the real mutation. UNTESTED live (mutation forbidden this
 -- session).
-function build_well(level, near, blueprint_file, rank, radius_tiles, dry_run)
+-- RES_ID/OVERRIDE (handoffs/2026-09-30-reservation-holding.md item 2): a
+-- well has no KIND argument either; checked against the fixed literal
+-- "well".
+function build_well(level, near, blueprint_file, rank, radius_tiles, dry_run, res_id, override)
+  if override ~= nil and res_id == nil then
+    return nil, "OVERRIDE requires RES_ID"
+  end
   rank = rank or 1
   local dry = truthy_dry_run(dry_run)
   local chosen, err, resolved_z = ranked_candidates(level, near, radius_tiles)
@@ -329,7 +335,9 @@ function build_well(level, near, blueprint_file, rank, radius_tiles, dry_run)
   local info = ok_near and near_info
   local req = requirements()
 
-  local conflict = reservations_mod.check_tiles({{x = c.x, y = c.y, z = z}}, nil)
+  local tiles = {{x = c.x, y = c.y, z = z}}
+  local needs_override = override ~= nil and reservations_mod.override_needed(tiles, res_id, "well")
+  local conflict = reservations_mod.check_tiles(tiles, nil, res_id, "well", override)
   if conflict then return nil, conflict.message end
 
   if dry then
@@ -354,6 +362,11 @@ function build_well(level, near, blueprint_file, rank, radius_tiles, dry_run)
     dfhack.run_command_silent, 'quickfort', 'run', blueprint_file, '-c',
     string.format('%d,%d,%d', c.x, c.y, z))
 
+  local quickfort_ok = ok_run and result == CR_OK
+  if needs_override and quickfort_ok then
+    reservations_mod.record_override(res_id, "well.build", "well", override)
+  end
+
   return {
     dry_run = false,
     rank = rank,
@@ -362,7 +375,7 @@ function build_well(level, near, blueprint_file, rank, radius_tiles, dry_run)
     distance_tiles = info and info.distance_tiles or nil,
     requirements = req,
     blueprint = blueprint_file,
-    quickfort_ok = ok_run and result == CR_OK,
+    quickfort_ok = quickfort_ok,
     quickfort_error = (not ok_run) and tostring(output) or nil,
     quickfort_stats = ok_run and parse_quickfort_stats(output) or nil,
   }
@@ -390,21 +403,21 @@ if cmd == "find" then
     print(json.encode(err and {error = err} or results))
   end
 elseif cmd == "build" then
-  local level, near, blueprint, rank, radius, dry_run
+  local level, near, blueprint, rank, radius, dry_run, res_id, override
   if tonumber(args[2]) then
-    level, near, blueprint, rank, radius, dry_run =
-      tonumber(args[2]), args[3], args[4], tonumber(args[5]), tonumber(args[6]), args[7]
+    level, near, blueprint, rank, radius, dry_run, res_id, override =
+      tonumber(args[2]), args[3], args[4], tonumber(args[5]), tonumber(args[6]), args[7], args[8], args[9]
   else
-    near, blueprint, rank, radius, dry_run =
-      args[2], args[3], tonumber(args[4]), tonumber(args[5]), args[6]
+    near, blueprint, rank, radius, dry_run, res_id, override =
+      args[2], args[3], tonumber(args[4]), tonumber(args[5]), args[6], args[7], args[8]
   end
   if not (near and blueprint) then
-    print("usage: df-overseer-well build [LEVEL] NEAR_LANDMARK BLUEPRINT_FILE [RANK] [RADIUS_TILES] [DRY_RUN]")
+    print("usage: df-overseer-well build [LEVEL] NEAR_LANDMARK BLUEPRINT_FILE [RANK] [RADIUS_TILES] [DRY_RUN] [RES_ID] [OVERRIDE]")
   else
-    local result, err = build_well(level, near, blueprint, rank, radius, dry_run)
+    local result, err = build_well(level, near, blueprint, rank, radius, dry_run, res_id, override)
     print(json.encode(err and {error = err} or result))
   end
 else
   print("usage: df-overseer-well find [LEVEL] NEAR_LANDMARK [RADIUS_TILES]")
-  print("usage: df-overseer-well build [LEVEL] NEAR_LANDMARK BLUEPRINT_FILE [RANK] [RADIUS_TILES] [DRY_RUN]")
+  print("usage: df-overseer-well build [LEVEL] NEAR_LANDMARK BLUEPRINT_FILE [RANK] [RADIUS_TILES] [DRY_RUN] [RES_ID] [OVERRIDE]")
 end
