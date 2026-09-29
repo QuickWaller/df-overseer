@@ -13,7 +13,9 @@ df = {
   tile_dig_designation = {No = 0, Default = 1},
   tiletype = {attrs = {}},
   job_type = enum({"Dig","DigChannel","SmoothWall","ConstructBuilding"}),
-  global = {world = {jobs = {list = {next = nil}}}},
+  -- cur_year: abs_tick() (df-overseer-reservations.lua) reads it with
+  -- ReadCurrentTick; tests move time with NOW (and YEAR where a year boundary matters).
+  global = setmetatable({world = {jobs = {list = {next = nil}}}}, {__index = function(_, k) if k == 'cur_year' then return YEAR or 0 end end}),
 }
 -- set_jobs({{job_type="Dig", x=, y=, z=}, ...}) rebuilds the linked list
 -- DFHack exposes at df.global.world.jobs.list.
@@ -52,9 +54,16 @@ dfhack = {
   },
   buildings = {findAtTile = function(pos) return TILES[key(pos.x, pos.y, pos.z)].occupied and {} or nil end},
   persistent = {
-    _s = nil,
-    getSiteData = function(k, default) if not dfhack.persistent._s then dfhack.persistent._s = default end return dfhack.persistent._s end,
-    saveSiteData = function(k, v) dfhack.persistent._s = v end,
+    -- Keyed by STATE_KEY (handoffs/2026-09-30-room-reservations.md: this
+    -- stub now also loads the real df-overseer-reservations.lua, which
+    -- persists under its OWN key, 'df-overseer-reservations_v1' -- a single
+    -- unkeyed slot would collide the two files' state).
+    _s = {},
+    getSiteData = function(k, default)
+      if dfhack.persistent._s[k] == nil then dfhack.persistent._s[k] = default end
+      return dfhack.persistent._s[k]
+    end,
+    saveSiteData = function(k, v) dfhack.persistent._s[k] = v end,
   },
   world = {ReadCurrentTick = function() return NOW or 1234 end},
   printerr = function(m) ERRS = (ERRS or "") .. m .. "\n" end,
@@ -86,8 +95,34 @@ function surface.finish(id) local b = find_zone(id); return {zone_id = b.id, h =
 function surface.boundary_material(id) local b = find_zone(id); return {zone_id = b.id, ring = 16} end
 SURFACE_ORIG = function() return find_zone end
 SURFACE = surface
+local RESERVATIONS_MOD = nil
 function reqscript(n)
   if n == "df-overseer-landmarks" then return landmarks end
   if n == "df-overseer-diggable" then return {find_diggable_area = function() return ranked_candidates() end} end
   if n == "df-overseer-surface" then return surface end
+  if n == "df-overseer-reservations" then
+    -- Loads the REAL df-overseer-reservations.lua (a dependency-free leaf:
+    -- it only reqscripts df-overseer-landmarks, already stubbed above, and
+    -- reads dfhack.persistent/dfhack.world.ReadCurrentTick, already stubbed
+    -- above too) -- see tests/test_blueprint_lua_logic.py's own comment on
+    -- why this is a real load, not a second parallel fake.
+    if not RESERVATIONS_MOD then
+      local f = io.open(RESERVATIONS_LUA_PATH, "r")
+      local src = f:read("*a")
+      f:close()
+      -- Real DFHack reqscript gives a loaded script its OWN environment
+      -- table (backed by the shared globals) and hands that table back as
+      -- the "module" -- that is what lets reservations.lua's own unqualified
+      -- `function get_raw(...)` etc. become `reservations_mod.get_raw`
+      -- instead of polluting this whole test's global table. Replicated
+      -- here with a plain __index-to-_G env table, since lupa's default
+      -- `load` (no env argument) would run the chunk against the shared
+      -- globals directly, same as this stub's own blueprint.lua load below.
+      local env = setmetatable({}, {__index = _G})
+      local chunk = assert(load(src, "reservations.lua", "t", env))
+      chunk()
+      RESERVATIONS_MOD = env
+    end
+    return RESERVATIONS_MOD
+  end
 end

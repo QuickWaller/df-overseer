@@ -50,7 +50,22 @@ TEMPLATE_CSV = REPO_ROOT / "blueprints" / "templates" / "bedroom-cell-v1.csv"
 READ_IDS = {"blueprint.plan", "blueprint.preview", "blueprint.sites", "blueprint.status"}
 APPLY_ID = "blueprint.apply"
 RELEASE_ID = "blueprint.release"
-ALL_IDS = READ_IDS | {APPLY_ID, RELEASE_ID}
+# handoffs/2026-09-30-room-reservations.md decisions 2 and 8: reserve verbs
+# added to this same file. `reservations` is a read, like the four above;
+# `reserve`/`unreserve` mutate like apply/release. Note on decision 8's
+# "dry runs ... also for the architect": dfmcp/roles.py rule 2 (see
+# test_architect_gets_the_reads_and_never_apply below, and its own docstring)
+# refuses granting ANY mutates-tagged tool to a non-sole-writer role, with no
+# carve-out for "but it defaults to a dry run" -- the exact reason the
+# Architect never holds blueprint.apply either, even though apply too
+# defaults to DRY_RUN true. So reserve/unreserve follow apply/release's own
+# precedent exactly: the Architect gets `reservations` (read) and never
+# `reserve`/`unreserve`, not a literal "dry-run grant" the role system has no
+# mechanism for.
+RESERVE_READ_ID = "blueprint.reservations"
+RESERVE_ID = "blueprint.reserve"
+UNRESERVE_ID = "blueprint.unreserve"
+ALL_IDS = READ_IDS | {APPLY_ID, RELEASE_ID} | {RESERVE_READ_ID, RESERVE_ID, UNRESERVE_ID}
 
 
 def _text():
@@ -121,11 +136,11 @@ def test_manifest_signatures_match_the_lua_usage_lines():
 
 def test_only_apply_mutates():
     reg = load_registry()
-    for tool_id in READ_IDS:
+    for tool_id in READ_IDS | {RESERVE_READ_ID}:
         tool = reg.get(tool_id)
         assert tool.effect == "read" and not tool.mutates, tool_id
         assert not tool.is_omniscient, tool_id
-    for mid in (APPLY_ID, RELEASE_ID):
+    for mid in (APPLY_ID, RELEASE_ID, RESERVE_ID, UNRESERVE_ID):
         tool = reg.get(mid)
         assert tool.effect == "mutate" and tool.mutates, mid
 
@@ -138,10 +153,10 @@ def test_no_tool_is_coordinate_bearing_in_the_open():
 
 def test_architect_gets_the_reads_and_never_apply():
     roster = _roster()
-    for tool_id in READ_IDS:
+    for tool_id in READ_IDS | {RESERVE_READ_ID}:
         allowed, reason = roster.check("architect", tool_id)
         assert allowed, f"architect should be granted {tool_id}: {reason}"
-    for mid in (APPLY_ID, RELEASE_ID):
+    for mid in (APPLY_ID, RELEASE_ID, RESERVE_ID, UNRESERVE_ID):
         allowed, _ = roster.check("architect", mid)
         assert not allowed, "the Architect stays propose-only; " + mid + " is the overseer's"
 

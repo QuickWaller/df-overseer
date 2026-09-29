@@ -330,6 +330,19 @@ read:
       the finish state of every cell asked to be smoothed, and the surface
       layer's enclosure, finish and material reads of the room. The read a
       proposal to extend or fix a room should start from.
+  - id: "blueprint.reservations"
+    status: planned
+    note: >-
+      Added handoffs/2026-09-30-room-reservations.md. Every open reservation
+      (handle, purpose, footprint size, nearest landmark, age, whether a
+      site-N has been carved from it): read this before proposing a room so a
+      proposal never targets ground another plan already holds. Never a
+      coordinate. `reserve`/`unreserve` themselves are NOT granted here even
+      though both default to a dry run -- same reason blueprint.apply is not
+      (dfmcp/roles.py rule 2 refuses any mutates-tagged grant to a
+      non-sole-writer role, with no carve-out for a tool that only defaults
+      to a dry run); the Architect proposes a reservation, it does not make
+      one. Offline build, not deployed.
 
 write:
   - id: "queue.propose"

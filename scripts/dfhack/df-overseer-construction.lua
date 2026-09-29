@@ -91,6 +91,10 @@
 local json = require('json')
 local surface_mod = reqscript('df-overseer-surface')
 local building_mod = reqscript('df-overseer-building')
+-- handoffs/2026-09-30-room-reservations.md decision 3: mine-vein and build
+-- both hold (not refuse) a ring tile inside a reservation neither holds --
+-- see apply_reservation_guard below, next to the other two guards.
+local reservations_mod = reqscript('df-overseer-reservations')
 
 local NULL = "\0"
 local function nn(v) if v == nil then return NULL end return v end
@@ -228,6 +232,31 @@ local function apply_single_cell(mode, cell, x, y, z, dry, label, tag)
   }
 end
 
+-- ---- reservation (handoffs/2026-09-30-room-reservations.md decision 3) ---
+--
+-- Every designating tool refuses a tile inside a reservation it does not
+-- hold. This tool already has a `held` bucket (mine-vein below, and the two
+-- guards further down for build), so a reservation conflict holds just the
+-- affected ring tile(s) rather than refusing the whole call -- matching
+-- item_present/keeps_access's own "held is not refused" shape. No
+-- holding-handle concept here (decision 4): always checked with no holder.
+-- Defined here, before mine_vein, so mine_vein's own lexical scope (a Lua
+-- `local function` is only visible from its definition point onward) can
+-- see it -- item_present/keeps_access are defined right before their own
+-- caller (build_construction) for the identical reason.
+local function apply_reservation_guard(candidates)
+  local held, kept = {}, {}
+  for _, c in ipairs(candidates) do
+    local conflict = reservations_mod.check_tiles({{x = c.x, y = c.y, z = c.z}}, nil)
+    if conflict then
+      held[#held + 1] = {ring_position = c.ring_position, reason = conflict.message}
+    else
+      kept[#kept + 1] = c
+    end
+  end
+  return held, kept
+end
+
 -- ---------------------------------------------------------------------------
 -- mine-vein ZONE_ID [DRY_RUN]
 -- ---------------------------------------------------------------------------
@@ -269,8 +298,18 @@ function mine_vein(zone_id, dry_run)
     -- confidently NOT a candidate, not an unclassifiable one.
   end
 
+  -- Reservation guard (handoffs/2026-09-30-room-reservations.md decision 3),
+  -- run before digging any candidate: this tool already reports a `held`
+  -- bucket separate from `refused`, so a reservation conflict holds just
+  -- that ring tile rather than refusing the whole call.
+  local reservation_held, kept_candidates = apply_reservation_guard(candidates)
+  local held = {}
+  for _, h in ipairs(reservation_held) do
+    held[#held + 1] = string.format("ring tile %d: held (reservation) -- %s", h.ring_position, h.reason)
+  end
+
   local results = {}
-  for _, c in ipairs(candidates) do
+  for _, c in ipairs(kept_candidates) do
     local r = apply_single_cell('dig', 'd', c.x, c.y, c.z, dry, 'Tiles designated for digging', 'mine')
     results[#results + 1] = {
       ring_position = c.ring_position,
@@ -289,6 +328,7 @@ function mine_vein(zone_id, dry_run)
     ore_tiles_found = #candidates,
     already_open = already_open,
     refused = refused,
+    held = held,
     dry_run = dry,
     results = results,
   }
@@ -734,10 +774,14 @@ function build_construction(zone_id, kind_name, dry_run)
   -- read live world state regardless of `dry`, so a dry run and a real run
   -- report holds identically -- a hold is not a run-level failure (`ok`
   -- stays true below, `results` simply omits the held targets).
-  local item_held, after_item_present = apply_item_present_guard(candidates)
+  local reservation_held, after_reservation = apply_reservation_guard(candidates)
+  local item_held, after_item_present = apply_item_present_guard(after_reservation)
   local access_held, final_candidates = apply_keeps_access_guard(hooks, after_item_present)
 
   local held_records = {}
+  for _, h in ipairs(reservation_held) do
+    held_records[#held_records + 1] = {ring_position = h.ring_position, guard = "reservation", reason = h.reason}
+  end
   for _, h in ipairs(item_held) do
     held_records[#held_records + 1] = {ring_position = h.ring_position, guard = "item_present", reason = h.reason}
   end

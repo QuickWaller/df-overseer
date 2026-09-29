@@ -459,6 +459,15 @@ _ARG_DESCRIPTIONS: Dict[str, str] = {
         "would do and writes nothing; only the word false performs the real "
         "apply. Give it before LEVEL, RANK and RADIUS_TILES."
     ),
+    "blueprint.PURPOSE": (
+        "A short free-text note on what this reservation is for (e.g. "
+        "'planned bedroom row 3'), reported back by reservations. Not "
+        "validated against any vocabulary, but never a coordinate."
+    ),
+    "blueprint.RES_ID": (
+        "A reservation handle such as res-3, as blueprint.reservations lists "
+        "it. Never a coordinate."
+    ),
     "workshop.KIND": (
         "Which workshop: still, kitchen, mason, mechanic or carpenter."
     ),

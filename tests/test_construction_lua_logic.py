@@ -74,6 +74,10 @@ class World:
             id_, item_type, x, y, z, opts
         )
 
+    def set_reserved(self, reservations):
+        arr = self.lua.table_from([self.lua.table_from(r) for r in reservations])
+        self.lua.eval("function(r) return set_reserved(r) end")(arr)
+
     def queue_quickfort(self, output, res=0):
         self.lua.eval("function(o, r) return queue_quickfort(o, r) end")(output, res)
 
@@ -309,6 +313,46 @@ def test_build_holds_rather_than_guess_when_an_ore_neighbour_is_unreadable(w):
     assert len(res["held"]) == 1
     assert "keeps_access" in res["held"][0]
     assert "could not confirm" in res["held"][0]
+    assert len(w.quickfort_calls()) == 0
+
+
+# ---------------------------------------------------------------------------
+# reservation guard (handoffs/2026-09-30-room-reservations.md decision 3)
+# ---------------------------------------------------------------------------
+
+
+def test_mine_vein_holds_a_reserved_ring_tile_rather_than_refusing_the_call(w):
+    w.add_zone(13)
+    w.set_ring(13, [(1, 1, 0), (2, 1, 0)])
+    w.set_tile(1, 1, 0, "WALL")
+    w.set_vein(1, 1, 0, "ore_or_gem", "HEMATITE")
+    w.set_tile(2, 1, 0, "WALL")
+    w.set_vein(2, 1, 0, "ore_or_gem", "HEMATITE")
+    w.set_reserved([{"x": 1, "y": 1, "z": 0, "handle": "res-1", "purpose": "planned bedroom"}])
+    w.queue_quickfort("  Tiles designated for digging: 1\n", res=0)
+
+    res = w.mine_vein(13, "true")
+    assert res["ore_tiles_found"] == 2
+    assert len(res["held"]) == 1
+    assert "res-1" in res["held"][0]
+    assert "reservation" in res["held"][0]
+    assert len(res["results"]) == 1  # only the unreserved tile designated
+    calls = w.quickfort_calls()
+    assert len(calls) == 1
+
+
+def test_build_holds_a_reserved_target_before_the_other_guards_run(w):
+    w.add_zone(13)
+    w.set_kinds([{"type": "Construction", "subtype": "Wall", "token": "Wall", "key": "Cw"}])
+    w.set_ring(13, [(1, 1, 0)])
+    w.set_tile(1, 1, 0, "FLOOR")
+    w.set_reserved([{"x": 1, "y": 1, "z": 0, "handle": "res-7", "purpose": "planned corridor"}])
+
+    res = w.build(13, "Wall")
+    assert len(res["results"]) == 0
+    assert len(res["held"]) == 1
+    assert "reservation" in res["held"][0]
+    assert "res-7" in res["held"][0]
     assert len(w.quickfort_calls()) == 0
 
 

@@ -154,6 +154,9 @@
 local json = require('json')
 local landmarks_mod = reqscript('df-overseer-landmarks')
 local stocks_mod = reqscript('df-overseer-stocks')
+-- handoffs/2026-09-30-room-reservations.md decision 3/4: no holding concept
+-- for this tool -- refuses a tile inside a reservation it does not hold.
+local reservations_mod = reqscript('df-overseer-reservations')
 
 local MAX_RADIUS = 60
 local DEFAULT_RADIUS = 30
@@ -1168,6 +1171,13 @@ function build_kind(kind_name, w, h, level, near, rank, radius_tiles, dry_run, m
     return result
   end
   result.blueprint.file = filename
+
+  local conflict = reservations_mod.check_tiles(
+    reservations_mod.rect_tiles(c.x, c.y, z, dw, dh), nil)
+  if conflict then
+    pcall(os.remove, "dfhack-config/blueprints/" .. filename)
+    return nil, conflict.message
+  end
 
   local coord = string.format('%d,%d,%d', c.x, c.y, z)
   if dry then

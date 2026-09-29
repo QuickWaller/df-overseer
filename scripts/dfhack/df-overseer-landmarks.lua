@@ -106,6 +106,14 @@
 -- Usage: ./dfhack-run df-overseer-landmarks <list|get NAME|build NAME BLUEPRINT_FILE>
 
 local json = require('json')
+-- handoffs/2026-09-30-room-reservations.md decision 3/4: build_at_landmark
+-- designates a blueprint on map tiles, so it too must refuse a reservation
+-- it does not hold. This tool takes no W/H (see build_at_landmark's own
+-- header) and never parses the blueprint file to learn its footprint, so
+-- unlike the other designating tools, it can only cheaply check its own
+-- anchor tile, not the full (unknown-sized) footprint the blueprint will
+-- actually cover -- a real, named limitation, not silently skipped.
+local reservations_mod = reqscript('df-overseer-reservations')
 local textutil = reqscript('df-overseer-textutil')
 local reachability = reqscript('df-overseer-reachability')
 
@@ -344,6 +352,11 @@ function build_at_landmark(name, blueprint_file)
   if not cx then
     return nil, "landmark not found: " .. name
   end
+
+  -- Anchor-tile-only check -- see header on why this tool cannot check a
+  -- full footprint.
+  local conflict = reservations_mod.check_tiles({{x = cx, y = cy, z = cz}}, nil)
+  if conflict then return nil, conflict.message end
 
   local ok_run, output, result = pcall(
     dfhack.run_command_silent, 'quickfort', 'run', blueprint_file, '-c',

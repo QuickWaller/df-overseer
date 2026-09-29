@@ -355,6 +355,12 @@ read:
     note: >-
       Same handoff. Is a carved room done and finished, with the surface
       layer's enclosure, finish and material reads of it.
+  - id: "blueprint.reservations"
+    status: planned
+    note: >-
+      Added handoffs/2026-09-30-room-reservations.md. Every open reservation:
+      handle, purpose, footprint size, nearest landmark, age in ticks, and
+      whether a site-N has been carved from it. Never a coordinate.
 
 write:
   - id: "openarea.build"
@@ -580,6 +586,27 @@ write:
       quickfort undo; refuses a site that is not stalled. Mutating, so the
       overseer only (dfmcp/roles.py rule 2). DRY_RUN defaults to true. Never
       run live.
+
+  - id: "blueprint.reserve"
+    status: planned
+    note: >-
+      Added handoffs/2026-09-30-room-reservations.md. Holds a specific
+      planned room's footprint (never a district or region -- that is the
+      still-owed zoning design session, memory/zoning-design-session-owed.md)
+      so no designating tool can take it out from under a plan. Resolves the
+      footprint the same way apply resolves a new dig site, with the same
+      access gate, and refuses any overlap with an existing reservation or
+      carved site unless every overlapping tile is wall on both sides (a
+      shared wall between tiled rooms). DRY_RUN defaults to true. Mutating,
+      overseer only. Offline build, lupa-tested against a fake world only;
+      never run live.
+  - id: "blueprint.unreserve"
+    status: planned
+    note: >-
+      Same handoff. Releases a reservation outright; no automatic expiry, so
+      this is the only way one ends. A shared wall tile stays held by any
+      other reservation still covering it. DRY_RUN defaults to true.
+      Mutating, overseer only. Offline build, never run live.
 
   - id: "construction.mine-vein"
     status: planned

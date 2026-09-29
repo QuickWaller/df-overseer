@@ -118,6 +118,9 @@
 
 local json = require('json')
 local landmarks_mod = reqscript('df-overseer-landmarks')
+-- handoffs/2026-09-30-room-reservations.md decision 3/4: no holding concept
+-- for this tool -- refuses a tile inside a reservation it does not hold.
+local reservations_mod = reqscript('df-overseer-reservations')
 local openarea_mod = reqscript('df-overseer-openarea')
 -- Read-only use of df-overseer-stocks.lua's get_seeds() (fort-owned seed
 -- ids), for the kitchen seed_protection check below -- reqscript reads
@@ -491,6 +494,10 @@ function build_workshop(w, h, level, near, kind, blueprint_file, rank, radius_ti
   local ok_near, near_info = pcall(landmarks_mod.nearest_landmark, cx, cy, z)
   local info = ok_near and near_info
   local req = requirements_for(kind_info)
+
+  local conflict = reservations_mod.check_tiles(
+    reservations_mod.rect_tiles(c.x, c.y, z, w, h), nil)
+  if conflict then return nil, conflict.message end
 
   if dry then
     return {

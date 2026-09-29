@@ -41,6 +41,9 @@
 
 local json = require('json')
 local landmarks_mod = reqscript('df-overseer-landmarks')
+-- handoffs/2026-09-30-room-reservations.md decision 3/4: no holding concept
+-- for this tool -- refuses a tile inside a reservation it does not hold.
+local reservations_mod = reqscript('df-overseer-reservations')
 
 local MAX_RADIUS = 60
 local DEFAULT_RADIUS = 30
@@ -325,6 +328,9 @@ function build_well(level, near, blueprint_file, rank, radius_tiles, dry_run)
   local ok_near, near_info = pcall(landmarks_mod.nearest_landmark, c.x, c.y, z)
   local info = ok_near and near_info
   local req = requirements()
+
+  local conflict = reservations_mod.check_tiles({{x = c.x, y = c.y, z = z}}, nil)
+  if conflict then return nil, conflict.message end
 
   if dry then
     return {

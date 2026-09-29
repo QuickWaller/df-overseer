@@ -131,6 +131,11 @@
 
 local json = require('json')
 local landmarks_mod = reqscript('df-overseer-landmarks')
+-- handoffs/2026-09-30-room-reservations.md decision 3: build refuses a tile
+-- inside a reservation it does not hold (decision 4: no holding concept for
+-- this tool). set-crop is exempt -- it only ever writes to an ALREADY-built
+-- plot's own plant_id field, it never designates a map tile.
+local reservations_mod = reqscript('df-overseer-reservations')
 local textutil = reqscript('df-overseer-textutil')
 local stocks_mod = reqscript('df-overseer-stocks')
 
@@ -496,6 +501,10 @@ function build_farm_plot(w, h, level, near, blueprint_file, rank, radius_tiles, 
   local cy = c.y + math.floor((h - 1) / 2)
   local ok_near, near_info = pcall(landmarks_mod.nearest_landmark, cx, cy, z)
   local info = ok_near and near_info
+
+  local conflict = reservations_mod.check_tiles(
+    reservations_mod.rect_tiles(c.x, c.y, z, w, h), nil)
+  if conflict then return nil, conflict.message end
 
   if dry then
     return {

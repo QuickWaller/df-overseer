@@ -127,6 +127,11 @@
 
 local json = require('json')
 local landmarks_mod = reqscript('df-overseer-landmarks')
+-- handoffs/2026-09-30-room-reservations.md decision 3: every tool that
+-- designates a build on map tiles refuses a tile inside a reservation it
+-- does not hold. This tool has no holding-handle concept (decision 4: "other
+-- tools ... simply refuse"), so it always calls check_tiles with no holder.
+local reservations_mod = reqscript('df-overseer-reservations')
 
 local MAX_RADIUS = 60
 local DEFAULT_RADIUS = 30
@@ -334,6 +339,10 @@ function build_open_area(w, h, level, near, blueprint_file, rank, radius_tiles)
   local ok_near, near_info = pcall(landmarks_mod.nearest_landmark, cx, cy, z)
   local ok_group, group = pcall(dfhack.maps.getWalkableGroup, xyz2pos(cx, cy, z))
   local info = ok_near and near_info
+
+  local conflict = reservations_mod.check_tiles(
+    reservations_mod.rect_tiles(c.x, c.y, z, w, h), nil)
+  if conflict then return nil, conflict.message end
 
   -- The one place a real coordinate exists in this file: assembled
   -- directly into quickfort's own argument list, never stored anywhere

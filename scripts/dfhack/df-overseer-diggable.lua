@@ -287,6 +287,10 @@
 
 local json = require('json')
 local landmarks_mod = reqscript('df-overseer-landmarks')
+-- handoffs/2026-09-30-room-reservations.md decision 3: dig/dig-stair refuse
+-- a tile inside a reservation they do not hold (decision 4: no holding
+-- concept for this tool -- "other tools ... simply refuse").
+local reservations_mod = reqscript('df-overseer-reservations')
 
 local MAX_RADIUS = 60
 local DEFAULT_RADIUS = 30
@@ -624,6 +628,10 @@ function dig_diggable_area(w, h, level, near, blueprint_file, rank, radius_tiles
     return c.material and df.tiletype_material[c.material] or nil
   end)
 
+  local conflict = reservations_mod.check_tiles(
+    reservations_mod.rect_tiles(c.x, c.y, z, w, h), nil)
+  if conflict then return nil, conflict.message end
+
   -- The one place a real coordinate exists in this file: assembled
   -- directly into quickfort's own argument list, never stored anywhere
   -- else and never returned.
@@ -829,6 +837,13 @@ function dig_stair_down(level, near, rank, radius_tiles, dry_run)
   local c = chosen[rank]
   local described = describe_stair_candidate(c, upper_z)
   described.rank = rank
+
+  -- Both halves of the pair, checked together before either is designated
+  -- (handoffs/2026-09-30-room-reservations.md decision 3) -- no holding
+  -- concept for this tool (decision 4).
+  local conflict = reservations_mod.check_tiles(
+    {{x = c.x, y = c.y, z = upper_z}, {x = c.x, y = c.y, z = lower_z}}, nil)
+  if conflict then return nil, conflict.message end
 
   if dry then
     described.dry_run = true

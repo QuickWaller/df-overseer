@@ -39,7 +39,9 @@ def _py(v):
     if isinstance(v, (int, float, str, bool)) or v is None:
         return v
     keys = list(v.keys())
-    if keys and all(isinstance(k, int) for k in keys) and keys == list(range(1, len(keys) + 1)):
+    if not keys:
+        return []  # an empty Lua table is always treated as an empty list here
+    if all(isinstance(k, int) for k in keys) and keys == list(range(1, len(keys) + 1)):
         return [_py(v[k]) for k in keys]
     return {str(k): _py(v[k]) for k in keys}
 
@@ -52,6 +54,13 @@ class World:
         self._old = os.getcwd()
         os.chdir(guest)
         self.lua = lupa.LuaRuntime(unpack_returned_tuples=True)
+        # handoffs/2026-09-30-room-reservations.md: the stub loads the REAL
+        # df-overseer-reservations.lua (a dependency-free leaf, see that
+        # file's own header) rather than a second, parallel fake -- this
+        # proves the two files' real integration, not just blueprint.lua's
+        # own assumptions about what reservations_mod does.
+        self.lua.execute("RESERVATIONS_LUA_PATH = %r" % str(
+            REPO_ROOT / "scripts" / "dfhack" / "df-overseer-reservations.lua"))
         self.lua.execute(STUB.read_text(encoding="utf-8"))
         load = self.lua.eval("function(src) return load(src, 'blueprint.lua') end")
         chunk = load(LUA.read_text(encoding="utf-8"))
@@ -90,7 +99,10 @@ class World:
         self.lua.execute("QF_OUTPUT = %r" % text)
 
     def calls(self):
-        return [self.lua.eval("CALLS")[i] for i in range(1, len(self.lua.eval("CALLS")) + 1)]
+        c = self.lua.eval("CALLS")
+        if c is None:
+            return []
+        return [c[i] for i in range(1, len(c) + 1)]
 
     def carve_and_smooth(self):
         self.lua.execute(
@@ -563,3 +575,113 @@ def test_a_fully_smoothed_shell_is_done_and_counts_add_up(world):
     assert st["shell_done"] is True
     c = st["shell_cells"]
     assert c["smooth_done"] == 15 and c["rough"] == 0 and c["undesignated"] == 0
+
+
+# ---------------------------------------------------------------------------
+# reserve / reservations / unreserve (handoffs/2026-09-30-room-reservations.md)
+# ---------------------------------------------------------------------------
+
+
+def _no_coordinate_keys(obj):
+    if isinstance(obj, dict):
+        for k, v in obj.items():
+            assert k not in ("x", "y", "z", "pos"), f"coordinate key leaked: {k}"
+            _no_coordinate_keys(v)
+    elif isinstance(obj, list):
+        for v in obj:
+            _no_coordinate_keys(v)
+
+
+def test_reserve_returns_a_handle_footprint_and_landmark_never_a_coordinate(world):
+    world.stone_block(10, 10)
+    r, err = world.call("reserve_site", BP, "planned bedroom row 3", "Well", "false")
+    assert err is None, err
+    assert r["handle"] == "res-1"
+    assert r["footprint"] == {"width": 5, "height": 5}
+    assert r["near_landmark"] == "Well"
+    assert r["purpose"] == "planned bedroom row 3"
+    assert r["dry_run"] is False
+    _no_coordinate_keys(r)
+
+
+def test_reserve_defaults_to_a_dry_run_and_reserves_nothing(world):
+    world.stone_block(10, 10)
+    r, _ = world.call("reserve_site", BP, "planned bedroom", "Well")
+    assert r["dry_run"] is True and r.get("would_reserve") is True
+    assert "handle" not in r
+    listing, _ = world.call("list_reservations")
+    assert listing == []
+
+
+def test_reservation_blocks_an_unrelated_apply_naming_the_handle(world):
+    world.stone_block(10, 10)
+    world.call("reserve_site", BP, "planned bedroom row 3", "Well", "false")
+    n_calls = len(world.calls())
+    r, err = world.call("apply_phase", BP, SHELL, "Well", "false")
+    assert err is None
+    assert r["blocked"] is True and r["ok"] is False
+    assert "res-1" in r["blocked_reason"]
+    assert "planned bedroom row 3" in r["blocked_reason"]
+    assert r["reservation_conflict"]["handle"] == "res-1"
+    assert len(world.calls()) == n_calls, "quickfort must not run when a reservation refuses the site"
+    _no_coordinate_keys(r)
+
+
+def test_apply_with_the_reservation_handle_succeeds_as_its_holder(world):
+    world.stone_block(10, 10)
+    world.call("reserve_site", BP, "planned bedroom row 3", "Well", "false")
+    world.qf_output(DIG_OK)
+    r, err = world.call("apply_phase", BP, SHELL, "res-1", "false")
+    assert err is None, err
+    assert r["ok"] is True
+    assert r["site"]["handle"] == "site-1"
+    assert r["site"]["reservation"] == "res-1"
+    listing, _ = world.call("list_reservations")
+    assert listing[0]["handle"] == "res-1"
+    assert listing[0]["in_use"] is True
+    assert listing[0]["site_handle"] == "site-1"
+
+
+def test_apply_refuses_a_reservation_for_a_different_template(world, tmp_path):
+    world.stone_block(10, 10)
+    world.call("reserve_site", BP, "planned bedroom row 3", "Well", "false")
+    # A second, differently-named template (same shell shape) so this test
+    # exercises the actual blueprint-mismatch refusal, not a missing-file error.
+    other_dir = Path("dfhack-config") / "blueprints" / "templates"
+    shutil.copy(TEMPLATE, other_dir / "other-template.csv")
+    r, err = world.call("apply_phase", "other-template", SHELL, "res-1", "false")
+    assert r is None
+    assert "reserved for" in err
+
+
+def test_reserve_refuses_overlap_with_an_already_carved_site(world):
+    world.stone_block(10, 10)
+    world.qf_output(DIG_OK)
+    world.call("apply_phase", BP, SHELL, "Well", "false")  # carves site-1 at rank 1
+    r, err = world.call("reserve_site", BP, "second plan", "Well", "false")
+    assert err is None
+    assert r.get("refused") is True
+    handles = {c["handle"] for c in r["conflicts"]}
+    assert "site-1" in handles
+    listing, _ = world.call("list_reservations")
+    assert listing == [], "a refused reserve never stores anything"
+
+
+def test_unreserve_releases_and_reservations_lists_none_left(world):
+    world.stone_block(10, 10)
+    world.call("reserve_site", BP, "planned bedroom row 3", "Well", "false")
+    r, err = world.call("unreserve_site", "res-1", "false")
+    assert err is None
+    assert r["released"] is True
+    assert r["still_held_by"] == []
+    listing, _ = world.call("list_reservations")
+    assert listing == []
+
+
+def test_unreserve_defaults_to_a_dry_run(world):
+    world.stone_block(10, 10)
+    world.call("reserve_site", BP, "planned bedroom row 3", "Well", "false")
+    r, _ = world.call("unreserve_site", "res-1")
+    assert r["dry_run"] is True and r["would_release"] is True
+    listing, _ = world.call("list_reservations")
+    assert len(listing) == 1

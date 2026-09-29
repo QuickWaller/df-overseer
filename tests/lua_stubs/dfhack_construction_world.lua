@@ -152,9 +152,39 @@ local FAKE_BUILDING = {
   list_kinds = function(_) return KINDS end,
 }
 
+-- Fake df-overseer-reservations.lua (handoffs/2026-09-30-room-reservations.md):
+-- RESERVED is a list of {x=, y=, z=, handle=, purpose=} the test sets via
+-- set_reserved(); check_tiles reports the first match not equal to
+-- `holding`, in the real module's own coordinate-free shape.
+RESERVED = {}
+function set_reserved(list) RESERVED = list end
+local FAKE_RESERVATIONS = {
+  check_tiles = function(tiles, holding)
+    for _, t in ipairs(tiles) do
+      for _, r in ipairs(RESERVED) do
+        if r.handle ~= holding and r.x == t.x and r.y == t.y and r.z == t.z then
+          return {
+            handle = r.handle, purpose = r.purpose,
+            near_landmark = r.near_landmark or "Well", direction = r.direction or "N",
+            distance_tiles = r.distance_tiles or 1,
+            message = "tile(s) here are reserved as " .. r.handle .. " (" .. tostring(r.purpose) .. ")",
+          }
+        end
+      end
+    end
+    return nil
+  end,
+  rect_tiles = function(x, y, z, w, h)
+    local out = {}
+    for dx = 0, w - 1 do for dy = 0, h - 1 do out[#out + 1] = {x = x + dx, y = y + dy, z = z} end end
+    return out
+  end,
+}
+
 package.loaded = package.loaded or {}
 package.loaded['df-overseer-surface'] = FAKE_SURFACE
 package.loaded['df-overseer-building'] = FAKE_BUILDING
+package.loaded['df-overseer-reservations'] = FAKE_RESERVATIONS
 package.loaded['json'] = {encode = function(v) return "json" end}
 
 function reqscript(name) return package.loaded[name] or {} end

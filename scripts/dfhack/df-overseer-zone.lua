@@ -187,6 +187,11 @@
 
 local json = require('json')
 local landmarks_mod = reqscript('df-overseer-landmarks')
+-- handoffs/2026-09-30-room-reservations.md decision 3/4: place refuses a
+-- tile inside a reservation it does not hold (no holding concept for this
+-- tool). assign-owner/clear-owner are exempt -- neither designates a map
+-- tile, both only change an already-placed zone's owner link.
+local reservations_mod = reqscript('df-overseer-reservations')
 
 local MAX_RADIUS = 60
 local DEFAULT_RADIUS = 30
@@ -683,6 +688,11 @@ local function place_water(k, level, near, rank, radius_tiles, dry)
   local base = water_info(k.label, k.token, c, z, nil)
   base.dry_run = dry
   base.rank = rank
+
+  local water_tiles = {}
+  for _, t in ipairs(c.tiles) do water_tiles[#water_tiles + 1] = {x = t[1], y = t[2], z = z} end
+  local water_conflict = reservations_mod.check_tiles(water_tiles, nil)
+  if water_conflict then return nil, water_conflict.message end
 
   if dry then
     base.would_zone_tiles = #c.tiles
@@ -1613,6 +1623,13 @@ function place_zone(kind_name, w, h, level, near, rank, radius_tiles, dry_run, o
     return result
   end
   result.blueprint.file = filename
+
+  local zone_conflict = reservations_mod.check_tiles(
+    reservations_mod.rect_tiles(c.x, c.y, z, dw, dh), nil)
+  if zone_conflict then
+    pcall(os.remove, "dfhack-config/blueprints/" .. filename)
+    return nil, zone_conflict.message
+  end
 
   local coord = string.format('%d,%d,%d', c.x, c.y, z)
   if dry then

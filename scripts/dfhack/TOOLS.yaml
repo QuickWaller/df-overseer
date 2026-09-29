@@ -2438,6 +2438,54 @@ df-overseer-blueprint.lua:
         non-dig phase. DRY_RUN defaults to true. On a real run that leaves no
         designation, the site handle is forgotten. Granted to the overseer
         only.
+    "reserve TEMPLATE PURPOSE SITE [DRY_RUN] [LEVEL] [RANK] [RADIUS_TILES]":
+      lua_function: reserve_site
+      effect: mutate
+      coordinate_bearing: internal-only
+      live_deployed: false
+      verified: "unverified (offline build, 2026-09-30, lupa-tested against a fake world only). Never run live."
+      knowledge_scope: player_derivable
+      notes: >
+        handoffs/2026-09-30-room-reservations.md. Holds a specific planned
+        room's footprint so no other designating tool can take it: not a
+        district or a region (that is the still-owed zoning design session,
+        memory/zoning-design-session-owed.md). Resolves TEMPLATE's whole
+        footprint the identical way a new dig phase would (same orientation
+        search, same access gate as apply/preview), classifies its cells wall
+        vs carve, and refuses on any overlap with an existing reservation or
+        an already-carved site UNLESS every overlapping tile is marked wall
+        on both sides (a shared wall between adjacent tiled rooms, matching a
+        template's own declared seam edges) -- any carve/interior overlap is
+        refused, naming the conflict. DRY_RUN defaults to true. Never a tile
+        position in the result, only a footprint size and nearest landmark.
+        Granted to overseer for a real reserve; architect and overseer may
+        dry-run.
+    reservations:
+      lua_function: list_reservations
+      effect: read
+      coordinate_bearing: false
+      live_deployed: false
+      verified: "unverified (offline build, 2026-09-30)"
+      knowledge_scope: player_derivable
+      notes: >
+        Same handoff. Every open reservation: handle, purpose, footprint
+        size, nearest landmark, age in ticks, and whether a site-N has been
+        carved from it (`in_use`). No automatic expiry -- a stale-looking
+        reservation is the overseer's call, not this tool's. Never a
+        coordinate.
+    "unreserve RES_ID [DRY_RUN]":
+      lua_function: unreserve_site
+      effect: mutate
+      coordinate_bearing: internal-only
+      live_deployed: false
+      verified: "unverified (offline build, 2026-09-30). Never run live."
+      knowledge_scope: player_derivable
+      notes: >
+        Same handoff. Releases a reservation outright, whether or not a site
+        was ever carved from it -- there is no other way to end one. A shared
+        wall tile stays held by any OTHER reservation still covering it
+        (`still_held_by`); nothing else is freed or undone. DRY_RUN defaults
+        to true. Granted to the overseer only.
 
 df-overseer-clock.lua:
   build_order_item: "agent loop MVP items 1-2 (docs/AGENT-LOOP.md); handoffs/2026-09-22-loop-clock-conductor-role.md"

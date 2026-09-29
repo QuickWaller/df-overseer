@@ -121,6 +121,15 @@ local json = require('json')
 local landmarks_mod = reqscript('df-overseer-landmarks')
 local diggable_mod = reqscript('df-overseer-diggable')
 local surface_mod = reqscript('df-overseer-surface')
+-- handoffs/2026-09-30-room-reservations.md, decision 2: reserve/
+-- reservations/unreserve live here (this file already has the site
+-- resolution and cell classification the ledger needs), backed by a small
+-- dependency-free module that owns persistent storage and the overlap math.
+-- One-directional only: THIS file reqscripts df-overseer-reservations.lua;
+-- that file never reqscripts this one back (df-overseer-reservations.lua's
+-- own header explains why -- a cycle here would depend on load order to
+-- avoid a nil function).
+local reservations_mod = reqscript('df-overseer-reservations')
 
 local NULL = "\0"
 local function encode(v) return json.encode(v, {null = NULL}) end
@@ -361,8 +370,14 @@ local function leaf_sections(sections, sec, out, depth, path)
   return out
 end
 
--- Everything the rest of the file needs to know about a blueprint.
-local function load_blueprint(name)
+-- Everything the rest of the file needs to know about a blueprint. Promoted
+-- from `local` (handoffs/2026-09-30-room-reservations.md) so
+-- df-overseer-reservations.lua's caller here (reserve_site, below) and this
+-- file's own tests can call it; still never reqscript'd BY
+-- df-overseer-reservations.lua itself -- that file stays a dependency-free
+-- leaf so this file can depend on it without a reqscript cycle (see that
+-- file's own header).
+function load_blueprint(name)
   local qname, text = locate_blueprint(name)
   if not qname then return nil, text end
   local sections = parse_sections(text)
@@ -403,6 +418,71 @@ end
 
 local function is_handle(s)
   return type(s) == 'string' and s:match('^site%-%d+$') ~= nil
+end
+
+-- handoffs/2026-09-30-room-reservations.md decision 4: SITE may also be a
+-- res-N reservation handle for a phase that starts by digging -- "blueprint
+-- apply of the same template on a reserved site is the holder." A landmark
+-- literally named like `res-3` is therefore unreachable, same caveat as
+-- site-N above.
+local function is_reservation_handle(s)
+  return type(s) == 'string' and s:match('^res%-%d+$') ~= nil
+end
+
+-- Every stored site record, WITH its real coordinates -- internal-only,
+-- exactly like load_state above: a caller (df-overseer-blueprint.lua's own
+-- reserve_site, checking a new reservation against already-carved sites)
+-- uses this to compute overlap, never to print or return a coordinate.
+function all_sites_raw()
+  local state = load_state()
+  local out = {}
+  for handle, s in pairs(state.sites) do
+    local copy = {}
+    for k, v in pairs(s) do copy[k] = v end
+    copy.handle = handle
+    out[#out + 1] = copy
+  end
+  table.sort(out, function(a, b) return a.handle < b.handle end)
+  return out
+end
+
+-- The wall/carve classification of a template's own dig cells, oriented,
+-- as 0-based {dx,dy} keys ("dx,dy" -> true) relative to the footprint's own
+-- top-left -- handoffs/2026-09-30-room-reservations.md decision 2 (reuse
+-- blueprint.lua's resolution code) and the user's revision of decision 5:
+-- a tile counts as WALL only if some #dig section's own cell there is the
+-- smooth symbol (a wall this template intends to keep solid/finished); a
+-- carve cell, or a tile no #dig section mentions at all, is never counted as
+-- wall -- unclassified is treated the strict way (never assumed
+-- compatible), matching this codebase's three-valued "never default to the
+-- permissive answer" rule. Uses EVERY #dig section in the blueprint, not one
+-- phase's leaves: a reservation holds the template's whole eventual
+-- footprint, not one phase of it.
+function classify_footprint_cells(bp, orient)
+  local wall = {}
+  for _, sec in ipairs(bp.sections) do
+    if sec.mode == "dig" then
+      for _, c in ipairs(sec.cells) do
+        if c.text == SMOOTH_SYMBOL then
+          local rx, ry = orient_cell(orient or "none", c.x, c.y, bp.w, bp.h)
+          wall[(rx - 1) .. "," .. (ry - 1)] = true
+        end
+      end
+    end
+  end
+  return wall
+end
+
+-- Same classification, for an already-carved site record (blueprint.lua's
+-- own state.sites entries), re-derived from its stored template name. If
+-- that template can no longer be loaded (deleted since), returns an empty
+-- wall set -- every tile of that site then reads as non-wall, the safe
+-- (strict, never-assume-compatible) default, so a new reservation refuses
+-- rather than guesses compatibility with a site whose own template is gone.
+local function classify_site_cells(s)
+  local bp2 = load_blueprint(s.blueprint)
+  if not bp2 then return {} end
+  return classify_footprint_cells(bp2, s.orient or "none")
 end
 
 local function site_brief(site)
@@ -805,8 +885,8 @@ local function dig_progress(site, failures, applied_tick)
       end
     end
   end
-  local okt, tick = pcall(dfhack.world.ReadCurrentTick)
-  local since = (okt and applied_tick) and (tick - applied_tick) or nil
+  local tick = reservations_mod.abs_tick()
+  local since = (tick and applied_tick) and (tick - applied_tick) or nil
   local state
   if jobs and njobs > 0 then state = "in_progress"
   elseif pending == 0 and unknown == 0 then state = "none_pending"
@@ -994,6 +1074,63 @@ function plan_template(name)
 end
 
 -- The one implementation behind `preview` (always dry) and `apply`.
+-- Finds a NEW site for a template's footprint near a landmark: tries every
+-- orientation the template can take and chooses the first whose entrance
+-- touches revealed walkable ground (see "Access" above), exactly as
+-- run_phase's own dig-phase site search always has. Extracted verbatim
+-- (handoffs/2026-09-30-room-reservations.md decision 2: "reuse blueprint.lua's
+-- resolution code; do not write a second footprint resolver") so
+-- reserve_site (below) resolves a reservation's footprint the identical way,
+-- with the identical access gate, instead of a second implementation that
+-- could quietly drift from this one. `dig_leaves`/`carve_needed` are
+-- supplied by the caller (run_phase scopes them to one phase's own dig
+-- sections; reserve_site scopes them to every #dig section in the template,
+-- since a reservation covers the template's whole eventual footprint, not
+-- one phase) -- this function itself has no opinion on which.
+-- Returns site, tried, chosen_ok, analysis on success (site is nil only when
+-- NO orientation could even be searched, i.e. the very first, "none",
+-- orientation's find_new_site call itself errored -- see the `f.err`
+-- handling below, identical to the original inline code); or nil, err.
+function resolve_new_site(bp, site_arg, level, rank, radius, dig_leaves, carve_needed, failures)
+  local tried, chosen_ok, analysis, site = {}, false, nil, nil
+  local by_dims = {}
+  for _, o in ipairs(ORIENTS) do
+    if o.name == "none" or carve_needed then
+      local w, h = bp.w, bp.h
+      if o.swap then w, h = h, w end
+      local dkey = w .. "x" .. h
+      if by_dims[dkey] == nil then
+        local f, ferr = find_new_site({w = w, h = h}, site_arg, level, rank, radius)
+        by_dims[dkey] = f or {err = ferr}
+      end
+      local f = by_dims[dkey]
+      if f.err then
+        if o.name == "none" then return nil, f.err end
+        tried[#tried + 1] = {orientation = o.name, entrance_reachable = NULL, error = f.err}
+      else
+        local cand = {x = f.x, y = f.y, z = f.z, w = w, h = h, any_hidden = f.any_hidden,
+          orient = o.name, bw = bp.w, bh = bp.h}
+        local ea = carve_needed and entrance_analysis(cand, dig_leaves, failures) or nil
+        local entry = {orientation = o.name, entrance_reachable = NULL,
+          carve_cells_reachable = NULL, carve_cells_unreachable = NULL,
+          interior_fully_revealed = not f.any_hidden}
+        if ea then   -- (no and/or idiom here: a false answer must stay false)
+          entry.entrance_reachable = ea.entrance_reachable
+          entry.carve_cells_reachable = ea.carve_cells_reachable
+          entry.carve_cells_unreachable = ea.carve_cells_unreachable
+        end
+        tried[#tried + 1] = entry
+        if not site then site, analysis = cand, ea end   -- fallback: the first
+        if ea and ea.entrance_reachable == true and ea.carve_cells_unreachable == 0
+            and not chosen_ok then
+          site, analysis, chosen_ok = cand, ea, true
+        end
+      end
+    end
+  end
+  return site, tried, chosen_ok, analysis
+end
+
 local function run_phase(name, phase, site_arg, level, rank, radius, dry, allow_stranded)
   local bp, err = load_blueprint(name)
   if not bp then return nil, err end
@@ -1028,8 +1165,10 @@ local function run_phase(name, phase, site_arg, level, rank, radius, dry, allow_
   end
   local tried, chosen_ok, analysis = {}, false, nil
 
-  -- Site: a stored handle, or a new one found near a landmark.
-  local site, handle, state
+  -- Site: a stored site-N handle, a res-N reservation handle (decision 4:
+  -- "blueprint apply of the same template on a reserved site is the
+  -- holder"), or a new one found near a landmark.
+  local site, handle, state, from_reservation
   if is_handle(site_arg) then
     if level ~= nil or rank ~= nil or radius ~= nil then
       return nil, "LEVEL, RANK and RADIUS_TILES only apply when SITE is a landmark; a handle already fixes the site"
@@ -1043,56 +1182,44 @@ local function run_phase(name, phase, site_arg, level, rank, radius, dry, allow_
     end
     site, handle = s, site_arg
     result.site = {handle = handle, source = "stored"}
+  elseif is_reservation_handle(site_arg) then
+    if level ~= nil or rank ~= nil or radius ~= nil then
+      return nil, "LEVEL, RANK and RADIUS_TILES only apply when SITE is a landmark; a reservation already fixes the site"
+    end
+    if sec.mode ~= "dig" and not (sec.mode == "meta" and leaves[1] and leaves[1].mode == "dig") then
+      return nil, "a reservation can only be carved by a phase that starts by digging; give a site-N handle for phase '" .. phase .. "'"
+    end
+    local rec = reservations_mod.get_raw(site_arg)
+    if not rec then return nil, "no reservation '" .. site_arg .. "' (see reservations)" end
+    if rec.blueprint ~= bp.name then
+      return nil, "reservation '" .. site_arg .. "' was reserved for '" .. tostring(rec.blueprint) ..
+        "', not '" .. bp.name .. "'"
+    end
+    if rec.site_handle then
+      return nil, "reservation '" .. site_arg .. "' was already carved as '" .. tostring(rec.site_handle) ..
+        "'; use that handle for further phases"
+    end
+    site = {x = rec.x, y = rec.y, z = rec.z, w = rec.w, h = rec.h,
+      orient = rec.orient or "none", bw = rec.bw or rec.w, bh = rec.bh or rec.h, any_hidden = nil}
+    from_reservation = site_arg
+    result.site = {handle = NULL, source = "reservation", reservation = site_arg,
+      note = dry and "a real apply registers this as a new site-N handle and marks the reservation in use"
+        or "registered below on success",
+      interior_fully_revealed = NULL}
   else
     if sec.mode ~= "dig" and not (sec.mode == "meta" and leaves[1] and leaves[1].mode == "dig") then
       return nil, "a new site can only be found for a phase that starts by digging; give a site-N handle for phase '" .. phase .. "'"
     end
-    -- Try every orientation the template can take, and choose the first whose
-    -- entrance touches revealed walkable ground (see "Access" above). Sites
-    -- are found per footprint shape: a quarter turn of a non-square template
-    -- swaps width and height, so its rectangle is searched for separately.
-    local by_dims, first_err = {}, nil
-    for _, o in ipairs(ORIENTS) do
-      if o.name == "none" or carve_needed then
-        local w, h = bp.w, bp.h
-        if o.swap then w, h = h, w end
-        local dkey = w .. "x" .. h
-        if by_dims[dkey] == nil then
-          local f, ferr = find_new_site({w = w, h = h}, site_arg, level, rank, radius)
-          by_dims[dkey] = f or {err = ferr}
-        end
-        local f = by_dims[dkey]
-        if f.err then
-          if o.name == "none" then return nil, f.err end
-          tried[#tried + 1] = {orientation = o.name, entrance_reachable = NULL, error = f.err}
-        else
-          local cand = {x = f.x, y = f.y, z = f.z, w = w, h = h, any_hidden = f.any_hidden,
-            orient = o.name, bw = bp.w, bh = bp.h}
-          local ea = carve_needed and entrance_analysis(cand, dig_leaves, failures) or nil
-          local entry = {orientation = o.name, entrance_reachable = NULL,
-            carve_cells_reachable = NULL, carve_cells_unreachable = NULL,
-            interior_fully_revealed = not f.any_hidden}
-          if ea then   -- (no and/or idiom here: a false answer must stay false)
-            entry.entrance_reachable = ea.entrance_reachable
-            entry.carve_cells_reachable = ea.carve_cells_reachable
-            entry.carve_cells_unreachable = ea.carve_cells_unreachable
-          end
-          tried[#tried + 1] = entry
-          if not site then site, analysis = cand, ea end   -- fallback: the first
-          if ea and ea.entrance_reachable == true and ea.carve_cells_unreachable == 0
-              and not chosen_ok then
-            site, analysis, chosen_ok = cand, ea, true
-          end
-        end
-      end
-    end
+    local s, t, c_ok, an = resolve_new_site(bp, site_arg, level, rank, radius, dig_leaves, carve_needed, failures)
+    if not s then return nil, t end
+    site, tried, chosen_ok, analysis = s, t, c_ok, an
     result.site = {handle = NULL, source = "found", rank = rank or 1,
       note = dry and "a real apply registers this as a new site-N handle"
         or "registered below on success",
       interior_fully_revealed = not site.any_hidden,
       orientation = site.orient, orientations_tried = tried}
   end
-  if handle then
+  if handle or from_reservation then
     analysis = carve_needed and entrance_analysis(site, dig_leaves, failures) or nil
     result.site.orientation = site.orient or "none"
   end
@@ -1131,6 +1258,28 @@ local function run_phase(name, phase, site_arg, level, rank, radius, dry, allow_
   result.site.direction = brief.direction
   result.site.distance_tiles = brief.distance_tiles
   result.site.footprint = {width = site.w, height = site.h}
+
+  -- Reservation check (handoffs/2026-09-30-room-reservations.md decision 3):
+  -- refuse any tile of this site that falls inside a reservation this call
+  -- does not hold. Holding is `from_reservation` (set above only when SITE
+  -- itself was a res-N handle) -- decision 4: this file's own apply is the
+  -- one tool allowed to pass a holding handle; every other designating tool
+  -- in this codebase calls the same check with no holder and simply
+  -- refuses. Checked for both dry and real runs, like the order guard below,
+  -- not gated on dry the way the stranding override is: a preview should
+  -- show a reservation conflict just as plainly as a real apply would refuse
+  -- it.
+  local reservation_conflict = reservations_mod.check_tiles(
+    reservations_mod.rect_tiles(site.x, site.y, site.z, site.w, site.h), from_reservation)
+  if reservation_conflict then
+    result.blocked = true
+    result.blocked_reason = reservation_conflict.message
+    result.reservation_conflict = {handle = reservation_conflict.handle, purpose = reservation_conflict.purpose,
+      near_landmark = reservation_conflict.near_landmark, direction = reservation_conflict.direction,
+      distance_tiles = reservation_conflict.distance_tiles}
+    result.ok = false
+    return result
+  end
 
   -- Order guard, by mode.
   local needs_shell = false
@@ -1181,14 +1330,21 @@ local function run_phase(name, phase, site_arg, level, rank, radius, dry, allow_
     state.next_id = state.next_id + 1
     state.sites[handle] = {x = site.x, y = site.y, z = site.z, w = site.w, h = site.h,
       orient = site.orient or "none", bw = site.bw or site.w, bh = site.bh or site.h,
-      blueprint = bp.name, phases = {}}
+      blueprint = bp.name, phases = {}, reservation = from_reservation}
     result.site.handle = handle
+    if from_reservation then
+      -- Decision 4: the issued site-N handle records the res-N it came
+      -- from, and the reservation itself is marked in use (reservations()
+      -- reports it; the reservation is NOT freed -- release is only ever
+      -- explicit unreserve, decision 6).
+      reservations_mod.mark_in_use(from_reservation, handle)
+      result.site.reservation = from_reservation
+    end
   end
   if handle then
     state = state or load_state()
     local entry = state.sites[handle]
-    local okt, tick = pcall(dfhack.world.ReadCurrentTick)
-    entry.phases[#entry.phases + 1] = {label = phase, tick = okt and tick or nil}
+    entry.phases[#entry.phases + 1] = {label = phase, tick = reservations_mod.abs_tick()}
     save_state(state)
   end
   local pending = count_pending(site, failures)
@@ -1340,6 +1496,134 @@ function release_site(handle, dry_run)
 end
 
 -- ---------------------------------------------------------------------------
+-- reserve / reservations / unreserve
+-- (handoffs/2026-09-30-room-reservations.md)
+-- ---------------------------------------------------------------------------
+
+-- reserve TEMPLATE PURPOSE SITE [DRY_RUN] [LEVEL] [RANK] [RADIUS_TILES].
+-- Resolves a NEW site for TEMPLATE's whole footprint the identical way a new
+-- dig phase would (resolve_new_site: same orientation search, same access
+-- gate), classifies its cells wall vs carve (classify_footprint_cells), and
+-- refuses on any overlap with an existing reservation or an already-carved
+-- site that is not itself all-wall-on-both-sides (decision 5, revised by the
+-- user 2026-09-30: a shared wall is fine, any carve/interior overlap is
+-- not). DRY_RUN defaults to true (decision 9). Never a coordinate in the
+-- result.
+function reserve_site(template, purpose, site_arg, dry_run, level, rank, radius)
+  if type(purpose) ~= 'string' or #purpose == 0 or #purpose > 200 then
+    return nil, "PURPOSE must be a non-empty string, at most 200 characters"
+  end
+  local bp, err = load_blueprint(template)
+  if not bp then return nil, err end
+  local dry = truthy_dry_run(dry_run)
+  local failures = {}
+  local dig_leaves, carve_needed = {}, false
+  for _, s in ipairs(bp.sections) do
+    if s.mode == "dig" then
+      dig_leaves[#dig_leaves + 1] = s
+      for _, c in ipairs(s.cells) do if CARVE_SYMBOLS[c.text] then carve_needed = true end end
+    end
+  end
+  if #dig_leaves == 0 then
+    return nil, "template '" .. bp.name .. "' has no #dig section; nothing to reserve a footprint for"
+  end
+  local site, tried, chosen_ok, analysis = resolve_new_site(bp, site_arg, level, rank, radius, dig_leaves, carve_needed, failures)
+  if not site then return nil, tried end
+  if site.w * site.h > MAX_SITE_TILES then
+    return nil, "reservation footprint is over this tool's " .. MAX_SITE_TILES .. "-tile bound"
+  end
+  local dig_can_start = true
+  if carve_needed and analysis then
+    dig_can_start = (analysis.entrance_reachable == true and analysis.carve_cells_unreachable == 0)
+  end
+  local wall_cells = classify_footprint_cells(bp, site.orient)
+  local other_footprints = {}
+  for _, s in ipairs(all_sites_raw()) do
+    other_footprints[#other_footprints + 1] = {x = s.x, y = s.y, z = s.z, w = s.w, h = s.h,
+      wall_cells = classify_site_cells(s), label = s.handle}
+  end
+  local conflicts = reservations_mod.find_conflicts(site.x, site.y, site.z, site.w, site.h, wall_cells, other_footprints)
+  local brief = site_brief(site)
+  local result = {
+    blueprint = bp.name, purpose = purpose, dry_run = dry,
+    footprint = {width = site.w, height = site.h},
+    near_landmark = brief.near_landmark, direction = brief.direction, distance_tiles = brief.distance_tiles,
+    orientation = site.orient or "none",
+    dig_can_start = dig_can_start,
+    read_failures = failures,
+  }
+  if #conflicts > 0 then
+    local names = {}
+    for _, c in ipairs(conflicts) do
+      names[#names + 1] = (c.kind == "site") and c.handle or (c.handle .. " (" .. tostring(c.purpose) .. ")")
+    end
+    result.refused = true
+    result.conflicts = conflicts
+    result.blocked_reason = "overlaps existing " .. table.concat(names, ", ")
+      .. " on at least one tile neither side marks as a shared wall"
+    return result
+  end
+  if not dig_can_start then
+    result.would_strand = "the reserved footprint's entrance touches no revealed walkable ground in any tried "
+      .. "orientation; a later apply at this reservation would stall (handoffs/2026-09-24-blueprint-access.md)"
+  end
+  if dry then
+    result.would_reserve = true
+    return result
+  end
+  local handle = reservations_mod.create({
+    x = site.x, y = site.y, z = site.z, w = site.w, h = site.h,
+    orient = site.orient or "none", bw = site.bw or site.w, bh = site.bh or site.h,
+    blueprint = bp.name, purpose = purpose, wall_cells = wall_cells,
+  })
+  result.handle = handle
+  return result
+end
+
+-- reservations: every reservation, handle/purpose/footprint size/nearest
+-- landmark/age in ticks/whether a site-N has been carved from it. Never a
+-- coordinate. Dry-run and real-run callers alike (architect and overseer,
+-- decision 8) may call this -- it never mutates.
+function list_reservations()
+  local now_tick = reservations_mod.abs_tick()
+  local out = {}
+  for _, rec in ipairs(reservations_mod.list_raw()) do
+    local brief = site_brief(rec)
+    out[#out + 1] = {
+      handle = rec.handle, blueprint = rec.blueprint, purpose = rec.purpose,
+      footprint = {width = rec.w, height = rec.h},
+      near_landmark = brief.near_landmark, direction = brief.direction, distance_tiles = brief.distance_tiles,
+      in_use = rec.site_handle ~= nil, site_handle = nn(rec.site_handle),
+      age_ticks = (now_tick and rec.created_tick) and (now_tick - rec.created_tick) or NULL,
+    }
+  end
+  return out
+end
+
+-- unreserve RES_ID [DRY_RUN]. Releases a reservation outright; per decision
+-- 6 there is no automatic expiry and no state short of "released" -- an
+-- overseer call is always what ends one, whether or not a site was ever
+-- carved from it. A shared wall tile stays held by any OTHER reservation
+-- still covering it (`still_held_by`) -- nothing extra to free, see
+-- df-overseer-reservations.lua's own header. DRY_RUN defaults to true.
+function unreserve_site(handle, dry_run)
+  local dry = truthy_dry_run(dry_run)
+  local rec = reservations_mod.get_raw(handle)
+  if not rec then return nil, "no reservation '" .. tostring(handle) .. "' (see reservations)" end
+  local result = {handle = handle, blueprint = rec.blueprint, purpose = rec.purpose, dry_run = dry,
+    was_in_use = rec.site_handle ~= nil, site_handle = nn(rec.site_handle)}
+  if dry then
+    result.would_release = true
+    return result
+  end
+  local ok, remaining, rerr = reservations_mod.remove(handle)
+  if not ok then return nil, rerr end
+  result.released = true
+  result.still_held_by = remaining
+  return result
+end
+
+-- ---------------------------------------------------------------------------
 -- CLI
 -- ---------------------------------------------------------------------------
 
@@ -1357,6 +1641,9 @@ local USAGE = {
   "usage: df-overseer-blueprint sites",
   "usage: df-overseer-blueprint status SITE_ID",
   "usage: df-overseer-blueprint release SITE_ID [DRY_RUN]",
+  "usage: df-overseer-blueprint reserve TEMPLATE PURPOSE SITE [DRY_RUN] [LEVEL] [RANK] [RADIUS_TILES]",
+  "usage: df-overseer-blueprint reservations",
+  "usage: df-overseer-blueprint unreserve RES_ID [DRY_RUN]",
 }
 
 local function emit(res, err)
@@ -1377,6 +1664,13 @@ elseif cmd == "status" then
   if not args[2] then print(USAGE[5]) else emit(site_status(args[2])) end
 elseif cmd == "release" then
   if not args[2] then print(USAGE[6]) else emit(release_site(args[2], args[3])) end
+elseif cmd == "reserve" then
+  if not (args[2] and args[3] and args[4]) then print(USAGE[7])
+  else emit(reserve_site(args[2], args[3], args[4], args[5], tonumber(args[6]), tonumber(args[7]), tonumber(args[8]))) end
+elseif cmd == "reservations" then
+  print(encode(list_reservations()))
+elseif cmd == "unreserve" then
+  if not args[2] then print(USAGE[9]) else emit(unreserve_site(args[2], args[3])) end
 else
   for _, l in ipairs(USAGE) do print(l) end
 end
