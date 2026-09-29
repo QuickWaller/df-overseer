@@ -2233,17 +2233,19 @@ df-overseer-surface.lua:
       effect: read
       coordinate_bearing: false
       live_deployed: false
-      verified: "unverified (offline build, lupa-tested against a fake world only, 2026-09-28; handoffs/2026-09-28-ore-vein-recovery-and-construction-tool.md). The tile-level vein decode chain (dfhack.maps.getTileBlock, block.block_events, df.block_square_event_mineralst, tile_bitmask:get, inorganic_mat, raws.inorganics) has never been run against a real DFHack process. HIGH RISK: live-verify against zone 13's own 5 known hematite ring tiles before trusting vein_status anywhere else."
+      verified: "2026-09-28, live on VM 103 against zone 13's 5 known hematite ring tiles, after two live-found fixes to the offline build (commits be0ab31, 365f17b; Working.md 'Ore-vein recovery tool built, wrong twice, now live-verified correct'): tile_bitmask is read as bits[y%16] bit x%16 (tile_bitmask:get does not exist), and the material via dfhack.matinfo.decode(0, idx).inorganic (direct raws.inorganics indexing errors live)."
       knowledge_scope: player_derivable
       notes: >
         Closes the gap decisions/DECISIONS.md 2026-09-24 found (an ore vein
         smoothed into a wall reads as plain MINERAL-class stone to every
         other tool). Per boundary-ring tile: the tiletype_material class,
         plus -- for a MINERAL/FEATURE tile -- the decoded mineral name and
-        whether it is economic (ore/gem, `dfhack.matinfo`-style non-empty
-        economic_uses, the same rule df-overseer-building.lua's material-
-        choice fix already established for an ITEM's material, applied here
-        to a map tile's own vein). vein_status is one of not_mineral /
+        whether it is economic (ore or gem: inorganic:isOre() or
+        inorganic.material:isGem(), the calls DFHack's own prospector plugin
+        uses; research/2026-09-28-ore-detection.md proved the earlier
+        non-empty economic_uses rule answers a different question, and
+        df-overseer-building.lua's item-material check was corrected to the
+        same rule). vein_status is one of not_mineral /
         ore_or_gem / not_economic / hidden / unreadable / unknown -- unknown
         covers a MINERAL/FEATURE tile whose vein event could not be matched
         or decoded, NEVER a guessed name. Reports `ring_position` (a 1-based
