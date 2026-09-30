@@ -92,6 +92,13 @@ tree would have captured the chain once.
    aging (nothing starves), the existing active-project limit, and an
    Overseer override with a recorded reason.
 
+10. **Checks declare how and when they are observed** (added mid-run by the
+    user, sent to the researcher as a message): instant read-back, event or
+    poll, and an expected time or "whenever"; an in-game event recorder
+    bridges the DF process to the conductor; goals that cannot be checked
+    exactly return met, not met or unknown/stale. Examples: building a
+    still, killing an enemy, hauling hematite to a stockpile.
+
 ## What to produce
 
 `research/2026-09-30-goal-tree-design.md`: a design document, cited, honest

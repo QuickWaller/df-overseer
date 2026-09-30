@@ -52,7 +52,14 @@ explicitly and separately from findings about the design itself.
 6. **Gaps.** Anything the design needs but does not specify, anything it
    specifies that the existing code cannot support without unacknowledged
    work, anything verified-sounding that is actually unverified.
-7. **The worked example.** Walk the booze chain adversarially: what breaks
+7. **Observability and timing.** For each kind of check: can it actually be
+   observed the way the design says (instant read-back, event, poll), is
+   the event bridge from the DF process on VM 103 to the conductor on VM
+   106 sound (lost events, duplicates, a restart between event and read),
+   and are "unknown" or "stale" results handled rather than forced to
+   true or false? Test the user's three contrasting examples: building a
+   still, killing an enemy, hauling a chunk of hematite to a stockpile.
+8. **The worked example.** Walk the booze chain adversarially: what breaks
    it?
 
 For each finding: severity (blocks building, must fix before a given build
