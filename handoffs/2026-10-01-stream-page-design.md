@@ -103,4 +103,42 @@ decisions the user must make).
 
 ## Result
 
-(fill in)
+Done, design only: `research/2026-10-01-stream-page-design.md`. No code, no
+live access.
+
+**Answer.** One store, one publisher, static files. The conductor's wakes
+and role runs become queue records (new `wake` and `run` kinds, conductor
+only); fort status does not (it is pushed to one overwritten file through a
+conductor-only `feed.status`, no DFHack call). A read-only publisher on
+VM 103 builds a public and an operator projection and pushes static JSON
+outbound to the relay by `rsync` over a directory-restricted key. The
+browser polls a tiny head file every 5 s; history is immutable, hashed
+segment files. The page lives on the relay beside noVNC, same origin; the
+operator page is the same code on the admin hostname behind the existing
+Access application. Stored schema additions: `seq`, a server-stamped
+`run_id` (the join to tool calls), `reply_to` and `about` where no link
+exists today, commissions as `ask` with `to`, project public fields, hold
+codes, and `goal`, `review`, `message`, `alarm` kinds; thread and project
+membership are derived. Safety: per-kind allowlist, write-time refusal of
+URLs, addresses, paths and tokens in public fields, a publish-time canary
+that withholds, inert rendering, three kill switches.
+
+**Findings on the way:** real-run wake reasons are not archived (only
+dry-run plans keep them); the call log carries the caller's address and
+rotates with journald, so it is neither publishable nor durable; the
+public allowlist today shows nothing readable for nine of eleven kinds.
+
+**Departures** (listed in its §9): no Public/Operator switch on the public
+page; Executor does not narrate steps; "four AI agents and a scheduler";
+Highlights filter first; goal card by measure type; plus a right-now line,
+project timeline, Seasons tab, ambient mode.
+
+**Slices:** S0 local projection and page on real exports; S1 operator live;
+S2 conductor records and joins; S3 public; S4 projects; S5 season goal; S6
+Telegram; S7 chronicle and wall.
+
+**Decisions for the user:** page on the relay or the portfolio; Telegram
+messages public by default or private; Consultant answers public or
+private; operator view shares the admin login or gets its own; operator
+data on the relay and its retention; build the Cloudflare kill-switch rule;
+public launch waits for S2; wording and the user's display name.
