@@ -1,5 +1,9 @@
 # Policy audit: existing plans and infrastructure against "set intent, let the game execute"
 
+> **Orchestrator corrections, 2026-09-30, after checking the code.**
+> 1. `df-overseer-building.lua` does **not** write a material class into a buildingplan filter. It only checks `plugins.buildingplan.isEnabled()` (line 951); `blueprint_text` writes the kind's key with no material, and `resolve_material_choice` only chooses a material for the report. So `building.build` has the same report-only gap as `construction.build`'s `material_report` (change list item 2 applies to both). The "Keep" row for it below is wrong.
+> 2. `prioritize` is not armok-tagged (`docs/DFHACK-INVENTORY.md`: `fort, auto, jobs`), and `docs/ARMOK-RULINGS.md` has no ruling on it (the cited line is `lever pull --priority`). As understood from DFHack's docs (unconfirmed on this install), `prioritize` works by setting the `do_now` flag on chosen job types, which collides with the user's ruling that "do now" is reserved for genuine problems. Needs the user's decision before item 4 is built.
+
 Date: 2026-09-30. Reviewer (Sonnet), review only: no code changes, no live access.
 Brief: `handoffs/2026-09-30-policy-audit.md`.
 
