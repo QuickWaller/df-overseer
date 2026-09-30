@@ -13,8 +13,9 @@ import pytest
 
 from dfqueue import schema
 from dfqueue.tests._helpers import (
-    make_answer, make_ask, make_escalation, make_executed, make_observation,
-    make_pass, make_project, make_proposal, make_ruling,
+    make_abandon, make_amend, make_answer, make_ask, make_escalation,
+    make_executed, make_observation, make_pass, make_project, make_proposal,
+    make_ruling,
 )
 
 
@@ -853,4 +854,79 @@ def test_observation_reason_coordinate_scan():
     record = make_observation()
     record["results"][0]["reason"] = "still pending at x=12"
     errors = _errors_mentioning(schema.validate(record), "results.0.reason")
+    assert errors
+
+
+# ---- amend / abandon (handoffs/2026-10-01-queue-bugs-and-amend.md item 3) ----
+
+
+def test_valid_amend_validates_clean():
+    assert schema.validate(make_amend()) == []
+
+
+def test_amend_role_restricted_to_sole_writer():
+    """Same restriction as ruling/executed/escalation/project."""
+    record = make_amend(role="architect")
+    errors = _errors_mentioning(schema.validate(record), "record.role")
+    assert errors, "an architect-authored amend should be refused"
+
+
+def test_amend_requires_a_reason():
+    record = make_amend()
+    del record["reason"]
+    errors = _errors_mentioning(schema.validate(record), "record.reason")
+    assert errors
+
+
+def test_amend_reason_coordinate_scan():
+    record = make_amend(reason="Wall off the tile at (4, 9, -2) instead.")
+    errors = _errors_mentioning(schema.validate(record), "record.reason")
+    assert errors
+
+
+def test_amend_steps_cannot_be_empty():
+    record = make_amend(steps=[])
+    errors = _errors_mentioning(schema.validate(record), "record.steps")
+    assert errors
+
+
+def test_amend_steps_use_the_same_per_step_rules_as_project():
+    """Same closed step schema as `project` (real tool ids, no self-require,
+    no cycle) -- exercised once here to prove the shared validation path,
+    not the whole matrix `test_project_*` above already covers."""
+    record = make_amend()
+    record["steps"][0]["tool"] = "not_a_real_tool.frobnicate"
+    errors = _errors_mentioning(schema.validate(record), "steps.0.tool")
+    assert errors
+    assert "not a real tool id" in errors[0]
+
+
+def test_amend_replaces_adds_drops_must_be_string_lists():
+    record = make_amend()
+    record["replaces"] = [123]
+    errors = _errors_mentioning(schema.validate(record), "record.replaces.0")
+    assert errors
+
+
+def test_valid_abandon_validates_clean():
+    assert schema.validate(make_abandon()) == []
+
+
+def test_abandon_role_restricted_to_sole_writer():
+    record = make_abandon(role="architect")
+    errors = _errors_mentioning(schema.validate(record), "record.role")
+    assert errors, "an architect-authored abandon should be refused"
+
+
+def test_abandon_requires_a_reason():
+    record = make_abandon()
+    del record["reason"]
+    errors = _errors_mentioning(schema.validate(record), "record.reason")
+    assert errors
+
+
+def test_abandon_requires_a_project_id():
+    record = make_abandon()
+    del record["project_id"]
+    errors = _errors_mentioning(schema.validate(record), "record.project_id")
     assert errors

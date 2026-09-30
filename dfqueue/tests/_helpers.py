@@ -192,6 +192,64 @@ def make_observation(project_id: str = "project-0001", step_id: str = "project-0
     return record
 
 
+def make_amend(project_id: str = "project-0001", **overrides) -> dict:
+    """A one-step amendment (`handoffs/2026-10-01-queue-bugs-and-amend.md`
+    item 3): replaces `make_project`'s own two-step plan with a single new
+    step, `replaces` naming the step it stands in for. Pass `steps=[...]`
+    to describe a different revision."""
+    record = {
+        "kind": "amend",
+        "role": "overseer",
+        "cycle": 30,
+        "snapshot": "tick 209700",
+        "project_id": project_id,
+        "reason": (
+            "The exposed hematite turned out to run through two tiles, not "
+            "three: dropping the now-unreachable third target."
+        ),
+        "replaces": ["project-0001/s1"],
+        "adds": [],
+        "drops": [],
+        "steps": [
+            {
+                "id": "project-0001/s1",
+                "tool": "construction.mine-vein",
+                "args": {},
+                "targets": {"set": ["ring-13-ore-1", "ring-13-ore-2"]},
+                "requires": [],
+                "trigger": "all_success",
+                "prefer_after": [],
+                "guards": "default",
+            },
+            {
+                "id": "project-0001/s2",
+                "tool": "construction.build",
+                "args": {"kind": "Wall"},
+                "targets": {"from_step": "project-0001/s1", "select": "done"},
+                "requires": ["project-0001/s1"],
+                "trigger": "all_done",
+                "prefer_after": [],
+                "guards": "default",
+            },
+        ],
+    }
+    record.update(overrides)
+    return record
+
+
+def make_abandon(project_id: str = "project-0001", **overrides) -> dict:
+    record = {
+        "kind": "abandon",
+        "role": "overseer",
+        "cycle": 30,
+        "snapshot": "tick 209700",
+        "project_id": project_id,
+        "reason": "The vein played out; the whole ring is walled off already.",
+    }
+    record.update(overrides)
+    return record
+
+
 def make_escalation(**overrides) -> dict:
     """Added handoffs/2026-09-22-loop-conductor-fixes.md item 3."""
     record = {

@@ -5,6 +5,7 @@ in either table, atomic proposal+prediction inserts, and the
 
 from __future__ import annotations
 
+import copy
 import json
 import sqlite3
 
@@ -12,8 +13,9 @@ import pytest
 
 from dfqueue import render, schema, store
 from dfqueue.tests._helpers import (
-    make_answer, make_ask, make_escalation, make_executed, make_observation,
-    make_pass, make_project, make_proposal, make_ruling,
+    make_abandon, make_amend, make_answer, make_ask, make_escalation,
+    make_executed, make_observation, make_pass, make_project, make_proposal,
+    make_ruling,
 )
 from learning.predictions.schema import GRADED_TRUE, PENDING
 
@@ -1280,3 +1282,373 @@ def test_observation_round_trips_and_never_touches_step_targets(tmp_path):
     assert loaded[-1]["kind"] == schema.OBSERVATION
     xml = render.to_xml(loaded[-1])
     assert xml.startswith("<observation ")
+
+
+# ---- item 1: a step (and a project) with no rows yet is never vacuously
+# "done" (handoffs/2026-10-01-queue-bugs-and-amend.md) -------------------------
+
+
+def test_step_status_is_never_vacuously_done_with_no_rows_and_no_executed_record():
+    """The literal bug: `all(state in (...) for state in [])` is `True` in
+    Python, so a step never seeded at all used to read `done` by
+    construction. `step_status` must read `active` instead."""
+    assert store.step_status([], has_executed_record=False) == "active"
+    assert store.step_status([], has_executed_record=True) == store.DONE
+    assert store.step_status([store.DONE, store.DONE], has_executed_record=False) == store.DONE
+    assert store.step_status([store.DONE, store.READY], has_executed_record=False) == "active"
+
+
+def test_project_status_active_while_an_unseeded_step_has_not_run(tmp_path):
+    """The project-level shape of the same bug: s1 (literal targets) fully
+    `done`, s2 (dynamic `from_step`, never seeded, never executed) still
+    open. The OLD code folded every seeded row into one flat list and
+    called `all()` over just that -- s2 contributed nothing to the list, so
+    it could not stop the project from reading `done`. It must read
+    `active`."""
+    path = _db(tmp_path)
+    store.append(make_proposal(), path, game_tick=100)
+    ruling, project = _rule_and_project(path)
+    s1 = project["steps"][0]["id"]
+
+    store.append(
+        make_executed(
+            ruling_id=ruling["id"], cycle=9, step_id=s1,
+            actions=[{
+                "tool": "construction.mine-vein", "outcome": "success",
+                "targets": ["ring-13-ore-1", "ring-13-ore-2", "ring-13-ore-3"],
+                "target_state": "done",
+            }],
+        ),
+        path,
+    )
+    status = store.project_status(path, project["id"])
+    assert status["status"] == "active"  # s2 never touched -- not done
+
+
+def test_project_status_done_once_every_step_including_the_unseeded_one_finishes(tmp_path):
+    path = _db(tmp_path)
+    store.append(make_proposal(), path, game_tick=100)
+    ruling, project = _rule_and_project(path)
+    s1, s2 = project["steps"][0]["id"], project["steps"][1]["id"]
+
+    store.append(
+        make_executed(
+            ruling_id=ruling["id"], cycle=9, step_id=s1,
+            actions=[{
+                "tool": "construction.mine-vein", "outcome": "success",
+                "targets": ["ring-13-ore-1", "ring-13-ore-2", "ring-13-ore-3"],
+                "target_state": "done",
+            }],
+        ),
+        path,
+    )
+    store.append(
+        make_executed(
+            ruling_id=ruling["id"], cycle=12, step_id=s2,
+            actions=[{"tool": "construction.build", "outcome": "success"}],
+        ),
+        path,
+    )
+    status = store.project_status(path, project["id"])
+    assert status["status"] == "done"
+    assert status["version"] == 1
+
+
+# ---- item 2: queue.executed checks the step's own tool and requires ---------
+
+
+def test_executed_refuses_a_tool_that_does_not_match_the_steps_own_declaration(tmp_path):
+    path = _db(tmp_path)
+    store.append(make_proposal(), path, game_tick=100)
+    ruling, project = _rule_and_project(path)
+    s1 = project["steps"][0]["id"]
+
+    with pytest.raises(store.QueueError, match="does not match step"):
+        store.append(
+            make_executed(
+                ruling_id=ruling["id"], cycle=5, step_id=s1,
+                actions=[{"tool": "workshop.build", "outcome": "success"}],
+            ),
+            path,
+        )
+
+
+def test_executed_refuses_a_step_whose_requires_are_not_yet_satisfied(tmp_path):
+    path = _db(tmp_path)
+    store.append(make_proposal(), path, game_tick=100)
+    ruling, project = _rule_and_project(path)
+    s2 = project["steps"][1]["id"]  # requires s1, trigger all_done
+
+    with pytest.raises(store.QueueError, match="not yet satisfied"):
+        store.append(
+            make_executed(
+                ruling_id=ruling["id"], cycle=5, step_id=s2,
+                actions=[{"tool": "construction.build", "outcome": "success"}],
+            ),
+            path,
+        )
+
+
+def test_executed_allowed_once_requires_are_satisfied(tmp_path):
+    path = _db(tmp_path)
+    store.append(make_proposal(), path, game_tick=100)
+    ruling, project = _rule_and_project(path)
+    s1, s2 = project["steps"][0]["id"], project["steps"][1]["id"]
+
+    store.append(
+        make_executed(
+            ruling_id=ruling["id"], cycle=5, step_id=s1,
+            actions=[{
+                "tool": "construction.mine-vein", "outcome": "success",
+                "targets": ["ring-13-ore-1", "ring-13-ore-2", "ring-13-ore-3"],
+                "target_state": "done",
+            }],
+        ),
+        path,
+    )
+    # No longer refused: s1 is fully done, satisfying s2's all_done trigger.
+    executed = store.append(
+        make_executed(
+            ruling_id=ruling["id"], cycle=6, step_id=s2,
+            actions=[{"tool": "construction.build", "outcome": "success"}],
+        ),
+        path,
+    )
+    assert executed["step_id"] == s2
+
+
+def test_executed_implicit_step_keeps_its_old_rules(tmp_path):
+    """No `step_id` at all (the legacy one-step-project path) is exempt from
+    both new checks -- `make_executed`'s own default action tool
+    (`workshop.build`) does not match anything because there is no step to
+    match against."""
+    path = _db(tmp_path)
+    store.append(make_proposal(), path, game_tick=100)
+    ruling = store.append(make_ruling(proposal_id="proposal-0001"), path)
+    store.append(make_project(from_ruling=ruling["id"], steps=[]), path)
+    executed = store.append(make_executed(ruling_id=ruling["id"], cycle=2), path)
+    assert executed.get("step_id") is None
+
+
+# ---- item 3: amend / abandon ---------------------------------------------------
+
+
+def test_amend_project_id_must_be_a_real_project(tmp_path):
+    path = _db(tmp_path)
+    with pytest.raises(store.QueueError, match="does not refer to an existing project"):
+        store.append(make_amend(project_id="no-such-project"), path)
+
+
+def test_amend_replaces_names_a_step_id_from_the_previous_version(tmp_path):
+    path = _db(tmp_path)
+    store.append(make_proposal(), path, game_tick=100)
+    _ruling, project = _rule_and_project(path)
+    with pytest.raises(store.QueueError, match="is not a step id in the previous version"):
+        store.append(
+            make_amend(project_id=project["id"], replaces=["no-such-step"]), path,
+        )
+
+
+def test_amend_adds_must_name_a_step_id_in_its_own_new_steps(tmp_path):
+    path = _db(tmp_path)
+    store.append(make_proposal(), path, game_tick=100)
+    _ruling, project = _rule_and_project(path)
+    with pytest.raises(store.QueueError, match="is not a step id in this amendment"):
+        store.append(
+            make_amend(project_id=project["id"], adds=["not-a-new-step"]), path,
+        )
+
+
+def test_amend_bumps_the_version_and_project_status_reads_the_latest_one(tmp_path):
+    path = _db(tmp_path)
+    store.append(make_proposal(), path, game_tick=100)
+    ruling, project = _rule_and_project(path)
+
+    status_v1 = store.project_status(path, project["id"])
+    assert status_v1["version"] == 1
+
+    # v2 drops the original two-step plan down to one BRAND NEW step,
+    # replacing both s1 and s2 (a different id, never the same id with a
+    # shrunk target set -- reusing an id would leave the OLD version's own
+    # rows for the targets it no longer declares sitting in step_targets
+    # forever, since an amendment only ever adds rows, never prunes one a
+    # later version stopped naming; see this handoff's Result section).
+    store.append(
+        make_amend(
+            project_id=project["id"],
+            replaces=[],
+            adds=["project-0001/s1b"],
+            drops=["project-0001/s1", "project-0001/s2"],
+            steps=[{
+                "id": "project-0001/s1b",
+                "tool": "construction.mine-vein",
+                "args": {},
+                "targets": {"set": ["ring-13-ore-1", "ring-13-ore-2"]},
+                "requires": [],
+                "trigger": "all_success",
+                "prefer_after": [],
+                "guards": "default",
+            }],
+        ),
+        path,
+    )
+
+    status_v2 = store.project_status(path, project["id"])
+    assert status_v2["version"] == 2
+    assert status_v2["status"] == "active"  # the new step has not run yet
+
+    store.append(
+        make_executed(
+            ruling_id=ruling["id"], cycle=9, step_id="project-0001/s1b",
+            actions=[{
+                "tool": "construction.mine-vein", "outcome": "success",
+                "targets": ["ring-13-ore-1", "ring-13-ore-2"],
+                "target_state": "done",
+            }],
+        ),
+        path,
+    )
+    status_v2_done = store.project_status(path, project["id"])
+    assert status_v2_done["status"] == "done"
+
+
+def test_amend_seeds_a_brand_new_step_added_by_the_amendment(tmp_path):
+    """A step an amendment ADDS (not present in the original version) must
+    still be reachable by `queue.executed`, and its literal targets get
+    seeded the same way a fresh project's own steps do."""
+    path = _db(tmp_path)
+    store.append(make_proposal(), path, game_tick=100)
+    ruling, project = _rule_and_project(path)
+
+    store.append(
+        make_amend(
+            project_id=project["id"],
+            adds=["project-0001/s3"],
+            steps=project["steps"] + [{
+                "id": "project-0001/s3",
+                "tool": "construction.build",
+                "args": {"kind": "Floor"},
+                "targets": {"set": ["ring-13-floor-1"]},
+                "requires": [],
+                "trigger": "all_success",
+                "prefer_after": [],
+                "guards": "default",
+            }],
+        ),
+        path,
+    )
+
+    rows = {r["target"]: r["state"] for r in store.target_states(path, project["id"])
+            if r["step_id"] == "project-0001/s3"}
+    assert rows == {"ring-13-floor-1": store.READY}
+
+    executed = store.append(
+        make_executed(
+            ruling_id=ruling["id"], cycle=9, step_id="project-0001/s3",
+            actions=[{
+                "tool": "construction.build", "outcome": "success",
+                "targets": ["ring-13-floor-1"], "target_state": "done",
+            }],
+        ),
+        path,
+    )
+    assert executed["step_id"] == "project-0001/s3"
+
+
+def test_amend_does_not_overwrite_the_original_project_record(tmp_path):
+    path = _db(tmp_path)
+    store.append(make_proposal(), path, game_tick=100)
+    _ruling, project = _rule_and_project(path)
+    original_steps = copy.deepcopy(project["steps"])
+
+    store.append(
+        make_amend(
+            project_id=project["id"],
+            steps=[{
+                "id": "project-0001/s1",
+                "tool": "construction.mine-vein",
+                "args": {},
+                "targets": {"set": ["ring-13-ore-1"]},
+                "requires": [],
+                "trigger": "all_success",
+                "prefer_after": [],
+                "guards": "default",
+            }],
+        ),
+        path,
+    )
+
+    reloaded = json.loads(
+        json.dumps(
+            [r for r in store.load(path) if r["kind"] == schema.PROJECT][0]
+        )
+    )
+    assert reloaded["steps"] == original_steps
+
+
+def test_amend_role_must_be_the_sole_writer(tmp_path):
+    path = _db(tmp_path)
+    store.append(make_proposal(), path, game_tick=100)
+    _ruling, project = _rule_and_project(path)
+    with pytest.raises(store.QueueError, match="sole_writer"):
+        store.append(make_amend(project_id=project["id"], role="architect"), path)
+
+
+def test_abandon_project_id_must_be_a_real_project(tmp_path):
+    path = _db(tmp_path)
+    with pytest.raises(store.QueueError, match="does not refer to an existing project"):
+        store.append(make_abandon(project_id="no-such-project"), path)
+
+
+def test_abandon_refuses_a_second_abandon(tmp_path):
+    path = _db(tmp_path)
+    store.append(make_proposal(), path, game_tick=100)
+    _ruling, project = _rule_and_project(path)
+    store.append(make_abandon(project_id=project["id"]), path)
+    with pytest.raises(store.QueueError, match="already abandoned"):
+        store.append(make_abandon(project_id=project["id"]), path)
+
+
+def test_abandon_refuses_an_amend_afterwards(tmp_path):
+    path = _db(tmp_path)
+    store.append(make_proposal(), path, game_tick=100)
+    _ruling, project = _rule_and_project(path)
+    store.append(make_abandon(project_id=project["id"]), path)
+    with pytest.raises(store.QueueError, match="is abandoned"):
+        store.append(make_amend(project_id=project["id"]), path)
+
+
+def test_abandon_marks_project_status_abandoned_with_reason_and_leaves_executed_history(tmp_path):
+    path = _db(tmp_path)
+    store.append(make_proposal(), path, game_tick=100)
+    ruling, project = _rule_and_project(path)
+    s1 = project["steps"][0]["id"]
+
+    store.append(
+        make_executed(
+            ruling_id=ruling["id"], cycle=5, step_id=s1,
+            actions=[{
+                "tool": "construction.mine-vein", "outcome": "success",
+                "targets": ["ring-13-ore-1"], "target_state": "done",
+            }],
+        ),
+        path,
+    )
+    before_counts = store.project_status(path, project["id"])["counts"]
+
+    reason = "The vein played out; the whole ring is walled off already."
+    store.append(make_abandon(project_id=project["id"], reason=reason), path)
+
+    status = store.project_status(path, project["id"])
+    assert status["status"] == store.PROJECT_ABANDONED
+    assert status["abandoned_reason"] == reason
+    # Executed history untouched: the same target-state counts as before.
+    assert status["counts"] == before_counts
+
+
+def test_abandon_role_must_be_the_sole_writer(tmp_path):
+    path = _db(tmp_path)
+    store.append(make_proposal(), path, game_tick=100)
+    _ruling, project = _rule_and_project(path)
+    with pytest.raises(store.QueueError, match="sole_writer"):
+        store.append(make_abandon(project_id=project["id"], role="architect"), path)
