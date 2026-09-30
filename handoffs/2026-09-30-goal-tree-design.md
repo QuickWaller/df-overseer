@@ -176,4 +176,44 @@ about what is unverified, marking verified versus proposed. Cover:
 
 ## Result
 
-(to be filled in by the researcher)
+Delivered: `research/2026-09-30-goal-tree-design.md` (design only, no code,
+no VM access). Covers the brief plus the three mid-task additions (check
+observability and the VM bridge, stuck detection and healing, a ready
+queue with labor fair share) and the taxonomy correction.
+
+**Headline.** One recursive node: a job (one tool call) or a goal
+(children in order or together, plus its own check, which skips the
+subtree when met). This is SHOP2's ordered/unordered subtasks crossed with
+behaviour trees' goal-check pattern; jobs are memory nodes, goals are
+re-read every cycle. Every check declares how it is observed (read-back,
+recorded event, poll) and when it is due (deadline, window, unbounded),
+and returns met / not met / unknown. DFHack's "events" are themselves
+in-process polls (EventManager source at `53.16-r1`) and can miss job
+completions, so an in-game recorder stores hints in the save and polls
+decide. The conductor runs steps through one new native tool,
+`queue.run_step(step_id, attempt_key)`: the server takes tool and
+arguments from the accepted record; the conductor still holds no DFHack
+mutating tool. Idempotency keys live in the save, so they roll back with
+the world. Claims are declared demands with allocations recomputed each
+cycle, never a tally. Priority is a survival tier, then WSJF with summed
+(not max) inheritance and bounded aging. DF's 259 job types sort into
+twelve groups; each gets one generic, data-fed implementation. Found: a
+project reads `done` before a `from_step` step runs; nothing enforces
+"exactly the approved arguments"; the WIP limit is charter-only; ranked
+site arguments do not pin a site; no workshop footprint template exists.
+
+**The three decisions the user most needs to make:**
+
+1. Slice or groups first: the booze chain alone, group by group, or
+   (recommended) one representative job and check per live group, then
+   group by group.
+2. Whether the runner becomes the only issuer of accepted project steps
+   (recommended), and which commands start on its allowlist
+   (recommended: `workjob.queue`, `building.build`).
+3. How far a standing goal's approval reaches: re-run its own jobs within
+   a yearly budget (recommended yes), and re-run a finished one-off
+   sub-project without a new ruling (recommended no).
+
+Two settled decisions need a correction to be buildable (report §14.2):
+late-bound arguments for decision 2, and reservation handles for sites
+under decision 6. Labor "claims" are better named admission caps.
