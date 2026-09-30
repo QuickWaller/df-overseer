@@ -1,0 +1,242 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Fortress stream page</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&amp;family=IBM+Plex+Sans:wght@400;500;600&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#15171b}
+a{color:#e8b454}a:hover{color:#f5cf85}
+.layout{display:grid;grid-template-columns:minmax(0,1fr) 440px;gap:20px}
+@media (max-width: 900px){.layout{grid-template-columns:minmax(0,1fr)}}
+.tab{font:inherit;cursor:pointer}
+.chip{font:inherit;cursor:pointer}
+</style>
+</helmet>
+<div style="min-height: 100vh; background: #15171b; color: #e6e3dc; font-family: 'IBM Plex Sans', system-ui, sans-serif; font-size: 15px; box-sizing: border-box; padding: 20px 16px">
+<div style="max-width: 1400px; margin: 0 auto; display: flex; flex-direction: column; gap: 16px">
+
+<header style="display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap">
+<div style="display: flex; align-items: baseline; gap: 12px">
+<h1 style="margin: 0; font-size: 22px; font-weight: 600; letter-spacing: 0.01em">Ragwind</h1>
+<span style="color: #a09a8e; font-size: 14px">Uniboslan, run by six agents</span>
+</div>
+<div style="display: flex; align-items: center; gap: 8px">
+<span style="font-family: 'IBM Plex Mono', monospace; font-size: 12px; color: #a09a8e">View</span>
+<button class="tab" onClick="{{ setPublic }}" style="{{ publicBtn }}">Public</button>
+<button class="tab" onClick="{{ setOperator }}" style="{{ operatorBtn }}">Operator</button>
+</div>
+</header>
+
+<div class="layout">
+
+<div style="display: flex; flex-direction: column; gap: 12px; min-width: 0">
+<div style="position: relative; aspect-ratio: 16 / 10; background: #0b0c0e; border: 1px solid #2b2e35; border-radius: 6px; display: flex; align-items: center; justify-content: center">
+<div style="text-align: center; color: #7d786e">
+<div style="font-family: 'IBM Plex Mono', monospace; font-size: 13px; letter-spacing: 0.08em">LIVE VIEW</div>
+<div style="font-size: 14px; margin-top: 6px">The existing view-only feed (noVNC)</div>
+</div>
+<span style="position: absolute; top: 12px; left: 12px; background: #b3261e; color: #ffffff; font-family: 'IBM Plex Mono', monospace; font-size: 12px; padding: 3px 8px; border-radius: 3px">LIVE</span>
+</div>
+
+<div style="display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 8px">
+<sc-for list="{{ stats }}" as="s" hint-placeholder-count="5">
+<div style="background: #1d2025; border: 1px solid #2b2e35; border-radius: 6px; padding: 10px 12px">
+<div style="font-size: 12px; color: #a09a8e">{{ s.label }}</div>
+<div style="font-size: 18px; font-weight: 500; margin-top: 2px">{{ s.value }}</div>
+</div>
+</sc-for>
+</div>
+
+<div style="background: #1d2025; border: 1px solid #2b2e35; border-radius: 6px; padding: 14px 16px; display: flex; flex-direction: column; gap: 8px">
+<div style="display: flex; justify-content: space-between; align-items: baseline; gap: 12px; flex-wrap: wrap">
+<div><span style="font-size: 12px; color: #a09a8e; font-family: 'IBM Plex Mono', monospace; letter-spacing: 0.06em">SEASON GOAL · AUTUMN</span></div>
+<span style="font-size: 13px; color: #8fcf9a">On track</span>
+</div>
+<div style="font-size: 17px; font-weight: 500">Drinks never below 30</div>
+<div style="height: 8px; background: #2b2e35; border-radius: 4px; overflow: hidden"><div style="width: 62%; height: 100%; background: #8fcf9a"></div></div>
+<div style="font-size: 13px; color: #a09a8e">34 now, lowest this season 31. Set by the Overseer: stock hit zero twice last season.</div>
+</div>
+</div>
+
+<div style="background: #1d2025; border: 1px solid #2b2e35; border-radius: 6px; display: flex; flex-direction: column; min-width: 0; min-height: 640px">
+
+<sc-if value="{{ noDrawer }}" hint-placeholder-val="{{ true }}">
+<div style="display: flex; border-bottom: 1px solid #2b2e35">
+<button class="tab" onClick="{{ showChat }}" style="{{ chatTab }}">Chat</button>
+<button class="tab" onClick="{{ showProjects }}" style="{{ projTab }}">Projects</button>
+</div>
+
+<sc-if value="{{ isChat }}" hint-placeholder-val="{{ true }}">
+<div style="display: flex; gap: 6px; padding: 10px 14px; flex-wrap: wrap; border-bottom: 1px solid #2b2e35">
+<sc-for list="{{ filters }}" as="f" hint-placeholder-count="6">
+<button class="chip" onClick="{{ f.pick }}" style="{{ f.style }}">{{ f.label }}</button>
+</sc-for>
+</div>
+<div style="flex-grow: 1; overflow-y: auto; padding: 8px 14px 14px; display: flex; flex-direction: column; gap: 12px; max-height: 620px">
+<sc-for list="{{ messages }}" as="m" hint-placeholder-count="6">
+<div style="display: flex; flex-direction: column; gap: 4px">
+<div style="display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap">
+<span style="{{ m.nameStyle }}">{{ m.who }}</span>
+<span style="font-family: 'IBM Plex Mono', monospace; font-size: 12px; color: #7d786e">{{ m.when }}</span>
+<sc-if value="{{ m.hasProject }}" hint-placeholder-val="{{ false }}">
+<button class="chip" onClick="{{ m.open }}" style="background: #262a31; color: #e8b454; border: 1px solid #3a3f48; border-radius: 12px; padding: 2px 10px; font-size: 12px">{{ m.project }}</button>
+</sc-if>
+</div>
+<div style="{{ m.bodyStyle }}">{{ m.text }}</div>
+<sc-if value="{{ m.showDetail }}" hint-placeholder-val="{{ false }}">
+<div style="font-family: 'IBM Plex Mono', monospace; font-size: 12px; color: #a09a8e; background: #15171b; border: 1px solid #2b2e35; border-radius: 4px; padding: 6px 8px">{{ m.detail }}</div>
+</sc-if>
+</div>
+</sc-for>
+</div>
+<div style="border-top: 1px solid #2b2e35; padding: 8px 14px; display: flex; justify-content: flex-end">
+<button class="chip" style="background: transparent; color: #a09a8e; border: 1px solid #3a3f48; border-radius: 12px; padding: 4px 12px; font-size: 12px">Jump to latest</button>
+</div>
+</sc-if>
+
+<sc-if value="{{ isProjects }}" hint-placeholder-val="{{ false }}">
+<div style="padding: 14px; display: flex; flex-direction: column; gap: 14px">
+<div style="font-family: 'IBM Plex Mono', monospace; font-size: 12px; color: #a09a8e; letter-spacing: 0.06em">UNDER THE SEASON GOAL</div>
+<sc-for list="{{ projects }}" as="p" hint-placeholder-count="4">
+<div style="border: 1px solid #2b2e35; border-radius: 6px; padding: 10px 12px; display: flex; flex-direction: column; gap: 8px; background: #191b20">
+<div style="display: flex; justify-content: space-between; align-items: center; gap: 8px">
+<button class="chip" onClick="{{ p.open }}" style="background: transparent; border: 0; color: #e6e3dc; font-size: 15px; font-weight: 500; padding: 0; text-align: left">{{ p.name }}</button>
+<span style="{{ p.statusStyle }}">{{ p.status }}</span>
+</div>
+<div style="display: flex; align-items: center; gap: 10px">
+<div style="flex-grow: 1; height: 6px; background: #2b2e35; border-radius: 3px; overflow: hidden"><div style="{{ p.barStyle }}"></div></div>
+<span style="font-family: 'IBM Plex Mono', monospace; font-size: 12px; color: #a09a8e">{{ p.progress }}</span>
+</div>
+<div style="font-size: 13px; color: #a09a8e">{{ p.now }}</div>
+</div>
+</sc-for>
+<div style="font-family: 'IBM Plex Mono', monospace; font-size: 12px; color: #a09a8e; letter-spacing: 0.06em; margin-top: 4px">OTHER ACTIVE</div>
+<div style="border: 1px solid #2b2e35; border-radius: 6px; padding: 10px 12px; display: flex; justify-content: space-between; background: #191b20">
+<span>Bedroom cells</span><span style="font-family: 'IBM Plex Mono', monospace; font-size: 12px; color: #a09a8e">4/12</span>
+</div>
+<div style="font-family: 'IBM Plex Mono', monospace; font-size: 12px; color: #a09a8e; letter-spacing: 0.06em; margin-top: 4px">WORKFORCE</div>
+<div style="font-size: 13px; color: #a09a8e">19 busy, 3 idle. Hauling 6, brewing 2, mining 3, building 2.</div>
+</div>
+</sc-if>
+</sc-if>
+
+<sc-if value="{{ hasDrawer }}" hint-placeholder-val="{{ false }}">
+<div style="padding: 14px; display: flex; flex-direction: column; gap: 14px; overflow-y: auto; max-height: 700px">
+<button class="chip" onClick="{{ closeDrawer }}" style="align-self: flex-start; background: transparent; color: #e8b454; border: 0; padding: 4px 0; font-size: 14px">Back</button>
+<div style="display: flex; justify-content: space-between; align-items: baseline; gap: 8px">
+<h2 style="margin: 0; font-size: 19px; font-weight: 600">{{ drawer.name }}</h2>
+<span style="{{ drawer.statusStyle }}">{{ drawer.status }}</span>
+</div>
+<div style="font-size: 13px; color: #a09a8e">{{ drawer.meta }}</div>
+<div style="font-family: 'IBM Plex Mono', monospace; font-size: 12px; color: #a09a8e; letter-spacing: 0.06em">STEPS</div>
+<div style="display: flex; flex-direction: column; gap: 8px">
+<sc-for list="{{ drawer.steps }}" as="st" hint-placeholder-count="5">
+<div style="display: flex; gap: 10px; align-items: flex-start">
+<span style="{{ st.markStyle }}">{{ st.mark }}</span>
+<div style="display: flex; flex-direction: column; gap: 2px">
+<span>{{ st.name }}</span>
+<sc-if value="{{ st.hasJob }}" hint-placeholder-val="{{ false }}">
+<span style="font-size: 13px; color: #a09a8e">{{ st.job }}</span>
+</sc-if>
+</div>
+</div>
+</sc-for>
+</div>
+<div style="font-family: 'IBM Plex Mono', monospace; font-size: 12px; color: #a09a8e; letter-spacing: 0.06em; margin-top: 4px">THIS PROJECT'S CONVERSATION</div>
+<div style="display: flex; flex-direction: column; gap: 10px">
+<sc-for list="{{ drawer.thread }}" as="m" hint-placeholder-count="4">
+<div style="display: flex; flex-direction: column; gap: 2px">
+<div style="display: flex; gap: 8px; align-items: baseline"><span style="{{ m.nameStyle }}">{{ m.who }}</span><span style="font-family: 'IBM Plex Mono', monospace; font-size: 12px; color: #7d786e">{{ m.when }}</span></div>
+<div style="{{ m.bodyStyle }}">{{ m.text }}</div>
+</div>
+</sc-for>
+</div>
+</div>
+</sc-if>
+
+</div>
+</div>
+</div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":980}}'>
+class Component extends DCLogic {
+  constructor(props) {
+    super(props);
+    this.state = { tab: 'chat', drawer: null, operator: false, filter: 'All' };
+  }
+  renderVals() {
+    const s = this.state;
+    const roles = {
+      Overseer: '#e8b454', Architect: '#7fb2e5', Quartermaster: '#8fcf9a',
+      Consultant: '#c7a6e8', Executor: '#b9b4aa', You: '#f08a5d', System: '#7d786e'
+    };
+    const btn = (on) => 'background: ' + (on ? '#e6e3dc' : 'transparent') + '; color: ' + (on ? '#15171b' : '#e6e3dc') + '; border: 1px solid #3a3f48; border-radius: 4px; padding: 6px 12px; font-size: 13px; min-height: 32px';
+    const tab = (on) => 'flex-grow: 1; background: transparent; color: ' + (on ? '#e6e3dc' : '#a09a8e') + '; border: 0; border-bottom: 2px solid ' + (on ? '#e8b454' : 'transparent') + '; padding: 12px; font-size: 14px; font-weight: 500; min-height: 44px';
+    const raw = [
+      { who: 'System', when: 'Autumn 1', text: 'Season change. Waking the Overseer for its seasonal review.', detail: 'wake_reason=season_change clock=slowed roles=[overseer]' },
+      { who: 'Overseer', when: 'Autumn 1', text: 'Season goal: drinks never below 30. Stock hit zero twice last season.', detail: 'queue.goal id=goal-0004 measure=drink_stock>=30' },
+      { who: 'Overseer', when: 'Autumn 1', text: 'Commissioning the Quartermaster: draft a plan to hold drinks above 30.', project: 'Second still', detail: 'queue.ask to=quartermaster kind=commission' },
+      { who: 'Quartermaster', when: 'Autumn 2', text: 'Proposal: a second still near the farm, and a standing order to brew whenever drinks fall below 40.', project: 'Second still', detail: 'queue.propose type=work_order steps=5' },
+      { who: 'Overseer', when: 'Autumn 2', text: 'Accepted as project version 1. It serves the season goal.', project: 'Second still', detail: 'queue.rule decision=accept -> project-0007 v1' },
+      { who: 'Executor', when: 'Autumn 4', text: 'Step 2 done: the still site is dug.', project: 'Second still', detail: 'diggable.dig res-5 targets=12/12 done' },
+      { who: 'Executor', when: 'Autumn 6', text: 'Hold on Barrels: no wood in reach. Trying the next-ranked grove.', project: 'Barrels for brewing', detail: 'hold=no_material_in_reach retry=trees.fell rank=2' },
+      { who: 'You', when: 'Autumn 6', text: 'Beds before winter too, please.', detail: 'telegram -> queue.user_message kind=advice' },
+      { who: 'Overseer', when: 'Autumn 6', text: 'Noted. Commissioning the Architect for six bedrooms once the still is built.', project: 'Bedroom cells', detail: 'queue.ask to=architect kind=commission' }
+    ];
+    const f = s.filter;
+    const messages = raw.filter((m) => f === 'All' || m.who === f).map((m) => ({
+      who: m.who, when: m.when, text: m.text, detail: m.detail,
+      project: m.project || '', hasProject: !!m.project,
+      showDetail: s.operator,
+      nameStyle: 'font-weight: 600; font-size: 14px; color: ' + roles[m.who],
+      bodyStyle: 'line-height: 1.45; ' + (m.who === 'System' ? 'color: #a09a8e; font-size: 13px' : m.who === 'You' ? 'color: #e6e3dc; background: #2a211c; border-radius: 6px; padding: 6px 10px' : 'color: #e6e3dc'),
+      open: () => this.setState({ drawer: m.project === 'Barrels for brewing' ? 'barrels' : 'still' })
+    }));
+    const filters = ['All', 'Overseer', 'Architect', 'Quartermaster', 'Executor', 'You'].map((x) => ({
+      label: x,
+      style: 'background: ' + (f === x ? '#e6e3dc' : 'transparent') + '; color: ' + (f === x ? '#15171b' : '#a09a8e') + '; border: 1px solid #3a3f48; border-radius: 12px; padding: 4px 10px; font-size: 12px; min-height: 28px',
+      pick: () => this.setState({ filter: x })
+    }));
+    const statusStyle = (st) => 'font-size: 12px; font-family: \'IBM Plex Mono\', monospace; padding: 2px 8px; border-radius: 10px; color: #15171b; background: ' + ({ active: '#7fb2e5', hold: '#e8b454', done: '#8fcf9a' }[st]);
+    const projects = [
+      { id: 'still', name: 'Second still', status: 'active', pct: 60, progress: '3/5', now: 'Building the still: Urist is hauling a shale boulder.' },
+      { id: 'barrels', name: 'Barrels for brewing', status: 'hold', pct: 25, progress: '1/4', now: 'Hold: no wood in reach. Executor trying the next grove.' },
+      { id: 'pile', name: 'Drink stockpile by the still', status: 'done', pct: 100, progress: '3/3', now: 'Done Autumn 3.' }
+    ].map((p) => ({ ...p, statusStyle: statusStyle(p.status), barStyle: 'height: 100%; width: ' + p.pct + '%; background: ' + ({ active: '#7fb2e5', hold: '#e8b454', done: '#8fcf9a' }[p.status]), open: () => this.setState({ drawer: p.id }) }));
+    const mark = (k) => ({ done: ['Done', '#8fcf9a'], run: ['Now', '#7fb2e5'], hold: ['Hold', '#e8b454'], wait: ['Next', '#7d786e'] }[k]);
+    const mkSteps = (list) => list.map((x) => ({ name: x[0], job: x[2] || '', hasJob: !!x[2], mark: mark(x[1])[0], markStyle: 'flex-shrink: 0; width: 44px; font-family: \'IBM Plex Mono\', monospace; font-size: 12px; color: ' + mark(x[1])[1] }));
+    const thread = (whoText) => whoText.map((m) => ({ who: m[0], when: m[1], text: m[2], nameStyle: 'font-weight: 600; font-size: 13px; color: ' + roles[m[0]], bodyStyle: 'font-size: 14px; line-height: 1.45; color: #e6e3dc' }));
+    const drawers = {
+      still: { name: 'Second still', status: 'active', meta: 'Proposed by the Quartermaster, commissioned by the Overseer. Version 1. Serves: drinks never below 30.',
+        steps: mkSteps([['Reserve a site near the farm', 'done'], ['Dig the site', 'done', '12 of 12 tiles dug'], ['Build the still', 'run', 'Urist Asmelkol is hauling a shale boulder'], ['Standing order: brew when drinks < 40', 'wait'], ['Check: the still produces drink', 'wait']]),
+        thread: thread([['Overseer', 'Autumn 1', 'Draft a plan to hold drinks above 30.'], ['Quartermaster', 'Autumn 2', 'A second still near the farm, plus a standing brew order.'], ['Overseer', 'Autumn 2', 'Accepted as version 1.'], ['Executor', 'Autumn 4', 'Step 2 done: the site is dug.']]) },
+      barrels: { name: 'Barrels for brewing', status: 'hold', meta: 'Sub-project of Second still. Version 1.',
+        steps: mkSteps([['Fell 4 trees', 'hold', 'No wood in reach; trying the next-ranked grove'], ['Order 6 barrels', 'wait'], ['Check: 6 barrels in stock', 'wait'], ['Check: brew order can run', 'wait']]),
+        thread: thread([['Executor', 'Autumn 6', 'Hold: no wood in reach. Trying the next-ranked grove.']]) }
+    };
+    const d = s.drawer ? drawers[s.drawer] : null;
+    return {
+      stats: [{ label: 'Date', value: 'Autumn, yr 31' }, { label: 'Dwarves', value: '22' }, { label: 'Drinks', value: '34' }, { label: 'Food', value: '120' }, { label: 'Idle', value: '3' }],
+      publicBtn: btn(!s.operator), operatorBtn: btn(s.operator),
+      setPublic: () => this.setState({ operator: false }), setOperator: () => this.setState({ operator: true }),
+      chatTab: tab(s.tab === 'chat'), projTab: tab(s.tab === 'projects'),
+      showChat: () => this.setState({ tab: 'chat' }), showProjects: () => this.setState({ tab: 'projects' }),
+      isChat: s.tab === 'chat', isProjects: s.tab === 'projects',
+      noDrawer: !d, hasDrawer: !!d,
+      drawer: d ? { ...d, statusStyle: statusStyle(d.status) } : { name: '', status: '', meta: '', steps: [], thread: [], statusStyle: '' },
+      closeDrawer: () => this.setState({ drawer: null }),
+      messages, filters, projects
+    };
+  }
+}
+</script>
+</body>
+</html>
