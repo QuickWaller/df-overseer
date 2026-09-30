@@ -1221,7 +1221,19 @@ df-overseer-well.lua:
         confirms candidates satisfy.
 
 df-overseer-orders.lua:
-  build_order_item: "gap named 2026-09-17, handoffs/2026-09-17-water-and-industry-tools.md item 4"
+  build_order_item: "gap named 2026-09-17, handoffs/2026-09-17-water-and-industry-tools.md item 4; generalised over job type and given frequency/conditions/material_category, handoffs/2026-10-01-orders-conditions.md"
+  # "" means the placeholder was omitted (dfmcp/tools.py fills it in when a
+  # caller names a later optional while skipping an earlier one). DRY_RUN's
+  # own default matches every other write in this project.
+  arg_defaults:
+    DRY_RUN: "true"
+    FREQUENCY: ""
+    MATERIAL: ""
+    MATERIAL_CATEGORY: ""
+    WORKSHOP_ID: ""
+    MAX_WORKSHOPS: ""
+    ITEM_CONDITIONS: ""
+    ORDER_CONDITIONS: ""
   commands:
     list:
       lua_function: list_orders
@@ -1251,52 +1263,74 @@ df-overseer-orders.lua:
         ConstructThrone, created 2026-09-23) read `validated: false`
         throughout a 900-tick run and did not change state
         (evals/live/2026-09-23-office-and-first-real-build/).
-    "create JOB AMOUNT [DRY_RUN]":
+        UPDATE 2026-10-01 (handoffs/2026-10-01-orders-conditions.md): row
+        building now goes through describe_order, the same helper
+        orders.create's post-write readback uses, adding workshop_id,
+        material_category (live bitfield flag names, reflected rather than
+        hardcoded), item_conditions and order_conditions to every row.
+        Purely additive (no existing field removed or renamed) but these
+        four new fields are OFFLINE, not yet live-verified: this fort's
+        three known orders have no conditions/material_category/workshop_id
+        set, so a live rerun would only confirm they come back
+        empty/absent, not that a real condition round-trips correctly.
+    "create JOB AMOUNT [FREQUENCY] [MATERIAL] [MATERIAL_CATEGORY] [WORKSHOP_ID] [MAX_WORKSHOPS] [ITEM_CONDITIONS] [ORDER_CONDITIONS] [DRY_RUN]":
       lua_function: create_order
       effect: mutate
       coordinate_bearing: false
-      live_deployed: true
-      verified: "2026-09-18 (DRY_RUN=true path only, all 12 jobs individually dry-run verified live via dfhack-run, each returning the expected job/reaction and a sane workshop_exists count -- 1 for brew_drink (the fort's one Still), 0 for the other 11; an unknown job name correctly refused, listing all 12 known jobs; the real create_orders call is still UNTESTED live, mutation forbidden this session)"
+      live_deployed: false
+      verified: unverified
       knowledge_scope: player_visible
       notes: >
-        JOB is one of blocks/mechanisms/barrels/brew_drink/bucket/bed/
-        door/table/chair/splint/crutch/soap (JOB_INFO, structured for
-        more later). handoffs/2026-09-18-lever-gap-tools.md added the last
-        eight: bucket=126 MakeBucket, bed=69 ConstructBed, door=67
-        ConstructDoor, table=72 ConstructTable, chair=70 ConstructThrone
-        (DF's own internal name for the chair job/item pair), splint=203
-        ConstructSplint, crutch=204 ConstructCrutch, soap=209
-        CustomReaction + reaction_name=MAKE_SOAP_FROM_TALLOW (a second
-        reaction, MAKE_SOAP_FROM_OIL, exists and was deliberately left
-        out -- see the .lua file's own header). Every job id was read live
-        off this install's own df.job_type enum, not guessed. Wraps
-        workorder.lua's own create_orders/preprocess_orders/
-        fillin_defaults (reqscript'd, confirmed live to load and expose
-        the right function types), reproducing its CLI default_action's
-        own exact call sequence rather than hand-building a
-        df.manager_order struct. MANAGER PREREQUISITE, checked live and
-        genuinely unresolved both ways: create_orders itself has no
-        code-level manager check at all, but dfhack.units.getNoblePositions
-        over every active unit found ZERO citizens holding the MANAGER
-        position on this fort today (a world.entities.all scan DID find a
-        filled MANAGER assignment elsewhere, but its histfig did not
-        resolve to a live unit via getUnitByHistfigId -- an unrelated
-        site, not Uniboslan). Whether DF's own engine then validates an
-        order into a real job with no Manager appointed is NOT verified
-        (would need an unpause, out of scope). Reports `manager_appointed`
-        and `workshop_exists` (a live count of the matching workshop
-        subtype -- for soap, a Custom/SOAP_MAKER building resolved live by
-        raws code, not a hardcoded index -- informational only, never a
-        refusal) on every call. WORKSHOP_SUBTYPE confidence varies per
-        job: bed is verified (wood-only in vanilla DF) and soap's Custom
-        workshop is live-confirmed present; door/table/chair/bucket
-        default to Carpenters as a single informational value though
-        vanilla DF allows building them of stone or metal too (an
-        alternate-material build is invisible to this count);
-        splint/crutch's workshop could not be found in any live-queryable
-        table and Carpenters there is wiki-level domain knowledge, not a
-        live read -- none of this affects order creation itself, which
-        never depends on workshop_subtype.
+        GENERALISED 2026-10-01 (handoffs/2026-10-01-orders-conditions.md),
+        replacing the prior twelve-entry JOB_INFO table (blocks/mechanisms/
+        barrels/brew_drink/bucket/bed/door/table/chair/splint/crutch/soap),
+        already flagged as a generalisability violation
+        (research/2026-09-30-policy-audit.md §1 row 2). BREAKING CHANGE:
+        JOB is no longer a short alias -- it is resolved generically, first
+        as a live `df.job_type` name (e.g. ConstructBlocks, MakeBucket), then
+        as a reaction code from world.raws.reactions.reactions (e.g.
+        BREW_DRINK_FROM_PLANT, MAKE_SOAP_FROM_TALLOW), matching
+        create_orders' own `it["reaction"]` handling
+        (research/2026-10-01-quartermaster-levers.md §1, wo.lua:205-210).
+        A caller that used to pass "blocks"/"brew_drink" must now pass
+        "ConstructBlocks"/"BREW_DRINK_FROM_PLANT". The old `workshop_exists`
+        informational count is REMOVED: it depended entirely on the same
+        hardcoded per-job table this stream removes, and df.job_type carries
+        no live-queryable workshop-subtype attribute to generalise it from
+        (checked against df.job.xml's own job_type enum-attr list at the
+        pinned tag). New optional arguments, all validated live and refused
+        by name when malformed (on the dry-run path too, not only on a real
+        write): FREQUENCY (a `df.workquota_frequency_type` name), MATERIAL
+        (anything dfhack.matinfo.find accepts), MATERIAL_CATEGORY (a
+        comma-separated class filter, e.g. "stone,wood" -- validated
+        against a throwaway df.manager_order's own live bitfield keys, since
+        job_material_category's flag names are not shipped as DFHack source
+        at the pinned tag, only referenced), WORKSHOP_ID/MAX_WORKSHOPS
+        (order pin/cap), ITEM_CONDITIONS ("COND:VALUE[:ITEM_TYPE[:MATERIAL]]"
+        entries separated by ";"), ORDER_CONDITIONS ("ORDER_ID:STATE"
+        entries separated by ";", STATE being Activated or Completed --
+        ORDER_ID must already exist in the live queue, since this tool
+        creates one order per call, not workorder.lua's own batch). See the
+        .lua file's own header for the exact syntax and every source
+        citation. Still wraps workorder.lua's own create_orders/
+        preprocess_orders/fillin_defaults, reproducing its CLI
+        default_action's own exact call sequence rather than hand-building
+        a df.manager_order struct. MANAGER PREREQUISITE unchanged from the
+        prior build (see the .lua file's own header) -- create_orders itself
+        has no code-level Manager check; whether DF's own engine then
+        dispatches a validated order with none appointed is a live-engine
+        question the register (2026-09-30/2026-10-01) reports as now
+        working on the live fort, not something this offline stream
+        re-confirmed. Reports `manager_appointed` on every call. On a real
+        (non-dry-run) write, the result's `order` field is read back live
+        from `world.manager_orders.all` (task 4: never an echo of the
+        request) via the same `describe_order` helper `orders.list` now
+        uses, identified by the manager_order_next_id counter read just
+        before the create call (exact under this project's existing
+        single-caller, paused-fort assumption). Offline build and
+        structural review only this stream (no live access, per the
+        handoff); the live test this needs is in this handoff's own Result
+        section.
     "cancel ID [DRY_RUN]":
       lua_function: cancel_order
       effect: mutate
@@ -1310,12 +1344,55 @@ df-overseer-orders.lua:
         for a df.manager_order object. Reversibility is the point (the
         handoff's own "orders.cancel ID for reversibility"), but the
         mechanism itself was never exercised on a real order this session.
+    "reorder ID POSITION [DRY_RUN]":
+      lua_function: reorder_order
+      effect: mutate
+      coordinate_bearing: false
+      live_deployed: false
+      verified: unverified
+      knowledge_scope: player_visible
+      notes: >
+        ADDED 2026-10-01 (handoffs/2026-10-01-orders-conditions.md). No
+        native "move order to position N" exists at this DFHack tag
+        (research/2026-10-01-quartermaster-levers.md §1): create_orders only
+        ever appends (wo.lua:440), and the only native reordering, the
+        `orders` plugin's `sort` command (orders.cpp:1012-1034), applies one
+        fixed rule (workshop-pinned first, then one-time before repeating),
+        not an arbitrary move. This is a direct erase+insert splice on
+        `world.manager_orders.all`, the same primitive `cancel_order`
+        already uses for deletion. POSITION is 1-based, matching
+        `orders.list`'s own `queue_position`, and is clamped to the queue's
+        current length rather than refused if it overshoots. Offline build,
+        not deployed; UNTESTED live.
+    "recheck ID [DRY_RUN]":
+      lua_function: recheck_order
+      effect: mutate
+      coordinate_bearing: false
+      live_deployed: false
+      verified: unverified
+      knowledge_scope: player_visible
+      notes: >
+        ADDED 2026-10-01 (handoffs/2026-10-01-orders-conditions.md).
+        CORRECTS the research's own first proposal ("wraps native `orders
+        recheck`"): orders.cpp's real `orders_recheck_command`
+        (orders.cpp:1040-1051) takes NO id argument at all -- it walks the
+        WHOLE queue and clears validated/active on every order that both
+        has item_conditions and is currently active. There is no native
+        per-order recheck to wrap. This tool instead reproduces that exact
+        gate scoped to one requested ID, writing `order.status.validated`/
+        `.active` directly (manager_order_status, df.workquota.xml:59-62,
+        carries no armok tag; the gate mirrors ordinary Manager-screen
+        behaviour, not a new capability). An order with no item_conditions,
+        or one that is not currently active, is reported as a no-op with a
+        named reason rather than hard-refused, matching `check_duplicate`'s
+        own "report, don't refuse" style for a legitimate state rather than
+        a malformed argument. Offline build, not deployed; UNTESTED live.
     "check-duplicate JOB":
       lua_function: check_duplicate
       effect: read
       coordinate_bearing: false
       live_deployed: true
-      verified: "2026-09-23 (evals/live/2026-09-23-order-job-attribution/README.md): called live as blocks, returned duplicate_risk:true, orders_in_flight correctly naming order id 0 (ConstructBlocks), jobs_in_flight empty (no live job assigned right now). Granted read-only to overseer, architect and quartermaster; no consultant entry"
+      verified: "2026-09-23 (evals/live/2026-09-23-order-job-attribution/README.md): called live as blocks, returned duplicate_risk:true, orders_in_flight correctly naming order id 0 (ConstructBlocks), jobs_in_flight empty (no live job assigned right now). Granted read-only to overseer, architect and quartermaster; no consultant entry. UPDATE 2026-10-01: JOB is now resolved by the same generic resolve_job used by orders.create (a live df.job_type name or a reaction code), not the removed JOB_INFO table -- the old 'blocks' alias no longer works, callers must pass 'ConstructBlocks'; not re-verified live under this new resolution."
       knowledge_scope: player_visible
       notes: >
         Added handoffs/2026-09-23-order-job-attribution-and-checks.md item 4:
@@ -1327,7 +1404,9 @@ df-overseer-orders.lua:
         Never refuses; `duplicate_risk` is a plain boolean summary, the
         caller decides what to do with it. Lives here (a Lua tool), not a
         native dfmcp tool or dfqueue -- see the .lua file's own header for
-        why. DEPLOYED 2026-09-23, see verified above.
+        why. DEPLOYED 2026-09-23, see verified above. 2026-10-01: JOB
+        resolution generalised (see verified above); everything else about
+        this command is unchanged.
 
 df-overseer-workjob.lua:
   build_order_item: "handoffs/2026-09-19-workshop-add-job.md -- the honest alternative to a stalled manager order: a direct workshop job, no Manager needed, per handoffs/2026-09-19-well-and-harvest.md section 6 and handoffs/2026-09-19-well-finish.md sections 2-4. GENERALISED handoffs/2026-09-21-workjob-generalise.md (dispatched 2026-09-23): the job vocabulary is now read live from DFHack's own workshops.getJobs, not a hand-maintained table -- see the .lua file's own header for the full coverage measurement and field-mapping citations."
