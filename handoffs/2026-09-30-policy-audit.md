@@ -83,4 +83,35 @@ this handoff's Result section (about 200 words).
 
 ## Result
 
-(to be filled in by the reviewer)
+Done. Full audit in `research/2026-09-30-policy-audit.md` (six commits, one
+per section, `8259cf2` through `cea7ab9` on this worktree's branch). Short
+answer: the codebase already mostly follows "set intent, let the game
+execute" — `orders.lua` wraps the real manager-order mechanism,
+`building.lua`/`workshop.lua` already write a material *class* into a
+buildingplan filter, autolabor's exclusivity is already enforced in both
+tools.yaml withholding and role charters, and `workjob.queue` is already
+documented as fallback-only. Two live conflicts were confirmed, both
+previously known, not newly discovered: `labor.set-labor` racing autolabor
+(already narrowed to overseer-only exception) and `construction.build`'s
+material choice being report-only rather than a real filter (a live gap
+already caught in `Working.md`, not yet fixed). The real gap is absence:
+nothing wraps DFHack `prioritize`, workshop `do_now`, or designation
+priority, even though all three are confirmed present and armok-clean on
+this install (`docs/DFHACK-INVENTORY.md`) — this is the concrete reason
+this audit was dispatched (`decisions/DECISIONS.md` 2026-09-30 last row) and
+it stands confirmed as still-missing. `production/blocker.py` and
+`cover.py`'s threshold half are a second AND-OR/thermostat planner beside
+manager-order conditions; the register's "freeze the rest" instruction is
+confirmed correctly scoped, neither too broad nor too narrow. The four
+goal-tree design documents are mostly the deferred half of the 2026-09-30
+lean-core decision already, not in tension with the policy; only
+`agents/quartermaster/role.md` carries a stale factual claim ("manager
+orders don't dispatch") that the register has since superseded, and
+`ROADMAP.md`'s Now bucket is five days stale. Ordered change list (nine
+items, smallest first) is in the audit's §6; items 3 and 7 need the user's
+go-ahead for live-VM work, item 9 is an already-framed user decision, the
+rest are direct applications of rulings already made. Not verified: live
+behaviour of `prioritize`/`do_now`/order-conditions (no VM access this
+pass), and a handful of conductor/consultant files classified from adjacent
+evidence rather than a full line-by-line trace (listed in the audit's own
+"Not verified" section). No permission refusals encountered.
