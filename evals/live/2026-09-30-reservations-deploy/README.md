@@ -53,7 +53,7 @@ reservation record, created and released within the run.
 | override on a dry run | `override_count` stayed 0 (dry runs record nothing) |
 | `unreserve` dry then real | released, `still_held_by: []`, list empty |
 | `construction.build 13 Wall` dry | `held`: ring tile 5 `item_present` (an unhauled PANTS on it), ring tile 15 `keeps_access` (would cut off exposed HEMATITE). Both guards fire on the real fort |
-| `building.build Masons` dry (Farm Plot, level -1) | material 182 (hematite) classified economic and excluded, `chosen_material: WOOD`; the isOre/isGem fix holds on the item path |
+| `building.build Masons` dry (Farm Plot, level -1) | material 182 (hematite) classified economic and excluded, `chosen_material: WOOD`; the isOre/isGem fix holds on the item path. **Corrected 2026-09-30: this verified only the tool's report.** The generated blueprint carries no material (`blueprint_text` writes only the kind's key), so `buildingplan` still attaches the closest suitable item at build time, which can be ore; the economic-material default is advisory (`research/2026-09-30-item-binding-design.md`) |
 
 ## Found live, not fixed here
 
