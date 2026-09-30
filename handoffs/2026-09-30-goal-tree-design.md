@@ -111,6 +111,16 @@ tree would have captured the chain once.
     project plus a per-cycle model budget; DF itself assigns jobs to idle
     dwarves one level below.
 
+13. **A taxonomy of jobs and checks, with a plan to fill every group**
+    (added mid-run, superseding an orchestrator suggestion of a thin
+    booze-chain slice, which the user has not accepted): categorise every
+    job and check into groups sharing one generic pattern, enumerated from
+    the game's own data (the `production/` dumps of job types, quickfort
+    kinds and workshop hosting; `df.job_type`; raws), cross checks with the
+    observability classes, map coverage against existing tools, and plan to
+    fill each group with every job and check it contains. The slice-versus-
+    group-filling choice is the user's to make.
+
 ## What to produce
 
 `research/2026-09-30-goal-tree-design.md`: a design document, cited, honest

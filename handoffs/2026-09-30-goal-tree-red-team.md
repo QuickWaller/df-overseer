@@ -64,7 +64,10 @@ explicitly and separately from findings about the design itself.
    then reclaim)? Does the wait-for graph see every kind of wait? Can the
    ready queue or labor fair-share starve something, or let two projects'
    jobs interfere in DF's own job assignment?
-9. **The worked example.** Walk the booze chain adversarially: what breaks
+9. **The taxonomy.** Does every job and check the game offers land in a
+   group, or does the design quietly leave some out? Are any groups forced
+   together that need different patterns?
+10. **The worked example.** Walk the booze chain adversarially: what breaks
    it?
 
 For each finding: severity (blocks building, must fix before a given build
