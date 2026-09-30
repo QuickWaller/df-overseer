@@ -11,7 +11,7 @@ user agreed so they can choose.
 A page beside the live video where people can watch the fort run itself:
 what the agents are saying to each other, what projects are under way and why,
 and how the season goal is going. The user has seen a clickable mockup and
-likes it: `C:\Users\wills\AppData\Local\Temp\claude\c--website-projects-df-automation\69cbce43-0ccd-45fe-ae4d-fe337a639f06\scratchpad\streampage\project\Main.dc.html`
+likes it: `research/2026-10-01-stream-page-mockup.dc.html`
 (sample data only; read it, its `renderVals()` holds the sample story). Its
 shape: live view left; status strip and season goal under it; right column
 with Chat (every queue record as a message from its role, role filters, jump
