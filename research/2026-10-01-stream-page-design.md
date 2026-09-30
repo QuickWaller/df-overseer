@@ -491,7 +491,7 @@ measurements after a week of real running:
 | Public items, raw JSON (about 300 bytes each) | about 25 MB | about 300 MB |
 | Same, gzip (JSON compresses roughly 5x, estimate) | about 5 MB | about 60 MB |
 | Closed segments | about 450 | about 5,000 |
-| Operator call records (1 KB each, 25 per role run) | about 6 GB worst case with 3 roles, much less in practice | about 8 GB |
+| Operator call records (1 KB each, 25 per role run) | about 0.7 GB | about 8 GB |
 
 A viewer's first load stays constant (four or five files, tens of KB)
 however long the history grows; only the season index grows, one line per
@@ -542,3 +542,179 @@ and full mouse and keyboard control then share one hostname and one login.
 That is right for one user. If the user ever wants to show the operator view
 to someone without handing them the fort, it needs its own hostname and
 Access application (§10).
+
+## 6. Q4, the UI
+
+### 6.1 What the mockup gets right (keep)
+
+The two-column shape with the video left and the conversation right; role
+colours with names; the status strip and season goal under the video; the
+Chat / Projects split; project chips on messages that open a drawer; the
+drawer's steps, current job and the project's own conversation; operator
+detail as a monospace line under each message. The palette and IBM Plex
+type suit the subject and the user liked them; keep both.
+
+### 6.2 What to change, and why
+
+Each is marked **DEPARTURE** where it changes what the user saw and agreed.
+
+1. **DEPARTURE: no Public / Operator switch on the public page** (§5). The
+   operator page has a "show as public" toggle instead.
+2. **Add a "right now" line under the video**, the most important addition.
+   The fort is paused or quiet most of the time (it has been paused for
+   most of its life so far), a model run takes minutes, and an empty chat
+   reads as broken. From `status.json`: "The Quartermaster is thinking
+   (woken for the season change), 2 min", "Paused: the Overseer is deciding
+   what to do about a hostile", "Running at full speed; nobody needs to
+   decide anything", "No news from the fort for 20 minutes". This is §8's
+   third condition (Sentry state published, so a pause reads as deliberation
+   rather than a crash), which the mockup has no place for.
+3. **The LIVE badge tells the truth**: Live, Paused (with why), Slowed, or
+   Offline, from the same status.
+4. **"Run by six agents" is not accurate.** Today: four model roles
+   (Overseer, Architect, Quartermaster, Consultant), a scheduler that is
+   code (the conductor), and, planned, a cheap executor model woken only on
+   a hold. Say "run by four AI agents and a scheduler" and add a small
+   **"Who's who"** popover: each role's one-line job, model, and what it may
+   and may not do (its allowlist, in words). Viewers cannot follow a
+   conversation without the cast list.
+5. **Step completions are the System speaking, not the Executor.** The
+   register's 2026-10-01 executor row: code runs every approved step; the
+   executor model wakes only on a hold. So "Step 2 done: the still site is
+   dug" is a System line, and the Executor appears only when it is choosing
+   what to do about a hold.
+6. **"You" is operator wording.** On the public page the user's own messages
+   show under the user's chosen display name, marked as the human; "You"
+   only on the operator page.
+7. **Sender and recipient on directed messages** ("Overseer to
+   Quartermaster"), from the new `to` field. The 2026-09-25 requirement is
+   exactly this: who talked to whom.
+8. **The season goal is not always a progress bar.** "Drinks never below
+   30" is a floor held over time, and a bar at 62% of it means nothing. The
+   goal card draws by the measure's operator: a floor or ceiling as a small
+   season-long line with the threshold marked ("lowest 31, now 34"); a
+   target to reach as a bar with a time marker; a count to build as "4 of
+   6". Data driven, one renderer per operator, not per goal.
+9. **Game date first, wall clock second.** "Autumn 1" is ambiguous; show
+   "12 Granite, year 31" with "4 min ago" beside it and the exact time on
+   hover. The day is derivable from the tick: 1,200 ticks a day, 28-day
+   months, 403,200 a year.
+10. **Filters: "Highlights" and "Everything" first, roles second.**
+    Highlights (the default) hides passes, routine step completions, quiet
+    wakes and lookups, and groups runs of System lines ("3 steps done on
+    Second still"). The role chips move into a small menu. **DEPARTURE**
+    (minor): the agreed design had role filters as the primary control.
+11. **"Jump to latest" appears only when the reader has scrolled up**, with
+    a count of new items. The chat never scrolls under a reader who is
+    reading.
+12. **Projects tab gains two groups**: "Waiting for a decision" (proposals
+    not yet ruled, commissions not yet drafted) and "Recently finished" (done
+    and abandoned, with why). The workforce line needs a labour read that no
+    cycle makes today; it moves to a later slice.
+
+### 6.3 A grammar for messages
+
+Each kind gets one visual treatment, so a reader learns it once:
+
+| Kind | Treatment |
+|---|---|
+| Proposal | a card: role, type label, public text, and a **verdict badge that updates in place** (Pending, Accepted, Rejected, Deferred), joined live from the later ruling, so a reader scrolling past an old proposal sees how it ended without hunting |
+| Ruling | the Overseer's line with a stamp (Accepted as version 1), quoting the proposal it answers |
+| Step done or held | a compact System line with the step label; holds amber with the hold code's text |
+| Wake | a thin divider line ("Season change: waking the Overseer"), not a message |
+| Escalation, alarm | red, pinned at the top of the chat until resolved |
+| Goal set, goal reviewed | a wide card spanning the chat, since it opens or closes a chapter |
+| User and Overseer messages | a distinct bubble, the only chat-app looking element on the page, because it is the only real conversation |
+
+### 6.4 Threading and reply lines
+
+**Reply quotes, not indentation.** A message that answers another shows
+one quoted line above it ("replying to Quartermaster: A second still near
+the farm...") that scrolls to and highlights the original. Nested threads in
+a live, time-ordered feed fragment it and hide the interleaving that is the
+point (the Overseer ruling on two advisors' proposals in one breath). The
+per-project and per-goal views are the "threaded" reading: the same items
+filtered by `thread`, shown in the drawer.
+
+### 6.5 How a project's life reads
+
+The drawer adds a **timeline** above the steps, one line per event, drawn
+from records that already exist or are proposed in §3:
+
+```
+Commissioned by the Overseer          1 Granite   serves: drinks never below 30
+Drafted by the Quartermaster (v1)     3 Granite   "A second still near the farm..."
+Accepted                              3 Granite
+Step 2 done: Dig the site             9 Granite
+Held: no wood in reach                14 Granite  the Executor is trying the next grove
+Amended to v2                         15 Granite  "Build with stone instead of wood"
+Done                                  2 Slate
+Checked: drinks held above 30         end of season
+```
+
+The steps list shows the current version, with a small "changed in v2"
+marker on steps an amendment replaced or added, and dropped steps struck
+through under a "Dropped in v2" fold. Abandoned projects keep their timeline
+and end with the Overseer's public reason. Nothing is ever edited, only
+appended, which is how the queue already works.
+
+### 6.6 The season archive, as the chronicle
+
+A **Seasons** tab (and a shareable page per season): newest first, one card
+per finished season, built from the immutable season files (4.2):
+
+- the goal and its stamp (Met, Partly, Missed), with the Overseer's review
+  in its own public words and whether it thought it was a good goal;
+- projects finished and abandoned, each linking its drawer;
+- the population line: arrivals, births, deaths by name (names are what a
+  player sees; they are the fort's story);
+- escalations and pauses, counted, each linking its moment;
+- "Read this season's conversation", which opens the chat at the season's
+  first segment.
+
+This is the chronicle's skeleton. When the Chronicler role is enabled, it
+adds one written paragraph per season to the same card; the card has room
+reserved for it and needs no redesign. Season files are immutable, so they
+are also stable citations for the public report.
+
+### 6.7 Mobile
+
+One column: the video (16:10, full width) with the status line pinned just
+beneath it, then three tabs: **Chat, Projects, Season**. The project drawer
+becomes a full-screen sheet with a back button that returns to the same
+scroll position. Filters open in a bottom sheet. Tap targets 44 px, as the
+mockup already has for tabs. On a narrow phone the video can collapse to a
+thumbnail strip so the chat gets the screen; tapping it expands.
+
+### 6.8 The ten-second test
+
+A first-time viewer should be able to answer three questions without
+scrolling:
+
+1. **What is this?** One sentence under the title: "A Dwarf Fortress colony
+   run by AI agents. Nobody is playing. This is what they are saying to each
+   other."
+2. **What are they trying to do?** The season goal card.
+3. **What is happening right now?** The "right now" line.
+
+The mockup answers the second only. A dismissible "How to read this" strip
+for first visits (remembered in the browser) explains roles, proposals and
+rulings in three lines.
+
+### 6.9 Ambient mode, for the screen on the wall (**addition**)
+
+`docs/PURPOSE.md` names four surfaces: the Pi on the wall, a phone,
+the website and a shareable artifact. The mockup serves two. `?ambient`
+gives the wall a full-bleed video, the season goal and the right-now line as
+a lower third, and the latest public item as a caption that fades after a
+minute; large type, no controls, a daily self-reload. Shareable artifacts
+come from permalinks: every item, project and season has an anchor URL.
+
+### 6.10 Accessibility
+
+Role is always a name as well as a colour; text contrast at least 4.5:1
+(the mockup's secondary grey on its panel colour is close and must be
+checked); new items announced politely to screen readers only while the
+reader is at the bottom, and throttled; motion respects reduced-motion
+settings; the drawer traps and returns focus. A light theme follows the
+system setting for the page chrome; the video frame stays dark.
