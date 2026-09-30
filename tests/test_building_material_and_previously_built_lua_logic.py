@@ -290,6 +290,11 @@ def test_economic_material_is_excluded_by_default_and_reported_why(w):
     assert f["available"] == 2
     assert "default" in f["material_choice"] and "non-economic" in f["material_choice"]
     assert not gaps
+    # 2026-10-01 (handoffs/2026-10-01-buildingplan-material-filter.md): the
+    # CLASS written into buildingplan's filter is every eligible material,
+    # not just the single reported chosen_material -- HEMATITE (economic)
+    # must never appear.
+    assert f["filter_material_names"] == ["SHALE"]
 
 
 def test_a_gem_material_is_economic_via_isGem_even_when_not_an_ore(w):
@@ -351,6 +356,10 @@ def test_allow_economic_overrides_the_default_and_can_pick_the_economic_material
     assert f_allowed["chosen_material"] == "HEMATITE"
     assert "excluded_materials" not in f_allowed
     assert "caller" in f_allowed["material_choice"]
+    # allow_economic widens the CLASS written to buildingplan to include the
+    # economic material alongside the non-economic one.
+    assert set(f_allowed["filter_material_names"]) == {"HEMATITE", "SHALE"}
+    assert set(f_default["filter_material_names"]) == {"SHALE"}
 
 
 def test_naming_a_material_explicitly_is_honoured_even_if_economic(w):
@@ -366,6 +375,8 @@ def test_naming_a_material_explicitly_is_honoured_even_if_economic(w):
     assert f["available"] == 1
     assert "caller named HEMATITE explicitly" in f["material_choice"]
     assert not gaps
+    # An explicitly named material is a class of one.
+    assert f["filter_material_names"] == ["HEMATITE"]
 
 
 def test_a_filters_own_non_economic_flag_beats_an_allow_economic_override(w):
