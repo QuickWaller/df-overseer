@@ -179,6 +179,9 @@ end
 
 function WORKORDER.create_orders(orders)
   for _, it in ipairs(orders) do
+    -- The real workorder.lua prints this from its own env (wo.lua:437);
+    -- modelled as an env lookup so a shadowed print is honoured.
+    ;(rawget(WORKORDER, 'print') or print)("Queuing " .. tostring(it.job) .. " x" .. tostring(it.amount_total))
     local jt = df.job_type[it.job]
     if jt == nil then
       error("Invalid job type for manager order: " .. tostring(it.job))

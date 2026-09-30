@@ -700,8 +700,23 @@ function create_order(
     return base
   end
   local orders = orders_or_err
+  -- workorder.lua prints "Queuing JOB xN" to stdout from inside
+  -- create_orders (wo.lua:437). On stdout it lands before our JSON, so the
+  -- MCP layer reads a successful create as a failure (found live
+  -- 2026-10-01: order 4 was created while the call reported isError). Its
+  -- print is looked up in the script's own env, so shadow it there for the
+  -- duration of the call and report the lines as a field instead.
+  local captured = {}
+  local had_print = rawget(workorder_mod, 'print')
+  workorder_mod.print = function(...)
+    local parts = {}
+    for i = 1, select('#', ...) do parts[#parts + 1] = tostring((select(i, ...))) end
+    captured[#captured + 1] = table.concat(parts, '\t')
+  end
   pcall(workorder_mod.fillin_defaults, orders)
   local ok_create, create_err = pcall(workorder_mod.create_orders, orders)
+  workorder_mod.print = had_print
+  if #captured > 0 then base.workorder_output = captured end
   base.create_ok = ok_create
   base.create_error = (not ok_create) and tostring(create_err) or nil
   if ok_create then

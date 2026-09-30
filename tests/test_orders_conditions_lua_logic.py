@@ -290,6 +290,16 @@ def test_real_create_reads_the_order_back_from_the_queue(w):
     assert isinstance(order["id"], int)
 
 
+def test_workorder_output_is_captured_not_printed_to_stdout(w):
+    # Live 2026-10-01: workorder.lua's "Queuing JOB xN" line landed on stdout
+    # before the JSON, so a successful create read as an MCP error.
+    w.run("STDOUT_LINES = {}; print = function(...) STDOUT_LINES[#STDOUT_LINES + 1] = table.concat({...}, ' ') end")
+    r = w.call("create_order", "ConstructBlocks", "2", "Daily", "", "", "", "", "", "", "false")
+    assert r["create_ok"] is True
+    assert any("Queuing" in line for line in r["workorder_output"])
+    assert len(w.g["STDOUT_LINES"]) == 0
+
+
 def test_real_create_rejection_from_the_wrapped_module_surfaces_as_create_error(w):
     # material_category validated offline against a THROWAWAY manager_order's
     # own bitfield keys (validate_material_category); the wrapped module's
