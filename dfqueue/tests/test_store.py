@@ -1144,10 +1144,28 @@ def test_target_state_folds_correctly_from_append_only_records(tmp_path):
 
 
 def test_target_state_fold_records_a_held_target_with_its_reason(tmp_path):
+    """s2's own `requires: [s1]` (`trigger: all_done`) must be satisfied
+    before an `executed` record naming s2 is accepted at all (item 2,
+    `handoffs/2026-10-01-queue-bugs-and-amend.md`), so s1 is finished first
+    -- this test's own point (a held target's reason surviving into
+    `project_status`) is otherwise unaffected."""
     path = _db(tmp_path)
     store.append(make_proposal(), path, game_tick=100)
     ruling, project = _rule_and_project(path)
+    s1 = project["steps"][0]["id"]
     s2 = project["steps"][1]["id"]
+
+    store.append(
+        make_executed(
+            ruling_id=ruling["id"], cycle=10, step_id=s1,
+            actions=[{
+                "tool": "construction.mine-vein", "outcome": "success",
+                "targets": ["ring-13-ore-1", "ring-13-ore-2", "ring-13-ore-3"],
+                "target_state": "done",
+            }],
+        ),
+        path,
+    )
 
     store.append(
         make_executed(

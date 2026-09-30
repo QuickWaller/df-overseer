@@ -591,6 +591,29 @@ write:
       existed keeps working the same way if this call is skipped or is a
       no-steps call.
 
+  - id: "queue.amend"
+    status: exists
+    note: >-
+      Added handoffs/2026-10-01-queue-bugs-and-amend.md item 3
+      (research/2026-09-30-goal-tree-red-team.md F-3: "nothing can carry a
+      change to an accepted project"). Writes a new numbered plan version
+      of an already-accepted project: 'steps' is the FULL new step list
+      this version replaces the previous one with, never a diff; nothing
+      already written is overwritten, and a step already executed keeps
+      its own record regardless of which version named it.
+      queue.project_status reads the latest version and shows its number.
+      Restricted to the roster's sole_writer the same way queue.project is
+      (dfmcp/roles.py rule 6, reusing sole_writer_only).
+  - id: "queue.abandon"
+    status: exists
+    note: >-
+      Same handoff. Marks an already-accepted project (and its still-open
+      steps) abandoned with a required reason; executed history is
+      untouched. This is the escalation-answer route the red team's F-3
+      found missing: an answer of "drop this plan" now has somewhere to
+      go. Restricted to the roster's sole_writer the same way queue.amend
+      is; refused a second time on an already-abandoned project.
+
   - id: "nobles.appoint"
     status: exists
     note: >-
