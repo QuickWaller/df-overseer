@@ -56,4 +56,53 @@ tests and lua stubs. Read-only use of openarea and reservations.
 
 ## Result
 
-(fill in, about 200 words)
+Mechanism documented in the .lua file's own header, sourced from DFHack
+53.16-r1 (dfhack.git) with `scripts` pinned to DFHack/scripts.git commit
+7549711a993e03bef19e90b27427096c1099853e: `#place` sizes a pile from its
+own cell grid (1..31 per axis, place.lua:4-10); a cell's letters
+(place.lua:78-97) pick categories, several letters combine into one
+custom pile (place.lua:109-164); `configure_stockpile` (place.lua:256-268)
+enables/disables a whole category via `plugins.stockpiles.import_settings`
+against a `cat_<name>.dfstock` library preset (all 17 confirmed present),
+whose real ENABLE/DISABLE semantics live in
+`StockpileSerializer::read_category`
+(plugins/stockpiles/StockpileSerializer.cpp:901-929); give/take links
+(place.lua:372-415) write the same four vectors the existing `links`
+command already reads. One real naming trap found and documented:
+"sheet" (this file's own accept-category name) vs "sheets" (the preset
+and place.lua's own spelling).
+
+Built: `place`, `configure`, `link`, `unlink` in
+`scripts/dfhack/df-overseer-stockpile.lua`, all DRY_RUN-true by default,
+reusing openarea's `is_free` finder and reservations'
+`filter_reserved`/`check_tiles` for `place`. Reports read back the real
+building state, never an echo of the request. TOOLS.yaml entries added
+(`live_deployed: false`, `verified: unverified`). Tests:
+`tests/test_stockpile_writing_lua_logic.py` (14 new, against
+`tests/lua_stubs/dfhack_stockpile_world.lua` plus the REAL
+reservations.lua) — states plainly the fake quickfort run does not
+exercise the real quickfort_building pipeline (tile-shape validity,
+extent grouping, container defaults) or the real plugin's subtype
+behaviour.
+
+Test counts (this stream): ambient `python -m pytest` 2142 passed, 3
+skipped (lupa on PYTHONPATH). `dfmcp/tests` under the main checkout's
+`.venv-dfmcp`: 722 passed.
+
+Role: checked agents/*/tools.yaml -- `stockpile.list`/`stockpile.links`
+(read) are already granted to overseer, architect AND quartermaster;
+`zone.place` (the closest mutating precedent) is granted to overseer
+and architect only, not quartermaster. Recommend: `place` (siting a
+new pile) alongside overseer/architect's existing `zone.place`/
+`workshop.build`; `configure`/`link`/`unlink` (routine stockpile
+management, no siting) to quartermaster, which already reads
+`stockpile.list`/`links` and is this project's production-lever role
+(register 2026-09-30, the quartermaster-levers research just
+dispatched per git log). Final grant is the orchestrator's call.
+
+Only a live run settles: whether `is_free`'s coarser check (vs
+place.lua's own `is_valid_stockpile_tile`) ever actually produces a
+short pile on Uniboslan's real terrain; whether `configure`'s
+enable/disable round-trips correctly against a real building's
+`settings.flags`; and the real shape of `give_to_pile` etc. on a live
+stockpile/workshop pair.
