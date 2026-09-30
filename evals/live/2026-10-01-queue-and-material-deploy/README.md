@@ -43,3 +43,32 @@ list from buildingplan's own vocabulary and read it back after writing.
 
 My own first read of the check miscounted (it treated each returned table as
 true); corrected by reading `props.enabled`, as recorded above.
+
+## After the fix (deploys `2026-10-01-c` at `baa283b` and `2026-10-01-d` at `09b5256`)
+
+The stream rebuilt the class from buildingplan's own vocabulary with a
+read-back. The first live dry run then showed 223 names with no hematite, but
+including metals (adamantine, aluminum) and wool: the default took every
+non-economic name buildingplan accepts for a wall. The orchestrator narrowed
+the default to the register's class, stone and wood only (`DEFAULT_CLASS_CATEGORIES`,
+data), with a category name (`stone`, `wood`) accepted as the choice, plus
+three tests. Live dry run after: 143 names, stone and wood only, no metal,
+no hematite.
+
+Reversible write on the real game (`bpapply.lua`, calling the tool's own
+exported `building_filters_and_gaps` and `apply_material_filters`):
+
+| Step | Construction/Wall filter 0 |
+|---|---|
+| before | 367 of 367 enabled, hematite and adamantine among them |
+| tool writes its class | `ok true`, read-back 143 enabled, no hematite, no adamantine |
+| restore | 367 of 367 |
+
+Stockpile tools deployed (overseer now 93 tools) but only as code; no live
+call yet.
+
+**Still unverified:** that a dwarf fetching for a real planned building
+honours the narrowed filter (needs a real build and an unpause), and that
+quickfort registers the building with buildingplan inside the write-restore
+window (`buildingplan.cpp:636` copies the filter at add time; quickfort's
+call timing not re-read).
