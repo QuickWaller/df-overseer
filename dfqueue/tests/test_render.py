@@ -15,8 +15,9 @@ from xml.etree import ElementTree as ET
 
 from dfqueue import render
 from dfqueue.tests._helpers import (
-    make_answer, make_ask, make_escalation, make_executed, make_observation,
-    make_pass, make_project, make_proposal, make_ruling,
+    make_abandon, make_amend, make_answer, make_ask, make_escalation,
+    make_executed, make_observation, make_pass, make_project, make_proposal,
+    make_ruling,
 )
 
 
@@ -221,3 +222,49 @@ def test_observation_xml_round_trips():
     assert result.get("target") == record["results"][0]["target"]
     assert result.get("status") == record["results"][0]["status"]
     assert result.text == record["results"][0]["reason"]
+
+
+# ---- amend / abandon (handoffs/2026-10-01-queue-bugs-and-amend.md item 3) ----
+
+
+def test_amend_xml_round_trips_project_id_reason_and_steps():
+    record = make_amend(id="amend-0001")
+    xml = render.to_xml(record)
+    root = ET.fromstring(xml)
+    assert root.tag == "amend"
+    assert root.find("project_id").text == record["project_id"]
+    assert root.find("reason").text == record["reason"]
+    assert root.find("replaces").text == ",".join(record["replaces"])
+    steps = root.find("steps").findall("step")
+    assert len(steps) == 2
+    assert steps[0].get("id") == record["steps"][0]["id"]
+
+
+def test_amend_xml_omits_replaces_adds_drops_when_empty():
+    record = make_amend(id="amend-0001", replaces=[], adds=[], drops=[])
+    xml = render.to_xml(record)
+    root = ET.fromstring(xml)
+    assert root.find("replaces") is None
+    assert root.find("adds") is None
+    assert root.find("drops") is None
+
+
+def test_abandon_xml_is_well_formed():
+    record = make_abandon(id="abandon-0001")
+    xml = render.to_xml(record)
+    root = ET.fromstring(xml)
+    assert root.tag == "abandon"
+    assert root.find("project_id").text == record["project_id"]
+    assert root.find("reason").text == record["reason"]
+
+
+def test_public_view_of_amend_and_abandon_carries_only_common_allowlisted_fields():
+    """Same "allowlist, not denylist" discipline as escalation's own test:
+    neither an amend's plan/reason nor an abandon's reason is published."""
+    amend = make_amend(id="amend-0001", ts="2026-10-01T00:00:00+00:00")
+    view = render.public_view(amend)
+    assert view == {"id": "amend-0001", "ts": "2026-10-01T00:00:00+00:00", "kind": "amend", "role": "overseer"}
+
+    abandon = make_abandon(id="abandon-0001", ts="2026-10-01T00:00:00+00:00")
+    view = render.public_view(abandon)
+    assert view == {"id": "abandon-0001", "ts": "2026-10-01T00:00:00+00:00", "kind": "abandon", "role": "overseer"}
