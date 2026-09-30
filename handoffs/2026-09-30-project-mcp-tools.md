@@ -38,6 +38,18 @@ who writes what) and §7 (what agents see) in full before starting.
    the role allowlists under `agents/*/tools.yaml`, and any test that pins
    role tool counts.
 
+## Since this brief was written
+
+- `dfmcp/tools.py` now scopes argument descriptions per command, then per
+  script, then bare (`handoffs/2026-09-30-reservation-gaps.md`, merged
+  `36d9c67`); `_describe` takes an optional `tool_id`. Use that, do not
+  assume the older shape.
+- Everything through `36d9c67` is deployed on VM 103; live role counts are
+  overseer 85, architect 51, consultant 29, quartermaster 24, conductor 15.
+  Report the new counts your grants would give.
+- Read the codebase-wide rules list in
+  `handoffs/2026-09-30-reservation-gaps.md` and follow it.
+
 ## Out of scope
 
 - The conductor reconciler and blueprint template `steps:` blocks (design
