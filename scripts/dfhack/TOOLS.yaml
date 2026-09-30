@@ -2105,6 +2105,11 @@ df-overseer-stocks.lua:
 
 df-overseer-labor.lua:
   build_order_item: "not in the 0-9 spatial build order -- a separate gap, decisions/DECISIONS.md 2026-09-11"
+  # Documented default (the value quota's own Lua uses when DRY_RUN is
+  # omitted), used by dfmcp/tools.py to fill a slot an agent skipped while
+  # naming a later optional argument by name. Same convention as the farm/
+  # workshop/zone/trees/well/nobles files.
+  arg_defaults: {DRY_RUN: "true"}
   commands:
     "unit-status [idle|injured|military|hostile]":
       lua_function: unit_status
@@ -2197,6 +2202,66 @@ df-overseer-labor.lua:
         (contract C1); the MCP argument `labor` is an array with one item
         per name, expanded into one command-line word each. Enabled means the labor bit is set, not that anyone is skilled or
         idle.
+
+    "quota LABOR MIN MAX [POOL] [DRY_RUN]":
+      lua_function: labor_quota
+      effect: mutate
+      coordinate_bearing: false
+      live_deployed: false
+      verified: unverified
+      knowledge_scope: player_derivable
+      notes: >
+        ADDED handoffs/2026-10-01-labor-quota.md
+        (research/2026-10-01-quartermaster-levers.md §2, "set intent, let
+        the game execute": autolabor is the labour engine on this fort,
+        this repo's job is per-labour targets, not hand-assignment).
+        Refuses exactly like set-labor when autolabor's enabled state
+        can't be determined, or when it is confirmed off. DRY_RUN defaults
+        to true: validates the labor name and MIN/MAX/POOL shape and
+        reports what would be set, without calling autolabor at all. A
+        real write (DRY_RUN false) shells to `autolabor LABOR MIN MAX
+        [POOL]` (the only interface for these numbers -- no Lua accessor
+        exists per the research) and its report is always a fresh
+        read-back through quota-status's own parser, never an echo of the
+        MIN/MAX/POOL the caller passed. player_derivable, not
+        player_visible, because it writes autolabor's own per-labour
+        policy rather than reading a screen a vanilla player has. Exercised
+        against a fake autolabor CLI in
+        tests/test_labor_quota_lua_logic.py (16 cases: validation, the
+        refusal, the dry-run no-call path, the real write's read-back
+        including a pool default the caller never passed, and a simulated
+        CLI failure) -- NOT yet run against the real plugin; the research's
+        own "Not verified" section flags a live call as the way to confirm
+        `autolabor LABOR MIN MAX` and `autolabor list`'s real text format
+        both work the way this file's parser assumes. Only the overseer
+        holds this grant (it is the sole mutating labor tool, same as
+        set-labor).
+    "quota-status [LABOR]":
+      lua_function: labor_quota_status
+      effect: read
+      coordinate_bearing: false
+      live_deployed: false
+      verified: unverified
+      knowledge_scope: player_derivable
+      notes: >
+        ADDED handoffs/2026-10-01-labor-quota.md. Parses `autolabor list`'s
+        own text output (research §2's cited source format, the only query
+        surface that exists -- a bare `autolabor LABOR` is flagged
+        unverified by the research, so this deliberately parses the full
+        `list` output rather than depending on that unverified single-labor
+        form) for one LABOR or, with none given, every labor autolabor
+        reports on. Each entry carries autolabor's own self-reported
+        "currently N dwarfs" AND an independently-read per-citizen count
+        (the same enabled-counts logic, never a guessed 0 for an unknown
+        name). A labor autolabor's own `list` never mentions is an error,
+        never a default. player_derivable: this is a computation over
+        autolabor's own text output plus a player-visible per-citizen
+        labor read, not itself a vanilla screen. Exercised in
+        tests/test_labor_quota_lua_logic.py against a fake `autolabor
+        list` output (automatic/disabled/haulers modes, unknown labor,
+        labor-with-no-autolabor-entry, and the no-argument "everything
+        autolabor has" shape) -- NOT yet run against the real plugin's own
+        text format live.
 
 df-overseer-ui.lua:
   build_order_item: "infra-support (menu/UI automation), not a perception/action primitive"
