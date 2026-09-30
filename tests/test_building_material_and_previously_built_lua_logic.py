@@ -396,6 +396,36 @@ def test_economic_material_is_excluded_by_default_and_reported_why(w):
     assert set(f["filter_material_names"]) == {"SHALE", "WILLOW"}
 
 
+def _vocab(w, entries):
+    w.lua.execute("set_vocabulary({" + ",".join(
+        '{name="%s", category="%s"}' % e for e in entries) + "})")
+
+
+def test_default_class_is_stone_and_wood_only_never_metal(w):
+    # Live 2026-10-01: a wall's vocabulary on Uniboslan held metals
+    # (adamantine, aluminum) and cloth; the default class (register
+    # 2026-09-30: any non-ore stone, any wood) must drop them.
+    _vocab(w, [("SHALE", "stone"), ("WILLOW", "wood"), ("ADAMANTINE", "metal"),
+               ("ALPACA WOOL", "yarn")])
+    req, _ = w.requirements()
+    f = req["building_material"]["filters"][0]
+    assert set(f["filter_material_names"]) == {"SHALE", "WILLOW"}
+
+
+def test_a_category_name_as_the_choice_gives_that_class(w):
+    _vocab(w, [("SHALE", "stone"), ("WILLOW", "wood"), ("OAK", "wood"), ("ADAMANTINE", "metal")])
+    req, _ = w.requirements(choice="wood")
+    f = req["building_material"]["filters"][0]
+    assert set(f["filter_material_names"]) == {"WILLOW", "OAK"}
+
+
+def test_a_filter_with_no_stone_or_wood_keeps_every_non_economic_category(w):
+    _vocab(w, [("ALPACA WOOL", "yarn"), ("SILK", "silk")])
+    req, _ = w.requirements()
+    f = req["building_material"]["filters"][0]
+    assert set(f["filter_material_names"]) == {"ALPACA WOOL", "SILK"}
+
+
 def test_a_gem_material_is_economic_via_isGem_even_when_not_an_ore(w):
     # handoffs/2026-09-28-building-economic-uses-fix.md: the fix reads BOTH
     # inorganic:isOre() and inorganic.material:isGem(), not isOre() alone --

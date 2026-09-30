@@ -964,6 +964,8 @@ end
 -- already known to buildingplan can still be named). Returns names (a list;
 -- nil only on a hard error, NEVER an empty list, so the caller cannot mistake
 -- "could not resolve" for "the class is genuinely empty"), error.
+DEFAULT_CLASS_CATEGORIES = {stone = true, wood = true}
+
 local function resolve_filter_class(vocab, flags, choice, economic_names)
   if not vocab or not next(vocab) then
     return nil, "buildingplan reports no material vocabulary for this filter"
@@ -985,6 +987,19 @@ local function resolve_filter_class(vocab, flags, choice, economic_names)
     end
   end
 
+  -- A category name (stone, wood, ...) as the choice: that whole class,
+  -- still minus economic materials unless allow_economic.
+  if requested_name then
+    local cat = requested_name:lower()
+    local cat_names = {}
+    for name, entry in pairs(vocab) do
+      if entry.category == cat and not (is_economic(name, entry) and must_non_economic) then
+        cat_names[#cat_names + 1] = name
+      end
+    end
+    if #cat_names > 0 then table.sort(cat_names); return cat_names, nil end
+  end
+
   if requested_name then
     local match_name, match_entry
     for name, entry in pairs(vocab) do
@@ -1001,9 +1016,20 @@ local function resolve_filter_class(vocab, flags, choice, economic_names)
     return {match_name}, nil
   end
 
+  -- The default class is data (register 2026-09-30: "any non-ore stone,
+  -- any wood"): only DEFAULT_CLASS_CATEGORIES when the vocabulary has any
+  -- of them (a wall must never take metal bars or adamantine by default);
+  -- otherwise every non-economic category the filter accepts.
+  local use_default_cats = false
+  if not allow_economic then
+    for _, entry in pairs(vocab) do
+      if DEFAULT_CLASS_CATEGORIES[entry.category] then use_default_cats = true; break end
+    end
+  end
   local names = {}
   for name, entry in pairs(vocab) do
-    if not (is_economic(name, entry) and not (allow_economic and not must_non_economic)) then
+    if (not use_default_cats or DEFAULT_CLASS_CATEGORIES[entry.category])
+        and not (is_economic(name, entry) and not (allow_economic and not must_non_economic)) then
       names[#names + 1] = name
     end
   end
