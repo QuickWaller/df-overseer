@@ -14,6 +14,8 @@ actually going on right now.
 
 **The user's decisions today are all in the register, 2026-09-30 rows** (read them before designing anything in this area). The one that governs everything: **set intent, let the game execute** (memory `set-intent-let-game-execute`): our layer decides *what* and *whether it is working*; DF schedules dwarves, workshops and materials (manager orders, which the user reports work; autolabor quotas; buildingplan class filters; designation priority and order sequence; "do now" only for genuine problems). **Lean core** to build; everything else agreed today is deferred direction, built only when a real run shows the need.
 
+**2026-10-01 progress:** Streams A and B merged and deployed to VM 103 (`evals/live/2026-10-01-queue-and-material-deploy/`): amend/abandon live (overseer 89 tools); B's material filter found live to be a silent no-op (wrong material names), sent back for a fix. Running: stockpile writing, Quartermaster levers research, unattended popups research. Decided today (register): every role on DeepSeek pro; executor hybrid and its bounds; top-down commissioning; Overseer seasonal review with a season goal it chooses alone; chat visible on the stream (requirement).
+
 **Goal (user, 2026-10-01): a minimal starting point**, the agents running the fort one game year hands-off; military deferred (register 2026-10-01 has the full gap list). Streams A and B dispatched 2026-10-01 (`handoffs/2026-10-01-queue-bugs-and-amend.md`, `handoffs/2026-10-01-buildingplan-material-filter.md`). After them: stockpile writing, manager orders with conditions and repeat, `labor.quota`, burrows and civilian alert, the priority tool, an unattended answer to self-pausing popups.
 
 **Next concrete steps, in order:**
