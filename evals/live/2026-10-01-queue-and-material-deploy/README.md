@@ -72,3 +72,22 @@ honours the narrowed filter (needs a real build and an unpause), and that
 quickfort registers the building with buildingplan inside the write-restore
 window (`buildingplan.cpp:636` copies the filter at add time; quickfort's
 call timing not re-read).
+
+## Manager orders live test (deploys `2026-10-01-e`, `2026-10-01-f`)
+
+- Dry run then real `orders.create MakeBarrel 2 Daily`, item condition
+  `AtMost:20:BARREL` (17 barrels in stock): order 4 created and read back
+  from the game exactly (Daily, AtMost 20 BARREL, amount 2).
+- **Bug found live:** `workorder.lua` prints `Queuing MakeBarrel x2` to
+  stdout before the tool's JSON, so a successful create came back from MCP
+  as `isError` (an agent would retry and duplicate). Fixed (`0be8c2a`): the
+  line is captured into `workorder_output`; regression test fails without
+  the fix.
+- Supervised unpause, 10 FPS, 300 s, tripwire armed: tick 209571 to 212610
+  (about 2.5 game days), 22 alive, 0 warnings, re-paused and restored.
+- **After the window, nothing dispatched:** order 4 `validated: false,
+  active: false`; orders 0 to 2 (from weeks earlier) `validated: true,
+  active: false`; order 3 never validated; barrels still 17. The Manager
+  (appointed, with an office) is not turning orders into jobs on this fort,
+  consistent with the 2026-09-24 finding and not with the 2026-09-30 report
+  that orders work. Cause unknown; order 4 left in place as a live case.
