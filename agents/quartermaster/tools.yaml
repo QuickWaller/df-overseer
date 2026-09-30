@@ -209,3 +209,11 @@ deny:
       design for how a proposal cites doctrine has no field in dfqueue.schema
       yet, so granting read access now would be an unenforced convention.
       Revisit when that field exists.
+  - id: "stockpile.place"
+    reason: Advisors do not act. Propose it.
+  - id: "stockpile.configure"
+    reason: Advisors do not act. Propose it.
+  - id: "stockpile.link"
+    reason: Advisors do not act. Propose it.
+  - id: "stockpile.unlink"
+    reason: Advisors do not act. Propose it.

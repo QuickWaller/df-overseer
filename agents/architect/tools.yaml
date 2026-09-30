@@ -434,3 +434,11 @@ deny:
       whichever role actually decides what to do about it. Revisit if a
       proposal type ever needs to cite a measured trend directly rather
       than a Quartermaster/Overseer assessment of one.
+  - id: "stockpile.place"
+    reason: Advisors do not act. Propose it.
+  - id: "stockpile.configure"
+    reason: Advisors do not act. Propose it.
+  - id: "stockpile.link"
+    reason: Advisors do not act. Propose it.
+  - id: "stockpile.unlink"
+    reason: Advisors do not act. Propose it.

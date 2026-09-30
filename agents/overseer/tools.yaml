@@ -688,6 +688,27 @@ write:
       world only; the real quickfort #build/Cw path has never run through
       this tool.
 
+  - id: "stockpile.place"
+    status: exists
+    note: >-
+      Added handoffs/2026-10-01-stockpile-writing.md. DRY_RUN defaults to
+      true. Places a W x H pile (1..31) near a landmark with the given
+      categories; openarea finder, reservations respected. Not yet live-verified.
+  - id: "stockpile.configure"
+    status: exists
+    note: >-
+      Same handoff. DRY_RUN defaults to true. Enables/disables whole
+      categories on an existing pile via the stockpiles plugin presets.
+  - id: "stockpile.link"
+    status: exists
+    note: >-
+      Same handoff. DRY_RUN defaults to true. Give/take link to a workshop
+      or another pile, by id.
+  - id: "stockpile.unlink"
+    status: exists
+    note: >-
+      Same handoff. DRY_RUN defaults to true.
+
 planned:
   - id: "playbook.write"
     status: planned
