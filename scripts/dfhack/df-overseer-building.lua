@@ -109,6 +109,17 @@
 -- an "allow_economic" override (the game would refuse economic material
 -- there regardless).
 --
+-- ENFORCED, NOT JUST ADVISORY, AS OF 2026-10-01 (handoffs/2026-10-01-
+-- buildingplan-material-filter.md, register 2026-09-30 ruling): a REAL
+-- (non-dry) build now writes the resolved CLASS (every eligible material
+-- name, not just the single reported chosen_material) into buildingplan's
+-- own per-building-type filter for the duration of the quickfort run, then
+-- restores whatever was there before -- see apply_material_filters and its
+-- header comment below for the mechanism, sourced from DFHack at 53.16-r1.
+-- Before this fix the blueprint carried no material at all and buildingplan
+-- attached the closest item, which could be ore
+-- (evals/live/2026-09-30-reservations-deploy/README.md, correction).
+--
 -- KIND_PREVIOUSLY_BUILT (2026-09-28, same handoff). `find` and `build` both
 -- report whether a real (non-dry-run) building of this exact kind
 -- (type/subtype/custom) already exists at full build stage
@@ -877,6 +888,10 @@ local function resolve_material_choice(rec, by_name, errors, flags, choice)
     rec.chosen_material = m.name
     rec.material_choice = "caller named " .. m.name .. " explicitly"
     rec.available = m.units
+    -- The CLASS written to buildingplan's own filter (2026-10-01, see
+    -- apply_material_filters below): a single named material is a class of
+    -- one, expressed the same way as the multi-material default below.
+    rec.filter_material_names = {m.name}
     return
   end
 
@@ -904,6 +919,17 @@ local function resolve_material_choice(rec, by_name, errors, flags, choice)
   rec.material_choice = allow_economic
     and "default: highest-stock material, economic materials allowed by caller"
     or "default: highest-stock non-economic material"
+  -- The CLASS (2026-10-01, handoffs/2026-10-01-buildingplan-material-
+  -- filter.md): every eligible material by name, not just the single
+  -- highest-stock one -- this is what gets written into buildingplan's own
+  -- filter (apply_material_filters below), so the GAME picks which exact
+  -- item among them, per the register's 2026-09-30 ruling. chosen_material/
+  -- available above stay as the advisory single-material report they always
+  -- were; filter_material_names is the new, enforced list.
+  rec.filter_material_names = {}
+  for _, m in ipairs(eligible) do
+    rec.filter_material_names[#rec.filter_material_names + 1] = m.name
+  end
 end
 
 local function true_flags(t, prefix)
@@ -942,12 +968,17 @@ local function stock_for(type_name, cache)
   return rec
 end
 
-local function requirements_for(k, material_choice)
-  local e = k.entry
-  local sub = e.subtype
+-- Exported (2026-10-01) so a sibling tool (construction.lua) can compute the
+-- same filter breakdown and CLASS-write recs from raw (type, subtype, custom)
+-- without needing this file's internal kind table at all -- construction.lua
+-- only ever has the subtype's NAME (from this file's own kind_summary), not
+-- its numeric enum, so it resolves the number itself (df.construction_type
+-- is a bidirectional DFHack enum table, name and number both index it) and
+-- calls straight in here. `label` is used only in gap/error text.
+function building_filters_and_gaps(btype, sub, cust, material_choice, label)
   if sub == nil then sub = -1 end
-  local cust = e.custom
   if cust == nil then cust = -1 end
+  label = label or "this kind"
   local bp_ok, bp = pcall(function() return require('plugins.buildingplan').isEnabled() end)
   local bm = {
     source = "dfhack.buildings.getFiltersByType",
@@ -956,11 +987,11 @@ local function requirements_for(k, material_choice)
   if not bp_ok then bm.buildingplan_error = tostring(bp) end
   local gaps = {}
 
-  local ok, filters = pcall(dfhack.buildings.getFiltersByType, {}, e.type, sub, cust)
+  local ok, filters = pcall(dfhack.buildings.getFiltersByType, {}, btype, sub, cust)
   if not ok or filters == nil then
     bm.error = "getFiltersByType failed: " .. tostring(filters)
     bm.filters = {}
-    gaps[#gaps + 1] = "could not read what " .. k.token .. " needs to build: " .. bm.error
+    gaps[#gaps + 1] = "could not read what " .. label .. " needs to build: " .. bm.error
     return {building_material = bm}, gaps
   end
 
@@ -1052,6 +1083,157 @@ local function requirements_for(k, material_choice)
     bm.note = "the game lists no material filter for this kind"
   end
   return {building_material = bm}, gaps
+end
+
+local function requirements_for(k, material_choice)
+  local e = k.entry
+  return building_filters_and_gaps(e.type, e.subtype, e.custom, material_choice, k.token)
+end
+
+-- ---------------------------------------------------------------------------
+-- Writing the chosen CLASS into buildingplan's own material filter
+-- (2026-10-01, handoffs/2026-10-01-buildingplan-material-filter.md; register
+-- 2026-09-30 ruling: we choose a material CLASS, the game picks the item).
+--
+-- THE MECHANISM, from DFHack source at tag 53.16-r1 (downloaded fresh for
+-- this fix, plugins/buildingplan/buildingplan.cpp):
+--
+-- - `setMaterialFilter(building_type, subtype, custom, index, material_names)`
+--   and `getMaterialFilter(building_type, subtype, custom, index)` are
+--   plugin Lua commands [verified: source, buildingplan.cpp lines 900-956
+--   (setMaterialFilter), 957-1010ish (getMaterialFilter), exposed via
+--   DFHACK_PLUGIN_LUA_COMMANDS around line 1236-1247]. Called from Lua as
+--   `require('plugins.buildingplan').setMaterialFilter(...)`, the same
+--   require-and-call shape this file already uses for `isEnabled()`.
+-- - The filter is keyed by `BuildingTypeKey(type, subtype, custom)` only
+--   [verified: source, `get_item_filters(*out, key)` at both call sites]:
+--   ONE filter per building type/subtype/custom combination, shared by every
+--   building of that kind this fort ever plans -- NOT per building
+--   instance, and quickfort's `#build` mode has no per-cell material syntax
+--   at this tag [from research/2026-09-30-item-binding-design.md section
+--   1.2, itself sourced from `internal/quickfort/build.lua`]. This is why
+--   the code below sets the filter immediately before the real quickfort
+--   run and restores it immediately after (the handoff's instruction for
+--   exactly this case: "if only a default exists, set it for the call and
+--   restore it, and say so").
+-- - `setMaterialFilter`'s fifth argument is a flat list of MATERIAL NAMES
+--   (e.g. "SHALE"), matched by `ItemFilter::matches`: "if the materials list
+--   is empty, an item matches by mask alone; otherwise it must be IN the
+--   list" [verified: source, itemfilter.cpp, fetched the same pass]. There
+--   is a COARSER category mask too (`setMaterialMaskFilter`, tokens "stone",
+--   "wood", "metal", ...), but a mask can only mean "all of a class,
+--   economic or not" -- it cannot express "not ore, not gem" by itself. So
+--   "any non-ore stone" is written here as an EXPLICIT NAME LIST: every
+--   material resolve_material_choice already found in live stock that is
+--   not economic (or every material if the caller passed allow_economic, or
+--   the one named material) -- never the mask. The mask is never touched by
+--   this fix.
+-- - Passing an EMPTY name list does not mean "match nothing": it resets the
+--   filter to "match by mask alone" (buildingplan.cpp: "if all materials are
+--   disabled, reset the mask" for the sibling mask-setter, and matches()'s
+--   own "materials list is empty" branch above) -- i.e. wide open. This code
+--   never writes an empty list for that reason: a kind with nothing eligible
+--   right now is reported as a gap and the filter is left untouched.
+--
+-- WHAT THIS DOES NOT COVER, source did not settle it:
+-- - Whether `setMaterialFilter`'s list is genuinely a pure whitelist against
+--   every candidate item buildingplan considers, in practice, on a running
+--   fort -- reasoned from `ItemFilter::matches`, never run against a real
+--   game. [unverified, needs a live test]
+-- - The list is built from CURRENT STOCK only (this file's own
+--   material_breakdown, which scans items on hand), not the fort's full raws
+--   catalogue: a material with zero units right now is never offered, even
+--   if the class would otherwise allow it, until this tool runs again for
+--   this building type after that material appears. [unverified how much
+--   this matters live; documented as a known limitation, not fixed here]
+-- - Whether `quickfort run`'s own building-placement step (inside the window
+--   between the filter write and its restore, below) reads this same
+--   (type, subtype, custom) key before or after `addPlannedBuilding`, i.e.
+--   whether the window is actually wide enough to matter -- reasoned from
+--   quickfort calling `buildingplan`'s registration synchronously during its
+--   own `#build` run, not observed live.
+-- - The restore logic below reconstructs `getMaterialFilter`'s prior state
+--   (every name "true" is read back as "no restriction", any other set of
+--   "true" names is read back as that exact list) from its OWN documented
+--   return shape [verified: source, the props.enabled expression]; this is
+--   exact by construction, not an approximation, PROVIDED getMaterialFilter's
+--   transformed view has no information loss versus the real internal
+--   `mat_filter` set, which was not independently re-derived from raw
+--   structures for this pass.
+-- ---------------------------------------------------------------------------
+
+local function buildingplan_module()
+  local ok, bp = pcall(require, 'plugins.buildingplan')
+  if not ok or type(bp) ~= 'table' then
+    return nil, "could not load plugins.buildingplan: " .. tostring(bp)
+  end
+  if type(bp.setMaterialFilter) ~= 'function' or type(bp.getMaterialFilter) ~= 'function' then
+    return nil, "plugins.buildingplan does not expose setMaterialFilter/getMaterialFilter on this DFHack build"
+  end
+  return bp
+end
+
+-- Returns names (a list; {} means "no restriction", see header), err.
+local function read_material_filter(bp, btype, sub, cust, index0)
+  local ok, ret = pcall(bp.getMaterialFilter, btype, sub, cust, index0)
+  if not ok then return nil, "getMaterialFilter failed: " .. tostring(ret) end
+  if ret == nil or type(ret) ~= 'table' then return {}, nil end
+  local names, all_true, any = {}, true, false
+  for name, props in pairs(ret) do
+    any = true
+    if type(props) == 'table' and props.enabled == "true" then
+      names[#names + 1] = name
+    else
+      all_true = false
+    end
+  end
+  if not any or all_true then return {}, nil end
+  table.sort(names)
+  return names, nil
+end
+
+local function write_material_filter(bp, btype, sub, cust, index0, names)
+  local ok, err = pcall(bp.setMaterialFilter, btype, sub, cust, index0, names or {})
+  if not ok then return false, "setMaterialFilter failed: " .. tostring(err) end
+  return true
+end
+
+-- Writes rec.filter_material_names (from resolve_material_choice, via
+-- building_filters_and_gaps) into buildingplan's own filter for every
+-- building_material rec in `filter_recs` that has a non-empty list, saving
+-- what was there first. Returns a report table and a restore() function the
+-- caller MUST call once the real quickfort run has finished (success or
+-- not) -- this is the "set for the call, restore after" contract.
+function apply_material_filters(btype, sub, cust, filter_recs)
+  local bp, berr = buildingplan_module()
+  if not bp then
+    return {applied = {}, skipped = "buildingplan unavailable: " .. tostring(berr)}, function() return {} end
+  end
+  local applied, saved = {}, {}
+  for _, rec in ipairs(filter_recs or {}) do
+    if rec.filter_material_names and #rec.filter_material_names > 0 then
+      local index0 = rec.index - 1
+      local prev, rerr = read_material_filter(bp, btype, sub, cust, index0)
+      if prev == nil then
+        applied[#applied + 1] = {index = rec.index, ok = false, error = rerr}
+      else
+        local ok, werr = write_material_filter(bp, btype, sub, cust, index0, rec.filter_material_names)
+        applied[#applied + 1] = {
+          index = rec.index, ok = ok, error = nn(werr), materials = rec.filter_material_names,
+        }
+        if ok then saved[#saved + 1] = {index0 = index0, names = prev} end
+      end
+    end
+  end
+  local function restore()
+    local restored = {}
+    for _, s in ipairs(saved) do
+      local ok, werr = write_material_filter(bp, btype, sub, cust, s.index0, s.names)
+      restored[#restored + 1] = {index = s.index0 + 1, ok = ok, error = nn(werr)}
+    end
+    return restored
+  end
+  return {applied = applied}, restore
 end
 
 -- ---------------------------------------------------------------------------
@@ -1230,7 +1412,29 @@ function build_kind(kind_name, w, h, level, near, rank, radius_tiles, dry_run, m
     return result
   end
 
+  -- Write the chosen CLASS into buildingplan's own filter for the duration
+  -- of this real run, restoring immediately after (see apply_material_filters
+  -- above for the mechanism and why this is a set-and-restore, not a
+  -- permanent change): only the building_material filters this call actually
+  -- resolved a non-empty class for are touched.
+  local filter_recs = {}
+  if req.building_material and req.building_material.filters then
+    for _, rec in ipairs(req.building_material.filters) do
+      if rec.filter_material_names then filter_recs[#filter_recs + 1] = rec end
+    end
+  end
+  local mf_report, mf_restore
+  if #filter_recs > 0 and req.building_material.buildingplan_enabled == true then
+    mf_report, mf_restore = apply_material_filters(k.entry.type, k.entry.subtype, k.entry.custom, filter_recs)
+  end
+
   local ok_run, output, res = pcall(dfhack.run_command_silent, 'quickfort', 'run', filename, '-c', coord)
+
+  if mf_restore then
+    mf_report.restored = mf_restore()
+    result.material_filter = mf_report
+  end
+
   local ok_rm, rm = pcall(os.remove, "dfhack-config/blueprints/" .. filename)
   result.blueprint.removed = (ok_rm and rm == true)
   local stats = ok_run and parse_quickfort_stats(output) or nil
