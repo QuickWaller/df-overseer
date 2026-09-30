@@ -87,9 +87,106 @@
 --
 -- Usage: ./dfhack-run df-overseer-stockpile list
 -- Usage: ./dfhack-run df-overseer-stockpile links ID
+--
+-- WRITING (handoffs/2026-10-01-stockpile-writing.md): place, configure, link,
+-- unlink. Four commands, all mutating, DRY_RUN default true.
+--
+-- MECHANISM, from DFHack source at tag 53.16-r1 (dfhack.git) with `scripts`
+-- pinned to DFHack/scripts.git commit 7549711a993e03bef19e90b27427096c1099853e
+-- (the exact commit that tag's own submodule pointer names):
+--
+-- SIZE: a #place blueprint cell's content is a stockpile-type key string;
+-- adjacent matching cells become one pile whose footprint is exactly the
+-- cell grid quickfort_building groups (place.lua's own header comment,
+-- scripts/internal/quickfort/place.lua:4-10: "width, height: number between
+-- 1 and 31" -- this project's own place enforces that same 1..31 cap rather
+-- than trusting quickfort to reject an oversized request silently). This
+-- file writes a throwaway #place CSV of exactly W by H cells, same pattern
+-- df-overseer-zone.lua's write_rect_blueprint uses for #zone.
+--
+-- CATEGORIES: `stockpile_db_raw` (place.lua:78-97) maps ONE ascii letter per
+-- top-level category to the SAME 17 tokens this file's own CATEGORY_NAMES
+-- already reads from `bld.settings.flags` (see the header above). Several
+-- letters concatenated in one cell (e.g. "sw") make ONE custom pile that
+-- accepts all of them -- `make_db_entry` (place.lua:113-164) walks the key
+-- string char by char. Separately, `configure_stockpile` (place.lua:256-268)
+-- applies each category via `stockpiles.import_settings('library/cat_'..cat,
+-- {id=bld.id, mode='enable'})` -- `import_settings` (plugins/lua/
+-- stockpiles.lua:124-134, dfhack.git tag 53.16-r1) resolves that to a
+-- `.dfstock` preset file and calls the plugin's own bound `stockpiles_import`
+-- (plugins/stockpiles/stockpiles.cpp:87-124), which turns opts.mode into a
+-- DeserializeMode (enable/disable/else set) and hands the preset file plus
+-- mode to `StockpileSerializer`. `read_category` (plugins/stockpiles/
+-- StockpileSerializer.cpp:901-929) is what mode actually does: ENABLE sets
+-- the category's own top-level flag bit AND every subtype field the preset
+-- file carries a value for; DISABLE clears the bit and zeroes those same
+-- fields, but only when the bit was already set; SET clears everything
+-- first, then applies the file wholesale. This file's `stockpile.configure`
+-- below drives exactly this: enable the requested categories, disable
+-- whatever else this pile currently accepts, read back with the SAME
+-- `accepted_categories` the read-only `list`/`links` commands already use.
+--
+-- PRESETS EXIST, one per category (`cat_ammo` through `cat_wood`, confirmed
+-- by a directory listing of data/stockpiles/ at this tag -- all 17 files
+-- present, matching CATEGORY_NAMES 1:1 via CATEGORY_INFO's preset field
+-- below). UNVERIFIED FROM SOURCE: the actual protobuf bytes of any single
+-- cat_X.dfstock were never decoded, so "every subtype the category has" is
+-- inferred only from read_category's own code path (above), not confirmed
+-- against one file's real payload. A NAMING MISMATCH is real, not
+-- unverified: this file's own accept-category name is "sheet" (the raw
+-- df-structures field, confirmed live per the header above) but the preset
+-- and place.lua's own categories={'sheets'} entry (place.lua:92) both use
+-- the plural "sheets" -- CATEGORY_INFO below carries both spellings
+-- explicitly so nothing has to remember which is which. Finer per-subtype
+-- filters, container counts (bins/barrels/wheelbarrows) and named
+-- give_to/take_from targets are ALSO settable through a #place cell's own
+-- `:key=val` properties (place.lua:100-244, `parse_properties`/
+-- `custom_stockpile`) and through named (non-category) preset files via the
+-- `:name(mode,filters)` transformation syntax (scripts/internal/quickfort/
+-- parse.lua:770-780, `parse_stockpile_transformations`) -- NEITHER is
+-- exposed by the coarse tools below, matching this file's own existing
+-- "coarse level" scope for `list`/`links`.
+--
+-- LINKS: `create_stockpile` (place.lua:293-334) queues named give_to/
+-- take_from targets, resolved by `link_stockpiles` (place.lua:372-415)
+-- against live piles/workshops by name or id via `utils.insert_sorted`
+-- (Lua API.rst:4077-4082) on the SAME four vectors this file's own `links`
+-- command already reads (`give_to_pile`/`take_from_pile`/`give_to_workshop`/
+-- `take_from_workshop`, on `bld.links` for a stockpile or `bld.profile.links`
+-- for a workshop): a pile giving to a pile writes give_to_pile on the giver
+-- and take_from_pile on the receiver; a pile giving to a workshop writes
+-- give_to_workshop on the giver and (the workshop's own) take_from_pile on
+-- the receiver; a workshop giving to a pile writes (the workshop's own)
+-- give_to_pile and the pile's take_from_workshop. `stockpile.link`/`unlink`
+-- below encode exactly this as one small data table (LINK_RULE), no per-kind
+-- branch, and use the same insert_sorted plus its inverse `erase_sorted_key`
+-- (Lua API.rst:4093-4097) quickfort itself uses, keyed by building id.
+--
+-- WHY `df-overseer-openarea.lua`'s finder (`is_free`), NOT place.lua's own
+-- `is_valid_stockpile_tile` (place.lua:29-43, which additionally demands a
+-- FLOOR/BOULDER/PEBBLES/STAIR/RAMP/TWIG/SAPLING/SHRUB tile shape): the
+-- handoff asks for this reuse explicitly, matching every other finder in
+-- this codebase. It is coarser than quickfort's own check -- a walkable,
+-- building-free, visible tile this file judges "free" could still fail
+-- `is_valid_stockpile_tile`'s own shape test (open space, a tree, a chasm
+-- edge). quickfort's own `check_tiles_and_extents` degrades this
+-- gracefully, not silently: an invalid tile is skipped from the extent
+-- (counted under "Stockpile tiles skipped (tile occupied)", place.lua:433-
+-- 436) rather than erroring, so a placement can come back SMALLER than
+-- W*H tiles even when `quickfort_ok` is true -- read `quickfort_stats` and
+-- the `read_back` occupied/total counts, never assume the requested
+-- footprint was fully honoured. Only a live run settles whether this gap
+-- ever actually bites on Uniboslan's own terrain.
+--
+-- Usage: ./dfhack-run df-overseer-stockpile place W H [LEVEL] NEAR_LANDMARK CATEGORIES [RANK] [RADIUS_TILES] [DRY_RUN] [RES_ID] [OVERRIDE]
+-- Usage: ./dfhack-run df-overseer-stockpile configure ID CATEGORIES [DRY_RUN]
+-- Usage: ./dfhack-run df-overseer-stockpile link ID TARGET_ID give|take [DRY_RUN]
+-- Usage: ./dfhack-run df-overseer-stockpile unlink ID TARGET_ID give|take [DRY_RUN]
 
 local json = require('json')
 local landmarks_mod = reqscript('df-overseer-landmarks')
+local openarea_mod = reqscript('df-overseer-openarea')
+local reservations_mod = reqscript('df-overseer-reservations')
 
 -- See header: mirrors df-overseer-stocks.lua's is_on_hidden_tile, adapted
 -- to take a bare position rather than an item.
