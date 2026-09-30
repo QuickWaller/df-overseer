@@ -99,6 +99,18 @@ tree would have captured the chain once.
     exactly return met, not met or unknown/stale. Examples: building a
     still, killing an enemy, hauling hematite to a stockpile.
 
+11. **Stuck versus waiting, with self-healing** (added mid-run): waiting is
+    held for a named reason; stuck is no progress past the check's expected
+    time with no reason. Healing ladder: re-check, re-issue, release claims
+    so blocked projects proceed, escalate. Deadlock found by a wait-for graph
+    over claims and broken on the lower-priority side.
+12. **A ready queue across all active projects** (added mid-run): each cycle
+    run every runnable step of every active project in priority order, never
+    one project at a time. The scarce resources are labor, materials, space
+    and model tokens, so the "time slice" is a fair share of labor per
+    project plus a per-cycle model budget; DF itself assigns jobs to idle
+    dwarves one level below.
+
 ## What to produce
 
 `research/2026-09-30-goal-tree-design.md`: a design document, cited, honest

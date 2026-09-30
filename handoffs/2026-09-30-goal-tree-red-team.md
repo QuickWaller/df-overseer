@@ -59,7 +59,12 @@ explicitly and separately from findings about the design itself.
    and are "unknown" or "stale" results handled rather than forced to
    true or false? Test the user's three contrasting examples: building a
    still, killing an enemy, hauling a chunk of hematite to a stockpile.
-8. **The worked example.** Walk the booze chain adversarially: what breaks
+8. **Stuck detection, healing and scheduling.** Can "waiting" be mistaken
+   for "stuck" or the reverse? Can healing thrash (re-issue forever, release
+   then reclaim)? Does the wait-for graph see every kind of wait? Can the
+   ready queue or labor fair-share starve something, or let two projects'
+   jobs interfere in DF's own job assignment?
+9. **The worked example.** Walk the booze chain adversarially: what breaks
    it?
 
 For each finding: severity (blocks building, must fix before a given build
