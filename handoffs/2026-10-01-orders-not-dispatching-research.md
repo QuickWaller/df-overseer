@@ -55,4 +55,21 @@ checks. Fill in this handoff's Result (about 200 words).
 
 ## Result
 
-(fill in)
+Done. `research/2026-10-01-orders-not-dispatching.md`. Short answer: the
+leading candidate is that Uniboslan has no Manager actually appointed right
+now, contradicting the register's belief, and the wiki's own account of the
+Manager confirms a hard gate: past 20 citizens (Uniboslan has 22), no order
+runs until validated, matching the eval's exact symptom (new order never
+validated, old ones stuck validated-but-inactive). `df.job.xml` names the
+real validation job (`ManageWorkOrders`, skill ORGANIZATION) and two
+previously-unused fields, `job.order_id` and `by_manager`, that let a live
+read confirm whether any job has ever actually been dispatched from a
+manager order at all. `df.building.xml`'s `workshop_profile` struct
+(`block_general_orders`, `max_general_orders`, `blocked_labors`,
+`permitted_workers`, `min_level`/`max_level`) is a second, independent,
+per-workshop cause not covered by the prior quartermaster-levers research.
+Six ranked read-only checks given, Manager-appointment first. This repo's
+own order-creation path is weakened as a cause since pre-existing,
+non-tool-made orders are stuck identically. Every claim marked verified
+(DFHack source, pinned tag/commit) or unverified (wiki paraphrase,
+closed-engine scheduling, live confirmation pending).
