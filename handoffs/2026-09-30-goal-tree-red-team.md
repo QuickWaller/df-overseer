@@ -102,4 +102,39 @@ design build steps each blocks.
 
 ## Result
 
-(to be filled in by the reviewer)
+Delivered: `research/2026-09-30-goal-tree-red-team.md` (review only, no
+code, no VM). 20 findings, ranked; three settled decisions argued
+separately (§5); a checked-and-sound list (§6).
+
+**Ranked top findings, and the design build step each blocks:**
+
+1. **F-1, BLOCKS F4.** `RES_ID` does not pin a site: `building.build`
+   still ranks near a landmark and keeps unreserved windows; a generic pad
+   template admits no workshop kind; the slot-filling `blueprint.reserve`
+   ranks at run time. Correction B does not hold as written (verified in
+   source).
+2. **F-3, BLOCKS F4/F5/F8.** No record can change an accepted project;
+   escalation answers ("update, drop, abandon") have nowhere to go.
+3. **F-2, before F4.** The idempotency key `<step>#<n>` makes standing
+   re-runs and post-amendment re-runs silent no-ops or refusals.
+4. **F-4, before F6.** Claims double-grant: items bind only when a dwarf
+   starts the job, and buildingplan attaches items on its own schedule.
+5. **F-5, before F5.** Accept-by-reference authorises advisor-chosen
+   overrides, economic material, workshop repeat, standing budgets and
+   priority inputs.
+6. **F-6, before F4.** The Overseer's execution-time checks (staleness,
+   first-build go-ahead, dry run first) vanish when code executes.
+7. **F-7, before F3/F4.** DF ids and our handles roll back and are reused;
+   tick-based rollback detection races; harness branches leak into the
+   live queue.
+8. **F-8, before standing goals.** One threshold thrashes; a standing goal
+   linked to a finished one-off supply chain wakes two models per
+   reactivation.
+9. **F-9, before F1.** In-order gating on reactive checks breaks when a
+   sibling consumes its predecessor's check: the booze chain's own step 7.
+10. **F-10, before F2.** One DFHack round trip per check and per queue
+    write, at 45 to 80 s a call.
+
+Also before F6/F7: the workshop as an unmodelled FIFO resource (F-11) and
+admission starvation (F-12). Option 3's row B cannot run until F-1 is
+fixed; row K5 is the most informative representative.
