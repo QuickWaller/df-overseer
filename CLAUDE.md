@@ -12,8 +12,8 @@ learning architecture.
 >
 > - **Current state, as last verified live 2026-09-25.** Uniboslan is
 >   paused, 22 alive and 1 dead, `dfmcp-server` active. Role tool lists
->   (read plus write, measured live 2026-09-30 over a real MCP client): **overseer 85,
->   architect 51, consultant 29, quartermaster 24, conductor 15**. The office is
+>   (read plus write, measured live 2026-09-30 over a real MCP client): **overseer 87,
+>   architect 52, consultant 29, quartermaster 24, conductor 16**. The office is
 >   built, furnished and owned by the Manager, and the game itself accepts
 >   it (the room-value proxy's earlier false negative is fixed). The ghost
 >   has been laid to rest (a Tomb zone over its coffin, confirmed by direct

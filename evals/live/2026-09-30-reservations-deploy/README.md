@@ -69,3 +69,7 @@ reservation record, created and released within the run.
 - **A pair of pants lies on office ring tile 5**, where a wall is designated.
   Whether DF hauls it off before building, or the wall job stalls, is
   unverified; worth watching in the next unpaused run.
+
+## Follow-up deploy: project MCP tools (`7a85739`)
+
+8 files, same script and checks (`ARRIVAL_VERIFIED`, `NO_CRLF`, DB backed up, `INSTALL_VERIFIED`, imports and registry load in the server venv before restart, clean restart with no errors in the journal). Live: role counts overseer 87, architect 52, consultant 29, quartermaster 24, conductor 16 (the +2/+1/+1 the stream predicted); `queue.project_status` returns "(no projects)" to the overseer and the architect; the architect calling `queue.project` is refused by the allowlist; the overseer calling it with a nonexistent ruling is refused by the store before any write. No project was written to the live queue.
