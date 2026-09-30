@@ -24,7 +24,7 @@ ROLES = ("architect", "quartermaster", "consultant", "overseer")
 #: docs/AGENT-LOOP.md §4: "Models: DeepSeek for every role." Overridable
 #: per role by MCP_ROLE token env below matching, kept as the honest
 #: starting default rather than invented per-role variation.
-DEFAULT_MODEL = "deepseek/deepseek-v4-flash"
+DEFAULT_MODEL = "deepseek/deepseek-v4-pro"  # every role, user's call 2026-10-01
 
 
 class ConfigError(Exception):

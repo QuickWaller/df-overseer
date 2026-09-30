@@ -1,7 +1,7 @@
 schema_version: 1
 role: architect
 
-model: anthropic/claude-sonnet-5
+model: deepseek/deepseek-v4-pro  # every role on DeepSeek pro for now, user's call 2026-10-01 (register)
 fallback:
   - anthropic/claude-haiku-4-5-20251001
 

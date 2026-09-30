@@ -7,7 +7,7 @@
 schema_version: 1
 role: overseer
 
-model: anthropic/claude-opus-5
+model: deepseek/deepseek-v4-pro  # every role on DeepSeek pro for now, user's call 2026-10-01 (register); may move to Sonnet later, depending on pricing
 fallback:
   - anthropic/claude-sonnet-5
 
