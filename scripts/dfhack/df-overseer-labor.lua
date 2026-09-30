@@ -56,6 +56,24 @@
 --        Names are resolved through df.unit_labor and checked by round trip
 --        (code back to name), so enum internals such as `_last_item` cannot
 --        pass as labors, and NONE (-1) is rejected as not a labor.
+--   quota LABOR MIN MAX [POOL] [DRY_RUN]
+--     -- ADDED 2026-10-01 (handoffs/2026-10-01-labor-quota.md,
+--        research/2026-10-01-quartermaster-levers.md §2). Sets autolabor's
+--        per-labour minimum/maximum/talent-pool through its own CLI (the
+--        only interface that exists -- no Lua accessor). Refuses when
+--        autolabor's enabled state can't be determined, or when it is
+--        confirmed off. DRY_RUN defaults to true; only an explicit `false`
+--        performs the real call. On a real write, the report is always a
+--        fresh read-back through `quota-status`, never an echo of the
+--        MIN/MAX/POOL the caller passed.
+--   quota-status [LABOR]
+--     -- ADDED 2026-10-01, read only. Parses `autolabor list`'s own text
+--        output (its only query surface) for one labour or, with no
+--        argument, every labour it reports. Each entry carries autolabor's
+--        own self-reported "currently N dwarfs" AND an independently-read
+--        per-citizen count (the same honest enabled-counts logic
+--        `enabled-counts` already uses), so target and actual can be
+--        cross-checked from two angles rather than trusting one echo.
 --
 -- Verified live against Uniboslan 2026-09-11 (7 citizens, all healthy, no
 -- military, Year 30) before writing any of the logic below, not assumed
@@ -370,6 +388,19 @@ local function labor_code_for(name)
   return code
 end
 
+-- True unless the string is exactly "false"/"0"/"no" (case-insensitive).
+-- DRY_RUN defaults to true (unset/nil), the same
+-- farm/workshop/zone/trees/well precedent (df-overseer-farm.lua's own
+-- truthy_dry_run). Only an explicit false-ish value performs a real
+-- mutation.
+local function truthy_dry_run(v)
+  if v == nil then
+    return true
+  end
+  local s = tostring(v):lower()
+  return not (s == "false" or s == "0" or s == "no")
+end
+
 local function enabled_counts(names)
   local counts, errors = {}, {}
   local codes = {}
@@ -406,6 +437,218 @@ local function enabled_counts(names)
     end
   end
   return counts, errors
+end
+
+-- labor.quota / labor.quota-status (handoffs/2026-10-01-labor-quota.md,
+-- research/2026-10-01-quartermaster-levers.md §2): autolabor is the labour
+-- engine on this fort (register 2026-09-30, "set intent, let the game
+-- execute"); this repo's job is to set its per-labour min/max/pool targets,
+-- never to hand-assign a labour to a count of dwarves itself. Per-labour
+-- min/max/pool are exposed ONLY through the plugin's own CLI
+-- (`autolabor LABOR MIN MAX [POOL]`), with no Lua accessor beyond
+-- isEnabled/setEnabled (research §2, "no Lua accessor exists for
+-- minimum_dwarfs/maximum_dwarfs"), so this shells out the same way
+-- set_labor's own autolabor_disable_labor already does, and reads the
+-- setting back by parsing `autolabor list`'s text output (the only query
+-- surface that exists; research §2 flags a bare `autolabor LABOR` with no
+-- further argument as unverified whether it is a real per-labor query, so
+-- this deliberately parses the full `list` output instead of depending on
+-- that unverified form).
+
+-- Parses one line of `autolabor list`/`status` output. Verified-from-source
+-- format (research §2, `autolabor.cpp:1057-1069` print_labor): either
+-- "LABORNAME:  minimum N, maximum M, pool P, currently C dwarfs", or
+-- "LABORNAME:  disabled", or "LABORNAME:  haulers". Never executed live
+-- this session (offline stream, no live access) -- this parser is
+-- verified-by-mechanism against the research's cited source text, not
+-- verified-by-execution; a live call is the first thing that should
+-- confirm it (see this file's TOOLS.yaml entry).
+local function parse_autolabor_list()
+  local ok_run, output, result = pcall(dfhack.run_command_silent, 'autolabor', 'list')
+  if not ok_run then
+    return nil, "autolabor list call failed: " .. tostring(output)
+  end
+  if result ~= CR_OK then
+    return nil, "autolabor list returned a non-OK result: " .. tostring(output)
+  end
+  local entries = {}
+  for line in tostring(output):gmatch("[^\r\n]+") do
+    local name, rest = line:match("^(%u[%u%d_]*):%s*(.+)$")
+    if name then
+      if rest:match("^disabled%s*$") then
+        entries[name] = {mode = "disabled"}
+      elseif rest:match("^haulers%s*$") then
+        entries[name] = {mode = "haulers"}
+      else
+        local min_s, max_s, pool_s, cur_s = rest:match(
+          "minimum%s+(%d+),%s*maximum%s+(%d+),%s*pool%s+(%d+),%s*currently%s+(%d+)%s+dwarfs")
+        if min_s then
+          entries[name] = {
+            mode = "automatic",
+            minimum = tonumber(min_s),
+            maximum = tonumber(max_s),
+            pool = tonumber(pool_s),
+            autolabor_currently = tonumber(cur_s),
+          }
+        else
+          -- Honest fallback, never a guessed shape: a line that matched the
+          -- "LABOR: ..." prefix but neither known suffix form is reported
+          -- as unrecognised rather than silently dropped or mis-parsed.
+          entries[name] = {mode = "unrecognised", raw = rest}
+        end
+      end
+    end
+  end
+  return entries, nil
+end
+
+-- Reads autolabor's current settings for `names` (a list of df.unit_labor
+-- names), or every labor autolabor reports when `names` is nil/empty.
+-- Cross-checks each against a live per-citizen bitfield scan
+-- (enabled_counts, the same honest-never-a-guessed-zero read this file's
+-- read-only command already uses), so the result carries both autolabor's
+-- own self-reported "currently" count and an independently-read one --
+-- the model sees target versus actual from two angles, not one echo.
+-- Always returns two tables (result, errors); a name with no usable data
+-- appears only in errors, never as a silently-omitted or guessed entry.
+-- Global, not local, like df-overseer-stockpile.lua's own command-level
+-- functions (place_stockpile etc.) -- lets a lua-logic test load this file
+-- against a fake DFHack world and call the real command function directly,
+-- the same technique tests/test_stockpile_writing_lua_logic.py already uses.
+function labor_quota_status(names)
+  local entries, list_err = parse_autolabor_list()
+  local result, errors = {}, {}
+  if not entries then
+    if names and #names > 0 then
+      for _, n in ipairs(names) do errors[n] = list_err end
+    else
+      errors["_autolabor_list"] = list_err
+    end
+    return result, errors
+  end
+
+  local want = {}
+  if names and #names > 0 then
+    for _, n in ipairs(names) do want[#want + 1] = n end
+  else
+    for n in pairs(entries) do want[#want + 1] = n end
+    table.sort(want)
+  end
+
+  local valid_names = {}
+  for _, n in ipairs(want) do
+    local code, code_err = labor_code_for(n)
+    if not code then
+      errors[n] = code_err
+    elseif not entries[n] then
+      errors[n] = "no autolabor entry for " .. n .. " (autolabor list did not report it)"
+    else
+      result[n] = entries[n]
+      valid_names[#valid_names + 1] = n
+    end
+  end
+
+  if #valid_names > 0 then
+    local counts, count_errors = enabled_counts(valid_names)
+    for _, n in ipairs(valid_names) do
+      result[n].actual_enabled_count = counts[n]
+      if count_errors[n] then
+        errors[n] = count_errors[n]
+      end
+    end
+  end
+
+  return result, errors
+end
+
+-- Sets one labour's autolabor minimum/maximum/talent-pool. Refuses exactly
+-- like set_labor when autolabor's enabled state can't be determined, or
+-- when autolabor is confirmed not enabled at all -- this tool IS autolabor's
+-- own lever, so it makes no sense to shell out to a plugin that is off.
+-- DRY_RUN defaults to true: a dry run validates everything (labor name,
+-- MIN/MAX/POOL shape, autolabor's enabled state) and reports exactly what
+-- would be set, without calling the CLI. Only an explicit false performs
+-- the real `autolabor LABOR MIN MAX [POOL]` call, and the report on success
+-- is always a fresh read-back through labor_quota_status, never an echo of
+-- the MIN/MAX/POOL the caller passed in (task 3 of the handoff).
+function labor_quota(labor_name, min_v, max_v, pool_v, dry_run)
+  local code, err = labor_code_for(labor_name)
+  if not code then
+    return false, err
+  end
+
+  local min_n, max_n = tonumber(min_v), tonumber(max_v)
+  if min_v == nil or min_n == nil then
+    return false, "MIN must be a number, got " .. tostring(min_v)
+  end
+  if max_v == nil or max_n == nil then
+    return false, "MAX must be a number, got " .. tostring(max_v)
+  end
+  if min_n < 0 or max_n < 0 or min_n ~= math.floor(min_n) or max_n ~= math.floor(max_n) then
+    return false, "MIN and MAX must be non-negative integers"
+  end
+  if min_n > max_n then
+    return false, string.format("MIN (%d) must be <= MAX (%d)", min_n, max_n)
+  end
+
+  local pool_n = nil
+  if pool_v ~= nil and pool_v ~= "" then
+    pool_n = tonumber(pool_v)
+    if pool_n == nil or pool_n < 0 or pool_n ~= math.floor(pool_n) then
+      return false, "POOL must be a non-negative integer, got " .. tostring(pool_v)
+    end
+  end
+
+  local enabled, status_err = autolabor_enabled()
+  if enabled == nil then
+    return false, string.format(
+      "refusing to set a quota on %s: could not determine whether autolabor "
+        .. "is enabled (%s), and shelling to its CLI without knowing is "
+        .. "exactly the kind of blind write this check exists to prevent",
+      labor_name, status_err)
+  end
+  if not enabled then
+    return false, string.format(
+      "refusing to set a quota on %s: autolabor is not enabled on this "
+        .. "fort, so there is no engine here for a quota to configure",
+      labor_name)
+  end
+
+  if truthy_dry_run(dry_run) then
+    return true, {
+      dry_run = true,
+      labor = labor_name,
+      would_set = {minimum = min_n, maximum = max_n, pool = pool_n},
+    }
+  end
+
+  local cmd_args = {labor_name, tostring(min_n), tostring(max_n)}
+  if pool_n ~= nil then
+    cmd_args[#cmd_args + 1] = tostring(pool_n)
+  end
+  local ok_run, output, result = pcall(
+    dfhack.run_command_silent, 'autolabor', table.unpack(cmd_args))
+  if not ok_run then
+    return false, string.format("autolabor %s call failed: %s",
+      table.concat(cmd_args, " "), tostring(output))
+  end
+  if result ~= CR_OK then
+    return false, string.format("autolabor %s returned a non-OK result: %s",
+      table.concat(cmd_args, " "), tostring(output))
+  end
+
+  local status, status_errs = labor_quota_status({labor_name})
+  if not status[labor_name] then
+    return false, string.format(
+      "autolabor %s %d %d accepted, but the read-back failed: %s",
+      labor_name, min_n, max_n,
+      tostring(status_errs[labor_name] or status_errs["_autolabor_list"] or "unknown"))
+  end
+  return true, {
+    dry_run = false,
+    labor = labor_name,
+    read_back = status[labor_name],
+  }
 end
 
 if cmd == "unit-status" then
@@ -445,8 +688,29 @@ elseif cmd == "enabled-counts" then
     end
     print(json.encode({counts = counts, errors = errors}, {null = NULL}))
   end
+elseif cmd == "quota" then
+  if #args < 4 then
+    print(json.encode(
+      {error = "usage: df-overseer-labor quota LABOR MIN MAX [POOL] [DRY_RUN]"},
+      {null = NULL}))
+  else
+    local ok, payload = labor_quota(args[2], args[3], args[4], args[5], args[6])
+    if ok then
+      print(json.encode(payload, {null = NULL}))
+    else
+      print(json.encode({error = payload}, {null = NULL}))
+    end
+  end
+elseif cmd == "quota-status" then
+  local names = args[2] and {args[2]} or nil
+  local status, errors = labor_quota_status(names)
+  if next(errors) == nil then
+    errors = setmetatable({}, {__tostring = function() return "JSON object" end})
+  end
+  print(json.encode({status = status, errors = errors}, {null = NULL}))
 else
   print("usage: df-overseer-labor <unit-status [idle|injured|military|hostile]"
     .. "|labors UNIT_ID|set-labor UNIT_ID LABOR_NAME on|off"
-    .. "|enabled-counts LABOR [LABOR...]>")
+    .. "|enabled-counts LABOR [LABOR...]"
+    .. "|quota LABOR MIN MAX [POOL] [DRY_RUN]|quota-status [LABOR]>")
 end
