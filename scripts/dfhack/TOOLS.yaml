@@ -780,7 +780,7 @@ df-overseer-building.lua:
       effect: mutate
       coordinate_bearing: internal-only
       live_deployed: true
-      verified: "2026-09-21 (DRY_RUN path only, live on VM 103: quickfort's own --dry-run validated the generated blueprint for workshop, furnace, furniture and variable-size kinds, first through a /tmp script path and again after the deploy over a real MCP client as the overseer for Masons, Kiln, Craftsdwarfs, Smelter, Bed and FarmPlot 5x5). REAL PATH FIRST EXERCISED 2026-09-23 (evals/live/2026-09-23-office-and-first-real-build/README.md): `building.build Chair Well 1 20 false` against the same site the dry run validated -- quickfort_ok:true, quickfort_problems:[], read_back confirmed building_found:true and type_matches:true. This is the first real, non-dry-run build of any kind this tool has ever made. Not yet a complete loop: the Chair sits buildingplan-suspended (stocks CHAIR read 0 before and after; the job is stuckjobs-visible as waiting_on:\"suspended\"), since the fort owns no Chair item yet; a manager order (ConstructThrone) was created to try to supply one and had not gone active after 900 ticks. A second real kind, the Carpenter's Workshop, was built live 2026-09-25 (out of economic hematite blocks, the gap this stream's material-choice fix addresses -- evals/live/2026-09-25-first-real-conductor-cycle/README.md). Material choice and kind_previously_built (2026-09-28) are code/offline-tested only; NOT yet live-verified. The economic-material check itself was corrected the same day (handoffs/2026-09-28-building-economic-uses-fix.md) from inorganic.economic_uses (wrong field, live-proved in research/2026-09-28-ore-detection.md) to inorganic:isOre()/inorganic.material:isGem(). 2026-10-01 (handoffs/2026-10-01-buildingplan-material-filter.md, register 2026-09-30 ruling): the resolved material CLASS is now WRITTEN into buildingplan's own per-building-type filter (`plugins.buildingplan.setMaterialFilter`, DFHack `53.16-r1` `plugins/buildingplan/buildingplan.cpp` lines 900-1010ish) for the duration of a real build, then restored -- code/offline-tested only (tests/test_buildingplan_material_filter_lua_logic.py against the real building.lua), NOT yet live-verified: whether the written filter is actually honoured by a running fort's item search, and whether the write/restore window is wide enough relative to quickfort's own registration timing, are both open per research/2026-09-30-item-binding-design.md section 5 (T1-T3, T6)."
+      verified: "2026-09-21 (DRY_RUN path only, live on VM 103: quickfort's own --dry-run validated the generated blueprint for workshop, furnace, furniture and variable-size kinds, first through a /tmp script path and again after the deploy over a real MCP client as the overseer for Masons, Kiln, Craftsdwarfs, Smelter, Bed and FarmPlot 5x5). REAL PATH FIRST EXERCISED 2026-09-23 (evals/live/2026-09-23-office-and-first-real-build/README.md): `building.build Chair Well 1 20 false` against the same site the dry run validated -- quickfort_ok:true, quickfort_problems:[], read_back confirmed building_found:true and type_matches:true. This is the first real, non-dry-run build of any kind this tool has ever made. Not yet a complete loop: the Chair sits buildingplan-suspended (stocks CHAIR read 0 before and after; the job is stuckjobs-visible as waiting_on:\"suspended\"), since the fort owns no Chair item yet; a manager order (ConstructThrone) was created to try to supply one and had not gone active after 900 ticks. A second real kind, the Carpenter's Workshop, was built live 2026-09-25 (out of economic hematite blocks, the gap this stream's material-choice fix addresses -- evals/live/2026-09-25-first-real-conductor-cycle/README.md). Material choice and kind_previously_built (2026-09-28) are code/offline-tested only; NOT yet live-verified. The economic-material check itself was corrected the same day (handoffs/2026-09-28-building-economic-uses-fix.md) from inorganic.economic_uses (wrong field, live-proved in research/2026-09-28-ore-detection.md) to inorganic:isOre()/inorganic.material:isGem(). 2026-10-01 (handoffs/2026-10-01-buildingplan-material-filter.md, register 2026-09-30 ruling): the resolved material CLASS is now WRITTEN into buildingplan's own per-building-type filter (`plugins.buildingplan.setMaterialFilter`, DFHack `53.16-r1` `plugins/buildingplan/buildingplan.cpp` lines 900-1010ish) for the duration of a real build, then restored -- code/offline-tested only (tests/test_buildingplan_material_filter_lua_logic.py against the real building.lua), NOT yet live-verified: whether the written filter is actually honoured by a running fort's item search, and whether the write/restore window is wide enough relative to quickfort's own registration timing, are both open per research/2026-09-30-item-binding-design.md section 5 (T1-T3, T6). CORRECTED THE SAME DAY (still 2026-10-01): a live dfhack-run lua test on VM 103 (reversible, restored after) found the first cut was a SILENT NO-OP -- the class was built from this file's own stock-scan names (`.material.id`, empty for a boulder on this fort, falling back to `material_0_243`), which never matched buildingplan's own `mat_cache` (keyed by `MaterialInfo:toString()`, confirmed live: `dfhack.matinfo.decode(0,243):toString() == \"shale\"`), so every write left all 367 materials enabled. Fixed: the class is now built from `getMaterialFilter`'s own vocabulary (never stock), and every write is read back and compared before being trusted -- a mismatch restores the prior state and reports failure rather than pretending success. Still code/offline-tested only past that point (the readback logic itself, not the live write it protects)."
       knowledge_scope: player_derivable
       notes: >
         Places one building of KIND at the RANK-th site near a landmark.
@@ -806,10 +806,19 @@ df-overseer-building.lua:
         then the prior filter is restored (`result.material_filter`, with
         `applied` and `restored` sub-records) -- the filter is fort-wide per
         building type, not per instance, which is why this is a
-        set-for-the-call-and-restore, never a permanent change. `find` only
-        ever previews the class (`filter_material_names` on each
-        `requirements.building_material.filters[i]`); it never writes
-        anything. `kind_previously_built` (true/false/
+        set-for-the-call-and-restore, never a permanent change. The eligible
+        names come from buildingplan's OWN vocabulary (`getMaterialFilter`),
+        never from stock (fixed the same day after a live silent-no-op, see
+        `verified` above); a mismatch on the post-write readback restores the
+        prior filter and reports the rec failed (`applied[i].ok: false`,
+        `error`), never silently treated as applied. `applied[i]` also
+        reports `enabled_count` and `economic_enabled` (which of the enabled
+        names are economic, for visibility). `find` only ever previews the
+        class (`filter_material_names` on each
+        `requirements.building_material.filters[i]`, now vocabulary-based
+        too, plus a `filter_class_error` when the vocabulary or economic-
+        material scan could not be read); it never writes anything.
+        `kind_previously_built` (true/false/
         null, read live, not a fixed note) says whether this exact kind has a
         real building already at full build stage: ask the user before the
         real build of a kind that is not yet built for real; once it is true
@@ -2307,7 +2316,7 @@ df-overseer-construction.lua:
       effect: mutate
       coordinate_bearing: internal-only
       live_deployed: false
-      verified: "unverified (offline build, lupa-tested against a fake world only, 2026-09-28; guards added and lupa-tested the same way, handoffs/2026-09-28-keeps-access-guard.md). The real quickfort `#build`/`Cw` path (research/2026-09-24-quickfort-hands.md section 3) has never been run by this tool. DRY_RUN defaults to true. 2026-10-01 (handoffs/2026-10-01-buildingplan-material-filter.md): MATERIAL_CHOICE and the buildingplan filter write/restore are new, code/offline-tested only against a fake building_filters_and_gaps/apply_material_filters (tests/test_construction_lua_logic.py) -- the real write/restore mechanism itself is offline-tested against the real building.lua by tests/test_buildingplan_material_filter_lua_logic.py, but nothing here has run against a live fort."
+      verified: "unverified (offline build, lupa-tested against a fake world only, 2026-09-28; guards added and lupa-tested the same way, handoffs/2026-09-28-keeps-access-guard.md). The real quickfort `#build`/`Cw` path (research/2026-09-24-quickfort-hands.md section 3) has never been run by this tool. DRY_RUN defaults to true. 2026-10-01 (handoffs/2026-10-01-buildingplan-material-filter.md): MATERIAL_CHOICE and the buildingplan filter write/restore are new, code/offline-tested only against a fake building_filters_and_gaps/apply_material_filters (tests/test_construction_lua_logic.py) -- the real write/restore mechanism itself is offline-tested against the real building.lua by tests/test_buildingplan_material_filter_lua_logic.py, but nothing here has run against a live fort. CORRECTED alongside building.build's same-day fix (still 2026-10-01): the class is resolved from buildingplan's own vocabulary via building.lua's building_filters_and_gaps, and every write apply_material_filters makes is read back and verified before being trusted, restoring and reporting failure on a mismatch -- see building.build's verified note above for the live evidence that motivated this."
       knowledge_scope: player_derivable
       notes: >
         For a zone's own boundary-ring tiles, designates a construction of
@@ -2349,7 +2358,13 @@ df-overseer-construction.lua:
         tile of one call shares the same kind. Never written on a dry run,
         and never written when nothing is eligible (an empty write would
         tell buildingplan "no restriction", the opposite of an empty
-        class). DRY_RUN defaults to true. Granted to the overseer only
+        class). The eligible names come from buildingplan's OWN vocabulary
+        (never stock, fixed the same day after a live silent-no-op on
+        building.build -- see `verified` above), and every write is read
+        back and verified before being trusted: a mismatch restores the
+        prior filter and reports that rec failed
+        (`material_filter.applied[i].ok: false`), never silently treated as
+        applied. DRY_RUN defaults to true. Granted to the overseer only
         (mutates fort state, dfmcp/roles.py rule 2).
 
 df-overseer-blueprint.lua:
