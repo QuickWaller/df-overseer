@@ -718,3 +718,184 @@ checked); new items announced politely to screen readers only while the
 reader is at the bottom, and throttled; motion respects reduced-motion
 settings; the drawer traps and returns focus. A light theme follows the
 system setting for the page chrome; the video frame stays dark.
+
+## 7. Q5, safety
+
+### 7.1 Where a leak could come from
+
+| Source | Example | Reaches the public projection? |
+|---|---|---|
+| Tool output and errors | a file path in an error, a stack trace | no: never in any public field (allowlist) |
+| Tool call arguments | coordinates, item ids | no: operator only; coordinates already refused in text fields (`schema._COORDINATE_PATTERN`) |
+| The call log's `client` field | a network address | no: dropped even from the operator files |
+| Hold reasons | a guard's refusal text | no: replaced by hold codes (3.3 item 7) |
+| **Model-written public text** | `public_rationale` echoing an error, a URL from a wiki page, a host name it saw in its context | **yes, by design**: this is the one real channel |
+| The user's own messages | something personal | yes if public; the user chooses (§10) |
+| Game-generated text | dwarf and artifact names | yes, and fine: player-visible, the fort's own story |
+
+### 7.2 Layers, strongest first
+
+1. **The per-kind allowlist** (3.5). Structural: a field not named cannot be
+   published, whatever it contains. Unchanged in spirit from
+   `render.public_view`; extended per kind.
+2. **Public fields are written for an audience, and short.** Charters say
+   so (they already do for `public_rationale`); the schema caps each public
+   field (280 characters for rationale, 60 for titles and labels).
+3. **Write-time refusal in public fields** (proposed, `dfqueue/schema.py`,
+   beside the coordinate check): refuse a URL or scheme, anything shaped
+   like a domain name, an IPv4 or IPv6 address, a file path (either slash
+   style), an email address, a long unbroken token-shaped string, and markup
+   (angle brackets, backticks, markdown links). The model is told why and
+   rewrites in plain words. This is a pattern list, which §8 warns against
+   as a *filter*; here it is a *refusal before storage*, so nothing is ever
+   silently edited, a miss is still caught by layer 4, and a false positive
+   costs one rewrite. The allowlist remains the guard.
+4. **Publish-time canary check** (proposed, in the publisher): exact-match
+   and prefix-match every public text against a list of the estate's real
+   secrets and identifiers (host names, addresses and subnet prefixes, token
+   prefixes, the user's email), kept in gitignored `infra/local.*` on VM 103
+   and never shipped to the page. A hit **withholds** the item (the page
+   shows "one message withheld"), raises an `alarm`, and counts toward the
+   automatic kill switch (4.6). Withholding, never editing.
+5. **Rendering is inert.** The page inserts every text with `textContent`,
+   never as HTML; no link detection, no markdown. A model that writes
+   `<script>` shows the reader the characters `<script>`. This is the
+   defence against a model (or a wiki page the Consultant read) injecting
+   into viewers' browsers, and it costs nothing.
+6. **Kill switches and the withhold list** (4.6).
+7. **The user reads it before anyone else does.** The public view ships
+   only after the operator view has run with its "show as public" toggle and
+   the user has read it; going public gets its own go-ahead and register
+   row, as §8 and the 2026-09-14 rows require.
+
+### 7.3 When model text says something it should not
+
+Secrets are layers 3 and 4. The rest is judgement: an unkind line, a claim
+about a real person, a paragraph a wiki page talked a model into. Consultant
+answers and ask text are the likeliest carriers, since they are written from
+wiki content, and they are private by default (3.5). For the rest, the
+answer is the withhold list and the kill switch, and the record stays in the
+queue for the learning loop: a public rationale that had to be withheld is
+itself useful data about the role that wrote it. **The publish delay**
+(waived by the user on 2026-09-14) is still not needed with layers 3 to 5
+in place; reinstating it is the remedy if a withheld item ever reaches a
+viewer first.
+
+### 7.4 Two commitments this page must not bend
+
+- **Nothing on the page is ever read by an agent.** The page is for humans;
+  the video and every rendering of the fort stay out of every model's input
+  (`docs/PURPOSE.md` commitment 1). A future Chronicler writes from the
+  queue and the season files, never from the page or the video.
+- **Only what a player could see.** Every public fact on the page (vitals,
+  stock counts, names, jobs) comes from tools marked `player_derivable`
+  in `TOOLS.yaml`, the same test the no-armok rule applies to agents.
+
+### 7.5 The operator view's own exposure
+
+Operator files hold call arguments, costs, private reasons and lessons; no
+tokens (the call log was checked to carry none, register 2026-09-14) and,
+with `client` dropped, no addresses. They sit on the relay behind Access. A
+compromised relay would expose them. That is a real but modest cost, and
+the alternative (serving the operator view from VM 103 through a new
+tunnel) adds a path into the fort host, which is worse. A decision for the
+user (§10).
+
+## 8. Q6, the slice plan
+
+Smallest valuable first. Each slice names what it needs from the user.
+Order reasoning: private before public, and the conductor's events before
+public, because a public page without the "right now" line would show an
+empty chat beside a paused fort, which is the worst first impression.
+
+| Slice | What | Value | Needs from the user |
+|---|---|---|---|
+| **S0** local | `dfqueue/feed.py` (proposed): the public and operator projections, the derivations of 3.4, segmenting and the file layout, as pure code; the page as static files (`web/stream/`, proposed) rendering them. Tested against the real exported records in `evals/live/*/queue-export/` | the user opens the page locally and reads real past agent conversation in it | nothing; no live access |
+| **S1** operator live | the publisher on VM 103 (read only), a directory-restricted key on the relay, a loopback static server there, the admin hostname serving the page; existing records only | "everything visible to the user" is met for everything already in the queue | go-ahead to deploy to VM 103 and the relay; confirm the Access application covers the path; peer check-in before touching either host |
+| **S2** conductor and joins | `seq`; the `run_id` header and stamp; `wake` and `run` kinds; `feed.status`; `reply_to` and `about` on ask and escalation; archive the wake reasons; the operator page shows calls under each message and the right-now line works | the page comes alive: who is thinking and why, and every message joined to its calls | go-ahead to deploy to VM 103 and VM 106; a supervised conductor run to see it (the service is disabled by the user's choice) |
+| **S3** public | per-kind public allowlist and text tables, write-time public-field checks, the canary, the three kill switches, the public server block, the portfolio link | the public stream exists | explicit go-ahead to publish, with its own register row; the Cloudflare rule built (dashboard); the user has read the "show as public" view; decisions 2 and 3 in §10 |
+| **S4** projects | `public_title`, step `label`, `public_rationale` on amend and abandon, hold codes, `projects.json`, the drawer with its timeline, verdict badges | the Projects panel and the drawer | review of the Overseer charter change (it writes the new fields) |
+| **S5** season goal | render `goal`, `review` and commissions (`ask.to`, `expects`); stock counts and the goal measure in the status push | the season goal card and the goal-first project outline | the seasonal review feature itself, which is its own stream (register 2026-10-01); this slice only renders it |
+| **S6** the user's line | `message` kind, the `user` roster entry, the Telegram bridge writing through `dfmcp` | the user and the Overseer talk on the page | a bot token (the user creates the bot); the open register question of how much authority a user message carries; decision 2 |
+| **S7** chronicle and wall | the Seasons tab and files, ambient mode, the live DF job under a step, the workforce line, Executor lines | the chronicle's skeleton and the screen on the wall | a finished season to show; the reconcile snapshot (lean core item 3) for live jobs |
+
+S0 can start now and in parallel with anything; S1 needs nothing new in the
+schema. S2 and S4 touch `dfqueue/` and `dfmcp/`, which other streams also
+touch, so each must be its own stream with its own touched surfaces
+(`handoffs/` rule).
+
+## 9. Departures from the brief, collected
+
+1. **No Public / Operator switch on the public page**; a "show as public"
+   toggle on the operator page instead (§5, 6.2).
+2. **The page lives on the relay**, not the portfolio site, which links to
+   it (§5). The brief left this open; recorded as a recommendation.
+3. **Not every record becomes a chat message.** Observations feed progress
+   only; asks, answers, passes and escalations show generated one-liners;
+   Consultant text stays private by default (3.5).
+4. **The conductor's events become records, but fort status does not**
+   (3.1): the brief's "conductor events as records or not" answered both
+   ways, by kind of event.
+5. **An explicit `seq` column**, not `rowid` (3.3).
+6. **Step completions are the System, not the Executor** (6.2 item 5),
+   following the register's own executor rows rather than the mockup.
+7. **"Six agents" becomes "four AI agents and a scheduler"**, with a Who's
+   who (6.2 item 4).
+8. **Highlights / Everything is the primary filter**, roles secondary (6.2
+   item 10).
+9. **The goal card draws by measure type**, not always a bar (6.2 item 8).
+10. **Hold reasons are published as codes**, never as the tool's text (3.3).
+11. **Additions not in the brief**: the right-now line, verdict badges that
+    update in place, the project timeline, the Seasons tab, ambient mode,
+    permalinks, the canary check, inert rendering, and durable storage of
+    the call log.
+
+## 10. Decisions for the user
+
+1. **Where the page lives**: the relay, same origin as the video
+   (recommended), or the portfolio site.
+2. **The user's Telegram messages and the Overseer's replies**: public by
+   default with a way to mark one private (recommended, matching the
+   register's "displayed on screen"), or private by default.
+3. **Consultant answers**: stay private (default), or public through a one
+   line summary the Consultant writes for the audience.
+4. **The operator view's gate**: share the admin hostname and its Access
+   login with full game control (recommended for one user), or its own
+   hostname and Access application so it can be shown without handing over
+   the fort.
+5. **Operator data on the relay** (call arguments, costs, private reasons),
+   with run files kept 90 days there and in full on VM 103: accept, or
+   change the window.
+6. **Build the Cloudflare kill-switch rule** (dashboard work only the user
+   can do) before S3.
+7. **Public launch waits for S2** (the right-now line) rather than
+   following S1 directly.
+8. **Wording**: "four AI agents and a scheduler", and the display name the
+   user wants on the public page for their own messages.
+
+## 11. What could not be verified
+
+No live access was used (design only, per the brief).
+
+- **SQLite `VACUUM` renumbering `rowid`** on tables without an explicit
+  `INTEGER PRIMARY KEY`: from SQLite's documented behaviour as known, not
+  re-read in this pass. The `seq` recommendation stands either way (an
+  explicit key is cheap), but its urgency rests on this.
+- **A per-run MCP header from openclaw**: the static header map reading an
+  environment variable is from `research/2026-09-12-openclaw-mcp-auth.md`
+  (a source read, not run); setting it per role run through the conductor's
+  container launch is unverified.
+- **The Access application's scope** (whole admin hostname or a path), and
+  whether Access-protected responses are ever cached at Cloudflare's edge.
+- **Whether the relay's current web server allows framing** (only matters
+  for the portfolio option), and **whether `rrsync` ships with the relay's
+  Debian 12 rsync package** at a usable path.
+- **Cloudflare custom rules on the user's plan**, for kill switch layer 1.
+- **Event rates and every cost figure in 4.7**: estimates from one real
+  cycle, to be replaced after a week of real running.
+- **journald retention on VM 103** for the call log (persistent journal is
+  on, per the incident-capture work; its size cap was not read).
+- **The game's month names** in the examples are from the game's calendar
+  as known, not read from this install.
+- **Colour contrast of the mockup's palette**: not measured.
+
