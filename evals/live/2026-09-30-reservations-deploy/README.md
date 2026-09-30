@@ -49,7 +49,7 @@ reservation record, created and released within the run.
 | `blueprint.apply` preview with `SITE=res-1` (the holder) | allowed |
 | `blueprint.apply office-room-v1` on `res-1` | refused: "reservation 'res-1' was reserved for 'bedroom-cell-v1', not 'office-room-v1'" |
 | architect calls `blueprint.reserve` | refused by the allowlist ("Advisors do not act; propose it instead") |
-| `zone.place` with `RES_ID=res-1` | no candidate: with `RES_ID` candidates are limited to the reservation, and its ground is still undug rock. The "allowed kind inside" and override paths need a dug room to test live |
+| `zone.place` with `RES_ID=res-1` | no candidate at rank 1 (24 eligible tiles). **Corrected 2026-09-30:** this run first said `RES_ID` limits candidates to the reservation; it does not. `filter_reserved` only drops candidates in someone else's reservation, so `RES_ID` does not pin a site (red team F-1, `research/2026-09-30-goal-tree-red-team.md`). Why this call found no candidate was not established. The "allowed kind inside" and override paths need a dug room to test live |
 | override on a dry run | `override_count` stayed 0 (dry runs record nothing) |
 | `unreserve` dry then real | released, `still_held_by: []`, list empty |
 | `construction.build 13 Wall` dry | `held`: ring tile 5 `item_present` (an unhauled PANTS on it), ring tile 15 `keeps_access` (would cut off exposed HEMATITE). Both guards fire on the real fort |
