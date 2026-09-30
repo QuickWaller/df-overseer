@@ -442,3 +442,7 @@ deny:
     reason: Advisors do not act. Propose it.
   - id: "stockpile.unlink"
     reason: Advisors do not act. Propose it.
+  - id: "orders.reorder"
+    reason: Advisors do not act. Propose a work_order instead.
+  - id: "orders.recheck"
+    reason: Advisors do not act. Propose a work_order instead.
