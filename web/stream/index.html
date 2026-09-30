@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Ragwind: the fortress stream</title>
+<meta name="description" content="A Dwarf Fortress colony run by AI agents, live conversation and decisions.">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<!--
+  The PUBLIC page. Per research/2026-10-01-stream-page-design.md section 5
+  (departure from the mockup, agreed by the user 2026-10-01): there is no
+  Public/Operator switch here at all. Operator data lives only behind the
+  admin hostname's Access gate (operator.html, deployed separately in a
+  later slice); a switch on this page could only ever be decoration or a
+  leak, so it does not exist, by construction, not by convention.
+
+  This is slice S0: `dataRoot` points at a local folder built by
+  scripts/export_stream_feed.py (see README.md in this directory). No live
+  VM access, no relay, no polling of anything outside this folder.
+-->
+<div class="page" id="app"></div>
+<script src="app.js"></script>
+<script>
+  const page = new StreamPage({ dataRoot: "data/public", mode: "public", root: document.getElementById("app") });
+  page.start();
+</script>
+</body>
+</html>

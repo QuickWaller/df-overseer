@@ -67,6 +67,13 @@ production/*.sqlite3*
 # dfseries/<fort>.series.sqlite3, same pattern again (handoffs/2026-09-19-dfseries-store.md).
 dfseries/*.sqlite3*
 
+# web/stream/data/: the stream page's exported feed files
+# (handoffs/2026-10-01-stream-page-s0.md, scripts/export_stream_feed.py's
+# own output). Generated from a queue export every time; never source, and
+# never committed even for local testing, same as every other exported
+# per-fort data directory above.
+web/stream/data/
+
 # The conductor's own runtime archive (handoffs/2026-09-22-loop-conductor-
 # service.md; docs/AGENT-LOOP.md item 3): each cycle's briefing, every role
 # run's JSON envelope, cost and clock changes, plus per-role diff cursors

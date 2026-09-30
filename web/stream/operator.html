@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Ragwind: operator view</title>
+<meta name="description" content="Operator-only view of the fortress stream, with the full record behind every line.">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<!--
+  The OPERATOR page. In a real deploy (slice S1) this is served only under
+  the admin hostname, behind the existing Cloudflare Access application
+  (research/2026-10-01-stream-page-design.md section 5) — never reachable
+  by any path the public page's server block also serves. Locally, in this
+  slice, both pages just read different subfolders of the same exported
+  data, and there is no access gate at all: this file is for the user's own
+  local review, not a deployment artifact.
+
+  The "Showing: Operator / Public preview" button is the mockup's
+  Public/Operator switch, MOVED here (design section 5's departure): the
+  toggle re-fetches from data/public instead of data/operator and renders
+  with the exact same code path the real public page uses, so the user
+  reads precisely what would go public before anything does (design
+  section 3.6, "the user reads it before anyone else does").
+-->
+<div class="page" id="app"></div>
+<script src="app.js"></script>
+<script>
+  const page = new StreamPage({ dataRoot: "data/operator", mode: "operator", root: document.getElementById("app") });
+  page.start();
+</script>
+</body>
+</html>
