@@ -72,13 +72,47 @@ dfhack = {
 -- -- this IS the "stub that fails if the filter call is missing": any test
 -- below asserting on #CALLS or a specific recorded call fails outright if
 -- apply_material_filters never calls through to these.
+--
+-- 2026-10-01 (live silent-no-op fix): apply_material_filters now reads back
+-- what it just wrote (verify_material_filter) and refuses+restores on a
+-- mismatch, so this fake must behave STATEFULLY -- a getMaterialFilter call
+-- after a setMaterialFilter call must reflect that write, exactly like the
+-- real plugin, or every "ok is True" test below would spuriously start
+-- failing the readback check the fix added. FILTER_STATE holds the currently
+-- written set per key (nil = unrestricted, i.e. every UNIVERSE name enabled);
+-- UNIVERSE is every name this key has ever seen, seeded by a test's
+-- set_get_response (the "prior state" declaration) and grown by every write
+-- -- a write's own names always end up in the universe, so a test that never
+-- declares a prior state still gets an exact, matching readback.
 CALLS = {}
 GET_RESPONSES = {}  -- keyed "type:sub:cust:index" -> {name = "true"/"false", ...} map, or nil
+FILTER_STATE = {}
+UNIVERSE = {}
+SEEDED = {}
+-- VALID_NAMES[key] = nil means "buildingplan recognises anything written"
+-- (every earlier test's assumption); a test that calls set_valid_names
+-- restricts this fake to modelling the LIVE bug exactly: setMaterialFilter
+-- silently drops any name buildingplan's own mat_cache would not recognise
+-- (real ItemFilter::matches semantics -- an unrecognised-only write ends up
+-- with zero accepted names, which is the SAME as writing an empty list:
+-- "no restriction", never "restrict to nothing").
+VALID_NAMES = {}
 
 local function key(t, s, c, i) return tostring(t) .. ":" .. tostring(s) .. ":" .. tostring(c) .. ":" .. tostring(i) end
 
+local function ensure_universe(k, names)
+  UNIVERSE[k] = UNIVERSE[k] or {}
+  for _, n in ipairs(names or {}) do UNIVERSE[k][n] = true end
+end
+
 function set_get_response(t, s, c, i, resp)
   GET_RESPONSES[key(t, s, c, i)] = resp
+end
+
+function set_valid_names(t, s, c, i, list)
+  local set = {}
+  for _, n in ipairs(list) do set[n] = true end
+  VALID_NAMES[key(t, s, c, i)] = set
 end
 
 -- Plain fields, no metatable indirection: a test that sets one of these to
@@ -86,11 +120,45 @@ end
 package.loaded['plugins.buildingplan'] = {
   isEnabled = function() return true end,
   setMaterialFilter = function(t, s, c, i, names)
+    local k = key(t, s, c, i)
     CALLS[#CALLS + 1] = {op = "set", type = t, subtype = s, custom = c, index = i, names = names}
+    local valid = VALID_NAMES[k]
+    local accepted = {}
+    for _, n in ipairs(names or {}) do
+      if valid == nil or valid[n] then accepted[#accepted + 1] = n end
+    end
+    ensure_universe(k, accepted)
+    if #accepted == 0 then
+      FILTER_STATE[k] = nil
+    else
+      local set = {}
+      for _, n in ipairs(accepted) do set[n] = true end
+      FILTER_STATE[k] = set
+    end
   end,
   getMaterialFilter = function(t, s, c, i)
+    local k = key(t, s, c, i)
     CALLS[#CALLS + 1] = {op = "get", type = t, subtype = s, custom = c, index = i}
-    return GET_RESPONSES[key(t, s, c, i)]
+    if not SEEDED[k] then
+      SEEDED[k] = true
+      local resp = GET_RESPONSES[k]
+      if resp ~= nil then
+        local names, restricted, any_false = {}, {}, false
+        for name, props in pairs(resp) do
+          names[#names + 1] = name
+          if props.enabled == "true" then restricted[name] = true else any_false = true end
+        end
+        ensure_universe(k, names)
+        if any_false then FILTER_STATE[k] = restricted end
+      end
+    end
+    local universe = UNIVERSE[k] or {}
+    local ret = {}
+    for name in pairs(universe) do
+      local enabled = (FILTER_STATE[k] == nil) or (FILTER_STATE[k][name] == true)
+      ret[name] = {enabled = enabled and "true" or "false", category = "stone", count = "0"}
+    end
+    return ret
   end,
 }
 
@@ -106,6 +174,10 @@ _G.require = function(n) return package.loaded[n] end
 function reset_calls()
   CALLS = {}
   GET_RESPONSES = {}
+  FILTER_STATE = {}
+  UNIVERSE = {}
+  SEEDED = {}
+  VALID_NAMES = {}
 end
 """
 
@@ -142,6 +214,10 @@ class World:
         self.lua.eval(
             "function(t, s, c, i, r) set_get_response(t, s, c, i, r) end"
         )(t, s, c, i, self.lua.table_from(resp, recursive=True) if resp is not None else None)
+
+    def set_valid_names(self, t, s, c, i, names):
+        arr = self.lua.table_from(names)
+        self.lua.eval("function(t, s, c, i, n) set_valid_names(t, s, c, i, n) end")(t, s, c, i, arr)
 
     def apply(self, btype, sub, cust, filter_recs):
         recs = self.lua.table_from(
@@ -250,3 +326,51 @@ def test_buildingplan_unavailable_is_reported_not_silently_skipped(w):
     assert "skipped" in report
     assert "buildingplan" in report["skipped"]
     assert _py(restore()) == []
+
+
+# ---------------------------------------------------------------------------
+# The live silent-no-op bug itself (2026-10-01): a write of names
+# buildingplan's own mat_cache does not recognise is accepted by
+# setMaterialFilter without error, but silently ends up restricting NOTHING.
+# apply_material_filters must catch this by reading back what it just wrote
+# and refusing (with a restore) on a mismatch -- never trusting the write
+# call's own success alone.
+# ---------------------------------------------------------------------------
+
+
+def test_a_write_of_unrecognised_names_is_caught_by_the_readback_and_restored(w):
+    # Models the exact live finding: buildingplan only knows "SHALE" for this
+    # filter; a write of names it does NOT know (the shape this file's stock-
+    # based naming used to produce) is accepted with no error but ends up
+    # restricting nothing at all.
+    w.set_valid_names(0, 1, -1, 0, ["SHALE"])
+    report, restore = w.apply(
+        0, 1, -1, [{"index": 1, "filter_material_names": ["WOOD", "material_0_243"]}]
+    )
+    entry = report["applied"][0]
+    assert entry["ok"] is False, "an unrecognised-name write must never be reported as applied"
+    assert "readback mismatch" in entry["error"]
+    assert entry["restored_on_mismatch"] is True
+    # Nothing to restore later: the mismatch was already fixed on the spot.
+    assert _py(restore()) == []
+
+
+def test_a_write_of_a_recognised_name_succeeds_and_reports_enabled_count(w):
+    w.set_valid_names(0, 1, -1, 0, ["SHALE", "MARBLE"])
+    report, _ = w.apply(0, 1, -1, [{"index": 1, "filter_material_names": ["SHALE"]}])
+    entry = report["applied"][0]
+    assert entry["ok"] is True
+    assert entry["enabled_count"] == 1
+
+
+def test_readback_reports_economic_enabled_without_crashing_when_unavailable(w):
+    # This stub has no df.global.world.raws.inorganics (unlike
+    # test_building_material_and_previously_built_lua_logic.py's stub), so
+    # economic_inorganic_names() fails inside apply_material_filters; the
+    # write/readback/match logic must still work and economic_enabled must
+    # come back as an empty list, never a crash or a missing key.
+    w.set_valid_names(0, 1, -1, 0, ["SHALE", "HEMATITE"])
+    report, _ = w.apply(0, 1, -1, [{"index": 1, "filter_material_names": ["SHALE", "HEMATITE"]}])
+    entry = report["applied"][0]
+    assert entry["ok"] is True
+    assert entry["economic_enabled"] == []

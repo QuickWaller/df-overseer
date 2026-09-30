@@ -85,25 +85,84 @@ the duration of a real (non-dry) call and restore afterward; an empty class
 is never written (that would mean "no restriction" to buildingplan).
 `TOOLS.yaml` updated for both commands.
 
-**Tests**: 8 new (`test_buildingplan_material_filter_lua_logic.py`, a fake
-`plugins.buildingplan` recording every call — fails if the write/restore
-calls go missing), 5 new in `test_construction_lua_logic.py`, plus
-assertions added to the existing building-material tests. Ambient
-`python -m pytest`: 2082 passed, 3 skipped (up from the prior 1845/3 baseline
-by other merged work plus these additions). `dfmcp/tests`: this worktree has
-no `.venv-dfmcp`; ambient Python gave 634 passed, 3 skipped (not the
-isolated-venv count CLAUDE.md records; dfmcp has no per-tool argument
-schemas, it reads `TOOLS.yaml` command strings generically, so the CLI
-signature change needed no dfmcp code change).
+**Tests (first pass)**: 8 new (`test_buildingplan_material_filter_lua_logic.py`,
+a fake `plugins.buildingplan` recording every call, failing if the
+write/restore calls go missing), 5 new in `test_construction_lua_logic.py`,
+plus assertions added to the existing building-material tests. Ambient
+`python -m pytest`: 2082 passed, 3 skipped at that point.
 
-**Only a live test can settle**: whether `setMaterialFilter`'s name list is
-honoured as a real whitelist against a running fort's item search (no
-DFHack code exercises "attach nothing, let DF search under a narrowed
-filter" at this tag, per `research/2026-09-30-item-binding-design.md`);
-whether the write/restore window is wide enough relative to quickfort's own
-`buildingplan` registration timing during `#build`; whether
-`df.construction_type` is genuinely bidirectional for the name->number
-reverse lookup `construction_type_numbers` relies on; and whether a material
-with zero current stock (never in the written list, since the list is built
-from live stock, not the raws catalogue) causes a visible gap once it later
-appears.
+## Correction, same day: the first pass was a silent no-op
+
+A live `dfhack-run lua` test on VM 103 (reversible, restored after, run by
+the orchestrator against Construction/Wall index 0) found the first pass's
+write did **nothing**: `filter_material_names` for a real wall was
+`["WOOD", "material_0_243"]`, neither name recognised by buildingplan's own
+`mat_cache` (keyed by `MaterialInfo:toString()`, confirmed live,
+`dfhack.matinfo.decode(0,243):toString() == "shale"`, `0:182 == "hematite"`),
+so `setMaterialFilter` silently reset to "no restriction" (367 of 367
+materials stayed enabled). Writing `{"shale"}` directly left exactly 1
+enabled, `getMaterialFilter`'s `props.enabled` read was already correct, and
+`df.construction_type` reverse lookup (`[1] == "Wall"`) worked. Root cause:
+the class was built from this file's own **stock scan** (`decode_item_material`'s
+`.material.id`, empty for a boulder on this fort, falling back to the
+`material_0_N` shape), which has no reason to match buildingplan's naming at
+all.
+
+**Fix**: the class is now resolved from buildingplan's **own vocabulary**
+(`getMaterialFilter(type, sub, cust, index)`, which already lists every name
+valid for that exact filter, tagged with its category and current count),
+never from stock. New helpers in `building.lua`: `vocabulary_for_filter`
+(wraps `getMaterialFilter`), `economic_inorganic_names` (scans every
+inorganic via `dfhack.matinfo.decode(0, idx)`, the same overload
+`decode_vein_tile` already uses, flagging `isOre()`/`isGem()`), and
+`resolve_filter_class` (the vocabulary minus economic names, or the whole
+vocabulary under `allow_economic`, or one named material validated against
+the vocabulary, never against stock). `resolve_material_choice` now takes a
+`filter_ctx` (`vocab`, `vocab_err`, `economic_names`, `economic_err`) and
+sets `rec.filter_material_names`/`rec.filter_class_error` from it,
+independent of every stock-based branch (those stay as the advisory
+`chosen_material`/`available`/`materials` fields, unchanged). Every write in
+`apply_material_filters` is now **read back and verified**: if the enabled
+set does not exactly match what was written, the prior filter is restored
+immediately and the rec is reported `ok: false` with the mismatch, never
+silently counted as applied. `decode_item_material` now prefers
+`MaterialInfo:toString()` for its report name too (falling back to the old
+shape), so the advisory report also stops showing `material_0_243`.
+
+**Stub changes**: `test_building_material_and_previously_built_lua_logic.py`'s
+stub gained a two-overload `dfhack.matinfo.decode` (item-based and
+index-based), a fake `raws.inorganics.all`, and a `getMaterialFilter` backed
+by a settable `VOCAB`/`INORGANICS`, with sensible defaults so its existing
+16 tests needed only the `filter_material_names` assertions updated to the
+new vocabulary-based values (they now include materials with zero stock,
+which is the fix's whole point).
+`test_buildingplan_material_filter_lua_logic.py`'s stub became **stateful**
+(`FILTER_STATE`/`UNIVERSE`/`SEEDED`) so a `getMaterialFilter` read after a
+`setMaterialFilter` write reflects it, plus a `VALID_NAMES` mechanism that
+reproduces the live bug exactly: `set_valid_names` declares which names
+buildingplan actually recognises, and a write of anything else is silently
+dropped, so `test_a_write_of_unrecognised_names_is_caught_by_the_readback_and_restored`
+fails without the readback fix and passes with it, directly proving the
+regression guard.
+
+**Tests (final)**: `test_buildingplan_material_filter_lua_logic.py` now has
+11 (3 new: the unrecognised-names catch, a recognised-name success with
+`enabled_count`, and an economic-enabled report that degrades cleanly when
+the economic scan is unavailable). `test_construction_lua_logic.py` and
+`test_building_material_and_previously_built_lua_logic.py` unchanged in
+count. Ambient `python -m pytest`: **2131 passed, 3 skipped**. `dfmcp/tests`:
+this worktree has no `.venv-dfmcp` (fresh worktree, not carried over);
+ambient Python gave **643 passed, 3 skipped**, not the isolated-venv count
+CLAUDE.md records. dfmcp needed no code change either pass: it reads
+`TOOLS.yaml` command strings generically, with no per-tool argument schema
+to update.
+
+**Only a live test can settle**: whether the corrected write, once verified
+by readback, is actually honoured by DF's own item search on a running fort
+(the readback proves buildingplan's bookkeeping changed, not that a dwarf
+will draw from the narrowed set); whether the write/restore window is wide
+enough relative to quickfort's own `buildingplan` registration timing during
+`#build`; and whether a material with zero current stock, now correctly
+included in the written class since it comes from buildingplan's raws-backed
+vocabulary rather than stock, actually gets picked once it later appears
+in stock.
