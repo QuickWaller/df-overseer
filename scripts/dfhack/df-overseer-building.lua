@@ -767,9 +767,20 @@ local function decode_item_material(item)
   if not ok or mi == nil then
     return nil, "dfhack.matinfo.decode failed: " .. tostring(mi)
   end
+  -- Prefer MaterialInfo:toString() (2026-10-01 fix): this is the SAME string
+  -- buildingplan's own mat_cache is keyed by (buildingplan.cpp
+  -- `mat_cache.emplace(mi.toString(), ...)`), so a report using this name
+  -- names something the real filter vocabulary also recognises, instead of
+  -- `.material.id` (which reads empty for a boulder on this fort, per the
+  -- live test that found the filter-write bug, and fell back to the opaque
+  -- "material_0_243" shape below).
   local name
-  local ok_n, id = pcall(function() return mi.material and mi.material.id end)
-  if ok_n and id and id ~= "" then name = tostring(id) end
+  local ok_ts, ts = pcall(function() return mi:toString() end)
+  if ok_ts and ts and ts ~= "" and ts ~= "any" then name = tostring(ts) end
+  if not name then
+    local ok_n, id = pcall(function() return mi.material and mi.material.id end)
+    if ok_n and id and id ~= "" then name = tostring(id) end
+  end
   if not name then
     local ok_ti, t = pcall(function() return mi.type end)
     local ok_ix, ix = pcall(function() return mi.index end)
@@ -839,6 +850,171 @@ local function flags_request_non_economic(flags)
   return false
 end
 
+-- ---------------------------------------------------------------------------
+-- buildingplan's OWN material vocabulary (2026-10-01 fix, handoffs/
+-- 2026-10-01-buildingplan-material-filter.md: a live dfhack-run lua test on
+-- VM 103, reversible, restored after, found the first cut of this fix was a
+-- SILENT NO-OP). Evidence: `setMaterialFilter` only keeps names it
+-- recognises in its own `mat_cache`, keyed by `MaterialInfo:toString()`
+-- (buildingplan.cpp `cache_matched`, `mat_cache.emplace(mi.toString(), ...)`,
+-- decoded via `dfhack.matinfo.decode(0, idx)` for every inorganic, matching
+-- df-overseer-surface.lua's own decode_vein_tile overload) -- live-confirmed
+-- `dfhack.matinfo.decode(0,243):toString() == "shale"`,
+-- `dfhack.matinfo.decode(0,182):toString() == "hematite"`. This file's OWN
+-- stock-based names (decode_item_material's `.material.id`, which read empty
+-- for boulders on this fort, falling back to the "material_0_243" shape) never
+-- matched that vocabulary, so `["WOOD", "material_0_243"]` matched NOTHING in
+-- `mat_cache`, and `ItemFilter::matches` treats an unmatched/empty name list
+-- as "no restriction" (buildingplan.cpp line ~926) -- confirmed live: that
+-- exact list left all 367 materials enabled, while writing {"shale"} left
+-- exactly 1.
+--
+-- THE FIX: never build the write list from stock. `getMaterialFilter(btype,
+-- sub, cust, index0)` returns every name buildingplan considers valid for
+-- THAT filter (already narrowed to the filter's own item-type/flags via
+-- `mat.matches(jitem)`, buildingplan.cpp lines 979-982), each tagged with its
+-- buildingplan CATEGORY ("stone", "wood", ...) and current stock `count` --
+-- this IS the vocabulary `setMaterialFilter` will actually recognise for
+-- that filter, live-confirmed (367 valid names read back for a Wall's index
+-- 0 on VM 103). This also removes the "built from live stock" gap: a
+-- material with zero units today still appears in the vocabulary and stays
+-- eligible.
+-- ---------------------------------------------------------------------------
+
+local function buildingplan_module()
+  local ok, bp = pcall(require, 'plugins.buildingplan')
+  if not ok or type(bp) ~= 'table' then
+    return nil, "could not load plugins.buildingplan: " .. tostring(bp)
+  end
+  if type(bp.setMaterialFilter) ~= 'function' or type(bp.getMaterialFilter) ~= 'function' then
+    return nil, "plugins.buildingplan does not expose setMaterialFilter/getMaterialFilter on this DFHack build"
+  end
+  return bp
+end
+
+-- Raw call, shared by the vocabulary read below and the prior-state read
+-- apply_material_filters takes before writing (and again, as a readback,
+-- right after). Returns ret (the name -> {count=, enabled=, category=}
+-- string-keyed map DFHack returns, or {} if the index does not exist), err.
+local function bp_get_material_filter(bp, btype, sub, cust, index0)
+  local ok, ret = pcall(bp.getMaterialFilter, btype, sub, cust, index0)
+  if not ok then return nil, "getMaterialFilter failed: " .. tostring(ret) end
+  if ret == nil or type(ret) ~= 'table' then return {}, nil end
+  return ret, nil
+end
+
+-- The full vocabulary for one filter: name -> {category=, count=, enabled=}.
+-- Never gated on current stock -- see the header above.
+local function vocabulary_for_filter(bp, btype, sub, cust, index0)
+  local ret, err = bp_get_material_filter(bp, btype, sub, cust, index0)
+  if not ret then return nil, err end
+  local vocab = {}
+  for name, props in pairs(ret) do
+    if type(props) == 'table' then
+      vocab[name] = {
+        category = props.category,
+        count = tonumber(props.count) or 0,
+        enabled = (props.enabled == "true"),
+      }
+    end
+  end
+  return vocab
+end
+
+-- Every inorganic material name, in buildingplan's own MaterialInfo:toString()
+-- form, that this fort's raws mark ore or gem
+-- (dfhack.matinfo.decode(0, idx):inorganic:isOre()/.material:isGem(), the
+-- same tile/vein-event overload df-overseer-surface.lua's decode_vein_tile
+-- already uses; live-verified for this fix, 2026-10-01: 0:182 (HEMATITE) is
+-- isOre()==true, 0:243 (SHALE) is isOre()==false). Scans every inorganic
+-- once; a caller needing this for more than one filter in the same call
+-- should compute it once and share it, not call this per filter.
+local function economic_inorganic_names()
+  local names = {}
+  local ok_inorg, inorganics = pcall(function() return df.global.world.raws.inorganics.all end)
+  if not ok_inorg or inorganics == nil then
+    return nil, "could not read df.global.world.raws.inorganics.all: " .. tostring(inorganics)
+  end
+  local ok_len, len = pcall(function() return #inorganics end)
+  if not ok_len then return nil, "could not read df.global.world.raws.inorganics.all's length" end
+  for idx = 0, len - 1 do
+    local ok_mi, mi = pcall(dfhack.matinfo.decode, 0, idx)
+    if ok_mi and mi then
+      local ok_name, name = pcall(function() return mi:toString() end)
+      local ok_inorg2, inorg = pcall(function() return mi.inorganic end)
+      if ok_name and name and ok_inorg2 and inorg then
+        local ok_ore, is_ore = pcall(function() return inorg:isOre() end)
+        local ok_gem, is_gem = pcall(function() return inorg.material and inorg.material:isGem() end)
+        if (ok_ore and is_ore) or (ok_gem and is_gem) then
+          names[name] = true
+        end
+      end
+    end
+  end
+  return names
+end
+
+-- Builds the class actually written to buildingplan's filter, from ITS OWN
+-- vocabulary, never stock: every vocab name that is not economic (by
+-- economic_inorganic_names, OR buildingplan's own "gem" category -- the
+-- fix's instruction: a gem-category material counts as economic even where
+-- isOre()/isGem() alone would miss it), unless allow_economic widens that to
+-- every vocab name, or a single named choice narrows it to one, validated
+-- against THIS vocabulary (never against stock, so a zero-stock material
+-- already known to buildingplan can still be named). Returns names (a list;
+-- nil only on a hard error, NEVER an empty list, so the caller cannot mistake
+-- "could not resolve" for "the class is genuinely empty"), error.
+local function resolve_filter_class(vocab, flags, choice, economic_names)
+  if not vocab or not next(vocab) then
+    return nil, "buildingplan reports no material vocabulary for this filter"
+  end
+  if not economic_names then
+    return nil, "could not determine which materials are economic (ore/gem)"
+  end
+  local must_non_economic = flags_request_non_economic(flags)
+  local function is_economic(name, entry)
+    return economic_names[name] == true or entry.category == "gem"
+  end
+
+  local requested_name, allow_economic = nil, false
+  if choice ~= nil and tostring(choice) ~= "" then
+    if tostring(choice):lower() == "allow_economic" then
+      allow_economic = true
+    else
+      requested_name = tostring(choice)
+    end
+  end
+
+  if requested_name then
+    local match_name, match_entry
+    for name, entry in pairs(vocab) do
+      if name:lower() == requested_name:lower() then match_name, match_entry = name, entry end
+    end
+    if not match_name then
+      return nil, "requested material " .. requested_name
+        .. " is not in buildingplan's own vocabulary for this filter"
+    end
+    if is_economic(match_name, match_entry) and must_non_economic then
+      return nil, "requested material " .. match_name
+        .. " is economic, but this filter's own flags require non_economic"
+    end
+    return {match_name}, nil
+  end
+
+  local names = {}
+  for name, entry in pairs(vocab) do
+    if not (is_economic(name, entry) and not (allow_economic and not must_non_economic)) then
+      names[#names + 1] = name
+    end
+  end
+  table.sort(names)
+  if #names == 0 then
+    return nil, "only economic material(s) are in buildingplan's vocabulary for this filter; "
+      .. "pass allow_economic or name one explicitly to use them"
+  end
+  return names, nil
+end
+
 -- Applies the caller's MATERIAL_CHOICE (or the safe default) to a
 -- building_material filter's stock breakdown, writing straight into `rec`.
 -- `choice` is nil (default: exclude economic materials), "allow_economic"
@@ -848,7 +1024,28 @@ end
 -- game's own rule). Same shape as df-overseer-workjob.lua's reagent_choice:
 -- candidates listed, resolved by explicit choice or a safe default, never
 -- silently guessed.
-local function resolve_material_choice(rec, by_name, errors, flags, choice)
+-- filter_ctx is {vocab=, vocab_err=, economic_names=, economic_err=} (see
+-- resolve_filter_class's header): the CLASS written to buildingplan's filter
+-- is resolved from THAT, independent of every stock-based branch below,
+-- since the 2026-10-01 fix (a live silent no-op, see the header comment
+-- above buildingplan_module). rec.materials/chosen_material/available/
+-- excluded_materials/material_choice stay stock-based, advisory only, as
+-- they always were.
+local function resolve_material_choice(rec, by_name, errors, flags, choice, filter_ctx)
+  filter_ctx = filter_ctx or {}
+  if filter_ctx.vocab_err then
+    rec.filter_class_error = filter_ctx.vocab_err
+  elseif filter_ctx.economic_err then
+    rec.filter_class_error = filter_ctx.economic_err
+  else
+    local names, ferr = resolve_filter_class(filter_ctx.vocab, flags, choice, filter_ctx.economic_names)
+    if ferr then
+      rec.filter_class_error = ferr
+    else
+      rec.filter_material_names = names
+    end
+  end
+
   local materials = {}
   for _, m in pairs(by_name) do materials[#materials + 1] = m end
   table.sort(materials, function(a, b)
@@ -888,10 +1085,6 @@ local function resolve_material_choice(rec, by_name, errors, flags, choice)
     rec.chosen_material = m.name
     rec.material_choice = "caller named " .. m.name .. " explicitly"
     rec.available = m.units
-    -- The CLASS written to buildingplan's own filter (2026-10-01, see
-    -- apply_material_filters below): a single named material is a class of
-    -- one, expressed the same way as the multi-material default below.
-    rec.filter_material_names = {m.name}
     return
   end
 
@@ -919,17 +1112,6 @@ local function resolve_material_choice(rec, by_name, errors, flags, choice)
   rec.material_choice = allow_economic
     and "default: highest-stock material, economic materials allowed by caller"
     or "default: highest-stock non-economic material"
-  -- The CLASS (2026-10-01, handoffs/2026-10-01-buildingplan-material-
-  -- filter.md): every eligible material by name, not just the single
-  -- highest-stock one -- this is what gets written into buildingplan's own
-  -- filter (apply_material_filters below), so the GAME picks which exact
-  -- item among them, per the register's 2026-09-30 ruling. chosen_material/
-  -- available above stay as the advisory single-material report they always
-  -- were; filter_material_names is the new, enforced list.
-  rec.filter_material_names = {}
-  for _, m in ipairs(eligible) do
-    rec.filter_material_names[#rec.filter_material_names + 1] = m.name
-  end
 end
 
 local function true_flags(t, prefix)
@@ -979,12 +1161,26 @@ function building_filters_and_gaps(btype, sub, cust, material_choice, label)
   if sub == nil then sub = -1 end
   if cust == nil then cust = -1 end
   label = label or "this kind"
-  local bp_ok, bp = pcall(function() return require('plugins.buildingplan').isEnabled() end)
+  local bp_ok, bp_enabled = pcall(function() return require('plugins.buildingplan').isEnabled() end)
   local bm = {
     source = "dfhack.buildings.getFiltersByType",
-    buildingplan_enabled = bp_ok and bp or NULL,
+    buildingplan_enabled = bp_ok and bp_enabled or NULL,
   }
-  if not bp_ok then bm.buildingplan_error = tostring(bp) end
+  if not bp_ok then bm.buildingplan_error = tostring(bp_enabled) end
+  -- The real module handle, for the vocabulary reads below -- separate from
+  -- the isEnabled() check above so bm.buildingplan_enabled keeps its exact
+  -- prior meaning/shape.
+  local bp_mod, bp_mod_err = buildingplan_module()
+  -- Lazy, shared across every filter in this call: a full raws scan, not
+  -- worth repeating per filter (see economic_inorganic_names's header).
+  local economic_names, economic_err, economic_computed = nil, nil, false
+  local function economic_names_once()
+    if not economic_computed then
+      economic_names, economic_err = economic_inorganic_names()
+      economic_computed = true
+    end
+    return economic_names, economic_err
+  end
   local gaps = {}
 
   local ok, filters = pcall(dfhack.buildings.getFiltersByType, {}, btype, sub, cust)
@@ -1062,7 +1258,16 @@ function building_filters_and_gaps(btype, sub, cust, material_choice, label)
         -- what the build path will actually select, so it is what gating
         -- gaps should be checked against, not the raw item-type sum above.
         local by_name, mat_errors = material_breakdown(names)
-        resolve_material_choice(rec, by_name, mat_errors, flags, material_choice)
+        local vocab, vocab_err
+        if bp_mod then
+          vocab, vocab_err = vocabulary_for_filter(bp_mod, btype, sub, cust, i - 1)
+        else
+          vocab_err = "plugins.buildingplan unavailable: " .. tostring(bp_mod_err)
+        end
+        local econ_names, econ_err = economic_names_once()
+        resolve_material_choice(rec, by_name, mat_errors, flags, material_choice, {
+          vocab = vocab, vocab_err = vocab_err, economic_names = econ_names, economic_err = econ_err,
+        })
         if rec.material_choice_error then
           gaps[#gaps + 1] = rec.material_choice_error .. " (" .. rec.need .. ")"
         elseif rec.excluded_materials and rec.quantity >= 0 and rec.chosen_material
@@ -1070,6 +1275,9 @@ function building_filters_and_gaps(btype, sub, cust, material_choice, label)
           gaps[#gaps + 1] = string.format(
             "needs %d of %s, only %d available once economic material(s) (%s) are excluded by default",
             rec.quantity, rec.need, rec.available, table.concat(rec.excluded_materials, ", "))
+        end
+        if rec.filter_class_error then
+          gaps[#gaps + 1] = "buildingplan filter class (" .. rec.need .. "): " .. rec.filter_class_error
         end
       end
     else
@@ -1116,36 +1324,41 @@ end
 --   run and restores it immediately after (the handoff's instruction for
 --   exactly this case: "if only a default exists, set it for the call and
 --   restore it, and say so").
--- - `setMaterialFilter`'s fifth argument is a flat list of MATERIAL NAMES
---   (e.g. "SHALE"), matched by `ItemFilter::matches`: "if the materials list
---   is empty, an item matches by mask alone; otherwise it must be IN the
---   list" [verified: source, itemfilter.cpp, fetched the same pass]. There
---   is a COARSER category mask too (`setMaterialMaskFilter`, tokens "stone",
---   "wood", "metal", ...), but a mask can only mean "all of a class,
---   economic or not" -- it cannot express "not ore, not gem" by itself. So
---   "any non-ore stone" is written here as an EXPLICIT NAME LIST: every
---   material resolve_material_choice already found in live stock that is
---   not economic (or every material if the caller passed allow_economic, or
---   the one named material) -- never the mask. The mask is never touched by
---   this fix.
+-- - `setMaterialFilter`'s fifth argument is a flat list of MATERIAL NAMES,
+--   matched by `ItemFilter::matches`: "if the materials list is empty, an
+--   item matches by mask alone; otherwise it must be IN the list" [verified:
+--   source, itemfilter.cpp, fetched the same pass]. There is a COARSER
+--   category mask too (`setMaterialMaskFilter`, tokens "stone", "wood",
+--   "metal", ...), but a mask can only mean "all of a class, economic or
+--   not" -- it cannot express "not ore, not gem" by itself. So "any non-ore
+--   stone" is written here as an EXPLICIT NAME LIST. The mask is never
+--   touched by this fix.
+-- - **A name only counts if buildingplan's own `mat_cache` recognises it**
+--   [verified live, 2026-10-01, see the header above buildingplan_module far
+--   above: the first cut of this fix built that list from this file's own
+--   stock scan and its names never matched `mat_cache` at all, so every
+--   write silently landed as the empty-list case below]. The list actually
+--   written here comes from `vocabulary_for_filter`/`resolve_filter_class`
+--   (see their headers above resolve_material_choice), which read the names
+--   from buildingplan's OWN `getMaterialFilter`, never from stock.
 -- - Passing an EMPTY name list does not mean "match nothing": it resets the
 --   filter to "match by mask alone" (buildingplan.cpp: "if all materials are
 --   disabled, reset the mask" for the sibling mask-setter, and matches()'s
 --   own "materials list is empty" branch above) -- i.e. wide open. This code
 --   never writes an empty list for that reason: a kind with nothing eligible
 --   right now is reported as a gap and the filter is left untouched.
+-- - **The write is verified by reading it back** (`apply_material_filters`
+--   below): after `setMaterialFilter`, `getMaterialFilter` is called again;
+--   if the enabled set it reports does not exactly match what was written
+--   (the live-caught failure mode: everything still enabled, meaning the
+--   names were not recognised), the prior filter is restored immediately and
+--   the rec is reported failed, never silently treated as applied.
 --
 -- WHAT THIS DOES NOT COVER, source did not settle it:
--- - Whether `setMaterialFilter`'s list is genuinely a pure whitelist against
---   every candidate item buildingplan considers, in practice, on a running
---   fort -- reasoned from `ItemFilter::matches`, never run against a real
---   game. [unverified, needs a live test]
--- - The list is built from CURRENT STOCK only (this file's own
---   material_breakdown, which scans items on hand), not the fort's full raws
---   catalogue: a material with zero units right now is never offered, even
---   if the class would otherwise allow it, until this tool runs again for
---   this building type after that material appears. [unverified how much
---   this matters live; documented as a known limitation, not fixed here]
+-- - Whether `setMaterialFilter`'s list, once WRITTEN AND READ BACK CORRECTLY,
+--   is genuinely honoured by DF's own item search on a running fort (as
+--   opposed to `buildingplan`'s own bookkeeping, which the readback proves) --
+--   [unverified, needs a live build-and-watch test].
 -- - Whether `quickfort run`'s own building-placement step (inside the window
 --   between the filter write and its restore, below) reads this same
 --   (type, subtype, custom) key before or after `addPlannedBuilding`, i.e.
@@ -1162,22 +1375,10 @@ end
 --   structures for this pass.
 -- ---------------------------------------------------------------------------
 
-local function buildingplan_module()
-  local ok, bp = pcall(require, 'plugins.buildingplan')
-  if not ok or type(bp) ~= 'table' then
-    return nil, "could not load plugins.buildingplan: " .. tostring(bp)
-  end
-  if type(bp.setMaterialFilter) ~= 'function' or type(bp.getMaterialFilter) ~= 'function' then
-    return nil, "plugins.buildingplan does not expose setMaterialFilter/getMaterialFilter on this DFHack build"
-  end
-  return bp
-end
-
 -- Returns names (a list; {} means "no restriction", see header), err.
 local function read_material_filter(bp, btype, sub, cust, index0)
-  local ok, ret = pcall(bp.getMaterialFilter, btype, sub, cust, index0)
-  if not ok then return nil, "getMaterialFilter failed: " .. tostring(ret) end
-  if ret == nil or type(ret) ~= 'table' then return {}, nil end
+  local ret, err = bp_get_material_filter(bp, btype, sub, cust, index0)
+  if not ret then return nil, err end
   local names, all_true, any = {}, true, false
   for name, props in pairs(ret) do
     any = true
@@ -1198,17 +1399,62 @@ local function write_material_filter(bp, btype, sub, cust, index0, names)
   return true
 end
 
+-- Reads back what buildingplan now reports as enabled for this filter,
+-- comparing it against `want` (the exact set of names just written). Any
+-- mismatch (fewer enabled than written -- some names were not recognised; or
+-- MORE enabled, up to and including every material in the vocabulary -- the
+-- live-caught silent-no-op failure mode) is reported, never silently
+-- accepted. `economic_names` (may be nil if that scan failed) is used only
+-- to report which of the enabled names are economic, for visibility.
+local function verify_material_filter(bp, btype, sub, cust, index0, want, economic_names)
+  local after, aerr = vocabulary_for_filter(bp, btype, sub, cust, index0)
+  if not after then
+    return false, nil, nil, "readback failed: " .. tostring(aerr)
+  end
+  local enabled, economic_enabled, want_set = {}, {}, {}
+  for _, n in ipairs(want) do want_set[n] = true end
+  for name, entry in pairs(after) do
+    if entry.enabled then
+      enabled[#enabled + 1] = name
+      if economic_names and (economic_names[name] or entry.category == "gem") then
+        economic_enabled[#economic_enabled + 1] = name
+      end
+    end
+  end
+  table.sort(enabled)
+  table.sort(economic_enabled)
+  local matches = (#enabled == #want)
+  if matches then
+    for _, n in ipairs(enabled) do
+      if not want_set[n] then matches = false break end
+    end
+  end
+  local err = nil
+  if not matches then
+    err = string.format(
+      "readback mismatch: wrote %d material(s), buildingplan now reports %d enabled -- the write was likely not recognised",
+      #want, #enabled)
+  end
+  return matches, enabled, economic_enabled, err
+end
+
 -- Writes rec.filter_material_names (from resolve_material_choice, via
 -- building_filters_and_gaps) into buildingplan's own filter for every
 -- building_material rec in `filter_recs` that has a non-empty list, saving
--- what was there first. Returns a report table and a restore() function the
--- caller MUST call once the real quickfort run has finished (success or
--- not) -- this is the "set for the call, restore after" contract.
+-- what was there first, WRITING, then READING BACK to confirm the write
+-- actually took (see the header above and verify_material_filter's own
+-- comment: the live-caught bug was a silent no-op that this readback alone
+-- would have caught). A mismatch restores the prior state immediately and is
+-- reported failed, never counted as applied. Returns a report table and a
+-- restore() function the caller MUST call once the real quickfort run has
+-- finished (success or not) -- this is the "set for the call, restore after"
+-- contract, for whichever recs DID apply successfully.
 function apply_material_filters(btype, sub, cust, filter_recs)
   local bp, berr = buildingplan_module()
   if not bp then
     return {applied = {}, skipped = "buildingplan unavailable: " .. tostring(berr)}, function() return {} end
   end
+  local economic_names = economic_inorganic_names()
   local applied, saved = {}, {}
   for _, rec in ipairs(filter_recs or {}) do
     if rec.filter_material_names and #rec.filter_material_names > 0 then
@@ -1218,10 +1464,22 @@ function apply_material_filters(btype, sub, cust, filter_recs)
         applied[#applied + 1] = {index = rec.index, ok = false, error = rerr}
       else
         local ok, werr = write_material_filter(bp, btype, sub, cust, index0, rec.filter_material_names)
-        applied[#applied + 1] = {
-          index = rec.index, ok = ok, error = nn(werr), materials = rec.filter_material_names,
-        }
-        if ok then saved[#saved + 1] = {index0 = index0, names = prev} end
+        local entry = {index = rec.index, ok = ok, error = nn(werr), materials = rec.filter_material_names}
+        if ok then
+          local matches, enabled, econ_enabled, verr = verify_material_filter(
+            bp, btype, sub, cust, index0, rec.filter_material_names, economic_names)
+          entry.enabled_count = enabled and #enabled or NULL
+          entry.economic_enabled = econ_enabled or {}
+          if not matches then
+            entry.ok = false
+            entry.error = verr
+            local rok, rwerr = write_material_filter(bp, btype, sub, cust, index0, prev)
+            entry.restored_on_mismatch = rok
+            if not rok then entry.restore_on_mismatch_error = nn(rwerr) end
+          end
+        end
+        applied[#applied + 1] = entry
+        if entry.ok then saved[#saved + 1] = {index0 = index0, names = prev} end
       end
     end
   end

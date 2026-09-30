@@ -54,7 +54,20 @@ df = {
     world = {
       items = {other = {}},
       buildings = {all = {}},
-      raws = {buildings = {all = {}}},
+      raws = {
+        buildings = {all = {}},
+        -- 2026-10-01: economic_inorganic_names only ever asks for the COUNT
+        -- (`#inorganics`), then decodes each index through
+        -- dfhack.matinfo.decode(0, idx) above -- never indexes this table
+        -- directly -- so a metatable-computed length over INORGANICS is
+        -- enough, with no need to rebuild an array each time set_inorganics
+        -- runs.
+        inorganics = {all = setmetatable({}, {__len = function()
+          local n = 0
+          for _ in pairs(INORGANICS) do n = n + 1 end
+          return n
+        end})},
+      },
     },
   },
 }
@@ -72,12 +85,55 @@ function make_inorganic(is_ore, is_gem)
   return inorg
 end
 
+-- 2026-10-01 (handoffs/2026-10-01-buildingplan-material-filter.md, the live
+-- silent-no-op fix): INORGANICS models df.global.world.raws.inorganics.all,
+-- each entry decoded via dfhack.matinfo.decode(0, idx) (the SAME index-based
+-- overload df-overseer-surface.lua's decode_vein_tile already uses), so
+-- economic_inorganic_names has something to scan. Each entry also gets a
+-- :toString() method, since that -- not .material.id -- is the name
+-- buildingplan's own vocabulary is keyed by; the two are DELIBERATELY the
+-- same uppercase tokens the rest of this stub already uses (real DFHack
+-- gives lowercase display names, but this stub only needs to exercise the
+-- LOGIC: case-insensitive matching, category/economic filtering).
+INORGANICS = {}  -- idx -> {name=, is_ore=, is_gem=}
+
+function set_inorganics(list)
+  local t = {}
+  for i, e in ipairs(list) do t[i - 1] = e end
+  INORGANICS = t
+end
+
+-- VOCAB models what plugins.buildingplan.getMaterialFilter reports for the
+-- filter under test: buildingplan's OWN vocabulary, independent of stock
+-- (see the .lua file's header on vocabulary_for_filter). Each entry is
+-- {name=, category=}; "enabled" always reads "true" here (this fake never
+-- models an existing restriction) unless a name is in DISABLED_VOCAB (set by
+-- a test wanting to exercise the restore-of-a-real-restriction path -- not
+-- needed by this file's own tests, kept for parity with the dedicated
+-- buildingplan-filter test file).
+VOCAB = {}
+DISABLED_VOCAB = {}
+
+function set_vocabulary(list)
+  VOCAB = list
+end
+
 dfhack = {
   matinfo = {
-    decode = function(item)
-      local mi = MATINFO[item.id]
-      if mi == "error" then error("boom: unreadable material") end
-      if mi == nil then error("no material info for item " .. tostring(item.id)) end
+    -- Real dfhack.matinfo.decode has two overloads: decode(item) and
+    -- decode(type, index). The fake distinguishes them by argument shape,
+    -- same as the real Lua binding does by argument count/type.
+    decode = function(a, b)
+      if type(a) == 'table' then
+        local mi = MATINFO[a.id]
+        if mi == "error" then error("boom: unreadable material") end
+        if mi == nil then error("no material info for item " .. tostring(a.id)) end
+        return mi
+      end
+      local e = INORGANICS[b]
+      if e == nil then error("no inorganic at index " .. tostring(b)) end
+      local mi = {inorganic = make_inorganic(e.is_ore or false, e.is_gem or false)}
+      function mi:toString() return e.name end
       return mi
     end,
   },
@@ -99,7 +155,30 @@ package.loaded['df-overseer-stocks'] = {
             in_building_units = 0, in_job_units = 0}
   end,
 }
-package.loaded['plugins.buildingplan'] = {isEnabled = function() return true end}
+-- 2026-10-01: FILTER_CALLS records every setMaterialFilter call (unused by
+-- this file's own tests, which only check the STOCK-based advisory fields
+-- and that no filter_class_error appears; the write mechanism itself is
+-- exercised by tests/test_buildingplan_material_filter_lua_logic.py).
+-- getMaterialFilter returns VOCAB (buildingplan's own vocabulary, set by
+-- set_vocabulary/reset_world -- independent of stock, per the fix).
+FILTER_CALLS = {}
+package.loaded['plugins.buildingplan'] = {
+  isEnabled = function() return true end,
+  setMaterialFilter = function(t, s, c, i, names)
+    FILTER_CALLS[#FILTER_CALLS + 1] = {type = t, subtype = s, custom = c, index = i, names = names}
+  end,
+  getMaterialFilter = function(t, s, c, i)
+    local ret = {}
+    for _, e in ipairs(VOCAB) do
+      ret[e.name] = {
+        enabled = DISABLED_VOCAB[e.name] and "false" or "true",
+        category = e.category,
+        count = "0",
+      }
+    end
+    return ret
+  end,
+}
 function reqscript(name) return package.loaded[name] or {} end
 _G.require = function(n) return package.loaded[n] end
 
@@ -124,6 +203,23 @@ function reset_world()
   df.global.world.buildings.all = make_vec({})
   MATINFO = {}
   FILTERS = {{quantity = 1, flags1 = {}, flags2 = {building_material = true}, flags3 = {}}}
+  FILTER_CALLS = {}
+  DISABLED_VOCAB = {}
+  -- Defaults cover every material this file's tests name: HEMATITE (ore),
+  -- SHALE (plain stone), ROCK_SALT_VAR (a gem, not an ore), WILLOW (wood).
+  -- A test that names a material not in this default list must call
+  -- set_inorganics/set_vocabulary itself first.
+  set_inorganics({
+    {name = "HEMATITE", is_ore = true, is_gem = false},
+    {name = "SHALE", is_ore = false, is_gem = false},
+    {name = "ROCK_SALT_VAR", is_ore = false, is_gem = true},
+  })
+  set_vocabulary({
+    {name = "HEMATITE", category = "stone"},
+    {name = "SHALE", category = "stone"},
+    {name = "ROCK_SALT_VAR", category = "stone"},
+    {name = "WILLOW", category = "wood"},
+  })
 end
 
 -- Puts `items` (each {id=, flags=}) into df.global.world.items.other[type_name].
@@ -290,11 +386,14 @@ def test_economic_material_is_excluded_by_default_and_reported_why(w):
     assert f["available"] == 2
     assert "default" in f["material_choice"] and "non-economic" in f["material_choice"]
     assert not gaps
-    # 2026-10-01 (handoffs/2026-10-01-buildingplan-material-filter.md): the
-    # CLASS written into buildingplan's filter is every eligible material,
-    # not just the single reported chosen_material -- HEMATITE (economic)
-    # must never appear.
-    assert f["filter_material_names"] == ["SHALE"]
+    # 2026-10-01 (handoffs/2026-10-01-buildingplan-material-filter.md, fixed
+    # again the same day after a live silent-no-op): the CLASS written into
+    # buildingplan's filter comes from buildingplan's OWN vocabulary
+    # (set_vocabulary's default: HEMATITE/SHALE/ROCK_SALT_VAR/WILLOW), never
+    # from stock -- so it includes WILLOW (never in this test's stock at all)
+    # and excludes HEMATITE (ore) and ROCK_SALT_VAR (a gem, not in stock
+    # either, but still excluded by vocabulary/category alone).
+    assert set(f["filter_material_names"]) == {"SHALE", "WILLOW"}
 
 
 def test_a_gem_material_is_economic_via_isGem_even_when_not_an_ore(w):
@@ -356,10 +455,11 @@ def test_allow_economic_overrides_the_default_and_can_pick_the_economic_material
     assert f_allowed["chosen_material"] == "HEMATITE"
     assert "excluded_materials" not in f_allowed
     assert "caller" in f_allowed["material_choice"]
-    # allow_economic widens the CLASS written to buildingplan to include the
-    # economic material alongside the non-economic one.
-    assert set(f_allowed["filter_material_names"]) == {"HEMATITE", "SHALE"}
-    assert set(f_default["filter_material_names"]) == {"SHALE"}
+    # allow_economic widens the CLASS to buildingplan's WHOLE vocabulary
+    # (every economic exclusion lifted); the default keeps excluding both
+    # economic vocabulary entries (HEMATITE the ore, ROCK_SALT_VAR the gem).
+    assert set(f_allowed["filter_material_names"]) == {"HEMATITE", "SHALE", "ROCK_SALT_VAR", "WILLOW"}
+    assert set(f_default["filter_material_names"]) == {"SHALE", "WILLOW"}
 
 
 def test_naming_a_material_explicitly_is_honoured_even_if_economic(w):
