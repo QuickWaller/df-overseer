@@ -90,26 +90,30 @@ tests.
    (`NativeTool`, `sole_writer_only=True`) and granted only in
    `agents/overseer/tools.yaml`.
 
-**Known limitation, not fixed here (flagging rather than silently
-absorbing):** an amendment's `_seed_step_targets` call only ever adds rows
-(`INSERT OR IGNORE`); if a later version keeps a step's own id but shrinks
-its target set, the dropped target's OLD row lingers in `step_targets`
-forever at whatever state it was left in, and still counts toward that
-step's own status. The tests and this stream's own worked examples always
-give a changed step a new id instead (`replaces`/`drops` old ids, `adds`
-the new one) specifically to avoid this; nothing enforces that pattern.
+**Closed by later instruction (2026-10-01, same day):** the target-seeding
+gap above is now enforced, not conventional -- `store.append` refuses an
+`amend` that reuses a step id from the previous version unless that step's
+whole definition is byte-identical after canonical JSON (`sort_keys=True`),
+naming the step id otherwise; a changed step must take a fresh id and list
+the old one in `replaces`/`drops`. New tests cover unchanged reuse
+(accepted), changed reuse under the same id (refused), and a changed step
+under a fresh id (accepted); one existing test that reused an id while
+silently changing its target set was fixed to use a fresh id instead.
 
 **Role tool counts** (`agents/*/tools.yaml` entry counts, offline; distinct
 from CLAUDE.md's live-measured figures): overseer 92 -> 94 (`queue.amend`,
 `queue.abandon`); architect 70, consultant 34, quartermaster 33, conductor
 16, all unchanged.
 
-**Tests:** dfqueue 218 -> 252 (34 new: schema validation, store write-time
-gates, render XML/public-view for `amend`/`abandon`); dfmcp 2 new in
-`test_roles.py` (rule 6 for both new tools) plus 9 new in
-`test_queue_tools.py`. Final full-suite counts: ambient `python -m pytest`
-2113 passed, 3 skipped (was 2109/3 before this stream's dfqueue-only
-commits landed, +4 net from the 3 new render tests plus one already-counted
-dfqueue test moved; no failures, no new skips); `dfmcp/tests` in
-`.venv-dfmcp` 722 passed (was 713), 0 failures. No em dashes added; no
-attribution lines; no live VM access; no permission refusals encountered.
+**Tests:** dfqueue 218 -> 255 (37 new: schema validation, store write-time
+gates including the byte-identical-reuse enforcement above, render
+XML/public-view for `amend`/`abandon`); dfmcp 2 new in `test_roles.py`
+(rule 6 for both new tools) plus 9 new in `test_queue_tools.py`. Final
+full-suite counts (both reran clean after the enforcement change): ambient
+`python -m pytest` 2116 passed, 3 skipped, 0 failures; `dfmcp/tests` in
+`.venv-dfmcp` 722 passed, 0 failures (one run hit
+`TestWriteSerialisation::test_concurrent_raw_appends_without_serialization_can_collide`,
+CLAUDE.md's documented deliberate-race flake; it passed alone immediately
+after and the full suite passed clean on rerun, so not a regression). No em
+dashes added; no attribution lines; no live VM access; no permission
+refusals encountered.
