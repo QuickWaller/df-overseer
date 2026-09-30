@@ -66,4 +66,29 @@ proposed, with a short answer up front, and this handoff's Result section
 
 ## Result
 
-(to be filled in by the researcher)
+Delivered: `research/2026-09-30-item-binding-design.md` (design only; no
+code, no live access).
+
+Claims stop double-promising without either shaky fix. Each cycle, one
+snapshot read commits the **unbound demand of every live job**, ours and
+foreign (read from the job's own filters and bound items), before any new
+grant; and every job we issue is **narrowed to one pool** (item type and
+material), the vanilla details-button power, so the count holds whichever
+item DF picks. Foreign broad filters are charged against every pool they
+overlap: conservative, never a double promise, and the hold names them.
+Recompute-never-tally is kept.
+
+Verified from source at `53.16-r1`: vanilla building placement offers and
+attaches specific items; workshop jobs bind items only when a dwarf takes
+them; `buildingplan` attaches the closest item on a 599-tick cycle; DFHack's
+`autocheese` pre-attaches a workshop reagent but also assigns the worker, so
+"attach and let DF pick the worker" is unverified (live tests T2, T3). Found:
+`building.build`'s economic-material default is advisory only, contrary to
+its header (memory-audit item).
+
+Decisions for the user: (1) exact items for buildings, proposed allowed as
+vanilla-equivalent; (2) workshop jobs: materials only, exact at issue, exact
+with dispatch, or forbid-based holds; (3) whether the runner may act on
+foreign jobs or only name them; (4) routing the Overseer's direct actions
+through the allocator (F-17); (5) running T2 to T4 in the harness reload
+branch; (6) economic and scarce materials as ruled fields only.
