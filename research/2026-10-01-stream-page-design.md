@@ -344,3 +344,201 @@ The operator page also gets a **"show as public"** toggle: the same page
 rendering the public projection, so the user reads exactly what the public
 would see before anything goes public. This is the mockup's Public /
 Operator switch, moved to where it is safe.
+
+## 4. Q2, the pipeline
+
+### 4.1 Shape
+
+```
+VM 106 conductor ──(dfmcp: queue.wake, queue.run, feed.status)──┐
+openclaw roles   ──(dfmcp: queue.* writes, run_id header)───────┤
+Telegram bridge  ──(dfmcp: queue.message, later)────────────────┤
+                                                                ▼
+VM 103: queue SQLite   dfmcp call log (journald)   status file
+            └──────────────┬───────────────────────────┘
+                   publisher (systemd, read only)
+                           │  rsync over SSH, OUTBOUND, key restricted
+                           ▼  to one directory on the relay
+relay: static files ── small static web server (loopback) ── two Cloudflare
+       /data/public/                                         tunnels
+       /data/operator/                                       (existing)
+```
+
+Proposed, all of it. Properties:
+
+- **VM 103 only dials out.** The publisher pushes with `rsync` over SSH
+  using a second dedicated key, restricted on the relay side to writing one
+  directory (OpenSSH `restrict` plus rsync's `rrsync` helper, the same
+  pattern as the viewer tunnel's `permitopen` key). Nothing on the relay
+  can reach the queue, and viewer traffic never touches VM 103.
+- **The publisher is read only.** It must open the queue with a read-only
+  SQLite connection, **not** through `dfqueue.store._connect`, which runs
+  `_ensure_schema` and would create tables or migrate on open (verified in
+  `store.py`). WAL mode is already on (`PRAGMA journal_mode=WAL`, verified),
+  so a reader never blocks the writer.
+- **Deterministic output.** Given the same records the publisher writes the
+  same bytes, so every file can be rebuilt from the queue at any time. Its
+  own state is one cursor (last `seq` published), and losing it costs one
+  rebuild, not data.
+
+### 4.2 Files
+
+```
+data/public/head.json        state (on | off), generation, last_seq,
+                             published_at, the open segment's name, the
+                             last 50 closed segments, the season index name
+data/public/status.json      fort status, public fields only (from feed.status)
+data/public/projects.json    live projects, recent finished ones, the season
+                             goal, and the thread-to-project map (3.4)
+data/public/open.json        the open segment: items since the last close
+data/public/seg/<generation>-<first_seq>-<last_seq>-<hash>.json
+                             closed segments of 200 items, immutable
+data/public/seasons/index.json, seasons/<year>-<season>.json
+                             one file per finished season (6.5), immutable
+data/operator/...            the same layout from the operator projection,
+                             plus runs/<run_id>.json (the calls of one run)
+```
+
+### 4.3 Push or poll
+
+**Poll, from the browser, of static files.** The browser fetches
+`head.json` every 5 seconds while the tab is visible (Page Visibility API;
+paused when hidden), with `If-None-Match`, and only when `last_seq` moves
+does it fetch `open.json` (and any segment closed since). `status.json` on
+the same beat. Rejected: Server-Sent Events or WebSockets. They need a
+long-lived process on the relay holding one connection per viewer, a new
+thing to keep patched and alive, for latency nobody can see: records arrive
+at the pace of model runs (a role takes 90 s to 10 minutes,
+`evals/live/2026-09-25-first-real-conductor-cycle/`), so a 5 s poll is
+invisible. Static files also mean the page keeps working, with its whole
+history, when VM 103 or the conductor is down.
+
+Between the publisher and the relay it is push, on change, at most every
+5 seconds, plus a heartbeat rewrite of `head.json` every minute so the page
+can tell "quiet" from "stale".
+
+**Caching (public only).** `head.json`, `open.json`, `status.json`: a
+few seconds at Cloudflare's edge, so a thousand viewers cost the relay one
+request per few seconds. Closed segments and finished seasons: long-lived,
+immutable, since their names carry a content hash. Operator files: never
+cached (they are behind Access; caching authenticated responses at the edge
+is a leak waiting to happen).
+
+### 4.4 A new viewer, history, ordering, gaps
+
+- **First load**: `head.json`, then `open.json` plus the newest closed
+  segment (the last 200 to 400 items), `projects.json`, `status.json`. Four
+  or five small files.
+- **Scrolling back**: the next older segment named in `head.json`, then in
+  the season index; a "jump to season" menu loads a season's first segment.
+- **Ordering**: by `seq` only, never by `ts` or game tick. Game ticks are
+  monotonic within a generation but can repeat across a save restore; wall
+  clocks drift between hosts. The page merges by `seq` and deduplicates by
+  `id`.
+- **Gaps**: private items leave holes in the public `seq`, by design. A
+  segment is defined by its `seq` range and contains every public item in
+  it, so a hole never means a missed item, and the page needs no gap
+  detection.
+- **Save restores** (register 2026-09-30 item 7: a generation marker per
+  save, a queue per generation). A new generation starts new segments; the
+  old generation's history stays readable, and the page draws a divider:
+  "The fort was restored from an earlier save. The story continues from
+  late Autumn, year 31." Honest, and good material for the public report.
+
+### 4.5 Restarts and failure
+
+| Failure | Effect | Recovery |
+|---|---|---|
+| Publisher restarts | nothing visible | recomputes the open segment from its cursor |
+| Publisher loses its cursor | nothing visible | full rebuild; identical bytes, so no churn |
+| VM 103 down | page shows history; status goes stale | `head.json`'s `published_at` ages; page says "No news from the fort for 20 minutes" |
+| Conductor down (VM 106) | no new wakes; status file stops changing | status carries `updated_at`; page shows "the conductor is not running", which is the truth |
+| Relay down | page and video both gone | same as the viewer today |
+| Push fails | page stale | publisher retries; an `alarm` after N minutes |
+
+### 4.6 The kill switch, three layers
+
+1. **Cloudflare, from a phone** (proposed): a custom rule, built once and
+   left disabled, that blocks `/data/public/` on the public hostname.
+   Enabling it stops every viewer at the edge within seconds, independent
+   of every VM. Needs the user's dashboard (§10).
+2. **Publisher, on VM 103**: `public_enabled: false` in the publisher's
+   config. It writes `head.json` as `{"state": "off"}`, deletes the public
+   segments from the relay (`rsync --delete`), and keeps the operator side
+   running. The page shows "The public feed is paused" and drops any items
+   it holds in memory.
+3. **Automatic, fail closed**: a canary hit (§7) withholds that item and
+   raises an `alarm`; three canary hits within an hour switch layer 2 off by
+   itself until the user switches it back on.
+
+No agent can reach any of the three: the switches live in files and
+dashboards, not in any role's tool allowlist. Withholding one item is a
+fourth, smaller control: an operator `withhold` list the publisher reads;
+it rewrites the affected segment under a new hashed name. A cached copy of
+the old name persists at the edge until purged, so real removal is layer 1
+or a cache purge, not the list alone.
+
+### 4.7 Cost at a year of history
+
+No measured event rate exists; one real eventful cycle (2026-09-25) wrote
+about ten records across three roles and made about 25 tool calls for the
+Overseer alone. Two assumptions, stated so they can be replaced by
+measurements after a week of real running:
+
+| | Quiet (one eventful cycle an hour) | Busy (one every 5 minutes, all year) |
+|---|---|---|
+| Records per year | about 90,000 | about 1,000,000 |
+| Public items, raw JSON (about 300 bytes each) | about 25 MB | about 300 MB |
+| Same, gzip (JSON compresses roughly 5x, estimate) | about 5 MB | about 60 MB |
+| Closed segments | about 450 | about 5,000 |
+| Operator call records (1 KB each, 25 per role run) | about 6 GB worst case with 3 roles, much less in practice | about 8 GB |
+
+A viewer's first load stays constant (four or five files, tens of KB)
+however long the history grows; only the season index grows, one line per
+season. The public side is trivial at either rate. **The operator call log
+is the only real volume**, and it has a durability problem worth naming:
+it lives in journald on VM 103, which rotates by size, so today the call
+log is not a durable record at all. The publisher should copy each call it
+reads into its own store (its operator files, or a small SQLite beside the
+queue), and the relay should keep operator run files for a window (90
+days, the user's call) with the full set kept on VM 103.
+
+## 5. Q3, where the page lives
+
+| | On the relay, beside noVNC (recommended) | On the portfolio site (GitHub Pages) |
+|---|---|---|
+| Video | same origin: embed noVNC directly | cross origin: iframe the relay; whether the relay allows framing is unverified |
+| Feed files | same origin, no CORS | cross origin: the relay must send CORS headers |
+| Operator view | same page on the admin hostname, already behind Access | Pages cannot sit behind Access without proxying the domain through Cloudflare and adding a path rule |
+| Deploy | a directory on the relay, from this repo | a build of another repo |
+| Survives a portfolio rebuild | yes | no |
+
+**Recommended: the relay.** Concretely (proposed): a small static web
+server (Caddy or nginx) on the relay, **bound to loopback**, in front of the
+existing websockify, serving the page, noVNC's assets, `/data/public/`, and
+proxying the websocket path to websockify. The public tunnel's ingress
+points at it instead of at websockify directly. A second server block, also
+loopback only and reachable only through the admin tunnel, serves the same
+page with `/data/operator/`. The loopback binding is the lesson of the
+2026-09-11 control channel (`scripts/provision_relay.py` `cmd_webvnc`):
+Access must be the whole gate, so the operator files must be unreachable by
+any path that skips it. **The operator directory must never be served by the
+public server block**; the page chooses its data root by the origin it was
+loaded from, and the public block simply has no operator directory to
+serve.
+
+**The static-site constraint** is met fully: the page is plain HTML, CSS and
+JavaScript, and everything dynamic is a file. If the user later prefers the
+portfolio as the home of the page, the page moves as is; only the video
+iframe and CORS questions above need answering. The portfolio page itself
+should change in slice S2 to link the stream page (and could later show the
+season goal and the last three public items by fetching `head.json` cross
+origin, which needs one CORS header).
+
+**The operator gate** needs nothing new if the existing Access application
+covers the whole admin hostname (**unverified**: whether it is scoped to the
+hostname or a path). One consequence to accept or change: the operator page
+and full mouse and keyboard control then share one hostname and one login.
+That is right for one user. If the user ever wants to show the operator view
+to someone without handing them the fort, it needs its own hostname and
+Access application (§10).
