@@ -107,7 +107,7 @@ or depend on `lupa`. `dfmcp/tests` via the main checkout's
 692 baseline by growth elsewhere on `main`; this stream touched nothing
 under `dfmcp/`). Neither suite was touched by this stream except by
 addition. Caught by the ambient run itself: a first draft of
-`test_feed.py` used `192.168.1.42` as a fake leaked-address fixture, which
+`test_feed.py` used `a private RFC 1918 address` as a fake leaked-address fixture, which
 `tests/test_no_leaked_addresses.py` correctly failed on (it is a real
 RFC 1918 address, in a tracked file); fixed to the RFC 5737 documentation
 address `192.0.2.42` in a follow-up commit, re-verified green. A second
