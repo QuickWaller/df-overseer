@@ -164,3 +164,183 @@ deployed to GitHub Pages by GitHub Actions (its README). Its
 that was never wired up (the image base URL is empty) and a link to the
 live viewer. It cannot run server code or sit behind Access without extra
 Cloudflare configuration.
+
+## 3. Q1, the data
+
+### 3.1 Sources
+
+| Source | Where | Feeds | Today |
+|---|---|---|---|
+| Queue records | VM 103, SQLite | chat, projects, goal, archive | exists, links partial |
+| Conductor wakes and role runs | VM 106, journald and archive | "System" chat lines, the "right now" line, operator cost and timing | not in the queue; wake reasons not even archived |
+| Fort status (clock, vitals, who is running) | conductor's per-cycle reads | status strip, "right now" line, paused state | `status.json` on VM 106 only |
+| Season goal measure | a live signal | goal bar | no goal exists yet |
+| `dfmcp` call log | VM 103, journald | operator only: calls under each message | exists, not joinable to records |
+| Stock counts (food, drink) | `stocks.food-drink` | status strip | exists as a tool, not read per cycle |
+| Live DF job under a step | the reconcile snapshot (register 2026-09-30 item 10) | project drawer | not built |
+
+**Proposed: the conductor's events become queue records**, written through
+two new conductor-only `dfmcp` tools, so the page has one ordered store and
+the publisher needs no second source on a second VM. Rejected alternative:
+a second publisher on VM 106 reading the cycle archive, merged with VM 103's
+by wall clock. Two clocks, two publishers and a merge are exactly the
+"ordering and gaps" problem the brief asks about; one store removes it.
+
+**Proposed: fort status is not a record.** It changes every cycle (about
+half a million times a year) and only its latest value matters, so the
+conductor pushes it through a third conductor-only tool, `feed.status`,
+which overwrites one file on VM 103 and makes **no** DFHack call. The
+conductor already holds every value it carries (vitals, clock level, tick,
+who it is about to launch), so this costs no extra game reads. Stock counts
+and the goal's measure are added to the conductor's per-cycle read set only
+when a goal exists (slice S5), not before.
+
+### 3.2 One item model for every chat line
+
+The publisher turns each record into one **item** (or none):
+
+```
+seq        global order (see 3.3), the only ordering key the page uses
+id         the record id (proposal-0004)
+kind       record kind, or wake / goal / review / message / alarm
+speaker    overseer | architect | quartermaster | consultant | executor
+           | conductor (shown as "System") | user (shown as the user's name)
+tick       absolute game tick (rendered as "12 Granite, Autumn, year 31")
+ts         wall clock UTC (rendered as "4 min ago", exact on hover)
+reply_to   an item id, or null
+thread     the root item of this reply chain (derived, 3.4)
+about      [project-0007, project-0007/s3, goal-0002, fort], derived or stored
+text       public text only (3.5); absent means the item shows its kind only
+badge      e.g. proposal verdict, step outcome, hold code (joined live, 6.3)
+```
+
+The operator projection adds the full record, `run_id`, and the tool calls
+that share its `run_id` (3.6).
+
+### 3.3 Schema additions that must be stored
+
+Stored only where the link or text cannot be derived.
+
+1. **`seq`, an explicit append counter** (store column, published as
+   `seq`). **DEPARTURE from "use what exists"**: `rowid` looks sufficient
+   but SQLite's `VACUUM` may renumber the `rowid` of any table without an
+   explicit `INTEGER PRIMARY KEY` (SQLite documentation, known behaviour,
+   not re-checked in this pass), and `records` keys on a text `id`. A
+   published ordering key must never move. Migration: backfill from `rowid`
+   order once.
+2. **`run_id`, stamped server-side on every record** and added to the call
+   log line. Set by the conductor per role run as an MCP request header
+   (openclaw's per-server static header map can read an environment
+   variable, `research/2026-09-12-openclaw-mcp-auth.md`; per-run use is
+   **unverified**). Never a tool argument, same rule as `role` and `cycle`.
+   This is the join the 2026-09-25 observability requirement asks for: a
+   message, the wake that caused it, and the calls it made all share it.
+   Records written outside a conductor run (a manual run, the Telegram
+   bridge) get a `run_id` naming their source (`manual-...`,
+   `telegram-...`).
+3. **`reply_to`** (optional record id), stored only on kinds with no link
+   today: `proposal` (the commission it answers), `ask`, `pass`,
+   `escalation`, and the new message kinds. Validated to exist at write
+   time, like `ruling.proposal_id`. For kinds already linked (ruling,
+   answer, executed, project, amend, abandon, observation) the publisher
+   derives it; storing it twice would invite the two to disagree.
+4. **`about`** (optional, a typed id: `project-0007`, `project-0007/s3`,
+   `goal-0002`, or `fort`), stored only on `ask`, `escalation` and message
+   kinds, where a model is the only one who knows what it is asking about.
+   Validated to exist.
+5. **Commissions: `ask` gains `to` (a role) and `expects`
+   (`answer` or `proposal`)**, matching the register's 2026-10-01 row that a
+   commission is "the same mechanism as a scoped question, with a project as
+   the answer". Today `ask` can only reach the Consultant (`ANSWER_ROLE`).
+   A proposal whose `reply_to` is a commission is that commission's answer.
+6. **Project public fields**: `public_title` (60 characters at most) and
+   `public_rationale` (why, one or two sentences) on `project`; the same
+   `public_rationale` on `amend` and `abandon`; an optional `label` on each
+   step (60 characters, public). Written by the Overseer, who already writes
+   the project. A step without a label shows its tool's display name from
+   `TOOLS.yaml` data (never its arguments).
+7. **Hold codes**: a held target carries `hold_code` from a closed
+   vocabulary (`no_material_in_reach`, `site_unreachable`, `site_flooded`,
+   `no_worker`, `waiting_for_haul`, `preview_failed`, `tool_refused`,
+   `other`), set by the code that records the hold; the free-text `reason`
+   stays, operator only. Public text for each code lives in one data file
+   (`dfqueue/public_text.yaml`, proposed), the same "one data entry, no new
+   code" rule the project applies to tools.
+8. **New kinds**, each validated like the rest, each with a single writing
+   role:
+
+| Kind | Writer | Carries | Public? |
+|---|---|---|---|
+| `wake` | conductor | reasons as codes with safe parameters, roles woken, clock level, one `run_id` per role | yes, as a System line from a text table |
+| `run` | conductor | `run_id`, role, ok or status, timed out, cost, wall clock, tool count | no (operator) |
+| `goal` | overseer | season, measure (`signal`, `op`, `value`, validated against `learning.live_signals` exactly as a prediction is), `public_title`, `public_rationale`, private `reason` | yes |
+| `review` | overseer | `goal_id`, result (`met`, `partly`, `missed`), measured value, `public_rationale`, private `lesson`, whether it was a good goal | yes |
+| `message` | user (via the Telegram bridge) or overseer | `to`, `text`, `mode` (`message` or `interrupt`, user only), `visibility` (`public` or `private`) | per `visibility` |
+| `alarm` | conductor or the watchdog (code) | `alarm_code` from a closed list, private `detail` | code text only |
+
+`user` must become a roster entry of a new kind (`human`), since
+`schema.validate` refuses any role not enabled in `agents/ROSTER.yaml`. The
+`executor` role, when built, needs nothing new: it reuses `executed` with a
+`public_rationale` for the action it chose.
+
+### 3.4 Derived by the publisher, never stored
+
+- **`reply_to` for linked kinds**: ruling to its proposal, answer to its
+  ask, executed to its ruling, project to its ruling, amend, abandon and
+  observation to their project, review to its goal.
+- **`thread`**: follow `reply_to` to the root. Because `reply_to` never
+  changes, the thread root never changes, so a published item never needs
+  rewriting.
+- **`about`**: a proposal becomes "about" the project its ruling founded,
+  **retroactively**. The item itself does not change: the page resolves
+  `thread` to a project through `projects.json` (4.2), which does change.
+  That is how the mockup's chip on the commission line ("Second still") can
+  exist before the project did, without mutating history.
+- **Project status for display**: `drafting` (commission open, no
+  proposal), `awaiting decision` (proposal pending), `active`, `held`
+  (active with a held target), `done`, `abandoned`. Only `active`, `done`
+  and `abandoned` exist in `store.project_status` today; the rest are joins.
+- **Progress as steps, not targets**: "3 of 5 steps", with the current
+  step's target count beneath it ("12 of 12 tiles"). Target counts alone
+  mislead (a dig step has twelve targets, a build step one).
+
+### 3.5 The public projection
+
+A per-kind allowlist in `dfqueue/render.py` beside `ALLOWED_PUBLIC_FIELDS`,
+which it extends rather than replaces.
+
+| Kind | Public text | Never public |
+|---|---|---|
+| `proposal` | `public_rationale`; `type` as a label | summary, rationale, prediction, preconditions, cost |
+| `ruling` | decision, `public_rationale` | reason |
+| `executed` | generated: "Step N done: <label>", or the executor's `public_rationale` | actions, arguments, targets, game refs, notes |
+| `ask`, `answer` | generated only: "The Architect asked the Consultant a question" | question and answer text (written by one model for another) |
+| `pass` | generated: "The Architect had nothing to propose" (collapsed) | reason |
+| `escalation` | generated: "The Overseer has asked the user for help" | reason |
+| `project`, `amend`, `abandon` | `public_title`, `public_rationale`, step labels | summary, because, steps' tools and arguments |
+| `observation` | no line; feeds progress | everything |
+| `wake` | text table keyed by reason code | detail text |
+| `goal`, `review` | `public_title`, `public_rationale`, result | reason, lesson |
+| `message` | `text` when `visibility` is public | private messages entirely |
+| `alarm` | text table keyed by alarm code | detail |
+
+Consultant answers are some of the most readable text in the queue and are
+wiki-grounded game knowledge, not fort secrets. Publishing them would need a
+one-line public summary on `answer`, written by the Consultant for the
+audience. The default above keeps them private; it is a decision for the
+user (§10).
+
+### 3.6 The operator projection
+
+Everything in every record, plus: the `run` record's cost and timing, the
+wake's detail text, and per item the tool calls sharing its `run_id` (tool,
+arguments, error, duration). **Minus the call log's `client` field**: it is
+a network address, useless on this page, and the operator files sit on the
+relay, the most exposed host in the estate (`docs/AGENT-ARCHITECTURE.md`
+§13). Briefings and final answers from the cycle archive stay on VM 106 in
+v1; the operator page names a run's archive directory only.
+
+The operator page also gets a **"show as public"** toggle: the same page
+rendering the public projection, so the user reads exactly what the public
+would see before anything goes public. This is the mockup's Public /
+Operator switch, moved to where it is safe.
