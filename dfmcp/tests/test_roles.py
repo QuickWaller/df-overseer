@@ -555,6 +555,33 @@ def test_rule6_also_restricts_queue_project_to_the_sole_writer(registry, tmp_pat
     assert "architect" in msg and "queue.project" in msg
 
 
+@pytest.mark.parametrize("tool_id", ["queue.amend", "queue.abandon"])
+def test_rule6_also_restricts_queue_amend_and_abandon_to_the_sole_writer(registry, tmp_path, tool_id):
+    """`handoffs/2026-10-01-queue-bugs-and-amend.md` item 3: same rule-6
+    mechanism as queue.project's own test above -- a non-sole-writer role
+    granted queue.amend/queue.abandon refuses to load, before dfqueue.schema's
+    own write-time role check is ever reached."""
+    agents = _roster(tmp_path, """
+        overseer:
+          enabled: true
+          dir: overseer
+          kind: actor
+        architect:
+          enabled: true
+          dir: architect
+          kind: advisor
+        """)
+    _role_dir(agents, "overseer", "read:\n  - id: \"overview.get\"\n")
+    _role_dir(agents, "architect", f"""
+        write:
+          - id: "{tool_id}"
+        """)
+    with pytest.raises(RoleValidationError) as exc:
+        load_roster(registry, agents_dir=agents)
+    msg = str(exc.value)
+    assert "architect" in msg and tool_id in msg
+
+
 def _registry_with_omniscient_tool(tmp_path):
     """A throwaway registry with one omniscient tool alongside a real
     tool, for rule 7's tests -- the real manifest has none by design
