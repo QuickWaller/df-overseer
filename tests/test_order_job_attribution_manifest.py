@@ -37,7 +37,14 @@ ORDERS_LUA = REPO_ROOT / "scripts" / "dfhack" / "df-overseer-orders.lua"
 WORKJOB_LUA = REPO_ROOT / "scripts" / "dfhack" / "df-overseer-workjob.lua"
 STUCKJOBS_LUA = REPO_ROOT / "scripts" / "dfhack" / "df-overseer-stuckjobs.lua"
 
-ORDERS_IDS = {"orders.list", "orders.create", "orders.cancel", "orders.check-duplicate"}
+ORDERS_IDS = {
+    "orders.list", "orders.create", "orders.cancel", "orders.check-duplicate",
+    # Added handoffs/2026-10-01-orders-conditions.md: reorder/recheck, plus
+    # orders.create's generalised (job-type-generic, frequency/conditions/
+    # material_category) argument shape -- see test_orders_create_signature
+    # below for that shape.
+    "orders.reorder", "orders.recheck",
+}
 WORKJOB_IDS = {"workjob.list", "workjob.list-jobs", "workjob.queue", "workjob.cancel"}
 # workjob.list-jobs added by handoffs/2026-09-21-workjob-generalise.md
 # (dispatched 2026-09-23): the job vocabulary is now read live from DFHack's
@@ -101,6 +108,14 @@ def test_lua_functions_named_in_the_manifest_exist():
 def test_check_duplicate_and_cancel_signatures():
     reg = load_registry()
     assert reg.get("orders.check-duplicate").args == ["JOB"]
+    assert reg.get("orders.cancel").args == ["ID", "[DRY_RUN]"]
+    assert reg.get("orders.reorder").args == ["ID", "POSITION", "[DRY_RUN]"]
+    assert reg.get("orders.recheck").args == ["ID", "[DRY_RUN]"]
+    assert reg.get("orders.create").args == [
+        "JOB", "AMOUNT", "[FREQUENCY]", "[MATERIAL]", "[MATERIAL_CATEGORY]",
+        "[WORKSHOP_ID]", "[MAX_WORKSHOPS]", "[ITEM_CONDITIONS]",
+        "[ORDER_CONDITIONS]", "[DRY_RUN]",
+    ]
     assert reg.get("workjob.cancel").args == ["JOB_ID", "[DRY_RUN]"]
     assert reg.get("workjob.queue").args == [
         "JOB", "WORKSHOP_LANDMARK_NAME", "[DRY_RUN]", "[REPEAT]", "[COUNT]",

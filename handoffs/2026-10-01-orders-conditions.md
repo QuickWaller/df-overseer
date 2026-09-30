@@ -54,4 +54,66 @@ and stubs.
 
 ## Result
 
-(fill in, about 200 words, and the live test that would confirm it)
+`orders.create` is now generic over job type: JOB resolves first as a live
+`df.job_type` name, else as a reaction code from
+`world.raws.reactions.reactions`, replacing the twelve-entry `JOB_INFO`
+table (a breaking change: "blocks" etc. no longer work, use
+"ConstructBlocks"). Added, as flat-string optional arguments, all validated
+live and refused by name on both the dry-run and real-write path:
+FREQUENCY, MATERIAL, MATERIAL_CATEGORY (comma list, validated against a
+throwaway `df.manager_order`'s own bitfield keys since DFHack ships no
+source definition of `job_material_category`'s flag names at all),
+WORKSHOP_ID, MAX_WORKSHOPS, ITEM_CONDITIONS
+("COND:VALUE[:ITEM_TYPE[:MATERIAL]]", ";"-separated), ORDER_CONDITIONS
+("ORDER_ID:STATE", ";"-separated, must reference an order already in the
+queue). Added `orders.reorder ID POSITION` (direct vector splice, no
+native "move to N" exists) and `orders.recheck ID`, which corrects the
+research's own proposal: the native `orders recheck` command takes no ID
+at all, so this reproduces its exact gate (conditioned and active)
+scoped to one order. Every read (`list`, a real `create`, `check-duplicate`)
+goes through one shared `describe_order`, so a real create reads the order
+back from the queue rather than echoing the request. `check-duplicate` now
+resolves JOB the same generic way. All existing roles (overseer, architect,
+quartermaster) already hold `orders.create`/`cancel`/`list`/`check-duplicate`
+in their own `tools.yaml` (not edited by this stream, per the handoff's own
+rule) and should get `orders.reorder`/`orders.recheck` too, matching that
+existing symmetry; `conductor` holds only `orders.list` today and does not
+need the new writes. Tests: 37 new lupa cases
+(`tests/test_orders_conditions_lua_logic.py` against
+`tests/lua_stubs/dfhack_orders_world.lua`) cover job/reaction resolution,
+every argument's validation and refusal wording, the real-create readback,
+and reorder/recheck's vector mechanics; the stub's own header states
+plainly what it cannot prove (workorder.lua's real qerror text,
+`job_material_category`'s real flag names, and anything about DF's closed
+engine actually dispatching an order). The existing manifest test
+(`tests/test_order_job_attribution_manifest.py`) was extended for the two
+new command ids and the new `create` signature. Ambient `python -m
+pytest`: 2185 passed, 3 skipped (this repo's baseline count has grown well
+past the 2026-09-25 measurement in `CLAUDE.md` from unrelated streams since
+then; nothing here regressed it). `dfmcp/tests` under the main checkout's
+`.venv-dfmcp`: 722 passed. No live access this stream; every "real mutation"
+path (`create_order` with `dry_run=false`, `reorder_order`, `recheck_order`)
+is UNTESTED against the actual game, same status as the pre-existing
+`cancel_order` write path.
+
+Role grants recommended for the orchestrator (not applied here, since
+`agents/*/tools.yaml` is out of scope for this stream): give
+`orders.reorder` and `orders.recheck` to overseer, architect and
+quartermaster, the same three roles that already hold the rest of the
+orders lifecycle; leave conductor at `orders.list` only.
+
+**Live test that would confirm this**, on a supervised unpause (matching
+the register's 2026-09-30 item-8/9 rows and
+`research/2026-10-01-quartermaster-levers.md` §4's own table): queue one
+real order with a repeat frequency and one item condition, e.g. `orders
+create MakeBarrel 0 Daily "" "" "" "" "AtMost:20:BARREL" "" false`, confirm
+`orders.list` reports it back with `frequency: Daily`, the item condition
+present, and `validated`/`active` starting `false`/`false`; watch it over a
+few ticks to see `validated` flip once the Manager (if appointed) assesses
+it; then call `orders.recheck` on its id while it is `active` and confirm
+`validated`/`active` both clear; then `orders.reorder` it to position 1 and
+confirm `orders.list`'s `queue_position` changes with no other order lost;
+cancel it afterwards for cleanup. A second, separate check: create one
+order by its reaction code (`BREW_DRINK_FROM_PLANT`) to confirm the
+JOB-as-reaction-code resolution path works against the real raws, not just
+the fake one this stream's stub modelled.
