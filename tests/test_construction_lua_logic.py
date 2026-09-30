@@ -29,7 +29,9 @@ def _py(v):
     if isinstance(v, (int, float, str, bool)) or v is None:
         return v
     keys = list(v.keys())
-    if keys and all(isinstance(k, int) for k in keys) and keys == list(range(1, len(keys) + 1)):
+    if not keys:
+        return []  # an empty Lua table is this codebase's empty list, never an object
+    if all(isinstance(k, int) for k in keys) and keys == list(range(1, len(keys) + 1)):
         return [_py(v[k]) for k in keys]
     return {str(k): _py(v[k]) for k in keys}
 
@@ -87,11 +89,21 @@ class World:
     def mine_vein(self, zone_id, dry_run=None, res_id=None, override=None):
         return _py(self.g["mine_vein"](zone_id, dry_run, res_id, override))
 
-    def build(self, zone_id, kind, dry_run=None, res_id=None, override=None):
-        return _py(self.g["build_construction"](zone_id, kind, dry_run, res_id, override))
+    def build(self, zone_id, kind, dry_run=None, material_choice=None, res_id=None, override=None):
+        return _py(self.g["build_construction"](zone_id, kind, dry_run, material_choice, res_id, override))
 
     def overrides(self):
         return _py(self.g["OVERRIDES"]) or []
+
+    def set_building_filters(self, filters, enabled=True):
+        arr = self.lua.table_from([self.lua.table_from(f, recursive=True) for f in filters])
+        self.lua.eval("function(f, e) return set_building_filters(f, e) end")(arr, enabled)
+
+    def applied_filter_calls(self):
+        return _py(self.g["APPLIED_FILTER_CALLS"]) or []
+
+    def restore_calls(self):
+        return self.g["RESTORE_CALLS"]
 
 
 @pytest.fixture
@@ -370,8 +382,82 @@ def test_build_reports_a_material_report_without_gating_the_real_call(w):
     assert "material_report" in res
     assert "note" in res["material_report"]
     # No stock configured in this fake world at all -> reports that, and
-    # still designates the building regardless (advisory only, see header).
+    # still designates the building regardless (no filter to write).
     assert res["results"][0]["ok"] is True
+
+
+# ---------------------------------------------------------------------------
+# 2026-10-01 (handoffs/2026-10-01-buildingplan-material-filter.md): the
+# resolved CLASS is now WRITTEN into buildingplan's own filter for a real
+# build, via building.lua's exported building_filters_and_gaps/
+# apply_material_filters (faked here -- see the stub's own header comment;
+# the real write/restore mechanism is proven against the REAL building.lua by
+# tests/test_buildingplan_material_filter_lua_logic.py). A test here asserts
+# on APPLIED_FILTER_CALLS/RESTORE_CALLS directly: if construction.lua stops
+# calling through, these assertions fail outright -- the "stub that fails if
+# the filter call is missing" the handoff asked for.
+# ---------------------------------------------------------------------------
+
+
+def test_build_writes_the_resolved_class_into_buildingplans_filter(w):
+    w.add_zone(13)
+    w.set_ring(13, [(1, 1, 0)])
+    w.set_kinds([{"type": "Construction", "subtype": "Wall", "token": "Wall", "key": "Cw"}])
+    w.set_tile(1, 1, 0, "FLOOR")
+    w.set_building_filters([{"index": 1, "filter_material_names": ["SHALE", "MARBLE"]}])
+    w.queue_quickfort("  Buildings designated: 1\n", res=0)
+
+    res = w.build(13, "Wall", dry_run="false")
+
+    assert res["results"][0]["ok"] is True
+    calls = w.applied_filter_calls()
+    assert len(calls) == 1, "apply_material_filters was never called: the class was not written"
+    assert set(calls[0]["names"]) == {"SHALE", "MARBLE"}
+    assert w.restore_calls() == 1, "the filter must be restored once the real build finishes"
+    assert res["material_filter"]["restored"] == []
+
+
+def test_build_never_writes_the_filter_on_a_dry_run(w):
+    w.add_zone(13)
+    w.set_ring(13, [(1, 1, 0)])
+    w.set_kinds([{"type": "Construction", "subtype": "Wall", "token": "Wall", "key": "Cw"}])
+    w.set_tile(1, 1, 0, "FLOOR")
+    w.set_building_filters([{"index": 1, "filter_material_names": ["SHALE"]}])
+    w.queue_quickfort("  Buildings designated: 1\n", res=0)
+
+    res = w.build(13, "Wall", dry_run="true")
+
+    assert res["dry_run"] is True
+    assert w.applied_filter_calls() == []
+    assert w.restore_calls() == 0
+
+
+def test_build_never_writes_an_empty_class(w):
+    w.add_zone(13)
+    w.set_ring(13, [(1, 1, 0)])
+    w.set_kinds([{"type": "Construction", "subtype": "Wall", "token": "Wall", "key": "Cw"}])
+    w.set_tile(1, 1, 0, "FLOOR")
+    # A filter rec with no eligible material at all (e.g. only economic stock
+    # and no override) carries no filter_material_names key at all -- see
+    # building.lua's resolve_material_choice, which returns early on that gap
+    # without ever setting it.
+    w.set_building_filters([{"index": 1}])
+    w.queue_quickfort("  Buildings designated: 1\n", res=0)
+
+    res = w.build(13, "Wall", dry_run="false")
+    assert w.applied_filter_calls() == []
+
+
+def test_build_skips_the_write_when_buildingplan_is_disabled(w):
+    w.add_zone(13)
+    w.set_ring(13, [(1, 1, 0)])
+    w.set_kinds([{"type": "Construction", "subtype": "Wall", "token": "Wall", "key": "Cw"}])
+    w.set_tile(1, 1, 0, "FLOOR")
+    w.set_building_filters([{"index": 1, "filter_material_names": ["SHALE"]}], enabled=False)
+    w.queue_quickfort("  Buildings designated: 1\n", res=0)
+
+    res = w.build(13, "Wall", dry_run="false")
+    assert w.applied_filter_calls() == []
 
 
 # ---------------------------------------------------------------------------

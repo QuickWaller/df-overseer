@@ -58,19 +58,22 @@
 -- discipline in this codebase (df-overseer-diggable.lua's is_diggable,
 -- df-overseer-surface.lua's tile_read).
 --
--- MATERIAL CHOICE: reuses the exact policy df-overseer-building.lua's
--- 2026-09-28 material-choice fix already established for a
--- building_material filter (default to excluding the game's own "economic"
--- stone unless the caller opts in) rather than inventing a second policy.
--- That logic lives in building.lua as file-local functions, not exported,
--- so a materially IDENTICAL, shortened version is duplicated here
--- (`material_report`) purely as ADVISORY reporting -- the real
--- `quickfort run` call below, like building.lua's own build_kind, has no
--- way to force quickfort/buildingplan to pick a specific material; only
--- reporting what is available and what would default is possible from
--- outside. Same reqscript-coupling-avoidance call this codebase already
--- makes repeatedly (df-overseer-diggable.lua's parse_quickfort_stats,
--- df-overseer-building.lua's own stock scan next to stocks_mod).
+-- MATERIAL CHOICE: as of 2026-10-01 (handoffs/2026-10-01-buildingplan-
+-- material-filter.md, register 2026-09-30 ruling) this is ENFORCED, not just
+-- advisory. building.lua exports `building_filters_and_gaps` (the real
+-- material breakdown/economic-exclusion logic, by raw building type/subtype/
+-- custom rather than its own internal kind table) and `apply_material_filters`
+-- (writes the resolved CLASS into buildingplan's own per-building-type
+-- filter for the duration of a real quickfort run, then restores what was
+-- there before -- see that file's header comments on both for the mechanism,
+-- sourced from DFHack at 53.16-r1). This file calls straight into both
+-- rather than duplicating them, now that the real write needs the real
+-- logic, not just a report. `k` here only ever carries the subtype's NAME
+-- (df-overseer-building.lua's own kind_summary), never its numeric enum;
+-- `df.construction_type` is a bidirectional DFHack enum table (name and
+-- number both index it, the same property building.lua's own enum_name
+-- already relies on), so the number is recovered with `df.construction_type
+-- [k.subtype]` -- [reasoned, not verified live].
 --
 -- GUARDS (added by handoffs/2026-09-28-keeps-access-guard.md, building on
 -- research/2026-09-28-job-dependency-graph.md section 4.2): `build` now runs
@@ -86,7 +89,11 @@
 -- no-mutation neighbour check.
 --
 -- Usage: ./dfhack-run df-overseer-construction mine-vein ZONE_ID [DRY_RUN] [RES_ID] [OVERRIDE]
--- Usage: ./dfhack-run df-overseer-construction build ZONE_ID KIND [DRY_RUN] [RES_ID] [OVERRIDE]
+-- Usage: ./dfhack-run df-overseer-construction build ZONE_ID KIND [DRY_RUN] [MATERIAL_CHOICE] [RES_ID] [OVERRIDE]
+--   MATERIAL_CHOICE is optional, same contract as df-overseer-building.lua's
+--   own build: omit it to exclude economic materials by default, pass
+--   "allow_economic" to allow them, or name a material (e.g. SHALE) to pick
+--   it explicitly.
 
 local json = require('json')
 local surface_mod = reqscript('df-overseer-surface')
@@ -372,115 +379,31 @@ function mine_vein(zone_id, dry_run, res_id, override)
 end
 
 -- ---------------------------------------------------------------------------
--- Material choice (advisory only -- see header)
+-- Material choice: resolves the numeric (building_type, subtype) for a
+-- construction KIND and delegates to building.lua's own
+-- building_filters_and_gaps/apply_material_filters (see header, MATERIAL
+-- CHOICE). Constructions have no `custom` (unlike a Custom workshop), so
+-- cust is always nil/-1 here.
 -- ---------------------------------------------------------------------------
 
--- Duplicated from df-overseer-building.lua's item_is_available (file-local
--- there): the same five-flag "available" gate (in_job, forbid, owned,
--- in_building, construction) plus the trader/garbage_collect/removed
--- fort-ownership check.
-local function item_is_available(item)
-  local ok_f, f = pcall(function() return item.flags end)
-  if not ok_f then return nil, "could not read item.flags" end
-  local ok_t, trader = pcall(function() return f.trader end)
-  if not ok_t then return nil, "could not read item.flags.trader" end
-  if trader then return false end
-  local ok_gc, gc = pcall(function() return f.garbage_collect end)
-  if ok_gc and gc then return false end
-  local ok_rm, rm = pcall(function() return f.removed end)
-  if ok_rm and rm then return false end
-  for _, flag in ipairs({"in_job", "forbid", "owned", "in_building", "construction"}) do
-    local ok, v = pcall(function() return f[flag] end)
-    if not ok then return nil, "could not read item.flags." .. flag end
-    if v then return false end
+-- Returns btype, sub (numbers), err. [reasoned, not verified live -- see
+-- header]: df.construction_type is assumed bidirectional, same as every
+-- other DFHack enum table this codebase already reads both ways
+-- (building.lua's enum_name).
+local function construction_type_numbers(k)
+  local ok_bt, btype = pcall(function() return df.building_type.Construction end)
+  if not ok_bt or btype == nil then
+    return nil, nil, "df.building_type.Construction is not available"
   end
-  return true
-end
-
--- Duplicated from df-overseer-building.lua's decode_item_material.
--- UNVERIFIED LIVE (inherited caveat, same as there): dfhack.matinfo.decode's
--- exact field names (.material.id, .inorganic.economic_uses) were not
--- independently re-confirmed by this stream.
-local function decode_item_material(item)
-  if type(dfhack.matinfo) ~= 'table' or type(dfhack.matinfo.decode) ~= 'function' then
-    return nil, "dfhack.matinfo.decode is not available on this DFHack Lua"
+  if k.subtype == nil or k.subtype == NULL then
+    return btype, nil, nil
   end
-  local ok, mi = pcall(dfhack.matinfo.decode, item)
-  if not ok or mi == nil then
-    return nil, "dfhack.matinfo.decode failed: " .. tostring(mi)
+  local ok_sub, sub = pcall(function() return df.construction_type[k.subtype] end)
+  if not ok_sub or sub == nil then
+    return nil, nil, "could not resolve construction subtype '" .. tostring(k.subtype)
+      .. "' back to a number via df.construction_type"
   end
-  local name
-  local ok_n, id = pcall(function() return mi.material and mi.material.id end)
-  if ok_n and id and id ~= "" then name = tostring(id) end
-  if not name then name = "material_unknown" end
-  local economic
-  local ok_i, inorg = pcall(function() return mi.inorganic end)
-  if ok_i and inorg then
-    local ok_u, uses = pcall(function() return inorg.economic_uses end)
-    if ok_u and uses ~= nil then economic = (#uses > 0) end
-  else
-    economic = false
-  end
-  return {name = name, economic = economic}
-end
-
--- A lean, advisory-only version of building.lua's material_breakdown +
--- resolve_material_choice: what boulder/log/block stock exists, broken
--- down by decoded material, defaulting to excluding economic material.
--- Never gates the real quickfort call below (see header: quickfort has no
--- parameter for this from outside).
-local BUILDING_MATERIAL_TYPES = {"BOULDER", "WOOD", "BLOCKS"}
-
-local function material_report()
-  local by_name, errors = {}, {}
-  for _, type_name in ipairs(BUILDING_MATERIAL_TYPES) do
-    local ok_vec, vec = pcall(function() return df.global.world.items.other[type_name] end)
-    if ok_vec and vec then
-      for i = 0, #vec - 1 do
-        local item = vec[i]
-        local avail, avail_err = item_is_available(item)
-        if avail == nil then
-          errors[#errors + 1] = type_name .. " item: " .. tostring(avail_err)
-        elseif avail then
-          local mat, mat_err = decode_item_material(item)
-          if not mat then
-            errors[#errors + 1] = type_name .. " item: " .. tostring(mat_err)
-          else
-            local rec = by_name[mat.name]
-            if not rec then
-              rec = {name = mat.name, economic = mat.economic, units = 0}
-              by_name[mat.name] = rec
-            end
-            rec.units = rec.units + 1
-          end
-        end
-      end
-    end
-  end
-  local materials, excluded = {}, {}
-  for _, m in pairs(by_name) do materials[#materials + 1] = m end
-  table.sort(materials, function(a, b)
-    if a.units ~= b.units then return a.units > b.units end
-    return a.name < b.name
-  end)
-  local eligible = {}
-  for _, m in ipairs(materials) do
-    if m.economic == true then
-      excluded[#excluded + 1] = m.name
-    else
-      eligible[#eligible + 1] = m
-    end
-  end
-  local note
-  if #eligible > 0 then
-    note = "default: highest-stock non-economic material would be " .. eligible[1].name
-      .. "; buildingplan/quickfort makes the real choice at build time, this is advisory only"
-  elseif #materials > 0 then
-    note = "only economic material(s) available (" .. table.concat(excluded, ", ") .. "); advisory only"
-  else
-    note = "no boulder/log/block stock found"
-  end
-  return {materials = materials, excluded_materials = excluded, note = note, scan_errors = errors}
+  return btype, sub, nil
 end
 
 -- ---------------------------------------------------------------------------
@@ -782,7 +705,7 @@ end
 -- template_allowed_kinds derives a template's #build cells through, so no
 -- vocabulary mismatch here (unlike df-overseer-workshop.lua's own local
 -- kind keys, see that file's comment).
-function build_construction(zone_id, kind_name, dry_run, res_id, override)
+function build_construction(zone_id, kind_name, dry_run, material_choice, res_id, override)
   if override ~= nil and res_id == nil then
     return {error = "OVERRIDE requires RES_ID"}
   end
@@ -852,6 +775,31 @@ function build_construction(zone_id, kind_name, dry_run, res_id, override)
     held[#held + 1] = string.format("ring tile %d: held (%s) -- %s", h.ring_position, h.guard, h.reason)
   end
 
+  -- Requirements/material breakdown, and (2026-10-01, see header MATERIAL
+  -- CHOICE) the real class write into buildingplan's own filter, bracketed
+  -- around every real (non-dry) build call below so it applies to the whole
+  -- step and is restored once the step finishes -- never per tile, since
+  -- every ring tile of one `build` call shares the same (building_type,
+  -- subtype).
+  local ctype, csub, tnerr = construction_type_numbers(k)
+  local req, mgaps
+  if tnerr then
+    req = {building_material = {error = tnerr, filters = {}}}
+    mgaps = {tnerr}
+  else
+    req, mgaps = building_mod.building_filters_and_gaps(ctype, csub, nil, material_choice, k.token)
+  end
+  local filter_recs = {}
+  if req.building_material and req.building_material.filters then
+    for _, rec in ipairs(req.building_material.filters) do
+      if rec.filter_material_names then filter_recs[#filter_recs + 1] = rec end
+    end
+  end
+  local mf_report, mf_restore
+  if not dry and not tnerr and #filter_recs > 0 and req.building_material.buildingplan_enabled == true then
+    mf_report, mf_restore = building_mod.apply_material_filters(ctype, csub, nil, filter_recs)
+  end
+
   local results = {}
   for _, c in ipairs(final_candidates) do
     local r = apply_single_cell('build', k.key, c.x, c.y, c.z, dry, 'Buildings designated', 'build')
@@ -874,6 +822,10 @@ function build_construction(zone_id, kind_name, dry_run, res_id, override)
     end
   end
 
+  if mf_restore then
+    mf_report.restored = mf_restore()
+  end
+
   return {
     zone_id = b.id,
     kind = {token = k.token, key = k.key, label = k.label, type = k.type, subtype = k.subtype},
@@ -882,7 +834,9 @@ function build_construction(zone_id, kind_name, dry_run, res_id, override)
     refused = refused,
     held = held,
     dry_run = dry,
-    material_report = material_report(),
+    material_report = req.building_material,
+    material_gaps = mgaps,
+    material_filter = mf_report,
     results = results,
   }
 end
@@ -910,11 +864,11 @@ if cmd == "mine-vein" then
   end
 elseif cmd == "build" then
   if not (args[2] and args[3]) then
-    print("usage: df-overseer-construction build ZONE_ID KIND [DRY_RUN] [RES_ID] [OVERRIDE]")
+    print("usage: df-overseer-construction build ZONE_ID KIND [DRY_RUN] [MATERIAL_CHOICE] [RES_ID] [OVERRIDE]")
   else
-    emit(build_construction(args[2], args[3], args[4], args[5], args[6]))
+    emit(build_construction(args[2], args[3], args[4], args[5], args[6], args[7]))
   end
 else
   print("usage: df-overseer-construction mine-vein ZONE_ID [DRY_RUN] [RES_ID] [OVERRIDE]")
-  print("usage: df-overseer-construction build ZONE_ID KIND [DRY_RUN] [RES_ID] [OVERRIDE]")
+  print("usage: df-overseer-construction build ZONE_ID KIND [DRY_RUN] [MATERIAL_CHOICE] [RES_ID] [OVERRIDE]")
 end

@@ -58,6 +58,12 @@ end
 df = {
   tiletype_shape = enum({"WALL", "FLOOR", "RAMP", "EMPTY"}),
   item_type = enum({"BOULDER", "ROUGH", "WOOD", "BLOCKS"}),
+  building_type = enum({"Workshop", "Furnace", "Construction", "Trap", "SiegeEngine", "Bed"}),
+  -- 2026-10-01 (handoffs/2026-10-01-buildingplan-material-filter.md):
+  -- construction_type_numbers relies on this being bidirectional (a name
+  -- like "Wall" indexes straight to its number), the same property every
+  -- real DFHack enum table has.
+  construction_type = enum({"Wall", "Floor", "Ramp", "UpStair", "DownStair"}),
   global = {world = {items = {all = ITEMS}}},
 }
 
@@ -148,8 +154,53 @@ function set_kinds(list)
   KINDS = t
 end
 
+-- 2026-10-01 (handoffs/2026-10-01-buildingplan-material-filter.md): the real
+-- df-overseer-building.lua now exports building_filters_and_gaps (the real
+-- material breakdown) and apply_material_filters (the buildingplan write);
+-- construction.lua calls straight into both. This fake models the SHAPE of
+-- both without re-implementing the real economic-exclusion logic (that is
+-- fully covered against the real building.lua by
+-- tests/test_building_material_and_previously_built_lua_logic.py and
+-- tests/test_buildingplan_material_filter_lua_logic.py) -- a test here sets
+-- what building_filters_and_gaps should return via set_building_filters, and
+-- reads what apply_material_filters was called with via
+-- APPLIED_FILTER_CALLS/RESTORE_CALLS.
+BUILDING_FILTERS = nil
+BUILDINGPLAN_ENABLED = false
+APPLIED_FILTER_CALLS = {}
+RESTORE_CALLS = 0
+
+function set_building_filters(list, enabled)
+  local t = {}
+  for i, rec in ipairs(list or {}) do t[i] = rec end
+  BUILDING_FILTERS = t
+  BUILDINGPLAN_ENABLED = (enabled ~= false)
+end
+
 local FAKE_BUILDING = {
   list_kinds = function(_) return KINDS end,
+  building_filters_and_gaps = function(btype, sub, cust, material_choice, label)
+    local filters = BUILDING_FILTERS or {}
+    local bm = {source = "fake", buildingplan_enabled = BUILDINGPLAN_ENABLED, filters = filters}
+    if #filters == 0 then
+      bm.note = "the game lists no material filter for this kind"
+    end
+    return {building_material = bm}, {}
+  end,
+  apply_material_filters = function(btype, sub, cust, filter_recs)
+    local applied = {}
+    for _, rec in ipairs(filter_recs) do
+      APPLIED_FILTER_CALLS[#APPLIED_FILTER_CALLS + 1] = {
+        btype = btype, sub = sub, cust = cust, index = rec.index, names = rec.filter_material_names,
+      }
+      applied[#applied + 1] = {index = rec.index, ok = true, materials = rec.filter_material_names}
+    end
+    local function restore()
+      RESTORE_CALLS = RESTORE_CALLS + 1
+      return {}
+    end
+    return {applied = applied}, restore
+  end,
 }
 
 -- Fake df-overseer-reservations.lua (handoffs/2026-09-30-room-reservations.md):
