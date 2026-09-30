@@ -24,8 +24,10 @@ learning architecture.
 >   one-week hold on recent edits); it goes stale without a manual refresh,
 >   since the refresh timers (S8) are not built. The conductor is
 >   installed on VM 106 (`conductor.service`), **disabled and inactive**,
->   run only once as a manual `--dry-run --once`; no agent or conductor
->   cycle has ever made a real decision on this fort beyond `ruling-0001`.
+>   run by hand only (`--once` through a transient unit mirroring it). Real
+>   `--once` cycles on 2026-09-25 and 2026-09-28 made real decisions: all four
+>   roles ran, proposals were filed, ruled and executed (a stair, a bedroom
+>   dig), asks answered (`evals/live/2026-09-25-first-real-conductor-cycle/`).
 >   **Reloading a save is ruled a test-harness power only, never an
 >   agent's** (`docs/ARMOK-RULINGS.md`). The districting design session's
 >   prior-art research is complete (df-ai, then Systematic Layout Planning/
@@ -99,15 +101,11 @@ learning architecture.
 > - **Agents.** openclaw on VM 106 is configured with four pinned roles
 >   (architect, overseer, quartermaster, consultant), each validated and
 >   probed live against the real MCP server (tool counts match exactly).
->   Only architect and overseer are confirmed to have actually run a real
->   `agent exec` decision (the architect's proposals, the Overseer's single
->   ruling, `ruling-0001` from 2026-09-16); **unknown** whether quartermaster
->   or consultant has ever run one for real, versus only being probed/
->   validated -- no run record for either was found in the sources this pass
->   read. The conductor has run once, manually, in the foreground, with
->   `--dry-run --once`; it has never run as a live systemd service, and no
->   agent or conductor cycle has ever made a real decision on this fort
->   beyond `ruling-0001`. Everything in `docs/` and `research/` beyond the
+>   All four have run real decisions through the conductor's `--once` cycles
+>   (2026-09-25 and 2026-09-28, `evals/live/2026-09-25-first-real-conductor-cycle/`):
+>   proposals filed and ruled, a stair and a bedroom dig executed, asks
+>   answered. The conductor has never run as its installed systemd service,
+>   only as manual `--once` runs through a transient unit. Everything in `docs/` and `research/` beyond the
 >   above is design or proposal unless marked verified.
 >
 > **Traps before running anything:**
