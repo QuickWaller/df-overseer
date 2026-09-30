@@ -205,7 +205,7 @@ id         the record id (proposal-0004)
 kind       record kind, or wake / goal / review / message / alarm
 speaker    overseer | architect | quartermaster | consultant | executor
            | conductor (shown as "System") | user (shown as the user's name)
-tick       absolute game tick (rendered as "12 Granite, Autumn, year 31")
+tick       absolute game tick (rendered as "12 Limestone (autumn), year 31")
 ts         wall clock UTC (rendered as "4 min ago", exact on hover)
 reply_to   an item id, or null
 thread     the root item of this reply chain (derived, 3.4)
@@ -596,7 +596,7 @@ Each is marked **DEPARTURE** where it changes what the user saw and agreed.
    target to reach as a bar with a time marker; a count to build as "4 of
    6". Data driven, one renderer per operator, not per goal.
 9. **Game date first, wall clock second.** "Autumn 1" is ambiguous; show
-   "12 Granite, year 31" with "4 min ago" beside it and the exact time on
+   "12 Limestone, year 31" with "4 min ago" beside it and the exact time on
    hover. The day is derivable from the tick: 1,200 ticks a day, 28-day
    months, 403,200 a year.
 10. **Filters: "Highlights" and "Everything" first, roles second.**
@@ -642,13 +642,13 @@ The drawer adds a **timeline** above the steps, one line per event, drawn
 from records that already exist or are proposed in §3:
 
 ```
-Commissioned by the Overseer          1 Granite   serves: drinks never below 30
-Drafted by the Quartermaster (v1)     3 Granite   "A second still near the farm..."
-Accepted                              3 Granite
-Step 2 done: Dig the site             9 Granite
-Held: no wood in reach                14 Granite  the Executor is trying the next grove
-Amended to v2                         15 Granite  "Build with stone instead of wood"
-Done                                  2 Slate
+Commissioned by the Overseer          1 Limestone    serves: drinks never below 30
+Drafted by the Quartermaster (v1)     3 Limestone    "A second still near the farm..."
+Accepted                              3 Limestone
+Step 2 done: Dig the site             9 Limestone
+Held: no wood in reach                14 Limestone   the Executor is trying the next grove
+Amended to v2                         15 Limestone   "Build with stone instead of wood"
+Done                                  2 Sandstone
 Checked: drinks held above 30         end of season
 ```
 
