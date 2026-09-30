@@ -1,5 +1,6 @@
 """dfqueue record schema: `proposal`, `pass`, `ruling`, `executed`, `ask`,
-`answer`, `escalation`, `project`, `observation`, validated at write time.
+`answer`, `escalation`, `project`, `observation`, `amend`, `abandon`,
+validated at write time.
 
 Implements `docs/AGENT-ARCHITECTURE.md` §4, "Writes are tool calls; reads are
 XML": **a specialist cannot emit prose into the queue.** It calls
@@ -70,6 +71,22 @@ and (for `project`/`observation`) `research/2026-09-28-job-dependency-graph.md`:
   (`OBSERVATION_ROLE` below) -- the reconciler that would write these is out
   of scope for `handoffs/2026-09-30-project-mcp-tools.md`; no MCP tool
   exposes a write path for it yet.
+- **`amend`** -- `research/2026-09-30-goal-tree-red-team.md` F-3: a new
+  numbered plan version of an already-accepted project, written by the
+  Overseer only. `project_id` names the original project; `steps` is the
+  FULL new step list this version replaces the previous one with (never a
+  diff); `replaces`/`adds`/`drops` are declarative bookkeeping naming the
+  previous version's step ids this version changes, adds or removes.
+  Nothing already written is ever overwritten -- the original `project`
+  record and every earlier `amend` stay readable, and a step already
+  executed keeps its own `executed` records regardless of which version
+  named it. `queue.project_status` reads the LATEST version's `steps` and
+  reports its version number.
+- **`abandon`** -- same F-3. Marks an already-accepted project (and its
+  still-open steps) abandoned with a required `reason`, written by the
+  Overseer only. Executed history is untouched; `queue.project_status`
+  reports `abandoned` status once one exists for a project, alongside the
+  reason.
 
 See `dfqueue/README.md`.
 
@@ -142,7 +159,20 @@ ESCALATION = "escalation"
 #: written only by the `conductor` role (never a model), see
 #: `OBSERVATION_ROLE` below.
 PROJECT, OBSERVATION = "project", "observation"
-KINDS = (PROPOSAL, PASS, RULING, EXECUTED, ASK, ANSWER, ESCALATION, PROJECT, OBSERVATION)
+#: Added handoffs/2026-10-01-queue-bugs-and-amend.md
+#: (research/2026-09-30-goal-tree-red-team.md F-3: "nothing can carry a
+#: change to an accepted project"). `amend` writes a new numbered plan
+#: version of an accepted project's steps -- nothing already written is
+#: overwritten, the old version stays readable, and any step already
+#: executed keeps its own records regardless of which version named it.
+#: `abandon` marks an accepted project (and its still-open steps) abandoned
+#: with a reason, leaving executed history untouched. Both restricted to
+#: the roster's sole_writer, same rule as RULING/EXECUTED/ESCALATION/PROJECT.
+AMEND, ABANDON = "amend", "abandon"
+KINDS = (
+    PROPOSAL, PASS, RULING, EXECUTED, ASK, ANSWER, ESCALATION, PROJECT,
+    OBSERVATION, AMEND, ABANDON,
+)
 
 # ---- ruling decisions ---------------------------------------------------------
 
@@ -326,6 +356,16 @@ KIND_FIELDS: dict[str, tuple[str, ...]] = {
     #: §4.4. One `observation` record reports on one or more targets read at
     #: the same game tick (one reconcile pass, one tick).
     OBSERVATION: ("project_id", "step_id", "game_tick", "results"),
+    #: `handoffs/2026-10-01-queue-bugs-and-amend.md` item 3. `steps` is the
+    #: FULL new ordered step list this version replaces the previous one
+    #: with (never a diff to apply) -- `replaces`/`adds`/`drops` are purely
+    #: declarative bookkeeping naming which of the previous version's step
+    #: ids this version keeps changed, which of `steps`' own ids are brand
+    #: new, and which of the previous version's ids are gone, so a reader
+    #: (or a future audit) does not have to diff two step lists by hand to
+    #: answer "what changed here".
+    AMEND: ("project_id", "steps", "reason", "replaces", "adds", "drops"),
+    ABANDON: ("project_id", "reason"),
 }
 
 # ---- the raw-coordinate pattern -----------------------------------------------
@@ -1055,6 +1095,91 @@ def normalize_project(record: dict) -> dict:
     return record
 
 
+def _validate_amend_fields(record: dict, errors: list[str]) -> None:
+    """`handoffs/2026-10-01-queue-bugs-and-amend.md` item 3
+    (`research/2026-09-30-goal-tree-red-team.md` F-3). `project_id`'s
+    existence (must name a real `project` record) and `replaces`/`drops`
+    naming real step ids of the PREVIOUS version, `adds` naming ids that
+    really are new in THIS version's own `steps`, all need the rest of the
+    queue (the previous version's own step ids), so those checks live in
+    `store.append()`, not here -- same split as everywhere else in this
+    module a reference needs the loaded file.
+
+    `steps` is validated with the same per-step rules a `project`'s own
+    `steps` uses (`_validate_step`, id uniqueness, no `requires` cycle) --
+    duplicated here rather than sharing `_validate_project_fields` outright,
+    since that function's messages and its `normalize_project`-specific
+    empty-steps wording are written for a fresh project, not a revision of
+    one that already exists.
+    """
+    if "project_id" not in record:
+        errors.append("record.project_id: required field is missing")
+    else:
+        v = record["project_id"]
+        if not isinstance(v, str) or not v:
+            errors.append("record.project_id: expected a non-empty string")
+
+    _validate_text_field(record, "reason", errors)
+
+    if "steps" not in record:
+        errors.append("record.steps: required field is missing")
+        return
+    steps = record["steps"]
+    if not isinstance(steps, list):
+        errors.append("record.steps: expected a list")
+        return
+    if not steps:
+        errors.append(
+            "record.steps: expected at least one step (an amendment still "
+            "carries the full new plan, never an empty one)"
+        )
+        return
+
+    step_ids = {
+        s["id"] for s in steps
+        if isinstance(s, dict) and isinstance(s.get("id"), str) and s["id"]
+    }
+
+    ids_seen = []
+    for i, step in enumerate(steps):
+        _validate_step(step, step_ids, errors, f"record.steps.{i}")
+        if isinstance(step, dict) and isinstance(step.get("id"), str) and step["id"]:
+            ids_seen.append(step["id"])
+
+    dupes = sorted({sid for sid in ids_seen if ids_seen.count(sid) > 1})
+    if dupes:
+        errors.append(f"record.steps: duplicate step ids: {dupes}")
+
+    cycle = _find_requires_cycle([s for s in steps if isinstance(s, dict)])
+    if cycle:
+        errors.append(f"record.steps: a 'requires' cycle exists: {' -> '.join(cycle)}")
+
+    for name in ("replaces", "adds", "drops"):
+        if name not in record:
+            continue
+        v = record[name]
+        if not isinstance(v, list):
+            errors.append(f"record.{name}: expected a list")
+            continue
+        for i, item in enumerate(v):
+            if not isinstance(item, str) or not item:
+                errors.append(f"record.{name}.{i}: expected a non-empty string")
+
+
+def _validate_abandon_fields(record: dict, errors: list[str]) -> None:
+    """`handoffs/2026-10-01-queue-bugs-and-amend.md` item 3. `project_id`'s
+    existence needs the rest of the queue (`store.append()`), same split as
+    everywhere else in this module a reference needs the loaded file."""
+    if "project_id" not in record:
+        errors.append("record.project_id: required field is missing")
+    else:
+        v = record["project_id"]
+        if not isinstance(v, str) or not v:
+            errors.append("record.project_id: expected a non-empty string")
+
+    _validate_text_field(record, "reason", errors)
+
+
 def _validate_observation_result(item, errors: list[str], prefix: str) -> None:
     if not isinstance(item, dict):
         errors.append(f"{prefix}: expected an object")
@@ -1205,7 +1330,7 @@ def validate(record) -> list[str]:
             errors.append(
                 f"record.role: {role!r} is not an enabled role in agents/ROSTER.yaml"
             )
-        if kind in (RULING, EXECUTED, ESCALATION, PROJECT):
+        if kind in (RULING, EXECUTED, ESCALATION, PROJECT, AMEND, ABANDON):
             writer = sole_writer()
             if role != writer:
                 errors.append(
@@ -1258,5 +1383,9 @@ def validate(record) -> list[str]:
         _validate_project_fields(record, errors)
     elif kind == OBSERVATION:
         _validate_observation_fields(record, errors)
+    elif kind == AMEND:
+        _validate_amend_fields(record, errors)
+    elif kind == ABANDON:
+        _validate_abandon_fields(record, errors)
 
     return errors
