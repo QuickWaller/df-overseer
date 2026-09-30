@@ -511,7 +511,11 @@ end
 -- the model sees target versus actual from two angles, not one echo.
 -- Always returns two tables (result, errors); a name with no usable data
 -- appears only in errors, never as a silently-omitted or guessed entry.
-local function labor_quota_status(names)
+-- Global, not local, like df-overseer-stockpile.lua's own command-level
+-- functions (place_stockpile etc.) -- lets a lua-logic test load this file
+-- against a fake DFHack world and call the real command function directly,
+-- the same technique tests/test_stockpile_writing_lua_logic.py already uses.
+function labor_quota_status(names)
   local entries, list_err = parse_autolabor_list()
   local result, errors = {}, {}
   if not entries then
@@ -567,7 +571,7 @@ end
 -- the real `autolabor LABOR MIN MAX [POOL]` call, and the report on success
 -- is always a fresh read-back through labor_quota_status, never an echo of
 -- the MIN/MAX/POOL the caller passed in (task 3 of the handoff).
-local function labor_quota(labor_name, min_v, max_v, pool_v, dry_run)
+function labor_quota(labor_name, min_v, max_v, pool_v, dry_run)
   local code, err = labor_code_for(labor_name)
   if not code then
     return false, err
