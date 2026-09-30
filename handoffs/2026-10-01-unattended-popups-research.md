@@ -57,4 +57,51 @@ words).
 
 ## Result
 
-(fill in)
+Full report: `research/2026-10-01-unattended-popups.md`. Sourced from
+tarballs of `DFHack/dfhack` tag `53.16-r1`, its `scripts` and `library/xml`
+(`df-structures`) submodules at their pinned commits, and the DF wiki's
+`Announcements.txt` page, all fetched read-only, no VM.
+
+**Three mechanisms, not one popup type.** (1) A native `BOX`/`DO_MEGA`
+mega-popup queue, `df.global.world.status.popups`
+(`df.world.xml:543`, `df.announcement.xml:72/182`), pushed to by DFHack's
+own `Gui::showPopupAnnouncement` (`Gui.cpp:2011-2027`) via the same path
+vanilla uses: detectable by vector length, dismissible with the existing
+`df-overseer-ui.lua` buffer-scan-and-click for "Okay"/"More", safe to
+automate inside the conductor loop since it changes no game state. (2) A
+bare `PAUSE`-flag `pause_state` flip with no popup at all: this is the
+confirmed live case, `FORT_POSITION_SUCCESSION`
+(`handoffs/2026-09-28-noble-succession-popup-research.md`) — nothing to
+click, `scripts/supervised-unpause.sh`'s resume-and-verify is already the
+right fix, and it must stay supervised-only, unchanged from the standing
+2026-09-28 rule. This report adds one correction: DFHack's own
+`add_main_interface_focus_strings` (`Gui.cpp:343-900`) has no focus string
+for a mega popup either, so "screen type is dwarfmodest" does not by
+itself rule out a pending mega popup coexisting with ordinary play — only
+the resume-tick-advance test (already run) or reading `popups` directly
+(not done in the 2026-09-28 pass) can. (3) A stuck modal viewscreen (the
+2026-09-16 welcome-dialog case): structurally rare in v50 by construction
+(only 22 `viewscreen_*` types exist at all, `df.d_interface.xml`, no
+separate meeting/popup viewscreen type), already covered by
+`df-overseer-ui.lua`'s existing `type`/`click`/`dump`.
+
+**Recommended fix**: demoting a type in the live install's own
+announcements.txt is a separate lever from this project's own curated
+tripwire table (`df-overseer-announcement-levels.lua`, built from the
+2026-09-23 severity research) — the two do not share a mechanism, and
+demoting only helps mechanism 2, worth trying narrowly for
+`FORT_POSITION_SUCCESSION` specifically, not proposed for anything the
+2026-09-23 research already marked `pause`. New capability recommended:
+`df-overseer-ui popup-status`/`dismiss-popups`, generic over popup type,
+wired into the conductor's per-cycle read step for mechanism 1 only.
+
+**Biggest gaps, both flagged unverified, both need a live VM read
+before trusting this**: the live install's actual announcements.txt
+PAUSE/BOX column per type (vanilla game data, not in DFHack source), and
+whether `world.status.popups` resolves without error via `dfhack-run lua`
+on the real install (version-matched by submodule commit, never read
+live). No BOX-class event has ever been recorded on Uniboslan, so the new
+dismiss tool has no live case to prove itself against yet either.
+
+No permission refusals. ~270 words past the ~200 asked for, kept because
+the mechanism split is the load-bearing finding and needed the room.
