@@ -12,6 +12,8 @@ planned, authorised, run and prioritised, so an independent Opus should look
 for the cracks before anything is built. Assume the design is wrong
 somewhere important and find where.
 
+The design landed at commit `395175f` (2,369 lines, 16 sections).
+
 ## Read first, in full
 
 The design document and its brief; `research/2026-09-28-job-dependency-graph.md`;
@@ -67,7 +69,16 @@ explicitly and separately from findings about the design itself.
 9. **The taxonomy.** Does every job and check the game offers land in a
    group, or does the design quietly leave some out? Are any groups forced
    together that need different patterns?
-10. **The worked example.** Walk the booze chain adversarially: what breaks
+10. **Learning from past projects** (the user, 2026-09-30: agents, maybe
+   a learning role, should read finished projects and compare them to find
+   learning points). Does the design record enough for a retrospective:
+   draft versus amendments, claimed versus used, each check's expected
+   time versus actual, holds, re-issues and escalations, and the outcome
+   of the goal check afterwards? Name what is missing, and where it would
+   fit beside the existing `learning/` package (predictions, ledger) and
+   the gotchas store. Do not design the learning role; say what the goal
+   tree must record so one could exist.
+11. **The worked example.** Walk the booze chain adversarially: what breaks
    it?
 
 For each finding: severity (blocks building, must fix before a given build
