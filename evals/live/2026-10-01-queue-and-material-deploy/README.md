@@ -91,3 +91,17 @@ call timing not re-read).
   (appointed, with an office) is not turning orders into jobs on this fort,
   consistent with the 2026-09-24 finding and not with the 2026-09-30 report
   that orders work. Cause unknown; order 4 left in place as a live case.
+
+### Read-only diagnosis after the window (`research/2026-10-01-orders-not-dispatching.md` checks)
+
+- Manager: unit 345, alive, citizen, position from the fort's own site
+  government, owns zone 13 (the office), no squad, 17 labours, idle at the
+  pause. The research's leading theory (no Manager appointed) is wrong.
+- All four workshops (Still, Masons, Mechanics, Carpenters): profile
+  `block_general_orders false`, `max_general_orders 5`, no worker limits.
+- Jobs: zero with an `order_id`, and no `ManageWorkOrders` job exists: the
+  Manager has never started the job that validates orders. Two orders
+  unvalidated.
+- Open: why the Manager never takes `ManageWorkOrders`. The longest
+  unpaused stretch this fort has had is a few game days; a one-month
+  supervised window watching for that job is proposed to the user.
