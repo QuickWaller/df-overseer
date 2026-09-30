@@ -1461,7 +1461,11 @@ df-overseer-workjob.lua:
         lines -- the exact first-live-run command is still owed.
 
 df-overseer-stockpile.lua:
-  build_order_item: "handoffs/2026-09-18-lever-gap-tools.md deliverable 2, docs/PRODUCTION-MODEL.md sec8/sec13 (leading indicator, stockpile-link lever gap)"
+  build_order_item: "handoffs/2026-09-18-lever-gap-tools.md deliverable 2, docs/PRODUCTION-MODEL.md sec8/sec13 (leading indicator, stockpile-link lever gap); writing (place/configure/link/unlink) added by handoffs/2026-10-01-stockpile-writing.md, register 2026-10-01 (\"set intent, let the game execute\")"
+  # Same convention as df-overseer-zone.lua's own arg_defaults (dfmcp/tools.py
+  # fills a slot an agent skipped while naming a later optional argument by
+  # name).
+  arg_defaults: {LEVEL: "0", RANK: "1", RADIUS_TILES: "30", DRY_RUN: "true"}
   commands:
     list:
       lua_function: list_stockpiles
@@ -1505,6 +1509,107 @@ df-overseer-stockpile.lua:
         linked; resolve_link_target is defensive (pcall throughout) and
         marks an entry unresolved rather than guessing if this assumption
         is ever wrong.
+    "place W H [LEVEL] NEAR_LANDMARK CATEGORIES [RANK] [RADIUS_TILES] [DRY_RUN] [RES_ID] [OVERRIDE]":
+      lua_function: place_stockpile
+      skippable: ["[RANK]", "[RADIUS_TILES]"]
+      effect: mutate
+      coordinate_bearing: internal-only
+      live_deployed: false
+      verified: unverified
+      knowledge_scope: player_derivable
+      notes: >
+        ADDED 2026-10-01 (handoffs/2026-10-01-stockpile-writing.md).
+        Generalised over CATEGORIES (comma-separated, from the same 17
+        names `list`'s own `accepts` already reports), not a per-kind
+        tool: reuses df-overseer-openarea.lua's `is_free` finder (via
+        reqscript) and df-overseer-reservations.lua's `filter_reserved`/
+        `check_tiles` exactly like every other WxH designating tool in
+        this codebase, then writes a throwaway `#place` blueprint whose
+        cell is the requested categories' own quickfort letters
+        concatenated (e.g. "stone,wood" -> "sw") -- mechanism sourced
+        from DFHack 53.16-r1, see the .lua file's own header for the
+        file:line citations. W and H are capped 1..31 (quickfort's own
+        stockpile size limit, place.lua's own header comment). DRY_RUN
+        defaults to true; RES_ID/OVERRIDE exactly as every other
+        designating tool, checked against the fixed literal "stockpile"
+        kind. Reports `read_back` (accepts/occupied_tiles/total_tiles
+        read off the real building found after a real run), never an
+        echo of the request -- `quickfort_ok` true with a
+        smaller-than-requested `total_tiles` is possible and expected
+        to be readable, not silently wrong, per the .lua header's WHY
+        note on reusing the coarser `is_free` test rather than
+        place.lua's own tile-shape check. UNTESTED LIVE this stream (no
+        VM access): proven only against a fake world in
+        tests/test_stockpile_writing_lua_logic.py, whose own header
+        states plainly that the fake quickfort run does not exercise
+        the real quickfort_building pipeline (no tile-shape validity,
+        no extent grouping, no container defaults). A live run is the
+        only thing that settles whether the is_free/is_valid_stockpile_tile
+        gap ever actually produces a short pile on Uniboslan's own
+        terrain.
+    "configure ID CATEGORIES [DRY_RUN]":
+      lua_function: stockpile_configure
+      effect: mutate
+      coordinate_bearing: false
+      live_deployed: false
+      verified: unverified
+      knowledge_scope: player_derivable
+      notes: >
+        ADDED 2026-10-01 (handoffs/2026-10-01-stockpile-writing.md).
+        Replace semantics: diffs CATEGORIES against the SAME
+        `accepted_categories` read `list`/`links` already use, then
+        enables what's missing and disables what's no longer wanted via
+        `plugins.stockpiles.import_settings` against each category's own
+        `cat_<preset>` library file (mode enable/disable) -- see the
+        .lua file's own header for the DFHack 53.16-r1 file:line
+        citations behind ENABLE/DISABLE's real semantics
+        (StockpileSerializer::read_category). DRY_RUN defaults to true
+        (not explicitly asked by the handoff, extended here to match
+        every other mutating command in this file/codebase) and reports
+        `would_enable`/`would_disable` without touching the pile;
+        `current_accepts` is the pre-change read. A real run reports
+        `read_back.accepts`, the post-change read. UNTESTED LIVE this
+        stream: proven only against a fake world whose own header notes
+        `plugins.stockpiles` is faked at the single-category-flag level,
+        not the real plugin's finer subtype behaviour.
+    "link ID TARGET_ID give|take [DRY_RUN]":
+      lua_function: stockpile_link
+      effect: mutate
+      coordinate_bearing: false
+      live_deployed: false
+      verified: unverified
+      knowledge_scope: player_derivable
+      notes: >
+        ADDED 2026-10-01 (handoffs/2026-10-01-stockpile-writing.md). ID
+        must be a stockpile; TARGET_ID must resolve to a stockpile or a
+        workshop (the same two kinds `links` already reads). One data
+        table (LINK_RULE, no per-kind branch) picks which two of the
+        four link vectors `links` already reads to write, matching
+        place.lua's own `link_stockpiles` exactly (file header
+        citation): give to a pile writes give_to_pile/take_from_pile;
+        give to a workshop writes give_to_workshop/(workshop's
+        own)take_from_pile; take from a pile writes
+        take_from_pile/give_to_pile; take from a workshop writes
+        take_from_workshop/(workshop's own)give_to_pile. Uses the same
+        `utils.insert_sorted` quickfort itself uses, keyed by building
+        id. DRY_RUN defaults to true. Reports `read_back` via the same
+        `stockpile_links` the read-only command uses. UNTESTED LIVE this
+        stream: proven against a fake world (both directions, both
+        target kinds); the real vectors' exact field types on a live
+        building are unverified.
+    "unlink ID TARGET_ID give|take [DRY_RUN]":
+      lua_function: stockpile_unlink
+      effect: mutate
+      coordinate_bearing: false
+      live_deployed: false
+      verified: unverified
+      knowledge_scope: player_derivable
+      notes: >
+        ADDED 2026-10-01 (handoffs/2026-10-01-stockpile-writing.md). The
+        exact inverse of `link` (same LINK_RULE table, same DRY_RUN
+        default), using `utils.erase_sorted_key` on both ends instead of
+        `utils.insert_sorted`. UNTESTED LIVE this stream, proven against
+        the same fake world as `link`.
 
 df-overseer-stuckjobs.lua:
   build_order_item: 8
