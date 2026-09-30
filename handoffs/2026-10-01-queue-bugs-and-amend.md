@@ -62,4 +62,54 @@ tests.
 
 ## Result
 
-(fill in, about 200 words)
+**All three tasks done, offline only, not live-verified.**
+
+1. `project_status`'s "done" is now folded per step
+   (`store.step_status`/`_step_has_executed_record`), never over the flat
+   `step_targets` list: a step with no rows and no `executed` record reads
+   `"active"`, never vacuously `"done"`. Regression tests at both the
+   `step_status` unit level and the project level.
+2. `queue.executed` now refuses (at `store.append`, before anything is
+   written) an action whose `tool` does not match the named step's own
+   declared `tool`, and a `step_id` whose `requires` are not yet satisfied,
+   using the existing unused `step_prerequisites_satisfied` (it was
+   correct, just uncalled). Implicit steps are exempt (no tool to match,
+   trivial requires).
+3. Two new record kinds, `amend` and `abandon` (a single kind with an
+   action field was rejected: their required fields differ enough --
+   `amend` needs a full replacement `steps` list, `abandon` needs none --
+   that one kind would need its own internal branching anyway). `amend`
+   carries the FULL new `steps` list per version (never a diff);
+   `replaces`/`adds`/`drops` are declarative bookkeeping only, validated
+   against the previous version. `project_status` resolves the latest
+   `amend`'s own steps and reports a `version` number; a dropped step is
+   simply absent from the latest list, no special-casing needed. `abandon`
+   sets project status to `"abandoned"` with its `reason`; executed
+   history and `step_targets` rows are never touched or rewritten.
+   `queue.amend`/`queue.abandon` added to `dfmcp/queue_tools.py`
+   (`NativeTool`, `sole_writer_only=True`) and granted only in
+   `agents/overseer/tools.yaml`.
+
+**Known limitation, not fixed here (flagging rather than silently
+absorbing):** an amendment's `_seed_step_targets` call only ever adds rows
+(`INSERT OR IGNORE`); if a later version keeps a step's own id but shrinks
+its target set, the dropped target's OLD row lingers in `step_targets`
+forever at whatever state it was left in, and still counts toward that
+step's own status. The tests and this stream's own worked examples always
+give a changed step a new id instead (`replaces`/`drops` old ids, `adds`
+the new one) specifically to avoid this; nothing enforces that pattern.
+
+**Role tool counts** (`agents/*/tools.yaml` entry counts, offline; distinct
+from CLAUDE.md's live-measured figures): overseer 92 -> 94 (`queue.amend`,
+`queue.abandon`); architect 70, consultant 34, quartermaster 33, conductor
+16, all unchanged.
+
+**Tests:** dfqueue 218 -> 252 (34 new: schema validation, store write-time
+gates, render XML/public-view for `amend`/`abandon`); dfmcp 2 new in
+`test_roles.py` (rule 6 for both new tools) plus 9 new in
+`test_queue_tools.py`. Final full-suite counts: ambient `python -m pytest`
+2113 passed, 3 skipped (was 2109/3 before this stream's dfqueue-only
+commits landed, +4 net from the 3 new render tests plus one already-counted
+dfqueue test moved; no failures, no new skips); `dfmcp/tests` in
+`.venv-dfmcp` 722 passed (was 713), 0 failures. No em dashes added; no
+attribution lines; no live VM access; no permission refusals encountered.
