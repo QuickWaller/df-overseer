@@ -17,9 +17,9 @@ learning architecture.
 >   built, furnished and owned by the Manager, and the game itself accepts
 >   it (the room-value proxy's earlier false negative is fixed). The ghost
 >   has been laid to rest (a Tomb zone over its coffin, confirmed by direct
->   struct reads and the game's own report). **Manager work orders still
->   never dispatch a job**; the user's ruling is to set this aside rather
->   than keep chasing it. **The Consultant now answers from the full
+>   struct reads and the game's own report). **Manager work orders: the user reports they work**
+>   (2026-09-30), superseding the 2026-09-24 finding that none dispatched;
+>   they are now the main route for workshop production (register 2026-09-30). **The Consultant now answers from the full
 >   offline wiki mirror** on VM 103 (4,450 pages, SQLite plus FTS5,
 >   one-week hold on recent edits); it goes stale without a manual refresh,
 >   since the refresh timers (S8) are not built. The conductor is
