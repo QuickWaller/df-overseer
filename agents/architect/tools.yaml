@@ -344,6 +344,15 @@ read:
       to a dry run); the Architect proposes a reservation, it does not make
       one. Offline build, not deployed.
 
+  - id: "queue.project_status"
+    status: exists
+    note: >-
+      Added handoffs/2026-09-30-project-mcp-tools.md (research/2026-09-28-
+      job-dependency-graph.md §6: "Gets a read tool for project status to
+      avoid re-proposing held work"). One line per project (status, target
+      counts, the top blocker's reason if held), never the whole graph. Read
+      this before proposing something a project already covers.
+
 write:
   - id: "queue.propose"
     status: exists

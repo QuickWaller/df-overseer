@@ -101,11 +101,12 @@ match.
 
 ## What this is
 
-Seven record kinds, one append-only SQLite database per fort. (This section
+Nine record kinds, one append-only SQLite database per fort. (This section
 had said "Three" since the original build; `executed`, `ask`, `answer` were
-each added by a later stream without updating the count here, and
-`escalation` is this stream's own addition -- corrected now rather than
-compounding the drift a fourth time.)
+each added by a later stream without updating the count here, `escalation`
+was a later stream's own addition, and `project`/`observation` are
+`handoffs/2026-09-28-dfqueue-project-step-schema.md`'s -- corrected now
+rather than compounding the drift again.)
 
 - **`proposal`** — an advisor's proposed action: `id`, `role`, `cycle`,
   `snapshot`, `type` (closed vocabulary, see below), `summary`, `rationale`,
@@ -141,10 +142,21 @@ compounding the drift a fourth time.)
   `ruling`/`executed`. Not a proposal and not an ask: `queue.pending`/
   `queue.overview` never count it.
 
-**Not built yet: a `plan` record.** §9's write-ahead-log record ("writes its
-ordered plan to the queue before executing... marks each step done as it
-goes") is the natural next kind, once the Overseer actually executes
-anything. Recorded here so it isn't lost, not designed.
+- **`project`** — §9's write-ahead-log record ("writes its ordered plan to
+  the queue before executing... marks each step done as it goes"):
+  `from_ruling`, `objective_id`, `template`, `summary`, `because`, `steps`
+  (`research/2026-09-28-job-dependency-graph.md` §4.1). Instantiated from
+  exactly one accepted ruling; an absent or empty `steps` normalises to one
+  implicit step wrapping the whole ruling, so every existing proposal type
+  keeps working unchanged. Only the sole_writer may write one. Reachable as
+  `queue.project` (write, sole_writer only) and `queue.project_status`
+  (read, one line per project) — `handoffs/2026-09-30-project-mcp-tools.md`.
+- **`observation`** — code's own view of the world at one reconcile pass:
+  `project_id`, `step_id`, `game_tick`, `results` (each a `target`/`status`/
+  `reason`, three-valued: `consistent`/`contradicted`/`not_observable`).
+  Written only by the `conductor` role, never a model. No MCP tool exposes a
+  write path for it yet — the reconciler that would call one is out of
+  scope for `handoffs/2026-09-30-project-mcp-tools.md`.
 
 ## Running it
 

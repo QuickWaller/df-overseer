@@ -1,5 +1,5 @@
 """dfqueue record schema: `proposal`, `pass`, `ruling`, `executed`, `ask`,
-`answer`, `escalation`, validated at write time.
+`answer`, `escalation`, `project`, `observation`, validated at write time.
 
 Implements `docs/AGENT-ARCHITECTURE.md` §4, "Writes are tool calls; reads are
 XML": **a specialist cannot emit prose into the queue.** It calls
@@ -7,7 +7,8 @@ XML": **a specialist cannot emit prose into the queue.** It calls
 here, and a malformed record is refused with every error listed rather than
 silently accepted or silently trimmed.
 
-Seven record kinds, per §4, `docs/AGENT-LOOP.md` items 4/7, and `agents/*/role.md`:
+Nine record kinds, per §4, `docs/AGENT-LOOP.md` items 4/7, `agents/*/role.md`,
+and (for `project`/`observation`) `research/2026-09-28-job-dependency-graph.md`:
 
 - **`proposal`** — an advisor's proposed action. The §4 record, field for
   field: `id`, `role`, `cycle`, `snapshot`, `type`, `summary`, `rationale`,
@@ -49,9 +50,28 @@ Seven record kinds, per §4, `docs/AGENT-LOOP.md` items 4/7, and `agents/*/role.
   prose) and leave the fort paused. Only the roster's `sole_writer` may
   write one, same restriction as `ruling`/`executed` -- the Overseer is the
   only role with an Escalation section in its charter at all.
+- **`project`** -- §9's own write-ahead-log record, "writes its ordered plan
+  to the queue before executing" (`docs/AGENT-ARCHITECTURE.md` §9), added
+  `handoffs/2026-09-28-dfqueue-project-step-schema.md`: `from_ruling`,
+  `objective_id`, `template`, `summary`, `because`, `steps`. Instantiated
+  from exactly one accepted ruling (a second `project` for the same
+  `from_ruling` is refused); a `steps` block omitted or empty is normalised
+  (`normalize_project` below) into one implicit step wrapping the whole
+  ruling, so every proposal type keeps working unchanged. Only the roster's
+  `sole_writer` may write one, same restriction as `ruling`/`executed`/
+  `escalation` -- the design's own rule that the Overseer's ruling
+  instantiates the project. Reachable over MCP as `queue.project`
+  (write) and `queue.project_status` (read), `dfmcp/queue_tools.py`
+  (`handoffs/2026-09-30-project-mcp-tools.md`).
+- **`observation`** -- code's own view of the world, one reconcile pass at
+  one game tick: `project_id`, `step_id`, `game_tick`, `results` (each a
+  `target`/`status`/`reason`, `status` one of `consistent`/`contradicted`/
+  `not_observable`). Written only by the `conductor` role, never a model
+  (`OBSERVATION_ROLE` below) -- the reconciler that would write these is out
+  of scope for `handoffs/2026-09-30-project-mcp-tools.md`; no MCP tool
+  exposes a write path for it yet.
 
-No `plan` record yet (§9's write-ahead-log record, "writes its ordered plan
-to the queue before executing"). See `dfqueue/README.md`.
+See `dfqueue/README.md`.
 
 ## `prediction.signal` must be a live signal, not a ledger field
 

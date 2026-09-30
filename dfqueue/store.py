@@ -928,6 +928,25 @@ def project_status(path: str | Path, project_id: str) -> dict:
     }
 
 
+def list_project_ids(path: str | Path) -> list[str]:
+    """Every `project` record's own id, oldest first (insertion order).
+
+    Added `handoffs/2026-09-30-project-mcp-tools.md` for `queue.project_status`'s
+    "one line per project" read (design §6) -- there is no separate index of
+    project ids, and `project_status` above needs one project id at a time, so
+    a caller wanting every project's line must enumerate ids first, then call
+    `project_status` per id (the same two-step shape `queue.overview`'s own
+    caller already uses for `pending_proposals`/`open_asks`, just against a
+    kind with no dedicated "still open" predicate: a project's own `status`
+    field, "active" or "done", is computed by `project_status`, not knowable
+    from the raw record alone)."""
+    with _connect(path) as conn:
+        rows = conn.execute(
+            "SELECT id FROM records WHERE kind = ? ORDER BY rowid ASC", (PROJECT,)
+        ).fetchall()
+    return [r["id"] for r in rows]
+
+
 def load(path: str | Path) -> list[dict]:
     """Every record, in append order — the full audit trail, same shape and
     order as the old JSONL version's `load()`."""

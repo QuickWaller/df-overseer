@@ -979,6 +979,22 @@ a write-ahead log. A crash mid-plan is then recoverable and re-application is
 detectable. That buys more real survival than any choice of host, and it is ours
 to build rather than something to select for.
 
+That plan is `dfqueue`'s `project` record (`dfqueue/schema.py`, designed in
+`research/2026-09-28-job-dependency-graph.md`): `from_ruling`, `summary`,
+`because`, and an optional ordered `steps` list with `requires` edges,
+instantiated from exactly one accepted ruling ("the Overseer's ruling
+creates it," design §6). Reachable over MCP as `queue.project` (write,
+sole writer only) and `queue.project_status` (read: one line per project,
+granted to the Overseer, the Architect and the conductor) --
+`dfmcp/queue_tools.py`, added `handoffs/2026-09-30-project-mcp-tools.md`.
+Per-step completion marks are `queue.executed`'s own optional `step_id`
+plus each action's `targets`/`target_state`, folded into a per-target state
+table `queue.project_status`'s counts and top blocker are read from. The
+reconciler that would re-assert holds and wake the Overseer on drift
+(design §6's Conductor row) is not built; `observation` records (code's own
+view of the world) stay write-restricted to the `conductor` role with no
+MCP write path yet.
+
 ---
 
 ## 10. Recording and learning

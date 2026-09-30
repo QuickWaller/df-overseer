@@ -108,6 +108,18 @@ read:
       rather than silently added: it is necessary plumbing for the read
       this handoff explicitly asks for, and does not touch anything the
       sibling in-game stream owns.
+  - id: "queue.project_status"
+    status: exists
+    note: >-
+      Added handoffs/2026-09-30-project-mcp-tools.md. Granted here because
+      this role already holds a queue read (queue.overview above) that is
+      role-independent by the same pattern; the reconciler that would
+      actually READ this each cycle (research/2026-09-28-job-dependency-
+      graph.md §6, "re-asserts holds... adds triage wake reasons") is out of
+      scope for this stream and not built -- this grant makes the read
+      reachable ahead of that, the same order queue.grade/queue.overview
+      were granted in. One line per project (status, target counts, the top
+      blocker's reason), never the whole graph.
 
 write:
   - id: "clock.set-speed"

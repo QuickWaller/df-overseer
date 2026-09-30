@@ -220,10 +220,27 @@ QUEUE_OVERVIEW = "queue.overview"
 #: queue.executed: only the roster's sole_writer (the Overseer) may call
 #: this, enforced again at write time by dfqueue.schema.validate.
 QUEUE_ESCALATE = "queue.escalate"
+#: Added handoffs/2026-09-30-project-mcp-tools.md
+#: (research/2026-09-28-job-dependency-graph.md §4.1/§6, dfqueue/schema.py's
+#: `project` kind, `handoffs/2026-09-28-dfqueue-project-step-schema.md`).
+#: Instantiates the Overseer's ordered plan for one accepted ruling -- "the
+#: Overseer's ruling creates it" (design §6). Same restriction as
+#: queue.rule/queue.executed/queue.escalate: sole_writer_only=True
+#: (dfmcp.roles rule 6) plus dfqueue.schema.validate's own role==sole_writer
+#: check for PROJECT records, the same two-layer pattern this module's
+#: docstring already documents for those three.
+QUEUE_PROJECT = "queue.project"
+#: Added the same stream. Read-only: one line per project (design §6:
+#: "status, counts, the top blocker's reason"), via dfqueue.render's own
+#: `project_status_line`. Granted to overseer and architect
+#: (agents/overseer/tools.yaml, agents/architect/tools.yaml) -- never
+#: sole_writer_only, since it is not a write at all.
+QUEUE_PROJECT_STATUS = "queue.project_status"
 
 NATIVE_TOOL_IDS = (
     QUEUE_PROPOSE, QUEUE_PASS, QUEUE_RULE, QUEUE_PENDING, QUEUE_ASK,
     QUEUE_ANSWER, QUEUE_EXECUTED, QUEUE_GRADE, QUEUE_OVERVIEW, QUEUE_ESCALATE,
+    QUEUE_PROJECT, QUEUE_PROJECT_STATUS,
 )
 
 
@@ -278,6 +295,10 @@ class NativeTool:
             return _OVERVIEW_DESCRIPTION, _OVERVIEW_SCHEMA
         if self.id == QUEUE_ESCALATE:
             return _ESCALATE_DESCRIPTION, _ESCALATE_SCHEMA
+        if self.id == QUEUE_PROJECT:
+            return _PROJECT_DESCRIPTION, _PROJECT_SCHEMA
+        if self.id == QUEUE_PROJECT_STATUS:
+            return _PROJECT_STATUS_DESCRIPTION, _PROJECT_STATUS_SCHEMA
         raise AssertionError(f"NativeTool.describe: unknown id {self.id!r}")  # pragma: no cover
 
 
@@ -317,6 +338,13 @@ NATIVE_TOOLS: Dict[str, NativeTool] = {
     # queue.escalate: same restriction as queue.rule/queue.executed (the
     # Overseer only, dfmcp.roles's sole_writer_only mechanism).
     QUEUE_ESCALATE: NativeTool(id=QUEUE_ESCALATE, mutates=False, sole_writer_only=True),
+    # queue.project: same restriction as queue.rule/queue.executed/
+    # queue.escalate -- only the Overseer's ruling instantiates a project
+    # (design §6).
+    QUEUE_PROJECT: NativeTool(id=QUEUE_PROJECT, mutates=False, sole_writer_only=True),
+    # queue.project_status: a read, granted to overseer and architect by
+    # their own tools.yaml; not sole_writer_only (it writes nothing).
+    QUEUE_PROJECT_STATUS: NativeTool(id=QUEUE_PROJECT_STATUS, mutates=False, sole_writer_only=False),
 }
 
 
@@ -603,8 +631,13 @@ _EXECUTED_DESCRIPTION = (
     "execution is still a valid, required record. This is what starts the "
     "proposal's prediction grading window: it now runs from THIS call's own "
     "stamped game tick, never from the original proposal's write time. Only "
-    "the roster's sole writer may call this. role/id/ts/cycle/snapshot are "
-    "stamped by the server; do not pass them."
+    "the roster's sole writer may call this. Optionally names 'step_id', "
+    "one step of ruling_id's own project (queue.project/queue.project_status), "
+    "when this execution is for a real, granular step rather than a plain "
+    "one-step project; an action naming 'targets' and 'target_state' folds "
+    "into that step's own per-target state (design §4.4/§4.5), the same "
+    "state queue.project_status's counts and top_blocker are read from. "
+    "role/id/ts/cycle/snapshot are stamped by the server; do not pass them."
 )
 _EXECUTED_SCHEMA = {
     "type": "object",
@@ -614,6 +647,15 @@ _EXECUTED_SCHEMA = {
         "ruling_id": {
             "type": "string",
             "description": "The id of an existing, accepted ruling (decision=accept).",
+        },
+        "step_id": {
+            "type": "string",
+            "description": (
+                "Optional: which step of ruling_id's own project this execution is "
+                "for (see queue.project_status). Omit for a ruling whose project has "
+                "no real steps (a plain one-step project) -- executed exactly as it "
+                "was before steps existed."
+            ),
         },
         "actions": {
             "type": "array",
@@ -629,6 +671,31 @@ _EXECUTED_SCHEMA = {
                     "detail": {
                         "type": "string",
                         "description": "Optional, e.g. why a call failed. Coordinate-free.",
+                    },
+                    "targets": {
+                        "type": "array",
+                        "items": {"type": ["string", "integer"]},
+                        "description": (
+                            "Optional: opaque target handles this action's outcome applies "
+                            "to, folded into this record's own step_id's per-target state "
+                            "(design §4.4). Required together with target_state, never one "
+                            "without the other. Coordinate-free."
+                        ),
+                    },
+                    "target_state": {
+                        "type": "string",
+                        "enum": list(schema.ACTION_TARGET_STATES),
+                        "description": (
+                            "Required together with targets, never one without the other."
+                        ),
+                    },
+                    "game_refs": {
+                        "type": "array",
+                        "items": {"type": ["string", "integer"]},
+                        "description": (
+                            "Optional: code-only job/building ids this action touched "
+                            "(never a coordinate)."
+                        ),
                     },
                 },
             },
@@ -702,6 +769,147 @@ _ESCALATE_SCHEMA = {
 }
 
 
+_STEP_TARGET_SPEC_SCHEMA = {
+    "type": "object",
+    "description": (
+        "Exactly one of 'set' (a literal list of opaque target handles) or "
+        "'from_step'+'select' ('this sibling step's own done targets'), "
+        "design §4.3."
+    ),
+    "properties": {
+        "set": {
+            "type": "array",
+            "items": {"type": ["string", "integer"]},
+            "description": "A literal list of opaque, coordinate-free target handles.",
+        },
+        "from_step": {
+            "type": "string",
+            "description": "A sibling step id in this same project's steps list.",
+        },
+        "select": {
+            "type": "string",
+            "enum": ["done"],
+            "description": "Required together with from_step. Only 'done' is built.",
+        },
+    },
+}
+
+_STEP_SCHEMA = {
+    "type": "object",
+    "additionalProperties": False,
+    "required": ["id", "tool", "targets"],
+    "properties": {
+        "id": {"type": "string", "description": "Unique within this project's own steps list."},
+        "tool": {"type": "string", "description": "A real tool id (scripts/dfhack/TOOLS.yaml, via the registry)."},
+        "args": {"type": "object", "description": "Optional. Arguments for this step's own tool call."},
+        "targets": _STEP_TARGET_SPEC_SCHEMA,
+        "requires": {
+            "type": "array",
+            "items": {"type": "string"},
+            "description": (
+                "Sibling step ids that must finish first (design §2.2, finish-to-start "
+                "edges only; a step may not require itself)."
+            ),
+        },
+        "trigger": {
+            "type": "string",
+            "enum": list(schema.TRIGGERS),
+            "description": (
+                "How THIS step's own 'requires' are judged satisfied: all_success "
+                "(default, every prerequisite target done) or all_done (every "
+                "prerequisite target finished, any outcome)."
+            ),
+        },
+        "prefer_after": {
+            "type": "array",
+            "items": {"type": "string"},
+            "description": "Sibling step ids to prefer running after, without a hard 'requires' edge.",
+        },
+        "guards": {
+            "description": (
+                "'default' (the tool's own default guard set, the usual choice) or a "
+                "list of extra guard names to ADD on top of it. Never removes a "
+                "default guard."
+            ),
+        },
+    },
+}
+
+_PROJECT_DESCRIPTION = (
+    "Instantiate the ordered plan for one accepted ruling -- the Overseer's "
+    "own write-ahead log (docs/AGENT-ARCHITECTURE.md §9; design "
+    "research/2026-09-28-job-dependency-graph.md §4.1/§6). Only the roster's "
+    "sole writer may call this (enforced at load time in dfmcp.roles and "
+    "again at write time in dfqueue.schema) -- a ruling's own project is "
+    "created by the ruling on it, never proposed. A ruling gets exactly one "
+    "project, ever; a second queue.project call for the same from_ruling is "
+    "refused. Omit 'steps' (or pass an empty list) for a plain one-step "
+    "project wrapping the whole ruling, unchanged from before this existed; "
+    "declare real steps with 'requires' edges for a multi-step plan whose "
+    "progress queue.project_status and queue.executed's own step_id can then "
+    "track. role/id/ts/cycle/snapshot are stamped by the server; do not pass "
+    "them."
+)
+
+_PROJECT_SCHEMA = {
+    "type": "object",
+    "additionalProperties": False,
+    "required": ["from_ruling", "summary", "because"],
+    "properties": {
+        "from_ruling": {
+            "type": "string",
+            "description": (
+                "The id of an existing, accepted ruling (decision=accept). Exactly "
+                "one project per ruling, ever."
+            ),
+        },
+        "objective_id": {
+            "type": "string",
+            "description": "Optional: which objective (if any) this project serves.",
+        },
+        "template": {
+            "type": "string",
+            "description": "Optional: the blueprint template this project instantiates, if any.",
+        },
+        "summary": {
+            "type": "string",
+            "description": "A short, coordinate-free description of the plan.",
+        },
+        "because": {
+            "type": "string",
+            "description": "Why this plan, coordinate-free.",
+        },
+        "steps": {
+            "type": "array",
+            "items": _STEP_SCHEMA,
+            "description": (
+                "Optional. Omit, or pass an empty list, for a one-step project "
+                "wrapping the whole ruling (no per-target tracking)."
+            ),
+        },
+    },
+}
+
+_PROJECT_STATUS_DESCRIPTION = (
+    "Read-only: one line per project (design §6: status, target counts by "
+    "state, and the top blocker's reason if any target is held), oldest "
+    "project first, via dfqueue.render.project_status_line. Never the whole "
+    "graph. Pass 'project_id' to read just that one project's own line "
+    "instead of every project's."
+)
+
+_PROJECT_STATUS_SCHEMA = {
+    "type": "object",
+    "additionalProperties": False,
+    "properties": {
+        "project_id": {
+            "type": "string",
+            "description": "Optional: read only this project's own status line.",
+        },
+    },
+}
+
+
 # --------------------------------------------------------------------------
 # cycle/snapshot stamping
 # --------------------------------------------------------------------------
@@ -758,7 +966,9 @@ _RULE_FIELDS = {"proposal_id", "decision", "reason", "public_rationale"}
 _PENDING_FIELDS = {"limit"}
 _ASK_FIELDS = {"question", "proposal_id"}
 _ANSWER_FIELDS = {"ask_id", "answer"}
-_EXECUTED_FIELDS = {"ruling_id", "actions", "notes"}
+_EXECUTED_FIELDS = {"ruling_id", "step_id", "actions", "notes"}
+_PROJECT_FIELDS = {"from_ruling", "objective_id", "template", "summary", "because", "steps"}
+_PROJECT_STATUS_FIELDS = {"project_id"}
 
 
 def _write_error(tool_id: str, exc: store.QueueError) -> QueueToolError:
@@ -1029,6 +1239,63 @@ async def _escalate(
     return render.to_xml(written), written
 
 
+async def _project(
+    role: str, arguments: Mapping[str, Any], *, db_path, call_dfhack: CallDFHack,
+    write_lock: "asyncio.Lock",
+) -> Tuple[str, dict]:
+    """Instantiates the Overseer's ordered plan for one accepted ruling
+    (design §6: "the Overseer's ruling creates it"). Validation that
+    `from_ruling` names an existing, accepted ruling with no project yet,
+    that every step id declared by a `requires`/`prefer_after`/`from_step`
+    reference is real, that the `requires` graph is acyclic, and that every
+    step's `tool` is a real registry id, is `dfqueue.schema`/`dfqueue.store`'s
+    own job (`_validate_project_fields`, `store.append`'s `from_ruling`
+    checks) -- this handler only stamps the record and calls `store.append`,
+    the same shape as every write handler above."""
+    _reject_unknown_arguments(QUEUE_PROJECT, arguments, _PROJECT_FIELDS)
+    tick, snapshot = await _stamp_cycle_snapshot(call_dfhack)
+    record = {
+        "kind": schema.PROJECT, "role": role, "cycle": tick, "snapshot": snapshot,
+        **{k: arguments[k] for k in _PROJECT_FIELDS if k in arguments},
+    }
+    written = await _append_locked(QUEUE_PROJECT, record, db_path, tick, write_lock)
+    return render.to_xml(written), written
+
+
+async def _project_status(
+    role: str, arguments: Mapping[str, Any], *, db_path, call_dfhack: CallDFHack,
+    write_lock: "asyncio.Lock",
+) -> Tuple[str, dict]:
+    """Read-only: one line per project (design §6), or just `project_id`'s
+    own line if given. `store.list_project_ids` enumerates ids (there is no
+    "still open" predicate to filter by the way `pending_proposals`/
+    `open_asks` have -- a project's own `status`, active or done, is
+    computed by `store.project_status`, not knowable from the raw record),
+    then `store.project_status` + `render.project_status_line` render each
+    one, the same two-step shape `queue.overview`'s own caller already uses.
+    No write_lock needed: a plain read."""
+    _reject_unknown_arguments(QUEUE_PROJECT_STATUS, arguments, _PROJECT_STATUS_FIELDS)
+    project_id = arguments.get("project_id")
+    if project_id is not None and (not isinstance(project_id, str) or not project_id):
+        raise QueueToolError(
+            f"{QUEUE_PROJECT_STATUS}: 'project_id' must be a non-empty string, got {project_id!r}"
+        )
+    try:
+        ids = [project_id] if project_id is not None else await asyncio.to_thread(
+            store.list_project_ids, db_path
+        )
+        statuses = [await asyncio.to_thread(store.project_status, db_path, pid) for pid in ids]
+    except store.QueueError as exc:
+        raise _write_error(QUEUE_PROJECT_STATUS, exc) from exc
+    except (sqlite3.Error, OSError) as exc:
+        raise _storage_error(QUEUE_PROJECT_STATUS, exc) from exc
+
+    lines = [render.project_status_line(s) for s in statuses]
+    text = "\n".join(lines) if lines else "(no projects)"
+    structured = {"count": len(statuses), "project_ids": [s["project_id"] for s in statuses]}
+    return text, structured
+
+
 _HANDLERS = {
     QUEUE_PROPOSE: _propose,
     QUEUE_PASS: _pass_,
@@ -1040,6 +1307,8 @@ _HANDLERS = {
     QUEUE_GRADE: _grade,
     QUEUE_OVERVIEW: _overview,
     QUEUE_ESCALATE: _escalate,
+    QUEUE_PROJECT: _project,
+    QUEUE_PROJECT_STATUS: _project_status,
 }
 
 
