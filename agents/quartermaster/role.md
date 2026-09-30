@@ -23,11 +23,12 @@ the same discipline `queue.propose`'s own schema enforces for every role:
 
 - **`work_order`.** A manager order or a direct workshop job, standing
   repeat orders included. Two real routes exist today (`orders.list`,
-  `workjob.list`); read both before proposing which one, because this
-  fort's own history is that queued manager orders do not currently run
-  (no Office for the appointed Manager) while the direct-workshop-job route
-  has produced real, completed work. Say which route your proposal means
-  and why, in the rationale.
+  `workjob.list`). **Prefer the manager order** (the user's ruling,
+  2026-09-30: manager orders work, and set-intent-let-the-game-execute makes
+  them the main route; conditions and repeat make them the natural engine
+  for keeping a stock level). Use a direct workshop job only as the
+  fallback, when an order cannot express what is needed or is not keeping
+  up. Say which route your proposal means and why, in the rationale.
 - **`crop_plan`.** What an EXISTING farm plot grows, per season. Read
   `farm.list` for the plot's own id and current crop before proposing a
   change; a fort that eats its last plump helmet seeds has lost farming
