@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import copy
 import json
+import re
 import sqlite3
 
 import pytest
@@ -1459,6 +1460,84 @@ def test_amend_adds_must_name_a_step_id_in_its_own_new_steps(tmp_path):
         )
 
 
+def test_amend_accepts_a_reused_step_id_that_is_byte_identical(tmp_path):
+    """A step id kept from the previous version, with its own definition
+    unchanged (canonical JSON identical), round-trips clean -- this is the
+    ordinary case of "amend one step, leave the other alone"."""
+    path = _db(tmp_path)
+    store.append(make_proposal(), path, game_tick=100)
+    _ruling, project = _rule_and_project(path)
+    s1, s2 = project["steps"][0], project["steps"][1]
+
+    written = store.append(
+        make_amend(
+            project_id=project["id"],
+            replaces=[],
+            adds=[],
+            drops=[],
+            steps=[copy.deepcopy(s1), copy.deepcopy(s2)],
+        ),
+        path,
+    )
+    assert [s["id"] for s in written["steps"]] == [s1["id"], s2["id"]]
+
+
+def test_amend_refuses_reusing_a_step_id_whose_definition_changed(tmp_path):
+    """Enforcement, not convention (user's call, 2026-10-01): a step id kept
+    from the previous version but silently redefined (here, s1's own
+    `targets` shrinks from three tiles to two, everything else the same) is
+    refused, naming the step id -- it must take a fresh id and list the old
+    one in replaces/drops instead. This is what closes the target-seeding
+    gap this handoff first only flagged: without it, the DROPPED target's
+    row would linger in step_targets under a live id forever."""
+    path = _db(tmp_path)
+    store.append(make_proposal(), path, game_tick=100)
+    _ruling, project = _rule_and_project(path)
+    s1, s2 = project["steps"][0], project["steps"][1]
+    changed_s1 = copy.deepcopy(s1)
+    changed_s1["targets"]["set"] = changed_s1["targets"]["set"][:-1]  # drop one target
+
+    with pytest.raises(store.QueueError, match=re.escape(s1["id"]) + r".*definition changed"):
+        store.append(
+            make_amend(
+                project_id=project["id"],
+                replaces=[s1["id"]],
+                adds=[],
+                drops=[],
+                steps=[changed_s1, copy.deepcopy(s2)],
+            ),
+            path,
+        )
+
+
+def test_amend_accepts_a_changed_step_under_a_fresh_id(tmp_path):
+    """The enforced escape hatch: a changed step takes a NEW id, and the
+    old one is named in `drops` (or `replaces`) -- never redefined in
+    place. Changes s2 rather than s1: s1 has a dependent (s2's own
+    `requires`/`from_step`), and renaming a step with a dependent would
+    force the dependent to change too, which is a different scenario than
+    this test means to isolate."""
+    path = _db(tmp_path)
+    store.append(make_proposal(), path, game_tick=100)
+    _ruling, project = _rule_and_project(path)
+    s1, s2 = project["steps"][0], project["steps"][1]
+    new_s2 = copy.deepcopy(s2)
+    new_s2["id"] = "project-0001/s2-v2"
+    new_s2["trigger"] = "all_success"  # was all_done: a real, isolated change
+
+    written = store.append(
+        make_amend(
+            project_id=project["id"],
+            replaces=[],
+            adds=["project-0001/s2-v2"],
+            drops=[s2["id"]],
+            steps=[copy.deepcopy(s1), new_s2],
+        ),
+        path,
+    )
+    assert [s["id"] for s in written["steps"]] == [s1["id"], "project-0001/s2-v2"]
+
+
 def test_amend_bumps_the_version_and_project_status_reads_the_latest_one(tmp_path):
     path = _db(tmp_path)
     store.append(make_proposal(), path, game_tick=100)
@@ -1561,11 +1640,16 @@ def test_amend_does_not_overwrite_the_original_project_record(tmp_path):
     _ruling, project = _rule_and_project(path)
     original_steps = copy.deepcopy(project["steps"])
 
+    # A fresh id for the changed step (never the old id with a shrunk
+    # target set -- item 3's own byte-identical-reuse rule would refuse
+    # that; see test_amend_refuses_reusing_a_step_id_whose_definition_changed).
     store.append(
         make_amend(
             project_id=project["id"],
+            drops=["project-0001/s1"],
+            adds=["project-0001/s1b"],
             steps=[{
-                "id": "project-0001/s1",
+                "id": "project-0001/s1b",
                 "tool": "construction.mine-vein",
                 "args": {},
                 "targets": {"set": ["ring-13-ore-1"]},

@@ -301,6 +301,19 @@ def _step_ids_list(steps: list) -> set:
     return {s["id"] for s in steps if isinstance(s, dict) and "id" in s}
 
 
+def _canonical_step_json(step: dict) -> str:
+    """Canonical JSON of one step, for `amend`'s own byte-identical reuse
+    check (user's call, 2026-10-01, closing the target-seeding gap this
+    handoff first only flagged): a step id kept from the previous version
+    is accepted only if its own definition (`tool`/`args`/`targets`/
+    `requires`/`trigger`/`prefer_after`/`guards`/`id`, whatever the schema
+    defines) did not change at all. `sort_keys=True` makes key order
+    irrelevant; a nested list still compares positionally, which is correct
+    here (`requires` is an ordered edge list, not a set, and reordering it
+    is itself a real change worth catching)."""
+    return json.dumps(step, sort_keys=True, ensure_ascii=False)
+
+
 def _project_id_already_flagged(errors: list[str]) -> bool:
     """Same idea as `_from_ruling_already_flagged`, for `amend`'s and
     `abandon`'s own `project_id` (reuses the same error prefix as
@@ -663,6 +676,37 @@ def append(record: dict, path: str | Path, *, game_tick: int | None = None) -> d
                             errors.append(
                                 f"record.adds: {sid!r} is not a step id in this "
                                 "amendment's own steps"
+                            )
+
+                    # Enforced, not merely conventional (user's call,
+                    # 2026-10-01): a step id kept from the previous version
+                    # must be byte-identical to it after canonical JSON, or
+                    # this call is refused naming the step id. Without this,
+                    # a step reusing its old id while quietly changing its
+                    # own `targets` would leave the OLD version's now-stale
+                    # target rows lingering in `step_targets` forever
+                    # (`_seed_step_targets` only ever adds rows, never
+                    # prunes one a later version stopped declaring) --
+                    # a changed step must take a fresh id and name the old
+                    # one in `replaces`/`drops` instead, so its old rows are
+                    # left behind cleanly rather than silently reinterpreted
+                    # under an id that no longer means what it used to.
+                    previous_steps_by_id = {
+                        s["id"]: s for s in previous_steps
+                        if isinstance(s, dict) and isinstance(s.get("id"), str) and s["id"]
+                    }
+                    for step in record.get("steps") or []:
+                        if not (isinstance(step, dict) and isinstance(step.get("id"), str) and step["id"]):
+                            continue
+                        sid = step["id"]
+                        prev_step = previous_steps_by_id.get(sid)
+                        if prev_step is not None and _canonical_step_json(step) != _canonical_step_json(prev_step):
+                            errors.append(
+                                f"record.steps: {sid!r} reuses a step id from the "
+                                "previous version but its own definition changed; "
+                                "a changed step must take a fresh id and list the "
+                                "old one in replaces/drops, never redefine an "
+                                "existing id in place"
                             )
 
         if kind == ABANDON and not _project_id_already_flagged(errors):
