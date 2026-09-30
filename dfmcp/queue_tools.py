@@ -236,11 +236,26 @@ QUEUE_PROJECT = "queue.project"
 #: (agents/overseer/tools.yaml, agents/architect/tools.yaml) -- never
 #: sole_writer_only, since it is not a write at all.
 QUEUE_PROJECT_STATUS = "queue.project_status"
+#: Added handoffs/2026-10-01-queue-bugs-and-amend.md item 3
+#: (research/2026-09-30-goal-tree-red-team.md F-3: "nothing can carry a
+#: change to an accepted project"). Writes a new numbered plan version of
+#: an already-accepted project (dfqueue.schema.AMEND): nothing already
+#: written is overwritten, the old version stays readable, and a step
+#: already executed keeps its own records regardless of which version
+#: named it. Same restriction as queue.rule/queue.executed/queue.escalate/
+#: queue.project: sole_writer_only=True (dfmcp.roles rule 6) plus
+#: dfqueue.schema.validate's own role==sole_writer check for AMEND records.
+QUEUE_AMEND = "queue.amend"
+#: Same stream. Marks an already-accepted project (and its still-open
+#: steps) abandoned with a required reason (dfqueue.schema.ABANDON);
+#: executed history is untouched. Same sole_writer_only restriction as
+#: queue.amend above.
+QUEUE_ABANDON = "queue.abandon"
 
 NATIVE_TOOL_IDS = (
     QUEUE_PROPOSE, QUEUE_PASS, QUEUE_RULE, QUEUE_PENDING, QUEUE_ASK,
     QUEUE_ANSWER, QUEUE_EXECUTED, QUEUE_GRADE, QUEUE_OVERVIEW, QUEUE_ESCALATE,
-    QUEUE_PROJECT, QUEUE_PROJECT_STATUS,
+    QUEUE_PROJECT, QUEUE_PROJECT_STATUS, QUEUE_AMEND, QUEUE_ABANDON,
 )
 
 
@@ -299,6 +314,10 @@ class NativeTool:
             return _PROJECT_DESCRIPTION, _PROJECT_SCHEMA
         if self.id == QUEUE_PROJECT_STATUS:
             return _PROJECT_STATUS_DESCRIPTION, _PROJECT_STATUS_SCHEMA
+        if self.id == QUEUE_AMEND:
+            return _AMEND_DESCRIPTION, _AMEND_SCHEMA
+        if self.id == QUEUE_ABANDON:
+            return _ABANDON_DESCRIPTION, _ABANDON_SCHEMA
         raise AssertionError(f"NativeTool.describe: unknown id {self.id!r}")  # pragma: no cover
 
 
@@ -345,6 +364,11 @@ NATIVE_TOOLS: Dict[str, NativeTool] = {
     # queue.project_status: a read, granted to overseer and architect by
     # their own tools.yaml; not sole_writer_only (it writes nothing).
     QUEUE_PROJECT_STATUS: NativeTool(id=QUEUE_PROJECT_STATUS, mutates=False, sole_writer_only=False),
+    # queue.amend: same restriction as queue.project -- only the Overseer
+    # may write a new plan version of an accepted project.
+    QUEUE_AMEND: NativeTool(id=QUEUE_AMEND, mutates=False, sole_writer_only=True),
+    # queue.abandon: same restriction as queue.amend/queue.project.
+    QUEUE_ABANDON: NativeTool(id=QUEUE_ABANDON, mutates=False, sole_writer_only=True),
 }
 
 
@@ -909,6 +933,88 @@ _PROJECT_STATUS_SCHEMA = {
     },
 }
 
+_AMEND_DESCRIPTION = (
+    "Write a new numbered plan version of an already-accepted project "
+    "(research/2026-09-30-goal-tree-red-team.md F-3: before this existed, "
+    "nothing could carry a change to an accepted project at all -- an "
+    "escalation answer of 'update the plan' had nowhere to go). Nothing "
+    "already written is overwritten: the original queue.project and every "
+    "earlier queue.amend stay readable, and a step already carried out via "
+    "queue.executed keeps its own record regardless of which version named "
+    "it. 'steps' is the FULL new step list this version replaces the "
+    "previous one with, never a diff to apply -- a step you are not "
+    "changing still needs to appear in it, or it is dropped. 'replaces', "
+    "'adds' and 'drops' are declarative bookkeeping only (which of the "
+    "previous version's step ids changed, which of 'steps' own ids are "
+    "brand new, which previous ids are gone) so a reader does not have to "
+    "diff two step lists by hand. Only the roster's sole writer may call "
+    "this. role/id/ts/cycle/snapshot are stamped by the server; do not "
+    "pass them."
+)
+_AMEND_SCHEMA = {
+    "type": "object",
+    "additionalProperties": False,
+    "required": ["project_id", "steps", "reason"],
+    "properties": {
+        "project_id": {
+            "type": "string",
+            "description": "The id of an existing, not-abandoned project (see queue.project_status).",
+        },
+        "steps": {
+            "type": "array",
+            "minItems": 1,
+            "items": _STEP_SCHEMA,
+            "description": "The FULL new step list this version replaces the previous one with.",
+        },
+        "reason": {
+            "type": "string",
+            "description": "Why this plan is changing. Coordinate-free. Required.",
+        },
+        "replaces": {
+            "type": "array",
+            "items": {"type": "string"},
+            "description": "Optional: step ids from the previous version this one changes.",
+        },
+        "adds": {
+            "type": "array",
+            "items": {"type": "string"},
+            "description": "Optional: step ids in 'steps' that are brand new in this version.",
+        },
+        "drops": {
+            "type": "array",
+            "items": {"type": "string"},
+            "description": "Optional: step ids from the previous version this one removes.",
+        },
+    },
+}
+
+_ABANDON_DESCRIPTION = (
+    "Mark an already-accepted project (and its still-open steps) abandoned "
+    "with a required reason (research/2026-09-30-goal-tree-red-team.md F-3: "
+    "the abandonment path F-3 flagged as unimplemented). Executed history "
+    "is untouched -- this never edits or removes a queue.executed record, "
+    "only adds this project's own closing record. queue.project_status "
+    "reports 'abandoned' status for this project from then on, with the "
+    "reason. Only the roster's sole writer may call this, and only once "
+    "per project. role/id/ts/cycle/snapshot are stamped by the server; do "
+    "not pass them."
+)
+_ABANDON_SCHEMA = {
+    "type": "object",
+    "additionalProperties": False,
+    "required": ["project_id", "reason"],
+    "properties": {
+        "project_id": {
+            "type": "string",
+            "description": "The id of an existing, not-yet-abandoned project.",
+        },
+        "reason": {
+            "type": "string",
+            "description": "Why this project is being abandoned. Coordinate-free. Required.",
+        },
+    },
+}
+
 
 # --------------------------------------------------------------------------
 # cycle/snapshot stamping
@@ -969,6 +1075,8 @@ _ANSWER_FIELDS = {"ask_id", "answer"}
 _EXECUTED_FIELDS = {"ruling_id", "step_id", "actions", "notes"}
 _PROJECT_FIELDS = {"from_ruling", "objective_id", "template", "summary", "because", "steps"}
 _PROJECT_STATUS_FIELDS = {"project_id"}
+_AMEND_FIELDS = {"project_id", "steps", "reason", "replaces", "adds", "drops"}
+_ABANDON_FIELDS = {"project_id", "reason"}
 
 
 def _write_error(tool_id: str, exc: store.QueueError) -> QueueToolError:
@@ -1296,6 +1404,46 @@ async def _project_status(
     return text, structured
 
 
+async def _amend(
+    role: str, arguments: Mapping[str, Any], *, db_path, call_dfhack: CallDFHack,
+    write_lock: "asyncio.Lock",
+) -> Tuple[str, dict]:
+    """Writes a new numbered plan version of an already-accepted project
+    (`dfqueue.schema.AMEND`). Validation that `project_id` names a real,
+    not-abandoned project, that `replaces`/`drops` name real step ids of
+    the PREVIOUS version and `adds` names real new ids in THIS version's
+    own `steps`, and every per-step rule `queue.project` already enforces
+    (real tool ids, no `requires` cycle, unique ids), is `dfqueue.schema`/
+    `dfqueue.store`'s own job -- this handler only stamps the record and
+    calls `store.append`, the same shape as every write handler above."""
+    _reject_unknown_arguments(QUEUE_AMEND, arguments, _AMEND_FIELDS)
+    tick, snapshot = await _stamp_cycle_snapshot(call_dfhack)
+    record = {
+        "kind": schema.AMEND, "role": role, "cycle": tick, "snapshot": snapshot,
+        **{k: arguments[k] for k in _AMEND_FIELDS if k in arguments},
+    }
+    written = await _append_locked(QUEUE_AMEND, record, db_path, tick, write_lock)
+    return render.to_xml(written), written
+
+
+async def _abandon(
+    role: str, arguments: Mapping[str, Any], *, db_path, call_dfhack: CallDFHack,
+    write_lock: "asyncio.Lock",
+) -> Tuple[str, dict]:
+    """Writes an `abandon` record (`dfqueue.schema.ABANDON`): marks an
+    already-accepted project (and its still-open steps) abandoned with a
+    required reason. Refused (dfqueue.store) if `project_id` does not name
+    a real project or is already abandoned."""
+    _reject_unknown_arguments(QUEUE_ABANDON, arguments, _ABANDON_FIELDS)
+    tick, snapshot = await _stamp_cycle_snapshot(call_dfhack)
+    record = {
+        "kind": schema.ABANDON, "role": role, "cycle": tick, "snapshot": snapshot,
+        **{k: arguments[k] for k in _ABANDON_FIELDS if k in arguments},
+    }
+    written = await _append_locked(QUEUE_ABANDON, record, db_path, tick, write_lock)
+    return render.to_xml(written), written
+
+
 _HANDLERS = {
     QUEUE_PROPOSE: _propose,
     QUEUE_PASS: _pass_,
@@ -1309,6 +1457,8 @@ _HANDLERS = {
     QUEUE_ESCALATE: _escalate,
     QUEUE_PROJECT: _project,
     QUEUE_PROJECT_STATUS: _project_status,
+    QUEUE_AMEND: _amend,
+    QUEUE_ABANDON: _abandon,
 }
 
 

@@ -15,8 +15,8 @@ from __future__ import annotations
 from xml.sax.saxutils import escape, quoteattr
 
 from .schema import (
-    ANSWER, ASK, ESCALATION, EXECUTED, OBSERVATION, PASS, PROJECT, PROPOSAL,
-    RULING,
+    ABANDON, AMEND, ANSWER, ASK, ESCALATION, EXECUTED, OBSERVATION, PASS,
+    PROJECT, PROPOSAL, RULING,
 )
 
 #: §8's allowlist, plus id/ts/kind "so the feed can order and thread items"
@@ -184,13 +184,50 @@ def project_status_line(status: dict) -> str:
     """One line for the Overseer's prompt, design §6: "status, target counts
     by state, and the top blocker's reason if any is held." Never the whole
     graph -- see `dfqueue.store.project_status`, this function's only
-    caller-shaped input."""
+    caller-shaped input.
+
+    `version` (added `handoffs/2026-10-01-queue-bugs-and-amend.md` item 3)
+    is shown only once a project has been amended at least once (`v2` and
+    up) -- the common, unamended case reads exactly as it always has,
+    nothing new to learn for every project that was never revised.
+    `abandoned_reason`, when present, is appended the same way a held
+    target's reason already is.
+    """
     counts = ", ".join(f"{n} {state}" for state, n in sorted(status["counts"].items())) or "no tracked targets"
-    line = f"{status['project_id']}: {status['status']} ({counts})"
+    version = status.get("version", 1)
+    version_suffix = f" (v{version})" if version and version > 1 else ""
+    line = f"{status['project_id']}{version_suffix}: {status['status']} ({counts})"
+    if status.get("abandoned_reason"):
+        line += f"; abandoned: {status['abandoned_reason']}"
     blocker = status.get("top_blocker")
     if blocker:
         line += f"; held: {blocker['target']} ({blocker['reason']})"
     return line
+
+
+def _amend_xml(record: dict) -> str:
+    lines = [_open_tag("amend", record)]
+    lines.append(f"  <project_id>{escape(record['project_id'])}</project_id>")
+    lines.append(f"  <reason>{escape(record['reason'])}</reason>")
+    for name in ("replaces", "adds", "drops"):
+        ids = record.get(name)
+        if ids:
+            lines.append(f"  <{name}>{escape(','.join(ids))}</{name}>")
+    lines.append("  <steps>")
+    for step in record.get("steps", []):
+        lines.append(_step_xml(step))
+    lines.append("  </steps>")
+    lines.append("</amend>")
+    return "\n".join(lines)
+
+
+def _abandon_xml(record: dict) -> str:
+    return "\n".join([
+        _open_tag("abandon", record),
+        f"  <project_id>{escape(record['project_id'])}</project_id>",
+        f"  <reason>{escape(record['reason'])}</reason>",
+        "</abandon>",
+    ])
 
 
 def _ask_xml(record: dict) -> str:
@@ -223,7 +260,7 @@ _RENDERERS = {
     PROPOSAL: _proposal_xml, PASS: _pass_xml, RULING: _ruling_xml,
     EXECUTED: _executed_xml, ASK: _ask_xml, ANSWER: _answer_xml,
     ESCALATION: _escalation_xml, PROJECT: _project_xml,
-    OBSERVATION: _observation_xml,
+    OBSERVATION: _observation_xml, AMEND: _amend_xml, ABANDON: _abandon_xml,
 }
 
 

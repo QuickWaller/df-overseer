@@ -56,8 +56,8 @@ from typing import Iterator
 from learning.predictions.schema import PENDING
 
 from .schema import (
-    ABANDONED, ACCEPT, ANSWER, ASK, DONE, EXECUTED, FAILED, HELD, ISSUED,
-    OBSERVATION, PROJECT, PROPOSAL, READY, REJECT, RULING,
+    ABANDON, ABANDONED, ACCEPT, AMEND, ANSWER, ASK, DONE, EXECUTED, FAILED,
+    HELD, ISSUED, OBSERVATION, PROJECT, PROPOSAL, READY, REJECT, RULING,
     TRIGGER_ALL_DONE, TRIGGER_ALL_SUCCESS, WAITING, fort_name,
     near_duplicate_reason, normalize_project, sole_writer, validate,
 )
@@ -294,7 +294,62 @@ def _find_project_for_ruling(conn: sqlite3.Connection, ruling_id: str) -> dict |
 
 
 def _step_ids(project: dict) -> set:
-    return {s["id"] for s in project.get("steps", []) if isinstance(s, dict) and "id" in s}
+    return _step_ids_list(project.get("steps", []))
+
+
+def _step_ids_list(steps: list) -> set:
+    return {s["id"] for s in steps if isinstance(s, dict) and "id" in s}
+
+
+def _canonical_step_json(step: dict) -> str:
+    """Canonical JSON of one step, for `amend`'s own byte-identical reuse
+    check (user's call, 2026-10-01, closing the target-seeding gap this
+    handoff first only flagged): a step id kept from the previous version
+    is accepted only if its own definition (`tool`/`args`/`targets`/
+    `requires`/`trigger`/`prefer_after`/`guards`/`id`, whatever the schema
+    defines) did not change at all. `sort_keys=True` makes key order
+    irrelevant; a nested list still compares positionally, which is correct
+    here (`requires` is an ordered edge list, not a set, and reordering it
+    is itself a real change worth catching)."""
+    return json.dumps(step, sort_keys=True, ensure_ascii=False)
+
+
+def _project_id_already_flagged(errors: list[str]) -> bool:
+    """Same idea as `_from_ruling_already_flagged`, for `amend`'s and
+    `abandon`'s own `project_id` (reuses the same error prefix as
+    `executed`'s/`observation`'s `project_id`, see
+    `_project_step_ids_already_flagged`, so this is really just a
+    differently-named wrapper for readability at each call site)."""
+    return _project_step_ids_already_flagged(errors)
+
+
+def _amends_for_project(conn: sqlite3.Connection, project_id: str) -> list[dict]:
+    """Every `amend` record naming `project_id`, oldest first (insertion
+    order) -- the append-only history of plan revisions
+    (`research/2026-09-30-goal-tree-red-team.md` F-3). Never edited, only
+    ever appended to."""
+    rows = conn.execute(
+        "SELECT payload FROM records WHERE kind = ? AND "
+        "json_extract(payload, '$.project_id') = ? ORDER BY rowid ASC",
+        (AMEND, project_id),
+    ).fetchall()
+    return [json.loads(r["payload"]) for r in rows]
+
+
+def _current_steps_and_version(conn: sqlite3.Connection, project: dict) -> tuple[list, int]:
+    """The steps in effect for `project` right now, and that version's
+    number: the original `project`'s own `steps` is version 1; the Nth
+    `amend` record (oldest first) replaces it wholesale with its own
+    `steps`, as version N+1. Never a diff applied to the previous version --
+    each `amend`'s `steps` is read as the complete, authoritative current
+    plan (see `dfqueue.schema`'s own docstring on `amend`), so a step this
+    version drops simply is not in the list read back here; no special-casing
+    needed to exclude a dropped step from "is this project done" below.
+    """
+    amends = _amends_for_project(conn, project["id"])
+    if not amends:
+        return project.get("steps", []), 1
+    return amends[-1]["steps"], len(amends) + 1
 
 
 def _find_duplicate_proposal(conn: sqlite3.Connection, record: dict) -> tuple[str, str] | None:
@@ -504,6 +559,11 @@ def append(record: dict, path: str | Path, *, game_tick: int | None = None) -> d
                 # `step_id` added handoffs/2026-09-28-dfqueue-project-step-schema.md:
                 # must name a real step of `ruling_id`'s own project. Only
                 # checked once `ruling_id` itself resolves to something real.
+                # Resolved against the CURRENT version of the project
+                # (`_current_steps_and_version`, handoffs/2026-10-01-
+                # queue-bugs-and-amend.md item 3) rather than only the
+                # original `project` record's own `steps`, so a step added
+                # by an `amend` is a legal `step_id` here too.
                 if record.get("step_id") is not None and not _project_step_ids_already_flagged(errors):
                     step_id = record["step_id"]
                     project = _find_project_for_ruling(conn, ruling_id)
@@ -512,11 +572,43 @@ def append(record: dict, path: str | Path, *, game_tick: int | None = None) -> d
                             f"record.step_id: {ruling_id!r} has no project yet "
                             "(write a 'project' record for this ruling first)"
                         )
-                    elif step_id not in _step_ids(project):
-                        errors.append(
-                            f"record.step_id: {step_id!r} is not a step of "
-                            f"{project['id']!r}, the project for {ruling_id!r}"
-                        )
+                    else:
+                        current_steps, _version = _current_steps_and_version(conn, project)
+                        if step_id not in _step_ids_list(current_steps):
+                            errors.append(
+                                f"record.step_id: {step_id!r} is not a step of "
+                                f"{project['id']!r}, the project for {ruling_id!r}"
+                            )
+                        else:
+                            # item 2: an `executed` record for a real step
+                            # must actually match that step's own
+                            # declaration, not just name it -- `queue.executed`
+                            # used to accept any tool for any step_id, and to
+                            # accept a step whose own `requires` were not yet
+                            # satisfied.
+                            step = next(s for s in current_steps if s.get("id") == step_id)
+                            if step.get("tool") is not None:
+                                for i, action in enumerate(record.get("actions", [])):
+                                    if isinstance(action, dict) and action.get("tool") != step["tool"]:
+                                        errors.append(
+                                            f"record.actions.{i}.tool: {action.get('tool')!r} "
+                                            f"does not match step {step_id!r}'s own declared "
+                                            f"tool {step['tool']!r}"
+                                        )
+
+                            target_rows = conn.execute(
+                                "SELECT step_id, state FROM step_targets WHERE project_id = ?",
+                                (project["id"],),
+                            ).fetchall()
+                            target_states_by_step: dict = {}
+                            for r in target_rows:
+                                target_states_by_step.setdefault(r["step_id"], []).append(r["state"])
+                            if not step_prerequisites_satisfied(step, target_states_by_step):
+                                errors.append(
+                                    f"record.step_id: {step_id!r}'s own 'requires' are not "
+                                    "yet satisfied (see queue.project_status); it cannot be "
+                                    "executed until its prerequisite steps finish"
+                                )
 
         if kind == PROJECT and not _from_ruling_already_flagged(errors):
             from_ruling = record.get("from_ruling")
@@ -546,6 +638,95 @@ def append(record: dict, path: str | Path, *, game_tick: int | None = None) -> d
                         f"record.from_ruling: {from_ruling!r} already has a "
                         "project; a ruling gets exactly one"
                     )
+
+        if kind == AMEND and not _project_id_already_flagged(errors):
+            project_id = record.get("project_id")
+            proj_row = conn.execute(
+                "SELECT payload FROM records WHERE id = ? AND kind = ?", (project_id, PROJECT)
+            ).fetchone()
+            if proj_row is None:
+                errors.append(
+                    f"record.project_id: {project_id!r} does not refer to an "
+                    "existing project in this queue"
+                )
+            else:
+                project = json.loads(proj_row["payload"])
+                if conn.execute(
+                    "SELECT 1 FROM records WHERE kind = ? AND "
+                    "json_extract(payload, '$.project_id') = ?",
+                    (ABANDON, project_id),
+                ).fetchone() is not None:
+                    errors.append(
+                        f"record.project_id: {project_id!r} is abandoned; an "
+                        "abandoned project cannot be amended"
+                    )
+                else:
+                    previous_steps, _version = _current_steps_and_version(conn, project)
+                    previous_step_ids = _step_ids_list(previous_steps)
+                    new_step_ids = _step_ids_list(record.get("steps") or [])
+                    for name in ("replaces", "drops"):
+                        for sid in record.get(name) or []:
+                            if sid not in previous_step_ids:
+                                errors.append(
+                                    f"record.{name}: {sid!r} is not a step id in the "
+                                    f"previous version of {project_id!r}"
+                                )
+                    for sid in record.get("adds") or []:
+                        if sid not in new_step_ids:
+                            errors.append(
+                                f"record.adds: {sid!r} is not a step id in this "
+                                "amendment's own steps"
+                            )
+
+                    # Enforced, not merely conventional (user's call,
+                    # 2026-10-01): a step id kept from the previous version
+                    # must be byte-identical to it after canonical JSON, or
+                    # this call is refused naming the step id. Without this,
+                    # a step reusing its old id while quietly changing its
+                    # own `targets` would leave the OLD version's now-stale
+                    # target rows lingering in `step_targets` forever
+                    # (`_seed_step_targets` only ever adds rows, never
+                    # prunes one a later version stopped declaring) --
+                    # a changed step must take a fresh id and name the old
+                    # one in `replaces`/`drops` instead, so its old rows are
+                    # left behind cleanly rather than silently reinterpreted
+                    # under an id that no longer means what it used to.
+                    previous_steps_by_id = {
+                        s["id"]: s for s in previous_steps
+                        if isinstance(s, dict) and isinstance(s.get("id"), str) and s["id"]
+                    }
+                    for step in record.get("steps") or []:
+                        if not (isinstance(step, dict) and isinstance(step.get("id"), str) and step["id"]):
+                            continue
+                        sid = step["id"]
+                        prev_step = previous_steps_by_id.get(sid)
+                        if prev_step is not None and _canonical_step_json(step) != _canonical_step_json(prev_step):
+                            errors.append(
+                                f"record.steps: {sid!r} reuses a step id from the "
+                                "previous version but its own definition changed; "
+                                "a changed step must take a fresh id and list the "
+                                "old one in replaces/drops, never redefine an "
+                                "existing id in place"
+                            )
+
+        if kind == ABANDON and not _project_id_already_flagged(errors):
+            project_id = record.get("project_id")
+            proj_row = conn.execute(
+                "SELECT 1 FROM records WHERE id = ? AND kind = ?", (project_id, PROJECT)
+            ).fetchone()
+            if proj_row is None:
+                errors.append(
+                    f"record.project_id: {project_id!r} does not refer to an "
+                    "existing project in this queue"
+                )
+            elif conn.execute(
+                "SELECT 1 FROM records WHERE kind = ? AND "
+                "json_extract(payload, '$.project_id') = ?",
+                (ABANDON, project_id),
+            ).fetchone() is not None:
+                errors.append(
+                    f"record.project_id: {project_id!r} is already abandoned"
+                )
 
         if kind == OBSERVATION:
             project = None
@@ -655,7 +836,9 @@ def append(record: dict, path: str | Path, *, game_tick: int | None = None) -> d
                 _arm_prediction_on_first_execution(conn, record)
                 _apply_executed_target_states(conn, record)
             elif kind == PROJECT:
-                _seed_step_targets(conn, record)
+                _seed_step_targets(conn, record["id"], record.get("steps", []))
+            elif kind == AMEND:
+                _seed_step_targets(conn, record["project_id"], record.get("steps", []))
 
         if duplicate_reason is not None:
             # The reason is reported to the caller of THIS append() so the
@@ -726,21 +909,28 @@ def _arm_prediction_on_first_execution(conn: sqlite3.Connection, record: dict) -
 # rebuild.
 
 
-def _seed_step_targets(conn: sqlite3.Connection, project: dict) -> None:
-    """Called once, when a `project` record is inserted: for every step
-    whose `targets` is a literal `set` (not a `from_step`/query spec, which
-    has no targets known yet -- design §4.3's dynamic-discovery case),
-    insert one row per declared target at `ready` (no `requires`) or
-    `waiting` (an unmet `requires` edge). A step's `requires` is checked
-    against every OTHER step in the same project having at least one target
-    row already `done`/`abandoned` -- but at project-creation time nothing
-    has run yet, so any step with a non-empty `requires` starts `waiting`
-    unconditionally; `all_done` vs `all_success` and requires-satisfaction
-    are evaluated at read time (`project_status` below), not baked into the
-    seed.
+def _seed_step_targets(conn: sqlite3.Connection, project_id: str, steps: list) -> None:
+    """Called once, when a `project` record is inserted (`project_id` is its
+    own id, `steps` its own `steps`), and again for each `amend` record
+    (`project_id` is the ORIGINAL project's id it names, `steps` the
+    amendment's own new steps -- `handoffs/2026-10-01-queue-bugs-and-amend.md`
+    item 3): for every step whose `targets` is a literal `set` (not a
+    `from_step`/query spec, which has no targets known yet -- design §4.3's
+    dynamic-discovery case), insert one row per declared target at `ready`
+    (no `requires`) or `waiting` (an unmet `requires` edge). `INSERT OR
+    IGNORE` below is what makes calling this a second time for an amendment
+    safe: a target already seeded by an earlier version (or already folded
+    to some other state by an `executed` record) is left exactly as it is;
+    only a target this call is the FIRST to mention gets a fresh `ready`/
+    `waiting` row. A step's `requires` is checked against every OTHER step
+    in the same project having at least one target row already
+    `done`/`abandoned` -- but at seed time nothing new has run yet, so any
+    step with a non-empty `requires` starts `waiting` unconditionally;
+    `all_done` vs `all_success` and requires-satisfaction are evaluated at
+    read time (`project_status`/`append`'s own `executed` validation below),
+    not baked into the seed.
     """
-    project_id = project["id"]
-    for step in project.get("steps", []):
+    for step in steps:
         targets = step.get("targets", {})
         target_set = targets.get("set") if isinstance(targets, dict) else None
         if not target_set:
@@ -873,21 +1063,84 @@ def rollback_drift(path: str | Path, project_id: str, current_tick: int) -> list
     ]
 
 
+#: A project-level status distinct from `"active"`/`"done"`: an `abandon`
+#: record exists for it (`handoffs/2026-10-01-queue-bugs-and-amend.md` item
+#: 3). Reuses the `ABANDONED` target-state string on purpose -- both mean
+#: "closed, not by finishing" -- rather than inventing a second constant
+#: for the same idea at a different granularity.
+PROJECT_ABANDONED = ABANDONED
+
+
+def step_status(target_states_for_step: list, has_executed_record: bool) -> str:
+    """One step's own status (design §6, extended by
+    `handoffs/2026-10-01-queue-bugs-and-amend.md` item 1): `done` when it
+    has tracked target rows and every one of them is `done`/`abandoned`, OR
+    when it has NO target rows at all (an implicit step, whose `targets` is
+    always the empty `{"set": []}`; or a real step whose `targets` is a
+    dynamic `from_step` spec, never seeded -- design §4.3) but an `executed`
+    record already covers it; `"active"` otherwise.
+
+    This is deliberately never vacuously `"done"` on an empty list the way
+    `project_status` used to compute it: `all(state in (DONE, ABANDONED)
+    for state in [])` is `True` in Python, so a step never seeded at all
+    used to read `done` by construction, and a project whose only OTHER
+    steps had finished read `done` right along with it -- the exact bug
+    item 1 fixes. A no-rows step reads `done` only from a positive signal
+    (`has_executed_record`), never from the absence of rows to check.
+    """
+    if target_states_for_step:
+        return DONE if all(s in (DONE, ABANDONED) for s in target_states_for_step) else "active"
+    return DONE if has_executed_record else "active"
+
+
+def _step_has_executed_record(conn: sqlite3.Connection, ruling_id: str, step: dict) -> bool:
+    """Whether some `executed` record already covers `step` of the project
+    whose ruling is `ruling_id` -- the positive signal `step_status` above
+    needs for a step with no target rows yet. An implicit step (`design
+    §5.3`'s legacy one-step project) is covered by ANY `executed` record
+    naming this ruling, since those carry no `step_id` at all; a real step
+    is covered only by an `executed` record naming its own `step_id`
+    specifically."""
+    if step.get("implicit"):
+        row = conn.execute(
+            "SELECT 1 FROM records WHERE kind = ? AND "
+            "json_extract(payload, '$.ruling_id') = ?",
+            (EXECUTED, ruling_id),
+        ).fetchone()
+    else:
+        row = conn.execute(
+            "SELECT 1 FROM records WHERE kind = ? AND "
+            "json_extract(payload, '$.ruling_id') = ? AND "
+            "json_extract(payload, '$.step_id') = ?",
+            (EXECUTED, ruling_id, step.get("id")),
+        ).fetchone()
+    return row is not None
+
+
 def project_status(path: str | Path, project_id: str) -> dict:
     """One project's status line, design §6: "the Overseer sees one line per
     active project (status, counts, the top blocker's reason)". Never the
     whole graph.
 
-    `status` is `"done"` when every tracked target is `done`/`abandoned`
-    (there is at least one tracked target), `"active"` otherwise -- except
-    for a project with NO tracked targets at all (an implicit-step project,
-    design §5.3's legacy path), where `"done"` instead means "at least one
-    `executed` record references this project's ruling" -- the same
-    legacy-unchanged behaviour `dfqueue`'s own `unexecuted_accepted_proposals`
-    already reports on for a plain `ruling`. A project-level `abandoned`
-    decision is NOT computed here -- design §4.4 calls it "a decision," and
-    this stream does not implement writing one (see this handoff's Result
-    section)."""
+    `status` is computed per STEP (`step_status` above), then folded: `done`
+    only when every step currently in the plan is itself `done`; `active`
+    otherwise; `"abandoned"` (`PROJECT_ABANDONED`) once an `abandon` record
+    exists for this project, regardless of step state -- checked first, and
+    short-circuits the rest (`handoffs/2026-10-01-queue-bugs-and-amend.md`
+    item 3). `counts`/`top_blocker` are read from the raw `step_targets`
+    rows exactly as before and are NOT remapped on an abandoned project:
+    they report what the game actually reached, not a retroactive rewrite
+    of it (executed history stays untouched by an `abandon`, per that
+    item's own wording; see this handoff's Result section for this call).
+
+    The steps read are the CURRENT version's (`_current_steps_and_version`):
+    the original `project`'s own `steps` if it has never been amended, else
+    the latest `amend`'s own `steps` -- `version` in the returned dict names
+    which one (1 for the original, 2 for the first amendment, and so on).
+    A step a later amendment dropped is simply absent from that latest
+    `steps` list, so it stops counting toward "is this project done" without
+    any special-casing here.
+    """
     with _connect(path) as conn:
         proj_row = conn.execute(
             "SELECT payload FROM records WHERE id = ? AND kind = ?", (project_id, PROJECT)
@@ -895,6 +1148,14 @@ def project_status(path: str | Path, project_id: str) -> dict:
         if proj_row is None:
             raise QueueError(f"no such project: {project_id!r}")
         project = json.loads(proj_row["payload"])
+
+        abandon_row = conn.execute(
+            "SELECT payload FROM records WHERE kind = ? AND "
+            "json_extract(payload, '$.project_id') = ?",
+            (ABANDON, project_id),
+        ).fetchone()
+
+        steps, version = _current_steps_and_version(conn, project)
 
         rows = conn.execute(
             "SELECT id, step_id, target, state, reason FROM step_targets "
@@ -904,28 +1165,41 @@ def project_status(path: str | Path, project_id: str) -> dict:
 
         counts: dict[str, int] = {}
         top_blocker = None
+        rows_by_step: dict = {}
         for r in rows:
             counts[r["state"]] = counts.get(r["state"], 0) + 1
+            rows_by_step.setdefault(r["step_id"], []).append(r["state"])
             if top_blocker is None and r["state"] == HELD:
                 top_blocker = {"step_id": r["step_id"], "target": r["target"], "reason": r["reason"]}
 
-        if rows:
-            status = "done" if all(r["state"] in (DONE, ABANDONED) for r in rows) else "active"
+        if abandon_row is not None:
+            status = PROJECT_ABANDONED
+            abandoned_reason = json.loads(abandon_row["payload"]).get("reason")
         else:
-            executed = conn.execute(
-                "SELECT 1 FROM records WHERE kind = ? AND "
-                "json_extract(payload, '$.ruling_id') = ?",
-                (EXECUTED, project["from_ruling"]),
-            ).fetchone()
-            status = "done" if executed is not None else "active"
+            abandoned_reason = None
+            ruling_id = project["from_ruling"]
+            all_done = True
+            for step in steps:
+                if not (isinstance(step, dict) and isinstance(step.get("id"), str) and step["id"]):
+                    continue
+                own_rows = rows_by_step.get(step["id"], [])
+                has_executed = own_rows == [] and _step_has_executed_record(conn, ruling_id, step)
+                if step_status(own_rows, has_executed) != DONE:
+                    all_done = False
+                    break
+            status = "done" if all_done else "active"
 
-    return {
+    result = {
         "project_id": project_id,
         "summary": project.get("summary"),
         "status": status,
+        "version": version,
         "counts": counts,
         "top_blocker": top_blocker,
     }
+    if abandoned_reason is not None:
+        result["abandoned_reason"] = abandoned_reason
+    return result
 
 
 def list_project_ids(path: str | Path) -> list[str]:

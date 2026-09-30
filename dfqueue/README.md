@@ -101,12 +101,13 @@ match.
 
 ## What this is
 
-Nine record kinds, one append-only SQLite database per fort. (This section
+Eleven record kinds, one append-only SQLite database per fort. (This section
 had said "Three" since the original build; `executed`, `ask`, `answer` were
 each added by a later stream without updating the count here, `escalation`
-was a later stream's own addition, and `project`/`observation` are
-`handoffs/2026-09-28-dfqueue-project-step-schema.md`'s -- corrected now
-rather than compounding the drift again.)
+was a later stream's own addition, `project`/`observation` are
+`handoffs/2026-09-28-dfqueue-project-step-schema.md`'s, and `amend`/`abandon`
+are `handoffs/2026-10-01-queue-bugs-and-amend.md`'s -- corrected now rather
+than compounding the drift again.)
 
 - **`proposal`** — an advisor's proposed action: `id`, `role`, `cycle`,
   `snapshot`, `type` (closed vocabulary, see below), `summary`, `rationale`,
@@ -157,6 +158,23 @@ rather than compounding the drift again.)
   Written only by the `conductor` role, never a model. No MCP tool exposes a
   write path for it yet — the reconciler that would call one is out of
   scope for `handoffs/2026-09-30-project-mcp-tools.md`.
+- **`amend`** -- `research/2026-09-30-goal-tree-red-team.md` F-3's fix:
+  "nothing can carry a change to an accepted project." `project_id`, `steps`
+  (the FULL new step list this version replaces the previous one with,
+  never a diff), `reason` (required), plus declarative `replaces`/`adds`/
+  `drops` step-id lists naming what changed relative to the previous
+  version. Nothing already written is ever overwritten: the original
+  `project` record and every earlier `amend` stay readable, and a step
+  already carried out via `executed` keeps its own record regardless of
+  which version named it. Only the sole_writer may write one. Reachable as
+  `queue.amend` (write, sole_writer only); `queue.project_status` reads the
+  latest version's `steps` and reports its version number.
+- **`abandon`** -- same F-3. Marks an already-accepted project (and its
+  still-open steps) abandoned with a required `reason`. Executed history is
+  untouched, this never edits or removes an `executed` record. Only the
+  sole_writer may write one, and only once per project. Reachable as
+  `queue.abandon` (write, sole_writer only); `queue.project_status` reports
+  `abandoned` status for that project from then on, with the reason.
 
 ## Running it
 

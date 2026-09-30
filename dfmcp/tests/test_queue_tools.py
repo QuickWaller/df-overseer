@@ -1061,3 +1061,163 @@ class TestExecutedStepId:
                 },
                 db_path=path, call_dfhack=_ok_call_dfhack, write_lock=asyncio.Lock(),
             )
+
+    async def test_executed_refuses_a_tool_mismatched_with_the_steps_own_tool(self, tmp_path):
+        """`handoffs/2026-10-01-queue-bugs-and-amend.md` item 2, reachable
+        end to end through the real MCP tool layer."""
+        path = tmp_path / "queue.sqlite3"
+        _proposal, ruling = await _propose_and_rule(path)
+        _p_text, project = await queue_tools.call(
+            queue_tools.QUEUE_PROJECT, "overseer", _project_args(ruling["id"]),
+            db_path=path, call_dfhack=_ok_call_dfhack, write_lock=asyncio.Lock(),
+        )
+        step_id = project["steps"][0]["id"]
+
+        with pytest.raises(queue_tools.QueueToolError, match="does not match step"):
+            await queue_tools.call(
+                queue_tools.QUEUE_EXECUTED, "overseer",
+                {
+                    "ruling_id": ruling["id"],
+                    "step_id": step_id,
+                    "actions": [{"tool": "workshop.build", "outcome": "success"}],
+                    "notes": "Wrong tool for this step.",
+                },
+                db_path=path, call_dfhack=_ok_call_dfhack, write_lock=asyncio.Lock(),
+            )
+
+    async def test_executed_refuses_a_step_whose_requires_are_unsatisfied(self, tmp_path):
+        path = tmp_path / "queue.sqlite3"
+        _proposal, ruling = await _propose_and_rule(path)
+        _p_text, project = await queue_tools.call(
+            queue_tools.QUEUE_PROJECT, "overseer", _project_args(ruling["id"]),
+            db_path=path, call_dfhack=_ok_call_dfhack, write_lock=asyncio.Lock(),
+        )
+        s2 = project["steps"][1]["id"]  # requires s1, never executed yet
+
+        with pytest.raises(queue_tools.QueueToolError, match="not yet satisfied"):
+            await queue_tools.call(
+                queue_tools.QUEUE_EXECUTED, "overseer",
+                {
+                    "ruling_id": ruling["id"],
+                    "step_id": s2,
+                    "actions": [{"tool": "construction.build", "outcome": "success"}],
+                    "notes": "s1 never ran.",
+                },
+                db_path=path, call_dfhack=_ok_call_dfhack, write_lock=asyncio.Lock(),
+            )
+
+
+class TestAmendAbandon:
+    """`handoffs/2026-10-01-queue-bugs-and-amend.md` item 3
+    (`research/2026-09-30-goal-tree-red-team.md` F-3), reachable end to end
+    through the real MCP tool layer -- `queue.amend`/`queue.abandon`."""
+
+    async def test_amend_writes_a_new_version_and_status_reports_it(self, tmp_path):
+        path = tmp_path / "queue.sqlite3"
+        _proposal, ruling = await _propose_and_rule(path)
+        _p_text, project = await queue_tools.call(
+            queue_tools.QUEUE_PROJECT, "overseer", _project_args(ruling["id"]),
+            db_path=path, call_dfhack=_ok_call_dfhack, write_lock=asyncio.Lock(),
+        )
+
+        text, amend = await queue_tools.call(
+            queue_tools.QUEUE_AMEND, "overseer",
+            {
+                "project_id": project["id"],
+                "reason": "s2's wall isn't needed; the tile is already enclosed.",
+                "drops": ["s2"],
+                "steps": [project["steps"][0]],
+            },
+            db_path=path, call_dfhack=_ok_call_dfhack, write_lock=asyncio.Lock(),
+        )
+        assert "<amend" in text
+        assert amend["kind"] == "amend"
+
+        status_text, structured = await queue_tools.call(
+            queue_tools.QUEUE_PROJECT_STATUS, "overseer", {"project_id": project["id"]},
+            db_path=path, call_dfhack=_ok_call_dfhack, write_lock=asyncio.Lock(),
+        )
+        assert "(v2)" in status_text
+        assert structured["count"] == 1
+
+    async def test_amend_refuses_role_arguments(self, tmp_path):
+        path = tmp_path / "queue.sqlite3"
+        _proposal, ruling = await _propose_and_rule(path)
+        _p_text, project = await queue_tools.call(
+            queue_tools.QUEUE_PROJECT, "overseer", _project_args(ruling["id"]),
+            db_path=path, call_dfhack=_ok_call_dfhack, write_lock=asyncio.Lock(),
+        )
+
+        with pytest.raises(queue_tools.QueueToolError, match="unexpected argument"):
+            await queue_tools.call(
+                queue_tools.QUEUE_AMEND, "overseer",
+                {
+                    "project_id": project["id"], "reason": "Testing a stray argument.",
+                    "steps": project["steps"], "role": "architect",
+                },
+                db_path=path, call_dfhack=_ok_call_dfhack, write_lock=asyncio.Lock(),
+            )
+
+    async def test_amend_against_an_unknown_project_is_refused(self, tmp_path):
+        path = tmp_path / "queue.sqlite3"
+        with pytest.raises(queue_tools.QueueToolError, match="does not refer to an existing project"):
+            await queue_tools.call(
+                queue_tools.QUEUE_AMEND, "overseer",
+                {
+                    "project_id": "project-9999", "reason": "No such project.",
+                    "steps": [{
+                        "id": "s1", "tool": "construction.mine-vein", "targets": {"set": ["t1"]},
+                    }],
+                },
+                db_path=path, call_dfhack=_ok_call_dfhack, write_lock=asyncio.Lock(),
+            )
+
+    async def test_abandon_marks_the_project_abandoned_with_its_reason(self, tmp_path):
+        path = tmp_path / "queue.sqlite3"
+        _proposal, ruling = await _propose_and_rule(path)
+        _p_text, project = await queue_tools.call(
+            queue_tools.QUEUE_PROJECT, "overseer", _project_args(ruling["id"]),
+            db_path=path, call_dfhack=_ok_call_dfhack, write_lock=asyncio.Lock(),
+        )
+
+        text, abandon = await queue_tools.call(
+            queue_tools.QUEUE_ABANDON, "overseer",
+            {"project_id": project["id"], "reason": "The vein played out."},
+            db_path=path, call_dfhack=_ok_call_dfhack, write_lock=asyncio.Lock(),
+        )
+        assert "<abandon" in text
+        assert abandon["kind"] == "abandon"
+
+        status_text, structured = await queue_tools.call(
+            queue_tools.QUEUE_PROJECT_STATUS, "overseer", {"project_id": project["id"]},
+            db_path=path, call_dfhack=_ok_call_dfhack, write_lock=asyncio.Lock(),
+        )
+        assert "abandoned" in status_text
+        assert "The vein played out." in status_text
+        assert structured["count"] == 1
+
+    async def test_abandon_refuses_a_second_call(self, tmp_path):
+        path = tmp_path / "queue.sqlite3"
+        _proposal, ruling = await _propose_and_rule(path)
+        _p_text, project = await queue_tools.call(
+            queue_tools.QUEUE_PROJECT, "overseer", _project_args(ruling["id"]),
+            db_path=path, call_dfhack=_ok_call_dfhack, write_lock=asyncio.Lock(),
+        )
+        await queue_tools.call(
+            queue_tools.QUEUE_ABANDON, "overseer",
+            {"project_id": project["id"], "reason": "First abandonment."},
+            db_path=path, call_dfhack=_ok_call_dfhack, write_lock=asyncio.Lock(),
+        )
+
+        with pytest.raises(queue_tools.QueueToolError, match="already abandoned"):
+            await queue_tools.call(
+                queue_tools.QUEUE_ABANDON, "overseer",
+                {"project_id": project["id"], "reason": "Second attempt."},
+                db_path=path, call_dfhack=_ok_call_dfhack, write_lock=asyncio.Lock(),
+            )
+
+    # Rule-6 load-time refusal (a non-sole-writer role granted queue.amend/
+    # queue.abandon refuses to load its roster) belongs in
+    # dfmcp/tests/test_roles.py, alongside queue.project's own equivalent
+    # test (not duplicated here); dfqueue.schema's own write-time role check
+    # is exercised directly in dfqueue/tests/test_schema.py.
