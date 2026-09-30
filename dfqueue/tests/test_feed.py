@@ -119,7 +119,7 @@ def test_build_proposal_badges_reflects_the_latest_ruling():
     # tests/test_no_leaked_addresses.py's private-IPv4 scan.
     "Reachable at 192.0.2.42 on the LAN",
     "The config lives at /etc/df-overseer/secrets.yaml",
-    "Windows path C:\\Users\\wills\\secrets\\file.txt has it",
+    "Windows path C:\\Users\\someone\\secrets\\file.txt has it",
     "Contact admin@example.com for access",
     "The token is aGVsbG93b3JsZHRoaXNpc2FsbG9uZw123456",
     "It links <script>alert(1)</script> in the page",
