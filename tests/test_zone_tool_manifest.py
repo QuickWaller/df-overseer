@@ -303,10 +303,10 @@ def test_place_now_takes_the_same_opt_in_around_furniture_flag_as_find():
     src = _text()
     place_fn = src[src.index("function place_zone"): src.index("-- zone contents (handoffs")]
     assert "truthy_around_furniture(around_furniture)" in place_fn
-    assert "ranked_rects(k, p, dw, dh, level, near, radius_tiles, furniture_ids)" in place_fn
+    assert "ranked_rects(k, p, dw, dh, level, near, radius_tiles, furniture_ids, res_id)" in place_fn
     assert "result.contains_qualifying_furniture" in place_fn
     find_fn = src[src.index("function find_zone_area"): src.index("function check_owner")]
-    assert "ranked_rects(k, p, dw, dh, level, near, radius_tiles, furniture_ids)" in find_fn
+    assert "ranked_rects(k, p, dw, dh, level, near, radius_tiles, furniture_ids, nil)" in find_fn
 
 
 def test_zone_tile_default_behaviour_is_unchanged_when_furniture_not_requested():

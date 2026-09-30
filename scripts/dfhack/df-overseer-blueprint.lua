@@ -138,6 +138,13 @@ local reservations_mod = reqscript('df-overseer-reservations')
 -- neither reqscripts this file back.
 local building_mod = reqscript('df-overseer-building')
 local zone_mod = reqscript('df-overseer-zone')
+-- handoffs/2026-09-30-reservation-gaps.md item 3: the quickfort-CSV parser
+-- (locate_blueprint/parse_sections/load_blueprint) moved out to this
+-- dependency-free leaf so df-overseer-landmarks.lua can reuse it too
+-- without a reqscript cycle (this file already reqscripts landmarks_mod
+-- above) -- see that leaf file's own header. One-directional, same as the
+-- other four above: this file reqscripts it; it reqscripts nothing.
+local parse_mod = reqscript('df-overseer-blueprint-parse')
 
 local NULL = "\0"
 local function encode(v) return json.encode(v, {null = NULL}) end
@@ -149,11 +156,11 @@ end
 local STATE_KEY = 'df-overseer-blueprint_v1'
 local MAX_SITE_TILES = 2500      -- 50x50: no real room comes close
 local MAX_META_DEPTH = 4
-local BLUEPRINT_DIR = 'dfhack-config/blueprints/'
 
--- Section modes this file understands the cells of. Others are skipped for
--- geometry (notes, aliases) or refused (see supported_modes below).
-local GRID_MODES = {dig = true, build = true, place = true, zone = true, meta = true}
+-- GRID_MODES (which section modes carry a grid of cells) moved to
+-- df-overseer-blueprint-parse.lua with parse_sections/load_blueprint (item
+-- 3, see above) -- nothing left in this file needs it directly; every
+-- function below reads already-parsed bp.sections instead of re-parsing.
 -- Modes that need solid tiles already dug: refused while the shell is pending.
 local NEEDS_DUG_SHELL = {build = true, place = true, zone = true}
 -- Symbols whose meaning in a `dig` section is "this cell is carved out".
@@ -268,74 +275,10 @@ end
 -- ---------------------------------------------------------------------------
 -- Reading the blueprint file (the only source of per-template facts)
 -- ---------------------------------------------------------------------------
-
-local function read_file(path)
-  local f, err = io.open(path, 'r')
-  if not f then return nil, tostring(err) end
-  local text = f:read('*a')
-  f:close()
-  return text
-end
-
--- Returns quickfort_name, text  or nil, err.
-local function locate_blueprint(name)
-  if not valid_name(name) then
-    return nil, "blueprint name must be a bare identifier (letters, digits, _ or -), got a value that is not"
-  end
-  local tried = {}
-  for _, rel in ipairs({'templates/' .. name .. '.csv', name .. '.csv'}) do
-    local text = read_file(BLUEPRINT_DIR .. rel)
-    if text then return rel, text end
-    tried[#tried + 1] = rel
-  end
-  return nil, "no blueprint '" .. name .. "' on the guest (looked for " ..
-    table.concat(tried, " and ") .. " under dfhack-config/blueprints/); deploy the .csv first"
-end
-
--- Parses quickfort's multi-section .csv into sections. Only what this file
--- needs: each section's mode, label, modeline flags, and its non-empty cells
--- as {x, y, text}, 1-based, with (1,1) the blueprint's top-left cell.
--- Rules mirrored from quickfort (parse.lua modeline grammar): a line
--- beginning `#` followed by a valid mode word starts a section; in a grid
--- row a cell beginning `#` starts a comment and ends the row; a cell of a
--- single backtick is quickfort's "ignore this cell". Blank lines count as
--- rows. Sections of mode notes/aliases/ignore are recorded but carry no cells.
-local VALID_MODES = {dig = true, build = true, place = true, zone = true,
-  burrow = true, meta = true, notes = true, ignore = true, aliases = true}
-
-local function parse_sections(text)
-  local sections, cur = {}, nil
-  local unnamed = 0
-  for raw in (text .. "\n"):gmatch("([^\n]*)\n") do
-    local line = raw:gsub("\r$", "")
-    local mode = line:match("^#(%a+)")
-    if mode and VALID_MODES[mode] then
-      unnamed = unnamed + 1
-      cur = {
-        mode = mode,
-        label = line:match("label%(([^)]*)%)") or tostring(unnamed),
-        has_start = line:find("start%(") ~= nil,
-        has_hidden = line:find("hidden%(") ~= nil,
-        cells = {}, row = 0, w = 0, h = 0,
-      }
-      sections[#sections + 1] = cur
-    elseif cur and GRID_MODES[cur.mode] then
-      cur.row = cur.row + 1
-      local x = 0
-      for cell in (line .. ","):gmatch("([^,]*),") do
-        x = x + 1
-        local t = cell:match("^%s*(.-)%s*$")
-        if t:sub(1, 1) == "#" then break end
-        if #t > 0 and t ~= "`" then
-          cur.cells[#cur.cells + 1] = {x = x, y = cur.row, text = t}
-          if x > cur.w then cur.w = x end
-          if cur.row > cur.h then cur.h = cur.row end
-        end
-      end
-    end
-  end
-  return sections
-end
+--
+-- locate_blueprint/parse_sections/load_blueprint's own body moved to
+-- df-overseer-blueprint-parse.lua (item 3, see the reqscript comment above):
+-- this file's own `load_blueprint` below is now a one-line delegator.
 
 local function section_by_label(sections, label)
   for _, s in ipairs(sections) do
@@ -384,33 +327,11 @@ end
 -- file's own tests can call it; still never reqscript'd BY
 -- df-overseer-reservations.lua itself -- that file stays a dependency-free
 -- leaf so this file can depend on it without a reqscript cycle (see that
--- file's own header).
+-- file's own header). A one-line delegator to df-overseer-blueprint-parse.lua
+-- (item 3) -- the parsing itself moved there so df-overseer-landmarks.lua can
+-- reuse it too; the shape this returns is unchanged.
 function load_blueprint(name)
-  local qname, text = locate_blueprint(name)
-  if not qname then return nil, text end
-  local sections = parse_sections(text)
-  if #sections == 0 then return nil, "no quickfort sections found in " .. qname end
-  local w, h = 0, 0
-  local room = nil
-  for _, s in ipairs(sections) do
-    if s.has_start or s.has_hidden then
-      return nil, "section '" .. s.label .. "' uses start() or hidden(), which shift the origin; this verb does not support that"
-    end
-    if GRID_MODES[s.mode] and s.mode ~= "meta" then
-      if s.w > w then w = s.w end
-      if s.h > h then h = s.h end
-    end
-    if s.mode == "zone" and not room and #s.cells > 0 then
-      local x1, y1, x2, y2 = 1e9, 1e9, 0, 0
-      for _, c in ipairs(s.cells) do
-        x1 = math.min(x1, c.x); y1 = math.min(y1, c.y)
-        x2 = math.max(x2, c.x); y2 = math.max(y2, c.y)
-      end
-      room = {x1 = x1, y1 = y1, x2 = x2, y2 = y2}
-    end
-  end
-  if w == 0 or h == 0 then return nil, "blueprint has no cells to apply" end
-  return {name = name, qname = qname, sections = sections, w = w, h = h, room = room}
+  return parse_mod.load_blueprint(name)
 end
 
 -- ---------------------------------------------------------------------------

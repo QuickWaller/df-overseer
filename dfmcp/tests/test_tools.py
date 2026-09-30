@@ -49,6 +49,7 @@ from dfmcp.tools import (
     ArgumentError,
     ToolSchemaError,
     _arg_specs_for_tool,
+    _describe,
     argv_for_call,
     build_tool_names,
     tool_definitions,
@@ -273,6 +274,52 @@ def test_documented_argument_tokens_all_have_descriptions(registry):
     specs = {s.name: s for s in _arg_specs_for_tool(build)}
     for name in ("level", "near_landmark", "radius_tiles", "w", "h", "rank", "blueprint_file"):
         assert specs[name].description, f"{name!r} has no description"
+
+
+def test_command_scoped_description_wins_over_script_scoped_and_bare():
+    """handoffs/2026-09-30-reservation-gaps.md item 4: a per-COMMAND entry
+    beats a per-SCRIPT entry beats a bare entry. Proven directly against
+    _describe with a throwaway argument name so this test cannot pass by
+    accident against real _ARG_DESCRIPTIONS content."""
+    import dfmcp.tools as tools_mod
+
+    original = dict(tools_mod._ARG_DESCRIPTIONS)
+    try:
+        tools_mod._ARG_DESCRIPTIONS["WIDGET"] = "bare"
+        tools_mod._ARG_DESCRIPTIONS["script.WIDGET"] = "script-scoped"
+        tools_mod._ARG_DESCRIPTIONS["script.command.WIDGET"] = "command-scoped"
+
+        assert _describe("WIDGET", None, None) == "bare"
+        assert _describe("WIDGET", "script", None) == "script-scoped"
+        assert _describe("WIDGET", "script", "script.command") == "command-scoped"
+        # A different command in the same script still falls back to the
+        # script-scoped entry, not the other command's own.
+        assert _describe("WIDGET", "script", "script.other-command") == "script-scoped"
+        # An unrelated script's own command falls all the way back to bare.
+        assert _describe("WIDGET", "other-script", "other-script.command") == "bare"
+    finally:
+        tools_mod._ARG_DESCRIPTIONS.clear()
+        tools_mod._ARG_DESCRIPTIONS.update(original)
+
+
+def test_zone_assign_owner_override_no_longer_blended_with_zone_place(registry):
+    """The live gap this item fixes: zone.place's OVERRIDE (a reservation
+    exception reason) and zone.assign-owner's OVERRIDE (an exact-word-true
+    switch) used to share one blended bare description. Each command's own
+    OVERRIDE must now describe only its own meaning."""
+    place = registry.get("zone.place")
+    assign_owner = registry.get("zone.assign-owner")
+    place_override = [s for s in _arg_specs_for_tool(place) if s.name == "override"][0]
+    owner_override = [s for s in _arg_specs_for_tool(assign_owner) if s.name == "override"][0]
+
+    assert "reservation" in place_override.description.lower()
+    assert "res_id" in place_override.description.lower()
+
+    assert "exact word true" in owner_override.description.lower()
+    assert "allowed-kinds gate" not in owner_override.description.lower()
+    assert "recorded on the reservation" not in owner_override.description.lower()
+    # And the two descriptions actually differ -- the whole point.
+    assert place_override.description != owner_override.description
 
 
 def test_input_schema_carries_description_when_present(registry, roster):

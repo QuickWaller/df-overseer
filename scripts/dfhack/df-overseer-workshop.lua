@@ -122,6 +122,12 @@ local landmarks_mod = reqscript('df-overseer-landmarks')
 -- for this tool -- refuses a tile inside a reservation it does not hold.
 local reservations_mod = reqscript('df-overseer-reservations')
 local openarea_mod = reqscript('df-overseer-openarea')
+-- handoffs/2026-09-30-reservation-gaps.md item 2: resolves this file's own
+-- workshop kinds through df-overseer-building.lua's own kind table (its
+-- exported list_kinds, the same one kind_token_for_key uses), so the kind
+-- checked against a reservation's allowed_kinds is the identical token a
+-- template's #build cell would resolve to -- see resolve_workshop_kind below.
+local building_mod = reqscript('df-overseer-building')
 -- Read-only use of df-overseer-stocks.lua's get_seeds() (fort-owned seed
 -- ids), for the kitchen seed_protection check below -- reqscript reads
 -- that file, it does not edit it, so this stays outside this stream's
@@ -131,6 +137,11 @@ local stocks_mod = reqscript('df-overseer-stocks')
 local MAX_RADIUS = 60
 local DEFAULT_RADIUS = 30
 local MAX_RESULTS = 5
+-- df-overseer-building.lua's own null-field sentinel (its nn() helper):
+-- kind_summary's `subtype` field is this exact string, never Lua nil, when
+-- a kind has no subtype -- matching df-overseer-construction.lua's own
+-- identical local NULL, used the same way in resolve_construction_kind.
+local NULL = "\0"
 
 -- workshop_type read directly from hack/scripts/internal/quickfort/build.lua
 -- on this install (its `wl`/`wz` #build symbol entries), not guessed.
@@ -144,20 +155,90 @@ local MAX_RESULTS = 5
 -- verification standard still/kitchen already set. None needs a container
 -- (mason/mechanic/carpenter output blocks/mechanisms/finished goods
 -- directly, never into a barrel).
+-- Keyed by df-overseer-building.lua's own per-subtype TOKEN (handoffs/
+-- 2026-09-30-reservation-gaps.md item 2: "if a genuinely per-workshop
+-- policy lives in that table, leave it but key it by the building token"),
+-- not this file's own former lowercase keys (still/kitchen/mason/mechanic/
+-- carpenter) -- see resolve_workshop_kind below, which is the only place
+-- that ever indexes this table, always with a token freshly resolved
+-- through building_mod.list_kinds, never a hardcoded assumption that these
+-- five strings ARE the live token (a token collision there would surface as
+-- "no labor/container policy for this workshop kind yet", not a silent
+-- mismatch).
 local KIND_INFO = {
-  still = {label = "Still", subtype = df.workshop_type.Still,
+  Still = {label = "Still",
     labor = "BREWER", needs_container = "BARREL"},
-  kitchen = {label = "Kitchen", subtype = df.workshop_type.Kitchen,
+  Kitchen = {label = "Kitchen",
     labor = "COOK", needs_container = nil,
     named_requirement = "restrict cooking of plants and seeds needed for "
       .. "replanting, or the farm loses its seed stock"},
-  mason = {label = "Mason's Workshop", subtype = df.workshop_type.Masons,
+  Masons = {label = "Mason's Workshop",
     labor = "MASON", needs_container = nil},
-  mechanic = {label = "Mechanic's Workshop", subtype = df.workshop_type.Mechanics,
+  Mechanics = {label = "Mechanic's Workshop",
     labor = "MECHANIC", needs_container = nil},
-  carpenter = {label = "Carpenter's Workshop", subtype = df.workshop_type.Carpenters,
+  Carpenters = {label = "Carpenter's Workshop",
     labor = "CARPENTER", needs_container = nil},
 }
+
+-- This file's own former lowercase kind keys (predating the reservation
+-- work), kept working exactly as before: still/kitchen/mason/mechanic/
+-- carpenter (case-insensitive) each map to the SUBTYPE name
+-- df-overseer-building.lua's own kind table uses for that same workshop
+-- (Masons/Mechanics/Carpenters are plural; Still/Kitchen already agree).
+-- Any caller may also pass a building.lua token or subtype name directly
+-- (e.g. "Masons"), since resolve_workshop_kind below tries the raw input
+-- first.
+local OLD_KEY_ALIAS = {
+  still = "Still", kitchen = "Kitchen", mason = "Masons",
+  mechanic = "Mechanics", carpenter = "Carpenters",
+}
+
+-- Resolves `name` (an old lowercase key, or a building.lua token/subtype
+-- name) to {token =, label =, labor =, needs_container =,
+-- named_requirement =} -- token is ALWAYS building_mod's own live-resolved
+-- value for a type "Workshop" kind, the identical domain
+-- df-overseer-blueprint.lua's template_allowed_kinds derives a template's
+-- #build cells through (df-overseer-construction.lua's own
+-- resolve_construction_kind already established this "read through
+-- building.lua's exported list_kinds, never re-implement the table"
+-- pattern; this is the same pattern restricted to type "Workshop" instead
+-- of "Construction"). Returns nil, err on an unknown kind, an ambiguous
+-- match, or a real building.lua Workshop kind this table has no policy for
+-- yet (never silently guessed).
+local function resolve_workshop_kind(name)
+  local raw = tostring(name or "")
+  local query = OLD_KEY_ALIAS[raw:lower()] or raw
+  local kinds, err = building_mod.list_kinds(query)
+  if not kinds then return nil, "could not read building kinds: " .. tostring(err) end
+  local q = query:lower()
+  local matches = {}
+  for _, k in ipairs(kinds) do
+    if k.type == "Workshop" then
+      local subtype = (k.subtype ~= NULL) and tostring(k.subtype) or nil
+      if k.token:lower() == q or (subtype and subtype:lower() == q) then
+        matches[#matches + 1] = k
+      end
+    end
+  end
+  if #matches == 0 then
+    return nil, "unknown workshop kind: " .. tostring(name)
+      .. " (expected still/kitchen/mason/mechanic/carpenter, or a Workshop token/subtype this install knows)"
+  end
+  if #matches > 1 then
+    return nil, "ambiguous workshop kind " .. tostring(name) .. ": ambiguity this tool did not expect"
+  end
+  local k = matches[1]
+  local policy = KIND_INFO[k.token]
+  if not policy then
+    return nil, "workshop kind " .. tostring(k.token)
+      .. " is a real building.lua Workshop kind but has no labor/container policy in this tool yet"
+  end
+  return {
+    token = k.token, label = policy.label,
+    labor = policy.labor, needs_container = policy.needs_container,
+    named_requirement = policy.named_requirement,
+  }
+end
 
 -- Same is_fort_owned test as df-overseer-stocks.lua (not flags.trader, not
 -- garbage_collect/removed, not on a hidden tile) -- duplicated rather than
@@ -377,7 +458,12 @@ local function find_candidates(w, h, z, min_x, max_x, min_y, max_y)
   return candidates
 end
 
-local function ranked_candidates(w, h, level, near, radius_tiles)
+-- res_id (handoffs/2026-09-30-reservation-gaps.md item 1): a candidate
+-- window overlapping a reservation this call does not hold is dropped
+-- before ranking, via reservations_mod's own shared `filter_reserved`.
+-- find_workshop_area passes nil (no RES_ID argument there); build_workshop
+-- passes its own res_id.
+local function ranked_candidates(w, h, level, near, radius_tiles, res_id)
   local ax, ay, az = landmarks_mod.get_landmark_centroid(near)
   if not ax then
     return nil, "landmark not found: " .. near
@@ -390,6 +476,8 @@ local function ranked_candidates(w, h, level, near, radius_tiles)
 
   local candidates = find_candidates(
     w, h, z, ax - radius, ax + radius, ay - radius, ay + radius)
+  candidates = reservations_mod.filter_reserved(candidates, res_id,
+    function(c) return reservations_mod.rect_tiles(c.x, c.y, z, w, h) end)
 
   for _, c in ipairs(candidates) do
     local dx, dy = c.x - ax, c.y - ay
@@ -439,11 +527,9 @@ local function truthy_dry_run(v)
 end
 
 function find_workshop_area(w, h, level, near, kind, radius_tiles)
-  local kind_info = KIND_INFO[tostring(kind):lower()]
-  if not kind_info then
-    return nil, "unknown workshop kind: " .. tostring(kind) .. " (expected still/kitchen/mason/mechanic/carpenter)"
-  end
-  local chosen, err, resolved_z = ranked_candidates(w, h, level, near, radius_tiles)
+  local kind_info, kind_err = resolve_workshop_kind(kind)
+  if not kind_info then return nil, kind_err end
+  local chosen, err, resolved_z = ranked_candidates(w, h, level, near, radius_tiles, nil)
   if err then
     return nil, err
   end
@@ -471,27 +557,23 @@ end
 -- DRY_RUN defaults to true. A dry run resolves the candidate and returns
 -- exactly what would be built, without calling quickfort. See header --
 -- the real path is UNTESTED live (mutation forbidden this session).
--- RES_ID/OVERRIDE (handoffs/2026-09-30-reservation-holding.md item 2): the
--- kind checked against a reservation's own allowed_kinds is this tool's own
--- lowercase kind key (e.g. "carpenter"), NOT df-overseer-building.lua's
--- generic per-subtype token (which a template's #build cell resolves to,
--- e.g. "Carpenters") -- the two vocabularies are not guaranteed to agree
--- (this file's five kind keys predate the reservation work and are its own
--- labor/container-aware lookup, not building.lua's generic one). No
--- template in this repo declares a workshop phase today, so this has no
--- live effect either way; flagged rather than silently assumed correct for
--- when one does.
+-- RES_ID/OVERRIDE (handoffs/2026-09-30-reservation-holding.md item 2, FIXED
+-- handoffs/2026-09-30-reservation-gaps.md item 2): the kind checked against
+-- a reservation's own allowed_kinds is now resolve_workshop_kind's own
+-- `.token`, df-overseer-building.lua's live-resolved per-subtype token --
+-- the identical value a template's #build cell would resolve to through
+-- that same file's kind_token_for_key, so the two vocabularies can no
+-- longer disagree the way this file's own former lowercase keys
+-- (still/kitchen/mason/mechanic/carpenter) did.
 function build_workshop(w, h, level, near, kind, blueprint_file, rank, radius_tiles, dry_run, res_id, override)
   if override ~= nil and res_id == nil then
     return nil, "OVERRIDE requires RES_ID"
   end
-  local kind_info = KIND_INFO[tostring(kind):lower()]
-  if not kind_info then
-    return nil, "unknown workshop kind: " .. tostring(kind) .. " (expected still/kitchen/mason/mechanic/carpenter)"
-  end
+  local kind_info, kind_err = resolve_workshop_kind(kind)
+  if not kind_info then return nil, kind_err end
   rank = rank or 1
   local dry = truthy_dry_run(dry_run)
-  local chosen, err, resolved_z = ranked_candidates(w, h, level, near, radius_tiles)
+  local chosen, err, resolved_z = ranked_candidates(w, h, level, near, radius_tiles, res_id)
   if err then
     return nil, err
   end
@@ -511,7 +593,7 @@ function build_workshop(w, h, level, near, kind, blueprint_file, rank, radius_ti
   -- Computed before check_tiles/designating; recorded only at the real
   -- success point below (handoff review, 2026-09-30).
   local tiles = reservations_mod.rect_tiles(c.x, c.y, z, w, h)
-  local kind_key = tostring(kind):lower()
+  local kind_key = kind_info.token
   local needs_override = override ~= nil and reservations_mod.override_needed(tiles, res_id, kind_key)
   local conflict = reservations_mod.check_tiles(tiles, nil, res_id, kind_key, override)
   if conflict then return nil, conflict.message end

@@ -151,7 +151,13 @@ end
 -- single tile), real coordinates kept. Shared by find_well/build_well, same
 -- "one ranking implementation" guarantee every other df-overseer-*.lua
 -- fused pair gives.
-local function ranked_candidates(level, near, radius_tiles)
+-- res_id (handoffs/2026-09-30-reservation-gaps.md item 1): a candidate tile
+-- overlapping a reservation this call does not hold is dropped before
+-- ranking, via reservations_mod's own shared `filter_reserved` (a well is
+-- always a single tile, so `tiles_for` is a one-element rect_tiles call).
+-- find_well passes nil (no RES_ID argument there); build_well passes its
+-- own res_id.
+local function ranked_candidates(level, near, radius_tiles, res_id)
   local ax, ay, az = landmarks_mod.get_landmark_centroid(near)
   if not ax then
     return nil, "landmark not found: " .. near
@@ -176,6 +182,8 @@ local function ranked_candidates(level, near, radius_tiles)
       end
     end
   end
+  candidates = reservations_mod.filter_reserved(candidates, res_id,
+    function(c) return reservations_mod.rect_tiles(c.x, c.y, z, 1, 1) end)
   table.sort(candidates, function(a, b) return a.dist_to_anchor < b.dist_to_anchor end)
 
   local chosen = {}
@@ -262,7 +270,7 @@ local function requirements()
 end
 
 function find_well(level, near, radius_tiles)
-  local chosen, err, resolved_z = ranked_candidates(level, near, radius_tiles)
+  local chosen, err, resolved_z = ranked_candidates(level, near, radius_tiles, nil)
   if err then
     return nil, err
   end
@@ -320,7 +328,7 @@ function build_well(level, near, blueprint_file, rank, radius_tiles, dry_run, re
   end
   rank = rank or 1
   local dry = truthy_dry_run(dry_run)
-  local chosen, err, resolved_z = ranked_candidates(level, near, radius_tiles)
+  local chosen, err, resolved_z = ranked_candidates(level, near, radius_tiles, res_id)
   if err then
     return nil, err
   end

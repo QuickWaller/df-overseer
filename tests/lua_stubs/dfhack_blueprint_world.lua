@@ -96,6 +96,7 @@ function surface.boundary_material(id) local b = find_zone(id); return {zone_id 
 SURFACE_ORIG = function() return find_zone end
 SURFACE = surface
 local RESERVATIONS_MOD = nil
+local PARSE_MOD = nil
 -- handoffs/2026-09-30-reservation-holding.md item 1: fake, minimal
 -- kind_token_for_key tables, the same shape df-overseer-building.lua's and
 -- df-overseer-zone.lua's own exported kind_token_for_key have -- NOT the
@@ -142,5 +143,21 @@ function reqscript(n)
       RESERVATIONS_MOD = env
     end
     return RESERVATIONS_MOD
+  end
+  if n == "df-overseer-blueprint-parse" then
+    -- Loads the REAL df-overseer-blueprint-parse.lua (handoffs/2026-09-30-
+    -- reservation-gaps.md item 3): a dependency-free leaf, no game API at
+    -- all (pure text/CSV parsing), so there is nothing to fake -- same
+    -- real-load-over-fake choice as df-overseer-reservations.lua above.
+    if not PARSE_MOD then
+      local f = io.open(BLUEPRINT_PARSE_LUA_PATH, "r")
+      local src = f:read("*a")
+      f:close()
+      local env = setmetatable({}, {__index = _G})
+      local chunk = assert(load(src, "blueprint-parse.lua", "t", env))
+      chunk()
+      PARSE_MOD = env
+    end
+    return PARSE_MOD
   end
 end

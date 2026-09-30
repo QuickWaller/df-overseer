@@ -600,7 +600,15 @@ end
 -- each component's own tiles/bbox fields, never stripped here). Shared by
 -- the find and place paths, so "rank 1" can never mean two different bodies
 -- depending which entry point asked.
-local function ranked_water_bodies(level, near, radius_tiles)
+-- res_id (handoffs/2026-09-30-reservation-gaps.md item 1): a component whose
+-- own tiles overlap a reservation this call does not hold is dropped before
+-- ranking, via reservations_mod's own shared `filter_reserved` -- water
+-- bodies are not rectangular, so `tiles_for` converts each component's own
+-- native {x,y} tile pairs (c.tiles) to the {x=,y=,z=} shape check_tiles
+-- expects, exactly as place_water's own final check already does. find_water
+-- passes nil (find_zone_area has no RES_ID argument); place_water passes its
+-- own res_id.
+local function ranked_water_bodies(level, near, radius_tiles, res_id)
   local ax, ay, az = landmarks_mod.get_landmark_centroid(near)
   if not ax then
     return nil, "landmark not found: " .. near
@@ -612,6 +620,11 @@ local function ranked_water_bodies(level, near, radius_tiles)
   local radius = math.min(radius_tiles or DEFAULT_RADIUS, MAX_RADIUS)
 
   local components = find_water_components(z, ax - radius, ax + radius, ay - radius, ay + radius)
+  components = reservations_mod.filter_reserved(components, res_id, function(c)
+    local tiles = {}
+    for _, t in ipairs(c.tiles) do tiles[#tiles + 1] = {x = t[1], y = t[2], z = z} end
+    return tiles
+  end)
 
   for _, c in ipairs(components) do
     local cx = (c.min_x + c.max_x) / 2
@@ -680,7 +693,7 @@ local function water_info(kind_label, token, c, z, rank)
 end
 
 local function find_water(k, level, near, radius_tiles)
-  local chosen, err, z = ranked_water_bodies(level, near, radius_tiles)
+  local chosen, err, z = ranked_water_bodies(level, near, radius_tiles, nil)
   if err then return nil, err end
   local results = {}
   for _, c in ipairs(chosen) do
@@ -691,7 +704,7 @@ end
 
 local function place_water(k, level, near, rank, radius_tiles, dry, res_id, override)
   rank = rank or 1
-  local chosen, err, z = ranked_water_bodies(level, near, radius_tiles)
+  local chosen, err, z = ranked_water_bodies(level, near, radius_tiles, res_id)
   if err then return nil, err end
   if rank < 1 or rank > #chosen then
     return nil, string.format(
@@ -844,8 +857,12 @@ end
 -- zone_tile -- nil for every caller except find's own AROUND_FURNITURE
 -- path; place never passes it. When non-nil, a candidate whose window
 -- contains qualifying furniture sorts before one that does not (see the
--- RANKING AND TOP-LEVEL REPORTING header comment above).
-local function ranked_rects(k, p, w, h, level, near, radius_tiles, furniture_type_ids)
+-- RANKING AND TOP-LEVEL REPORTING header comment above). res_id
+-- (handoffs/2026-09-30-reservation-gaps.md item 1): a candidate window
+-- overlapping a reservation this call does not hold is dropped before
+-- ranking, via reservations_mod's own shared `filter_reserved`. find_zone_area
+-- passes nil (no RES_ID argument there); place_zone passes its own res_id.
+local function ranked_rects(k, p, w, h, level, near, radius_tiles, furniture_type_ids, res_id)
   local ax, ay, az = landmarks_mod.get_landmark_centroid(near)
   if not ax then return nil, nil, "landmark not found: " .. tostring(near) end
   local z, level_err = resolve_level(az, level, near)
@@ -937,6 +954,8 @@ local function ranked_rects(k, p, w, h, level, near, radius_tiles, furniture_typ
   -- every candidate's has_furniture is false, so the new branch never
   -- fires and ranking is byte-for-byte the same as before this change
   -- (test_default_ranking_is_unchanged_without_around_furniture).
+  candidates = reservations_mod.filter_reserved(candidates, res_id,
+    function(c) return reservations_mod.rect_tiles(c.x, c.y, z, w, h) end)
   table.sort(candidates, function(a, b)
     if furniture_type_ids and a.has_furniture ~= b.has_furniture then return a.has_furniture end
     if p.prefer_indoors and a.indoors ~= b.indoors then return a.indoors end
@@ -1287,7 +1306,7 @@ function find_zone_area(kind_name, w, h, level, near, radius_tiles, around_furni
     end
   end
 
-  local chosen, search, err, z = ranked_rects(k, p, dw, dh, level, near, radius_tiles, furniture_ids)
+  local chosen, search, err, z = ranked_rects(k, p, dw, dh, level, near, radius_tiles, furniture_ids, nil)
   if err then return nil, err end
   if #chosen == 0 then
     local rj = search.rejected
@@ -1619,7 +1638,7 @@ function place_zone(kind_name, w, h, level, near, rank, radius_tiles, dry_run, o
     end
   end
 
-  local chosen, search, err, z = ranked_rects(k, p, dw, dh, level, near, radius_tiles, furniture_ids)
+  local chosen, search, err, z = ranked_rects(k, p, dw, dh, level, near, radius_tiles, furniture_ids, res_id)
   if err then return nil, err end
   if rank < 1 or rank > #chosen then
     return nil, string.format("no candidate at rank %d (found %d near %s); search: %s",

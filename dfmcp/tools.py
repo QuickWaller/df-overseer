@@ -164,6 +164,26 @@ three tools this stream touched, plus the ones shared widely enough
 (`W`/`H`/`RANK`) to be worth describing once. Every entry states plainly
 that the argument is never a raw coordinate, where that's true.
 
+**Lookup order** (`_describe`), most specific wins: a per-COMMAND key
+(`f"{tool.id}.{name}"`, e.g. `"zone.assign-owner.OVERRIDE"`) beats a
+per-SCRIPT key (`f"{scope}.{name}"`, `scope` being `tool.id.split(".", 1)[0]`,
+e.g. `"blueprint.SITE"`) beats a bare key (`name`, e.g. `"OVERRIDE"`).
+Per-script scoping existed first (an argument named the same thing means
+something different in a different script -- `blueprint.SITE` is a site or
+reservation handle, `ZONE_ID` elsewhere is a zone). Per-command scoping was
+added 2026-09-30 (`handoffs/2026-09-30-reservation-gaps.md` item 4) once
+per-script stopped being fine-grained enough: `zone.place`'s `OVERRIDE` (a
+reservation-exception reason string) and `zone.assign-owner`'s `OVERRIDE` (an
+exact-word-`true` switch) are two commands in the SAME script, "zone.", so a
+scoped `"zone.OVERRIDE"` entry would have wrongly applied to both. The bare
+`"OVERRIDE"` entry now describes only the reservation-exception meaning (used
+by every OVERRIDE-taking command except `zone.assign-owner`);
+`"zone.assign-owner.OVERRIDE"` describes that one command's own, unrelated
+meaning. `_arg_specs_for_tool` passes both `scope` and `tool.id` down through
+`_parse_arg_tokens`/`_parse_one` to `_describe`; `_parse_arg_token` (the
+single-token entry point kept for callers that only see one name) passes
+neither, matching its own pre-scoping behaviour.
+
 ## Turning a call back into argv: the one real trap
 
 Ground truth for the shape, confirmed by reading the dispatch code of every
@@ -496,18 +516,28 @@ _ARG_DESCRIPTIONS: Dict[str, str] = {
         "\"starter-room-5x5.csv\" -- not a path on this repo's own "
         "filesystem, and not a coordinate."
     ),
+    # Split into a per-COMMAND entry (zone.assign-owner.OVERRIDE, below) plus
+    # this bare fallback, rather than one entry blending both meanings
+    # (handoffs/2026-09-30-reservation-gaps.md item 4: "zone.place's OVERRIDE
+    # ... and zone.assign-owner's OVERRIDE share one blended description",
+    # since tools.py's scope used to resolve per-SCRIPT only -- "zone." --
+    # which cannot distinguish two commands in the same script). This bare
+    # entry now describes only the reservation-exception-reason meaning, used
+    # by every designating tool's OVERRIDE except zone.assign-owner's.
     "OVERRIDE": (
-        "Two unrelated meanings depending on the tool. For zone.assign-owner: only the "
-        "exact word true overrides -- it allows replacing a zone's existing owner or "
-        "giving a unit a second zone of the same kind. For every OTHER designating "
-        "tool's own OVERRIDE (building.build, zone.place, workshop.build, farm.build, "
+        "A free-text reason string for a one-off exception to RES_ID's own "
+        "allowed-kinds gate (building.build, zone.place, workshop.build, farm.build, "
         "well.build, openarea.build, diggable.dig/dig-stair, construction.mine-vein/"
-        "build, landmarks.build): a free-text reason string for a one-off exception to "
-        "RES_ID's own allowed-kinds gate, valid only together with RES_ID, recorded on "
+        "build, landmarks.build), valid only together with RES_ID, recorded on "
         "the reservation (see blueprint.reservations); it never changes the "
         "reservation's own purpose or allowed kinds -- re-purposing a room is unreserve "
         "plus a new reserve, never this. Leave it out otherwise; the refusal names the "
         "handle, its purpose and the kinds it does allow."
+    ),
+    "zone.assign-owner.OVERRIDE": (
+        "Only the exact word true overrides -- it allows replacing a zone's existing "
+        "owner or giving a unit a second zone of the same kind. Unlike every other "
+        "tool's own OVERRIDE, this one has nothing to do with reservations or RES_ID."
     ),
     "ZONE_ID": (
         "An existing zone's own id, as zone.list gives it in its id field "
@@ -542,7 +572,22 @@ class ArgSpec:
 _PLACEHOLDER_RE = re.compile(r"^[A-Za-z][A-Za-z0-9_]*$")
 
 
-def _describe(inner: str, scope: Optional[str]) -> Optional[str]:
+def _describe(inner: str, scope: Optional[str], tool_id: Optional[str] = None) -> Optional[str]:
+    """Lookup order, most specific first (handoffs/2026-09-30-reservation-gaps.md
+    item 4): a per-COMMAND entry (`f"{tool_id}.{inner}"`, e.g. "zone.assign-owner.OVERRIDE")
+    wins over a per-SCRIPT entry (`f"{scope}.{inner}"`, e.g. "zone.OVERRIDE") wins over a
+    bare entry (`inner`, e.g. "OVERRIDE"). Command-level scoping exists because
+    `tool.id.split(".", 1)[0]` (the script) is not fine-grained enough when two
+    commands in the SAME script give the same argument name two different
+    meanings -- `zone.place`'s OVERRIDE (a reservation-exception reason string)
+    and `zone.assign-owner`'s OVERRIDE (an exact-word-true switch) used to share
+    one blended bare description before this; `zone.assign-owner.OVERRIDE` now
+    overrides it for that one command only, leaving the bare entry to describe
+    every other OVERRIDE-taking command undiluted."""
+    if tool_id is not None:
+        commanded = _ARG_DESCRIPTIONS.get(f"{tool_id}.{inner}")
+        if commanded is not None:
+            return commanded
     if scope is not None:
         scoped = _ARG_DESCRIPTIONS.get(f"{scope}.{inner}")
         if scoped is not None:
@@ -551,7 +596,13 @@ def _describe(inner: str, scope: Optional[str]) -> Optional[str]:
 
 
 def _parse_one(
-    word: str, *, required: bool, raw: str, group: Optional[str], scope: Optional[str]
+    word: str,
+    *,
+    required: bool,
+    raw: str,
+    group: Optional[str],
+    scope: Optional[str],
+    tool_id: Optional[str] = None,
 ) -> ArgSpec:
     """One name inside a token: a placeholder, a literal-choice, or a
     repeated placeholder (`NAME...`)."""
@@ -578,13 +629,15 @@ def _parse_one(
         raw=raw,
         required=required,
         json_type=json_type,
-        description=_describe(base, scope),
+        description=_describe(base, scope, tool_id),
         repeated=repeated,
         group=group,
     )
 
 
-def _parse_arg_tokens(token: str, scope: Optional[str] = None) -> List[ArgSpec]:
+def _parse_arg_tokens(
+    token: str, scope: Optional[str] = None, tool_id: Optional[str] = None
+) -> List[ArgSpec]:
     """Every ArgSpec one manifest token stands for: one for `NAME`, `[NAME]`,
     `NAME...` and `[NAME...]`; one per member for a group `[A B]`."""
     required = True
@@ -599,11 +652,16 @@ def _parse_arg_tokens(token: str, scope: Optional[str] = None) -> List[ArgSpec]:
     if not words:
         raise ToolSchemaError(f"argument token {token!r} is empty")
     if len(words) == 1:
-        return [_parse_one(words[0], required=required, raw=token, group=None, scope=scope)]
+        return [
+            _parse_one(
+                words[0], required=required, raw=token, group=None, scope=scope, tool_id=tool_id
+            )
+        ]
     if required:  # unreachable from the registry (whitespace splits an unbracketed token)
         raise ToolSchemaError(f"argument token {token!r} contains a space outside brackets")
     specs = [
-        _parse_one(w, required=False, raw=token, group=token, scope=scope) for w in words
+        _parse_one(w, required=False, raw=token, group=token, scope=scope, tool_id=tool_id)
+        for w in words
     ]
     for spec, w in zip(specs, words):
         if spec.repeated or spec.enum is not None:
@@ -630,7 +688,7 @@ def _arg_specs_for_tool(tool: Tool) -> List[ArgSpec]:
     scope = tool.id.split(".", 1)[0]
     prelim: List[ArgSpec] = []
     for tok in tool.args:
-        prelim.extend(_parse_arg_tokens(tok, scope))
+        prelim.extend(_parse_arg_tokens(tok, scope, tool.id))
 
     for i, spec in enumerate(prelim):
         if spec.repeated and i != len(prelim) - 1:

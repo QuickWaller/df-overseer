@@ -108,14 +108,18 @@
 local json = require('json')
 -- handoffs/2026-09-30-room-reservations.md decision 3/4: build_at_landmark
 -- designates a blueprint on map tiles, so it too must refuse a reservation
--- it does not hold. This tool takes no W/H (see build_at_landmark's own
--- header) and never parses the blueprint file to learn its footprint, so
--- unlike the other designating tools, it can only cheaply check its own
--- anchor tile, not the full (unknown-sized) footprint the blueprint will
--- actually cover -- a real, named limitation, not silently skipped.
+-- it does not hold.
 local reservations_mod = reqscript('df-overseer-reservations')
 local textutil = reqscript('df-overseer-textutil')
 local reachability = reqscript('df-overseer-reachability')
+-- handoffs/2026-09-30-reservation-gaps.md item 3: build_at_landmark used to
+-- check only its own anchor tile, because it never learned the blueprint's
+-- footprint size. df-overseer-blueprint.lua's own quickfort-CSV parser now
+-- lives in this dependency-free leaf (reused here rather than a second CSV
+-- parser) -- NOT df-overseer-blueprint.lua directly, since that file
+-- already reqscripts this one (for near-landmark siting): reqscripting it
+-- back would close a two-way cycle (see the leaf file's own header).
+local blueprint_parse_mod = reqscript('df-overseer-blueprint-parse')
 
 local GLOBAL_KEY = 'df-overseer-landmarks_v1'
 local MAX_EXITS_PER_LANDMARK = 3
@@ -349,9 +353,13 @@ end
 -- never assigned into, printed, or returned.
 -- RES_ID/OVERRIDE (handoffs/2026-09-30-reservation-holding.md item 2): no
 -- KIND concept here either -- checked against the fixed literal
--- "landmark_build". Out of scope per that handoff: still only the anchor
--- tile, not the blueprint's full footprint (see the header comment above on
--- why this tool cannot check that).
+-- "landmark_build". FIXED handoffs/2026-09-30-reservation-gaps.md item 3:
+-- every tile of BLUEPRINT_FILE's own footprint is now checked, anchored at
+-- the landmark's own centroid as its top-left -- the same top-left anchoring
+-- `quickfort run BLUEPRINT_FILE -c cx,cy,z` below already uses. If the
+-- file's footprint cannot be read at all, this refuses rather than silently
+-- falling back to the old anchor-only check (a blueprint that cannot even be
+-- parsed for its size cannot be reservation-checked responsibly either).
 function build_at_landmark(name, blueprint_file, res_id, override)
   if override ~= nil and res_id == nil then
     return nil, "OVERRIDE requires RES_ID"
@@ -361,9 +369,12 @@ function build_at_landmark(name, blueprint_file, res_id, override)
     return nil, "landmark not found: " .. name
   end
 
-  -- Anchor-tile-only check -- see header on why this tool cannot check a
-  -- full footprint.
-  local tiles = {{x = cx, y = cy, z = cz}}
+  local fp, fp_err = blueprint_parse_mod.load_blueprint_file(blueprint_file)
+  if not fp then
+    return nil, "could not read BLUEPRINT_FILE's own footprint (refusing rather than " ..
+      "falling back to an anchor-only reservation check): " .. tostring(fp_err)
+  end
+  local tiles = reservations_mod.rect_tiles(cx, cy, cz, fp.w, fp.h)
   local needs_override = override ~= nil and reservations_mod.override_needed(tiles, res_id, "landmark_build")
   local conflict = reservations_mod.check_tiles(tiles, nil, res_id, "landmark_build", override)
   if conflict then return nil, conflict.message end

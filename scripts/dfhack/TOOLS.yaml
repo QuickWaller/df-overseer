@@ -191,7 +191,15 @@ df-overseer-landmarks.lua:
         those for the mechanism and the top-left-vs-center quickfort bug
         both of them had). No live-test claim on record for this one
         specifically -- treat as needing verification before relying on it,
-        not as broken.
+        not as broken. FIXED handoffs/2026-09-30-reservation-gaps.md item 3:
+        the reservation check used to cover only the anchor tile, since this
+        tool never learned BLUEPRINT_FILE's own footprint size. Now reads
+        the footprint via the extracted df-overseer-blueprint-parse.lua leaf
+        (the same quickfort-CSV parser df-overseer-blueprint.lua itself now
+        delegates to, moved out so this file can reuse it without a
+        reqscript cycle -- that file already reqscripts this one) and checks
+        every tile the blueprint will cover; a footprint that cannot be read
+        refuses outright rather than falling back to anchor-only.
 
 df-overseer-overview.lua:
   build_order_item: 4

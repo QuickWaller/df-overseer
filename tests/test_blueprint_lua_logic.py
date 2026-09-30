@@ -61,6 +61,14 @@ class World:
         # own assumptions about what reservations_mod does.
         self.lua.execute("RESERVATIONS_LUA_PATH = %r" % str(
             REPO_ROOT / "scripts" / "dfhack" / "df-overseer-reservations.lua"))
+        # handoffs/2026-09-30-reservation-gaps.md item 3: the quickfort-CSV
+        # parser moved to this dependency-free leaf so
+        # df-overseer-landmarks.lua could reuse it without a reqscript cycle;
+        # blueprint.lua's own load_blueprint is now a one-line delegator to
+        # it, loaded for real here for the same reason as reservations.lua
+        # above.
+        self.lua.execute("BLUEPRINT_PARSE_LUA_PATH = %r" % str(
+            REPO_ROOT / "scripts" / "dfhack" / "df-overseer-blueprint-parse.lua"))
         self.lua.execute(STUB.read_text(encoding="utf-8"))
         load = self.lua.eval("function(src) return load(src, 'blueprint.lua') end")
         chunk = load(LUA.read_text(encoding="utf-8"))

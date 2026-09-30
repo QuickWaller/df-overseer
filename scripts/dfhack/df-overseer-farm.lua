@@ -310,7 +310,12 @@ local function resolve_level(az, level, landmark_name)
   return z
 end
 
-local function ranked_candidates(w, h, level, near, radius_tiles)
+-- res_id (handoffs/2026-09-30-reservation-gaps.md item 1): a candidate
+-- window overlapping a reservation this call does not hold is dropped
+-- before ranking, via reservations_mod's own shared `filter_reserved`.
+-- find_farm_plot_area passes nil (no RES_ID argument there); build_farm_plot
+-- passes its own res_id.
+local function ranked_candidates(w, h, level, near, radius_tiles, res_id)
   local ax, ay, az = landmarks_mod.get_landmark_centroid(near)
   if not ax then
     return nil, "landmark not found: " .. near
@@ -323,6 +328,8 @@ local function ranked_candidates(w, h, level, near, radius_tiles)
 
   local candidates = find_candidates(
     w, h, z, ax - radius, ax + radius, ay - radius, ay + radius)
+  candidates = reservations_mod.filter_reserved(candidates, res_id,
+    function(c) return reservations_mod.rect_tiles(c.x, c.y, z, w, h) end)
 
   for _, c in ipairs(candidates) do
     local dx, dy = c.x - ax, c.y - ay
@@ -429,7 +436,7 @@ local function valid_crops_for(plot_outside)
 end
 
 function find_farm_plot_area(w, h, level, near, radius_tiles)
-  local chosen, err, resolved_z = ranked_candidates(w, h, level, near, radius_tiles)
+  local chosen, err, resolved_z = ranked_candidates(w, h, level, near, radius_tiles, nil)
   if err then
     return nil, err
   end
@@ -495,7 +502,7 @@ function build_farm_plot(w, h, level, near, blueprint_file, rank, radius_tiles, 
   end
   rank = rank or 1
   local dry = truthy_dry_run(dry_run)
-  local chosen, err, resolved_z = ranked_candidates(w, h, level, near, radius_tiles)
+  local chosen, err, resolved_z = ranked_candidates(w, h, level, near, radius_tiles, res_id)
   if err then
     return nil, err
   end

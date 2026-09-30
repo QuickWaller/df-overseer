@@ -564,7 +564,15 @@ local function walkable(x, y, z, cache)
 end
 
 -- Returns chosen (list of {x,y,dist}), search_stats, err, z
-local function ranked_sites(k, w, h, level, near, radius_tiles)
+-- res_id (handoffs/2026-09-30-reservation-gaps.md item 1): a candidate
+-- window overlapping a reservation this call does not hold is dropped
+-- before ranking, via reservations_mod's own shared `filter_reserved`
+-- (the same helper df-overseer-diggable.lua's/df-overseer-openarea.lua's
+-- own ranked_candidates already use), so RANK N never lands on reserved
+-- ground and then refuses at build_kind's own check_tiles below.
+-- find_kind passes nil (no RES_ID argument exists there); build_kind
+-- passes its own res_id.
+local function ranked_sites(k, w, h, level, near, radius_tiles, res_id)
   local ax, ay, az = landmarks_mod.get_landmark_centroid(near)
   if not ax then return nil, nil, "landmark not found: " .. tostring(near) end
   local z, level_err = resolve_level(az, level, near)
@@ -640,6 +648,8 @@ local function ranked_sites(k, w, h, level, near, radius_tiles)
       end
     end
   end
+  candidates = reservations_mod.filter_reserved(candidates, res_id,
+    function(c) return reservations_mod.rect_tiles(c.x, c.y, z, w, h) end)
   table.sort(candidates, function(a, b) return a.dist < b.dist end)
 
   local chosen = {}
@@ -1117,7 +1127,7 @@ function find_kind(kind_name, w, h, level, near, radius_tiles, material_choice)
   if not k then return nil, kerr end
   local dw, dh = resolve_dims(k, w, h)
   if not dw then return nil, dh end
-  local chosen, search, err, z = ranked_sites(k, dw, dh, level, near, radius_tiles)
+  local chosen, search, err, z = ranked_sites(k, dw, dh, level, near, radius_tiles, nil)
   if err then return nil, err end
   if #chosen == 0 then
     return nil, string.format("no site for %s (%dx%d) near %s; search: %d tiles checked, %s eligible, %d check errors%s",
@@ -1152,7 +1162,7 @@ function build_kind(kind_name, w, h, level, near, rank, radius_tiles, dry_run, m
   if not dw then return nil, dh end
   rank = rank or 1
   local dry = truthy_dry_run(dry_run)
-  local chosen, search, err, z = ranked_sites(k, dw, dh, level, near, radius_tiles)
+  local chosen, search, err, z = ranked_sites(k, dw, dh, level, near, radius_tiles, res_id)
   if err then return nil, err end
   if rank < 1 or rank > #chosen then
     return nil, string.format("no candidate at rank %d (found %d near %s); search: %d tiles checked, %s eligible, %d check errors",
