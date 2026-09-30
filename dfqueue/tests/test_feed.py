@@ -114,7 +114,10 @@ def test_build_proposal_badges_reflects_the_latest_ruling():
 
 @pytest.mark.parametrize("text", [
     "See https://example.com/status for details",
-    "Reachable at 192.168.1.42 on the LAN",
+    # RFC 5737 TEST-NET-1 documentation address, not a real host -- chosen
+    # deliberately so this fixture itself never trips
+    # tests/test_no_leaked_addresses.py's private-IPv4 scan.
+    "Reachable at 192.0.2.42 on the LAN",
     "The config lives at /etc/df-overseer/secrets.yaml",
     "Windows path C:\\Users\\wills\\secrets\\file.txt has it",
     "Contact admin@example.com for access",
