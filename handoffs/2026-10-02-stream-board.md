@@ -82,6 +82,43 @@ It becomes the board.
 - External scripts only from cdnjs/jsdelivr (none should be needed).
 - Never show a model a rendered map: this page is for humans only, fine.
 
+## Plan (executor, before starting)
+
+1. `dfqueue/feed_status.py`: add pure, records-only functions (no SQLite
+   `step_targets` dependency, since the offline fixtures are JSONL only and
+   `load_records_readonly` never sees that table either): derive each
+   current-version step's board state (done/active/ready/waiting/hold),
+   target counts when the step's `targets` is a literal `set`, and the
+   version that added it (from each `amend`'s own `adds` list). A thin
+   `public_text.yaml` loader, tolerant of the file not existing yet (the
+   sibling stream owns it).
+2. `dfqueue/feed.py`: extend `build_projects_view` to carry status
+   (active/hold/done/abandoned), urgency (sanitised to the closed
+   enum), proposal/ruling links, a public display name (`public_title` or
+   a truncated `summary` fallback) and the step list from (1). Apply the
+   existing `find_unsafe_pattern` safety net to every new public-facing
+   string. Keep the existing allowlist discipline (public dict never
+   carries a private field).
+3. Fixtures: hand-built `records.jsonl` (not run through `store.append`,
+   since this worktree's `schema.py` does not yet know the sibling's new
+   fields) covering a done project, an active one with a held step, a
+   waiting/ready chain, an amended plan with an added and a dropped step,
+   and a turned-down proposal.
+4. Tests in `dfqueue/tests/` for the derivation (done/ready/waiting/active/
+   hold, added-step tagging, dropped-step exclusion) and that the public
+   projection still only carries allowlisted keys.
+5. `web/stream/app.js` + `style.css`: rebuild the page as the mockup's
+   option E split layout: header with theme toggle, live view left,
+   scrolling board right (goal strip, four sections, cards), a details
+   panel that replaces the column, an SVG job graph (ported from the
+   mockup's `layoutJobs`/`jobGraph`/`miniGraph`), Terminal 2 default and
+   Stone 2 behind the toggle (`localStorage`, try/catch).
+6. `web/stream/README.md` update, asset version bump to `?v=4`.
+7. Verify: `python -m pytest`, then serve the export locally and check both
+   themes at desktop and 375px with a scripted headless Chrome (system
+   Chrome via `puppeteer-core`, already available offline-equivalent: no
+   deploy, just driving a local static file server).
+
 ## Done when
 
 - `python -m pytest` green for the feed and publisher tests; add tests for
