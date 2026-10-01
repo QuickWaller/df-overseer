@@ -67,7 +67,7 @@ from typing import Any, Dict, List, Optional
 
 import yaml
 
-from dfqueue.feed import build_items, find_unsafe_pattern
+from dfqueue.feed import find_unsafe_pattern
 from dfqueue.schema import (
     ANSWER,
     ASK,
@@ -353,24 +353,6 @@ def _spokes(roster, tr: dict) -> dict:
     return spokes
 
 
-def _recent_lines(records: List[dict], role: str, *, limit: int = 60) -> List[dict]:
-    """This role's own public lines, oldest first (the page groups by game
-    day itself, the same way the board does). Reuses `dfqueue.feed`'s own
-    item builder and safety net rather than re-deriving either."""
-    items = build_items(records, public=True)
-    mine = [it for it in items if it.get("role") == role]
-    lines = []
-    for it in mine[-limit:]:
-        if it.get("withheld"):
-            text = "(one message withheld)"
-        elif it.get("text"):
-            text = it["text"]
-        else:
-            continue
-        lines.append({"game_date": it.get("game_date"), "text": text, "type": it.get("type")})
-    return lines
-
-
 def build_agents_json(
     records: List[dict],
     *,
@@ -381,8 +363,12 @@ def build_agents_json(
 ) -> dict:
     """The whole Agents page's data: roster, models, tool lists (from the
     SAME loader `dfmcp` enforces at runtime, never a hand-kept copy),
-    charters and their git history, track record and recent lines from the
-    current fort's queue, and spoke counts for the hub-and-spoke map."""
+    charters and their git history, track record from the current fort's
+    queue, and spoke counts for the hub-and-spoke map. "Recent lines" is
+    NOT built here: `web/stream/app.js` filters the fort's own already-
+    published `open.json` by role client-side, the same file the board
+    reads, rather than this module duplicating that file's content into a
+    second, per-role JSON export."""
     manifest = _load_roster_manifest(agents_dir)
     sole_writer = manifest.get("sole_writer")
     roster = roster or _default_roster(registry, agents_dir)
