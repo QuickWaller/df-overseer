@@ -10,6 +10,7 @@
 # Usage:
 #   scripts/vm-ssh.sh df 'uptime'              # the fort VM   (DF_VM_IP)
 #   scripts/vm-ssh.sh openclaw 'systemctl ...' # the agent VM  (OPENCLAW_VM_IP)
+#   scripts/vm-ssh.sh relay 'uptime'           # the viewer relay (RELAY_VM_IP, user relay)
 #   scripts/vm-ssh.sh df --copy LOCAL REMOTE   # scp a file to the fort VM
 #
 # The address is read by key from .env (never the whole file), stripped of
@@ -29,7 +30,8 @@ shift || true
 case "$target" in
   df)       env_key="DF_VM_IP" ;;
   openclaw) env_key="OPENCLAW_VM_IP" ;;
-  *) echo "usage: vm-ssh.sh {df|openclaw} COMMAND | --copy LOCAL REMOTE" >&2; exit 2 ;;
+  relay)    env_key="RELAY_VM_IP"; SSH_USER="${DF_RELAY_SSH_USER:-relay}" ;;
+  *) echo "usage: vm-ssh.sh {df|openclaw|relay} COMMAND | --copy LOCAL REMOTE" >&2; exit 2 ;;
 esac
 
 if [ ! -r "$ENV_FILE" ]; then
