@@ -105,3 +105,17 @@ call timing not re-read).
 - Open: why the Manager never takes `ManageWorkOrders`. The longest
   unpaused stretch this fort has had is a few game days; a one-month
   supervised window watching for that job is proposed to the user.
+
+## labor.quota (deploys `2026-10-01-g`, `2026-10-01-h`)
+
+Granted: `labor.quota` overseer only; `labor.quota-status` overseer,
+architect, quartermaster. Live counts: overseer 97, architect 53,
+consultant 29, quartermaster 25, conductor 16.
+
+- `quota-status HAUL_ITEM` first read `mode: unrecognised`: autolabor's
+  real line is `haulers, currently 18 dwarfs`, the stub had invented a bare
+  `haulers`. Parser and stub fixed (`dfe796b`); the corrected stub fails the
+  old parser. Live after: HAUL_ITEM `haulers`, 18 by autolabor and 18 by
+  independent count; MINE `automatic`, minimum 2, maximum 200, 2 and 2.
+- `quota HAUL_ITEM 1 200` dry run: reports `would_set` without writing. No
+  real write yet.
