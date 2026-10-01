@@ -36,10 +36,10 @@ http://127.0.0.1:8090 {
 		file_server
 	}
 	handle /view {
-		redir /vnc.html?autoconnect=true&resize=scale 302
+		redir * /vnc.html?autoconnect=true&resize=scale 302
 	}
 	handle /stream* {
-		redir / 302
+		redir * / 302
 	}
 	handle {
 		reverse_proxy 127.0.0.1:CHANGEME_WEBSOCKIFY_PUBLIC_PORT
@@ -66,10 +66,10 @@ http://127.0.0.1:8091 {
 		file_server
 	}
 	handle /view {
-		redir /vnc.html?autoconnect=true&resize=scale 302
+		redir * /vnc.html?autoconnect=true&resize=scale 302
 	}
 	handle /stream* {
-		redir / 302
+		redir * / 302
 	}
 	handle {
 		reverse_proxy 127.0.0.1:CHANGEME_WEBSOCKIFY_CONTROL_PORT
