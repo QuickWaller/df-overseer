@@ -1,0 +1,21 @@
+# Public-facing text for closed vocabularies the queue schema validates
+# against. One data entry per code, no new code needed to add one -- the
+# same "one data entry, no new code" rule CLAUDE.md's "Tools must be
+# generalisable" project-specific rule applies to tools.
+#
+# Loaded once by `dfqueue.schema._load_public_text` (`lru_cache`, same
+# pattern as `_load_roster`). An unknown code is refused at write time
+# against this file's own keys, never a hardcoded tuple in the schema.
+#
+# Added handoffs/2026-10-02-queue-display-fields.md, design
+# research/2026-10-01-stream-page-design.md §3.3 item 7.
+
+hold_codes:
+  no_material_in_reach: "Waiting on a material within reach."
+  site_unreachable: "The site cannot currently be reached."
+  site_flooded: "The site is flooded."
+  no_worker: "No worker is available for this job."
+  waiting_for_haul: "Waiting on a hauling job to finish first."
+  preview_failed: "The plan's preview failed, so it is held rather than built on a guess."
+  tool_refused: "The tool that would do this refused the request."
+  other: "Held for another reason."
