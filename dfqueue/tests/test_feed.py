@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
+from pathlib import Path
 
 import pytest
 
@@ -209,10 +210,14 @@ def test_observation_never_produces_a_public_item():
     assert item is None
 
 
-def test_project_amend_abandon_carry_no_public_text_yet_named_gap():
-    # design §3.3 item 6 (public_title/public_rationale) is not stored yet;
-    # these must read text: None, never fall back to the private
-    # summary/because/reason fields.
+def test_project_amend_abandon_with_no_public_rationale_carry_no_public_text():
+    # design §3.3 item 6's `public_rationale` is read when the Overseer
+    # wrote one (see test_project_amend_abandon_public_rationale_becomes_
+    # the_chat_text below); these fixtures do not set it, so the chat
+    # item's own text stays None -- never a fallback to the private
+    # summary/because/reason fields (those stay operator-only, and a
+    # truncated `summary` is only ever used as projects.json's display
+    # NAME, never as this chat line's body text).
     for record in (
         make_project(id="project-0001", from_ruling="ruling-0001", summary="private plan summary"),
         make_amend(id="amend-0001", project_id="project-0001", reason="private amend reason"),
@@ -224,6 +229,18 @@ def test_project_amend_abandon_carry_no_public_text_yet_named_gap():
         assert item["text"] is None
         dumped = json.dumps(item)
         assert "private" not in dumped
+
+
+def test_project_amend_abandon_public_rationale_becomes_the_chat_text():
+    for record in (
+        make_project(id="project-0001", from_ruling="ruling-0001", public_rationale="A new project."),
+        make_amend(id="amend-0001", project_id="project-0001", public_rationale="The plan changed."),
+        make_abandon(id="abandon-0001", project_id="project-0001", public_rationale="Giving up on this one."),
+    ):
+        item = feed.build_public_item(
+            record, seq=1, reply_to=None, thread=record["id"], badge=None, ctx={},
+        )
+        assert item["text"] == record["public_rationale"]
 
 
 def test_build_public_item_refuses_an_unrecognised_kind():
@@ -298,6 +315,20 @@ def test_operator_item_carries_the_full_record():
     assert items[0]["record"] == record
 
 
+def test_operator_item_also_carries_the_flat_kind_dispatchable_shape():
+    # Page code (the stream board's turned-down-proposal lookup, its
+    # conversation renderer) reads kind/id/role/text the same way on both
+    # projections -- it only reaches into `record` for an operator-only
+    # detail. A bug where operator items had none of these (only a nested
+    # `record`) silently emptied every kind-filtered list in operator mode.
+    record = make_ruling(id="ruling-0001", proposal_id="proposal-0001")
+    item = feed.build_items([record], public=False)[0]
+    assert item["kind"] == "ruling"
+    assert item["id"] == "ruling-0001"
+    assert item["role"] == "overseer"
+    assert item["text"] == feed.build_items([record], public=True)[0]["text"]
+
+
 # ---- projects view ------------------------------------------------------------
 
 
@@ -338,6 +369,150 @@ def test_projects_view_counts_amend_versions():
     ]
     view = feed.build_projects_view(records, public=True)
     assert view["projects"]["project-0001"]["version"] == 3
+
+
+# ---- projects view: board fields (handoffs/2026-10-02-stream-board.md) -----
+
+
+def _project_records(**project_overrides):
+    return [
+        make_proposal(id="proposal-0001"),
+        make_ruling(id="ruling-0001", proposal_id="proposal-0001"),
+        make_project(id="project-0001", from_ruling="ruling-0001", **project_overrides),
+    ]
+
+
+def test_projects_view_carries_status_links_and_steps():
+    view = feed.build_projects_view(_project_records(), public=True)
+    entry = view["projects"]["project-0001"]
+    assert entry["status"] == "active"
+    assert entry["ruling_id"] == "ruling-0001"
+    assert entry["proposal_id"] == "proposal-0001"
+    assert [s["id"] for s in entry["steps"]] == [
+        "project-0001/s1", "project-0001/s2",
+    ]
+
+
+def test_projects_view_description_is_the_public_rationale():
+    records = _project_records(public_rationale="Brewing the fort's first drink.")
+    view = feed.build_projects_view(records, public=True)
+    assert view["projects"]["project-0001"]["description"] == "Brewing the fort's first drink."
+    assert view["projects"]["project-0001"]["description"] is not None
+
+
+def test_projects_view_description_is_none_when_absent_no_summary_fallback():
+    view = feed.build_projects_view(_project_records(), public=True)
+    assert view["projects"]["project-0001"]["description"] is None
+
+
+def test_projects_view_public_name_prefers_public_title_over_summary():
+    view = feed.build_projects_view(
+        _project_records(public_title="First workshop area"), public=True,
+    )
+    assert view["projects"]["project-0001"]["name"] == "First workshop area"
+
+
+def test_projects_view_public_name_falls_back_to_a_truncated_summary():
+    records = _project_records(summary="A " + "very " * 20 + "long private-audience summary.")
+    view = feed.build_projects_view(records, public=True)
+    name = view["projects"]["project-0001"]["name"]
+    assert name is not None
+    assert len(name) <= feed._DISPLAY_NAME_MAX
+    assert name.endswith("…")
+
+
+def test_projects_view_public_name_is_none_with_no_title_and_no_summary():
+    records = _project_records(summary=None)
+    view = feed.build_projects_view(records, public=True)
+    assert view["projects"]["project-0001"]["name"] is None
+
+
+def test_projects_view_urgency_sanitised_on_public_raw_on_operator():
+    public_view = feed.build_projects_view(
+        _project_records(urgency="urgent-ish"), public=True,
+    )
+    operator_view = feed.build_projects_view(
+        _project_records(urgency="urgent-ish"), public=False,
+    )
+    assert public_view["projects"]["project-0001"]["urgency"] is None
+    assert operator_view["projects"]["project-0001"]["urgency"] == "urgent-ish"
+
+
+def test_projects_view_known_urgency_passes_through_on_both_sides():
+    for which in (True, False):
+        view = feed.build_projects_view(
+            _project_records(urgency="high"), public=which,
+        )
+        assert view["projects"]["project-0001"]["urgency"] == "high"
+
+
+def test_projects_view_public_steps_never_carry_held_detail():
+    records = _project_records() + [
+        make_executed(
+            id="executed-0001", ruling_id="ruling-0001", cycle=9,
+            step_id="project-0001/s1",
+            actions=[{
+                "tool": "construction.mine-vein", "outcome": "blocked",
+                "targets": ["ring-13-ore-1"], "target_state": "held",
+                "detail": "the private refusal text",
+            }],
+        ),
+    ]
+    public_view = feed.build_projects_view(records, public=True)
+    operator_view = feed.build_projects_view(records, public=False)
+    public_dump = json.dumps(public_view)
+    assert "the private refusal text" not in public_dump
+    operator_step = next(
+        s for s in operator_view["projects"]["project-0001"]["steps"]
+        if s["id"] == "project-0001/s1"
+    )
+    assert operator_step["held_detail"] == "the private refusal text"
+
+
+def test_projects_view_public_hold_text_from_a_mapped_hold_code(tmp_path, monkeypatch):
+    public_text_path = tmp_path / "public_text.yaml"
+    public_text_path.write_text(
+        "no_worker: No dwarf is free for this job.\n", encoding="utf-8",
+    )
+    original_load = feed.feed_status.load_public_text
+    monkeypatch.setattr(
+        feed.feed_status, "load_public_text",
+        lambda *a, **k: original_load(public_text_path),
+    )
+    records = _project_records() + [
+        make_executed(
+            id="executed-0001", ruling_id="ruling-0001", cycle=9,
+            step_id="project-0001/s1",
+            actions=[{
+                "tool": "construction.mine-vein", "outcome": "blocked",
+                "targets": ["ring-13-ore-1"], "target_state": "held",
+            }],
+        ),
+        make_observation(
+            id="observation-0001", project_id="project-0001",
+            step_id="project-0001/s1",
+            results=[{
+                "target": "ring-13-ore-1", "status": "not_observable",
+                "reason": "no free miner", "hold_code": "no_worker",
+            }],
+        ),
+    ]
+    view = feed.build_projects_view(records, public=True)
+    step = next(
+        s for s in view["projects"]["project-0001"]["steps"]
+        if s["id"] == "project-0001/s1"
+    )
+    assert step["state"] == "hold"
+    assert step["hold_code"] == "no_worker"
+    assert step["hold_text"] == "No dwarf is free for this job."
+
+
+def test_projects_view_abandoned_project_status():
+    records = _project_records() + [
+        make_abandon(id="abandon-0001", project_id="project-0001"),
+    ]
+    view = feed.build_projects_view(records, public=True)
+    assert view["projects"]["project-0001"]["status"] == "abandoned"
 
 
 # ---- segmenting ---------------------------------------------------------------
@@ -454,6 +629,80 @@ def test_write_feed_closed_segments_land_on_disk_with_matching_names(tmp_path):
     assert seg_path.exists()
     seg_payload = json.loads(seg_path.read_text(encoding="utf-8"))
     assert len(seg_payload["items"]) == 200
+
+
+# ---- multiple forts (register 2026-10-02, "plan for more than one fort") --
+
+
+def test_fort_feed_dir_shape():
+    assert feed.fort_feed_dir("/data/public", "uniboslan") == Path("/data/public/forts/uniboslan")
+
+
+def test_build_forts_index_marks_the_upserted_fort_current_and_others_not():
+    existing = [
+        {"id": "uniboslan", "name": "Ragwind", "status": "live", "current": True},
+    ]
+    forts = feed.build_forts_index(
+        existing, {"id": "second-fort", "name": "Second Fort", "status": "live"},
+    )
+    by_id = {f["id"]: f for f in forts}
+    assert by_id["second-fort"]["current"] is True
+    assert by_id["uniboslan"]["current"] is False
+
+
+def test_build_forts_index_updating_the_same_fort_again_keeps_one_entry():
+    existing = [{"id": "uniboslan", "name": "Ragwind", "status": "live", "current": True}]
+    forts = feed.build_forts_index(
+        existing, {"id": "uniboslan", "name": "Ragwind", "status": "lost"},
+    )
+    assert len(forts) == 1
+    assert forts[0]["status"] == "lost"
+    assert forts[0]["current"] is True
+
+
+def test_build_forts_index_is_sorted_by_id():
+    existing = [{"id": "zzz-fort", "name": "Z", "status": "live", "current": True}]
+    forts = feed.build_forts_index(existing, {"id": "aaa-fort", "name": "A", "status": "live"})
+    assert [f["id"] for f in forts] == ["aaa-fort", "zzz-fort"]
+
+
+def test_read_forts_index_missing_file_is_empty(tmp_path):
+    assert feed.read_forts_index(tmp_path) == []
+
+
+def test_write_fort_feed_writes_under_forts_subdir_and_updates_the_index(tmp_path):
+    items = feed.build_items([make_proposal(id="proposal-0001")], public=True)
+    feed.write_fort_feed(
+        items, tmp_path, fort_id="uniboslan", fort_name="Ragwind", fort_status="live",
+        projects={"thread_to_project": {}, "projects": {}},
+    )
+    fort_dir = tmp_path / "forts" / "uniboslan"
+    assert (fort_dir / "head.json").exists()
+    assert (fort_dir / "open.json").exists()
+
+    forts_index = json.loads((tmp_path / "forts.json").read_text(encoding="utf-8"))
+    assert forts_index == {
+        "forts": [{"id": "uniboslan", "name": "Ragwind", "status": "live", "current": True}],
+    }
+
+
+def test_write_fort_feed_a_second_fort_is_added_without_losing_the_first(tmp_path):
+    items = feed.build_items([make_proposal(id="proposal-0001")], public=True)
+    feed.write_fort_feed(
+        items, tmp_path, fort_id="uniboslan", fort_name="Ragwind", fort_status="live",
+        projects={"thread_to_project": {}, "projects": {}},
+    )
+    feed.write_fort_feed(
+        items, tmp_path, fort_id="second-fort", fort_name="Second Fort", fort_status="live",
+        projects={"thread_to_project": {}, "projects": {}},
+    )
+    forts_index = json.loads((tmp_path / "forts.json").read_text(encoding="utf-8"))
+    by_id = {f["id"]: f for f in forts_index["forts"]}
+    assert set(by_id) == {"uniboslan", "second-fort"}
+    assert by_id["second-fort"]["current"] is True
+    assert by_id["uniboslan"]["current"] is False
+    assert (tmp_path / "forts" / "uniboslan" / "head.json").exists()
+    assert (tmp_path / "forts" / "second-fort" / "head.json").exists()
 
 
 # ---- load_records_readonly never uses dfqueue.store._connect ---------------

@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Ragwind: operator view</title>
 <meta name="description" content="Operator-only view of the fortress stream, with the full record behind every line.">
-<link rel="stylesheet" href="style.css?v=3">
+<link rel="stylesheet" href="style.css?v=4">
 </head>
 <body>
 <!--
@@ -25,7 +25,7 @@
   section 3.6, "the user reads it before anyone else does").
 -->
 <div class="page" id="app"></div>
-<script src="app.js?v=3"></script>
+<script src="app.js?v=4"></script>
 <script>
   const page = new StreamPage({ dataRoot: "data/operator", mode: "operator", liveViewSrc: "vnc.html?autoconnect=true&resize=scale", root: document.getElementById("app") });
   page.start();

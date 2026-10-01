@@ -18,7 +18,10 @@ import sqlite3
 import pytest
 
 from dfqueue import feed_status, store
-from dfqueue.tests._helpers import make_executed, make_project, make_proposal, make_ruling
+from dfqueue.tests._helpers import (
+    make_abandon, make_amend, make_executed, make_observation, make_project,
+    make_proposal, make_ruling,
+)
 
 
 def _db(tmp_path):
@@ -179,3 +182,217 @@ def test_project_status_readonly_connection_is_actually_read_only(tmp_path):
             conn.execute("DELETE FROM records")
     finally:
         conn.close()
+
+
+# ---- step_board_states: records-only, no step_targets table ----------------
+#
+# `step_board_states` and `project_board_status` are a SECOND read path, used
+# by the stream board (handoffs/2026-10-02-stream-board.md) precisely
+# because the offline fixtures are plain `records.jsonl` with no
+# `step_targets` table at all. Every record here is a plain dict (not run
+# through `store.append`), matching `test_feed.py`'s own convention.
+
+_PROJECT = make_project(id="project-0001", from_ruling="ruling-0001")
+_S1, _S2 = _PROJECT["steps"][0]["id"], _PROJECT["steps"][1]["id"]
+
+
+def _base_records():
+    return [
+        make_proposal(id="proposal-0001"),
+        make_ruling(id="ruling-0001", proposal_id="proposal-0001"),
+        dict(_PROJECT),
+    ]
+
+
+def test_step_board_states_fresh_project_is_ready_then_waiting():
+    states = feed_status.step_board_states(_base_records(), "project-0001")
+    by_id = {s["id"]: s for s in states}
+    assert by_id[_S1]["state"] == "ready"  # no requires
+    assert by_id[_S2]["state"] == "waiting"  # requires s1, not done
+    assert by_id[_S1]["done"] == 0 and by_id[_S1]["total"] == 3
+
+
+def test_step_board_states_partial_progress_reads_active():
+    records = _base_records() + [
+        make_executed(
+            id="executed-0001", ruling_id="ruling-0001", cycle=9, step_id=_S1,
+            actions=[{
+                "tool": "construction.mine-vein", "outcome": "success",
+                "targets": ["ring-13-ore-1"], "target_state": "issued",
+            }],
+        ),
+    ]
+    states = {s["id"]: s for s in feed_status.step_board_states(records, "project-0001")}
+    assert states[_S1]["state"] == "active"
+    assert states[_S1]["done"] == 0 and states[_S1]["total"] == 3
+
+
+def test_step_board_states_all_targets_done_reads_done_and_unblocks_next():
+    records = _base_records() + [
+        make_executed(
+            id="executed-0001", ruling_id="ruling-0001", cycle=9, step_id=_S1,
+            actions=[{
+                "tool": "construction.mine-vein", "outcome": "success",
+                "targets": ["ring-13-ore-1", "ring-13-ore-2", "ring-13-ore-3"],
+                "target_state": "done",
+            }],
+        ),
+    ]
+    states = {s["id"]: s for s in feed_status.step_board_states(records, "project-0001")}
+    assert states[_S1]["state"] == "done"
+    assert states[_S2]["state"] == "ready"
+
+
+def test_step_board_states_a_held_target_reads_hold_with_private_detail():
+    records = _base_records() + [
+        make_executed(
+            id="executed-0001", ruling_id="ruling-0001", cycle=9, step_id=_S1,
+            actions=[{
+                "tool": "construction.mine-vein", "outcome": "blocked",
+                "targets": ["ring-13-ore-1"], "target_state": "held",
+                "detail": "no free miner",
+            }],
+        ),
+    ]
+    states = {s["id"]: s for s in feed_status.step_board_states(records, "project-0001")}
+    assert states[_S1]["state"] == "hold"
+    assert states[_S1]["held_detail"] == "no free miner"
+    # Waiting on a held prerequisite is still "waiting", not "ready".
+    assert states[_S2]["state"] == "waiting"
+
+
+def test_step_board_states_unknown_project_is_empty():
+    assert feed_status.step_board_states(_base_records(), "project-9999") == []
+
+
+def test_step_board_states_legacy_no_steps_project_has_no_job_graph():
+    records = [
+        make_proposal(id="proposal-0001"),
+        make_ruling(id="ruling-0001", proposal_id="proposal-0001"),
+        make_project(id="project-0001", from_ruling="ruling-0001", steps=[]),
+    ]
+    assert feed_status.step_board_states(records, "project-0001") == []
+
+
+def test_step_board_states_an_added_step_is_tagged_with_its_version():
+    amended_steps = _PROJECT["steps"] + [{
+        "id": "project-0001/s3", "tool": "stockpile.designate", "args": {},
+        "targets": {"set": ["t1"]}, "requires": [_S2],
+        "trigger": "all_success", "prefer_after": [], "guards": "default",
+    }]
+    records = _base_records() + [
+        make_amend(
+            id="amend-0001", project_id="project-0001", adds=["project-0001/s3"],
+            replaces=[], drops=[], steps=amended_steps,
+        ),
+    ]
+    states = {s["id"]: s for s in feed_status.step_board_states(records, "project-0001")}
+    assert "added_version" not in states[_S1]
+    assert "added_version" not in states[_S2]
+    assert states["project-0001/s3"]["added_version"] == 2
+
+
+def test_step_board_states_a_dropped_step_is_simply_absent():
+    # The amend's own `steps` is the complete current plan -- s1 is not
+    # redeclared, so it drops out of the job graph entirely, same as
+    # `store._current_steps_and_version`'s own "never a diff" contract.
+    records = _base_records() + [
+        make_amend(
+            id="amend-0001", project_id="project-0001", replaces=[_S1], adds=[], drops=[],
+            steps=[_PROJECT["steps"][1]],
+        ),
+    ]
+    states = {s["id"] for s in feed_status.step_board_states(records, "project-0001")}
+    assert states == {_S2}
+
+
+# ---- project_board_status ----------------------------------------------------
+
+
+def test_project_board_status_active_then_done():
+    fresh = feed_status.project_board_status(_base_records(), "project-0001")
+    assert fresh == "active"
+
+    done_records = _base_records() + [
+        make_executed(
+            id="executed-0001", ruling_id="ruling-0001", cycle=9, step_id=_S1,
+            actions=[{
+                "tool": "construction.mine-vein", "outcome": "success",
+                "targets": ["ring-13-ore-1", "ring-13-ore-2", "ring-13-ore-3"],
+                "target_state": "done",
+            }],
+        ),
+        make_executed(
+            id="executed-0002", ruling_id="ruling-0001", cycle=12, step_id=_S2,
+            actions=[{"tool": "construction.build", "outcome": "success"}],
+        ),
+    ]
+    assert feed_status.project_board_status(done_records, "project-0001") == "done"
+
+
+def test_project_board_status_hold_beats_active_when_any_step_is_held():
+    records = _base_records() + [
+        make_executed(
+            id="executed-0001", ruling_id="ruling-0001", cycle=9, step_id=_S1,
+            actions=[{
+                "tool": "construction.mine-vein", "outcome": "blocked",
+                "targets": ["ring-13-ore-1"], "target_state": "held",
+            }],
+        ),
+    ]
+    assert feed_status.project_board_status(records, "project-0001") == "hold"
+
+
+def test_project_board_status_abandoned_overrides_everything_else():
+    records = _base_records() + [make_abandon(project_id="project-0001")]
+    assert feed_status.project_board_status(records, "project-0001") == "abandoned"
+
+
+def test_project_board_status_unknown_project_is_none():
+    assert feed_status.project_board_status(_base_records(), "project-9999") is None
+
+
+# ---- hold codes and dfqueue/public_text.yaml ---------------------------------
+
+
+def test_load_public_text_missing_file_is_empty_not_an_error(tmp_path):
+    assert feed_status.load_public_text(tmp_path / "does-not-exist.yaml") == {}
+
+
+def test_load_public_text_reads_a_flat_code_to_text_map(tmp_path):
+    p = tmp_path / "public_text.yaml"
+    p.write_text("no_worker: No dwarf is free for this job.\n", encoding="utf-8")
+    assert feed_status.load_public_text(p) == {
+        "no_worker": "No dwarf is free for this job.",
+    }
+
+
+def test_step_hold_text_with_no_observation_is_honestly_unknown():
+    assert feed_status.step_hold_text(_base_records(), "project-0001", _S1, {}) == (None, None)
+
+
+def test_step_hold_text_reads_the_latest_observations_hold_code():
+    records = _base_records() + [
+        make_observation(
+            id="observation-0001", project_id="project-0001", step_id=_S1,
+            results=[{"target": "ring-13-ore-1", "status": "not_observable",
+                      "reason": "tile unreadable", "hold_code": "site_unreachable"}],
+        ),
+    ]
+    public_text = {"site_unreachable": "The site cannot be reached right now."}
+    text, code = feed_status.step_hold_text(records, "project-0001", _S1, public_text)
+    assert code == "site_unreachable"
+    assert text == "The site cannot be reached right now."
+
+
+def test_step_hold_text_an_unmapped_code_still_names_the_code_not_a_guess():
+    records = _base_records() + [
+        make_observation(
+            id="observation-0001", project_id="project-0001", step_id=_S1,
+            results=[{"target": "ring-13-ore-1", "status": "not_observable",
+                      "reason": "tile unreadable", "hold_code": "other"}],
+        ),
+    ]
+    text, code = feed_status.step_hold_text(records, "project-0001", _S1, {})
+    assert code == "other"
+    assert text is None

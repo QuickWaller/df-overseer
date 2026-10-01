@@ -1,16 +1,43 @@
-# The stream page (slice S0: local only; slice S1: prepared, not deployed)
+# The stream page (slice S0/S2: local only; slice S1: prepared, not deployed)
 
-Design: `research/2026-10-01-stream-page-design.md`. This directory is the
-whole "everything that can be built and seen locally with no live access"
-slice (design section 8, `handoffs/2026-10-01-stream-page-s0.md`). Plain
-HTML, CSS and JavaScript, no build step, no framework, no external
-requests. `dfqueue/feed.py` is the data layer this page reads; read that
-module's docstring and its `GAPS` list before trusting any field the page
-does not show — most of what design sections 3.3 and 6 describe (a real
-`seq` column, `run_id`, step labels, the season goal, hold codes, the
-"right now" line's real source) is not built yet, by this slice's own
-scope, and the page says so in the small note at the bottom of the layout
-rather than pretending otherwise.
+Design: `research/2026-10-01-stream-page-design.md`. The board's look is
+`research/2026-10-02-stream-board-mockup.html` (option E, split layout;
+register 2026-10-02 "Stream page look"; built per
+`handoffs/2026-10-02-stream-board.md`). This directory is the whole
+"everything that can be built and seen locally with no live access" slice
+(design section 8, `handoffs/2026-10-01-stream-page-s0.md`). Plain HTML,
+CSS and JavaScript, no build step, no framework, no external requests
+(except Google Fonts for JetBrains Mono, with a system-monospace fallback
+if that request is blocked). `dfqueue/feed.py` and `dfqueue/feed_status.py`
+are the data layer this page reads; read `feed.py`'s docstring and its
+`GAPS` list before trusting any field the page does not show — a real `seq`
+column, `run_id`, the season goal, and the "right now" status line's real
+source are still not built, and the page says so in its own gaps note
+rather than pretending otherwise. Step labels, public titles/rationales,
+urgency and hold codes (design §3.3 items 6/7) ARE read now, with the exact
+honest fallback named in each case (see "What is real" below).
+
+## Multiple forts
+
+The published data is organised per fort (register 2026-10-02, "plan for
+more than one fort"): `<out-dir>/public/forts.json` lists every fort a
+given export root has ever been given (`id`, `name`, `status` — `live` or
+`lost` — `current`), and each fort's own feed lives under
+`<out-dir>/public/forts/<fort-id>/` (`head.json`, `open.json`,
+`projects.json`, `status.json`, `seg/`, `seasons/` — the same shape
+`dfqueue.feed.write_feed` always produced, just no longer at the root). The
+page reads `forts.json` first and follows whichever fort is marked
+`current`; it never hard-codes a fort id. `dfqueue.feed.fort_feed_dir`,
+`build_forts_index`, `read_forts_index`/`write_forts_index` and
+`write_fort_feed` (the one call `scripts/export_stream_feed.py` makes) are
+the whole of this layer — see their docstrings in `dfqueue/feed.py`.
+Project-wide data that is not any one fort's (agents, tools, known gotchas)
+has no home built yet, but belongs at `<out-dir>/public/`, a SIBLING of
+`forts/`, never inside it — this layout already leaves that room.
+
+If `forts.json` is missing (an older export, before this existed), the page
+falls back to treating the projection root itself as one fort's feed
+directly — the pre-multi-fort layout — rather than failing to load.
 
 Slice S1 (operator live, `handoffs/2026-10-01-stream-page-s1-prep.md`) is
 built and tested but **not deployed**: the real publisher
@@ -31,9 +58,19 @@ deploy steps still needing the user's go-ahead.
 
    Any `queue-export/records.jsonl` under `evals/live/` works (there are
    currently two: `2026-09-15-architect-third-charter` and
-   `2026-09-15-overseer-first-ruling`). Or point `--db` at a real
-   `dfqueue/<fort>.sqlite3` file if you have one locally — the script opens
-   it strictly read-only and never migrates or creates it.
+   `2026-09-15-overseer-first-ruling`), or
+   `web/stream/fixtures/board-demo.jsonl` (hand-built, covers every board
+   state: done, active, waiting/ready, on hold with a hold_code, an amended
+   plan with an added step tagged `v2`/`v3`, and a turned-down proposal —
+   not run through `store.append`, since this is a plain `records.jsonl`,
+   same convention `dfqueue/tests/_helpers.py` uses). Or point `--db` at a
+   real `dfqueue/<fort>.sqlite3` file if you have one locally — the script
+   opens it strictly read-only and never migrates or creates it.
+
+   The export names a fort (see "Multiple forts" above): `--fort-id`
+   defaults to the `--db` file's own stem, or `uniboslan` for a `--records`
+   export; override it, and `--fort-name`/`--fort-status` (`live`/`lost`),
+   with explicit flags.
 
 2. Serve this directory over HTTP (opening `index.html` directly as a
    `file://` URL will fail: browsers refuse `fetch()` of local JSON from a
@@ -55,23 +92,36 @@ visible, so it also picks up a re-export live without a manual refresh.
 
 ## What is real here and what is a placeholder
 
-- **Real**: the item stream (proposals, rulings, executed steps, asks,
-  answers, passes, escalations, amends, abandons — everything already in
-  the queue schema), the public-text allowlist per kind, the withhold net
-  for URL/address/path/token-shaped text, reply quotes and thread
-  resolution, the project-to-thread map, verdict badges, segmenting into
-  200-item immutable files, and the read-only export from a real
-  `records.jsonl`.
+- **Real**: the board (split layout, Under way/On hold/Done/Turned down,
+  a card's mini job graph and "N of M steps" label, urgency pill, the
+  details panel's full job graph with dependency edges, done/active/ready/
+  waiting/hold states, `v2`/`v3` tags on an amendment's added step, and the
+  conversation grouped by game day), both themes (Terminal 2 default, Stone
+  2 behind the header toggle, remembered in `localStorage`), multiple forts
+  (`forts.json`, see above), the item stream (proposals, rulings, executed
+  steps, asks, answers, passes, escalations, amends, abandons), public
+  titles/rationales/urgency/step labels/hold codes when the Overseer wrote
+  them (with the named fallback below when it did not), the public-text
+  allowlist per kind, the withhold net for URL/address/path/token-shaped
+  text, reply quotes and thread resolution, the project-to-thread map,
+  verdict badges, segmenting into 200-item immutable files, and the
+  read-only export from a real `records.jsonl`.
+- **Honest fallbacks, not placeholders** (handoff item 7): a project's
+  board name falls back to its own `summary`, truncated, when no
+  `public_title` was written; a step's label falls back to its tool id,
+  humanized, when it has no `label`; a project with no urgency written (or
+  an unrecognised value) shows no urgency pill at all, never a guess; a
+  held step with no `hold_code`, or a code `dfqueue/public_text.yaml` does
+  not map, still shows "on hold" with no reason text, never a guessed one.
 - **Placeholder**: the video frame (design's live view is not embedded —
-  no relay, no noVNC locally), the status strip and "right now" line
-  (`feed.status` does not exist yet — design section 3.1), the season goal
-  card (no goal exists), step labels and per-step progress on the Projects
-  tab (design section 3.3 item 6, slice S4), the Season/chronicle tab
-  (slice S7), and history scrolling past the single open segment (design
-  section 4.4's segment-fetching logic is not implemented client-side yet —
-  a real fort's queue is far larger than the two-record test exports this
-  slice ships with, so this was not yet exercised against real segment
-  files).
+  no relay, no noVNC locally; it stays black in both themes either way),
+  the status strip and "right now" line (`feed.status` does not exist yet
+  — design section 3.1), the season goal strip (no goal exists), the
+  Season/chronicle view (slice S7), and history scrolling past the single
+  open segment (design section 4.4's segment-fetching logic is not
+  implemented client-side yet — a real fort's queue is far larger than the
+  small test exports this slice ships with, so this was not yet exercised
+  against real segment files).
 
 ## Slice S1: operator live (prepared offline, not deployed)
 
@@ -83,6 +133,18 @@ progress (`dfqueue/feed_status.py`), and the `infra/` templates below.
 command is written out exactly so the orchestrator (or the user) can review
 it before running it for real, per this repo's CLAUDE.md rule that any
 change to live/VM state needs explicit go-ahead each time.
+
+**Paths below predate multiple forts** (this stream's own addition, register
+2026-10-02): `scripts/stream_publisher.py` still writes the flat
+`data/public/head.json`-style layout (see "Known gaps" above), so every
+`.../data/public/head.json` path quoted in this section is still correct
+for THAT script as it stands today. Once a future stream updates it to call
+`dfqueue.feed.write_fort_feed`, every one of those paths gains a
+`forts/<fort-id>/` segment (`.../data/public/forts/<fort-id>/head.json`)
+and a new `.../data/public/forts.json` exists alongside it — Caddy and the
+`rrsync` push key need NO changes either way, since both already serve/
+accept the whole `data/public`/`data/operator` directory tree recursively,
+not a named file inside it.
 
 ### What S1 needs from the user, before any of this runs
 
@@ -203,20 +265,29 @@ port to fully revert the relay's public surface to pre-S1 shape.
 
 ## Known gaps in this slice, beyond `dfqueue/feed.py`'s own `GAPS` list
 
-- No JS test suite for `app.js` — `dfqueue/tests/test_feed.py` covers the
-  data layer thoroughly (that is where the safety-relevant logic lives:
-  the allowlist and the withhold net); the rendering layer is exercised
-  manually per the steps above, not automated. A future slice could add a
+- No JS test suite for `app.js` — `dfqueue/tests/test_feed.py` and
+  `test_feed_status.py` cover the data layer thoroughly (that is where the
+  safety-relevant logic lives: the allowlist, the withhold net, step-state
+  derivation); the rendering layer is exercised manually (this stream's own
+  Result section records exactly what was screenshotted, in both themes, at
+  desktop and 375px) rather than automated. A future slice could add a
   headless-browser smoke test if that seems worth the dependency.
 - No closed-segment or season-file fetching client-side (see above).
-- No focus-trapping project drawer — the Projects tab lists cards but does
-  not open the mockup's full drawer with a step timeline and its own
-  conversation thread; that needs step labels and target counts
-  (`dfqueue.store.project_status`, not available to a read-only-records
-  reader — see `dfqueue/feed.py`'s own `GAPS`).
-- No dark/light theme switch (the design says the video frame stays dark
-  regardless; the chrome could follow `prefers-color-scheme`, not wired up
-  here).
+- A step with a dynamic `{"from_step": ...}` target spec (design §4.3)
+  shows no "N of M" count at all (not fabricated) and only ever reads
+  `ready`/`waiting`/`hold` from whether ANY `executed` record covers it, not
+  partial progress — this slice's `dfqueue.feed_status.step_board_states`
+  only derives per-target counts for a step's own literal `targets.set`.
+- `scripts/stream_publisher.py` (slice S1, not touched by this stream)
+  still calls `dfqueue.feed.write_feed` directly, writing the OLD flat
+  layout. Before any real deploy it needs to call
+  `dfqueue.feed.write_fort_feed` instead (fort id/name/status config, likely
+  new `STREAM_PUBLISHER_FORT_*` `.env` variables mirroring this script's own
+  `--fort-id`/`--fort-name`/`--fort-status`). The page already falls back to
+  the flat layout if `forts.json` is absent, so this is not a breaking gap,
+  just unfinished parity.
 - Accessibility: role names are always shown as text (never colour alone),
-  and new items announce politely via `aria-live="polite"` on the messages
-  list, but this has not been tested with a real screen reader.
+  but this has not been tested with a real screen reader. The theme toggle
+  and board cards are plain buttons (keyboard-reachable, `aria-pressed`
+  where relevant) but no explicit focus-trapping exists in the details
+  panel.
