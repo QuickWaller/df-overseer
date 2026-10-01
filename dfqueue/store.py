@@ -312,7 +312,7 @@ def _canonical_step_json(step: dict) -> str:
     here (`requires` is an ordered edge list, not a set, and reordering it
     is itself a real change worth catching).
 
-    **`label` is excluded from this comparison** (user's call,
+    **`label` is excluded from this comparison** (executor's call,
     `handoffs/2026-10-02-queue-display-fields.md`): it is cosmetic display
     text, never read by the reconciler or by `_seed_step_targets`, so a
     step whose only change is a reworded `label` must not be forced to take
