@@ -153,6 +153,13 @@ read:
       built-for-real tools (work_order/crop_plan/stock_target) as the
       Architect does, so it needs the same feedback channel.
 
+  - id: "labor.quota-status"
+    status: exists
+    note: >-
+      Added handoffs/2026-10-01-labor-quota.md. Autolabor's own per-labour
+      minimum, maximum and current count, plus an independent count of
+      citizens holding the labour: target versus actual. Not yet live-verified.
+
 write:
   - id: "queue.propose"
     status: exists
@@ -221,3 +228,5 @@ deny:
     reason: Advisors do not act. Propose a work_order instead.
   - id: "orders.recheck"
     reason: Advisors do not act. Propose a work_order instead.
+  - id: "labor.quota"
+    reason: Advisors do not act. Propose it.

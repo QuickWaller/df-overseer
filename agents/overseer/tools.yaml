@@ -251,6 +251,12 @@ read:
     note: >-
       Same handoff. Ranked sites and what the kind needs, for any kind. Read-
       only. Deployed 2026-09-21.
+  - id: "labor.quota-status"
+    status: exists
+    note: >-
+      Added handoffs/2026-10-01-labor-quota.md. Autolabor's own per-labour
+      minimum, maximum and current count, plus an independent count of
+      citizens holding the labour: target versus actual. Not yet live-verified.
   - id: "labor.enabled-counts"
     status: exists
     note: >-
@@ -718,6 +724,14 @@ write:
     status: exists
     note: >-
       Same handoff. DRY_RUN defaults to true.
+
+  - id: "labor.quota"
+    status: exists
+    note: >-
+      Same handoff. DRY_RUN defaults to true. Sets autolabor's MIN MAX
+      [POOL] for one labour through its CLI; the routine labour lever
+      (register 2026-09-30), set-labor being the per-dwarf exception.
+      Refused when autolabor is off. Not yet live-verified.
 
 planned:
   - id: "playbook.write"
