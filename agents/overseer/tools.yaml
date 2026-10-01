@@ -733,6 +733,20 @@ write:
       (register 2026-09-30), set-labor being the per-dwarf exception.
       Refused when autolabor is off. Not yet live-verified.
 
+  - id: "construction.door"
+    status: exists
+    note: >-
+      Added handoffs/2026-10-01-entrances-get-doors.md. DRY_RUN defaults to
+      true. Places a door on a zone ring's entrance tile (a ring tile whose
+      outside neighbour joins the main walkable area). construction.build
+      now never walls an entrance and refuses a ring with none.
+  - id: "construction.audit"
+    status: exists
+    note: >-
+      Same handoff. DRY_RUN defaults to true. Lists planned ring
+      constructions that would strand a room once built; a real call
+      suspends the first at-risk job. After the 2026-10-01 sealed office.
+
 planned:
   - id: "playbook.write"
     status: planned

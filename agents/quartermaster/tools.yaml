@@ -230,3 +230,7 @@ deny:
     reason: Advisors do not act. Propose a work_order instead.
   - id: "labor.quota"
     reason: Advisors do not act. Propose it.
+  - id: "construction.door"
+    reason: Advisors do not act. Propose it.
+  - id: "construction.audit"
+    reason: Advisors do not act. Propose it.
