@@ -1,0 +1,607 @@
+"""The stream page's real publisher (slice S1,
+`handoffs/2026-10-01-stream-page-s1-prep.md` task 1). Runs on VM 103 under
+systemd (`infra/stream-publisher.service.example` +
+`infra/stream-publisher.timer.example`, both UNDEPLOYED templates, same
+"review before running" convention as every other `infra/*.example` file),
+reads the live queue read-only exactly as `scripts/export_stream_feed.py`
+reads a static export, and pushes the built `data/public/` and
+`data/operator/` layout outward to the relay over `rsync`/`ssh` using a key
+restricted to one directory there (design
+`research/2026-10-01-stream-page-design.md` §4.1: "VM 103 only dials out").
+
+Usage (local staging only, no push -- for review)::
+
+    python scripts/stream_publisher.py --once \\
+        --db dfqueue/Uniboslan.sqlite3 --staging-dir /tmp/stream-stage
+
+Usage (real push, once a relay and a restricted key exist)::
+
+    python scripts/stream_publisher.py --once \\
+        --db /var/lib/dfqueue/Uniboslan.sqlite3 \\
+        --staging-dir /var/lib/stream-publisher/stage \\
+        --kill-switch-file /var/lib/stream-publisher/STOP \\
+        --public-relay-host <relay-vm-ip> --public-relay-user stream-pub \\
+        --public-relay-path /srv/stream/data/public \\
+        --public-relay-ssh-key /etc/stream-publisher/relay_push_ed25519 \\
+        --operator-relay-host <relay-vm-ip> --operator-relay-user stream-pub \\
+        --operator-relay-path /srv/stream/data/operator \\
+        --operator-relay-ssh-key /etc/stream-publisher/relay_push_ed25519
+
+Every flag has an environment-variable equivalent (`STREAM_PUBLISHER_*`,
+see `config_from_env` / `infra/stream-publisher.example.env`), read the same
+way `dfmcp/server.py`'s `ServerConfig`/`config_from_env` are: a real
+environment variable wins over `.env`, which wins over nothing. No flag or
+variable needs a committed real value -- every example below uses a
+placeholder, per this repo's "no hosts, addresses, keys or remote paths in
+a committed file" rule.
+
+## What this script does NOT do
+
+- **Never writes to the queue.** `dfqueue.feed.load_records_readonly` and
+  `dfqueue.feed_status`'s own functions both open the database with SQLite's
+  `file:...?mode=ro` URI mode, never `dfqueue.store._connect` (which runs
+  `_ensure_schema`, a write, on open). This module imports no write
+  function from either `dfqueue.store` or `dfqueue.schema` at all --
+  `test_stream_publisher.py::test_module_imports_no_queue_write_path` pins
+  that down statically, and a second test runs a full cycle against a
+  database file made read-only on disk (`os.chmod`, not just the SQLite URI)
+  to prove it end to end.
+- **Never builds the real safety layers 3/4** (design §7.2's write-time
+  field refusal, which belongs in `dfqueue/schema.py`, and the publish-time
+  canary against the estate's real secrets, which needs a gitignored
+  `infra/local.*` list this repo does not ship). This script relies entirely
+  on the withhold net `dfqueue.feed` already applies inside
+  `feed.build_public_item` (`feed.find_unsafe_pattern`) -- real, but
+  deliberately not the full design.
+- **Never deploys itself.** `infra/stream-publisher.service.example` and
+  `infra/stream-publisher.timer.example` are reviewed-not-run templates,
+  same convention as `infra/dfmcp-server.service.example`'s own header.
+  This handoff is explicitly "build and test everything S1 needs, deploy
+  nothing" -- the orchestrator runs the real install after the user's
+  go-ahead, per `web/stream/README.md`'s runbook section.
+
+## Kill switches (design §4.6, this handoff's task 1)
+
+Two independent switches, checked every cycle, in order:
+
+1. **`--kill-switch-file`**: if the file exists, NOTHING is pushed to the
+   relay this cycle, public or operator -- the loudest, simplest "stop
+   everything" switch, a `touch`/`rm` away on VM 103 alone, matching the
+   handoff's literal wording ("a kill switch file that stops all
+   publishing"). Local staging files are still written (harmless, and lets
+   an operator inspect what *would* have been pushed), only the push itself
+   is skipped.
+2. **`--public-disabled` / `STREAM_PUBLISHER_PUBLIC_ENABLED=false`** (design
+   §4.6 layer 2): only the PUBLIC side stops. `data/public/head.json` is
+   written and pushed as `{"state": "off"}` with every segment removed
+   (`rsync --delete`); the operator side keeps running untouched. This is
+   the slower, deliberate switch meant to be flipped from a config change,
+   not an emergency `touch`.
+
+Neither switch is reachable by any role's tool allowlist -- both are files
+and flags this script alone reads, matching design §4.6's "no agent can
+reach any of the three" (the third, a Cloudflare rule, is dashboard-only and
+out of this script's scope entirely).
+
+## Change detection and restart safety (design §4.1, §4.5)
+
+Every cycle rebuilds the full projection from the queue from scratch --
+cheap at this fort's real record counts (design §4.7's own year-one
+estimate is at most on the order of a million records; this slice has seen
+dozens) -- and computes a content hash over the built items/projects/status
+*before* any wall-clock timestamp is attached (`compute_content_hash`,
+which never sees `published_at`). Only when that hash changes from the
+previous cycle's (kept in a small JSON cursor file beside the staging
+directory) does it push, except a heartbeat push at least every
+`--heartbeat-interval` seconds even with no change, so a quiet fort's
+`head.json.published_at` still proves the publisher is alive (design §4.5:
+the page needs that timestamp moving to tell "quiet" from "stale"). Losing
+the cursor file costs one extra push of identical content, never data
+(design §4.5's own "full rebuild; identical bytes, so no churn").
+
+## Step-level project progress (this handoff's other named task-1 item)
+
+`dfqueue/feed.py`'s own `GAPS` list named this: `feed.build_projects_view`
+alone cannot report per-step counts or a held target's blocker, because
+`dfqueue.store.project_status` reads through the write-capable `_connect`.
+`dfqueue/feed_status.py` (this same handoff) closes that gap read-only; this
+script is `feed_status`'s first real caller, merging `counts` into every
+project (safe on both projections -- a bare state-name tally) and
+`top_blocker` into the operator projection only (a held target's `reason`
+is free text written by a tool, not for an audience -- design §3.3 item 7's
+"the free-text reason stays, operator only," until hold codes exist in
+slice S4).
+"""
+
+from __future__ import annotations
+
+import argparse
+import hashlib
+import json
+import os
+import subprocess
+import sys
+import time
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Any, Callable, Mapping, Optional
+
+REPO_ROOT = Path(__file__).resolve().parent.parent
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+
+from dfqueue import feed, feed_status  # noqa: E402  (path setup must run first)
+
+DEFAULT_ENV_PATH = REPO_ROOT / ".env"
+DEFAULT_HEARTBEAT_INTERVAL_SECONDS = 60
+DEFAULT_LOOP_INTERVAL_SECONDS = 5
+CURSOR_FILENAME = ".publisher-cursor.json"
+
+
+class ConfigError(Exception):
+    """Raised by `config_from_env`/`load_config` for a missing or invalid
+    setting -- same role `dfmcp.server.ConfigError` plays for the MCP
+    server, deliberately not shared across the two (this script has no
+    dependency on `dfmcp` at all)."""
+
+
+# ---- config -------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class RelayTarget:
+    """One rsync destination: pushed to as `user@host:path` using
+    `ssh_key` -- the directory-restricted key design §4.1 requires
+    (`infra/stream-publisher-authorized-keys-line.example` is the template
+    for the relay-side half of that restriction)."""
+
+    host: str
+    user: str
+    path: str
+    ssh_key: str
+
+    def destination(self) -> str:
+        return f"{self.user}@{self.host}:{self.path}"
+
+
+@dataclass
+class PublisherConfig:
+    """`db_path`/`staging_dir` default to `""` rather than being required
+    dataclass fields, deliberately: the CLI builds a config in two steps
+    (environment/`.env` first, then flag overrides on top), and a strict
+    `__post_init__` would reject the intermediate, env-only object before
+    the flags ever get a chance to fill in what `.env` left blank. Call
+    `validate()` once the config is as complete as it will ever get --
+    `config_from_env`/`load_config` do this by default (`validate=True`),
+    and `main()` does it explicitly after merging CLI flags on top."""
+
+    db_path: str = ""
+    staging_dir: str = ""
+    public_relay: Optional[RelayTarget] = None
+    operator_relay: Optional[RelayTarget] = None
+    kill_switch_file: Optional[str] = None
+    public_enabled: bool = True
+    heartbeat_interval_seconds: int = DEFAULT_HEARTBEAT_INTERVAL_SECONDS
+    loop_interval_seconds: int = DEFAULT_LOOP_INTERVAL_SECONDS
+    rsync_bin: str = "rsync"
+
+    def validate(self) -> None:
+        if not self.db_path or not str(self.db_path).strip():
+            raise ConfigError(
+                "db_path must be set explicitly -- STREAM_PUBLISHER_DB or --db. "
+                "There is no in-tree default, same reason dfmcp.server.ServerConfig "
+                "gives none for queue_db: a code redeploy must never resolve a "
+                "relative path onto live queue data."
+            )
+        if not self.staging_dir or not str(self.staging_dir).strip():
+            raise ConfigError(
+                "staging_dir must be set explicitly -- STREAM_PUBLISHER_STAGING_DIR "
+                "or --staging-dir."
+            )
+        if self.heartbeat_interval_seconds < 1:
+            raise ConfigError("heartbeat_interval_seconds must be at least 1")
+        if self.loop_interval_seconds < 1:
+            raise ConfigError("loop_interval_seconds must be at least 1")
+
+
+_RELAY_FIELDS = ("host", "user", "path", "ssh_key")
+
+
+def _relay_from_env(env: Mapping[str, str], prefix: str) -> Optional[RelayTarget]:
+    """Build a `RelayTarget` from `STREAM_PUBLISHER_<PREFIX>_RELAY_{HOST,
+    USER,PATH,SSH_KEY}`, or `None` if none of the four are set at all (the
+    "write locally only, push to nowhere" mode this handoff's own offline
+    scope needs for review and tests). Raises `ConfigError` if only SOME of
+    the four are set -- a half-configured relay is a misconfiguration, never
+    silently partial."""
+    keys = {f: f"STREAM_PUBLISHER_{prefix}_RELAY_{f.upper()}" for f in _RELAY_FIELDS}
+    values = {f: env.get(k) for f, k in keys.items()}
+    present = {f: v for f, v in values.items() if v}
+    if not present:
+        return None
+    if len(present) != len(_RELAY_FIELDS):
+        missing = [keys[f] for f in _RELAY_FIELDS if f not in present]
+        raise ConfigError(
+            f"{prefix} relay is partially configured -- missing: {', '.join(missing)}"
+        )
+    return RelayTarget(**values)  # type: ignore[arg-type]
+
+
+def _parse_bool(raw: str, env_key: str) -> bool:
+    lowered = raw.strip().lower()
+    if lowered in ("1", "true", "yes", "on"):
+        return True
+    if lowered in ("0", "false", "no", "off"):
+        return False
+    raise ConfigError(f"{env_key}={raw!r} is not a valid boolean")
+
+
+def config_from_env(env: Mapping[str, str], *, validate: bool = True) -> PublisherConfig:
+    """Build a `PublisherConfig` from a plain `{name: value}` mapping (e.g.
+    `os.environ`, or a dict merged from `.env`) -- pure, so tests exercise it
+    with a plain dict, no file or real environment variable required. Same
+    shape as `dfmcp.server.config_from_env`. `validate=False` (used by the
+    CLI's two-step build, `_config_from_args`) skips the `db_path`/
+    `staging_dir` presence check so flag overrides can still fill them in."""
+    kwargs: dict[str, Any] = {}
+    if env.get("STREAM_PUBLISHER_DB"):
+        kwargs["db_path"] = env["STREAM_PUBLISHER_DB"]
+    if env.get("STREAM_PUBLISHER_STAGING_DIR"):
+        kwargs["staging_dir"] = env["STREAM_PUBLISHER_STAGING_DIR"]
+    if env.get("STREAM_PUBLISHER_KILL_SWITCH_FILE"):
+        kwargs["kill_switch_file"] = env["STREAM_PUBLISHER_KILL_SWITCH_FILE"]
+    if env.get("STREAM_PUBLISHER_PUBLIC_ENABLED"):
+        kwargs["public_enabled"] = _parse_bool(
+            env["STREAM_PUBLISHER_PUBLIC_ENABLED"], "STREAM_PUBLISHER_PUBLIC_ENABLED"
+        )
+    if env.get("STREAM_PUBLISHER_HEARTBEAT_SECONDS"):
+        kwargs["heartbeat_interval_seconds"] = int(env["STREAM_PUBLISHER_HEARTBEAT_SECONDS"])
+    if env.get("STREAM_PUBLISHER_LOOP_SECONDS"):
+        kwargs["loop_interval_seconds"] = int(env["STREAM_PUBLISHER_LOOP_SECONDS"])
+    if env.get("STREAM_PUBLISHER_RSYNC_BIN"):
+        kwargs["rsync_bin"] = env["STREAM_PUBLISHER_RSYNC_BIN"]
+
+    public_relay = _relay_from_env(env, "PUBLIC")
+    operator_relay = _relay_from_env(env, "OPERATOR")
+    if public_relay is not None:
+        kwargs["public_relay"] = public_relay
+    if operator_relay is not None:
+        kwargs["operator_relay"] = operator_relay
+
+    cfg = PublisherConfig(**kwargs)
+    if validate:
+        cfg.validate()
+    return cfg
+
+
+def _read_dotenv(path: Path) -> dict[str, str]:
+    """Same quoting rules as `scripts/pve.py`'s `load_env` (handles a
+    single- or double-quoted value) -- duplicated rather than imported
+    because `scripts/pve.py` is a standalone CLI, not a library this script
+    should depend on."""
+    env: dict[str, str] = {}
+    if not path.is_file():
+        return env
+    with open(path, encoding="utf-8") as fh:
+        for line in fh:
+            line = line.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            key, _, value = line.partition("=")
+            value = value.strip()
+            if len(value) >= 2 and value[0] == value[-1] and value[0] in "\"'":
+                value = value[1:-1]
+            env[key.strip()] = value
+    return env
+
+
+def load_config(env_path: Path = DEFAULT_ENV_PATH, *, validate: bool = True) -> PublisherConfig:
+    """Real entry point's config: `.env` merged under the real process
+    environment (a real env var wins over a `.env` entry)."""
+    env = _read_dotenv(env_path)
+    env.update(os.environ)
+    return config_from_env(env, validate=validate)
+
+
+# ---- content hashing (design §4.1's "same records, same bytes") ------------
+
+
+def _canonical_json(payload: Any) -> str:
+    return json.dumps(payload, sort_keys=True, ensure_ascii=False, indent=None)
+
+
+def compute_content_hash(items: list, projects: dict, status: Optional[dict]) -> str:
+    """A hash over exactly what changes the reader's experience -- never a
+    wall-clock field. Two cycles that would write byte-identical
+    `head.json`/`open.json`/`projects.json` (ignoring `published_at`)
+    produce the same hash, which is what lets `run_cycle` tell "nothing
+    changed" from "something changed" without diffing files on disk."""
+    body = _canonical_json({"items": items, "projects": projects, "status": status})
+    return hashlib.sha256(body.encode("utf-8")).hexdigest()
+
+
+# ---- the step-progress merge (this handoff's feed_status gap) --------------
+
+
+def _merge_project_progress(
+    projects_view: dict, project_statuses: dict[str, dict], *, public: bool,
+) -> None:
+    """Add `counts` (both projections -- a bare tally of step-target state
+    names, safe either way) and, operator only, `top_blocker` (a held
+    target's free-text `reason`, never public until design §3.3 item 7's
+    hold codes exist) to every project `feed.build_projects_view` already
+    produced. Mutates `projects_view["projects"]` in place; a project id
+    `feed_status` has no status for (should not happen -- both read the same
+    records -- but never assumed) is left exactly as `feed` built it."""
+    for pid, entry in projects_view["projects"].items():
+        status = project_statuses.get(pid)
+        if status is None:
+            continue
+        entry["counts"] = status["counts"]
+        if not public:
+            entry["top_blocker"] = status["top_blocker"]
+
+
+def build_projection(
+    records: list[dict], *, public: bool, project_statuses: dict[str, dict],
+) -> tuple[list[dict], dict]:
+    """One projection (public or operator): `feed.build_items` plus
+    `feed.build_projects_view`, with step-level progress merged in from
+    `feed_status` (read-only, this handoff's other task-1 deliverable)."""
+    items = feed.build_items(records, public=public)
+    projects_view = feed.build_projects_view(records, public=public)
+    _merge_project_progress(projects_view, project_statuses, public=public)
+    return items, projects_view
+
+
+# ---- the cursor file (design §4.5's restart safety) ------------------------
+
+
+def _read_cursor(path: Path) -> dict[str, Any]:
+    if not path.is_file():
+        return {}
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        # A corrupt or unreadable cursor costs one extra push of identical
+        # content (design §4.5), never a crash -- treat it as "no cursor".
+        return {}
+
+
+def _write_cursor(path: Path, cursor: dict[str, Any]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(_canonical_json(cursor), encoding="utf-8")
+
+
+# ---- the push itself (the only function a test ever has to replace) --------
+
+
+def _rsync_push(
+    local_dir: Path, relay: RelayTarget, *, delete: bool = False, rsync_bin: str = "rsync",
+) -> subprocess.CompletedProcess:
+    """Push `local_dir`'s contents into `relay.path` over SSH, using
+    `relay.ssh_key` -- design §4.1's directory-restricted key, never the
+    operator's own login key. `BatchMode=yes` so a bad or missing key fails
+    loudly instead of hanging on a password prompt (this runs unattended
+    under systemd); `StrictHostKeyChecking=accept-new` so a first run does
+    not block on an interactive host-key prompt either, while still
+    refusing a host whose key later CHANGES (never `=no`, which would accept
+    a changed key silently too).
+
+    Trailing slash on the source, none on the destination: rsync's own
+    "copy contents of this directory into that one" convention, not "copy
+    this directory as a subdirectory of that one"."""
+    cmd = [
+        rsync_bin, "-az",
+        "-e", f"ssh -i {relay.ssh_key} -o BatchMode=yes -o StrictHostKeyChecking=accept-new",
+    ]
+    if delete:
+        cmd.append("--delete")
+    cmd += [f"{local_dir}{os.sep}", relay.destination().rstrip("/") + "/"]
+    return subprocess.run(cmd, check=True, capture_output=True, text=True)
+
+
+Pusher = Callable[..., Any]
+
+
+# ---- one cycle --------------------------------------------------------------
+
+
+def run_cycle(
+    cfg: PublisherConfig, *, now: Optional[float] = None, pusher: Optional[Pusher] = None,
+) -> dict[str, Any]:
+    """Build both projections from the live queue, write them to
+    `cfg.staging_dir`, and push whichever side needs pushing. Returns a
+    small JSON-able summary (`{"public": {...}, "operator": {...}}`) meant
+    to be printed and captured by journald under the real systemd unit --
+    never raises on a disabled or unreachable relay, only on something the
+    cycle itself could not recover from (a missing/unreadable database, a
+    real rsync failure, which `subprocess.run(check=True)` turns into a
+    `CalledProcessError`)."""
+    now = time.time() if now is None else now
+    pusher = _rsync_push if pusher is None else pusher
+
+    kill_switch_active = bool(cfg.kill_switch_file) and Path(cfg.kill_switch_file).is_file()
+
+    records = feed.load_records_readonly(cfg.db_path)
+    project_statuses = feed_status.all_project_statuses_readonly(cfg.db_path)
+
+    public_items, public_projects = build_projection(
+        records, public=True, project_statuses=project_statuses
+    )
+    operator_items, operator_projects = build_projection(
+        records, public=False, project_statuses=project_statuses
+    )
+    # design §3.1 GAP: feed.status (a live per-cycle status push) is not
+    # built -- no conductor-side writer exists yet (slice S2). This is the
+    # only status.json this script can honestly produce, same as
+    # scripts/export_stream_feed.py.
+    status = feed.build_placeholder_status()
+
+    staging = Path(cfg.staging_dir)
+    cursor_path = staging / CURSOR_FILENAME
+    cursor = _read_cursor(cursor_path)
+
+    result: dict[str, Any] = {
+        "kill_switch_active": kill_switch_active,
+        "public": {"pushed": False, "reason": None},
+        "operator": {"pushed": False, "reason": None},
+    }
+
+    # ---- operator side: never disabled by public_enabled, only by the
+    # kill-switch file or having no relay configured at all. ----------------
+    operator_out = staging / "operator"
+    feed.write_feed(operator_items, operator_out, projects=operator_projects, status=status)
+    operator_hash = compute_content_hash(operator_items, operator_projects, status)
+    if kill_switch_active:
+        result["operator"]["reason"] = "kill_switch_file"
+    elif cfg.operator_relay is None:
+        result["operator"]["reason"] = "no_relay_configured"
+    else:
+        due = now - cursor.get("operator_last_push", 0) >= cfg.heartbeat_interval_seconds
+        if operator_hash != cursor.get("operator_hash") or due:
+            pusher(operator_out, cfg.operator_relay, delete=False, rsync_bin=cfg.rsync_bin)
+            cursor["operator_hash"] = operator_hash
+            cursor["operator_last_push"] = now
+            result["operator"]["pushed"] = True
+        else:
+            result["operator"]["reason"] = "unchanged"
+
+    # ---- public side: the kill-switch file OR public_enabled=false both
+    # stop it, but only public_enabled=false actively clears it. -----------
+    public_off = kill_switch_active or not cfg.public_enabled
+    public_out = staging / "public"
+    if public_off:
+        feed.write_feed(
+            [], public_out,
+            projects={"thread_to_project": {}, "projects": {}},
+            status=None, state="off",
+        )
+    else:
+        feed.write_feed(public_items, public_out, projects=public_projects, status=status)
+    public_hash = compute_content_hash(
+        [] if public_off else public_items,
+        {"thread_to_project": {}, "projects": {}} if public_off else public_projects,
+        None if public_off else status,
+    )
+
+    if kill_switch_active:
+        result["public"]["reason"] = "kill_switch_file"
+    elif cfg.public_relay is None:
+        result["public"]["reason"] = "no_relay_configured"
+    else:
+        was_off = cursor.get("public_state") == "off"
+        due = now - cursor.get("public_last_push", 0) >= cfg.heartbeat_interval_seconds
+        changed = public_hash != cursor.get("public_hash")
+        turned_off_now = public_off and not was_off
+        if changed or due or turned_off_now:
+            pusher(
+                public_out, cfg.public_relay, delete=public_off, rsync_bin=cfg.rsync_bin,
+            )
+            cursor["public_hash"] = public_hash
+            cursor["public_last_push"] = now
+            cursor["public_state"] = "off" if public_off else "on"
+            result["public"]["pushed"] = True
+        else:
+            result["public"]["reason"] = "already_off" if public_off else "unchanged"
+
+    _write_cursor(cursor_path, cursor)
+    return result
+
+
+# ---- CLI --------------------------------------------------------------------
+
+
+def _build_arg_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--db", help="the live queue SQLite file (read-only). STREAM_PUBLISHER_DB")
+    parser.add_argument("--staging-dir", help="local directory to stage data/public and data/operator into. STREAM_PUBLISHER_STAGING_DIR")
+    parser.add_argument("--kill-switch-file", help="if this file exists, nothing is pushed this cycle. STREAM_PUBLISHER_KILL_SWITCH_FILE")
+    parser.add_argument("--public-disabled", action="store_true", default=None, help="design §4.6 layer 2: stop and clear the public side only, keep the operator side running")
+    parser.add_argument("--heartbeat-interval", type=int, help="seconds between forced pushes even with no change. STREAM_PUBLISHER_HEARTBEAT_SECONDS")
+    parser.add_argument("--loop-interval", type=int, help="seconds between cycles when not --once. STREAM_PUBLISHER_LOOP_SECONDS")
+    parser.add_argument("--public-relay-host")
+    parser.add_argument("--public-relay-user")
+    parser.add_argument("--public-relay-path")
+    parser.add_argument("--public-relay-ssh-key")
+    parser.add_argument("--operator-relay-host")
+    parser.add_argument("--operator-relay-user")
+    parser.add_argument("--operator-relay-path")
+    parser.add_argument("--operator-relay-ssh-key")
+    parser.add_argument("--once", action="store_true", help="run a single cycle and exit (the systemd-timer-triggered mode, infra/stream-publisher.timer.example)")
+    parser.add_argument("--env-file", default=str(DEFAULT_ENV_PATH), help="path to a .env file to merge under the real environment (default: repo root .env)")
+    return parser
+
+
+def _config_from_args(args: argparse.Namespace) -> PublisherConfig:
+    """CLI flags override `.env`/the real environment, which `load_config`
+    already merged -- the same precedence `dfmcp/server.py`'s own CLI
+    wrapper (if any) would use: explicit beats implicit."""
+    cfg = load_config(Path(args.env_file), validate=False)
+    overrides: dict[str, Any] = {}
+    if args.db:
+        overrides["db_path"] = args.db
+    if args.staging_dir:
+        overrides["staging_dir"] = args.staging_dir
+    if args.kill_switch_file:
+        overrides["kill_switch_file"] = args.kill_switch_file
+    if args.public_disabled:
+        overrides["public_enabled"] = False
+    if args.heartbeat_interval:
+        overrides["heartbeat_interval_seconds"] = args.heartbeat_interval
+    if args.loop_interval:
+        overrides["loop_interval_seconds"] = args.loop_interval
+
+    def _relay_override(prefix: str) -> Optional[RelayTarget]:
+        host = getattr(args, f"{prefix}_relay_host")
+        user = getattr(args, f"{prefix}_relay_user")
+        path = getattr(args, f"{prefix}_relay_path")
+        ssh_key = getattr(args, f"{prefix}_relay_ssh_key")
+        if not any((host, user, path, ssh_key)):
+            return None
+        if not all((host, user, path, ssh_key)):
+            raise ConfigError(f"--{prefix}-relay-* flags must all be given together")
+        return RelayTarget(host=host, user=user, path=path, ssh_key=ssh_key)
+
+    public_override = _relay_override("public")
+    operator_override = _relay_override("operator")
+    if public_override is not None:
+        overrides["public_relay"] = public_override
+    if operator_override is not None:
+        overrides["operator_relay"] = operator_override
+
+    for field_name, value in overrides.items():
+        setattr(cfg, field_name, value)
+    cfg.validate()
+    return cfg
+
+
+def main(argv: Optional[list[str]] = None) -> int:
+    args = _build_arg_parser().parse_args(argv)
+    try:
+        cfg = _config_from_args(args)
+    except ConfigError as exc:
+        print(f"stream_publisher: {exc}", file=sys.stderr)
+        return 2
+
+    if args.once:
+        result = run_cycle(cfg)
+        print(json.dumps(result, sort_keys=True))
+        return 0
+
+    print(
+        f"stream_publisher: looping every {cfg.loop_interval_seconds}s "
+        "(Ctrl-C to stop)",
+        file=sys.stderr,
+    )
+    while True:
+        try:
+            result = run_cycle(cfg)
+            print(json.dumps(result, sort_keys=True))
+        except Exception as exc:  # noqa: BLE001 -- a cycle failure must never kill the loop
+            print(f"stream_publisher: cycle failed: {exc}", file=sys.stderr)
+        time.sleep(cfg.loop_interval_seconds)
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
