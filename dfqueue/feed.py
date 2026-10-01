@@ -482,18 +482,34 @@ def build_public_item(record: dict, *, seq: int, reply_to: Optional[str],
 
 
 def build_operator_item(record: dict, *, seq: int, reply_to: Optional[str],
-                         thread: str, badge: Optional[str]) -> dict:
-    """The operator view: the full record plus the same derived fields.
-    `run_id` is always `None` in this slice (GAPS — no per-run header
-    exists yet); no call-log join exists yet either (GAPS)."""
+                         thread: str, badge: Optional[str], ctx: Optional[dict] = None) -> dict:
+    """The operator view: the full record under `record`, PLUS the same
+    flat, kind-dispatchable shape the public item has (`kind`/`id`/`role`/
+    `type`/`text`), so page code (the stream board included) can treat a
+    public and an operator item identically without special-casing which
+    projection it is reading -- it only needs the full `record` for a
+    detail an operator specifically wants. `text` reuses the same per-kind
+    builder the public item uses (no `find_unsafe_pattern` withholding: the
+    operator is a trusted internal viewer, and the raw `record` already
+    carries everything anyway); the richer private rationale an operator
+    might eventually see instead of the public one is a named gap, not
+    built this slice. `run_id` is always `None` in this slice (GAPS — no
+    per-run header exists yet); no call-log join exists yet either (GAPS)."""
     kind = record.get("kind")
     if kind not in KNOWN_KINDS:
         raise ValueError(
             f"feed.build_operator_item: unrecognised kind {kind!r}"
         )
     tick = record.get("cycle")
+    builder = PUBLIC_TEXT_BUILDERS.get(kind)
+    text = builder(record, ctx or {}) if builder else None
     return {
         "seq": seq,
+        "id": record.get("id"),
+        "kind": kind,
+        "role": record.get("role"),
+        "type": humanize_type(record.get("type")) if kind == PROPOSAL else None,
+        "text": text,
         "reply_to": reply_to,
         "thread": thread,
         "badge": badge,
@@ -702,6 +718,7 @@ def build_items(records: list[dict], *, public: bool) -> list[dict]:
         else:
             item = build_operator_item(
                 record, seq=i, reply_to=reply_to, thread=thread, badge=badge,
+                ctx=ctx,
             )
         if item is not None:
             items.append(item)

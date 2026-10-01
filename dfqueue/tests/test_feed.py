@@ -314,6 +314,20 @@ def test_operator_item_carries_the_full_record():
     assert items[0]["record"] == record
 
 
+def test_operator_item_also_carries_the_flat_kind_dispatchable_shape():
+    # Page code (the stream board's turned-down-proposal lookup, its
+    # conversation renderer) reads kind/id/role/text the same way on both
+    # projections -- it only reaches into `record` for an operator-only
+    # detail. A bug where operator items had none of these (only a nested
+    # `record`) silently emptied every kind-filtered list in operator mode.
+    record = make_ruling(id="ruling-0001", proposal_id="proposal-0001")
+    item = feed.build_items([record], public=False)[0]
+    assert item["kind"] == "ruling"
+    assert item["id"] == "ruling-0001"
+    assert item["role"] == "overseer"
+    assert item["text"] == feed.build_items([record], public=True)[0]["text"]
+
+
 # ---- projects view ------------------------------------------------------------
 
 
