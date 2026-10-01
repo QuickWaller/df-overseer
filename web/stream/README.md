@@ -7,15 +7,67 @@ register 2026-10-02 "Stream page look"; built per
 "everything that can be built and seen locally with no live access" slice
 (design section 8, `handoffs/2026-10-01-stream-page-s0.md`). Plain HTML,
 CSS and JavaScript, no build step, no framework, no external requests
-(except Google Fonts for JetBrains Mono, with a system-monospace fallback
-if that request is blocked). `dfqueue/feed.py` and `dfqueue/feed_status.py`
-are the data layer this page reads; read `feed.py`'s docstring and its
-`GAPS` list before trusting any field the page does not show — a real `seq`
-column, `run_id`, the season goal, and the "right now" status line's real
-source are still not built, and the page says so in its own gaps note
-rather than pretending otherwise. Step labels, public titles/rationales,
-urgency and hold codes (design §3.3 items 6/7) ARE read now, with the exact
-honest fallback named in each case (see "What is real" below).
+except Google Fonts for JetBrains Mono (system-monospace fallback if
+blocked) and `marked` 12.0.2 from cdnjs, pinned (used only to render a
+role's own committed `role.md` on its Charter tab). `dfqueue/feed.py` and
+`dfqueue/feed_status.py` are the data layer the Board reads; read
+`feed.py`'s docstring and its `GAPS` list before trusting any field the
+page does not show — a real `seq` column, `run_id`, the season goal, and
+the "right now" status line's real source are still not built, and the
+page says so in its own gaps note rather than pretending otherwise. Step
+labels, public titles/rationales, urgency and hold codes (design §3.3
+items 6/7) ARE read now, with the exact honest fallback named in each case
+(see "What is real" below).
+
+## Site navigation, Agents, Tools, Forts and a Chronicle stub
+
+Built per `handoffs/2026-10-02-site-agents-tools.md`, spec
+`research/2026-10-02-site-agents-tools-mockup.html`. `app.js` now exports
+`SitePage`, which owns the top navigation (fort group: current fort's
+name, Board, Chronicle; project group: Agents, Tools, Forts) and hash
+routing (`#board`, `#chronicle`, `#chronicle-<fort>`, `#agents`,
+`#agent-<role>[-charter]`, `#tools`, `#tool-<id>`, `#forts`); it mounts the
+ORIGINAL `StreamPage` completely unchanged for the Board (the default
+view). `index.html`/`operator.html` now instantiate `SitePage`, not
+`StreamPage`, directly.
+
+- **Agents**: a hub-and-spoke map (Overseer centred, every other role and
+  Will/Executor on a ring, spoke width by message count, dashed for a
+  planned role) and a panel with three tabs (Tools, Recent lines, Charter).
+  Roles, planned roles, tool lists, charters and track record all come
+  from `agents.json` (built by `dfqueue.site_data.build_agents_json` from
+  `agents/ROSTER.yaml`, each enabled role's real tool allowlist via
+  `dfmcp.roles.load_roster` — the exact same loader the MCP server itself
+  uses, never a hand-kept copy — and the current fort's queue records).
+  Recent lines are NOT in `agents.json`: the page filters the fort's own
+  already-published `open.json` by role, client-side, the same file the
+  Board reads.
+- **Tools**: every tool from `tools.json` (`dfqueue.site_data.
+  build_tools_json`), grouped by area, searchable, filterable by role and
+  by has-gotchas/vents/unexplained; a tool page shows its gotchas/vents/
+  unexplained errors (`gotchas.json`), confidence (`gotchas/
+  confidence.yaml`) and who holds it.
+- **Forts**: one card per fort from the existing `forts.json`, plus a
+  dashed "Next fort, planned" card. A card opens that fort's chronicle
+  (`#chronicle` for the current fort, `#chronicle-<id>` for a lost one).
+- **Chronicle: a clearly marked stub.** Vitals charts, seasons with the
+  Chronicler's account, picked events with "show all", thoughts, and the
+  lost-fort archive page — all from exactly one fixture file,
+  `web/stream/fixtures/chronicle-demo.json`, tagged "example data" in the
+  UI and never mixed into real data. The Chronicler role is not enabled
+  (`agents/ROSTER.yaml`), so none of it reflects the real fort.
+- **gotchas.json** is read from a live gotcha store **read-only**
+  (`dfqueue.site_data.load_gotchas_readonly`, same `mode=ro` pattern as
+  `feed.load_records_readonly`): the public projection never carries
+  `call_excerpt` (the key itself is absent, not merely `null`) and
+  withholds (never edits) a title/body `dfqueue.feed.find_unsafe_pattern`
+  flags. A general entry (`tool: null`, not about one tool — a sibling
+  stream is adding store support for this) already reads through
+  correctly; see `dfqueue/tests/test_site_data.py`.
+- **Dev-only smoke-test aids**: `?theme=stone2`/`?theme=terminal2` on
+  either page's URL sets the starting theme (useful for headless
+  screenshots, since it saves to the same `ragwind-theme` localStorage key
+  the Board's own toggle uses); not a feature a real viewer needs.
 
 ## Multiple forts
 
@@ -31,9 +83,11 @@ page reads `forts.json` first and follows whichever fort is marked
 `build_forts_index`, `read_forts_index`/`write_forts_index` and
 `write_fort_feed` (the one call `scripts/export_stream_feed.py` makes) are
 the whole of this layer — see their docstrings in `dfqueue/feed.py`.
-Project-wide data that is not any one fort's (agents, tools, known gotchas)
-has no home built yet, but belongs at `<out-dir>/public/`, a SIBLING of
-`forts/`, never inside it — this layout already leaves that room.
+Project-wide data that is not any one fort's lives at `<out-dir>/public/`
+(and `<out-dir>/operator/`), a SIBLING of `forts/`, never inside it, exactly
+where this layout always left room for it: `agents.json`, `tools.json` and
+`gotchas.json` (`dfqueue.site_data.write_site_data`, handoffs/2026-10-02-
+site-agents-tools.md).
 
 If `forts.json` is missing (an older export, before this existed), the page
 falls back to treating the projection root itself as one fort's feed
@@ -70,7 +124,10 @@ deploy steps still needing the user's go-ahead.
    The export names a fort (see "Multiple forts" above): `--fort-id`
    defaults to the `--db` file's own stem, or `uniboslan` for a `--records`
    export; override it, and `--fort-name`/`--fort-status` (`live`/`lost`),
-   with explicit flags.
+   with explicit flags. Add `--gotchas-db path/to/gotchas.sqlite3` to
+   populate `gotchas.json` from a real (or locally built, via `python -m
+   dfmcp.gotchas_store init PATH`) gotcha store; omit it for an honest
+   empty `gotchas.json` rather than inventing entries.
 
 2. Serve this directory over HTTP (opening `index.html` directly as a
    `file://` URL will fail: browsers refuse `fetch()` of local JSON from a
@@ -79,6 +136,13 @@ deploy steps still needing the user's go-ahead.
    ```
    python -m http.server 8934
    ```
+
+   This repo routinely runs several concurrent sessions (CLAUDE.md); if
+   another one already has a server on 8934, `http.server` binding to a
+   port already in use can silently leave an OLDER server (serving a
+   different checkout, possibly a stale `app.js`) answering requests
+   instead of failing loudly. Pick a different port, or pass
+   `--directory web/stream` explicitly, if a loaded page looks stale.
 
 3. Open <http://127.0.0.1:8934/index.html> for the public page, or
    <http://127.0.0.1:8934/operator.html> for the operator page (which reads
@@ -105,7 +169,11 @@ visible, so it also picks up a re-export live without a manual refresh.
   allowlist per kind, the withhold net for URL/address/path/token-shaped
   text, reply quotes and thread resolution, the project-to-thread map,
   verdict badges, segmenting into 200-item immutable files, and the
-  read-only export from a real `records.jsonl`.
+  read-only export from a real `records.jsonl`; the Agents page (roster,
+  tool allowlists, charters and their git history, track record, spoke
+  counts, recent lines); the Tools page and tool pages (area, confidence,
+  who holds it, gotchas/vents/unexplained with the public safety net
+  applied); the Forts page.
 - **Honest fallbacks, not placeholders** (handoff item 7): a project's
   board name falls back to its own `summary`, truncated, when no
   `public_title` was written; a step's label falls back to its tool id,
@@ -299,3 +367,19 @@ port to fully revert the relay's public surface to pre-S1 shape.
   and board cards are plain buttons (keyboard-reachable, `aria-pressed`
   where relevant) but no explicit focus-trapping exists in the details
   panel.
+- **Agents/Tools/Forts/Chronicle (handoffs/2026-10-02-site-agents-tools.md)**:
+  no graded-prediction hit/miss rate on a role's record (would need the
+  queue's separate `predictions` table, a read this stream did not build —
+  only `proposals`/`accepted`/`rejected`/`deferred`/`answers`/`asks`, all
+  from the `records` table, are shown). No wake-up count for the conductor's
+  spoke (never recorded anywhere yet — slice S2 — shown with no number,
+  never a guess). The agent map's spokes carry no text label along the line
+  itself (the mockup's own halo-text labels); each node's own box names the
+  role, which this stream judged sufficient. Headless Chrome's `--window-
+  size` has an effective floor around 512px for `--dump-dom`/`--screenshot`
+  (confirmed: requesting 320-520px all produced `innerWidth: 512`), so a
+  literal 375px capture was not directly achievable from the CLI; verified
+  instead that `document.documentElement.scrollWidth === innerWidth` (no
+  horizontal overflow at all) at the achievable ~512px width, for every new
+  view, both themes — see this handoff's Result section for exactly what
+  that proved and did not prove.

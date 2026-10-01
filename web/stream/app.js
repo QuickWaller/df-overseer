@@ -915,8 +915,8 @@ function gotchaEntryEl(g, { showTool } = {}) {
   const head = [listPill, el("span", { class: "etitle", text: g.withheld ? "(withheld)" : (g.title || "(untitled)") })];
   if (showTool) {
     head.push(g.tool
-      ? el("a", { class: "chip", href: "#tool-" + g.tool, text: g.tool })
-      : el("span", { class: "chip", text: "general" }));
+      ? el("a", { class: "tagchip", href: "#tool-" + g.tool, text: g.tool })
+      : el("span", { class: "tagchip", text: "general" }));
   }
   const outcomes = (g.outcomes || []).map((o) => el("span", {
     class: "oc-" + (o.result === "worked" ? "ok" : o.result === "did_not_work" ? "bad" : "unclear"),
@@ -969,8 +969,17 @@ class SitePage {
       const saved = localStorage.getItem("ragwind-theme");
       if (THEMES.includes(saved)) return saved;
     } catch (e) { /* private window or blocked storage: default theme */ }
+    // ?theme= is a smoke-test aid (web/stream/README.md), not a feature a
+    // viewer is expected to use: it saves to the SAME localStorage key the
+    // Board's own StreamPage reads, so a screenshot tool can set the theme
+    // once via the URL and have it hold across a hash navigation into the
+    // Board, which has no query-param reading of its own.
     const q = new URLSearchParams(location.search).get("theme");
-    return THEMES.includes(q) ? q : DEFAULT_THEME; // ?theme= is a smoke-test aid, see README
+    if (THEMES.includes(q)) {
+      try { localStorage.setItem("ragwind-theme", q); } catch (e) { /* see above */ }
+      return q;
+    }
+    return DEFAULT_THEME;
   }
 
   _saveTheme() {
@@ -1065,6 +1074,9 @@ class SitePage {
     const route = this._route();
     this._renderNav(route);
     this.main.textContent = "";
+    // The Agents page is full-width (handoff item 2: the map/panel split
+    // needs the room); every other view keeps the page's usual max-width.
+    this.main.classList.toggle("full", route.view === "agents");
     if (route.view === "board") {
       this.main.appendChild(this._boardEl());
       return;
@@ -1081,6 +1093,7 @@ class SitePage {
     }
     if (route.view === "agents") {
       await this._ensureAgents();
+      await this._ensureTools();
       await this._ensureGotchas();
       await this._ensureFeedItems();
       this.main.appendChild(await this._viewAgents(route.param));
@@ -1161,7 +1174,7 @@ class SitePage {
     let panelBody;
     if (sel) {
       panelBody = [
-        el("div", { class: "pclose" }, [el("a", { href: "#agents", class: "chip", text: "close" })]),
+        el("div", { class: "pclose" }, [el("a", { href: "#agents", class: "tagchip", text: "close" })]),
         this._agentPanel(sel, selRaw.endsWith("-charter") ? "charter" : null),
       ];
     } else {
@@ -1216,8 +1229,8 @@ class SitePage {
       el("div", { class: "faint small", text: r.planned ? r.kind_label : r.kind_label }),
       el("div", { class: "small", text: r.summary }),
       el("div", { class: "chips" }, [
-        r.planned ? el("span", { class: "chip", text: "not enabled" }) : el("span", { class: "chip", text: spelledCount(r.tool_count, "tool", "tools") }),
-        r.planned ? null : (r.model_label ? el("span", { class: "chip", text: r.model_label }) : null),
+        r.planned ? el("span", { class: "tagchip", text: "not enabled" }) : el("span", { class: "tagchip", text: spelledCount(r.tool_count, "tool", "tools") }),
+        r.planned ? null : (r.model_label ? el("span", { class: "tagchip", text: r.model_label }) : null),
       ]),
       ...lines,
     ]);
@@ -1238,9 +1251,9 @@ class SitePage {
 
   _agentMapSvg() {
     const order = buildSpokeOrder(this.agents);
-    const W = 1000, H = 640;
+    const W = 1000, H = 820;
     const hub = { x: W / 2, y: H / 2 };
-    const rx = W / 2 - 150, ry = H / 2 - 110;
+    const rx = W / 2 - 150, ry = H / 2 - 130;
     const n = Math.max(order.length, 1);
     const pos = (i) => {
       const a = ((-90 + (360 * i) / n) * Math.PI) / 180;
@@ -1325,7 +1338,7 @@ class SitePage {
   _agentPanel(role, forceTab) {
     const r = this.agents.roles[role];
     if (!r) return el("p", { class: "muted", text: "Unknown role." });
-    if (this._agentTabFor !== role) { this.agentTab = r.planned ? "charter" : "tools"; this._agentTabFor = role; }
+    if (this._agentTabFor !== role) { this.agentTab = r.planned ? "charter" : (new URLSearchParams(location.search).get("tab") || "tools"); this._agentTabFor = role; }
     if (forceTab) this.agentTab = forceTab;
     if (r.planned) this.agentTab = "charter";
 
@@ -1356,7 +1369,7 @@ class SitePage {
         this._charterEl(r.charter_md),
         (r.charter_changes || []).length ? el("div", {}, [
           el("h2", { text: "Changes" }),
-          el("div", { class: "box timeline" }, r.charter_changes.map(([d, t]) => el("div", { class: "tl" }, [el("span", { class: "d", text: d }), el("span", { text: t })]))),
+          el("div", { class: "box timeline" }, r.charter_changes.map(([d, t]) => el("div", { class: "tlrow" }, [el("span", { class: "trd", text: d }), el("span", { text: t })]))),
         ]) : null,
       ]);
     }
@@ -1664,7 +1677,7 @@ class SitePage {
                 s.goal ? el("div", {}, [el("span", { class: "faint", text: "Goal  " }), document.createTextNode(s.goal)]) : el("div", { class: "faint", text: "No goal this season." }),
                 s.end ? el("div", {}, [el("span", { class: "faint", text: "Result  " }), document.createTextNode(s.end)]) : null,
                 s.review ? el("div", { class: "line" }, [el("div", { class: "ctx" }, [el("span", { style: `color:${roleCssVar("overseer")};font-weight:600`, text: "Overseer" }), document.createTextNode(" · review")]), document.createTextNode(s.review)]) : null,
-                el("div", { class: "timeline" }, shown.map(([d, t, k]) => el("div", { class: "tl" + (EV[k] ? "" : "") }, [el("span", { class: "d", text: d }), el("span", {}, [el("span", { class: "pill " + (EV[k] ? EV[k][1] : "p-plain"), text: EV[k] ? EV[k][0] : k }), document.createTextNode("  " + t)])]))),
+                el("div", { class: "timeline" }, shown.map(([d, t, k]) => el("div", { class: "tlrow" }, [el("span", { class: "trd", text: d }), el("span", {}, [el("span", { class: "pill " + (EV[k] ? EV[k][1] : "p-plain"), text: EV[k] ? EV[k][0] : k }), document.createTextNode("  " + t)])]))),
                 el("button", {
                   class: "tbtn", type: "button", "aria-pressed": String(all),
                   onclick: () => { all ? this.showAllSeasons.delete(i) : this.showAllSeasons.add(i); this._render(); },
@@ -1695,7 +1708,7 @@ class SitePage {
             el("div", { class: "ctx small" }, [el("span", { style: `color:${roleCssVar("chronicler")};font-weight:600`, text: "Chronicler" }), el("span", { class: "faint", text: " · the fort in brief" })]),
             el("p", { class: "account", text: lost.account }),
           ]),
-          el("div", { class: "timeline" }, lost.events.map(([d, t, k]) => el("div", { class: "tl" }, [el("span", { class: "d", text: d }), el("span", {}, [el("span", { class: "pill " + (EV[k] ? EV[k][1] : "p-plain"), text: EV[k] ? EV[k][0] : k }), document.createTextNode("  " + t)])]))),
+          el("div", { class: "timeline" }, lost.events.map(([d, t, k]) => el("div", { class: "tlrow" }, [el("span", { class: "trd", text: d }), el("span", {}, [el("span", { class: "pill " + (EV[k] ? EV[k][1] : "p-plain"), text: EV[k] ? EV[k][0] : k }), document.createTextNode("  " + t)])]))),
         ]),
       ]),
     ]);
