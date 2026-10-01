@@ -763,6 +763,151 @@ def test_project_guards_rejects_junk():
     assert errors
 
 
+# ---- public display fields (handoffs/2026-10-02-queue-display-fields.md) -----
+
+
+def test_project_without_public_fields_still_validates_clean():
+    """An old project record, written before this stream, never had
+    public_title/public_rationale/urgency at all -- all three are optional."""
+    record = make_project()
+    assert "public_title" not in record
+    assert schema.validate(record) == []
+
+
+def test_project_public_title_and_rationale_and_urgency_validate_clean():
+    record = make_project(
+        public_title="Recover the hematite vein",
+        public_rationale="The ring's own smoothing pass exposed ore.",
+        urgency="elevated",
+    )
+    assert schema.validate(record) == []
+
+
+def test_project_public_title_too_long_is_refused():
+    record = make_project(public_title="x" * 61)
+    errors = _errors_mentioning(schema.validate(record), "record.public_title")
+    assert errors
+
+
+def test_project_public_title_at_the_limit_is_fine():
+    record = make_project(public_title="x" * 60)
+    assert schema.validate(record) == []
+
+
+def test_project_public_rationale_too_long_is_refused():
+    record = make_project(public_rationale="x" * 301)
+    errors = _errors_mentioning(schema.validate(record), "record.public_rationale")
+    assert errors
+
+
+def test_project_public_title_coordinate_scan():
+    record = make_project(public_title="Wall at (4, 9, -2)")
+    errors = _errors_mentioning(schema.validate(record), "record.public_title")
+    assert errors
+
+
+def test_project_public_rationale_coordinate_scan():
+    record = make_project(public_rationale="Still pending at x=12.")
+    errors = _errors_mentioning(schema.validate(record), "record.public_rationale")
+    assert errors
+
+
+def test_project_public_title_empty_string_is_refused():
+    record = make_project(public_title="")
+    errors = _errors_mentioning(schema.validate(record), "record.public_title")
+    assert errors
+
+
+def test_project_urgency_vocabulary():
+    record = make_project(urgency="urgent")
+    errors = _errors_mentioning(schema.validate(record), "record.urgency")
+    assert errors
+
+
+def test_project_urgency_each_value_in_closed_vocabulary_is_valid():
+    for value in ("normal", "elevated", "high"):
+        record = make_project(urgency=value)
+        assert schema.validate(record) == [], value
+
+
+def test_project_step_label_validates_clean():
+    record = make_project()
+    record["steps"][0]["label"] = "Smooth walls"
+    assert schema.validate(record) == []
+
+
+def test_project_step_label_too_long_is_refused():
+    record = make_project()
+    record["steps"][0]["label"] = "x" * 25
+    errors = _errors_mentioning(schema.validate(record), "steps.0.label")
+    assert errors
+
+
+def test_project_step_label_at_the_limit_is_fine():
+    record = make_project()
+    record["steps"][0]["label"] = "x" * 24
+    assert schema.validate(record) == []
+
+
+def test_project_step_label_coordinate_scan():
+    record = make_project()
+    record["steps"][0]["label"] = "Wall at (4, 9, -2)"
+    errors = _errors_mentioning(schema.validate(record), "steps.0.label")
+    assert errors
+
+
+def test_project_step_label_empty_string_is_refused():
+    record = make_project()
+    record["steps"][0]["label"] = ""
+    errors = _errors_mentioning(schema.validate(record), "steps.0.label")
+    assert errors
+
+
+def test_amend_public_rationale_validates_clean():
+    record = make_amend(public_rationale="Dropping the now-unreachable tile.")
+    assert schema.validate(record) == []
+
+
+def test_amend_public_rationale_too_long_is_refused():
+    record = make_amend(public_rationale="x" * 301)
+    errors = _errors_mentioning(schema.validate(record), "record.public_rationale")
+    assert errors
+
+
+def test_abandon_public_rationale_validates_clean():
+    record = make_abandon(public_rationale="The vein played out.")
+    assert schema.validate(record) == []
+
+
+def test_abandon_public_rationale_too_long_is_refused():
+    record = make_abandon(public_rationale="x" * 301)
+    errors = _errors_mentioning(schema.validate(record), "record.public_rationale")
+    assert errors
+
+
+def test_observation_hold_code_validates_clean():
+    record = make_observation()
+    record["results"][0]["hold_code"] = "no_worker"
+    assert schema.validate(record) == []
+
+
+def test_observation_unknown_hold_code_is_refused():
+    record = make_observation()
+    record["results"][0]["hold_code"] = "made_up_code"
+    errors = _errors_mentioning(schema.validate(record), "results.0.hold_code")
+    assert errors
+
+
+def test_observation_hold_code_vocabulary_matches_public_text_file():
+    """`schema.hold_codes()` must read `dfqueue/public_text.yaml`'s own keys,
+    not a hardcoded tuple -- the 'one data entry, no new code' rule."""
+    assert schema.hold_codes() == {
+        "no_material_in_reach", "site_unreachable", "site_flooded",
+        "no_worker", "waiting_for_haul", "preview_failed", "tool_refused",
+        "other",
+    }
+
+
 # ---- executed: step_id, targets, game_refs, target_state ---------------------
 
 

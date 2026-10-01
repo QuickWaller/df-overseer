@@ -1510,6 +1510,33 @@ def test_amend_refuses_reusing_a_step_id_whose_definition_changed(tmp_path):
         )
 
 
+def test_amend_label_only_change_keeps_the_same_step_id(tmp_path):
+    """`handoffs/2026-10-02-queue-display-fields.md`: changing only a step's
+    `label` (cosmetic display text the reconciler never reads) must NOT
+    trip the byte-identical reuse check -- a label-only edit keeps the same
+    step id, unlike a real definition change (see the refusal test above,
+    which still fires for `targets`)."""
+    path = _db(tmp_path)
+    store.append(make_proposal(), path, game_tick=100)
+    _ruling, project = _rule_and_project(path)
+    s1, s2 = project["steps"][0], project["steps"][1]
+    relabelled_s1 = copy.deepcopy(s1)
+    relabelled_s1["label"] = "Mine the vein"
+
+    written = store.append(
+        make_amend(
+            project_id=project["id"],
+            replaces=[],
+            adds=[],
+            drops=[],
+            steps=[relabelled_s1, copy.deepcopy(s2)],
+        ),
+        path,
+    )
+    assert [s["id"] for s in written["steps"]] == [s1["id"], s2["id"]]
+    assert written["steps"][0]["label"] == "Mine the vein"
+
+
 def test_amend_accepts_a_changed_step_under_a_fresh_id(tmp_path):
     """The enforced escape hatch: a changed step takes a NEW id, and the
     old one is named in `drops` (or `replaces`) -- never redefined in
