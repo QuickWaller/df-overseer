@@ -143,6 +143,11 @@ SCHEMA_VERSION = 1
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 ROSTER_PATH = REPO_ROOT / "agents" / "ROSTER.yaml"
+#: `handoffs/2026-10-02-queue-display-fields.md`: public text for a closed
+#: code vocabulary (today just `hold_codes`), one data entry per code, no
+#: new code to add one -- the same "one data entry, no new code" rule
+#: `tools-must-be-generalisable` applies to tools.
+PUBLIC_TEXT_PATH = REPO_ROOT / "dfqueue" / "public_text.yaml"
 
 # ---- record kinds -----------------------------------------------------------
 
@@ -259,6 +264,29 @@ OBSERVATION_STATUSES = (OBS_CONSISTENT, OBS_CONTRADICTED, OBS_NOT_OBSERVABLE)
 DWARF_TICKS = "dwarf_ticks"
 COST_UNITS = (DWARF_TICKS,)
 
+# ---- public display fields (handoffs/2026-10-02-queue-display-fields.md) -----
+#
+# The stream page board (`handoffs/2026-10-02-stream-board.md`,
+# `research/2026-10-01-stream-page-design.md` §3.3 items 6/7) needs fields
+# the queue did not record before: a project's public title and one-line
+# rationale, an urgency, a short label per step, and a closed hold-code
+# vocabulary for a held target. All optional -- an old record written before
+# this stream stays valid unchanged.
+
+#: `urgency` on `project`: `high` (lives or the fort at risk), `elevated`
+#: (blocks other work, or a need running short), `normal` (everything else)
+#: -- `agents/overseer/role.md` states the same three in those words.
+URGENCY_NORMAL, URGENCY_ELEVATED, URGENCY_HIGH = "normal", "elevated", "high"
+URGENCIES = (URGENCY_NORMAL, URGENCY_ELEVATED, URGENCY_HIGH)
+
+#: Length limits for the new public fields (handoff's own numbers, chosen
+#: for the stream board's card and job-graph layout -- `public_title` is a
+#: card title, `public_rationale` is "one or two sentences", a step `label`
+#: is "short and imperative", e.g. "Smooth walls", "Place bed").
+PUBLIC_TITLE_MAX = 60
+PUBLIC_RATIONALE_MAX = 300
+STEP_LABEL_MAX = 24
+
 # ---- the closed `type` vocabulary, keyed by role -----------------------------
 #
 # Drafted from each enabled role's `role.md` "Owns" section, one closed
@@ -348,10 +376,12 @@ KIND_FIELDS: dict[str, tuple[str, ...]] = {
     ASK: ("question", "proposal_id"),
     ANSWER: ("ask_id", "answer"),
     ESCALATION: ("reason",),
-    #: `research/2026-09-28-job-dependency-graph.md` §4.1.
+    #: `research/2026-09-28-job-dependency-graph.md` §4.1. `public_title`,
+    #: `public_rationale` and `urgency` added
+    #: `handoffs/2026-10-02-queue-display-fields.md`, all optional.
     PROJECT: (
         "from_ruling", "objective_id", "template", "summary", "because",
-        "steps",
+        "steps", "public_title", "public_rationale", "urgency",
     ),
     #: §4.4. One `observation` record reports on one or more targets read at
     #: the same game tick (one reconcile pass, one tick).
@@ -364,8 +394,13 @@ KIND_FIELDS: dict[str, tuple[str, ...]] = {
     #: new, and which of the previous version's ids are gone, so a reader
     #: (or a future audit) does not have to diff two step lists by hand to
     #: answer "what changed here".
-    AMEND: ("project_id", "steps", "reason", "replaces", "adds", "drops"),
-    ABANDON: ("project_id", "reason"),
+    #: `public_rationale` added `handoffs/2026-10-02-queue-display-fields.md`,
+    #: optional.
+    AMEND: (
+        "project_id", "steps", "reason", "replaces", "adds", "drops",
+        "public_rationale",
+    ),
+    ABANDON: ("project_id", "reason", "public_rationale"),
 }
 
 # ---- the raw-coordinate pattern -----------------------------------------------
@@ -479,6 +514,23 @@ def fort_name() -> str:
     return _load_roster()["fort"]
 
 
+# ---- public text (dfqueue/public_text.yaml), read-only -------------------------
+
+
+@lru_cache(maxsize=1)
+def _load_public_text() -> dict:
+    with PUBLIC_TEXT_PATH.open(encoding="utf-8") as fh:
+        return yaml.safe_load(fh) or {}
+
+
+def hold_codes() -> frozenset[str]:
+    """The closed `hold_code` vocabulary (design
+    `research/2026-10-01-stream-page-design.md` §3.3 item 7), read from
+    `dfqueue/public_text.yaml`'s own keys rather than hardcoded here -- a new
+    code is one data entry in that file, not a code change."""
+    return frozenset(_load_public_text().get("hold_codes", {}).keys())
+
+
 # ---- sub-record validation ------------------------------------------------------
 
 
@@ -491,6 +543,34 @@ def _validate_text_field(record: dict, name: str, errors: list[str]) -> None:
     if not isinstance(value, str) or not value:
         errors.append(f"record.{name}: expected a non-empty string")
         return
+    coord = _find_coordinate(value)
+    if coord:
+        errors.append(
+            f"record.{name}: contains a raw-coordinate pattern ({coord!r}); "
+            "design commitment #1 forbids coordinates in text fields"
+        )
+
+
+def _validate_optional_text_field(
+    record: dict, name: str, errors: list[str], *, max_len: int | None = None
+) -> None:
+    """An optional, coordinate-free free-text field: absence (or an explicit
+    `None`) is not an error, unlike `_validate_text_field` -- added
+    `handoffs/2026-10-02-queue-display-fields.md` for the stream page's
+    public display fields (`public_title`, `public_rationale`), which an
+    old record written before this stream never had. When given, it gets
+    the same coordinate scan every public text field gets, plus an optional
+    max length."""
+    if name not in record or record[name] is None:
+        return
+    value = record[name]
+    if not isinstance(value, str) or not value:
+        errors.append(f"record.{name}: expected a non-empty string when given")
+        return
+    if max_len is not None and len(value) > max_len:
+        errors.append(
+            f"record.{name}: expected at most {max_len} characters, got {len(value)}"
+        )
     coord = _find_coordinate(value)
     if coord:
         errors.append(
@@ -874,7 +954,7 @@ def _validate_step(step, step_ids: set, errors: list[str], prefix: str) -> None:
 
     known = {
         "id", "tool", "args", "targets", "requires", "trigger",
-        "prefer_after", "guards", "implicit",
+        "prefer_after", "guards", "implicit", "label",
     }
     for key in step:
         if key not in known:
@@ -968,6 +1048,23 @@ def _validate_step(step, step_ids: set, errors: list[str], prefix: str) -> None:
                     if not isinstance(name, str) or not name:
                         errors.append(f"{prefix}.guards.{i}: expected a non-empty string")
 
+    if "label" in step and step["label"] is not None:
+        label = step["label"]
+        if not isinstance(label, str) or not label:
+            errors.append(f"{prefix}.label: expected a non-empty string when given")
+        elif len(label) > STEP_LABEL_MAX:
+            errors.append(
+                f"{prefix}.label: expected at most {STEP_LABEL_MAX} characters, "
+                f"got {len(label)}"
+            )
+        else:
+            coord = _find_coordinate(label)
+            if coord:
+                errors.append(
+                    f"{prefix}.label: contains a raw-coordinate pattern ({coord!r}); "
+                    "design commitment #1 forbids coordinates in text fields"
+                )
+
 
 def _find_requires_cycle(steps: list) -> list[str] | None:
     """The first `requires` cycle found (finish-to-start edges only, design
@@ -1024,6 +1121,15 @@ def _validate_project_fields(record: dict, errors: list[str]) -> None:
 
     _validate_text_field(record, "summary", errors)
     _validate_text_field(record, "because", errors)
+    _validate_optional_text_field(record, "public_title", errors, max_len=PUBLIC_TITLE_MAX)
+    _validate_optional_text_field(
+        record, "public_rationale", errors, max_len=PUBLIC_RATIONALE_MAX
+    )
+    if "urgency" in record and record["urgency"] is not None:
+        if record["urgency"] not in URGENCIES:
+            errors.append(
+                f"record.urgency: {record['urgency']!r} is not in {URGENCIES}"
+            )
 
     if "steps" not in record:
         errors.append("record.steps: required field is missing")
@@ -1120,6 +1226,9 @@ def _validate_amend_fields(record: dict, errors: list[str]) -> None:
             errors.append("record.project_id: expected a non-empty string")
 
     _validate_text_field(record, "reason", errors)
+    _validate_optional_text_field(
+        record, "public_rationale", errors, max_len=PUBLIC_RATIONALE_MAX
+    )
 
     if "steps" not in record:
         errors.append("record.steps: required field is missing")
@@ -1178,13 +1287,16 @@ def _validate_abandon_fields(record: dict, errors: list[str]) -> None:
             errors.append("record.project_id: expected a non-empty string")
 
     _validate_text_field(record, "reason", errors)
+    _validate_optional_text_field(
+        record, "public_rationale", errors, max_len=PUBLIC_RATIONALE_MAX
+    )
 
 
 def _validate_observation_result(item, errors: list[str], prefix: str) -> None:
     if not isinstance(item, dict):
         errors.append(f"{prefix}: expected an object")
         return
-    known = {"target", "status", "reason"}
+    known = {"target", "status", "reason", "hold_code"}
     for key in item:
         if key not in known:
             errors.append(f"{prefix}.{key}: not a field in the schema")
@@ -1221,6 +1333,14 @@ def _validate_observation_result(item, errors: list[str], prefix: str) -> None:
                     f"{prefix}.reason: contains a raw-coordinate pattern ({coord!r}); "
                     "design commitment #1 forbids coordinates in text fields"
                 )
+
+    if "hold_code" in item and item["hold_code"] is not None:
+        hc = item["hold_code"]
+        if not isinstance(hc, str) or hc not in hold_codes():
+            errors.append(
+                f"{prefix}.hold_code: {hc!r} is not in the closed hold-code "
+                f"vocabulary (dfqueue/public_text.yaml: {sorted(hold_codes())})"
+            )
 
 
 def _validate_observation_fields(record: dict, errors: list[str]) -> None:

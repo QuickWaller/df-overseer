@@ -925,6 +925,51 @@ class TestProject:
     # ever reached). dfqueue.schema's own write-time role check is exercised
     # directly in dfqueue/tests/test_schema.py::test_project_role_restricted_to_sole_writer.
 
+    async def test_project_accepts_public_title_rationale_urgency_and_step_label(self, tmp_path):
+        """`handoffs/2026-10-02-queue-display-fields.md`: the new public
+        display fields reach `dfqueue.store` through this tool unchanged."""
+        path = tmp_path / "queue.sqlite3"
+        _proposal, ruling = await _propose_and_rule(path)
+
+        args = _project_args(ruling["id"])
+        args["steps"][0]["label"] = "Mine the vein"
+        args["public_title"] = "Recover the hematite vein"
+        args["public_rationale"] = "The ring's own smoothing pass exposed ore."
+        args["urgency"] = "elevated"
+
+        _text, structured = await queue_tools.call(
+            queue_tools.QUEUE_PROJECT, "overseer", args,
+            db_path=path, call_dfhack=_ok_call_dfhack, write_lock=asyncio.Lock(),
+        )
+        assert structured["public_title"] == "Recover the hematite vein"
+        assert structured["public_rationale"] == "The ring's own smoothing pass exposed ore."
+        assert structured["urgency"] == "elevated"
+        assert structured["steps"][0]["label"] == "Mine the vein"
+
+    async def test_project_rejects_a_bad_urgency(self, tmp_path):
+        path = tmp_path / "queue.sqlite3"
+        _proposal, ruling = await _propose_and_rule(path)
+        args = _project_args(ruling["id"])
+        args["urgency"] = "urgent"
+
+        with pytest.raises(queue_tools.QueueToolError, match="urgency"):
+            await queue_tools.call(
+                queue_tools.QUEUE_PROJECT, "overseer", args,
+                db_path=path, call_dfhack=_ok_call_dfhack, write_lock=asyncio.Lock(),
+            )
+
+    async def test_project_rejects_a_too_long_public_title(self, tmp_path):
+        path = tmp_path / "queue.sqlite3"
+        _proposal, ruling = await _propose_and_rule(path)
+        args = _project_args(ruling["id"])
+        args["public_title"] = "x" * 61
+
+        with pytest.raises(queue_tools.QueueToolError, match="public_title"):
+            await queue_tools.call(
+                queue_tools.QUEUE_PROJECT, "overseer", args,
+                db_path=path, call_dfhack=_ok_call_dfhack, write_lock=asyncio.Lock(),
+            )
+
 
 class TestProjectStatus:
     async def test_status_renders_one_line_per_project_and_never_a_coordinate(self, tmp_path):
@@ -1221,3 +1266,67 @@ class TestAmendAbandon:
     # dfmcp/tests/test_roles.py, alongside queue.project's own equivalent
     # test (not duplicated here); dfqueue.schema's own write-time role check
     # is exercised directly in dfqueue/tests/test_schema.py.
+
+    async def test_amend_accepts_public_rationale(self, tmp_path):
+        path = tmp_path / "queue.sqlite3"
+        _proposal, ruling = await _propose_and_rule(path)
+        _p_text, project = await queue_tools.call(
+            queue_tools.QUEUE_PROJECT, "overseer", _project_args(ruling["id"]),
+            db_path=path, call_dfhack=_ok_call_dfhack, write_lock=asyncio.Lock(),
+        )
+
+        _text, amend = await queue_tools.call(
+            queue_tools.QUEUE_AMEND, "overseer",
+            {
+                "project_id": project["id"],
+                "reason": "s2's wall isn't needed; the tile is already enclosed.",
+                "public_rationale": "Dropping the wall step; the tile is already enclosed.",
+                "drops": ["s2"],
+                "steps": [project["steps"][0]],
+            },
+            db_path=path, call_dfhack=_ok_call_dfhack, write_lock=asyncio.Lock(),
+        )
+        assert amend["public_rationale"] == "Dropping the wall step; the tile is already enclosed."
+
+    async def test_amend_label_only_change_round_trips_through_the_tool(self, tmp_path):
+        """The fresh-id rule's label exclusion (`dfqueue.store._canonical_step_json`),
+        exercised end to end through the real MCP tool rather than only
+        `dfqueue.tests.test_store` directly."""
+        path = tmp_path / "queue.sqlite3"
+        _proposal, ruling = await _propose_and_rule(path)
+        _p_text, project = await queue_tools.call(
+            queue_tools.QUEUE_PROJECT, "overseer", _project_args(ruling["id"]),
+            db_path=path, call_dfhack=_ok_call_dfhack, write_lock=asyncio.Lock(),
+        )
+        s1, s2 = project["steps"][0], dict(project["steps"][1])
+        relabelled_s1 = dict(s1)
+        relabelled_s1["label"] = "Mine the vein"
+
+        _text, amend = await queue_tools.call(
+            queue_tools.QUEUE_AMEND, "overseer",
+            {
+                "project_id": project["id"],
+                "reason": "Labelling the steps for the stream page; nothing else changes.",
+                "steps": [relabelled_s1, s2],
+            },
+            db_path=path, call_dfhack=_ok_call_dfhack, write_lock=asyncio.Lock(),
+        )
+        assert [s["id"] for s in amend["steps"]] == [s1["id"], s2["id"]]
+
+    async def test_abandon_accepts_public_rationale(self, tmp_path):
+        path = tmp_path / "queue.sqlite3"
+        _proposal, ruling = await _propose_and_rule(path)
+        _p_text, project = await queue_tools.call(
+            queue_tools.QUEUE_PROJECT, "overseer", _project_args(ruling["id"]),
+            db_path=path, call_dfhack=_ok_call_dfhack, write_lock=asyncio.Lock(),
+        )
+
+        _text, abandon = await queue_tools.call(
+            queue_tools.QUEUE_ABANDON, "overseer",
+            {
+                "project_id": project["id"], "reason": "The vein played out.",
+                "public_rationale": "The vein played out; nothing left to mine.",
+            },
+            db_path=path, call_dfhack=_ok_call_dfhack, write_lock=asyncio.Lock(),
+        )
+        assert abandon["public_rationale"] == "The vein played out; nothing left to mine."

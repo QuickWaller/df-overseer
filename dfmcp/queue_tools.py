@@ -826,6 +826,16 @@ _STEP_SCHEMA = {
         "id": {"type": "string", "description": "Unique within this project's own steps list."},
         "tool": {"type": "string", "description": "A real tool id (scripts/dfhack/TOOLS.yaml, via the registry)."},
         "args": {"type": "object", "description": "Optional. Arguments for this step's own tool call."},
+        "label": {
+            "type": "string",
+            "maxLength": 24,
+            "description": (
+                "Optional, public, coordinate-free: a short imperative label for the "
+                "stream page's job graph, e.g. 'Smooth walls', 'Place bed'. Omit to show "
+                "the tool's own display name instead. Changing only a step's label in a "
+                "later queue.amend never counts as changing the step (no fresh id needed)."
+            ),
+        },
         "targets": _STEP_TARGET_SPEC_SCHEMA,
         "requires": {
             "type": "array",
@@ -911,6 +921,26 @@ _PROJECT_SCHEMA = {
                 "wrapping the whole ruling (no per-target tracking)."
             ),
         },
+        "public_title": {
+            "type": "string",
+            "maxLength": 60,
+            "description": "Optional, public: a short card title for the stream page.",
+        },
+        "public_rationale": {
+            "type": "string",
+            "maxLength": 300,
+            "description": (
+                "Optional, public: why, one or two sentences, for the stream page."
+            ),
+        },
+        "urgency": {
+            "type": "string",
+            "enum": list(schema.URGENCIES),
+            "description": (
+                "Optional: high (lives or the fort at risk), elevated (blocks other "
+                "work or a need running short), normal (everything else)."
+            ),
+        },
     },
 }
 
@@ -985,6 +1015,14 @@ _AMEND_SCHEMA = {
             "items": {"type": "string"},
             "description": "Optional: step ids from the previous version this one removes.",
         },
+        "public_rationale": {
+            "type": "string",
+            "maxLength": 300,
+            "description": (
+                "Optional, public: why this plan is changing, one or two sentences, "
+                "for the stream page."
+            ),
+        },
     },
 }
 
@@ -1011,6 +1049,14 @@ _ABANDON_SCHEMA = {
         "reason": {
             "type": "string",
             "description": "Why this project is being abandoned. Coordinate-free. Required.",
+        },
+        "public_rationale": {
+            "type": "string",
+            "maxLength": 300,
+            "description": (
+                "Optional, public: why this project is being abandoned, one or two "
+                "sentences, for the stream page."
+            ),
         },
     },
 }
@@ -1073,10 +1119,16 @@ _PENDING_FIELDS = {"limit"}
 _ASK_FIELDS = {"question", "proposal_id"}
 _ANSWER_FIELDS = {"ask_id", "answer"}
 _EXECUTED_FIELDS = {"ruling_id", "step_id", "actions", "notes"}
-_PROJECT_FIELDS = {"from_ruling", "objective_id", "template", "summary", "because", "steps"}
+_PROJECT_FIELDS = {
+    "from_ruling", "objective_id", "template", "summary", "because", "steps",
+    "public_title", "public_rationale", "urgency",
+}
 _PROJECT_STATUS_FIELDS = {"project_id"}
-_AMEND_FIELDS = {"project_id", "steps", "reason", "replaces", "adds", "drops"}
-_ABANDON_FIELDS = {"project_id", "reason"}
+_AMEND_FIELDS = {
+    "project_id", "steps", "reason", "replaces", "adds", "drops",
+    "public_rationale",
+}
+_ABANDON_FIELDS = {"project_id", "reason", "public_rationale"}
 
 
 def _write_error(tool_id: str, exc: store.QueueError) -> QueueToolError:

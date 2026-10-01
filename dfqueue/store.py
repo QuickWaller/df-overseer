@@ -310,8 +310,17 @@ def _canonical_step_json(step: dict) -> str:
     defines) did not change at all. `sort_keys=True` makes key order
     irrelevant; a nested list still compares positionally, which is correct
     here (`requires` is an ordered edge list, not a set, and reordering it
-    is itself a real change worth catching)."""
-    return json.dumps(step, sort_keys=True, ensure_ascii=False)
+    is itself a real change worth catching).
+
+    **`label` is excluded from this comparison** (user's call,
+    `handoffs/2026-10-02-queue-display-fields.md`): it is cosmetic display
+    text, never read by the reconciler or by `_seed_step_targets`, so a
+    step whose only change is a reworded `label` must not be forced to take
+    a fresh id -- the fresh-id rule exists to keep `step_targets` rows from
+    silently being reinterpreted under a changed `targets`/`tool`/`args`,
+    which a label can never cause."""
+    comparable = {k: v for k, v in step.items() if k != "label"}
+    return json.dumps(comparable, sort_keys=True, ensure_ascii=False)
 
 
 def _project_id_already_flagged(errors: list[str]) -> bool:

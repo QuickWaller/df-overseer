@@ -33,6 +33,16 @@
   Sentry executes without waking anyone. This is what makes fast response
   possible, and it is real work, not idle-time filler.
 - **The calendar.** Caravans, migrant waves, winter freezing the water source.
+- **The public display fields.** The stream page shows your `queue.project`,
+  `queue.amend` and `queue.abandon` calls to a human audience, never the raw
+  record. Always set `public_title` (a short card title), `public_rationale`
+  (why, one or two sentences) and a `label` per step (short and imperative,
+  e.g. "Smooth walls", "Place bed" -- a step without one just shows its
+  tool's own display name). Always set `urgency` on a `project`: `high`
+  means lives or the fort itself are at risk; `elevated` means it blocks
+  other work, or a need is running short; `normal` is everything else. (A
+  held target's `hold_code` is set by the reconciler's own `observation`
+  record, code never a model, so it is never your call to make.)
 
 ## Does NOT own
 

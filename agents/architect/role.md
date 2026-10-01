@@ -53,6 +53,10 @@
   would change your proposal. Wait for `queue.answer` before treating it
   as settled; it is a hypothesis, never a substitute for your own read
   tools.
+- **Suggest a title.** You have no `public_title` field of your own, but a
+  short, human-readable title for what you are proposing, as the first
+  clause of your `summary`, helps the Overseer write the stream page's own
+  `public_title` if your proposal is accepted.
 
 Your record, once written, is rendered back to you as XML (the form models
 handle most reliably, `docs/AGENT-ARCHITECTURE.md` §4):
