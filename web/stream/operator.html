@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Ragwind: operator view</title>
 <meta name="description" content="Operator-only view of the fortress stream, with the full record behind every line.">
-<link rel="stylesheet" href="style.css?v=4">
+<link rel="stylesheet" href="style.css?v=5">
 </head>
 <body>
 <!--
@@ -22,12 +22,16 @@
   toggle re-fetches from data/public instead of data/operator and renders
   with the exact same code path the real public page uses, so the user
   reads precisely what would go public before anything does (design
-  section 3.6, "the user reads it before anyone else does").
+  section 3.6, "the user reads it before anyone else does"). The Agents/
+  Tools/Forts/Chronicle views (handoffs/2026-10-02-site-agents-tools.md)
+  are read-only reference pages with nothing operator-only to preview, so
+  this toggle only affects the Board (StreamPage), same as before.
 -->
-<div class="page" id="app"></div>
-<script src="app.js?v=4"></script>
+<div id="app"></div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/marked/12.0.2/marked.min.js"></script>
+<script src="app.js?v=5"></script>
 <script>
-  const page = new StreamPage({ dataRoot: "data/operator", mode: "operator", liveViewSrc: "vnc.html?autoconnect=true&resize=scale", root: document.getElementById("app") });
+  const page = new SitePage({ dataRoot: "data/operator", mode: "operator", liveViewSrc: "vnc.html?autoconnect=true&resize=scale", root: document.getElementById("app") });
   page.start();
 </script>
 </body>

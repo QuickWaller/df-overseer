@@ -44,7 +44,7 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from dfqueue import feed  # noqa: E402  (path setup must run first)
+from dfqueue import feed, site_data  # noqa: E402  (path setup must run first)
 
 
 def _load(records_path: str | None, db_path: str | None) -> list[dict]:
@@ -80,11 +80,24 @@ def main(argv: list[str] | None = None) -> int:
         "--fort-status", default="live", choices=["live", "lost"],
         help="this fort's status for forts.json (default: live)",
     )
+    parser.add_argument(
+        "--gotchas-db",
+        help="a live gotcha-store SQLite file (read-only); omit for an honest empty gotchas.json",
+    )
     args = parser.parse_args(argv)
 
     records = _load(args.records, args.db)
     out_dir = Path(args.out_dir)
     fort_id = args.fort_id or _default_fort_id(args.records, args.db)
+
+    # Project-wide data (agents.json/tools.json/gotchas.json), the same
+    # across every fort -- built once, written at the top of each
+    # projection root (site_data.write_site_data's own docstring).
+    agents_json = site_data.build_agents_json(records)
+    tools_json = site_data.build_tools_json()
+    gotchas_entries = (
+        site_data.load_gotchas_readonly(args.gotchas_db) if args.gotchas_db else []
+    )
 
     public_items = feed.build_items(records, public=True)
     public_projects = feed.build_projects_view(records, public=True)
@@ -93,6 +106,10 @@ def main(argv: list[str] | None = None) -> int:
         fort_status=args.fort_status, projects=public_projects,
         status=feed.build_placeholder_status(),
     )
+    site_data.write_site_data(
+        out_dir / "public", agents_json=agents_json, tools_json=tools_json,
+        gotchas_entries=gotchas_entries, public=True,
+    )
 
     operator_items = feed.build_items(records, public=False)
     operator_projects = feed.build_projects_view(records, public=False)
@@ -100,6 +117,10 @@ def main(argv: list[str] | None = None) -> int:
         operator_items, out_dir / "operator", fort_id=fort_id, fort_name=args.fort_name,
         fort_status=args.fort_status, projects=operator_projects,
         status=feed.build_placeholder_status(),
+    )
+    site_data.write_site_data(
+        out_dir / "operator", agents_json=agents_json, tools_json=tools_json,
+        gotchas_entries=gotchas_entries, public=False,
     )
 
     print(

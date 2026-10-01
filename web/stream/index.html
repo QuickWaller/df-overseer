@@ -5,7 +5,8 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Ragwind: the fortress stream</title>
 <meta name="description" content="A Dwarf Fortress colony run by AI agents, live conversation and decisions.">
-<link rel="stylesheet" href="style.css?v=4">
+<link rel="stylesheet" href="style.css?v=5">
+<link rel="preconnect" href="https://fonts.googleapis.com">
 </head>
 <body>
 <!--
@@ -19,11 +20,23 @@
   This is slice S0: `dataRoot` points at a local folder built by
   scripts/export_stream_feed.py (see README.md in this directory). No live
   VM access, no relay, no polling of anything outside this folder.
+
+  Site navigation, Agents, Tools, Forts and the Chronicle stub
+  (handoffs/2026-10-02-site-agents-tools.md): `app.js` now exports a
+  `SitePage` that owns the top navigation and mounts the ORIGINAL
+  `StreamPage` unchanged for the Board view. `marked` (pinned, from cdnjs,
+  CLAUDE.md's "external scripts only from cdnjs or jsdelivr, pinned") is
+  used only to render a role's own committed `role.md` on its Charter tab
+  -- repo-authored prose, never live or operator-tainted text; see app.js's
+  `_charterEl` for the safety handling (links stripped, no `<script>`
+  survives either way) and the page's own fallback (plain preformatted
+  text) when this script fails to load.
 -->
-<div class="page" id="app"></div>
-<script src="app.js?v=4"></script>
+<div id="app"></div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/marked/12.0.2/marked.min.js"></script>
+<script src="app.js?v=5"></script>
 <script>
-  const page = new StreamPage({ dataRoot: "data/public", mode: "public", liveViewSrc: "vnc.html?autoconnect=true&resize=scale&view_only=true", root: document.getElementById("app") });
+  const page = new SitePage({ dataRoot: "data/public", mode: "public", liveViewSrc: "vnc.html?autoconnect=true&resize=scale&view_only=true", root: document.getElementById("app") });
   page.start();
 </script>
 </body>

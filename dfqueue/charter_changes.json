@@ -1,0 +1,136 @@
+{
+  "architect": [
+    [
+      "2026-10-02",
+      "agents: overseer charter sets public display fields, proposers suggest a title"
+    ],
+    [
+      "2026-09-22",
+      "wip: Quartermaster made complete for the MVP; queue.ask/executed grants"
+    ],
+    [
+      "2026-09-21",
+      "Grant the gotcha and building tools to the enabled roles; wire the confidence legend into role.md"
+    ],
+    [
+      "2026-09-15",
+      "wip: native queue.* MCP tools wired into dfmcp registry/roles/tools"
+    ],
+    [
+      "2026-09-12",
+      "Build the agents/ roster scaffolding: ROSTER.yaml, charters, tool allowlists"
+    ]
+  ],
+  "chronicler": [
+    [
+      "2026-09-12",
+      "Build the agents/ roster scaffolding: ROSTER.yaml, charters, tool allowlists"
+    ]
+  ],
+  "conductor": [
+    [
+      "2026-09-23",
+      "wip: doc-drift pass 3, role charters and roster comment brought current; correct an overstated agent-exec claim"
+    ],
+    [
+      "2026-09-22",
+      "Game clock, quicksave, vitals tools and the conductor role"
+    ]
+  ],
+  "consultant": [
+    [
+      "2026-09-25",
+      "conductor: charter-write failures become recorded failed runs; Overseer/Consultant queue-routing charter lines"
+    ],
+    [
+      "2026-09-24",
+      "Merge wiki S3 (full pull) and S4 (reader and search)"
+    ],
+    [
+      "2026-09-22",
+      "Grant the five retrieval tools to the Consultant; update its role.md"
+    ],
+    [
+      "2026-09-22",
+      "docs: correct stale deployment and verification notes in agents/"
+    ],
+    [
+      "2026-09-21",
+      "Grant the gotcha and building tools to the enabled roles; wire the confidence legend into role.md"
+    ],
+    [
+      "2026-09-12",
+      "Build the agents/ roster scaffolding: ROSTER.yaml, charters, tool allowlists"
+    ]
+  ],
+  "marshal": [
+    [
+      "2026-09-16",
+      "wip: agents/README.md status, marshal blocked_on/role.md - threat.scan exists and is live-verified, write tools now the real blocker"
+    ],
+    [
+      "2026-09-12",
+      "Land the two safety detectors, unrun, and correct a field name published in three places"
+    ],
+    [
+      "2026-09-12",
+      "Build the agents/ roster scaffolding: ROSTER.yaml, charters, tool allowlists"
+    ]
+  ],
+  "overseer": [
+    [
+      "2026-10-02",
+      "agents: overseer charter sets public display fields, proposers suggest a title"
+    ],
+    [
+      "2026-09-25",
+      "conductor: charter-write failures become recorded failed runs; Overseer/Consultant queue-routing charter lines"
+    ],
+    [
+      "2026-09-22",
+      "wip: queue.overview/queue.escalate native tools, isError generalization for ok:false refusals, cycle.py/status.py wiring"
+    ],
+    [
+      "2026-09-22",
+      "wip: Quartermaster made complete for the MVP; queue.ask/executed grants"
+    ],
+    [
+      "2026-09-21",
+      "Grant the gotcha and building tools to the enabled roles; wire the confidence legend into role.md"
+    ],
+    [
+      "2026-09-12",
+      "Build the agents/ roster scaffolding: ROSTER.yaml, charters, tool allowlists"
+    ]
+  ],
+  "quartermaster": [
+    [
+      "2026-10-02",
+      "agents: overseer charter sets public display fields, proposers suggest a title"
+    ],
+    [
+      "2026-09-30",
+      "Quartermaster charter prefers manager orders (the 2026-09-30 ruling); register: priority tool without prioritize, deferred with a measurement"
+    ],
+    [
+      "2026-09-23",
+      "wip: doc-drift pass 3, role charters and roster comment brought current; correct an overstated agent-exec claim"
+    ],
+    [
+      "2026-09-22",
+      "wip: Quartermaster made complete for the MVP; queue.ask/executed grants"
+    ],
+    [
+      "2026-09-18",
+      "Reconcile the three stale items the tools stream flagged, plus tool counts"
+    ],
+    [
+      "2026-09-17",
+      "docs: add doc-drift-pass index row, fix quartermaster's stale blocked_on line"
+    ],
+    [
+      "2026-09-12",
+      "Build the agents/ roster scaffolding: ROSTER.yaml, charters, tool allowlists"
+    ]
+  ]
+}

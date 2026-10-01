@@ -826,3 +826,893 @@ class StreamPage {
 }
 
 window.StreamPage = StreamPage;
+
+/* ============================================================================
+ * Site shell: navigation, Agents, Tools, Forts and a Chronicle stub
+ * (handoffs/2026-10-02-site-agents-tools.md). Spec and layout:
+ * research/2026-10-02-site-agents-tools-mockup.html -- ported here to read
+ * real data (dfqueue.site_data's agents.json/tools.json/gotchas.json, plus
+ * the existing per-fort feed for Recent lines) instead of the mockup's
+ * hand-built constants. The Board view is untouched: `SitePage` mounts the
+ * existing `StreamPage` unchanged for `#board` and never reaches into it.
+ *
+ * Roles and planned roles are never hard-coded here -- they come from
+ * `agents.json`'s `role_order`/`planned_order`/`roles`, built from
+ * `agents/ROSTER.yaml` (dfqueue/site_data.py). "Will" and "Executor" are
+ * the two fixed extras the handoff names explicitly: a human and a
+ * not-yet-built role with no entry in the roster at all.
+ * ============================================================================
+ */
+
+//: Pinned, from cdnjs (CLAUDE.md: "external scripts only from cdnjs or
+//: jsdelivr, pinned") -- same version the mockup uses. Declared here so a
+//: page that does not load the script (an older cached index.html) still
+//: renders the charter as plain preformatted text rather than failing.
+const MARKED_VERSION = "12.0.2";
+
+const FIXED_EXTRAS = {
+  will: {
+    name: "Will", kindLabel: "The human", noLink: true, color: "var(--will)",
+    line: "Messages the Overseer in plain words. The Overseer can message back, and may question an instruction before acting on it.",
+  },
+  executor: {
+    name: "Executor", kindLabel: "Planned: runs the jobs", planned: true, color: "var(--role-executor)",
+    line: "Would carry out each project's jobs step by step in code, waking a cheap model only when a job is held. Today the Overseer does this itself.",
+  },
+};
+
+function roleCssVar(role) {
+  if (role === "conductor") return "var(--role-system)";
+  if (FIXED_EXTRAS[role]) return FIXED_EXTRAS[role].color;
+  return `var(--role-${role}, var(--text))`;
+}
+
+/** Evenly spaced spoke order around the ring: every enabled role but the
+ * sole writer (hub), then every planned role, with the two fixed extras
+ * worked in -- "Executor" at the midpoint, "Will" last. Order (not a fixed
+ * angle table) is what's data-driven here: the roster can grow or shrink
+ * and the ring just redistributes. */
+function buildSpokeOrder(agents) {
+  const enabled = (agents.role_order || []).filter((r) => r !== agents.sole_writer);
+  const planned = agents.planned_order || [];
+  const list = enabled.map((key) => ({ key, planned: false }))
+    .concat(planned.map((key) => ({ key, planned: true })));
+  const mid = Math.ceil(list.length / 2);
+  list.splice(mid, 0, { key: "executor", planned: true, extra: true });
+  list.push({ key: "will", planned: false, extra: true });
+  return list;
+}
+
+function spelledCount(n, one, many) {
+  return `${n} ${n === 1 ? one : many}`;
+}
+
+function countChips(entries) {
+  const by = (list) => entries.filter((e) => e.list === list).length;
+  const g = by("gotcha"), v = by("vent"), u = by("unexplained");
+  const chips = [];
+  if (g) chips.push(el("span", { class: "cnt cnt-g", text: spelledCount(g, "gotcha", "gotchas") }));
+  if (v) chips.push(el("span", { class: "cnt cnt-v", text: spelledCount(v, "vent", "vents") }));
+  if (u) chips.push(el("span", { class: "cnt cnt-u", text: spelledCount(u, "unexplained", "unexplained") }));
+  return chips;
+}
+
+function confidencePillClass(level) {
+  if (level === "full") return "pill p-ok";
+  if (level === "low") return "pill p-bad";
+  return "pill p-warn";
+}
+
+/** One gotcha/vent/unexplained entry, rendered the same way on an agent's
+ * tool tree, a tool page and (once general entries exist) a "general"
+ * group -- never the operator-only `call_excerpt`, which this page never
+ * fetches in the first place (dfqueue.site_data.build_gotchas_json strips
+ * it from the public projection before this page ever sees the JSON). */
+function gotchaEntryEl(g, { showTool } = {}) {
+  const listPill = g.list === "gotcha"
+    ? el("span", { class: "pill " + (g.status === "accepted" ? "p-ok" : "p-info"), text: g.status === "accepted" ? "gotcha" : "gotcha, proposed" })
+    : g.list === "vent" ? el("span", { class: "pill p-warn", text: "vent" }) : el("span", { class: "pill p-bad", text: "unexplained" });
+  const head = [listPill, el("span", { class: "etitle", text: g.withheld ? "(withheld)" : (g.title || "(untitled)") })];
+  if (showTool) {
+    head.push(g.tool
+      ? el("a", { class: "tagchip", href: "#tool-" + g.tool, text: g.tool })
+      : el("span", { class: "tagchip", text: "general" }));
+  }
+  const outcomes = (g.outcomes || []).map((o) => el("span", {
+    class: "oc-" + (o.result === "worked" ? "ok" : o.result === "did_not_work" ? "bad" : "unclear"),
+  }, [
+    document.createTextNode((o.result === "worked" ? "worked" : o.result === "did_not_work" ? "didn't help" : o.result) + "  "),
+    el("span", { style: `color:${roleCssVar(o.role)};font-weight:600`, text: roleTitle(o.role) }),
+    document.createTextNode("  " + (o.at || "")),
+  ]));
+  return el("div", { class: "entry" }, [
+    el("div", { class: "ehead" }, head),
+    el("div", { class: "muted small", text: g.withheld ? "This entry's text was withheld by the public-text safety net." : (g.body || "") }),
+    el("div", { class: "outcomes" }, [
+      el("span", {}, [document.createTextNode("by "), el("span", { style: `color:${roleCssVar(g.by)};font-weight:600`, text: roleTitle(g.by) })]),
+      ...outcomes,
+    ]),
+  ]);
+}
+
+class SitePage {
+  constructor({ dataRoot, mode, root, liveViewSrc }) {
+    this.dataRoot = dataRoot;
+    this.mode = mode;
+    this.liveViewSrc = liveViewSrc;
+    this.root = root;
+    this.theme = this._loadTheme();
+    this.forts = [];
+    this.fortMeta = null;
+    this.agents = null;
+    this.tools = null;
+    this.gotchas = null;
+    this.chronicleFixture = null;
+    this._boardPage = null;
+    this._boardContainer = null;
+    this.mapSel = null;
+    this.mapFocus = null;
+    this.agentTab = "tools";
+    this._agentTabFor = null;
+    this.toolFilter = { q: "", role: null, only: null };
+    this.showAllSeasons = new Set();
+    this._boundHashChange = () => this._onHashChange();
+    window.addEventListener("hashchange", this._boundHashChange);
+    this._build();
+  }
+
+  // ---- theme: same localStorage key StreamPage uses, so both toggles
+  // (this page's own, and the Board's internal one) stay in sync. --------
+
+  _loadTheme() {
+    try {
+      const saved = localStorage.getItem("ragwind-theme");
+      if (THEMES.includes(saved)) return saved;
+    } catch (e) { /* private window or blocked storage: default theme */ }
+    // ?theme= is a smoke-test aid (web/stream/README.md), not a feature a
+    // viewer is expected to use: it saves to the SAME localStorage key the
+    // Board's own StreamPage reads, so a screenshot tool can set the theme
+    // once via the URL and have it hold across a hash navigation into the
+    // Board, which has no query-param reading of its own.
+    const q = new URLSearchParams(location.search).get("theme");
+    if (THEMES.includes(q)) {
+      try { localStorage.setItem("ragwind-theme", q); } catch (e) { /* see above */ }
+      return q;
+    }
+    return DEFAULT_THEME;
+  }
+
+  _saveTheme() {
+    try { localStorage.setItem("ragwind-theme", this.theme); } catch (e) { /* see above */ }
+  }
+
+  _setTheme(theme) {
+    this.theme = theme;
+    this.shell.setAttribute("data-style", theme);
+    this._saveTheme();
+    this.themeButtons.forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.theme === theme)));
+    if (this._boardPage) this._boardPage._setTheme(theme);
+  }
+
+  _build() {
+    this.root.textContent = "";
+    this.shell = el("div", { class: "site", "data-style": this.theme });
+    this.navHost = el("div", {});
+    this.main = el("main", { class: "sitemain" });
+    this.shell.appendChild(this.navHost);
+    this.shell.appendChild(this.main);
+    this.root.appendChild(this.shell);
+  }
+
+  async start() {
+    await this._loadForts();
+    await this._render();
+  }
+
+  async _loadForts() {
+    const index = await fetchJson(`${this.dataRoot}/forts.json`).catch(() => null);
+    this.forts = (index && Array.isArray(index.forts)) ? index.forts : [];
+    this.fortMeta = this.forts.find((f) => f.current) || this.forts[0] || null;
+  }
+
+  async _ensureAgents() {
+    if (this.agents) return;
+    this.agents = await fetchJson(`${this.dataRoot}/agents.json`).catch(
+      () => ({ role_order: [], planned_order: [], roles: {}, spokes: {}, sole_writer: null })
+    );
+  }
+
+  async _ensureTools() {
+    if (this.tools) return;
+    this.tools = await fetchJson(`${this.dataRoot}/tools.json`).catch(() => ({ tools: [], areas: [] }));
+  }
+
+  async _ensureGotchas() {
+    if (this.gotchas) return;
+    this.gotchas = await fetchJson(`${this.dataRoot}/gotchas.json`).catch(() => []);
+  }
+
+  /** The current fort's own chat items (`open.json`), the same file
+   * `StreamPage` reads for the board -- reused here, not re-fetched into a
+   * second per-role file, so "Recent lines" shows exactly the public text
+   * the board itself would show for that role. */
+  async _ensureFeedItems() {
+    if (this.feedItems) return;
+    const root = this.fortMeta ? `${this.dataRoot}/forts/${this.fortMeta.id}` : this.dataRoot;
+    const open = await fetchJson(`${root}/open.json`).catch(() => ({ items: [] }));
+    this.feedItems = open.items || [];
+  }
+
+  /** The Chronicle is a clearly marked stub (handoff item 5): one fixture
+   * file of pretend data, never mixed into anything real this page reads
+   * elsewhere. */
+  async _ensureChronicleFixture() {
+    if (this.chronicleFixture) return;
+    this.chronicleFixture = await fetchJson("fixtures/chronicle-demo.json").catch(() => null);
+  }
+
+  _route() {
+    const hash = (location.hash || "#board").slice(1);
+    if (hash.startsWith("agent-")) return { view: "agents", param: hash.slice(6) };
+    if (hash.startsWith("tool-")) return { view: "tools", param: hash.slice(5) };
+    if (hash.startsWith("chronicle-")) return { view: "lost-chronicle", param: hash.slice(10) };
+    if (["board", "chronicle", "agents", "tools", "forts"].includes(hash)) return { view: hash, param: null };
+    return { view: "board", param: null };
+  }
+
+  _onHashChange() {
+    const route = this._route();
+    this._render();
+    if (route.view !== "agents") window.scrollTo(0, 0);
+    else if (window.innerWidth <= 900) {
+      const panel = document.getElementById("site-apanel");
+      if (panel) panel.scrollIntoView({ block: "start" });
+    }
+  }
+
+  async _render() {
+    const route = this._route();
+    this._renderNav(route);
+    this.main.textContent = "";
+    // The Agents page is full-width (handoff item 2: the map/panel split
+    // needs the room); every other view keeps the page's usual max-width.
+    this.main.classList.toggle("full", route.view === "agents");
+    if (route.view === "board") {
+      this.main.appendChild(this._boardEl());
+      return;
+    }
+    if (route.view === "chronicle") {
+      await this._ensureChronicleFixture();
+      this.main.appendChild(this._viewChronicle());
+      return;
+    }
+    if (route.view === "lost-chronicle") {
+      await this._ensureChronicleFixture();
+      this.main.appendChild(this._viewLostChronicle(route.param));
+      return;
+    }
+    if (route.view === "agents") {
+      await this._ensureAgents();
+      await this._ensureTools();
+      await this._ensureGotchas();
+      await this._ensureFeedItems();
+      this.main.appendChild(await this._viewAgents(route.param));
+      return;
+    }
+    if (route.view === "tools") {
+      await this._ensureTools();
+      await this._ensureGotchas();
+      this.main.appendChild(route.param ? this._viewTool(route.param) : this._viewTools());
+      return;
+    }
+    if (route.view === "forts") {
+      this.main.appendChild(this._viewForts());
+      return;
+    }
+  }
+
+  // ---- nav: fort group (current fort, Board, Chronicle) + project group
+  // (Agents, Tools, Forts) -- the mockup's header, built from forts.json's
+  // own current fort rather than any name in this file. ------------------
+
+  _renderNav(route) {
+    this.navHost.textContent = "";
+    const fortName = (this.fortMeta && this.fortMeta.name) || "Fortress";
+    const current = route.view;
+    const navLink = (hash, label, active) => el("a", {
+      href: "#" + hash, "aria-current": active ? "page" : null, text: label,
+    });
+    const fortGroup = el("div", { class: "navgroup" }, [
+      el("span", { class: "fortpick", title: "Fort" }, [el("span", { class: "dot" }), document.createTextNode(" " + fortName)]),
+      navLink("board", "Board", current === "board"),
+      navLink("chronicle", "Chronicle", current === "chronicle"),
+    ]);
+    const projectGroup = el("div", { class: "navgroup" }, [
+      el("span", { class: "glabel", text: "Project" }),
+      navLink("agents", "Agents", current === "agents"),
+      navLink("tools", "Tools", current === "tools"),
+      navLink("forts", "Forts", current === "forts" || current === "lost-chronicle"),
+    ]);
+    this.themeButtons = THEMES.map((t) => el("button", {
+      type: "button", "aria-pressed": String(t === this.theme), "data-theme": t,
+      text: t === "terminal2" ? "Terminal 2" : "Stone 2",
+      onclick: () => this._setTheme(t),
+    }));
+    const header = el("header", { class: "top" }, [
+      el("div", { class: "brand" }, [document.createTextNode("df-overseer"), el("small", { text: "  a fort run by AI agents" })]),
+      el("nav", { class: "nav", "aria-label": "Site" }, [fortGroup, projectGroup]),
+      el("div", { class: "theme", role: "group", "aria-label": "Theme" }, this.themeButtons),
+    ]);
+    this.navHost.appendChild(header);
+  }
+
+  // ---- Board: the existing StreamPage, completely untouched. A single
+  // instance is kept across hash navigations (it keeps polling in the
+  // background, same as it would standalone) rather than rebuilt. --------
+
+  _boardEl() {
+    if (!this._boardPage) {
+      this._boardContainer = el("div", {});
+      this._boardPage = new StreamPage({
+        dataRoot: this.dataRoot, mode: this.mode, liveViewSrc: this.liveViewSrc,
+        root: this._boardContainer,
+      });
+      this._boardPage.start();
+    }
+    return this._boardContainer;
+  }
+
+  // ---- Agents ------------------------------------------------------------
+
+  async _viewAgents(selRaw) {
+    let sel = null;
+    if (selRaw) {
+      const key = selRaw.endsWith("-charter") ? selRaw.slice(0, -8) : selRaw;
+      if (this.agents.roles[key]) sel = key;
+    }
+    this.mapSel = sel;
+    let panelBody;
+    if (sel) {
+      panelBody = [
+        el("div", { class: "pclose" }, [el("a", { href: "#agents", class: "tagchip", text: "close" })]),
+        this._agentPanel(sel, selRaw.endsWith("-charter") ? "charter" : null),
+      ];
+    } else {
+      panelBody = this._panelIntro();
+    }
+    const mapWrap = el("div", { id: "site-mapwrap" }, [this._agentMapSvg()]);
+    return el("div", {}, [
+      el("div", {}, [el("h1", { text: "Agents" }), el("span", { class: "scope", text: " all forts" })]),
+      el("p", { class: "lede", text: "Who runs the fort. Each agent has a charter that says what it owns and a list of tools it may use. They carry over from fort to fort." }),
+      el("div", { class: "asplit" }, [
+        el("div", { class: "box amapbox" }, [
+          el("div", { class: "mapstage" }, [mapWrap]),
+          el("div", {}, [el("span", { class: "example", text: "" })]),
+        ]),
+        el("aside", { class: "apanel", id: "site-apanel", "aria-live": "polite" }, panelBody),
+      ]),
+    ]);
+  }
+
+  _panelIntro() {
+    return [el("div", { class: "sec" }, [
+      el("div", { class: "faint small", text: "Point at an agent on the map to see its card. Click to open everything about it here: what it does, its record, the gotchas and vents it wrote, its tools and its charter." }),
+      el("div", { class: "box legend" }, [
+        el("span", { class: "faint", text: "spokes" }), el("span", { text: "Everything goes through the Overseer." }),
+        el("span", { class: "faint", text: "width" }), el("span", { text: "A thicker spoke means more messages." }),
+        el("span", { class: "faint", text: "dashed" }), el("span", { text: "A planned role, not built yet." }),
+      ]),
+    ])];
+  }
+
+  _spokeCard(key) {
+    const extra = FIXED_EXTRAS[key];
+    if (extra) {
+      return el("div", { class: "box acard" + (extra.planned ? " planned" : "") }, [
+        el("div", { class: "aname", style: `color:${extra.color}`, text: extra.name }),
+        el("div", { class: "faint small", text: extra.kindLabel }),
+        el("div", { class: "small", text: extra.line }),
+      ]);
+    }
+    const r = this.agents.roles[key];
+    if (!r) return null;
+    const traffic = this.agents.spokes && this.agents.spokes[key];
+    const lines = [];
+    if (traffic) {
+      const parts = [];
+      if (traffic.out) parts.push(`${traffic.out[1] == null ? "some" : traffic.out[1]} ${traffic.out[0]} sent`);
+      if (traffic.in) parts.push(`${traffic.in[1] == null ? "some" : traffic.in[1]} ${traffic.in[0]} back`);
+      if (parts.length) lines.push(el("div", { class: "faint small traffic", text: parts.join(", ") + " so far" }));
+    }
+    return el("a", { class: "box acard" + (r.planned ? " planned" : ""), href: "#agent-" + key + (r.planned ? "-charter" : "") }, [
+      el("div", { class: "aname", style: `color:${roleCssVar(key)}`, text: r.name }),
+      el("div", { class: "faint small", text: r.planned ? r.kind_label : r.kind_label }),
+      el("div", { class: "small", text: r.summary }),
+      el("div", { class: "chips" }, [
+        r.planned ? el("span", { class: "tagchip", text: "not enabled" }) : el("span", { class: "tagchip", text: spelledCount(r.tool_count, "tool", "tools") }),
+        r.planned ? null : (r.model_label ? el("span", { class: "tagchip", text: r.model_label }) : null),
+      ]),
+      ...lines,
+    ]);
+  }
+
+  _showMapPop(key) {
+    const panel = document.getElementById("site-apanel");
+    if (!panel || this.mapSel) return;
+    const card = this._spokeCard(key);
+    if (!card) return;
+    panel.replaceChildren(el("div", { class: "sec" }, [card, (!FIXED_EXTRAS[key]) ? el("div", { class: "faint small", text: "Click to open." }) : null]));
+  }
+
+  _hideMapPop() {
+    const panel = document.getElementById("site-apanel");
+    if (panel && !this.mapSel) panel.replaceChildren(...this._panelIntro());
+  }
+
+  _agentMapSvg() {
+    const order = buildSpokeOrder(this.agents);
+    const W = 1000, H = 820;
+    const hub = { x: W / 2, y: H / 2 };
+    const rx = W / 2 - 150, ry = H / 2 - 130;
+    const n = Math.max(order.length, 1);
+    const pos = (i) => {
+      const a = ((-90 + (360 * i) / n) * Math.PI) / 180;
+      return { x: hub.x + rx * Math.cos(a), y: hub.y + ry * Math.sin(a) };
+    };
+    const counts = order.map((sp) => {
+      const t = this.agents.spokes && this.agents.spokes[sp.key];
+      return (t && t.out && t.out[1]) || 0 + ((t && t.in && t.in[1]) || 0);
+    });
+    const maxN = Math.max(1, ...counts);
+
+    const svg = svgEl("svg", { viewBox: `0 0 ${W} ${H}`, preserveAspectRatio: "xMidYMid meet", role: "img", "aria-label": "Every agent talks through the Overseer", class: "amap" });
+    svg.append(svgEl("ellipse", { cx: hub.x, cy: hub.y, rx, ry, fill: "none", stroke: "var(--line)", "stroke-dasharray": "2 6" }));
+
+    const nodeBox = (key, x, y, title, sub, color, opts) => {
+      opts = opts || {};
+      const hw = opts.hw || 88, hh = opts.hh || 26;
+      const g = svgEl("g", { class: "mnode", tabindex: opts.link ? "0" : "-1", opacity: opts.dim ? "0.3" : "1" });
+      if (opts.sel) g.append(svgEl("rect", { x: x - hw - 7, y: y - hh - 7, width: hw * 2 + 14, height: hh * 2 + 14, fill: "none", stroke: color, "stroke-width": "1", "stroke-dasharray": "2 3" }));
+      g.append(svgEl("rect", { x: x - hw, y: y - hh, width: hw * 2, height: hh * 2, fill: "var(--raised)", stroke: color, "stroke-width": opts.planned ? "1.5" : "2", "stroke-dasharray": opts.planned ? "5 4" : "" }));
+      const t1 = svgEl("text", { x, y: y - (opts.big ? 4 : 2), "text-anchor": "middle", fill: color, "font-size": opts.big ? "17" : "13", "font-weight": "700", "font-family": "inherit" });
+      t1.textContent = title;
+      g.append(t1);
+      const t2 = svgEl("text", { x, y: y + (opts.big ? 16 : 13), "text-anchor": "middle", fill: "var(--faint)", "font-size": "10.5", "font-family": "inherit" });
+      t2.textContent = opts.planned ? sub + " · planned" : sub;
+      g.append(t2);
+      if (opts.hoverKey) {
+        const show = () => { this._showMapPop(opts.hoverKey); this.mapFocus = opts.hoverKey; };
+        g.addEventListener("mouseenter", show);
+        g.addEventListener("focus", show);
+      }
+      if (opts.link) {
+        g.style.cursor = "pointer";
+        const go = () => { location.hash = opts.link; };
+        g.addEventListener("click", go);
+        g.addEventListener("keydown", (e) => { if (e.key === "Enter") go(); });
+      }
+      return g;
+    };
+
+    const lines = svgEl("g", {});
+    const nodes = svgEl("g", {});
+    order.forEach((sp, i) => {
+      const p = pos(i);
+      const focusKey = this.mapFocus || this.mapSel;
+      const dim = focusKey && focusKey !== sp.key && focusKey !== "overseer";
+      const traffic = this.agents.spokes && this.agents.spokes[sp.key];
+      const n2 = (traffic && traffic.out && traffic.out[1]) ? traffic.out[1] : 0;
+      const n3 = (traffic && traffic.in && traffic.in[1]) ? traffic.in[1] : 0;
+      const w = sp.planned ? 1.5 : 1.5 + (4.5 * (n2 + n3)) / maxN;
+      lines.append(svgEl("line", {
+        x1: hub.x, y1: hub.y, x2: p.x, y2: p.y, stroke: roleCssVar(sp.key), "stroke-width": String(w),
+        "stroke-dasharray": sp.planned ? "6 5" : "", opacity: dim ? "0.12" : "0.75",
+      }));
+      const extra = FIXED_EXTRAS[sp.key];
+      const roleData = this.agents.roles[sp.key];
+      const title = extra ? extra.name : (roleData ? roleData.name : sp.key);
+      const sub = extra ? (sp.key === "will" ? "by Telegram" : "runs jobs") : (roleData ? roleData.kind_label : "");
+      const link = extra ? (extra.noLink ? null : null) : ("#agent-" + sp.key + (sp.planned ? "-charter" : ""));
+      nodes.append(nodeBox(sp.key, p.x, p.y, title, sub, roleCssVar(sp.key), {
+        dim, sel: this.mapSel === sp.key, planned: sp.planned, link, hoverKey: sp.key,
+      }));
+    });
+    const overseerKey = this.agents.sole_writer;
+    if (overseerKey && this.agents.roles[overseerKey]) {
+      const focusKey = this.mapFocus || this.mapSel;
+      nodes.append(nodeBox(overseerKey, hub.x, hub.y, this.agents.roles[overseerKey].name, this.agents.roles[overseerKey].kind_label, roleCssVar(overseerKey), {
+        sel: this.mapSel === overseerKey, big: true, hw: 100, hh: 34, link: "#agent-" + overseerKey, hoverKey: overseerKey,
+        dim: focusKey && focusKey !== overseerKey && !(order.some((s) => s.key === focusKey) === false),
+      }));
+    }
+    svg.append(lines, nodes);
+    svg.addEventListener("mouseleave", () => { this.mapFocus = null; this._hideMapPop(); this._redrawMap(); });
+    return svg;
+  }
+
+  _redrawMap() {
+    const wrap = document.getElementById("site-mapwrap");
+    if (wrap) wrap.replaceChildren(this._agentMapSvg());
+  }
+
+  _agentPanel(role, forceTab) {
+    const r = this.agents.roles[role];
+    if (!r) return el("p", { class: "muted", text: "Unknown role." });
+    if (this._agentTabFor !== role) { this.agentTab = r.planned ? "charter" : (new URLSearchParams(location.search).get("tab") || "tools"); this._agentTabFor = role; }
+    if (forceTab) this.agentTab = forceTab;
+    if (r.planned) this.agentTab = "charter";
+
+    const stats = [];
+    const rec = r.record || {};
+    if (rec.ruled != null) {
+      stats.push([rec.ruled, "rulings"], [rec.accepted, "accepted"], [rec.rejected, "rejected"]);
+      if (rec.asks) stats.push([rec.asks, "fact-checks asked"]);
+    } else if (rec.proposals != null) {
+      stats.push([rec.proposals, "proposals"], [rec.accepted, "accepted"], [rec.rejected, "rejected"]);
+    } else if (rec.answers != null) {
+      stats.push([rec.answers, "questions answered"]);
+    }
+
+    const mine = (this.tools ? this.tools.tools : []).filter((t) => t.roles.includes(role));
+    const tabs = r.planned ? [["charter", "Charter"]] : [
+      ["tools", `Tools ${mine.length}`], ["lines", "Recent lines"], ["charter", "Charter"],
+    ];
+
+    let body;
+    if (this.agentTab === "tools") {
+      body = this._toolTree(mine, role);
+    } else if (this.agentTab === "lines") {
+      body = this._recentLinesEl(role);
+    } else {
+      body = el("div", { class: "sec" }, [
+        el("div", { class: "faint small", text: `agents/${role}/role.md` }),
+        this._charterEl(r.charter_md),
+        (r.charter_changes || []).length ? el("div", {}, [
+          el("h2", { text: "Changes" }),
+          el("div", { class: "box timeline" }, r.charter_changes.map(([d, t]) => el("div", { class: "tlrow" }, [el("span", { class: "trd", text: d }), el("span", { text: t })]))),
+        ]) : null,
+      ]);
+    }
+
+    const head = el("div", { class: "phead" }, [
+      el("h1", { style: `color:${roleCssVar(role)}`, text: r.name }),
+      el("div", { class: "faint small", text: `${r.kind_label}${r.planned ? "" : " · " + (r.model_label || "unknown model") + " · " + spelledCount(mine.length, "tool", "tools")}` }),
+      el("p", { class: "lede", text: r.summary || r.blocked_on || "" }),
+      stats.length ? el("div", { class: "box stats" }, stats.map(([v, k]) => el("div", { class: "stat" }, [el("b", { text: String(v) }), el("span", { text: k })]))) : null,
+    ]);
+    const tabBar = el("div", { class: "tabs", role: "tablist" }, tabs.map(([k, l]) => el("button", {
+      type: "button", role: "tab", class: "tabbtn", "aria-selected": String(this.agentTab === k),
+      onclick: () => { this.agentTab = k; this._render(); }, text: l,
+    })));
+    return el("div", {}, [head, tabBar, el("div", { class: "ptab", role: "tabpanel" }, [body])]);
+  }
+
+  /** `role.md` is this repo's own committed prose, never live/model/operator
+   * output, so rendering it through `marked` (loaded, pinned, from cdnjs)
+   * is the one place this page allows HTML from parsed text -- every link
+   * `marked` would produce is immediately stripped back to plain text
+   * first, so nothing clickable or script-bearing survives either way. A
+   * page that has not loaded `marked` (network blocked) falls back to a
+   * plain, fully inert `<pre>`. */
+  _charterEl(md) {
+    const box = el("article", { class: "box md" });
+    if (window.marked) {
+      box.innerHTML = window.marked.parse(md || "");
+      box.querySelectorAll("a").forEach((a) => {
+        const span = document.createElement("span");
+        span.className = "ref";
+        span.textContent = a.textContent;
+        a.replaceWith(span);
+      });
+      box.querySelectorAll("script").forEach((s) => s.remove());
+    } else {
+      box.appendChild(el("pre", { text: md || "" }));
+    }
+    return box;
+  }
+
+  /** This role's own lines from the current fort's real feed (`open.json`,
+   * the same file the board reads), grouped by game day with the board's
+   * own `groupByDay`/`shortDate` helpers -- real data, never a fixture,
+   * unlike the Chronicle tab. */
+  _recentLinesEl(role) {
+    const mine = (this.feedItems || []).filter((it) => it.role === role && (it.withheld || it.text));
+    if (!mine.length) {
+      return el("div", { class: "box" }, [el("div", { class: "faint", text: "Nothing in the current fort's feed yet." })]);
+    }
+    const groups = groupByDay(mine.slice(-60));
+    return el("div", { class: "box" }, groups.map(([day, items]) => el("div", {}, [
+      el("div", { class: "day", text: day ? shortDate(day) : "Now" }),
+      ...items.map((it) => el("div", { class: "line" }, [
+        document.createTextNode(it.withheld ? "(one message withheld)" : it.text),
+        it.type ? el("div", { class: "ctx", text: it.type }) : null,
+      ])),
+    ])));
+  }
+
+  _toolTree(tools, role) {
+    const gotchasFor = (toolId) => (this.gotchas || []).filter((g) => g.tool === toolId);
+    const generalFor = (r) => (this.gotchas || []).filter((g) => !g.tool && g.by === r);
+    const fams = {};
+    tools.forEach((t) => {
+      const fam = t.id.split(".")[0];
+      (fams[fam] = fams[fam] || []).push(t);
+    });
+    const famGotchaCount = (fam) => fams[fam].reduce((n, t) => n + gotchasFor(t.id).length, 0);
+    const names = Object.keys(fams).sort((a, b) => famGotchaCount(b) - famGotchaCount(a) || a.localeCompare(b));
+    const gen = generalFor(role);
+    const generalDetails = el("details", { class: "tfam", open: gen.length ? "" : null }, [
+      el("summary", {}, [
+        el("span", { class: "fname2", text: "general" }),
+        el("span", { class: "faint small", text: "not about one tool" }),
+        el("span", { class: "counts" }, countChips(gen)),
+      ]),
+      el("div", { class: "tlist" }, gen.length
+        ? [el("div", { class: "tgs" }, gen.map((g) => gotchaEntryEl(g, { showTool: false })))]
+        : [el("div", { class: "faint small", text: "Nothing general yet." })]),
+    ]);
+    const famEls = names.map((fam) => {
+      const ts = fams[fam];
+      const gs = ts.flatMap((t) => gotchasFor(t.id));
+      return el("details", { class: "tfam" }, [
+        el("summary", {}, [
+          el("span", { class: "fname2", text: fam }),
+          el("span", { class: "faint small", text: spelledCount(ts.length, "tool", "tools") }),
+          el("span", { class: "counts" }, countChips(gs)),
+        ]),
+        el("div", { class: "tlist" }, ts.map((t) => {
+          const tg = gotchasFor(t.id);
+          return el("div", { class: "titem" }, [
+            el("div", { class: "ehead" }, [
+              el("a", { class: "tid2", href: "#tool-" + t.id, text: t.id }),
+              t.write ? el("span", { class: "pill p-plain", text: "changes the fort" }) : null,
+              el("span", { class: "counts" }, countChips(tg)),
+            ]),
+            t.description ? el("div", { class: "muted small", text: t.description }) : null,
+            tg.length ? el("div", { class: "tgs" }, tg.map((g) => gotchaEntryEl(g, { showTool: false }))) : null,
+          ]);
+        })),
+      ]);
+    });
+    return el("div", { class: "box ttree" }, [generalDetails, ...famEls]);
+  }
+
+  // ---- Tools ---------------------------------------------------------------
+
+  _viewTools() {
+    const render = () => {
+      const q = this.toolFilter.q.toLowerCase();
+      const list = this.tools.tools.filter((t) =>
+        (!q || t.id.includes(q) || (t.description || "").toLowerCase().includes(q)) &&
+        (!this.toolFilter.role || t.roles.includes(this.toolFilter.role)) &&
+        (!this.toolFilter.only || (this.gotchas || []).some((g) => g.tool === t.id && g.list === this.toolFilter.only))
+      );
+      const areas = [...this.tools.areas, "Other"];
+      const groups = areas.map((a) => [a, list.filter((t) => t.area === a)]).filter(([, ts]) => ts.length);
+      wrap.replaceChildren(
+        el("div", { class: "faint small", text: `${list.length} of ${this.tools.tools.length} tools` }),
+        ...groups.map(([area, ts]) => el("div", { class: "tarea" }, [
+          el("h2", {}, [document.createTextNode(area + " "), el("span", { class: "n", text: String(ts.length) })]),
+          el("div", { style: "margin-top:6px" }, ts.map((t) => {
+            const gs = (this.gotchas || []).filter((g) => g.tool === t.id);
+            return el("a", { class: "trow", href: "#tool-" + t.id }, [
+              el("span", { class: "tid", text: t.id }),
+              el("span", { class: "tdesc", text: (t.write ? "Changes the fort. " : "") + (t.description || "No description yet.") }),
+              el("span", { class: "roles" }, t.roles.map((r) => el("span", { class: "rdot", title: r, style: `background:${roleCssVar(r)}` }))),
+              el("span", { class: "counts" }, countChips(gs)),
+            ]);
+          })),
+        ])),
+      );
+    };
+    const wrap = el("div", { class: "sec" });
+    const roleBtn = (role, label) => el("button", {
+      class: "tbtn", type: "button", "aria-pressed": String(this.toolFilter.role === role),
+      onclick: () => { this.toolFilter.role = this.toolFilter.role === role ? null : role; render(); },
+      text: label,
+    });
+    const onlyBtn = (key, label) => el("button", {
+      class: "tbtn", type: "button", "aria-pressed": String(this.toolFilter.only === key),
+      onclick: () => { this.toolFilter.only = this.toolFilter.only === key ? null : key; render(); },
+      text: label,
+    });
+    const roleOrder = (this.agents && this.agents.role_order) || [];
+    const filters = el("div", { class: "tfilters" }, [
+      el("input", {
+        type: "search", placeholder: "Search tools", value: this.toolFilter.q, "aria-label": "Search tools",
+        oninput: (e) => { this.toolFilter.q = e.target.value; render(); },
+      }),
+      el("span", { class: "chips" }, roleOrder.map((r) => roleBtn(r, roleTitle(r)))),
+      el("span", { class: "chips" }, [["gotcha", "Has gotchas"], ["vent", "Has vents"], ["unexplained", "Has unexplained"]].map(([k, l]) => onlyBtn(k, l))),
+    ]);
+    render();
+    return el("div", {}, [
+      el("div", {}, [el("h1", { text: "Tools" }), el("span", { class: "scope", text: " all forts" })]),
+      el("p", { class: "lede", text: "Everything the agents can use, grouped by what it's for. The dots show which agents have each tool, and the counts show its gotchas, vents and unexplained errors." }),
+      filters, wrap,
+    ]);
+  }
+
+  _viewTool(id) {
+    const t = (this.tools.tools || []).find((x) => x.id === id);
+    if (!t) return this._viewTools();
+    const gs = (this.gotchas || []).filter((g) => g.tool === id);
+    const by = (list) => gs.filter((g) => g.list === list);
+    const pile = by("gotcha").length + by("vent").length >= 4;
+    const section = (title, list, emptyText) => el("div", { class: "sec" }, [
+      el("h2", {}, [document.createTextNode(title + " "), el("span", { class: "n", text: String(list.length) })]),
+      el("div", { class: "box" }, list.length ? list.map((g) => gotchaEntryEl(g, { showTool: false })) : [el("div", { class: "faint", text: emptyText })]),
+    ]);
+    const confidence = t.confidence || { level: "medium", note: "" };
+    return el("div", {}, [
+      el("div", { class: "crumbs" }, [el("a", { href: "#tools", text: "Tools" }), document.createTextNode(" / " + t.area + " / " + id)]),
+      el("div", { class: "sec" }, [el("h1", { text: id }), el("p", { class: "lede", text: t.description || "No description yet." })]),
+      pile ? el("div", { class: "warnbar", text: "Gotchas and vents are piling up on this tool. The rule is to consider rebuilding it, or rewriting its description." }) : null,
+      el("div", { class: "cols" }, [
+        el("div", { class: "sec" }, [
+          gs.length ? null : el("div", { class: "box faint", text: "No gotchas, vents or unexplained errors recorded for this tool yet." }),
+          section("Gotchas", by("gotcha"), "None yet."),
+          section("Vents", by("vent"), "No complaints yet."),
+          section("Unexplained errors", by("unexplained"), "None."),
+        ]),
+        el("div", { class: "sec" }, [
+          el("h2", { text: "About" }),
+          el("div", { class: "box" }, [el("dl", { class: "kv" }, [
+            el("dt", { text: "Effect" }), el("dd", { text: t.write ? "Changes the fort" : "Reads only" }),
+            el("dt", { text: "Area" }), el("dd", { text: t.area }),
+            el("dt", { text: "Confidence" }), el("dd", {}, [el("span", { class: confidencePillClass(confidence.level), text: confidence.level })]),
+            el("dt", { text: "Used by" }), el("dd", { class: "chips" }, t.roles.map((r) => el("a", { class: "who", href: "#agent-" + r, style: `color:${roleCssVar(r)}`, text: roleTitle(r) }))),
+          ])]),
+          el("h2", { text: "What confidence means" }),
+          el("div", { class: "box legend" }, [
+            el("span", { class: "pill p-ok", text: "full" }), el("span", { text: "Just use it." }),
+            el("span", { class: "pill p-warn", text: "medium" }), el("span", { text: "Read the description closely, check the gotchas, watch the result." }),
+            el("span", { class: "pill p-bad", text: "low" }), el("span", { text: "Never run live, or known to be awkward. Dry-run first." }),
+            el("span", {}), el("span", { class: "faint small", text: "Every tool starts at medium and only changes when we review it (gotchas/confidence.yaml)." }),
+          ]),
+        ]),
+      ]),
+    ]);
+  }
+
+  // ---- Forts ---------------------------------------------------------------
+
+  _viewForts() {
+    const cards = this.forts.map((f) => el("a", {
+      class: "box fcard", href: f.status === "lost" ? "#chronicle-" + f.id : "#chronicle", style: "text-decoration:none",
+    }, [
+      el("div", { class: "ehead" }, [el("span", { class: "fname", text: f.name }), el("span", { class: "pill " + (f.status === "live" ? "p-ok" : "p-bad"), text: f.status })]),
+      el("div", { class: "faint small", text: f.status === "live" ? "Read its chronicle so far" : "Read its chronicle" }),
+    ]));
+    cards.push(el("div", { class: "box fcard planned" }, [
+      el("div", { class: "ehead" }, [el("span", { class: "fname faint", text: "Next fort" }), el("span", { class: "pill p-plain", text: "planned" })]),
+      el("div", { class: "small muted", text: "Starts once this fort runs smoothly." }),
+      el("div", { class: "small muted", text: "Takes over the board, and starts a new chronicle. Same agents, tools and gotchas, with everything they learned." }),
+    ]));
+    return el("div", {}, [
+      el("div", {}, [el("h1", { text: "Forts" }), el("span", { class: "scope", text: " all forts" })]),
+      el("p", { class: "lede", text: "Every fort the agents have run, each with its chronicle. The board always shows the fort running now. Forts end; the agents, tools and gotchas carry on to the next one." }),
+      el("div", { class: "grid" }, cards),
+    ]);
+  }
+
+  // ---- Chronicle: a clearly marked stub (handoff item 5) -------------------
+  // Pretend data, kept in exactly one fixture file
+  // (web/stream/fixtures/chronicle-demo.json), never mixed into real data
+  // this page reads anywhere else.
+
+  _exampleTag() {
+    return el("span", { class: "example", text: "example data" });
+  }
+
+  _sparkChart(s) {
+    const W = 300, H = 120, L = 34, R = 10, T = 12, B = 22;
+    const max = Math.max(...s.v, 1);
+    const x = (i) => L + (i * (W - L - R)) / (s.v.length - 1);
+    const y = (v) => T + (1 - v / max) * (H - T - B);
+    const svg = svgEl("svg", { viewBox: `0 0 ${W} ${H}`, role: "img", "aria-label": `${s.k} by month` });
+    const col = s.tone === "bad" ? "var(--bad)" : "var(--chart, var(--g-now-line))";
+    [0, max].forEach((v) => {
+      svg.append(svgEl("line", { x1: L, x2: W - R, y1: y(v), y2: y(v), stroke: "var(--grid, var(--line))", "stroke-width": "1" }));
+      const t = svgEl("text", { x: L - 6, y: y(v) + 4, "text-anchor": "end", fill: "var(--faint)", "font-size": "10", "font-family": "inherit" });
+      t.textContent = String(v);
+      svg.append(t);
+    });
+    const pts = s.v.map((v, i) => `${x(i)},${y(v)}`).join(" ");
+    svg.append(svgEl("polygon", { points: `${x(0)},${y(0)} ${pts} ${x(s.v.length - 1)},${y(0)}`, fill: s.tone === "bad" ? "transparent" : "var(--chart-fill, rgba(85,255,255,0.1))" }));
+    svg.append(svgEl("polyline", { points: pts, fill: "none", stroke: col, "stroke-width": "2" }));
+    svg.append(svgEl("circle", { cx: x(s.v.length - 1), cy: y(s.v[s.v.length - 1]), r: "3.5", fill: col }));
+    [0, s.v.length - 1].forEach((i) => {
+      const t = svgEl("text", { x: x(i), y: H - 6, "text-anchor": i ? "end" : "start", fill: "var(--faint)", "font-size": "10", "font-family": "inherit" });
+      t.textContent = s.months[i];
+      svg.append(t);
+    });
+    return el("div", { class: "box chart" }, [
+      el("div", { class: "ch" }, [el("span", { class: "faint small", text: s.k.toUpperCase() }), el("span", { class: "now", style: `color:${col}`, text: String(s.v[s.v.length - 1]) })]),
+      svg,
+    ]);
+  }
+
+  _chronThought(t) {
+    return el("figure", { class: "thought", style: `border-color:${roleCssVar(t.by)}` }, [
+      el("blockquote", { text: t.text }),
+      el("figcaption", { class: "small" }, [
+        el("span", { style: `color:${roleCssVar(t.by)};font-weight:600`, text: roleTitle(t.by) }),
+        el("span", { class: "faint", text: t.by === "chronicler" ? " · its own aside" : " · quoted, " + (t.about || "") }),
+      ]),
+    ]);
+  }
+
+  _chronBlock(season) {
+    const c = season.chron;
+    return el("div", { class: "chron" }, [
+      el("div", { class: "ctx small" }, [
+        el("span", { style: `color:${roleCssVar("chronicler")};font-weight:600`, text: "Chronicler" }),
+        el("span", { class: "faint", text: " · the season in brief" }),
+      ]),
+      el("p", { class: "account", text: c.account }),
+      c.thoughts && c.thoughts.length ? el("div", { class: "thoughts" }, c.thoughts.map((t) => this._chronThought(t))) : null,
+    ]);
+  }
+
+  _viewChronicle() {
+    const fx = this.chronicleFixture;
+    if (!fx) return el("p", { class: "muted", text: "The example chronicle data could not be loaded." });
+    const seasons = fx.seasons || [];
+    const EV = fx.event_kinds || {};
+    return el("div", {}, [
+      el("div", {}, [el("h1", { text: "Chronicle" }), document.createTextNode(" "), this._exampleTag()]),
+      el("p", { class: "lede", text: "The fort's story, season by season. Example data: the Chronicler is not enabled yet (agents/ROSTER.yaml), so none of this reflects the real fort." }),
+      el("div", { class: "sec" }, [el("h2", { text: "The fort so far" }), el("div", { class: "charts" }, (fx.vitals || []).map((v) => this._sparkChart(v)))]),
+      ...seasons.map((s, i) => {
+        const all = this.showAllSeasons.has(i);
+        const picked = s.events.filter((e) => e[3]);
+        const shown = all ? s.events : picked;
+        return el("section", { class: "sec" }, [
+          el("h2", {}, [document.createTextNode(s.s + " "), s.result ? el("span", { class: "pill " + s.result[1], text: "goal " + s.result[0] }) : null]),
+          el("div", { class: "box sec" }, [
+            this._chronBlock(s),
+            el("div", { class: "cols" }, [
+              el("div", { class: "sec" }, [
+                s.goal ? el("div", {}, [el("span", { class: "faint", text: "Goal  " }), document.createTextNode(s.goal)]) : el("div", { class: "faint", text: "No goal this season." }),
+                s.end ? el("div", {}, [el("span", { class: "faint", text: "Result  " }), document.createTextNode(s.end)]) : null,
+                s.review ? el("div", { class: "line" }, [el("div", { class: "ctx" }, [el("span", { style: `color:${roleCssVar("overseer")};font-weight:600`, text: "Overseer" }), document.createTextNode(" · review")]), document.createTextNode(s.review)]) : null,
+                el("div", { class: "timeline" }, shown.map(([d, t, k]) => el("div", { class: "tlrow" }, [el("span", { class: "trd", text: d }), el("span", {}, [el("span", { class: "pill " + (EV[k] ? EV[k][1] : "p-plain"), text: EV[k] ? EV[k][0] : k }), document.createTextNode("  " + t)])]))),
+                el("button", {
+                  class: "tbtn", type: "button", "aria-pressed": String(all),
+                  onclick: () => { all ? this.showAllSeasons.delete(i) : this.showAllSeasons.add(i); this._render(); },
+                  text: all ? `Show only the Chronicler's ${picked.length}` : `Show all ${s.events.length} events (${s.events.length - picked.length} left out)`,
+                }),
+              ]),
+              el("div", { class: "sec" }, [el("div", { class: "faint small", text: "This season" })]),
+            ]),
+          ]),
+        ]);
+      }),
+    ]);
+  }
+
+  _viewLostChronicle(id) {
+    const fx = this.chronicleFixture;
+    const lost = fx && fx.lost_forts && fx.lost_forts[id];
+    if (!lost) return this._viewChronicle();
+    const EV = fx.event_kinds || {};
+    return el("div", {}, [
+      el("div", { class: "crumbs" }, [el("a", { href: "#forts", text: "Forts" }), document.createTextNode(" / " + lost.name)]),
+      el("div", {}, [el("h1", { text: lost.name + ": chronicle" }), document.createTextNode(" "), el("span", { class: "pill p-bad", text: "lost" }), document.createTextNode(" "), this._exampleTag()]),
+      el("p", { class: "lede", text: "An archive: the chronicle as the fort ended. The board moved on to the next fort." }),
+      el("section", { class: "sec" }, [
+        el("h2", { text: lost.s }),
+        el("div", { class: "box sec" }, [
+          el("div", { class: "chron" }, [
+            el("div", { class: "ctx small" }, [el("span", { style: `color:${roleCssVar("chronicler")};font-weight:600`, text: "Chronicler" }), el("span", { class: "faint", text: " · the fort in brief" })]),
+            el("p", { class: "account", text: lost.account }),
+          ]),
+          el("div", { class: "timeline" }, lost.events.map(([d, t, k]) => el("div", { class: "tlrow" }, [el("span", { class: "trd", text: d }), el("span", {}, [el("span", { class: "pill " + (EV[k] ? EV[k][1] : "p-plain"), text: EV[k] ? EV[k][0] : k }), document.createTextNode("  " + t)])]))),
+        ]),
+      ]),
+    ]);
+  }
+}
+
+window.SitePage = SitePage;
