@@ -1,0 +1,32 @@
+# UNDEPLOYED -- see infra/stream-publisher.service.example's own header for
+# the full deploy checklist; this is the companion template, same
+# relationship infra/dfseries-import.timer.example has to its own .service.
+#
+# Fires stream-publisher.service every 5 seconds -- design
+# research/2026-10-01-stream-page-design.md §4.3's own cadence ("push on
+# change, at most every 5 seconds, plus a heartbeat rewrite of head.json
+# every minute"); the heartbeat interval is a separate setting
+# (STREAM_PUBLISHER_HEARTBEAT_SECONDS, default 60) read by the script
+# itself each tick, not by this timer. A tick that finds nothing changed
+# and the heartbeat not yet due costs one cheap read-only queue scan and
+# writes nothing new -- scripts/stream_publisher.py's own change-detection
+# (a content hash, never a wall clock, over what the tick would publish)
+# is what makes a 5-second timer safe to run unattended.
+#
+# Enable with `sudo systemctl enable --now stream-publisher.timer` (this
+# enables the TIMER, never the .service directly -- the service has no
+# [Install] section on purpose, same as dfseries-import.service.example).
+# Only go live after the user's explicit go-ahead, per CLAUDE.md, and only
+# once stream-publisher.service.example's own checklist items are done.
+
+[Unit]
+Description=Run stream-publisher.service every 5 seconds
+
+[Timer]
+OnBootSec=10s
+OnUnitActiveSec=5s
+AccuracySec=1s
+Unit=stream-publisher.service
+
+[Install]
+WantedBy=timers.target
