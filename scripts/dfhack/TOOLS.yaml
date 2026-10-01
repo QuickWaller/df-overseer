@@ -2616,6 +2616,81 @@ df-overseer-construction.lua:
         applied. DRY_RUN defaults to true. Granted to the overseer only
         (mutates fort state, dfmcp/roles.py rule 2).
 
+        2026-10-01 (handoffs/2026-10-01-entrances-get-doors.md), live
+        incident evals/live/2026-10-01-queue-and-material-deploy/README.md
+        ("Month window, a sealed office"): `build` now computes this zone's
+        entrance(s) before designating anything, through `find_entrances`
+        (a ring tile whose outside neighbour belongs to the fort's main
+        walkable group -- connectivity.report's own main_group_id, never
+        re-derived -- and whose inside neighbour is the zone's own
+        footprint). A zone with NO detectable entrance among its open ring
+        tiles is refused outright, by name, before anything is designated
+        (never proceeds and seals the room). Any ring tile that IS the
+        entrance is pulled out of the candidate set before item_present/
+        keeps_access/reservation ever see it, reported in `held` with guard
+        "entrance" -- for every KIND, not just Wall (CLAUDE.md's
+        generalisability rule: this does not try to know per-subtype which
+        constructions block walking). `entrances_found` is new on the
+        response. Offline/lupa-tested only (tests/test_construction_lua_logic.py,
+        the office's own real 3x3-interior/16-tile-ring geometry from the
+        eval); never run against a live fort.
+    "door ZONE_ID [DRY_RUN] [RES_ID] [OVERRIDE]":
+      lua_function: build_door
+      effect: mutate
+      coordinate_bearing: internal-only
+      live_deployed: false
+      verified: "unverified (offline build, lupa-tested against a fake world only, 2026-10-01, handoffs/2026-10-01-entrances-get-doors.md). Never run against a real DFHack process. DRY_RUN defaults to true."
+      knowledge_scope: player_derivable
+      notes: >
+        Places a Door (resolved through df-overseer-building.lua's own
+        list_kinds, never a hard-coded building number) at every tile
+        `build`'s own find_entrances identifies as this zone's entrance --
+        never anywhere else on the ring. Chosen over "a documented call to
+        building.build Door at that tile" (the design's other option)
+        because building.build's own site search (NEAR_LANDMARK plus a
+        search radius) answers "find an open area that fits a building",
+        the wrong question for "put a door at THIS exact, already-known
+        entrance tile" -- this file already owns the exact-ring-tile-
+        targeting machinery (apply_single_cell, the reservation/
+        item_present guards) `build`/`mine-vein` use, reused here rather
+        than bending building.lua's tool to a job it was not built for.
+        MATERIAL_CHOICE is deliberately not threaded through (unlike
+        `build`): buildingplan's own default applies. A zone with no
+        detectable entrance is refused outright, same as `build`. DRY_RUN
+        defaults to true. Granted to the overseer only (mutates fort state,
+        dfmcp/roles.py rule 2).
+    "audit [ZONE_ID] [DRY_RUN]":
+      lua_function: audit_constructions
+      effect: mutate
+      coordinate_bearing: internal-only
+      live_deployed: false
+      verified: "unverified (offline build, lupa-tested against a fake world only, 2026-10-01, handoffs/2026-10-01-entrances-get-doors.md -- the office's own real geometry as a fixture). bld:getBuildStage()==bld:getMaxBuildStage() and dfhack.job.getHolder/job.flags.suspend are each already a live-verified call site elsewhere in this codebase (df-overseer-building.lua's kind_previously_built, df-overseer-zone.lua's content_row, df-overseer-stuckjobs.lua's get_stuck_jobs/job.flags.suspend) -- this file only recombines them, nothing here has run against a live fort. DRY_RUN defaults to true: a bare read never suspends anything."
+      knowledge_scope: player_derivable
+      notes: >
+        The backstop for walls designated BEFORE the entrance guard above
+        existed (exactly the 2026-09-28 office walls that caused the
+        incident this handoff is named for). For one zone (ZONE_ID) or
+        every activity zone the game knows (ZONE_ID omitted), classifies
+        every ring tile as `built` (shape already a wall), `planned` (a
+        Construction building sits here, not yet at its own max build
+        stage -- the job has not finished, the tile has not become a wall
+        yet) or `open` (neither), then asks the same find_entrances whether
+        an entrance would still exist among the OPEN tiles once every
+        PLANNED tile also finishes (`would_strand`). If not, the planned
+        tile(s) that would themselves have qualified as the entrance are
+        named in `at_risk` (building id, never a coordinate). A real
+        (non-dry) call suspends the first at-risk building's own job via
+        `job.flags.suspend` (the same hand stopgap used live on building 22,
+        2026-09-28, now a named tool action) -- the deterministic
+        first-in-ring-order tie-break `keeps_access` already established,
+        reported in `suspended`. DRY_RUN defaults to true, same as
+        mine-vein/build above. Like both of those, this file grants by tool
+        id, not by argument, so this is granted to the overseer only, the
+        same as every other mutating command here (dfmcp/roles.py rule 2)
+        -- even though a DRY_RUN=true call never mutates anything, nothing
+        in the current allowlist model can hand out "this tool, but only
+        with this argument" to a read-only role.
+
 df-overseer-blueprint.lua:
   build_order_item: "the Architect's hands; handoffs/2026-09-24-blueprint-hands.md. Research: research/2026-09-24-quickfort-hands.md"
   # Documented defaults (each the value the Lua script already uses when the

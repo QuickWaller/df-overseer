@@ -58,16 +58,30 @@ end
 df = {
   tiletype_shape = enum({"WALL", "FLOOR", "RAMP", "EMPTY"}),
   item_type = enum({"BOULDER", "ROUGH", "WOOD", "BLOCKS"}),
-  building_type = enum({"Workshop", "Furnace", "Construction", "Trap", "SiegeEngine", "Bed"}),
+  building_type = enum({"Workshop", "Furnace", "Construction", "Trap", "SiegeEngine", "Bed", "Door"}),
   -- 2026-10-01 (handoffs/2026-10-01-buildingplan-material-filter.md):
   -- construction_type_numbers relies on this being bidirectional (a name
   -- like "Wall" indexes straight to its number), the same property every
   -- real DFHack enum table has.
   construction_type = enum({"Wall", "Floor", "Ramp", "UpStair", "DownStair"}),
-  global = {world = {items = {all = ITEMS}}},
+  global = {world = {items = {all = ITEMS}, jobs = {list = nil}, buildings = {all = {}}}},
+  building_civzonest = {
+    -- handoffs/2026-10-01-entrances-get-doors.md audit's own no-ZONE_ID path
+    -- (iterate every civzone): this fake never registers a civzone in
+    -- df.global.world.buildings.all, so is_instance is never asked to
+    -- return true in any test here -- every audit test names its ZONE_ID
+    -- explicitly. Present only so a call to is_instance does not error.
+    is_instance = function(_) return false end,
+  },
 }
 
 CR_OK = 0
+
+-- A real DFHack global (dfhack.buildings.findAtTile(xyz2pos(x,y,z)) is the
+-- exact call df-overseer-surface.lua's own tile_read already makes live);
+-- this fake just needs SOME table shape a position-taking call can use as
+-- a lookup key, never printed or compared to anything but itself.
+function xyz2pos(x, y, z) return {x = x, y = y, z = z} end
 
 -- ---------------------------------------------------------------------------
 -- Fake df-overseer-surface module
@@ -80,8 +94,13 @@ VEINS = {}   -- "x,y,z" -> {vein_status=, mineral_name=, error=}
 
 local function key(x, y, z) return x .. "," .. y .. "," .. z end
 
-function add_zone(id)
-  ZONES[id] = {id = id}
+-- x1/y1/x2/y2 default to a single far-away cell (1000,1000,0) that no real
+-- test target coordinate ever collides with -- existing tests that only
+-- care about item_present/keeps_access/reservation/material guards never
+-- need to think about zone geometry at all; only the entrance-specific
+-- tests below pass a real footprint (the office's own, from the eval).
+function add_zone(id, x1, y1, x2, y2)
+  ZONES[id] = {id = id, x1 = x1 or 1000, y1 = y1 or 1000, x2 = x2 or 1000, y2 = y2 or 1000}
 end
 
 function set_ring(zone_id, tiles)
@@ -270,11 +289,110 @@ local FAKE_RESERVATIONS = {
   end,
 }
 
+-- ---------------------------------------------------------------------------
+-- Fake df-overseer-reachability.lua / df-overseer-connectivity.lua
+-- (handoffs/2026-10-01-entrances-get-doors.md): GROUPS is a plain
+-- "x,y,z" -> walkable-group-id map a test fills in with set_group;
+-- MAIN_GROUP is the fort's own main group, read by main_group_id() through
+-- get_connectivity_report. group_matches mirrors the REAL
+-- df-overseer-reachability.lua's own signature (x, y, z, target_groups) ->
+-- matched, how, group -- "at"/the real group id are good enough fakes here,
+-- find_entrances only ever looks at the first return value.
+-- ---------------------------------------------------------------------------
+
+GROUPS = {}
+MAIN_GROUP = nil
+function set_group(x, y, z, group) GROUPS[key(x, y, z)] = group end
+function set_main_group(group) MAIN_GROUP = group end
+
+local FAKE_REACHABILITY = {
+  group_matches = function(x, y, z, target_groups)
+    local g = GROUPS[key(x, y, z)]
+    if g == nil then return false, nil, nil end
+    return target_groups[g] == true, "at", g
+  end,
+}
+
+local FAKE_CONNECTIVITY = {
+  get_connectivity_report = function()
+    return {main_group_id = MAIN_GROUP}
+  end,
+}
+
+-- add_entrance_fixture(zone_id, [ex, ey, ez]) -- appends one open ring tile
+-- to RINGS[zone_id] whose OUTSIDE neighbour (per
+-- df-overseer-construction.lua's own ring_edge_neighbours, against the
+-- zone's footprint -- the x1=y1=x2=y2=1000 default from add_zone unless the
+-- test gave its own) is registered in the fort's main walkable group, so
+-- find_entrances reports exactly this tile as the zone's entrance. Tests
+-- that do not themselves test entrance behaviour call this once, purely so
+-- build_construction/build_door/audit do not refuse the whole call for "no
+-- entrance" -- appended LAST, so its ring_position is always the highest,
+-- keeping every other guard's own held-list ordering (held[0], etc.)
+-- unaffected; `open_tiles_found`/ring-tile counts in those tests do need
+-- the +1 this tile adds.
+function add_entrance_fixture(zone_id, ex, ey, ez)
+  ex, ey, ez = ex or 1000, ey or 999, ez or 0
+  RINGS[zone_id] = RINGS[zone_id] or {}
+  table.insert(RINGS[zone_id], {ex, ey, ez})
+  TILES[key(ex, ey, ez)] = {ok = true, hidden = false, shape = df.tiletype_shape.FLOOR}
+  set_group(ex, ey - 1, ez, 1)
+  if MAIN_GROUP == nil then MAIN_GROUP = 1 end
+end
+
+-- ---------------------------------------------------------------------------
+-- Fake buildings-at-tile + jobs world (handoffs/2026-10-01-entrances-get-
+-- doors.md: planned_construction_at/job_for_building/audit_constructions).
+-- ---------------------------------------------------------------------------
+
+BUILDINGS_AT_TILE = {}
+JOBS = {}
+df.global.world.jobs.list = JOBS
+
+-- set_planned_building(x, y, z, building_id, build_stage, max_build_stage,
+-- [building_type]) registers a building (Construction by default) at
+-- (x,y,z). "planned" (audit_constructions' own meaning) when build_stage <
+-- max_build_stage, matching the live bld:getBuildStage()==
+-- bld:getMaxBuildStage() check df-overseer-building.lua's
+-- kind_previously_built and df-overseer-zone.lua's content_row already use.
+function set_planned_building(x, y, z, building_id, build_stage, max_build_stage, building_type)
+  local bld = {
+    id = building_id,
+    _type = df.building_type[building_type or "Construction"],
+    _stage = build_stage,
+    _max_stage = max_build_stage,
+  }
+  function bld:getType() return self._type end
+  function bld:getBuildStage() return self._stage end
+  function bld:getMaxBuildStage() return self._max_stage end
+  BUILDINGS_AT_TILE[key(x, y, z)] = bld
+  return bld
+end
+
+-- add_job(bld) -- a job "attached to" `bld` via dfhack.job.getHolder, the
+-- same building->job link df-overseer-stuckjobs.lua's own get_stuck_jobs
+-- already reads live.
+function add_job(bld)
+  local job = {id = #JOBS + 1, flags = {suspend = false}, _holder = bld}
+  JOBS[#JOBS + 1] = job
+  return job
+end
+
+function job_suspended(bld)
+  for _, job in ipairs(JOBS) do
+    if job._holder == bld then return job.flags.suspend == true end
+  end
+  return nil
+end
+
 package.loaded = package.loaded or {}
 package.loaded['df-overseer-surface'] = FAKE_SURFACE
 package.loaded['df-overseer-building'] = FAKE_BUILDING
 package.loaded['df-overseer-reservations'] = FAKE_RESERVATIONS
+package.loaded['df-overseer-reachability'] = FAKE_REACHABILITY
+package.loaded['df-overseer-connectivity'] = FAKE_CONNECTIVITY
 package.loaded['json'] = {encode = function(v) return "json" end}
+package.loaded['utils'] = {listpairs = function(t) return ipairs(t) end}
 
 function reqscript(name) return package.loaded[name] or {} end
 function require(name) return package.loaded[name] end
@@ -305,6 +423,12 @@ dfhack = {
       if item._x == nil then return nil end
       return item._x, item._y, item._z
     end,
+  },
+  buildings = {
+    findAtTile = function(pos) return BUILDINGS_AT_TILE[key(pos.x, pos.y, pos.z)] end,
+  },
+  job = {
+    getHolder = function(job) return job._holder end,
   },
 }
 
