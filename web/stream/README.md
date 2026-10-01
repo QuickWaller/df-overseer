@@ -134,17 +134,16 @@ command is written out exactly so the orchestrator (or the user) can review
 it before running it for real, per this repo's CLAUDE.md rule that any
 change to live/VM state needs explicit go-ahead each time.
 
-**Paths below predate multiple forts** (this stream's own addition, register
-2026-10-02): `scripts/stream_publisher.py` still writes the flat
-`data/public/head.json`-style layout (see "Known gaps" above), so every
-`.../data/public/head.json` path quoted in this section is still correct
-for THAT script as it stands today. Once a future stream updates it to call
-`dfqueue.feed.write_fort_feed`, every one of those paths gains a
-`forts/<fort-id>/` segment (`.../data/public/forts/<fort-id>/head.json`)
-and a new `.../data/public/forts.json` exists alongside it — Caddy and the
-`rrsync` push key need NO changes either way, since both already serve/
-accept the whole `data/public`/`data/operator` directory tree recursively,
-not a named file inside it.
+**Paths below reflect the multi-fort layout** (register 2026-10-02):
+`scripts/stream_publisher.py` now calls `dfqueue.feed.write_fort_feed`, so
+every `.../data/public/head.json` path quoted in this section actually
+lands at `.../data/public/forts/<fort-id>/head.json`, with
+`.../data/public/forts.json` alongside it (`<fort-id>` defaults to
+`STREAM_PUBLISHER_DB`'s own file stem; see "Known gaps" above for the
+env vars that configure it). Caddy and the `rrsync` push key need NO
+changes either way, since both already serve/accept the whole
+`data/public`/`data/operator` directory tree recursively, not a named file
+inside it.
 
 ### What S1 needs from the user, before any of this runs
 
@@ -190,8 +189,9 @@ not a named file inside it.
    (no relay variables yet): it writes the local staging files and reports
    `"reason": "no_relay_configured"` for both sides, pushing nothing --
    confirm the staged `data/public/` and `data/operator/` look right
-   (`cat <staging-dir>/public/head.json`, same shape `write_feed` produces
-   locally) before any network step.
+   (`cat <staging-dir>/public/forts.json` and
+   `<staging-dir>/public/forts/<fort-id>/head.json`, same shape
+   `write_fort_feed` produces locally) before any network step.
 
 **On the relay:**
 
@@ -207,7 +207,7 @@ not a named file inside it.
    the `CHANGEME` ports and the relay's own checkout path for `web/stream/`.
    **Do not repoint either Cloudflare tunnel's ingress yet.**
 7. Start Caddy bound to loopback only, and confirm **from the relay itself**
-   (`curl 127.0.0.1:<public-caddy-port>/data/public/head.json` --
+   (`curl 127.0.0.1:<public-caddy-port>/data/public/forts.json` --
    if step 4's manual cycle has not pushed yet, this 404s, which is
    expected and fine) before touching the tunnels.
 
@@ -216,8 +216,8 @@ not a named file inside it.
 8. Fill in the eight `STREAM_PUBLISHER_{PUBLIC,OPERATOR}_RELAY_*` variables
    in `.env` and re-run the manual `--once` cycle from step 4. Confirm it
    reports `"pushed": true` for both sides, then confirm **on the relay**
-   that `/srv/stream/data/public/head.json` and
-   `/srv/stream/data/operator/head.json` both exist and match what step 4
+   that `/srv/stream/data/public/forts.json` and
+   `/srv/stream/data/operator/forts.json` both exist and match what step 4
    staged locally.
 9. Only once 7 and 8 both check out: repoint each Cloudflare tunnel's
    ingress from websockify's own port to Caddy's (per
@@ -229,10 +229,10 @@ not a named file inside it.
 | Hop | How to check |
 |---|---|
 | Publisher reads the queue | `--once`'s own JSON summary on stdout (journald, once the timer runs): `kill_switch_active`, and `"reason"`/`"pushed"` per side |
-| Local staging is correct | `cat <staging-dir>/public/head.json` and `.../projects.json` on VM 103 |
+| Local staging is correct | `cat <staging-dir>/public/forts.json` and `.../forts/<fort-id>/projects.json` on VM 103 |
 | The restricted key is actually restricted | the two `rsync` commands in `infra/stream-publisher-push-key-authorized-keys.example`'s "Verify after installing" section, run from VM 103 |
-| The relay actually received the push | `cat /srv/stream/data/public/head.json` on the relay, compared to VM 103's staged copy |
-| Caddy serves it, loopback only | `curl 127.0.0.1:<port>/data/public/head.json` on the relay itself; the same URL from off-host must fail until a tunnel points at it |
+| The relay actually received the push | `cat /srv/stream/data/public/forts.json` on the relay, compared to VM 103's staged copy |
+| Caddy serves it, loopback only | `curl 127.0.0.1:<port>/data/public/forts.json` on the relay itself; the same URL from off-host must fail until a tunnel points at it |
 | The operator path never leaks publicly | confirm the PUBLIC server block's Caddyfile stanza has no `/data/operator/` `handle_path` at all (not a rule that denies it -- the absence itself) |
 | End to end | load the public hostname, confirm the page polls `head.json` and shows real items; load the admin hostname behind Access, confirm it shows the operator projection including `top_blocker` text the public page never gets |
 
@@ -278,14 +278,22 @@ port to fully revert the relay's public surface to pre-S1 shape.
   `ready`/`waiting`/`hold` from whether ANY `executed` record covers it, not
   partial progress — this slice's `dfqueue.feed_status.step_board_states`
   only derives per-target counts for a step's own literal `targets.set`.
-- `scripts/stream_publisher.py` (slice S1, not touched by this stream)
-  still calls `dfqueue.feed.write_feed` directly, writing the OLD flat
-  layout. Before any real deploy it needs to call
-  `dfqueue.feed.write_fort_feed` instead (fort id/name/status config, likely
-  new `STREAM_PUBLISHER_FORT_*` `.env` variables mirroring this script's own
-  `--fort-id`/`--fort-name`/`--fort-status`). The page already falls back to
-  the flat layout if `forts.json` is absent, so this is not a breaking gap,
-  just unfinished parity.
+- `scripts/stream_publisher.py` now calls `dfqueue.feed.write_fort_feed`
+  (this gap is closed): `STREAM_PUBLISHER_FORT_ID` (defaults to
+  `STREAM_PUBLISHER_DB`'s own file stem), `STREAM_PUBLISHER_FORT_NAME`
+  (default `Ragwind`) and `STREAM_PUBLISHER_FORT_STATUS` (default `live`)
+  mirror the export script's own `--fort-id`/`--fort-name`/`--fort-status`.
+  **What the first real deploy of this change does on the relay**: before
+  it, nothing has ever pushed the multi-fort layout there, so there is
+  nothing to go stale on a from-scratch install. If a relay somehow already
+  has old flat `data/public/head.json`-style files from an even earlier,
+  pre-multi-fort build of this script, they become stale and inert once
+  `forts.json` lands beside them: the page (see "Multiple forts" above)
+  reads `forts.json` first and only falls back to treating the projection
+  root as one flat fort's feed when `forts.json` is entirely ABSENT, so a
+  stale flat file sitting next to a real `forts.json` is simply never read
+  again. No manual cleanup is required on the relay; deleting the old flat
+  files there is optional and harmless.
 - Accessibility: role names are always shown as text (never colour alone),
   but this has not been tested with a real screen reader. The theme toggle
   and board cards are plain buttons (keyboard-reachable, `aria-pressed`

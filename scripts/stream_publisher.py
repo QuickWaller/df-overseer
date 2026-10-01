@@ -9,6 +9,24 @@ reads a static export, and pushes the built `data/public/` and
 restricted to one directory there (design
 `research/2026-10-01-stream-page-design.md` §4.1: "VM 103 only dials out").
 
+Each side's staged/pushed directory is now the multi-fort projection root
+`dfqueue.feed.write_fort_feed` writes (register 2026-10-02, "plan for more
+than one fort"): `forts.json` plus `forts/<fort-id>/...`, the same layout
+`scripts/export_stream_feed.py` writes, not the old flat `head.json`-at-root
+shape. `--fort-id` (`STREAM_PUBLISHER_FORT_ID`) defaults to the `--db`
+file's own stem (`/var/lib/dfqueue/Uniboslan.sqlite3` -> `Uniboslan`);
+`--fort-name`/`--fort-status` (`STREAM_PUBLISHER_FORT_NAME`/
+`STREAM_PUBLISHER_FORT_STATUS`) default to `Ragwind`/`live`. **The first
+deploy of this change makes the relay's existing flat paths
+(`.../data/public/head.json` etc, if anything was ever pushed there before)
+stale** -- `web/stream/app.js` falls back to treating the projection root as
+one flat fort's feed only when `forts.json` is entirely absent, so a stale
+flat `head.json` left over from before this change, sitting ALONGSIDE a new
+`forts.json`, is just inert: the page reads `forts.json` and follows
+whichever fort is `current`, never the old flat files once that index
+exists. Nothing needs manual cleanup on the relay, though removing the old
+flat files there is harmless if wanted.
+
 Usage (local staging only, no push -- for review)::
 
     python scripts/stream_publisher.py --once \\
@@ -136,6 +154,10 @@ DEFAULT_ENV_PATH = REPO_ROOT / ".env"
 DEFAULT_HEARTBEAT_INTERVAL_SECONDS = 60
 DEFAULT_LOOP_INTERVAL_SECONDS = 5
 CURSOR_FILENAME = ".publisher-cursor.json"
+# Same default `scripts/export_stream_feed.py --fort-name` uses -- the one
+# real fort this repo automates today (CLAUDE.md's own "Current state").
+DEFAULT_FORT_NAME = "Ragwind"
+_VALID_FORT_STATUSES = ("live", "lost")
 
 
 class ConfigError(Exception):
@@ -184,6 +206,17 @@ class PublisherConfig:
     heartbeat_interval_seconds: int = DEFAULT_HEARTBEAT_INTERVAL_SECONDS
     loop_interval_seconds: int = DEFAULT_LOOP_INTERVAL_SECONDS
     rsync_bin: str = "rsync"
+    fort_id: str = ""
+    fort_name: str = DEFAULT_FORT_NAME
+    fort_status: str = "live"
+
+    def resolved_fort_id(self) -> str:
+        """`fort_id` when explicitly configured, else the queue file's own
+        stem (`/var/lib/dfqueue/Uniboslan.sqlite3` -> `Uniboslan`) -- the
+        same convention `scripts/export_stream_feed.py`'s own
+        `_default_fort_id` uses for a `--db` export, never a guess at a
+        SECOND fort's name."""
+        return self.fort_id or Path(self.db_path).stem
 
     def validate(self) -> None:
         if not self.db_path or not str(self.db_path).strip():
@@ -202,6 +235,10 @@ class PublisherConfig:
             raise ConfigError("heartbeat_interval_seconds must be at least 1")
         if self.loop_interval_seconds < 1:
             raise ConfigError("loop_interval_seconds must be at least 1")
+        if self.fort_status not in _VALID_FORT_STATUSES:
+            raise ConfigError(
+                f"fort_status={self.fort_status!r} must be one of {_VALID_FORT_STATUSES}"
+            )
 
 
 _RELAY_FIELDS = ("host", "user", "path", "ssh_key")
@@ -260,6 +297,12 @@ def config_from_env(env: Mapping[str, str], *, validate: bool = True) -> Publish
         kwargs["loop_interval_seconds"] = int(env["STREAM_PUBLISHER_LOOP_SECONDS"])
     if env.get("STREAM_PUBLISHER_RSYNC_BIN"):
         kwargs["rsync_bin"] = env["STREAM_PUBLISHER_RSYNC_BIN"]
+    if env.get("STREAM_PUBLISHER_FORT_ID"):
+        kwargs["fort_id"] = env["STREAM_PUBLISHER_FORT_ID"]
+    if env.get("STREAM_PUBLISHER_FORT_NAME"):
+        kwargs["fort_name"] = env["STREAM_PUBLISHER_FORT_NAME"]
+    if env.get("STREAM_PUBLISHER_FORT_STATUS"):
+        kwargs["fort_status"] = env["STREAM_PUBLISHER_FORT_STATUS"]
 
     public_relay = _relay_from_env(env, "PUBLIC")
     operator_relay = _relay_from_env(env, "OPERATOR")
@@ -438,6 +481,7 @@ def run_cycle(
     # scripts/export_stream_feed.py.
     status = feed.build_placeholder_status()
 
+    fort_id = cfg.resolved_fort_id()
     staging = Path(cfg.staging_dir)
     cursor_path = staging / CURSOR_FILENAME
     cursor = _read_cursor(cursor_path)
@@ -451,7 +495,10 @@ def run_cycle(
     # ---- operator side: never disabled by public_enabled, only by the
     # kill-switch file or having no relay configured at all. ----------------
     operator_out = staging / "operator"
-    feed.write_feed(operator_items, operator_out, projects=operator_projects, status=status)
+    feed.write_fort_feed(
+        operator_items, operator_out, fort_id=fort_id, fort_name=cfg.fort_name,
+        fort_status=cfg.fort_status, projects=operator_projects, status=status,
+    )
     operator_hash = compute_content_hash(operator_items, operator_projects, status)
     if kill_switch_active:
         result["operator"]["reason"] = "kill_switch_file"
@@ -472,13 +519,17 @@ def run_cycle(
     public_off = kill_switch_active or not cfg.public_enabled
     public_out = staging / "public"
     if public_off:
-        feed.write_feed(
-            [], public_out,
+        feed.write_fort_feed(
+            [], public_out, fort_id=fort_id, fort_name=cfg.fort_name,
+            fort_status=cfg.fort_status,
             projects={"thread_to_project": {}, "projects": {}},
             status=None, state="off",
         )
     else:
-        feed.write_feed(public_items, public_out, projects=public_projects, status=status)
+        feed.write_fort_feed(
+            public_items, public_out, fort_id=fort_id, fort_name=cfg.fort_name,
+            fort_status=cfg.fort_status, projects=public_projects, status=status,
+        )
     public_hash = compute_content_hash(
         [] if public_off else public_items,
         {"thread_to_project": {}, "projects": {}} if public_off else public_projects,
@@ -528,6 +579,19 @@ def _build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument("--operator-relay-user")
     parser.add_argument("--operator-relay-path")
     parser.add_argument("--operator-relay-ssh-key")
+    parser.add_argument(
+        "--fort-id", default=None,
+        help="this fort's id for the multi-fort data/.../forts/<fort-id>/ layout "
+             "(default: the --db file's own stem). STREAM_PUBLISHER_FORT_ID",
+    )
+    parser.add_argument(
+        "--fort-name", default=None,
+        help=f"this fort's display name (default: {DEFAULT_FORT_NAME}). STREAM_PUBLISHER_FORT_NAME",
+    )
+    parser.add_argument(
+        "--fort-status", default=None, choices=list(_VALID_FORT_STATUSES),
+        help="this fort's status for forts.json (default: live). STREAM_PUBLISHER_FORT_STATUS",
+    )
     parser.add_argument("--once", action="store_true", help="run a single cycle and exit (the systemd-timer-triggered mode, infra/stream-publisher.timer.example)")
     parser.add_argument("--env-file", default=str(DEFAULT_ENV_PATH), help="path to a .env file to merge under the real environment (default: repo root .env)")
     return parser
@@ -551,6 +615,12 @@ def _config_from_args(args: argparse.Namespace) -> PublisherConfig:
         overrides["heartbeat_interval_seconds"] = args.heartbeat_interval
     if args.loop_interval:
         overrides["loop_interval_seconds"] = args.loop_interval
+    if args.fort_id:
+        overrides["fort_id"] = args.fort_id
+    if args.fort_name:
+        overrides["fort_name"] = args.fort_name
+    if args.fort_status:
+        overrides["fort_status"] = args.fort_status
 
     def _relay_override(prefix: str) -> Optional[RelayTarget]:
         host = getattr(args, f"{prefix}_relay_host")
