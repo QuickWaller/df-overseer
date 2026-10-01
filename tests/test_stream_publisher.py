@@ -9,10 +9,12 @@ Covers: change detection (a second cycle with identical queue content does
 not push again), the kill-switch file (stops both sides outright), the
 `public_enabled=False` switch (stops and clears only the public side, keeps
 the operator side running), safe-on-restart (a missing/corrupt cursor file
-costs one extra push, never a crash), and -- the one safety property this
-handoff calls out by name -- that the publisher never attempts to write to
-the queue database at all, proved by actually making the on-disk file
-read-only and running a full cycle against it.
+costs one extra push, never a crash), the multi-fort layout (`forts.json`
+plus `forts/<fort-id>/...` on both sides, fort id defaulting to the `--db`
+file's own stem and overridable, fort name/status configurable), and -- the
+one safety property this handoff calls out by name -- that the publisher
+never attempts to write to the queue database at all, proved by actually
+making the on-disk file read-only and running a full cycle against it.
 """
 
 from __future__ import annotations
@@ -121,6 +123,49 @@ def test_config_from_env_rejects_a_partially_configured_relay():
         sp.config_from_env(env)
 
 
+def test_config_from_env_reads_fort_fields():
+    env = {
+        "STREAM_PUBLISHER_DB": "x", "STREAM_PUBLISHER_STAGING_DIR": "y",
+        "STREAM_PUBLISHER_FORT_ID": "uniboslan",
+        "STREAM_PUBLISHER_FORT_NAME": "Ragwind",
+        "STREAM_PUBLISHER_FORT_STATUS": "lost",
+    }
+    cfg = sp.config_from_env(env)
+    assert cfg.fort_id == "uniboslan"
+    assert cfg.fort_name == "Ragwind"
+    assert cfg.fort_status == "lost"
+
+
+def test_fort_id_defaults_unset_and_name_status_default_sensibly():
+    cfg = sp.config_from_env(
+        {"STREAM_PUBLISHER_DB": "x", "STREAM_PUBLISHER_STAGING_DIR": "y"}
+    )
+    assert cfg.fort_id == ""
+    assert cfg.fort_name == sp.DEFAULT_FORT_NAME
+    assert cfg.fort_status == "live"
+
+
+def test_resolved_fort_id_falls_back_to_the_db_files_own_stem(tmp_path):
+    cfg = _cfg(tmp_path, db_path=str(tmp_path / "Uniboslan.sqlite3"))
+    assert cfg.resolved_fort_id() == "Uniboslan"
+
+
+def test_resolved_fort_id_prefers_an_explicitly_configured_one(tmp_path):
+    cfg = _cfg(
+        tmp_path, db_path=str(tmp_path / "Uniboslan.sqlite3"), fort_id="ragwind",
+    )
+    assert cfg.resolved_fort_id() == "ragwind"
+
+
+def test_config_from_env_rejects_an_invalid_fort_status():
+    env = {
+        "STREAM_PUBLISHER_DB": "x", "STREAM_PUBLISHER_STAGING_DIR": "y",
+        "STREAM_PUBLISHER_FORT_STATUS": "paused",
+    }
+    with pytest.raises(sp.ConfigError):
+        sp.config_from_env(env)
+
+
 def test_config_from_env_rejects_an_invalid_boolean():
     env = {
         "STREAM_PUBLISHER_DB": "x", "STREAM_PUBLISHER_STAGING_DIR": "y",
@@ -196,8 +241,35 @@ def test_run_cycle_with_no_relay_writes_locally_and_pushes_nothing(tmp_path):
     assert result["operator"]["reason"] == "no_relay_configured"
     assert result["public"]["reason"] == "no_relay_configured"
     assert not result["operator"]["pushed"] and not result["public"]["pushed"]
-    assert (tmp_path / "stage" / "public" / "head.json").is_file()
-    assert (tmp_path / "stage" / "operator" / "head.json").is_file()
+    assert (tmp_path / "stage" / "public" / "forts.json").is_file()
+    assert (tmp_path / "stage" / "public" / "forts" / "queue" / "head.json").is_file()
+    assert (tmp_path / "stage" / "operator" / "forts" / "queue" / "head.json").is_file()
+
+
+def test_run_cycle_writes_forts_json_with_the_resolved_fort(tmp_path):
+    db = tmp_path / "Uniboslan.sqlite3"
+    _seed_db(db)
+    cfg = _cfg(tmp_path, db_path=str(db), fort_name="Ragwind", fort_status="live")
+
+    sp.run_cycle(cfg, now=1000.0)
+
+    for side in ("public", "operator"):
+        forts = json.loads((tmp_path / "stage" / side / "forts.json").read_text())
+        assert forts == {
+            "forts": [{"id": "Uniboslan", "name": "Ragwind", "status": "live", "current": True}]
+        }
+        assert (tmp_path / "stage" / side / "forts" / "Uniboslan" / "head.json").is_file()
+
+
+def test_run_cycle_honours_an_explicit_fort_id_over_the_db_stem(tmp_path):
+    db = tmp_path / "queue.sqlite3"
+    _seed_db(db)
+    cfg = _cfg(tmp_path, db_path=str(db), fort_id="ragwind")
+
+    sp.run_cycle(cfg, now=1000.0)
+
+    assert (tmp_path / "stage" / "public" / "forts" / "ragwind" / "head.json").is_file()
+    assert not (tmp_path / "stage" / "public" / "forts" / "queue").exists()
 
 
 # ---- run_cycle: change detection -----------------------------------------
@@ -284,7 +356,7 @@ def test_kill_switch_file_stops_both_sides(tmp_path):
     assert result["operator"]["reason"] == "kill_switch_file"
     assert pusher.calls == []
     # Local staging is still written -- an operator can inspect it.
-    assert (tmp_path / "stage" / "public" / "head.json").is_file()
+    assert (tmp_path / "stage" / "public" / "forts" / "queue" / "head.json").is_file()
 
 
 def test_kill_switch_file_absent_does_not_block_publishing(tmp_path):
@@ -321,7 +393,9 @@ def test_public_disabled_clears_public_but_keeps_operator_running(tmp_path):
     assert result["operator"]["pushed"] is True
     public_call = [c for c in pusher.calls if c["relay"].path.endswith("public")][0]
     assert public_call["delete"] is True  # design §4.6 layer 2: segments removed
-    head = json.loads((tmp_path / "stage" / "public" / "head.json").read_text())
+    head = json.loads(
+        (tmp_path / "stage" / "public" / "forts" / "queue" / "head.json").read_text()
+    )
     assert head["state"] == "off"
 
     # A second cycle, still disabled and unchanged: no further push until
