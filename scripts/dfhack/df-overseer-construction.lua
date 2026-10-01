@@ -94,14 +94,96 @@
 --   own build: omit it to exclude economic materials by default, pass
 --   "allow_economic" to allow them, or name a material (e.g. SHALE) to pick
 --   it explicitly.
+-- Usage: ./dfhack-run df-overseer-construction door ZONE_ID [DRY_RUN] [RES_ID] [OVERRIDE]
+-- Usage: ./dfhack-run df-overseer-construction audit [ZONE_ID] [DRY_RUN]
+--
+-- ENTRANCE GUARD, door, audit (handoffs/2026-10-01-entrances-get-doors.md):
+-- live incident 2026-10-01 (evals/live/2026-10-01-queue-and-material-deploy/
+-- README.md, "Month window, a sealed office") -- `build` designated ring
+-- walls around the office on 2026-09-28 that included the room's own way
+-- out; `keeps_access` protects exposed ore, not a room's own exit, and
+-- never re-checked walls designated before it existed. This stream adds:
+--   - `find_entrances` (below, next to `build`'s guards): a ring tile is the
+--     room's entrance if it has an inside neighbour that is the zone's own
+--     footprint rectangle (structural -- always true for a non-corner ring
+--     tile, by the geometry of `ring_tiles`/`footprint_tiles` in
+--     df-overseer-surface.lua) and an outside neighbour that belongs to the
+--     fort's main walkable group (the group most citizens are in, read via
+--     df-overseer-connectivity.lua's exported get_connectivity_report,
+--     never re-derived here). A ring CORNER never qualifies: neither of its
+--     two orthogonal neighbours lies inside the footprint, so it cannot be
+--     "the way out" by this definition -- see ring_edge_neighbours below.
+--   - `build` now computes this zone's entrances before designating
+--     anything. Zero entrances found among the OPEN ring tiles this call
+--     could touch refuses the WHOLE call by name (never guesses it is safe
+--     to proceed with no exit); any found entrance tile is pulled out of
+--     the candidate set before the other guards run and reported in `held`
+--     with guard "entrance" (a named skip, never silent) -- for EVERY KIND,
+--     not just Wall: per CLAUDE.md's generalisability rule, this guard does
+--     not try to know which construction subtypes block walking and which
+--     do not (that would be per-kind branching in code); it conservatively
+--     protects the entrance tile from any construction.build call.
+--   - `door` places a Door (df-overseer-building.lua's own generic
+--     list_kinds, not a hard-coded building number) at every entrance this
+--     same find_entrances identifies, through the identical one-tile
+--     quickfort `-c` application `build`/`mine-vein` already use. Chosen
+--     over "a documented call to building.build Door at that tile"
+--     (the handoff's other option) because building.build's own site
+--     search (`ranked_sites`, NEAR_LANDMARK plus a search radius) finds an
+--     open area that FITS a building, which is the wrong question for "put
+--     a door at THIS exact, already-known entrance tile" -- construction.lua
+--     already owns the exact-ring-tile-targeting machinery `build` and
+--     `mine-vein` use (apply_single_cell, the reservation/item_present
+--     guards), so `door` reuses it rather than bending building.lua's
+--     site-search tool to a job it was not built for. MATERIAL_CHOICE is
+--     not threaded through for Door (unlike `build`): buildingplan's own
+--     default applies, undocumented scope choice stated here plainly rather
+--     than silently dropped.
+--   - `audit` is the backstop for walls designated BEFORE this guard
+--     existed (exactly the 2026-09-28 walls that caused the incident): for
+--     a zone (or every activity zone the game knows, if ZONE_ID is
+--     omitted), it reads every ring tile's live state and classifies each
+--     as built (shape already WALL), planned (a Construction building
+--     exists here, per the same bld:getBuildStage() == bld:getMaxBuildStage()
+--     check df-overseer-building.lua's kind_previously_built and
+--     df-overseer-zone.lua's content_row already use live, but NOT yet at
+--     max stage -- the job has not finished, the tile has not become a wall
+--     yet) or open (neither). It then asks find_entrances the same
+--     question over just the OPEN tiles: if none of them would still work
+--     as an entrance once every PLANNED tile also finishes, the room is
+--     one bad job completion away from being sealed, exactly building 22's
+--     situation on 2026-09-28. The planned tile(s) that themselves would
+--     have qualified as the entrance (found by the same find_entrances
+--     against the planned set) are named `at_risk`; a mutating,
+--     DRY_RUN-default-true call sets `job.flags.suspend` on at least one of
+--     them (the same hand stopgap `job.flags.suspend` used live on building
+--     22, now a named tool action instead of a manual flag flip), using the
+--     deterministic first-in-ring-order tie-break `keeps_access` already
+--     established for "hold just enough to keep one approach open".
+--
+-- NOT VERIFIED LIVE (offline stream, no VM access): the whole entrance/
+-- door/audit path, same honesty this file's header already states for
+-- mine-vein/build. `bld:getBuildStage()`/`getMaxBuildStage()` and
+-- `dfhack.job.getHolder`/`job.flags.suspend` are each already a live-
+-- verified call site elsewhere in this codebase (df-overseer-building.lua's
+-- kind_previously_built, df-overseer-zone.lua's content_row,
+-- df-overseer-stuckjobs.lua's get_stuck_jobs/job.flags.suspend) -- this file
+-- only recombines them, it does not claim them freshly confirmed here.
 
 local json = require('json')
+local utils = require('utils')
 local surface_mod = reqscript('df-overseer-surface')
 local building_mod = reqscript('df-overseer-building')
 -- handoffs/2026-09-30-room-reservations.md decision 3: mine-vein and build
 -- both hold (not refuse) a ring tile inside a reservation neither holds --
 -- see apply_reservation_guard below, next to the other two guards.
 local reservations_mod = reqscript('df-overseer-reservations')
+-- handoffs/2026-10-01-entrances-get-doors.md: the shared tri-state
+-- reachability primitive (group_matches, never a new pathfind) and the
+-- "main walkable group" reading (get_connectivity_report's own
+-- main_group_id, reused rather than re-derived from warn-stranded here).
+local reachability_mod = reqscript('df-overseer-reachability')
+local connectivity_mod = reqscript('df-overseer-connectivity')
 
 local NULL = "\0"
 local function nn(v) if v == nil then return NULL end return v end
@@ -662,6 +744,116 @@ local function apply_keeps_access_guard(hooks, candidates)
   return held, kept
 end
 
+-- ---- entrance (handoffs/2026-10-01-entrances-get-doors.md) ----------------
+--
+-- See the file header for the full reasoning. This is a THIRD guard, in the
+-- same held/kept shape as item_present/keeps_access, but with one
+-- difference: finding ZERO entrances is not a per-tile hold, it is a
+-- whole-call refusal (there is no safe subset of targets to proceed with
+-- if the room would end up with no way out at all).
+
+-- Classifies a ring tile against the zone's own footprint rectangle `b`
+-- (b.x1/x2/y1/y2 -- the same fields df-overseer-surface.lua's own
+-- ring_tiles/footprint_tiles already read off the real building_civzonest).
+-- Returns inside_xyz, outside_xyz for a straight-edge ring tile (the single
+-- orthogonal neighbour that lies inside the footprint, and the one that
+-- continues straight on past the ring); nil, nil for a ring CORNER, which
+-- has no neighbour inside the footprint at all (both its orthogonal
+-- neighbours are themselves other ring tiles) and so can never be "the way
+-- out" by this definition.
+local function ring_edge_neighbours(b, x, y, z)
+  if x >= b.x1 and x <= b.x2 and y == b.y1 - 1 then
+    return {x, b.y1, z}, {x, y - 1, z}
+  elseif x >= b.x1 and x <= b.x2 and y == b.y2 + 1 then
+    return {x, b.y2, z}, {x, y + 1, z}
+  elseif y >= b.y1 and y <= b.y2 and x == b.x1 - 1 then
+    return {b.x1, y, z}, {x - 1, y, z}
+  elseif y >= b.y1 and y <= b.y2 and x == b.x2 + 1 then
+    return {b.x2, y, z}, {x + 1, y, z}
+  end
+  return nil, nil
+end
+
+-- The fort's main walkable group id (the group most citizens are in),
+-- reused from df-overseer-connectivity.lua's own exported
+-- get_connectivity_report rather than re-deriving it from warn-stranded
+-- here. 0 is DFHack's own "not walkable" sentinel (df-overseer-
+-- reachability.lua's own header), never a real group -- treated the same as
+-- a missing report: unknown, not a guessed group.
+local function main_group_id()
+  local ok, report = pcall(connectivity_mod.get_connectivity_report)
+  if not ok or not report or report.main_group_id == nil or report.main_group_id == 0 then
+    return nil, "could not read the fort's main walkable group from connectivity.report"
+  end
+  return report.main_group_id
+end
+
+-- Every tile in `candidates` (a list of {ring_position, x, y, z}) whose
+-- outside neighbour (per ring_edge_neighbours) belongs to `main_group`,
+-- per df-overseer-reachability.lua's own group_matches (never a new
+-- pathfind -- see that file's header on why a hypothetical path check does
+-- not exist in this codebase). A corner (ring_edge_neighbours returns nil)
+-- is never an entrance. Returns a list of {ring_position, x, y, z}, in the
+-- same order `candidates` was given.
+local function find_entrances(b, candidates, main_group)
+  local entrances = {}
+  for _, c in ipairs(candidates) do
+    local inside, outside = ring_edge_neighbours(b, c.x, c.y, c.z)
+    if inside and outside then
+      local matched = reachability_mod.group_matches(outside[1], outside[2], outside[3], {[main_group] = true})
+      if matched then
+        entrances[#entrances + 1] = {ring_position = c.ring_position, x = c.x, y = c.y, z = c.z}
+      end
+    end
+  end
+  return entrances
+end
+
+-- Runs find_entrances over `candidates`, splitting them into (held, kept,
+-- entrances) -- `entrances` kept separately (not just folded into `held`)
+-- because build_door needs the coordinates, while build_construction only
+-- needs the held/kept split. `candidates` must already be the OPEN ring
+-- tiles a call could actually touch (same precondition build_construction's
+-- own first loop already establishes).
+local function apply_entrance_guard(b, candidates, main_group)
+  local entrances = find_entrances(b, candidates, main_group)
+  local entrance_set = {}
+  for _, e in ipairs(entrances) do entrance_set[guard_key(e.x, e.y, e.z)] = true end
+  local held, kept = {}, {}
+  for _, c in ipairs(candidates) do
+    if entrance_set[guard_key(c.x, c.y, c.z)] then
+      held[#held + 1] = {ring_position = c.ring_position,
+        reason = "this zone's own entrance; building here would seal the room"}
+    else
+      kept[#kept + 1] = c
+    end
+  end
+  return held, kept, entrances
+end
+
+-- Shared by build_construction and build_door: every ring tile's live
+-- shape, split into (candidates, refused) -- a tile still shaped WALL or
+-- unreadable/hidden is `refused` by name, never guessed open, same
+-- discipline build_construction's own loop already used before this was
+-- pulled out into its own function.
+local function collect_open_ring_candidates(hooks, ring)
+  local candidates, refused = {}, {}
+  for i, xyz in ipairs(ring) do
+    local x, y, z = xyz[1], xyz[2], xyz[3]
+    local t = hooks.tile_read(x, y, z)
+    if not t.ok then
+      refused[#refused + 1] = string.format("ring tile %d: could not read its shape (%s); refusing to guess", i, t.err)
+    elseif t.hidden then
+      refused[#refused + 1] = string.format("ring tile %d: hidden; refusing to guess it is open", i)
+    elseif t.shape == df.tiletype_shape.WALL then
+      refused[#refused + 1] = string.format("ring tile %d: still a wall, not yet mined; run mine-vein first", i)
+    else
+      candidates[#candidates + 1] = {ring_position = i, x = x, y = y, z = z}
+    end
+  end
+  return candidates, refused
+end
+
 -- ---------------------------------------------------------------------------
 -- build ZONE_ID KIND [DRY_RUN]
 -- ---------------------------------------------------------------------------
@@ -722,19 +914,23 @@ function build_construction(zone_id, kind_name, dry_run, material_choice, res_id
   end
   local dry = truthy_dry_run(dry_run)
 
-  local candidates, refused = {}, {}
-  for i, xyz in ipairs(ring) do
-    local x, y, z = xyz[1], xyz[2], xyz[3]
-    local t = hooks.tile_read(x, y, z)
-    if not t.ok then
-      refused[#refused + 1] = string.format("ring tile %d: could not read its shape (%s); refusing to guess", i, t.err)
-    elseif t.hidden then
-      refused[#refused + 1] = string.format("ring tile %d: hidden; refusing to guess it is open", i)
-    elseif t.shape == df.tiletype_shape.WALL then
-      refused[#refused + 1] = string.format("ring tile %d: still a wall, not yet mined; run mine-vein first", i)
-    else
-      candidates[#candidates + 1] = {ring_position = i, x = x, y = y, z = z}
-    end
+  local candidates, refused = collect_open_ring_candidates(hooks, ring)
+
+  -- Entrance guard (handoffs/2026-10-01-entrances-get-doors.md), run before
+  -- any other guard: a zone with no detectable entrance among its open ring
+  -- tiles is refused outright (never designate anything that could leave
+  -- the room with no way out at all), and any ring tile that IS the
+  -- entrance is pulled out of the candidate set before item_present/
+  -- keeps_access ever see it -- see apply_entrance_guard's own header.
+  local main_group, mg_err = main_group_id()
+  if not main_group then
+    return {error = "could not confirm this zone's entrance (" .. tostring(mg_err)
+      .. "); refusing rather than risk sealing the room"}
+  end
+  local entrance_held, after_entrance, entrances_found = apply_entrance_guard(b, candidates, main_group)
+  if #entrances_found == 0 then
+    return {error = "zone " .. b.id .. " has no detectable entrance among its open ring tiles; "
+      .. "refusing to build here, this would seal the room"}
   end
 
   -- Guards, in this order (per the handoff: item_present is the simpler
@@ -743,7 +939,7 @@ function build_construction(zone_id, kind_name, dry_run, material_choice, res_id
   -- read live world state regardless of `dry`, so a dry run and a real run
   -- report holds identically -- a hold is not a run-level failure (`ok`
   -- stays true below, `results` simply omits the held targets).
-  local reservation_held, after_reservation = apply_reservation_guard(candidates, res_id, k.token, override)
+  local reservation_held, after_reservation = apply_reservation_guard(after_entrance, res_id, k.token, override)
   -- Which of the candidates that passed the reservation guard only did so
   -- BECAUSE of OVERRIDE (handoff review, 2026-09-30) -- computed here,
   -- before the other two guards or any designation, so a later guard
@@ -760,6 +956,9 @@ function build_construction(zone_id, kind_name, dry_run, material_choice, res_id
   local access_held, final_candidates = apply_keeps_access_guard(hooks, after_item_present)
 
   local held_records = {}
+  for _, h in ipairs(entrance_held) do
+    held_records[#held_records + 1] = {ring_position = h.ring_position, guard = "entrance", reason = h.reason}
+  end
   for _, h in ipairs(reservation_held) do
     held_records[#held_records + 1] = {ring_position = h.ring_position, guard = "reservation", reason = h.reason}
   end
@@ -831,6 +1030,7 @@ function build_construction(zone_id, kind_name, dry_run, material_choice, res_id
     kind = {token = k.token, key = k.key, label = k.label, type = k.type, subtype = k.subtype},
     boundary_ring_tiles = #ring,
     open_tiles_found = #candidates,
+    entrances_found = #entrances_found,
     refused = refused,
     held = held,
     dry_run = dry,
@@ -839,6 +1039,278 @@ function build_construction(zone_id, kind_name, dry_run, material_choice, res_id
     material_filter = mf_report,
     results = results,
   }
+end
+
+-- ---------------------------------------------------------------------------
+-- door ZONE_ID [DRY_RUN] [RES_ID] [OVERRIDE]
+--
+-- handoffs/2026-10-01-entrances-get-doors.md task 3: see the file header
+-- ("Chosen over...") for why this is a sibling verb here rather than a
+-- building.build Door call. Resolves the Door kind through
+-- df-overseer-building.lua's own list_kinds (never a hard-coded building
+-- number), finds this zone's entrance(s) via the exact same find_entrances
+-- every call build_construction now runs, and places one Door at each --
+-- never anywhere else on the ring. MATERIAL_CHOICE is deliberately not
+-- threaded through here (see header); buildingplan's own default applies.
+-- ---------------------------------------------------------------------------
+
+local function resolve_door_kind()
+  local kinds, err = building_mod.list_kinds("Door")
+  if not kinds then return nil, "could not read building kinds: " .. tostring(err) end
+  for _, k in ipairs(kinds) do
+    if k.token == "Door" then return k end
+  end
+  return nil, "this install's building kinds have no Door entry"
+end
+
+function build_door(zone_id, dry_run, res_id, override)
+  if override ~= nil and res_id == nil then
+    return {error = "OVERRIDE requires RES_ID"}
+  end
+  local k, kerr = resolve_door_kind()
+  if not k then return {error = kerr} end
+  local hooks, herr = surface_hooks()
+  if not hooks then return {error = herr} end
+  local b, err = hooks.find_zone(zone_id)
+  if not b then return {error = err} end
+  local ring = hooks.ring_tiles(b)
+  if #ring > MAX_RING_TILES then
+    return {error = "zone " .. b.id .. "'s boundary ring is " .. #ring
+      .. " tiles, over this tool's " .. MAX_RING_TILES .. "-tile bound; refusing rather than scanning it"}
+  end
+  local dry = truthy_dry_run(dry_run)
+
+  local candidates, refused = collect_open_ring_candidates(hooks, ring)
+
+  local main_group, mg_err = main_group_id()
+  if not main_group then
+    return {error = "could not confirm this zone's entrance (" .. tostring(mg_err)
+      .. "); refusing rather than guess where to put a door"}
+  end
+  local entrances = find_entrances(b, candidates, main_group)
+  if #entrances == 0 then
+    return {error = "zone " .. b.id .. " has no detectable entrance among its open ring tiles; "
+      .. "refusing to place a door anywhere"}
+  end
+
+  -- Same reservation/item_present guards build_construction runs, applied
+  -- only over the entrance tiles themselves (never the rest of the ring --
+  -- door only ever targets an entrance).
+  local reservation_held, after_reservation = apply_reservation_guard(entrances, res_id, k.token, override)
+  local override_candidates = {}
+  if override ~= nil then
+    for _, c in ipairs(after_reservation) do
+      if reservations_mod.override_needed({{x = c.x, y = c.y, z = c.z}}, res_id, k.token) then
+        override_candidates[#override_candidates + 1] = c
+      end
+    end
+  end
+  local item_held, final_candidates = apply_item_present_guard(after_reservation)
+
+  local held_records = {}
+  for _, h in ipairs(reservation_held) do
+    held_records[#held_records + 1] = {ring_position = h.ring_position, guard = "reservation", reason = h.reason}
+  end
+  for _, h in ipairs(item_held) do
+    held_records[#held_records + 1] = {ring_position = h.ring_position, guard = "item_present", reason = h.reason}
+  end
+  table.sort(held_records, function(a, c) return a.ring_position < c.ring_position end)
+  local held = {}
+  for _, h in ipairs(held_records) do
+    held[#held + 1] = string.format("ring tile %d: held (%s) -- %s", h.ring_position, h.guard, h.reason)
+  end
+
+  local results = {}
+  for _, c in ipairs(final_candidates) do
+    local r = apply_single_cell('build', k.key, c.x, c.y, c.z, dry, 'Buildings designated', 'door')
+    results[#results + 1] = {
+      ring_position = c.ring_position,
+      dry_run = dry,
+      ok = r.ok,
+      problems = r.problems,
+      error = nn(r.error),
+      stats = (r.stats and next(r.stats)) and r.stats or {},
+    }
+    if not dry and r.ok then
+      for _, oc in ipairs(override_candidates) do
+        if oc == c then
+          reservations_mod.record_override(res_id, "construction.door", k.token, override)
+          override_candidates = {}  -- record at most once per call
+          break
+        end
+      end
+    end
+  end
+
+  return {
+    zone_id = b.id,
+    kind = {token = k.token, key = k.key, label = k.label},
+    boundary_ring_tiles = #ring,
+    entrances_found = #entrances,
+    refused = refused,
+    held = held,
+    dry_run = dry,
+    results = results,
+  }
+end
+
+-- ---------------------------------------------------------------------------
+-- audit [ZONE_ID] [DRY_RUN]
+--
+-- handoffs/2026-10-01-entrances-get-doors.md task 4: the backstop for walls
+-- designated BEFORE this entrance guard existed (exactly the 2026-09-28
+-- office walls). See the file header for the full reasoning: classifies
+-- every ring tile as built/planned/open, asks find_entrances whether an
+-- entrance would still exist once every PLANNED tile also finishes, and (a
+-- real, non-dry call) suspends just enough of the at-risk planned tiles'
+-- own jobs to keep one open, via job.flags.suspend -- the exact hand
+-- stopgap used live on building 22, 2026-09-28.
+-- ---------------------------------------------------------------------------
+
+-- True/false/nil (unknown), per the same bld:getBuildStage()==
+-- bld:getMaxBuildStage() live-verified check df-overseer-building.lua's
+-- kind_previously_built and df-overseer-zone.lua's content_row already use.
+-- A tile with no building at all, or a building that is not a Construction,
+-- is simply "no planned construction here" (false), never "unknown".
+local function planned_construction_at(x, y, z)
+  local ok_b, bld = pcall(dfhack.buildings.findAtTile, xyz2pos(x, y, z))
+  if not ok_b or not bld then return false, nil end
+  local ok_t, btype = pcall(function() return bld:getType() end)
+  if not ok_t or btype ~= df.building_type.Construction then return false, nil end
+  local ok_s, stage = pcall(function() return bld:getBuildStage() end)
+  local ok_m, max_stage = pcall(function() return bld:getMaxBuildStage() end)
+  if not (ok_s and ok_m) then return nil, bld end
+  if stage >= max_stage then return false, nil end  -- already finished: this is `built`, not `planned`
+  return true, bld
+end
+
+-- The job attached to a planned building, via the same
+-- utils.listpairs(df.global.world.jobs.list) + dfhack.job.getHolder
+-- traversal df-overseer-stuckjobs.lua's own get_stuck_jobs already uses
+-- live (see that file's header for the confirmation). nil if no job is
+-- currently attached (a genuinely idle planned building, or a read failure)
+-- -- never guessed.
+local function job_for_building(bld)
+  for _, job in utils.listpairs(df.global.world.jobs.list) do
+    local ok_h, holder = pcall(dfhack.job.getHolder, job)
+    if ok_h and holder == bld then return job end
+  end
+  return nil
+end
+
+-- One zone's audit: built/planned/open ring tiles, whether an entrance
+-- would survive every planned tile completing, and (if not) which planned
+-- tile(s) are the critical ones (the same deterministic first-in-ring-order
+-- tie-break keeps_access already established).
+local function audit_one_zone(hooks, b, main_group, dry)
+  local ring = hooks.ring_tiles(b)
+  if #ring > MAX_RING_TILES then
+    return {zone_id = b.id, error = "boundary ring is " .. #ring .. " tiles, over this tool's "
+      .. MAX_RING_TILES .. "-tile bound; refusing rather than scanning it"}
+  end
+
+  local open_tiles, planned_tiles, built_tiles, unknown_tiles = {}, {}, {}, {}
+  local planned_by_key = {}
+  for i, xyz in ipairs(ring) do
+    local x, y, z = xyz[1], xyz[2], xyz[3]
+    local t = hooks.tile_read(x, y, z)
+    if not t.ok or t.hidden then
+      unknown_tiles[#unknown_tiles + 1] = i
+    elseif t.shape == df.tiletype_shape.WALL then
+      built_tiles[#built_tiles + 1] = {ring_position = i, x = x, y = y, z = z}
+    else
+      local planned, bld = planned_construction_at(x, y, z)
+      if planned == nil then
+        unknown_tiles[#unknown_tiles + 1] = i
+      elseif planned then
+        local rec = {ring_position = i, x = x, y = y, z = z, building_id = bld.id, bld = bld}
+        planned_tiles[#planned_tiles + 1] = rec
+        planned_by_key[guard_key(x, y, z)] = rec
+      else
+        open_tiles[#open_tiles + 1] = {ring_position = i, x = x, y = y, z = z}
+      end
+    end
+  end
+
+  local entrances_now = find_entrances(b, open_tiles, main_group)
+  -- Would an entrance survive once every PLANNED tile also completes? Only
+  -- the OPEN tiles (neither built nor planned) could still serve as one.
+  local would_strand = #entrances_now == 0
+
+  -- Of the planned tiles, which would THEMSELVES have qualified as the
+  -- entrance had they stayed open -- i.e. finishing them is what removes
+  -- the last way out. Only reported/suspended when the room would actually
+  -- be stranded; a planned tile that happens to sit on a structurally
+  -- viable entrance spot is not itself a problem if another real entrance
+  -- survives regardless.
+  local at_risk, suspended = {}, {}
+  if would_strand then
+    local critical = find_entrances(b, planned_tiles, main_group)
+    table.sort(critical, function(a, c) return a.ring_position < c.ring_position end)
+    for _, c in ipairs(critical) do
+      local rec = planned_by_key[guard_key(c.x, c.y, c.z)]
+      at_risk[#at_risk + 1] = {ring_position = rec.ring_position, building_id = rec.building_id}
+    end
+    if not dry and #at_risk > 0 then
+      -- Deterministic tie-break (keeps_access's own rule): suspending the
+      -- FIRST at-risk tile (lowest ring_position) is enough to keep one
+      -- approach open again; the rest are left alone.
+      local target = at_risk[1]
+      local target_rec = planned_by_key[guard_key(critical[1].x, critical[1].y, critical[1].z)]
+      local job = job_for_building(target_rec.bld)
+      if job then
+        local ok_set = pcall(function() job.flags.suspend = true end)
+        suspended[#suspended + 1] = {building_id = target.building_id, ok = ok_set == true}
+      else
+        suspended[#suspended + 1] = {building_id = target.building_id, ok = false,
+          note = "no job currently attached to this building; could not suspend"}
+      end
+    end
+  end
+
+  return {
+    zone_id = b.id,
+    boundary_ring_tiles = #ring,
+    built = #built_tiles,
+    planned = #planned_tiles,
+    open = #open_tiles,
+    unknown_tiles = #unknown_tiles,
+    would_strand = would_strand,
+    at_risk = at_risk,
+    dry_run = dry,
+    suspended = suspended,
+  }
+end
+
+function audit_constructions(zone_id, dry_run)
+  local hooks, herr = surface_hooks()
+  if not hooks then return {error = herr} end
+
+  local zones = {}
+  if zone_id ~= nil then
+    local b, err = hooks.find_zone(zone_id)
+    if not b then return {error = err} end
+    zones = {b}
+  else
+    local ok_all, all = pcall(function() return df.global.world.buildings.all end)
+    if not ok_all or not all then return {error = "could not read df.global.world.buildings.all"} end
+    for _, bld in ipairs(all) do
+      local ok_i, is_zone = pcall(function() return df.building_civzonest:is_instance(bld) end)
+      if ok_i and is_zone then zones[#zones + 1] = bld end
+    end
+  end
+
+  local main_group, mg_err = main_group_id()
+  if not main_group then
+    return {error = "could not read the fort's main walkable group (" .. tostring(mg_err) .. ")"}
+  end
+
+  local dry = truthy_dry_run(dry_run)
+  local zone_reports = {}
+  for _, b in ipairs(zones) do
+    zone_reports[#zone_reports + 1] = audit_one_zone(hooks, b, main_group, dry)
+  end
+  return {zones_checked = #zones, dry_run = dry, zones = zone_reports}
 end
 
 -- ---------------------------------------------------------------------------
@@ -868,7 +1340,17 @@ elseif cmd == "build" then
   else
     emit(build_construction(args[2], args[3], args[4], args[5], args[6], args[7]))
   end
+elseif cmd == "door" then
+  if not args[2] then
+    print("usage: df-overseer-construction door ZONE_ID [DRY_RUN] [RES_ID] [OVERRIDE]")
+  else
+    emit(build_door(args[2], args[3], args[4], args[5]))
+  end
+elseif cmd == "audit" then
+  emit(audit_constructions(args[2], args[3]))
 else
   print("usage: df-overseer-construction mine-vein ZONE_ID [DRY_RUN] [RES_ID] [OVERRIDE]")
   print("usage: df-overseer-construction build ZONE_ID KIND [DRY_RUN] [MATERIAL_CHOICE] [RES_ID] [OVERRIDE]")
+  print("usage: df-overseer-construction door ZONE_ID [DRY_RUN] [RES_ID] [OVERRIDE]")
+  print("usage: df-overseer-construction audit [ZONE_ID] [DRY_RUN]")
 end
