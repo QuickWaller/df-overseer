@@ -13,7 +13,9 @@ import pytest
 
 from dfmcp import gotchas_store as gs
 from dfmcp import gotchas_tools as gt
-from dfmcp.tests.gotchas_support import build_registry_and_roster
+from dfmcp.registry import DEFAULT_TOOLS_YAML, load_registry
+from dfmcp.roles import DEFAULT_AGENTS_DIR, load_roster
+from dfmcp.tests.gotchas_support import ALL_NATIVE_TOOLS, build_registry_and_roster
 from dfmcp.tools import tool_definitions
 
 KNOWN = ["building.build", "building.find", "landmarks.list", "gotchas.get", "gotchas.write"]
@@ -320,3 +322,130 @@ class TestGet:
     async def test_absent_store_is_an_error_not_an_empty_answer(self, tmp_path):
         with pytest.raises(gt.GotchaToolError, match="not found"):
             await _call(gt.GOTCHAS_GET, {"tool": "building.build"}, tmp_path / "absent.sqlite3")
+
+
+# --------------------------------------------------------------------------
+# General entries (register 2026-10-02): no tool named
+# --------------------------------------------------------------------------
+
+GENERAL_NEW = {
+    "title": "waking mid-cycle with no fresh tool result: the context is stale",
+    "body": "The run resumed partway through a cycle and acted on a tool result from before the "
+    "pause; re-check state before acting rather than trusting a stale result.",
+}
+
+
+class TestGeneralEntries:
+    pytestmark = pytest.mark.asyncio
+
+    async def test_write_omits_tool_and_reads_back_as_tool_null(self, db):
+        text, s = await _call(gt.GOTCHAS_WRITE, dict(GENERAL_NEW), db)
+        entry = s["entry"]
+        assert entry["id"] == "gotcha-0001"
+        assert entry["tool"] is None
+        assert entry["kind"] is None
+        assert 'tool=""' in text and 'general="true"' in text
+
+    async def test_get_general_true_returns_it_and_excludes_tool_entries(self, db):
+        await _call(gt.GOTCHAS_WRITE, dict(GENERAL_NEW), db)
+        await _call(gt.GOTCHAS_WRITE, dict(NEW), db, run_id="session-2")
+        text, s = await _call(gt.GOTCHAS_GET, {"general": True}, db)
+        assert s["general"] is True
+        assert [e["id"] for e in s["entries"]] == ["gotcha-0001"]
+        assert 'general="true"' in text
+
+    async def test_get_tool_still_excludes_general_entries(self, db):
+        await _call(gt.GOTCHAS_WRITE, dict(GENERAL_NEW), db)
+        await _call(gt.GOTCHAS_WRITE, dict(NEW), db, run_id="session-2")
+        _, s = await _call(gt.GOTCHAS_GET, {"tool": "building.build"}, db)
+        assert [e["id"] for e in s["entries"]] == ["gotcha-0002"]
+
+    async def test_outcomes_and_rejection_work_on_a_general_entry(self, db):
+        _, s = await _call(gt.GOTCHAS_WRITE, dict(GENERAL_NEW), db)
+        gid = s["entry"]["id"]
+        _, s2 = await _call(
+            gt.GOTCHAS_WRITE, {"id": gid, "result": "worked"}, db, run_id="s2",
+        )
+        assert [o["result"] for o in s2["entry"]["outcomes"]] == ["worked"]
+        gs.set_status(db, gid, "rejected", by="maintainer")
+        text, s3 = await _call(gt.GOTCHAS_GET, {"id": gid}, db)
+        assert s3["entry"]["status"] == "rejected" and "REJECTED" in text
+
+    async def test_general_with_tool_is_refused(self, db):
+        with pytest.raises(gt.GotchaToolError, match="cannot be combined with 'general'"):
+            await _call(gt.GOTCHAS_GET, {"tool": "building.build", "general": True}, db)
+
+    async def test_general_with_kind_is_refused(self, db):
+        with pytest.raises(gt.GotchaToolError, match="need 'tool' as well"):
+            await _call(gt.GOTCHAS_GET, {"general": True, "kind": "Masons"}, db)
+
+    async def test_kind_without_tool_is_refused_at_write_time(self, db):
+        with pytest.raises(gt.GotchaToolError, match="kind is meaningless without a tool"):
+            await _call(gt.GOTCHAS_WRITE, {**GENERAL_NEW, "kind": "Masons"}, db)
+        assert gs.tool_index(db) == {}
+
+    async def test_general_is_not_a_bool_is_refused(self, db):
+        with pytest.raises(gt.GotchaToolError, match="'general' must be a boolean"):
+            await _call(gt.GOTCHAS_GET, {"general": "yes"}, db)
+
+    async def test_index_lists_general_entries_separately(self, db):
+        await _call(gt.GOTCHAS_WRITE, dict(GENERAL_NEW), db)
+        await _call(gt.GOTCHAS_WRITE, dict(NEW), db, run_id="session-2")
+        text, s = await _call(gt.GOTCHAS_GET, {}, db)
+        assert s["tools"] == {
+            None: {"gotcha": {"proposed": 1}},
+            "building.build": {"gotcha": {"proposed": 1}},
+        }
+        assert 'general="true"' in text and 'general="false"' in text
+
+    async def test_general_entry_still_refuses_near_duplicates(self, db):
+        await _call(gt.GOTCHAS_WRITE, dict(GENERAL_NEW), db)
+        with pytest.raises(gt.GotchaToolError, match="near-duplicate"):
+            await _call(
+                gt.GOTCHAS_WRITE,
+                {**GENERAL_NEW, "title": GENERAL_NEW["title"] + "!"},
+                db, run_id="session-9",
+            )
+
+    async def test_same_title_as_general_and_as_a_tool_entry_is_not_a_duplicate(self, db):
+        await _call(gt.GOTCHAS_WRITE, dict(GENERAL_NEW), db)
+        _, s = await _call(
+            gt.GOTCHAS_WRITE, {**NEW, "title": GENERAL_NEW["title"], "body": GENERAL_NEW["body"]},
+            db, run_id="session-2",
+        )
+        assert s["entry"]["tool"] == "building.build"
+
+
+# --------------------------------------------------------------------------
+# Per-role tool counts, unchanged by this handoff (task: "Per-role tool
+# counts must not change"). Uses the real TOOLS.yaml and agents/*/tools.yaml,
+# not the test stand-ins `gotchas_support.build_registry_and_roster` adds.
+# This offline, static count intentionally differs from the live numbers in
+# CLAUDE.md/Working.md (measured over a real MCP client, which applies
+# further live filtering); it is here only to catch this handoff changing
+# what a role may call, not to assert the live figures.
+# --------------------------------------------------------------------------
+
+
+def _real_role_counts():
+    registry = load_registry(DEFAULT_TOOLS_YAML, native_tools=ALL_NATIVE_TOOLS)
+    roster = load_roster(registry, agents_dir=DEFAULT_AGENTS_DIR)
+    return {
+        role: len(tool_definitions(registry, roster, role))
+        for role in ("overseer", "architect", "consultant", "quartermaster", "conductor")
+    }
+
+
+class TestRoleToolCountsUnchanged:
+    def test_role_tool_counts_match_pre_handoff_baseline(self):
+        # Measured against the real repo manifest and agents/ directory before
+        # this handoff's gotchas_tools.py/gotchas_store.py changes, and
+        # confirmed unchanged by running the same computation against
+        # commit 52494c9 (the merge base this stream started from).
+        assert _real_role_counts() == {
+            "overseer": 99,
+            "architect": 53,
+            "consultant": 29,
+            "quartermaster": 25,
+            "conductor": 16,
+        }

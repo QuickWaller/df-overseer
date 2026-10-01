@@ -383,3 +383,211 @@ class TestReadsAndExport:
         assert gs._main(["export", str(path), str(tmp_path / "o")]) == 0
         assert gs._main(["bogus"]) == 2
         assert (tmp_path / "o" / "gotchas.jsonl").exists()
+
+
+# --------------------------------------------------------------------------
+# General entries (register 2026-10-02): tool = NULL
+# --------------------------------------------------------------------------
+
+
+class TestGeneralEntries:
+    def test_tool_may_be_omitted_and_reads_back_as_none(self, db):
+        rec = _add(db, tool=None)
+        assert rec["tool"] is None
+        assert rec["kind"] is None
+        fetched = gs.get_entry(db, rec["id"])
+        assert fetched["tool"] is None
+
+    def test_kind_with_no_tool_is_refused(self, db):
+        with pytest.raises(gs.GotchaStoreError, match="kind is meaningless without a tool"):
+            _add(db, tool=None, kind="Masons")
+        assert gs.tool_index(db) == {}
+
+    def test_empty_string_tool_is_refused_not_treated_as_general(self, db):
+        with pytest.raises(gs.GotchaStoreError, match="non-empty string"):
+            _add(db, tool="")
+
+    def test_entries_for_tool_none_lists_only_general_entries(self, db):
+        g = _add(db, tool=None)
+        t = _add(db, title="placing a trade depot off the map edge: wagons cannot reach it",
+                 body="A depot more than a few tiles from the edge is unreachable by wagon; keep it close.")
+        assert [r["id"] for r in gs.entries_for_tool(db, None)] == [g["id"]]
+        assert [r["id"] for r in gs.entries_for_tool(db, "building.build")] == [t["id"]]
+
+    def test_outcomes_duplicate_check_and_tool_index_all_work_on_general_entries(self, db):
+        g = _add(db, tool=None)
+        after = gs.add_outcome(db, g["id"], result="worked", note=None, role="a", run_id="r")
+        assert [o["result"] for o in after["outcomes"]] == ["worked"]
+        with pytest.raises(gs.GotchaStoreError, match="near-duplicate"):
+            _add(db, tool=None, title=g["title"] + "!")
+        assert gs.tool_index(db) == {None: {"gotcha": {"proposed": 1}}}
+
+    def test_same_title_general_and_tool_scoped_is_not_a_duplicate(self, db):
+        g = _add(db, tool=None)
+        t = _add(db, title=g["title"], body=g["body"])
+        assert g["id"] != t["id"]
+
+
+# --------------------------------------------------------------------------
+# Migrating a version-1 store (tool NOT NULL) to version 2 (tool nullable)
+# --------------------------------------------------------------------------
+
+_V1_SCHEMA_SQL = """
+CREATE TABLE schema_version (version INTEGER NOT NULL);
+CREATE TABLE entries (
+    id TEXT PRIMARY KEY,
+    tool TEXT NOT NULL,
+    kind TEXT,
+    list TEXT NOT NULL,
+    title TEXT NOT NULL,
+    body TEXT NOT NULL,
+    status TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    written_by_role TEXT NOT NULL,
+    run_id TEXT NOT NULL,
+    call_excerpt TEXT
+);
+CREATE INDEX idx_entries_tool ON entries(tool, list, status);
+CREATE INDEX idx_entries_run ON entries(run_id);
+CREATE TABLE outcomes (
+    seq INTEGER PRIMARY KEY AUTOINCREMENT,
+    entry_id TEXT NOT NULL REFERENCES entries(id),
+    at TEXT NOT NULL,
+    role TEXT NOT NULL,
+    run_id TEXT NOT NULL,
+    result TEXT NOT NULL,
+    note TEXT
+);
+CREATE INDEX idx_outcomes_entry ON outcomes(entry_id);
+CREATE TABLE status_history (
+    seq INTEGER PRIMARY KEY AUTOINCREMENT,
+    entry_id TEXT NOT NULL REFERENCES entries(id),
+    at TEXT NOT NULL,
+    from_status TEXT NOT NULL,
+    to_status TEXT NOT NULL,
+    by TEXT NOT NULL,
+    note TEXT
+);
+"""
+
+
+def _make_v1_store(path):
+    """A populated schema-version-1 store (`tool NOT NULL`), built by hand
+    with the old DDL so the migration test exercises the real upgrade path,
+    not a store `init_store` already created at the current version."""
+    conn = sqlite3.connect(path)
+    conn.executescript(_V1_SCHEMA_SQL)
+    conn.execute("INSERT INTO schema_version (version) VALUES (1)")
+    conn.execute(
+        "INSERT INTO entries (id, tool, kind, list, title, body, status, created_at, "
+        "written_by_role, run_id, call_excerpt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        ("gotcha-0001", "building.build", "Masons",
+         "gotcha", "placing a workshop in a desert biome: the build stalls without water",
+         "In a desert the builder never gets a path to the site.", "accepted",
+         "2026-09-01T00:00:00+00:00", "architect", "run-1", "building.build Masons NearWagon"),
+    )
+    conn.execute(
+        "INSERT INTO entries (id, tool, kind, list, title, body, status, created_at, "
+        "written_by_role, run_id, call_excerpt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        ("vent-0001", "building.find", None,
+         "vent", "asking for a room of any kind: no tool builds rooms",
+         "Nothing in my tool list builds a room; I wanted a bedroom.", "proposed",
+         "2026-09-02T00:00:00+00:00", "overseer", "run-2", None),
+    )
+    conn.execute(
+        "INSERT INTO outcomes (entry_id, at, role, run_id, result, note) VALUES (?, ?, ?, ?, ?, ?)",
+        ("gotcha-0001", "2026-09-03T00:00:00+00:00", "overseer", "run-3", "worked", "confirmed"),
+    )
+    conn.execute(
+        "INSERT INTO status_history (entry_id, at, from_status, to_status, by, note) "
+        "VALUES (?, ?, ?, ?, ?, ?)",
+        ("gotcha-0001", "2026-09-03T00:00:01+00:00", "proposed", "accepted", "maintainer", "seen twice"),
+    )
+    conn.commit()
+    conn.close()
+
+
+class TestMigrationV1ToV2:
+    def test_v1_store_has_tool_not_null(self, tmp_path):
+        path = tmp_path / "v1.sqlite3"
+        _make_v1_store(path)
+        conn = sqlite3.connect(path)
+        cols = {r[1]: r for r in conn.execute("PRAGMA table_info(entries)").fetchall()}
+        conn.close()
+        assert cols["tool"][3] == 1  # notnull flag, before migration
+
+    def test_opening_a_v1_store_migrates_it_and_preserves_every_row(self, tmp_path):
+        path = tmp_path / "v1.sqlite3"
+        _make_v1_store(path)
+
+        entries = gs.entries_for_tool(path, "building.build")
+        assert [e["id"] for e in entries] == ["gotcha-0001"]
+        e = entries[0]
+        assert e["status"] == "accepted" and e["kind"] == "Masons"
+        assert [o["result"] for o in e["outcomes"]] == ["worked"]
+        assert e["outcomes"][0]["note"] == "confirmed"
+
+        vents = gs.entries_for_tool(path, "building.find", lists=["vent"])
+        assert [v["id"] for v in vents] == ["vent-0001"]
+
+        conn = sqlite3.connect(path)
+        version = conn.execute("SELECT version FROM schema_version").fetchone()[0]
+        cols = {r[1]: r for r in conn.execute("PRAGMA table_info(entries)").fetchall()}
+        status_rows = conn.execute(
+            "SELECT from_status, to_status, by FROM status_history"
+        ).fetchall()
+        conn.close()
+        assert version == gs.SCHEMA_VERSION == 2
+        assert cols["tool"][3] == 0  # notnull flag cleared
+        assert status_rows == [("proposed", "accepted", "maintainer")]
+
+    def test_migration_lets_a_new_general_entry_be_written_afterwards(self, tmp_path):
+        path = tmp_path / "v1.sqlite3"
+        _make_v1_store(path)
+        gs.check_store(path)  # triggers the lazy migration
+        rec = gs.add_entry(
+            path,
+            {
+                "tool": None, "list": "gotcha",
+                "title": "waking mid-cycle with no fresh tool result: the context is stale",
+                "body": "The run resumed mid-cycle and acted on a stale tool result from before "
+                "the pause.",
+                "written_by_role": "overseer", "run_id": "run-9",
+            },
+            known_tools={"building.build", "building.find"},
+        )
+        assert rec["tool"] is None
+        assert [r["id"] for r in gs.entries_for_tool(path, "building.build")] == ["gotcha-0001"]
+
+    def test_migration_is_idempotent_on_restart(self, tmp_path):
+        path = tmp_path / "v1.sqlite3"
+        _make_v1_store(path)
+        gs.check_store(path)
+        gs.check_store(path)  # second open: already v2, must be a no-op
+        entries = gs.entries_for_tool(path, "building.build")
+        assert len(entries) == 1
+        conn = sqlite3.connect(path)
+        version = conn.execute("SELECT version FROM schema_version").fetchone()[0]
+        conn.close()
+        assert version == 2
+
+    def test_explicit_migrate_store_command_and_cli(self, tmp_path, capsys):
+        path = tmp_path / "v1.sqlite3"
+        _make_v1_store(path)
+        assert gs.migrate_store(path) == 2
+        assert gs.migrate_store(path) == 2  # idempotent, run again
+        entries = gs.entries_for_tool(path, "building.build")
+        assert len(entries) == 1 and entries[0]["outcomes"][0]["result"] == "worked"
+
+        path2 = tmp_path / "v1b.sqlite3"
+        _make_v1_store(path2)
+        assert gs._main(["migrate", str(path2)]) == 0
+        out = capsys.readouterr().out
+        assert "schema_version 2" in out
+
+    def test_already_current_store_is_untouched_by_migrate(self, db):
+        gs.migrate_store(db)  # a fresh v2 store from init_store: no-op
+        conn = sqlite3.connect(db)
+        version = conn.execute("SELECT version FROM schema_version").fetchone()[0]
+        conn.close()
+        assert version == gs.SCHEMA_VERSION
