@@ -40,11 +40,7 @@ noticed, so do not hold back a real one. A complaint that a tool is not right
 for what you wanted, or an error you could not explain, goes in the same tool
 under the `vent` or `unexplained` list, and is never evidence.
 
-**General entries.** Not everything worth noting is about a tool. If the
-thing you want to record is about how the work goes instead, process, timing,
-other agents, your own wake-ups, write it with `gotchas.write` and omit
-`tool`. Read one back with `gotchas.get` passing `general: true`. A general
-entry can never have a `kind`, since a kind is only meaningful on a tool.
-Game knowledge (crop and water rules, and the like) is never a gotcha,
-general or otherwise: it belongs in doctrine, written through the
-Consultant.
+**General entries** are about the run itself, process, timing, other agents,
+your own wake-ups, not any one tool: omit `tool` in `gotchas.write` (never a
+`kind`), and read them back with `gotchas.get` and `general: true`. Game
+knowledge still goes to doctrine, through the Consultant, never here.
