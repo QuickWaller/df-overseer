@@ -579,12 +579,14 @@ def build_projects_view(records: list[dict], *, public: bool) -> dict:
 
     Each project entry carries what the stream board needs (handoffs/
     2026-10-02-stream-board.md): `status` (active/hold/done/abandoned,
-    `dfqueue.feed_status.project_board_status`), `name` and `urgency`
-    (sanitised, `None` when unknown), `ruling_id`/`proposal_id` (ids only),
-    and `steps` (`dfqueue.feed_status.step_board_states`, public copy with
-    `held_detail` stripped). The operator projection additionally carries
-    the raw `summary`, `public_title`, `public_rationale`, `urgency` as
-    written (even if outside the known enum, so a bad write is visible to
+    `dfqueue.feed_status.project_board_status`), `name` and `description`
+    (the card's own title and one-liner; `description` is the raw
+    `public_rationale`, already safety-checked on the public side) and
+    `urgency` (sanitised, `None` when unknown), `ruling_id`/`proposal_id`
+    (ids only), and `steps` (`dfqueue.feed_status.step_board_states`, public
+    copy with `held_detail` stripped). The operator projection additionally
+    carries the raw `summary`, `public_title`, `public_rationale`, `urgency`
+    as written (even if outside the known enum, so a bad write is visible to
     an operator rather than silently hidden), `abandoned_reason`, and the
     steps' own `held_detail`."""
     reply_to_by_id = {r["id"]: compute_reply_to(r) for r in records if r.get("id")}
@@ -610,8 +612,10 @@ def build_projects_view(records: list[dict], *, public: bool) -> dict:
         }
         if public:
             entry["name"] = _public_display_name(r)
+            entry["description"] = _safe_public_text(r.get("public_rationale"))
         else:
             entry["name"] = r.get("public_title") or r.get("summary")
+            entry["description"] = r.get("public_rationale")
             entry["from_ruling"] = ruling_id
             entry["summary"] = r.get("summary")
             entry["public_title"] = r.get("public_title")

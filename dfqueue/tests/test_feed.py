@@ -378,6 +378,18 @@ def test_projects_view_carries_status_links_and_steps():
     ]
 
 
+def test_projects_view_description_is_the_public_rationale():
+    records = _project_records(public_rationale="Brewing the fort's first drink.")
+    view = feed.build_projects_view(records, public=True)
+    assert view["projects"]["project-0001"]["description"] == "Brewing the fort's first drink."
+    assert view["projects"]["project-0001"]["description"] is not None
+
+
+def test_projects_view_description_is_none_when_absent_no_summary_fallback():
+    view = feed.build_projects_view(_project_records(), public=True)
+    assert view["projects"]["project-0001"]["description"] is None
+
+
 def test_projects_view_public_name_prefers_public_title_over_summary():
     view = feed.build_projects_view(
         _project_records(public_title="First workshop area"), public=True,
