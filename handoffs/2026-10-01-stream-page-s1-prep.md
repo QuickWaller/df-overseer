@@ -53,4 +53,35 @@ read-only module beside `dfqueue/feed.py`, tests.
 
 ## Result
 
-(fill in, with the deploy steps the user must approve)
+**Plan (committed first, in case this run is cancelled):**
+
+1. `dfqueue/feed_status.py`: a read-only equivalent of `store.project_status`
+   (and a `list_project_ids`-reading helper), opening the queue db with the
+   same `file:...?mode=ro` URI `feed.load_records_readonly` already uses,
+   reusing `store`'s pure/private helpers (`step_status`,
+   `_current_steps_and_version`, `_step_has_executed_record`,
+   `PROJECT_ABANDONED`, `QueueError`) by import rather than duplicating their
+   logic, since those take a plain `sqlite3.Connection` and have no write
+   side effects themselves. Tests beside it.
+2. `scripts/stream_publisher.py`: the publisher script. Reads
+   `dfqueue.feed`/`dfqueue.feed_status` read-only, writes `data/public/` and
+   `data/operator/` to a local staging dir (`feed.write_feed`, extended with
+   per-project step counts from task 1), then pushes to the relay with
+   `rsync -e ssh` over a restricted key. Push-on-change via a content hash of
+   the staged tree, a minimum interval floor, three kill-switch checks
+   (`design §4.6`: a local `PUBLIC_DISABLED` file, `public_enabled: false` in
+   its own config, and never touching the automatic/Cloudflare layers, which
+   are not this script's job), safe on restart (cursor file, rebuildable).
+3. `infra/` examples: systemd unit + timer or `Restart=always` loop service
+   for the publisher, the relay's static server config stanza (Caddy or
+   nginx, loopback-bound, one block per hostname/data-root), the restricted
+   `authorized_keys` line template for the push key.
+4. `web/stream/README.md`: a "Slice S1: operator live" runbook section.
+5. Tests for the publisher's own logic (change detection, kill switch,
+   restart/cursor, and a static assertion that it never imports or calls
+   anything in `dfqueue.store`'s write path).
+
+Order: task 1 first (feed_status.py), since the publisher step needs it;
+then the publisher; then infra examples and the runbook describe what task 2
+produces; tests throughout, committed after each piece.
+
