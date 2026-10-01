@@ -826,6 +826,85 @@ def write_feed(
         _write_json(out_dir / "status.json", status)
 
 
+# ---- multiple forts (register 2026-10-02, "plan for more than one fort") --
+#
+# The user's own addition to the stream-board handoff, mid-stream: nothing
+# in this repo runs more than one fort today (Uniboslan/Ragwind is the only
+# one, CLAUDE.md's own "Current state"), but the page's data layout should
+# not assume there will only ever be one. `write_feed` above is unchanged
+# and still writes exactly one fort's one projection's feed to whatever
+# directory it is given; what changes is WHERE a caller points it
+# (`<root>/forts/<fort_id>/...` instead of `<root>/...` directly) and that
+# `<root>/forts.json` names every fort the page can pick from. Project-wide
+# data that is not any one fort's (agents, tools, known gotchas) has no
+# home built yet, but lives at `<root>/`, a sibling of `forts/`, never
+# inside it -- this layout already leaves that room.
+
+
+def fort_feed_dir(root_dir: str | Path, fort_id: str) -> Path:
+    """Where one fort's feed lives under a projection root
+    (`<root>/forts/<fort_id>/`). The one place this path shape is written
+    down, so every caller (the export script, a future real publisher,
+    their tests) agrees on it."""
+    return Path(root_dir) / "forts" / fort_id
+
+
+def build_forts_index(existing: list[dict], entry: dict) -> list[dict]:
+    """Upsert `entry` (`{"id", "name", "status"}`, `status` one of
+    `"live"`/`"lost"`) into `existing` (a prior `forts.json`'s own `"forts"`
+    list), marking it `current` and every other entry NOT current -- a
+    publisher only ever has one fort it is actively exporting, so that fort
+    is always the one the page should default to opening. Returns a fresh
+    list sorted by id (deterministic output, same rebuild property
+    `write_feed`'s own docstring asks for)."""
+    by_id = {f["id"]: dict(f) for f in existing if isinstance(f, dict) and f.get("id")}
+    by_id[entry["id"]] = {
+        "id": entry["id"], "name": entry["name"], "status": entry["status"],
+        "current": True,
+    }
+    for fid, f in by_id.items():
+        if fid != entry["id"]:
+            f["current"] = False
+    return [by_id[fid] for fid in sorted(by_id)]
+
+
+def read_forts_index(root_dir: str | Path) -> list[dict]:
+    """`<root>/forts.json`'s own `"forts"` list, or `[]` if the file does
+    not exist yet (the very first export for this root)."""
+    path = Path(root_dir) / "forts.json"
+    if not path.exists():
+        return []
+    data = json.loads(path.read_text(encoding="utf-8"))
+    forts = data.get("forts", [])
+    return forts if isinstance(forts, list) else []
+
+
+def write_forts_index(root_dir: str | Path, forts: list[dict]) -> None:
+    _write_json(Path(root_dir) / "forts.json", {"forts": forts})
+
+
+def write_fort_feed(
+    items: list[dict], root_dir: str | Path, *, fort_id: str, fort_name: str,
+    fort_status: str, projects: dict, status: Optional[dict] = None,
+    generation: int = 1, state: str = "on", published_at: Optional[str] = None,
+) -> None:
+    """`write_feed`, plus maintaining `<root>/forts.json`: upserts this
+    fort as the current one (`build_forts_index`) and writes its feed to
+    `fort_feed_dir(root_dir, fort_id)`. The export script and any future
+    real publisher call this instead of `write_feed` directly, so the two
+    never drift on where a fort's files live."""
+    root_dir = Path(root_dir)
+    write_feed(
+        items, fort_feed_dir(root_dir, fort_id), projects=projects,
+        status=status, generation=generation, state=state, published_at=published_at,
+    )
+    forts = build_forts_index(
+        read_forts_index(root_dir),
+        {"id": fort_id, "name": fort_name, "status": fort_status},
+    )
+    write_forts_index(root_dir, forts)
+
+
 # ---- loading records (read-only; never dfqueue.store._connect) -------------
 
 

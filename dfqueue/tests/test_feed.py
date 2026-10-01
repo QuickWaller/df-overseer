@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
+from pathlib import Path
 
 import pytest
 
@@ -628,6 +629,80 @@ def test_write_feed_closed_segments_land_on_disk_with_matching_names(tmp_path):
     assert seg_path.exists()
     seg_payload = json.loads(seg_path.read_text(encoding="utf-8"))
     assert len(seg_payload["items"]) == 200
+
+
+# ---- multiple forts (register 2026-10-02, "plan for more than one fort") --
+
+
+def test_fort_feed_dir_shape():
+    assert feed.fort_feed_dir("/data/public", "uniboslan") == Path("/data/public/forts/uniboslan")
+
+
+def test_build_forts_index_marks_the_upserted_fort_current_and_others_not():
+    existing = [
+        {"id": "uniboslan", "name": "Ragwind", "status": "live", "current": True},
+    ]
+    forts = feed.build_forts_index(
+        existing, {"id": "second-fort", "name": "Second Fort", "status": "live"},
+    )
+    by_id = {f["id"]: f for f in forts}
+    assert by_id["second-fort"]["current"] is True
+    assert by_id["uniboslan"]["current"] is False
+
+
+def test_build_forts_index_updating_the_same_fort_again_keeps_one_entry():
+    existing = [{"id": "uniboslan", "name": "Ragwind", "status": "live", "current": True}]
+    forts = feed.build_forts_index(
+        existing, {"id": "uniboslan", "name": "Ragwind", "status": "lost"},
+    )
+    assert len(forts) == 1
+    assert forts[0]["status"] == "lost"
+    assert forts[0]["current"] is True
+
+
+def test_build_forts_index_is_sorted_by_id():
+    existing = [{"id": "zzz-fort", "name": "Z", "status": "live", "current": True}]
+    forts = feed.build_forts_index(existing, {"id": "aaa-fort", "name": "A", "status": "live"})
+    assert [f["id"] for f in forts] == ["aaa-fort", "zzz-fort"]
+
+
+def test_read_forts_index_missing_file_is_empty(tmp_path):
+    assert feed.read_forts_index(tmp_path) == []
+
+
+def test_write_fort_feed_writes_under_forts_subdir_and_updates_the_index(tmp_path):
+    items = feed.build_items([make_proposal(id="proposal-0001")], public=True)
+    feed.write_fort_feed(
+        items, tmp_path, fort_id="uniboslan", fort_name="Ragwind", fort_status="live",
+        projects={"thread_to_project": {}, "projects": {}},
+    )
+    fort_dir = tmp_path / "forts" / "uniboslan"
+    assert (fort_dir / "head.json").exists()
+    assert (fort_dir / "open.json").exists()
+
+    forts_index = json.loads((tmp_path / "forts.json").read_text(encoding="utf-8"))
+    assert forts_index == {
+        "forts": [{"id": "uniboslan", "name": "Ragwind", "status": "live", "current": True}],
+    }
+
+
+def test_write_fort_feed_a_second_fort_is_added_without_losing_the_first(tmp_path):
+    items = feed.build_items([make_proposal(id="proposal-0001")], public=True)
+    feed.write_fort_feed(
+        items, tmp_path, fort_id="uniboslan", fort_name="Ragwind", fort_status="live",
+        projects={"thread_to_project": {}, "projects": {}},
+    )
+    feed.write_fort_feed(
+        items, tmp_path, fort_id="second-fort", fort_name="Second Fort", fort_status="live",
+        projects={"thread_to_project": {}, "projects": {}},
+    )
+    forts_index = json.loads((tmp_path / "forts.json").read_text(encoding="utf-8"))
+    by_id = {f["id"]: f for f in forts_index["forts"]}
+    assert set(by_id) == {"uniboslan", "second-fort"}
+    assert by_id["second-fort"]["current"] is True
+    assert by_id["uniboslan"]["current"] is False
+    assert (tmp_path / "forts" / "uniboslan" / "head.json").exists()
+    assert (tmp_path / "forts" / "second-fort" / "head.json").exists()
 
 
 # ---- load_records_readonly never uses dfqueue.store._connect ---------------
