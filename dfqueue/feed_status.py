@@ -336,6 +336,7 @@ def step_board_states(records: list[dict], project_id: str) -> list[dict]:
             continue
         sid = step["id"]
         literal = _literal_targets(step)
+        held_detail = None
         if literal is not None:
             pairs = [target_states.get((sid, t)) for t in literal]
             states = [p[0] for p in pairs if p is not None]
@@ -344,6 +345,10 @@ def step_board_states(records: list[dict], project_id: str) -> list[dict]:
             has_held = any(s == HELD for s in states)
             has_progress = done_count > 0 or any(s == ISSUED for s in states)
             is_done = total > 0 and done_count == total
+            if has_held:
+                held_detail = next(
+                    (p[1] for p in pairs if p is not None and p[0] == HELD), None,
+                )
         else:
             total = done_count = None
             has_held = has_progress = False
@@ -353,6 +358,7 @@ def step_board_states(records: list[dict], project_id: str) -> list[dict]:
         per_step[sid] = {
             "total": total, "done_count": done_count, "is_done": is_done,
             "has_held": has_held, "has_progress": has_progress,
+            "held_detail": held_detail,
         }
 
     done_ids = {sid for sid, c in per_step.items() if c["is_done"]}
@@ -383,6 +389,14 @@ def step_board_states(records: list[dict], project_id: str) -> list[dict]:
         version = added_version.get(sid, 1)
         if version > 1:
             entry["added_version"] = version
+        if state == "hold":
+            # Private: the `executed` action's own `detail` text for the
+            # held target. Never public on its own (it is the tool's raw
+            # refusal text, design §3.3 item 7's own "never as the tool's
+            # text" rule) -- `dfqueue.feed` strips this for the public
+            # projection and uses `step_hold_text`'s `hold_code` lookup
+            # instead.
+            entry["held_detail"] = c["held_detail"]
         out.append(entry)
     return out
 
