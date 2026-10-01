@@ -46,6 +46,32 @@ two writers cannot both see the same "next id" (the race `dfqueue`'s docstring
 documents for its COUNT-based ids). Ids are `<list>-NNNN` (`gotcha-0001`,
 `unexplained-0002`, `vent-0003`): a per-list counter that reads well in a
 prompt, chosen by the store, never by the caller.
+
+## General entries (schema version 2)
+
+Register 2026-10-02, "General gotchas and vents": an entry may be about the
+run itself (process, timing, other agents, its own wake-ups) rather than any
+one tool. That entry has `tool = NULL`; `kind` is meaningless without a tool,
+so a `kind` on a tool-less entry is refused at write time
+(`validate_new_entry`). Every read keyed by tool (`entries_for_tool`,
+near-duplicate matching) uses `tool IS ?` rather than `tool = ?`, since SQL
+`=` never matches `NULL`.
+
+SQLite cannot drop a `NOT NULL` constraint in place (`ALTER TABLE ... ALTER
+COLUMN` does not exist), so schema version 1 (`tool TEXT NOT NULL`) is
+migrated to version 2 (`tool TEXT`) by rebuilding the `entries` table inside
+one transaction: rename it, create the new nullable-`tool` table under the
+original name, copy every row across unchanged (id, outcomes and
+`status_history` are untouched, since they live in other tables and
+reference entries only by id), drop the renamed copy, recreate its indexes,
+then bump `schema_version`. The migration is a no-op once the column is
+already nullable (checked via `PRAGMA table_info`), so it is safe to run
+again; if it is interrupted mid-transaction the whole thing rolls back and
+the next attempt starts clean from version 1. It runs automatically the
+first time any connection opens a version-1 store (`_connect`,
+`init_store`'s existing-file branch), and can also be run explicitly and
+idempotently with `python -m dfmcp.gotchas_store migrate PATH` (the command
+the deploy runbook uses).
 """
 
 from __future__ import annotations
@@ -60,7 +86,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, Iterable, Iterator, List, Mapping, Optional, Sequence
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
 # --------------------------------------------------------------------------
 # Closed vocabularies (contract C3)
@@ -127,7 +153,7 @@ CREATE TABLE IF NOT EXISTS schema_version (
 
 CREATE TABLE IF NOT EXISTS entries (
     id TEXT PRIMARY KEY,
-    tool TEXT NOT NULL,
+    tool TEXT,
     kind TEXT,
     list TEXT NOT NULL,
     title TEXT NOT NULL,
@@ -187,10 +213,7 @@ def init_store(path: str | Path) -> None:
     try:
         conn.row_factory = sqlite3.Row
         if existed:
-            try:
-                _check_schema(conn, p)
-            except GotchaStoreError:
-                raise
+            _ensure_current_schema(conn, p)
             return
         conn.executescript(_SCHEMA_SQL)
         conn.execute("INSERT INTO schema_version (version) VALUES (?)", (SCHEMA_VERSION,))
@@ -218,6 +241,71 @@ def _check_schema(conn: sqlite3.Connection, path: Path) -> None:
         )
 
 
+_ENTRIES_V2_SQL = """
+CREATE TABLE entries (
+    id TEXT PRIMARY KEY,
+    tool TEXT,
+    kind TEXT,
+    list TEXT NOT NULL,
+    title TEXT NOT NULL,
+    body TEXT NOT NULL,
+    status TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    written_by_role TEXT NOT NULL,
+    run_id TEXT NOT NULL,
+    call_excerpt TEXT
+)
+"""
+
+
+def _migrate_v1_to_v2(conn: sqlite3.Connection) -> None:
+    """Rebuild `entries` with a nullable `tool` column, preserving every row,
+    id and outcome (see the module docstring, "General entries"). A no-op if
+    the column is already nullable. Runs in its own transaction; rolls back
+    cleanly on any failure, so a retry after an interruption starts clean."""
+    cols = conn.execute("PRAGMA table_info(entries)").fetchall()
+    tool_col = next((c for c in cols if c["name"] == "tool"), None)
+    already_nullable = tool_col is None or not tool_col["notnull"]
+    conn.execute("BEGIN IMMEDIATE")
+    try:
+        if not already_nullable:
+            conn.execute("ALTER TABLE entries RENAME TO entries_v1_old")
+            conn.execute(_ENTRIES_V2_SQL)
+            conn.execute(
+                "INSERT INTO entries (id, tool, kind, list, title, body, status, created_at, "
+                "written_by_role, run_id, call_excerpt) SELECT id, tool, kind, list, title, body, "
+                "status, created_at, written_by_role, run_id, call_excerpt FROM entries_v1_old"
+            )
+            conn.execute("DROP TABLE entries_v1_old")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_entries_tool ON entries(tool, list, status)")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_entries_run ON entries(run_id)")
+        conn.execute("UPDATE schema_version SET version = ?", (SCHEMA_VERSION,))
+        conn.execute("COMMIT")
+    except BaseException:
+        conn.execute("ROLLBACK")
+        raise
+
+
+def _migrate_if_needed(conn: sqlite3.Connection, path: Path) -> None:
+    """Upgrade a version-1 store in place before anything else touches it.
+    Silently does nothing if the version cannot be read (a genuinely
+    malformed file): `_check_schema` gives the real error for that case."""
+    try:
+        row = conn.execute("SELECT version FROM schema_version").fetchone()
+    except sqlite3.DatabaseError:
+        return
+    if row is not None and row[0] == 1 and SCHEMA_VERSION == 2:
+        try:
+            _migrate_v1_to_v2(conn)
+        except sqlite3.Error as exc:
+            raise GotchaStoreError(f"gotcha store at {path}: migration to schema version 2 failed: {exc}") from exc
+
+
+def _ensure_current_schema(conn: sqlite3.Connection, path: Path) -> None:
+    _migrate_if_needed(conn, path)
+    _check_schema(conn, path)
+
+
 @contextmanager
 def _connect(path: str | Path) -> Iterator[sqlite3.Connection]:
     p = Path(path)
@@ -234,8 +322,8 @@ def _connect(path: str | Path) -> Iterator[sqlite3.Connection]:
         raise GotchaStoreError(f"gotcha store at {p} cannot be opened: {exc}") from exc
     try:
         conn.row_factory = sqlite3.Row
+        _ensure_current_schema(conn, p)
         conn.execute("PRAGMA foreign_keys=ON")
-        _check_schema(conn, p)
         yield conn
     finally:
         conn.close()
@@ -243,9 +331,34 @@ def _connect(path: str | Path) -> Iterator[sqlite3.Connection]:
 
 def check_store(path: str | Path) -> None:
     """Raise `GotchaStoreError` unless `path` is a valid store. Used at server
-    startup so a missing or malformed store stops the deploy loudly."""
+    startup so a missing or malformed store stops the deploy loudly. Also
+    where the automatic version-1-to-2 migration runs, since this calls
+    `_connect`."""
     with _connect(path):
         pass
+
+
+def migrate_store(path: str | Path) -> int:
+    """Explicitly run any pending schema migration on `path` and return the
+    resulting schema version. Idempotent: a store already at
+    `SCHEMA_VERSION` is untouched. This is the exact command the deploy
+    runbook uses (`python -m dfmcp.gotchas_store migrate PATH`); the same
+    migration also runs lazily the first time anything opens the store, so
+    this is a way to do it explicitly, under supervision, before restarting
+    the server."""
+    p = Path(path)
+    if not p.is_file():
+        raise GotchaStoreError(f"gotcha store not found at {p}")
+    try:
+        conn = sqlite3.connect(p, timeout=10, isolation_level=None)
+    except sqlite3.Error as exc:
+        raise GotchaStoreError(f"gotcha store at {p} cannot be opened: {exc}") from exc
+    try:
+        conn.row_factory = sqlite3.Row
+        _ensure_current_schema(conn, p)
+    finally:
+        conn.close()
+    return SCHEMA_VERSION
 
 
 # --------------------------------------------------------------------------
@@ -315,19 +428,30 @@ def _text_problems(name: str, value: Any, minimum: int, maximum: int) -> List[st
 def validate_new_entry(record: Mapping[str, Any], known_tools: Iterable[str]) -> List[str]:
     """Every problem with a would-be new entry, or []. `record` carries the
     caller-supplied fields (`tool`, `kind`, `list`, `title`, `body`,
-    `call_excerpt`) plus the server-stamped `written_by_role` and `run_id`."""
+    `call_excerpt`) plus the server-stamped `written_by_role` and `run_id`.
+
+    `tool` is optional: omitted (`None`) means a general entry, about the run
+    itself rather than any one tool (register 2026-10-02). `kind` is
+    meaningless without a tool and is refused when `tool` is absent."""
     problems: List[str] = []
     tool = record.get("tool")
-    if not isinstance(tool, str) or not tool:
-        problems.append("tool is required")
-    elif tool not in set(known_tools):
-        problems.append(
-            f"tool {tool!r} is not a tool in this server's registry; a gotcha is written about a "
-            "real tool id (see your tool list)"
-        )
+    if tool is not None:
+        if not isinstance(tool, str) or not tool:
+            problems.append("tool, when given, must be a non-empty string")
+        elif tool not in set(known_tools):
+            problems.append(
+                f"tool {tool!r} is not a tool in this server's registry; a gotcha is written about "
+                "a real tool id (see your tool list), or about nothing (omit 'tool') for a general "
+                "note about the run itself"
+            )
     kind = record.get("kind")
     if kind is not None:
-        if not isinstance(kind, str) or not _KIND_RE.match(kind) or len(kind) > KIND_MAX_CHARS:
+        if tool is None:
+            problems.append(
+                "kind is meaningless without a tool: omit 'kind' for a general entry, or pass "
+                "'tool' as well"
+            )
+        elif not isinstance(kind, str) or not _KIND_RE.match(kind) or len(kind) > KIND_MAX_CHARS:
             problems.append(
                 "kind, when given, must be a kind token (letters, digits, '_' or '-', starting "
                 f"with a letter, at most {KIND_MAX_CHARS} chars), not a display label"
@@ -417,7 +541,7 @@ def get_entry(path: str | Path, entry_id: str) -> Optional[dict]:
 
 def entries_for_tool(
     path: str | Path,
-    tool: str,
+    tool: Optional[str],
     *,
     kind: Optional[str] = None,
     lists: Optional[Sequence[str]] = None,
@@ -427,8 +551,12 @@ def entries_for_tool(
     """A tool's entries, oldest first. `kind` given: entries for that kind
     **and** tool-wide entries (`kind` null), since a tool-wide gotcha applies
     to every kind. `kind` omitted: every entry for the tool, kind-specific
-    ones included."""
-    query = f"SELECT {_ENTRY_COLUMNS} FROM entries WHERE tool = ?"
+    ones included. `tool=None` means general entries (not about any tool);
+    `kind` is never meaningful there, since a general entry cannot carry one.
+
+    Uses `tool IS ?`, not `tool = ?`, since SQL `=` never matches `NULL` and
+    `tool` can be `None`."""
+    query = f"SELECT {_ENTRY_COLUMNS} FROM entries WHERE tool IS ?"
     params: list = [tool]
     if kind is not None:
         query += " AND (kind IS NULL OR kind = ?)"
@@ -468,15 +596,16 @@ def outcome_counts(path: str | Path, entry_ids: Sequence[str]) -> Dict[str, Dict
     return counts
 
 
-def tool_index(path: str | Path) -> Dict[str, Dict[str, Dict[str, int]]]:
+def tool_index(path: str | Path) -> Dict[Optional[str], Dict[str, Dict[str, int]]]:
     """{tool: {list: {status: count}}} for every tool that has at least one
     entry. A tool absent here has none (or is not a real tool: the caller
-    checks that separately)."""
+    checks that separately). General entries (no tool) are grouped under the
+    key `None`."""
     with _connect(path) as conn:
         rows = conn.execute(
             "SELECT tool, list, status, COUNT(*) AS n FROM entries GROUP BY tool, list, status"
         ).fetchall()
-    index: Dict[str, Dict[str, Dict[str, int]]] = {}
+    index: Dict[Optional[str], Dict[str, Dict[str, int]]] = {}
     for r in rows:
         index.setdefault(r["tool"], {}).setdefault(r["list"], {})[r["status"]] = r["n"]
     return index
@@ -528,8 +657,8 @@ def add_entry(
                     "an outcome on an existing entry instead (pass its id)."
                 )
             same = conn.execute(
-                f"SELECT {_ENTRY_COLUMNS} FROM entries WHERE tool = ? AND list = ?",
-                (record["tool"], record["list"]),
+                f"SELECT {_ENTRY_COLUMNS} FROM entries WHERE tool IS ? AND list = ?",
+                (record.get("tool"), record["list"]),
             ).fetchall()
             for row in same:
                 reason = near_duplicate_reason(record, row)
@@ -545,7 +674,7 @@ def add_entry(
                 "INSERT INTO entries (id, tool, kind, list, title, body, status, created_at, "
                 "written_by_role, run_id, call_excerpt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
-                    new_id, record["tool"], record.get("kind"), record["list"],
+                    new_id, record.get("tool"), record.get("kind"), record["list"],
                     record["title"].strip(), record["body"], STATUS_PROPOSED, created,
                     record["written_by_role"], record["run_id"], record.get("call_excerpt"),
                 ),
@@ -663,10 +792,14 @@ def export_jsonl(path: str | Path, out_dir: str | Path) -> None:
 
 
 def _main(argv: Sequence[str]) -> int:
-    usage = "usage: python -m dfmcp.gotchas_store init PATH | export PATH OUT_DIR"
+    usage = "usage: python -m dfmcp.gotchas_store init PATH | migrate PATH | export PATH OUT_DIR"
     if len(argv) >= 2 and argv[0] == "init" and len(argv) == 2:
         init_store(argv[1])
         print(f"gotcha store ready at {argv[1]}")
+        return 0
+    if len(argv) == 2 and argv[0] == "migrate":
+        version = migrate_store(argv[1])
+        print(f"gotcha store at {argv[1]} is schema_version {version}")
         return 0
     if len(argv) == 3 and argv[0] == "export":
         export_jsonl(argv[1], argv[2])

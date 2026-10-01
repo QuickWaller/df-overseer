@@ -136,15 +136,19 @@ _LISTS = list(store.LISTS)
 _STATUSES = list(store.STATUSES)
 
 _GET_DESCRIPTION = (
-    "Read the gotchas recorded about a tool: notes from earlier runs, each titled with the "
-    "condition it applies under. Tool results carry only the titles; this returns the full text, "
-    "the status (proposed = an unconfirmed experiment, accepted = confirmed, rejected) and every "
-    "recorded outcome. Three modes: pass 'id' for exactly one entry; pass 'tool' (optionally "
-    "'kind', 'list', 'status') for that tool's entries, where a 'kind' also returns the tool-wide "
-    "entries that apply to every kind; pass neither for an index of which tools have entries. An "
+    "Read the gotchas recorded about a tool, or about the run itself: notes from earlier runs, "
+    "each titled with the condition it applies under. Tool results carry only the titles; this "
+    "returns the full text, the status (proposed = an unconfirmed experiment, accepted = "
+    "confirmed, rejected) and every recorded outcome. Four modes: pass 'id' for exactly one entry; "
+    "pass 'tool' (optionally 'kind', 'list', 'status') for that tool's entries, where a 'kind' also "
+    "returns the tool-wide entries that apply to every kind; pass 'general: true' (optionally "
+    "'list', 'status') for general entries, about process, timing, other agents or your own "
+    "wake-ups rather than any one tool ('kind' does not apply there); pass neither 'tool' nor "
+    "'general' for an index of which tools (and whether general entries exist) have entries. An "
     "unknown tool or id is an error, never an empty list: an empty list means 'this real tool has "
-    "no such entries'. Rejected entries are left out of a tool listing by default, and the "
-    "response always states how many were left out, even when zero. Read-only."
+    "no such entries'. Rejected entries are left out of a listing by default, and the response "
+    "always states how many were left out, even when zero. Game knowledge belongs in doctrine, "
+    "through the Consultant, never here. Read-only."
 )
 
 _GET_SCHEMA = {
@@ -161,7 +165,17 @@ _GET_SCHEMA = {
         "tool": {
             "type": "string",
             "description": (
-                "A tool id, for example 'building.build'. Refused if it is not a real tool."
+                "A tool id, for example 'building.build'. Refused if it is not a real tool. "
+                "Mutually exclusive with 'general'."
+            ),
+        },
+        "general": {
+            "type": "boolean",
+            "description": (
+                "Pass true (with no 'tool') to list general entries: a gotcha, unexplained error "
+                "or vent about the run itself (process, timing, other agents, your own wake-ups), "
+                "not about any particular tool. Combine with 'list', 'status', 'include_rejected' "
+                "as usual; 'kind' does not apply, since a general entry has none."
             ),
         },
         "kind": {
@@ -174,34 +188,38 @@ _GET_SCHEMA = {
         "list": {
             "type": "string",
             "enum": _LISTS,
-            "description": "Only with 'tool': gotcha (default: all three lists), unexplained or vent.",
+            "description": "Only with 'tool' or 'general': gotcha (default: all three lists), unexplained or vent.",
         },
         "status": {
             "type": "string",
             "enum": _STATUSES,
-            "description": "Only with 'tool': narrow to one status.",
+            "description": "Only with 'tool' or 'general': narrow to one status.",
         },
         "include_rejected": {
             "type": "boolean",
-            "description": "Only with 'tool': also return rejected entries (default false).",
+            "description": "Only with 'tool' or 'general': also return rejected entries (default false).",
         },
     },
 }
 
 _WRITE_DESCRIPTION = (
-    "Record what you learned about a tool, for the runs after you. Two modes, chosen by whether "
-    "'id' is passed. NEW ENTRY (no 'id'): pass 'tool', 'title', 'body' and optionally 'list', "
-    "'kind', 'call_excerpt'. The server chooses the id, marks it proposed and stamps your role, "
-    "the run and the time. The title must state the condition it applies under, in the form "
+    "Record what you learned, for the runs after you. Two modes, chosen by whether 'id' is "
+    "passed. NEW ENTRY (no 'id'): pass 'title', 'body' and optionally 'tool', 'list', 'kind', "
+    "'call_excerpt'. The server chooses the id, marks it proposed and stamps your role, the run "
+    "and the time. The title must state the condition it applies under, in the form "
     "'<condition>: <hazard>' (for example 'placing a workshop in a desert biome: <what goes "
     "wrong>'), on one line, so a reader can tell from the title alone whether it applies. "
-    "'list' is gotcha (something worked out to keep in mind next time; the default), unexplained "
-    "(an error or mistake you could not explain) or vent (a complaint that the tool is not right "
-    "for what you wanted; never evidence). Near-duplicates, oversized text and unknown tools are "
-    "refused with reasons, and a run may write only a few new entries. OUTCOME (with 'id'): pass "
-    "'id' of an existing gotcha and 'result' (worked or did_not_work), optionally 'note'. This "
-    "appends an outcome and never changes the entry; use it after you tried a proposed gotcha. "
-    "One outcome per run per entry."
+    "'tool' is optional: give it for a note about one tool, or omit it for a general entry about "
+    "the run itself (process, timing, other agents, your own wake-ups) rather than any tool; a "
+    "general entry cannot have a 'kind'. Game knowledge (crop and water rules, and the like) is "
+    "never a gotcha: it belongs in doctrine, written through the Consultant, not here. 'list' is "
+    "gotcha (something worked out to keep in mind next time; the default), unexplained (an error "
+    "or mistake you could not explain) or vent (a complaint that the tool is not right for what "
+    "you wanted; never evidence). Near-duplicates, oversized text and unknown tools are refused "
+    "with reasons, and a run may write only a few new entries. OUTCOME (with 'id'): pass 'id' of "
+    "an existing gotcha and 'result' (worked or did_not_work), optionally 'note'. This appends an "
+    "outcome and never changes the entry; use it after you tried a proposed gotcha. One outcome "
+    "per run per entry."
 )
 
 _WRITE_SCHEMA = {
@@ -210,7 +228,11 @@ _WRITE_SCHEMA = {
     "properties": {
         "tool": {
             "type": "string",
-            "description": "New entry: the tool id the note is about, for example 'building.build'.",
+            "description": (
+                "New entry, optional: the tool id the note is about, for example "
+                "'building.build'. Omit for a general entry about the run itself, not any "
+                "particular tool (then 'kind' must also be omitted)."
+            ),
         },
         "title": {
             "type": "string",
@@ -266,7 +288,7 @@ _WRITE_SCHEMA = {
     },
 }
 
-_GET_FIELDS = {"id", "tool", "kind", "list", "status", "include_rejected"}
+_GET_FIELDS = {"id", "tool", "general", "kind", "list", "status", "include_rejected"}
 _NEW_FIELDS = {"tool", "title", "body", "list", "kind", "call_excerpt"}
 _OUTCOME_FIELDS = {"id", "result", "note", "tool"}
 _WRITE_FIELDS = _NEW_FIELDS | _OUTCOME_FIELDS
@@ -285,7 +307,8 @@ REJECTED_WARNING = "REJECTED: kept as a record. Do NOT follow it."
 
 def entry_xml(entry: Mapping[str, Any]) -> str:
     attrs = (
-        f'id={quoteattr(entry["id"])} tool={quoteattr(entry["tool"])} '
+        f'id={quoteattr(entry["id"])} tool={quoteattr(entry["tool"] or "")} '
+        f'general={quoteattr("true" if entry["tool"] is None else "false")} '
         f'kind={quoteattr(entry["kind"] or "")} list={quoteattr(entry["list"])} '
         f'status={quoteattr(entry["status"])} written_by={quoteattr(entry["written_by_role"])} '
         f'created_at={quoteattr(entry["created_at"])}'
@@ -359,6 +382,9 @@ async def _get(
     _reject_unknown_arguments(GOTCHAS_GET, arguments, _GET_FIELDS)
     entry_id = _string_arg(GOTCHAS_GET, arguments, "id")
     tool = _string_arg(GOTCHAS_GET, arguments, "tool")
+    general = arguments.get("general", False)
+    if not isinstance(general, bool):
+        raise GotchaToolError(f"{GOTCHAS_GET}: 'general' must be a boolean")
     kind = _string_arg(GOTCHAS_GET, arguments, "kind")
     list_name = _string_arg(GOTCHAS_GET, arguments, "list")
     status = _string_arg(GOTCHAS_GET, arguments, "status")
@@ -366,29 +392,45 @@ async def _get(
     if not isinstance(include_rejected, bool):
         raise GotchaToolError(f"{GOTCHAS_GET}: 'include_rejected' must be a boolean")
 
+    if tool is not None and general:
+        raise GotchaToolError(f"{GOTCHAS_GET}: 'tool' cannot be combined with 'general'")
+
     if entry_id is not None:
-        others = [n for n in ("tool", "kind", "list", "status") if arguments.get(n) is not None]
+        others = [n for n in ("tool", "general", "kind", "list", "status") if arguments.get(n) is not None]
         if others:
             raise GotchaToolError(f"{GOTCHAS_GET}: 'id' cannot be combined with {others}")
         entry = await _read(store.get_entry, db_path, entry_id)
         if entry is None:
             raise GotchaToolError(
-                f"{GOTCHAS_GET}: no entry with id {entry_id!r}. Pass 'tool' to list a tool's "
-                "entries, or nothing for the index."
+                f"{GOTCHAS_GET}: no entry with id {entry_id!r}. Pass 'tool' or 'general: true' to "
+                "list entries, or nothing for the index."
             )
         return entry_xml(entry), {"entry": entry}
+
+    if general:
+        others = [n for n in ("kind",) if arguments.get(n) is not None]
+        if others:
+            raise GotchaToolError(
+                f"{GOTCHAS_GET}: {others} need 'tool' as well; a general entry has no kind"
+            )
+        return await _list_entries(db_path, tool=None, kind=None, list_name=list_name, status=status,
+                                    include_rejected=include_rejected)
 
     if tool is None:
         others = [n for n in ("kind", "list", "status") if arguments.get(n) is not None]
         if others:
-            raise GotchaToolError(f"{GOTCHAS_GET}: {others} need 'tool' as well")
+            raise GotchaToolError(f"{GOTCHAS_GET}: {others} need 'tool' (or 'general: true') as well")
         index = await _read(store.tool_index, db_path)
         lines = ["<gotcha_index note=\"only tools with at least one entry are listed; a tool not "
-                 "listed has none\">"]
-        for t in sorted(index):
+                 "listed has none; general entries (no tool) are listed with an empty id and "
+                 "general='true'\">"]
+        for t in sorted(index, key=lambda x: (x is not None, x or "")):
             for ln in sorted(index[t]):
                 counts = " ".join(f'{s}="{n}"' for s, n in sorted(index[t][ln].items()))
-                lines.append(f"  <tool id={quoteattr(t)} list={quoteattr(ln)} {counts}/>")
+                general_attr = quoteattr("true" if t is None else "false")
+                lines.append(
+                    f"  <tool id={quoteattr(t or '')} general={general_attr} list={quoteattr(ln)} {counts}/>"
+                )
         lines.append("</gotcha_index>")
         return "\n".join(lines), {"tools": index}
 
@@ -398,6 +440,16 @@ async def _get(
             "than returning an empty list, which would read as 'no gotchas' instead of 'not a "
             "real tool'."
         )
+    return await _list_entries(db_path, tool=tool, kind=kind, list_name=list_name, status=status,
+                                include_rejected=include_rejected)
+
+
+async def _list_entries(
+    db_path, *, tool: Optional[str], kind: Optional[str], list_name: Optional[str],
+    status: Optional[str], include_rejected: bool,
+) -> Tuple[str, dict]:
+    """Shared rendering for a tool's entries and for general entries
+    (`tool=None`): same filters, same shape, same rejected-omission rule."""
     lists = [list_name] if list_name else None
     if list_name is not None and list_name not in store.LISTS:
         raise GotchaToolError(f"{GOTCHAS_GET}: 'list' must be one of {_LISTS}")
@@ -411,10 +463,13 @@ async def _get(
         e for e in entries if e["status"] != store.STATUS_REJECTED
     ]
     omitted = len(entries) - len(visible)
-    head = (
-        f'<gotchas tool={quoteattr(tool)} kind={quoteattr(kind or "")} returned="{len(visible)}" '
-        f'omitted_rejected="{omitted}">'
-    )
+    if tool is None:
+        head = f'<gotchas general="true" returned="{len(visible)}" omitted_rejected="{omitted}">'
+    else:
+        head = (
+            f'<gotchas tool={quoteattr(tool)} kind={quoteattr(kind or "")} returned="{len(visible)}" '
+            f'omitted_rejected="{omitted}">'
+        )
     lines = [head]
     if omitted:
         lines.append(
@@ -422,11 +477,13 @@ async def _get(
             "include_rejected:true to see them.</note>"
         )
     if not visible:
-        lines.append(f"  <note>{tool} is a real tool and has no matching entries.</note>")
+        subject = "there are" if tool is None else f"{tool} is a real tool and has"
+        lines.append(f"  <note>{subject} no matching entries.</note>")
     lines.extend(entry_xml(e) for e in visible)
     lines.append("</gotchas>")
     return "\n".join(lines), {
         "tool": tool,
+        "general": tool is None,
         "kind": kind,
         "returned_count": len(visible),
         "omitted_rejected_count": omitted,
@@ -481,11 +538,11 @@ async def _write(
             f"{GOTCHAS_WRITE}: {stray} only apply when recording an outcome on an existing "
             "gotcha (pass its 'id')"
         )
-    missing = [n for n in ("tool", "title", "body") if arguments.get(n) is None]
+    missing = [n for n in ("title", "body") if arguments.get(n) is None]
     if missing:
         raise GotchaToolError(f"{GOTCHAS_WRITE}: a new entry needs {missing}")
     record = {
-        "tool": arguments["tool"],
+        "tool": arguments.get("tool"),
         "kind": arguments.get("kind"),
         "list": arguments.get("list", store.LIST_GOTCHA),
         "title": arguments["title"],
