@@ -39,3 +39,8 @@ body). A tool that needs many gotchas is a badly shaped tool, and the count is
 noticed, so do not hold back a real one. A complaint that a tool is not right
 for what you wanted, or an error you could not explain, goes in the same tool
 under the `vent` or `unexplained` list, and is never evidence.
+
+**General entries** are about the run itself, process, timing, other agents,
+your own wake-ups, not any one tool: omit `tool` in `gotchas.write` (never a
+`kind`), and read them back with `gotchas.get` and `general: true`. Game
+knowledge still goes to doctrine, through the Consultant, never here.
