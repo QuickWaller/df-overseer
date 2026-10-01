@@ -2683,10 +2683,13 @@ df-overseer-construction.lua:
         `job.flags.suspend` (the same hand stopgap used live on building 22,
         2026-09-28, now a named tool action) -- the deterministic
         first-in-ring-order tie-break `keeps_access` already established,
-        reported in `suspended`. DRY_RUN defaults to true. Granted to the
-        overseer only for a real (non-dry) call (mutates fort state,
-        dfmcp/roles.py rule 2); the read (DRY_RUN true, the default) is safe
-        for any role that already holds `connectivity.report`.
+        reported in `suspended`. DRY_RUN defaults to true, same as
+        mine-vein/build above. Like both of those, this file grants by tool
+        id, not by argument, so this is granted to the overseer only, the
+        same as every other mutating command here (dfmcp/roles.py rule 2)
+        -- even though a DRY_RUN=true call never mutates anything, nothing
+        in the current allowlist model can hand out "this tool, but only
+        with this argument" to a read-only role.
 
 df-overseer-blueprint.lua:
   build_order_item: "the Architect's hands; handoffs/2026-09-24-blueprint-hands.md. Research: research/2026-09-24-quickfort-hands.md"
