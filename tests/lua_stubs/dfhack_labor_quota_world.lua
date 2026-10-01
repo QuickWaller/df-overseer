@@ -88,7 +88,7 @@ local function build_list_text()
     if e.mode == "disabled" then
       lines[#lines + 1] = n .. ":           disabled"
     elseif e.mode == "haulers" then
-      lines[#lines + 1] = n .. ":           haulers"
+      lines[#lines + 1] = n .. ":           haulers, currently 18 dwarfs"  -- real text, live 2026-10-01
     else
       lines[#lines + 1] = string.format(
         "%s:           minimum %d, maximum %d, pool %d, currently %d dwarfs",

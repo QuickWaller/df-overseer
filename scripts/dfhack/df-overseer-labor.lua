@@ -458,7 +458,8 @@ end
 -- Parses one line of `autolabor list`/`status` output. Verified-from-source
 -- format (research §2, `autolabor.cpp:1057-1069` print_labor): either
 -- "LABORNAME:  minimum N, maximum M, pool P, currently C dwarfs", or
--- "LABORNAME:  disabled", or "LABORNAME:  haulers". Never executed live
+-- "LABORNAME:  disabled", or "LABORNAME:  haulers, currently C dwarfs"
+-- (that last shape confirmed live 2026-10-01). Never executed live
 -- this session (offline stream, no live access) -- this parser is
 -- verified-by-mechanism against the research's cited source text, not
 -- verified-by-execution; a live call is the first thing that should
@@ -475,10 +476,11 @@ local function parse_autolabor_list()
   for line in tostring(output):gmatch("[^\r\n]+") do
     local name, rest = line:match("^(%u[%u%d_]*):%s*(.+)$")
     if name then
-      if rest:match("^disabled%s*$") then
-        entries[name] = {mode = "disabled"}
-      elseif rest:match("^haulers%s*$") then
-        entries[name] = {mode = "haulers"}
+      -- Live 2026-10-01: the real text is "haulers, currently 18 dwarfs",
+      -- not a bare "haulers"; accept both, with the count when present.
+      local word = rest:match("^(disabled)") or rest:match("^(haulers)")
+      if word then
+        entries[name] = {mode = word, autolabor_currently = tonumber(rest:match("currently%s+(%d+)"))}
       else
         local min_s, max_s, pool_s, cur_s = rest:match(
           "minimum%s+(%d+),%s*maximum%s+(%d+),%s*pool%s+(%d+),%s*currently%s+(%d+)%s+dwarfs")
