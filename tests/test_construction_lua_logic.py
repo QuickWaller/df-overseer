@@ -581,3 +581,168 @@ def test_build_does_not_record_an_override_on_a_dry_run(w):
     res = w.build(13, "Wall", dry_run="true", res_id="res-1", override="needed for X")
     assert res["dry_run"] is True
     assert w.overrides() == [], "a dry run must never write to persistent reservation state"
+
+
+# ---------------------------------------------------------------------------
+# entrance guard / door / audit (handoffs/2026-10-01-entrances-get-doors.md)
+#
+# Fixture below is the real office's own geometry from
+# evals/live/2026-10-01-queue-and-material-deploy/README.md ("Month window,
+# a sealed office"): a 3x3 interior (the eval's 103,102 to 105,104), z
+# dropped to 0 (irrelevant to this guard's own logic). The ring is the
+# office's real 16-tile boundary; (104, 101, 0) stands in for the eval's
+# 103,101 -- the actual north-side wall the live rescue had to remove --
+# kept at the north edge's MIDDLE tile here only so it is unambiguously a
+# straight edge, never a corner, in a geometry-agnostic test. ring_position
+# 3 in the fixed order below.
+# ---------------------------------------------------------------------------
+
+OFFICE_X1, OFFICE_Y1, OFFICE_X2, OFFICE_Y2 = 103, 102, 105, 104
+OFFICE_ENTRANCE = (104, 101, 0)  # ring_position 3 in OFFICE_RING below
+OFFICE_RING = [
+    (102, 101, 0), (103, 101, 0), (104, 101, 0), (105, 101, 0), (106, 101, 0),  # north (incl. 2 corners)
+    (102, 105, 0), (103, 105, 0), (104, 105, 0), (105, 105, 0), (106, 105, 0),  # south (incl. 2 corners)
+    (102, 102, 0), (102, 103, 0), (102, 104, 0),                               # west
+    (106, 102, 0), (106, 103, 0), (106, 104, 0),                               # east
+]
+
+
+def _setup_office(w, zone_id=99, entrance_shape="FLOOR", other_shape="FLOOR"):
+    w.add_zone(zone_id, OFFICE_X1, OFFICE_Y1, OFFICE_X2, OFFICE_Y2)
+    w.set_ring(zone_id, OFFICE_RING)
+    for xyz in OFFICE_RING:
+        w.set_tile(*xyz, entrance_shape if xyz == OFFICE_ENTRANCE else other_shape)
+    # The entrance's own outside neighbour (one step further north) belongs
+    # to the fort's main walkable group -- "the group most citizens are in",
+    # read live in production via connectivity.report's main_group_id.
+    ex, ey, ez = OFFICE_ENTRANCE
+    w.set_group(ex, ey - 1, ez, 1)
+    w.set_main_group(1)
+
+
+def test_find_entrances_identifies_the_offices_real_north_exit_and_builds_the_rest(w):
+    _setup_office(w)
+    w.set_kinds([{"type": "Construction", "subtype": "Wall", "token": "Wall", "key": "Cw"}])
+    for _ in range(len(OFFICE_RING) - 1):  # every tile except the entrance gets built
+        w.queue_quickfort("  Buildings designated: 1\n", res=0)
+
+    res = w.build(99, "Wall")
+
+    assert res["open_tiles_found"] == len(OFFICE_RING)
+    assert res["entrances_found"] == 1
+    assert len(res["held"]) == 1
+    assert "ring tile 3" in res["held"][0]
+    assert "entrance" in res["held"][0]
+    assert "this zone's own entrance" in res["held"][0]
+    assert len(res["results"]) == len(OFFICE_RING) - 1
+    assert all(r["ok"] for r in res["results"])
+    # the entrance's own ring_position (3) never appears among built results
+    assert all(r["ring_position"] != 3 for r in res["results"])
+
+
+def test_build_refuses_the_whole_call_when_the_entrance_is_already_sealed(w):
+    # Exactly the 2026-09-28 incident: every ring tile, including the
+    # entrance, already built as a wall (shape WALL) -- no open tile is left
+    # that could still serve as the way out, so the WHOLE call is refused,
+    # never silently proceeding to wall the (already walled) rest.
+    _setup_office(w, entrance_shape="WALL", other_shape="WALL")
+    w.set_kinds([{"type": "Construction", "subtype": "Wall", "token": "Wall", "key": "Cw"}])
+
+    res = w.build(99, "Wall")
+
+    assert "error" in res
+    assert "no detectable entrance" in res["error"]
+    assert len(w.quickfort_calls()) == 0
+
+
+def test_build_refuses_when_main_group_cannot_be_read(w):
+    # connectivity.report itself unavailable (no citizens, or a read
+    # failure) -- refuse rather than guess which tile is safe to leave open.
+    w.add_zone(99, OFFICE_X1, OFFICE_Y1, OFFICE_X2, OFFICE_Y2)
+    w.set_ring(99, OFFICE_RING)
+    for xyz in OFFICE_RING:
+        w.set_tile(*xyz, "FLOOR")
+    w.set_kinds([{"type": "Construction", "subtype": "Wall", "token": "Wall", "key": "Cw"}])
+    # set_main_group deliberately never called: MAIN_GROUP stays nil.
+
+    res = w.build(99, "Wall")
+
+    assert "error" in res
+    assert "main walkable group" in res["error"]
+    assert len(w.quickfort_calls()) == 0
+
+
+def test_door_places_a_door_at_the_entrance_only(w):
+    _setup_office(w)
+    w.set_kinds([{"type": "Door", "subtype": None, "token": "Door", "key": "d"}])
+    w.queue_quickfort("  Buildings designated: 1\n", res=0)
+
+    res = w.door(99)
+
+    assert res["kind"]["token"] == "Door"
+    assert res["entrances_found"] == 1
+    assert len(res["results"]) == 1
+    assert res["results"][0]["ring_position"] == 3  # OFFICE_ENTRANCE's own ring_position
+    assert res["results"][0]["ok"] is True
+
+
+def test_door_refuses_when_the_zone_has_no_entrance(w):
+    _setup_office(w, entrance_shape="WALL", other_shape="WALL")
+    w.set_kinds([{"type": "Door", "subtype": None, "token": "Door", "key": "d"}])
+
+    res = w.door(99)
+
+    assert "error" in res
+    assert "no detectable entrance" in res["error"]
+    assert len(w.quickfort_calls()) == 0
+
+
+def test_audit_reports_no_risk_when_the_entrance_is_untouched(w):
+    _setup_office(w)
+    # Build 4 of the office's ring tiles for real (buildings 18-21 in the
+    # eval's own numbering) -- shape now WALL, fully built (no job pending).
+    for xyz in OFFICE_RING:
+        if xyz != OFFICE_ENTRANCE:
+            w.set_tile(*xyz, "WALL")
+
+    res = w.audit(99)
+
+    assert res["zones_checked"] == 1
+    zone = res["zones"][0]
+    assert zone["zone_id"] == 99
+    assert zone["open"] == 1       # just the untouched entrance
+    assert zone["built"] == len(OFFICE_RING) - 1
+    assert zone["planned"] == 0
+    assert zone["would_strand"] is False
+    assert zone["at_risk"] == []
+    assert zone["suspended"] == []
+
+
+def test_audit_finds_and_suspends_the_building_that_would_seal_the_last_exit(w):
+    # Exactly building 22's own situation on 2026-09-28: every OTHER ring
+    # tile already a finished wall, and the entrance tile itself has a
+    # Construction building sitting on it that has NOT finished yet (build
+    # stage below max) -- the tile's own shape has therefore not become WALL
+    # yet, so it still reads as "open" to tile_read, but it is NOT a safe
+    # open tile: finishing this one job would seal the room.
+    _setup_office(w)
+    for xyz in OFFICE_RING:
+        if xyz != OFFICE_ENTRANCE:
+            w.set_tile(*xyz, "WALL")
+    ex, ey, ez = OFFICE_ENTRANCE
+    w.set_planned_building(ex, ey, ez, 22, 1, 3)  # build_stage 1 of 3: not finished
+    w.add_job_for_tile(ex, ey, ez)
+
+    dry_res = w.audit(99)  # DRY_RUN defaults to true: never suspends anything
+    zone = dry_res["zones"][0]
+    assert zone["open"] == 0
+    assert zone["planned"] == 1
+    assert zone["would_strand"] is True
+    assert zone["at_risk"] == [{"ring_position": 3, "building_id": 22}]
+    assert zone["suspended"] == []
+    assert w.job_suspended_for_tile(ex, ey, ez) is False
+
+    real_res = w.audit(99, "false")
+    zone = real_res["zones"][0]
+    assert zone["suspended"] == [{"building_id": 22, "ok": True}]
+    assert w.job_suspended_for_tile(ex, ey, ez) is True
