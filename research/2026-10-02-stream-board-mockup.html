@@ -1,0 +1,986 @@
+<title>Ragwind Chat Layouts</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600&family=JetBrains+Mono:wght@400;500;700&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root {
+  color-scheme: dark;
+  --ground: #15171b; --surface: #1d2025; --raised: #252930; --line: #2f333b; --line-strong: #3d424c;
+  --text: #ebe7df; --muted: #aaa396; --faint: #7f796e;
+  --accent: #e8b454;
+  --architect: #86b8ea; --quartermaster: #93d39e; --overseer: #e8b454; --consultant: #c9aaea; --executor: #bdb8ae; --will: #f2915f; --system: #8e887d;
+  --ok-bg: #17271c; --ok-line: #3f6c49; --ok: #93d39e;
+  --no-bg: #2b231a; --no-line: #6c5636; --no: #e8b454;
+  --wait-bg: #1f222a; --wait-line: #3b4252; --wait: #aab5ca;
+  --panel: #191b20;
+  --g-done-bg: #1a221c; --g-done-line: #33473a; --g-done-fg: #8fa996; --g-done-mini: #4f6a57;
+  --g-now-bg: #21354d; --g-now-line: #6fa0d4; --g-now-fg: #eaf2fb; --g-now-barbg: #3a5675; --g-now-bar: #9cc6f0;
+  --g-ready-line: #86b8ea; --g-ready-fg: #d8e7f6;
+  --g-wait-line: #3d424c; --g-wait-fg: #7f796e;
+  --g-hold-bg: #33201a; --g-hold-line: #e07a52; --g-hold-fg: #ffd2bf; --g-hold-icon: #e07a52;
+  --chip-ink: #15171b;
+  --title-font: var(--sans);
+  --radius: 8px;
+  --mono: "IBM Plex Mono", ui-monospace, Menlo, Consolas, monospace;
+  --sans: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --fs: 15px;
+}
+* { box-sizing: border-box; }
+html, body { background: var(--ground); }
+body { color: var(--text); font-family: var(--sans); font-size: var(--fs); line-height: 1.45; padding-inline: 16px; padding-block: 18px 40px; }
+button { font: inherit; color: inherit; cursor: pointer; }
+button:focus-visible, a:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.wrap { max-width: 1180px; margin: 0 auto; display: flex; flex-direction: column; gap: 16px; }
+header.top { display: flex; flex-wrap: wrap; gap: 12px 20px; align-items: end; justify-content: space-between; }
+header.top h1 { margin: 0; font-size: 1.45em; font-weight: 600; text-wrap: balance; }
+header.top p { margin: 4px 0 0; color: var(--muted); font-size: 0.9em; max-width: 64ch; }
+.sizer { display: flex; gap: 6px; align-items: center; color: var(--faint); font-family: var(--mono); font-size: 12px; }
+.sizer button { background: var(--surface); border: 1px solid var(--line-strong); border-radius: 6px; min-width: 40px; min-height: 36px; }
+.tabs { display: flex; flex-wrap: wrap; gap: 8px; }
+.tabs button { background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 10px 14px; text-align: left; min-height: 44px; display: flex; flex-direction: column; gap: 2px; }
+.tabs button .k { font-family: var(--mono); font-size: 11px; letter-spacing: 0.08em; color: var(--faint); }
+.tabs button[aria-selected="true"] { border-color: var(--accent); background: var(--raised); }
+.tabs button[aria-selected="true"] .k { color: var(--accent); }
+.blurb { background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 12px 14px; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px 20px; font-size: 0.9em; }
+.blurb h3 { margin: 0 0 4px; font-family: var(--mono); font-size: 11px; letter-spacing: 0.08em; color: var(--faint); font-weight: 500; }
+.blurb p { margin: 0; color: var(--muted); }
+@media (max-width: 760px) { .blurb { grid-template-columns: minmax(0, 1fr); } }
+
+.stage { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; min-height: 620px; }
+.who { font-weight: 600; }
+.r-architect { color: var(--architect); } .r-quartermaster { color: var(--quartermaster); } .r-overseer { color: var(--overseer); }
+.r-consultant { color: var(--consultant); } .r-executor { color: var(--executor); } .r-will { color: var(--will); } .r-system { color: var(--system); }
+.date { font-family: var(--mono); font-size: 12px; color: var(--faint); font-variant-numeric: tabular-nums; }
+.day { display: flex; align-items: center; gap: 10px; color: var(--faint); font-family: var(--mono); font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; }
+.day::before, .day::after { content: ""; flex: 1; height: 1px; background: var(--line); }
+.chip { font-family: var(--mono); font-size: 11px; font-weight: 500; letter-spacing: 0.05em; text-transform: uppercase; border-radius: 4px; padding: 2px 7px; color: var(--chip-ink); white-space: nowrap; }
+.chip.ok { background: var(--ok); } .chip.no { background: var(--no); } .chip.wait { background: var(--wait); }
+.chip.active { background: var(--architect); } .chip.hold { background: var(--no); } .chip.done { background: var(--ok); }
+.tag { font-size: 12px; color: var(--muted); border: 1px solid var(--line-strong); border-radius: 10px; padding: 1px 8px; white-space: nowrap; }
+.linkbtn { background: none; border: 0; padding: 0; color: var(--accent); text-decoration: underline; text-underline-offset: 3px; min-height: 28px; }
+.muted { color: var(--muted); }
+
+/* Decision card, shared by A, C and D */
+.card { background: var(--ground); border: 1px solid var(--line); border-radius: 8px; padding: 12px 14px; display: flex; flex-direction: column; gap: 8px; }
+.card .head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 8px; }
+.card .title { font-size: 1.07em; font-weight: 500; line-height: 1.35; text-wrap: balance; }
+.card .why { color: var(--muted); font-size: 0.88em; }
+.verdict { border-radius: 6px; padding: 8px 10px; display: flex; flex-direction: column; gap: 3px; border: 1px solid; }
+.verdict.ok { background: var(--ok-bg); border-color: var(--ok-line); }
+.verdict.no { background: var(--no-bg); border-color: var(--no-line); }
+.verdict.wait { background: var(--wait-bg); border-color: var(--wait-line); }
+.verdict .vh { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.verdict .vr { font-size: 0.93em; }
+.progress { display: flex; align-items: center; gap: 10px; font-size: 0.88em; }
+.bar { flex: 1; height: 6px; background: var(--line); border-radius: 3px; overflow: hidden; min-width: 60px; }
+.bar > i { display: block; height: 100%; }
+.qa { border-left: 2px solid var(--line-strong); padding-left: 12px; display: flex; flex-direction: column; gap: 4px; font-size: 0.93em; }
+.event { font-size: 0.88em; color: var(--muted); display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; }
+.event .dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; flex: none; transform: translateY(-1px); }
+
+/* A: timeline + drawer */
+.a-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.05fr); min-height: 620px; }
+.a-col { display: flex; flex-direction: column; min-width: 0; }
+.a-col + .a-col { border-left: 1px solid var(--line); }
+.subtabs { display: flex; border-bottom: 1px solid var(--line); }
+.subtabs button { flex: 1; background: none; border: 0; border-bottom: 2px solid transparent; padding: 12px; min-height: 46px; color: var(--muted); font-weight: 500; }
+.subtabs button[aria-selected="true"] { color: var(--text); border-bottom-color: var(--accent); }
+.scroll { overflow-y: auto; padding: 14px; display: flex; flex-direction: column; gap: 12px; max-height: 720px; }
+.filters { display: flex; gap: 6px; padding: 10px 14px; border-bottom: 1px solid var(--line); flex-wrap: wrap; }
+.filters button { background: none; border: 1px solid var(--line-strong); border-radius: 14px; padding: 4px 12px; font-size: 12px; color: var(--muted); min-height: 32px; }
+.filters button[aria-pressed="true"] { background: var(--text); color: var(--ground); border-color: var(--text); }
+.drawer-empty { color: var(--faint); padding: 40px 24px; text-align: center; }
+.steps { display: flex; flex-direction: column; gap: 8px; }
+.step { display: grid; grid-template-columns: 76px minmax(0, 1fr); gap: 10px; align-items: baseline; }
+.step .m { font-family: var(--mono); font-size: 11px; letter-spacing: 0.05em; text-transform: uppercase; }
+.step .job { font-size: 0.85em; color: var(--muted); }
+.plist { display: flex; flex-direction: column; gap: 10px; }
+.prow { background: var(--ground); border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; display: flex; flex-direction: column; gap: 6px; text-align: left; width: 100%; }
+.prow .pt { display: flex; justify-content: space-between; gap: 8px; align-items: center; font-weight: 500; }
+.sectionlabel { font-family: var(--mono); font-size: 11px; letter-spacing: 0.08em; color: var(--faint); text-transform: uppercase; }
+@media (max-width: 860px) { .a-grid { grid-template-columns: minmax(0, 1fr); } .a-col + .a-col { border-left: 0; border-top: 1px solid var(--line); } }
+
+/* B: channels */
+.b-grid { display: grid; grid-template-columns: 250px minmax(0, 1fr); min-height: 620px; }
+.rail { border-right: 1px solid var(--line); padding: 12px 8px; display: flex; flex-direction: column; gap: 2px; background: var(--panel); }
+.rail .sectionlabel { padding: 10px 10px 4px; }
+.rail button { background: none; border: 0; border-radius: 6px; padding: 8px 10px; text-align: left; display: flex; justify-content: space-between; align-items: center; gap: 8px; min-height: 40px; color: var(--muted); }
+.rail button[aria-current="true"] { background: var(--raised); color: var(--text); }
+.rail .hash { color: var(--faint); font-family: var(--mono); margin-right: 4px; }
+.rail .badge { font-family: var(--mono); font-size: 11px; color: var(--faint); }
+.rail .st { width: 8px; height: 8px; border-radius: 50%; flex: none; }
+.chan-head { padding: 12px 16px; border-bottom: 1px solid var(--line); display: flex; flex-direction: column; gap: 2px; }
+.chan-head h2 { margin: 0; font-size: 1.05em; }
+.msg { display: grid; grid-template-columns: 34px minmax(0, 1fr); gap: 10px; }
+.avatar { width: 34px; height: 34px; border-radius: 6px; display: grid; place-items: center; font-family: var(--mono); font-size: 13px; font-weight: 500; color: #15171b; }
+.msg .mh { display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; }
+.msg .mb { font-size: 0.95em; }
+@media (max-width: 760px) { .b-grid { grid-template-columns: minmax(0, 1fr); } .rail { border-right: 0; border-bottom: 1px solid var(--line); flex-direction: row; overflow-x: auto; } .rail .sectionlabel { display: none; } .rail button { flex: none; } }
+
+/* C: board */
+.c-wrap { display: flex; flex-direction: column; min-height: 620px; }
+.board { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 16px 12px; padding: 14px 14px 28px; flex: 1; align-items: start; }
+.column { display: flex; flex-direction: column; gap: 10px; }
+.column h3 { margin: 0; font-family: var(--mono); font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--faint); display: flex; gap: 8px; align-items: center; }
+.column h3 .count { background: var(--raised); border: 1px solid var(--line-strong); border-radius: 10px; padding: 0 7px; color: var(--muted); }
+.bcard .bdesc { font-size: 0.86em; color: var(--muted); }
+.jobs { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 5px; font-size: 0.85em; }
+.jobs li { display: grid; grid-template-columns: 1.9em 3.2em minmax(0, 1fr); gap: 6px; align-items: baseline; }
+.jobs .jp { font-family: var(--mono); font-size: 11px; color: var(--faint); font-variant-numeric: tabular-nums; }
+.jobs .jm { font-family: var(--mono); font-size: 10.5px; letter-spacing: 0.05em; text-transform: uppercase; }
+.jobs .jd { display: block; color: var(--muted); font-size: 0.95em; }
+.jobs .j-done .jm { color: var(--ok); } .jobs .j-done .jn { color: var(--muted); }
+.jobs .j-now .jm { color: var(--architect); } .jobs .j-hold .jm { color: var(--no); } .jobs .j-next .jm { color: var(--faint); } .jobs .j-next .jn { color: var(--muted); }
+.bcard { background: var(--ground); border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; text-align: left; display: flex; flex-direction: column; gap: 6px; width: 100%; }
+.bcard[aria-pressed="true"] { border-color: var(--accent); }
+.bcard .bt { font-weight: 500; line-height: 1.35; }
+.c-panel { border-top: 1px solid var(--line); padding: 14px; display: flex; flex-direction: column; gap: 10px; background: var(--panel); }
+.track { display: flex; gap: 4px; align-items: stretch; }
+.track .slot { flex: 1; display: flex; flex-direction: column; gap: 2px; min-width: 10px; }
+.track .seg { display: block; height: 7px; border-radius: 2px; background: var(--line-strong); }
+.track .slot:has(.seg + .seg) .seg { height: 4px; }
+.track .s-done { background: var(--ok); } .track .s-now { background: var(--architect); } .track .s-hold { background: var(--no); } .track .s-next { background: var(--line-strong); }
+.nowline { display: flex; flex-direction: column; gap: 2px; font-size: 0.86em; }
+.nowline .jm, .jobs .jm { font-family: var(--mono); font-size: 10.5px; letter-spacing: 0.05em; text-transform: uppercase; }
+.jm.j-now { color: var(--architect); } .jm.j-hold { color: var(--no); }
+.bcard .foot { display: flex; gap: 8px; align-items: baseline; font-size: 0.82em; border-top: 1px solid var(--line); padding-top: 6px; }
+.bcard .foot .count { margin-left: auto; color: var(--accent); font-size: 0.95em; }
+.jgraph-wrap { overflow-x: auto; }
+.jgraph { display: block; max-width: 100%; height: auto; }
+.glegend { display: flex; flex-wrap: wrap; gap: 4px 12px; font-size: 0.78em; color: var(--muted); }
+.glegend span { display: inline-flex; align-items: center; gap: 5px; }
+.glegend .lg { width: 12px; height: 10px; border-radius: 2px; border: 1px solid; display: inline-block; }
+.lg-done { background: var(--ok-bg); border-color: var(--ok-line); } .lg-now { background: #1b2533; border-color: #4d79a6; }
+.lg-hold { background: var(--no-bg); border-color: var(--no-line); } .lg-added { background: var(--ground); border-color: var(--accent); border-width: 2px; }
+.chip.amend { background: var(--accent); } .lg-next { background: var(--ground); border-color: var(--line-strong); border-style: dashed; }
+.c-body { display: grid; grid-template-columns: minmax(0, 1fr); flex: 1; }
+.c-body.with-panel { grid-template-columns: minmax(0, 1fr) minmax(300px, 380px); }
+.cpanel { border-left: 1px solid var(--line); background: var(--panel); padding: 14px 16px; display: flex; flex-direction: column; gap: 10px; }
+.cph { display: flex; justify-content: space-between; align-items: start; gap: 8px; }
+.cph h2 { margin: 0; font-size: 1.15em; text-wrap: balance; }
+.closebtn { background: none; border: 1px solid var(--line-strong); border-radius: 6px; min-width: 36px; min-height: 36px; font-size: 18px; line-height: 1; color: var(--muted); }
+@media (max-width: 820px) { .c-body.with-panel { grid-template-columns: minmax(0, 1fr); } .cpanel { border-left: 0; border-top: 1px solid var(--line); } }
+.btop { display: flex; justify-content: space-between; align-items: start; gap: 8px; }
+.urg { font-family: var(--mono); font-size: 10.5px; letter-spacing: 0.05em; text-transform: uppercase; border-radius: 4px; padding: 2px 6px; border: 1px solid; white-space: nowrap; }
+.u-critical { color: #ff9d8a; border-color: #8a3b2e; background: #2c1714; }
+.u-high { color: #f2b27a; border-color: #7a5130; background: #2a1e14; }
+.u-elevated { color: #e8d27a; border-color: #6b6034; background: #25221a; }
+.u-normal, .u-low { color: var(--muted); border-color: var(--line-strong); }
+.sbar { display: flex; align-items: center; gap: 10px; }
+.sbar .segs { flex: 1; display: flex; gap: 2px; height: 8px; border-radius: 4px; overflow: hidden; }
+.sbar .sg { flex: 1; background: var(--line); }
+.sbar .g-done { background: var(--ok); }
+.sbar .g-now { background: repeating-linear-gradient(135deg, var(--architect) 0 5px, #5f8fbf 5px 10px); }
+.sbar .g-hold { background: var(--no); }
+.sbar .slabel { font-size: 0.8em; color: var(--muted); white-space: nowrap; font-variant-numeric: tabular-nums; }
+.bcard[aria-pressed="true"] { border-color: var(--accent); }
+.bcard { gap: 8px; padding: 12px 13px; }
+.bcard .bt { font-size: 1.04em; font-weight: 600; }
+.bcard .bdesc { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.btop { display: flex; justify-content: space-between; align-items: center; gap: 8px; min-height: 20px; }
+.u-none { color: var(--faint); border-color: var(--line); }
+.bstatus { display: flex; align-items: center; gap: 10px; padding-top: 4px; }
+.bstatus .mini { flex: none; }
+.bstatus .slabel { margin-left: auto; font-size: 0.78em; color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.cphl { display: flex; flex-direction: column; gap: 6px; }
+.chips { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+.meta { font-size: 0.85em; color: var(--muted); line-height: 1.6; }
+.pdesc { margin: 0; line-height: 1.5; }
+.psec { display: flex; flex-direction: column; gap: 8px; border-top: 1px solid var(--line); padding-top: 10px; }
+.liveitem { border-left: 3px solid var(--architect); padding: 2px 0 2px 10px; }
+.liveitem.l-hold { border-left-color: var(--no); }
+.liveitem .ln { font-weight: 500; font-size: 0.92em; }
+.liveitem .ld { color: var(--muted); font-size: 0.86em; }
+.tl { list-style: none; margin: 0; padding: 0 0 0 16px; position: relative; display: flex; flex-direction: column; gap: 12px; }
+.tl::before { content: ""; position: absolute; left: 4px; top: 6px; bottom: 6px; width: 1px; background: var(--line-strong); }
+.tl li { position: relative; display: flex; flex-direction: column; gap: 2px; }
+.tl .tdot { position: absolute; left: -16px; top: 5px; width: 9px; height: 9px; border-radius: 50%; box-shadow: 0 0 0 3px var(--panel); }
+.tday { display: flex; flex-direction: column; gap: 8px; }
+.tday + .tday { margin-top: 6px; }
+.tdayh { font-family: var(--mono); font-size: 11px; letter-spacing: 0.06em; color: var(--faint); }
+.tl .tline { font-size: 0.9em; line-height: 1.45; }
+.bwrap { position: relative; display: flex; flex-direction: column; }
+.bwrap.open .bcard { border-color: var(--accent); border-bottom-left-radius: 0; border-bottom-right-radius: 0; }
+.bcard .last { font-size: 0.82em; color: var(--muted); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; border-top: 1px solid var(--line); padding-top: 6px; }
+.bcard .more-hint { font-size: 12px; color: var(--accent); }
+.bexp { background: var(--raised); border: 1px solid var(--accent); border-top: 0; border-radius: 0 0 8px 8px; padding: 10px 12px; display: flex; flex-direction: column; gap: 8px; }
+.convo { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 7px; font-size: 0.86em; }
+.convo li { display: grid; grid-template-columns: 6.6em minmax(0, 1fr); gap: 8px; align-items: baseline; }
+.peek { display: none; position: absolute; z-index: 5; left: 0; right: 0; top: calc(100% + 6px); background: var(--raised); border: 1px solid var(--line-strong); border-radius: 8px; padding: 10px 12px; box-shadow: 0 8px 24px rgba(0,0,0,0.45); flex-direction: column; gap: 6px; }
+@media (hover: hover) and (pointer: fine) { .bwrap:hover .peek { display: flex; } }
+@media (prefers-reduced-motion: no-preference) { .peek { animation: peekin 120ms ease-out; } @keyframes peekin { from { opacity: 0; transform: translateY(-3px); } to { opacity: 1; transform: none; } } }
+.ticker { border-top: 1px solid var(--line); padding: 8px 14px; display: flex; gap: 18px; overflow-x: auto; font-size: 0.85em; color: var(--muted); white-space: nowrap; }
+
+/* D: digest */
+.e-wrap { display: flex; flex-direction: column; }
+.e-head { padding: 12px 16px; border-bottom: 1px solid var(--line); }
+.e-name { font-weight: 600; font-size: 1.15em; }
+.e-view { position: relative; background: #000; border-right: 1px solid var(--line); }
+.fakeview { display: block; width: 100%; height: auto; }
+.e-wrap > .e-view { display: flex; justify-content: center; }
+.e-wrap > .e-view .fakeview { width: auto; max-width: 100%; max-height: 480px; }
+.e-live { position: absolute; top: 10px; left: 10px; background: #b3261e; color: #fff; font-family: var(--mono); font-size: 11px; padding: 2px 7px; border-radius: 3px; }
+.e-vo { position: absolute; bottom: 8px; right: 10px; background: rgba(0,0,0,0.6); color: var(--muted); font-size: 11px; padding: 2px 6px; border-radius: 3px; }
+.e-side { padding: 14px; display: flex; flex-direction: column; gap: 14px; }
+.e-stats { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.e-stat { background: var(--ground); border: 1px solid var(--line); border-radius: 6px; padding: 8px 10px; display: flex; flex-direction: column; }
+.e-stat .k { font-size: 11px; color: var(--faint); font-family: var(--mono); letter-spacing: 0.05em; text-transform: uppercase; }
+.e-stat .v { font-size: 1.15em; font-weight: 500; font-variant-numeric: tabular-nums; }
+.e-stat .v.bad { color: #e07a52; }
+.e-goal, .e-now { display: flex; flex-direction: column; gap: 8px; }
+@media (max-width: 860px) { .e-top { grid-template-columns: minmax(0, 1fr); } .e-view { border-right: 0; border-bottom: 1px solid var(--line); } }
+.e-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; }
+.e-switch { display: flex; gap: 6px; }
+.e-switch button { background: none; border: 1px solid var(--line-strong); border-radius: 14px; padding: 4px 12px; font-size: 12px; color: var(--muted); min-height: 32px; }
+.e-switch button[aria-pressed="true"] { background: var(--text); color: var(--ground); border-color: var(--text); }
+.e-wrap > .e-view { border-right: 0; border-bottom: 1px solid var(--line); }
+.e-goal { display: flex; gap: 12px; align-items: baseline; flex-wrap: wrap; padding: 10px 16px; border-bottom: 1px solid var(--line); background: var(--panel); }
+.e-split { display: grid; grid-template-columns: minmax(0, 1.7fr) minmax(300px, 1fr); }
+.e-split .e-view { border-right: 1px solid var(--line); align-self: start; }
+.e-col { display: flex; flex-direction: column; max-height: 760px; overflow-y: auto; }
+.e-col .e-goal { background: none; }
+.e-sec { display: flex; flex-direction: column; gap: 8px; padding: 12px 14px; border-bottom: 1px solid var(--line); }
+.e-sec h3 { margin: 0; font-family: var(--mono); font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--faint); display: flex; gap: 8px; align-items: center; font-weight: 500; }
+.e-sec h3 .count { background: var(--raised); border: 1px solid var(--line-strong); border-radius: 10px; padding: 0 7px; color: var(--muted); }
+.ecard { background: var(--ground); border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; text-align: left; display: flex; flex-direction: column; gap: 6px; width: 100%; }
+.ecard .bt { font-weight: 600; }
+.ecard .bdesc { font-size: 0.86em; color: var(--muted); }
+.cpanel.in-col { border-left: 0; background: none; }
+@media (max-width: 860px) { .e-split { grid-template-columns: minmax(0, 1fr); } .e-split .e-view { border-right: 0; border-bottom: 1px solid var(--line); } .e-col { max-height: none; } }
+
+.e-controls { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.e-clabel { font-family: var(--mono); font-size: 11px; letter-spacing: 0.06em; color: var(--faint); text-transform: uppercase; }
+.e-wrap { background: var(--surface); color: var(--text); font-family: var(--sans); border-radius: 10px; }
+.e-wrap .bt, .e-wrap .cph h2, .e-wrap .e-name { font-family: var(--title-font); }
+.e-wrap .ecard, .e-wrap .bcard, .e-wrap .card { border-radius: var(--radius); }
+
+.e-wrap[data-style="terminal"] {
+  --ground: #000; --surface: #050505; --raised: #101010; --panel: #000; --line: #262626; --line-strong: #3a3a3a;
+  --text: #c6c6c6; --muted: #8e8e8e; --faint: #6a6a6a; --accent: #ffff55;
+  --architect: #55ffff; --quartermaster: #55ff55; --overseer: #ffff55; --consultant: #ff55ff; --executor: #aaaaaa; --will: #ff5555; --system: #808080;
+  --ok: #55ff55; --ok-bg: #001a00; --ok-line: #1f6b1f; --no: #ffaa00; --no-bg: #1a1000; --no-line: #6b4a00; --wait: #aaaaaa; --wait-bg: #111; --wait-line: #444;
+  --g-done-bg: #001400; --g-done-line: #1f6b1f; --g-done-fg: #55aa55; --g-done-mini: #2f8f2f;
+  --g-now-bg: #002a2a; --g-now-line: #55ffff; --g-now-fg: #ccffff; --g-now-barbg: #004444; --g-now-bar: #55ffff;
+  --g-ready-line: #55ffff; --g-ready-fg: #aaffff; --g-wait-line: #444; --g-wait-fg: #6a6a6a;
+  --g-hold-bg: #2a1000; --g-hold-line: #ff5555; --g-hold-fg: #ffaaaa; --g-hold-icon: #ff5555;
+  --chip-ink: #000; --sans: "IBM Plex Mono", ui-monospace, Menlo, Consolas, monospace; --title-font: var(--sans); --radius: 0;
+  border-radius: 0;
+}
+.e-wrap[data-style="terminal"] .ecard, .e-wrap[data-style="terminal"] .bcard, .e-wrap[data-style="terminal"] .chip,
+.e-wrap[data-style="terminal"] .urg, .e-wrap[data-style="terminal"] button { border-radius: 0; }
+.e-wrap[data-style="terminal"] .ecard { border-style: double; border-width: 3px; }
+
+.e-wrap[data-style="forge"] {
+  --ground: #15110d; --surface: #1c1712; --raised: #261f18; --panel: #19140f; --line: #352b21; --line-strong: #4a3d2f;
+  --text: #efe5d6; --muted: #b8a994; --faint: #8a7c69; --accent: #d9a441;
+  --architect: #93b4d6; --quartermaster: #a3c98c; --overseer: #d9a441; --consultant: #c7a6d8; --executor: #c2b6a4; --will: #e88a5c; --system: #9a8d7a;
+  --ok: #a3c98c; --ok-bg: #1b2316; --ok-line: #4d6440; --no: #e0a24a; --no-bg: #2a1d10; --no-line: #74552b;
+  --g-done-bg: #1b2116; --g-done-line: #3f5234; --g-done-fg: #9db08c; --g-done-mini: #5d7550;
+  --g-now-bg: #3a2a12; --g-now-line: #d9a441; --g-now-fg: #fbecc9; --g-now-barbg: #5a4320; --g-now-bar: #f0c46b;
+  --g-ready-line: #d9a441; --g-ready-fg: #f3dcaa; --g-wait-line: #4a3d2f; --g-wait-fg: #8a7c69;
+  --g-hold-bg: #3a1a14; --g-hold-line: #e0674a; --g-hold-fg: #ffcab9; --g-hold-icon: #e0674a;
+  --chip-ink: #15110d; --title-font: "Cinzel", "Trajan Pro", Georgia, serif; --radius: 4px;
+}
+.e-wrap[data-style="forge"] .e-name { letter-spacing: 0.08em; }
+
+.e-wrap[data-style="stone"] {
+  color-scheme: light;
+  --ground: #f6f5f2; --surface: #e8e6e1; --raised: #ffffff; --panel: #efede8; --line: #d2cfc8; --line-strong: #b9b5ac;
+  --text: #1f232a; --muted: #555a63; --faint: #7d818a; --accent: #2b5fa8;
+  --architect: #2b5fa8; --quartermaster: #2f7d45; --overseer: #9a6410; --consultant: #7a4fa0; --executor: #5d6168; --will: #b8502a; --system: #6f727a;
+  --ok: #2f7d45; --ok-bg: #e5f1e8; --ok-line: #9cc7a8; --no: #9a6410; --no-bg: #f7ecd9; --no-line: #d9b77c; --wait: #5d6168; --wait-bg: #eceae6; --wait-line: #b9b5ac;
+  --g-done-bg: #e8f0ea; --g-done-line: #a9c8b2; --g-done-fg: #4f7a5c; --g-done-mini: #8fb59b;
+  --g-now-bg: #dce8f7; --g-now-line: #2b5fa8; --g-now-fg: #12345f; --g-now-barbg: #b7cbe6; --g-now-bar: #2b5fa8;
+  --g-ready-line: #2b5fa8; --g-ready-fg: #1d4277; --g-wait-line: #b9b5ac; --g-wait-fg: #7d818a;
+  --g-hold-bg: #fae6dc; --g-hold-line: #c2552c; --g-hold-fg: #7a2d12; --g-hold-icon: #c2552c;
+  --chip-ink: #ffffff; --radius: 8px;
+}
+.e-wrap[data-style="stone"] .e-switch button[aria-pressed="true"] { background: var(--text); color: var(--raised); }
+.e-wrap[data-style="stone"] .u-high { color: #8a3d12; background: #fbe3d3; border-color: #e3a07a; }
+.e-wrap[data-style="stone"] .u-elevated { color: #6d5a0e; background: #f6efcf; border-color: #d9c77a; }
+.e-wrap[data-style="stone"] .e-live { background: #c2352a; }
+
+/* Terminal 2: the terminal feel, calmer. One accent (cyan) does the work; agents get
+   muted tints of DF's colours; single borders; a rounder mono at a larger size. */
+.e-wrap[data-style="terminal2"], .e-wrap[data-style="amber"] {
+  --sans: "JetBrains Mono", "IBM Plex Mono", ui-monospace, Menlo, Consolas, monospace; --title-font: var(--sans);
+  --radius: 0; border-radius: 0; font-size: 14.5px; line-height: 1.6; letter-spacing: 0;
+}
+.e-wrap[data-style="terminal2"] .ecard, .e-wrap[data-style="terminal2"] .bcard, .e-wrap[data-style="terminal2"] .chip,
+.e-wrap[data-style="terminal2"] .urg, .e-wrap[data-style="terminal2"] button,
+.e-wrap[data-style="amber"] .ecard, .e-wrap[data-style="amber"] .bcard, .e-wrap[data-style="amber"] .chip,
+.e-wrap[data-style="amber"] .urg, .e-wrap[data-style="amber"] button { border-radius: 0; }
+.e-wrap[data-style="terminal2"] :is(.e-sec h3, .e-clabel, .sectionlabel, .date, .slabel, .muted),
+.e-wrap[data-style="amber"] :is(.e-sec h3, .e-clabel, .sectionlabel, .date, .slabel, .muted) { font-size: 12.5px; font-family: var(--sans); }
+.e-wrap[data-style="terminal2"] .bt, .e-wrap[data-style="amber"] .bt { font-weight: 700; }
+.e-wrap[data-style="terminal2"] {
+  --ground: #000; --surface: #050505; --raised: #101010; --panel: #000; --line: #262626; --line-strong: #3a3a3a;
+  --text: #c6c6c6; --muted: #9a9a9a; --faint: #7a7a7a; --accent: #ffff55;
+  --architect: #55ffff; --quartermaster: #55ff55; --overseer: #ffff55; --consultant: #ff55ff; --executor: #aaaaaa; --will: #ff5555; --system: #808080;
+  --ok: #55ff55; --ok-bg: #001a00; --ok-line: #1f6b1f; --no: #ffaa00; --no-bg: #1a1000; --no-line: #6b4a00; --wait: #aaaaaa; --wait-bg: #111; --wait-line: #444;
+  --g-done-bg: #001400; --g-done-line: #1f6b1f; --g-done-fg: #55aa55; --g-done-mini: #2f8f2f;
+  --g-now-bg: #002a2a; --g-now-line: #55ffff; --g-now-fg: #ccffff; --g-now-barbg: #004444; --g-now-bar: #55ffff;
+  --g-ready-line: #55ffff; --g-ready-fg: #aaffff; --g-wait-line: #444; --g-wait-fg: #7a7a7a;
+  --g-hold-bg: #2a1000; --g-hold-line: #ff5555; --g-hold-fg: #ffaaaa; --g-hold-icon: #ff5555;
+  --chip-ink: #000;
+}
+.e-wrap[data-style="terminal2"] .ecard { border-style: double; border-width: 3px; }
+/* Amber: one hue, like an old phosphor monitor. Agents differ by name, not colour;
+   only "on hold" breaks the hue, so trouble is the one thing that stands out. */
+.e-wrap[data-style="amber"] {
+  --ground: #0d0a05; --surface: #120e07; --raised: #1a140a; --panel: #100c06; --line: #2b2112; --line-strong: #44351c;
+  --text: #ffd28a; --muted: #d4a862; --faint: #a07c45; --accent: #ffb000;
+  --architect: #ffc04d; --quartermaster: #ffc04d; --overseer: #ffc04d; --consultant: #ffc04d; --executor: #d4a862; --will: #ffe2a8; --system: #a07c45;
+  --ok: #ffc04d; --ok-bg: #1d160a; --ok-line: #5a4320; --no: #ff8a5c; --no-bg: #24120a; --no-line: #6b3520; --wait: #d4a862; --wait-bg: #161009; --wait-line: #44351c;
+  --g-done-bg: #15100a; --g-done-line: #3a2d18; --g-done-fg: #a07c45; --g-done-mini: #6b5330;
+  --g-now-bg: #3a2a08; --g-now-line: #ffb000; --g-now-fg: #fff0cc; --g-now-barbg: #5c4410; --g-now-bar: #ffc94d;
+  --g-ready-line: #ffb000; --g-ready-fg: #ffd98a; --g-wait-line: #44351c; --g-wait-fg: #a07c45;
+  --g-hold-bg: #2e120a; --g-hold-line: #ff6a3d; --g-hold-fg: #ffc2ad; --g-hold-icon: #ff6a3d;
+  --chip-ink: #0d0a05;
+}
+.e-wrap[data-style="amber"] .e-name { text-shadow: 0 0 6px rgba(255, 176, 0, 0.35); }
+
+/* Stone 2: Terminal 2's DF build on a neutral light-grey ground. DF's darker eight colours
+   (the half of its palette that reads on light), mono type, square double borders. */
+.e-wrap[data-style="stone2"] {
+  color-scheme: light;
+  --sans: "JetBrains Mono", "IBM Plex Mono", ui-monospace, Menlo, Consolas, monospace; --title-font: var(--sans);
+  --radius: 0; border-radius: 0; font-size: 14.5px; line-height: 1.6;
+  --ground: #f3f3f2; --surface: #e3e3e1; --raised: #fbfbfa; --panel: #eaeae8; --line: #c8c8c5; --line-strong: #a6a6a2;
+  --text: #1c1c1c; --muted: #4a4a4a; --faint: #6b6b68; --accent: #00777f;
+  --architect: #00777f; --quartermaster: #1d7a1d; --overseer: #8a5200; --consultant: #8e1f8e; --executor: #555555; --will: #a61b1b; --system: #6b6b68;
+  --ok: #1d7a1d; --ok-bg: #e2efdf; --ok-line: #8fbf88; --no: #8a5200; --no-bg: #f3e6d0; --no-line: #c9a46a; --wait: #555; --wait-bg: #e7e7e5; --wait-line: #a6a6a2;
+  --g-done-bg: #e3eee0; --g-done-line: #8fbf88; --g-done-fg: #2f6a2f; --g-done-mini: #6fa868;
+  --g-now-bg: #d6e9f2; --g-now-line: #1a6c9c; --g-now-fg: #0c3652; --g-now-barbg: #aed2e5; --g-now-bar: #1a6c9c;
+  --g-ready-line: #1a6c9c; --g-ready-fg: #134e74; --g-wait-line: #a6a6a2; --g-wait-fg: #6b6b68;
+  --g-hold-bg: #f6dcd6; --g-hold-line: #a61b1b; --g-hold-fg: #6a0f0f; --g-hold-icon: #a61b1b;
+  --chip-ink: #ffffff;
+}
+.e-wrap[data-style="stone2"] :is(.ecard, .bcard, .chip, .urg, button) { border-radius: 0; }
+.e-wrap[data-style="stone2"] .ecard { border-style: double; border-width: 3px; border-color: var(--line-strong); }
+.e-wrap[data-style="stone2"] :is(.e-sec h3, .e-clabel, .sectionlabel, .date, .slabel, .muted) { font-size: 12.5px; font-family: var(--sans); }
+.e-wrap[data-style="stone2"] .bt { font-weight: 700; }
+.e-wrap[data-style="stone2"] .u-high { color: #a61b1b; background: #f6dcd6; border-color: #a61b1b; }
+.e-wrap[data-style="stone2"] .u-elevated { color: #8a5200; background: #f3e6d0; border-color: #8a5200; }
+.e-wrap[data-style="stone2"] .e-switch button[aria-pressed="true"] { background: var(--text); color: var(--raised); }
+.d-wrap { padding: 18px; display: flex; flex-direction: column; gap: 18px; max-width: 760px; margin: 0 auto; }
+.dday { display: flex; flex-direction: column; gap: 10px; }
+.dday h2 { margin: 0; font-size: 1.1em; display: flex; gap: 10px; align-items: baseline; flex-wrap: wrap; }
+.dday .lede { margin: 0; font-size: 1.02em; line-height: 1.55; }
+.dday .lede b { font-weight: 600; }
+.tally { display: flex; gap: 8px; flex-wrap: wrap; }
+details.more > summary { cursor: pointer; color: var(--accent); min-height: 32px; display: inline-flex; align-items: center; }
+details.more[open] > summary { margin-bottom: 8px; }
+.note { font-size: 0.82em; color: var(--faint); }
+</style>
+
+<div class="wrap">
+  <header class="top">
+    <div>
+      <h1>Ragwind chat layouts</h1>
+      <p>Four ways to show the agents' conversation and projects, all built from the same real queue records (Galena, years 31 and 32). Project steps in the drawers are illustrative where the queue has none yet.</p>
+    </div>
+    <div class="sizer" aria-label="Text size">
+      <span>TEXT</span>
+      <button type="button" id="fs-down" aria-label="Smaller text">A&minus;</button>
+      <button type="button" id="fs-up" aria-label="Larger text">A+</button>
+    </div>
+  </header>
+
+  <nav class="tabs" role="tablist" id="tabs"></nav>
+  <section class="blurb" id="blurb"></section>
+  <section class="stage" id="stage"></section>
+</div>
+
+<script>
+const R = { architect: "Architect", quartermaster: "Quartermaster", overseer: "Overseer", consultant: "Consultant", executor: "Executor", will: "Will", system: "System" };
+const ROLE_BG = { architect: "#86b8ea", quartermaster: "#93d39e", overseer: "#e8b454", consultant: "#c9aaea", executor: "#bdb8ae", will: "#f2915f", system: "#8e887d" };
+
+// Real queue records (titles and one-line reasons shortened from the records' own public text).
+const P = [
+  { id: "p1", day: "10 Galena, year 31", role: "architect", title: "Lay out the first workshop area in the clearing south of the embark site",
+    why: "The fort is still entirely on the surface and has no workshops at all.",
+    verdicts: [{ v: "ok", word: "Accepted", day: "10 Galena, year 31", reason: "The embark site, wagon and stockpile are all connected and walkable." }],
+    project: "workarea" },
+  { id: "p2", day: "6 Galena, year 32", role: "architect", title: "Mark out a 3×3 office around the shale throne for the Manager",
+    why: "Work orders can't validate without a Manager's office.",
+    verdicts: [{ v: "no", word: "Rejected", day: "6 Galena, year 32", reason: "The Manager already has an office with a chair (zone 13)." }] },
+  { id: "p3", day: "6 Galena, year 32", role: "architect", title: "Carve a small stone office for the Manager",
+    why: "The current office is bare grass with no walls or smoothing.",
+    verdicts: [{ v: "no", word: "Rejected", day: "6 Galena, year 32", reason: "A chair office already exists, so this would duplicate it." }], dup: "overlaps the office proposal" },
+  { id: "p4", day: "6 Galena, year 32", role: "architect", title: "Dig one down-stair to reach the stone level",
+    why: "Bedrooms need stone to smooth; the current level is soil.",
+    verdicts: [{ v: "ok", word: "Accepted", day: "6 Galena, year 32", reason: "One stair opens the level where the first bedrooms can be dug." }],
+    project: "stair" },
+  { id: "p5", day: "6 Galena, year 32", role: "quartermaster", title: "Brew at the Still to end the zero-drink state",
+    why: "22 dwarves and not one unit of drink; the standing brew order never ran.",
+    verdicts: [{ v: "ok", word: "Accepted", day: "6 Galena, year 32", reason: "Brew directly at the Still to fix the fort's zero-drink state." }],
+    project: "brew" },
+  { id: "p6", day: "11 Galena, year 32", role: "architect", title: "Build a Carpenter's Workshop beside Stockpile #1",
+    why: "No carpentry at all, so the fort can make no beds, tables, bins or barrels.",
+    verdicts: [{ v: "ok", word: "Accepted", day: "11 Galena, year 32", reason: "Checked live: two carpenters are ready and there's a free site by the stockpile." }],
+    project: "carpenter" },
+  { id: "p7", day: "11 Galena, year 32", role: "quartermaster", title: "Brew directly at the Still instead of waiting on the manager order",
+    why: "There's no drink at all, and the manager's brew order has never run.",
+    verdicts: [
+      { v: "wait", word: "Deferred", day: "11 Galena, year 32", reason: "The real block is containers: every barrel is full of plants." },
+      { v: "no", word: "Rejected", day: "21 Galena, year 32", reason: "Still no empty barrel or pot to hold the drink, so a brew job would stall." }] },
+  { id: "p8", day: "21 Galena, year 32", role: "architect", title: "Dig the first bedroom cell, one level below the farm",
+    why: "22 dwarves have nowhere to sleep: no bedroom, no dormitory, no beds.",
+    verdicts: [{ v: "ok", word: "Accepted", day: "21 Galena, year 32", reason: "Checked live: reachable, on stone so it can be smoothed, miners ready." }],
+    project: "bedroom" },
+  { id: "p9", day: "21 Galena, year 32", role: "quartermaster", title: "Brew the large plant store at the Still for a first drink stock",
+    why: "The fort has never had a single unit of drink.",
+    verdicts: [{ v: "no", word: "Rejected", day: "21 Galena, year 32", reason: "Same as the earlier brew proposal, and it assumes empty barrels that don't exist." }],
+    dup: "repeat of 11 Galena" },
+];
+const Q = [
+  { id: "q1", day: "6 Galena, year 32", asker: "architect", q: "Can a bedroom be smoothed on this soil level?", a: "No. Soil can't be smoothed; dig down to stone first." },
+  { id: "q2", day: "11 Galena, year 32", asker: "quartermaster", q: "Why does the brew order sit validated but never active?", a: "Two separate problems: the order route, and no empty container for the drink." },
+  { id: "q3", day: "21 Galena, year 32", asker: "architect", q: "Which room gaps are still open: bedrooms, dining hall, a meeting area?", a: "I can't see the queue, so only the game side: bedrooms and a dining hall are missing." },
+  { id: "q4", day: "21 Galena, year 32", asker: "quartermaster", q: "What does the decision queue look like right now?", a: "I can't read the queue by design. Ask the Overseer." },
+];
+const PROJ = {
+  workarea: { urgency: null, name: "First workshop area", desc: "A first cluster of workshops in the clearing south of the embark site.", from: "p1", status: "done", done: 2, total: 2, now: "Done.",
+    steps: [["Site clearing", "done", null, "1"], ["Designate workshops", "done", null, "2"]] },
+  stair: { urgency: null, name: "Down-stair to the stone level", desc: "One stair down to the stone layer, so bedrooms can be dug and smoothed.", from: "p4", status: "done", done: 1, total: 1, now: "Done 7 Galena.",
+    steps: [["Dig down-stair", "done", "Finished by a miner on 7 Galena", "1"]] },
+  brew: { urgency: "Elevated", name: "First brew at the Still", desc: "Brew the fort's plant store into its first drink; it has never had any.", from: "p5", status: "hold", done: 1, total: 3, now: "On hold: no empty barrel or pot to hold the drink.",
+    steps: [["Queue brew job", "done", null, "1"], ["Get empty barrel", "hold", "Every barrel is full of plants", "2"], ["Check drink stock", "next", null, "3", "2"]] },
+  carpenter: { urgency: null, name: "Carpenter's Workshop", desc: "The fort's first carpentry, so it can make beds, tables, bins and barrels.", from: "p6", status: "done", done: 2, total: 2, now: "Done: workshop built.",
+    steps: [["Pick site", "done", null, "1"], ["Build workshop", "done", null, "2"]] },
+  bedroom: { urgency: "High", name: "First bedroom cell", desc: "A first proper bedroom for a fort of 22 that has nowhere to sleep.", from: "p8", status: "active", done: 1, total: 8, version: 3,
+    amendments: [{ v: 2, day: "21 Galena, year 32", reason: "Added hauling the dug stone out: the bed can't go in while boulders cover the floor." },
+      { v: 3, day: "22 Galena, year 32", reason: "Added smoothing the floor, as Will asked, once the stone is out.", asked: { day: "22 Galena, year 32", text: "Smooth the floor too, please." } }], now: "Digging the cell, and a bed is being made alongside.",
+    steps: [["Designate shell", "done", "12 tiles designated", "1"], ["Dig shell", "now", "Urist is digging tile 4 of 12", "2a"], ["Make bed", "now", "Carpenter's Workshop: Kadol is sawing the frame", "2b"], ["Smooth walls", "next", null, "3a", "2a"], ["Haul stone out", "next", null, "3b", "1", 2], ["Smooth floor", "next", null, "4", "3b", 3], ["Place bed", "next", null, "5", "2b, 3a and 4"], ["Make bedroom", "next", null, "6", "5"]] },
+};
+const EVENTS = [
+  { day: "7 Galena, year 32", project: "stair", kind: "done", text: "Down-stair finished." },
+  { day: "8 Galena, year 32", project: "brew", kind: "hold", text: "First brew on hold: no empty barrel or pot." },
+  { day: "12 Galena, year 32", project: "carpenter", kind: "done", text: "Carpenter's Workshop built." },
+  { day: "21 Galena, year 32", project: "bedroom", kind: "step", text: "Bedroom shell designated (12 tiles)." },
+];
+const DAYS = ["10 Galena, year 31", "6 Galena, year 32", "7 Galena, year 32", "8 Galena, year 32", "11 Galena, year 32", "12 Galena, year 32", "21 Galena, year 32"];
+const STATUS = { active: ["Under way", "active", "#86b8ea"], hold: ["On hold", "hold", "#e8b454"], done: ["Done", "done", "#93d39e"] };
+
+const DF_MONTHS = ["Granite", "Slate", "Felsite", "Hematite", "Malachite", "Galena", "Limestone", "Sandstone", "Timber", "Moonstone", "Opal", "Obsidian"];
+function shortDate(d) {
+  const m = /^(\d+) (\w+), year (\d+)$/.exec(d || "");
+  if (!m) return d;
+  return `${m[1]}-${m[2]}-${m[3]}`;
+}
+function h(tag, attrs, ...kids) {
+  const n = document.createElement(tag);
+  for (const k in attrs || {}) {
+    if (k === "class") n.className = attrs[k];
+    else if (k === "text") n.textContent = attrs[k];
+    else if (k.startsWith("on")) n.addEventListener(k.slice(2), attrs[k]);
+    else if (attrs[k] !== false && attrs[k] != null) n.setAttribute(k, attrs[k]);
+  }
+  for (const c of kids.flat()) if (c != null) n.append(c.nodeType ? c : document.createTextNode(c));
+  return n;
+}
+const who = (role) => h("span", { class: "who r-" + role, text: R[role] });
+const pById = (id) => P.find((p) => p.id === id);
+
+function verdictBox(v) {
+  return h("div", { class: "verdict " + v.v },
+    h("div", { class: "vh" }, h("span", { class: "chip " + v.v, text: v.word }), who("overseer"), h("span", { class: "date", text: v.day })),
+    h("div", { class: "vr", text: v.reason }));
+}
+function progress(pr) {
+  const [label, , color] = STATUS[pr.status];
+  return h("div", { class: "progress" },
+    h("span", { class: "chip " + STATUS[pr.status][1], text: label }),
+    h("div", { class: "bar" }, h("i", { style: `width:${Math.round(100 * pr.done / pr.total)}%;background:${color}` })),
+    h("span", { class: "date", text: `${pr.done}/${pr.total}` }));
+}
+function decisionCard(p, onProject) {
+  const pr = p.project && PROJ[p.project];
+  return h("article", { class: "card" },
+    h("div", { class: "head" }, who(p.role), h("span", { class: "muted", text: "proposes" }), p.dup ? h("span", { class: "tag", text: p.dup }) : null),
+    h("div", { class: "title", text: p.title }),
+    h("div", { class: "why", text: p.why }),
+    p.verdicts.map(verdictBox),
+    pr ? progress(pr) : null,
+    pr ? h("div", { class: "event" }, h("span", { text: pr.now }), onProject ? h("button", { class: "linkbtn", type: "button", onclick: () => onProject(p.project), text: "Open project" }) : null) : null);
+}
+function qaBlock(q) {
+  return h("div", { class: "qa" },
+    h("div", {}, who(q.asker), h("span", { class: "muted", text: " asks the Consultant: " }), q.q),
+    h("div", {}, who("consultant"), h("span", { text: ": " }), h("span", { class: "muted", text: q.a })));
+}
+function eventLine(e, onProject) {
+  const color = e.kind === "hold" ? "var(--no)" : e.kind === "done" ? "var(--ok)" : "var(--architect)";
+  return h("div", { class: "event" }, h("span", { class: "dot", style: "background:" + color }), h("span", { class: "r-system who", text: "System" }), h("span", { text: e.text }),
+    onProject ? h("button", { class: "linkbtn", type: "button", onclick: () => onProject(e.project), text: PROJ[e.project].name }) : null);
+}
+function projectDetail(key, onBack) {
+  const pr = PROJ[key], p = pById(pr.from);
+  const marks = { done: ["Done", "var(--ok)"], now: ["Now", "var(--architect)"], hold: ["Hold", "var(--no)"], next: ["Next", "var(--faint)"] };
+  const thread = [decisionCard(p)];
+  EVENTS.filter((e) => e.project === key).forEach((e) => thread.push(eventLine(e)));
+  return h("div", { class: "scroll" },
+    onBack ? h("button", { class: "linkbtn", type: "button", onclick: onBack, text: "← Back" }) : null,
+    h("div", { style: "display:flex;justify-content:space-between;align-items:baseline;gap:8px;flex-wrap:wrap" }, h("h2", { style: "margin:0;font-size:1.2em", text: pr.name }), progress(pr)),
+    h("div", { class: "muted", text: `Proposed by the ${R[p.role]} on ${p.day}; accepted by the Overseer. ${pr.now}` }),
+    h("div", { class: "sectionlabel", text: "Steps" }),
+    h("div", { class: "steps" }, pr.steps.map(([name, m, job, pos, after]) => h("div", { class: "step" },
+      h("span", { class: "m", style: "color:" + marks[m][1], text: pos + "  " + marks[m][0] }),
+      h("div", {}, h("div", { text: name }), job ? h("div", { class: "job", text: job }) : null, m === "next" && after ? h("div", { class: "job", text: "after " + after }) : null)))),
+    h("div", { class: "sectionlabel", text: "This project's conversation" }),
+    thread);
+}
+
+// ---------- Option A: decision timeline + projects ----------
+const A = { side: "projects", project: "bedroom", filter: "highlights" };
+function renderA(stage) {
+  const openProject = (k) => { A.project = k; A.side = "project"; renderA(stage); };
+  const left = h("div", { class: "a-col" },
+    h("div", { class: "subtabs" }, h("button", { type: "button", "aria-selected": "true", text: "Chat" })),
+    h("div", { class: "filters" }, ["highlights", "everything"].map((f) => h("button", { type: "button", "aria-pressed": String(A.filter === f), onclick: () => { A.filter = f; renderA(stage); }, text: f === "highlights" ? "Highlights" : "Everything" }))));
+  const sc = h("div", { class: "scroll" });
+  DAYS.forEach((d) => {
+    const items = [];
+    P.filter((p) => p.day === d).forEach((p) => items.push(decisionCard(p, openProject)));
+    if (A.filter === "everything") Q.filter((q) => q.day === d).forEach((q) => items.push(qaBlock(q)));
+    EVENTS.filter((e) => e.day === d && (A.filter === "everything" || e.kind !== "step")).forEach((e) => items.push(eventLine(e, openProject)));
+    if (items.length) { sc.append(h("div", { class: "day", text: d })); items.forEach((i) => sc.append(i)); }
+  });
+  left.append(sc);
+  const right = h("div", { class: "a-col" },
+    h("div", { class: "subtabs" }, h("button", { type: "button", "aria-selected": String(A.side !== "project" || true), onclick: () => { A.side = "projects"; renderA(stage); }, text: "Projects" })));
+  if (A.side === "project") right.append(projectDetail(A.project, () => { A.side = "projects"; renderA(stage); }));
+  else right.append(projectList(openProject));
+  stage.replaceChildren(h("div", { class: "a-grid" }, left, right));
+}
+function projectList(open) {
+  const groups = [["Under way", ["active", "hold"]], ["Done", ["done"]]];
+  return h("div", { class: "scroll" },
+    h("div", { class: "sectionlabel", text: "Season goal" }),
+    h("div", { class: "muted", text: "No season goal set yet. It will head this list once the Overseer sets one." }),
+    groups.map(([label, sts]) => [h("div", { class: "sectionlabel", text: label }),
+      h("div", { class: "plist" }, Object.entries(PROJ).filter(([, pr]) => sts.includes(pr.status)).map(([k, pr]) =>
+        h("button", { class: "prow", type: "button", onclick: () => open(k) },
+          h("div", { class: "pt" }, h("span", { text: pr.name }), h("span", { class: "date", text: `${pr.done}/${pr.total}` })),
+          progress(pr), h("div", { class: "muted", style: "font-size:0.88em", text: pr.now }))))]));
+}
+
+// ---------- Option B: channels ----------
+const B = { chan: "fort" };
+function renderB(stage) {
+  const chans = [["fort", "fort-wide"], ["questions", "questions"]];
+  const rail = h("nav", { class: "rail", "aria-label": "Channels" },
+    h("div", { class: "sectionlabel", text: "Channels" }),
+    chans.map(([k, label]) => h("button", { type: "button", "aria-current": String(B.chan === k), onclick: () => { B.chan = k; renderB(stage); } },
+      h("span", {}, h("span", { class: "hash", text: "#" }), label), h("span", { class: "badge", text: k === "fort" ? String(P.length) : String(Q.length) }))),
+    h("div", { class: "sectionlabel", text: "Projects" }),
+    Object.entries(PROJ).map(([k, pr]) => h("button", { type: "button", "aria-current": String(B.chan === k), onclick: () => { B.chan = k; renderB(stage); } },
+      h("span", {}, h("span", { class: "hash", text: "#" }), pr.name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "")),
+      h("span", { class: "st", style: "background:" + STATUS[pr.status][2], title: STATUS[pr.status][0] }))));
+  const msgs = [];
+  const msg = (role, day, body) => h("div", { class: "msg" },
+    h("div", { class: "avatar", style: "background:" + ROLE_BG[role], text: R[role][0] }),
+    h("div", {}, h("div", { class: "mh" }, who(role), h("span", { class: "date", text: day })), h("div", { class: "mb" }, body)));
+  let head;
+  if (B.chan === "fort") {
+    head = ["#fort-wide", "Every proposal and the Overseer's answer. Accepted ones open their own channel."];
+    DAYS.forEach((d) => {
+      const ps = P.filter((p) => p.day === d);
+      if (!ps.length) return;
+      msgs.push(h("div", { class: "day", text: d }));
+      ps.forEach((p) => {
+        msgs.push(msg(p.role, p.day, [h("div", { style: "font-weight:500", text: p.title }), h("div", { class: "muted", style: "font-size:0.9em", text: p.why })]));
+        p.verdicts.forEach((v) => msgs.push(msg("overseer", v.day, [h("span", { class: "chip " + v.v, text: v.word }), " ", v.reason,
+          p.project && v.v === "ok" ? [" ", h("button", { class: "linkbtn", type: "button", onclick: () => { B.chan = p.project; renderB(stage); }, text: "#" + PROJ[p.project].name.toLowerCase().replace(/[^a-z0-9]+/g, "-") })] : null])));
+      });
+    });
+  } else if (B.chan === "questions") {
+    head = ["#questions", "Questions to the Consultant and its one-line answers."];
+    Q.forEach((q) => { msgs.push(msg(q.asker, q.day, q.q)); msgs.push(msg("consultant", q.day, h("span", { class: "muted", text: q.a }))); });
+  } else {
+    const pr = PROJ[B.chan], p = pById(pr.from);
+    head = ["#" + pr.name.toLowerCase().replace(/[^a-z0-9]+/g, "-"), `${STATUS[pr.status][0]}. ${pr.now}`];
+    msgs.push(progress(pr));
+    msgs.push(msg(p.role, p.day, [h("div", { style: "font-weight:500", text: p.title }), h("div", { class: "muted", style: "font-size:0.9em", text: p.why })]));
+    p.verdicts.forEach((v) => msgs.push(msg("overseer", v.day, [h("span", { class: "chip " + v.v, text: v.word }), " ", v.reason])));
+    EVENTS.filter((e) => e.project === B.chan).forEach((e) => msgs.push(msg("system", e.day, e.text)));
+    pr.steps.filter((s) => s[1] === "now" || s[1] === "hold").forEach((s) => msgs.push(msg("executor", "now", `${s[0]}: ${s[2] || ""}`)));
+  }
+  const main = h("div", { class: "a-col" }, h("div", { class: "chan-head" }, h("h2", { text: head[0] }), h("div", { class: "muted", style: "font-size:0.88em", text: head[1] })), h("div", { class: "scroll" }, msgs));
+  stage.replaceChildren(h("div", { class: "b-grid" }, rail, main));
+}
+
+// ---------- Option C: board ----------
+const C = { sel: "p8", panel: true };
+// One proposal's conversation, oldest first: who said what, and when.
+function convo(p) {
+  const out = [{ role: p.role, day: p.day, text: "Proposed: " + p.title }];
+  p.verdicts.forEach((v) => out.push({ role: "overseer", day: v.day, text: v.word + ": " + v.reason, v: v.v }));
+  if (p.project) {
+    EVENTS.filter((e) => e.project === p.project).forEach((e) => out.push({ role: "system", day: e.day, text: e.text }));
+    (PROJ[p.project].amendments || []).forEach((a) => {
+      if (a.asked) out.push({ role: "will", day: a.asked.day, text: a.asked.text });
+      out.push({ role: "overseer", day: a.day, text: `Amended: version ${a.v}. ${a.reason}`, amend: true });
+    });
+    PROJ[p.project].steps.filter((s) => s[1] === "now" || s[1] === "hold").forEach((s) => out.push({ role: "executor", day: "now", text: s[0] + (s[2] ? ": " + s[2] : "") }));
+  }
+  return out;
+}
+function convoList(lines) {
+  return h("ol", { class: "convo" }, lines.map((l) => h("li", {},
+    h("span", { class: "date", text: l.day }),
+    h("span", {}, who(l.role), h("span", { text: " " }), l.v ? h("span", { class: "chip " + l.v, text: l.text.split(":")[0] }) : null,
+      h("span", { text: l.v ? " " + l.text.slice(l.text.indexOf(":") + 1).trim() : " " + l.text })))));
+}
+function statusBar(pr) {
+  const label = pr.status === "done" ? "Done" : pr.status === "hold" ? `On hold · ${pr.done} of ${pr.total} done` : `${pr.done} of ${pr.total} jobs done`;
+  return h("div", { class: "sbar" },
+    h("div", { class: "segs", role: "img", "aria-label": label }, pr.steps.map((st) => h("i", { class: "sg g-" + st[1] }))),
+    h("span", { class: "slabel", text: label }));
+}
+// Job dependency graph, top to bottom. A job waits for the ids in its "after"
+// field; with none, it waits for every job in the previous plan slot.
+function layoutJobs(pr) {
+  const steps = pr.steps.map(([name, m, job, pos, after, added]) => ({ name, m, job, pos, after, added, slot: parseInt(pos, 10) }));
+  const slots = [...new Set(steps.map((x) => x.slot))].sort((a, b) => a - b);
+  steps.forEach((x) => {
+    if (x.after) x.deps = x.after.split(/\s*(?:and|,)\s*/).filter(Boolean);
+    else { const i = slots.indexOf(x.slot); x.deps = i > 0 ? steps.filter((y) => y.slot === slots[i - 1]).map((y) => y.pos) : []; }
+  });
+  const byPos = Object.fromEntries(steps.map((x) => [x.pos, x]));
+  const depth = (x) => x.d ?? (x.d = x.deps.length ? 1 + Math.max(...x.deps.map((d) => depth(byPos[d]))) : 0);
+  steps.forEach(depth);
+  steps.forEach((x) => { x.state = x.m === "next" ? (x.deps.every((d) => byPos[d].m === "done") ? "ready" : "waiting") : x.m; });
+  steps.forEach((x) => { const mm = x.job && x.job.match(/(\d+) of (\d+)/); x.frac = mm ? Number(mm[1]) / Number(mm[2]) : null; x.fracText = mm ? `${mm[1]} of ${mm[2]}` : null; });
+  const rows = [];
+  steps.forEach((x) => (rows[x.d] = rows[x.d] || []).push(x));
+  return { steps, byPos, rows };
+}
+const SVGNS = "http://www.w3.org/2000/svg";
+const svgEl = (t, a) => { const n = document.createElementNS(SVGNS, t); for (const k in a) n.setAttribute(k, a[k]); return n; };
+// Compact left-to-right version of the job graph for the board card.
+function miniGraph(pr) {
+  const { steps, byPos, rows } = layoutJobs(pr);
+  const NW = 18, NH = 9, HG = 9, VG = 3;
+  const maxPer = Math.max(...rows.map((r) => r.length));
+  const H = maxPer * NH + (maxPer - 1) * VG;
+  const W = rows.length * NW + (rows.length - 1) * HG;
+  rows.forEach((r, ci) => { const tot = r.length * NH + (r.length - 1) * VG; r.forEach((x, i) => { x.x = ci * (NW + HG); x.y = (H - tot) / 2 + i * (NH + VG); }); });
+  const svg = svgEl("svg", { viewBox: `-1 -1 ${W + 2} ${H + 2}`, width: Math.min(W + 2, 220), height: H + 2, class: "mini", "aria-hidden": "true" });
+  steps.forEach((x) => x.deps.forEach((d) => { const a = byPos[d];
+    svg.append(svgEl("path", { d: `M${a.x + NW},${a.y + NH / 2} C${a.x + NW + HG / 2},${a.y + NH / 2} ${x.x - HG / 2},${x.y + NH / 2} ${x.x},${x.y + NH / 2}`, fill: "none", stroke: "var(--line-strong)", "stroke-width": "1.2" })); }));
+  const st = { done: ["var(--g-done-mini)", "var(--g-done-mini)", ""], now: ["var(--g-now-line)", "var(--g-now-line)", ""], ready: ["var(--ground)", "var(--g-ready-line)", ""], waiting: ["var(--ground)", "var(--g-wait-line)", "2 2"], hold: ["var(--g-hold-icon)", "var(--g-hold-icon)", ""] };
+  steps.forEach((x) => svg.append(svgEl("rect", { x: x.x, y: x.y, width: NW, height: NH, rx: 2.5, fill: st[x.state][0], stroke: st[x.state][1], "stroke-width": x.state === "ready" ? "1.4" : "1", "stroke-dasharray": st[x.state][2] })));
+  return svg;
+}
+function jobGraph(pr) {
+  const NS = SVGNS;
+  const { steps, byPos, rows } = layoutJobs(pr);
+  const W = 340, NH = 40, VG = 24, HG = 10, PAD = 10;
+  const maxPer = Math.max(...rows.map((r) => r.length));
+  const NW = Math.min(220, (W - PAD * 2 - HG * (maxPer - 1)) / maxPer);
+  rows.forEach((r, ri) => {
+    const total = r.length * NW + (r.length - 1) * HG;
+    r.forEach((x, i) => { x.x = (W - total) / 2 + i * (NW + HG); x.y = PAD + ri * (NH + VG); });
+  });
+  const H = PAD * 2 + rows.length * NH + (rows.length - 1) * VG;
+  const el = (t, a) => { const n = document.createElementNS(NS, t); for (const k in a) n.setAttribute(k, a[k]); return n; };
+  const svg = el("svg", { viewBox: `0 0 ${W} ${H}`, width: "100%", role: "img", "aria-label": "Job order: " + steps.map((x) => `${x.pos} ${x.name} (${x.m})`).join(", "), class: "jgraph" });
+  const defs = el("defs", {});
+  const mk = el("marker", { id: "arw", viewBox: "0 0 8 8", refX: "7", refY: "4", markerWidth: "7", markerHeight: "7", orient: "auto-start-reverse" });
+  mk.append(el("path", { d: "M0,0 L8,4 L0,8 z", fill: "var(--faint)" }));
+  defs.append(mk); svg.append(defs);
+  steps.forEach((x) => x.deps.forEach((d) => {
+    const a = byPos[d], x1 = a.x + NW / 2, y1 = a.y + NH, x2 = x.x + NW / 2, y2 = x.y - 2, my = (y1 + y2) / 2;
+    svg.append(el("path", { d: `M${x1},${y1} C${x1},${my} ${x2},${my} ${x2},${y2}`, fill: "none", stroke: "var(--line-strong)", "stroke-width": "1.5", "marker-end": "url(#arw)" }));
+  }));
+  const look = {
+    done:    { bg: "var(--g-done-bg)", line: "var(--g-done-line)", fg: "var(--g-done-fg)", sub: "done" },
+    now:     { bg: "var(--g-now-bg)", line: "var(--g-now-line)", fg: "var(--g-now-fg)", sub: "in progress" },
+    ready:   { bg: "var(--ground)", line: "var(--g-ready-line)", fg: "var(--g-ready-fg)", sub: "ready" },
+    waiting: { bg: "var(--ground)", line: "var(--g-wait-line)", fg: "var(--g-wait-fg)", sub: "waiting", dash: "4 3" },
+    hold:    { bg: "var(--g-hold-bg)", line: "var(--g-hold-line)", fg: "var(--g-hold-fg)", sub: "on hold" },
+  };
+  steps.forEach((x) => {
+    const L = look[x.state];
+    const g = el("g", {});
+    const t = el("title", {}); t.textContent = `${x.name}: ${L.sub}${x.job ? " (" + x.job + ")" : ""}`; g.append(t);
+    g.append(el("rect", { x: x.x, y: x.y, width: NW, height: NH, rx: 6, fill: L.bg, stroke: L.line, "stroke-width": x.state === "ready" || x.state === "now" ? 1.6 : 1, "stroke-dasharray": L.dash || "" }));
+    if (x.state === "now" && x.frac != null) {
+      g.append(el("rect", { x: x.x + 6, y: x.y + NH - 7, width: NW - 12, height: 3, rx: 1.5, fill: "var(--g-now-barbg)" }));
+      g.append(el("rect", { x: x.x + 6, y: x.y + NH - 7, width: (NW - 12) * x.frac, height: 3, rx: 1.5, fill: "var(--g-now-bar)" }));
+    }
+    const ix = x.x + 9;
+    if (x.state === "done") g.append(el("path", { d: `M${ix},${x.y + 13} l3,3 l6,-6`, fill: "none", stroke: L.fg, "stroke-width": 1.6, "stroke-linecap": "round", "stroke-linejoin": "round" }));
+    if (x.state === "hold") { g.append(el("circle", { cx: ix + 4, cy: x.y + 13, r: 6, fill: "var(--g-hold-icon)" })); const ex = el("text", { x: ix + 4, y: x.y + 17, "text-anchor": "middle", fill: "var(--chip-ink)", "font-size": "10", "font-weight": "700", "font-family": "IBM Plex Sans, system-ui, sans-serif" }); ex.textContent = "!"; g.append(ex); }
+    const hasIcon = x.state === "done" || x.state === "hold";
+    const tx = hasIcon ? x.x + 24 : x.x + 9;
+    const max = Math.floor((NW - (hasIcon ? 30 : 16)) / 6.3);
+    const name = el("text", { x: tx, y: x.y + 17, fill: L.fg, "font-size": "12", "font-weight": x.state === "now" || x.state === "ready" ? "600" : "400", "font-family": "IBM Plex Sans, system-ui, sans-serif" });
+    name.textContent = x.name.length > max ? x.name.slice(0, max - 1) + "\u2026" : x.name;
+    g.append(name);
+    const subt = el("text", { x: tx, y: x.y + 30, fill: L.fg, opacity: "0.75", "font-size": "10", "font-family": "IBM Plex Mono, ui-monospace, monospace" });
+    subt.textContent = x.state === "now" && x.fracText ? x.fracText : L.sub;
+    g.append(subt);
+    if (x.added) {
+      g.append(el("rect", { x: x.x + NW - 30, y: x.y - 7, width: 27, height: 14, rx: 4, fill: "var(--raised)", stroke: "var(--line-strong)" }));
+      const tg = el("text", { x: x.x + NW - 16.5, y: x.y + 3.5, "text-anchor": "middle", fill: "var(--muted)", "font-size": "9.5", "font-family": "IBM Plex Mono, ui-monospace, monospace" });
+      tg.textContent = "v" + x.added;
+      g.append(tg);
+    }
+    svg.append(g);
+  });
+  return svg;
+}
+function detailPanel(p, onClose) {
+  const pr = p.project && PROJ[p.project];
+  const accepted = p.verdicts.find((v) => v.v === "ok");
+  const last = p.verdicts[p.verdicts.length - 1];
+  const statusChip = pr ? h("span", { class: "chip " + STATUS[pr.status][1], text: STATUS[pr.status][0] }) : h("span", { class: "chip " + last.v, text: last.word });
+  const live = pr ? pr.steps.filter((st) => (st[1] === "now" || st[1] === "hold") && st[2]) : [];
+  const tl = convo(p);
+  return h("aside", { class: "cpanel", "aria-label": "Project details" },
+    h("div", { class: "cph" },
+      h("div", { class: "cphl" },
+        h("div", { class: "chips" }, pr && pr.urgency ? h("span", { class: "urg u-" + pr.urgency.toLowerCase(), text: pr.urgency }) : null, statusChip),
+        h("h2", { text: pr ? pr.name : p.title })),
+      h("button", { class: "closebtn", type: "button", "aria-label": "Close details", onclick: onClose, text: "\u00d7" })),
+    h("div", { class: "meta" }, who(p.role), h("span", { class: "date", text: "  " + shortDate(p.day) })),
+    h("p", { class: "pdesc", text: pr ? pr.desc : p.why }),
+    pr ? [
+      h("section", { class: "psec" }, h("div", { class: "sectionlabel", text: "Jobs" }),
+        h("div", { class: "jgraph-wrap" }, jobGraph(pr)),
+        null),
+      live.length ? h("section", { class: "psec" }, h("div", { class: "sectionlabel", text: "Happening now" }),
+        live.map((st) => h("div", { class: "liveitem l-" + st[1] }, h("div", { class: "ln", text: st[0] }), h("div", { class: "ld", text: st[2] })))) : null] : null,
+    h("section", { class: "psec" }, h("div", { class: "sectionlabel", text: "Conversation" }),
+      byDay(tl).map(([day, lines]) => h("div", { class: "tday" },
+        h("div", { class: "tdayh", text: day === "now" ? "Now" : shortDate(day) }),
+        h("ol", { class: "tl" }, lines.map((l) => h("li", {},
+          h("span", { class: "tdot", style: "background:" + ROLE_BG[l.role] }),
+          h("div", { class: "tline" }, who(l.role), " ",
+            l.v ? [h("span", { class: "chip " + l.v, text: l.text.split(":")[0] }), " " + l.text.slice(l.text.indexOf(":") + 1).trim()]
+            : l.amend ? [h("span", { class: "chip amend", text: "Amended" }), " " + l.text.slice(l.text.indexOf(".") + 1).trim()] : l.text))))))));
+}
+// Group conversation lines under their game day, in date order, with live "now" lines last.
+function dayKey(d) {
+  if (d === "now") return Infinity;
+  const m = /^(\d+) (\w+), year (\d+)$/.exec(d || "");
+  return m ? Number(m[3]) * 1000 + (DF_MONTHS.indexOf(m[2]) + 1) * 40 + Number(m[1]) : 0;
+}
+function byDay(lines) {
+  const groups = [];
+  [...lines].map((l, i) => [l, i]).sort((a, b) => dayKey(a[0].day) - dayKey(b[0].day) || a[1] - b[1]).forEach(([l]) => {
+    const g = groups[groups.length - 1];
+    if (g && g[0] === l.day) g[1].push(l); else groups.push([l.day, [l]]);
+  });
+  return groups;
+}
+function renderC(stage) {
+  const cols = [
+    ["Proposed", (p) => false],
+    ["Under way", (p) => p.project && PROJ[p.project].status === "active"],
+    ["On hold", (p) => p.project && PROJ[p.project].status === "hold"],
+    ["Done", (p) => p.project && PROJ[p.project].status === "done"],
+    ["Turned down", (p) => !p.project],
+  ];
+  const board = h("div", { class: "board" }, cols.map(([label, fn]) => {
+    const ps = P.filter(fn);
+    return h("section", { class: "column" }, h("h3", {}, h("span", { text: label }), h("span", { class: "count", text: String(ps.length) })),
+      ps.length ? ps.map((p) => {
+        const pr = p.project && PROJ[p.project];
+        const urg = pr ? pr.urgency : null;
+        const last = p.verdicts[p.verdicts.length - 1];
+        const tagText = urg ? urg : pr ? (pr.status === "done" ? "Complete" : "No urgency") : last.word;
+        return h("button", { class: "bcard", type: "button", "aria-pressed": String(C.sel === p.id), onclick: () => { C.sel = p.id; C.panel = true; renderC(stage); } },
+          h("div", { class: "btop" },
+            h("span", { class: "urg " + (urg ? "u-" + urg.toLowerCase() : "u-none"), text: tagText }),
+            h("span", { class: "date", text: pr && pr.status === "done" ? "" : shortDate(p.day) })),
+          h("div", { class: "bt", text: pr ? pr.name : p.title }),
+          h("div", { class: "bdesc", text: pr ? pr.desc : last.reason }),
+          pr ? h("div", { class: "bstatus" }, miniGraph(pr),
+            h("span", { class: "slabel", text: pr.status === "done" ? "All done" : pr.status === "hold" ? `${pr.done}/${pr.total} \u00b7 held` : `${pr.done}/${pr.total} done` })) : null);
+      })
+      : h("div", { class: "muted", style: "font-size:0.85em", text: label === "Proposed" ? "Nothing waiting for a ruling." : "None." }));
+  }));
+  const ticker = h("div", { class: "ticker", "aria-label": "Latest activity" }, [...EVENTS].reverse().map((e) => h("span", {}, h("span", { class: "date", text: e.day + "  " }), e.text)));
+  const body = h("div", { class: "c-body" + (C.panel ? " with-panel" : "") }, board,
+    C.panel ? detailPanel(pById(C.sel), () => { C.panel = false; renderC(stage); }) : null);
+  stage.replaceChildren(h("div", { class: "c-wrap" }, body, ticker));
+}
+
+// ---------- Option D: daily digest ----------
+function renderD(stage) {
+  const wrap = h("div", { class: "d-wrap" });
+  [...DAYS].reverse().forEach((d) => {
+    const ps = P.filter((p) => p.day === d || p.verdicts.some((v) => v.day === d));
+    const es = EVENTS.filter((e) => e.day === d);
+    const qs = Q.filter((q) => q.day === d);
+    if (!ps.length && !es.length) return;
+    const acc = ps.filter((p) => p.verdicts.some((v) => v.day === d && v.v === "ok"));
+    const rej = ps.filter((p) => p.verdicts.some((v) => v.day === d && v.v === "no"));
+    const def = ps.filter((p) => p.verdicts.some((v) => v.day === d && v.v === "wait"));
+    const parts = [];
+    if (acc.length) parts.push(["The Overseer approved ", acc.map((p) => h("b", { text: (p.project ? PROJ[p.project].name : p.title).toLowerCase() })), "."]);
+    if (rej.length) parts.push([" It turned down ", String(rej.length), rej.length === 1 ? " proposal" : " proposals", " (", rej.map((p) => p.verdicts.find((v) => v.day === d && v.v === "no").reason.replace(/\.$/, "").toLowerCase()).join("; "), ")."]);
+    if (def.length) parts.push([" One proposal was put on hold: ", def[0].verdicts.find((v) => v.day === d).reason.toLowerCase()]);
+    es.forEach((e) => parts.push([" ", e.text]));
+    const lede = h("p", { class: "lede" }, parts.flat().map((x) => Array.isArray(x) ? x.flatMap((y, i) => i ? [", ", y] : [y]) : x).flat());
+    const sec = h("section", { class: "dday" },
+      h("h2", {}, h("span", { text: d })),
+      h("div", { class: "tally" },
+        acc.length ? h("span", { class: "chip ok", text: acc.length + " accepted" }) : null,
+        rej.length ? h("span", { class: "chip no", text: rej.length + " rejected" }) : null,
+        def.length ? h("span", { class: "chip wait", text: def.length + " deferred" }) : null,
+        qs.length ? h("span", { class: "tag", text: qs.length + (qs.length === 1 ? " question" : " questions") }) : null),
+      lede,
+      h("details", { class: "more" }, h("summary", { text: "Show the conversation" }),
+        h("div", { style: "display:flex;flex-direction:column;gap:10px" }, P.filter((p) => p.day === d).map((p) => decisionCard(p)), qs.map(qaBlock), es.map((e) => eventLine(e)))));
+    wrap.append(sec);
+  });
+  stage.replaceChildren(wrap);
+}
+
+
+// ---------- Option E: the full stream page ----------
+// A fake live view in DF's classic look, for the mockup only; the real page embeds the actual feed.
+function fakeView() {
+  const COLS = 64, ROWS = 36;
+  const cv = h("canvas", { class: "fakeview", width: COLS * 12, height: ROWS * 16, role: "img", "aria-label": "Mock live view of the fortress" });
+  const ctx = cv.getContext("2d");
+  let seed = 7;
+  const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+  const map = [];
+  for (let y = 0; y < ROWS; y++) { map.push([]); for (let x = 0; x < COLS; x++) {
+    let c = [",", "#3f8f3a"];
+    const r = rnd();
+    if (r < 0.06) c = ["♣", "#2f7a2a"]; else if (r < 0.1) c = ["\"", "#5aa64f"]; else if (r < 0.13) c = [".", "#6b6b4a"];
+    if (x > 40 || y > 24) c = rnd() < 0.85 ? ["█", "#5c5850"] : ["▒", "#7a7466"];
+    map[y].push(c);
+  } }
+  const carve = (x0, y0, w, hh) => { for (let y = y0; y < y0 + hh; y++) for (let x = x0; x < x0 + w; x++) map[y][x] = ["+", "#8a857a"]; };
+  carve(41, 6, 12, 8); carve(46, 14, 3, 11); carve(42, 25, 9, 6); carve(53, 8, 6, 3);
+  const block = (x0, y0, ch, col) => { for (let y = 0; y < 3; y++) for (let x = 0; x < 3; x++) map[y0 + y][x0 + x] = [ch[y * 3 + x], col]; };
+  block(43, 8, "╔═╗║§║╚═╝", "#c9a227");
+  block(48, 8, "┌─┐│≡│└─┘", "#b07a3a");
+  for (let x = 30; x < 37; x++) for (let y = 14; y < 19; y++) map[y][x] = ["≈", "#3d8fd1"];
+  map[16][20] = ["O", "#3d8fd1"];
+  const dwarves = Array.from({ length: 9 }, (_, i) => ({ x: 42 + (i % 8), y: 7 + (i % 5), c: ["#e8c547", "#e07a52", "#86b8ea", "#c9aaea", "#93d39e"][i % 5] }));
+  const walk = (d) => {
+    const dx = Math.round(rnd() * 2 - 1), dy = Math.round(rnd() * 2 - 1);
+    const t = map[d.y + dy] && map[d.y + dy][d.x + dx];
+    if (t && t[0] !== "█" && t[0] !== "▒" && t[0] !== "≈") { d.x += dx; d.y += dy; }
+  };
+  const draw = () => {
+    ctx.fillStyle = "#000"; ctx.fillRect(0, 0, cv.width, cv.height);
+    ctx.font = "15px 'IBM Plex Mono', ui-monospace, monospace"; ctx.textBaseline = "top";
+    for (let y = 0; y < ROWS; y++) for (let x = 0; x < COLS; x++) { const [ch, col] = map[y][x]; ctx.fillStyle = col; ctx.fillText(ch, x * 12, y * 16); }
+    dwarves.forEach((d) => { ctx.fillStyle = "#000"; ctx.fillRect(d.x * 12, d.y * 16, 12, 16); ctx.fillStyle = d.c; ctx.fillText("☺", d.x * 12, d.y * 16); });
+  };
+  draw();
+  const still = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  if (!still) {
+    clearInterval(window.__fakeTick);
+    window.__fakeTick = setInterval(() => { if (!document.body.contains(cv)) { clearInterval(window.__fakeTick); return; } dwarves.forEach(walk); draw(); }, 450);
+  }
+  return cv;
+}
+const E = { layout: "split", sel: null, style: "stone2" };
+function goalStrip() {
+  return h("div", { class: "e-goal" },
+    h("span", { class: "sectionlabel", text: "Season goal" }),
+    h("span", { class: "muted", text: "None set yet. The Overseer sets one at its seasonal review." }));
+}
+function renderE(stage) {
+  const view = h("div", { class: "e-view" }, fakeView(),
+    h("span", { class: "e-live", text: "LIVE" }), h("span", { class: "e-vo", text: "mock picture" }));
+  const switcher = h("div", { class: "e-switch", role: "group", "aria-label": "Layout" },
+    [["stacked", "Stacked"], ["split", "Split"]].map(([k, t]) => h("button", { type: "button", "aria-pressed": String(E.layout === k), onclick: () => { E.layout = k; renderE(stage); }, text: t })));
+  const styles = h("div", { class: "e-switch", role: "group", "aria-label": "Style" },
+    [["slate", "Slate"], ["terminal", "Terminal"], ["terminal2", "Terminal 2"], ["amber", "Amber"], ["forge", "Forge"], ["stone", "Stone"], ["stone2", "Stone 2"]].map(([k, t]) => h("button", { type: "button", "aria-pressed": String(E.style === k), onclick: () => { E.style = k; renderE(stage); }, text: t })));
+  const head = h("header", { class: "e-head" }, h("div", {}, h("span", { class: "e-name", text: "Ragwind" }), h("span", { class: "muted", text: "  Uniboslan, run by AI agents" })),
+    h("div", { class: "e-controls" }, h("span", { class: "e-clabel", text: "Layout" }), switcher, h("span", { class: "e-clabel", text: "Style" }), styles));
+  if (E.layout === "stacked") {
+    const board = h("div", { class: "e-board" });
+    stage.replaceChildren(h("div", { class: "e-wrap", "data-style": E.style }, head, view, goalStrip(), board));
+    renderC(board);
+    return;
+  }
+  // Split: the view on the left, the board as stacked sections on the right.
+  const col = h("div", { class: "e-col" });
+  if (E.sel) {
+    const panel = detailPanel(pById(E.sel), () => { E.sel = null; renderE(stage); });
+    panel.classList.add("in-col");
+    col.append(panel);
+  } else {
+    col.append(goalStrip());
+    const groups = [
+      ["Under way", (p) => p.project && PROJ[p.project].status === "active"],
+      ["On hold", (p) => p.project && PROJ[p.project].status === "hold"],
+      ["Done", (p) => p.project && PROJ[p.project].status === "done"],
+      ["Turned down", (p) => !p.project],
+    ];
+    groups.forEach(([label, fn]) => {
+      const ps = P.filter(fn);
+      if (!ps.length) return;
+      col.append(h("section", { class: "e-sec" },
+        h("h3", {}, h("span", { text: label }), h("span", { class: "count", text: String(ps.length) })),
+        ps.map((p) => {
+          const pr = p.project && PROJ[p.project];
+          const last = p.verdicts[p.verdicts.length - 1];
+          return h("button", { class: "ecard", type: "button", onclick: () => { E.sel = p.id; renderE(stage); } },
+            h("div", { class: "btop" }, h("span", { class: "bt", text: pr ? pr.name : p.title }), pr && pr.urgency ? h("span", { class: "urg u-" + pr.urgency.toLowerCase(), text: pr.urgency }) : null),
+            pr ? h("div", { class: "bstatus" }, miniGraph(pr), h("span", { class: "slabel", text: pr.status === "done" ? "All done" : pr.status === "hold" ? `${pr.done}/${pr.total} · held` : `${pr.done}/${pr.total} done` }))
+              : h("div", { class: "bdesc", text: last.reason }));
+        })));
+    });
+  }
+  stage.replaceChildren(h("div", { class: "e-wrap", "data-style": E.style }, head, h("div", { class: "e-split" }, view, col)));
+}
+
+const OPTIONS = [
+  { k: "a", key: "A", name: "Decision timeline", render: renderA,
+    how: "Chat on the left as one card per proposal, the verdict inside it; projects on the right. A card's project link opens the project there.",
+    good: "Calm. Every card answers what, who and the outcome. A project's later progress updates its card; only holds and finishes post a line.",
+    weak: "Two columns need width; on a phone they stack and you switch between them." },
+  { k: "b", key: "B", name: "Channels", render: renderB,
+    how: "Slack-style: a fort-wide channel for proposals and rulings, one for questions, and one channel per project with its own history.",
+    good: "Familiar, and a project's whole life sits in one place. Easy to follow one thing you care about.",
+    weak: "Viewers must pick a channel; the big picture is split across many." },
+  { k: "c", key: "C", name: "Project board", render: renderC,
+    how: "Columns by state. A card shows urgency, name, a short description and a mini job graph. In the graphs each job says what it is: done (ticked, faded), in progress (filled, with how far), ready (outlined, can start now), waiting (dashed grey) or on hold (warning). Click a card for its panel. Urgency values are examples; urgency is not built yet.",
+    good: "Shows the state of the whole fort at a glance. Good for a screen on the wall.",
+    weak: "The fort-wide story across projects is split by card; a timeline view (A or D) still helps alongside." },
+  { k: "d", key: "D", name: "Daily digest", render: renderD,
+    how: "Each in-game day as a short written summary with tallies, newest first. Expand a day to see its cards.",
+    good: "Readable by anyone in seconds; the seed of the Chronicler's history.",
+    weak: "Not live in the moment; detail is hidden until you expand." },
+  { k: "e", key: "E", name: "Full stream page", render: renderE,
+    how: "The whole page a viewer sees, in two layouts. Stacked: the live view full width, the season goal as a strip, the board below. Split: the view on the left and the board as a column of sections on the right; a card opens its details in that column.",
+    good: "Stacked gives the board room; split keeps the fort and the work side by side on one screen.",
+    weak: "Stacked needs a scroll to reach the board; split squeezes the board into one column." },
+];
+let current = "a";
+function show(k) {
+  current = k;
+  try { localStorage.setItem("ragwind-option", k); } catch (e) {}
+  const o = OPTIONS.find((x) => x.k === k);
+  document.getElementById("tabs").replaceChildren(...OPTIONS.map((x) => h("button", { type: "button", role: "tab", "aria-selected": String(x.k === k), onclick: () => show(x.k) },
+    h("span", { class: "k", text: "OPTION " + x.key }), h("span", { text: x.name }))));
+  document.getElementById("blurb").replaceChildren(
+    h("div", {}, h("h3", { text: "HOW IT WORKS" }), h("p", { text: o.how })),
+    h("div", {}, h("h3", { text: "STRONG AT" }), h("p", { text: o.good })),
+    h("div", {}, h("h3", { text: "WEAKER AT" }), h("p", { text: o.weak })));
+  o.render(document.getElementById("stage"));
+  if (location.hash !== "#" + k) history.replaceState(null, "", "#" + k);
+}
+let fs = 15;
+try { fs = Number(localStorage.getItem("ragwind-fs")) || 15; } catch (e) {}
+function setFs(n) { fs = Math.max(13, Math.min(22, n)); document.documentElement.style.setProperty("--fs", fs + "px"); try { localStorage.setItem("ragwind-fs", String(fs)); } catch (e) {} }
+document.getElementById("fs-up").addEventListener("click", () => setFs(fs + 1));
+document.getElementById("fs-down").addEventListener("click", () => setFs(fs - 1));
+setFs(fs);
+let start = (location.hash || "").replace("#", "");
+if (!OPTIONS.some((o) => o.k === start)) { try { start = localStorage.getItem("ragwind-option") || "a"; } catch (e) { start = "a"; } }
+show(OPTIONS.some((o) => o.k === start) ? start : "a");
+</script>
