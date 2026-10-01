@@ -93,8 +93,11 @@ function isHighlight(item) {
 }
 
 class StreamPage {
-  constructor({ dataRoot, mode, root }) {
+  constructor({ dataRoot, mode, root, liveViewSrc }) {
     this.dataRoot = dataRoot;
+    // The live view is the existing noVNC viewer on the same origin, embedded.
+    // Only when served from the real site: a local build has no viewer.
+    this.liveViewSrc = liveViewSrc && location.port === "" ? liveViewSrc : null;
     this.mode = mode; // "public" | "operator"
     this.root = root;
     this.tab = "chat";
@@ -239,13 +242,18 @@ class StreamPage {
   }
 
   _buildLeftColumn() {
-    const frame = el("div", { class: "video-frame" }, [
-      el("span", { class: "live-badge offline", text: "OFFLINE" }),
-      el("div", { class: "placeholder" }, [
-        el("div", { class: "tag", text: "LIVE VIEW" }),
-        el("div", { class: "sub", text: "The existing view-only feed (noVNC) is not wired into this local build." }),
-      ]),
-    ]);
+    const frame = this.liveViewSrc
+      ? el("div", { class: "video-frame" }, [
+          el("iframe", { class: "live-view", src: this.liveViewSrc, title: "Live view of the fortress", allow: "fullscreen" }),
+          el("span", { class: "live-badge live", text: "LIVE" }),
+        ])
+      : el("div", { class: "video-frame" }, [
+          el("span", { class: "live-badge offline", text: "OFFLINE" }),
+          el("div", { class: "placeholder" }, [
+            el("div", { class: "tag", text: "LIVE VIEW" }),
+            el("div", { class: "sub", text: "The live view appears here on the real site." }),
+          ]),
+        ]);
     this.videoFrame = frame;
     this.liveBadge = frame.querySelector(".live-badge");
 

@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Ragwind: the fortress stream</title>
 <meta name="description" content="A Dwarf Fortress colony run by AI agents, live conversation and decisions.">
-<link rel="stylesheet" href="style.css">
+<link rel="stylesheet" href="style.css?v=2">
 </head>
 <body>
 <!--
@@ -21,9 +21,9 @@
   VM access, no relay, no polling of anything outside this folder.
 -->
 <div class="page" id="app"></div>
-<script src="app.js"></script>
+<script src="app.js?v=2"></script>
 <script>
-  const page = new StreamPage({ dataRoot: "data/public", mode: "public", root: document.getElementById("app") });
+  const page = new StreamPage({ dataRoot: "data/public", mode: "public", liveViewSrc: "vnc.html?autoconnect=true&resize=scale&view_only=true", root: document.getElementById("app") });
   page.start();
 </script>
 </body>
