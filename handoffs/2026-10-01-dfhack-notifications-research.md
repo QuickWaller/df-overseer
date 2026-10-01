@@ -71,12 +71,12 @@ file, no game-state mutation).
 
 **Q3**: all 16 fort-relevant notifications read player-visible or
 player-derivable facts, with one flagged exception (`missing_nemesis`,
-savegame-corruption internals no vanilla screen shows — recommend an
+savegame-corruption internals no vanilla screen shows, recommend an
 explicit ruling before wiring it in, not decided here). Important
 correction found: DFHack's own `invader_count`/`hostile_count` use exactly
 the `isDanger`/`isInvader` flags this project's own `df-overseer-threat.lua`
 already proved an unreliable reachability signal (its header cites a kea
-reachable-but-unflagged and demons flagged-but-unreachable) — recommend NOT
+reachable-but-unflagged and demons flagged-but-unreachable), recommend NOT
 wiring these straight into the fixed floor's "reachable hostile" item, only
 as a cheap pre-check ahead of the existing reachability tool. `warn_stranded`
 (the exact 2026-09-28 incident's own catch) is recommended for the fixed
