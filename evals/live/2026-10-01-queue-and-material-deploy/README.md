@@ -119,3 +119,40 @@ consultant 29, quartermaster 25, conductor 16.
   independent count; MINE `automatic`, minimum 2, maximum 200, 2 and 2.
 - `quota HAUL_ITEM 1 200` dry run: reports `would_set` without writing. No
   real write yet.
+
+## Month window, a sealed office, and the rescue (2026-10-01)
+
+User go-ahead for a one-month supervised window. Quicksave first (confirmed,
+`autosave 2`). `labor.quota MINE 3 200 200` written for real, read back
+minimum 3. Window: 100 FPS, 420 s, tick 212612 to 243881 (about 26 game
+days), tripwire armed, re-paused cleanly.
+
+- **labor.quota works live:** citizens with MINE went from 2 to 3 during
+  the window (watcher, every 25 s). Not yet reset to 2.
+- **The Manager never took `ManageWorkOrders`** in 26 days; orders
+  unchanged (0-2 validated inactive, 3 and 4 unvalidated).
+- **Cause found, and it is ours.** The user saw DFHack's "stranded
+  citizens" notification. Walkable groups: 20 citizens in one, 2 in
+  another: the Manager (345) and a miner (346), inside the office, zone 13
+  (interior 103,102 to 105,104, z167). Four of the five ring walls
+  designated by `construction.build` on 2026-09-28 (buildings 18 to 21)
+  had been built, including the two on the north side touching the main
+  fort; the room's way out was walled. This is the defect the 2026-09-28
+  dependency-graph design predicted ("treats every open ring tile as
+  buildable, which would wall a room's own doorway"); `keeps_access` was
+  added after these walls were designated and nothing re-checked them.
+  Very likely also why no order was ever validated: the Manager could
+  not reach anything (not proven; orders were stuck before the walls were
+  finished).
+- **Rescue (user's go):** `dfhack.constructions.designateRemove` on the
+  wall at 103,101 (the player's remove-construction designation). 10 FPS
+  window: the wall became floor about 870 ticks in; the Manager drank
+  (thirst 40664 to 37) and ate, the miner too; all 22 citizens in one
+  walkable group after, nobody hungry or thirsty; re-paused. The DFHack
+  notification cleared at the same time.
+- Building 22 (102,104) still planned and suspended next to unmined ore.
+
+**Follow-ups:** re-check every still-planned construction against
+`keeps_access`, not only new ones; read DFHack's own notification list
+(stranded and the rest) in the conductor as wake reasons; reset MINE to its
+previous minimum 2; watch whether the Manager now validates orders.
