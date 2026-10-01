@@ -148,7 +148,7 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from dfqueue import feed, feed_status  # noqa: E402  (path setup must run first)
+from dfqueue import feed, feed_status, site_data  # noqa: E402  (path setup must run first)
 
 DEFAULT_ENV_PATH = REPO_ROOT / ".env"
 DEFAULT_HEARTBEAT_INTERVAL_SECONDS = 60
@@ -209,6 +209,13 @@ class PublisherConfig:
     fort_id: str = ""
     fort_name: str = DEFAULT_FORT_NAME
     fort_status: str = "live"
+    # Project-wide data (agents.json/tools.json/gotchas.json,
+    # `dfqueue.site_data`), not any one fort's -- `None` is an honest
+    # "no gotcha store configured" state, same shape `db_path`'s own
+    # absence-is-an-error convention would otherwise suggest, except this
+    # one is optional: an export with no gotchas store still publishes the
+    # roster and tool catalog, just with an empty gotchas.json.
+    gotchas_db: Optional[str] = None
 
     def resolved_fort_id(self) -> str:
         """`fort_id` when explicitly configured, else the queue file's own
@@ -303,6 +310,8 @@ def config_from_env(env: Mapping[str, str], *, validate: bool = True) -> Publish
         kwargs["fort_name"] = env["STREAM_PUBLISHER_FORT_NAME"]
     if env.get("STREAM_PUBLISHER_FORT_STATUS"):
         kwargs["fort_status"] = env["STREAM_PUBLISHER_FORT_STATUS"]
+    if env.get("STREAM_PUBLISHER_GOTCHAS_DB"):
+        kwargs["gotchas_db"] = env["STREAM_PUBLISHER_GOTCHAS_DB"]
 
     public_relay = _relay_from_env(env, "PUBLIC")
     operator_relay = _relay_from_env(env, "OPERATOR")
@@ -353,13 +362,20 @@ def _canonical_json(payload: Any) -> str:
     return json.dumps(payload, sort_keys=True, ensure_ascii=False, indent=None)
 
 
-def compute_content_hash(items: list, projects: dict, status: Optional[dict]) -> str:
+def compute_content_hash(
+    items: list, projects: dict, status: Optional[dict], site: Optional[dict] = None,
+) -> str:
     """A hash over exactly what changes the reader's experience -- never a
     wall-clock field. Two cycles that would write byte-identical
     `head.json`/`open.json`/`projects.json` (ignoring `published_at`)
     produce the same hash, which is what lets `run_cycle` tell "nothing
-    changed" from "something changed" without diffing files on disk."""
-    body = _canonical_json({"items": items, "projects": projects, "status": status})
+    changed" from "something changed" without diffing files on disk. `site`
+    (agents.json/tools.json/gotchas.json, added for the Agents/Tools/Forts
+    stream) folds project-wide data into the same change-detection path, so
+    an allowlist or confidence-level edit triggers a push exactly like a new
+    chat item would -- optional and defaulted to `None` so every existing
+    caller (and the hash this produces for it) is unchanged."""
+    body = _canonical_json({"items": items, "projects": projects, "status": status, "site": site})
     return hashlib.sha256(body.encode("utf-8")).hexdigest()
 
 
@@ -447,6 +463,17 @@ def _rsync_push(
 Pusher = Callable[..., Any]
 
 
+def _site_hash_payload(agents_json: dict, tools_json: dict, gotchas: list) -> dict:
+    """`agents_json`/`tools_json` minus their own `generated_at` -- a
+    wall-clock field that would otherwise bust `compute_content_hash` every
+    single cycle even when nothing about the roster, tools or gotchas
+    actually changed (the exact trap `compute_content_hash`'s own docstring
+    warns about for `published_at`)."""
+    agents_stable = {k: v for k, v in agents_json.items() if k != "generated_at"}
+    tools_stable = {k: v for k, v in tools_json.items() if k != "generated_at"}
+    return {"agents": agents_stable, "tools": tools_stable, "gotchas": gotchas}
+
+
 # ---- one cycle --------------------------------------------------------------
 
 
@@ -481,6 +508,19 @@ def run_cycle(
     # scripts/export_stream_feed.py.
     status = feed.build_placeholder_status()
 
+    # Project-wide data (handoffs/2026-10-02-site-agents-tools.md): the same
+    # across every fort, read fresh each cycle like everything else here
+    # (dfqueue.site_data's own read-only guarantees: the roster/registry
+    # loader never writes, and the gotcha store is opened `mode=ro`, same
+    # discipline as `feed.load_records_readonly` above).
+    agents_json = site_data.build_agents_json(records)
+    tools_json = site_data.build_tools_json()
+    gotchas_entries = (
+        site_data.load_gotchas_readonly(cfg.gotchas_db) if cfg.gotchas_db else []
+    )
+    public_gotchas = site_data.build_gotchas_json(gotchas_entries, public=True)
+    operator_gotchas = site_data.build_gotchas_json(gotchas_entries, public=False)
+
     fort_id = cfg.resolved_fort_id()
     staging = Path(cfg.staging_dir)
     cursor_path = staging / CURSOR_FILENAME
@@ -499,7 +539,14 @@ def run_cycle(
         operator_items, operator_out, fort_id=fort_id, fort_name=cfg.fort_name,
         fort_status=cfg.fort_status, projects=operator_projects, status=status,
     )
-    operator_hash = compute_content_hash(operator_items, operator_projects, status)
+    site_data.write_site_data(
+        operator_out, agents_json=agents_json, tools_json=tools_json,
+        gotchas_entries=gotchas_entries, public=False,
+    )
+    operator_hash = compute_content_hash(
+        operator_items, operator_projects, status,
+        site=_site_hash_payload(agents_json, tools_json, operator_gotchas),
+    )
     if kill_switch_active:
         result["operator"]["reason"] = "kill_switch_file"
     elif cfg.operator_relay is None:
@@ -530,10 +577,20 @@ def run_cycle(
             public_items, public_out, fort_id=fort_id, fort_name=cfg.fort_name,
             fort_status=cfg.fort_status, projects=public_projects, status=status,
         )
+    # Local staging is always written (same "keeps being written either
+    # way" convention `write_fort_feed` above already follows) -- but when
+    # the public side is off, it is excluded from the hash below, same as
+    # `items`/`projects`/`status` are, so it never spuriously causes a push
+    # while off and never counts toward "unchanged" once back on.
+    site_data.write_site_data(
+        public_out, agents_json=agents_json, tools_json=tools_json,
+        gotchas_entries=gotchas_entries, public=True,
+    )
     public_hash = compute_content_hash(
         [] if public_off else public_items,
         {"thread_to_project": {}, "projects": {}} if public_off else public_projects,
         None if public_off else status,
+        site=None if public_off else _site_hash_payload(agents_json, tools_json, public_gotchas),
     )
 
     if kill_switch_active:
@@ -592,6 +649,11 @@ def _build_arg_parser() -> argparse.ArgumentParser:
         "--fort-status", default=None, choices=list(_VALID_FORT_STATUSES),
         help="this fort's status for forts.json (default: live). STREAM_PUBLISHER_FORT_STATUS",
     )
+    parser.add_argument(
+        "--gotchas-db", default=None,
+        help="a live gotcha-store SQLite file (read-only); omit for an honest empty "
+             "gotchas.json. STREAM_PUBLISHER_GOTCHAS_DB",
+    )
     parser.add_argument("--once", action="store_true", help="run a single cycle and exit (the systemd-timer-triggered mode, infra/stream-publisher.timer.example)")
     parser.add_argument("--env-file", default=str(DEFAULT_ENV_PATH), help="path to a .env file to merge under the real environment (default: repo root .env)")
     return parser
@@ -621,6 +683,8 @@ def _config_from_args(args: argparse.Namespace) -> PublisherConfig:
         overrides["fort_name"] = args.fort_name
     if args.fort_status:
         overrides["fort_status"] = args.fort_status
+    if args.gotchas_db:
+        overrides["gotchas_db"] = args.gotchas_db
 
     def _relay_override(prefix: str) -> Optional[RelayTarget]:
         host = getattr(args, f"{prefix}_relay_host")

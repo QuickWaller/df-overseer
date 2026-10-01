@@ -214,6 +214,55 @@ def test_operator_gotchas_carry_call_excerpt_and_full_text(gotcha_db):
     assert "call_excerpt" in unsafe
 
 
+def test_general_gotcha_with_no_tool_reads_through_as_general(tmp_path):
+    """A sibling stream is changing `dfmcp/gotchas_store.py` so an entry may
+    have `tool IS NULL` (a general gotcha/vent, not about one tool); this
+    reader must not touch that store, but it must already carry a null/
+    missing `tool` straight through rather than defaulting it to a string
+    -- that is what lets the Agents panel's "general" group and the Tools
+    page both tell a general entry apart from a tool-specific one. Written
+    with a hand-built schema (not `gotchas_store.init_store`, whose checked-in
+    `entries.tool` column is still `NOT NULL` as of this stream) so this test
+    does not depend on that sibling stream having landed yet -- it only
+    proves THIS reader's own handling of a null tool, once the store allows
+    one."""
+    import sqlite3
+
+    path = tmp_path / "gotchas-general.sqlite3"
+    conn = sqlite3.connect(path)
+    try:
+        conn.executescript(
+            "CREATE TABLE entries (id TEXT PRIMARY KEY, tool TEXT, kind TEXT, "
+            "list TEXT NOT NULL, title TEXT NOT NULL, body TEXT NOT NULL, "
+            "status TEXT NOT NULL, created_at TEXT NOT NULL, "
+            "written_by_role TEXT NOT NULL, run_id TEXT NOT NULL, call_excerpt TEXT);"
+            "CREATE TABLE outcomes (seq INTEGER PRIMARY KEY AUTOINCREMENT, "
+            "entry_id TEXT NOT NULL, at TEXT NOT NULL, role TEXT NOT NULL, "
+            "run_id TEXT NOT NULL, result TEXT NOT NULL, note TEXT);"
+        )
+        conn.execute(
+            "INSERT INTO entries (id, tool, kind, list, title, body, status, "
+            "created_at, written_by_role, run_id, call_excerpt) VALUES "
+            "('vent-0001', NULL, NULL, 'vent', "
+            "'the overseer only wakes us when asked: no quiet seasonal check-in', "
+            "'Advisors propose rooms without checking whether anyone with the right "
+            "labor is free; good ideas get rejected for timing instead.', "
+            "'open', '2026-10-02T00:00:00+00:00', 'architect', 'run-general', NULL)"
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+    entries = site_data.load_gotchas_readonly(path)
+    assert len(entries) == 1
+    assert entries[0]["tool"] is None
+
+    public = site_data.build_gotchas_json(entries, public=True)
+    assert public[0]["tool"] is None
+    assert public[0]["list"] == "vent"
+    assert "call_excerpt" not in public[0]
+
+
 def test_gotchas_readonly_never_creates_a_missing_store(tmp_path):
     missing = tmp_path / "does-not-exist.sqlite3"
     with pytest.raises(Exception):

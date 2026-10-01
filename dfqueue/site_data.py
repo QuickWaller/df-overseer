@@ -29,6 +29,12 @@ LEVEL of the published tree, a SIBLING of `forts/` (`web/stream/README.md`
   with `public=True` never puts the key in the output dict at all (not
   merely `null`) -- see `test_site_data.py`'s own assertion for the exact
   shape this guarantees.
+- **A general entry (no one tool) passes through as `tool: null`, never a
+  placeholder string.** A sibling stream is relaxing
+  `dfmcp/gotchas_store.py`'s `entries.tool` column from `NOT NULL` so a
+  gotcha/vent about the work in general, not one tool, can be written; this
+  reader does not wait on that landing (it already reads `tool` as-is,
+  `None` included) and does not touch the store either way.
 - **It does not touch `agents/`, `dfmcp/` or `dfqueue/schema.py`/`store.py`**,
   per this stream's handoff.
 
@@ -563,6 +569,30 @@ def build_gotchas_json(entries: List[dict], *, public: bool) -> List[dict]:
 
 def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
+
+
+def _write_json(path: Path, payload: Any) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        json.dumps(payload, sort_keys=True, ensure_ascii=False, indent=None),
+        encoding="utf-8",
+    )
+
+
+def write_site_data(
+    root_dir: str | Path, *, agents_json: dict, tools_json: dict,
+    gotchas_entries: List[dict], public: bool,
+) -> None:
+    """`agents.json`, `tools.json` and `gotchas.json` at the TOP of a
+    projection root (`<root>/`, a sibling of `<root>/forts/` and
+    `<root>/forts.json` -- `web/stream/README.md`'s "Multiple forts"
+    section already reserves this spot). `agents.json`/`tools.json` carry
+    nothing sensitive, so the same payload goes to both projections;
+    `gotchas.json` is projected per `public` (see `build_gotchas_json`)."""
+    root_dir = Path(root_dir)
+    _write_json(root_dir / "agents.json", agents_json)
+    _write_json(root_dir / "tools.json", tools_json)
+    _write_json(root_dir / "gotchas.json", build_gotchas_json(gotchas_entries, public=public))
 
 
 # ---------------------------------------------------------------------------
