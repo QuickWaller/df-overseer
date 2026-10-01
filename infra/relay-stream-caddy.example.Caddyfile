@@ -21,7 +21,7 @@
 	auto_https off
 }
 
-http://127.0.0.1:8090 {
+http://:8090 {
 	bind 127.0.0.1
 	@page path / /index.html /app.js /style.css
 	handle @page {
@@ -46,7 +46,7 @@ http://127.0.0.1:8090 {
 	}
 }
 
-http://127.0.0.1:8091 {
+http://:8091 {
 	bind 127.0.0.1
 	@page path / /operator.html /index.html /app.js /style.css
 	handle @page {
