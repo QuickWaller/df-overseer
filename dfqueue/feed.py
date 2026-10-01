@@ -84,6 +84,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterable, Optional
 
+from . import feed_status
 from .schema import (
     ABANDON, ACCEPT, AMEND, ANSWER, ASK, DEFER, ESCALATION, EXECUTED,
     OBSERVATION, PASS, PROJECT, PROPOSAL, REJECT, RULING,
@@ -109,12 +110,18 @@ GAPS = [
     "link (ruling, answer, executed, project, amend, abandon, observation). "
     "A commission's proposal-side reply_to, and any ask/escalation `about`, "
     "read as null until slice S2/S5 add the columns.",
-    "hold codes (design §3.3 item 7): a held target's public text needs "
-    "dfqueue/public_text.yaml (proposed) and a hold_code field neither of "
-    "which exist; this module has no held-target rendering at all yet.",
+    "hold codes (design §3.3 item 7): read when present (dfqueue.feed_status"
+    ".step_hold_text), mapped through dfqueue/public_text.yaml (the sibling "
+    "stream's own file, handoffs/2026-10-02-queue-display-fields.md) when "
+    "that file exists and names the code. A held step with no hold_code at "
+    "all, or a code the yaml file does not (yet) map, still shows as "
+    "on-hold on the board, just with no reason text -- never a guessed one.",
     "public_title/label/public_rationale on project, amend, abandon "
-    "(design §3.3 item 6): not stored yet, so project/amend/abandon items "
-    "carry text: null on the public side. Closed by slice S4.",
+    "(design §3.3 item 6): read when present (handoffs/2026-10-02-stream-"
+    "board.md). A project/amend/abandon chat item's own `text` is still "
+    "null when public_rationale is absent -- no summary fallback for the "
+    "chat line, only for projects.json's own display `name` (truncated "
+    "summary; see build_projects_view).",
     "new kinds wake/run/goal/review/message/alarm (design §3.3 item 8): no "
     "writer exists for any of them yet, so no real record of these kinds "
     "can appear in a queue export this module reads. This module raises "
@@ -124,12 +131,13 @@ GAPS = [
     "fort status (design §3.1, feed.status): no per-cycle status push "
     "exists; build_placeholder_status() is the only status.json this slice "
     "can produce.",
-    "project step-level counts/top_blocker (dfqueue.store.project_status): "
-    "that function reads store._connect and the step_targets table; this "
-    "module's read-only reader only reads the records table, so "
-    "projects.json in this slice reports version/abandoned only, not "
-    "per-target progress. A read-only equivalent of project_status is left "
-    "for slice S1's publisher.",
+    "project step-level counts (dfqueue.store.project_status's own "
+    "step_targets-table read): build_projects_view now reports per-step "
+    "state and target counts via dfqueue.feed_status.step_board_states, "
+    "computed straight from records (executed actions, not the step_targets "
+    "table, which this records-only reader never sees) rather than via "
+    "store.project_status. The two should always agree where both apply; "
+    "they are not cross-checked against each other anywhere.",
     "call-log join (design §3.6): dfmcp's journald call log is not read by "
     "this module at all in S0; operator items carry no per-item tool calls.",
 ]
@@ -374,12 +382,14 @@ def _escalation_public_text(record: dict, ctx: dict) -> Optional[str]:
     return "The Overseer has asked the user for help."
 
 
-def _no_public_text(record: dict, ctx: dict) -> Optional[str]:
-    # project / amend / abandon: public_title / public_rationale (design
-    # §3.3 item 6) are not stored yet — GAPS. Never fall back to `summary`,
-    # `because` or `reason`, which are written for the model audience, not
-    # the public one (design §3.5's own "never public" column).
-    return None
+def _project_amend_abandon_public_text(record: dict, ctx: dict) -> Optional[str]:
+    # design §3.3 item 6's `public_rationale`, when the Overseer wrote one.
+    # Never a fallback to `summary`, `because` or `reason`, which are
+    # written for the model audience, not the public one (design §3.5's own
+    # "never public" column) -- the ONE fallback this slice's handoff grants
+    # (a truncated `summary` as a display NAME) is projects.json's own
+    # concern (see `_public_display_name` below), not this chat line's text.
+    return record.get("public_rationale")
 
 
 PUBLIC_TEXT_BUILDERS = {
@@ -390,9 +400,9 @@ PUBLIC_TEXT_BUILDERS = {
     ANSWER: _answer_public_text,
     PASS: _pass_public_text,
     ESCALATION: _escalation_public_text,
-    PROJECT: _no_public_text,
-    AMEND: _no_public_text,
-    ABANDON: _no_public_text,
+    PROJECT: _project_amend_abandon_public_text,
+    AMEND: _project_amend_abandon_public_text,
+    ABANDON: _project_amend_abandon_public_text,
     # OBSERVATION is handled by `build_public_item` returning None before
     # any text builder would be consulted (design §3.5: "no line").
 }
@@ -496,6 +506,68 @@ def build_operator_item(record: dict, *, seq: int, reply_to: Optional[str],
     }
 
 
+# ---- project display fields (design §3.3 item 6/7, handoffs/2026-10-02- --
+# ---- stream-board.md) -------------------------------------------------------
+
+#: The closed urgency vocabulary a project may carry (design register
+#: 2026-10-02, "Stream page look"). Anything else (missing, misspelled,
+#: written by a future role that gets it wrong) reads as unknown, never
+#: guessed up or down to the nearest known value.
+URGENCY_VALUES = ("normal", "elevated", "high")
+
+#: `name` is a display concern, not a chat line, so it gets its own, more
+#: generous budget than a single message — long enough that a truncated
+#: `summary` fallback still reads as a sentence fragment, not a word salad.
+_DISPLAY_NAME_MAX = 72
+
+
+def _sanitize_urgency(value: Any) -> Optional[str]:
+    """`value` if it is one of `URGENCY_VALUES`, else `None` -- never a
+    best-guess normalisation of something close (`"High"`, `"urgent"`)."""
+    return value if value in URGENCY_VALUES else None
+
+
+def _safe_public_text(text: Optional[str]) -> Optional[str]:
+    """`text` unless `find_unsafe_pattern` would withhold it, in which case
+    `None` -- the same conservative "a false positive costs one withheld
+    line" trade the chat-item safety net makes, applied to projects.json's
+    own display fields too (they are just as public)."""
+    if text is None:
+        return None
+    return None if find_unsafe_pattern(text) is not None else text
+
+
+def _truncate(text: str, max_len: int) -> str:
+    if len(text) <= max_len:
+        return text
+    return text[: max_len - 1].rstrip() + "…"
+
+
+def _public_display_name(record: dict) -> Optional[str]:
+    """A project's public display name: `public_title` (design §3.3 item 6)
+    when the Overseer wrote one and it looks safe, else a truncated
+    `summary` (this handoff's own named fallback -- `summary` is written for
+    the model audience, but is the only candidate text a project always
+    has, and the user explicitly asked for it as the LAST-resort display
+    name, never as the chat line's own body text). `None` only when neither
+    exists or both are unsafe."""
+    title = _safe_public_text(record.get("public_title"))
+    if title:
+        return title
+    summary = record.get("summary")
+    if not isinstance(summary, str) or not summary.strip():
+        return None
+    return _safe_public_text(_truncate(summary.strip(), _DISPLAY_NAME_MAX))
+
+
+def _public_board_steps(records: list[dict], project_id: str) -> list[dict]:
+    """`feed_status.step_board_states`'s steps, with the private
+    `held_detail` field stripped (public projection never gets the tool's
+    raw refusal text — design §3.3 item 7)."""
+    steps = feed_status.step_board_states(records, project_id)
+    return [{k: v for k, v in s.items() if k != "held_detail"} for s in steps]
+
+
 # ---- projects.json (design §4.2, §3.4's thread-to-project map) -------------
 
 
@@ -505,14 +577,19 @@ def build_projects_view(records: list[dict], *, public: bool) -> dict:
     `thread` id to the project it (retroactively) founded, per design §3.4,
     without ever rewriting the proposal/ruling item itself.
 
-    Per-target progress (`counts`, `top_blocker`, a `done`/`active` status)
-    needs `dfqueue.store.project_status`, which reads `step_targets` through
-    `store._connect` — out of scope for this read-records-only module (see
-    `GAPS`). This slice reports only `version` (1 plus amend count) and
-    `abandoned`/`abandoned_reason` (operator only — `abandoned_reason` is
-    the private `reason` field, never public until design §3.3 item 6's
-    `public_rationale` on abandon exists)."""
+    Each project entry carries what the stream board needs (handoffs/
+    2026-10-02-stream-board.md): `status` (active/hold/done/abandoned,
+    `dfqueue.feed_status.project_board_status`), `name` and `urgency`
+    (sanitised, `None` when unknown), `ruling_id`/`proposal_id` (ids only),
+    and `steps` (`dfqueue.feed_status.step_board_states`, public copy with
+    `held_detail` stripped). The operator projection additionally carries
+    the raw `summary`, `public_title`, `public_rationale`, `urgency` as
+    written (even if outside the known enum, so a bad write is visible to
+    an operator rather than silently hidden), `abandoned_reason`, and the
+    steps' own `held_detail`."""
     reply_to_by_id = {r["id"]: compute_reply_to(r) for r in records if r.get("id")}
+    rulings_by_id = {r["id"]: r for r in records if r.get("kind") == RULING and r.get("id")}
+    public_text = feed_status.load_public_text() if public else {}
 
     projects: dict[str, dict] = {}
     thread_to_project: dict[str, str] = {}
@@ -521,10 +598,24 @@ def build_projects_view(records: list[dict], *, public: bool) -> dict:
             continue
         pid = r["id"]
         thread_to_project[compute_thread(pid, reply_to_by_id)] = pid
-        entry: dict[str, Any] = {"id": pid, "version": 1, "abandoned": False}
-        if not public:
-            entry["from_ruling"] = r.get("from_ruling")
+        ruling_id = r.get("from_ruling")
+        ruling = rulings_by_id.get(ruling_id)
+        entry: dict[str, Any] = {
+            "id": pid,
+            "version": 1,
+            "abandoned": False,
+            "urgency": _sanitize_urgency(r.get("urgency")) if public else r.get("urgency"),
+            "ruling_id": ruling_id,
+            "proposal_id": ruling.get("proposal_id") if ruling else None,
+        }
+        if public:
+            entry["name"] = _public_display_name(r)
+        else:
+            entry["name"] = r.get("public_title") or r.get("summary")
+            entry["from_ruling"] = ruling_id
             entry["summary"] = r.get("summary")
+            entry["public_title"] = r.get("public_title")
+            entry["public_rationale"] = r.get("public_rationale")
         projects[pid] = entry
 
     for r in records:
@@ -538,8 +629,30 @@ def build_projects_view(records: list[dict], *, public: bool) -> dict:
             projects[pid]["abandoned"] = True
             if not public:
                 projects[pid]["abandoned_reason"] = r.get("reason")
-            # else: public abandoned-project text is a design §3.3 item 6
-            # gap (public_rationale on abandon) — no reason shown yet.
+            # else: an abandoned project's public reason is `abandon`'s own
+            # `public_rationale` (design §3.3 item 6), surfaced through the
+            # project's chat item (build_public_item), not duplicated here.
+
+    for pid in projects:
+        steps = (
+            _public_board_steps(records, pid) if public
+            else feed_status.step_board_states(records, pid)
+        )
+        projects[pid]["steps"] = steps
+        projects[pid]["status"] = feed_status.project_board_status(records, pid)
+        if public:
+            for step in steps:
+                if step.get("state") == "hold":
+                    text, code = feed_status.step_hold_text(
+                        records, pid, step["id"], public_text,
+                    )
+                    if code:
+                        step["hold_code"] = code
+                    if text:
+                        step["hold_text"] = text
+                    # No code at all, or a code with no mapped text yet:
+                    # the step still reads "hold" from its own `state` --
+                    # never a guessed reason (this handoff's own rule).
 
     return {"thread_to_project": thread_to_project, "projects": projects}
 
