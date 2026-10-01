@@ -62,3 +62,39 @@ most of them; urgency is new (register 2026-10-02, "Stream page look").
 `python -m pytest` and `dfmcp/tests` in `.venv-dfmcp` green (report the
 counts), and a Result section appended here naming every field, its
 limits, and anything left open.
+
+## Plan (executor)
+
+1. `dfqueue/schema.py`: add an optional-text-field validator (distinct from
+   `_validate_text_field`, which is required-field shaped) with a max-length
+   check and the same coordinate scan; a closed `urgency` vocabulary
+   (`normal`/`elevated`/`high`); `public_title` (60), `public_rationale`
+   (300) on `project`, `public_rationale` (300) on `amend`/`abandon`;
+   `label` (24, imperative) on a step, validated alongside the rest of
+   `_validate_step`; `hold_code` on an `observation` result, checked against
+   a vocabulary read from a new `dfqueue/public_text.yaml` (loaded once,
+   `lru_cache`, same pattern as `_load_roster`), never a hardcoded tuple, so
+   adding a code later is one data entry.
+2. `dfqueue/public_text.yaml`: `hold_codes:` map, the 8 codes design §3.3
+   item 7 names, each with one line of public text.
+3. `dfqueue/store.py`: `_canonical_step_json`'s byte-identical reuse check
+   (the fresh-id rule) excludes `label` from the comparison -- a label-only
+   edit is cosmetic, does not touch `targets`/`tool`/`args`, so it must not
+   force a fresh step id. Decision recorded here and in the Result section.
+4. `dfmcp/queue_tools.py`: add `label` to `_STEP_SCHEMA`; add
+   `public_title`/`public_rationale`/`urgency` to `_PROJECT_SCHEMA`/
+   `_PROJECT_FIELDS`; add `public_rationale` to `_AMEND_SCHEMA`/
+   `_AMEND_FIELDS` and `_ABANDON_SCHEMA`/`_ABANDON_FIELDS`. No new tool, no
+   allowlist change -- per-role tool counts must not move.
+5. `agents/overseer/role.md`: a short paragraph under Owns/Execution:
+   always set `public_title`, `public_rationale`, `urgency` and a `label`
+   per step on `project`/`amend`/`abandon`; what each urgency level means;
+   set `hold_code` where the code records a hold.
+   `agents/architect/role.md`, `agents/quartermaster/role.md`: one line
+   suggesting a title in the proposal summary.
+6. Tests in `dfqueue/tests/test_schema.py`, `dfqueue/tests/test_store.py`
+   (the label-only-amend case end to end) and `dfmcp/tests/test_queue_tools.py`.
+
+Not touching `web/stream/*`, `dfqueue/feed.py`, `dfqueue/feed_status.py`,
+or `dfqueue/render.py` (not part of this handoff's touched surfaces; the
+public projection table is a future stream's work).
