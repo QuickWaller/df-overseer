@@ -300,3 +300,88 @@ screenshot and click through both `index.html` and `operator.html`:
   its new fields defensively (`.get(...)`, tolerant of their absence) but
   I have not seen its actual field names/shapes land, only the handoff's
   own spec for them.
+
+### Result, follow-up pass (2026-10-02, small items off this handoff's own gaps)
+
+Merged `origin/main` first (fast-forward): the sibling queue-display-fields
+stream had landed, `dfqueue/schema.py` now knows `public_title`,
+`public_rationale`, `urgency`, step `label` and `hold_code` for real, and
+`web/stream/fixtures/board-demo.jsonl` existed but had never been run
+through `dfqueue.schema.validate` (invented tool ids, an `outcome`
+vocabulary the schema never had).
+
+1. **`scripts/stream_publisher.py` now calls `dfqueue.feed.write_fort_feed`**
+   (closing the gap this Result section named above). `PublisherConfig`
+   gained `fort_id`/`fort_name`/`fort_status` and a `resolved_fort_id()`
+   method: `fort_id` defaults to `STREAM_PUBLISHER_DB`'s own file stem
+   (`Uniboslan.sqlite3` -> `Uniboslan`) when unset, matching
+   `scripts/export_stream_feed.py`'s own `--fort-id` convention; name/status
+   default to `Ragwind`/`live`. New CLI flags `--fort-id`/`--fort-name`/
+   `--fort-status` and env vars `STREAM_PUBLISHER_FORT_ID`/`_FORT_NAME`/
+   `_FORT_STATUS` (placeholders added to `infra/local.example.env`).
+   `fort_status` is validated against `live`/`lost` the same way
+   `export_stream_feed.py --fort-status`'s `choices` does. Every kill
+   switch, the change-detection hash, the heartbeat and the read-only
+   guarantees (never importing `dfqueue.store.append`/`_connect`) are
+   unchanged -- only *where* each side's `write_feed` call writes to
+   changed, from the per-fort directory directly to the projection root
+   `write_fort_feed` itself resolves. 7 new tests in
+   `tests/test_stream_publisher.py` (fort-id resolution and its db-stem
+   fallback, env/CLI reading, an invalid `fort_status` rejected, `run_cycle`
+   actually writing `forts.json` plus `forts/<fort-id>/...` on both sides,
+   an explicit `--fort-id` overriding the db stem); 3 existing tests updated
+   for the new path shape (`stage/public/head.json` ->
+   `stage/public/forts/<fort-id>/head.json`). `python -m pytest
+   tests/test_stream_publisher.py dfqueue -q`: **418 passed**.
+   `web/stream/README.md` documents what the first real deploy of this
+   change does on the relay: nothing has ever pushed the multi-fort layout
+   there yet, so there is nothing to go stale on a from-scratch install; if
+   an even older flat-layout push already exists, it goes stale but stays
+   harmless, because the page only falls back to the flat layout when
+   `forts.json` is entirely ABSENT, never when a stale flat file merely sits
+   beside it.
+2. **`web/stream/fixtures/board-demo.jsonl` now validates clean against
+   `dfqueue.schema.validate`, record for record.** Two real drift sources,
+   both now closed: (a) every step/action `tool` was an invented id
+   (`site.clear`, `workshop.designate`, `construction.dig-stair`,
+   `work_order.queue`, `stockpile.get-barrel`, `stockpile.check`,
+   `construction.dig-room`, `carpenter.make-bed`, `hauling.haul-stone`,
+   `construction.smooth`) -- none are real tools in
+   `scripts/dfhack/TOOLS.yaml` (confirmed via `dfmcp.registry.load_registry()
+   .ids()`, 109 real ids). Remapped to real ones, picked for narrative fit:
+   `trees.fell`, `workshop.build`, `diggable.dig-stair`, `workjob.queue`
+   (used for both the brew-job queue and, later, the stone-hauling queue),
+   `stocks.availability`, `stocks.food-drink`, `diggable.dig`,
+   `building.build` (for "Make bed", the closest generic furniture-placement
+   tool there is), `construction.build` (for "Smooth floor"). (b) two
+   `executed` actions used `outcome: "blocked"`/`"partial"`, but
+   `dfqueue.schema.EXECUTION_OUTCOMES` is only `("success", "failure")` --
+   fixed to `"failure"` (the blocked barrel fetch) and `"success"` (the
+   partially-issued dig, which still succeeded as an action; the partial
+   progress is what `target_state: "issued"` on a 4-of-12 target list
+   already expresses). Every record's `role` was already an enabled roster
+   role and every `type`/`urgency`/`hold_code` was already in its closed
+   vocabulary -- only tool ids and action outcomes had drifted.
+   Added `dfqueue/tests/test_board_demo_fixture.py`: validates every fixture
+   record against `dfqueue.schema.validate` (so a future tool rename or
+   outcome-vocabulary change catches this fixture automatically), plus a
+   content guard that the fixture still covers a done project, an amended
+   plan, a rejected ruling and a held step with a real `hold_code`.
+   Re-exported with `python scripts/export_stream_feed.py --records
+   web/stream/fixtures/board-demo.jsonl --out-dir web/stream/data
+   --fort-id uniboslan --fort-name Ragwind --fort-status live` (succeeded,
+   25 public / 26 operator items). Rendered with a real, system-installed
+   Chrome headless via `puppeteer-core` (scratch npm project, not this
+   repo) against `python -m http.server`: the board (Under way/On hold/
+   Done/Turned down, urgency pills, mini job graphs, step counts), the
+   details panel (job graph with `v2`/`v3` tags, "Happening now",
+   conversation grouped by day), both themes (Terminal 2 default, Stone 2
+   via the toggle) and both widths (1400x1000, 375x900) all rendered
+   correctly with zero horizontal scroll
+   (`scrollWidth - clientWidth === 0` confirmed at 375px in both themes)
+   and no console errors beyond the expected `/favicon.ico` 404. Full
+   screenshots reviewed directly, not just scraped text.
+3. Not touched: `Working.md`, `decisions/DECISIONS.md`, `memory/` (per this
+   repo's rule that an executor does not own those). No deploy of any kind.
+   `web/stream/data/` (the re-export's output) is gitignored and was not
+   committed.
