@@ -1,0 +1,88 @@
+# UNDEPLOYED. This file is not installed on VM 103 or anywhere else -- the
+# stream that wrote it (handoffs/2026-10-01-stream-page-s1-prep.md) was
+# explicitly scoped to "build and test everything S1 needs, deploy nothing."
+# It exists so the eventual deploy step is a review of a written unit, not
+# an improvised one typed against a live host, same convention as
+# infra/dfmcp-server.service.example and infra/dfseries-import.service.example.
+#
+# Triggered by stream-publisher.timer, not started directly and not enabled
+# on its own (Type=oneshot, no [Install] section needed -- the timer is
+# what gets enabled). This mirrors dfseries-import's own
+# service+timer split rather than a long-running Restart=always loop:
+# scripts/stream_publisher.py's own `--once` flag runs exactly one cycle and
+# exits, so a crashed or hung cycle never blocks the next tick, and the
+# timer's own cadence (see stream-publisher.timer.example) IS the "push on
+# change, at most every N seconds" cadence design
+# research/2026-10-01-stream-page-design.md §4.3 asks for.
+#
+# Copy to /etc/systemd/system/stream-publisher.service on VM 103, fill in
+# CHANGEME, and do not enable the TIMER (not this file directly) before:
+#   1. scripts/stream_publisher.py's own requirements are satisfied: a
+#      real queue SQLite path (STREAM_PUBLISHER_DB, NEVER the in-tree
+#      dfqueue/<fort>.sqlite3 default -- same "a code redeploy must never
+#      clobber live data" reasoning dfmcp-server.service's own comment
+#      gives for MCP_SERVER_QUEUE_DB), a staging directory this unit's User
+#      can write (STREAM_PUBLISHER_STAGING_DIR, kept OUTSIDE the code tree,
+#      same StateDirectory= mechanism below), and -- once the relay side of
+#      this handoff's task 2 is actually provisioned -- the four
+#      STREAM_PUBLISHER_{PUBLIC,OPERATOR}_RELAY_{HOST,USER,PATH,SSH_KEY}
+#      variables and a real restricted push key on disk (see
+#      infra/stream-publisher-push-key-authorized-keys.example for the
+#      relay-side half of that key).
+#   2. Until the relay side exists, this unit can still run safely with
+#      ONLY STREAM_PUBLISHER_DB/STREAM_PUBLISHER_STAGING_DIR set: no relay
+#      variables means `run_cycle` writes the local staging files and
+#      pushes nothing (`"reason": "no_relay_configured"`), which is exactly
+#      this handoff's own scope -- a safe first install, reviewed, before
+#      the push half is turned on.
+#   3. The exact `systemctl enable --now stream-publisher.timer` command,
+#      and separately the moment real relay variables are added, have both
+#      been run past the user for explicit go-ahead, per this repo's
+#      CLAUDE.md rule that any change to live/VM state needs confirmation
+#      each time.
+
+[Unit]
+Description=df-overseer stream page publisher (triggered by stream-publisher.timer)
+# Needs the queue file on disk and (once configured) the network to reach
+# the relay -- but never DFHack's RPC socket; this reads the queue only.
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+# Same account dfmcp-server.service runs as is NOT required here -- this
+# unit only needs READ access to the queue database and its own staging
+# directory, never write access to anything dfmcp/DFHack own. A narrower,
+# dedicated account is recommended precisely because this is the one
+# process on VM 103 whose job is to reach outward to the most exposed host
+# in the estate (design §4.1's "VM 103 only dials out" -- this is the dial).
+User=CHANGEME
+Group=CHANGEME
+
+WorkingDirectory=/CHANGEME/df-automation
+EnvironmentFile=/CHANGEME/df-automation/.env
+ExecStart=/CHANGEME/df-automation/.venv-dfmcp/bin/python /CHANGEME/df-automation/scripts/stream_publisher.py --once
+
+# Hardened like dfmcp-server.service, with the read/write split this unit
+# actually needs: read-only access to the code tree and the queue's own
+# directory, write access only to its own staging directory and the SSH
+# key file it reads (never writes) for the push.
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadOnlyPaths=/CHANGEME/df-automation
+# The queue's own directory: read-only is enough -- this unit never writes
+# to the queue (dfqueue.feed.load_records_readonly / dfqueue.feed_status's
+# own read-only connections, never dfqueue.store._connect). If the queue
+# lives on the same filesystem as dfmcp-server.service's own
+# MCP_SERVER_QUEUE_DB directory, this path is the same one, just
+# read-only here where dfmcp-server.service needs it read-write.
+ReadOnlyPaths=/CHANGEME/queue-db-dir
+# StateDirectory=stream-publisher creates /var/lib/stream-publisher (owned
+# by User/Group above) and makes it implicitly writable under
+# ProtectSystem=strict, with no further ReadWritePaths= needed -- same
+# mechanism dfmcp-server.service uses for its own state. Point
+# STREAM_PUBLISHER_STAGING_DIR and STREAM_PUBLISHER_KILL_SWITCH_FILE
+# somewhere under this directory.
+StateDirectory=stream-publisher

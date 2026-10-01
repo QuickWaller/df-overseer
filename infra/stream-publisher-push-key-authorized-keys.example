@@ -1,0 +1,54 @@
+# UNDEPLOYED template for ONE LINE in the relay's own
+# ~stream-pub/.ssh/authorized_keys (a dedicated, unprivileged account on
+# the relay -- never the account anything else on the relay runs as).
+# Design research/2026-10-01-stream-page-design.md §4.1: "the publisher
+# pushes with rsync over SSH using a second dedicated key, restricted on the
+# relay side to writing one directory (OpenSSH restrict plus rsync's rrsync
+# helper, the same pattern as the viewer tunnel's permitopen key)."
+#
+# Generate the key ON VM 103 (never on the relay, and never reuse any other
+# key this project already has):
+#   ssh-keygen -t ed25519 -f /etc/stream-publisher/relay_push_ed25519 -N "" \
+#       -C "stream-publisher push, VM 103 -> relay, directory-restricted"
+# The PUBLIC half goes on the relay (this file, one line below); the
+# PRIVATE half stays on VM 103 at the path STREAM_PUBLISHER_PUBLIC_RELAY_SSH_KEY
+# / STREAM_PUBLISHER_OPERATOR_RELAY_SSH_KEY point at (infra/local.example.env
+# has both). One key restricted to the PARENT of both data/public/ and
+# data/operator/ (design §4.2's file layout) is simpler than two separate
+# keys and still satisfies "restricted to one directory" -- the split
+# between what the PUBLIC and ADMIN Cloudflare tunnels can each reach is
+# enforced at the relay's own static-server layer (design §5: two loopback-
+# bound server blocks, only one of which has a data/operator/ directory to
+# serve at all), not at this key.
+#
+# `rrsync` (restricted rsync, ships in the rsync package's /usr/share/doc/
+# examples/ on Debian -- confirm the exact path on the relay's actual
+# Debian release before relying on it; design §11 flags this as
+# UNVERIFIED) restricts every rsync session using this key to operations
+# inside the one directory named below, and nothing else -- no shell, no
+# other command, whatever the connecting client actually asks for.
+#
+# On the relay, find or copy rrsync somewhere executable, e.g.:
+#   cp /usr/share/doc/rsync/examples/rrsync /usr/local/bin/rrsync
+#   chmod 755 /usr/local/bin/rrsync
+# Then add this ONE line (replace <public-key-contents> with the real
+# public key's contents, as one unbroken line, and create the
+# stream-pub account and /srv/stream/data directory first):
+
+command="/usr/local/bin/rrsync /srv/stream/data",restrict,no-port-forwarding,no-X11-forwarding,no-agent-forwarding,no-pty ssh-ed25519 <public-key-contents> stream-publisher-push
+
+# `restrict` (OpenSSH >= 7.2) is the modern catch-all that implies every
+# `no-*` option already listed -- they are kept explicit anyway so the line
+# is self-documenting even on an older OpenSSH that does not know
+# `restrict` yet. `rrsync` (no `-ro`) allows writes under /srv/stream/data
+# only -- the push genuinely needs to upload, not just read -- but still
+# refuses to touch anything outside that directory, including via `../`.
+#
+# Verify after installing (from VM 103, using the private key):
+#   rsync -az -e "ssh -i /etc/stream-publisher/relay_push_ed25519" \
+#       /tmp/smoke-test/ stream-pub@<relay-vm-ip>:/srv/stream/data/smoke-test/
+#   # then confirm the far side really has it, and that a path OUTSIDE
+#   # /srv/stream/data is refused:
+#   rsync -az -e "ssh -i /etc/stream-publisher/relay_push_ed25519" \
+#       /tmp/smoke-test/ stream-pub@<relay-vm-ip>:/etc/smoke-test/
+#   # (the second command MUST fail)

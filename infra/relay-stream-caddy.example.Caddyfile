@@ -1,0 +1,87 @@
+# UNDEPLOYED template for a Caddyfile on the relay. Design
+# research/2026-10-01-stream-page-design.md §5: "a small static web server
+# (Caddy or nginx) on the relay, bound to loopback, in front of the existing
+# websockify, serving the page, noVNC's assets, /data/public/, and proxying
+# the websocket path to websockify. The public tunnel's ingress points at it
+# instead of at websockify directly. A second server block, also loopback
+# only and reachable only through the admin tunnel, serves the same page
+# with /data/operator/."
+#
+# Caddy chosen over nginx for this template only because its config is
+# shorter to review line by line; nginx works identically in spirit if
+# that is the relay's existing convention instead -- nothing here depends
+# on a Caddy-specific feature besides `file_server`/`reverse_proxy`, both of
+# which nginx has its own equivalents for.
+#
+# Today (design §2, verified in this repo at the design doc's own
+# revision): the relay serves noVNC through websockify's OWN built-in web
+# server, listening directly on the port each Cloudflare tunnel's ingress
+# points at (NOVNC_PORT for the public tunnel, NOVNC_CONTROL_PORT for the
+# admin tunnel, both loopback-bound for the control instance -- see
+# scripts/provision_relay.py's cmd_webvnc). Installing this Caddyfile is a
+# real topology change: each tunnel's ingress must be repointed from
+# websockify's port to THIS Caddy instance's port instead, with Caddy
+# proxying the websocket path on to websockify's (now loopback-only, no
+# longer tunnel-facing) port. That repoint is a deploy step for the
+# orchestrator to run only after the user's go-ahead -- this file is the
+# reviewed config, not the deploy itself.
+#
+# CHANGEME markers: the two Caddy listen ports (pick anything free and
+# loopback-only; they replace websockify's current port in each tunnel's
+# ingress rule), the page's own checkout path on the relay, and
+# websockify's own (now-internal) port for each instance.
+
+# ---- public server block: noVNC view-only + the public stream page -------
+# This tunnel's Cloudflare ingress must point at 127.0.0.1:<this port>
+# instead of at websockify's NOVNC_PORT directly.
+127.0.0.1:CHANGEME_PUBLIC_CADDY_PORT {
+	# The stream page and noVNC's own static assets live side by side in
+	# one checkout on the relay (design §5: "same origin: embed noVNC
+	# directly" / "same origin, no CORS"). web/stream/ is this repo's own
+	# directory, deployed to the relay by whatever mechanism the eventual
+	# deploy step chooses (rsync of the checkout, a CI artifact, etc --
+	# out of this handoff's scope, which builds the PUBLISHER side only).
+	root * /CHANGEME/relay-checkout/web/stream
+	file_server
+
+	# The stream page's own data files, pushed here by
+	# scripts/stream_publisher.py over the restricted key (this directory
+	# is NOT under web/stream/ itself -- it is the rsync destination named
+	# in infra/stream-publisher-push-key-authorized-keys.example,
+	# /srv/stream/data/public).
+	handle_path /data/public/* {
+		root * /srv/stream/data/public
+		file_server
+	}
+
+	# noVNC's own websocket path, proxied to the existing websockify
+	# instance -- now loopback-only, no longer directly tunnel-facing.
+	handle /websockify {
+		reverse_proxy 127.0.0.1:CHANGEME_WEBSOCKIFY_PUBLIC_PORT
+	}
+
+	# NEVER served here: /data/operator/. There is no such directory
+	# reachable from this server block at all -- design §5's own rule
+	# ("the operator directory must never be served by the public server
+	# block") is met by this block having no handle_path for it, not by a
+	# deny rule that could be misconfigured away.
+}
+
+# ---- operator server block: same page, operator data, same admin tunnel --
+# Reachable ONLY through the existing admin Cloudflare Tunnel + Access
+# application (scripts/provision_relay.py's --control instance's own
+# loopback-only convention, 2026-09-11's lesson: Access must be the WHOLE
+# gate). This tunnel's ingress must point at 127.0.0.1:<this port>.
+127.0.0.1:CHANGEME_OPERATOR_CADDY_PORT {
+	root * /CHANGEME/relay-checkout/web/stream
+	file_server
+
+	handle_path /data/operator/* {
+		root * /srv/stream/data/operator
+		file_server
+	}
+
+	handle /websockify {
+		reverse_proxy 127.0.0.1:CHANGEME_WEBSOCKIFY_CONTROL_PORT
+	}
+}
