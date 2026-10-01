@@ -336,6 +336,13 @@ class StreamPage {
     this.root = root;
     this.theme = this._loadTheme();
     this.selected = null; // {kind: "project"|"proposal", id} | null
+    // Multi-fort data layout (register 2026-10-02, "plan for more than one
+    // fort"): `dataRoot` is the PROJECTION root (`data/public`), not a
+    // feed directly. `fortId`/`fortMeta` are resolved once from
+    // `${dataRoot}/forts.json`'s own `current` fort -- never hard-coded
+    // here. `_feedRoot()` is what loadAll/poll actually fetch from.
+    this.fortId = null;
+    this.fortMeta = null;
     this.items = [];
     this.itemsById = new Map();
     this.projects = { thread_to_project: {}, projects: {} };
@@ -378,13 +385,37 @@ class StreamPage {
 
   // ---- data loading ---------------------------------------------------
 
+  /** `${dataRoot}/forts.json`'s own `current` fort, resolved once (cached
+   * on `this.fortId`). Falls back to `dataRoot` itself as the feed root
+   * (the pre-multi-fort layout) when `forts.json` is missing or empty --
+   * a static-file 404 here is expected for an older export, not an error
+   * to surface to the viewer. */
+  async _resolveFort() {
+    if (this.fortId !== null || this._fortResolved) return;
+    this._fortResolved = true;
+    const index = await fetchJson(`${this.dataRoot}/forts.json`).catch(() => null);
+    const forts = (index && Array.isArray(index.forts)) ? index.forts : [];
+    const current = forts.find((f) => f.current) || forts[0] || null;
+    if (current) {
+      this.fortId = current.id;
+      this.fortMeta = current;
+    }
+  }
+
+  _feedRoot() {
+    return this.fortId ? `${this.dataRoot}/forts/${this.fortId}` : this.dataRoot;
+  }
+
   async loadAll() {
-    const head = await fetchJson(`${this.dataRoot}/head.json`).catch(() => null);
-    const open = await fetchJson(`${this.dataRoot}/open.json`).catch(() => ({ items: [] }));
-    const projects = await fetchJson(`${this.dataRoot}/projects.json`).catch(
+    await this._resolveFort();
+    this._applyFortMeta();
+    const root = this._feedRoot();
+    const head = await fetchJson(`${root}/head.json`).catch(() => null);
+    const open = await fetchJson(`${root}/open.json`).catch(() => ({ items: [] }));
+    const projects = await fetchJson(`${root}/projects.json`).catch(
       () => ({ thread_to_project: {}, projects: {} })
     );
-    const status = await fetchJson(`${this.dataRoot}/status.json`).catch(() => null);
+    const status = await fetchJson(`${root}/status.json`).catch(() => null);
 
     this.head = head;
     // S0/S1 have no closed segments to speak of in the small local exports
@@ -401,7 +432,7 @@ class StreamPage {
   async poll() {
     if (document.hidden) return; // Page Visibility API, design section 4.3
     try {
-      const head = await fetchJson(`${this.dataRoot}/head.json`);
+      const head = await fetchJson(`${this._feedRoot()}/head.json`);
       if (!head || head.last_seq === this.lastSeq) return;
       await this.loadAll();
     } catch (e) {
@@ -434,9 +465,12 @@ class StreamPage {
   }
 
   _buildHeader() {
-    const name = el("span", { class: "e-name", text: "Ragwind" });
-    const subtitle = el("span", { class: "muted", text: "  Uniboslan, run by four AI agents and a scheduler" });
-    const titles = el("div", {}, [name, subtitle]);
+    // Placeholder only -- never the data path's fort id. Replaced by the
+    // real fort's own `name` once `forts.json` resolves (`_applyFortMeta`);
+    // a fort with no name at all, or no fort listed, just keeps this.
+    this.titleEl = el("span", { class: "e-name", text: "Fortress" });
+    const subtitle = el("span", { class: "muted", text: "  run by four AI agents and a scheduler" });
+    const titles = el("div", {}, [this.titleEl, subtitle]);
 
     const whoswhoBtn = el("button", {
       type: "button", class: "closebtn", style: "width:auto;padding:0 12px;font-size:12px",
@@ -498,7 +532,21 @@ class StreamPage {
       ? "Showing: Public preview"
       : "Showing: Operator";
     this.operatorToggleBtn.setAttribute("aria-pressed", String(this.showAsPublic));
+    // A different projection root could in principle list a different
+    // fort (or none yet) -- re-resolve rather than keep the old one.
+    this.fortId = null;
+    this.fortMeta = null;
+    this._fortResolved = false;
     this.loadAll();
+  }
+
+  /** The header's fort name, once resolved (handoff: "never hard-coded in
+   * app.js"). Before the first load, or if no fort is listed at all, shows
+   * a generic placeholder rather than inventing a name. */
+  _applyFortMeta() {
+    if (this.fortMeta && this.fortMeta.name) {
+      this.titleEl.textContent = this.fortMeta.name;
+    }
   }
 
   _buildLiveView() {

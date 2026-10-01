@@ -12,6 +12,14 @@ reads either a live-shaped SQLite file (same flag, same reader) or a
 local directory the page can `fetch()` from a static file server. No
 network access, no VM.
 
+**Multiple forts** (register 2026-10-02, "plan for more than one fort"):
+every export names ONE fort (`--fort-id`, falling back to the `--db` file's
+own stem, since that is already how this repo names a fort's queue file --
+`dfqueue/Uniboslan.sqlite3` -- or to `uniboslan` for a `--records` export,
+the one real fort this repo automates today, CLAUDE.md's own "Current
+state"). Never hard-code a fort id in `web/stream/app.js` itself -- the page
+reads `forts.json` and follows whichever fort is marked `current`.
+
 Usage (see `web/stream/README.md` for the full walkthrough)::
 
     python scripts/export_stream_feed.py \\
@@ -20,8 +28,10 @@ Usage (see `web/stream/README.md` for the full walkthrough)::
 
     python scripts/export_stream_feed.py --db dfqueue/Uniboslan.sqlite3 --out-dir web/stream/data
 
-Writes `<out-dir>/public/` and `<out-dir>/operator/`, each the full
-`data/...` layout `dfqueue.feed.write_feed` produces (design section 4.2).
+Writes `<out-dir>/public/` and `<out-dir>/operator/`, each holding
+`forts.json` (every fort this root has ever been given, this run's fort
+marked `current`) and `forts/<fort-id>/`, the full per-fort `data/...`
+layout `dfqueue.feed.write_feed` produces (design section 4.2).
 """
 
 from __future__ import annotations
@@ -47,6 +57,12 @@ def _load(records_path: str | None, db_path: str | None) -> list[dict]:
     raise SystemExit("pass one of --records <path/to/records.jsonl> or --db <path/to/fort.sqlite3>")
 
 
+def _default_fort_id(records_path: str | None, db_path: str | None) -> str:
+    if db_path:
+        return Path(db_path).stem
+    return "uniboslan"  # the one real fort this repo automates (CLAUDE.md's own "Current state")
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--records", help="a records.jsonl export (dfqueue.store.export_jsonl's shape)")
@@ -55,28 +71,41 @@ def main(argv: list[str] | None = None) -> int:
         "--out-dir", default=str(REPO_ROOT / "web" / "stream" / "data"),
         help="parent directory to write public/ and operator/ into (default: web/stream/data)",
     )
+    parser.add_argument(
+        "--fort-id", default=None,
+        help="this export's fort id (default: the --db file's own stem, or 'uniboslan' for --records)",
+    )
+    parser.add_argument("--fort-name", default="Ragwind", help="this fort's display name (default: Ragwind)")
+    parser.add_argument(
+        "--fort-status", default="live", choices=["live", "lost"],
+        help="this fort's status for forts.json (default: live)",
+    )
     args = parser.parse_args(argv)
 
     records = _load(args.records, args.db)
     out_dir = Path(args.out_dir)
+    fort_id = args.fort_id or _default_fort_id(args.records, args.db)
 
     public_items = feed.build_items(records, public=True)
     public_projects = feed.build_projects_view(records, public=True)
-    feed.write_feed(
-        public_items, out_dir / "public", projects=public_projects,
+    feed.write_fort_feed(
+        public_items, out_dir / "public", fort_id=fort_id, fort_name=args.fort_name,
+        fort_status=args.fort_status, projects=public_projects,
         status=feed.build_placeholder_status(),
     )
 
     operator_items = feed.build_items(records, public=False)
     operator_projects = feed.build_projects_view(records, public=False)
-    feed.write_feed(
-        operator_items, out_dir / "operator", projects=operator_projects,
+    feed.write_fort_feed(
+        operator_items, out_dir / "operator", fort_id=fort_id, fort_name=args.fort_name,
+        fort_status=args.fort_status, projects=operator_projects,
         status=feed.build_placeholder_status(),
     )
 
     print(
         f"Wrote {len(public_items)} public item(s) and {len(operator_items)} "
-        f"operator item(s) from {len(records)} record(s) to {out_dir}"
+        f"operator item(s) from {len(records)} record(s) to {out_dir} "
+        f"(fort '{fort_id}')"
     )
     return 0
 
