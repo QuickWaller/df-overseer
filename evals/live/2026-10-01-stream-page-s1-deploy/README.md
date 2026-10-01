@@ -54,3 +54,32 @@ Date: 2026-10-01. User's go-ahead ("yes for 2"). Runbook:
 - home-lab obligation: two new services (Caddy on the relay,
   stream-publisher on VM 103) belong in `home-lab/inventory/services.yaml`;
   this repo cannot edit it.
+
+## Tunnels repointed by the user; the front-door change (same day)
+
+- The user repointed both tunnels in the dashboard. The admin connector
+  took the change at once; the public connector kept `localhost:6080`
+  until `systemctl restart cloudflared` on the relay (it had just
+  reconnected and missed the update).
+- **White screen, first misdiagnosed.** The page loaded blank. I first
+  blamed a Cloudflare cache of an empty `app.js` (`cf-cache-status: HIT`,
+  length 0). Wrong cause: Caddy sites were written `http://127.0.0.1:8090`,
+  which answer only requests whose Host is 127.0.0.1; tunnel requests carry
+  the public hostname, matched no site, and got an empty 200 for every
+  path. Every loopback test had passed because curl sent Host 127.0.0.1.
+  Fixed to `http://:8090` and `http://:8091` with `bind 127.0.0.1` (still
+  one loopback listener per port, verified). The empty answers had been
+  cached by Cloudflare for the `.js` and `.css` names, so asset links now
+  carry `?v=3` and the page routes send `Cache-Control: no-cache`, data
+  `no-store`.
+- **The page is the front door** (the user: the addresses were not
+  convenient): `/` is the stream page with the live view embedded
+  (view-only on the public site, full control on the admin site), `/view`
+  redirects to the bare viewer, old `/stream/...` links redirect to `/`,
+  everything else passes through to noVNC. Caddy's `redir /path 302`
+  read the target as a path matcher; fixed with `redir * /path 302`.
+- From outside after the fixes: public `/` 200 (1302 bytes), `app.js?v=3`
+  22116 bytes, `style.css?v=3` 9634, `data/public/head.json` 191,
+  `/view` 302, `vnc.html` 200, `/operator.html` and
+  `/data/operator/head.json` 404 on the public site; admin `/` redirects to
+  Cloudflare Access.
