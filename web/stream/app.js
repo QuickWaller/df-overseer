@@ -1321,7 +1321,7 @@ class SitePage {
 
   _agentMapSvg() {
     const order = this._ringLayout();
-    const W = 1120, H = 700, NW = 176, NH = 52;
+    const W = 1120, H = 700, NW = 210, NH = 64;
     const hub = { x: 470, y: 350 };
     const ry = 275, rx = ry * 1.18;
     const pos = (sp) => {
@@ -1350,10 +1350,10 @@ class SitePage {
       if (opts.sel) g.append(svgEl("rect", { x: x - hw - 7, y: y - hh - 7, width: hw * 2 + 14, height: hh * 2 + 14, fill: "none", stroke: color, "stroke-width": "1", "stroke-dasharray": "2 3" }));
       g.append(svgEl("rect", { x: x - hw, y: y - hh, width: hw * 2, height: hh * 2, fill: "var(--raised)", stroke: color, "stroke-width": opts.planned ? "1.5" : "2", "stroke-dasharray": opts.planned ? "5 4" : "" }));
       if (opts.double) g.append(svgEl("rect", { x: x - hw + 5, y: y - hh + 5, width: hw * 2 - 10, height: hh * 2 - 10, fill: "none", stroke: color, "stroke-width": "1" }));
-      const t1 = svgEl("text", { x, y: y - (opts.big ? 4 : 2), "text-anchor": "middle", fill: color, "font-size": opts.big ? "18" : "14", "font-weight": "700", "font-family": "inherit" });
+      const t1 = svgEl("text", { x, y: y - (opts.big ? 5 : 3), "text-anchor": "middle", fill: color, "font-size": opts.big ? "22" : "17", "font-weight": "700", "font-family": "inherit" });
       t1.textContent = title;
       g.append(t1);
-      const t2 = svgEl("text", { x, y: y + (opts.big ? 18 : 15), "text-anchor": "middle", fill: "var(--faint)", "font-size": "11", "font-family": "inherit" });
+      const t2 = svgEl("text", { x, y: y + (opts.big ? 21 : 18), "text-anchor": "middle", fill: "var(--faint)", "font-size": "13", "font-family": "inherit" });
       t2.textContent = sub;
       g.append(t2);
       if (opts.hoverKey) {
@@ -1378,7 +1378,7 @@ class SitePage {
       const p = pos(sp);
       const dim = focusKey && focusKey !== sp.key && focusKey !== overseerKey;
       const w = sp.planned ? 1.5 : 1.5 + (4.5 * traffic(sp.key)) / maxN;
-      const a = leave(p, hub, NW / 2 + 4, NH / 2 + 4), b = leave(hub, p, 100 + 4, 34 + 4);
+      const a = leave(p, hub, NW / 2 + 4, NH / 2 + 4), b = leave(hub, p, 122 + 4, 42 + 4);
       lines.append(svgEl("line", {
         x1: a.x, y1: a.y, x2: b.x, y2: b.y, stroke: roleCssVar(sp.key), "stroke-width": String(w),
         "stroke-dasharray": sp.planned ? "6 5" : "", opacity: dim ? "0.12" : "0.75",
@@ -1394,15 +1394,15 @@ class SitePage {
       }));
       if (sp.key === "executor") {
         // The fort hangs off the Executor, outside the ring.
-        const fort = { x: p.x + 205, y: p.y };
+        const fort = { x: p.x + 236, y: p.y };
         const fdim = focusKey && focusKey !== "executor";
-        lines.append(svgEl("line", { x1: p.x + NW / 2 + 4, y1: p.y, x2: fort.x - 74, y2: fort.y, stroke: "var(--muted)", "stroke-width": "1.5", "stroke-dasharray": "6 5", opacity: fdim ? "0.12" : "0.75" }));
-        nodes.append(nodeBox(fort.x, fort.y, "The fort", "Dwarf Fortress", "var(--text)", { dim: fdim, hw: 70, hh: 24 }));
+        lines.append(svgEl("line", { x1: p.x + NW / 2 + 4, y1: p.y, x2: fort.x - 86, y2: fort.y, stroke: "var(--muted)", "stroke-width": "1.5", "stroke-dasharray": "6 5", opacity: fdim ? "0.12" : "0.75" }));
+        nodes.append(nodeBox(fort.x, fort.y, "The fort", "Dwarf Fortress", "var(--text)", { dim: fdim, hw: 82, hh: 30 }));
       }
     });
     if (overseerKey && this.agents.roles[overseerKey]) {
       nodes.append(nodeBox(hub.x, hub.y, this.agents.roles[overseerKey].name, this.agents.roles[overseerKey].kind_label, roleCssVar(overseerKey), {
-        sel: this.mapSel === overseerKey, big: true, double: true, hw: 100, hh: 34, link: "#agent-" + overseerKey, hoverKey: overseerKey,
+        sel: this.mapSel === overseerKey, big: true, double: true, hw: 122, hh: 42, link: "#agent-" + overseerKey, hoverKey: overseerKey,
       }));
     }
     svg.append(lines, nodes);
