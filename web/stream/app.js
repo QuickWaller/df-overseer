@@ -1139,7 +1139,7 @@ class SitePage {
     this.main.classList.toggle("agentsview", route.view === "agents");
     // Agents fills the window exactly: the map stays put, only the open
     // tab's body scrolls.
-    this.shell.classList.toggle("fullheight", route.view === "agents");
+    this.shell.classList.toggle("fullheight", route.view === "agents" || route.view === "board");
     if (route.view === "board") {
       this.main.appendChild(this._boardEl());
       return;
@@ -1218,7 +1218,7 @@ class SitePage {
 
   _boardEl() {
     if (!this._boardPage) {
-      this._boardContainer = el("div", {});
+      this._boardContainer = el("div", { class: "boardhost" });
       this._boardPage = new StreamPage({
         dataRoot: this.dataRoot, mode: this.mode, liveViewSrc: this.liveViewSrc,
         root: this._boardContainer, embedded: true,

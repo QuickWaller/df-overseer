@@ -491,3 +491,18 @@ a.tagchip:hover { border-color: var(--text); }
 .e-wrap .btab { background: none; border: 1px solid transparent; border-bottom: 0; padding: 4px 10px; min-height: 32px; color: var(--muted); font: inherit; font-size: 13px; cursor: pointer; margin-bottom: -1px; }
 .e-wrap .btab[aria-selected="true"] { border-color: var(--line-strong); background: var(--raised); color: var(--text); font-weight: 700; }
 .e-wrap .btab .count { font-size: 11.5px; color: var(--faint); margin-left: 4px; }
+
+/* Board in the site: fills the window like Agents; the live view keeps its
+   shape and only the board column scrolls. */
+.site.fullheight .boardhost { display: flex; flex-direction: column; }
+.site.fullheight .boardhost > .e-wrap { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }
+.site.fullheight .boardhost .e-col { max-height: none; min-height: 0; }
+.site.fullheight .boardhost .e-split { min-height: 0; }
+@media (max-width: 900px) {
+  .site.fullheight .boardhost .e-col { max-height: none; overflow: visible; }
+}
+.site.fullheight .boardhost .e-view { align-self: stretch; min-height: 0; display: flex; align-items: center; justify-content: center; overflow: hidden; }
+.site.fullheight .boardhost .video-frame { height: 100%; max-height: 100%; width: auto; max-width: 100%; }
+@media (max-width: 900px) {
+  .site.fullheight .boardhost .video-frame { height: auto; width: 100%; }
+}
