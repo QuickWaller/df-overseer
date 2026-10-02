@@ -2,6 +2,11 @@
 
   mcpcall.py counts                      -> tool count per role
   mcpcall.py names ROLE [SUBSTR]         -> tool names for a role
+  mcpcall.py names-all                   -> every role's full tool name list,
+                                             one "role<TAB>name" line each
+                                             (scripts/drift_check.py's live
+                                             tool-id check uses this, single
+                                             SSH round trip for every role)
   mcpcall.py call ROLE TOOL 'JSON_ARGS'  -> one tool call, prints text result
 
 Token read by key from .env, never printed. Address from `hostname -I`,
@@ -51,6 +56,11 @@ async def main():
         for t in tools.tools:
             if sub in t.name:
                 print(t.name)
+    elif mode == "names-all":
+        for role in ROLES:
+            tools = await session(role, lambda s: s.list_tools())
+            for t in tools.tools:
+                print(role + "\t" + t.name)
     elif mode == "schema":
         role, tool = sys.argv[2], sys.argv[3]
         tools = await session(role, lambda s: s.list_tools())

@@ -205,17 +205,63 @@ def test_check_live_tool_counts_probe_absent_is_clean_with_note():
     assert "cross-checked" in result["note"]
 
 
-def test_check_live_tool_counts_probe_present_mismatch():
+def test_check_live_tool_counts_probe_present_clean_when_ids_match():
+    """A real `names-all` dump of conductor's exact own tool ids (the
+    smallest role, 16 tools) must compare clean -- this exercises the real
+    id.replace(".", "__") <-> name_to_id round trip against the real
+    registry, not a stubbed-out comparison."""
+    conductor_ids = sorted(drift_check.offline_role_tool_ids()["conductor"])
+    names_all = "".join(f"conductor\t{tid.replace('.', '__')}\n" for tid in conductor_ids)
     targets = {"vm103-dfmcp": _target(host="df", destination_root_raw="/opt/df/dfmcp-smoke")}
     runner = dc.FakeRunner({
         ("df", "test -f /opt/df/dfmcp-smoke/scripts/ops/mcpcall.py && echo present || echo absent"): "present\n",
-        ("df", "cd /opt/df/dfmcp-smoke && .venv/bin/python scripts/ops/mcpcall.py counts"):
-            "overseer 1\narchitect 2\nconsultant 3\nquartermaster 4\nconductor 5\n",
+        ("df", "cd /opt/df/dfmcp-smoke && .venv/bin/python scripts/ops/mcpcall.py names-all"): names_all,
+    })
+    result = drift_check.check_live_tool_counts(targets, runner)
+    assert result["probe_deployed"] is True
+    assert result["clean"] is True
+    assert result["live_counts"]["conductor"] == 16
+
+
+def test_check_live_tool_counts_catches_id_level_mismatch_with_equal_counts():
+    """Same COUNT (16) as the real conductor role, but one real id swapped
+    for another role's real id ("overview.get" replaced by architect's
+    "zone.list") plus one name the current registry does not recognise at
+    all -- a count-only check would miss both; this must not."""
+    conductor_ids = sorted(drift_check.offline_role_tool_ids()["conductor"])
+    assert "overview.get" in conductor_ids
+    swapped = [tid for tid in conductor_ids if tid != "overview.get"] + ["zone.list"]
+    assert len(swapped) == len(conductor_ids)
+    names_all = "".join(f"conductor\t{tid.replace('.', '__')}\n" for tid in swapped)
+    names_all += "conductor\tnot-a-real-tool\n"
+    targets = {"vm103-dfmcp": _target(host="df", destination_root_raw="/opt/df/dfmcp-smoke")}
+    runner = dc.FakeRunner({
+        ("df", "test -f /opt/df/dfmcp-smoke/scripts/ops/mcpcall.py && echo present || echo absent"): "present\n",
+        ("df", "cd /opt/df/dfmcp-smoke && .venv/bin/python scripts/ops/mcpcall.py names-all"): names_all,
     })
     result = drift_check.check_live_tool_counts(targets, runner)
     assert result["probe_deployed"] is True
     assert result["clean"] is False
-    assert set(result["mismatches"]) == {"overseer", "architect", "consultant", "quartermaster", "conductor"}
+    m = result["mismatches"]["conductor"]
+    assert m["offline"] == m["live"] == 16  # counts agree; ids still caught the drift
+    assert m["missing_live"] == ["overview.get"]
+    assert m["extra_live"] == ["zone.list"]
+    assert m["unknown_live_names"] == ["not-a-real-tool"]
+
+
+def test_check_live_tool_counts_role_absent_from_live_output_not_reported():
+    """A role the live dump never mentions (e.g. mcpcall.py's own ROLES list
+    falling behind the roster) is not itself a mismatch -- distinct from a
+    role that IS reported but disagrees."""
+    targets = {"vm103-dfmcp": _target(host="df", destination_root_raw="/opt/df/dfmcp-smoke")}
+    runner = dc.FakeRunner({
+        ("df", "test -f /opt/df/dfmcp-smoke/scripts/ops/mcpcall.py && echo present || echo absent"): "present\n",
+        ("df", "cd /opt/df/dfmcp-smoke && .venv/bin/python scripts/ops/mcpcall.py names-all"): "",
+    })
+    result = drift_check.check_live_tool_counts(targets, runner)
+    assert result["probe_deployed"] is True
+    assert result["clean"] is True
+    assert result["live_counts"] == {}
 
 
 def test_check_live_tool_counts_no_dfmcp_target():

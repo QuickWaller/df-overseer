@@ -23,13 +23,16 @@ Four checks per the handoff (handoffs/2026-10-02-deploy-and-drift-system.md):
    behind" in the same report. A target with no stamp yet (nothing this
    tool has ever deployed, e.g. relay-web, vm106-agents before their first
    deploy.py run) compares directly against origin/main instead and says so.
-2. live behaviour: per-role tool counts computed offline from
+2. live behaviour: per-role tool IDS computed offline from
    dfmcp.registry/dfmcp.roles (the registry + roster this repo would load),
-   cross-checked against a live MCP probe when one is deployed on the host.
-   scripts/ops/mcpcall.py is the existing probe (its own header: "Live MCP
-   client for VM 103 checks, run from /opt/df/dfmcp-smoke/.venv") --
-   reused here rather than inventing a second one. Added to the
-   vm103-dfmcp manifest target 2026-10-02
+   cross-checked against a live MCP probe when one is deployed on the host
+   -- an actual set comparison (`mcpcall.py names-all`, translated back to
+   tool ids via dfmcp.tools.build_tool_names()'s name_to_id map), not just a
+   count, because two roles can carry the same NUMBER of tools while
+   disagreeing on which ones. scripts/ops/mcpcall.py is the existing probe
+   (its own header: "Live MCP client for VM 103 checks, run from
+   /opt/df/dfmcp-smoke/.venv") -- reused here rather than inventing a second
+   one. Added to the vm103-dfmcp manifest target 2026-10-02
    (handoffs/2026-10-02-drift-followups.md), but a manifest entry alone
    does not ship it anywhere: this check still probes the host directly
    (`test -f {destination_root}/scripts/ops/mcpcall.py`) and degrades to
@@ -181,7 +184,7 @@ def check_target_files(target: dc.Target, env: Dict[str, str], runner) -> dict:
 # ---------------------------------------------------------------------------
 
 
-def offline_role_tool_counts(agents_dir: Path = REPO_ROOT / "agents") -> Dict[str, int]:
+def _load_registry_and_roster(agents_dir: Path = REPO_ROOT / "agents"):
     sys.path.insert(0, str(REPO_ROOT))
     from dfmcp.registry import load_registry
     from dfmcp.roles import load_roster
@@ -192,14 +195,39 @@ def offline_role_tool_counts(agents_dir: Path = REPO_ROOT / "agents") -> Dict[st
         **gotchas_tools.NATIVE_TOOLS, **knowledge_tools.NATIVE_TOOLS,
     })
     roster = load_roster(registry, agents_dir=agents_dir)
+    return registry, roster
+
+
+def offline_role_tool_counts(agents_dir: Path = REPO_ROOT / "agents") -> Dict[str, int]:
+    _, roster = _load_registry_and_roster(agents_dir)
     return {name: len(perms.read) + len(perms.write) for name, perms in roster.roles.items()}
 
 
+def offline_role_tool_ids(agents_dir: Path = REPO_ROOT / "agents") -> Dict[str, set]:
+    """{role: {tool_id, ...}} -- every id the roster actually grants (read
+    plus write), the same ids `dfmcp/tools.py`'s `build_tool_names()` maps to
+    the MCP-visible dunder names a live `mcpcall.py names-all` reports."""
+    _, roster = _load_registry_and_roster(agents_dir)
+    return {name: set(perms.read) | set(perms.write) for name, perms in roster.roles.items()}
+
+
 def check_live_tool_counts(targets: Dict[str, dc.Target], runner) -> dict:
-    offline = offline_role_tool_counts()
+    """Per-role live check against the vm103-dfmcp target, once
+    scripts/ops/mcpcall.py is actually deployed there (`names-all`, not just
+    `counts`: two roles can carry the same NUMBER of tools while disagreeing
+    on which ones, and a count-only check would call that clean)."""
+    offline_ids = offline_role_tool_ids()
+    offline = {role: len(ids) for role, ids in offline_ids.items()}
+
+    sys.path.insert(0, str(REPO_ROOT))
+    from dfmcp.tools import build_tool_names
+    registry, _ = _load_registry_and_roster()
+    _, name_to_id = build_tool_names(registry)
+
     probe_deployed = False
     dfmcp_target = targets.get("vm103-dfmcp")
-    live_counts: Dict[str, int] = {}
+    live_ids: Dict[str, set] = {}
+    unknown_live_names: Dict[str, list] = {}
     if dfmcp_target is not None:
         try:
             out = runner.run(
@@ -213,20 +241,36 @@ def check_live_tool_counts(targets: Dict[str, dc.Target], runner) -> dict:
             try:
                 out = runner.run(
                     dfmcp_target.host,
-                    f"cd {dfmcp_target.destination_root_raw} && .venv/bin/python scripts/ops/mcpcall.py counts",
+                    f"cd {dfmcp_target.destination_root_raw} && .venv/bin/python scripts/ops/mcpcall.py names-all",
                 )
                 for line in out.splitlines():
-                    parts = line.split()
-                    if len(parts) == 2 and parts[1].isdigit():
-                        live_counts[parts[0]] = int(parts[1])
+                    if "\t" not in line:
+                        continue
+                    role, name = line.split("\t", 1)
+                    tool_id = name_to_id.get(name)
+                    if tool_id is None:
+                        unknown_live_names.setdefault(role, []).append(name)
+                        continue
+                    live_ids.setdefault(role, set()).add(tool_id)
             except dc.SSHError:
                 pass
 
-    mismatches = {
-        role: {"offline": offline.get(role), "live": live_counts.get(role)}
-        for role in set(offline) | set(live_counts)
-        if role in live_counts and offline.get(role) != live_counts.get(role)
-    }
+    live_counts = {role: len(ids) for role, ids in live_ids.items()}
+    mismatches = {}
+    for role in set(offline) | set(live_ids):
+        if role not in live_ids:
+            continue  # not reported live at all -- not a per-id mismatch here
+        missing_live = sorted(offline_ids.get(role, set()) - live_ids[role])
+        extra_live = sorted(live_ids[role] - offline_ids.get(role, set()))
+        if missing_live or extra_live or unknown_live_names.get(role):
+            mismatches[role] = {
+                "offline": offline.get(role),
+                "live": live_counts.get(role),
+                "missing_live": missing_live,
+                "extra_live": extra_live,
+                "unknown_live_names": unknown_live_names.get(role, []),
+            }
+
     return {
         "offline_counts": offline,
         "probe_deployed": probe_deployed,
@@ -381,6 +425,12 @@ def print_report(report: dict) -> None:
         print(f"    {live['note']}")
     for role, m in live["mismatches"].items():
         print(f"    MISMATCH {role}: offline {m['offline']} vs live {m['live']}")
+        if m.get("missing_live"):
+            print(f"        missing live: {', '.join(m['missing_live'])}")
+        if m.get("extra_live"):
+            print(f"        extra live (not in the allowlist): {', '.join(m['extra_live'])}")
+        if m.get("unknown_live_names"):
+            print(f"        live names not recognised by the current registry: {', '.join(m['unknown_live_names'])}")
     print()
 
     website = report["website"]
