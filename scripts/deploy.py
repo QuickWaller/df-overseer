@@ -153,17 +153,21 @@ def deploy_target(
         return {"target": target.name, "skipped": "no --yes"}
 
     destination = plan["destination_root"]
+    su = "sudo -n " if target.sudo else ""
     tar_bytes = build_tar(commit, plan["files"], flatten=target.flatten)
-    runner.run(target.host, f"mkdir -p {destination}")
+    print(f"--- {target.name}: deploying {commit[:12]} ({len(plan['files'])} file(s)) to {destination} ---")
+    runner.run(target.host, f"{su}mkdir -p {destination}")
     if tar_bytes:
-        runner.run(target.host, f"tar xf - -C {destination}", input_bytes=tar_bytes)
+        runner.run(target.host, f"{su}tar xf - -C {destination}", input_bytes=tar_bytes)
     runner.run(
         target.host,
-        f"cat > {destination}/DEPLOYED_COMMIT <<'EOF'\n{plan['stamp_contents']}EOF",
+        f"{su}tee {destination}/DEPLOYED_COMMIT >/dev/null <<'EOF'\n{plan['stamp_contents']}EOF",
     )
+    print("  files copied, stamp written")
 
     for service in plan["low_risk_restarts"]:
         runner.run(target.host, f"sudo systemctl restart {service}")
+        print(f"  restarted {service}")
 
     for entry in target.restart:
         if entry.is_high_risk:
@@ -171,6 +175,18 @@ def deploy_target(
             print(f"    scripts/vm-ssh.sh {target.host} 'sudo systemctl restart {entry.service}'")
             print(f"    Read first: {entry.why.strip()}")
 
+    # The deploy is only done when this target's drift check is clean (the
+    # docstring's promise; tests use a fake runner and skip the real check).
+    if isinstance(runner, dc.SSHRunner):
+        check = subprocess.run(
+            [sys.executable, str(dc.REPO_ROOT / "scripts" / "drift_check.py"), "--target", target.name],
+            cwd=dc.REPO_ROOT, capture_output=True, text=True,
+        )
+        print(check.stdout.rstrip())
+        if check.returncode != 0:
+            print(f"  DRIFT after deploying {target.name}: see the report above.")
+            return {"target": target.name, "deployed": True, "commit": commit, "plan": plan, "drift": True}
+        print(f"  {target.name}: clean")
     return {"target": target.name, "deployed": True, "commit": commit, "plan": plan}
 
 
@@ -230,6 +246,8 @@ def main(argv: Optional[List[str]] = None) -> int:
             results.append({"target": name, "error": str(exc)})
             if args.yes:
                 hard_fail = True
+    if any(r.get("drift") for r in results):
+        hard_fail = True
     if hard_fail:
         return 1
     return 0

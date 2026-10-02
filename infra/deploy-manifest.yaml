@@ -306,6 +306,7 @@ targets:
   relay-web:
     host: relay
     destination_root: /srv/stream/web-public
+    sudo: true      # /srv/stream/web-public is owned by root on the relay
     flatten: true   # confirmed live 2026-10-02: files land as
                      # <destination_root>/index.html, not
                      # <destination_root>/web/stream/index.html -- every
@@ -346,6 +347,7 @@ targets:
   relay-web-operator:
     host: relay
     destination_root: /srv/stream/web-operator
+    sudo: true
     flatten: true   # same layout as relay-web, plus operator.html; served on
                      # the admin address behind Cloudflare Access
     paths:

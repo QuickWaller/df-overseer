@@ -54,6 +54,8 @@ class Target:
     post_deploy: List[str] = field(default_factory=list)
     verified: str = ""
     flatten: bool = False
+    #: write through `sudo -n` (a destination owned by root, e.g. the relay's web folders)
+    sudo: bool = False
     # True only for a target where the destination drops the repo's leading
     # directories and keeps just each file's basename (relay-web: repo path
     # `web/stream/index.html` lands at `<destination_root>/index.html`, not
@@ -116,6 +118,7 @@ def load_manifest(path: Path = MANIFEST_PATH) -> Dict[str, Target]:
             post_deploy=list(entry.get("post_deploy") or []),
             verified=entry.get("verified", ""),
             flatten=bool(entry.get("flatten", False)),
+            sudo=bool(entry.get("sudo", False)),
         )
     if not targets:
         raise ManifestError(f"{path}: no targets defined")
