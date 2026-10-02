@@ -18,7 +18,7 @@ python scripts/deploy.py --all --dry-run             # every target in infra/dep
 
 Target names come from `infra/deploy-manifest.yaml`: `vm103-dfmcp`,
 `vm103-dfhack-scripts`, `vm103-stream-publisher`, `vm106-agents`,
-`vm106-conductor`, `relay-web`, as of this writing.
+`vm106-conductor`, `relay-web`, `relay-web-operator`, as of this writing.
 
 `deploy.py` refuses to run for real (`--yes`) when:
 
