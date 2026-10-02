@@ -72,13 +72,15 @@ PrivateTmp=true
 ProtectSystem=strict
 ProtectHome=true
 ReadOnlyPaths=/CHANGEME/df-automation
-# The queue's own directory: read-only is enough -- this unit never writes
-# to the queue (dfqueue.feed.load_records_readonly / dfqueue.feed_status's
-# own read-only connections, never dfqueue.store._connect). If the queue
-# lives on the same filesystem as dfmcp-server.service's own
-# MCP_SERVER_QUEUE_DB directory, this path is the same one, just
-# read-only here where dfmcp-server.service needs it read-write.
-ReadOnlyPaths=/CHANGEME/queue-db-dir
+# The queue's own directory must be WRITABLE, although this unit never
+# writes to the queue itself (dfqueue.feed.load_records_readonly opens it
+# with mode=ro). The queue is SQLite WAL (dfqueue.store._connect), and even
+# a mode=ro reader has to create the database's -shm file beside it when no
+# other connection holds one open. A read-only directory made every publish
+# fail with "unable to open database file" whenever the queue was idle
+# (found live 2026-10-02, during a conductor cycle; fixed on VM 103 with a
+# drop-in, stream-publisher.service.d/queue-wal.conf, matching this).
+ReadWritePaths=/CHANGEME/queue-db-dir
 # StateDirectory=stream-publisher creates /var/lib/stream-publisher (owned
 # by User/Group above) and makes it implicitly writable under
 # ProtectSystem=strict, with no further ReadWritePaths= needed -- same
