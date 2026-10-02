@@ -68,9 +68,12 @@ run any time, including by a human just checking. Four sections:
    finding.
 2. **Live tool counts**: the repo's own registry + roster, computed
    offline, cross-checked against a live MCP probe (`scripts/ops/mcpcall.py`)
-   when one is actually deployed on the host. As of 2026-10-02 it is not
-   part of any manifest target, so this degrades to "offline count only" --
-   see "Known gaps" below.
+   when one is actually deployed on the host. Added to the `vm103-dfmcp`
+   manifest target 2026-10-02 (handoffs/2026-10-02-drift-followups.md), but
+   a manifest entry alone does not put it on the host: this still degrades
+   to "offline count only, live probe not deployed" (`docs/STATE.md`'s own
+   per-run note says which) until a real `deploy.py --yes` run against
+   `vm103-dfmcp` ships it.
 3. **Website**: the relay's static files, and the published
    `tools.json`/`agents.json` against what `dfqueue.site_data` would
    generate from the repo right now.

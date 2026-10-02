@@ -79,6 +79,22 @@ targets:
                                      # -- fixed here before this manifest's
                                      # first real use, see the Result section.
       - scripts/stream_publisher.py
+      - scripts/ops/mcpcall.py      # the live MCP probe scripts/drift_check.py's
+                                     # check_live_tool_counts() already looks
+                                     # for at this exact path (`test -f
+                                     # {destination_root}/scripts/ops/mcpcall.py`)
+                                     # and, if present, runs with `.venv/bin/
+                                     # python` to cross-check live per-role tool
+                                     # counts against the offline registry+roster
+                                     # (handoffs/2026-10-02-drift-followups.md).
+                                     # Previously only ever copied to /tmp by
+                                     # hand for one-off smoke tests; shipping it
+                                     # here is what lets drift_check.py find it
+                                     # without a manual step. Needs nothing else:
+                                     # the destination .venv already has `mcp`
+                                     # and `httpx2` installed (it has been run
+                                     # there by hand before, per Working.md's
+                                     # "Tools for the next session" note).
     exclude:
       - "**/tests/"
       - "**/__pycache__/"

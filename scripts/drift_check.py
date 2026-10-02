@@ -28,11 +28,13 @@ Four checks per the handoff (handoffs/2026-10-02-deploy-and-drift-system.md):
    cross-checked against a live MCP probe when one is deployed on the host.
    scripts/ops/mcpcall.py is the existing probe (its own header: "Live MCP
    client for VM 103 checks, run from /opt/df/dfmcp-smoke/.venv") --
-   reused here rather than inventing a second one, but it is NOT currently
-   part of any manifest target's shipped files (confirmed live, 2026-10-02:
-   absent from /opt/df/dfmcp-smoke/scripts), so this check degrades to
-   "offline count only, live probe not deployed" until a future manifest
-   update ships it.
+   reused here rather than inventing a second one. Added to the
+   vm103-dfmcp manifest target 2026-10-02
+   (handoffs/2026-10-02-drift-followups.md), but a manifest entry alone
+   does not ship it anywhere: this check still probes the host directly
+   (`test -f {destination_root}/scripts/ops/mcpcall.py`) and degrades to
+   "offline count only, live probe not deployed" until an actual
+   `deploy.py --yes` run against vm103-dfmcp has put it there.
 3. website: relay file hashes against repo HEAD, and the published
    agents.json/tools.json (dfqueue.site_data's own output, written by
    scripts/stream_publisher.py's write_site_data() call) against what the
@@ -232,9 +234,10 @@ def check_live_tool_counts(targets: Dict[str, dc.Target], runner) -> dict:
         "mismatches": mismatches,
         "clean": not mismatches,
         "note": None if probe_deployed else (
-            "scripts/ops/mcpcall.py is not part of any manifest target's shipped files "
-            "(confirmed live 2026-10-02); live counts cannot be cross-checked until it is "
-            "deployed. offline_counts is what the repo's registry+roster would produce."
+            "scripts/ops/mcpcall.py is in the vm103-dfmcp manifest target (added "
+            "2026-10-02) but not yet copied to the host by a real `deploy.py --yes` "
+            "run; live counts cannot be cross-checked until it is deployed. "
+            "offline_counts is what the repo's registry+roster would produce."
         ),
     }
 
