@@ -108,7 +108,11 @@ class ToolGuide:
             for arg in self.arguments:
                 if arg.required:
                     status = "required"
-                elif arg.default is not None:
+                elif arg.default:
+                    # An empty-string default (the Lua CLI's own "not given"
+                    # convention for a few arguments, e.g. MATERIAL_CHOICE) has
+                    # nothing useful to show in prose; falls through to the
+                    # bare "optional" below, same as a declared default of None.
                     status = f"optional, default {arg.default}"
                 else:
                     status = "optional"

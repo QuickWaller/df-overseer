@@ -87,6 +87,23 @@ def test_guide_text_renders_fixed_section_order():
     assert "- Quickfort can report success while designating nothing." in text
 
 
+def test_guide_text_empty_string_default_has_nothing_to_show():
+    """A few arguments (MATERIAL_CHOICE) declare "" as their documented
+    default, the Lua CLI's own "not given" convention -- guide_text must not
+    render "optional, default )" or similarly empty-looking text for them."""
+    from dfmcp.registry import GuideArgument, ToolGuide
+
+    guide = ToolGuide(
+        arguments=(GuideArgument(name="MATERIAL_CHOICE", required=False, default="", meaning="Picks one."),),
+        returns="Something.",
+        before_a_real_run=(),
+        traps=(),
+    )
+    text = guide.guide_text()
+    assert "MATERIAL_CHOICE (optional): Picks one." in text
+    assert "default " not in text.split("MATERIAL_CHOICE")[1].split("\n")[0]
+
+
 def test_guide_text_empty_sections_say_so_plainly():
     from dfmcp.registry import ToolGuide
 
