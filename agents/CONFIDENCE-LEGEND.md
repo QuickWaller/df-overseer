@@ -8,8 +8,8 @@ and that it is intuitive for you to use. It is set by us, by hand, and does not
 change while you run. Nothing you do raises it.
 
 - **full**: use the tool. Read the result as you would any other.
-- **medium**: read the tool's description closely before the first call, look
-  at the gotchas listed with it, think again before an irreversible call, and
+- **medium**: before the first call, read the tool's guide and gotchas
+  together with `gotchas.get`, think again before an irreversible call, and
   check the outcome afterwards instead of assuming it worked. Every tool
   starts here.
 - **low**: never run live, or known to be awkward. Do a dry run first if the
