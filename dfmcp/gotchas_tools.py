@@ -7,7 +7,14 @@ two per tool, to keep every role's tool list short.
 - **`gotchas.get`** expands a gotcha: by id, or every entry of one tool
   (optionally narrowed to a kind, a list or a status). Results in tool calls
   carry only short titles; the full text, the status and the recorded
-  outcomes come from here.
+  outcomes come from here. Added `handoffs/2026-10-02-tool-descriptions-split.md`:
+  a call naming `tool` also returns that tool's `guide` (the operating detail
+  -- arguments, defaults, cautions, known traps -- that used to live in the
+  MCP description, now sent only on demand), so reading a tool's guide and
+  its gotchas together is one call, matching `agents/CONFIDENCE-LEGEND.md`'s
+  "before using a medium-confidence tool" instruction. A tool with no guide
+  yet (a native tool, or a real tool this manifest has not been filled in
+  for) simply gets no `<guide>` element; this is never an error.
 - **`gotchas.write`** has two modes chosen by whether `id` is passed. Without
   it, it writes a **new** entry about a tool: the server chooses the id and
   sets the status `proposed`, and stamps the writing role, the run and the
@@ -376,9 +383,10 @@ async def _read(fn, *args, **kwargs):
 
 async def _get(
     role: str, arguments: Mapping[str, Any], *, db_path, known_tools: Iterable[str], run_id: str,
-    write_lock: "asyncio.Lock",
+    write_lock: "asyncio.Lock", tool_guides: Optional[Mapping[str, str]] = None,
 ) -> Tuple[str, dict]:
     del role, run_id, write_lock
+    tool_guides = tool_guides or {}
     _reject_unknown_arguments(GOTCHAS_GET, arguments, _GET_FIELDS)
     entry_id = _string_arg(GOTCHAS_GET, arguments, "id")
     tool = _string_arg(GOTCHAS_GET, arguments, "tool")
@@ -441,15 +449,20 @@ async def _get(
             "real tool'."
         )
     return await _list_entries(db_path, tool=tool, kind=kind, list_name=list_name, status=status,
-                                include_rejected=include_rejected)
+                                include_rejected=include_rejected, guide=tool_guides.get(tool))
 
 
 async def _list_entries(
     db_path, *, tool: Optional[str], kind: Optional[str], list_name: Optional[str],
-    status: Optional[str], include_rejected: bool,
+    status: Optional[str], include_rejected: bool, guide: Optional[str] = None,
 ) -> Tuple[str, dict]:
     """Shared rendering for a tool's entries and for general entries
-    (`tool=None`): same filters, same shape, same rejected-omission rule."""
+    (`tool=None`): same filters, same shape, same rejected-omission rule.
+
+    `guide` (added handoffs/2026-10-02-tool-descriptions-split.md): the
+    calling tool's operating-detail text, rendered as a `<guide>` element
+    right after the opening tag when present. Always None for a general
+    entry (`tool=None`), since a guide is about one tool, not the run."""
     lists = [list_name] if list_name else None
     if list_name is not None and list_name not in store.LISTS:
         raise GotchaToolError(f"{GOTCHAS_GET}: 'list' must be one of {_LISTS}")
@@ -471,6 +484,8 @@ async def _list_entries(
             f'omitted_rejected="{omitted}">'
         )
     lines = [head]
+    if guide:
+        lines.append(f"  <guide>{escape(guide)}</guide>")
     if omitted:
         lines.append(
             f"  <note>{omitted} rejected entr{'y' if omitted == 1 else 'ies'} left out; pass "
@@ -485,6 +500,7 @@ async def _list_entries(
         "tool": tool,
         "general": tool is None,
         "kind": kind,
+        "guide": guide,
         "returned_count": len(visible),
         "omitted_rejected_count": omitted,
         "entries": visible,
@@ -498,8 +514,9 @@ async def _list_entries(
 
 async def _write(
     role: str, arguments: Mapping[str, Any], *, db_path, known_tools: Iterable[str], run_id: str,
-    write_lock: "asyncio.Lock",
+    write_lock: "asyncio.Lock", tool_guides: Optional[Mapping[str, str]] = None,
 ) -> Tuple[str, dict]:
+    del tool_guides  # gotchas.write has no use for a tool's guide text
     _reject_unknown_arguments(GOTCHAS_WRITE, arguments, _WRITE_FIELDS)
 
     async def locked(fn, *args, **kwargs):
@@ -567,16 +584,22 @@ async def call(
     known_tools: Iterable[str],
     run_id: str,
     write_lock: "asyncio.Lock",
+    tool_guides: Optional[Mapping[str, str]] = None,
 ) -> Tuple[str, Optional[dict]]:
     """Dispatch one native call, returning `(text, structured)` for
     `dfmcp.server`, or raising `GotchaToolError` for it to turn into an
     `isError` result. `known_tools` is the registry's ids (a write must name a
     real tool); `run_id` is the server's stamp for "this run" (the MCP session
-    id); `write_lock` is the server's one `asyncio.Lock`."""
+    id); `write_lock` is the server's one `asyncio.Lock`. `tool_guides`
+    (added handoffs/2026-10-02-tool-descriptions-split.md), optional: a
+    {tool_id: guide text} mapping, used only by `gotchas.get` to attach a
+    tool's guide to its gotchas; omitted entirely (default {}) by any caller
+    that does not have one, which simply means no call ever returns a guide,
+    never an error."""
     handler = _HANDLERS.get(tool_id)
     if handler is None:  # pragma: no cover -- server.py only routes known native ids here
         raise AssertionError(f"gotchas_tools.call: unknown native tool id {tool_id!r}")
     return await handler(
         role, arguments, db_path=Path(db_path), known_tools=known_tools, run_id=run_id,
-        write_lock=write_lock,
+        write_lock=write_lock, tool_guides=tool_guides or {},
     )

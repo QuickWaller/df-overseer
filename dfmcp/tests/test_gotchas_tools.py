@@ -258,6 +258,38 @@ class TestGet:
         assert s["returned_count"] == 2 and s["omitted_rejected_count"] == 0
         assert all(e["body"] for e in s["entries"])
 
+    async def test_tool_lookup_attaches_the_tools_guide_when_one_is_passed(self, db):
+        """handoffs/2026-10-02-tool-descriptions-split.md task 3: gotchas.get
+        for a tool returns its guide alongside the gotchas, so reading both
+        is one call. No tool_guides passed at all -- the default -- means no
+        call ever returns a guide; this is never an error, the entries alone
+        are still returned."""
+        await self._seed(db)
+        text, s = await gt.call(
+            gt.GOTCHAS_GET, "architect", {"tool": "building.build"}, db_path=db,
+            known_tools=KNOWN, run_id="s5", write_lock=asyncio.Lock(),
+            tool_guides={"building.build": "Arguments: KIND, W H, ..."},
+        )
+        assert s["guide"] == "Arguments: KIND, W H, ..."
+        assert "<guide>Arguments: KIND, W H, ...</guide>" in text
+
+    async def test_tool_lookup_omits_guide_element_when_none_is_known(self, db):
+        text, s = await _call(gt.GOTCHAS_GET, {"tool": "landmarks.list"}, db)
+        assert s["guide"] is None
+        assert "<guide>" not in text
+
+    async def test_general_lookup_never_carries_a_guide(self, db):
+        await _call(
+            gt.GOTCHAS_WRITE, {"title": "a run note: something odd", "body": "x" * 20}, db,
+        )
+        text, s = await gt.call(
+            gt.GOTCHAS_GET, "architect", {"general": True}, db_path=db, known_tools=KNOWN,
+            run_id="s6", write_lock=asyncio.Lock(),
+            tool_guides={"building.build": "should never appear here"},
+        )
+        assert s.get("guide") is None
+        assert "<guide>" not in text
+
     async def test_kind_narrows_but_keeps_tool_wide_entries(self, db):
         a, b = await self._seed(db)
         await _call(
