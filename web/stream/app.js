@@ -1422,17 +1422,6 @@ class SitePage {
     if (forceTab) this.agentTab = forceTab;
     if (r.planned) this.agentTab = "charter";
 
-    const stats = [];
-    const rec = r.record || {};
-    if (rec.ruled != null) {
-      stats.push([rec.ruled, "rulings"], [rec.accepted, "accepted"], [rec.rejected, "rejected"]);
-      if (rec.asks) stats.push([rec.asks, "fact-checks asked"]);
-    } else if (rec.proposals != null) {
-      stats.push([rec.proposals, "proposals"], [rec.accepted, "accepted"], [rec.rejected, "rejected"]);
-    } else if (rec.answers != null) {
-      stats.push([rec.answers, "questions answered"]);
-    }
-
     const mine = (this.tools ? this.tools.tools : []).filter((t) => t.roles.includes(role));
     const tabs = r.planned ? [["charter", "Charter"]] : [
       ["tools", `Tools ${mine.length}`], ["lines", "Recent lines"], ["charter", "Charter"],
@@ -1461,10 +1450,6 @@ class SitePage {
       ]),
       el("div", { class: "faint small", text: `${r.kind_label}${r.planned ? "" : " · " + (r.model_label || "unknown model") + " · " + spelledCount(mine.length, "tool", "tools")}` }),
       el("p", { class: "lede", text: r.summary || r.blocked_on || "" }),
-      // The record as one compact row of chips, coloured by what they mean.
-      stats.length ? el("div", { class: "rstats" }, stats.map(([v, k]) => el("span", {
-        class: "rstat" + (k === "accepted" ? " r-ok" : k === "rejected" ? " r-bad" : ""),
-      }, [el("b", { text: String(v) }), document.createTextNode(" " + k)]))) : null,
     ]);
     const tabBar = el("div", { class: "tabs", role: "tablist" }, tabs.map(([k, l]) => el("button", {
       type: "button", role: "tab", class: "tabbtn", "aria-selected": String(this.agentTab === k),
