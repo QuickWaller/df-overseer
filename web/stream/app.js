@@ -1573,7 +1573,12 @@ class SitePage {
         // narrows the list.
         ...groups.map(([area, ts]) => el("details", {
           class: "tarea tfam", open: (this.toolAreasOpen.has(area) || q || this.toolFilter.role || this.toolFilter.only) ? "" : null,
-          ontoggle: (e) => { if (e.currentTarget.open) this.toolAreasOpen.add(area); else this.toolAreasOpen.delete(area); },
+          // Only a click while nothing is filtered is remembered, so areas a
+          // search opened close again once the search is cleared.
+          ontoggle: (e) => {
+            if (this.toolFilter.q || this.toolFilter.role || this.toolFilter.only) return;
+            if (e.currentTarget.open) this.toolAreasOpen.add(area); else this.toolAreasOpen.delete(area);
+          },
         }, [
           el("summary", {}, [
             el("span", { class: "fname2", text: area }),
