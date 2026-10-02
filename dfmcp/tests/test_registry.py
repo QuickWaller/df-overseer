@@ -32,6 +32,21 @@ def test_canonical_ids_are_script_dot_verb():
         assert verb, tool_id
 
 
+def test_every_real_tool_has_a_summary_and_a_guide():
+    """handoffs/2026-10-02-tool-descriptions-split.md task 5: every command
+    in the real manifest must carry a non-empty `summary` short enough to
+    stand as an MCP description, and a non-empty `guide` (the operating
+    detail that used to live in `notes` alone). 300 chars is the handoff's
+    own cap; `notes` itself is unrestricted and untouched by this test."""
+    reg = load_registry()
+    for tool in reg.all():
+        if not hasattr(tool, "summary"):
+            continue  # a native tool (queue.*, gotchas.*, ...), not TOOLS.yaml-backed
+        assert tool.summary, f"{tool.id}: missing summary"
+        assert len(tool.summary) < 300, f"{tool.id}: summary is {len(tool.summary)} chars, over the 300 cap"
+        assert tool.guide, f"{tool.id}: missing guide"
+
+
 def test_known_ids_resolve_as_expected():
     """Spot-check ids the allowlists in agents/ actually depend on."""
     reg = load_registry()

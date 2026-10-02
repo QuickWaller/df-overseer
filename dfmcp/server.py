@@ -504,6 +504,16 @@ def build_mcp_server(
     queue_write_lock = asyncio.Lock()
     gotchas_write_lock = asyncio.Lock()
     known_tool_ids = registry.ids()
+    # {tool_id: guide text}, non-empty entries only -- handoffs/2026-10-02-
+    # tool-descriptions-split.md: gotchas.get attaches a tool's guide (the
+    # operating detail no longer sent in the MCP description by default) to
+    # that tool's gotchas, so reading both is one call. A native tool has no
+    # `.guide` attribute at all (duck-typed, same as `.describe`), so this
+    # is built with getattr rather than assuming every registry entry is a
+    # TOOLS.yaml-backed Tool.
+    tool_guides = {
+        t.id: t.guide for t in registry.all() if getattr(t, "guide", None)
+    }
     guidance = ToolGuidance(confidence, gotchas_db_path) if confidence is not None else None
 
     async def _call_dfhack(tool_id: str, arguments: Mapping[str, Any]) -> Any:
@@ -616,6 +626,7 @@ def build_mcp_server(
                         tool_id, role, params.arguments or {},
                         db_path=gotchas_db_path, known_tools=known_tool_ids,
                         run_id=_run_id(ctx), write_lock=gotchas_write_lock,
+                        tool_guides=tool_guides,
                     )
                 elif tool_id in knowledge_tools.NATIVE_TOOL_IDS:
                     text, structured = await knowledge_tools.call(

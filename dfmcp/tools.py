@@ -36,7 +36,14 @@ Per docs/AGENT-ARCHITECTURE.md §10, agents inherit stated reliability rather
 than inventing it, so `tool_definitions`'s description for each tool states,
 from the manifest and nowhere else:
 
-- what the command does (`Tool.description`, i.e. TOOLS.yaml's `notes`),
+- what the command does, from `Tool.summary` (one or two plain sentences,
+  handoffs/2026-10-02-tool-descriptions-split.md), falling back to the first
+  sentence of `Tool.notes` only when a command has no `summary` yet (see
+  `_summary_text` below). The full operating detail that used to live in the
+  description (arguments, defaults, cautions, known traps) moved to
+  `Tool.guide`, never sent here -- a caller fetches it on demand through
+  `gotchas.get` alongside that tool's gotchas, per `agents/CONFIDENCE-LEGEND.md`.
+  `Tool.notes` itself (developer history) is never sent to a model.
 - whether it mutates fort state,
 - its verification status, stated plainly when it is NOT verified. This is
   the one CLAUDE.md and docs/TRAPS.md have already paid for once
@@ -717,8 +724,31 @@ def _arg_specs_for_tool(tool: Tool) -> List[ArgSpec]:
 # --------------------------------------------------------------------------
 
 
+def _summary_text(tool: Tool) -> str:
+    """`Tool.summary` if the command has one; otherwise the first sentence of
+    `Tool.notes` (handoffs/2026-10-02-tool-descriptions-split.md task 3).
+
+    "First sentence" is a plain split on the first ". " (or a trailing "."),
+    not a grammar: `Tool.notes` is free text written for a developer reading
+    the manifest, not for this fallback, so this is a best-effort shortening,
+    never a promise that the result reads well on its own. Every command in
+    scripts/dfhack/TOOLS.yaml has a real `summary` as of this task; this path
+    exists for a future command added without one, and is exercised directly
+    by dfmcp/tests/test_tools.py so it cannot silently rot unused.
+    """
+    if tool.summary:
+        return tool.summary
+    notes = (tool.notes or "").strip()
+    if not notes:
+        return "(TOOLS.yaml has no notes for this command)"
+    cut = notes.find(". ")
+    if cut != -1:
+        return notes[: cut + 1]
+    return notes if notes.endswith(".") else notes + "."
+
+
 def _tool_description(tool: Tool) -> str:
-    parts = [tool.description or "(TOOLS.yaml has no notes for this command)"]
+    parts = [_summary_text(tool)]
     parts.append("Mutates fort state." if tool.mutates else "Read-only: does not mutate fort state.")
     if tool.is_verified:
         parts.append(f"Verified against a live fort: {tool.verified}.")

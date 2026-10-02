@@ -40,7 +40,7 @@ import pytest
 
 from dfmcp.doctrine_tools import NATIVE_TOOLS as DOCTRINE_NATIVE_TOOLS
 from dfmcp.queue_tools import NATIVE_TOOLS
-from dfmcp.registry import RegistryError, load_registry
+from dfmcp.registry import RegistryError, Tool, load_registry
 from dfmcp.roles import load_roster
 from dfmcp.series_tools import NATIVE_TOOLS as SERIES_NATIVE_TOOLS
 from dfmcp.gotchas_tools import NATIVE_TOOLS as GOTCHAS_NATIVE_TOOLS
@@ -50,6 +50,7 @@ from dfmcp.tools import (
     ToolSchemaError,
     _arg_specs_for_tool,
     _describe,
+    _summary_text,
     argv_for_call,
     build_tool_names,
     tool_definitions,
@@ -389,6 +390,50 @@ def test_description_states_mutation_and_verification_status(registry, roster):
 
     read_desc = defs["overview__get"]["description"]
     assert "Read-only" in read_desc
+
+
+def _make_tool(**overrides) -> Tool:
+    base = dict(
+        id="fake.tool", script="df-overseer-fake.lua", command="tool", lua_function="do_tool",
+        effect="read", coordinate_bearing=False, live_deployed=True, verified="unverified",
+        knowledge_scope="player_visible",
+    )
+    base.update(overrides)
+    return Tool(**base)
+
+
+class TestSummaryTextFallback:
+    """handoffs/2026-10-02-tool-descriptions-split.md task 3: dfmcp/tools.py
+    sends `Tool.summary` as the MCP description, falling back to the first
+    sentence of `Tool.notes` only when a command has no `summary` -- and
+    test_registry.py's own sweep already asserts no real command takes this
+    fallback path. This exercises the fallback logic itself directly."""
+
+    def test_summary_present_wins_outright(self):
+        tool = _make_tool(summary="Does the thing.", notes="A much longer developer note. More history.")
+        assert _summary_text(tool) == "Does the thing."
+
+    def test_falls_back_to_first_sentence_of_notes_when_no_summary(self):
+        tool = _make_tool(summary=None, notes="Does the thing. Here is a lot of development history nobody needs.")
+        assert _summary_text(tool) == "Does the thing."
+
+    def test_falls_back_to_whole_notes_when_no_sentence_break(self):
+        tool = _make_tool(summary=None, notes="Does the thing with no period at the end")
+        assert _summary_text(tool) == "Does the thing with no period at the end."
+
+    def test_falls_back_to_placeholder_when_neither_is_set(self):
+        tool = _make_tool(summary=None, notes=None)
+        assert _summary_text(tool) == "(TOOLS.yaml has no notes for this command)"
+
+    def test_no_real_tool_takes_the_fallback_path(self, registry):
+        """Belt and braces alongside test_registry.py's own direct sweep:
+        every real command's description must come from `summary`, never
+        from the notes fallback."""
+        for tool_id in registry.ids():
+            tool = registry.get(tool_id)
+            if not hasattr(tool, "summary"):
+                continue  # a native tool
+            assert _summary_text(tool) == tool.summary, tool_id
 
 
 def test_unknown_role_yields_no_tools_not_an_error(registry, roster):
