@@ -16,7 +16,11 @@ to enable it, once they choose to.
 
 Exit code mirrors drift_check's: 0 clean, 1 drifted (whether or not the
 Telegram send succeeded -- a failed alert must never be reported as "no
-drift" by a caller only checking the exit code).
+drift" by a caller only checking the exit code). A target that cannot be
+reached at all (host down, network unreachable) also alerts, with an error
+message instead of a drift report, rather than crashing silently with
+nothing sent -- that failure mode is exactly what a daily unattended check
+exists to catch.
 """
 from __future__ import annotations
 
@@ -88,7 +92,30 @@ def main(argv=None) -> int:
     selected = [name for name, t in targets.items() if not str(t.destination_root_raw).startswith("${")
                 or env.get(t.destination_root_raw[2:-1])]
     runner = dc.SSHRunner(env_file=env_path if args.env_file else None)
-    report = drift_check.build_report(targets, selected, env, runner)
+    try:
+        report = drift_check.build_report(targets, selected, env, runner)
+    except dc.SSHError as exc:
+        # A target that cannot be reached at all (host down, network
+        # unreachable) must still alert -- the whole point of a daily
+        # unattended check is catching exactly this, not crashing silently
+        # with nothing sent. scripts/vm-ssh.sh already masks any
+        # address-shaped string in its own stderr, so `exc`'s text is safe
+        # to relay as-is.
+        message = (
+            "df-overseer drift check: ERROR, could not complete the check "
+            f"({exc}). Run `python scripts/drift_check.py` by hand to see "
+            "which target and investigate."
+        )
+        if args.dry_run:
+            print(message)
+            return 1
+        creds = read_telegram_credentials(env_path)
+        if creds is None:
+            print(message, file=sys.stderr)
+            return 1
+        token, chat_id = creds
+        send_telegram_message(token, chat_id, message)
+        return 1
 
     if report["clean"]:
         return 0

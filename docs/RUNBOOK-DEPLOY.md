@@ -101,29 +101,64 @@ run any time, including by a human just checking. Four sections:
   `CLAUDE.md`/`Working.md`), and the handoff's Result section for every
   other hand-written number that should probably move there too.
 
-## Daily drift check with a Telegram alert (written, NOT installed)
+## Daily drift check with a Telegram alert
 
 `scripts/drift_check_telegram_alert.py` runs `drift_check`'s full report and
 sends ONE Telegram message to the user's existing private line
 (`TELEGRAM_BOT_TOKEN` + `USER_TELEGRAM_ID` in `.env`, register 2026-10-01)
-only when drift is found -- silent on a clean day. Written and tested
-offline only; this stream did not install or enable it, per its own
-"never deploy or install anything" constraint.
+only when drift is found -- silent on a clean day. It also alerts (an error
+message instead of a drift report) if a target cannot be reached at all --
+confirmed by a direct test (`tests/test_drift_check_telegram_alert.py`'s
+unreachable-host cases): an SSH failure no longer crashes silently with
+nothing sent.
 
 ```
 python scripts/drift_check_telegram_alert.py --dry-run   # preview the message, no send, no credentials needed
 python scripts/drift_check_telegram_alert.py              # real run, needs both env vars set
 ```
 
-To actually schedule it, a human runs ONE of the following (both outward
-facing -- do not run either without deciding to, same as any deploy):
-
-**Windows Task Scheduler** (this workstation, where `.env` and the repo
-checkout already live):
+**Installed, this workstation, task name `df-overseer-drift-check`**
+(handoffs/2026-10-02-drift-followups.md, 2026-10-02): a per-user Windows
+Task Scheduler task, daily at 09:00 local, `StartWhenAvailable` set so a
+sleeping machine still checks once it wakes. Its action runs from the
+**main checkout** (`C:\website-projects\df-automation`, not a worktree --
+a worktree is deleted once its agent finishes, which would silently kill
+the schedule) so `.env` resolves without any override:
 
 ```
-schtasks /Create /SC DAILY /ST 08:00 /TN "df-overseer-drift-check" ^
-  /TR "\"C:\Program Files\Git\bin\bash.exe\" -lc \"cd /c/website-projects/df-automation && python scripts/drift_check_telegram_alert.py\""
+C:\Program Files\Git\bin\bash.exe -lc "cd /c/website-projects/df-automation && python scripts/drift_check_telegram_alert.py"
+```
+
+`schtasks.exe` has no flag for "start when available" (checked: `schtasks
+/Create /?` lists no such switch; it is a Settings-tab-only option in the
+GUI, or requires either an XML task definition or the PowerShell
+`ScheduledTasks` module) -- this task was created with the latter:
+
+```powershell
+$action = New-ScheduledTaskAction -Execute "C:\Program Files\Git\bin\bash.exe" `
+  -Argument '-lc "cd /c/website-projects/df-automation && python scripts/drift_check_telegram_alert.py"' `
+  -WorkingDirectory "C:\website-projects\df-automation"
+$trigger = New-ScheduledTaskTrigger -Daily -At 9:00AM
+$settings = New-ScheduledTaskSettingsSet -StartWhenAvailable -DontStopOnIdleEnd `
+  -ExecutionTimeLimit (New-TimeSpan -Minutes 15)
+Register-ScheduledTask -TaskName "df-overseer-drift-check" -Action $action `
+  -Trigger $trigger -Settings $settings `
+  -Description "Daily drift_check_telegram_alert.py: alerts the user's Telegram only when drift (or an unreachable host) is found."
+```
+
+Check it: `Get-ScheduledTask -TaskName "df-overseer-drift-check"`. **Remove
+it**: `Unregister-ScheduledTask -TaskName "df-overseer-drift-check" -Confirm:$false`
+(outward-facing only in the sense of stopping a standing alert -- safe to
+run any time, reversible by re-running the registration above).
+
+Proven working from the task's own context (main checkout, not worktree)
+by running the exact action command by hand with `--dry-run` appended --
+never by triggering the live task, since its real action has no
+`--dry-run` and the fort was clean at the time, so a trigger would not even
+have proven the send path:
+
+```
+& "C:\Program Files\Git\bin\bash.exe" -lc "cd /c/website-projects/df-automation && python scripts/drift_check_telegram_alert.py --dry-run"
 ```
 
 **systemd timer** (if run from a Linux host instead -- e.g. VM 103 itself,
@@ -133,7 +168,5 @@ copy the pattern from `infra/stream-publisher.timer.example` and
 `ExecStart=<venv>/bin/python scripts/drift_check_telegram_alert.py` in the
 service, `EnvironmentFile=` pointing at a `.env` with the two Telegram
 variables set, same pattern as `stream-publisher.service`'s own
-`EnvironmentFile=/etc/stream-publisher/env`).
-
-Either way: run the `--dry-run` form by hand first and confirm the message
-looks right before enabling the schedule.
+`EnvironmentFile=/etc/stream-publisher/env`). Not used here; the Windows
+task above is this repo's one daily drift alert today.
