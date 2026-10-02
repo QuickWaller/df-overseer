@@ -465,3 +465,16 @@ a.tagchip:hover { border-color: var(--text); }
 .site .guide { white-space: pre-wrap; max-width: 90ch; line-height: 1.6; }
 .site .sstats { display: flex; flex-direction: column; gap: 10px; }
 .site .sstats .stat b small { font-size: 0.7em; font-weight: 400; }
+
+/* Agents: the page fills the window; the map is locked in place and only the
+   open tab's body scrolls. Below 900px it falls back to a normal page. */
+.site.fullheight { height: 100vh; height: 100dvh; display: flex; flex-direction: column; overflow: hidden; }
+.site.fullheight .sitemain { flex: 1 1 auto; min-height: 0; padding-block: 12px 16px; gap: 12px; }
+.site.fullheight .sitemain > div { flex: 1 1 auto; min-height: 0; gap: 10px; }
+.site.fullheight .asplit { flex: 1 1 auto; min-height: 0; height: auto; }
+.site .apanel > .pbody { display: flex; flex-direction: column; gap: 10px; flex: 1 1 auto; min-height: 0; }
+.site .phrow { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+@media (max-width: 900px) {
+  .site.fullheight { height: auto; display: block; overflow: visible; }
+  .site .apanel > .pbody { min-height: auto; }
+}

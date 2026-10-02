@@ -1137,6 +1137,9 @@ class SitePage {
     // needs the room); every other view keeps the page's usual max-width.
     this.main.classList.add("full");
     this.main.classList.toggle("agentsview", route.view === "agents");
+    // Agents fills the window exactly: the map stays put, only the open
+    // tab's body scrolls.
+    this.shell.classList.toggle("fullheight", route.view === "agents");
     if (route.view === "board") {
       this.main.appendChild(this._boardEl());
       return;
@@ -1236,17 +1239,13 @@ class SitePage {
     this.mapSel = sel;
     let panelBody;
     if (sel) {
-      panelBody = [
-        el("div", { class: "pclose" }, [el("a", { href: "#agents", class: "tagchip", text: "close" })]),
-        this._agentPanel(sel, selRaw.endsWith("-charter") ? "charter" : null),
-      ];
+      panelBody = [this._agentPanel(sel, selRaw.endsWith("-charter") ? "charter" : null)];
     } else {
       panelBody = this._panelIntro();
     }
     const mapWrap = el("div", { id: "site-mapwrap" }, [this._agentMapSvg()]);
     return el("div", {}, [
       el("div", { class: "ptitle" }, [el("h1", { text: "Agents" }), el("span", { class: "scope", text: "all forts" })]),
-      el("p", { class: "lede", text: "Who runs the fort. Each agent has a charter that says what it owns and a list of tools it may use. They carry over from fort to fort." }),
       el("div", { class: "asplit" }, [
         el("div", { class: "box amapbox" }, [
           el("div", { class: "mapstage" }, [mapWrap]),
@@ -1457,7 +1456,10 @@ class SitePage {
     }
 
     const head = el("div", { class: "phead" }, [
-      el("h1", { style: `color:${roleCssVar(role)}`, text: r.name }),
+      el("div", { class: "phrow" }, [
+        el("h1", { style: `color:${roleCssVar(role)}`, text: r.name }),
+        el("a", { href: "#agents", class: "tagchip", text: "close" }),
+      ]),
       el("div", { class: "faint small", text: `${r.kind_label}${r.planned ? "" : " · " + (r.model_label || "unknown model") + " · " + spelledCount(mine.length, "tool", "tools")}` }),
       el("p", { class: "lede", text: r.summary || r.blocked_on || "" }),
       stats.length ? el("div", { class: "box stats" }, stats.map(([v, k]) => el("div", { class: "stat" }, [el("b", { text: String(v) }), el("span", { text: k })]))) : null,
@@ -1466,7 +1468,7 @@ class SitePage {
       type: "button", role: "tab", class: "tabbtn", "aria-selected": String(this.agentTab === k),
       onclick: () => { this.agentTab = k; this._render(); }, text: l,
     })));
-    return el("div", {}, [head, tabBar, el("div", { class: "ptab", role: "tabpanel" }, [body])]);
+    return el("div", { class: "pbody" }, [head, tabBar, el("div", { class: "ptab", role: "tabpanel" }, [body])]);
   }
 
   /** `role.md` is this repo's own committed prose, never live/model/operator
