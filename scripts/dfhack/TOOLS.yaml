@@ -995,7 +995,7 @@ df-overseer-zone.lua:
         Offline build only, not deployed or live-verified this stream.
       summary: "Finds up to five non-overlapping sites for one zone kind near a landmark, ranked by distance."
       guide: >
-        Arguments: KIND (a token from zone.list-kinds), optional W H pair (omit for the kind's own default size), optional LEVEL (default 0), NEAR_LANDMARK, optional RADIUS_TILES (default 30), optional AROUND_FURNITURE (default false). With AROUND_FURNITURE true, a tile already holding the kind's own qualifying furniture (a Chair for Office, Bed for Bedroom, Table for DiningHall, Coffin for Tomb) is accepted instead of rejected as occupied, and a site containing that furniture is ranked above an empty one; the response then also reports whether ANY candidate contains the furniture, so a caller does not have to scan every result to find out. Room-value kinds also report which noble positions ask for a room of this kind and whether each is currently held. Read-only.
+        Arguments: KIND (a token from zone.list-kinds), optional W H pair (omit for the kind's own default size), optional LEVEL (default 0), NEAR_LANDMARK, optional RADIUS_TILES (default 30), optional AROUND_FURNITURE (default false). With AROUND_FURNITURE true, a tile already holding the kind's own qualifying furniture (a Chair for Office, Bed for Bedroom, Table for DiningHall, Coffin for Tomb) is accepted instead of rejected as occupied, and a site containing that furniture is ranked above an empty one; the response then also reports whether ANY candidate contains the furniture, so a caller does not have to scan every result to find out. AROUND_FURNITURE is refused by name for a kind with no qualifying furniture of its own. Room-value kinds also report which noble positions ask for a room of this kind and whether each is currently held. KIND "water_source" is a special case: it keeps its own finder over connected water bodies and refuses W H entirely, never a rectangle search. Read-only.
     "check-owner KIND OWNER":
       lua_function: check_owner
       effect: read
@@ -2957,7 +2957,7 @@ df-overseer-blueprint.lua:
         returned. Read-only: the sole effect is asking quickfort with -d.
       summary: "Dry-runs one phase of a blueprint template against a site, without designating anything."
       guide: >
-        Arguments: TEMPLATE, PHASE (from blueprint.plan), SITE (a landmark name to find a new site near, with optional LEVEL/RANK/RADIUS_TILES, or an existing site-N handle from a prior apply or from blueprint.sites), optional LEVEL/RANK/RADIUS_TILES (only meaningful with a landmark SITE, an error otherwise). Reports what would be designated, any problems, and whether a soil-finish requirement would be met. Read-only.
+        Arguments: TEMPLATE, PHASE (from blueprint.plan), SITE (a landmark name to find a new site near, with optional LEVEL/RANK/RADIUS_TILES, or an existing site-N handle from a prior apply or from blueprint.sites), optional LEVEL/RANK/RADIUS_TILES (only meaningful with a landmark SITE, an error otherwise). Reports what would be designated, any problems, and whether a soil-finish requirement would be met. A build, zone or place phase also reports whether phase ordering would block it (it needs a finished dug shell first); `plan` says which phases need one. Read-only.
     "apply TEMPLATE PHASE SITE [DRY_RUN] [LEVEL] [RANK] [RADIUS_TILES] [ALLOW_STRANDED]":
       lua_function: apply_phase
       effect: mutate
