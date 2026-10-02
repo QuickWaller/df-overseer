@@ -81,6 +81,19 @@ from dfqueue.schema import (
 REPO_ROOT = Path(__file__).resolve().parent.parent
 AGENTS_DIR = REPO_ROOT / "agents"
 CHARTER_CHANGES_FALLBACK_PATH = REPO_ROOT / "dfqueue" / "charter_changes.json"
+#: Display wording for the site (role labels, map ring order, past forts):
+#: plain data the user and the orchestrator edit by hand.
+SITE_TEXT_PATH = REPO_ROOT / "web" / "stream" / "site-text.yaml"
+
+
+def load_site_text(path: Path = SITE_TEXT_PATH) -> dict:
+    """`web/stream/site-text.yaml`, or `{}` when absent (a deploy without
+    the web folder still exports, with the roster's own wording)."""
+    try:
+        with Path(path).open(encoding="utf-8") as fh:
+            return yaml.safe_load(fh) or {}
+    except OSError:
+        return {}
 
 # ---------------------------------------------------------------------------
 # Small, generic lookup tables -- data, not per-role branches (CLAUDE.md
@@ -360,6 +373,7 @@ def build_agents_json(
     repo_root: Path = REPO_ROOT,
     registry=None,
     roster=None,
+    site_text: Optional[dict] = None,
 ) -> dict:
     """The whole Agents page's data: roster, models, tool lists (from the
     SAME loader `dfmcp` enforces at runtime, never a hand-kept copy),
@@ -373,6 +387,7 @@ def build_agents_json(
     sole_writer = manifest.get("sole_writer")
     roster = roster or _default_roster(registry, agents_dir)
     tr = _track_records(records)
+    site_roles = (site_text if site_text is not None else load_site_text()).get("roles") or {}
 
     role_order: List[str] = []
     planned_order: List[str] = []
@@ -392,10 +407,10 @@ def build_agents_json(
         role_record: dict = {
             "name": display_name,
             "kind": kind,
-            "kind_label": KIND_LABELS.get(kind, kind),
+            "kind_label": (site_roles.get(role_name) or {}).get("kind_label") or KIND_LABELS.get(kind, kind),
             "enabled": enabled,
             "planned": not enabled,
-            "summary": entry.get("summary", ""),
+            "summary": " ".join(str((site_roles.get(role_name) or {}).get("summary") or entry.get("summary", "")).split()),
             "blocked_on": entry.get("blocked_on"),
             "model": model_id,
             "model_label": humanize_model_id(model_id) if kind != "system" else ("Code, no model" if enabled else None),
@@ -422,6 +437,34 @@ def build_agents_json(
 # ---------------------------------------------------------------------------
 # tools.json
 # ---------------------------------------------------------------------------
+
+
+#: A sentence that points at the repo's own history (a handoff, a dated
+#: change, a file) is developer material, never page text.
+_DEV_REFERENCE = re.compile(r"handoff|\.md\b|\.lua\b|\bADDED\b|\b20\d\d-\d\d-\d\d\b|^Same\b|memory/")
+_SENTENCE_END = re.compile(r"(?<=[.!?])\s+(?=[A-Z(`\"])")
+
+
+def first_sentence(text: Optional[str]) -> str:
+    """The first sentence of a developer note, the fallback when a tool has
+    no `summary` yet. Developer notes themselves never reach the page."""
+    text = " ".join((text or "").split())
+    if not text:
+        return ""
+    for sentence in _SENTENCE_END.split(text):
+        if not _DEV_REFERENCE.search(sentence):
+            return sentence
+    return ""
+
+
+def _tool_summary(tool, any_role: Optional[str]) -> str:
+    """`Tool.summary` when the registry has it (the three-layer split,
+    `handoffs/2026-10-02-tool-descriptions-split.md`), else the first
+    sentence of the old description."""
+    summary = getattr(tool, "summary", None)
+    if summary:
+        return " ".join(str(summary).split())
+    return first_sentence(_tool_description(tool, any_role))
 
 
 def _tool_description(tool, any_role: Optional[str]) -> str:
@@ -459,7 +502,8 @@ def build_tools_json(registry=None, roster=None, *, agents_dir: Path = AGENTS_DI
         tools.append({
             "id": tool_id,
             "write": bool(getattr(tool, "mutates", False)),
-            "description": _tool_description(tool, roles_with[0] if roles_with else None),
+            "description": _tool_summary(tool, roles_with[0] if roles_with else None),
+            "guide": getattr(tool, "guide", None) or None,
             "area": area_of(tool_id),
             "roles": roles_with,
             "confidence": {"level": level.level, "note": level.note},
@@ -576,6 +620,11 @@ def write_site_data(
     nothing sensitive, so the same payload goes to both projections;
     `gotchas.json` is projected per `public` (see `build_gotchas_json`)."""
     root_dir = Path(root_dir)
+    text = load_site_text()
+    _write_json(root_dir / "site.json", {
+        "past_forts": text.get("past_forts") or [],
+        "map_ring": text.get("map_ring") or {},
+    })
     _write_json(root_dir / "agents.json", agents_json)
     _write_json(root_dir / "tools.json", tools_json)
     _write_json(root_dir / "gotchas.json", build_gotchas_json(gotchas_entries, public=public))

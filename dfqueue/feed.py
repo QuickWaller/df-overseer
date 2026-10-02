@@ -351,7 +351,13 @@ def _ruling_public_text(record: dict, ctx: dict) -> Optional[str]:
         decision, (decision or "Ruled").capitalize()
     )
     rationale = record.get("public_rationale")
-    return f"{label}: {rationale}" if rationale else label
+    if not rationale:
+        return label
+    # A rationale that already opens with its own verdict ("Rejected: ...")
+    # is not prefixed twice.
+    if rationale.lower().startswith(label.lower()):
+        return rationale
+    return f"{label}: {rationale}"
 
 
 def _executed_public_text(record: dict, ctx: dict) -> Optional[str]:

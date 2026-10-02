@@ -1,63 +1,263 @@
 {
   "_comment": "EXAMPLE DATA ONLY. Pretend data for the Chronicle stub (handoffs/2026-10-02-site-agents-tools.md item 5): the Chronicler role is not enabled yet (agents/ROSTER.yaml, chronicler.enabled: false) and no tool in this repo writes a chronicle entry (agents/chronicler/role.md). None of this reflects the real fort. Kept in exactly this one file, loaded only by the Chronicle and lost-fort-archive views, never mixed into real data this page reads anywhere else.",
   "event_kinds": {
-    "project": ["done", "p-ok"],
-    "death": ["death", "p-bad"],
-    "arrival": ["arrival", "p-info"],
-    "trouble": ["trouble", "p-warn"],
-    "will": ["Will", "p-plain"],
-    "routine": ["routine", "p-plain"]
+    "project": [
+      "done",
+      "p-ok"
+    ],
+    "death": [
+      "death",
+      "p-bad"
+    ],
+    "arrival": [
+      "arrival",
+      "p-info"
+    ],
+    "trouble": [
+      "trouble",
+      "p-warn"
+    ],
+    "will": [
+      "Will",
+      "p-plain"
+    ],
+    "routine": [
+      "routine",
+      "p-plain"
+    ]
   },
   "vitals": [
-    { "k": "Dwarves", "v": [7, 7, 9, 9, 15, 22], "months": ["Granite", "Slate", "Felsite", "Hematite", "Malachite", "Galena"], "tone": "chart" },
-    { "k": "Food", "v": [60, 82, 101, 118, 140, 151], "months": ["Granite", "Slate", "Felsite", "Hematite", "Malachite", "Galena"], "tone": "chart" },
-    { "k": "Drink", "v": [40, 31, 22, 12, 4, 0], "months": ["Granite", "Slate", "Felsite", "Hematite", "Malachite", "Galena"], "tone": "bad" },
-    { "k": "Deaths", "v": [0, 0, 0, 1, 1, 1], "months": ["Granite", "Slate", "Felsite", "Hematite", "Malachite", "Galena"], "tone": "bad" }
+    {
+      "k": "Dwarves",
+      "v": [
+        7,
+        7,
+        9,
+        9,
+        15,
+        22
+      ],
+      "months": [
+        "Granite",
+        "Slate",
+        "Felsite",
+        "Hematite",
+        "Malachite",
+        "Galena"
+      ],
+      "tone": "chart",
+      "worse": "down"
+    },
+    {
+      "k": "Food",
+      "v": [
+        60,
+        82,
+        101,
+        118,
+        140,
+        151
+      ],
+      "months": [
+        "Granite",
+        "Slate",
+        "Felsite",
+        "Hematite",
+        "Malachite",
+        "Galena"
+      ],
+      "tone": "chart",
+      "worse": "down"
+    },
+    {
+      "k": "Drink",
+      "v": [
+        40,
+        31,
+        22,
+        12,
+        4,
+        0
+      ],
+      "months": [
+        "Granite",
+        "Slate",
+        "Felsite",
+        "Hematite",
+        "Malachite",
+        "Galena"
+      ],
+      "tone": "bad",
+      "worse": "down"
+    },
+    {
+      "k": "Deaths",
+      "v": [
+        0,
+        0,
+        0,
+        1,
+        1,
+        1
+      ],
+      "months": [
+        "Granite",
+        "Slate",
+        "Felsite",
+        "Hematite",
+        "Malachite",
+        "Galena"
+      ],
+      "tone": "bad",
+      "worse": "up"
+    }
   ],
   "seasons": [
     {
       "s": "Spring, year 32",
-      "months": [0, 3],
-      "result": null, "goal": null, "end": null, "review": null,
+      "months": [
+        0,
+        3
+      ],
+      "result": null,
+      "goal": null,
+      "end": null,
+      "review": null,
       "events": [
-        ["01 Granite", "Embarked with 7 dwarves.", "arrival", 1],
-        ["04 Granite", "First farm plot planted.", "routine", 0],
-        ["10 Slate", "The ghost was laid to rest in a tomb.", "project", 1],
-        ["15 Slate", "Well finished.", "project", 0],
-        ["03 Felsite", "Migrants: 2 arrived.", "arrival", 1]
+        [
+          "01 Granite",
+          "Embarked with 7 dwarves.",
+          "arrival",
+          1
+        ],
+        [
+          "04 Granite",
+          "First farm plot planted.",
+          "routine",
+          0
+        ],
+        [
+          "10 Slate",
+          "The ghost was laid to rest in a tomb.",
+          "project",
+          1
+        ],
+        [
+          "15 Slate",
+          "Well finished.",
+          "project",
+          0
+        ],
+        [
+          "03 Felsite",
+          "Migrants: 2 arrived.",
+          "arrival",
+          1
+        ]
       ],
       "chron": {
         "account": "Seven dwarves came to the hills and dug in. The first thing they finished properly was a grave: an old ghost had been haunting the halls, and they gave it a tomb before they gave themselves beds.",
         "thoughts": [
-          { "by": "consultant", "text": "An unburied dead dwarf returns as a ghost. A coffin in a tomb zone ends it.", "about": "answering the Overseer, 09 Slate" }
+          {
+            "by": "consultant",
+            "text": "An unburied dead dwarf returns as a ghost. A coffin in a tomb zone ends it.",
+            "about": "answering the Overseer, 09 Slate"
+          }
         ]
       }
     },
     {
       "s": "Summer, year 32",
-      "months": [3, 6],
-      "result": ["missed", "p-bad"],
+      "months": [
+        3,
+        6
+      ],
+      "result": [
+        "missed",
+        "p-bad"
+      ],
       "goal": "Get drink back above 50 before autumn.",
       "end": "Drink fell to 0. The brew order never started.",
       "review": "The goal was right, but I set it without checking that the Manager could validate orders. He was walled into his office for part of the season. Next season: confirm the Manager can reach his desk before relying on orders.",
       "events": [
-        ["02 Hematite", "Office for the Manager finished.", "project", 1],
-        ["05 Hematite", "Labor change: one more miner.", "routine", 0],
-        ["14 Hematite", "A dwarf drowned.", "death", 1],
-        ["20 Hematite", "Order created: 10 beds.", "routine", 0],
-        ["01 Malachite", "Migrants: 6 arrived.", "arrival", 1],
-        ["11 Malachite", "Food stockpile moved nearer the kitchen.", "routine", 0],
-        ["08 Galena", "Our own ring wall sealed the Manager into his office. Freed two days later.", "trouble", 1],
-        ["12 Galena", "Brew order rechecked: still waiting.", "routine", 0],
-        ["18 Galena", "Migrants: 7 arrived.", "arrival", 1],
-        ["22 Galena", "Will asked for smoothed floors in the new bedrooms.", "will", 1]
+        [
+          "02 Hematite",
+          "Office for the Manager finished.",
+          "project",
+          1
+        ],
+        [
+          "05 Hematite",
+          "Labor change: one more miner.",
+          "routine",
+          0
+        ],
+        [
+          "14 Hematite",
+          "A dwarf drowned.",
+          "death",
+          1
+        ],
+        [
+          "20 Hematite",
+          "Order created: 10 beds.",
+          "routine",
+          0
+        ],
+        [
+          "01 Malachite",
+          "Migrants: 6 arrived.",
+          "arrival",
+          1
+        ],
+        [
+          "11 Malachite",
+          "Food stockpile moved nearer the kitchen.",
+          "routine",
+          0
+        ],
+        [
+          "08 Galena",
+          "Our own ring wall sealed the Manager into his office. Freed two days later.",
+          "trouble",
+          1
+        ],
+        [
+          "12 Galena",
+          "Brew order rechecked: still waiting.",
+          "routine",
+          0
+        ],
+        [
+          "18 Galena",
+          "Migrants: 7 arrived.",
+          "arrival",
+          1
+        ],
+        [
+          "22 Galena",
+          "Will asked for smoothed floors in the new bedrooms.",
+          "will",
+          1
+        ]
       ],
       "chron": {
         "account": "Summer was the season this fort outgrew itself. Thirteen newcomers arrived to a fort that had built an office for its Manager and then, by its own hand, bricked him inside it. For two days nobody could sign an order, and the brewery stayed cold. By the end of Galena there was not a drop to drink, and twenty-two dwarves were waiting on bedrooms that existed only as plans.",
         "thoughts": [
-          { "by": "chronicler", "text": "A wall with no door is a very dwarvish way to protect a man from interruptions." },
-          { "by": "quartermaster", "text": "Drink is at zero. Proposing a repeating brew order at 30 plum wine.", "about": "19 Galena, on the brew order" },
-          { "by": "architect", "text": "I can only take a ranked open area. I want the food stockpile beside the kitchen and there is no way to say so.", "about": "a vent about stockpile.place" }
+          {
+            "by": "chronicler",
+            "text": "A wall with no door is a very dwarvish way to protect a man from interruptions."
+          },
+          {
+            "by": "quartermaster",
+            "text": "Drink is at zero. Proposing a repeating brew order at 30 plum wine.",
+            "about": "19 Galena, on the brew order"
+          },
+          {
+            "by": "architect",
+            "text": "I can only take a ranked open area. I want the food stockpile beside the kitchen and there is no way to say so.",
+            "about": "a vent about stockpile.place"
+          }
         ]
       }
     }
@@ -68,8 +268,16 @@
       "s": "The founding",
       "account": "Artobcatten never got past its first days. The wagon was unloaded, the first stairs went down, and the fort was lost before it had a season to its name. What the agents learned there went into their tools.",
       "events": [
-        ["Day 1", "Embarked.", "arrival"],
-        ["Within days", "Lost while founding.", "death"]
+        [
+          "Day 1",
+          "Embarked.",
+          "arrival"
+        ],
+        [
+          "Within days",
+          "Lost while founding.",
+          "death"
+        ]
       ]
     }
   }

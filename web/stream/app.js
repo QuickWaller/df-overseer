@@ -327,8 +327,10 @@ function jobGraph(steps) {
 }
 
 class StreamPage {
-  constructor({ dataRoot, mode, root, liveViewSrc }) {
+  constructor({ dataRoot, mode, root, liveViewSrc, embedded }) {
     this.dataRoot = dataRoot;
+    // Inside the site shell the site owns the header and the theme toggle.
+    this.embedded = !!embedded;
     // The live view is the existing noVNC viewer on the same origin, embedded.
     // Only when served from the real site: a local build has no viewer.
     this.liveViewSrc = liveViewSrc && location.port === "" ? liveViewSrc : null;
@@ -457,11 +459,16 @@ class StreamPage {
     this.col = el("div", { class: "e-col" });
     const split = el("div", { class: "e-split" }, [view, this.col]);
 
-    this.wrap.appendChild(header);
-    this.wrap.appendChild(this.whoswhoPanel);
+    if (!this.embedded) {
+      this.wrap.appendChild(header);
+      this.wrap.appendChild(this.whoswhoPanel);
+    } else {
+      this.wrap.classList.add("embedded");
+    }
     this.wrap.appendChild(split);
     this.root.appendChild(this.wrap);
-    this.root.appendChild(this._buildGapsNote());
+    // Developer notes stay off the public page.
+    if (this.mode === "operator") this.root.appendChild(this._buildGapsNote());
   }
 
   _buildHeader() {
@@ -481,7 +488,7 @@ class StreamPage {
 
     this.themeButtons = THEMES.map((t) => el("button", {
       type: "button", "aria-pressed": String(t === this.theme), "data-theme": t,
-      text: t === "terminal2" ? "Terminal 2" : "Stone 2",
+      text: t === "terminal2" ? "Dark" : "Light",
       onclick: () => this._setTheme(t),
     }));
     const themeSwitch = el("div", { class: "e-switch", role: "group", "aria-label": "Theme" }, this.themeButtons);
@@ -509,7 +516,7 @@ class StreamPage {
       ])).concat([
         el("p", {
           class: "muted", style: "font-size:12px",
-          text: "Model names and exact tool allowlists are not shown here yet (see web/stream/README.md).",
+          text: "Each agent's model, tools and charter are on the Agents page.",
         }),
       ])
     );
@@ -580,7 +587,7 @@ class StreamPage {
       class: "muted", style: "font-size:12px;padding:0 16px 16px",
       text:
         "Fort status, the season goal and history scrolling past the open " +
-        "segment are not built yet — see web/stream/README.md.",
+        "segment are not built yet (web/stream/README.md).",
     });
   }
 
@@ -618,7 +625,7 @@ class StreamPage {
       this.col.appendChild(this._sectionEl("Turned down", turnedDown));
     }
     if (!shown) {
-      this.col.appendChild(el("p", { class: "muted", text: "Nothing here yet. Run the export script (web/stream/README.md) to load real past conversation." }));
+      this.col.appendChild(el("p", { class: "muted", text: "Nothing here yet." }));
     }
   }
 
@@ -644,7 +651,7 @@ class StreamPage {
   // ---- board data (dfqueue.feed.build_projects_view's own shape) --------
 
   _boardCards() {
-    return Object.values(this.projects.projects || {}).map((p) => ({
+    const projects = Object.values(this.projects.projects || {}).map((p) => ({
       kind: "project",
       id: p.id,
       name: p.name || `Project ${p.id}`,
@@ -653,6 +660,24 @@ class StreamPage {
       status: p.status || "active",
       steps: p.steps || [],
     }));
+    return projects.concat(this._acceptedWithoutProject());
+  }
+
+  /** Proposals accepted before project records existed never founded a
+   * project, so they would show nowhere. Each shows as its own card: done
+   * when something was executed on its thread, otherwise under way. */
+  _acceptedWithoutProject() {
+    const threadToProject = this.projects.thread_to_project || {};
+    return this.items
+      .filter((item) => item.kind === "proposal" && item.badge === "accepted" && !threadToProject[item.thread])
+      .map((item) => {
+        const executed = this.items.some((i) => i.kind === "executed" && i.thread === item.thread);
+        return {
+          kind: "proposal", id: item.id, name: item.type || "Proposal",
+          description: item.text || null, urgency: null,
+          status: executed ? "done" : "active", steps: [], noPlan: true,
+        };
+      });
   }
 
   /** A rejected or deferred proposal that never founded a project (handoff
@@ -670,9 +695,11 @@ class StreamPage {
         const ruling = [...this.items]
           .filter((r) => r.kind === "ruling" && r.reply_to === item.id)
           .pop();
+        // The section already says "Turned down": show the reason alone.
+        const reason = ruling && ruling.text ? ruling.text.replace(/^(rejected|deferred)\s*:\s*/i, "") : null;
         return {
           kind: "proposal", id: item.id, name: item.type || "Proposal",
-          description: ruling ? ruling.text : null, urgency: null,
+          description: reason, urgency: null,
           status: "turned_down", steps: [],
         };
       });
@@ -689,6 +716,11 @@ class StreamPage {
     ];
     if (entry.description) {
       parts.push(el("div", { class: "bdesc", text: entry.description }));
+    }
+    if (entry.noPlan) {
+      parts.push(el("div", { class: "bstatus" }, [
+        el("span", { class: "slabel", text: entry.status === "done" ? "Done, before job plans existed" : "Accepted" }),
+      ]));
     }
     if (entry.steps.length) {
       const done = entry.steps.filter((s) => s.state === "done").length;
@@ -1013,6 +1045,12 @@ class SitePage {
     const index = await fetchJson(`${this.dataRoot}/forts.json`).catch(() => null);
     this.forts = (index && Array.isArray(index.forts)) ? index.forts : [];
     this.fortMeta = this.forts.find((f) => f.current) || this.forts[0] || null;
+    // Forts that ended, and the map's ring order, from the site's own text
+    // file (site.json). A past fort the publisher already lists wins.
+    this.siteText = await fetchJson(`${this.dataRoot}/site.json`).catch(() => ({}));
+    (this.siteText.past_forts || []).forEach((f) => {
+      if (!this.forts.some((x) => x.id === f.id)) this.forts.push({ ...f, current: false });
+    });
   }
 
   async _ensureAgents() {
@@ -1041,6 +1079,27 @@ class SitePage {
     const root = this.fortMeta ? `${this.dataRoot}/forts/${this.fortMeta.id}` : this.dataRoot;
     const open = await fetchJson(`${root}/open.json`).catch(() => ({ items: [] }));
     this.feedItems = open.items || [];
+  }
+
+  async _ensureProjects() {
+    if (this.fortProjects) return;
+    const root = this.fortMeta ? `${this.dataRoot}/forts/${this.fortMeta.id}` : this.dataRoot;
+    this.fortProjects = await fetchJson(`${root}/projects.json`).catch(() => ({ projects: {} }));
+  }
+
+  /** A few real numbers for the live fort's card, all from data the board
+   * already publishes: the latest game date, proposals and projects. */
+  _liveFortStats() {
+    const items = this.feedItems || [];
+    const latest = [...items].reverse().find((i) => i.game_date);
+    const proposals = items.filter((i) => i.kind === "proposal");
+    const accepted = proposals.filter((i) => i.badge === "accepted").length;
+    const projects = Object.keys((this.fortProjects && this.fortProjects.projects) || {}).length;
+    const lines = [];
+    if (latest) lines.push(shortDate(latest.game_date));
+    if (proposals.length) lines.push(`${spelledCount(proposals.length, "proposal", "proposals")}, ${accepted} accepted`);
+    if (projects) lines.push(spelledCount(projects, "project", "projects"));
+    return lines;
   }
 
   /** The Chronicle is a clearly marked stub (handoff item 5): one fixture
@@ -1076,7 +1135,8 @@ class SitePage {
     this.main.textContent = "";
     // The Agents page is full-width (handoff item 2: the map/panel split
     // needs the room); every other view keeps the page's usual max-width.
-    this.main.classList.toggle("full", route.view === "agents");
+    this.main.classList.add("full");
+    this.main.classList.toggle("agentsview", route.view === "agents");
     if (route.view === "board") {
       this.main.appendChild(this._boardEl());
       return;
@@ -1100,12 +1160,15 @@ class SitePage {
       return;
     }
     if (route.view === "tools") {
+      await this._ensureAgents();
       await this._ensureTools();
       await this._ensureGotchas();
       this.main.appendChild(route.param ? this._viewTool(route.param) : this._viewTools());
       return;
     }
     if (route.view === "forts") {
+      await this._ensureFeedItems();
+      await this._ensureProjects();
       this.main.appendChild(this._viewForts());
       return;
     }
@@ -1122,20 +1185,20 @@ class SitePage {
     const navLink = (hash, label, active) => el("a", {
       href: "#" + hash, "aria-current": active ? "page" : null, text: label,
     });
-    const fortGroup = el("div", { class: "navgroup" }, [
-      el("span", { class: "fortpick", title: "Fort" }, [el("span", { class: "dot" }), document.createTextNode(" " + fortName)]),
+    // The current fort's own views sit inside one box with its name.
+    const fortGroup = el("div", { class: "navgroup fortgroup" }, [
+      el("span", { class: "fortpick", title: "The fort running now" }, [el("span", { class: "dot" }), document.createTextNode(" " + fortName)]),
       navLink("board", "Board", current === "board"),
       navLink("chronicle", "Chronicle", current === "chronicle"),
     ]);
     const projectGroup = el("div", { class: "navgroup" }, [
-      el("span", { class: "glabel", text: "Project" }),
       navLink("agents", "Agents", current === "agents"),
       navLink("tools", "Tools", current === "tools"),
       navLink("forts", "Forts", current === "forts" || current === "lost-chronicle"),
     ]);
     this.themeButtons = THEMES.map((t) => el("button", {
       type: "button", "aria-pressed": String(t === this.theme), "data-theme": t,
-      text: t === "terminal2" ? "Terminal 2" : "Stone 2",
+      text: t === "terminal2" ? "Dark" : "Light",
       onclick: () => this._setTheme(t),
     }));
     const header = el("header", { class: "top" }, [
@@ -1155,7 +1218,7 @@ class SitePage {
       this._boardContainer = el("div", {});
       this._boardPage = new StreamPage({
         dataRoot: this.dataRoot, mode: this.mode, liveViewSrc: this.liveViewSrc,
-        root: this._boardContainer,
+        root: this._boardContainer, embedded: true,
       });
       this._boardPage.start();
     }
@@ -1182,12 +1245,11 @@ class SitePage {
     }
     const mapWrap = el("div", { id: "site-mapwrap" }, [this._agentMapSvg()]);
     return el("div", {}, [
-      el("div", {}, [el("h1", { text: "Agents" }), el("span", { class: "scope", text: " all forts" })]),
+      el("div", { class: "ptitle" }, [el("h1", { text: "Agents" }), el("span", { class: "scope", text: "all forts" })]),
       el("p", { class: "lede", text: "Who runs the fort. Each agent has a charter that says what it owns and a list of tools it may use. They carry over from fort to fort." }),
       el("div", { class: "asplit" }, [
         el("div", { class: "box amapbox" }, [
           el("div", { class: "mapstage" }, [mapWrap]),
-          el("div", {}, [el("span", { class: "example", text: "" })]),
         ]),
         el("aside", { class: "apanel", id: "site-apanel", "aria-live": "polite" }, panelBody),
       ]),
@@ -1249,36 +1311,52 @@ class SitePage {
     if (panel && !this.mapSel) panel.replaceChildren(...this._panelIntro());
   }
 
-  _agentMapSvg() {
+  /** Spoke order and angle: `site.json`'s `map_ring` (degrees, 0 = right)
+   * when it names a spoke, otherwise even spacing in `buildSpokeOrder`'s
+   * order, so a new role still lands on the ring. */
+  _ringLayout() {
     const order = buildSpokeOrder(this.agents);
-    const W = 1000, H = 820;
-    const hub = { x: W / 2, y: H / 2 };
-    const rx = W / 2 - 150, ry = H / 2 - 130;
+    const ring = (this.siteText && this.siteText.map_ring) || {};
     const n = Math.max(order.length, 1);
-    const pos = (i) => {
-      const a = ((-90 + (360 * i) / n) * Math.PI) / 180;
+    return order.map((sp, i) => ({ ...sp, angle: ring[sp.key] != null ? ring[sp.key] : -90 + (360 * i) / n }));
+  }
+
+  _agentMapSvg() {
+    const order = this._ringLayout();
+    const W = 1120, H = 700, NW = 176, NH = 52;
+    const hub = { x: 470, y: 350 };
+    const ry = 275, rx = ry * 1.18;
+    const pos = (sp) => {
+      const a = (sp.angle * Math.PI) / 180;
       return { x: hub.x + rx * Math.cos(a), y: hub.y + ry * Math.sin(a) };
     };
-    const counts = order.map((sp) => {
-      const t = this.agents.spokes && this.agents.spokes[sp.key];
-      return (t && t.out && t.out[1]) || 0 + ((t && t.in && t.in[1]) || 0);
-    });
-    const maxN = Math.max(1, ...counts);
+    const traffic = (key) => {
+      const t = this.agents.spokes && this.agents.spokes[key];
+      return ((t && t.out && t.out[1]) || 0) + ((t && t.in && t.in[1]) || 0);
+    };
+    const maxN = Math.max(1, ...order.map((sp) => traffic(sp.key)));
+    // Where a line from a toward b leaves a box of half-size (hw, hh) centred on a.
+    const leave = (a, b, hw, hh) => {
+      const dx = b.x - a.x, dy = b.y - a.y;
+      const t = Math.min(hw / Math.abs(dx || 1e-6), hh / Math.abs(dy || 1e-6));
+      return { x: a.x + dx * t, y: a.y + dy * t };
+    };
 
     const svg = svgEl("svg", { viewBox: `0 0 ${W} ${H}`, preserveAspectRatio: "xMidYMid meet", role: "img", "aria-label": "Every agent talks through the Overseer", class: "amap" });
     svg.append(svgEl("ellipse", { cx: hub.x, cy: hub.y, rx, ry, fill: "none", stroke: "var(--line)", "stroke-dasharray": "2 6" }));
 
-    const nodeBox = (key, x, y, title, sub, color, opts) => {
+    const nodeBox = (x, y, title, sub, color, opts) => {
       opts = opts || {};
-      const hw = opts.hw || 88, hh = opts.hh || 26;
+      const hw = opts.hw || NW / 2, hh = opts.hh || NH / 2;
       const g = svgEl("g", { class: "mnode", tabindex: opts.link ? "0" : "-1", opacity: opts.dim ? "0.3" : "1" });
       if (opts.sel) g.append(svgEl("rect", { x: x - hw - 7, y: y - hh - 7, width: hw * 2 + 14, height: hh * 2 + 14, fill: "none", stroke: color, "stroke-width": "1", "stroke-dasharray": "2 3" }));
       g.append(svgEl("rect", { x: x - hw, y: y - hh, width: hw * 2, height: hh * 2, fill: "var(--raised)", stroke: color, "stroke-width": opts.planned ? "1.5" : "2", "stroke-dasharray": opts.planned ? "5 4" : "" }));
-      const t1 = svgEl("text", { x, y: y - (opts.big ? 4 : 2), "text-anchor": "middle", fill: color, "font-size": opts.big ? "17" : "13", "font-weight": "700", "font-family": "inherit" });
+      if (opts.double) g.append(svgEl("rect", { x: x - hw + 5, y: y - hh + 5, width: hw * 2 - 10, height: hh * 2 - 10, fill: "none", stroke: color, "stroke-width": "1" }));
+      const t1 = svgEl("text", { x, y: y - (opts.big ? 4 : 2), "text-anchor": "middle", fill: color, "font-size": opts.big ? "18" : "14", "font-weight": "700", "font-family": "inherit" });
       t1.textContent = title;
       g.append(t1);
-      const t2 = svgEl("text", { x, y: y + (opts.big ? 16 : 13), "text-anchor": "middle", fill: "var(--faint)", "font-size": "10.5", "font-family": "inherit" });
-      t2.textContent = opts.planned ? sub + " · planned" : sub;
+      const t2 = svgEl("text", { x, y: y + (opts.big ? 18 : 15), "text-anchor": "middle", fill: "var(--faint)", "font-size": "11", "font-family": "inherit" });
+      t2.textContent = sub;
       g.append(t2);
       if (opts.hoverKey) {
         const show = () => { this._showMapPop(opts.hoverKey); this.mapFocus = opts.hoverKey; };
@@ -1294,35 +1372,39 @@ class SitePage {
       return g;
     };
 
+    const focusKey = this.mapFocus || this.mapSel;
+    const overseerKey = this.agents.sole_writer;
     const lines = svgEl("g", {});
     const nodes = svgEl("g", {});
-    order.forEach((sp, i) => {
-      const p = pos(i);
-      const focusKey = this.mapFocus || this.mapSel;
-      const dim = focusKey && focusKey !== sp.key && focusKey !== "overseer";
-      const traffic = this.agents.spokes && this.agents.spokes[sp.key];
-      const n2 = (traffic && traffic.out && traffic.out[1]) ? traffic.out[1] : 0;
-      const n3 = (traffic && traffic.in && traffic.in[1]) ? traffic.in[1] : 0;
-      const w = sp.planned ? 1.5 : 1.5 + (4.5 * (n2 + n3)) / maxN;
+    order.forEach((sp) => {
+      const p = pos(sp);
+      const dim = focusKey && focusKey !== sp.key && focusKey !== overseerKey;
+      const w = sp.planned ? 1.5 : 1.5 + (4.5 * traffic(sp.key)) / maxN;
+      const a = leave(p, hub, NW / 2 + 4, NH / 2 + 4), b = leave(hub, p, 100 + 4, 34 + 4);
       lines.append(svgEl("line", {
-        x1: hub.x, y1: hub.y, x2: p.x, y2: p.y, stroke: roleCssVar(sp.key), "stroke-width": String(w),
+        x1: a.x, y1: a.y, x2: b.x, y2: b.y, stroke: roleCssVar(sp.key), "stroke-width": String(w),
         "stroke-dasharray": sp.planned ? "6 5" : "", opacity: dim ? "0.12" : "0.75",
       }));
       const extra = FIXED_EXTRAS[sp.key];
       const roleData = this.agents.roles[sp.key];
       const title = extra ? extra.name : (roleData ? roleData.name : sp.key);
-      const sub = extra ? (sp.key === "will" ? "by Telegram" : "runs jobs") : (roleData ? roleData.kind_label : "");
-      const link = extra ? (extra.noLink ? null : null) : ("#agent-" + sp.key + (sp.planned ? "-charter" : ""));
-      nodes.append(nodeBox(sp.key, p.x, p.y, title, sub, roleCssVar(sp.key), {
-        dim, sel: this.mapSel === sp.key, planned: sp.planned, link, hoverKey: sp.key,
+      const kind = extra ? (sp.key === "will" ? "by Telegram" : "runs jobs") : (roleData ? roleData.kind_label : "");
+      const sub = sp.planned && !/^planned/i.test(kind) ? kind + " · planned" : kind;
+      const link = extra ? null : ("#agent-" + sp.key + (sp.planned ? "-charter" : ""));
+      nodes.append(nodeBox(p.x, p.y, title, sub, roleCssVar(sp.key), {
+        dim, sel: this.mapSel === sp.key, planned: sp.planned, double: !sp.planned, link, hoverKey: sp.key,
       }));
+      if (sp.key === "executor") {
+        // The fort hangs off the Executor, outside the ring.
+        const fort = { x: p.x + 205, y: p.y };
+        const fdim = focusKey && focusKey !== "executor";
+        lines.append(svgEl("line", { x1: p.x + NW / 2 + 4, y1: p.y, x2: fort.x - 74, y2: fort.y, stroke: "var(--muted)", "stroke-width": "1.5", "stroke-dasharray": "6 5", opacity: fdim ? "0.12" : "0.75" }));
+        nodes.append(nodeBox(fort.x, fort.y, "The fort", "Dwarf Fortress", "var(--text)", { dim: fdim, hw: 70, hh: 24 }));
+      }
     });
-    const overseerKey = this.agents.sole_writer;
     if (overseerKey && this.agents.roles[overseerKey]) {
-      const focusKey = this.mapFocus || this.mapSel;
-      nodes.append(nodeBox(overseerKey, hub.x, hub.y, this.agents.roles[overseerKey].name, this.agents.roles[overseerKey].kind_label, roleCssVar(overseerKey), {
-        sel: this.mapSel === overseerKey, big: true, hw: 100, hh: 34, link: "#agent-" + overseerKey, hoverKey: overseerKey,
-        dim: focusKey && focusKey !== overseerKey && !(order.some((s) => s.key === focusKey) === false),
+      nodes.append(nodeBox(hub.x, hub.y, this.agents.roles[overseerKey].name, this.agents.roles[overseerKey].kind_label, roleCssVar(overseerKey), {
+        sel: this.mapSel === overseerKey, big: true, double: true, hw: 100, hh: 34, link: "#agent-" + overseerKey, hoverKey: overseerKey,
       }));
     }
     svg.append(lines, nodes);
@@ -1485,12 +1567,13 @@ class SitePage {
       const list = this.tools.tools.filter((t) =>
         (!q || t.id.includes(q) || (t.description || "").toLowerCase().includes(q)) &&
         (!this.toolFilter.role || t.roles.includes(this.toolFilter.role)) &&
-        (!this.toolFilter.only || (this.gotchas || []).some((g) => g.tool === t.id && g.list === this.toolFilter.only))
+        (!this.toolFilter.only || (this.gotchas || []).some((g) => g.tool === t.id && g.list === this.toolFilter.only)) &&
+        (this.toolFilter.ungranted || t.roles.length > 0)
       );
       const areas = [...this.tools.areas, "Other"];
       const groups = areas.map((a) => [a, list.filter((t) => t.area === a)]).filter(([, ts]) => ts.length);
       wrap.replaceChildren(
-        el("div", { class: "faint small", text: `${list.length} of ${this.tools.tools.length} tools` }),
+        el("div", { class: "faint small", text: `${list.length} of ${this.tools.tools.length} tools` + (this.toolFilter.ungranted ? "" : `, hiding ${this.tools.tools.filter((t) => !t.roles.length).length} no agent has`) }),
         ...groups.map(([area, ts]) => el("div", { class: "tarea" }, [
           el("h2", {}, [document.createTextNode(area + " "), el("span", { class: "n", text: String(ts.length) })]),
           el("div", { style: "margin-top:6px" }, ts.map((t) => {
@@ -1498,7 +1581,9 @@ class SitePage {
             return el("a", { class: "trow", href: "#tool-" + t.id }, [
               el("span", { class: "tid", text: t.id }),
               el("span", { class: "tdesc", text: (t.write ? "Changes the fort. " : "") + (t.description || "No description yet.") }),
-              el("span", { class: "roles" }, t.roles.map((r) => el("span", { class: "rdot", title: r, style: `background:${roleCssVar(r)}` }))),
+              el("span", { class: "roles" }, t.roles.length
+                ? t.roles.map((r) => el("span", { class: "rdot", title: roleTitle(r), style: `background:${roleCssVar(r)}` }))
+                : [el("span", { class: "faint small", text: "not granted" })]),
               el("span", { class: "counts" }, countChips(gs)),
             ]);
           })),
@@ -1508,12 +1593,12 @@ class SitePage {
     const wrap = el("div", { class: "sec" });
     const roleBtn = (role, label) => el("button", {
       class: "tbtn", type: "button", "aria-pressed": String(this.toolFilter.role === role),
-      onclick: () => { this.toolFilter.role = this.toolFilter.role === role ? null : role; render(); },
+      onclick: () => { this.toolFilter.role = this.toolFilter.role === role ? null : role; this._render(); },
       text: label,
     });
     const onlyBtn = (key, label) => el("button", {
       class: "tbtn", type: "button", "aria-pressed": String(this.toolFilter.only === key),
-      onclick: () => { this.toolFilter.only = this.toolFilter.only === key ? null : key; render(); },
+      onclick: () => { this.toolFilter.only = this.toolFilter.only === key ? null : key; this._render(); },
       text: label,
     });
     const roleOrder = (this.agents && this.agents.role_order) || [];
@@ -1522,12 +1607,17 @@ class SitePage {
         type: "search", placeholder: "Search tools", value: this.toolFilter.q, "aria-label": "Search tools",
         oninput: (e) => { this.toolFilter.q = e.target.value; render(); },
       }),
-      el("span", { class: "chips" }, roleOrder.map((r) => roleBtn(r, roleTitle(r)))),
+      el("span", { class: "chips" }, roleOrder.map((r) => roleBtn(r, (this.agents.roles[r] && this.agents.roles[r].name) || roleTitle(r)))),
       el("span", { class: "chips" }, [["gotcha", "Has gotchas"], ["vent", "Has vents"], ["unexplained", "Has unexplained"]].map(([k, l]) => onlyBtn(k, l))),
+      el("button", {
+        class: "tbtn", type: "button", "aria-pressed": String(!!this.toolFilter.ungranted),
+        onclick: (e) => { this.toolFilter.ungranted = !this.toolFilter.ungranted; e.currentTarget.setAttribute("aria-pressed", String(this.toolFilter.ungranted)); render(); },
+        text: "Include tools no agent has",
+      }),
     ]);
     render();
     return el("div", {}, [
-      el("div", {}, [el("h1", { text: "Tools" }), el("span", { class: "scope", text: " all forts" })]),
+      el("div", { class: "ptitle" }, [el("h1", { text: "Tools" }), el("span", { class: "scope", text: "all forts" })]),
       el("p", { class: "lede", text: "Everything the agents can use, grouped by what it's for. The dots show which agents have each tool, and the counts show its gotchas, vents and unexplained errors." }),
       filters, wrap,
     ]);
@@ -1547,6 +1637,7 @@ class SitePage {
     return el("div", {}, [
       el("div", { class: "crumbs" }, [el("a", { href: "#tools", text: "Tools" }), document.createTextNode(" / " + t.area + " / " + id)]),
       el("div", { class: "sec" }, [el("h1", { text: id }), el("p", { class: "lede", text: t.description || "No description yet." })]),
+      t.guide ? el("div", { class: "sec" }, [el("h2", { text: "How to use it" }), el("div", { class: "box guide", text: t.guide })]) : null,
       pile ? el("div", { class: "warnbar", text: "Gotchas and vents are piling up on this tool. The rule is to consider rebuilding it, or rewriting its description." }) : null,
       el("div", { class: "cols" }, [
         el("div", { class: "sec" }, [
@@ -1561,14 +1652,14 @@ class SitePage {
             el("dt", { text: "Effect" }), el("dd", { text: t.write ? "Changes the fort" : "Reads only" }),
             el("dt", { text: "Area" }), el("dd", { text: t.area }),
             el("dt", { text: "Confidence" }), el("dd", {}, [el("span", { class: confidencePillClass(confidence.level), text: confidence.level })]),
-            el("dt", { text: "Used by" }), el("dd", { class: "chips" }, t.roles.map((r) => el("a", { class: "who", href: "#agent-" + r, style: `color:${roleCssVar(r)}`, text: roleTitle(r) }))),
+            el("dt", { text: "Used by" }), el("dd", { class: "chips" }, t.roles.length ? t.roles.map((r) => el("a", { class: "who", href: "#agent-" + r, style: `color:${roleCssVar(r)}`, text: roleTitle(r) })) : [el("span", { class: "faint", text: "No agent has this tool." })]),
           ])]),
           el("h2", { text: "What confidence means" }),
           el("div", { class: "box legend" }, [
             el("span", { class: "pill p-ok", text: "full" }), el("span", { text: "Just use it." }),
             el("span", { class: "pill p-warn", text: "medium" }), el("span", { text: "Read the description closely, check the gotchas, watch the result." }),
             el("span", { class: "pill p-bad", text: "low" }), el("span", { text: "Never run live, or known to be awkward. Dry-run first." }),
-            el("span", {}), el("span", { class: "faint small", text: "Every tool starts at medium and only changes when we review it (gotchas/confidence.yaml)." }),
+            el("span", {}), el("span", { class: "faint small", text: "Every tool starts at medium and only changes when we review it." }),
           ]),
         ]),
       ]),
@@ -1582,6 +1673,7 @@ class SitePage {
       class: "box fcard", href: f.status === "lost" ? "#chronicle-" + f.id : "#chronicle", style: "text-decoration:none",
     }, [
       el("div", { class: "ehead" }, [el("span", { class: "fname", text: f.name }), el("span", { class: "pill " + (f.status === "live" ? "p-ok" : "p-bad"), text: f.status })]),
+      ...(f.status === "live" ? this._liveFortStats() : [f.fate || ""]).filter(Boolean).map((line) => el("div", { class: "small muted", text: line })),
       el("div", { class: "faint small", text: f.status === "live" ? "Read its chronicle so far" : "Read its chronicle" }),
     ]));
     cards.push(el("div", { class: "box fcard planned" }, [
@@ -1590,7 +1682,7 @@ class SitePage {
       el("div", { class: "small muted", text: "Takes over the board, and starts a new chronicle. Same agents, tools and gotchas, with everything they learned." }),
     ]));
     return el("div", {}, [
-      el("div", {}, [el("h1", { text: "Forts" }), el("span", { class: "scope", text: " all forts" })]),
+      el("div", { class: "ptitle" }, [el("h1", { text: "Forts" }), el("span", { class: "scope", text: "all forts" })]),
       el("p", { class: "lede", text: "Every fort the agents have run, each with its chronicle. The board always shows the fort running now. Forts end; the agents, tools and gotchas carry on to the next one." }),
       el("div", { class: "grid" }, cards),
     ]);
@@ -1633,6 +1725,25 @@ class SitePage {
     ]);
   }
 
+  /** One vital's value at the season's end and its change over the season
+   * (`months` is [first, end) as month indexes into the vital's series). */
+  _seasonDelta(v, months) {
+    const [a, b] = months || [0, v.v.length];
+    const start = a === 0 ? v.v[0] : v.v[a - 1];
+    const end = v.v[Math.min(b, v.v.length) - 1];
+    const d = end - start;
+    // `worse` says which way is bad for this vital (deaths up, drink down).
+    const bad = v.worse === "up" ? d > 0 : d < 0;
+    const good = d !== 0 && !bad;
+    return el("div", { class: "stat" }, [
+      el("span", { text: v.k }),
+      el("b", {}, [
+        document.createTextNode(String(end)),
+        el("small", { class: d === 0 ? "faint" : bad ? "oc-bad" : good ? "oc-ok" : "faint", text: d === 0 ? "  \u00b10" : `  ${d > 0 ? "+" : ""}${d}` }),
+      ]),
+    ]);
+  }
+
   _chronThought(t) {
     return el("figure", { class: "thought", style: `border-color:${roleCssVar(t.by)}` }, [
       el("blockquote", { text: t.text }),
@@ -1661,8 +1772,8 @@ class SitePage {
     const seasons = fx.seasons || [];
     const EV = fx.event_kinds || {};
     return el("div", {}, [
-      el("div", {}, [el("h1", { text: "Chronicle" }), document.createTextNode(" "), this._exampleTag()]),
-      el("p", { class: "lede", text: "The fort's story, season by season. Example data: the Chronicler is not enabled yet (agents/ROSTER.yaml), so none of this reflects the real fort." }),
+      el("div", { class: "ptitle" }, [el("h1", { text: "Chronicle" }), this._exampleTag()]),
+      el("p", { class: "lede", text: "The fort's story, season by season, as the Chronicler will tell it. This is example data: the Chronicler is not enabled yet, so none of it reflects the real fort." }),
       el("div", { class: "sec" }, [el("h2", { text: "The fort so far" }), el("div", { class: "charts" }, (fx.vitals || []).map((v) => this._sparkChart(v)))]),
       ...seasons.map((s, i) => {
         const all = this.showAllSeasons.has(i);
@@ -1684,7 +1795,10 @@ class SitePage {
                   text: all ? `Show only the Chronicler's ${picked.length}` : `Show all ${s.events.length} events (${s.events.length - picked.length} left out)`,
                 }),
               ]),
-              el("div", { class: "sec" }, [el("div", { class: "faint small", text: "This season" })]),
+              el("div", { class: "sec" }, [
+                el("div", { class: "faint small", text: "This season" }),
+                el("div", { class: "stats sstats" }, (fx.vitals || []).map((v) => this._seasonDelta(v, s.months))),
+              ]),
             ]),
           ]),
         ]);

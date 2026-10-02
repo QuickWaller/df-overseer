@@ -319,7 +319,9 @@ a.tagchip:hover { border-color: var(--text); }
 .site .brand small { font-weight: 400; color: var(--faint); margin-left: 8px; }
 .site .nav { display: flex; flex-wrap: wrap; gap: 6px 4px; align-items: center; flex: 1 1 auto; }
 .site .navgroup { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; }
-.site .navgroup + .navgroup { padding-left: 12px; margin-left: 8px; border-left: 1px solid var(--line-strong); }
+.site .navgroup + .navgroup { margin-left: 10px; }
+.site .fortgroup { border: 1px solid var(--line-strong); background: var(--raised); padding: 2px; gap: 2px; }
+.site .fortgroup .fortpick { border: 0; background: none; padding-right: 12px; margin-right: 2px; border-right: 1px solid var(--line); }
 .site .glabel { font-size: 11.5px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--faint); margin-right: 4px; }
 .site .nav a { text-decoration: none; padding: 3px 10px; border: 1px solid transparent; min-height: 32px; display: inline-flex; align-items: center; color: var(--text); }
 .site .nav a:hover { border-color: var(--line-strong); }
@@ -451,3 +453,15 @@ a.tagchip:hover { border-color: var(--text); }
 @media (max-width: 480px) {
   .site .top { padding-inline: 16px; }
 }
+
+/* ---- review fixes 2026-10-02 ---- */
+/* A page title with its scope tag beside it, not on a line of its own. */
+.site .ptitle { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; }
+.site .ptitle .scope { margin-left: 0; vertical-align: baseline; }
+.sitemain > div { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+/* The board inside the site: the site owns the header, the board fills the width. */
+.e-wrap.embedded { border: 3px double var(--line-strong); }
+/* A tool's guide keeps its own line breaks and lists. */
+.site .guide { white-space: pre-wrap; max-width: 90ch; line-height: 1.6; }
+.site .sstats { display: flex; flex-direction: column; gap: 10px; }
+.site .sstats .stat b small { font-size: 0.7em; font-weight: 400; }

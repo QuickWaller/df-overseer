@@ -1,0 +1,66 @@
+# Display text for the stream site: plain-English role labels, the agent
+# map's ring order, and forts that ended. Read by dfqueue/site_data.py at
+# export time. Edit freely: this is wording, not behaviour.
+#
+# Roles not listed here fall back to their ROSTER.yaml kind ("Advises") and
+# summary; a new role appears on the map evenly placed until it gets an
+# angle below.
+
+roles:
+  overseer:
+    kind_label: Decides and acts
+    summary: >-
+      Runs the fort like a project manager. It rules on every proposal,
+      turns accepted ones into projects, and is the only agent that
+      changes the fort.
+  architect:
+    kind_label: Advises on space
+    summary: >-
+      Decides where things go: rooms, workshops, stockpiles, corridors and
+      the order to dig them in. It proposes, and never acts.
+  quartermaster:
+    kind_label: Advises on supply
+    summary: >-
+      Watches food, drink, stocks, work orders and labor, and proposes what
+      to make next before a shortage bites. It proposes, and never acts.
+  consultant:
+    kind_label: Answers questions
+    summary: >-
+      The fort's Dwarf Fortress expert. It answers questions from an offline
+      copy of the wiki and the project's own doctrine, and never decides.
+  conductor:
+    kind_label: Code, not an agent
+    summary: >-
+      Runs the clock: starts and pauses the game, takes a quicksave before
+      any decided action, and wakes the agents when something needs them.
+  marshal:
+    kind_label: "Planned: military"
+    summary: >-
+      Would own military posture: burrows, squads, equipment, and the
+      playbooks that run when the fort is attacked.
+  chronicler:
+    kind_label: "Planned: storyteller"
+    summary: >-
+      Would write the fort's history for people to read: the account of
+      each season in the Chronicle.
+
+# Agent map: angle of each spoke in degrees (0 = right, 90 = down). The
+# Overseer is the hub. "will" and "executor" are the two fixed extras; the
+# fort hangs off the Executor.
+map_ring:
+  consultant: -90
+  conductor: -38
+  executor: 0
+  chronicler: 45
+  will: 90
+  marshal: 135
+  quartermaster: 180
+  architect: -138
+
+# Forts that ended. The live fort comes from the publisher; these are added
+# to forts.json beside it.
+past_forts:
+  - id: artobcatten
+    name: Artobcatten
+    status: lost
+    fate: Lost while founding. The first fort.
