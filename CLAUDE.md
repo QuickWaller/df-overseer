@@ -109,11 +109,12 @@ learning architecture.
 >   above is design or proposal unless marked verified.
 >
 > **Traps before running anything:**
-> - Ambient `python -m pytest` gives **1845 passed, 3 skipped** with `lupa`
->   installed on `PYTHONPATH` (measured 2026-09-25; `lupa` is
+> - Ambient `python -m pytest` gives **2490 passed, 3 skipped, 1 known failure**
+>   (`doctrine/tests/test_wiki_check.py::test_cli_exit_codes`, date-sensitive) with `lupa`
+>   installed on `PYTHONPATH` (measured 2026-10-02; `lupa` is
 >   not a repo dependency, `pip install --target <scratch dir>` then add it
 >   to `PYTHONPATH`; without it several Lua-logic test files skip instead).
->   Run `dfmcp/tests` in `.venv-dfmcp` for all **692** (measured 2026-09-25).
+>   Run `dfmcp/tests` in `.venv-dfmcp` for all **764** (measured 2026-10-02).
 >   One test, `test_queue_tools.py::TestWriteSerialisation::
 >   test_concurrent_raw_appends_without_serialization_can_collide`, is a
 >   deliberate race and has flaked under load (failed once in a full run,
