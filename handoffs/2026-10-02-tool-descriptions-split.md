@@ -159,9 +159,17 @@ of marker phrases, not a line-by-line diff against every `notes` field; see
 the "least sure" list below for where a closer human read is most worth
 spending.
 
-**Tests.** `dfmcp/tests` in `.venv-dfmcp`: **756 passed**. Ambient suite
-(`python -m pytest` with `lupa` installed to a scratch dir and added to
-`PYTHONPATH`, per CLAUDE.md): **[fill in on completion]**.
+**Tests.** `dfmcp/tests` in `.venv-dfmcp` (fresh venv, created this stream
+per `docs/TRAPS.md`): **756 passed**. Ambient suite (`python -m pytest` with
+`lupa` installed to a scratch dir and added to `PYTHONPATH`, per CLAUDE.md):
+**2,421 passed, 3 skipped, 1 failed**. The one failure,
+`doctrine/tests/test_wiki_check.py::test_cli_exit_codes`, is in the wikimirror
+freshness-check CLI, a module this stream never touched; it fails the same
+way in isolation and is not related to any TOOLS.yaml, registry, tools.py or
+gotchas_tools.py change here (most likely a wall-clock/freshness-threshold
+test that has drifted stale against the current date, not a regression this
+stream caused). Flagging for the orchestrator rather than silently working
+around it.
 
 ## Not done
 
