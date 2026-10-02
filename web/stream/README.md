@@ -1,4 +1,4 @@
-# The stream page (slice S0/S2: local only; slice S1: prepared, not deployed)
+# The stream page (slice S0/S2: local only; slice S1: deployed 2026-10-02)
 
 Design: `research/2026-10-01-stream-page-design.md`. The board's look is
 `research/2026-10-02-stream-board-mockup.html` (option E, split layout;
@@ -94,11 +94,13 @@ falls back to treating the projection root itself as one fort's feed
 directly — the pre-multi-fort layout — rather than failing to load.
 
 Slice S1 (operator live, `handoffs/2026-10-01-stream-page-s1-prep.md`) is
-built and tested but **not deployed**: the real publisher
+**deployed and live** as of 2026-10-02
+(`evals/live/2026-10-02-site-and-tools-deploy/README.md`): the real publisher
 (`scripts/stream_publisher.py`), the step-progress reader it needs
-(`dfqueue/feed_status.py`), and the `infra/` templates it deploys from. See
-"Slice S1: operator live" below for exactly what that would take and the
-deploy steps still needing the user's go-ahead.
+(`dfqueue/feed_status.py`), and the `infra/` templates it deploys from are all
+running on VM 103 and the relay (`stream-publisher.timer` active and enabled,
+per `docs/STATE.md`). See "Slice S1: operator live" below for the deploy
+procedure that was followed.
 
 ## Open it locally
 
@@ -191,16 +193,16 @@ visible, so it also picks up a re-export live without a manual refresh.
   small test exports this slice ships with, so this was not yet exercised
   against real segment files).
 
-## Slice S1: operator live (prepared offline, not deployed)
+## Slice S1: operator live (deployed 2026-10-02)
 
 `handoffs/2026-10-01-stream-page-s1-prep.md` built everything S1 needs
 offline: the real publisher (`scripts/stream_publisher.py`), a read-only
 equivalent of `dfqueue.store.project_status` it needs for step-level
-progress (`dfqueue/feed_status.py`), and the `infra/` templates below.
-**Nothing in this section has been run against VM 103 or the relay.** Every
-command is written out exactly so the orchestrator (or the user) can review
-it before running it for real, per this repo's CLAUDE.md rule that any
-change to live/VM state needs explicit go-ahead each time.
+progress (`dfqueue/feed_status.py`), and the `infra/` templates below. **This
+section's steps have been run, for real, against VM 103 and the relay**
+(`evals/live/2026-10-02-site-and-tools-deploy/README.md`): it is kept below
+as the deploy procedure that was followed, useful for a future redeploy or
+for standing the publisher up on a new host.
 
 **Paths below reflect the multi-fort layout** (register 2026-10-02):
 `scripts/stream_publisher.py` now calls `dfqueue.feed.write_fort_feed`, so

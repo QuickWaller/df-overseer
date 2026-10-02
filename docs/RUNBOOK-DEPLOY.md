@@ -18,7 +18,7 @@ python scripts/deploy.py --all --dry-run             # every target in infra/dep
 
 Target names come from `infra/deploy-manifest.yaml`: `vm103-dfmcp`,
 `vm103-dfhack-scripts`, `vm103-stream-publisher`, `vm106-agents`,
-`vm106-conductor`, `relay-web`, as of this writing.
+`vm106-conductor`, `relay-web`, `relay-web-operator`, as of this writing.
 
 `deploy.py` refuses to run for real (`--yes`) when:
 
@@ -68,9 +68,12 @@ run any time, including by a human just checking. Four sections:
    finding.
 2. **Live tool counts**: the repo's own registry + roster, computed
    offline, cross-checked against a live MCP probe (`scripts/ops/mcpcall.py`)
-   when one is actually deployed on the host. As of 2026-10-02 it is not
-   part of any manifest target, so this degrades to "offline count only" --
-   see "Known gaps" below.
+   when one is actually deployed on the host. Added to the `vm103-dfmcp`
+   manifest target 2026-10-02 (handoffs/2026-10-02-drift-followups.md), but
+   a manifest entry alone does not put it on the host: this still degrades
+   to "offline count only, live probe not deployed" (`docs/STATE.md`'s own
+   per-run note says which) until a real `deploy.py --yes` run against
+   `vm103-dfmcp` ships it.
 3. **Website**: the relay's static files, and the published
    `tools.json`/`agents.json` against what `dfqueue.site_data` would
    generate from the repo right now.
@@ -85,7 +88,7 @@ run any time, including by a human just checking. Four sections:
 | `differ` on a file | The live file's bytes don't match the compared commit | If compared against a stamp: redeploy that target. If compared against `origin/main` (no stamp): the host was likely touched by an ad-hoc deploy before this tooling existed -- decide whether to adopt the live bytes or overwrite them with a real deploy, don't assume automatically |
 | `missing_on_host` | The manifest lists a file the host doesn't have under the path this tool expected | Check whether the manifest's path assumption is simply wrong before assuming a failed deploy (this happened twice building this tool itself -- see the Result section of the handoff that built it) |
 | N commits behind `origin/main` | The target's stamped deploy predates N later commits to its own files | Redeploy if those commits touch this target's paths; otherwise informational |
-| live tool count mismatch | The offline count (repo) disagrees with a live MCP probe | Redeploy `vm103-dfmcp` and restart `dfmcp-server.service` |
+| live tool count/id mismatch | The repo's registry+roster disagrees with a live MCP probe, either on count or on which tool ids a role actually has (`mcpcall.py names-all`, matched back to ids) | Redeploy `vm103-dfmcp` and restart `dfmcp-server.service` |
 | service inactive/disabled | Exactly what it says, not evaluated | Compare against what the relevant doc SAYS the state should be; a mismatch there is a doc-audit finding, not a drift_check one |
 | website `tools.json` mismatch | The relay's published counts disagree with what the repo would generate | Check whether `stream-publisher.timer` has actually run since the last relevant commit; redeploy `vm103-stream-publisher` if its code is what's stale |
 
@@ -101,29 +104,64 @@ run any time, including by a human just checking. Four sections:
   `CLAUDE.md`/`Working.md`), and the handoff's Result section for every
   other hand-written number that should probably move there too.
 
-## Daily drift check with a Telegram alert (written, NOT installed)
+## Daily drift check with a Telegram alert
 
 `scripts/drift_check_telegram_alert.py` runs `drift_check`'s full report and
 sends ONE Telegram message to the user's existing private line
 (`TELEGRAM_BOT_TOKEN` + `USER_TELEGRAM_ID` in `.env`, register 2026-10-01)
-only when drift is found -- silent on a clean day. Written and tested
-offline only; this stream did not install or enable it, per its own
-"never deploy or install anything" constraint.
+only when drift is found -- silent on a clean day. It also alerts (an error
+message instead of a drift report) if a target cannot be reached at all --
+confirmed by a direct test (`tests/test_drift_check_telegram_alert.py`'s
+unreachable-host cases): an SSH failure no longer crashes silently with
+nothing sent.
 
 ```
 python scripts/drift_check_telegram_alert.py --dry-run   # preview the message, no send, no credentials needed
 python scripts/drift_check_telegram_alert.py              # real run, needs both env vars set
 ```
 
-To actually schedule it, a human runs ONE of the following (both outward
-facing -- do not run either without deciding to, same as any deploy):
-
-**Windows Task Scheduler** (this workstation, where `.env` and the repo
-checkout already live):
+**Installed, this workstation, task name `df-overseer-drift-check`**
+(handoffs/2026-10-02-drift-followups.md, 2026-10-02): a per-user Windows
+Task Scheduler task, daily at 09:00 local, `StartWhenAvailable` set so a
+sleeping machine still checks once it wakes. Its action runs from the
+**main checkout** (`C:\website-projects\df-automation`, not a worktree --
+a worktree is deleted once its agent finishes, which would silently kill
+the schedule) so `.env` resolves without any override:
 
 ```
-schtasks /Create /SC DAILY /ST 08:00 /TN "df-overseer-drift-check" ^
-  /TR "\"C:\Program Files\Git\bin\bash.exe\" -lc \"cd /c/website-projects/df-automation && python scripts/drift_check_telegram_alert.py\""
+C:\Program Files\Git\bin\bash.exe -lc "cd /c/website-projects/df-automation && python scripts/drift_check_telegram_alert.py"
+```
+
+`schtasks.exe` has no flag for "start when available" (checked: `schtasks
+/Create /?` lists no such switch; it is a Settings-tab-only option in the
+GUI, or requires either an XML task definition or the PowerShell
+`ScheduledTasks` module) -- this task was created with the latter:
+
+```powershell
+$action = New-ScheduledTaskAction -Execute "C:\Program Files\Git\bin\bash.exe" `
+  -Argument '-lc "cd /c/website-projects/df-automation && python scripts/drift_check_telegram_alert.py"' `
+  -WorkingDirectory "C:\website-projects\df-automation"
+$trigger = New-ScheduledTaskTrigger -Daily -At 9:00AM
+$settings = New-ScheduledTaskSettingsSet -StartWhenAvailable -DontStopOnIdleEnd `
+  -ExecutionTimeLimit (New-TimeSpan -Minutes 15)
+Register-ScheduledTask -TaskName "df-overseer-drift-check" -Action $action `
+  -Trigger $trigger -Settings $settings `
+  -Description "Daily drift_check_telegram_alert.py: alerts the user's Telegram only when drift (or an unreachable host) is found."
+```
+
+Check it: `Get-ScheduledTask -TaskName "df-overseer-drift-check"`. **Remove
+it**: `Unregister-ScheduledTask -TaskName "df-overseer-drift-check" -Confirm:$false`
+(outward-facing only in the sense of stopping a standing alert -- safe to
+run any time, reversible by re-running the registration above).
+
+Proven working from the task's own context (main checkout, not worktree)
+by running the exact action command by hand with `--dry-run` appended --
+never by triggering the live task, since its real action has no
+`--dry-run` and the fort was clean at the time, so a trigger would not even
+have proven the send path:
+
+```
+& "C:\Program Files\Git\bin\bash.exe" -lc "cd /c/website-projects/df-automation && python scripts/drift_check_telegram_alert.py --dry-run"
 ```
 
 **systemd timer** (if run from a Linux host instead -- e.g. VM 103 itself,
@@ -133,7 +171,5 @@ copy the pattern from `infra/stream-publisher.timer.example` and
 `ExecStart=<venv>/bin/python scripts/drift_check_telegram_alert.py` in the
 service, `EnvironmentFile=` pointing at a `.env` with the two Telegram
 variables set, same pattern as `stream-publisher.service`'s own
-`EnvironmentFile=/etc/stream-publisher/env`).
-
-Either way: run the `--dry-run` form by hand first and confirm the message
-looks right before enabling the schedule.
+`EnvironmentFile=/etc/stream-publisher/env`). Not used here; the Windows
+task above is this repo's one daily drift alert today.

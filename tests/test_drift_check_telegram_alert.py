@@ -64,6 +64,56 @@ def test_dry_run_never_sends_and_prints_message(monkeypatch, capsys):
     assert "sample" in out
 
 
+def test_unreachable_host_alerts_instead_of_crashing_dry_run(monkeypatch, capsys):
+    """An SSHError (host down, network unreachable) must still produce an
+    alert message, not an uncaught traceback with nothing sent."""
+    def raising_run(host, command, input_bytes=None):
+        raise dc.SSHError("vm-ssh.sh df failed (exit 255): ssh: connect to host port 22: timed out")
+    runner = dc.FakeRunner()
+    monkeypatch.setattr(runner, "run", raising_run)
+    targets = {
+        "sample": dc.Target(name="sample", host="df", destination_root_raw="/opt/sample",
+                             paths=["agents/ROSTER.yaml"]),
+    }
+    monkeypatch.setattr(dc, "load_manifest", lambda path=dc.MANIFEST_PATH: targets)
+    monkeypatch.setattr(dc, "SSHRunner", lambda env_file=None: runner)
+
+    rc = alert.main(["--dry-run"])
+    assert rc == 1
+    out = capsys.readouterr().out
+    assert "ERROR" in out
+    assert "timed out" in out
+
+
+def test_unreachable_host_alerts_for_real_when_not_dry_run(monkeypatch, tmp_path):
+    def raising_run(host, command, input_bytes=None):
+        raise dc.SSHError("vm-ssh.sh df failed (exit 255): unreachable")
+    runner = dc.FakeRunner()
+    monkeypatch.setattr(runner, "run", raising_run)
+    targets = {
+        "sample": dc.Target(name="sample", host="df", destination_root_raw="/opt/sample",
+                             paths=["agents/ROSTER.yaml"]),
+    }
+    monkeypatch.setattr(dc, "load_manifest", lambda path=dc.MANIFEST_PATH: targets)
+    monkeypatch.setattr(dc, "SSHRunner", lambda env_file=None: runner)
+
+    sent = {}
+    def fake_send(token, chat_id, text):
+        sent["token"] = token
+        sent["chat_id"] = chat_id
+        sent["text"] = text
+    monkeypatch.setattr(alert, "send_telegram_message", fake_send)
+
+    env_path = tmp_path / ".env"
+    env_path.write_text("TELEGRAM_BOT_TOKEN=abc\nUSER_TELEGRAM_ID=123\n", encoding="utf-8")
+
+    rc = alert.main(["--env-file", str(env_path)])
+    assert rc == 1
+    assert "ERROR" in sent["text"]
+    assert sent["token"] == "abc"
+    assert sent["chat_id"] == "123"
+
+
 def test_main_clean_report_returns_zero_without_formatting(monkeypatch):
     head = dc.current_commit()
     real_hash = dc.sha256_at_commit(head, "agents/ROSTER.yaml")
