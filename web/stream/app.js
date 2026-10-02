@@ -1654,6 +1654,35 @@ class SitePage {
     ]);
   }
 
+  /** The tool's guide in its four fixed sections: arguments as a table,
+   * then what it returns, what to check before a real run, and its traps.
+   * A tool with only plain guide text shows that; none shows a note. */
+  _guideEl(t) {
+    const g = t.guide_sections;
+    if (!g) {
+      return t.guide ? el("div", { class: "box guide", text: t.guide }) : el("div", { class: "box faint", text: "No guide written for this tool yet." });
+    }
+    const list = (items) => el("ul", { class: "glist" }, items.map((x) => el("li", { text: x })));
+    const parts = [];
+    if ((g.arguments || []).length) {
+      parts.push(el("h3", { text: "Arguments" }), el("div", { class: "argwrap" }, [el("table", { class: "args" }, [
+        el("thead", {}, [el("tr", {}, [el("th", { text: "Name" }), el("th", { text: "" }), el("th", { text: "Default" }), el("th", { text: "Meaning" })])]),
+        el("tbody", {}, g.arguments.map((a) => el("tr", {}, [
+          el("td", { class: "aname", text: a.name }),
+          el("td", { class: a.required ? "areq" : "faint", text: a.required ? "required" : "optional" }),
+          el("td", { class: "faint", text: a.default == null || a.default === "" ? "" : String(a.default) }),
+          el("td", { text: a.meaning }),
+        ]))),
+      ])]));
+    } else {
+      parts.push(el("h3", { text: "Arguments" }), el("div", { class: "faint", text: "None." }));
+    }
+    if (g.returns) parts.push(el("h3", { text: "Returns" }), el("p", { text: g.returns }));
+    if ((g.before_a_real_run || []).length) parts.push(el("h3", { text: "Before a real run" }), list(g.before_a_real_run));
+    if ((g.traps || []).length) parts.push(el("h3", { text: "Traps" }), list(g.traps));
+    return el("div", { class: "box guidebox" }, parts);
+  }
+
   /** One tool on one screen: the guide on the left, everything else on the
    * right. Each column scrolls on its own only if its content is too long. */
   _viewTool(id) {
@@ -1676,7 +1705,7 @@ class SitePage {
       el("div", { class: "tpcols" }, [
         el("div", { class: "tpcol" }, [
           el("h2", { text: "How to use it" }),
-          t.guide ? el("div", { class: "box guide", text: t.guide }) : el("div", { class: "box faint", text: "No guide written for this tool yet." }),
+          this._guideEl(t),
         ]),
         el("div", { class: "tpcol" }, [
           el("div", { class: "box" }, [el("dl", { class: "kv" }, [
