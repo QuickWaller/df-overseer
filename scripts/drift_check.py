@@ -83,28 +83,52 @@ def read_stamp(target: dc.Target, destination: str, runner) -> Optional[Dict[str
 # ---------------------------------------------------------------------------
 
 
-def remote_sha256_many(host: str, destination: str, files: List[str], runner) -> Dict[str, Optional[str]]:
-    """{file: sha256 or None if missing on the host}. A single ssh call for
-    the whole target; `|| true` so one missing file doesn't blow up the
+def remote_sha256_many(
+    host: str, destination: str, files: List[str], runner, *, remote_path=lambda f: f,
+) -> Dict[str, Optional[str]]:
+    """{repo_path: sha256 or None if missing on the host}. A single ssh call
+    for the whole target; `|| true` so one missing file doesn't blow up the
     rest (sha256sum exits non-zero if ANY named file is absent, but still
-    prints the hashes it could compute)."""
+    prints the hashes it could compute).
+
+    `remote_path(repo_path)` maps a repo-relative path to where it actually
+    lands under `destination` -- identical for almost every target, but
+    relay-web's and vm103-dfhack-scripts' `flatten: true` drops the leading
+    directories (repo `web/stream/index.html` -> remote `index.html`),
+    confirmed live 2026-10-02 after a first drift_check.py run misreported
+    those files as missing entirely.
+
+    Matches each output line to the requested file by POSITION, not by
+    parsing the printed filename back out: `scripts/vm-ssh.sh`'s own
+    address-leak scrubber masks any `df-[a-z0-9-]+`-shaped string in its
+    output, including this project's own `df-overseer-*.lua` filenames
+    (the exact false positive docs/DRIFT-AUDIT-2026-09-28.md already hit
+    doing this by hand) -- confirmed live here too: `sha256sum
+    df-overseer-ui.lua` comes back as `<hash>  <host>.lua`, which no
+    name-based parse could ever match back to the real filename. GNU
+    coreutils' sha256sum processes its arguments strictly in the order
+    given and emits exactly one line per argument (a hash line on success,
+    an error line otherwise) to the SAME requested order, so position is
+    reliable even though the printed name is not -- the digest itself
+    (pure hex) is never mangled by the scrubber."""
     if not files:
         return {}
-    quoted = " ".join(shlex.quote(f) for f in files)
+    remote_names = [remote_path(f) for f in files]
+    quoted = " ".join(shlex.quote(f) for f in remote_names)
     out = runner.run(
         host,
         f"cd {shlex.quote(destination)} && sha256sum {quoted} 2>&1 || true",
     )
-    results: Dict[str, Optional[str]] = {f: None for f in files}
-    for line in out.splitlines():
-        line = line.rstrip("\n")
-        if not line:
-            continue
+    lines = [line for line in out.splitlines() if line.strip()]
+    results: Dict[str, Optional[str]] = {}
+    for f, line in zip(files, lines):
         parts = line.split(None, 1)
         if len(parts) == 2 and len(parts[0]) == 64 and all(c in "0123456789abcdef" for c in parts[0]):
-            digest, path = parts
-            path = path.lstrip("*")  # sha256sum marks binary mode with a leading '*'
-            results[path] = digest
+            results[f] = parts[0]
+        else:
+            results[f] = None
+    for f in files:
+        results.setdefault(f, None)
     return results
 
 
@@ -116,7 +140,7 @@ def check_target_files(target: dc.Target, env: Dict[str, str], runner) -> dict:
     compare_commit = stamped_commit or "origin/main"
     files = dc.target_files(target, compare_commit)
     local_hashes = {f: dc.sha256_at_commit(compare_commit, f) for f in files}
-    remote_hashes = remote_sha256_many(target.host, destination, files, runner)
+    remote_hashes = remote_sha256_many(target.host, destination, files, runner, remote_path=target.remote_path)
 
     per_file = []
     drifted = 0

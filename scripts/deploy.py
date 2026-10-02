@@ -46,6 +46,7 @@ import subprocess
 import sys
 import tarfile
 import tempfile
+from io import BytesIO
 from pathlib import Path
 from typing import Dict, List, Optional
 
@@ -57,17 +58,35 @@ def manifest_hash(path: Path = dc.MANIFEST_PATH) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()[:12]
 
 
-def build_tar(commit: str, files: List[str], cwd: Path = dc.REPO_ROOT) -> bytes:
+def build_tar(commit: str, files: List[str], cwd: Path = dc.REPO_ROOT, *, flatten: bool = False) -> bytes:
     """`git archive` of exactly `files` (never a whole directory the caller
     didn't ask for) as of `commit`. Returns the tar bytes; raises
-    CalledProcessError if any file is missing from that commit."""
+    CalledProcessError if any file is missing from that commit.
+
+    `flatten=True` (relay-web only, per infra/deploy-manifest.yaml's own
+    `flatten: true` comment) rewrites each tar member's name to just its
+    basename before returning, since `git archive` has no built-in way to
+    do that -- it only ever preserves the repo-relative path."""
     if not files:
         return b""
     result = subprocess.run(
         ["git", "-c", "core.autocrlf=false", "archive", "--format=tar", commit, "--", *files],
         cwd=cwd, capture_output=True, check=True,
     )
-    return result.stdout
+    tar_bytes = result.stdout
+    if not flatten:
+        return tar_bytes
+    src = tarfile.open(fileobj=BytesIO(tar_bytes), mode="r:")
+    out_buf = BytesIO()
+    dst = tarfile.open(fileobj=out_buf, mode="w:")
+    for member in src.getmembers():
+        if not member.isfile():
+            continue  # directory entries have no meaningful flattened name
+        data = src.extractfile(member)
+        member.name = member.name.rsplit("/", 1)[-1]
+        dst.addfile(member, data)
+    dst.close()
+    return out_buf.getvalue()
 
 
 def plan_for_target(target: dc.Target, commit: str, env: Dict[str, str]) -> dict:
@@ -134,7 +153,7 @@ def deploy_target(
         return {"target": target.name, "skipped": "no --yes"}
 
     destination = plan["destination_root"]
-    tar_bytes = build_tar(commit, plan["files"])
+    tar_bytes = build_tar(commit, plan["files"], flatten=target.flatten)
     runner.run(target.host, f"mkdir -p {destination}")
     if tar_bytes:
         runner.run(target.host, f"tar xf - -C {destination}", input_bytes=tar_bytes)

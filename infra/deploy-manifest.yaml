@@ -57,16 +57,27 @@ targets:
       - gotchas/
       - learning/
       - production/
-      - scripts/dfhack/            # TOOLS.yaml (the registry source) AND the
-                                     # .lua files themselves -- dfmcp/registry.py
-                                     # resolves TOOLS.yaml relative to the
-                                     # checkout root, so the .lua bodies must
-                                     # exist here too even though they are ALSO
-                                     # deployed separately to the game's own
-                                     # hack/scripts/ (see vm103-dfhack-scripts
-                                     # below -- same source files, two
-                                     # destinations, by design, not a duplicate
-                                     # bug).
+      - scripts/dfhack/TOOLS.yaml  # the registry source only. CORRECTED
+                                     # 2026-10-02 after drift_check.py's first
+                                     # real run reported all 37 .lua files
+                                     # "missing_on_host" here -- that read as
+                                     # drift at first, but a live listing
+                                     # (`ls /opt/df/dfmcp-smoke/scripts/dfhack`)
+                                     # shows the directory holds ONLY
+                                     # TOOLS.yaml. dfmcp/registry.py parses
+                                     # TOOLS.yaml for tool metadata (command
+                                     # signatures, args, flags) but never reads
+                                     # a .lua file's body itself -- script
+                                     # EXECUTION happens inside the running DF
+                                     # process via DFHack's RPC against
+                                     # whatever is already loaded from the
+                                     # game's own hack/scripts/ (see
+                                     # vm103-dfhack-scripts below), not by the
+                                     # MCP server reading source off disk. The
+                                     # original entry (whole scripts/dfhack/)
+                                     # was a wrong assumption, not a stale fact
+                                     # -- fixed here before this manifest's
+                                     # first real use, see the Result section.
       - scripts/stream_publisher.py
     exclude:
       - "**/tests/"
@@ -121,6 +132,10 @@ targets:
   vm103-dfhack-scripts:
     host: df
     destination_root: /opt/df/game/hack/scripts
+    flatten: true   # confirmed live 2026-10-02 (same bug class as relay-web
+                     # below, found by the same drift_check.py run): DFHack's
+                     # own hack/scripts/ holds bare basenames
+                     # (df-overseer-ui.lua), not scripts/dfhack/df-overseer-ui.lua.
     paths:
       - scripts/dfhack/*.lua
     exclude:
@@ -289,6 +304,11 @@ targets:
   relay-web:
     host: relay
     destination_root: /srv/stream/web-public
+    flatten: true   # confirmed live 2026-10-02: files land as
+                     # <destination_root>/index.html, not
+                     # <destination_root>/web/stream/index.html -- every
+                     # other target in this manifest mirrors the repo path
+                     # exactly, this one alone does not.
     paths:
       - web/stream/index.html
       - web/stream/app.js

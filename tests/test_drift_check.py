@@ -78,6 +78,41 @@ def test_remote_sha256_many_handles_missing_file():
     assert out == {"a.txt": sha_a, "missing.txt": None}
 
 
+def test_remote_sha256_many_respects_flatten_remote_path():
+    files = ["web/stream/index.html"]
+    sha = "3" * 64
+    runner = dc.FakeRunner({
+        ("relay", "cd /srv/stream/web-public && sha256sum index.html 2>&1 || true"): f"{sha}  index.html\n",
+    })
+    out = drift_check.remote_sha256_many(
+        "relay", "/srv/stream/web-public", files, runner, remote_path=lambda f: f.rsplit("/", 1)[-1],
+    )
+    assert out == {"web/stream/index.html": sha}
+
+
+def test_remote_sha256_many_survives_masked_filenames_by_position():
+    # Reproduces the real, live-confirmed case: vm-ssh.sh's scrubber masks
+    # any df-[a-z0-9-]+-shaped string, including this project's own
+    # df-overseer-*.lua filenames, so the printed name in sha256sum's own
+    # output comes back as "<host>.lua" for every one of them. Name-based
+    # matching would silently call every one of these "missing"; position
+    # must not.
+    files = ["scripts/dfhack/df-overseer-ui.lua", "scripts/dfhack/df-overseer-zone.lua"]
+    sha_a = "a" * 64
+    sha_b = "b" * 64
+    runner = dc.FakeRunner({
+        ("df", "cd /opt/game/scripts && sha256sum df-overseer-ui.lua df-overseer-zone.lua 2>&1 || true"):
+            f"{sha_a}  <host>.lua\n{sha_b}  <host>.lua\n",
+    })
+    out = drift_check.remote_sha256_many(
+        "df", "/opt/game/scripts", files, runner, remote_path=lambda f: f.rsplit("/", 1)[-1],
+    )
+    assert out == {
+        "scripts/dfhack/df-overseer-ui.lua": sha_a,
+        "scripts/dfhack/df-overseer-zone.lua": sha_b,
+    }
+
+
 def test_remote_sha256_many_empty_files_returns_empty_without_calling_runner():
     runner = dc.FakeRunner({})
     assert drift_check.remote_sha256_many("df", "/opt/sample", [], runner) == {}

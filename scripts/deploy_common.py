@@ -53,6 +53,18 @@ class Target:
     restart: List[RestartEntry] = field(default_factory=list)
     post_deploy: List[str] = field(default_factory=list)
     verified: str = ""
+    flatten: bool = False
+    # True only for a target where the destination drops the repo's leading
+    # directories and keeps just each file's basename (relay-web: repo path
+    # `web/stream/index.html` lands at `<destination_root>/index.html`, not
+    # `<destination_root>/web/stream/index.html` -- confirmed live 2026-10-02).
+    # Every other target mirrors the repo's relative path under
+    # destination_root exactly, which is why this defaults to False rather
+    # than being inferred.
+
+    def remote_path(self, repo_path: str) -> str:
+        """The path under destination_root this file actually lands at."""
+        return repo_path.rsplit("/", 1)[-1] if self.flatten else repo_path
 
     def destination_root(self, env: Dict[str, str]) -> str:
         """Resolve a ${VAR} placeholder in destination_root_raw against `env`
@@ -103,6 +115,7 @@ def load_manifest(path: Path = MANIFEST_PATH) -> Dict[str, Target]:
             restart=restart,
             post_deploy=list(entry.get("post_deploy") or []),
             verified=entry.get("verified", ""),
+            flatten=bool(entry.get("flatten", False)),
         )
     if not targets:
         raise ManifestError(f"{path}: no targets defined")
@@ -258,6 +271,18 @@ class SSHError(Exception):
     pass
 
 
+def _default_bash() -> str:
+    """scripts/vm-ssh.sh is a bash script; on Windows, subprocess cannot
+    exec it directly (`%1 is not a valid Win32 application`), and a bare
+    "bash" on PATH may resolve to WSL's wrapper instead of Git Bash (which
+    fails with no WSL distro installed -- confirmed empirically on this
+    workstation). GIT_BASH overrides the path; the Git-for-Windows default
+    install location is the fallback. On a real POSIX host, vm-ssh.sh can
+    be exec'd directly, so this is only consulted when that fails."""
+    import os
+    return os.environ.get("GIT_BASH", r"C:\Program Files\Git\bin\bash.exe")
+
+
 class SSHRunner:
     """Real runner: shells out to scripts/vm-ssh.sh. Every call is read-only
     at this layer's discretion -- it is the CALLER's job (deploy.py vs
@@ -269,14 +294,22 @@ class SSHRunner:
         self.env_file = env_file
 
     def run(self, host: str, command: str, input_bytes: Optional[bytes] = None) -> str:
-        import os
         env = dict(**{**_os_environ()})
         if self.env_file is not None:
             env["DF_ENV_FILE"] = str(self.env_file)
-        result = subprocess.run(
-            [str(self.vm_ssh), host, command],
-            input=input_bytes, capture_output=True, env=env,
-        )
+        try:
+            result = subprocess.run(
+                [str(self.vm_ssh), host, command],
+                input=input_bytes, capture_output=True, env=env,
+            )
+        except OSError:
+            # Windows: vm-ssh.sh cannot be exec'd directly. Fall back to an
+            # explicit Git Bash. Left as a fallback rather than the default
+            # path so a real POSIX host (or CI) never pays for the probe.
+            result = subprocess.run(
+                [_default_bash(), str(self.vm_ssh), host, command],
+                input=input_bytes, capture_output=True, env=env,
+            )
         if result.returncode != 0:
             raise SSHError(
                 f"vm-ssh.sh {host} failed (exit {result.returncode}): "

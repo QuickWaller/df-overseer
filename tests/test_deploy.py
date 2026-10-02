@@ -280,6 +280,31 @@ def test_main_dry_run_unknown_target(monkeypatch):
     assert rc == 2
 
 
+def test_build_tar_flatten_rewrites_member_names():
+    import tarfile
+    from io import BytesIO
+    head = dc.current_commit()
+    tar_bytes = deploy_mod.build_tar(head, ["agents/ROSTER.yaml", "agents/README.md"], flatten=True)
+    names = tarfile.open(fileobj=BytesIO(tar_bytes), mode="r:").getnames()
+    assert set(names) == {"ROSTER.yaml", "README.md"}
+
+
+def test_build_tar_without_flatten_keeps_full_path():
+    import tarfile
+    from io import BytesIO
+    head = dc.current_commit()
+    tar_bytes = deploy_mod.build_tar(head, ["agents/ROSTER.yaml"], flatten=False)
+    names = [n for n in tarfile.open(fileobj=BytesIO(tar_bytes), mode="r:").getnames() if n.endswith(".yaml")]
+    assert names == ["agents/ROSTER.yaml"]
+
+
+def test_target_remote_path_flatten_vs_default():
+    flat = dc.Target(name="t", host="relay", destination_root_raw="/x", paths=["a/b.txt"], flatten=True)
+    plain = dc.Target(name="t", host="relay", destination_root_raw="/x", paths=["a/b.txt"], flatten=False)
+    assert flat.remote_path("web/stream/index.html") == "index.html"
+    assert plain.remote_path("web/stream/index.html") == "web/stream/index.html"
+
+
 def test_main_dry_run_all_targets_succeeds(monkeypatch, capsys):
     monkeypatch.setattr(dc, "is_tree_clean", lambda: True)
     monkeypatch.setattr(dc, "is_ancestor_of_origin_main", lambda commit, cwd=dc.REPO_ROOT: True)
