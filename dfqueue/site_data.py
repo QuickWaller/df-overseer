@@ -487,6 +487,31 @@ def _tool_description(tool, any_role: Optional[str]) -> str:
     return ""
 
 
+def _guide_sections(guide) -> Optional[dict]:
+    """The structured half of a tool's guide (handoffs/2026-10-02-structured-
+    tool-guides.md), alongside the existing rendered `guide` text, so the
+    website can show a table (arguments, returns, before-a-real-run, traps)
+    rather than one paragraph. `None` for a tool with no structured guide
+    yet (a native tool, or a TOOLS.yaml entry that somehow has none) -- the
+    page falls back to the plain-text `guide` in that case, same as today."""
+    if guide is None:
+        return None
+    return {
+        "arguments": [
+            {
+                "name": arg.name,
+                "required": arg.required,
+                "default": arg.default,
+                "meaning": arg.meaning,
+            }
+            for arg in guide.arguments
+        ],
+        "returns": guide.returns,
+        "before_a_real_run": list(guide.before_a_real_run),
+        "traps": list(guide.traps),
+    }
+
+
 def build_tools_json(registry=None, roster=None, *, agents_dir: Path = AGENTS_DIR) -> dict:
     from dfmcp.confidence import load_confidence
 
@@ -499,11 +524,13 @@ def build_tools_json(registry=None, roster=None, *, agents_dir: Path = AGENTS_DI
         tool = registry.get(tool_id)
         roles_with = sorted(r for r, perms in roster.roles.items() if perms.allows(tool_id))
         level = confidence.lookup(tool_id)
+        guide = getattr(tool, "guide", None)
         tools.append({
             "id": tool_id,
             "write": bool(getattr(tool, "mutates", False)),
             "description": _tool_summary(tool, roles_with[0] if roles_with else None),
-            "guide": getattr(tool, "guide", None) or None,
+            "guide": guide.guide_text() if guide else None,
+            "guide_sections": _guide_sections(guide),
             "area": area_of(tool_id),
             "roles": roles_with,
             "confidence": {"level": level.level, "note": level.note},
