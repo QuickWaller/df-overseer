@@ -1691,15 +1691,21 @@ df-overseer-building.lua:
             required: false
             default: ""
             meaning: >-
-              Optional, repeatable. Narrows candidates to a specific material by tag; building.list-
-              materials shows what is available.
+              Optional. Previews the material class a real build would use: leave it out to exclude
+              economic materials (ore and gem) by default, pass the word allow_economic to allow
+              them, or name a material directly (for example SHALE) to pick it even if it is
+              economic, unless the kind's own requirements demand a non-economic material, which
+              always wins. This only previews; it never writes anything.
         returns: >-
           Each result reports what the game actually requires to build that kind (labor, item and
           material counts), what is short, and `kind_previously_built` (whether one of this kind
           already exists, read live). An empty result still reports how many tiles were checked, so
           "nothing here" can be told apart from a broken search.
         before_a_real_run: []
-        traps: []
+        traps:
+          - >-
+            The gaps list only reports what the game says is short; a find call never refuses on
+            its own, even when everything needed is missing.
     "build KIND [W H] [LEVEL] NEAR_LANDMARK [RANK] [RADIUS_TILES] [DRY_RUN] [MATERIAL_CHOICE] [RES_ID] [OVERRIDE]":
       lua_function: build_kind
       skippable: ["[W H]"]
@@ -1815,9 +1821,12 @@ df-overseer-building.lua:
             required: false
             default: ""
             meaning: >-
-              Optional, repeatable. Picks a specific material by tag for the build; building.list-
-              materials shows what is available. Unsupplied, the game's own buildingplan default
-              applies.
+              Optional. Controls the material class actually built: leave it out to exclude economic
+              materials (ore and gem) by default, pass the word allow_economic to allow them, or name
+              a material directly (for example SHALE) to pick it even if it is economic, unless the
+              kind's own requirements demand a non-economic material, which always wins. On a real
+              (non-dry) build this is actively enforced through the game's own material filter for
+              the duration of the call, then restored afterward.
           - name: "RES_ID"
             required: false
             default: null
@@ -1848,7 +1857,12 @@ df-overseer-building.lua:
           - >-
             A dry run validates with the game's own quickfort check and makes no lasting change;
             only an explicit DRY_RUN false builds.
-        traps: []
+        traps:
+          - >-
+            MATERIAL_CHOICE's enforcement lasts only for this one call; the material filter is
+            restored to whatever it was right afterward, never left changed permanently. A mismatch
+            on the post-write read-back restores the prior filter and reports that record as failed,
+            never silently treated as applied.
 df-overseer-zone.lua:
   build_order_item: "gap named 2026-09-17 (handoffs/2026-09-17-water-and-industry-tools.md item 1); generalised over every zone kind and given an optional owner by handoffs/2026-09-21-zone-tool-generalise.md; given an inventory, a per-zone validity check and furniture-aware siting by handoffs/2026-09-23-zone-inventory-and-validity.md"
   # Documented defaults (each the value the Lua script already uses when the
@@ -2440,7 +2454,10 @@ df-overseer-zone.lua:
           owner's unit id so zone.assign-owner can restore it if needed. Cannot undo the former
           owner's "lost my room" reaction, and a preserve-rooms role reservation on the position may
           reassign the zone again on its own next cycle.
-        before_a_real_run: []
+        before_a_real_run:
+          - >-
+            Refuses on the same cases as zone.assign-owner where they apply to a bare zone id (a
+            kind that cannot have an owner), plus a zone that has no owner to clear.
         traps: []
     "contents ZONE_ID":
       lua_function: zone_contents
@@ -5125,8 +5142,11 @@ df-overseer-construction.lua:
             required: false
             default: ""
             meaning: >-
-              Optional, repeatable. Picks a specific material by tag for the construction;
-              construction.list-materials shows what is available.
+              Optional. Same contract as building.build's own MATERIAL_CHOICE: leave it out to
+              exclude economic materials (ore and gem) by default, pass the word allow_economic to
+              allow them, or name a material directly (for example SHALE) to pick it even if it is
+              economic, unless the kind's own requirements demand a non-economic material, which
+              always wins.
           - name: "RES_ID"
             required: false
             default: null
@@ -5164,7 +5184,10 @@ df-overseer-construction.lua:
             The zone's own entrance tile(s) are always kept clear and never targeted, for every
             kind, not only walls; a zone with no detectable entrance is refused outright rather than
             risking a sealed room.
-        traps: []
+        traps:
+          - >-
+            The material filter is enforced only for the duration of this one call, then restored;
+            it is not a permanent change to buildingplan's own settings.
     "door ZONE_ID [DRY_RUN] [RES_ID] [OVERRIDE]":
       lua_function: build_door
       effect: mutate
@@ -5620,13 +5643,14 @@ df-overseer-blueprint.lua:
             required: false
             default: "true"
             meaning: >-
-              Optional. true (the default when omitted) asks quickfort what it would do and writes
-              nothing; only the word false performs the real apply. Give it before LEVEL, RANK and
-              RADIUS_TILES.
+              Optional. true (the default when omitted) asks quickfort what it would undo and
+              writes nothing; only the word false actually withdraws the designations.
         returns: >-
           Only works on a site blueprint.status reports as stalled, and only undoes dig phases; it
           cannot undo a tile already dug, a wall already smoothed, or a built zone or building.
-        before_a_real_run: []
+        before_a_real_run:
+          - >-
+            Refuses a site that is not stalled and a site with any non-dig phase already applied.
         traps: []
     "reserve TEMPLATE PURPOSE SITE [DRY_RUN] [LEVEL] [RANK] [RADIUS_TILES]":
       lua_function: reserve_site
@@ -5764,9 +5788,8 @@ df-overseer-blueprint.lua:
             required: false
             default: "true"
             meaning: >-
-              Optional. true (the default when omitted) asks quickfort what it would do and writes
-              nothing; only the word false performs the real apply. Give it before LEVEL, RANK and
-              RADIUS_TILES.
+              Optional. true (the default when omitted) only reports what would be released; only
+              the word false actually releases it.
         returns: >-
           The only way to end a reservation, whether or not a site was ever carved from it. A shared
           wall tile still held by another reservation is not freed.
@@ -5798,10 +5821,12 @@ df-overseer-clock.lua:
             required: true
             default: null
             meaning: >-
-              The target frames-per-second cap to set.
+              The target frames-per-second cap to set, from 1 to 1000.
         returns: >-
           Returns the old and new value.
-        before_a_real_run: []
+        before_a_real_run:
+          - >-
+            Refuses a value outside 1 to 1000.
         traps: []
     pause:
       lua_function: clock_pause
