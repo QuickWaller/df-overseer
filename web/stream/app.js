@@ -50,7 +50,9 @@ const WHOS_WHO = [
 //: The board's two themes (handoff item 5): Terminal 2 is the default for
 //: every viewer regardless of system `prefers-color-scheme`; Stone 2 is
 //: opt-in, behind the header toggle, remembered per browser.
-const THEMES = ["terminal2", "stone2"];
+//: One theme only: the light one was dropped (user's call, 2026-10-02; it
+//: is in git history). Kept as a list so a theme can return without rewiring.
+const THEMES = ["terminal2"];
 const DEFAULT_THEME = "terminal2";
 
 //: The board's four sections, in display order, and the project-status
@@ -67,6 +69,9 @@ function el(tag, attrs, children) {
   const node = document.createElement(tag);
   attrs = attrs || {};
   for (const key of Object.keys(attrs)) {
+    // No value means no attribute: `null` must not become the text "null",
+    // which would open a <details> or mark a link as aria-current.
+    if (attrs[key] == null || attrs[key] === false) continue;
     if (key === "text") {
       node.textContent = attrs[key]; // the ONLY place text ever enters the DOM
     } else if (key === "class") {
@@ -494,7 +499,7 @@ class StreamPage {
     const themeSwitch = el("div", { class: "e-switch", role: "group", "aria-label": "Theme" }, this.themeButtons);
 
     const controls = [
-      el("span", { class: "e-clabel", text: "Theme" }), themeSwitch, whoswhoBtn,
+      whoswhoBtn,
     ];
     if (this.mode === "operator") {
       const toggle = el("button", {
@@ -987,6 +992,7 @@ class SitePage {
     this.agentTab = "tools";
     this._agentTabFor = null;
     this.toolFilter = { q: "", role: null, only: null };
+    this.toolAreasOpen = new Set();
     this.showAllSeasons = new Set();
     this._boundHashChange = () => this._onHashChange();
     window.addEventListener("hashchange", this._boundHashChange);
@@ -1207,7 +1213,6 @@ class SitePage {
     const header = el("header", { class: "top" }, [
       el("div", { class: "brand" }, [document.createTextNode("df-overseer"), el("small", { text: "  a fort run by AI agents" })]),
       el("nav", { class: "nav", "aria-label": "Site" }, [fortGroup, projectGroup]),
-      el("div", { class: "theme", role: "group", "aria-label": "Theme" }, this.themeButtons),
     ]);
     this.navHost.appendChild(header);
   }
@@ -1563,8 +1568,18 @@ class SitePage {
       const groups = areas.map((a) => [a, list.filter((t) => t.area === a)]).filter(([, ts]) => ts.length);
       wrap.replaceChildren(
         el("div", { class: "faint small", text: `${list.length} of ${this.tools.tools.length} tools` + (this.toolFilter.ungranted ? "" : `, hiding ${this.tools.tools.filter((t) => !t.roles.length).length} no agent has`) }),
-        ...groups.map(([area, ts]) => el("div", { class: "tarea" }, [
-          el("h2", {}, [document.createTextNode(area + " "), el("span", { class: "n", text: String(ts.length) })]),
+        // Each area is a dropdown: closed until opened, kept open across
+        // filtering, and opened for every area while a search or filter
+        // narrows the list.
+        ...groups.map(([area, ts]) => el("details", {
+          class: "tarea tfam", open: (this.toolAreasOpen.has(area) || q || this.toolFilter.role || this.toolFilter.only) ? "" : null,
+          ontoggle: (e) => { if (e.currentTarget.open) this.toolAreasOpen.add(area); else this.toolAreasOpen.delete(area); },
+        }, [
+          el("summary", {}, [
+            el("span", { class: "fname2", text: area }),
+            el("span", { class: "faint small", text: spelledCount(ts.length, "tool", "tools") }),
+            el("span", { class: "counts" }, countChips(ts.flatMap((t) => (this.gotchas || []).filter((g) => g.tool === t.id)))),
+          ]),
           el("div", { style: "margin-top:6px" }, ts.map((t) => {
             const gs = (this.gotchas || []).filter((g) => g.tool === t.id);
             return el("a", { class: "trow", href: "#tool-" + t.id }, [
@@ -1606,8 +1621,6 @@ class SitePage {
     ]);
     render();
     return el("div", {}, [
-      el("div", { class: "ptitle" }, [el("h1", { text: "Tools" }), el("span", { class: "scope", text: "all forts" })]),
-      el("p", { class: "lede", text: "Everything the agents can use, grouped by what it's for. The dots show which agents have each tool, and the counts show its gotchas, vents and unexplained errors." }),
       filters, wrap,
     ]);
   }

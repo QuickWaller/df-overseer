@@ -62,25 +62,8 @@ a { color: var(--accent); }
   flex-direction: column;
 }
 
-.e-wrap[data-style="stone2"] {
-  color-scheme: light;
-  --ground: #f3f3f2; --surface: #e3e3e1; --raised: #fbfbfa; --panel: #eaeae8;
-  --line: #c8c8c5; --line-strong: #a6a6a2;
-  --text: #1c1c1c; --muted: #4a4a4a; --faint: #6b6b68; --accent: #00777f;
-  --architect: #00777f; --quartermaster: #1d7a1d; --overseer: #8a5200;
-  --consultant: #8e1f8e; --executor: #555555; --will: #a61b1b; --system: #6b6b68;
-  --ok: #1d7a1d; --ok-bg: #e2efdf; --ok-line: #8fbf88;
-  --no: #8a5200; --no-bg: #f3e6d0; --no-line: #c9a46a;
-  --wait: #555; --wait-bg: #e7e7e5; --wait-line: #a6a6a2;
-  --g-done-bg: #e3eee0; --g-done-line: #8fbf88; --g-done-fg: #2f6a2f; --g-done-mini: #6fa868;
-  --g-now-bg: #d6e9f2; --g-now-line: #1a6c9c; --g-now-fg: #0c3652; --g-now-barbg: #aed2e5; --g-now-bar: #1a6c9c;
-  --g-ready-line: #1a6c9c; --g-ready-fg: #134e74; --g-wait-line: #a6a6a2; --g-wait-fg: #6b6b68;
-  --g-hold-bg: #f6dcd6; --g-hold-line: #a61b1b; --g-hold-fg: #6a0f0f; --g-hold-icon: #a61b1b;
-  --chip-ink: #ffffff;
-}
-
 /* Square corners, double-line card borders (user's call, register
-   2026-10-02): both themes, not just one. */
+   2026-10-02). */
 .e-wrap, .e-wrap * { border-radius: 0 !important; }
 .e-wrap .ecard { border-style: double; border-width: 3px; }
 
@@ -163,8 +146,6 @@ a { color: var(--accent); }
 }
 .urg.u-high { color: #ff9d8a; border-color: #8a3b2e; background: #2c1714; }
 .urg.u-elevated { color: #e8d27a; border-color: #6b6034; background: #25221a; }
-.e-wrap[data-style="stone2"] .urg.u-high { color: #a61b1b; background: #f6dcd6; border-color: #a61b1b; }
-.e-wrap[data-style="stone2"] .urg.u-elevated { color: #8a5200; background: #f3e6d0; border-color: #8a5200; }
 
 .chip {
   font-size: 11px; font-weight: 500; letter-spacing: 0.05em; text-transform: uppercase;
@@ -259,17 +240,6 @@ a { color: var(--accent); }
   background: var(--ground); color: var(--text);
   font-family: "JetBrains Mono", "IBM Plex Mono", "Cascadia Mono", ui-monospace, Menlo, Consolas, monospace;
   min-height: 100vh;
-}
-.site[data-style="stone2"] {
-  color-scheme: light;
-  --ground: #f3f3f2; --surface: #e3e3e1; --raised: #fbfbfa; --panel: #eaeae8;
-  --line: #c8c8c5; --line-strong: #a6a6a2;
-  --text: #1c1c1c; --muted: #4a4a4a; --faint: #6b6b68; --accent: #1a6c9c; --chip-ink: #fff;
-  --overseer: #8a5200; --architect: #00777f; --quartermaster: #1d7a1d; --consultant: #8e1f8e;
-  --marshal: #a61b1b; --chronicler: #2b3fb0; --will: #a61b1b; --system: #6b6b68; --executor: #555555;
-  --ok: #1d7a1d; --ok-bg: #e3eee0; --bad: #a61b1b; --bad-bg: #f6dcd6;
-  --warn: #8a5200; --warn-bg: #f3e6d0; --info: #1a6c9c; --info-bg: #d6e9f2;
-  --grid: #dcdcd9; --chart: #1a6c9c; --chart-fill: rgba(26, 108, 156, 0.10);
 }
 .site, .site * { border-radius: 0 !important; }
 .sitemain {
