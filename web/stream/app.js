@@ -1630,47 +1630,45 @@ class SitePage {
     ]);
   }
 
+  /** One tool on one screen: the guide on the left, everything else on the
+   * right. Each column scrolls on its own only if its content is too long. */
   _viewTool(id) {
     const t = (this.tools.tools || []).find((x) => x.id === id);
     if (!t) return this._viewTools();
     const gs = (this.gotchas || []).filter((g) => g.tool === id);
-    const by = (list) => gs.filter((g) => g.list === list);
-    const pile = by("gotcha").length + by("vent").length >= 4;
-    const section = (title, list, emptyText) => el("div", { class: "sec" }, [
-      el("h2", {}, [document.createTextNode(title + " "), el("span", { class: "n", text: String(list.length) })]),
-      el("div", { class: "box" }, list.length ? list.map((g) => gotchaEntryEl(g, { showTool: false })) : [el("div", { class: "faint", text: emptyText })]),
-    ]);
+    const pile = gs.filter((g) => g.list === "gotcha" || g.list === "vent").length >= 4;
     const confidence = t.confidence || { level: "medium", note: "" };
-    return el("div", {}, [
-      el("div", { class: "crumbs" }, [el("a", { href: "#tools", text: "Tools" }), document.createTextNode(" / " + t.area + " / " + id)]),
-      el("div", { class: "sec" }, [el("h1", { text: id }), el("p", { class: "lede", text: t.description || "No description yet." })]),
-      el("div", { class: "scrollbody sec" }, [
-      t.guide ? el("div", { class: "sec" }, [el("h2", { text: "How to use it" }), el("div", { class: "box guide", text: t.guide })]) : null,
-      pile ? el("div", { class: "warnbar", text: "Gotchas and vents are piling up on this tool. The rule is to consider rebuilding it, or rewriting its description." }) : null,
-      el("div", { class: "cols" }, [
-        el("div", { class: "sec" }, [
-          gs.length ? null : el("div", { class: "box faint", text: "No gotchas, vents or unexplained errors recorded for this tool yet." }),
-          section("Gotchas", by("gotcha"), "None yet."),
-          section("Vents", by("vent"), "No complaints yet."),
-          section("Unexplained errors", by("unexplained"), "None."),
+    const meaning = {
+      full: "Just use it.",
+      medium: "Read the guide and gotchas first, and watch the result.",
+      low: "Never run live, or known to be awkward. Dry-run first.",
+    }[confidence.level] || "";
+    return el("div", { class: "toolpage" }, [
+      el("div", { class: "tphead" }, [
+        el("div", { class: "crumbs" }, [el("a", { href: "#tools", text: "Tools" }), document.createTextNode(" / " + t.area)]),
+        el("h1", { text: id }),
+        el("p", { class: "lede", text: t.description || "No description yet." }),
+      ]),
+      el("div", { class: "tpcols" }, [
+        el("div", { class: "tpcol" }, [
+          el("h2", { text: "How to use it" }),
+          t.guide ? el("div", { class: "box guide", text: t.guide }) : el("div", { class: "box faint", text: "No guide written for this tool yet." }),
         ]),
-        el("div", { class: "sec" }, [
-          el("h2", { text: "About" }),
+        el("div", { class: "tpcol" }, [
           el("div", { class: "box" }, [el("dl", { class: "kv" }, [
             el("dt", { text: "Effect" }), el("dd", { text: t.write ? "Changes the fort" : "Reads only" }),
-            el("dt", { text: "Area" }), el("dd", { text: t.area }),
-            el("dt", { text: "Confidence" }), el("dd", {}, [el("span", { class: confidencePillClass(confidence.level), text: confidence.level })]),
-            el("dt", { text: "Used by" }), el("dd", { class: "chips" }, t.roles.length ? t.roles.map((r) => el("a", { class: "who", href: "#agent-" + r, style: `color:${roleCssVar(r)}`, text: roleTitle(r) })) : [el("span", { class: "faint", text: "No agent has this tool." })]),
+            el("dt", { text: "Used by" }), el("dd", { class: "chips" }, t.roles.length ? t.roles.map((r) => el("a", { class: "who", href: "#agent-" + r, style: `color:${roleCssVar(r)}`, text: (this.agents && this.agents.roles[r] && this.agents.roles[r].name) || roleTitle(r) })) : [el("span", { class: "faint", text: "No agent has this tool." })]),
+            el("dt", { text: "Confidence" }), el("dd", {}, [
+              el("span", { class: confidencePillClass(confidence.level), text: confidence.level }),
+              el("span", { class: "faint small", text: "  " + meaning }),
+            ]),
           ])]),
-          el("h2", { text: "What confidence means" }),
-          el("div", { class: "box legend" }, [
-            el("span", { class: "pill p-ok", text: "full" }), el("span", { text: "Just use it." }),
-            el("span", { class: "pill p-warn", text: "medium" }), el("span", { text: "Read the description closely, check the gotchas, watch the result." }),
-            el("span", { class: "pill p-bad", text: "low" }), el("span", { text: "Never run live, or known to be awkward. Dry-run first." }),
-            el("span", {}), el("span", { class: "faint small", text: "Every tool starts at medium and only changes when we review it." }),
-          ]),
+          pile ? el("div", { class: "warnbar", text: "Gotchas and vents are piling up on this tool: consider rebuilding it or rewriting its guide." }) : null,
+          el("h2", {}, [document.createTextNode("Gotchas, vents and unexplained errors "), el("span", { class: "counts" }, countChips(gs))]),
+          el("div", { class: "box" }, gs.length
+            ? gs.map((g) => gotchaEntryEl(g, { showTool: false }))
+            : [el("div", { class: "faint", text: "None recorded yet." })]),
         ]),
-      ]),
       ]),
     ]);
   }

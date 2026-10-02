@@ -481,3 +481,14 @@ a.tagchip:hover { border-color: var(--text); }
    body below them scrolls. */
 .site.fullheight .scrollbody { flex: 1 1 auto; min-height: 0; overflow-y: auto; padding-right: 6px; align-content: start; }
 @media (max-width: 900px) { .site.fullheight .scrollbody { overflow: visible; } }
+
+/* A tool on one screen: guide left, about and entries right; each column
+   scrolls on its own only when its content is longer than the window. */
+.site .toolpage { display: flex; flex-direction: column; gap: 12px; }
+.site .tphead { display: flex; flex-direction: column; gap: 4px; }
+.site .tphead .lede { max-width: none; }
+.site .tpcols { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(320px, 1fr); gap: 20px; min-height: 0; flex: 1 1 auto; }
+.site .tpcol { display: flex; flex-direction: column; gap: 10px; min-height: 0; overflow-y: auto; padding-right: 6px; }
+.site .tpcol .guide { max-width: none; }
+.site .tpcol h2 .counts { display: inline-flex; gap: 6px; text-transform: none; letter-spacing: 0; }
+@media (max-width: 900px) { .site .tpcols { grid-template-columns: minmax(0, 1fr); } .site .tpcol { overflow: visible; } }
