@@ -12,9 +12,9 @@ learning architecture.
 >
 > - **Current state, as last verified live 2026-09-25.** Uniboslan is
 >   paused, 22 alive and 1 dead, `dfmcp-server` active. Role tool lists
->   (read plus write, measured live 2026-10-01, matched offline 2026-10-02): **overseer 99,
->   architect 53, consultant 29, quartermaster 25, conductor 16**. The office is
->   built, furnished and owned by the Manager, and the game itself accepts
+>   (read plus write): **see `docs/STATE.md`'s generated per-role tool
+>   counts** (last matched live 2026-10-01, re-measured offline 2026-10-02).
+>   The office is built, furnished and owned by the Manager, and the game itself accepts
 >   it (the room-value proxy's earlier false negative is fixed). The ghost
 >   has been laid to rest (a Tomb zone over its coffin, confirmed by direct
 >   struct reads and the game's own report). **Manager work orders: the user reports they work**

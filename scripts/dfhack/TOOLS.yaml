@@ -2330,7 +2330,7 @@ df-overseer-zone.lua:
             required: false
             default: "30"
             meaning: >-
-              How far from NEAR_LANDMARK to search, in tiles. Clamped to a hard cap of 60 tiles
+              How far from NEAR_LANDMARK_FILTER to search, in tiles. Clamped to a hard cap of 60 tiles
               server-side regardless of the value passed.
         returns: >-
           With every filter empty, returns a fleet-wide summary (counts by kind, plus a
@@ -3839,7 +3839,7 @@ df-overseer-threat.lua:
             required: false
             default: null
             meaning: >-
-              How far from NEAR_LANDMARK to search, in tiles. Clamped to a hard cap of 60 tiles
+              How far from a landmark to search, in tiles. Clamped to a hard cap of 60 tiles
               server-side regardless of the value passed.
         returns: >-
           Each candidate is tiered pause/slow/record_only (used by the conductor's clock to decide
@@ -3914,7 +3914,7 @@ df-overseer-breach.lua:
             required: false
             default: null
             meaning: >-
-              How far from NEAR_LANDMARK to search, in tiles. Clamped to a hard cap of 60 tiles
+              How far from a landmark to search, in tiles. Clamped to a hard cap of 60 tiles
               server-side regardless of the value passed.
         returns: >-
           The game gives no event or announcement for a flood at all, so this is the only signal for
@@ -5409,7 +5409,7 @@ df-overseer-blueprint.lua:
             required: false
             default: null
             meaning: >-
-              An offset relative to NEAR_LANDMARK's own level, NOT an absolute DF map coordinate: 0
+              An offset relative to SITE's own level, NOT an absolute DF map coordinate: 0
               (the default when omitted) is the landmark's own level, -1 is one level below it, 1 is
               one level above it. A level below the dug-out fort returns nothing until something
               walkable exists there, v1 only returns candidates that border the existing walkable
@@ -5418,13 +5418,13 @@ df-overseer-blueprint.lua:
             required: false
             default: null
             meaning: >-
-              Which ranked candidate to act on: 1 is the candidate closest to NEAR_LANDMARK.
+              Which ranked candidate to act on: 1 is the candidate closest to SITE.
               Defaults to 1 when omitted.
           - name: "RADIUS_TILES"
             required: false
             default: null
             meaning: >-
-              How far from NEAR_LANDMARK to search, in tiles. Clamped to a hard cap of 60 tiles
+              How far from SITE to search, in tiles. Clamped to a hard cap of 60 tiles
               server-side regardless of the value passed.
         returns: >-
           Reports what would be designated, any problems, and whether a soil-finish requirement
@@ -5513,7 +5513,7 @@ df-overseer-blueprint.lua:
             required: false
             default: null
             meaning: >-
-              An offset relative to NEAR_LANDMARK's own level, NOT an absolute DF map coordinate: 0
+              An offset relative to SITE's own level, NOT an absolute DF map coordinate: 0
               (the default when omitted) is the landmark's own level, -1 is one level below it, 1 is
               one level above it. A level below the dug-out fort returns nothing until something
               walkable exists there, v1 only returns candidates that border the existing walkable
@@ -5522,13 +5522,13 @@ df-overseer-blueprint.lua:
             required: false
             default: null
             meaning: >-
-              Which ranked candidate to act on: 1 is the candidate closest to NEAR_LANDMARK.
+              Which ranked candidate to act on: 1 is the candidate closest to SITE.
               Defaults to 1 when omitted.
           - name: "RADIUS_TILES"
             required: false
             default: null
             meaning: >-
-              How far from NEAR_LANDMARK to search, in tiles. Clamped to a hard cap of 60 tiles
+              How far from SITE to search, in tiles. Clamped to a hard cap of 60 tiles
               server-side regardless of the value passed.
           - name: "ALLOW_STRANDED"
             required: false
@@ -5713,7 +5713,7 @@ df-overseer-blueprint.lua:
             required: false
             default: null
             meaning: >-
-              An offset relative to NEAR_LANDMARK's own level, NOT an absolute DF map coordinate: 0
+              An offset relative to SITE's own level, NOT an absolute DF map coordinate: 0
               (the default when omitted) is the landmark's own level, -1 is one level below it, 1 is
               one level above it. A level below the dug-out fort returns nothing until something
               walkable exists there, v1 only returns candidates that border the existing walkable
@@ -5722,13 +5722,13 @@ df-overseer-blueprint.lua:
             required: false
             default: null
             meaning: >-
-              Which ranked candidate to act on: 1 is the candidate closest to NEAR_LANDMARK.
+              Which ranked candidate to act on: 1 is the candidate closest to SITE.
               Defaults to 1 when omitted.
           - name: "RADIUS_TILES"
             required: false
             default: null
             meaning: >-
-              How far from NEAR_LANDMARK to search, in tiles. Clamped to a hard cap of 60 tiles
+              How far from SITE to search, in tiles. Clamped to a hard cap of 60 tiles
               server-side regardless of the value passed.
         returns: >-
           This is a reservation of one room's footprint, not a district or zoning tool. Never

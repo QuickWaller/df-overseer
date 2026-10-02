@@ -1,6 +1,34 @@
 # Roadmap
 
-**Last reviewed:** 2026-09-25 (twenty-fifth pass, full: two more heavy days
+**Last reviewed:** 2026-10-02 (twenty-sixth pass, full: a week of very heavy
+landings since the last pass -- five real (non-dry-run) conductor `--once`
+cycles made real decisions against the live fort (2026-09-25 through
+2026-09-28); the job-dependency-graph design landed and its first two build
+items (`keeps_access`/`item_present` guards, `dfqueue` project/step records)
+shipped; room reservations (hold, override, finder-skip) were designed,
+built and deployed; manager work orders went from "never dispatch" to
+confirmed working, generalised over job type with conditions/repeat/reorder;
+project MCP tools (`queue.project`, `queue.project_status`) landed; a
+goal-tree design and its independent red team were produced and are waiting
+on the user; a drift-detection system (`scripts/deploy.py`, `docs/STATE.md`,
+a daily Windows-task alert) now gates every deploy and caught the first real
+repo/VM mismatches; the stream page (board, site/agents/tools/forts pages)
+went from mockup to merged slices; and tool descriptions were split into a
+short always-sent summary plus an on-demand structured guide (`gotchas.get`),
+cutting the overseer's per-request description payload by about two-thirds.
+New top Now item records all of it, supersedes the 2026-09-25 item below, and
+folds in the open items a 2026-10-02 doc audit and this pass both surfaced.
+The Next bucket's wiki-lookup item is marked done (the Consultant has read
+the full offline mirror live since 2026-09-24/25). The rest of the Next and
+Later buckets were keyword-scanned (wiki, consultant, conductor, manager,
+reservation, project, goal tree, tool description, drift, stream page,
+district, zoning) and nothing else quietly finished was found beyond what
+the new top item already states; that was a search, not a line-by-line read.
+Suite measured 2026-10-02: **2492 passed / 3 skipped** ambient (with `lupa`
+on `PYTHONPATH`), **768 passed** in `dfmcp/tests` under a freshly built
+`.venv-dfmcp` (pinned `mcp==2.2.0`, per `docs/TRAPS.md`).)
+
+**Previously reviewed:** 2026-09-25 (twenty-fifth pass, full: two more heavy days
 landed since the last pass -- the office built and accepted, the ghost laid
 to rest, the site-ranking system judged in need of a redesign rather than a
 patch, the Consultant's offline wiki mirror designed, built, deployed and
@@ -117,6 +145,63 @@ or `decisions/DECISIONS.md`, not here.
 ## Now
 <!-- Actively being worked, or the clear immediate next step. -->
 
+- **NEW 2026-10-02: the conductor has made real decisions on the live fort,
+  manager orders now work, and the agents' own tool surface just got a
+  cheaper and better-documented front door.** Deployed and live-verified
+  since the 2026-09-25 item below: five real (non-dry-run) conductor
+  `--once` cycles (2026-09-25 through 2026-09-28) ran all four roles,
+  filed and ruled proposals, and executed real work (a down-stair dig, a
+  bedroom cell's dig shell, a Carpenter's Workshop siting), finding and
+  fixing several tool/process gaps live along the way; **manager work
+  orders went from "never dispatch" to confirmed working** and were
+  generalised over job type with conditions, repeat, reorder and recheck;
+  the job-dependency-graph design (`research/2026-09-28-job-dependency-
+  graph.md`) landed and its first two build items shipped and were
+  live-verified (`keeps_access`/`item_present` guards refusing a build that
+  would seal off reachable ore; `dfqueue` project/step records, the
+  missing `plan` record `docs/AGENT-ARCHITECTURE.md` §9 had flagged); room
+  reservations (hold a template's footprint, one-off overrides, shared
+  walls, finder-skip) were designed, built, merged and deployed; project
+  MCP tools (`queue.project`, `queue.project_status`, `queue.executed`)
+  landed; a full goal-tree design and an independent red team
+  (`research/2026-09-30-goal-tree-design.md`, `-red-team.md`, 20 findings)
+  were produced and are waiting on the user, who in the meantime set the
+  governing direction, **"set intent, let the game execute"**: a lean core
+  (projects with checks, amend/abandon, site-pinning reservations, the
+  conductor running approved steps, standing goals as manager orders) over
+  the fuller design. A **drift-detection system** now gates every deploy
+  (`scripts/deploy.py`, generated `docs/STATE.md`, a daily Windows-task
+  alert) and already caught real repo/VM mismatches. The **stream page**
+  moved from mockup to merged slices (board, a site/agents/tools/forts
+  page). **Tool descriptions were split into a short always-sent summary
+  plus a structured guide fetched on demand** (`gotchas.get`), cutting the
+  overseer's per-request description payload from about 146,000 to about
+  46,000 characters (roughly two-thirds), then the two native `gotchas.*`
+  tools' own descriptions (the largest two remaining) were split the same
+  way. Role tool lists moved **79/49/28/24/15 to 99/53/29/25/16**
+  (overseer/architect/consultant/quartermaster/conductor; current count
+  lives in `docs/STATE.md`, not hand-copied here). **Still open, in order:
+  (1)** the team cycle (a real, supervised `conductor --once` run through
+  its installed service rather than a transient unit) is refused by the
+  auto-mode classifier and waits on the user running it by hand or
+  widening `autoMode`; **(2)** the goal-tree design's user decisions and
+  the item-binding design's six decisions; **(3)** the districting design
+  session, still waiting on the user, now also carrying the
+  job-dependency-graph's "model a room's build order as a dependency
+  graph" and a haul-before-seal guard as agenda inputs alongside blueprint
+  connector properties and observability; **(4)** the wiki refresh timers
+  (S8), still hand-refresh-only; **(5)** leaked-key rotation, not urgent.
+  → `Working.md` (both the 2026-09-30 and 2026-09-28 "Current state"
+  sections), `decisions/DECISIONS.md` 2026-09-28 through 2026-10-02 rows,
+  `handoffs/INDEX.md`, `evals/live/2026-09-30-reservations-deploy/`,
+  `evals/live/2026-10-02-site-and-tools-deploy/`, `docs/STATE.md`.
+- **SUPERSEDED 2026-10-02 by the item above (kept for the record):** every
+  one of this item's "still open" steps below has moved: (1) the conductor
+  has now run live for real, five times; (2) the districting session still
+  waits on the user, now with more agenda inputs; (3) the wiki refresh
+  timers are still not built; (4) the ore/hematite fix was done and
+  live-verified 2026-09-28 (`handoffs/2026-09-28-ore-vein-recovery-and-
+  construction-tool.md`); (5) leaked-key rotation is still open, not urgent.
 - **NEW 2026-09-25: the office and ghost are resolved, the Consultant reads
   the full wiki mirror live, and the recommended next step is a real,
   supervised conductor run.** Deployed and live-verified across 2026-09-24/
@@ -663,7 +748,15 @@ or `decisions/DECISIONS.md`, not here.
   retention on the DF wiki. The MVP ships a curated 20-30 page snapshot
   instead. -> `decisions/DECISIONS.md` 2026-09-22.
 
-- **DF wiki lookup as a `dfmcp` tool for the Consultant and the Architect**,
+- **DONE (the lookup half): DF wiki access for the Consultant.** Superseded
+  by the fuller offline wiki mirror built 2026-09-24/25 and switched over
+  live: the Consultant answers from the full mirror (4,450 pages, SQLite
+  plus FTS5, a one-week hold on recent edits), not a curated snapshot, and
+  this is live-verified (`docs/CONSULTANT-WIKI.md`). **Still open from this
+  item's original scope:** `ask`/`answer` records so other advisors can
+  consult the Consultant without spending their own context, not built.
+  Original text follows, for the reasoning that led here.
+  **DF wiki lookup as a `dfmcp` tool for the Consultant and the Architect**,
   served from a local snapshot, not the open web, returning capped
   section-level excerpts (user's calls 2026-09-15). Fills the Consultant's
   `planned` `knowledge.wiki_lookup`. Follows the queue wiring, which

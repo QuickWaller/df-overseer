@@ -58,7 +58,7 @@ import json
 import sqlite3
 import sys
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Any, Callable, Iterable
 
 import yaml
 
@@ -333,16 +333,24 @@ def _check_source(entry: dict, index: int, source: dict, reader: Any, stale: boo
     return _result(entry, index, source, "unchanged", **base)
 
 
-def _open_reader(store_reader: Any) -> tuple[Any, str | None, bool]:
-    """(reader, unavailable_reason, opened_here). A path is opened read-only."""
+def _open_reader(
+    store_reader: Any, clock: Callable[[], Any] | None = None
+) -> tuple[Any, str | None, bool]:
+    """(reader, unavailable_reason, opened_here). A path is opened read-only.
+
+    `clock` (default: the real wall clock) is only consulted when a path is
+    opened here: an already-open reader carries its own clock, set when it
+    was constructed.
+    """
     if store_reader is None:
         return None, "no_mirror_configured", False
     if isinstance(store_reader, (str, Path)):
         from wikimirror.schema import SchemaError
         from wikimirror.store import Store, StoreError
 
+        kw: dict[str, Any] = {"clock": clock} if clock is not None else {}
         try:
-            return Store.open_readonly(store_reader), None, True
+            return Store.open_readonly(store_reader, **kw), None, True
         except (StoreError, SchemaError, sqlite3.Error, OSError) as exc:
             return None, f"mirror_unavailable: {type(exc).__name__}: {exc}", False
     return store_reader, None, False
@@ -361,7 +369,12 @@ def _freshness(reader: Any) -> tuple[dict[str, Any] | None, str | None]:
     }, None
 
 
-def check_doctrine(doctrine_entries: Iterable[Any], store_reader: Any) -> dict[str, Any]:
+def check_doctrine(
+    doctrine_entries: Iterable[Any],
+    store_reader: Any,
+    *,
+    clock: Callable[[], Any] | None = None,
+) -> dict[str, Any]:
     """Compare every cited wiki source with the mirror's SERVED revision.
 
     `doctrine_entries` is the parsed doctrine list. `store_reader` is an open
@@ -369,9 +382,15 @@ def check_doctrine(doctrine_entries: Iterable[Any], store_reader: Any) -> dict[s
     path (opened read-only here and closed after), or None. Read-only; never
     edits doctrine; never raises for a mirror problem: those become
     `cannot_check` results.
+
+    `clock` is only used when `store_reader` is a path: it is passed to the
+    `Store` opened here, so staleness is judged against the caller's notion
+    of "now" rather than always the real wall clock. Defaults to the real
+    clock. An already-open reader keeps whatever clock it was constructed
+    with; passing `clock` here does not override it.
     """
     entries = list(doctrine_entries or [])
-    reader, unavailable, opened_here = _open_reader(store_reader)
+    reader, unavailable, opened_here = _open_reader(store_reader, clock)
     try:
         freshness = None
         if reader is not None:
@@ -470,7 +489,11 @@ def render_text(report: dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
-def main(argv: list[str] | None = None) -> int:
+def main(argv: list[str] | None = None, *, clock: Callable[[], Any] | None = None) -> int:
+    """`clock` is test-only: an injectable "now" for the mirror staleness check,
+    defaulting to the real wall clock. Not exposed as a CLI flag; a caller
+    embedding this (or a test) passes it directly.
+    """
     from doctrine.validate import DEFAULT_PATH
 
     ap = argparse.ArgumentParser(description="Check doctrine wiki citations against the mirror.")
@@ -480,7 +503,7 @@ def main(argv: list[str] | None = None) -> int:
     args = ap.parse_args(argv)
     with open(args.doctrine, "r", encoding="utf-8") as fh:
         entries = yaml.safe_load(fh) or []
-    report = check_doctrine(entries, args.db)
+    report = check_doctrine(entries, args.db, clock=clock)
     print(json.dumps(report, indent=2, default=str) if args.json else render_text(report))
     # Exit 1 when anything needs attention or could not be checked; 0 when all clear.
     bad = report["needing_reread"] or report["summary"]["cannot_check"] or not report["mirror"]["available"]

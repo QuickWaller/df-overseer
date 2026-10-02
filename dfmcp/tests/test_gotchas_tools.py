@@ -278,6 +278,26 @@ class TestGet:
         assert s["guide"] is None
         assert "<guide>" not in text
 
+    @pytest.mark.parametrize("tool_id", [gt.GOTCHAS_GET, gt.GOTCHAS_WRITE])
+    async def test_gotchas_get_and_write_carry_their_own_real_guide(self, db, tool_id):
+        """handoffs/2026-10-02-wiki-check-test.md task 4: gotchas.get and
+        gotchas.write's own MCP descriptions were shortened (the detail used
+        to be ~1,128 and ~1,450 chars respectively, sent on every request);
+        the detail now lives in each tool's own `NativeTool.guide` and is
+        served through gotchas.get(tool=...) exactly like any TOOLS.yaml-backed
+        tool's guide -- the same `tool_guides` wiring `dfmcp/server.py` builds
+        from `getattr(t, "guide", None)` over the registry, here built the same
+        way by hand from `gt.NATIVE_TOOLS`."""
+        guide_text = gt.NATIVE_TOOLS[tool_id].guide.guide_text()
+        assert guide_text  # a real, non-empty guide for both
+        text, s = await gt.call(
+            gt.GOTCHAS_GET, "architect", {"tool": tool_id}, db_path=db, known_tools=KNOWN,
+            run_id="s-self", write_lock=asyncio.Lock(),
+            tool_guides={t: n.guide.guide_text() for t, n in gt.NATIVE_TOOLS.items()},
+        )
+        assert s["guide"] == guide_text
+        assert f"<guide>{gt.escape(guide_text)}</guide>" in text
+
     async def test_general_lookup_never_carries_a_guide(self, db):
         await _call(
             gt.GOTCHAS_WRITE, {"title": "a run note: something odd", "body": "x" * 20}, db,
@@ -481,3 +501,14 @@ class TestRoleToolCountsUnchanged:
             "quartermaster": 25,
             "conductor": 16,
         }
+
+
+def test_gotchas_get_and_write_descriptions_are_short():
+    """handoffs/2026-10-02-wiki-check-test.md task 4: the two tools' own MCP
+    descriptions must stay short summaries (previously ~1,128 and ~1,450
+    chars, the largest and second-largest on the overseer's list), not
+    regress back to carrying the full mode-by-mode explanation -- that detail
+    belongs in the guide (see test_gotchas_get_and_write_carry_their_own_real_guide
+    above), not sent on every call."""
+    assert len(gt._GET_DESCRIPTION) < 400
+    assert len(gt._WRITE_DESCRIPTION) < 400
