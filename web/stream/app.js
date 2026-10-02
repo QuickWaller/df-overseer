@@ -607,26 +607,26 @@ class StreamPage {
       return;
     }
     this.col.appendChild(this._goalStrip());
-    // Mockup's own renderE: a section with nothing in it is omitted
-    // entirely, not shown empty with a "None" placeholder (that is option
-    // C's board behaviour, not option E's split layout, which is the one
-    // this page follows).
+    // The board's sections as tabs, each with its count; an empty section
+    // has no tab. The chosen tab is kept while the board polls.
     const cards = this._boardCards();
-    let shown = 0;
-    BOARD_SECTIONS.forEach(([label, statuses]) => {
-      const entries = cards.filter((c) => statuses.includes(c.status));
-      if (!entries.length) return;
-      shown += entries.length;
-      this.col.appendChild(this._sectionEl(label, entries));
-    });
-    const turnedDown = this._turnedDownCards();
-    if (turnedDown.length) {
-      shown += turnedDown.length;
-      this.col.appendChild(this._sectionEl("Turned down", turnedDown));
-    }
-    if (!shown) {
+    const groups = BOARD_SECTIONS
+      .map(([label, statuses]) => [label, cards.filter((c) => statuses.includes(c.status))])
+      .concat([["Turned down", this._turnedDownCards()]])
+      .filter(([, entries]) => entries.length);
+    if (!groups.length) {
       this.col.appendChild(el("p", { class: "muted", text: "Nothing here yet." }));
+      return;
     }
+    if (!groups.some(([label]) => label === this.boardTab)) this.boardTab = groups[0][0];
+    this.col.appendChild(el("div", { class: "btabs", role: "tablist" }, groups.map(([label, entries]) => el("button", {
+      type: "button", role: "tab", class: "btab", "aria-selected": String(label === this.boardTab),
+      onclick: () => { this.boardTab = label; this._renderColumn(); },
+    }, [document.createTextNode(label + " "), el("span", { class: "count", text: String(entries.length) })]))));
+    const [, entries] = groups.find(([label]) => label === this.boardTab);
+    const list = el("div", { class: "e-sec", role: "tabpanel" });
+    entries.forEach((entry) => list.appendChild(this._cardEl(entry)));
+    this.col.appendChild(list);
   }
 
   _goalStrip() {
