@@ -1139,7 +1139,7 @@ class SitePage {
     this.main.classList.toggle("agentsview", route.view === "agents");
     // Agents fills the window exactly: the map stays put, only the open
     // tab's body scrolls.
-    this.shell.classList.toggle("fullheight", route.view === "agents" || route.view === "board");
+    this.shell.classList.toggle("fullheight", ["agents", "board", "tools", "forts"].includes(route.view));
     if (route.view === "board") {
       this.main.appendChild(this._boardEl());
       return;
@@ -1579,7 +1579,7 @@ class SitePage {
         ])),
       );
     };
-    const wrap = el("div", { class: "sec" });
+    const wrap = el("div", { class: "sec scrollbody" });
     const roleBtn = (role, label) => el("button", {
       class: "tbtn", type: "button", "aria-pressed": String(this.toolFilter.role === role),
       onclick: () => { this.toolFilter.role = this.toolFilter.role === role ? null : role; this._render(); },
@@ -1626,6 +1626,7 @@ class SitePage {
     return el("div", {}, [
       el("div", { class: "crumbs" }, [el("a", { href: "#tools", text: "Tools" }), document.createTextNode(" / " + t.area + " / " + id)]),
       el("div", { class: "sec" }, [el("h1", { text: id }), el("p", { class: "lede", text: t.description || "No description yet." })]),
+      el("div", { class: "scrollbody sec" }, [
       t.guide ? el("div", { class: "sec" }, [el("h2", { text: "How to use it" }), el("div", { class: "box guide", text: t.guide })]) : null,
       pile ? el("div", { class: "warnbar", text: "Gotchas and vents are piling up on this tool. The rule is to consider rebuilding it, or rewriting its description." }) : null,
       el("div", { class: "cols" }, [
@@ -1652,6 +1653,7 @@ class SitePage {
           ]),
         ]),
       ]),
+      ]),
     ]);
   }
 
@@ -1673,7 +1675,7 @@ class SitePage {
     return el("div", {}, [
       el("div", { class: "ptitle" }, [el("h1", { text: "Forts" }), el("span", { class: "scope", text: "all forts" })]),
       el("p", { class: "lede", text: "Every fort the agents have run, each with its chronicle. The board always shows the fort running now. Forts end; the agents, tools and gotchas carry on to the next one." }),
-      el("div", { class: "grid" }, cards),
+      el("div", { class: "grid scrollbody" }, cards),
     ]);
   }
 

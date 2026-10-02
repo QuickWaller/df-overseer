@@ -506,3 +506,8 @@ a.tagchip:hover { border-color: var(--text); }
 @media (max-width: 900px) {
   .site.fullheight .boardhost .video-frame { height: auto; width: 100%; }
 }
+
+/* Tools and Forts in the full-window layout: the title and filters stay, the
+   body below them scrolls. */
+.site.fullheight .scrollbody { flex: 1 1 auto; min-height: 0; overflow-y: auto; padding-right: 6px; align-content: start; }
+@media (max-width: 900px) { .site.fullheight .scrollbody { overflow: visible; } }
