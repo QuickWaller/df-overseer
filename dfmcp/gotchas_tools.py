@@ -14,7 +14,14 @@ two per tool, to keep every role's tool list short.
   its gotchas together is one call, matching `agents/CONFIDENCE-LEGEND.md`'s
   "before using a medium-confidence tool" instruction. A tool with no guide
   yet (a native tool, or a real tool this manifest has not been filled in
-  for) simply gets no `<guide>` element; this is never an error.
+  for) simply gets no `<guide>` element; this is never an error. Added
+  `handoffs/2026-10-02-wiki-check-test.md` task 4: `gotchas.get` and
+  `gotchas.write` now carry guides of their own (`_GET_GUIDE`, `_WRITE_GUIDE`
+  below, the same `ToolGuide` shape `dfmcp/registry.py` uses for a
+  TOOLS.yaml-backed command), so `gotchas.get(tool="gotchas.write")` or
+  `gotchas.get(tool="gotchas.get")` answers "how do I use this tool" the same
+  way it would for any other -- the two largest MCP descriptions on the
+  overseer's list no longer have to carry that detail on every request.
 - **`gotchas.write`** has two modes chosen by whether `id` is passed. Without
   it, it writes a **new** entry about a tool: the server chooses the id and
   sets the status `proposed`, and stamps the writing role, the run and the
@@ -79,6 +86,7 @@ from typing import Any, Dict, Iterable, List, Mapping, Optional, Tuple
 from xml.sax.saxutils import escape, quoteattr
 
 from . import gotchas_store as store
+from .registry import GuideArgument, ToolGuide
 
 # --------------------------------------------------------------------------
 # Tool ids and the default store path
@@ -110,13 +118,22 @@ class GotchaToolError(Exception):
 
 @dataclass(frozen=True)
 class NativeTool:
-    """Same duck-typed shape as `dfmcp.doctrine_tools.NativeTool`."""
+    """Same duck-typed shape as `dfmcp.doctrine_tools.NativeTool`, plus a
+    `guide` field (added for the gotchas tools themselves,
+    `handoffs/2026-10-02-wiki-check-test.md` task 4): the same `ToolGuide`
+    shape `dfmcp/registry.py`'s TOOLS.yaml-backed `Tool` carries. `dfmcp/
+    server.py`'s `tool_guides` map is built by duck-typed `getattr(t, "guide",
+    None)` over every entry in `registry.all()`, native tools included, so
+    giving `gotchas.get`/`gotchas.write` a real `guide` here is picked up with
+    no server.py change: `gotchas.get(tool="gotchas.write")` then returns it
+    the same way it would for any other tool."""
 
     id: str
     mutates: bool = False
     sole_writer_only: bool = False
     native: bool = True
     args: Tuple[str, ...] = ()
+    guide: Optional[ToolGuide] = None
 
     def describe(self, role: str) -> Tuple[str, dict]:
         del role  # neither schema depends on the caller
@@ -127,13 +144,8 @@ class NativeTool:
         raise AssertionError(f"NativeTool.describe: unknown id {self.id!r}")  # pragma: no cover
 
 
-# `mutates=False` on both, deliberately: `Tool.mutates` means "mutates fort
-# state" and nothing wider (see `dfmcp/queue_tools.py`), so an advisor may hold
-# `gotchas.write` without contradicting "advisors are read-only".
-NATIVE_TOOLS: Dict[str, NativeTool] = {
-    GOTCHAS_GET: NativeTool(id=GOTCHAS_GET),
-    GOTCHAS_WRITE: NativeTool(id=GOTCHAS_WRITE),
-}
+# NATIVE_TOOLS is built near the end of this module (after `_GET_GUIDE` and
+# `_WRITE_GUIDE` exist), since `NativeTool.guide` needs them; see there.
 
 # --------------------------------------------------------------------------
 # Descriptions and schemas
@@ -142,20 +154,17 @@ NATIVE_TOOLS: Dict[str, NativeTool] = {
 _LISTS = list(store.LISTS)
 _STATUSES = list(store.STATUSES)
 
+# Short: the MCP description sent to the model on every request. The detail
+# this used to carry (the four modes, their field combinations, the
+# empty-list-vs-error rule) now lives in `_GET_GUIDE` below, fetched on demand
+# through `gotchas.get(tool="gotchas.get")` -- `handoffs/2026-10-02-
+# wiki-check-test.md` task 4; before this change this string alone was 1,128
+# characters, the second-largest description on the overseer's list.
 _GET_DESCRIPTION = (
-    "Read the gotchas recorded about a tool, or about the run itself: notes from earlier runs, "
-    "each titled with the condition it applies under. Tool results carry only the titles; this "
-    "returns the full text, the status (proposed = an unconfirmed experiment, accepted = "
-    "confirmed, rejected) and every recorded outcome. Four modes: pass 'id' for exactly one entry; "
-    "pass 'tool' (optionally 'kind', 'list', 'status') for that tool's entries, where a 'kind' also "
-    "returns the tool-wide entries that apply to every kind; pass 'general: true' (optionally "
-    "'list', 'status') for general entries, about process, timing, other agents or your own "
-    "wake-ups rather than any one tool ('kind' does not apply there); pass neither 'tool' nor "
-    "'general' for an index of which tools (and whether general entries exist) have entries. An "
-    "unknown tool or id is an error, never an empty list: an empty list means 'this real tool has "
-    "no such entries'. Rejected entries are left out of a listing by default, and the response "
-    "always states how many were left out, even when zero. Game knowledge belongs in doctrine, "
-    "through the Consultant, never here. Read-only."
+    "Read the gotchas recorded about a tool, about the run itself, or an index of which tools "
+    "have entries. Pass 'id' for one entry, 'tool' for that tool's entries, or 'general: true' "
+    "for entries about the run rather than any tool; pass neither for the index. Call "
+    "gotchas.get(tool='gotchas.get') for the full mode-by-mode guide."
 )
 
 _GET_SCHEMA = {
@@ -209,24 +218,16 @@ _GET_SCHEMA = {
     },
 }
 
+# Short, for the same reason as `_GET_DESCRIPTION` above: this string alone
+# was 1,450 characters, the largest description on the overseer's list. The
+# full two-mode explanation (field combinations, the title's required shape,
+# the append-only outcome rule) now lives in `_WRITE_GUIDE`, fetched through
+# gotchas.get(tool="gotchas.write").
 _WRITE_DESCRIPTION = (
-    "Record what you learned, for the runs after you. Two modes, chosen by whether 'id' is "
-    "passed. NEW ENTRY (no 'id'): pass 'title', 'body' and optionally 'tool', 'list', 'kind', "
-    "'call_excerpt'. The server chooses the id, marks it proposed and stamps your role, the run "
-    "and the time. The title must state the condition it applies under, in the form "
-    "'<condition>: <hazard>' (for example 'placing a workshop in a desert biome: <what goes "
-    "wrong>'), on one line, so a reader can tell from the title alone whether it applies. "
-    "'tool' is optional: give it for a note about one tool, or omit it for a general entry about "
-    "the run itself (process, timing, other agents, your own wake-ups) rather than any tool; a "
-    "general entry cannot have a 'kind'. Game knowledge (crop and water rules, and the like) is "
-    "never a gotcha: it belongs in doctrine, written through the Consultant, not here. 'list' is "
-    "gotcha (something worked out to keep in mind next time; the default), unexplained (an error "
-    "or mistake you could not explain) or vent (a complaint that the tool is not right for what "
-    "you wanted; never evidence). Near-duplicates, oversized text and unknown tools are refused "
-    "with reasons, and a run may write only a few new entries. OUTCOME (with 'id'): pass 'id' of "
-    "an existing gotcha and 'result' (worked or did_not_work), optionally 'note'. This appends an "
-    "outcome and never changes the entry; use it after you tried a proposed gotcha. One outcome "
-    "per run per entry."
+    "Record what you learned, for the runs after you: a new gotcha about a tool (or about the "
+    "run itself), or an outcome on one you already tried. Pass 'title' and 'body' for a new "
+    "entry, or 'id' and 'result' to record whether it worked. Call "
+    "gotchas.get(tool='gotchas.write') for the full guide."
 )
 
 _WRITE_SCHEMA = {
@@ -293,6 +294,169 @@ _WRITE_SCHEMA = {
             "description": f"Outcome mode, optional: a few words, at most {store.NOTE_MAX_CHARS} characters.",
         },
     },
+}
+
+# --------------------------------------------------------------------------
+# Guides (handoffs/2026-10-02-wiki-check-test.md task 4): the detail moved
+# out of `_GET_DESCRIPTION`/`_WRITE_DESCRIPTION` above, served the same way a
+# TOOLS.yaml-backed tool's `guide` is, through `gotchas.get(tool=...)`.
+# --------------------------------------------------------------------------
+
+_GET_GUIDE = ToolGuide(
+    arguments=(
+        GuideArgument(
+            name="id", required=False, default=None,
+            meaning=(
+                "One entry by its id, for example 'gotcha-0004'. Mutually exclusive with every "
+                "other argument. Returned whatever its status."
+            ),
+        ),
+        GuideArgument(
+            name="tool", required=False, default=None,
+            meaning=(
+                "A tool id, for example 'building.build'. Refused if it is not a real tool. "
+                "Mutually exclusive with 'general'."
+            ),
+        ),
+        GuideArgument(
+            name="general", required=False, default="false",
+            meaning=(
+                "Pass true (with no 'tool') to list general entries: a gotcha, unexplained error "
+                "or vent about the run itself (process, timing, other agents, your own "
+                "wake-ups), not about any particular tool. 'kind' does not apply there, since a "
+                "general entry has none."
+            ),
+        ),
+        GuideArgument(
+            name="kind", required=False, default=None,
+            meaning=(
+                "Only with 'tool': narrow to one kind token. Entries for that kind and tool-wide "
+                "entries are both returned; tool-wide ones apply to every kind."
+            ),
+        ),
+        GuideArgument(
+            name="list", required=False, default=None,
+            meaning="Only with 'tool' or 'general': gotcha, unexplained or vent. Omit for all three.",
+        ),
+        GuideArgument(
+            name="status", required=False, default=None,
+            meaning="Only with 'tool' or 'general': narrow to one status (proposed, accepted, rejected).",
+        ),
+        GuideArgument(
+            name="include_rejected", required=False, default="false",
+            meaning="Only with 'tool' or 'general': also return rejected entries.",
+        ),
+    ),
+    returns=(
+        "Four modes depending on which argument is given. An 'id' returns exactly one entry. A "
+        "'tool' returns that tool's entries (plus a <guide> element with its own operating detail, "
+        "when the tool has one) and includes tool-wide entries alongside any 'kind' given. "
+        "'general: true' returns entries about the run itself rather than any tool. Neither 'tool' "
+        "nor 'general' returns an index of which tools (and whether general entries exist) have at "
+        "least one entry. An unknown tool or id is an error, never an empty list, since an empty "
+        "list means 'this real tool has no such entries'. Rejected entries are left out of a "
+        "listing by default; the response always states how many were left out, even when zero."
+    ),
+    before_a_real_run=(),
+    traps=(
+        "Game knowledge (crop and water rules, and the like) belongs in doctrine, read through "
+        "the Consultant, never in a gotcha.",
+    ),
+)
+
+_WRITE_GUIDE = ToolGuide(
+    arguments=(
+        GuideArgument(
+            name="tool", required=False, default=None,
+            meaning=(
+                "New entry, optional: the tool id the note is about, for example "
+                "'building.build'. Omit for a general entry about the run itself, not any "
+                "particular tool (then 'kind' must also be omitted)."
+            ),
+        ),
+        GuideArgument(
+            name="title", required=False, default=None,
+            meaning=(
+                "New entry: '<condition>: <hazard>', one plain line, at most "
+                f"{store.TITLE_MAX_CHARS} characters, naming the condition clearly enough that a "
+                "reader can tell from the title alone whether it applies. Required together with "
+                "'body' unless 'id' is given (outcome mode)."
+            ),
+        ),
+        GuideArgument(
+            name="body", required=False, default=None,
+            meaning=(
+                f"New entry: the full note, {store.BODY_MIN_CHARS} to {store.BODY_MAX_CHARS} "
+                "characters: what happens, why if you know, and what to do instead. Never a raw "
+                "coordinate. Required together with 'title' unless 'id' is given."
+            ),
+        ),
+        GuideArgument(
+            name="list", required=False, default="gotcha",
+            meaning=(
+                "New entry: gotcha (something worked out to keep in mind next time), unexplained "
+                "(an error or mistake you could not explain) or vent (a complaint that the tool is "
+                "not right for what you wanted; never evidence)."
+            ),
+        ),
+        GuideArgument(
+            name="kind", required=False, default=None,
+            meaning=(
+                "New entry, optional: a kind token (never a display label) when the note applies "
+                "to one kind of a generic tool only. Omit for a note about the whole tool."
+            ),
+        ),
+        GuideArgument(
+            name="call_excerpt", required=False, default=None,
+            meaning=(
+                f"New entry, optional: a short excerpt of the call that prompted it, at most "
+                f"{store.EXCERPT_MAX_CHARS} characters."
+            ),
+        ),
+        GuideArgument(
+            name="id", required=False, default=None,
+            meaning=(
+                "Outcome mode: the id of an existing gotcha you tried. Switches the call from "
+                "writing a new entry to appending an outcome; do not combine with the new-entry "
+                "fields ('title', 'body', 'list', 'kind', 'call_excerpt')."
+            ),
+        ),
+        GuideArgument(
+            name="result", required=False, default=None,
+            meaning="Outcome mode, required: did the gotcha fix the problem? worked or did_not_work.",
+        ),
+        GuideArgument(
+            name="note", required=False, default=None,
+            meaning=f"Outcome mode, optional: a few words, at most {store.NOTE_MAX_CHARS} characters.",
+        ),
+    ),
+    returns=(
+        "Two modes, chosen by whether 'id' is passed. NEW ENTRY (no 'id'): needs 'title' and "
+        "'body'; the server chooses the id, marks it proposed, and stamps your role, the run and "
+        "the time. OUTCOME (with 'id'): needs 'result'; appends an outcome to that existing entry "
+        "and never changes it, so a gotcha stays append-only. Returns the full entry either way."
+    ),
+    before_a_real_run=(
+        "The title must state the condition it applies under, in the form '<condition>: "
+        "<hazard>' (for example 'placing a workshop in a desert biome: <what goes wrong>'), so a "
+        "reader can tell from the title alone whether it applies.",
+        "Game knowledge (crop and water rules, and the like) is never a gotcha; it belongs in "
+        "doctrine, written through the Consultant, not here.",
+    ),
+    traps=(
+        "Near-duplicates, oversized text and unknown tools are refused with reasons, and a run "
+        "may write only a few new entries.",
+        "Passing 'id' together with any new-entry field is refused: combine 'id' with only "
+        "'result' (required) and 'note' (optional).",
+    ),
+)
+
+# `mutates=False` on both, deliberately: `Tool.mutates` means "mutates fort
+# state" and nothing wider (see `dfmcp/queue_tools.py`), so an advisor may hold
+# `gotchas.write` without contradicting "advisors are read-only".
+NATIVE_TOOLS: Dict[str, NativeTool] = {
+    GOTCHAS_GET: NativeTool(id=GOTCHAS_GET, guide=_GET_GUIDE),
+    GOTCHAS_WRITE: NativeTool(id=GOTCHAS_WRITE, guide=_WRITE_GUIDE),
 }
 
 _GET_FIELDS = {"id", "tool", "general", "kind", "list", "status", "include_rejected"}
