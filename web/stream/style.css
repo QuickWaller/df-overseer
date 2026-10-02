@@ -492,3 +492,10 @@ a.tagchip:hover { border-color: var(--text); }
 .site .tpcol .guide { max-width: none; }
 .site .tpcol h2 .counts { display: inline-flex; gap: 6px; text-transform: none; letter-spacing: 0; }
 @media (max-width: 900px) { .site .tpcols { grid-template-columns: minmax(0, 1fr); } .site .tpcol { overflow: visible; } }
+
+/* Tool page: the right column holds still; only the open entry tab scrolls. */
+.site .tpcol:last-child { overflow: hidden; }
+.site .etabwrap { display: flex; flex-direction: column; flex: 1 1 auto; min-height: 0; }
+.site .etabwrap .ebody { flex: 1 1 auto; min-height: 0; overflow-y: auto; }
+.site dd.chips { display: flex; flex-wrap: wrap; gap: 4px 12px; }
+@media (max-width: 900px) { .site .tpcol:last-child { overflow: visible; } .site .etabwrap .ebody { overflow: visible; } }

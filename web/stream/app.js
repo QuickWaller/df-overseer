@@ -960,7 +960,7 @@ function gotchaEntryEl(g, { showTool } = {}) {
   }, [
     document.createTextNode((o.result === "worked" ? "worked" : o.result === "did_not_work" ? "didn't help" : o.result) + "  "),
     el("span", { style: `color:${roleCssVar(o.role)};font-weight:600`, text: roleTitle(o.role) }),
-    document.createTextNode("  " + (o.at || "")),
+    document.createTextNode("  " + (o.at || "").slice(0, 10)),
   ]));
   return el("div", { class: "entry" }, [
     el("div", { class: "ehead" }, head),
@@ -1630,6 +1630,30 @@ class SitePage {
     ]);
   }
 
+  /** Gotchas, vents and unexplained errors as three tabs with counts; only
+   * the open tab's list scrolls. The chosen tab is kept per tool. */
+  _entryTabs(gs, toolId) {
+    const lists = [["gotcha", "Gotchas"], ["vent", "Vents"], ["unexplained", "Unexplained"]];
+    this.toolEntryTab = this.toolEntryTab || {};
+    if (!this.toolEntryTab[toolId]) {
+      const first = lists.find(([k]) => gs.some((g) => g.list === k));
+      this.toolEntryTab[toolId] = first ? first[0] : "gotcha";
+    }
+    const cur = this.toolEntryTab[toolId];
+    const shown = gs.filter((g) => g.list === cur);
+    const empty = { gotcha: "No gotchas recorded yet.", vent: "No complaints yet.", unexplained: "Nothing unexplained." }[cur];
+    return el("div", { class: "etabwrap" }, [
+      el("div", { class: "tabs", role: "tablist" }, lists.map(([k, label]) => el("button", {
+        type: "button", role: "tab", class: "tabbtn", "aria-selected": String(k === cur),
+        onclick: () => { this.toolEntryTab[toolId] = k; this._render(); },
+        text: `${label} ${gs.filter((g) => g.list === k).length}`,
+      }))),
+      el("div", { class: "box ebody", role: "tabpanel" }, shown.length
+        ? shown.map((g) => gotchaEntryEl(g, { showTool: false }))
+        : [el("div", { class: "faint", text: empty })]),
+    ]);
+  }
+
   /** One tool on one screen: the guide on the left, everything else on the
    * right. Each column scrolls on its own only if its content is too long. */
   _viewTool(id) {
@@ -1664,10 +1688,7 @@ class SitePage {
             ]),
           ])]),
           pile ? el("div", { class: "warnbar", text: "Gotchas and vents are piling up on this tool: consider rebuilding it or rewriting its guide." }) : null,
-          el("h2", {}, [document.createTextNode("Gotchas, vents and unexplained errors "), el("span", { class: "counts" }, countChips(gs))]),
-          el("div", { class: "box" }, gs.length
-            ? gs.map((g) => gotchaEntryEl(g, { showTool: false }))
-            : [el("div", { class: "faint", text: "None recorded yet." })]),
+          this._entryTabs(gs, id),
         ]),
       ]),
     ]);
