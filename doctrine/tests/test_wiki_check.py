@@ -354,6 +354,34 @@ def test_cli_exit_codes(tmp_path, wall, capsys):
     import yaml
 
     doc.write_text(yaml.safe_dump([entry(100)]), encoding="utf-8")
-    assert wiki_check.main(["--db", str(path), "--doctrine", str(doc)]) == 0
-    assert wiki_check.main(["--db", str(tmp_path / "gone.sqlite3"), "--doctrine", str(doc)]) == 1
+    # The CLI's staleness check must use the injected clock, pinned at T0 (same
+    # moment the fixture pinned last_full_pull_utc), not the real wall clock: a
+    # fresh pull "just now" by the test's own clock must not read as stale no
+    # matter how much real wall-clock time has passed since T0 was written.
+    assert wiki_check.main(["--db", str(path), "--doctrine", str(doc)], clock=wall) == 0
+    assert (
+        wiki_check.main(
+            ["--db", str(tmp_path / "gone.sqlite3"), "--doctrine", str(doc)], clock=wall
+        )
+        == 1
+    )
     assert "UNAVAILABLE" in capsys.readouterr().out
+
+
+def test_cli_still_reports_very_stale_for_a_genuinely_old_pull(tmp_path, wall, capsys):
+    """The clock fix must not hide a real stale mirror: advance the injected
+    clock itself well past the staleness threshold and confirm the CLI still
+    exits 1 and says so."""
+    path = tmp_path / "m.sqlite3"
+    s = Store.open(path, clock=wall)
+    s.set_meta("last_full_pull_utc", iso(T0))
+    baseline(s, make_rev(revid=100))
+    s.close()
+    doc = tmp_path / "d.yaml"
+    import yaml
+
+    doc.write_text(yaml.safe_dump([entry(100)]), encoding="utf-8")
+    wall.advance(days=30)
+    assert wiki_check.main(["--db", str(path), "--doctrine", str(doc)], clock=wall) == 1
+    out = capsys.readouterr().out
+    assert "UNAVAILABLE" in out or "cannot_check" in out
