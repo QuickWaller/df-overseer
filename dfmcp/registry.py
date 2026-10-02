@@ -73,6 +73,18 @@ class Tool:
     verified: str                    # the manifest's raw string, "unverified" included
     knowledge_scope: str             # "player_visible" / "player_derivable" / "omniscient"
     notes: Optional[str] = None
+    # Added by the tool-descriptions-split (handoffs/2026-10-02-tool-
+    # descriptions-split.md): `summary` is one or two plain sentences, sent
+    # to the model as the MCP description (see dfmcp/tools.py's
+    # `_tool_description`/`_summary_text`); `guide` is the operating detail
+    # (arguments, defaults, cautions, traps) a caller fetches on demand
+    # through `gotchas.get` rather than having it sent on every request.
+    # Both optional (None until a command's entry is filled in, though every
+    # entry in scripts/dfhack/TOOLS.yaml now has both) -- `notes` keeps
+    # carrying developer history and is never sent to a model or shown on
+    # the public site.
+    summary: Optional[str] = None
+    guide: Optional[str] = None
     args: list = field(default_factory=list)
     build_order_item: Any = None
     # Raw optional tokens (as written in the signature, e.g. "[W H]") that the
@@ -339,6 +351,8 @@ def load_registry(path=DEFAULT_TOOLS_YAML, *, native_tools: Optional[Mapping[str
                 verified=str(spec.get("verified", "unverified")),
                 knowledge_scope=knowledge_scope,
                 notes=spec.get("notes"),
+                summary=spec.get("summary"),
+                guide=spec.get("guide"),
                 args=args,
                 build_order_item=build_order_item,
                 skippable=tuple(skippable),
