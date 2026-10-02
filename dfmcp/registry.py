@@ -60,6 +60,174 @@ class RegistryError(Exception):
 
 
 @dataclass(frozen=True)
+class GuideArgument:
+    """One argument row of a command's structured guide, in call order.
+
+    `name` is the display placeholder as written in the command signature
+    (e.g. "LEVEL", "on|off", a duplicate disambiguated as "UNIT_ID (1)"), not
+    the lower-cased, de-duplicated property name the JSON schema uses
+    (dfmcp/tools.py's ArgSpec.name) -- the guide is read by a person or
+    quoted on the website, never fed back into argv_for_call.
+    """
+
+    name: str
+    required: bool
+    default: Optional[str]
+    meaning: str
+
+
+@dataclass(frozen=True)
+class ToolGuide:
+    """A command's structured guide (handoffs/2026-10-02-structured-tool-
+    guides.md), replacing the one-paragraph-of-prose `guide` string the
+    previous stream (handoffs/2026-10-02-tool-descriptions-split.md) wrote.
+    Four fixed sections, each its own field so the user and the orchestrator
+    can edit one caveat at a time in TOOLS.yaml without touching the others,
+    and so the website can show them as a structured table rather than a
+    paragraph. Every list may be empty (a tool with no dry-run rule or no
+    known trap just has an empty list there); `returns` is the one field
+    that must always carry real text -- even a tool with no arguments and no
+    caveats still returns something, so there is always a sentence to write.
+    """
+
+    arguments: tuple  # of GuideArgument, in call order
+    returns: str
+    before_a_real_run: tuple  # of str
+    traps: tuple  # of str
+
+    def guide_text(self) -> str:
+        """Plain text, the four sections in this fixed order, for a
+        caller that cannot render structure (gotchas.get's <guide> element,
+        an agent's own reading). Headings exactly "Arguments", "Returns",
+        "Before a real run", "Traps"; each argument one line as
+        "NAME (required|optional, default X): meaning", matching this
+        handoff's own spec so the rendering never drifts from the schema.
+        """
+        lines = ["Arguments:"]
+        if self.arguments:
+            for arg in self.arguments:
+                if arg.required:
+                    status = "required"
+                elif arg.default:
+                    # An empty-string default (the Lua CLI's own "not given"
+                    # convention for a few arguments, e.g. MATERIAL_CHOICE) has
+                    # nothing useful to show in prose; falls through to the
+                    # bare "optional" below, same as a declared default of None.
+                    status = f"optional, default {arg.default}"
+                else:
+                    status = "optional"
+                lines.append(f"  {arg.name} ({status}): {arg.meaning}")
+        else:
+            lines.append("  None.")
+        lines.append("")
+        lines.append("Returns:")
+        lines.append(f"  {self.returns}")
+        lines.append("")
+        lines.append("Before a real run:")
+        if self.before_a_real_run:
+            for item in self.before_a_real_run:
+                lines.append(f"  - {item}")
+        else:
+            lines.append("  Nothing special.")
+        lines.append("")
+        lines.append("Traps:")
+        if self.traps:
+            for item in self.traps:
+                lines.append(f"  - {item}")
+        else:
+            lines.append("  None known.")
+        return "\n".join(lines)
+
+
+def _parse_guide_argument(script_name: str, command_sig: str, idx: int, raw: Any) -> GuideArgument:
+    if not isinstance(raw, dict):
+        raise RegistryError(
+            f"{script_name} {command_sig!r}: guide.arguments[{idx}] must be a mapping, "
+            f"got {type(raw).__name__}"
+        )
+    name = raw.get("name")
+    if not name or not isinstance(name, str):
+        raise RegistryError(
+            f"{script_name} {command_sig!r}: guide.arguments[{idx}] missing a string 'name'"
+        )
+    if "required" not in raw or not isinstance(raw.get("required"), bool):
+        raise RegistryError(
+            f"{script_name} {command_sig!r}: guide.arguments[{idx}] ({name!r}) needs a "
+            "boolean 'required'"
+        )
+    default = raw.get("default")
+    if default is not None and not isinstance(default, str):
+        raise RegistryError(
+            f"{script_name} {command_sig!r}: guide.arguments[{idx}] ({name!r}) 'default' "
+            f"must be a string or null, got {default!r}"
+        )
+    meaning = raw.get("meaning")
+    if not meaning or not isinstance(meaning, str):
+        raise RegistryError(
+            f"{script_name} {command_sig!r}: guide.arguments[{idx}] ({name!r}) missing a "
+            "string 'meaning'"
+        )
+    return GuideArgument(
+        name=name, required=bool(raw["required"]), default=default, meaning=" ".join(meaning.split())
+    )
+
+
+def _parse_string_list(script_name: str, command_sig: str, field_name: str, raw: Any) -> tuple:
+    if raw is None:
+        return ()
+    if not isinstance(raw, list) or not all(isinstance(item, str) and item for item in raw):
+        raise RegistryError(
+            f"{script_name} {command_sig!r}: guide.{field_name} must be a list of non-empty "
+            f"strings, got {raw!r}"
+        )
+    return tuple(" ".join(item.split()) for item in raw)
+
+
+def _parse_guide(script_name: str, command_sig: str, raw: Any) -> Optional[ToolGuide]:
+    """None when the command has no `guide` field at all (not yet converted
+    to the structured form); a RegistryError for anything present but
+    malformed, since a guide that loaded wrong would silently mislead every
+    caller who reads it. Every entry in the real scripts/dfhack/TOOLS.yaml
+    has a guide (handoffs/2026-10-02-structured-tool-guides.md); this stays
+    lenient on absence only so a test fixture may omit it."""
+    if raw is None:
+        return None
+    if not isinstance(raw, dict):
+        raise RegistryError(
+            f"{script_name} {command_sig!r}: guide must be a mapping (arguments/returns/"
+            f"before_a_real_run/traps), got {type(raw).__name__}"
+        )
+    extra = set(raw) - {"arguments", "returns", "before_a_real_run", "traps"}
+    if extra:
+        raise RegistryError(
+            f"{script_name} {command_sig!r}: guide has unknown key(s) {sorted(extra)}"
+        )
+    raw_arguments = raw.get("arguments")
+    if raw_arguments is None:
+        raw_arguments = []
+    if not isinstance(raw_arguments, list):
+        raise RegistryError(
+            f"{script_name} {command_sig!r}: guide.arguments must be a list, "
+            f"got {type(raw_arguments).__name__}"
+        )
+    arguments = tuple(
+        _parse_guide_argument(script_name, command_sig, i, item)
+        for i, item in enumerate(raw_arguments)
+    )
+    returns = raw.get("returns")
+    if not returns or not isinstance(returns, str):
+        raise RegistryError(f"{script_name} {command_sig!r}: guide.returns must be a non-empty string")
+    before_a_real_run = _parse_string_list(script_name, command_sig, "before_a_real_run", raw.get("before_a_real_run"))
+    traps = _parse_string_list(script_name, command_sig, "traps", raw.get("traps"))
+    return ToolGuide(
+        arguments=arguments,
+        returns=" ".join(returns.split()),
+        before_a_real_run=before_a_real_run,
+        traps=traps,
+    )
+
+
+@dataclass(frozen=True)
 class Tool:
     """One DFHack command, as described by TOOLS.yaml, under its canonical id."""
 
@@ -78,13 +246,17 @@ class Tool:
     # to the model as the MCP description (see dfmcp/tools.py's
     # `_tool_description`/`_summary_text`); `guide` is the operating detail
     # (arguments, defaults, cautions, traps) a caller fetches on demand
-    # through `gotchas.get` rather than having it sent on every request.
-    # Both optional (None until a command's entry is filled in, though every
-    # entry in scripts/dfhack/TOOLS.yaml now has both) -- `notes` keeps
-    # carrying developer history and is never sent to a model or shown on
-    # the public site.
+    # through `gotchas.get` rather than having it sent on every request. As
+    # of handoffs/2026-10-02-structured-tool-guides.md, `guide` is a
+    # structured ToolGuide (four fixed sections), not a single prose string;
+    # call its `guide_text()` for the rendered plain text gotchas.get and
+    # dfmcp/server.py's tool_guides map actually send. Both optional (None
+    # until a command's entry is filled in, though every entry in
+    # scripts/dfhack/TOOLS.yaml now has both) -- `notes` keeps carrying
+    # developer history and is never sent to a model or shown on the public
+    # site.
     summary: Optional[str] = None
-    guide: Optional[str] = None
+    guide: Optional[ToolGuide] = None
     args: list = field(default_factory=list)
     build_order_item: Any = None
     # Raw optional tokens (as written in the signature, e.g. "[W H]") that the
@@ -352,7 +524,7 @@ def load_registry(path=DEFAULT_TOOLS_YAML, *, native_tools: Optional[Mapping[str
                 knowledge_scope=knowledge_scope,
                 notes=spec.get("notes"),
                 summary=spec.get("summary"),
-                guide=spec.get("guide"),
+                guide=_parse_guide(script_name, command_sig, spec.get("guide")),
                 args=args,
                 build_order_item=build_order_item,
                 skippable=tuple(skippable),

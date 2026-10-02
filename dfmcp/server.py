@@ -510,9 +510,12 @@ def build_mcp_server(
     # that tool's gotchas, so reading both is one call. A native tool has no
     # `.guide` attribute at all (duck-typed, same as `.describe`), so this
     # is built with getattr rather than assuming every registry entry is a
-    # TOOLS.yaml-backed Tool.
+    # TOOLS.yaml-backed Tool. `.guide` is a structured ToolGuide, not a bare
+    # string, since handoffs/2026-10-02-structured-tool-guides.md; `.guide_text()`
+    # renders its four fixed sections as the same plain text gotchas.get has
+    # always sent.
     tool_guides = {
-        t.id: t.guide for t in registry.all() if getattr(t, "guide", None)
+        t.id: t.guide.guide_text() for t in registry.all() if getattr(t, "guide", None)
     }
     guidance = ToolGuidance(confidence, gotchas_db_path) if confidence is not None else None
 

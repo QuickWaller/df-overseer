@@ -142,6 +142,31 @@ def test_area_of_unknown_prefix_is_other():
     assert site_data.area_of("madeup.verb") == "Other"
 
 
+def test_tools_json_guide_sections_match_the_rendered_guide(registry, roster):
+    """handoffs/2026-10-02-structured-tool-guides.md task 3: every
+    TOOLS.yaml-backed tool carries both the rendered plain-text `guide`
+    (unchanged shape) and the structured `guide_sections` beside it, so the
+    website can show a table instead of one paragraph. A native tool (no
+    structured guide at all) gets `guide_sections: None`, same as its
+    existing `guide: None`."""
+    tools = site_data.build_tools_json(registry, roster)
+    by_id = {t["id"]: t for t in tools["tools"]}
+
+    check = by_id["connectivity.check"]
+    assert check["guide"]
+    assert check["guide_sections"]["arguments"][0]["name"] == "FROM"
+    assert check["guide_sections"]["arguments"][0]["required"] is True
+    assert check["guide_sections"]["returns"]
+    assert isinstance(check["guide_sections"]["before_a_real_run"], list)
+    assert isinstance(check["guide_sections"]["traps"], list)
+    assert check["guide_sections"]["traps"]  # connectivity.check has a known trap
+
+    native = by_id.get("queue.propose")
+    if native is not None:
+        assert native["guide"] is None
+        assert native["guide_sections"] is None
+
+
 # ---------------------------------------------------------------------------
 # gotchas.json
 # ---------------------------------------------------------------------------
