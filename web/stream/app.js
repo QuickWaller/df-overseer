@@ -1742,8 +1742,6 @@ class SitePage {
       el("div", { class: "small muted", text: "Takes over the board, and starts a new chronicle. Same agents, tools and gotchas, with everything they learned." }),
     ]));
     return el("div", {}, [
-      el("div", { class: "ptitle" }, [el("h1", { text: "Forts" }), el("span", { class: "scope", text: "all forts" })]),
-      el("p", { class: "lede", text: "Every fort the agents have run, each with its chronicle. The board always shows the fort running now. Forts end; the agents, tools and gotchas carry on to the next one." }),
       el("div", { class: "grid scrollbody" }, cards),
     ]);
   }
@@ -1832,8 +1830,7 @@ class SitePage {
     const seasons = fx.seasons || [];
     const EV = fx.event_kinds || {};
     return el("div", {}, [
-      el("div", { class: "ptitle" }, [el("h1", { text: "Chronicle" }), this._exampleTag()]),
-      el("p", { class: "lede", text: "The fort's story, season by season, as the Chronicler will tell it. This is example data: the Chronicler is not enabled yet, so none of it reflects the real fort." }),
+      el("div", {}, [this._exampleTag()]),
       el("div", { class: "sec" }, [el("h2", { text: "The fort so far" }), el("div", { class: "charts" }, (fx.vitals || []).map((v) => this._sparkChart(v)))]),
       ...seasons.map((s, i) => {
         const all = this.showAllSeasons.has(i);
