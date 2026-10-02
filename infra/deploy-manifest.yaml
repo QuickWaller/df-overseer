@@ -181,6 +181,8 @@ targets:
       - dfqueue/feed.py
       - dfqueue/feed_status.py
       - dfqueue/site_data.py
+      - dfqueue/charter_changes.json   # charter history; the VM has no git
+      - web/stream/site-text.yaml      # role labels, map ring, past forts
     exclude: []
     leave_alone:
       - /etc/stream-publisher/env    # NOT inside destination_root; the unit's
@@ -313,6 +315,7 @@ targets:
       - web/stream/index.html
       - web/stream/app.js
       - web/stream/style.css
+      - web/stream/fixtures/chronicle-demo.json   # the Chronicle stub's example data
     exclude: []
     leave_alone:
       - /srv/stream/data/            # the publisher's own push target
@@ -320,7 +323,7 @@ targets:
                                        # over the restricted rsync key);
                                        # deploy.py for relay-web must never
                                        # touch this path.
-      - /srv/stream/web-operator/    # the operator projection's static
+      - /srv/stream/web-operator/    # its own target below (relay-web-operator); the operator projection's static
                                        # assets; same files today but served
                                        # at a different Caddy path behind
                                        # Cloudflare Access -- out of scope for
@@ -339,3 +342,23 @@ targets:
       predates web/stream/*'s current content, which another stream is
       actively editing today. Expected, not alarming, but real drift.
       web/stream/* is that other stream's surface and is not touched here.
+
+  relay-web-operator:
+    host: relay
+    destination_root: /srv/stream/web-operator
+    flatten: true   # same layout as relay-web, plus operator.html; served on
+                     # the admin address behind Cloudflare Access
+    paths:
+      - web/stream/index.html
+      - web/stream/operator.html
+      - web/stream/app.js
+      - web/stream/style.css
+      - web/stream/fixtures/chronicle-demo.json
+    exclude: []
+    leave_alone:
+      - /srv/stream/data/
+    restart: []
+    post_deploy: []
+    verified: >-
+      2026-10-02, live: /srv/stream/web-operator holds index.html,
+      operator.html, app.js and style.css (orchestrator, read-only listing).

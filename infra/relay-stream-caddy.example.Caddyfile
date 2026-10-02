@@ -23,7 +23,7 @@
 
 http://:8090 {
 	bind 127.0.0.1
-	@page path / /index.html /app.js /style.css
+	@page path / /index.html /app.js /style.css /chronicle-demo.json
 	handle @page {
 		header Cache-Control "no-cache"
 		rewrite / /index.html
@@ -48,7 +48,7 @@ http://:8090 {
 
 http://:8091 {
 	bind 127.0.0.1
-	@page path / /operator.html /index.html /app.js /style.css
+	@page path / /operator.html /index.html /app.js /style.css /chronicle-demo.json
 	handle @page {
 		header Cache-Control "no-cache"
 		rewrite / /operator.html

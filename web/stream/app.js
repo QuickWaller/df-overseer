@@ -1113,7 +1113,10 @@ class SitePage {
    * elsewhere. */
   async _ensureChronicleFixture() {
     if (this.chronicleFixture) return;
-    this.chronicleFixture = await fetchJson("fixtures/chronicle-demo.json").catch(() => null);
+    // Served beside the page on the relay (flattened), under fixtures/ locally.
+    this.chronicleFixture = await fetchJson("chronicle-demo.json")
+      .catch(() => fetchJson("fixtures/chronicle-demo.json"))
+      .catch(() => null);
   }
 
   _route() {
