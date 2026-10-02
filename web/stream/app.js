@@ -1245,7 +1245,6 @@ class SitePage {
     }
     const mapWrap = el("div", { id: "site-mapwrap" }, [this._agentMapSvg()]);
     return el("div", {}, [
-      el("div", { class: "ptitle" }, [el("h1", { text: "Agents" }), el("span", { class: "scope", text: "all forts" })]),
       el("div", { class: "asplit" }, [
         el("div", { class: "box amapbox" }, [
           el("div", { class: "mapstage" }, [mapWrap]),
