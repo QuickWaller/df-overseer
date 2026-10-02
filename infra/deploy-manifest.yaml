@@ -1,0 +1,321 @@
+# infra/deploy-manifest.yaml
+#
+# The single list of what this repo deploys, where, and how. Built
+# 2026-10-02 (handoffs/2026-10-02-deploy-and-drift-system.md) from what is
+# ACTUALLY deployed, read live and read-only against each host
+# (`scripts/vm-ssh.sh <host> '...'`, listings/sha256sum/systemctl
+# show/cat only) -- not from what a handoff once proposed. Where a path or
+# fact below could not be directly confirmed this way, it says so in a
+# comment rather than guessing.
+#
+# `scripts/deploy.py` and `scripts/drift_check.py` are the only code that
+# reads this file. Per CLAUDE.md: never a hostname, address, token, or VMID
+# in here -- only the `vm-ssh.sh` target name (`df`, `openclaw`, `relay`)
+# and, where a destination root is itself host-specific (VM 106's checkout
+# directory name is masked by `vm-ssh.sh`'s own address-leak guard even
+# though it is not a secret), an env-var placeholder resolved from the
+# gitignored root `.env` at deploy/drift-check time, e.g.
+# `${OPENCLAW_CHECKOUT_ROOT}`. VM 103's own paths are already named in
+# committed docs (`docs/DRIFT-AUDIT-2026-09-28.md`,
+# `infra/dfmcp-server.service.example`) and are written out literally here
+# for the same reason: they identify no host, only a directory layout on
+# whichever host `df`/`relay` resolve to.
+#
+# Schema, per target:
+#   host:              vm-ssh.sh target name: df | openclaw | relay
+#   destination_root:   absolute path on that host, or an ${ENV_VAR} placeholder
+#   paths:              list of repo-relative globs/paths this target carries.
+#                       Directories are deployed whole (minus `exclude`).
+#   exclude:            globs under `paths` that are never shipped even though
+#                       they live inside a shipped directory (tests, __pycache__,
+#                       gitignored data files the destination already excludes
+#                       by not being tracked in the first place).
+#   leave_alone:        destination-relative paths `deploy.py` must never touch,
+#                       because they are live state, not shipped code.
+#   restart:            systemd units to restart after a successful deploy.
+#                       Each entry is {service, risk}. risk: "low" units
+#                       restart under `deploy.py --yes`; risk: "high" units are
+#                       NEVER restarted by deploy.py, which only prints the
+#                       exact manual command and the doc to follow first.
+#   post_deploy:        steps beyond "copy files" and "restart", in order.
+#   verified:           how this target's shape was confirmed, so a future
+#                       reader can tell "read live 2026-10-02" from "inferred".
+
+schema_version: 1
+
+targets:
+
+  vm103-dfmcp:
+    host: df
+    destination_root: /opt/df/dfmcp-smoke
+    paths:
+      - agents/
+      - dfmcp/
+      - dfqueue/
+      - doctrine/
+      - dfseries/
+      - gotchas/
+      - learning/
+      - production/
+      - scripts/dfhack/            # TOOLS.yaml (the registry source) AND the
+                                     # .lua files themselves -- dfmcp/registry.py
+                                     # resolves TOOLS.yaml relative to the
+                                     # checkout root, so the .lua bodies must
+                                     # exist here too even though they are ALSO
+                                     # deployed separately to the game's own
+                                     # hack/scripts/ (see vm103-dfhack-scripts
+                                     # below -- same source files, two
+                                     # destinations, by design, not a duplicate
+                                     # bug).
+      - scripts/stream_publisher.py
+    exclude:
+      - "**/tests/"
+      - "**/__pycache__/"
+      - "dfqueue/*.sqlite3"         # gitignored; never tracked, so never shipped
+    leave_alone:
+      - .env
+      - dfseries.bak-*/             # a point-in-time backup directory living
+                                     # beside dfseries/ at the destination;
+                                     # confirmed present (dfseries.bak-20260919T033841)
+                                     # but not repo-sourced -- deploy.py must not
+                                     # delete or overwrite it.
+      - thirst_timer/               # present live at the destination
+                                     # (2026-10-02 listing) with NO matching
+                                     # repo directory. Unexplained: no handoff
+                                     # found that created it. Left alone here
+                                     # rather than guessed about; flagged again
+                                     # in the Result section below. A future
+                                     # drift pass should resolve what it is
+                                     # before deciding whether it is cruft to
+                                     # remove (a human decision, never an
+                                     # automatic deploy-time deletion).
+    restart:
+      - service: dfmcp-server.service
+        risk: low
+        why: >-
+          dfmcp/server.py loads the tool registry, roster, and gotcha-store
+          confidence file once at startup (dfmcp/server.py main()); none of
+          that is hot-reloaded, so any change under dfmcp/, agents/, or
+          scripts/dfhack/TOOLS.yaml needs a restart to take effect. Low risk:
+          stateless server, no in-flight game-state write it could corrupt by
+          restarting (dfmcp/dfhack_client.py's connection pool self-heals
+          across a DFHack restart per infra/dfmcp-server.service.example's
+          own header, and this is the reverse direction, MCP server over
+          DFHack, which is even less coupled).
+    post_deploy:
+      - "doctrine/ changes do NOT need this restart -- dfmcp/doctrine_tools.py
+         re-reads doctrine/seed.yaml on every call (infra/local.example.env's
+         MCP_SERVER_DOCTRINE_PATH comment); restarting for a doctrine-only
+         change is unnecessary but harmless."
+    verified: >-
+      2026-10-02, live: systemctl show dfmcp-server.service confirms
+      WorkingDirectory=/opt/df/dfmcp-smoke, ActiveState=active,
+      UnitFileState=enabled. `ls /opt/df/dfmcp-smoke` lists exactly
+      agents, dfmcp, dfqueue, dfseries, dfseries.bak-20260919T033841,
+      doctrine, gotchas, learning, production, scripts, thirst_timer.
+      `ls /opt/df/dfmcp-smoke/scripts` lists exactly dfhack/ and
+      stream_publisher.py (confirms scripts/ is NOT shipped whole -- only
+      these two entries). sha256 spot-checks: agents/ROSTER.yaml and
+      dfmcp/README.md both compared against committed HEAD (see Result).
+
+  vm103-dfhack-scripts:
+    host: df
+    destination_root: /opt/df/game/hack/scripts
+    paths:
+      - scripts/dfhack/*.lua
+    exclude:
+      - scripts/dfhack/TOOLS.yaml   # registry source, not a DFHack script;
+                                     # belongs only to vm103-dfmcp above
+    leave_alone: []
+    restart:
+      - service: df-fortress.service
+        risk: high
+        why: >-
+          DFHack loads scripts/*.lua fresh only when its own process starts;
+          there is no live "reload scripts" RPC used anywhere in this repo's
+          history (checked: no handoff, decision, or doc names one). Taking a
+          new .lua live therefore means restarting the GAME process, not a
+          side service -- this is a live-save-risk operation, not a plain
+          service bounce. docs/ARMOK-RULINGS.md rules reloading a save
+          "allowed for the test harness only, banned for any playing agent",
+          and decisions/DECISIONS.md 2026-09-16 records the actual procedure
+          a human followed to do this safely once: quicksave, poll the save
+          slot's mtime rather than trust the call's own return, copy the
+          verified slot to a timestamped backup, THEN restart, THEN confirm
+          identity after (citizen count, year/tick, labor flags) matches
+          before trusting the fort came back clean.
+    post_deploy:
+      - "deploy.py NEVER restarts df-fortress.service itself (see risk: high
+         above). It copies the .lua files and stops; restarting the game to
+         pick them up is a separate, explicitly human-run step following
+         decisions/DECISIONS.md 2026-09-16's procedure, never automated."
+    verified: >-
+      2026-10-02, live: docs/DRIFT-AUDIT-2026-09-28.md already confirmed this
+      exact destination_root and that the live copies there are byte-identical
+      to committed HEAD modulo one trailing newline (a prior deploy-method
+      artifact, not a content difference). Re-derived the restart riskiness
+      from decisions/DECISIONS.md 2026-09-16 and docs/ARMOK-RULINGS.md; not
+      independently re-hashed this pass (see Result for what WAS re-hashed
+      2026-10-02).
+
+  vm103-stream-publisher:
+    host: df
+    destination_root: /opt/df/dfmcp-smoke
+    paths:
+      - scripts/stream_publisher.py
+      - dfqueue/feed.py
+      - dfqueue/feed_status.py
+      - dfqueue/site_data.py
+    exclude: []
+    leave_alone:
+      - /etc/stream-publisher/env    # NOT inside destination_root; the unit's
+                                       # own EnvironmentFile, outside the code
+                                       # checkout on purpose (same reasoning as
+                                       # MCP_SERVER_QUEUE_DB: a code redeploy
+                                       # must never be able to resolve a
+                                       # relative path onto live config).
+    restart:
+      - service: stream-publisher.timer
+        risk: low
+        why: >-
+          A oneshot unit triggered by its own timer every 5s
+          (infra/stream-publisher.timer.example); EnvironmentFile= is re-read
+          per invocation, and the next tick picks up new code with no
+          in-flight state to lose. A restart is not even strictly required --
+          the next scheduled tick runs the new file -- but restarting makes
+          the "new code is live" moment observable rather than waiting up to
+          5s.
+    post_deploy: []
+    verified: >-
+      2026-10-02, live: stream-publisher.timer is enabled and active
+      (waiting), triggering stream-publisher.service on a 5s cadence since
+      2026-10-01 01:02:40 UTC; the most recent run (2026-10-02 01:08:04 UTC)
+      exited 0/SUCCESS. Its unit file's own header comment reads "deployed
+      2026-10-01". This contradicts web/stream/README.md's current heading
+      ("Slice S1: operator live (prepared offline, not deployed)") -- see
+      Result and the doc-audit note below; web/stream/* is another stream's
+      surface, not edited here.
+
+  vm106-agents:
+    host: openclaw
+    destination_root: ${OPENCLAW_CHECKOUT_ROOT}
+    # OPENCLAW_CHECKOUT_ROOT: new key, added to infra/local.example.env by
+    # this stream. The real directory name on VM 106 could not be printed
+    # here even if it mattered for the manifest's own correctness --
+    # vm-ssh.sh's address-leak scrubber masks any `df-[a-z0-9-]+`-shaped
+    # string in SSH output, which this checkout's own name matches (the
+    # same false-positive docs/DRIFT-AUDIT-2026-09-28.md hit on the Lua
+    # script filenames). Rather than fight the scrubber to print a
+    # non-secret path, the manifest names it the same way every other
+    # host-specific value in this repo is named: an env var, resolved from
+    # the gitignored .env, never hardcoded.
+    paths:
+      - agents/
+    exclude:
+      - "**/tests/"
+    leave_alone:
+      - deploy-backup-*/            # timestamped backups already present
+                                     # (deploy-backup-2026-09-22-mvp,
+                                     # deploy-backup-2026-09-30-charters) --
+                                     # confirms a deploy step already makes
+                                     # one of these before overwriting; keep
+                                     # doing so (see post_deploy below), never
+                                     # delete an existing one.
+      - conductor/                  # vm106-conductor's own tree, see below
+      - .venv-conductor/
+      - conductor.env
+    restart: []        # agents/ is read at openclaw agent-exec time, not by a
+                       # resident process that needs bouncing; no service to
+                       # restart for a charter-only change.
+    post_deploy:
+      - "Copy the existing agents/ tree to deploy-backup-<date>-<label>/
+         before overwriting, matching the convention already visible on the
+         host (two such backups exist from 2026-09-22 and 2026-09-30)."
+    verified: >-
+      2026-10-02, live: sha256 of all 21 files under agents/ on VM 106
+      compared against committed HEAD. 7 match exactly (ROSTER.yaml,
+      conductor/model.yaml, conductor/role.md, chronicler/role.md,
+      marshal/role.md, consultant/role.md, README.md); 14 differ (see
+      Result for the full table) -- VM 106's agents/ has been live since a
+      2026-09-22 batch with two later partial touch-ups (conductor/
+      quartermaster role.md around 2026-09-25 and again ~2026-09-30,
+      conductor/tools.yaml once around 2026-09-22) and has NOT had a full
+      agents/ redeploy since. This is a new finding: docs/DRIFT-AUDIT-2026-09-28.md
+      only audited VM 103's copy of agents/, not VM 106's.
+
+  vm106-conductor:
+    host: openclaw
+    destination_root: ${OPENCLAW_CHECKOUT_ROOT}
+    paths:
+      - conductor/
+    exclude:
+      - "**/tests/"
+      - "**/__pycache__/"
+    leave_alone:
+      - conductor.env
+      - .venv-conductor/
+    restart:
+      - service: conductor.service
+        risk: high
+        why: >-
+          conductor.service is the ONE role classed `kind: system`
+          (agents/ROSTER.yaml) and holds clock.pause/resume/arm/disarm and
+          fort.quicksave -- tools no other role may ever hold
+          (dfmcp/roles.py SYSTEM_CLASS_TOOL_IDS). It is currently installed,
+          disabled, and inactive, run only by hand via a transient unit
+          mirroring it (CLAUDE.md status block, confirmed again live
+          2026-10-02: UnitFileState=disabled, ActiveState=inactive). Treating
+          a restart of this unit as low-risk would be wrong even though it is
+          currently off: enabling or starting it is the thing a real
+          conductor deploy is FOR, and that is exactly the kind of decision
+          this repo's rules reserve for the user ("a real supervised
+          conductor run... waits on the user", CLAUDE.md top status block).
+    post_deploy:
+      - "deploy.py copies conductor/ code and stops. It never runs
+         `systemctl enable` or `systemctl start` on conductor.service --
+         that go-ahead is the user's, separately, each time, per this
+         project's existing rule that the conductor has never run as its
+         installed systemd service, only manual --once runs."
+    verified: >-
+      2026-10-02, live: systemctl show conductor.service confirms
+      WorkingDirectory matches ${OPENCLAW_CHECKOUT_ROOT}, ExecStart runs
+      `python -m conductor.service --dry-run`, ActiveState=inactive,
+      UnitFileState=disabled -- consistent with CLAUDE.md's "disabled and
+      inactive, run by hand only" status. conductor/'s own file-level drift
+      against repo HEAD was not sha256-checked this pass (budget went to
+      agents/, which both drifted targets share a host with); a follow-up
+      drift_check.py run will cover it going forward.
+
+  relay-web:
+    host: relay
+    destination_root: /srv/stream/web-public
+    paths:
+      - web/stream/index.html
+      - web/stream/app.js
+      - web/stream/style.css
+    exclude: []
+    leave_alone:
+      - /srv/stream/data/            # the publisher's own push target
+                                       # (vm103-stream-publisher writes here
+                                       # over the restricted rsync key);
+                                       # deploy.py for relay-web must never
+                                       # touch this path.
+      - /srv/stream/web-operator/    # the operator projection's static
+                                       # assets; same files today but served
+                                       # at a different Caddy path behind
+                                       # Cloudflare Access -- out of scope for
+                                       # this manifest entry until
+                                       # web/stream/README.md's own S1 deploy
+                                       # steps 5-9 are re-verified against
+                                       # what is actually live (see Result).
+    restart: []        # static files served by Caddy; no reload needed for a
+                       # plain file replace (Caddy re-reads from disk per
+                       # request for static file_server handlers).
+    post_deploy: []
+    verified: >-
+      2026-10-02, live: /srv/stream/web-public/{index.html,app.js,style.css}
+      exist on the relay and Caddy is active. sha256 of all three against
+      committed HEAD: all three DIFFER (see Result) -- the relay's copy
+      predates web/stream/*'s current content, which another stream is
+      actively editing today. Expected, not alarming, but real drift.
+      web/stream/* is that other stream's surface and is not touched here.
