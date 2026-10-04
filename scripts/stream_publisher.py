@@ -148,7 +148,7 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from dfqueue import feed, feed_status, site_data  # noqa: E402  (path setup must run first)
+from dfqueue import feed, feed_status, live, site_data  # noqa: E402  (path setup must run first)
 
 DEFAULT_ENV_PATH = REPO_ROOT / ".env"
 DEFAULT_HEARTBEAT_INTERVAL_SECONDS = 60
@@ -216,6 +216,12 @@ class PublisherConfig:
     # one is optional: an export with no gotchas store still publishes the
     # roster and tool catalog, just with an empty gotchas.json.
     gotchas_db: Optional[str] = None
+    # The "who is awake" live view (handoffs/2026-10-05-board-order-year-
+    # live-view.md): read `dfmcp-server`'s call journal on this host, and/or
+    # a local copy of the conductor's runtime root. Both off by default, so
+    # the status.json stays the plain placeholder until a deploy turns them on.
+    live_journal: bool = False
+    conductor_dir: Optional[str] = None
 
     def resolved_fort_id(self) -> str:
         """`fort_id` when explicitly configured, else the queue file's own
@@ -312,6 +318,13 @@ def config_from_env(env: Mapping[str, str], *, validate: bool = True) -> Publish
         kwargs["fort_status"] = env["STREAM_PUBLISHER_FORT_STATUS"]
     if env.get("STREAM_PUBLISHER_GOTCHAS_DB"):
         kwargs["gotchas_db"] = env["STREAM_PUBLISHER_GOTCHAS_DB"]
+
+    if env.get("STREAM_PUBLISHER_LIVE_JOURNAL"):
+        kwargs["live_journal"] = _parse_bool(
+            env["STREAM_PUBLISHER_LIVE_JOURNAL"], "STREAM_PUBLISHER_LIVE_JOURNAL"
+        )
+    if env.get("STREAM_PUBLISHER_CONDUCTOR_DIR"):
+        kwargs["conductor_dir"] = env["STREAM_PUBLISHER_CONDUCTOR_DIR"]
 
     public_relay = _relay_from_env(env, "PUBLIC")
     operator_relay = _relay_from_env(env, "OPERATOR")
@@ -479,6 +492,7 @@ def _site_hash_payload(agents_json: dict, tools_json: dict, gotchas: list) -> di
 
 def run_cycle(
     cfg: PublisherConfig, *, now: Optional[float] = None, pusher: Optional[Pusher] = None,
+    journal_reader: Optional[Callable[[], Optional[list]]] = None,
 ) -> dict[str, Any]:
     """Build both projections from the live queue, write them to
     `cfg.staging_dir`, and push whichever side needs pushing. Returns a
@@ -507,6 +521,18 @@ def run_cycle(
     # only status.json this script can honestly produce, same as
     # scripts/export_stream_feed.py.
     status = feed.build_placeholder_status()
+    live_public = live_operator = None
+    if cfg.live_journal or cfg.conductor_dir:
+        lines = (journal_reader or live.read_journal_lines)() if cfg.live_journal else []
+        calls = None if lines is None else live.parse_call_lines(lines)
+        conductor = live.read_conductor_dir(cfg.conductor_dir)
+        live_public = live.build_live(calls, now, public=True, conductor=conductor)
+        live_operator = live.build_live(calls, now, public=False, conductor=conductor)
+    status_public = status if live_public is None else {**status, "live": live_public}
+    status_operator = status if live_operator is None else {**status, "live": live_operator}
+    # The hash sees `live` without its clock-ticking fields (live.live_hash_payload).
+    hash_status_public = status if live_public is None else {**status, "live": live.live_hash_payload(live_public)}
+    hash_status_operator = status if live_operator is None else {**status, "live": live.live_hash_payload(live_operator)}
 
     # Project-wide data (handoffs/2026-10-02-site-agents-tools.md): the same
     # across every fort, read fresh each cycle like everything else here
@@ -537,14 +563,14 @@ def run_cycle(
     operator_out = staging / "operator"
     feed.write_fort_feed(
         operator_items, operator_out, fort_id=fort_id, fort_name=cfg.fort_name,
-        fort_status=cfg.fort_status, projects=operator_projects, status=status,
+        fort_status=cfg.fort_status, projects=operator_projects, status=status_operator,
     )
     site_data.write_site_data(
         operator_out, agents_json=agents_json, tools_json=tools_json,
         gotchas_entries=gotchas_entries, public=False,
     )
     operator_hash = compute_content_hash(
-        operator_items, operator_projects, status,
+        operator_items, operator_projects, hash_status_operator,
         site=_site_hash_payload(agents_json, tools_json, operator_gotchas),
     )
     if kill_switch_active:
@@ -575,7 +601,7 @@ def run_cycle(
     else:
         feed.write_fort_feed(
             public_items, public_out, fort_id=fort_id, fort_name=cfg.fort_name,
-            fort_status=cfg.fort_status, projects=public_projects, status=status,
+            fort_status=cfg.fort_status, projects=public_projects, status=status_public,
         )
     # Local staging is always written (same "keeps being written either
     # way" convention `write_fort_feed` above already follows) -- but when
@@ -589,7 +615,7 @@ def run_cycle(
     public_hash = compute_content_hash(
         [] if public_off else public_items,
         {"thread_to_project": {}, "projects": {}} if public_off else public_projects,
-        None if public_off else status,
+        None if public_off else hash_status_public,
         site=None if public_off else _site_hash_payload(agents_json, tools_json, public_gotchas),
     )
 
@@ -654,6 +680,16 @@ def _build_arg_parser() -> argparse.ArgumentParser:
         help="a live gotcha-store SQLite file (read-only); omit for an honest empty "
              "gotchas.json. STREAM_PUBLISHER_GOTCHAS_DB",
     )
+    parser.add_argument(
+        "--live-journal", action="store_true", default=None,
+        help="build the who-is-awake view from dfmcp-server's journal on this host "
+             "(needs journal read access). STREAM_PUBLISHER_LIVE_JOURNAL",
+    )
+    parser.add_argument(
+        "--conductor-dir", default=None,
+        help="a local copy of the conductor's runtime root (status.json, cycles/): adds wake "
+             "reason, run duration and (operator only) cost to the live view. STREAM_PUBLISHER_CONDUCTOR_DIR",
+    )
     parser.add_argument("--once", action="store_true", help="run a single cycle and exit (the systemd-timer-triggered mode, infra/stream-publisher.timer.example)")
     parser.add_argument("--env-file", default=str(DEFAULT_ENV_PATH), help="path to a .env file to merge under the real environment (default: repo root .env)")
     return parser
@@ -685,6 +721,10 @@ def _config_from_args(args: argparse.Namespace) -> PublisherConfig:
         overrides["fort_status"] = args.fort_status
     if args.gotchas_db:
         overrides["gotchas_db"] = args.gotchas_db
+    if args.live_journal:
+        overrides["live_journal"] = True
+    if args.conductor_dir:
+        overrides["conductor_dir"] = args.conductor_dir
 
     def _relay_override(prefix: str) -> Optional[RelayTarget]:
         host = getattr(args, f"{prefix}_relay_host")

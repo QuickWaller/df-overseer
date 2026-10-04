@@ -21,6 +21,15 @@
  */
 
 const POLL_MS = 5000;
+const LIVE_POLL_MS = 4000;
+
+/** 372 -> "6m 12s", 45 -> "45s", 3700 -> "1h 1m". */
+function formatElapsed(totalSeconds) {
+  const s = Math.max(0, Math.floor(totalSeconds));
+  if (s < 60) return `${s}s`;
+  if (s < 3600) return `${Math.floor(s / 60)}m ${String(s % 60).padStart(2, "0")}s`;
+  return `${Math.floor(s / 3600)}h ${Math.floor((s % 3600) / 60)}m`;
+}
 
 const ROLE_COLORS = {
   overseer: "var(--role-overseer)",
@@ -133,14 +142,22 @@ function shortDate(gameDate) {
   return `${m[1]}-${m[2]}-${m[3]}`;
 }
 
-/** Group a project's conversation items by game day, oldest day first,
- * original (seq) order preserved within a day; items with no game date
- * ("Happening now"-style lines) form their own trailing group. Mirrors the
- * mockup's `byDay`. */
-function groupByDay(items) {
+function cmpDay(a, b) {
+  const x = dayKey(a), y = dayKey(b);
+  return x === y ? 0 : x < y ? -1 : 1;
+}
+
+/** Group conversation items by game day, NEWEST day first and newest entry
+ * first within a day (the user's call 2026-10-05); items with no game date
+ * ("Now"-style lines) form their own group at the very top. Feed (seq)
+ * position breaks ties, so a ruling, which always follows its proposal,
+ * lands above it and carries a "re:" tag (`_replyTag`). Pass
+ * `newestFirst = false` for the old oldest-first order. */
+function groupByDay(items, newestFirst = true) {
   const groups = [];
+  const dir = newestFirst ? -1 : 1;
   const withKey = items.map((item, i) => [item, i]);
-  withKey.sort((a, b) => dayKey(a[0].game_date) - dayKey(b[0].game_date) || a[1] - b[1]);
+  withKey.sort((a, b) => dir * (cmpDay(a[0].game_date, b[0].game_date) || a[1] - b[1]));
   withKey.forEach(([item]) => {
     const last = groups[groups.length - 1];
     if (last && last[0] === item.game_date) last[1].push(item);
@@ -354,6 +371,8 @@ class StreamPage {
     this.itemsById = new Map();
     this.projects = { thread_to_project: {}, projects: {} };
     this.status = null;
+    this.statusFetchedAt = 0;
+    this.liveStripEl = el("div", { class: "e-live-strip", hidden: "" });
     this.lastSeq = 0;
     this._build();
   }
@@ -432,6 +451,7 @@ class StreamPage {
     this.itemsById = new Map(this.items.map((it) => [it.id, it]));
     this.projects = projects;
     this.status = status;
+    this.statusFetchedAt = Date.now();
     this.lastSeq = head ? head.last_seq : this.items.length;
     this._render();
   }
@@ -451,6 +471,66 @@ class StreamPage {
   start() {
     this.loadAll();
     this._pollTimer = setInterval(() => this.poll(), POLL_MS);
+    // The who-is-awake strip moves on its own clock: status.json is tiny and
+    // changes between feed items, so it is not gated on head.json.
+    this._livePollTimer = setInterval(() => this.pollLive(), LIVE_POLL_MS);
+    this._liveTickTimer = setInterval(() => this._renderLiveStrip(), 1000);
+  }
+
+  async pollLive() {
+    if (document.hidden) return;
+    try {
+      const status = await fetchJson(`${this._feedRoot()}/status.json`);
+      this.status = status;
+      this.statusFetchedAt = Date.now();
+      this._renderLiveStrip();
+    } catch (e) {
+      // No status file yet (local demo before an export): the strip stays hidden.
+    }
+  }
+
+  /** The one-line "who is awake" strip at the top of the board column
+   * (`status.live`, built by dfqueue/live.py). Hidden when there is no live
+   * data; shows the awake role, how long, its last tool and why it woke, or
+   * the last finished run when nobody is awake. Costs show on the operator
+   * page only (the public file never carries them). */
+  _renderLiveStrip() {
+    const strip = this.liveStripEl;
+    const live = this.status && this.status.live;
+    if (!live || live.available === false) { strip.hidden = true; return; }
+    const sinceFetch = Math.max(0, (Date.now() - this.statusFetchedAt) / 1000);
+    const parts = [];
+    const reason = (r) => (r ? `woke for ${String(r).replace(/_/g, " ")}` : null);
+    if (live.awake && live.awake.length) {
+      live.awake.forEach((a) => {
+        const seg = el("span", { class: "ls-seg" }, [
+          el("span", { class: "ls-dot", style: `background:${ROLE_COLORS[a.role] || "var(--text)"}` }),
+          el("span", { style: `color:${ROLE_COLORS[a.role] || "var(--text)"};font-weight:600`, text: roleTitle(a.role) }),
+          el("span", { class: "ls-t", text: formatElapsed((a.elapsed_s || 0) + sinceFetch) }),
+          a.last_tool ? el("span", { class: "ls-tool", text: a.last_tool }) : null,
+          a.wake_reason ? el("span", { class: "faint", text: reason(a.wake_reason) }) : null,
+        ]);
+        parts.push(seg);
+      });
+    } else if (live.running) {
+      parts.push(el("span", { class: "ls-seg" }, [el("span", { class: "ls-dot", style: "background:var(--role-system)" }), el("span", { text: "System" })]));
+    } else {
+      const runs = Object.entries(live.last_runs || {})
+        .filter(([, r]) => r.duration_s !== null && r.duration_s !== undefined)
+        .sort((x, y) => String(y[1].ended_at || "").localeCompare(String(x[1].ended_at || "")));
+      if (!runs.length) { strip.hidden = true; return; }
+      const [role, r] = runs[0];
+      parts.push(el("span", { class: "ls-seg faint" }, [
+        el("span", { text: "Last run" }),
+        el("span", { style: `color:${ROLE_COLORS[role] || "var(--text)"}`, text: roleTitle(role) }),
+        el("span", { class: "ls-t", text: formatElapsed(r.duration_s) }),
+        this.mode === "operator" && typeof r.cost_usd === "number" ? el("span", { text: `$${r.cost_usd.toFixed(2)}` }) : null,
+        r.wake_reason ? el("span", { text: reason(r.wake_reason) }) : null,
+      ]));
+    }
+    strip.textContent = "";
+    parts.forEach((p) => strip.appendChild(p));
+    strip.hidden = false;
   }
 
   // ---- chrome: header, live view ----------------------------------------
@@ -611,6 +691,8 @@ class StreamPage {
       );
       return;
     }
+    this.col.appendChild(this.liveStripEl);
+    this._renderLiveStrip();
     this.col.appendChild(this._goalStrip());
     // The board's sections as tabs, each with its count; an empty section
     // has no tab. The chosen tab is kept while the board polls.
@@ -850,10 +932,19 @@ class StreamPage {
         el("div", { class: "tline" }, [
           el("span", { style: `color:${ROLE_COLORS[item.role] || "var(--text)"};font-weight:600`, text: speakerName(item) + " " }),
           item.badge ? el("span", { class: "chip " + item.badge, text: item.badge }) : null,
+          this._replyTag(item),
           el("span", { text: " " + this._bodyText(item) }),
         ]),
       ]))),
     ]));
+  }
+
+  /** "re: Room siting" on a line that answers another (a ruling against its
+   * proposal), so reading newest first still shows what it is about. */
+  _replyTag(item) {
+    const target = item.reply_to && this.itemsById ? this.itemsById.get(item.reply_to) : null;
+    if (!target) return null;
+    return el("span", { class: "faint", text: " re: " + (target.type || target.kind) });
   }
 
   _bodyText(item) {
