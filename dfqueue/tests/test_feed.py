@@ -758,3 +758,65 @@ def test_load_records_jsonl_reads_the_real_exported_shape(tmp_path):
     )
     records = feed.load_records_jsonl(p)
     assert [r["id"] for r in records] == ["proposal-0001", "ruling-0001"]
+
+
+
+# ---- executed items name the job (board threads) -----------------------------
+
+
+def _step_records(label="Dig shell", **action):
+    steps = [{
+        "id": "project-0001/s1", "tool": "construction.mine-vein", "args": {},
+        "targets": {"set": ["a", "b", "c", "d"]}, "label": label,
+    }]
+    act = {"tool": "construction.mine-vein", "outcome": "success", "targets": ["a", "b"],
+           "target_state": "issued"}
+    act.update(action)
+    return [
+        make_project(id="project-0001", from_ruling="ruling-0001", steps=steps),
+        make_executed(id="executed-0001", ruling_id="ruling-0001",
+                      step_id="project-0001/s1", actions=[act]),
+    ]
+
+
+def _executed_item(records, public=True):
+    items = feed.build_items(records, public=public)
+    return next(i for i in items if i["kind"] == "executed")
+
+
+def test_executed_public_item_carries_job_label_targets_and_total():
+    item = _executed_item(_step_records())
+    assert item["step_label"] == "Dig shell"
+    assert item["step_targets"] == 2
+    assert item["step_total"] == 4
+    assert item["step_outcome"] == "started"
+    assert "record" not in item
+
+
+def test_executed_outcome_finished_and_failed():
+    assert _executed_item(_step_records(target_state="done"))["step_outcome"] == "finished"
+    assert _executed_item(_step_records(outcome="failed", target_state="failed"))["step_outcome"] == "failed"
+
+
+def test_executed_step_label_goes_through_the_public_safety_net():
+    item = _executed_item(_step_records(label="Fetch https://example.com/x"))
+    assert item["step_label"] is None
+
+
+def test_executed_without_a_step_has_no_label():
+    item = _executed_item([make_executed(id="executed-0001", ruling_id="ruling-0001")])
+    assert item["step_label"] is None
+    assert item["step_total"] is None
+
+
+def test_executed_step_label_follows_a_later_amend():
+    records = _step_records()
+    steps = [{"id": "project-0001/s1", "tool": "construction.mine-vein", "args": {},
+              "targets": {"set": ["a"]}, "label": "Dig the deep shell"}]
+    records.append(make_amend(id="amend-0001", project_id="project-0001", steps=steps))
+    assert _executed_item(records)["step_label"] == "Dig the deep shell"
+
+
+def test_operator_executed_item_carries_the_same_step_fields():
+    item = _executed_item(_step_records(), public=False)
+    assert item["step_label"] == "Dig shell" and item["record"]["step_id"] == "project-0001/s1"
