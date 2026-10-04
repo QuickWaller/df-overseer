@@ -214,7 +214,7 @@ def test_what_it_checked_comes_from_calls_by_record_with_counts_and_errors():
       const page = Object.create(StreamPage.prototype);
       page.projects = { projects: {}, thread_to_project: {} };
       page.runs = DATA.runs;
-      const post = page._threadPost(DATA.items[0]);
+      const post = page._threadPost({ ...DATA.items[0], calls: [] });  // the operator feed's empty list
       const seen = []; const walk = (n) => { if (n.textContent) seen.push(n.textContent); n.children.forEach(walk); }; walk(post);
       return seen;
     """

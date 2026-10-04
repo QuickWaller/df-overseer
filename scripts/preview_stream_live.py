@@ -29,7 +29,7 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT))
 
-from dfqueue import live  # noqa: E402
+from dfqueue import live, runs as runs_store, site_data  # noqa: E402
 
 WEB = REPO_ROOT / "web" / "stream"
 FIXTURE = WEB / "fixtures" / "board-demo.jsonl"
@@ -37,6 +37,41 @@ FIXTURE = WEB / "fixtures" / "board-demo.jsonl"
 
 def _call(now: float, age_s: float, role: str, tool: str) -> dict:
     return {"ts": now - age_s, "role": role, "tool": tool, "is_error": False}
+
+
+DEMO_START = datetime(2025, 12, 31, 23, 55, tzinfo=timezone.utc)
+DEMO_END = datetime(2026, 1, 1, 0, 5, tzinfo=timezone.utc)
+DEMO_SUMMARIES = {
+    "architect": "Looked over the fort, found no workshop area and filed proposals for the first rooms.",
+    "overseer": "Ruled on the open proposals and turned the accepted ones into jobs.",
+    "quartermaster": "Checked stocks and asked for food and drink to be stored.",
+}
+DEMO_READS = {
+    "architect": ["overview.get", "overview.get", "zone.list", "tree.find"],
+    "overseer": ["queue.pending", "overview.get", "stocks.food-drink"],
+    "quartermaster": ["stocks.food-drink", "stocks.food-drink", "overview.get"],
+}
+
+
+def _demo_runs(now: float) -> tuple:
+    """Run rows linked to the demo fixture's records by the real
+    `records_in_window`, and a made-up call journal in the same window, so
+    runs.json (summaries, wake reasons, "what it checked") is built by
+    `live.build_runs` exactly as the publisher builds it."""
+    records = [json.loads(line) for line in FIXTURE.read_text(encoding="utf8").splitlines() if line.strip()]
+    base = DEMO_START.timestamp()
+    rows, calls = [], []
+    for n, role in enumerate(DEMO_SUMMARIES, start=1):
+        linked = runs_store.records_in_window(records, role, DEMO_START.isoformat(), DEMO_END.isoformat())
+        rows.append({
+            "run_id": f"run-{n:04d}", "role": role, "wake_reason": "routine_review" if role != "overseer" else "ask_open",
+            "wake_detail": "demo", "cycle": n, "started_at": DEMO_START.isoformat(), "ended_at": DEMO_END.isoformat(),
+            "status": "ok", "ok": 1, "timed_out": 0, "duration_s": 372.4 + n * 40, "cost_usd": 0.05 * n,
+            "error": None, "final_answer": DEMO_SUMMARIES[role], "records_json": json.dumps(linked),
+        })
+        for k, tool in enumerate(DEMO_READS[role]):
+            calls.append({"ts": base + 10 + k, "role": role, "tool": tool, "is_error": role == "quartermaster" and k == 1})
+    return rows, calls
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -68,8 +103,15 @@ def main(argv: list[str] | None = None) -> int:
         "last_runs": {"overseer": {"duration_s": 372.4, "cost_usd": 1.84, "wake_reason": "routine_review",
                                    "ok": True, "ended_at": ended}},
     }
+    run_rows, run_calls = _demo_runs(now)
+    tools_info = {t["id"]: t for t in site_data.build_tools_json()["tools"]}
+    record_ts = {json.loads(l)["id"]: json.loads(l)["ts"] for l in FIXTURE.read_text(encoding="utf8").splitlines() if l.strip()}
     for side, public in (("public", True), ("operator", False)):
-        built = live.build_live(calls, now, public=public, conductor=conductor)
+        built = live.build_live(calls, now, public=public, conductor=conductor, runs=run_rows)
+        runs_doc = live.build_runs(run_rows, now, public=public, calls=run_calls, tools=tools_info, record_ts=record_ts)
+        for fort_dir in (out / side / "forts").glob("*"):
+            (fort_dir / "runs.json").write_text(json.dumps(runs_doc, indent=2), encoding="utf-8")
+            print(f"wrote {fort_dir.relative_to(REPO_ROOT)}/runs.json")
         for status_path in (out / side / "forts").glob("*/status.json"):
             status = json.loads(status_path.read_text(encoding="utf-8")) if status_path.exists() else {}
             status["live"] = built

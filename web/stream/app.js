@@ -1141,7 +1141,7 @@ class StreamPage {
     const extras = [];
     const rec = item.record || {};
     if (item.kind === "proposal" && rec.summary) extras.push(el("div", { class: "fsub", text: rec.summary }));
-    const calls = item.calls || checkRows((this.runs && this.runs.calls_by_record || {})[item.id]);
+    const calls = (item.calls && item.calls.length) ? item.calls : checkRows((this.runs && this.runs.calls_by_record || {})[item.id]);
     if (calls.length) {
       extras.push(el("details", { class: "fx" }, [
         el("summary", { text: `What it checked · ${calls.length}` }),
