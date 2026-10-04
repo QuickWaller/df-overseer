@@ -222,6 +222,19 @@ class PublisherConfig:
     # the status.json stays the plain placeholder until a deploy turns them on.
     live_journal: bool = False
     conductor_dir: Optional[str] = None
+    # The conductor's run reports (handoffs/2026-10-05-conductor-report.md):
+    # `dfqueue/runs.py`'s store. Default: `<db stem>.runs.sqlite3` beside the
+    # queue database, used only if that file exists (see `resolved_runs_db`).
+    runs_db: Optional[str] = None
+
+    def resolved_runs_db(self) -> Optional[str]:
+        if self.runs_db:
+            return self.runs_db
+        if not self.db_path:
+            return None
+        from dfqueue import runs as runs_store
+        candidate = runs_store.runs_path(self.db_path)
+        return str(candidate) if candidate.is_file() else None
 
     def resolved_fort_id(self) -> str:
         """`fort_id` when explicitly configured, else the queue file's own
@@ -325,6 +338,8 @@ def config_from_env(env: Mapping[str, str], *, validate: bool = True) -> Publish
         )
     if env.get("STREAM_PUBLISHER_CONDUCTOR_DIR"):
         kwargs["conductor_dir"] = env["STREAM_PUBLISHER_CONDUCTOR_DIR"]
+    if env.get("STREAM_PUBLISHER_RUNS_DB"):
+        kwargs["runs_db"] = env["STREAM_PUBLISHER_RUNS_DB"]
 
     public_relay = _relay_from_env(env, "PUBLIC")
     operator_relay = _relay_from_env(env, "OPERATOR")
@@ -487,6 +502,26 @@ def _site_hash_payload(agents_json: dict, tools_json: dict, gotchas: list) -> di
     return {"agents": agents_stable, "tools": tools_stable, "gotchas": gotchas}
 
 
+def _with_runs(site: dict, runs_payload: Optional[dict]) -> dict:
+    """Folds the run reports into the change-detection payload (minus their
+    wall-clock `as_of`), only when a run store exists, so a fort without one
+    hashes exactly as before."""
+    if runs_payload is None:
+        return site
+    return {**site, "runs": live.live_hash_payload(runs_payload)}
+
+
+def _write_runs(out_root: Path, fort_id: str, runs_payload: Optional[dict]) -> None:
+    """`<root>/forts/<fort_id>/runs.json`, next to that fort's `head.json`.
+    Nothing is written (and a stale file is left to the next successful
+    cycle) when there is no run store."""
+    if runs_payload is None:
+        return
+    target = feed.fort_feed_dir(out_root, fort_id) / "runs.json"
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(_canonical_json(runs_payload), encoding="utf-8")
+
+
 # ---- one cycle --------------------------------------------------------------
 
 
@@ -522,12 +557,17 @@ def run_cycle(
     # scripts/export_stream_feed.py.
     status = feed.build_placeholder_status()
     live_public = live_operator = None
-    if cfg.live_journal or cfg.conductor_dir:
+    # The conductor's run reports, read-only and optional: absent store gives
+    # None, which changes nothing below (no runs.json, no `+reports` source).
+    run_rows = live.read_runs(cfg.resolved_runs_db())
+    runs_public = live.build_runs(run_rows, now, public=True)
+    runs_operator = live.build_runs(run_rows, now, public=False)
+    if cfg.live_journal or cfg.conductor_dir or run_rows is not None:
         lines = (journal_reader or live.read_journal_lines)() if cfg.live_journal else []
         calls = None if lines is None else live.parse_call_lines(lines)
         conductor = live.read_conductor_dir(cfg.conductor_dir)
-        live_public = live.build_live(calls, now, public=True, conductor=conductor)
-        live_operator = live.build_live(calls, now, public=False, conductor=conductor)
+        live_public = live.build_live(calls, now, public=True, conductor=conductor, runs=run_rows)
+        live_operator = live.build_live(calls, now, public=False, conductor=conductor, runs=run_rows)
     status_public = status if live_public is None else {**status, "live": live_public}
     status_operator = status if live_operator is None else {**status, "live": live_operator}
     # The hash sees `live` without its clock-ticking fields (live.live_hash_payload).
@@ -569,9 +609,10 @@ def run_cycle(
         operator_out, agents_json=agents_json, tools_json=tools_json,
         gotchas_entries=gotchas_entries, public=False,
     )
+    _write_runs(operator_out, fort_id, runs_operator)
     operator_hash = compute_content_hash(
         operator_items, operator_projects, hash_status_operator,
-        site=_site_hash_payload(agents_json, tools_json, operator_gotchas),
+        site=_with_runs(_site_hash_payload(agents_json, tools_json, operator_gotchas), runs_operator),
     )
     if kill_switch_active:
         result["operator"]["reason"] = "kill_switch_file"
@@ -612,11 +653,14 @@ def run_cycle(
         public_out, agents_json=agents_json, tools_json=tools_json,
         gotchas_entries=gotchas_entries, public=True,
     )
+    if not public_off:
+        _write_runs(public_out, fort_id, runs_public)
     public_hash = compute_content_hash(
         [] if public_off else public_items,
         {"thread_to_project": {}, "projects": {}} if public_off else public_projects,
         None if public_off else hash_status_public,
-        site=None if public_off else _site_hash_payload(agents_json, tools_json, public_gotchas),
+        site=None if public_off else _with_runs(
+            _site_hash_payload(agents_json, tools_json, public_gotchas), runs_public),
     )
 
     if kill_switch_active:
@@ -690,6 +734,11 @@ def _build_arg_parser() -> argparse.ArgumentParser:
         help="a local copy of the conductor's runtime root (status.json, cycles/): adds wake "
              "reason, run duration and (operator only) cost to the live view. STREAM_PUBLISHER_CONDUCTOR_DIR",
     )
+    parser.add_argument(
+        "--runs-db", default=None,
+        help="the conductor's run-report store (dfqueue/runs.py), read-only. Default: the "
+             "<queue db stem>.runs.sqlite3 file beside --db, if it exists. STREAM_PUBLISHER_RUNS_DB",
+    )
     parser.add_argument("--once", action="store_true", help="run a single cycle and exit (the systemd-timer-triggered mode, infra/stream-publisher.timer.example)")
     parser.add_argument("--env-file", default=str(DEFAULT_ENV_PATH), help="path to a .env file to merge under the real environment (default: repo root .env)")
     return parser
@@ -725,6 +774,8 @@ def _config_from_args(args: argparse.Namespace) -> PublisherConfig:
         overrides["live_journal"] = True
     if args.conductor_dir:
         overrides["conductor_dir"] = args.conductor_dir
+    if args.runs_db:
+        overrides["runs_db"] = args.runs_db
 
     def _relay_override(prefix: str) -> Optional[RelayTarget]:
         host = getattr(args, f"{prefix}_relay_host")

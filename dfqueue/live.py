@@ -22,6 +22,12 @@ Two tiers, no new port and no new credential:
   credential or a new MCP tool, left to the orchestrator). Absent, the view
   runs on Tier A alone.
 
+- **Tier C, the conductor's own run reports (best).** `conductor.report`
+  (handoffs/2026-10-05-conductor-report.md) stores one row per role run in
+  `dfqueue/runs.py`'s store on this host. `read_runs` reads it `mode=ro`;
+  `build_live` uses an open run for the strip's wake reason and the newest
+  finished run per role for `last_runs`; `build_runs` produces `runs.json`.
+
 Public output carries no cost, no arguments and no host detail. Operator
 output adds cost and the call's error flag.
 """
@@ -29,6 +35,8 @@ output adds cost and the call's error flag.
 from __future__ import annotations
 
 import json
+import re
+import sqlite3
 import subprocess
 from datetime import datetime, timezone
 from pathlib import Path
@@ -45,6 +53,21 @@ JOURNAL_LOOKBACK_MIN = 30
 
 #: `conductor/status.py::status_running`'s block is ignored once older than this.
 RUNNING_BLOCK_MAX_AGE_S = 900
+
+#: A run report with no end older than this is shown as `lost`, not `running`
+#: (the conductor died, or its end call failed). The role timeout is 600 s.
+RUN_OPEN_MAX_AGE_S = 1200
+
+#: Public `runs.json` carries a run's summary only when this is True AND the
+#: text passes `feed.find_unsafe_pattern`. Free model text is the worst case
+#: for that pattern check (it catches urls, paths, tokens and markup, not
+#: meaning), so flipping this to False is the one switch that makes summaries
+#: operator-only.
+PUBLIC_SUMMARIES = True
+SUMMARY_PUBLIC_MAX = 280
+RUNS_LIMIT = 40
+
+_WAKE_REASON_PUBLIC = re.compile(r"^[a-z][a-z0-9_]{0,39}$")
 
 JOURNAL_UNIT = "dfmcp-server.service"
 SYSTEM_ROLE = "conductor"
@@ -160,6 +183,101 @@ def read_conductor_dir(path: "str | Path | None", *, cycles_scanned: int = 6) ->
     return out
 
 
+# ---- the conductor's run reports (Tier C) -----------------------------------
+
+
+def read_runs(path: "str | Path | None", limit: int = RUNS_LIMIT) -> Optional[list]:
+    """Newest-first run rows from `dfqueue/runs.py`'s store, read-only, or
+    `None` when `path` is unset or the store does not exist yet (the tool is
+    not deployed, or nothing has reported). Never raises."""
+    if not path or not Path(path).is_file():
+        return None
+    from dfqueue import runs as runs_store
+    try:
+        return runs_store.read_runs_readonly(path, limit)
+    except (sqlite3.Error, OSError):
+        return None
+
+
+def _run_status(row: Mapping[str, Any], now: float) -> str:
+    if row.get("ended_at") is None:
+        started = _parse_ts(row.get("started_at"))
+        return "running" if started is not None and now - started <= RUN_OPEN_MAX_AGE_S else "lost"
+    if row.get("timed_out"):
+        return "timed_out"
+    return "ok" if row.get("ok") else "failed"
+
+
+def _public_summary(text: Optional[str]) -> Optional[str]:
+    """The public form of a run's final answer, or `None` when it must be
+    withheld. Checked on the whole text and again on the published cut, so a
+    pattern past the cut still withholds."""
+    if not PUBLIC_SUMMARIES or not text:
+        return None
+    from dfqueue import feed
+    body = text.replace("\n[truncated]", "").strip()
+    if not body or feed.find_unsafe_pattern(body):
+        return None
+    body = " ".join(body.split())
+    if len(body) > SUMMARY_PUBLIC_MAX:
+        cut = body[:SUMMARY_PUBLIC_MAX]
+        stop = max(cut.rfind(". "), cut.rfind("! "), cut.rfind("? "))
+        body = cut[: stop + 1] if stop >= 80 else cut.rstrip() + "..."
+    return None if feed.find_unsafe_pattern(body) else body
+
+
+def build_runs(rows: Optional[list], now: float, *, public: bool, limit: int = RUNS_LIMIT) -> Optional[dict]:
+    """The `runs.json` payload for one projection, or `None` when there is
+    no run store. Newest first. See the handoff's Result for the shape.
+
+    Public per run: `run_id, role, wake_reason` (only if it is a plain code),
+    `status, started_at, ended_at, duration_s, records, summary` (see
+    `_public_summary`; absent with `summary_withheld: true` when the text was
+    held back). Operator adds `wake_detail, cycle, cost_usd, error` and the
+    full `final_answer` (as `summary`, uncut)."""
+    if rows is None:
+        return None
+    out_runs = []
+    by_thread: dict[str, list[str]] = {}
+    for row in rows[:limit]:
+        try:
+            records = json.loads(row.get("records_json") or "[]")
+        except ValueError:
+            records = []
+        records = [r for r in records if isinstance(r, dict) and r.get("id")]
+        wake = row.get("wake_reason")
+        entry: dict = {
+            "run_id": row.get("run_id"),
+            "role": row.get("role"),
+            "wake_reason": wake if (not public or (isinstance(wake, str) and _WAKE_REASON_PUBLIC.match(wake))) else None,
+            "status": _run_status(row, now),
+            "started_at": row.get("started_at"),
+            "ended_at": row.get("ended_at"),
+            "duration_s": None if row.get("duration_s") is None else round(row["duration_s"]),
+            "records": [{"id": r["id"], "kind": r.get("kind"), "thread": r.get("thread") or r["id"]} for r in records],
+        }
+        answer = row.get("final_answer")
+        if public:
+            if entry["status"] == "ok" and answer:
+                summary = _public_summary(answer)
+                if summary is None:
+                    entry["summary_withheld"] = True
+                else:
+                    entry["summary"] = summary
+        else:
+            entry.update({
+                "wake_detail": row.get("wake_detail"), "cycle": row.get("cycle"),
+                "cost_usd": row.get("cost_usd"), "error": row.get("error"),
+                "summary": answer,
+            })
+        out_runs.append(entry)
+        for r in entry["records"]:
+            by_thread.setdefault(r["thread"], [])
+            if entry["run_id"] not in by_thread[r["thread"]]:
+                by_thread[r["thread"]].append(entry["run_id"])
+    return {"available": True, "as_of": _iso(now), "runs": out_runs, "by_thread": by_thread}
+
+
 # ---- building the view -----------------------------------------------------
 
 
@@ -181,13 +299,14 @@ def _iso(ts: float) -> str:
 def build_live(
     calls: Optional[list[dict]], now: float, *, public: bool,
     conductor: Optional[Mapping[str, Any]] = None, window: float = AWAKE_WINDOW_S,
+    runs: Optional[list] = None,
 ) -> dict:
     """The `live` block for one projection. `calls=None` means the journal
     could not be read. See the module docstring for the rules; every field
     present in the public form is also in the operator form, which adds
     `cost_usd` (a run's cost) and `last_error` (the newest call failed)."""
     base: dict = {"available": False, "as_of": _iso(now), "running": False, "awake": [], "last_runs": {}}
-    if calls is None and conductor is None:
+    if calls is None and conductor is None and runs is None:
         base["reason"] = "journal_unreadable"
         return base
 
@@ -251,13 +370,45 @@ def build_live(
             entry["cost_usd"] = run.get("cost_usd")
         last_runs[role] = entry
 
+    # The conductor's own run reports (Tier C) beat both of the above: an open
+    # run supplies the wake reason, the newest finished run per role the
+    # last_runs entry (with the run id, so the page can link to runs.json).
+    open_runs: dict[str, Mapping[str, Any]] = {}
+    seen_closed: set[str] = set()
+    for row in runs or []:  # newest first
+        role = row.get("role")
+        if not isinstance(role, str):
+            continue
+        if _run_status(row, now) == "running":
+            open_runs.setdefault(role, row)
+        elif row.get("ended_at") is not None and role not in seen_closed:
+            seen_closed.add(role)
+            report_entry = {
+                "run_id": row.get("run_id"),
+                "duration_s": None if row.get("duration_s") is None else round(row["duration_s"]),
+                "ended_at": row.get("ended_at"),
+                "wake_reason": row.get("wake_reason"),
+                "ok": None if row.get("ok") is None else bool(row["ok"]),
+                "source": "report",
+            }
+            if not public:
+                report_entry["cost_usd"] = row.get("cost_usd")
+            last_runs[role] = report_entry
+    for entry in awake:
+        run = open_runs.get(entry["role"])
+        if run is not None:
+            entry["wake_reason"] = run.get("wake_reason")
+            entry["run_id"] = run.get("run_id")
+
     base.update({
         "available": True,
-        "running": bool(awake) or system_awake,
+        "running": bool(awake) or system_awake or bool(open_runs),
         "awake": awake,
         "last_runs": last_runs,
         "source": "journal+archive" if conductor else "journal",
     })
+    if runs is not None:
+        base["source"] = base["source"] + "+reports"
     if calls is None:
         base["source"] = "archive"
     return base
