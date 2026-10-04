@@ -175,3 +175,38 @@ def test_runs_db_env_and_flag_override_the_default(tmp_path):
                               "STREAM_PUBLISHER_RUNS_DB": "/x/custom.sqlite3"})
     assert cfg.resolved_runs_db() == "/x/custom.sqlite3"
     assert sp.PublisherConfig(db_path=str(tmp_path / "q.sqlite3"), staging_dir="/s").resolved_runs_db() is None
+
+
+# ---- "what it checked" (handoffs/2026-10-05-thread-run-data.md) -------------
+
+TOOLS = {
+    "overview.get": {"write": False, "description": "A first look at the fort. Counts and landmarks."},
+    "zone.list": {"write": False, "description": "Lists zones."},
+    "queue.propose": {"write": True, "description": "Files a proposal."},
+}
+
+
+def test_checks_are_reads_in_the_run_before_the_record_with_a_public_note():
+    rows = [_row("run-0001", "architect", started=300, ended=100)]
+    calls = [
+        _call("architect", "overview.get", 280), _call("architect", "overview.get", 270),
+        _call("architect", "zone.list", 250), _call("architect", "queue.propose", 200),
+        _call("architect", "zone.list", 150),                      # after the record
+        _call("overseer", "zone.list", 260),                       # other role
+        _call("architect", "zone.list", 400),                      # before the run
+    ]
+    ts = {"proposal-0001": _iso(190)}
+    for public in (True, False):
+        out = live.build_runs(rows, NOW, public=public, calls=calls, tools=TOOLS, record_ts=ts)
+        got = out["calls_by_record"]["proposal-0001"]
+        assert [(c["tool"], c["n"], c["failed"]) for c in got] == [("overview.get", 2, False), ("zone.list", 1, False)]
+        assert got[0]["note"] == "A first look at the fort."
+        assert "arguments" not in json.dumps(out)
+
+
+def test_a_failed_read_is_flagged_and_no_journal_means_no_checks():
+    rows = [_row("run-0001", "architect", started=300, ended=100)]
+    bad = [{"ts": NOW - 250, "role": "architect", "tool": "zone.list", "is_error": True}]
+    out = live.build_runs(rows, NOW, public=True, calls=bad, tools=TOOLS, record_ts={"proposal-0001": _iso(190)})
+    assert out["calls_by_record"]["proposal-0001"][0]["failed"] is True
+    assert live.build_runs(rows, NOW, public=True)["calls_by_record"] == {}

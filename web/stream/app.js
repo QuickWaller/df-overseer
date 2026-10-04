@@ -430,6 +430,55 @@ function threadTree(items) {
   return { root, kids };
 }
 
+/** A run's wake reason in plain words ("routine_review" -> "woke for routine
+ * review"), or null. */
+function wakeWords(reason) {
+  return reason ? `woke for ${String(reason).replace(/_/g, " ")}` : null;
+}
+
+/** "42 s", "6 min", "1 h 5 min" from seconds. */
+function durationWords(sec) {
+  if (typeof sec !== "number" || !isFinite(sec)) return null;
+  const s = Math.max(0, Math.round(sec));
+  if (s < 90) return `${s} s`;
+  const m = Math.round(s / 60);
+  return m < 60 ? `${m} min` : `${Math.floor(m / 60)} h ${m % 60} min`;
+}
+
+/** Each run in `runs.json` (`dfqueue/live.py::build_runs`) that wrote a
+ * record in this conversation becomes one "Summary" reply from that role,
+ * placed just after the last record it wrote here. A run with no summary
+ * (failed, or withheld by the feed's safety check) adds nothing: an empty
+ * post says nothing. Returns pseudo-items for `threadTree`. */
+function summaryItems(items, runsDoc) {
+  if (!runsDoc || !runsDoc.by_thread || !items.length) return [];
+  const sorted = [...items].sort((a, b) => (a.seq || 0) - (b.seq || 0));
+  const thread = sorted[0].thread;
+  const ids = (runsDoc.by_thread[thread] || []);
+  const out = [];
+  ids.forEach((runId) => {
+    const run = (runsDoc.runs || []).find((r) => r.run_id === runId);
+    if (!run || !run.summary) return;
+    const mine = new Set((run.records || []).filter((r) => r.thread === thread).map((r) => r.id));
+    const seqs = sorted.filter((i) => mine.has(i.id)).map((i) => i.seq || 0);
+    if (!seqs.length) return;
+    out.push({
+      id: `${runId}:${thread}`, kind: "summary", role: run.role, thread,
+      seq: Math.max(...seqs) + 0.5, reply_to: sorted[0].id, text: run.summary,
+      when_text: [wakeWords(run.wake_reason), durationWords(run.duration_s)].filter(Boolean).join(" · "),
+    });
+  });
+  return out;
+}
+
+/** `calls_by_record` entries as the rows "What it checked" lists. */
+function checkRows(list) {
+  return (list || []).map((c) => ({
+    tool: c.tool,
+    note: [c.note, c.n > 1 ? `${c.n} calls` : null, c.failed ? "errored" : null].filter(Boolean).join(" · "),
+  }));
+}
+
 /** The one-line wording of an event item (what the speaker did), or null
  * when the item is a post, not an event. `cls` is "", " plan", " fail" or
  * " hold" (amber for the last two). */
@@ -498,6 +547,7 @@ class StreamPage {
     this.itemsById = new Map();
     this.projects = { thread_to_project: {}, projects: {} };
     this.status = null;
+    this.runs = null; // runs.json: summaries and "what it checked" (dfqueue/live.py)
     this.statusFetchedAt = 0;
     this.liveStripEl = el("div", { class: "e-live-strip", hidden: "" });
     this.lastSeq = 0;
@@ -569,6 +619,7 @@ class StreamPage {
       () => ({ thread_to_project: {}, projects: {} })
     );
     const status = await fetchJson(`${root}/status.json`).catch(() => null);
+    this.runs = await fetchJson(`${root}/runs.json`).catch(() => null);
 
     this.head = head;
     // S0/S1 have no closed segments to speak of in the small local exports
@@ -611,6 +662,14 @@ class StreamPage {
       this.status = status;
       this.statusFetchedAt = Date.now();
       this._renderLiveStrip();
+      // A run's summary lands after its records: refresh runs.json here too,
+      // and redraw only when it really changed (as_of ticks every cycle).
+      const runs = await fetchJson(`${this._feedRoot()}/runs.json`).catch(() => null);
+      const key = (r) => JSON.stringify(r, (k, v) => (k === "as_of" ? undefined : v));
+      if (key(runs) !== key(this.runs)) {
+        this.runs = runs;
+        this._render();
+      }
     } catch (e) {
       // No status file yet (local demo before an export): the strip stays hidden.
     }
@@ -627,7 +686,7 @@ class StreamPage {
     if (!live || live.available === false) { strip.hidden = true; return; }
     const sinceFetch = Math.max(0, (Date.now() - this.statusFetchedAt) / 1000);
     const parts = [];
-    const reason = (r) => (r ? `woke for ${String(r).replace(/_/g, " ")}` : null);
+    const reason = wakeWords;
     if (live.awake && live.awake.length) {
       live.awake.forEach((a) => {
         const seg = el("span", { class: "ls-seg" }, [
@@ -1004,10 +1063,10 @@ class StreamPage {
    * its question. Plans, carried-out steps and holds are one-line events,
    * not posts. "What it checked" lists `item.calls`; "Thinking" shows
    * `item.thinking`, on the public page too (the user's call, 2026-10-05;
-   * nothing captures it yet). The tree and
+   * openclaw keeps no reasoning text yet, so it is empty on real data). The tree and
    * the event wording are `threadTree` and `eventLine`, tested under node. */
   _conversationEl(items) {
-    const { root, kids } = threadTree(items);
+    const { root, kids } = threadTree([...items, ...summaryItems(items, this.runs)]);
     // Explicit open/closed per post; unset means the default: the opening
     // post's replies start open, deeper ones (an answer under its question)
     // start closed (the user's call, 2026-10-05).
@@ -1070,21 +1129,23 @@ class StreamPage {
     }
     const kindLabel = {
       proposal: item.type || "Proposal", amend: "Plan change", ask: "Question", answer: "Answer", abandon: "Abandoned",
+      summary: "Summary",
     }[item.kind] || null;
     const meta = [
       el("span", { class: "fwho", style: `color:${color}`, text: name }),
       verdict ? el("span", { class: "fverdict v-" + verdict.toLowerCase(), text: verdict }) : null,
       kindLabel ? el("span", { class: "fkind", text: kindLabel }) : null,
       item.kind === "proposal" && item.badge ? el("span", { class: "chip " + item.badge, text: item.badge }) : null,
-      el("span", { class: "fwhen", text: item.game_date ? shortDate(item.game_date) : "" }),
+      el("span", { class: "fwhen", text: item.kind === "summary" ? (item.when_text || "") : (item.game_date ? shortDate(item.game_date) : "") }),
     ];
     const extras = [];
     const rec = item.record || {};
     if (item.kind === "proposal" && rec.summary) extras.push(el("div", { class: "fsub", text: rec.summary }));
-    if (item.calls && item.calls.length) {
+    const calls = (item.calls && item.calls.length) ? item.calls : checkRows((this.runs && this.runs.calls_by_record || {})[item.id]);
+    if (calls.length) {
       extras.push(el("details", { class: "fx" }, [
-        el("summary", { text: `What it checked · ${item.calls.length}` }),
-        el("div", { class: "fcalls" }, item.calls.flatMap((c) => [
+        el("summary", { text: `What it checked · ${calls.length}` }),
+        el("div", { class: "fcalls" }, calls.flatMap((c) => [
           el("span", { class: "ft", text: c.tool || c.tool_id || "" }),
           el("span", { text: c.note || c.result || "" }),
         ])),
@@ -1464,7 +1525,9 @@ class SitePage {
       onclick: () => this._setTheme(t),
     }));
     const header = el("header", { class: "top" }, [
-      el("div", { class: "brand" }, [document.createTextNode("df-overseer"), el("small", { text: "  a fort run by AI agents" })]),
+      el("div", { class: "brand" }, [document.createTextNode("df-overseer"), el("small", { text: "  a fort run by AI agents" }),
+        this.mode === "operator" ? el("span", { class: "scope", text: "Operator" }) : null,
+      ]),
       el("nav", { class: "nav", "aria-label": "Site" }, [fortGroup, projectGroup]),
     ]);
     this.navHost.appendChild(header);

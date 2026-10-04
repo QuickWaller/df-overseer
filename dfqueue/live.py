@@ -48,8 +48,9 @@ from typing import Any, Callable, Iterable, Mapping, Optional
 AWAKE_WINDOW_S = 240
 
 #: How far back the journal is read. Must exceed the longest run the page
-#: should show the start of (the conductor's role timeout is 600 s).
-JOURNAL_LOOKBACK_MIN = 30
+#: should show the start of (the conductor's role timeout is 600 s), and is
+#: also how far back a run keeps its "what it checked" list in `runs.json`.
+JOURNAL_LOOKBACK_MIN = 720
 
 #: `conductor/status.py::status_running`'s block is ignored once older than this.
 RUNNING_BLOCK_MAX_AGE_S = 900
@@ -66,6 +67,7 @@ RUN_OPEN_MAX_AGE_S = 1200
 PUBLIC_SUMMARIES = True
 SUMMARY_PUBLIC_MAX = 280
 RUNS_LIMIT = 40
+CHECK_NOTE_MAX = 80
 
 _WAKE_REASON_PUBLIC = re.compile(r"^[a-z][a-z0-9_]{0,39}$")
 
@@ -226,7 +228,51 @@ def _public_summary(text: Optional[str]) -> Optional[str]:
     return None if feed.find_unsafe_pattern(body) else body
 
 
-def build_runs(rows: Optional[list], now: float, *, public: bool, limit: int = RUNS_LIMIT) -> Optional[dict]:
+def _first_sentence(text: Any, limit: int = CHECK_NOTE_MAX) -> Optional[str]:
+    if not isinstance(text, str) or not text.strip():
+        return None
+    body = " ".join(text.split())
+    stop = body.find(". ")
+    if 0 < stop < limit:
+        return body[: stop + 1]
+    return body if len(body) <= limit else body[: limit - 3].rstrip() + "..."
+
+
+def _checks_for(
+    calls: list, role: Any, start: Optional[float], end: Optional[float],
+    before: Optional[float], tools: Optional[Mapping[str, Any]],
+) -> list:
+    """The read calls `role` made in [start, end] up to `before`, in first-use
+    order, one entry per tool: `{tool, note, n, failed}`. `note` is the
+    tool's public one-line description (the same text tools.json publishes),
+    never the call's arguments. A write tool (registry `write`) is left out:
+    this is what it looked at, not what it did."""
+    if start is None or end is None:
+        return []
+    order: dict[str, dict] = {}
+    for call in calls:
+        if call["role"] != role or call["ts"] < start - 1 or call["ts"] > end + 1:
+            continue
+        if before is not None and call["ts"] > before + 1:
+            continue
+        info = (tools or {}).get(call["tool"])
+        if isinstance(info, Mapping) and info.get("write"):
+            continue
+        entry = order.setdefault(call["tool"], {
+            "tool": call["tool"],
+            "note": _first_sentence(info.get("description")) if isinstance(info, Mapping) else None,
+            "n": 0, "failed": False,
+        })
+        entry["n"] += 1
+        entry["failed"] = entry["failed"] or bool(call["is_error"])
+    return list(order.values())
+
+
+def build_runs(
+    rows: Optional[list], now: float, *, public: bool, limit: int = RUNS_LIMIT,
+    calls: Optional[list] = None, tools: Optional[Mapping[str, Any]] = None,
+    record_ts: Optional[Mapping[str, Any]] = None,
+) -> Optional[dict]:
     """The `runs.json` payload for one projection, or `None` when there is
     no run store. Newest first. See the handoff's Result for the shape.
 
@@ -234,11 +280,17 @@ def build_runs(rows: Optional[list], now: float, *, public: bool, limit: int = R
     `status, started_at, ended_at, duration_s, records, summary` (see
     `_public_summary`; absent with `summary_withheld: true` when the text was
     held back). Operator adds `wake_detail, cycle, cost_usd, error` and the
-    full `final_answer` (as `summary`, uncut)."""
+    full `final_answer` (as `summary`, uncut).
+
+    `calls_by_record` (both forms, from the parsed journal `calls`, the
+    registry `tools` map `{id: {write, description}}` and each record's own
+    `record_ts`): `{record_id: [{tool, note, n, failed}]}`, the reads its role
+    made in the run before that record was written. Empty without a journal."""
     if rows is None:
         return None
     out_runs = []
     by_thread: dict[str, list[str]] = {}
+    calls_by_record: dict[str, list] = {}
     for row in rows[:limit]:
         try:
             records = json.loads(row.get("records_json") or "[]")
@@ -271,11 +323,21 @@ def build_runs(rows: Optional[list], now: float, *, public: bool, limit: int = R
                 "summary": answer,
             })
         out_runs.append(entry)
+        if calls and row.get("ended_at") is not None:
+            run_start, run_end = _parse_ts(row.get("started_at")), _parse_ts(row.get("ended_at"))
+            for r in entry["records"]:
+                checks = _checks_for(
+                    calls, row.get("role"), run_start, run_end,
+                    _parse_ts((record_ts or {}).get(r["id"])), tools,
+                )
+                if checks:
+                    calls_by_record[r["id"]] = checks
         for r in entry["records"]:
             by_thread.setdefault(r["thread"], [])
             if entry["run_id"] not in by_thread[r["thread"]]:
                 by_thread[r["thread"]].append(entry["run_id"])
-    return {"available": True, "as_of": _iso(now), "runs": out_runs, "by_thread": by_thread}
+    return {"available": True, "as_of": _iso(now), "runs": out_runs, "by_thread": by_thread,
+            "calls_by_record": calls_by_record}
 
 
 # ---- building the view -----------------------------------------------------
