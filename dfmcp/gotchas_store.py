@@ -340,14 +340,17 @@ def _repair_dangling_entries_refs(conn: sqlite3.Connection) -> None:
     the correct reference, every row copied with its `seq` unchanged and the
     AUTOINCREMENT counter preserved, all in one transaction. A no-op on a
     healthy store (checked against `sqlite_master`)."""
-    broken = [
-        r["name"]
-        for r in conn.execute(
-            "SELECT name FROM sqlite_master WHERE type = 'table' AND name IN "
-            "('outcomes', 'status_history') AND sql LIKE ?",
-            (f"%{_STALE_NAME}%",),
-        ).fetchall()
-    ]
+    try:
+        broken = [
+            r["name"]
+            for r in conn.execute(
+                "SELECT name FROM sqlite_master WHERE type = 'table' AND name IN "
+                "('outcomes', 'status_history') AND sql LIKE ?",
+                (f"%{_STALE_NAME}%",),
+            ).fetchall()
+        ]
+    except sqlite3.DatabaseError:
+        return  # not a readable database: `_check_schema` reports that properly
     if not broken:
         return
     conn.execute("PRAGMA foreign_keys=OFF")
