@@ -85,6 +85,11 @@ user, breaking the "read secrets by the key you need" rule — it printed
 call: rotate later, not urgent, but don't lose the item. → decisions/DECISIONS.md
 2026-09-17.
 
+**The full list now lives in `infra/local.secrets-rotation.md`** (gitignored,
+key names only: why, when, where each lives; user's ask 2026-10-05). Add a row
+there the moment any secret is exposed. Newest: the admin tunnel token,
+exposed again 2026-10-05 via the relay unit that carries it inline.
+
 ## Archived
 
 - Sections through 2026-09-10 (fifth handover) — provisioning build,
