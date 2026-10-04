@@ -70,3 +70,60 @@ Bump the asset version in `web/stream/index.html` and `operator.html`.
 All three tasks committed with tests, a local preview recipe (how the
 orchestrator can serve it on localhost with sample data showing a running
 cycle), the exact deploy targets needed, and a Result section here.
+
+## Result (executor, 2026-10-05)
+
+### Task 2 (year): done. `feed.render_game_date` added 1 to the year.
+The fort's absolute tick is built as `cur_year * 403,200 + cur_year_tick`
+(`conductor/game_tick.py`), so `tick // 403,200` already IS `cur_year`:
+12,746,121 = 31 * 403,200 + 246,921, year 31, day 205 of the year = the
+10th of Sandstone. The `+ 1` made it "year 32". Fixed (no offset), tests pin
+the real pair, and the old year-1 expectations became year 0.
+
+### Task 1 (newest first): done.
+`groupByDay` in `web/stream/app.js` now sorts newest day first and newest
+entry first within a day; undated ("Now") lines sit on top. A ruling that
+answers a proposal now sits above it in a thread, so each such line carries a
+faint "re: <proposal type>" tag. Applies to the project and proposal
+conversations and the Agents tab's recent lines. The public and operator pages
+share `app.js`, so both change. Node-based test in
+`dfqueue/tests/test_site_js_order.py`.
+
+### Task 3 design (written before building): the data path
+Facts found. (a) The conductor writes `status.json` and the cycle archive
+(`summary.json`, `briefings.json` with each role's `wake_reason`,
+`run-<role>.json` with `wall_clock_seconds` and `cost_usd`) only at the END of
+a cycle, so nothing on VM 106 says "running" mid-turn. (b) `dfmcp-server` on
+VM 103 logs every call as one JSON line (role, tool_id, ts, duration_ms,
+arguments). (c) The publisher is on VM 103 and already writes a per-fort
+`status.json` (today a placeholder) that the page already fetches.
+(d) Any 106 -> 103 transport (publisher pulling over ssh, or the conductor
+pushing files) needs a new credential; the only existing 106 -> 103 channel
+is the conductor's MCP token, and a new MCP tool means an `agents/` allowlist
+edit, outside this stream.
+
+Chosen, no new port, no new credential:
+- **Tier A (live, built):** the publisher reads `dfmcp-server`'s journal on
+  its own host (`journalctl -u dfmcp-server.service -o cat --since ...`,
+  needs only journal-read group membership for the publisher's user). A role
+  is "awake" while its latest call is under 240 s old; its run started at the
+  first call of the burst (gaps under 240 s); its last tool is the latest
+  call's tool id. A cycle is "running" while any role (or the conductor) is
+  awake. Arguments are never copied. This answers "is anyone working, who,
+  doing what, for how long" with no help from VM 106.
+- **Tier B (built, inert until fed):** the publisher can also read a local
+  directory laid out like the conductor's runtime root (`--conductor-dir`):
+  `status.json` plus `cycles/cycle-*/{summary,briefings}.json` and
+  `run-<role>.json`. From it: the wake reason and the last completed run's
+  duration (public) and cost (operator only). It also honours an optional
+  `running` block in `status.json` ({role, wake_reason, started_at}); a small
+  helper `conductor.status.status_running` defines that contract, but the
+  conductor does not call it yet (that is a `cycle.py` edit, outside this
+  stream's surfaces). **Getting those files from 106 to 103 needs one
+  restricted credential or an MCP tool; NOT added, orchestrator's call.**
+- Output rides the existing per-fort `status.json` (`live` key) in both the
+  public and operator trees; the page polls it every 4 s on its own, separate
+  from the `head.json` gate, so the strip moves between feed changes. Public
+  `live` carries role, awake flag, elapsed, tool id, wake reason, last
+  duration. Operator adds cost and the call's error flag. Nothing carries
+  arguments, hostnames or addresses.
