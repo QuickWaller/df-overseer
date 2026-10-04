@@ -89,8 +89,42 @@ run any time, including by a human just checking. Four sections:
 | `missing_on_host` | The manifest lists a file the host doesn't have under the path this tool expected | Check whether the manifest's path assumption is simply wrong before assuming a failed deploy (this happened twice building this tool itself -- see the Result section of the handoff that built it) |
 | N commits behind `origin/main` | The target's stamped deploy predates N later commits to its own files | Redeploy if those commits touch this target's paths; otherwise informational |
 | live tool count/id mismatch | The repo's registry+roster disagrees with a live MCP probe, either on count or on which tool ids a role actually has (`mcpcall.py names-all`, matched back to ids) | Redeploy `vm103-dfmcp` and restart `dfmcp-server.service` |
+| `untracked unit` / `untracked drop-in` | A unit or drop-in is installed on the host that the repo neither carries nor declares `unmanaged_units` | Someone edited the host by hand: commit the file under `infra/units/<host>/` (if it is project-owned and secret-free) or declare it `unmanaged_units` with a reason, and deploy through `deploy.py` from now on |
 | service inactive/disabled | Exactly what it says, not evaluated | Compare against what the relevant doc SAYS the state should be; a mismatch there is a doc-audit finding, not a drift_check one |
 | website `tools.json` mismatch | The relay's published counts disagree with what the repo would generate | Check whether `stream-publisher.timer` has actually run since the last relevant commit; redeploy `vm103-stream-publisher` if its code is what's stale |
+
+## systemd units and drop-ins
+
+Units are deployed like code: the exact installed bytes live in
+`infra/units/<host>/` (`df`, `openclaw`, `relay`, the `vm-ssh.sh` names), with
+drop-ins at `<unit>.d/<name>.conf`, and the manifest targets `vm103-units`,
+`vm106-units`, `relay-units` ship them to `/etc/systemd/system` through `sudo
+-n`, then run `systemctl daemon-reload`. **Never edit `/etc/systemd/system` by
+hand**: change the file under `infra/units/`, commit, push, `deploy.py
+--target <name>-units --dry-run`, then (with the go-ahead) `--yes`.
+
+- **No unit target restarts anything.** `daemon-reload` only re-reads
+  definitions. A running service keeps its old definition until restarted:
+  `dfmcp-server.service` (low risk) by hand or the next `vm103-dfmcp` deploy,
+  a changed `.timer` with `systemctl restart <name>.timer`, `df-fortress.service`
+  only by the live-save procedure, and `conductor.service` never (it stays
+  disabled and inactive; shipping its unit does not enable or start it).
+- **No stamp.** `/etc/systemd/system` is not a checkout, so no
+  `DEPLOYED_COMMIT` lands there and drift compares units to `origin/main`
+  (push before expecting `[clean]`).
+- **Untracked units are drift.** The drift check also lists regular files under
+  `/etc/systemd/system` (and every `<unit>.d/*.conf`); one the repo does not
+  carry and the manifest does not list under `unmanaged_units` is reported as
+  `untracked unit` / `untracked drop-in`. Either commit it under `infra/units/`
+  or declare it `unmanaged_units` with a reason (vendor files; units whose
+  `ExecStart` carries an address or a token and so cannot go in a public repo).
+- **Never commit a unit that embeds an address or a token.** Move the value
+  into an `EnvironmentFile=` or `--token-file` on the host first. Tests in
+  `tests/test_deploy.py` fail on an address, an inline `--token`, or a CR byte
+  under `infra/units/`.
+- The `infra/*.service.example` and `*.timer.example` files stay as annotated
+  templates (design notes, deploy checklists); `infra/units/` is the truth
+  about what is installed.
 
 ## Standing cadence
 

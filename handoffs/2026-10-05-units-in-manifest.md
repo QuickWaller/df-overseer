@@ -116,3 +116,33 @@ Only one drop-in directory exists on any host (`stream-publisher.service.d`).
 The `*.example` files stay: they carry the design commentary and deploy
 checklists; the deployable copies under `infra/units/` are the source of truth
 for what is installed.
+
+### Built and verified
+
+- Code: `strip_prefix`, `stamp`, `daemon_reload`, `unmanaged_units` in
+  `scripts/deploy_common.py`; `scripts/deploy.py` (tar rename, optional stamp,
+  `sudo -n systemctl daemon-reload`); `scripts/drift_check.py`
+  (`find_untracked_units`, report and STATE column). `.gitattributes` pins
+  `infra/units/**` to LF.
+- Tests: 15 new (7 in `tests/test_drift_check.py`, 8 in
+  `tests/test_deploy.py`, incl. no-address/no-token/no-CR guards over
+  `infra/units/`). Full ambient suite: 2511 passed, 3 skipped, 0 failed.
+- Live, read-only: the three unit targets compared against HEAD are clean
+  (15, 3 and 2 files, 0 untracked); with the relay's `unmanaged_units`
+  cleared in-process the same live check flags the four cloudflared units and
+  the distro drop-in, so the untracked check demonstrably can detect.
+- `deploy.py --dry-run` plans for all three unit targets reviewed (HEAD is not
+  yet on origin/main, so the ancestor gate was bypassed in-process for the
+  dry-run only; nothing touched a host).
+- `docs/STATE.md` regenerated: unit targets read DRIFT only because
+  `origin/main` does not carry `infra/units/` yet. Re-run `--write-state`
+  after the push.
+- Open for the orchestrator: (1) rotate the relay tunnel token embedded in
+  `cloudflared-admin.service` (the inventory read printed it into this
+  session's transcript) and move it to `--token-file`; (2) the first real
+  unit deploy will show whether the `df`/`openclaw` accounts have passwordless
+  `sudo tar` and `sudo systemctl daemon-reload`; (3) the two VNC tunnel units
+  need their relay address moved to an `EnvironmentFile` before they can come
+  in; (4) helper scripts the units run (`/usr/local/sbin/df-netwatch.py`,
+  `/opt/df/stream/capture-push.sh`, the game's `systemd-*.sh`) are still not
+  in any manifest target.
