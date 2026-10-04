@@ -79,18 +79,18 @@ def test_agents_json_conductor_is_code_not_a_model(records, roster):
 
 
 def test_agents_json_track_record_from_real_records(records, roster):
-    """board-demo.jsonl has 5 rulings (4 architect-proposed + 1
+    """board-demo.jsonl has 6 rulings (5 architect-proposed + 1
     quartermaster-proposed), one rejected, one overseer ask, one consultant
     answer -- counted, never invented."""
     agents = site_data.build_agents_json(records, roster=roster)
     overseer = agents["roles"]["overseer"]["record"]
-    assert overseer["ruled"] == 5
+    assert overseer["ruled"] == 6
     assert overseer["accepted"] == 4
     assert overseer["rejected"] == 1
     assert overseer["asks"] == 1
 
     architect = agents["roles"]["architect"]["record"]
-    assert architect["proposals"] == 4
+    assert architect["proposals"] == 5
     assert architect["accepted"] == 3
     assert architect["rejected"] == 1
 
