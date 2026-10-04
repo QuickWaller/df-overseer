@@ -60,11 +60,14 @@ near-duplicate matching) uses `tool IS ?` rather than `tool = ?`, since SQL
 SQLite cannot drop a `NOT NULL` constraint in place (`ALTER TABLE ... ALTER
 COLUMN` does not exist), so schema version 1 (`tool TEXT NOT NULL`) is
 migrated to version 2 (`tool TEXT`) by rebuilding the `entries` table inside
-one transaction: rename it, create the new nullable-`tool` table under the
-original name, copy every row across unchanged (id, outcomes and
-`status_history` are untouched, since they live in other tables and
-reference entries only by id), drop the renamed copy, recreate its indexes,
-then bump `schema_version`. The migration is a no-op once the column is
+one transaction: create the new nullable-`tool` table under a temporary
+name, copy every row across unchanged (id, outcomes and `status_history` are
+untouched, since they live in other tables and reference entries only by
+id), drop the old table, rename the new one into place, recreate its
+indexes, then bump `schema_version`. (The first version of this migration
+renamed the OLD table aside instead, which made SQLite rewrite the child
+tables' foreign keys to the dropped name; `_repair_dangling_entries_refs`
+repairs stores that already went through it.) The migration is a no-op once the column is
 already nullable (checked via `PRAGMA table_info`), so it is safe to run
 again; if it is interrupted mid-transaction the whole thing rolls back and
 the next attempt starts clean from version 1. It runs automatically the
@@ -258,28 +261,111 @@ CREATE TABLE entries (
 """
 
 
+_CHILD_TABLES_SQL = {
+    "outcomes": """
+CREATE TABLE outcomes_new (
+    seq INTEGER PRIMARY KEY AUTOINCREMENT,
+    entry_id TEXT NOT NULL REFERENCES entries(id),
+    at TEXT NOT NULL,
+    role TEXT NOT NULL,
+    run_id TEXT NOT NULL,
+    result TEXT NOT NULL,
+    note TEXT
+)
+""",
+    "status_history": """
+CREATE TABLE status_history_new (
+    seq INTEGER PRIMARY KEY AUTOINCREMENT,
+    entry_id TEXT NOT NULL REFERENCES entries(id),
+    at TEXT NOT NULL,
+    from_status TEXT NOT NULL,
+    to_status TEXT NOT NULL,
+    by TEXT NOT NULL,
+    note TEXT
+)
+""",
+}
+_CHILD_INDEXES_SQL = (
+    "CREATE INDEX IF NOT EXISTS idx_outcomes_entry ON outcomes(entry_id)",
+    "CREATE INDEX IF NOT EXISTS idx_outcomes_run ON outcomes(run_id)",
+)
+_STALE_NAME = "entries_v1_old"
+
+
 def _migrate_v1_to_v2(conn: sqlite3.Connection) -> None:
     """Rebuild `entries` with a nullable `tool` column, preserving every row,
     id and outcome (see the module docstring, "General entries"). A no-op if
     the column is already nullable. Runs in its own transaction; rolls back
-    cleanly on any failure, so a retry after an interruption starts clean."""
+    cleanly on any failure, so a retry after an interruption starts clean.
+
+    The new table is built under a temporary name, filled, and swapped in by
+    dropping the old `entries` and renaming the new one. The earlier version
+    renamed the OLD table aside (`ALTER TABLE entries RENAME TO
+    entries_v1_old`), and SQLite then rewrote the `REFERENCES entries(id)`
+    clauses of `outcomes` and `status_history` to point at the renamed table;
+    once that table was dropped they dangled, and every outcome or status
+    write failed with `no such table: main.entries_v1_old`. Renaming the NEW
+    table never touches anything that references `entries`, so the foreign
+    keys stay correct. Foreign keys are switched off for the swap (they are
+    off by default on this connection; the pragma is a no-op inside a
+    transaction, so it is set first)."""
     cols = conn.execute("PRAGMA table_info(entries)").fetchall()
     tool_col = next((c for c in cols if c["name"] == "tool"), None)
     already_nullable = tool_col is None or not tool_col["notnull"]
+    conn.execute("PRAGMA foreign_keys=OFF")
     conn.execute("BEGIN IMMEDIATE")
     try:
         if not already_nullable:
-            conn.execute("ALTER TABLE entries RENAME TO entries_v1_old")
-            conn.execute(_ENTRIES_V2_SQL)
+            conn.execute(_ENTRIES_V2_SQL.replace("CREATE TABLE entries", "CREATE TABLE entries_new", 1))
             conn.execute(
-                "INSERT INTO entries (id, tool, kind, list, title, body, status, created_at, "
+                "INSERT INTO entries_new (id, tool, kind, list, title, body, status, created_at, "
                 "written_by_role, run_id, call_excerpt) SELECT id, tool, kind, list, title, body, "
-                "status, created_at, written_by_role, run_id, call_excerpt FROM entries_v1_old"
+                "status, created_at, written_by_role, run_id, call_excerpt FROM entries"
             )
-            conn.execute("DROP TABLE entries_v1_old")
+            conn.execute("DROP TABLE entries")
+            conn.execute("ALTER TABLE entries_new RENAME TO entries")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_entries_tool ON entries(tool, list, status)")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_entries_run ON entries(run_id)")
         conn.execute("UPDATE schema_version SET version = ?", (SCHEMA_VERSION,))
+        conn.execute("COMMIT")
+    except BaseException:
+        conn.execute("ROLLBACK")
+        raise
+
+
+def _repair_dangling_entries_refs(conn: sqlite3.Connection) -> None:
+    """Repair a store the old migration left broken: `outcomes` and/or
+    `status_history` whose `REFERENCES` clause names the dropped
+    `entries_v1_old` instead of `entries`. Each affected table is rebuilt with
+    the correct reference, every row copied with its `seq` unchanged and the
+    AUTOINCREMENT counter preserved, all in one transaction. A no-op on a
+    healthy store (checked against `sqlite_master`)."""
+    try:
+        broken = [
+            r["name"]
+            for r in conn.execute(
+                "SELECT name FROM sqlite_master WHERE type = 'table' AND name IN "
+                "('outcomes', 'status_history') AND sql LIKE ?",
+                (f"%{_STALE_NAME}%",),
+            ).fetchall()
+        ]
+    except sqlite3.DatabaseError:
+        return  # not a readable database: `_check_schema` reports that properly
+    if not broken:
+        return
+    conn.execute("PRAGMA foreign_keys=OFF")
+    conn.execute("BEGIN IMMEDIATE")
+    try:
+        for name in broken:
+            counter = conn.execute("SELECT seq FROM sqlite_sequence WHERE name = ?", (name,)).fetchone()
+            conn.execute(_CHILD_TABLES_SQL[name])
+            conn.execute(f"INSERT INTO {name}_new SELECT * FROM {name}")
+            conn.execute(f"DROP TABLE {name}")
+            conn.execute(f"ALTER TABLE {name}_new RENAME TO {name}")
+            if counter is not None:
+                conn.execute("UPDATE sqlite_sequence SET seq = ? WHERE name = ?", (counter[0], name))
+        for stmt in _CHILD_INDEXES_SQL:
+            conn.execute(stmt)
         conn.execute("COMMIT")
     except BaseException:
         conn.execute("ROLLBACK")
@@ -303,6 +389,10 @@ def _migrate_if_needed(conn: sqlite3.Connection, path: Path) -> None:
 
 def _ensure_current_schema(conn: sqlite3.Connection, path: Path) -> None:
     _migrate_if_needed(conn, path)
+    try:
+        _repair_dangling_entries_refs(conn)
+    except sqlite3.Error as exc:
+        raise GotchaStoreError(f"gotcha store at {path}: repair of dangling references failed: {exc}") from exc
     _check_schema(conn, path)
 
 
