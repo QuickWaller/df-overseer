@@ -380,3 +380,125 @@ targets:
     verified: >-
       2026-10-02, live: /srv/stream/web-operator holds index.html,
       operator.html, app.js and style.css (orchestrator, read-only listing).
+
+  # ---------------------------------------------------------------------
+  # systemd units and drop-ins (added 2026-10-05,
+  # handoffs/2026-10-05-units-in-manifest.md). The committed files under
+  # infra/units/<host>/ are the EXACT installed bytes, read back from each
+  # host 2026-10-05; the *.example files elsewhere in infra/ stay as the
+  # annotated templates. Rule: units change only through deploy.py, never by
+  # editing /etc/systemd/system by hand (the 2026-10-02 stream-publisher
+  # drop-in was the exception that forced this).
+  #
+  # Shared shape: destination /etc/systemd/system, sudo, strip_prefix so the
+  # path under it is the unit's own (drop-ins keep their <unit>.d/
+  # directory), stamp: false (a DEPLOYED_COMMIT would litter the systemd
+  # directory, so drift compares these to origin/main), daemon_reload: true.
+  # NO unit target restarts anything automatically: daemon-reload only
+  # re-reads definitions, and a running service keeps its old definition
+  # until someone restarts it, per its own risk rating below.
+  # ---------------------------------------------------------------------
+
+  vm103-units:
+    host: df
+    destination_root: /etc/systemd/system
+    sudo: true
+    strip_prefix: infra/units/df/
+    stamp: false
+    daemon_reload: true
+    paths:
+      - infra/units/df/
+    exclude: []
+    leave_alone: []
+    unmanaged_units:
+      - name: df-vnc-tunnel.service
+        why: >-
+          ExecStart embeds the relay's LAN address; this repo is public, so
+          the file stays host-only. To bring it in, move the address into an
+          EnvironmentFile and reference ${VAR} in ExecStart first.
+      - name: df-vnc-control-tunnel.service
+        why: same as df-vnc-tunnel.service (relay LAN address in ExecStart)
+    restart:
+      - service: df-fortress.service
+        risk: high
+        why: >-
+          Its unit file is shipped here, but the unit RUNS the game; a changed
+          definition only takes effect on a restart, which is the live-save
+          procedure of decisions/DECISIONS.md 2026-09-16 (see
+          vm103-dfhack-scripts above). Never automatic.
+    post_deploy:
+      - "daemon-reload runs, nothing is restarted. A changed dfmcp-server.service
+         takes effect on its next restart (low risk,
+         `scripts/vm-ssh.sh df 'sudo systemctl restart dfmcp-server.service'`,
+         or the next vm103-dfmcp deploy); stream-publisher.timer picks up a changed
+         .service on the next tick; a changed .timer needs
+         `sudo systemctl restart <name>.timer`."
+    verified: >-
+      2026-10-05, live and read-only: every file under infra/units/df/ read back
+      from /etc/systemd/system on the host (base64 over vm-ssh.sh, because its
+      scrubber masks df-* names) and committed byte for byte. The only drop-in
+      directory on the host is stream-publisher.service.d. NOT yet confirmed:
+      that the df account's sudo permits `tar` and `systemctl daemon-reload`
+      without a password (needs a first real deploy to learn; the existing
+      `sudo systemctl restart` entries already assume systemctl).
+
+  vm106-units:
+    host: openclaw
+    destination_root: /etc/systemd/system
+    sudo: true
+    strip_prefix: infra/units/openclaw/
+    stamp: false
+    daemon_reload: true
+    paths:
+      - infra/units/openclaw/
+    exclude: []
+    leave_alone: []
+    restart:
+      - service: conductor.service
+        risk: high
+        why: >-
+          conductor.service must stay DISABLED and INACTIVE (run by hand only,
+          CLAUDE.md status block). Shipping its unit file never enables or
+          starts it, and deploy.py never restarts it; enabling or starting is
+          the user's separate go-ahead each time.
+    post_deploy:
+      - "daemon-reload runs; conductor.service is not enabled, started or
+         restarted. Confirm afterwards with `drift_check.py` (services section):
+         conductor.service must still read active=inactive, enabled=disabled."
+    verified: >-
+      2026-10-05, live and read-only: conductor.service and df-netwatch.{service,timer}
+      read back from /etc/systemd/system and committed byte for byte;
+      conductor.service UnitFileState=disabled, ActiveState=inactive per the
+      2026-10-02 check, unchanged by this stream (it wrote nothing).
+
+  relay-units:
+    host: relay
+    destination_root: /etc/systemd/system
+    sudo: true
+    strip_prefix: infra/units/relay/
+    stamp: false
+    daemon_reload: true
+    paths:
+      - infra/units/relay/
+    exclude: []
+    leave_alone: []
+    unmanaged_units:
+      - name: cloudflared.service
+        why: vendor tunnel client install, not project-written; reads its token from a root-only file
+      - name: cloudflared-update.service
+        why: vendor updater, not project-written
+      - name: cloudflared-update.timer
+        why: vendor updater, not project-written
+      - name: cloudflared-admin.service
+        why: >-
+          ExecStart embeds a live tunnel token inline, so it cannot be
+          committed to this public repo. Fix on the host first (rotate the
+          token, then `--token-file` like cloudflared.service does), then
+          bring the unit in.
+    restart: []
+    post_deploy:
+      - "daemon-reload runs; the websockify bridges are not restarted (changing a
+         bridge unit is a hand restart after checking nobody is mid-session)."
+    verified: >-
+      2026-10-05, live and read-only: df-webvnc.service and df-webvnc-control.service
+      read back and committed byte for byte.
