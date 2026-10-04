@@ -1003,7 +1003,8 @@ class StreamPage {
    * everything else replies to it one level in, and an answer nests under
    * its question. Plans, carried-out steps and holds are one-line events,
    * not posts. "What it checked" lists `item.calls`; "Thinking" shows
-   * `item.thinking` (operator data only; nothing captures it yet). The tree and
+   * `item.thinking`, on the public page too (the user's call, 2026-10-05;
+   * nothing captures it yet). The tree and
    * the event wording are `threadTree` and `eventLine`, tested under node. */
   _conversationEl(items) {
     const { root, kids } = threadTree(items);
@@ -1091,7 +1092,7 @@ class StreamPage {
     }
     if (item.thinking) {
       extras.push(el("details", { class: "fx" }, [
-        el("summary", {}, [el("span", { text: "Thinking" }), el("span", { class: "fop", text: "OPERATOR" })]),
+        el("summary", { text: "Thinking" }),
         el("div", { class: "fthink", text: item.thinking }),
       ]));
     }
