@@ -67,6 +67,22 @@ def status_from_cycle(result: CycleResult, *, state: str = "running") -> Dict[st
     }
 
 
+def status_running(role: str, wake_reason: str, *, started_at: "str | None" = None) -> Dict[str, Any]:
+    """The status a conductor writes when it LAUNCHES a role's run (before
+    the run, not after the cycle): `{"state": "running", "running": {role,
+    wake_reason, started_at}}`. `dfqueue/live.py` reads the `running` block to
+    show why the awake role woke. Nothing in the service calls this yet; the
+    call belongs in `conductor/cycle.py` just before each runner launch
+    (handoffs/2026-10-05-board-order-year-live-view.md). The block carries a
+    role name and a wake-reason code only, nothing from a briefing."""
+    now = datetime.now(timezone.utc).isoformat()
+    return {
+        "state": "running",
+        "updated_at": now,
+        "running": {"role": role, "wake_reason": wake_reason, "started_at": started_at or now},
+    }
+
+
 def write_status(path: "Path | str", status: Dict[str, Any]) -> None:
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
