@@ -51,7 +51,7 @@ def _line(age_s, role, tool):
     ts = datetime.fromtimestamp(NOW - age_s, timezone.utc).isoformat()
     return json.dumps({
         "event": "tools/call", "ts": ts, "role": role, "tool": tool, "tool_id": tool,
-        "arguments": {"password": "ARG-SECRET"}, "client": "10.1.2.3", "is_error": False,
+        "arguments": {"password": "ARG-SECRET"}, "client": "203.0.113.9", "is_error": False,
     })
 
 
@@ -78,7 +78,7 @@ def test_live_lands_in_both_status_files_public_without_cost_or_arguments(tmp_pa
     pub, op = json.loads(pub_text), json.loads(op_text)
     assert pub["live"]["running"] and pub["live"]["awake"][0]["last_tool"] == "zone.list"
     assert pub["live"]["awake"][0]["elapsed_s"] == 120
-    for secret in ("3.21", "ARG-SECRET", "10.1.2.3"):
+    for secret in ("3.21", "ARG-SECRET", "203.0.113.9"):
         assert secret not in pub_text
     assert op["live"]["last_runs"]["overseer"]["cost_usd"] == 3.21
 

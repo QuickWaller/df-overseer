@@ -127,3 +127,53 @@ Chosen, no new port, no new credential:
   `live` carries role, awake flag, elapsed, tool id, wake reason, last
   duration. Operator adds cost and the call's error flag. Nothing carries
   arguments, hostnames or addresses.
+
+### Task 3 as built
+- `dfqueue/live.py` (journal parse, journal reader, conductor-dir reader,
+  `build_live`, `live_hash_payload`); publisher flags `--live-journal`,
+  `--conductor-dir` (env `STREAM_PUBLISHER_LIVE_JOURNAL`,
+  `STREAM_PUBLISHER_CONDUCTOR_DIR`), both OFF by default so status.json stays
+  the placeholder until switched on. The change hash ignores `as_of` and
+  `elapsed_s`, so an idle clock does not republish.
+- `conductor/status.py::status_running` defines the mid-run block; the
+  conductor does not call it yet (cycle.py, not in this stream's surfaces).
+  Until it does, a live run shows no wake reason; the last finished run's
+  reason shows once its archive is on this host.
+- Page: persistent one-line strip above the Season goal line
+  (`.e-live-strip`, 28px, never wraps), polls `status.json` every 4 s apart
+  from the head.json gate, elapsed ticks each second. Hidden when there is no
+  live data. Checked headless at 1280x700 on both pages, running and idle.
+- Assets bumped to v21 in both html files.
+
+### Checks
+Ambient `python -m pytest`: 2517 passed, 3 skipped (the date-sensitive wiki
+test passed today). `dfmcp/tests` in `.venv-dfmcp`: 768 passed. New tests:
+`dfqueue/tests/test_live.py` (11), `tests/test_stream_publisher_live.py` (5),
+`conductor/tests/test_status_running.py` (2), `dfqueue/tests/test_site_js_order.py`
+(2), plus the year tests in `test_feed.py`.
+
+### Preview recipe
+`python scripts/preview_stream_live.py` (add `--idle` for the last-run line,
+`--no-serve` to only write data): exports the board demo fixture to the
+gitignored `web/stream/data/`, writes a `live` block (Architect awake about
+four minutes, last tool zone.list, an earlier Overseer run), serves
+`web/stream/` on http://127.0.0.1:8934/index.html and `/operator.html`.
+
+### Deploy targets (orchestrator; nothing deployed)
+1. Relay web public and operator (`/srv/stream/web-public`, `/srv/stream/web-operator`
+   manifest blocks): `web/stream/app.js`, `style.css`, `index.html`,
+   `operator.html` (v21).
+2. VM 103 `vm103-stream-publisher` manifest block: `scripts/stream_publisher.py`,
+   `dfqueue/feed.py`, `dfqueue/live.py` (new, added to the manifest). Then add to
+   `/etc/stream-publisher/env`: `STREAM_PUBLISHER_LIVE_JOURNAL=true`, make sure the
+   publisher's user can read the journal (`systemd-journal` group; verify
+   with `journalctl -u dfmcp-server.service -n 1` as that user), and the
+   timer picks it up on its next 5 s run. Year fix and ordering take effect
+   with the same deploy; published feed items re-render the new year
+   automatically (dates are computed each cycle, not stored).
+3. Not done, needs a decision: delivering the conductor's runtime files
+   (`status.json`, `cycles/`) from VM 106 to the publisher host so
+   `STREAM_PUBLISHER_CONDUCTOR_DIR` has something to read (needs a restricted
+   credential or an MCP tool), and a `status_running` call in
+   `conductor/cycle.py` before each runner launch so a live run shows its
+   wake reason.

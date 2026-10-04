@@ -11,7 +11,7 @@ def _line(offset, role, tool, *, error=False, args=None):
     ts = datetime.fromtimestamp(T0 + offset, timezone.utc).isoformat(timespec="milliseconds")
     return json.dumps({
         "event": "tools/call", "ts": ts, "role": role, "tool": tool.replace(".", "_"),
-        "tool_id": tool, "arguments": args or {"secret": "ARG-VALUE"}, "client": "10.9.9.9",
+        "tool_id": tool, "arguments": args or {"secret": "ARG-VALUE"}, "client": "203.0.113.9",
         "session_id": "sess-1", "is_error": error, "duration_ms": 5.0,
     })
 
