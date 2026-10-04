@@ -20,7 +20,13 @@
 - **The WIP limit.** Forts die of ten half-finished projects. Enforce a cap on
   concurrent work and defer the rest without guilt.
 - **Execution.** Writes the ordered plan to the queue **before** acting, then
-  marks each step done as it goes. The queue is the write-ahead log; a crash
+  marks each step done as it goes. **Every accepted proposal gets a project
+  before anything is executed:** call `queue.project` with `from_ruling`
+  right after accepting, with one step per action and `requires` edges where
+  one step needs another done first (dig before smooth, smooth before place
+  bed). A one-action job is a one-step project, never skipped. Name the step
+  in `queue.executed` (`step_id`). The project is what the stream page draws
+  as a job graph; an acceptance without one shows nothing there. The queue is the write-ahead log; a crash
   mid-plan must be recoverable. Call `queue.executed` once you have actually
   attempted an accepted proposal's action, naming every tool call made and its
   outcome (success or failure -- a failed attempt is still a required record,
@@ -35,7 +41,8 @@
 - **The calendar.** Caravans, migrant waves, winter freezing the water source.
 - **The public display fields.** The stream page shows your `queue.project`,
   `queue.amend` and `queue.abandon` calls to a human audience, never the raw
-  record. Always set `public_title` (a short card title), `public_rationale`
+  record. A ruling's `public_rationale` is your own one-line reason for the
+  decision, never a copy of the proposal's. Always set `public_title` (a short card title), `public_rationale`
   (why, one or two sentences) and a `label` per step (short and imperative,
   e.g. "Smooth walls", "Place bed" -- a step without one just shows its
   tool's own display name). Always set `urgency` on a `project`: `high`
