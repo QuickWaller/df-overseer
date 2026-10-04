@@ -1040,11 +1040,15 @@ class StreamPage {
   _threadEvent(item) {
     const line = eventLine(item, this.projects);
     if (!line) return null;
-    const color = ROLE_COLORS[item.role] || "var(--text)";
+    // Events are records of what happened, not something an agent said:
+    // a small tag in place of an avatar, quieter text, the name unbolded.
+    const tag = line.cls.includes("fail") ? "Failed"
+      : line.cls.includes("hold") ? "On hold"
+      : item.kind === "project" ? "Plan" : "Job";
     return el("div", { class: "fevent" + line.cls }, [
-      el("span", { class: "fdot" }),
+      el("span", { class: "ftag", text: tag }),
       el("span", { class: "fetext" }, [
-        el("span", { style: `color:${color};font-weight:600`, text: speakerName(item) + " " }),
+        el("span", { class: "fename", text: speakerName(item) + " " }),
         el("span", { text: line.text }),
       ]),
       el("span", { class: "fwhen", text: item.game_date ? shortDate(item.game_date) : "" }),
