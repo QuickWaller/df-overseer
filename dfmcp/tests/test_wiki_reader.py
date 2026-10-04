@@ -522,13 +522,13 @@ def test_wiki_search_is_a_registered_native_tool_with_a_schema():
 
 
 def test_consultant_is_granted_wiki_search_and_no_other_role_is():
-    from dfmcp import doctrine_tools, gotchas_tools, queue_tools, series_tools
+    from dfmcp import conductor_tools, doctrine_tools, gotchas_tools, queue_tools, series_tools
     from dfmcp.registry import load_registry
     from dfmcp.roles import load_roster
 
     reg = load_registry(native_tools={
         **queue_tools.NATIVE_TOOLS, **doctrine_tools.NATIVE_TOOLS, **series_tools.NATIVE_TOOLS,
-        **gotchas_tools.NATIVE_TOOLS, **kt.NATIVE_TOOLS,
+        **gotchas_tools.NATIVE_TOOLS, **kt.NATIVE_TOOLS, **conductor_tools.NATIVE_TOOLS,
     })
     roster = load_roster(reg)
     assert kt.WIKI_SEARCH in roster.roles["consultant"].read

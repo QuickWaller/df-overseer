@@ -161,3 +161,14 @@ write:
       runs dfqueue.grade.run_grading_cycle over MCP since the queue database
       lives on VM 103 and this service runs on VM 106. Idempotent. Granted
       only here: no other role's tools.yaml references this id.
+  - id: "conductor.report"
+    status: exists
+    note: >-
+      Added handoffs/2026-10-05-conductor-report.md. Native tool
+      (dfmcp/conductor_tools.py), not a DFHack command. Carries each role
+      run's wake reason at launch and its end-of-run summary, duration, cost
+      and the queue records it wrote to VM 103 (dfqueue/runs.py), over the
+      MCP connection the conductor already holds, so the stream page can show
+      why a role woke. Writes only to its own run store, never the fort.
+      Granted only here (the handler also refuses any other role). The
+      conductor treats a failed report as a log line, never a cycle failure.
