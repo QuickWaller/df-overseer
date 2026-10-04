@@ -864,6 +864,34 @@ class TestQueueTools:
         text_after = "".join(b.text for b in pending_after.content if b.type == "text")
         assert proposal_id not in text_after
 
+    async def test_conductor_report_roundtrip_over_the_wire_and_other_roles_refused(
+        self, registry, roster, pool, fake_dfhack, tmp_path
+    ):
+        """handoffs/2026-10-05-conductor-report.md: the conductor's token can
+        start and end a run report (a row lands in the run store beside the
+        queue db), and every other role is refused by the allowlist."""
+        from dfqueue import runs as _runs
+
+        queue_db = tmp_path / "queue.sqlite3"
+        async with mcp_session(_app(registry, roster, pool, queue_db), CONDUCTOR_TOKEN) as session:
+            started = await session.call_tool(
+                "conductor__report",
+                {"phase": "start", "role": "architect", "wake_reason": "routine_review", "cycle": 1},
+            )
+            assert started.is_error is False
+            run_id = started.structured_content["run_id"]
+            ended = await session.call_tool(
+                "conductor__report",
+                {"phase": "end", "run_id": run_id, "ok": True, "final_answer": "Quiet."},
+            )
+            assert ended.is_error is False
+        row = _runs.get_run(_runs.runs_path(queue_db), run_id)
+        assert row["wake_reason"] == "routine_review" and row["final_answer"] == "Quiet."
+
+        async with mcp_session(_app(registry, roster, pool, queue_db), ARCHITECT_TOKEN) as session:
+            denied = await session.call_tool("conductor__report", {"phase": "start", "role": "architect"})
+        assert denied.is_error is True
+
     async def test_queue_call_is_logged(self, registry, roster, pool, fake_dfhack, tmp_path, caplog):
         """Test named in the brief: the queue call is logged, through the
         same _on_call_tool wrapper as every other tool, and never with the

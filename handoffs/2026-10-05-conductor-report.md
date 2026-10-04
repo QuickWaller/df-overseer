@@ -154,3 +154,124 @@ operator-only, it is one flag (`PUBLIC_SUMMARIES` in `dfqueue/live.py`).
 **Counts.** Only `conductor` gains a tool: 16 -> 17. The pinned count in
 `dfmcp/tests/test_gotchas_tools.py` and the per-role counts in
 `docs/STATE.md` (generated; regenerated offline by its own command) change.
+
+## Result (2026-10-05, executor, offline; no host writes, no deploys)
+
+**Built as designed**, with these points settled while building:
+
+- `dfqueue/runs.py` (store, `runs_path`, `start_run`/`end_run`/`window_for`,
+  `read_runs_readonly`, `queue_records_readonly`, `records_in_window`),
+  `dfmcp/conductor_tools.py` (the tool; `server.py` routes it with its own
+  write lock), `agents/conductor/tools.yaml` (`write:` grant, conductor only;
+  the handler also refuses any other role), `conductor/cycle.py`
+  (`_report`, `_run_role`: both role-run sites, the tripwire Overseer run and
+  the ordinary loop, are bracketed; a dry run reports nothing; a report failure
+  is one warning and never touches the run or the cycle),
+  `dfqueue/live.py` (`read_runs`, `build_runs`, `build_live(..., runs=)`),
+  `scripts/stream_publisher.py` (reads the store, fills the strip, writes
+  `runs.json`, folds it into change detection), `infra/deploy-manifest.yaml`
+  (`dfqueue/runs.py` added to `vm103-stream-publisher`; the other targets ship
+  whole directories already).
+- Wiring that had to follow the new native tool: `scripts/drift_check.py` and
+  `dfqueue/site_data.py` build a registry with the native-tool merge (without
+  `conductor_tools` the roster refuses to load, `tools.json` included), and
+  every test fixture that builds its own registry now merges it too.
+- **Public summaries: kept, behind the same safety the feed uses, plus a
+  280-char sentence cut, one switch to turn off.** `feed.find_unsafe_pattern`
+  catches urls, domains, addresses, paths, markup and token-shaped strings; it
+  does not understand meaning, so a model could still put a coordinate or a
+  quoted tool error in prose. If the user is not comfortable, set
+  `dfqueue/live.py::PUBLIC_SUMMARIES = False` (public `runs.json` then carries
+  `summary_withheld: true` and no text; operator is unaffected). Public never
+  carries cost, `wake_detail`, `error` or cycle, and a `wake_reason` that is
+  not a plain lowercase code is nulled.
+- Records are linked by role and server-stamped time window at `end` (design
+  above). Verified in a test against a real `records` table, not mocks.
+
+**Tests.** Ambient `python -m pytest`: 2561 passed, 3 skipped, 0 failed (the
+date-sensitive wiki test happened to pass). `.venv-dfmcp` `dfmcp/tests`: 782
+passed (764 plus 18 new). New: `dfmcp/tests/test_conductor_tools.py` (13),
+one over-the-wire case in `dfmcp/tests/test_server.py`,
+`conductor/tests/test_report.py` (6), `tests/test_stream_publisher_runs.py`
+(10). Pinned conductor count 16 to 17 in `dfmcp/tests/test_gotchas_tools.py`
+and `tests/test_drift_check.py`; `test_roles.py` now pins that only the
+conductor holds `conductor.report`. `docs/STATE.md` is generated from live
+probes and was not regenerated; it will show conductor 17 offline vs 16 live
+until the deploy, then regenerate with `python scripts/drift_check.py --write-state`.
+
+### JSON the page reads
+
+All under the per-fort directory, next to `head.json` (`forts/<fort_id>/`),
+both projections.
+
+`status.json`, `live` block (existing; additions marked NEW):
+```
+live.source            "journal+reports" etc. ("+reports" suffix when the store exists)
+live.running           true while a role is awake OR a report is open
+live.awake[]           { role, since, elapsed_s, last_tool, last_call_at,
+                         wake_reason,            // now filled from the open run report
+                         run_id }                // NEW, joins to runs.json (absent if no open report)
+live.last_runs[role]   { run_id, duration_s, ended_at, wake_reason, ok,
+                         source: "report" }      // operator adds cost_usd
+```
+
+`runs.json` (NEW; absent until a run store exists; newest first, max 40):
+```
+{ "available": true, "as_of": "<iso>",
+  "runs": [ {
+    "run_id": "run-0007", "role": "architect",
+    "wake_reason": "routine_review",   // code; public nulls anything not [a-z0-9_]
+    "status": "running|ok|failed|timed_out|lost",
+    "started_at": "<iso>", "ended_at": "<iso>|null", "duration_s": 42|null,
+    "records": [ { "id": "proposal-0003", "kind": "proposal", "thread": "proposal-0003" } ],
+    // public only:   "summary": "<=280 chars"  OR  "summary_withheld": true
+    //                (summary only when status is ok and the text passed the safety check)
+    // operator only: "summary": "<full final answer, 4000 cap>", "wake_detail", "cycle",
+    //                "cost_usd" (null = unknown), "error"
+  } ],
+  "by_thread": { "proposal-0003": ["run-0007", "run-0005"] } }   // thread id -> run ids, newest first
+```
+`thread` is the id of the feed item to nest the run's summary under: a
+proposal, ask or project is its own thread; a ruling or amend resolves to its
+`proposal_id`/`project_id`; an `executed` record resolves through its ruling.
+The page should match `thread` against its existing thread ids and ignore any
+it cannot find. A `lost` run is one with no end for over 20 minutes.
+
+### Deploy plan (orchestrator; nothing here was deployed)
+
+Order: **server first, then the publisher, conductor last.** A conductor that
+calls a tool the server lacks only logs a warning, so the order is forgiving,
+but the strip stays empty until all three are live.
+
+1. `vm103-dfmcp` (`dfmcp/`, `dfqueue/`, `agents/`): ships the tool, the grant,
+   `dfqueue/runs.py`, and the registry wiring in `dfqueue/site_data.py`.
+   **Restart `dfmcp-server.service`** (low risk). Check: conductor tool count
+   16 to 17, every other role unchanged (overseer 99, architect 53, consultant
+   29, quartermaster 25); an architect calling `conductor__report` is refused.
+   The first `start` creates `<queue-db-stem>.runs.sqlite3` beside the queue
+   database. Confirm the service can write in that directory (SQLite WAL adds
+   `-wal` and `-shm` files, so a unit that whitelists only the one file in
+   `ReadWritePaths` would fail).
+2. `vm103-stream-publisher` (`scripts/stream_publisher.py`, `dfqueue/live.py`,
+   `dfqueue/runs.py`, `dfqueue/site_data.py`, all already in or added to that
+   target). No env needed: the publisher finds the store as the queue db's
+   `.runs.sqlite3` sibling (override `STREAM_PUBLISHER_RUNS_DB`). Confirm its
+   user can read that file and open the `-shm` (WAL read-only needs both). If
+   `mode=ro` fails the code returns nothing and the strip stays as before
+   without an error, so check that `runs.json` appears. Restart
+   `stream-publisher.timer` (low risk). Deploy this after step 1 so the
+   publisher's registry (`site_data`) knows the new tool.
+3. `vm106-agents` (`agents/`, bookkeeping: the conductor does not read it at
+   run time) and `vm106-conductor` (`conductor/`). `conductor.service` is
+   disabled and inactive, so there is nothing to restart; the next manual
+   `--once` run picks the code up. First real check: one `--once` cycle that
+   wakes a role, then read `runs.json` on VM 103 and the strip.
+4. After: `python scripts/drift_check.py --write-state` (conductor 17).
+
+**Not done / for the orchestrator:** `Working.md`, `decisions/DECISIONS.md` and
+`memory/` are untouched by rule. Suggested register row: run reports ride the
+conductor's MCP connection into a store of their own beside the queue db,
+records are linked server-side by role and time window, public summaries are
+gated by the feed's safety check with a one-flag off switch. The page work
+(`web/stream/`) is the next stream: render `live.awake[].wake_reason` and
+`runs.json` replies nested by `thread`.
