@@ -82,3 +82,10 @@ rules: read `C:\Users\wills\.claude\projects\c--website-projects-df-automation\m
 
 All five tasks committed with tests, screenshots described in the Result,
 the deploy targets listed, and a Result section here.
+
+## Result (extended as the work lands)
+
+Plan: (1) feed gets `step_label`/`step_targets`/`step_total`/`step_outcome` on
+executed items; (2) check what `calls` could hold; (3) board lists every
+proposal with state filters; (4) titles grow from proposal to project to amend;
+(5) tidy, node tests, fixture, asset bump. Commit after each.
