@@ -196,6 +196,7 @@ targets:
       - scripts/stream_publisher.py
       - dfqueue/feed.py
       - dfqueue/feed_status.py
+      - dfqueue/live.py                # who-is-awake view (journal + conductor dir)
       - dfqueue/site_data.py
       - dfqueue/charter_changes.json   # charter history; the VM has no git
       - web/stream/site-text.yaml      # role labels, map ring, past forts

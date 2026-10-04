@@ -156,6 +156,24 @@ Re-run the export script and refresh the page to see a different export;
 the page polls its own `head.json` every 5 seconds while the tab is
 visible, so it also picks up a re-export live without a manual refresh.
 
+## The who-is-awake strip (preview and data path)
+
+The Board's top line shows which role is awake, for how long, its last tool,
+and why it woke; idle, it shows the last run (operator page adds cost). Data
+is `status.json`'s `live` key, built by `dfqueue/live.py` from `dfmcp-server`'s
+call journal on the publisher's host, plus an optional local copy of the
+conductor's runtime root. Preview it with sample data, no VM:
+
+```
+python scripts/preview_stream_live.py          # a cycle running, serves :8934
+python scripts/preview_stream_live.py --idle   # nobody awake
+```
+
+Publisher switches (both off by default): `--live-journal` /
+`STREAM_PUBLISHER_LIVE_JOURNAL=true` and `--conductor-dir` /
+`STREAM_PUBLISHER_CONDUCTOR_DIR`. The publisher's user needs read access to
+the journal (`systemd-journal` group).
+
 ## What is real here and what is a placeholder
 
 - **Real**: the board (split layout, Under way/On hold/Done/Turned down,
