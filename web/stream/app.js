@@ -1010,12 +1010,11 @@ class StreamPage {
       // Operator items carry the record; public items carry `step_label` and
       // `step_targets` once the publisher adds them (until then, generic).
       const step = rec.step_id ? findStep(rec.step_id) : null;
-      const label = (step && step.label) || item.step_label || null;
-      const acts = rec.actions || [];
-      const n = acts.length ? acts.reduce((k, a) => k + ((a.targets || []).length), 0) : (item.step_targets || 0);
-      const total = (step && step.total) || item.step_total || null;
-      const failed = acts.some((a) => a.outcome && a.outcome !== "success");
-      const done = acts.length && acts.every((a) => a.target_state === "done");
+      const label = item.step_label || (step && step.label) || null;
+      const n = item.step_targets || 0;
+      const total = item.step_total || null;
+      const failed = item.step_outcome === "failed";
+      const done = item.step_outcome === "finished";
       const verb = failed ? "tried and failed to start" : done ? "finished" : "started";
       const count = n ? ` · ${n}${total ? " of " + total : ""} ${n === 1 ? "target" : "targets"} ${done ? "done" : "ordered"}` : "";
       text = label ? `${verb} job "${label}"${count}` : "carried out a job";

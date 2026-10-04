@@ -470,7 +470,7 @@ PUBLIC_ITEM_FIELDS = frozenset({
     "seq", "id", "kind", "role", "speaker", "type", "tick", "game_date",
     "ts", "reply_to", "thread", "text", "badge", "withheld",
     "withheld_reason", "step_label", "step_targets", "step_total",
-    "step_outcome",
+    "step_outcome", "title",
 })
 
 #: Kinds this module knows how to render at all, public or operator side.
@@ -516,6 +516,7 @@ def build_public_item(record: dict, *, seq: int, reply_to: Optional[str],
     }
     if kind == PROPOSAL:
         out["type"] = humanize_type(record.get("type"))
+        out["title"] = _public_display_name({"summary": record.get("summary")})
     if kind == EXECUTED:
         out.update(executed_step_info(record, ctx))
 
@@ -562,6 +563,8 @@ def build_operator_item(record: dict, *, seq: int, reply_to: Optional[str],
     builder = PUBLIC_TEXT_BUILDERS.get(kind)
     text = builder(record, ctx or {}) if builder else None
     extra = executed_step_info(record, ctx or {}) if kind == EXECUTED else {}
+    if kind == PROPOSAL:
+        extra["title"] = _public_display_name({"summary": record.get("summary")}, safe=False)
     return {
         **extra,
         "seq": seq,
@@ -619,7 +622,7 @@ def _truncate(text: str, max_len: int) -> str:
     return text[: max_len - 1].rstrip() + "…"
 
 
-def _public_display_name(record: dict) -> Optional[str]:
+def _public_display_name(record: dict, *, safe: bool = True) -> Optional[str]:
     """A project's public display name: `public_title` (design §3.3 item 6)
     when the Overseer wrote one and it looks safe, else a truncated
     `summary` (this handoff's own named fallback -- `summary` is written for
@@ -627,13 +630,14 @@ def _public_display_name(record: dict) -> Optional[str]:
     has, and the user explicitly asked for it as the LAST-resort display
     name, never as the chat line's own body text). `None` only when neither
     exists or both are unsafe."""
-    title = _safe_public_text(record.get("public_title"))
+    check = _safe_public_text if safe else (lambda t: t)
+    title = check(record.get("public_title"))
     if title:
         return title
     summary = record.get("summary")
     if not isinstance(summary, str) or not summary.strip():
         return None
-    return _safe_public_text(_truncate(summary.strip(), _DISPLAY_NAME_MAX))
+    return check(_truncate(summary.strip(), _DISPLAY_NAME_MAX))
 
 
 def _public_board_steps(records: list[dict], project_id: str) -> list[dict]:
@@ -705,6 +709,15 @@ def build_projects_view(records: list[dict], *, public: bool) -> dict:
             continue
         if kind == AMEND:
             projects[pid]["version"] += 1
+            # A later amend that names a new `public_title` renames the
+            # project (the newest wins). The schema does not give `amend` a
+            # `public_title` field yet, so no real record carries one today;
+            # read when present so the day it does, the title grows.
+            new_title = r.get("public_title")
+            if isinstance(new_title, str) and new_title.strip():
+                new_title = _safe_public_text(new_title) if public else new_title
+                if new_title:
+                    projects[pid]["name"] = new_title
         elif kind == ABANDON:
             projects[pid]["abandoned"] = True
             if not public:
