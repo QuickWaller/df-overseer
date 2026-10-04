@@ -340,6 +340,53 @@ def find_unsafe_pattern(text: Optional[str]) -> Optional[str]:
     return None
 
 
+# ---- executed items: which job, how many targets, how it went --------------
+
+#: Words an executed item's `step_outcome` may take. The page words them
+#: ("finished", "started", "tried and failed to start"); nothing else about
+#: the tool call (its id, arguments, raw detail) is ever public.
+STEP_OUTCOMES = ("started", "finished", "failed")
+
+
+def _steps_by_id(records: list[dict]) -> dict:
+    """step id -> the step dict, from every project's first version, then
+    each amend's replacement plan in append order (a later version's step of
+    the same id wins)."""
+    out: dict[str, dict] = {}
+    for r in records:
+        if r.get("kind") in (PROJECT, AMEND):
+            for step in r.get("steps") or []:
+                if isinstance(step, dict) and isinstance(step.get("id"), str):
+                    out[step["id"]] = step
+    return out
+
+
+def executed_step_info(record: dict, ctx: dict) -> dict:
+    """What a public `executed` item may say about its job: `step_label`
+    (the agent-written display label, or the humanised tool id, run through
+    the same safety net as every other public text; `None` when unsafe or
+    when the record names no step), `step_targets` (targets this record
+    acted on), `step_total` (the step's literal target count, `None` when
+    its targets are dynamic) and `step_outcome` (see `STEP_OUTCOMES`)."""
+    step = (ctx.get("steps_by_id") or {}).get(record.get("step_id"))
+    label = _safe_public_text(feed_status.step_public_label(step)) if step else None
+    actions = [a for a in (record.get("actions") or []) if isinstance(a, dict)]
+    targets = sum(len(a.get("targets") or []) for a in actions)
+    literal = feed_status._literal_targets(step) if step else None
+    if any(a.get("outcome") not in (None, "success") for a in actions):
+        outcome = "failed"
+    elif actions and all(a.get("target_state") == "done" for a in actions):
+        outcome = "finished"
+    else:
+        outcome = "started"
+    return {
+        "step_label": label,
+        "step_targets": targets,
+        "step_total": len(literal) if literal is not None else None,
+        "step_outcome": outcome,
+    }
+
+
 # ---- public text per kind (design §3.5) -------------------------------------
 
 
@@ -422,7 +469,8 @@ PUBLIC_TEXT_BUILDERS = {
 PUBLIC_ITEM_FIELDS = frozenset({
     "seq", "id", "kind", "role", "speaker", "type", "tick", "game_date",
     "ts", "reply_to", "thread", "text", "badge", "withheld",
-    "withheld_reason",
+    "withheld_reason", "step_label", "step_targets", "step_total",
+    "step_outcome", "title",
 })
 
 #: Kinds this module knows how to render at all, public or operator side.
@@ -468,6 +516,9 @@ def build_public_item(record: dict, *, seq: int, reply_to: Optional[str],
     }
     if kind == PROPOSAL:
         out["type"] = humanize_type(record.get("type"))
+        out["title"] = _public_display_name({"summary": record.get("summary")})
+    if kind == EXECUTED:
+        out.update(executed_step_info(record, ctx))
 
     builder = PUBLIC_TEXT_BUILDERS.get(kind)
     text = builder(record, ctx) if builder else None
@@ -511,7 +562,11 @@ def build_operator_item(record: dict, *, seq: int, reply_to: Optional[str],
     tick = record.get("cycle")
     builder = PUBLIC_TEXT_BUILDERS.get(kind)
     text = builder(record, ctx or {}) if builder else None
+    extra = executed_step_info(record, ctx or {}) if kind == EXECUTED else {}
+    if kind == PROPOSAL:
+        extra["title"] = _public_display_name({"summary": record.get("summary")}, safe=False)
     return {
+        **extra,
         "seq": seq,
         "id": record.get("id"),
         "kind": kind,
@@ -567,7 +622,7 @@ def _truncate(text: str, max_len: int) -> str:
     return text[: max_len - 1].rstrip() + "…"
 
 
-def _public_display_name(record: dict) -> Optional[str]:
+def _public_display_name(record: dict, *, safe: bool = True) -> Optional[str]:
     """A project's public display name: `public_title` (design §3.3 item 6)
     when the Overseer wrote one and it looks safe, else a truncated
     `summary` (this handoff's own named fallback -- `summary` is written for
@@ -575,13 +630,14 @@ def _public_display_name(record: dict) -> Optional[str]:
     has, and the user explicitly asked for it as the LAST-resort display
     name, never as the chat line's own body text). `None` only when neither
     exists or both are unsafe."""
-    title = _safe_public_text(record.get("public_title"))
+    check = _safe_public_text if safe else (lambda t: t)
+    title = check(record.get("public_title"))
     if title:
         return title
     summary = record.get("summary")
     if not isinstance(summary, str) or not summary.strip():
         return None
-    return _safe_public_text(_truncate(summary.strip(), _DISPLAY_NAME_MAX))
+    return check(_truncate(summary.strip(), _DISPLAY_NAME_MAX))
 
 
 def _public_board_steps(records: list[dict], project_id: str) -> list[dict]:
@@ -653,6 +709,15 @@ def build_projects_view(records: list[dict], *, public: bool) -> dict:
             continue
         if kind == AMEND:
             projects[pid]["version"] += 1
+            # A later amend that names a new `public_title` renames the
+            # project (the newest wins). The schema does not give `amend` a
+            # `public_title` field yet, so no real record carries one today;
+            # read when present so the day it does, the title grows.
+            new_title = r.get("public_title")
+            if isinstance(new_title, str) and new_title.strip():
+                new_title = _safe_public_text(new_title) if public else new_title
+                if new_title:
+                    projects[pid]["name"] = new_title
         elif kind == ABANDON:
             projects[pid]["abandoned"] = True
             if not public:
@@ -710,7 +775,7 @@ def build_items(records: list[dict], *, public: bool) -> list[dict]:
     reply_to_by_id = {r["id"]: compute_reply_to(r) for r in records if r.get("id")}
     badges = build_proposal_badges(records)
     records_by_id = {r["id"]: r for r in records if r.get("id")}
-    ctx = {"records_by_id": records_by_id}
+    ctx = {"records_by_id": records_by_id, "steps_by_id": _steps_by_id(records)}
 
     items: list[dict] = []
     for i, record in enumerate(records, start=1):

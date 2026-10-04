@@ -526,10 +526,8 @@ a.tagchip:hover { border-color: var(--text); }
 .site table.args .areq { color: var(--warn); white-space: nowrap; }
 .site .glist { margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 4px; line-height: 1.55; }
 
-/* PROTOTYPE 2026-10-05: conversation as a forum thread (app.js _conversationEl). */
+/* Conversation as a forum thread (app.js _conversationEl). */
 .fthread { display: flex; flex-direction: column; }
-.fdepth { margin-left: calc(var(--d) * 18px); padding-left: calc(min(var(--d), 1) * 14px); border-left: 1px solid transparent; }
-.fdepth[style*="--d:1"], .fdepth[style*="--d:2"], .fdepth[style*="--d:3"] { border-left-color: var(--line-strong); }
 .fpost { display: grid; grid-template-columns: 28px 1fr; gap: 0 10px; padding: 9px 0; }
 .fav { width: 26px; height: 26px; border: 1px solid currentColor; display: grid; place-items: center; font-weight: 700; font-size: 12px; }
 .fbody { min-width: 0; display: flex; flex-direction: column; gap: 4px; }
@@ -568,3 +566,6 @@ a.tagchip:hover { border-color: var(--text); }
 .freplies { display: flex; flex-direction: column; }
 .fevent .fdot, .fevent.plan .fdot { border-color: var(--line-strong); background: var(--raised); }
 .fevent.hold .fdot, .fevent.fail .fdot { border-color: var(--no-line); background: var(--no-bg); }
+.btop .bt { margin-right: auto; }
+.brole { font-size: 12px; white-space: nowrap; }
+.e-wrap .bagent { margin-left: auto; align-self: center; margin-bottom: 4px; background: var(--raised); color: var(--text); border: 1px solid var(--line-strong); font: inherit; font-size: 12.5px; padding: 3px 6px; min-height: 28px; }
