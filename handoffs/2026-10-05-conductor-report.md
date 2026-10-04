@@ -70,3 +70,87 @@ on the fort VM) and routing through the user's workstation (not always on).
 Design written here, the tool, conductor calls and publisher output committed
 with tests, the JSON shape documented for the page, the deploy plan, and a
 Result section.
+
+## Design (written before building, 2026-10-05)
+
+**Tool.** One native MCP tool, `conductor.report`, with a `phase` argument
+(`start` | `end`), in `dfmcp/conductor_tools.py`, granted only in
+`agents/conductor/tools.yaml` (`write:`). Two layers, as `queue.rule` does:
+the allowlist, and a refusal in the handler if the authenticated role is not
+`conductor`. Not `mutates` (it never touches the fort), not `sole_writer_only`.
+Arguments are closed (`additionalProperties: false`, unknown keys refused).
+
+- `start`: `role` (architect|overseer|quartermaster|consultant), `wake_reason`
+  (a short code, capped 64), `wake_detail` (capped 300), `cycle` (the
+  conductor's cycle index, int). The server stamps `started_at` itself (its own
+  clock, so there is no cross-host skew) and returns `{"run_id": "run-NNNN"}`.
+- `end`: `run_id` (from `start`; if the start call failed the conductor sends
+  `role`, `wake_reason`, `cycle` again instead and the server creates the row,
+  with `started_at = now - duration_s`), `status`, `ok`, `timed_out`,
+  `duration_s`, `cost_usd` (null means unknown), `error` (capped 500),
+  `final_answer` (**capped at 4000 chars**, truncated with a marker). The
+  server stamps `ended_at`.
+
+**Storage: a small store of its own, not a queue table.** `dfqueue/runs.py`,
+one SQLite file next to the queue database
+(`<queue-db-stem>.runs.sqlite3`, derived from `queue_db_path`, so no new
+server config and no new path to deploy). Why not a queue table: the queue is
+an append-only ledger of *decisions* with a schema version, a validator, a
+grader and a feed that all walk `records`; a run report is mutable operational
+telemetry (a row is created at launch and completed at the end) and putting it
+in the ledger would touch `schema.py`/`store.py` migrations and
+`dfqueue/feed.py` (another stream's file). A separate file also cannot slow or
+corrupt the ledger. WAL mode; the writer is the MCP server (one process, under
+its own lock); the publisher opens it `mode=ro` exactly as
+`feed.load_records_readonly` does. Table `runs`: `run_id` PK, `role`,
+`wake_reason`, `wake_detail`, `cycle`, `started_at`, `ended_at`, `status`,
+`ok`, `timed_out`, `duration_s`, `cost_usd`, `error`, `final_answer`,
+`records_json`. Retention: the writer prunes to the newest 500 rows.
+
+**Linking runs to records (task 2): the server resolves it, by role and time
+window, at `end`.** The conductor runs roles one at a time and each role holds
+its own token, so every queue record a run wrote carries `role == run.role` and
+a server-stamped `ts` inside `[started_at, ended_at]` (both from the same
+server clock). At `end` the server reads the queue read-only for that window,
+and stores `records_json`: a list (capped 50) of `{id, kind, thread}`.
+`thread` is the record the page should nest the summary under: the record's own
+`proposal_id`/`project_id` if it has one; an `executed` record resolves
+through its ruling's `proposal_id`; a proposal, ask or project is its own
+thread. Rejected alternatives: the MCP session id (openclaw may reuse or split
+sessions, and `_run_id` itself says the "one run is one session" assumption is
+unconfirmed live) and the conductor listing records (it does not see what the
+role wrote, and a model-reported list would be unverifiable). Known limit: a
+role that is woken twice in one cycle would be two windows, not overlapping,
+so it stays exact; two roles never overlap in one conductor.
+
+**Failure never breaks a cycle.** The conductor wraps both calls in a helper
+that catches everything (including `MCPToolError`), logs a warning and goes on;
+a missing `run_id` just makes the `end` call self-contained. A server without
+the tool yet (conductor deployed before the server) is the same case: logged,
+ignored.
+
+**Conductor side.** `conductor/cycle.py`: a `_run_role` helper replaces the two
+direct `deps.role_runner.run` calls (the tripwire Overseer run and the ordinary
+loop), calling `conductor.report` start before and end after. `status_running`
+stays for the local `status.json` but is no longer the source the page needs.
+
+**Publisher side.** `dfqueue/live.py` gains `read_runs_readonly(path)` and
+`build_runs(rows, *, public)`; `scripts/stream_publisher.py` reads the runs
+store each cycle (optional: `STREAM_PUBLISHER_RUNS_DB`, default the
+`.runs.sqlite3` sibling of the queue db if it exists), fills the strip's
+`wake_reason` from the open run (and `last_runs[role]` from the newest closed
+one, overriding the conductor-dir path), and writes `runs.json` next to each
+projection's `head.json`. **Public summaries**: free model text is the worst
+case for the feed's pattern check (it catches urls, paths, tokens, markup, not
+meaning: a model can name a coordinate or quote a tool error). Decision:
+public `runs.json` carries role, wake reason code, duration, outcome and the
+linked record ids/threads, and the **summary only after
+`feed.find_unsafe_pattern` passes AND it is cut to 280 chars at a sentence
+boundary**; any failed check withholds that summary (the entry says
+`summary_withheld: true`, never why). Cost and `error` are operator-only.
+Reported to the user in Result as a judgement call: if they want summaries
+operator-only, it is one flag (`PUBLIC_SUMMARIES` in `dfqueue/live.py`).
+
+**Counts.** Only `conductor` gains a tool: 16 -> 17. The pinned count in
+`dfmcp/tests/test_gotchas_tools.py` and the per-role counts in
+`docs/STATE.md` (generated; regenerated offline by its own command) change.
