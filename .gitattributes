@@ -1,0 +1,3 @@
+# Deployable systemd units must be byte-identical to what lands on the host:
+# never CRLF in the working tree either (scripts/drift_check.py hashes them).
+infra/units/** text eol=lf

@@ -1,0 +1,39 @@
+[Unit]
+Description=df-overseer conductor (conductor.service, the agent loop)
+After=network-online.target docker.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=df
+Group=df
+# Docker socket access for the account this unit runs as, scoped to the
+# service rather than every login shell of df (handoffs/2026-09-22-loop-
+# conductor-docker-access.md): the socket is root:docker mode 0660, and
+# this grant is the narrowest route that reaches it without a sudoers
+# entry, a socket permission change, or a rootless/TCP Docker socket.
+SupplementaryGroups=docker
+
+WorkingDirectory=/opt/df-automation
+EnvironmentFile=/opt/df-automation/conductor.env
+ExecStart=/opt/df-automation/.venv-conductor/bin/python -m conductor.service --dry-run
+# --dry-run left in place for the first supervised run, per this unit's own
+# upstream template (infra/conductor.service.example) -- remove it only
+# after reviewing the status JSON and journald output. Not enabled or
+# started by this deploy; needs the user's explicit go-ahead each time
+# (CLAUDE.md).
+
+Restart=on-failure
+RestartSec=10
+
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/df-automation
+ReadWritePaths=/var/lib/conductor
+ReadWritePaths=/opt/openclaw/config
+ReadWritePaths=/opt/openclaw
+
+[Install]
+WantedBy=multi-user.target

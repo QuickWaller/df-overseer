@@ -58,7 +58,9 @@ def manifest_hash(path: Path = dc.MANIFEST_PATH) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()[:12]
 
 
-def build_tar(commit: str, files: List[str], cwd: Path = dc.REPO_ROOT, *, flatten: bool = False) -> bytes:
+def build_tar(
+    commit: str, files: List[str], cwd: Path = dc.REPO_ROOT, *, flatten: bool = False, strip_prefix: str = "",
+) -> bytes:
     """`git archive` of exactly `files` (never a whole directory the caller
     didn't ask for) as of `commit`. Returns the tar bytes; raises
     CalledProcessError if any file is missing from that commit.
@@ -66,7 +68,12 @@ def build_tar(commit: str, files: List[str], cwd: Path = dc.REPO_ROOT, *, flatte
     `flatten=True` (relay-web only, per infra/deploy-manifest.yaml's own
     `flatten: true` comment) rewrites each tar member's name to just its
     basename before returning, since `git archive` has no built-in way to
-    do that -- it only ever preserves the repo-relative path."""
+    do that -- it only ever preserves the repo-relative path.
+
+    `strip_prefix` (the units targets: `infra/units/df/` landing under
+    `/etc/systemd/system`) removes a leading repo prefix but keeps the rest of
+    the path, so a drop-in's `<unit>.d/` subdirectory survives; directory
+    entries outside the prefix (`infra/`, `infra/units/`) are dropped."""
     if not files:
         return b""
     result = subprocess.run(
@@ -74,7 +81,7 @@ def build_tar(commit: str, files: List[str], cwd: Path = dc.REPO_ROOT, *, flatte
         cwd=cwd, capture_output=True, check=True,
     )
     tar_bytes = result.stdout
-    if not flatten:
+    if not flatten and not strip_prefix:
         return tar_bytes
     src = tarfile.open(fileobj=BytesIO(tar_bytes), mode="r:")
     out_buf = BytesIO()
@@ -83,8 +90,13 @@ def build_tar(commit: str, files: List[str], cwd: Path = dc.REPO_ROOT, *, flatte
         if not member.isfile():
             continue  # directory entries have no meaningful flattened name
         data = src.extractfile(member)
-        member.name = member.name.rsplit("/", 1)[-1]
-        dst.addfile(member, data)
+        if flatten:
+            member.name = member.name.rsplit("/", 1)[-1]
+        elif member.name.startswith(strip_prefix):
+            member.name = member.name[len(strip_prefix):]
+        else:
+            continue
+        dst.addfile(member, data)  # tar creates parent directories on extract
     dst.close()
     return out_buf.getvalue()
 
@@ -108,6 +120,10 @@ def plan_for_target(target: dc.Target, commit: str, env: Dict[str, str]) -> dict
         "low_risk_restarts": [r.service for r in low_risk_restarts],
         "high_risk_restarts": [r.service for r in high_risk_restarts],
         "post_deploy": target.post_deploy,
+        "stamp": target.stamp,
+        "daemon_reload": target.daemon_reload,
+        "sudo": target.sudo,
+        "remote_files": [target.remote_path(f) for f in files],
     }
 
 
@@ -122,8 +138,15 @@ def print_plan(plan: dict) -> None:
         print(f"    {f}")
     if plan["file_count"] > 20:
         print(f"    ... and {plan['file_count'] - 20} more")
-    print(f"  write stamp: DEPLOYED_COMMIT at {plan['destination_root']}")
-    print(f"    {plan['stamp_contents'].strip().replace(chr(10), ', ')}")
+    if plan["stamp"]:
+        print(f"  write stamp: DEPLOYED_COMMIT at {plan['destination_root']}")
+        print(f"    {plan['stamp_contents'].strip().replace(chr(10), ', ')}")
+    else:
+        print("  no DEPLOYED_COMMIT stamp (destination is not a code checkout; drift compares to origin/main)")
+    if plan["sudo"]:
+        print("  writes through sudo -n")
+    if plan["daemon_reload"]:
+        print("  then: sudo systemctl daemon-reload (re-reads unit definitions; restarts nothing)")
     if plan["low_risk_restarts"]:
         print(f"  would restart (low risk): {', '.join(plan['low_risk_restarts'])}")
     if plan["high_risk_restarts"]:
@@ -154,16 +177,22 @@ def deploy_target(
 
     destination = plan["destination_root"]
     su = "sudo -n " if target.sudo else ""
-    tar_bytes = build_tar(commit, plan["files"], flatten=target.flatten)
+    tar_bytes = build_tar(commit, plan["files"], flatten=target.flatten, strip_prefix=target.strip_prefix)
     print(f"--- {target.name}: deploying {commit[:12]} ({len(plan['files'])} file(s)) to {destination} ---")
     runner.run(target.host, f"{su}mkdir -p {destination}")
     if tar_bytes:
         runner.run(target.host, f"{su}tar xf - -C {destination}", input_bytes=tar_bytes)
-    runner.run(
-        target.host,
-        f"{su}tee {destination}/DEPLOYED_COMMIT >/dev/null <<'EOF'\n{plan['stamp_contents']}EOF",
-    )
-    print("  files copied, stamp written")
+    if target.stamp:
+        runner.run(
+            target.host,
+            f"{su}tee {destination}/DEPLOYED_COMMIT >/dev/null <<'EOF'\n{plan['stamp_contents']}EOF",
+        )
+        print("  files copied, stamp written")
+    else:
+        print("  files copied (no stamp for this target)")
+    if target.daemon_reload:
+        runner.run(target.host, "sudo -n systemctl daemon-reload")
+        print("  systemctl daemon-reload done")
 
     for service in plan["low_risk_restarts"]:
         runner.run(target.host, f"sudo systemctl restart {service}")

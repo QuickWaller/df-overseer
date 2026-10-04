@@ -56,6 +56,20 @@ class Target:
     flatten: bool = False
     #: write through `sudo -n` (a destination owned by root, e.g. the relay's web folders)
     sudo: bool = False
+    #: repo-path prefix removed before landing under destination_root
+    #: (`infra/units/df/` -> `/etc/systemd/system/`), keeping the rest of the
+    #: path, so a `<unit>.d/<drop-in>.conf` subdirectory survives. `flatten`
+    #: cannot do that: it keeps only the basename.
+    strip_prefix: str = ""
+    #: write DEPLOYED_COMMIT at destination_root. False for a destination that
+    #: is not a code checkout (/etc/systemd/system must not collect stray files).
+    stamp: bool = True
+    #: run `systemctl daemon-reload` after copying (units and drop-ins only;
+    #: re-reads definitions, restarts nothing).
+    daemon_reload: bool = False
+    #: host-only unit files deliberately NOT in the repo: [{name, why}].
+    #: drift_check reports any installed unit not tracked and not listed here.
+    unmanaged_units: List[Dict[str, str]] = field(default_factory=list)
     # True only for a target where the destination drops the repo's leading
     # directories and keeps just each file's basename (relay-web: repo path
     # `web/stream/index.html` lands at `<destination_root>/index.html`, not
@@ -66,7 +80,11 @@ class Target:
 
     def remote_path(self, repo_path: str) -> str:
         """The path under destination_root this file actually lands at."""
-        return repo_path.rsplit("/", 1)[-1] if self.flatten else repo_path
+        if self.flatten:
+            return repo_path.rsplit("/", 1)[-1]
+        if self.strip_prefix and repo_path.startswith(self.strip_prefix):
+            return repo_path[len(self.strip_prefix):]
+        return repo_path
 
     def destination_root(self, env: Dict[str, str]) -> str:
         """Resolve a ${VAR} placeholder in destination_root_raw against `env`
@@ -119,6 +137,12 @@ def load_manifest(path: Path = MANIFEST_PATH) -> Dict[str, Target]:
             verified=entry.get("verified", ""),
             flatten=bool(entry.get("flatten", False)),
             sudo=bool(entry.get("sudo", False)),
+            strip_prefix=entry.get("strip_prefix", "") or "",
+            stamp=bool(entry.get("stamp", True)),
+            daemon_reload=bool(entry.get("daemon_reload", False)),
+            unmanaged_units=[
+                {"name": u["name"], "why": u.get("why", "")} for u in (entry.get("unmanaged_units") or [])
+            ],
         )
     if not targets:
         raise ManifestError(f"{path}: no targets defined")

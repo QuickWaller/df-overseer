@@ -1,0 +1,18 @@
+[Unit]
+Description=x11vnc (view-only) for the Dwarf Fortress Xvfb display
+After=df-xvfb.service
+Requires=df-xvfb.service
+
+[Service]
+Type=simple
+User=df
+Environment=DISPLAY=:99
+ExecStart=/usr/bin/x11vnc -display :99 -nopw \
+  -rfbport 5900 -viewonly -forever -shared -noxdamage \
+  -o /opt/df/log/x11vnc.log
+Restart=on-failure
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target
+

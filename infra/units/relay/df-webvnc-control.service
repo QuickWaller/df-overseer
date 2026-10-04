@@ -1,0 +1,14 @@
+[Unit]
+Description=noVNC websocket bridge to the Dwarf Fortress x11vnc server
+After=network.target
+
+[Service]
+Type=simple
+User=relay
+ExecStart=/usr/bin/websockify --web=/usr/share/novnc 127.0.0.1:6081 localhost:5901
+Restart=on-failure
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target
+

@@ -1,0 +1,18 @@
+[Unit]
+Description=df-overseer dfseries import (triggered by dfseries-import.timer)
+After=local-fs.target
+
+[Service]
+Type=oneshot
+User=df
+Group=df
+
+WorkingDirectory=/opt/df/dfmcp-smoke
+ExecStart=/bin/sh -c '/opt/df/dfmcp-smoke/.venv/bin/python3 -m dfseries.cli import /var/lib/dfseries/uniboslan.series.sqlite3 /opt/df/game/dfhack-config/timeseries/*.jsonl'
+
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadOnlyPaths=/opt/df/game/dfhack-config/timeseries
+StateDirectory=dfseries

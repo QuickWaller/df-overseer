@@ -305,6 +305,94 @@ def test_target_remote_path_flatten_vs_default():
     assert plain.remote_path("web/stream/index.html") == "web/stream/index.html"
 
 
+# ---------------------------------------------------------------------------
+# systemd unit targets (handoffs/2026-10-05-units-in-manifest.md)
+# ---------------------------------------------------------------------------
+
+_UNIT_TARGETS = ("vm103-units", "vm106-units", "relay-units")
+
+
+def test_target_remote_path_strip_prefix_keeps_dropin_directory():
+    t = dc.Target(name="t", host="df", destination_root_raw="/etc/systemd/system",
+                  strip_prefix="infra/units/df/")
+    assert t.remote_path("infra/units/df/dfmcp-server.service") == "dfmcp-server.service"
+    assert (t.remote_path("infra/units/df/stream-publisher.service.d/queue-wal.conf")
+            == "stream-publisher.service.d/queue-wal.conf")
+
+
+def test_build_tar_strip_prefix_lands_units_and_dropins_at_systemd_paths():
+    import tarfile
+    from io import BytesIO
+    head = dc.current_commit()
+    files = ["infra/units/df/stream-publisher.service", "infra/units/df/stream-publisher.service.d/queue-wal.conf"]
+    tar_bytes = deploy_mod.build_tar(head, files, strip_prefix="infra/units/df/")
+    names = tarfile.open(fileobj=BytesIO(tar_bytes), mode="r:").getnames()
+    assert set(names) == {"stream-publisher.service", "stream-publisher.service.d/queue-wal.conf"}
+
+
+def test_real_manifest_unit_targets_shape():
+    targets = dc.load_manifest()
+    for name in _UNIT_TARGETS:
+        t = targets[name]
+        assert t.destination_root_raw == "/etc/systemd/system"
+        assert t.sudo and t.daemon_reload and not t.stamp
+        assert t.strip_prefix == f"infra/units/{t.host}/"
+        # the committed files exist and every one is under the target's own directory
+        files = dc.target_files(t, "HEAD")
+        assert files, f"{name} ships nothing at HEAD"
+        assert all(f.startswith(t.strip_prefix) for f in files)
+        # nothing in a unit target restarts automatically
+        assert [r for r in t.restart if not r.is_high_risk] == []
+
+
+def test_real_manifest_conductor_and_fortress_are_never_auto_restarted():
+    targets = dc.load_manifest()
+    risk = {(t.name, r.service): r.risk for t in targets.values() for r in t.restart}
+    assert risk[("vm106-units", "conductor.service")] == "high"
+    assert risk[("vm103-units", "df-fortress.service")] == "high"
+
+
+def test_unit_files_contain_no_address_or_inline_secret():
+    import re
+    root = dc.REPO_ROOT / "infra" / "units"
+    for path in root.rglob("*"):
+        if not path.is_file():
+            continue
+        text = path.read_text(encoding="utf-8")
+        for ip in re.findall(r"\b\d{1,3}(?:\.\d{1,3}){3}\b", text):
+            assert ip in ("127.0.0.1", "0.0.0.0"), f"{path}: address {ip}"
+        assert "--token " not in text, f"{path}: inline tunnel token"
+        assert "relay@" not in text, f"{path}: relay login target"
+
+
+def test_unit_files_are_lf_only():
+    for path in (dc.REPO_ROOT / "infra" / "units").rglob("*"):
+        if path.is_file():
+            assert b"\r" not in path.read_bytes(), f"{path} has CR bytes"
+
+
+def test_unit_target_dry_run_plan_shows_daemon_reload_and_no_stamp(capsys):
+    t = dc.load_manifest()["vm106-units"]
+    plan = deploy_mod.plan_for_target(t, dc.current_commit(), {})
+    assert plan["daemon_reload"] and not plan["stamp"]
+    assert "df-netwatch.service" in plan["remote_files"]
+    deploy_mod.print_plan(plan)
+    out = capsys.readouterr().out
+    assert "daemon-reload" in out and "no DEPLOYED_COMMIT stamp" in out
+    assert "WOULD NOT restart (high risk, manual only): conductor.service" in out
+
+
+def test_unit_target_real_run_reloads_but_never_stamps_or_restarts_high_risk():
+    t = dc.load_manifest()["vm106-units"]
+    runner = dc.FakeRunner({("openclaw", "*"): ""})
+    deploy_mod.deploy_target(t, dc.current_commit(), {}, runner, dry_run=False, yes=True)
+    cmds = [c[1] for c in runner.calls]
+    assert any("tar xf - -C /etc/systemd/system" in c and c.startswith("sudo -n ") for c in cmds)
+    assert "sudo -n systemctl daemon-reload" in cmds
+    assert not any("DEPLOYED_COMMIT" in c for c in cmds)
+    assert not any("restart" in c or "enable" in c or "start conductor" in c for c in cmds)
+
+
 def test_main_dry_run_all_targets_succeeds(monkeypatch, capsys):
     monkeypatch.setattr(dc, "is_tree_clean", lambda: True)
     monkeypatch.setattr(dc, "is_ancestor_of_origin_main", lambda commit, cwd=dc.REPO_ROOT: True)
