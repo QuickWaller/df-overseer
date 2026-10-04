@@ -1007,15 +1007,18 @@ class StreamPage {
    * the event wording are `threadTree` and `eventLine`, tested under node. */
   _conversationEl(items) {
     const { root, kids } = threadTree(items);
-    this._openReplies = this._openReplies || new Set();
-    const render = (item) => {
+    // Explicit open/closed per post; unset means the default: the opening
+    // post's replies start open, deeper ones (an answer under its question)
+    // start closed (the user's call, 2026-10-05).
+    this._replyState = this._replyState || new Map();
+    const render = (item, depth = 0) => {
       const node = this._threadEvent(item) || this._threadPost(item);
       const children = kids.get(item.id) || [];
       if (!children.length) return node;
-      const open = this._openReplies.has(item.id);
+      const open = this._replyState.has(item.id) ? this._replyState.get(item.id) : depth === 0;
       const who = [...new Set(children.map((c) => speakerName(c)))];
       const last = children[children.length - 1];
-      const box = el("div", { class: "freplies" }, children.map(render));
+      const box = el("div", { class: "freplies" }, children.map((c) => render(c, depth + 1)));
       box.hidden = !open;
       const label = () => `${box.hidden ? "+" : "-"} ${children.length} ${children.length === 1 ? "reply" : "replies"}`;
       const btn = el("button", { type: "button", class: "ftoggle", "aria-expanded": String(open) }, [
@@ -1028,11 +1031,11 @@ class StreamPage {
       ]);
       btn.onclick = () => {
         box.hidden = !box.hidden;
-        if (box.hidden) this._openReplies.delete(item.id); else this._openReplies.add(item.id);
+        this._replyState.set(item.id, !box.hidden);
         btn.setAttribute("aria-expanded", String(!box.hidden));
         btn.querySelector(".ftl").textContent = label();
       };
-      return el("div", { class: "fnode" }, [node, el("div", { class: "fkids" }, [btn, box])]);
+      return el("div", { class: "fnode" }, [node, el("div", { class: `fkids tier-${depth + 1}` }, [btn, box])]);
     };
     return [el("div", { class: "fthread" }, root ? [render(root)] : [])];
   }

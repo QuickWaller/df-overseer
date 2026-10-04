@@ -100,10 +100,10 @@ def test_event_wording_for_finished_failed_and_hold():
     assert lines[3] == {"cls": " hold", "text": 'put job "Dig shell" on hold: no stone'}
 
 
-# ---- the thread DOM: replies are collapsed by default and the state survives ------
+# ---- the thread DOM: first-level replies open, deeper ones closed; state survives ---
 
 
-def test_replies_collapsed_by_default_toggle_and_survive_a_rerender():
+def test_first_level_open_deeper_closed_toggle_and_survive_a_rerender():
     expr = r"""
       const page = Object.create(StreamPage.prototype);
       page.projects = { projects: {}, thread_to_project: {} };
@@ -118,10 +118,10 @@ def test_replies_collapsed_by_default_toggle_and_survive_a_rerender():
       return { before, label0, label1, after: hiddenBoxes() };
     """
     res = _run(expr, THREAD)
-    assert res["before"] == [True, True]            # root's replies, and the ask's answer
-    assert res["label0"] == "+ 4 replies"
-    assert res["label1"] == "- 4 replies"
-    assert res["after"] == [False, True]            # the open state survived the re-render
+    assert res["before"] == [False, True]           # root's replies open, the ask's answer closed
+    assert res["label0"] == "- 4 replies"
+    assert res["label1"] == "+ 4 replies"
+    assert res["after"] == [True, True]             # the closed state survived the re-render
 
 
 # ---- the board list: every proposal, one entry per thread -------------------------

@@ -575,3 +575,9 @@ a.tagchip:hover { border-color: var(--text); }
 .fevent .fename { color: var(--muted); }
 .ftag { flex: none; width: 52px; text-align: center; font-size: 9.5px; letter-spacing: .08em; text-transform: uppercase; color: var(--faint); border: 1px dashed var(--line-strong); padding: 0 3px; }
 .fevent.hold .ftag, .fevent.fail .ftag { color: var(--no); border-color: var(--no-line); border-style: solid; }
+/* Tiers: each level of replies gets its own rule and a faint ground, so the
+   nesting reads at a glance; event tags are solid, not dashed. */
+.ftag { border-style: solid; }
+.fkids.tier-1 { border-left: 2px solid var(--line-strong); margin-left: 13px; padding-left: 14px; }
+.fkids.tier-2 { border-left: 2px solid var(--muted); margin-left: 13px; padding-left: 12px; background: var(--raised); padding-block: 2px 6px; }
+.fkids.tier-2 .ftoggle { padding-top: 6px; }
