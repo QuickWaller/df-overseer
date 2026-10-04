@@ -1,0 +1,9 @@
+[Unit]
+Description=Capture and push a Dwarf Fortress screenshot (one-shot)
+After=df-xvfb.service
+Requires=df-xvfb.service
+
+[Service]
+Type=oneshot
+User=df
+ExecStart=/opt/df/stream/capture-push.sh

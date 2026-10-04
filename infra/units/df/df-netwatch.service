@@ -1,0 +1,7 @@
+[Unit]
+Description=df-overseer netwatch: gateway-loss capture (run by the timer)
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/python3 /usr/local/sbin/df-netwatch.py
+

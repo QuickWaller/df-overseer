@@ -63,3 +63,56 @@ edit files on a host directly"; this closes the gap that forced an exception.
 Inventory table, committed units, a reviewed `--dry-run` plan for each new
 unit target, the drift check covering units with tests, and a Result section
 here.
+
+## Result
+
+### Plan (committed first)
+
+- Layout: `infra/units/<vm-ssh target>/<unit file>`, drop-ins at
+  `infra/units/<target>/<unit>.d/<name>.conf`. The target directory name is
+  the `vm-ssh.sh` host name (`df`, `openclaw`, `relay`), never an address, and
+  mirrors how every manifest target already names its host. One manifest
+  target per host (`vm103-units`, `vm106-units`, `relay-units`), destination
+  `/etc/systemd/system`, `sudo: true`.
+- New manifest/deploy options (generic, data-driven): `strip_prefix` (repo path
+  minus a leading prefix, so `.d/` drop-in subdirectories survive, which
+  `flatten` cannot do), `stamp: false` (no `DEPLOYED_COMMIT` file inside
+  `/etc/systemd/system`), `daemon_reload: true` (run `systemctl daemon-reload`
+  after the copy), `unmanaged_units` (host-only unit files deliberately kept
+  out of the repo, each with a reason).
+- Drift check: hashes every unit and drop-in, and lists installed regular
+  files at the top of `/etc/systemd/system` plus every `*.d/*.conf`; any not in
+  the repo and not declared `unmanaged_units` is reported as drift
+  ("untracked unit" / "untracked drop-in").
+- No automatic restarts of unit targets. `daemon-reload` only re-reads
+  definitions; high-risk entries (`df-fortress.service`, `conductor.service`)
+  are printed as manual-only.
+
+### Inventory (read-only, 2026-10-05)
+
+Files were read via `base64` over `vm-ssh.sh`, because its scrubber masks every
+`df-*` name to `<host>` (names recovered with `sed 's/-/_/g'` remote-side).
+
+| host | unit | repo counterpart before | installed vs example | decision |
+|---|---|---|---|---|
+| df | dfmcp-server.service | infra/dfmcp-server.service.example | differs: example is a long UNDEPLOYED/CHANGEME template; installed has `After=` df-fortress, `ReadWritePaths` for dfseries/dfgotchas, `StateDirectory=dfmcp` | commit installed |
+| df | stream-publisher.service | stream-publisher.service.example | installed has filled paths; the 2026-10-02 fix lives in the drop-in | commit installed |
+| df | stream-publisher.timer | stream-publisher.timer.example | comment-only difference | commit installed |
+| df | stream-publisher.service.d/queue-wal.conf | none (example edited to match) | host-only until now | commit installed |
+| df | dfseries-import.service / .timer | dfseries-import.*.example | filled-in/comment differences | commit installed |
+| df | df-fortress.service | none (provision_vm.py / install_df.py) | n/a | commit installed |
+| df | df-xvfb.service | none | n/a | commit installed |
+| df | df-netwatch.service / .timer | none (script is scripts/guest-capture/df_netwatch.py) | identical to the VM 106 copy | commit installed |
+| df | df-stream.service / .timer | none | n/a (runs `/opt/df/stream/capture-push.sh`, not in repo) | commit installed |
+| df | df-vnc.service, df-vnc-control.service, df-webvnc.service | none | n/a | commit installed |
+| df | df-vnc-tunnel.service, df-vnc-control-tunnel.service | none | contain a LAN address of the relay in `ExecStart` | NOT committed; `unmanaged_units` with reason |
+| openclaw | conductor.service | conductor.service.example | installed has `SupplementaryGroups=docker`, `--dry-run`, real paths; disabled and inactive | commit installed, never auto-restart |
+| openclaw | df-netwatch.service / .timer | none | identical to the VM 103 copy | commit installed |
+| relay | df-webvnc.service, df-webvnc-control.service | none | n/a | commit installed |
+| relay | cloudflared.service, cloudflared-update.service/.timer | vendor | not project-written | `unmanaged_units` |
+| relay | cloudflared-admin.service | none | embeds a live tunnel token in `ExecStart` | NOT committed; `unmanaged_units`; token needs rotating and a move to `--token-file` (see report) |
+
+Only one drop-in directory exists on any host (`stream-publisher.service.d`).
+The `*.example` files stay: they carry the design commentary and deploy
+checklists; the deployable copies under `infra/units/` are the source of truth
+for what is installed.

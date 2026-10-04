@@ -1,0 +1,11 @@
+[Unit]
+Description=Run stream-publisher.service every 5 seconds
+
+[Timer]
+OnBootSec=10s
+OnUnitActiveSec=5s
+AccuracySec=1s
+Unit=stream-publisher.service
+
+[Install]
+WantedBy=timers.target

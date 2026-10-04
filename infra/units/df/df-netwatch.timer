@@ -1,0 +1,12 @@
+[Unit]
+Description=df-overseer netwatch: per-minute gateway check
+
+[Timer]
+OnBootSec=1min
+OnUnitActiveSec=1min
+AccuracySec=5s
+Persistent=true
+
+[Install]
+WantedBy=timers.target
+

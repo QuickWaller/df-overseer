@@ -1,0 +1,30 @@
+[Unit]
+Description=Dwarf Fortress (DFHack), headless
+After=df-xvfb.service network.target
+Requires=df-xvfb.service
+
+[Service]
+Type=simple
+User=df
+WorkingDirectory=/opt/df/game
+Environment=DISPLAY=:99
+ExecStartPre=/opt/df/game/systemd-wait-xvfb.sh
+ExecStart=/opt/df/game/dfhack
+ExecStop=/opt/df/game/systemd-stop.sh
+TimeoutStopSec=180
+Restart=no
+# ExecStop does its own kill (quicksave first, DF ignores SIGTERM) rather than
+# systemd's built-in one. MainPID is './dfhack', a launcher script that waits
+# on dwarfort and re-exits with dwarfort's signal folded into its own exit
+# code (bash's wait/$? convention) rather than dying by that signal itself --
+# confirmed on VM 104 on 2026-08-30: 'systemctl status' showed
+# 'ExecStart=...dfhack (code=exited, status=137)', an EXIT CODE, not a
+# signal death, so listing SIGKILL by name here did not help. 137 = 128+9
+# (SIGKILL), 143 = 128+15 (SIGTERM), for whichever escalation step actually
+# ends it. Without this, 'systemctl is-active' reads 'failed' after every
+# clean stop, a false alarm for any future health check reading unit state.
+SuccessExitStatus=137 143
+
+[Install]
+WantedBy=multi-user.target
+

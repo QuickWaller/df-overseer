@@ -1,0 +1,42 @@
+[Unit]
+Description=df-overseer MCP server (dfmcp.server)
+After=network-online.target df-fortress.service
+Wants=network-online.target
+# Ordered after the real DFHack-launching unit on this host so the server
+# does not start racing an RPC socket that isn't up yet. One-directional on
+# purpose (the DFHack connection pool self-heals across a DFHack restart
+# already): this is an After=, never a Requires= -- df-fortress must never
+# depend on dfmcp, only the reverse ordering. The unit is df-fortress.service
+# on this host, not dfhack.service (the example's placeholder name).
+
+[Service]
+Type=simple
+User=df
+Group=df
+
+WorkingDirectory=/opt/df/dfmcp-smoke
+EnvironmentFile=/opt/df/dfmcp-smoke/.env
+ExecStart=/opt/df/dfmcp-smoke/.venv/bin/python -m dfmcp.server
+
+Restart=on-failure
+RestartSec=5
+
+# Defence in depth beyond the application-level bind-address check
+# (dfmcp.server.ServerConfig refuses 0.0.0.0 and refuses to start with no
+# bind_host at all).
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/df/dfmcp-smoke
+ReadWritePaths=/var/lib/dfseries
+ReadWritePaths=/var/lib/dfgotchas
+
+# The queue's SQLite file lives outside the code tree so a code redeploy
+# can never clobber live data. StateDirectory=dfmcp creates /var/lib/dfmcp
+# owned by User=df/Group=df and, under ProtectSystem=strict, is implicitly
+# writable without a hand-added ReadWritePaths entry (systemd.exec(5)).
+StateDirectory=dfmcp
+
+[Install]
+WantedBy=multi-user.target
