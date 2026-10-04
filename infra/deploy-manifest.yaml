@@ -489,6 +489,11 @@ targets:
         why: vendor updater, not project-written
       - name: cloudflared-update.timer
         why: vendor updater, not project-written
+      - name: sshd-keygen@.service.d
+        why: >-
+          distro (cloud-init) drop-in that disables ssh host-key generation
+          while cloud-init runs; not project-written. Naming the directory
+          covers every file in it.
       - name: cloudflared-admin.service
         why: >-
           ExecStart embeds a live tunnel token inline, so it cannot be

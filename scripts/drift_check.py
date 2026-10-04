@@ -137,9 +137,53 @@ def remote_sha256_many(
     return results
 
 
+def _norm_unit_name(name: str) -> str:
+    """Compare unit names with `-` folded to `_`: scripts/vm-ssh.sh masks every
+    `df-[a-z0-9-]+` string in its output to `<host>`, which would hide the very
+    names this check needs, so the remote listing is run through `sed
+    's/-/_/g'` (nothing the scrubber matches survives that) and both sides are
+    folded the same way before comparing."""
+    return name.replace("-", "_")
+
+
+def find_untracked_units(target: dc.Target, destination: str, files: List[str], runner) -> dict:
+    """Unit files and drop-ins installed under `destination` that the repo
+    does not know about and the manifest does not declare `unmanaged_units`.
+    Only for a unit target (daemon_reload: true). Lists regular files only
+    (symlinks are `systemctl enable` wiring and vendor aliases, not content):
+    top-level `*.service`/`*.timer`/..., and every `<unit>.d/*.conf`.
+
+    Verifies the verification: if the host listing shows none of the files the
+    repo says are installed, the listing itself failed (a bad find, an empty
+    reply) and an empty "untracked" list would be a false all-clear, so that
+    is reported as an error, not as clean."""
+    try:
+        out = runner.run(
+            target.host,
+            f"cd {shlex.quote(destination)} && find . -mindepth 1 -maxdepth 2 -type f "
+            f"| sed 's/-/_/g' | sort || true",
+        )
+    except dc.SSHError as exc:
+        return {"untracked": [], "error": f"listing failed: {exc}"}
+    installed = [line[2:] if line.startswith("./") else line for line in out.splitlines() if line.strip()]
+    tracked = {_norm_unit_name(target.remote_path(f)) for f in files}
+    unmanaged = {_norm_unit_name(u["name"]) for u in target.unmanaged_units}
+    # an unmanaged entry may name a whole drop-in directory: `<unit>.d` covers `<unit>.d/*`
+    def declared(path: str) -> bool:
+        return path in unmanaged or path.split("/", 1)[0] in unmanaged
+    if tracked and not (tracked & set(installed)):
+        return {"untracked": [], "error": "listing shows none of the tracked units; cannot trust an empty result"}
+    untracked = [
+        {"path": path, "kind": "drop-in" if "/" in path else "unit"}
+        for path in installed
+        if path not in tracked and not declared(path)
+    ]
+    return {"untracked": untracked, "error": None}
+
+
 def check_target_files(target: dc.Target, env: Dict[str, str], runner) -> dict:
     destination = target.destination_root(env)
-    stamp = read_stamp(target, destination, runner)
+    stamp = read_stamp(target, destination, runner) if target.stamp else None
     stamped_commit = stamp.get("commit") if stamp else None
 
     compare_commit = stamped_commit or "origin/main"
@@ -166,6 +210,12 @@ def check_target_files(target: dc.Target, env: Dict[str, str], runner) -> dict:
     if stamped_commit:
         commits_behind = dc.commits_behind_origin_main(stamped_commit)
 
+    untracked: List[dict] = []
+    untracked_error = None
+    if target.daemon_reload:  # a unit target: also look for host-only units/drop-ins
+        found = find_untracked_units(target, destination, files, runner)
+        untracked, untracked_error = found["untracked"], found["error"]
+
     return {
         "target": target.name,
         "destination_root": destination,
@@ -175,7 +225,9 @@ def check_target_files(target: dc.Target, env: Dict[str, str], runner) -> dict:
         "file_count": len(files),
         "drifted_count": drifted,
         "files": per_file,
-        "clean": drifted == 0,
+        "untracked": untracked,
+        "untracked_error": untracked_error,
+        "clean": drifted == 0 and not untracked and untracked_error is None,
     }
 
 
@@ -416,6 +468,10 @@ def print_report(report: dict) -> None:
             for f in result["files"]:
                 if f["status"] != "match":
                     print(f"    {f['status']}: {f['path']}")
+            for u in result.get("untracked", []):
+                print(f"    untracked {u['kind']} on host (not in the repo, not declared unmanaged): {u['path']}")
+            if result.get("untracked_error"):
+                print(f"    untracked-unit check could not run: {result['untracked_error']}")
     print()
 
     live = report["live_tool_counts"]
@@ -471,14 +527,15 @@ def write_state(report: dict, path: Path = STATE_PATH) -> None:
         "",
         "## Deployed commit per target",
         "",
-        "| target | stamped commit | commits behind origin/main | files drifted |",
-        "|---|---|---|---|",
+        "| target | stamped commit | commits behind origin/main | files drifted | untracked units |",
+        "|---|---|---|---|---|",
     ]
     for name, result in report["files"].items():
         commit = (result["stamp"] or {}).get("commit", "(no stamp)")
         behind = result["commits_behind_origin_main"]
         behind_txt = str(behind) if behind is not None else "?"
-        lines.append(f"| {name} | {commit[:12]} | {behind_txt} | {result['drifted_count']}/{result['file_count']} |")
+        untracked_txt = str(len(result.get("untracked", []))) if not result.get("untracked_error") else "check failed"
+        lines.append(f"| {name} | {commit[:12]} | {behind_txt} | {result['drifted_count']}/{result['file_count']} | {untracked_txt} |")
 
     lines += ["", "## Per-role tool counts (offline, from the repo's own registry + roster)", ""]
     for role, count in sorted(report["live_tool_counts"]["offline_counts"].items()):

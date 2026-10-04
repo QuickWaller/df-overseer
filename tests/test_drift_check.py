@@ -179,6 +179,109 @@ def test_check_target_files_missing_on_host_counts_as_drift():
 
 
 # ---------------------------------------------------------------------------
+# systemd unit targets: hashing plus untracked unit / drop-in detection
+# ---------------------------------------------------------------------------
+
+_LIST_CMD = ("cd /etc/systemd/system && find . -mindepth 1 -maxdepth 2 -type f "
+             "| sed 's/-/_/g' | sort || true")
+
+
+def _unit_target(**overrides) -> dc.Target:
+    base = dict(
+        name="units", host="df", destination_root_raw="/etc/systemd/system",
+        paths=["infra/units/df/"], sudo=True, strip_prefix="infra/units/df/",
+        stamp=False, daemon_reload=True, restart=[],
+        unmanaged_units=[{"name": "df-vnc-tunnel.service", "why": "address"}],
+    )
+    base.update(overrides)
+    return dc.Target(**base)
+
+
+def _unit_runner(listing: str, target: dc.Target, *, same_hashes=True):
+    files = dc.target_files(target, "HEAD")
+    names = [target.remote_path(f) for f in files]
+    hashes = {f: dc.sha256_at_commit("HEAD", f) for f in files}
+    sha_out = "".join(f"{hashes[f] if same_hashes else 'f' * 64}  {n}\n" for f, n in zip(files, names))
+    return dc.FakeRunner({
+        ("df", f"cd /etc/systemd/system && sha256sum {' '.join(names)} 2>&1 || true"): sha_out,
+        ("df", _LIST_CMD): listing,
+    })
+
+
+def _installed_listing(target: dc.Target, extra=()):
+    names = [target.remote_path(f).replace("-", "_") for f in dc.target_files(target, "HEAD")]
+    return "".join(f"./{n}\n" for n in [*names, *extra])
+
+
+def _patch_compare_to_head(monkeypatch):
+    # the real comparison commit for an unstamped target is origin/main, which
+    # does not carry unpushed unit files; compare against HEAD for these tests
+    real = dc.target_files
+    monkeypatch.setattr(dc, "target_files", lambda t, commit, cwd=dc.REPO_ROOT: real(t, "HEAD"))
+    real_sha = dc.sha256_at_commit
+    monkeypatch.setattr(dc, "sha256_at_commit", lambda c, p, cwd=dc.REPO_ROOT: real_sha("HEAD", p))
+
+
+def test_units_clean_when_hashes_match_and_nothing_extra(monkeypatch):
+    _patch_compare_to_head(monkeypatch)
+    t = _unit_target()
+    listing = _installed_listing(t, extra=["df_vnc_tunnel.service"])  # declared unmanaged
+    result = drift_check.check_target_files(t, {}, _unit_runner(listing, t))
+    assert result["clean"] is True and result["untracked"] == []
+    assert result["stamp"] is None  # never reads a stamp for stamp: false
+
+
+def test_units_installed_dropin_unknown_to_repo_is_drift(monkeypatch):
+    _patch_compare_to_head(monkeypatch)
+    t = _unit_target()
+    listing = _installed_listing(t, extra=["dfmcp_server.service.d/override.conf"])
+    result = drift_check.check_target_files(t, {}, _unit_runner(listing, t))
+    assert result["clean"] is False
+    assert result["untracked"] == [{"path": "dfmcp_server.service.d/override.conf", "kind": "drop-in"}]
+
+
+def test_units_installed_unit_unknown_to_repo_is_drift(monkeypatch):
+    _patch_compare_to_head(monkeypatch)
+    t = _unit_target()
+    result = drift_check.check_target_files(t, {}, _unit_runner(_installed_listing(t, extra=["stray.service"]), t))
+    assert result["clean"] is False
+    assert result["untracked"][0] == {"path": "stray.service", "kind": "unit"}
+
+
+def test_units_edited_in_place_is_drift(monkeypatch):
+    _patch_compare_to_head(monkeypatch)
+    t = _unit_target()
+    result = drift_check.check_target_files(t, {}, _unit_runner(_installed_listing(t), t, same_hashes=False))
+    assert result["clean"] is False and result["drifted_count"] == result["file_count"]
+
+
+def test_units_unmanaged_directory_name_covers_its_files(monkeypatch):
+    _patch_compare_to_head(monkeypatch)
+    t = _unit_target(unmanaged_units=[{"name": "sshd-keygen@.service.d", "why": "distro"}])
+    listing = _installed_listing(t, extra=["sshd_keygen@.service.d/disable_it.conf"])
+    assert drift_check.check_target_files(t, {}, _unit_runner(listing, t))["clean"] is True
+
+
+def test_units_empty_listing_is_an_error_not_a_false_all_clear(monkeypatch):
+    _patch_compare_to_head(monkeypatch)
+    t = _unit_target()
+    result = drift_check.check_target_files(t, {}, _unit_runner("", t))
+    assert result["clean"] is False
+    assert result["untracked_error"]
+
+
+def test_non_unit_target_does_not_list_untracked():
+    target = _target(paths=["agents/ROSTER.yaml"])
+    real_hash = dc.sha256_at_commit("origin/main", "agents/ROSTER.yaml")
+    runner = dc.FakeRunner({
+        ("df", "cat /opt/sample/DEPLOYED_COMMIT 2>/dev/null || true"): "",
+        ("df", "cd /opt/sample && sha256sum agents/ROSTER.yaml 2>&1 || true"): f"{real_hash}  agents/ROSTER.yaml\n",
+    })
+    result = drift_check.check_target_files(target, {}, runner)
+    assert result["untracked"] == [] and result["untracked_error"] is None
+
+
+# ---------------------------------------------------------------------------
 # offline tool counts
 # ---------------------------------------------------------------------------
 
