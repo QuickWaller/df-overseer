@@ -70,3 +70,13 @@ summaries and thinking are public**, behind the feed's safety check.
 
 Tasks 1, 2, 3 and 5 built and tested, task 4 answered (and built if the data
 exists), the deploy targets listed, and a Result section here.
+
+## Plan (executor, 2026-10-05)
+
+- Task 3 carries checks in `runs.json` as `calls_by_record: {record_id: [{tool, note, n, failed}]}`:
+  reads only (registry `write` flag from `tools.json`), the record's role, inside
+  the run window, before the record's own timestamp. Note is the tool's public
+  one-line description; no arguments ever. Journal lookback raised so older runs keep theirs.
+- Task 1 renders `runs.json` as "Summary" replies built client side from `by_thread`.
+- Task 4: read-only investigation first, no workaround built.
+- Task 5: small "Operator" mark in the operator header.
