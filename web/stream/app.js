@@ -64,14 +64,16 @@ const WHOS_WHO = [
 const THEMES = ["terminal2"];
 const DEFAULT_THEME = "terminal2";
 
-//: The board's four sections, in display order, and the project-status
-//: value(s) each one collects (design register 2026-10-02; `abandoned`
-//: joins `done` -- both are "no further work", the board does not give
-//: an abandoned project its own fifth column).
-const BOARD_SECTIONS = [
-  ["Under way", ["active"]],
-  ["On hold", ["hold"]],
-  ["Done", ["done", "abandoned"]],
+//: The board's state tabs, in display order, with the entry state each one
+//: collects. Every proposal is listed under exactly one of them; "All" is
+//: first. An abandoned project counts as done (no further work).
+const BOARD_STATES = [
+  ["Under way", "active"],
+  ["On hold", "hold"],
+  ["Done", "done"],
+  ["Pending", "pending"],
+  ["Deferred", "deferred"],
+  ["Rejected", "rejected"],
 ];
 
 function el(tag, attrs, children) {
@@ -151,7 +153,7 @@ function cmpDay(a, b) {
  * first within a day (the user's call 2026-10-05); items with no game date
  * ("Now"-style lines) form their own group at the very top. Feed (seq)
  * position breaks ties, so a ruling, which always follows its proposal,
- * lands above it and carries a "re:" tag (`_replyTag`). Pass
+ * lands above it. Pass
  * `newestFirst = false` for the old oldest-first order. */
 function groupByDay(items, newestFirst = true) {
   const groups = [];
@@ -350,6 +352,128 @@ function jobGraph(steps) {
   });
   return svg;
 }
+
+// ---- board model (pure; no DOM, exercised by node in dfqueue/tests) --------
+
+/** One entry per proposal thread, newest first. A proposal that became a
+ * project is ONE entry named by the project's title (its `public_title`,
+ * which an amend may change); until then it is named by the proposal itself
+ * (a safe summary, else its type). A project with no proposal in the feed
+ * gets an entry of its own. `state` is one of BOARD_STATES' values. */
+function boardEntries(items, projectsDoc) {
+  const projects = (projectsDoc && projectsDoc.projects) || {};
+  const threadToProject = (projectsDoc && projectsDoc.thread_to_project) || {};
+  const byId = new Map(items.map((i) => [i.id, i]));
+  const used = new Set();
+  const entries = [];
+  const rulingOf = (proposal) => items.filter((r) => r.kind === "ruling" && r.reply_to === proposal.id).pop();
+  items.filter((i) => i.kind === "proposal").forEach((item) => {
+    const pid = threadToProject[item.thread];
+    const p = pid && projects[pid];
+    if (p) {
+      used.add(pid);
+      entries.push({
+        kind: "project", id: pid, role: item.role, seq: item.seq || 0,
+        name: p.name || item.title || item.type || `Project ${pid}`,
+        description: p.description || item.text || null, urgency: p.urgency || null,
+        state: p.status === "abandoned" ? "done" : (p.status || "active"),
+        abandoned: p.status === "abandoned", steps: p.steps || [],
+      });
+      return;
+    }
+    const base = {
+      kind: "proposal", id: item.id, role: item.role, seq: item.seq || 0,
+      name: item.title || item.type || "Proposal", urgency: null, steps: [],
+    };
+    if (item.badge === "accepted") {
+      // Accepted before project records existed: no plan, so done when
+      // something was carried out on its thread, otherwise under way.
+      const executed = items.some((i) => i.kind === "executed" && i.thread === item.thread);
+      entries.push({ ...base, description: item.text || null, state: executed ? "done" : "active", noPlan: true });
+    } else if (item.badge === "rejected" || item.badge === "deferred") {
+      const ruling = rulingOf(item);
+      // The tab already says which: show the reason alone.
+      const reason = ruling && ruling.text ? ruling.text.replace(/^(rejected|deferred)\s*:\s*/i, "") : null;
+      entries.push({ ...base, description: reason || item.text || null, state: item.badge });
+    } else {
+      entries.push({ ...base, description: item.text || null, state: "pending" });
+    }
+  });
+  Object.values(projects).filter((p) => !used.has(p.id)).forEach((p) => {
+    const own = byId.get(p.id);
+    entries.push({
+      kind: "project", id: p.id, role: own ? own.role : null, seq: own ? own.seq || 0 : 0,
+      name: p.name || `Project ${p.id}`, description: p.description || null, urgency: p.urgency || null,
+      state: p.status === "abandoned" ? "done" : (p.status || "active"),
+      abandoned: p.status === "abandoned", steps: p.steps || [],
+    });
+  });
+  return entries.sort((a, b) => b.seq - a.seq);
+}
+
+/** The forum tree of one conversation: the founding post is the root, every
+ * other item replies to it one level in, and an answer hangs under its
+ * question. Items are in feed order. Returns `{root, kids}` where `kids`
+ * maps an item id to its replies in order. */
+function threadTree(items) {
+  const sorted = [...items].sort((a, b) => (a.seq || 0) - (b.seq || 0));
+  const byId = new Map(sorted.map((i) => [i.id, i]));
+  const root = sorted.find((i) => !i.reply_to || !byId.has(i.reply_to)) || sorted[0] || null;
+  const kids = new Map();
+  sorted.forEach((i) => {
+    if (i === root) return;
+    const p = i.reply_to && byId.get(i.reply_to);
+    const parent = p && p.kind === "ask" ? p.id : root.id;
+    if (!kids.has(parent)) kids.set(parent, []);
+    kids.get(parent).push(i);
+  });
+  return { root, kids };
+}
+
+/** The one-line wording of an event item (what the speaker did), or null
+ * when the item is a post, not an event. `cls` is "", " plan", " fail" or
+ * " hold" (amber for the last two). */
+function eventLine(item, projectsDoc) {
+  const rec = item.record || {};
+  const projects = (projectsDoc && projectsDoc.projects) || {};
+  const findStep = (id) => {
+    for (const p of Object.values(projects)) {
+      const s = (p.steps || []).find((x) => x.id === id);
+      if (s) return s;
+    }
+    return null;
+  };
+  if (item.kind === "project") {
+    // The public feed carries no record, so fall back to the project's own
+    // steps in projects.json (the first version's, not later adds).
+    const steps = rec.steps || ((projects[item.id] || {}).steps || []).filter((s) => !s.added_version);
+    const n = steps.length;
+    return {
+      cls: " plan",
+      text: n ? `made this a project with ${n === 1 ? "1 job" : n + " jobs"}: ${steps.map((s) => s.label).join(", ")}`
+        : "made this a project",
+    };
+  }
+  if (item.kind === "executed") {
+    const step = rec.step_id ? findStep(rec.step_id) : null;
+    const label = item.step_label || (step && step.label) || null;
+    const n = item.step_targets || 0;
+    const total = item.step_total || null;
+    const failed = item.step_outcome === "failed";
+    const done = item.step_outcome === "finished";
+    const verb = failed ? "tried and failed to start" : done ? "finished" : "started";
+    const count = n ? ` \u00b7 ${n}${total ? " of " + total : ""} ${n === 1 ? "target" : "targets"} ${done ? "done" : "ordered"}` : "";
+    return { cls: failed ? " fail" : "", text: label ? `${verb} job "${label}"${count}` : "carried out a job" };
+  }
+  if (item.kind === "observation") {
+    const r = (rec.results || [])[0];
+    const step = rec.step_id ? findStep(rec.step_id) : null;
+    return { cls: " hold", text: `put job "${(step && step.label) || "a job"}" on hold${r && r.reason ? ": " + r.reason : ""}` };
+  }
+  return null;
+}
+
+// ---- end board model --------------------------------------------------------
 
 class StreamPage {
   constructor({ dataRoot, mode, root, liveViewSrc, embedded }) {
@@ -697,22 +821,35 @@ class StreamPage {
     this.col.appendChild(this.liveStripEl);
     this._renderLiveStrip();
     this.col.appendChild(this._goalStrip());
-    // The board's sections as tabs, each with its count; an empty section
-    // has no tab. The chosen tab is kept while the board polls.
-    const cards = this._boardCards();
-    const groups = BOARD_SECTIONS
-      .map(([label, statuses]) => [label, cards.filter((c) => statuses.includes(c.status))])
-      .concat([["Turned down", this._turnedDownCards()]])
-      .filter(([, entries]) => entries.length);
-    if (!groups.length) {
+    // Every proposal, as tabs by state with their counts ("All" first) and,
+    // when more than one agent has proposed, an agent filter. Empty states
+    // have no tab. The chosen tab and agent are kept while the board polls.
+    const all = boardEntries(this.items, this.projects);
+    if (!all.length) {
       this.col.appendChild(el("p", { class: "muted", text: "Nothing here yet." }));
       return;
     }
-    if (!groups.some(([label]) => label === this.boardTab)) this.boardTab = groups[0][0];
-    this.col.appendChild(el("div", { class: "btabs", role: "tablist" }, groups.map(([label, entries]) => el("button", {
+    const roles = [...new Set(all.map((e) => e.role).filter(Boolean))];
+    if (this.boardAgent && !roles.includes(this.boardAgent)) this.boardAgent = "";
+    const mine = this.boardAgent ? all.filter((e) => e.role === this.boardAgent) : all;
+    const groups = [["All", mine]].concat(
+      BOARD_STATES.map(([label, state]) => [label, mine.filter((e) => e.state === state)]),
+    ).filter(([label, entries]) => label === "All" || entries.length);
+    if (!groups.some(([label]) => label === this.boardTab)) this.boardTab = "All";
+    const tabs = groups.map(([label, entries]) => el("button", {
       type: "button", role: "tab", class: "btab", "aria-selected": String(label === this.boardTab),
       onclick: () => { this.boardTab = label; this._renderColumn(); },
-    }, [document.createTextNode(label + " "), el("span", { class: "count", text: String(entries.length) })]))));
+    }, [document.createTextNode(label + " "), el("span", { class: "count", text: String(entries.length) })]));
+    if (roles.length > 1) {
+      const pick = el("select", {
+        class: "bagent", "aria-label": "Filter by agent",
+        onchange: (ev) => { this.boardAgent = ev.target.value; this._renderColumn(); },
+      }, [el("option", { value: "", text: "All agents" })].concat(
+        roles.map((r) => el("option", { value: r, text: roleTitle(r), selected: r === this.boardAgent })),
+      ));
+      tabs.push(pick);
+    }
+    this.col.appendChild(el("div", { class: "btabs", role: "tablist" }, tabs));
     const [, entries] = groups.find(([label]) => label === this.boardTab);
     const list = el("div", { class: "e-sec", role: "tabpanel" });
     entries.forEach((entry) => list.appendChild(this._cardEl(entry)));
@@ -726,82 +863,17 @@ class StreamPage {
     ]);
   }
 
-  _sectionEl(label, entries) {
-    const section = el("section", { class: "e-sec" }, [
-      el("h3", {}, [el("span", { text: label }), el("span", { class: "count", text: String(entries.length) })]),
-    ]);
-    if (!entries.length) {
-      section.appendChild(el("div", { class: "muted", style: "font-size:0.85em", text: "None." }));
-      return section;
-    }
-    entries.forEach((entry) => section.appendChild(this._cardEl(entry)));
-    return section;
-  }
-
-  // ---- board data (dfqueue.feed.build_projects_view's own shape) --------
-
-  _boardCards() {
-    const projects = Object.values(this.projects.projects || {}).map((p) => ({
-      kind: "project",
-      id: p.id,
-      name: p.name || `Project ${p.id}`,
-      description: p.description || null,
-      urgency: p.urgency || null,
-      status: p.status || "active",
-      steps: p.steps || [],
-    }));
-    return projects.concat(this._acceptedWithoutProject());
-  }
-
-  /** Proposals accepted before project records existed never founded a
-   * project, so they would show nowhere. Each shows as its own card: done
-   * when something was executed on its thread, otherwise under way. */
-  _acceptedWithoutProject() {
-    const threadToProject = this.projects.thread_to_project || {};
-    return this.items
-      .filter((item) => item.kind === "proposal" && item.badge === "accepted" && !threadToProject[item.thread])
-      .map((item) => {
-        const executed = this.items.some((i) => i.kind === "executed" && i.thread === item.thread);
-        return {
-          kind: "proposal", id: item.id, name: item.type || "Proposal",
-          description: item.text || null, urgency: null,
-          status: executed ? "done" : "active", steps: [], noPlan: true,
-        };
-      });
-  }
-
-  /** A rejected or deferred proposal that never founded a project (handoff
-   * item 2: "a turned-down proposal shows its name and the ruling's public
-   * reason"). A proposal carries no `public_title` of its own (only a
-   * project does, design §3.3 item 6), so its board "name" is its own
-   * public `type` label (`Room siting`, already public, design §3.5) --
-   * never a guess at a title it was never given. */
-  _turnedDownCards() {
-    const threadToProject = this.projects.thread_to_project || {};
-    return this.items
-      .filter((item) => item.kind === "proposal" && (item.badge === "rejected" || item.badge === "deferred"))
-      .filter((item) => !threadToProject[item.thread])
-      .map((item) => {
-        const ruling = [...this.items]
-          .filter((r) => r.kind === "ruling" && r.reply_to === item.id)
-          .pop();
-        // The section already says "Turned down": show the reason alone.
-        const reason = ruling && ruling.text ? ruling.text.replace(/^(rejected|deferred)\s*:\s*/i, "") : null;
-        return {
-          kind: "proposal", id: item.id, name: item.type || "Proposal",
-          description: reason, urgency: null,
-          status: "turned_down", steps: [],
-        };
-      });
-  }
-
   _cardEl(entry) {
     const parts = [
       el("div", { class: "btop" }, [
         el("span", { class: "bt", text: entry.name }),
+        ["pending", "deferred", "rejected"].includes(entry.state)
+          ? el("span", { class: "chip " + entry.state, text: entry.state })
+          : null,
         entry.urgency && entry.urgency !== "normal"
           ? el("span", { class: "urg u-" + entry.urgency, text: entry.urgency })
           : null,
+        entry.role ? el("span", { class: "brole", style: `color:${ROLE_COLORS[entry.role] || "var(--muted)"}`, text: roleTitle(entry.role) }) : null,
       ]),
     ];
     if (entry.description) {
@@ -809,15 +881,15 @@ class StreamPage {
     }
     if (entry.noPlan) {
       parts.push(el("div", { class: "bstatus" }, [
-        el("span", { class: "slabel", text: entry.status === "done" ? "Done, before job plans existed" : "Accepted" }),
+        el("span", { class: "slabel", text: entry.state === "done" ? "Done, before job plans existed" : "Accepted" }),
       ]));
     }
     if (entry.steps.length) {
       const done = entry.steps.filter((s) => s.state === "done").length;
       const total = entry.steps.length;
-      const label = entry.status === "done" ? "All done"
-        : entry.status === "abandoned" ? "Abandoned"
-        : entry.status === "hold" ? `${done}/${total} steps · held`
+      const label = entry.abandoned ? "Abandoned"
+        : entry.state === "done" ? "All done"
+        : entry.state === "hold" ? `${done}/${total} steps · held`
         : `${done}/${total} steps done`;
       parts.push(el("div", { class: "bstatus" }, [
         miniGraph(entry.steps),
@@ -926,39 +998,18 @@ class StreamPage {
     ]);
   }
 
-  /** PROTOTYPE (2026-10-05, for the user's review): the conversation as a
+  /** The conversation as a
    * forum thread. Oldest first; the founding proposal is the opening post,
    * everything else replies to it one level in, and an answer nests under
    * its question. Plans, carried-out steps and holds are one-line events,
    * not posts. "What it checked" lists `item.calls`; "Thinking" shows
-   * `item.thinking` (operator data only; nothing captures it yet). */
+   * `item.thinking` (operator data only; nothing captures it yet). The tree and
+   * the event wording are `threadTree` and `eventLine`, tested under node. */
   _conversationEl(items) {
-    const sorted = [...items].sort((a, b) => (a.seq || 0) - (b.seq || 0));
-    const byId = new Map(sorted.map((i) => [i.id, i]));
-    const projectsById = this.projects.projects || {};
-    const stepLabel = (stepId) => {
-      for (const p of Object.values(projectsById)) {
-        const s = (p.steps || []).find((x) => x.id === stepId);
-        if (s) return s.label;
-      }
-      return null;
-    };
-    // Tree: an answer hangs under its question; everything else in the
-    // thread hangs under the opening post (one level, like a forum).
-    const root = sorted.find((i) => !i.reply_to || !byId.has(i.reply_to)) || sorted[0];
-    const parentOf = (item) => {
-      if (item === root) return null;
-      const p = item.reply_to && byId.get(item.reply_to);
-      return p && p.kind === "ask" ? p.id : (root ? root.id : null);
-    };
-    const kids = new Map();
-    sorted.forEach((i) => {
-      const p = parentOf(i);
-      if (p) { if (!kids.has(p)) kids.set(p, []); kids.get(p).push(i); }
-    });
+    const { root, kids } = threadTree(items);
     this._openReplies = this._openReplies || new Set();
     const render = (item) => {
-      const node = this._threadEvent(item, stepLabel) || this._threadPost(item);
+      const node = this._threadEvent(item) || this._threadPost(item);
       const children = kids.get(item.id) || [];
       if (!children.length) return node;
       const open = this._openReplies.has(item.id);
@@ -986,52 +1037,15 @@ class StreamPage {
     return [el("div", { class: "fthread" }, root ? [render(root)] : [])];
   }
 
-  _threadEvent(item, stepLabel) {
-    const rec = item.record || {};
-    const projects = this.projects.projects || {};
-    const findStep = (id) => {
-      for (const p of Object.values(projects)) {
-        const s = (p.steps || []).find((x) => x.id === id);
-        if (s) return s;
-      }
-      return null;
-    };
-    let text = null, cls = "";
-    if (item.kind === "project") {
-      // The public feed carries no record, so fall back to the project's
-      // own steps in projects.json (the first version's, not later adds).
-      const steps = rec.steps || ((projects[item.id] || {}).steps || []).filter((s) => !s.added_version);
-      const n = steps.length;
-      text = n
-        ? `made this a project with ${n === 1 ? "1 job" : n + " jobs"}: ${steps.map((s) => s.label).join(", ")}`
-        : "made this a project";
-      cls = " plan";
-    } else if (item.kind === "executed") {
-      // Operator items carry the record; public items carry `step_label` and
-      // `step_targets` once the publisher adds them (until then, generic).
-      const step = rec.step_id ? findStep(rec.step_id) : null;
-      const label = item.step_label || (step && step.label) || null;
-      const n = item.step_targets || 0;
-      const total = item.step_total || null;
-      const failed = item.step_outcome === "failed";
-      const done = item.step_outcome === "finished";
-      const verb = failed ? "tried and failed to start" : done ? "finished" : "started";
-      const count = n ? ` · ${n}${total ? " of " + total : ""} ${n === 1 ? "target" : "targets"} ${done ? "done" : "ordered"}` : "";
-      text = label ? `${verb} job "${label}"${count}` : "carried out a job";
-      cls = failed ? " fail" : "";
-    } else if (item.kind === "observation") {
-      const r = (rec.results || [])[0];
-      const step = rec.step_id ? findStep(rec.step_id) : null;
-      text = `put job "${(step && step.label) || "a job"}" on hold${r && r.reason ? ": " + r.reason : ""}`;
-      cls = " hold";
-    }
-    if (!text) return null;
+  _threadEvent(item) {
+    const line = eventLine(item, this.projects);
+    if (!line) return null;
     const color = ROLE_COLORS[item.role] || "var(--text)";
-    return el("div", { class: "fevent" + cls }, [
+    return el("div", { class: "fevent" + line.cls }, [
       el("span", { class: "fdot" }),
       el("span", { class: "fetext" }, [
         el("span", { style: `color:${color};font-weight:600`, text: speakerName(item) + " " }),
-        el("span", { text }),
+        el("span", { text: line.text }),
       ]),
       el("span", { class: "fwhen", text: item.game_date ? shortDate(item.game_date) : "" }),
     ]);
@@ -1082,30 +1096,6 @@ class StreamPage {
         ...extras,
       ]),
     ]);
-  }
-
-  _conversationElFlat(items) {
-    const groups = groupByDay(items);
-    return groups.map(([day, lines]) => el("div", { class: "tday" }, [
-      el("div", { class: "tdayh", text: day ? shortDate(day) : "Now" }),
-      el("ol", { class: "tl" }, lines.map((item) => el("li", {}, [
-        el("span", { class: "tdot", style: `background:${ROLE_COLORS[item.role] || "var(--text)"}` }),
-        el("div", { class: "tline" }, [
-          el("span", { style: `color:${ROLE_COLORS[item.role] || "var(--text)"};font-weight:600`, text: speakerName(item) + " " }),
-          item.badge ? el("span", { class: "chip " + item.badge, text: item.badge }) : null,
-          this._replyTag(item),
-          el("span", { text: " " + this._bodyText(item) }),
-        ]),
-      ]))),
-    ]));
-  }
-
-  /** "re: Room siting" on a line that answers another (a ruling against its
-   * proposal), so reading newest first still shows what it is about. */
-  _replyTag(item) {
-    const target = item.reply_to && this.itemsById ? this.itemsById.get(item.reply_to) : null;
-    if (!target) return null;
-    return el("span", { class: "faint", text: " re: " + (target.type || target.kind) });
   }
 
   _bodyText(item) {
