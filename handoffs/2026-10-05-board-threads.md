@@ -89,3 +89,65 @@ Plan: (1) feed gets `step_label`/`step_targets`/`step_total`/`step_outcome` on
 executed items; (2) check what `calls` could hold; (3) board lists every
 proposal with state filters; (4) titles grow from proposal to project to amend;
 (5) tidy, node tests, fixture, asset bump. Commit after each.
+
+### Done (all five tasks committed on the worktree branch)
+
+1. **Public step data.** `dfqueue/feed.py`: `executed_step_info` adds `step_label`
+   (the step's label, newest plan version wins, humanised tool id as the
+   fallback, run through `_safe_public_text`, `None` when unsafe), `step_targets`,
+   `step_total` (literal target count, `None` for dynamic targets) and
+   `step_outcome` (started, finished, failed) to public AND operator executed
+   items; all four are in `PUBLIC_ITEM_FIELDS`. `eventLine` in `app.js` words the
+   event from them.
+2. **"What it checked".** Not fillable from the feed today. The operator item's
+   `calls: []` is the design's section 3.6 join (tool calls sharing the item's
+   `run_id`), which needs the `run_id` stamp (slice S2, a GAPS entry) and
+   dfmcp's call journal, both outside the feed and outside this stream. The JS
+   hook (`item.calls`, entries `{tool, note}`) is left; no data path invented.
+3. **Every proposal listed.** `boardEntries` (pure) gives one entry per proposal
+   thread, newest first; a proposal that became a project is one entry. Tabs by
+   state with counts: All, Under way, On hold, Done, Pending, Deferred, Rejected
+   (empty states hidden), plus an "All agents" select when more than one agent
+   has proposed. Cards show a state chip for pending/deferred/rejected and the
+   proposing agent. Abandoned projects stay under Done ("Abandoned" label).
+4. **Titles that grow.** Public and operator proposal items now carry `title`
+   (a truncated `summary`, safety-checked on the public side, the same last-resort
+   rule projects already use). Entry name: project `public_title` once a project
+   exists, else the proposal `title`, else its type. `build_projects_view` lets a
+   later amend's `public_title` rename the project. **Gap:** `dfqueue/schema.py`
+   gives `amend` no `public_title` field (and the dfmcp amend tool no argument),
+   so no real record can carry one yet; the feed reads it when present (tested
+   on raw records). Adding it is a schema plus dfmcp change, not done here
+   (not in my surfaces).
+5. **Tidy and tests.** Removed `_conversationElFlat`, `_replyTag`, `_sectionEl`,
+   the card builders and `.fdepth`. New `dfqueue/tests/test_site_js_threads.py`
+   (7 tests, node, real `app.js` with a tiny DOM stub): thread root and
+   nesting, event wording for started/finished/failed/hold/plan, replies
+   collapsed by default with the open state surviving a re-render, one entry per
+   proposal, project title replacing proposal title, orphan project entry.
+   `dfqueue/tests/test_feed.py` +9 tests. Demo fixture now has a pending
+   proposal (0010), a deferred one (0011, ruling-0011) and `ask-0001` joined to
+   proposal-0004's project thread (the rejected proposal-0002 already existed);
+   `test_site_data.py` counts updated for the extra ruling and proposal. Asset
+   version bumped to `?v=33` in `index.html` and `operator.html`.
+
+### Checks
+- `python -m pytest dfqueue -q`: 435 passed. `node --check web/stream/app.js`: clean.
+- Headless Chrome 1280x700 (CDP script, scratchpad, not committed), public and
+  operator pages: no console errors (public shows only a favicon 404 from the
+  bare http.server), page does not scroll, tabs All 7 / Under way 1 / On hold 1 /
+  Done 2 / Pending 1 / Deferred 1 / Rejected 1, Rejected tab lists the
+  rejected proposal, agent filter Quartermaster gives its 2 entries, a project
+  thread opens with "+ 4 replies" collapsed, expands to "- 4 replies", events
+  read 'Overseer finished job "Dig down-stair" · 1 of 1 target done' on the
+  PUBLIC page too (task 1 working), the Question and Answer nest under each
+  other once expanded.
+
+### Deploy targets
+- Relay web (`relay-web` target, already in `infra/deploy-manifest.yaml`):
+  `web/stream/index.html`, `app.js`, `style.css`; operator target adds
+  `operator.html`. No manifest change needed.
+- Feed export on VM 103 (`dfqueue/feed.py`, already listed in the manifest): the
+  public page needs the new feed fields (`step_label` etc., `title`) or events
+  fall back to "carried out a job" and proposals to their type. Deploy the
+  feed with the web files; old data stays readable.

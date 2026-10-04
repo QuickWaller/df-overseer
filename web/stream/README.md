@@ -176,11 +176,11 @@ the journal (`systemd-journal` group).
 
 ## What is real here and what is a placeholder
 
-- **Real**: the board (split layout, Under way/On hold/Done/Turned down,
+- **Real**: the board (split layout; every proposal listed once, as tabs by state (All, Under way, On hold, Done, Pending, Deferred, Rejected) plus an agent filter, each opening its forum-style thread with collapsed replies,
   a card's mini job graph and "N of M steps" label, urgency pill, the
   details panel's full job graph with dependency edges, done/active/ready/
   waiting/hold states, `v2`/`v3` tags on an amendment's added step, and the
-  conversation grouped by game day), both themes (Terminal 2 default, Stone
+  conversation thread), both themes (Terminal 2 default, Stone
   2 behind the header toggle, remembered in `localStorage`), multiple forts
   (`forts.json`, see above), the item stream (proposals, rulings, executed
   steps, asks, answers, passes, escalations, amends, abandons), public
