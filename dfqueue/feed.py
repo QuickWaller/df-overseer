@@ -213,8 +213,10 @@ MONTH_NAMES = (
 
 def render_game_date(tick: Optional[int]) -> Optional[str]:
     """"12 Limestone, year 31" from an absolute game tick, or `None` if
-    `tick` is `None`. Years are 1-based (year 0 does not appear in the
-    game's own calendar); days-of-month are 1-based."""
+    `tick` is `None`. The year is the game's own `cur_year`
+    (abs tick = cur_year * 403,200 + cur_year_tick, so year = tick // 403,200
+    with no offset: 12,746,121 is year 31, tick 246,921); days-of-month are
+    1-based."""
     if tick is None:
         return None
     year = tick // TICKS_PER_YEAR
@@ -222,7 +224,7 @@ def render_game_date(tick: Optional[int]) -> Optional[str]:
     day_of_month = (day_in_year // TICKS_PER_DAY) % DAYS_PER_MONTH
     month_index = (day_in_year // TICKS_PER_DAY) // DAYS_PER_MONTH
     month_index = min(month_index, MONTHS_PER_YEAR - 1)  # defensive clamp
-    return f"{day_of_month + 1} {MONTH_NAMES[month_index]}, year {year + 1}"
+    return f"{day_of_month + 1} {MONTH_NAMES[month_index]}, year {year}"
 
 
 # ---- reply_to / thread (design §3.4) ----------------------------------------

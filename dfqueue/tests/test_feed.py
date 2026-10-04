@@ -31,13 +31,13 @@ def test_render_game_date_none_for_none_tick():
     assert feed.render_game_date(None) is None
 
 
-def test_render_game_date_first_day_of_year_one():
-    assert feed.render_game_date(0) == "1 Granite, year 1"
+def test_render_game_date_first_day_of_year_zero():
+    assert feed.render_game_date(0) == "1 Granite, year 0"
 
 
 def test_render_game_date_rolls_into_the_second_month():
     # 28 days (0-indexed day 28) is the first day of the second month.
-    assert feed.render_game_date(28 * feed.TICKS_PER_DAY) == "1 Slate, year 1"
+    assert feed.render_game_date(28 * feed.TICKS_PER_DAY) == "1 Slate, year 0"
 
 
 def test_render_game_date_stays_deterministic_for_a_real_cycle_value():
@@ -45,6 +45,15 @@ def test_render_game_date_stays_deterministic_for_a_real_cycle_value():
     result = feed.render_game_date(12274877)
     assert isinstance(result, str)
     assert "year" in result
+
+
+def test_render_game_date_year_matches_the_forts_own_clock():
+    # Real pair read live: cur_year 31, cur_year_tick 246921, abs_tick
+    # 12,746,121 = 31 * 403,200 + 246,921. The feed once headed this
+    # "year 32" (a +1 offset); the game's own year is 31.
+    assert 31 * feed.TICKS_PER_YEAR + 246921 == 12746121
+    # day 205 of the year = 7 full months (196 days) + day 10 -> 10 Sandstone
+    assert feed.render_game_date(12746121) == "10 Sandstone, year 31"
 
 
 # ---- reply_to / thread -------------------------------------------------------
