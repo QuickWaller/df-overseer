@@ -163,3 +163,60 @@ def test_a_project_with_no_proposal_in_the_feed_still_gets_an_entry():
     doc = {"thread_to_project": {}, "projects": {"project-9": {"id": "project-9", "name": "Orphan", "status": "abandoned", "steps": []}}}
     e = _run("return boardEntries([], DATA)[0];", doc)
     assert e["name"] == "Orphan" and e["state"] == "done" and e["abandoned"] is True
+
+
+# ---- run summaries and "what it checked" from runs.json (2026-10-05) ----------
+
+RUNS = {
+    "by_thread": {"proposal-1": ["run-1", "run-2"]},
+    "runs": [
+        {"run_id": "run-2", "role": "overseer", "wake_reason": "ask_open", "duration_s": 372, "summary": "Ruled the proposal.",
+         "records": [{"id": "ruling-1", "kind": "ruling", "thread": "proposal-1"}]},
+        {"run_id": "run-1", "role": "architect", "wake_reason": "routine_review", "duration_s": 42, "summary": "Filed a proposal.",
+         "records": [{"id": "proposal-1", "kind": "proposal", "thread": "proposal-1"}]},
+        {"run_id": "run-0", "role": "architect", "wake_reason": None, "duration_s": 5, "records": [
+            {"id": "proposal-1", "kind": "proposal", "thread": "proposal-1"}]},
+    ],
+    "calls_by_record": {"proposal-1": [{"tool": "overview.get", "note": "A first look.", "n": 2, "failed": False},
+                                       {"tool": "zone.list", "note": None, "n": 1, "failed": True}]},
+}
+
+
+def test_each_run_becomes_a_summary_reply_after_its_last_record_and_blank_ones_are_skipped():
+    out = _run("return summaryItems(DATA.items, DATA.runs).map((i) => [i.id, i.role, i.seq, i.when_text, i.text, i.reply_to]);",
+               {"items": THREAD, "runs": {**RUNS, "by_thread": {"proposal-1": ["run-1", "run-2", "run-0"]}}})
+    assert out == [
+        ["run-1:proposal-1", "architect", 1.5, "woke for routine review · 42 s", "Filed a proposal.", "proposal-1"],
+        ["run-2:proposal-1", "overseer", 2.5, "woke for ask open · 6 min", "Ruled the proposal.", "proposal-1"],
+    ]
+    assert _run("return summaryItems(DATA, null).length;", THREAD) == 0
+
+
+def test_summaries_nest_one_level_under_the_opening_post_and_render_with_the_summary_label():
+    expr = r"""
+      const page = Object.create(StreamPage.prototype);
+      page.projects = { projects: {}, thread_to_project: {} };
+      page.runs = DATA.runs;
+      const thread = page._conversationEl(DATA.items);
+      const text = []; const walk = (n) => { if (n.textContent) text.push(n.textContent); n.children.forEach(walk); }; walk(thread[0]);
+      const classes = []; const walk2 = (n) => { classes.push(n.className); n.children.forEach(walk2); }; walk2(thread[0]);
+      return { text, tier1: classes.filter((c) => c === "fkids tier-1").length, tier2: classes.filter((c) => c === "fkids tier-2").length };
+    """
+    res = _run(expr, {"items": THREAD, "runs": RUNS})
+    assert "Summary" in res["text"] and "Filed a proposal." in res["text"] and "woke for ask open · 6 min" in res["text"]
+    assert res["tier1"] == 1  # one reply group under the opening post, summaries included
+
+
+def test_what_it_checked_comes_from_calls_by_record_with_counts_and_errors():
+    rows = _run("return checkRows(DATA.calls_by_record['proposal-1']);", RUNS)
+    assert rows == [{"tool": "overview.get", "note": "A first look. · 2 calls"}, {"tool": "zone.list", "note": "errored"}]
+    expr = r"""
+      const page = Object.create(StreamPage.prototype);
+      page.projects = { projects: {}, thread_to_project: {} };
+      page.runs = DATA.runs;
+      const post = page._threadPost(DATA.items[0]);
+      const seen = []; const walk = (n) => { if (n.textContent) seen.push(n.textContent); n.children.forEach(walk); }; walk(post);
+      return seen;
+    """
+    seen = _run(expr, {"items": THREAD, "runs": RUNS})
+    assert "What it checked · 2" in seen and "overview.get" in seen
