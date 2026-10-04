@@ -254,7 +254,7 @@ function miniGraph(steps) {
  * added. */
 function jobGraph(steps) {
   const { byId, rows } = layoutSteps(steps);
-  const W = 320, NH = 40, VG = 24, HG = 10, PAD = 10;
+  const W = 320, NH = 36, VG = 26, HG = 10, PAD = 8;
   const maxPer = Math.max(1, ...rows.map((r) => r.length));
   const NW = Math.min(200, (W - PAD * 2 - HG * (maxPer - 1)) / maxPer);
   const pos = {};
@@ -267,13 +267,13 @@ function jobGraph(steps) {
   const H = PAD * 2 + rows.length * NH + Math.max(0, rows.length - 1) * VG;
   const label = steps.map((s) => `${s.label} (${STEP_LOOK[s.state] ? STEP_LOOK[s.state].sub : s.state})`).join(", ");
   const svg = svgEl("svg", {
-    viewBox: `0 0 ${W} ${H}`, width: "100%", role: "img",
+    viewBox: `0 0 ${W} ${H}`, width: String(W), role: "img",
     "aria-label": "Job order: " + label, class: "jgraph",
   });
   const defs = svgEl("defs", {});
   const marker = svgEl("marker", {
     id: "stream-arrow", viewBox: "0 0 8 8", refX: "7", refY: "4",
-    markerWidth: "7", markerHeight: "7", orient: "auto-start-reverse",
+    markerWidth: "6.5", markerHeight: "6.5", orient: "auto-start-reverse",
   });
   marker.append(svgEl("path", { d: "M0,0 L8,4 L0,8 z", fill: "var(--faint)" }));
   defs.append(marker);
@@ -283,10 +283,13 @@ function jobGraph(steps) {
     (s.requires || []).forEach((d) => {
       const a = pos[d], b = pos[s.id];
       if (!a || !b) return;
-      const x1 = a.x + NW / 2, y1 = a.y + NH, x2 = b.x + NW / 2, y2 = b.y - 2, my = (y1 + y2) / 2;
+      // Leave and arrive straight down: the bend happens in the middle of
+      // the gap, with a straight run into the arrowhead.
+      const x1 = a.x + NW / 2, y1 = a.y + NH + 1, x2 = b.x + NW / 2, y2 = b.y - 3;
+      const run = Math.min(8, (y2 - y1) / 3), ya = y1 + run, yb = y2 - run, my = (ya + yb) / 2;
       svg.append(svgEl("path", {
-        d: `M${x1},${y1} C${x1},${my} ${x2},${my} ${x2},${y2}`, fill: "none",
-        stroke: "var(--line-strong)", "stroke-width": "1.5", "marker-end": "url(#stream-arrow)",
+        d: `M${x1},${y1} L${x1},${ya} C${x1},${my} ${x2},${my} ${x2},${yb} L${x2},${y2}`, fill: "none",
+        stroke: "var(--line-strong)", "stroke-width": "1.2", "marker-end": "url(#stream-arrow)",
       }));
     });
   });
@@ -306,8 +309,8 @@ function jobGraph(steps) {
     }));
     if (s.state === "active" && typeof s.done === "number" && typeof s.total === "number" && s.total > 0) {
       const frac = s.done / s.total;
-      g.append(svgEl("rect", { x: String(p.x + 6), y: String(p.y + NH - 7), width: String(NW - 12), height: "3", rx: "1.5", fill: "var(--g-now-barbg)" }));
-      g.append(svgEl("rect", { x: String(p.x + 6), y: String(p.y + NH - 7), width: String((NW - 12) * frac), height: "3", rx: "1.5", fill: "var(--g-now-bar)" }));
+      g.append(svgEl("rect", { x: String(p.x + 6), y: String(p.y + NH - 5), width: String(NW - 12), height: "2.5", rx: "1.5", fill: "var(--g-now-barbg)" }));
+      g.append(svgEl("rect", { x: String(p.x + 6), y: String(p.y + NH - 5), width: String((NW - 12) * frac), height: "2.5", rx: "1.5", fill: "var(--g-now-bar)" }));
     }
     const ix = p.x + 9;
     if (s.state === "done") {
@@ -329,12 +332,12 @@ function jobGraph(steps) {
     const tx = hasIcon ? p.x + 24 : p.x + 9;
     const maxChars = Math.max(1, Math.floor((NW - (hasIcon ? 30 : 16)) / 6.3));
     const name = svgEl("text", {
-      x: String(tx), y: String(p.y + 17), fill: look.fg, "font-size": "12",
+      x: String(tx), y: String(p.y + 15), fill: look.fg, "font-size": "12",
       "font-weight": s.state === "active" || s.state === "ready" ? "600" : "400",
     });
     name.textContent = s.label.length > maxChars ? s.label.slice(0, maxChars - 1) + "…" : s.label;
     g.append(name);
-    const sub = svgEl("text", { x: String(tx), y: String(p.y + 30), fill: look.fg, opacity: "0.75", "font-size": "10" });
+    const sub = svgEl("text", { x: String(tx), y: String(p.y + 27), fill: look.fg, opacity: "0.75", "font-size": "10" });
     sub.textContent = (s.state === "active" && typeof s.done === "number") ? `${s.done} of ${s.total}` : look.sub;
     g.append(sub);
     if (s.added_version) {
@@ -923,7 +926,166 @@ class StreamPage {
     ]);
   }
 
+  /** PROTOTYPE (2026-10-05, for the user's review): the conversation as a
+   * forum thread. Oldest first; the founding proposal is the opening post,
+   * everything else replies to it one level in, and an answer nests under
+   * its question. Plans, carried-out steps and holds are one-line events,
+   * not posts. "What it checked" lists `item.calls`; "Thinking" shows
+   * `item.thinking` (operator data only; nothing captures it yet). */
   _conversationEl(items) {
+    const sorted = [...items].sort((a, b) => (a.seq || 0) - (b.seq || 0));
+    const byId = new Map(sorted.map((i) => [i.id, i]));
+    const projectsById = this.projects.projects || {};
+    const stepLabel = (stepId) => {
+      for (const p of Object.values(projectsById)) {
+        const s = (p.steps || []).find((x) => x.id === stepId);
+        if (s) return s.label;
+      }
+      return null;
+    };
+    // Tree: an answer hangs under its question; everything else in the
+    // thread hangs under the opening post (one level, like a forum).
+    const root = sorted.find((i) => !i.reply_to || !byId.has(i.reply_to)) || sorted[0];
+    const parentOf = (item) => {
+      if (item === root) return null;
+      const p = item.reply_to && byId.get(item.reply_to);
+      return p && p.kind === "ask" ? p.id : (root ? root.id : null);
+    };
+    const kids = new Map();
+    sorted.forEach((i) => {
+      const p = parentOf(i);
+      if (p) { if (!kids.has(p)) kids.set(p, []); kids.get(p).push(i); }
+    });
+    this._openReplies = this._openReplies || new Set();
+    const render = (item) => {
+      const node = this._threadEvent(item, stepLabel) || this._threadPost(item);
+      const children = kids.get(item.id) || [];
+      if (!children.length) return node;
+      const open = this._openReplies.has(item.id);
+      const who = [...new Set(children.map((c) => speakerName(c)))];
+      const last = children[children.length - 1];
+      const box = el("div", { class: "freplies" }, children.map(render));
+      box.hidden = !open;
+      const label = () => `${box.hidden ? "+" : "-"} ${children.length} ${children.length === 1 ? "reply" : "replies"}`;
+      const btn = el("button", { type: "button", class: "ftoggle", "aria-expanded": String(open) }, [
+        el("span", { class: "ftl", text: label() }),
+        el("span", { class: "ftwho" }, who.map((w, k) => {
+          const c = children.find((x) => speakerName(x) === w);
+          return el("span", { style: `color:${ROLE_COLORS[c.role] || "var(--text)"}`, text: (k ? ", " : "") + w });
+        })),
+        el("span", { class: "fwhen", text: last.game_date ? "last " + shortDate(last.game_date) : "" }),
+      ]);
+      btn.onclick = () => {
+        box.hidden = !box.hidden;
+        if (box.hidden) this._openReplies.delete(item.id); else this._openReplies.add(item.id);
+        btn.setAttribute("aria-expanded", String(!box.hidden));
+        btn.querySelector(".ftl").textContent = label();
+      };
+      return el("div", { class: "fnode" }, [node, el("div", { class: "fkids" }, [btn, box])]);
+    };
+    return [el("div", { class: "fthread" }, root ? [render(root)] : [])];
+  }
+
+  _threadEvent(item, stepLabel) {
+    const rec = item.record || {};
+    const projects = this.projects.projects || {};
+    const findStep = (id) => {
+      for (const p of Object.values(projects)) {
+        const s = (p.steps || []).find((x) => x.id === id);
+        if (s) return s;
+      }
+      return null;
+    };
+    let text = null, cls = "";
+    if (item.kind === "project") {
+      // The public feed carries no record, so fall back to the project's
+      // own steps in projects.json (the first version's, not later adds).
+      const steps = rec.steps || ((projects[item.id] || {}).steps || []).filter((s) => !s.added_version);
+      const n = steps.length;
+      text = n
+        ? `made this a project with ${n === 1 ? "1 job" : n + " jobs"}: ${steps.map((s) => s.label).join(", ")}`
+        : "made this a project";
+      cls = " plan";
+    } else if (item.kind === "executed") {
+      // Operator items carry the record; public items carry `step_label` and
+      // `step_targets` once the publisher adds them (until then, generic).
+      const step = rec.step_id ? findStep(rec.step_id) : null;
+      const label = (step && step.label) || item.step_label || null;
+      const acts = rec.actions || [];
+      const n = acts.length ? acts.reduce((k, a) => k + ((a.targets || []).length), 0) : (item.step_targets || 0);
+      const total = (step && step.total) || item.step_total || null;
+      const failed = acts.some((a) => a.outcome && a.outcome !== "success");
+      const done = acts.length && acts.every((a) => a.target_state === "done");
+      const verb = failed ? "tried and failed to start" : done ? "finished" : "started";
+      const count = n ? ` · ${n}${total ? " of " + total : ""} ${n === 1 ? "target" : "targets"} ${done ? "done" : "ordered"}` : "";
+      text = label ? `${verb} job "${label}"${count}` : "carried out a job";
+      cls = failed ? " fail" : "";
+    } else if (item.kind === "observation") {
+      const r = (rec.results || [])[0];
+      const step = rec.step_id ? findStep(rec.step_id) : null;
+      text = `put job "${(step && step.label) || "a job"}" on hold${r && r.reason ? ": " + r.reason : ""}`;
+      cls = " hold";
+    }
+    if (!text) return null;
+    const color = ROLE_COLORS[item.role] || "var(--text)";
+    return el("div", { class: "fevent" + cls }, [
+      el("span", { class: "fdot" }),
+      el("span", { class: "fetext" }, [
+        el("span", { style: `color:${color};font-weight:600`, text: speakerName(item) + " " }),
+        el("span", { text }),
+      ]),
+      el("span", { class: "fwhen", text: item.game_date ? shortDate(item.game_date) : "" }),
+    ]);
+  }
+
+  _threadPost(item) {
+    const color = ROLE_COLORS[item.role] || "var(--text)";
+    const name = speakerName(item);
+    let body = this._bodyText(item);
+    let verdict = null;
+    if (item.kind === "ruling") {
+      const m = /^(Accepted|Rejected|Deferred)\s*:?\s*(.*)$/s.exec(body || "");
+      if (m) { verdict = m[1]; body = m[2]; }
+    }
+    const kindLabel = {
+      proposal: item.type || "Proposal", amend: "Plan change", ask: "Question", answer: "Answer", abandon: "Abandoned",
+    }[item.kind] || null;
+    const meta = [
+      el("span", { class: "fwho", style: `color:${color}`, text: name }),
+      verdict ? el("span", { class: "fverdict v-" + verdict.toLowerCase(), text: verdict }) : null,
+      kindLabel ? el("span", { class: "fkind", text: kindLabel }) : null,
+      item.kind === "proposal" && item.badge ? el("span", { class: "chip " + item.badge, text: item.badge }) : null,
+      el("span", { class: "fwhen", text: item.game_date ? shortDate(item.game_date) : "" }),
+    ];
+    const extras = [];
+    const rec = item.record || {};
+    if (item.kind === "proposal" && rec.summary) extras.push(el("div", { class: "fsub", text: rec.summary }));
+    if (item.calls && item.calls.length) {
+      extras.push(el("details", { class: "fx" }, [
+        el("summary", { text: `What it checked · ${item.calls.length}` }),
+        el("div", { class: "fcalls" }, item.calls.flatMap((c) => [
+          el("span", { class: "ft", text: c.tool || c.tool_id || "" }),
+          el("span", { text: c.note || c.result || "" }),
+        ])),
+      ]));
+    }
+    if (item.thinking) {
+      extras.push(el("details", { class: "fx" }, [
+        el("summary", {}, [el("span", { text: "Thinking" }), el("span", { class: "fop", text: "OPERATOR" })]),
+        el("div", { class: "fthink", text: item.thinking }),
+      ]));
+    }
+    return el("div", { class: "fpost" }, [
+      el("div", { class: "fav", style: `color:${color}`, text: (name || "?").charAt(0) }),
+      el("div", { class: "fbody" }, [
+        el("div", { class: "fmeta" }, meta),
+        el("div", { class: "ftext", text: body }),
+        ...extras,
+      ]),
+    ]);
+  }
+
+  _conversationElFlat(items) {
     const groups = groupByDay(items);
     return groups.map(([day, lines]) => el("div", { class: "tday" }, [
       el("div", { class: "tdayh", text: day ? shortDate(day) : "Now" }),

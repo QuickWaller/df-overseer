@@ -189,7 +189,7 @@ a { color: var(--accent); }
 .psec { display: flex; flex-direction: column; gap: 8px; border-top: 1px solid var(--line); padding-top: 10px; }
 
 .jgraph-wrap { overflow-x: auto; }
-.jgraph { display: block; max-width: 100%; height: auto; }
+.jgraph { display: block; max-width: 100%; height: auto; margin: 0 auto; }
 .mini { display: block; }
 
 .liveitem { border-left: 3px solid var(--architect); padding: 2px 0 2px 10px; }
@@ -525,3 +525,46 @@ a.tagchip:hover { border-color: var(--text); }
 .site table.args .aname { font-weight: 700; white-space: nowrap; }
 .site table.args .areq { color: var(--warn); white-space: nowrap; }
 .site .glist { margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 4px; line-height: 1.55; }
+
+/* PROTOTYPE 2026-10-05: conversation as a forum thread (app.js _conversationEl). */
+.fthread { display: flex; flex-direction: column; }
+.fdepth { margin-left: calc(var(--d) * 18px); padding-left: calc(min(var(--d), 1) * 14px); border-left: 1px solid transparent; }
+.fdepth[style*="--d:1"], .fdepth[style*="--d:2"], .fdepth[style*="--d:3"] { border-left-color: var(--line-strong); }
+.fpost { display: grid; grid-template-columns: 28px 1fr; gap: 0 10px; padding: 9px 0; }
+.fav { width: 26px; height: 26px; border: 1px solid currentColor; display: grid; place-items: center; font-weight: 700; font-size: 12px; }
+.fbody { min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+.fmeta { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 8px; font-size: 12px; }
+.fwho { font-weight: 700; }
+.fkind { color: var(--faint); font-size: 11px; letter-spacing: .05em; text-transform: uppercase; border: 1px solid var(--line-strong); padding: 0 5px; }
+.fverdict { font-size: 11px; letter-spacing: .05em; text-transform: uppercase; padding: 0 5px; border: 1px solid; }
+.fverdict.v-accepted { color: var(--ok); border-color: var(--ok-line); background: var(--ok-bg); }
+.fverdict.v-rejected, .fverdict.v-deferred { color: var(--no); border-color: var(--no-line); background: var(--no-bg); }
+.fwhen { color: var(--faint); margin-left: auto; white-space: nowrap; font-size: 12px; }
+.ftext { color: var(--text); }
+.fsub { color: var(--muted); font-size: 12px; }
+.fevent { display: flex; align-items: baseline; gap: 9px; padding: 4px 0 4px 2px; font-size: 12px; color: var(--muted); }
+.fdot { width: 8px; height: 8px; flex: none; border: 1px solid var(--ok-line); background: var(--ok-bg); transform: translateY(1px); }
+.fevent.plan .fdot { border-color: var(--g-now-line); background: var(--g-now-bg); }
+.fevent.hold .fdot, .fevent.fail .fdot { border-color: var(--g-hold-line); background: var(--g-hold-bg); }
+.fetext { color: var(--text); }
+.fx { border: 1px solid var(--line); background: var(--raised); }
+.fx + .fx { margin-top: -5px; }
+.fx summary { cursor: pointer; list-style: none; padding: 3px 9px; font-size: 12px; color: var(--muted); display: flex; gap: 8px; }
+.fx summary::-webkit-details-marker { display: none; }
+.fx summary::before { content: "+"; color: var(--faint); }
+.fx[open] summary::before { content: "-"; }
+.fx summary:hover { color: var(--text); }
+.fop { margin-left: auto; font-size: 10px; letter-spacing: .08em; color: var(--will); }
+.fcalls { padding: 2px 10px 8px 24px; font-size: 12px; display: grid; grid-template-columns: auto 1fr; gap: 2px 12px; color: var(--muted); }
+.fcalls .ft { color: var(--text); }
+.fthink { padding: 2px 10px 8px 24px; font-size: 12px; color: var(--faint); white-space: pre-wrap; }
+/* PROTOTYPE: collapsed replies, neutral event markers */
+.fkids { margin-left: 13px; padding-left: 15px; border-left: 1px solid var(--line-strong); }
+.ftoggle { display: flex; align-items: baseline; gap: 10px; width: 100%; background: none; border: 0; padding: 4px 0; font-size: 12px; text-align: left; }
+.ftoggle .ftl { color: var(--architect); }
+.ftoggle:hover .ftl { text-decoration: underline; }
+.ftoggle:focus-visible { outline: 1px solid var(--accent); }
+.ftwho { color: var(--muted); }
+.freplies { display: flex; flex-direction: column; }
+.fevent .fdot, .fevent.plan .fdot { border-color: var(--line-strong); background: var(--raised); }
+.fevent.hold .fdot, .fevent.fail .fdot { border-color: var(--no-line); background: var(--no-bg); }
