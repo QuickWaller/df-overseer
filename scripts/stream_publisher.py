@@ -560,11 +560,17 @@ def run_cycle(
     # The conductor's run reports, read-only and optional: absent store gives
     # None, which changes nothing below (no runs.json, no `+reports` source).
     run_rows = live.read_runs(cfg.resolved_runs_db())
-    runs_public = live.build_runs(run_rows, now, public=True)
-    runs_operator = live.build_runs(run_rows, now, public=False)
+    lines = None
     if cfg.live_journal or cfg.conductor_dir or run_rows is not None:
         lines = (journal_reader or live.read_journal_lines)() if cfg.live_journal else []
-        calls = None if lines is None else live.parse_call_lines(lines)
+    calls = None if lines is None else live.parse_call_lines(lines)
+    record_ts = {r.get("id"): r.get("ts") for r in records if isinstance(r, dict)}
+    # `write`/`description` per tool, the public tools.json's own text
+    # (built again below for the site files; cheap and read-only).
+    tools_info = {t["id"]: t for t in site_data.build_tools_json()["tools"]} if run_rows else None
+    runs_public = live.build_runs(run_rows, now, public=True, calls=calls, tools=tools_info, record_ts=record_ts)
+    runs_operator = live.build_runs(run_rows, now, public=False, calls=calls, tools=tools_info, record_ts=record_ts)
+    if cfg.live_journal or cfg.conductor_dir or run_rows is not None:
         conductor = live.read_conductor_dir(cfg.conductor_dir)
         live_public = live.build_live(calls, now, public=True, conductor=conductor, runs=run_rows)
         live_operator = live.build_live(calls, now, public=False, conductor=conductor, runs=run_rows)
