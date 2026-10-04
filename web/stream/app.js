@@ -133,14 +133,22 @@ function shortDate(gameDate) {
   return `${m[1]}-${m[2]}-${m[3]}`;
 }
 
-/** Group a project's conversation items by game day, oldest day first,
- * original (seq) order preserved within a day; items with no game date
- * ("Happening now"-style lines) form their own trailing group. Mirrors the
- * mockup's `byDay`. */
-function groupByDay(items) {
+function cmpDay(a, b) {
+  const x = dayKey(a), y = dayKey(b);
+  return x === y ? 0 : x < y ? -1 : 1;
+}
+
+/** Group conversation items by game day, NEWEST day first and newest entry
+ * first within a day (the user's call 2026-10-05); items with no game date
+ * ("Now"-style lines) form their own group at the very top. Feed (seq)
+ * position breaks ties, so a ruling, which always follows its proposal,
+ * lands above it and carries a "re:" tag (`_replyTag`). Pass
+ * `newestFirst = false` for the old oldest-first order. */
+function groupByDay(items, newestFirst = true) {
   const groups = [];
+  const dir = newestFirst ? -1 : 1;
   const withKey = items.map((item, i) => [item, i]);
-  withKey.sort((a, b) => dayKey(a[0].game_date) - dayKey(b[0].game_date) || a[1] - b[1]);
+  withKey.sort((a, b) => dir * (cmpDay(a[0].game_date, b[0].game_date) || a[1] - b[1]));
   withKey.forEach(([item]) => {
     const last = groups[groups.length - 1];
     if (last && last[0] === item.game_date) last[1].push(item);
@@ -850,10 +858,19 @@ class StreamPage {
         el("div", { class: "tline" }, [
           el("span", { style: `color:${ROLE_COLORS[item.role] || "var(--text)"};font-weight:600`, text: speakerName(item) + " " }),
           item.badge ? el("span", { class: "chip " + item.badge, text: item.badge }) : null,
+          this._replyTag(item),
           el("span", { text: " " + this._bodyText(item) }),
         ]),
       ]))),
     ]));
+  }
+
+  /** "re: Room siting" on a line that answers another (a ruling against its
+   * proposal), so reading newest first still shows what it is about. */
+  _replyTag(item) {
+    const target = item.reply_to && this.itemsById ? this.itemsById.get(item.reply_to) : null;
+    if (!target) return null;
+    return el("span", { class: "faint", text: " re: " + (target.type || target.kind) });
   }
 
   _bodyText(item) {
