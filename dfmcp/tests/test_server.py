@@ -57,6 +57,7 @@ import pytest_asyncio
 
 from dfqueue import store as _dfqueue_store
 
+from dfmcp.conductor_tools import NATIVE_TOOLS as CONDUCTOR_NATIVE_TOOLS
 from dfmcp.dfhack_client import DFHackConnectionPool, _encode_run_command_request
 from dfmcp.doctrine_tools import NATIVE_TOOLS as DOCTRINE_NATIVE_TOOLS
 from dfmcp.queue_tools import NATIVE_TOOLS
@@ -141,7 +142,7 @@ def registry():
     # merged in too, added handoffs/2026-09-19-series-mcp-tools.md:
     # agents/overseer/tools.yaml and agents/consultant/tools.yaml now grant
     # series.* ids, same rule-1 requirement.
-    return load_registry(native_tools={**NATIVE_TOOLS, **DOCTRINE_NATIVE_TOOLS, **SERIES_NATIVE_TOOLS, **GOTCHAS_NATIVE_TOOLS, **KNOWLEDGE_NATIVE_TOOLS})
+    return load_registry(native_tools={**NATIVE_TOOLS, **DOCTRINE_NATIVE_TOOLS, **SERIES_NATIVE_TOOLS, **GOTCHAS_NATIVE_TOOLS, **KNOWLEDGE_NATIVE_TOOLS, **CONDUCTOR_NATIVE_TOOLS})
 
 
 @pytest.fixture(scope="module")
@@ -862,6 +863,34 @@ class TestQueueTools:
         assert pending_after.structured_content == {"count": 0, "proposal_ids": []}
         text_after = "".join(b.text for b in pending_after.content if b.type == "text")
         assert proposal_id not in text_after
+
+    async def test_conductor_report_roundtrip_over_the_wire_and_other_roles_refused(
+        self, registry, roster, pool, fake_dfhack, tmp_path
+    ):
+        """handoffs/2026-10-05-conductor-report.md: the conductor's token can
+        start and end a run report (a row lands in the run store beside the
+        queue db), and every other role is refused by the allowlist."""
+        from dfqueue import runs as _runs
+
+        queue_db = tmp_path / "queue.sqlite3"
+        async with mcp_session(_app(registry, roster, pool, queue_db), CONDUCTOR_TOKEN) as session:
+            started = await session.call_tool(
+                "conductor__report",
+                {"phase": "start", "role": "architect", "wake_reason": "routine_review", "cycle": 1},
+            )
+            assert started.is_error is False
+            run_id = started.structured_content["run_id"]
+            ended = await session.call_tool(
+                "conductor__report",
+                {"phase": "end", "run_id": run_id, "ok": True, "final_answer": "Quiet."},
+            )
+            assert ended.is_error is False
+        row = _runs.get_run(_runs.runs_path(queue_db), run_id)
+        assert row["wake_reason"] == "routine_review" and row["final_answer"] == "Quiet."
+
+        async with mcp_session(_app(registry, roster, pool, queue_db), ARCHITECT_TOKEN) as session:
+            denied = await session.call_tool("conductor__report", {"phase": "start", "role": "architect"})
+        assert denied.is_error is True
 
     async def test_queue_call_is_logged(self, registry, roster, pool, fake_dfhack, tmp_path, caplog):
         """Test named in the brief: the queue call is logged, through the

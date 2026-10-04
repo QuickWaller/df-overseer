@@ -23,6 +23,7 @@ from pathlib import Path
 import pytest
 import yaml
 
+from dfmcp.conductor_tools import NATIVE_TOOLS as CONDUCTOR_NATIVE_TOOLS
 from dfmcp import doctrine_tools
 from doctrine import validate as doctrine_validate
 
@@ -396,7 +397,7 @@ class TestRosterWiring:
         # knowledge.wiki_lookup/dfhack.source_search/dfhack.source_read.
         return load_registry(
             native_tools={**QUEUE_NATIVE_TOOLS, **doctrine_tools.NATIVE_TOOLS, **SERIES_NATIVE_TOOLS,
-                **GOTCHAS_NATIVE_TOOLS, **KNOWLEDGE_NATIVE_TOOLS}
+                **GOTCHAS_NATIVE_TOOLS, **KNOWLEDGE_NATIVE_TOOLS, **CONDUCTOR_NATIVE_TOOLS}
         )
 
     @pytest.fixture(scope="class")

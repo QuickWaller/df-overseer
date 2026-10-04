@@ -127,7 +127,7 @@ from .dfhack_client import (
     DFHackConnectionPool,
     DFHackProtocolError,
 )
-from . import doctrine_tools, gotchas_store, gotchas_tools, knowledge_tools, labor_join, queue_tools, series_tools
+from . import conductor_tools, doctrine_tools, gotchas_store, gotchas_tools, knowledge_tools, labor_join, queue_tools, series_tools
 from .confidence import DEFAULT_CONFIDENCE_PATH, ConfidenceConfig, load_confidence
 from .registry import Registry, load_registry
 from .roles import Roster, load_roster
@@ -503,6 +503,7 @@ def build_mcp_server(
     id_to_name, name_to_id = build_tool_names(registry)
     queue_write_lock = asyncio.Lock()
     gotchas_write_lock = asyncio.Lock()
+    conductor_write_lock = asyncio.Lock()
     known_tool_ids = registry.ids()
     # {tool_id: guide text}, non-empty entries only -- handoffs/2026-10-02-
     # tool-descriptions-split.md: gotchas.get attaches a tool's guide (the
@@ -614,6 +615,11 @@ def build_mcp_server(
                         db_path=queue_db_path, call_dfhack=_call_dfhack,
                         write_lock=queue_write_lock,
                     )
+                elif tool_id in conductor_tools.NATIVE_TOOL_IDS:
+                    text, structured = await conductor_tools.call(
+                        tool_id, role, params.arguments or {},
+                        queue_db_path=queue_db_path, write_lock=conductor_write_lock,
+                    )
                 elif tool_id in doctrine_tools.NATIVE_TOOL_IDS:
                     text, structured = await doctrine_tools.call(
                         tool_id, role, params.arguments or {},
@@ -640,6 +646,8 @@ def build_mcp_server(
                 else:  # pragma: no cover -- every native id belongs to one of the above
                     raise AssertionError(f"native tool id {tool_id!r} has no owning module")
             except queue_tools.QueueToolError as exc:
+                return _tool_result_error(str(exc))
+            except conductor_tools.ConductorToolError as exc:
                 return _tool_result_error(str(exc))
             except doctrine_tools.DoctrineToolError as exc:
                 return _tool_result_error(str(exc))
@@ -888,7 +896,7 @@ def main() -> None:
     config = load_config()
     registry = load_registry(native_tools={
         **queue_tools.NATIVE_TOOLS, **doctrine_tools.NATIVE_TOOLS, **series_tools.NATIVE_TOOLS,
-        **gotchas_tools.NATIVE_TOOLS, **knowledge_tools.NATIVE_TOOLS,
+        **gotchas_tools.NATIVE_TOOLS, **knowledge_tools.NATIVE_TOOLS, **conductor_tools.NATIVE_TOOLS,
     })
     roster = load_roster(registry)
     tokens = load_role_tokens(roster)

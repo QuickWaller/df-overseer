@@ -40,6 +40,7 @@ from dfmcp.doctrine_tools import NATIVE_TOOLS as DOCTRINE_NATIVE_TOOLS  # noqa: 
 from dfmcp.series_tools import NATIVE_TOOLS as SERIES_NATIVE_TOOLS  # noqa: E402
 from dfmcp.gotchas_tools import NATIVE_TOOLS as GOTCHAS_NATIVE_TOOLS  # noqa: E402
 from dfmcp.knowledge_tools import NATIVE_TOOLS as KNOWLEDGE_NATIVE_TOOLS  # noqa: E402
+from dfmcp.conductor_tools import NATIVE_TOOLS as CONDUCTOR_NATIVE_TOOLS  # noqa: E402
 
 SURFACE_LUA = REPO_ROOT / "scripts" / "dfhack" / "df-overseer-surface.lua"
 
@@ -64,6 +65,7 @@ def _all_native_tools():
         **SERIES_NATIVE_TOOLS,
         **GOTCHAS_NATIVE_TOOLS,
         **KNOWLEDGE_NATIVE_TOOLS,
+        **CONDUCTOR_NATIVE_TOOLS,
     }
 
 

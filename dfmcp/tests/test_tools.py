@@ -38,6 +38,7 @@ import textwrap
 
 import pytest
 
+from dfmcp.conductor_tools import NATIVE_TOOLS as CONDUCTOR_NATIVE_TOOLS
 from dfmcp.doctrine_tools import NATIVE_TOOLS as DOCTRINE_NATIVE_TOOLS
 from dfmcp.queue_tools import NATIVE_TOOLS
 from dfmcp.registry import RegistryError, Tool, load_registry
@@ -73,7 +74,7 @@ def registry():
     # handoffs/2026-09-19-series-mcp-tools.md: agents/overseer/tools.yaml and
     # agents/consultant/tools.yaml now grant series.* ids, same rule-1
     # requirement, and dfmcp.series_tools.NativeTool.args is likewise ().
-    return load_registry(native_tools={**NATIVE_TOOLS, **DOCTRINE_NATIVE_TOOLS, **SERIES_NATIVE_TOOLS, **GOTCHAS_NATIVE_TOOLS, **KNOWLEDGE_NATIVE_TOOLS})
+    return load_registry(native_tools={**NATIVE_TOOLS, **DOCTRINE_NATIVE_TOOLS, **SERIES_NATIVE_TOOLS, **GOTCHAS_NATIVE_TOOLS, **KNOWLEDGE_NATIVE_TOOLS, **CONDUCTOR_NATIVE_TOOLS})
 
 
 @pytest.fixture(scope="module")

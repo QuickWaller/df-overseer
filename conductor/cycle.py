@@ -314,6 +314,55 @@ async def _drain_all_cursors(
     return events_by_role, new_cursors
 
 
+#: handoffs/2026-10-05-conductor-report.md: the conductor-only MCP tool that
+#: carries each run's wake reason (at launch) and summary (at the end) to the
+#: host the stream publisher runs on.
+REPORT_TOOL_ID = "conductor.report"
+
+
+async def _report(call: Callable, arguments: Mapping[str, Any]) -> Optional[Dict[str, Any]]:
+    """One `conductor.report` call. NEVER raises: a report is observability,
+    and a failure (the tool not deployed yet, the server unreachable, a
+    refusal) is one warning line, never a failed cycle or a lost run."""
+    try:
+        result = await call(REPORT_TOOL_ID, dict(arguments))
+        return result if isinstance(result, dict) else None
+    except Exception as exc:  # noqa: BLE001 -- deliberately total, see docstring
+        LOG.warning("%s (%s) failed, the run goes on: %s", REPORT_TOOL_ID, arguments.get("phase"), exc)
+        return None
+
+
+async def _run_role(
+    deps: "CycleDeps", call: Callable, role: str, prompt: str, *, wake: Any, cycle_index: int,
+) -> RunResult:
+    """`deps.role_runner.run`, bracketed by two `conductor.report` calls (start,
+    end). The wake reason and its detail go out at launch; the outcome, cost,
+    duration and final answer at the end. When the start call failed, the end
+    call carries `role`, `wake_reason` and `cycle` too, so it is self-contained."""
+    started = await _report(call, {
+        "phase": "start", "role": role, "wake_reason": wake.reason,
+        "wake_detail": wake.detail, "cycle": cycle_index,
+    })
+    run_id = (started or {}).get("run_id")
+    run_result = await deps.role_runner.run(
+        role, prompt, model=deps.models[role],
+        timeout_seconds=_timeout_for(deps, role), charter=deps.charters.get(role),
+    )
+    end_args: Dict[str, Any] = {
+        "phase": "end", "status": run_result.status, "ok": bool(run_result.ok),
+        "timed_out": bool(run_result.timed_out),
+        "duration_s": float(run_result.wall_clock_seconds or 0.0),
+        "cost_usd": run_result.cost_usd, "error": run_result.error,
+        "final_answer": run_result.final_answer,
+    }
+    if run_id:
+        end_args["run_id"] = run_id
+    else:
+        end_args.update({"role": role, "wake_reason": wake.reason, "wake_detail": wake.detail, "cycle": cycle_index})
+    await _report(call, end_args)
+    return run_result
+
+
 def _timeout_for(deps: "CycleDeps", role: str) -> float:
     """Per-role cap from `policy.yaml` (`role_timeout_seconds`) if set, else the
     service-wide cap."""
@@ -414,9 +463,9 @@ async def run_cycle(cycle_index: int, deps: CycleDeps) -> CycleResult:
                 diff_events=events_by_role.get(OVERSEER, []),
                 queue_summary=_queue_summary_for(OVERSEER, queue_state),
             )
-            overseer_run = await deps.role_runner.run(
-                OVERSEER, json.dumps(briefing, default=str), model=deps.models[OVERSEER],
-                timeout_seconds=_timeout_for(deps, OVERSEER), charter=deps.charters.get(OVERSEER),
+            overseer_run = await _run_role(
+                deps, call, OVERSEER, json.dumps(briefing, default=str), wake=wake,
+                cycle_index=cycle_index,
             )
             role_runs.append(overseer_run)
             if overseer_run.ok:
@@ -594,9 +643,8 @@ async def run_cycle(cycle_index: int, deps: CycleDeps) -> CycleResult:
             # runs whenever it may act."
             await _call_write(call, "fort.quicksave", {}, clock_changes=clock_changes, cycle_index=cycle_index)
 
-        run_result = await deps.role_runner.run(
-            role, json.dumps(briefing, default=str), model=deps.models[role],
-            timeout_seconds=_timeout_for(deps, role), charter=deps.charters.get(role),
+        run_result = await _run_role(
+            deps, call, role, json.dumps(briefing, default=str), wake=wake, cycle_index=cycle_index,
         )
         role_runs.append(run_result)
 
