@@ -25,6 +25,7 @@ from pathlib import Path
 
 import pytest
 
+from dfmcp.conductor_tools import NATIVE_TOOLS as CONDUCTOR_NATIVE_TOOLS
 from dfmcp import series_tools
 from dfseries import importer, store
 
@@ -528,7 +529,7 @@ class TestRosterWiring:
 
         return load_registry(
             native_tools={**QUEUE_NATIVE_TOOLS, **DOCTRINE_NATIVE_TOOLS, **series_tools.NATIVE_TOOLS,
-                **GOTCHAS_NATIVE_TOOLS, **KNOWLEDGE_NATIVE_TOOLS}
+                **GOTCHAS_NATIVE_TOOLS, **KNOWLEDGE_NATIVE_TOOLS, **CONDUCTOR_NATIVE_TOOLS}
         )
 
     @pytest.fixture(scope="class")

@@ -244,6 +244,7 @@ def _default_registry():
     so `dfmcp.roles.load_roster` can resolve the real roster. Imported
     lazily so a caller that already has a registry (or roster) need not pay
     for building one twice."""
+    from dfmcp.conductor_tools import NATIVE_TOOLS as CONDUCTOR_NATIVE_TOOLS
     from dfmcp.doctrine_tools import NATIVE_TOOLS as DOCTRINE_NATIVE_TOOLS
     from dfmcp.gotchas_tools import NATIVE_TOOLS as GOTCHAS_NATIVE_TOOLS
     from dfmcp.knowledge_tools import NATIVE_TOOLS as KNOWLEDGE_NATIVE_TOOLS
@@ -253,7 +254,7 @@ def _default_registry():
 
     return load_registry(native_tools={
         **QUEUE_NATIVE_TOOLS, **DOCTRINE_NATIVE_TOOLS, **SERIES_NATIVE_TOOLS,
-        **GOTCHAS_NATIVE_TOOLS, **KNOWLEDGE_NATIVE_TOOLS,
+        **GOTCHAS_NATIVE_TOOLS, **KNOWLEDGE_NATIVE_TOOLS, **CONDUCTOR_NATIVE_TOOLS,
     })
 
 

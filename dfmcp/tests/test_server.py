@@ -57,6 +57,7 @@ import pytest_asyncio
 
 from dfqueue import store as _dfqueue_store
 
+from dfmcp.conductor_tools import NATIVE_TOOLS as CONDUCTOR_NATIVE_TOOLS
 from dfmcp.dfhack_client import DFHackConnectionPool, _encode_run_command_request
 from dfmcp.doctrine_tools import NATIVE_TOOLS as DOCTRINE_NATIVE_TOOLS
 from dfmcp.queue_tools import NATIVE_TOOLS
@@ -141,7 +142,7 @@ def registry():
     # merged in too, added handoffs/2026-09-19-series-mcp-tools.md:
     # agents/overseer/tools.yaml and agents/consultant/tools.yaml now grant
     # series.* ids, same rule-1 requirement.
-    return load_registry(native_tools={**NATIVE_TOOLS, **DOCTRINE_NATIVE_TOOLS, **SERIES_NATIVE_TOOLS, **GOTCHAS_NATIVE_TOOLS, **KNOWLEDGE_NATIVE_TOOLS})
+    return load_registry(native_tools={**NATIVE_TOOLS, **DOCTRINE_NATIVE_TOOLS, **SERIES_NATIVE_TOOLS, **GOTCHAS_NATIVE_TOOLS, **KNOWLEDGE_NATIVE_TOOLS, **CONDUCTOR_NATIVE_TOOLS})
 
 
 @pytest.fixture(scope="module")

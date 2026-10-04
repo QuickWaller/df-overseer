@@ -17,6 +17,7 @@ per this project's "mark verified vs proposed" rule.
 
 import pytest
 
+from dfmcp.conductor_tools import NATIVE_TOOLS as CONDUCTOR_NATIVE_TOOLS
 from dfmcp.doctrine_tools import NATIVE_TOOLS as DOCTRINE_NATIVE_TOOLS
 from dfmcp.queue_tools import NATIVE_TOOLS
 from dfmcp.registry import load_registry
@@ -34,7 +35,7 @@ def registry():
     # files, which still grant queue.*/doctrine.get/series.* alongside the
     # new workjob.* ids this stream adds.
     return load_registry(
-        native_tools={**NATIVE_TOOLS, **DOCTRINE_NATIVE_TOOLS, **SERIES_NATIVE_TOOLS, **GOTCHAS_NATIVE_TOOLS, **KNOWLEDGE_NATIVE_TOOLS}
+        native_tools={**NATIVE_TOOLS, **DOCTRINE_NATIVE_TOOLS, **SERIES_NATIVE_TOOLS, **GOTCHAS_NATIVE_TOOLS, **KNOWLEDGE_NATIVE_TOOLS, **CONDUCTOR_NATIVE_TOOLS}
     )
 
 
@@ -93,7 +94,7 @@ def test_workjob_queue_argument_signature_matches_the_lua_dispatch():
     test_tools.py's own module docstring pins W/H/LEVEL/etc against each
     owning script's dispatch code."""
     reg = load_registry(
-        native_tools={**NATIVE_TOOLS, **DOCTRINE_NATIVE_TOOLS, **SERIES_NATIVE_TOOLS, **GOTCHAS_NATIVE_TOOLS, **KNOWLEDGE_NATIVE_TOOLS}
+        native_tools={**NATIVE_TOOLS, **DOCTRINE_NATIVE_TOOLS, **SERIES_NATIVE_TOOLS, **GOTCHAS_NATIVE_TOOLS, **KNOWLEDGE_NATIVE_TOOLS, **CONDUCTOR_NATIVE_TOOLS}
     )
     tool = reg.get("workjob.queue")
     tokens = [t.strip("[]") for t in tool.args]
@@ -288,7 +289,7 @@ def test_repeat_without_dry_run_fills_the_safe_dry_run_default():
     slot can never turn a preview into a real write. Was a refusal until
     handoffs/2026-09-25-tool-gaps-from-first-cycle.md item 2."""
     reg = load_registry(
-        native_tools={**NATIVE_TOOLS, **DOCTRINE_NATIVE_TOOLS, **SERIES_NATIVE_TOOLS, **GOTCHAS_NATIVE_TOOLS, **KNOWLEDGE_NATIVE_TOOLS}
+        native_tools={**NATIVE_TOOLS, **DOCTRINE_NATIVE_TOOLS, **SERIES_NATIVE_TOOLS, **GOTCHAS_NATIVE_TOOLS, **KNOWLEDGE_NATIVE_TOOLS, **CONDUCTOR_NATIVE_TOOLS}
     )
     tool = reg.get("workjob.queue")
     assert argv_for_call(
@@ -323,7 +324,7 @@ def test_workjob_cancel_argument_signature_matches_the_lua_dispatch():
     """Ground truth: df-overseer-workjob.lua's own dispatch block reads
     `args[2], args[3]` as job_id/dry_run in that order for `cancel`."""
     reg = load_registry(
-        native_tools={**NATIVE_TOOLS, **DOCTRINE_NATIVE_TOOLS, **SERIES_NATIVE_TOOLS, **GOTCHAS_NATIVE_TOOLS, **KNOWLEDGE_NATIVE_TOOLS}
+        native_tools={**NATIVE_TOOLS, **DOCTRINE_NATIVE_TOOLS, **SERIES_NATIVE_TOOLS, **GOTCHAS_NATIVE_TOOLS, **KNOWLEDGE_NATIVE_TOOLS, **CONDUCTOR_NATIVE_TOOLS}
     )
     tool = reg.get("workjob.cancel")
     tokens = [t.strip("[]") for t in tool.args]
@@ -413,7 +414,7 @@ def test_orders_check_duplicate_carries_no_coordinates(registry):
 
 def test_orders_check_duplicate_argument_signature():
     reg = load_registry(
-        native_tools={**NATIVE_TOOLS, **DOCTRINE_NATIVE_TOOLS, **SERIES_NATIVE_TOOLS, **GOTCHAS_NATIVE_TOOLS, **KNOWLEDGE_NATIVE_TOOLS}
+        native_tools={**NATIVE_TOOLS, **DOCTRINE_NATIVE_TOOLS, **SERIES_NATIVE_TOOLS, **GOTCHAS_NATIVE_TOOLS, **KNOWLEDGE_NATIVE_TOOLS, **CONDUCTOR_NATIVE_TOOLS}
     )
     tool = reg.get("orders.check-duplicate")
     assert tool.args == ["JOB"]

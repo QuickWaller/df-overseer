@@ -16,6 +16,7 @@ import textwrap
 import pytest
 import yaml
 
+from dfmcp.conductor_tools import NATIVE_TOOLS as CONDUCTOR_NATIVE_TOOLS
 from dfmcp.doctrine_tools import NATIVE_TOOLS as DOCTRINE_NATIVE_TOOLS
 from dfmcp.queue_tools import NATIVE_TOOLS
 from dfmcp.registry import load_registry
@@ -39,7 +40,7 @@ def registry():
     # agents/overseer/tools.yaml and agents/consultant/tools.yaml now grant
     # series.* ids and agents/architect/tools.yaml denies them, same rule-1
     # requirement for the two enabled grantee roles.
-    return load_registry(native_tools={**NATIVE_TOOLS, **DOCTRINE_NATIVE_TOOLS, **SERIES_NATIVE_TOOLS, **GOTCHAS_NATIVE_TOOLS, **KNOWLEDGE_NATIVE_TOOLS})
+    return load_registry(native_tools={**NATIVE_TOOLS, **DOCTRINE_NATIVE_TOOLS, **SERIES_NATIVE_TOOLS, **GOTCHAS_NATIVE_TOOLS, **KNOWLEDGE_NATIVE_TOOLS, **CONDUCTOR_NATIVE_TOOLS})
 
 
 # --------------------------------------------------------------------------
@@ -182,9 +183,14 @@ def test_conductor_is_kind_system_and_holds_exactly_the_clock_writes(registry):
     roster = load_roster(registry)
     conductor = roster.roles["conductor"]
     assert conductor.kind == "system"
-    assert set(conductor.write) == SYSTEM_CLASS_TOOL_IDS | {"queue.grade"}
+    assert set(conductor.write) == SYSTEM_CLASS_TOOL_IDS | {"queue.grade", "conductor.report"}
+    # conductor.report (handoffs/2026-10-05-conductor-report.md): native, never
+    # mutates the fort, and granted to no other role.
+    for other_name, other in roster.roles.items():
+        if other_name != "conductor":
+            assert "conductor.report" not in other.write and "conductor.report" not in other.read
     for tool_id in conductor.write:
-        if tool_id == "queue.grade":
+        if tool_id in ("queue.grade", "conductor.report"):
             assert registry.get(tool_id).mutates is False
             continue
         assert registry.get(tool_id).mutates is True
