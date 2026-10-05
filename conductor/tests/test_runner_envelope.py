@@ -42,3 +42,37 @@ async def test_order_is_finalAnswer_then_final_answer_then_final(tmp_path):
 @pytest.mark.asyncio
 async def test_no_answer_anywhere_is_none(tmp_path):
     assert await _answer(tmp_path, {"ok": True, "status": "ok", "payloads": []}) is None
+
+
+# Real usage block (evals/live/2026-09-15-overseer-first-ruling/run.json).
+_USAGE = {
+    "input": 10212, "output": 2639, "cacheRead": 28928, "cacheWrite": 0,
+    "reasoningTokens": 1595, "total": 41779, "cost": {"total": 0.006843014},
+}
+
+
+@pytest.mark.asyncio
+async def test_usage_and_turns_are_kept_with_cache_read(tmp_path):
+    env = dict(_REAL_SHAPE_ENVELOPE, usage=_USAGE, assistantTurns=5)
+    runner = _runner(tmp_path, _fake_exec(_FakeProcess(json.dumps(env).encode())))
+    result = await runner.run("overseer", "q", model="m")
+    assert result.assistant_turns == 5
+    assert result.usage == {
+        "input": 10212, "output": 2639, "cacheRead": 28928, "cacheWrite": 0,
+        "reasoningTokens": 1595, "total": 41779,
+    }
+
+
+@pytest.mark.asyncio
+async def test_missing_or_malformed_usage_is_none_never_zero(tmp_path):
+    for env in (_REAL_SHAPE_ENVELOPE, dict(_REAL_SHAPE_ENVELOPE, usage="x", assistantTurns=True)):
+        runner = _runner(tmp_path, _fake_exec(_FakeProcess(json.dumps(env).encode())))
+        result = await runner.run("overseer", "q", model="m")
+        assert result.usage is None and result.assistant_turns is None
+
+
+@pytest.mark.asyncio
+async def test_a_usage_key_that_is_absent_stays_absent(tmp_path):
+    env = dict(_REAL_SHAPE_ENVELOPE, usage={"input": 5, "cacheRead": "n/a", "junk": 1})
+    runner = _runner(tmp_path, _fake_exec(_FakeProcess(json.dumps(env).encode())))
+    assert (await runner.run("overseer", "q", model="m")).usage == {"input": 5}

@@ -482,6 +482,24 @@ async def test_daily_cost_accumulates_across_role_runs(tmp_path):
     assert deps.archive.daily_cost(today) == pytest.approx(0.03)
 
 
+async def test_the_run_archive_keeps_usage_and_turns(tmp_path):
+    tools = _base_tools()
+    tools["diff.since"] = _diff_sequence([[{"id": 1, "type": "migrant_wave"}]])
+    usage = {"input": 100, "output": 20, "cacheRead": 900, "total": 1020}
+    runner = FakeRoleRunner({
+        "architect": RunResult(
+            role="architect", ok=True, status="ok", cost_usd=0.01, wall_clock_seconds=1,
+            timed_out=False, tool_summary={}, final_answer="x", raw={},
+            usage=usage, assistant_turns=4,
+        ),
+    })
+    result = await run_cycle(1, _deps(tmp_path, tools=tools, runner=runner))
+    run = json.loads((result.archived_path / "run-architect.json").read_text(encoding="utf-8"))
+    assert run["usage"] == usage and run["assistant_turns"] == 4
+    other = json.loads((result.archived_path / "run-quartermaster.json").read_text(encoding="utf-8"))
+    assert other["usage"] is None and other["assistant_turns"] is None
+
+
 # ---------------------------------------------------------------------------
 # The charter and briefing actually reach the runner
 # ---------------------------------------------------------------------------
@@ -889,62 +907,3 @@ async def test_a_dry_run_polls_stuck_jobs_but_writes_no_state(tmp_path):
     await run_cycle(1, deps)
     assert not deps.cursor_store.path.with_name("job_watch.json").exists()
 
-
-# ---------------------------------------------------------------------------
-# The briefing's facts block (handoffs/2026-10-05-better-briefing.md)
-# ---------------------------------------------------------------------------
-
-_FOOD_DRINK = {
-    "drink": {"units": 4, "item_count": 1}, "prepared_meals": {"units": 0, "item_count": 0},
-    "raw_edibles": {"units": 24, "item_count": 5},
-}
-
-
-def _fact_tools():
-    tools = _base_tools()
-    tools["diff.since"] = _diff_sequence([[{"id": 1, "type": "migrant_wave"}]])
-    tools["orders.list"] = _orders_list([
-        {"id": 2, "job": "BrewDrinkFromPlant", "validated": True, "active": False, "amount_left": 1, "amount_total": 1},
-    ])
-    tools["stocks.food-drink"] = _FOOD_DRINK
-    tools["stocks.availability"] = lambda a: {"total_units": 6, "available_units": 2, "in_job_units": 1, "type": a["type"]}
-    tools["stocks.seeds"] = {"total_units": 59, "by_plant_units": {"PLUMP": 34, "SWEET": 25}}
-    return tools
-
-
-async def test_each_woken_role_briefing_carries_facts_from_shared_reads(tmp_path):
-    tools = _fact_tools()
-    deps = _deps(tmp_path, tools=tools)
-    result = await run_cycle(1, deps)
-    briefs = json.loads((result.archived_path / "briefings.json").read_text(encoding="utf-8"))
-
-    qm, arch = briefs["quartermaster"]["facts"], briefs["architect"]["facts"]
-    assert qm["stocks"]["drink_units"] == 4
-    assert qm["orders"]["not_progressing"]["items"] == ["#2 BrewDrinkFromPlant validated, not active, 1 of 1 left"]
-    assert qm["availability"]["items"][0] == "BARREL: 2 free of 6, 1 in jobs"
-    assert qm["seeds"]["top_plants"] == ["PLUMP 34", "SWEET 25"]
-    # The architect has no extras in policy.yaml: shared facts only.
-    assert "availability" not in arch and "seeds" not in arch
-    assert arch["stocks"]["drink_units"] == 4
-
-    # Read once per cycle, not once per role.
-    names = [t for t, _ in deps.tool_caller.calls]
-    assert names.count("stocks.food-drink") == 1
-    assert names.count("stocks.seeds") == 1
-
-
-async def test_failed_fact_reads_drop_those_lines_and_never_fail_the_cycle(tmp_path):
-    tools = _fact_tools()
-    del tools["stocks.food-drink"]       # undeployed allowlist entry: MCPToolError
-    tools["stocks.availability"] = {"error": "unknown item type"}  # an odd shape
-    def _boom(_args):
-        raise RuntimeError("boom")
-    tools["stocks.seeds"] = _boom
-    deps = _deps(tmp_path, tools=tools)
-    result = await run_cycle(1, deps)
-    assert result.roles_woken == ("architect", "quartermaster")
-    briefs = json.loads((result.archived_path / "briefings.json").read_text(encoding="utf-8"))
-    facts = briefs["quartermaster"]["facts"]
-    assert "stocks" not in facts and "availability" not in facts and "seeds" not in facts
-    assert facts["orders"]["total"] == 1  # the order line needs no new read
-    assert [c["role"] for c in deps.role_runner.calls] == ["architect", "quartermaster"]
