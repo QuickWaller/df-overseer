@@ -128,6 +128,7 @@ named landmarks and relative directions (`docs/PURPOSE.md` commitment #3).
 from __future__ import annotations
 
 import difflib
+import json
 import re
 from functools import lru_cache
 from pathlib import Path
@@ -174,10 +175,22 @@ PROJECT, OBSERVATION = "project", "observation"
 #: with a reason, leaving executed history untouched. Both restricted to
 #: the roster's sole_writer, same rule as RULING/EXECUTED/ESCALATION/PROJECT.
 AMEND, ABANDON = "amend", "abandon"
+#: Added handoffs/2026-10-05-stage-2a.md (docs/CONDUCTOR-EXECUTION.md 6.1):
+#: the executor's record that a project, a ruling or a pending proposal is
+#: closed, with an outcome and a reason. Written only by the roster's
+#: `executor`.
+CLOSE = "close"
 KINDS = (
     PROPOSAL, PASS, RULING, EXECUTED, ASK, ANSWER, ESCALATION, PROJECT,
-    OBSERVATION, AMEND, ABANDON,
+    OBSERVATION, AMEND, ABANDON, CLOSE,
 )
+
+#: A `close` record's `outcome` (docs/CONDUCTOR-EXECUTION.md 6.1).
+CLOSE_COMPLETED, CLOSE_NOT_DONE = "completed", "not_done"
+CLOSE_ABANDONED, CLOSE_SUPERSEDED = "abandoned", "superseded"
+CLOSE_OUTCOMES = (CLOSE_COMPLETED, CLOSE_NOT_DONE, CLOSE_ABANDONED, CLOSE_SUPERSEDED)
+#: A `close` names exactly one of these.
+CLOSE_TARGET_FIELDS = ("project_id", "proposal_id", "ruling_id")
 
 # ---- ruling decisions ---------------------------------------------------------
 
@@ -365,6 +378,15 @@ KIND_FIELDS: dict[str, tuple[str, ...]] = {
         "type", "summary", "rationale", "prediction", "cost",
         "suggested_priority", "preconditions", "public_rationale",
         "duplicate_of", "relies_on", "cited",
+        #: handoffs/2026-10-05-stage-2a.md (docs/CONDUCTOR-EXECUTION.md 2.1):
+        #: `step` is the one exact action a routed proposal asks for;
+        #: `phases` declares the later phases of the same project;
+        #: `project_id`/`after_step` make it a follow-up that joins an open
+        #: project; `preview` and `covered_by` are server-set.
+        #: `public_title` is in the design's 2.1 example (copied to the
+        #: project it opens).
+        "step", "phases", "project_id", "after_step", "preview", "covered_by",
+        "public_title",
     ),
     PASS: ("reason",),
     RULING: ("decision", "proposal_id", "reason", "public_rationale"),
@@ -372,7 +394,9 @@ KIND_FIELDS: dict[str, tuple[str, ...]] = {
     #: which step of `from_ruling`'s project this execution is for. Optional
     #: -- a `ruling` whose project has no real steps (see `normalize_project`)
     #: is executed exactly as before, with no `step_id` at all.
-    EXECUTED: ("ruling_id", "step_id", "actions", "notes"),
+    #: `proposal_id` added handoffs/2026-10-05-stage-2a.md: the executor's
+    #: step's own proposal (a follow-up's step is not the root ruling's).
+    EXECUTED: ("ruling_id", "step_id", "actions", "notes", "proposal_id"),
     ASK: ("question", "proposal_id"),
     ANSWER: ("ask_id", "answer"),
     ESCALATION: ("reason",),
@@ -385,7 +409,10 @@ KIND_FIELDS: dict[str, tuple[str, ...]] = {
     ),
     #: §4.4. One `observation` record reports on one or more targets read at
     #: the same game tick (one reconcile pass, one tick).
-    OBSERVATION: ("project_id", "step_id", "game_tick", "results"),
+    #: `done` and `detail` added handoffs/2026-10-05-stage-2a.md: `done` is
+    #: the executor's completion verdict for the step's synthetic target
+    #: (flips it `done` and arms the step proposal's prediction).
+    OBSERVATION: ("project_id", "step_id", "game_tick", "results", "done", "detail"),
     #: `handoffs/2026-10-01-queue-bugs-and-amend.md` item 3. `steps` is the
     #: FULL new ordered step list this version replaces the previous one
     #: with (never a diff to apply) -- `replaces`/`adds`/`drops` are purely
@@ -401,6 +428,10 @@ KIND_FIELDS: dict[str, tuple[str, ...]] = {
         "public_rationale",
     ),
     ABANDON: ("project_id", "reason", "public_rationale"),
+    CLOSE: (
+        "project_id", "proposal_id", "ruling_id", "outcome", "reason",
+        "cleanup",
+    ),
 }
 
 # ---- the raw-coordinate pattern -----------------------------------------------
@@ -512,6 +543,13 @@ def sole_writer() -> str:
 
 def fort_name() -> str:
     return _load_roster()["fort"]
+
+
+def executor() -> str:
+    """The roster's `executor` (docs/CONDUCTOR-EXECUTION.md 6.1): the code
+    role that runs routed steps and writes `project`, `executed`, `amend`,
+    `observation` and `close` for them. Never a model."""
+    return _load_roster().get("executor") or OBSERVATION_ROLE
 
 
 # ---- public text (dfqueue/public_text.yaml), read-only -------------------------
@@ -757,7 +795,130 @@ def _validate_fact_list(record: dict, name: str, errors: list[str], *, cited: bo
         _validate_fact_ref(item, errors, f"record.{name}[{i}]", cited=cited)
 
 
+#: Largest JSON size, in characters, of a server-set `preview` or an
+#: observation's `detail`.
+PREVIEW_MAX = 4000
+
+
+def _args_have_coordinates(value) -> str | None:
+    """A raw-coordinate pattern anywhere in a step's `args` (design
+    commitment #1: no coordinates in anything a proposer writes)."""
+    return _find_coordinate(json.dumps(value, ensure_ascii=False, sort_keys=True))
+
+
+def _validate_step_spec(step, errors: list[str], prefix: str) -> None:
+    """A proposal's `step`: `{tool, args, label?}`, one exact action
+    (docs/CONDUCTOR-EXECUTION.md 2.1). Whether the tool is in a routed group,
+    takes `DRY_RUN`, and whether the arguments dry-run are the server's
+    filing checks (2C), not this stateless one."""
+    if not isinstance(step, dict):
+        errors.append(f"{prefix}: expected an object")
+        return
+    for key in step:
+        if key not in ("tool", "args", "label"):
+            errors.append(f"{prefix}.{key}: not a field of a proposal step")
+    tool = step.get("tool")
+    if not isinstance(tool, str) or not tool:
+        errors.append(f"{prefix}.tool: required, a non-empty string")
+    elif tool not in _tool_registry().ids():
+        errors.append(
+            f"{prefix}.tool: {tool!r} is not a real tool id "
+            "(scripts/dfhack/TOOLS.yaml, via dfmcp.registry)"
+        )
+    if "args" not in step:
+        errors.append(f"{prefix}.args: required (an object, possibly empty)")
+    elif not isinstance(step["args"], dict):
+        errors.append(f"{prefix}.args: expected an object")
+    else:
+        coord = _args_have_coordinates(step["args"])
+        if coord:
+            errors.append(
+                f"{prefix}.args: contains a raw-coordinate pattern ({coord!r}); "
+                "design commitment #1 forbids coordinates in a step"
+            )
+    label = step.get("label")
+    if label is not None:
+        if not isinstance(label, str) or not label:
+            errors.append(f"{prefix}.label: expected a non-empty string when given")
+        elif len(label) > STEP_LABEL_MAX:
+            errors.append(
+                f"{prefix}.label: expected at most {STEP_LABEL_MAX} characters, "
+                f"got {len(label)}"
+            )
+        elif _find_coordinate(label):
+            errors.append(f"{prefix}.label: contains a raw-coordinate pattern")
+
+
+def _validate_phases_spec(phases, errors: list[str], prefix: str) -> None:
+    """`phases: {tool, list}`: the later phases of the same project, in
+    order. That each phase exists in the template, and the meta-overlap
+    refusal (2.2 item 5), need the template and are the server's (2C)."""
+    if not isinstance(phases, dict):
+        errors.append(f"{prefix}: expected an object")
+        return
+    for key in phases:
+        if key not in ("tool", "list"):
+            errors.append(f"{prefix}.{key}: not a field of phases")
+    tool = phases.get("tool")
+    if not isinstance(tool, str) or not tool:
+        errors.append(f"{prefix}.tool: required, a non-empty string")
+    elif tool not in _tool_registry().ids():
+        errors.append(f"{prefix}.tool: {tool!r} is not a real tool id")
+    names = phases.get("list")
+    if not isinstance(names, list) or not names:
+        errors.append(f"{prefix}.list: required, a non-empty list of phase names")
+    else:
+        strs = [n for n in names if isinstance(n, str) and n]
+        for i, n in enumerate(names):
+            if not isinstance(n, str) or not n:
+                errors.append(f"{prefix}.list.{i}: expected a non-empty string")
+        if len(set(strs)) != len(strs):
+            errors.append(f"{prefix}.list: a phase may be listed once")
+
+
+def _validate_routed_fields(record: dict, errors: list[str]) -> None:
+    """The stage 2 fields of a proposal (shape and combinations only; every
+    check that needs the queue, routing or the template is in the store or
+    the server)."""
+    has_step = "step" in record
+    if has_step:
+        _validate_step_spec(record["step"], errors, "record.step")
+    if "phases" in record:
+        _validate_phases_spec(record["phases"], errors, "record.phases")
+        if not has_step:
+            errors.append("record.phases: needs a step")
+        if "project_id" in record:
+            errors.append(
+                "record.phases: only a first proposal declares phases; a follow-up "
+                "joins the phases its project already declared"
+            )
+    follow = ("project_id" in record, "after_step" in record)
+    if follow[0] != follow[1]:
+        errors.append("record.project_id and record.after_step: give both or neither")
+    for name in ("project_id", "after_step"):
+        if name in record and (not isinstance(record[name], str) or not record[name]):
+            errors.append(f"record.{name}: expected a non-empty string")
+    if follow[0] and not has_step:
+        errors.append("record.project_id: a follow-up needs a step")
+    if "covered_by" in record:
+        v = record["covered_by"]
+        if not isinstance(v, str) or not v:
+            errors.append("record.covered_by: expected a non-empty string (the server sets it)")
+        if not follow[0]:
+            errors.append("record.covered_by: only a follow-up can be covered")
+    if "preview" in record:
+        v = record["preview"]
+        if not isinstance(v, dict):
+            errors.append("record.preview: expected an object (the server sets it)")
+        elif len(json.dumps(v, ensure_ascii=False, sort_keys=True)) > PREVIEW_MAX:
+            errors.append(f"record.preview: larger than {PREVIEW_MAX} characters")
+        if not has_step:
+            errors.append("record.preview: needs a step")
+    _validate_optional_text_field(record, "public_title", errors, max_len=PUBLIC_TITLE_MAX)
+
+
 def _validate_proposal_fields(record: dict, role, errors: list[str]) -> None:
+    _validate_routed_fields(record, errors)
     _validate_fact_list(record, "relies_on", errors, cited=False)
     _validate_fact_list(record, "cited", errors, cited=True)
     if "cited" in record and len(record.get("cited") or []) != len(record.get("relies_on") or []):
@@ -930,6 +1091,13 @@ def _validate_executed_fields(record: dict, errors: list[str]) -> None:
         if not isinstance(sid, str) or not sid:
             errors.append("record.step_id: expected a non-empty string")
 
+    if "proposal_id" in record:
+        pid = record["proposal_id"]
+        if not isinstance(pid, str) or not pid:
+            errors.append("record.proposal_id: expected a non-empty string")
+        elif "step_id" not in record:
+            errors.append("record.proposal_id: names a step's proposal, so step_id is needed too")
+
     if "actions" not in record:
         errors.append("record.actions: required field is missing")
     else:
@@ -1007,7 +1175,7 @@ def _validate_step(step, step_ids: set, errors: list[str], prefix: str) -> None:
 
     known = {
         "id", "tool", "args", "targets", "requires", "trigger",
-        "prefer_after", "guards", "implicit", "label",
+        "prefer_after", "guards", "implicit", "label", "proposal_id",
     }
     for key in step:
         if key not in known:
@@ -1046,6 +1214,11 @@ def _validate_step(step, step_ids: set, errors: list[str], prefix: str) -> None:
 
     if "args" in step and not isinstance(step["args"], dict):
         errors.append(f"{prefix}.args: expected an object")
+
+    if "proposal_id" in step:
+        v = step["proposal_id"]
+        if not isinstance(v, str) or not v:
+            errors.append(f"{prefix}.proposal_id: expected a non-empty string")
 
     if "targets" not in step:
         errors.append(f"{prefix}.targets: required field is missing")
@@ -1432,6 +1605,65 @@ def _validate_observation_fields(record: dict, errors: list[str]) -> None:
             for i, r in enumerate(results):
                 _validate_observation_result(r, errors, f"record.results.{i}")
 
+    if "done" in record and not isinstance(record["done"], bool):
+        errors.append("record.done: expected a boolean")
+    if "detail" in record:
+        d = record["detail"]
+        if not isinstance(d, dict):
+            errors.append("record.detail: expected an object")
+        else:
+            blob = json.dumps(d, ensure_ascii=False, sort_keys=True)
+            if len(blob) > PREVIEW_MAX:
+                errors.append(f"record.detail: larger than {PREVIEW_MAX} characters")
+            coord = _find_coordinate(blob)
+            if coord:
+                errors.append(
+                    f"record.detail: contains a raw-coordinate pattern ({coord!r}); "
+                    "design commitment #1 forbids coordinates in this field"
+                )
+
+
+def _validate_close_fields(record: dict, errors: list[str]) -> None:
+    """`handoffs/2026-10-05-stage-2a.md`: a `close` names exactly one of a
+    project, a proposal or a ruling. That the target exists and is not
+    already closed needs the queue (`store.append()`)."""
+    named = [n for n in CLOSE_TARGET_FIELDS if n in record]
+    if len(named) != 1:
+        errors.append(
+            f"record: a close names exactly one of {CLOSE_TARGET_FIELDS}, got {named}"
+        )
+    for n in named:
+        v = record[n]
+        if not isinstance(v, str) or not v:
+            errors.append(f"record.{n}: expected a non-empty string")
+    if record.get("outcome") not in CLOSE_OUTCOMES:
+        errors.append(f"record.outcome: {record.get('outcome')!r} is not in {CLOSE_OUTCOMES}")
+    _validate_text_field(record, "reason", errors)
+    if "cleanup" in record:
+        c = record["cleanup"]
+        if not isinstance(c, list):
+            errors.append("record.cleanup: expected a list")
+        else:
+            for i, item in enumerate(c):
+                pre = f"record.cleanup.{i}"
+                if not isinstance(item, dict):
+                    errors.append(f"{pre}: expected an object")
+                    continue
+                for key in item:
+                    if key not in ("handle", "tool", "outcome", "detail"):
+                        errors.append(f"{pre}.{key}: not a field of a cleanup result")
+                for key in ("handle", "outcome"):
+                    if not isinstance(item.get(key), str) or not item.get(key):
+                        errors.append(f"{pre}.{key}: required, a non-empty string")
+                if "tool" in item and (not isinstance(item["tool"], str) or not item["tool"]):
+                    errors.append(f"{pre}.tool: expected a non-empty string")
+                if "detail" in item:
+                    d = item["detail"]
+                    if not isinstance(d, str) or not d:
+                        errors.append(f"{pre}.detail: expected a non-empty string")
+                    elif _find_coordinate(d):
+                        errors.append(f"{pre}.detail: contains a raw-coordinate pattern")
+
 
 def _validate_ask_fields(record: dict, errors: list[str]) -> None:
     """`proposal_id`'s existence, when present, needs the rest of the queue
@@ -1503,13 +1735,27 @@ def validate(record) -> list[str]:
             errors.append(
                 f"record.role: {role!r} is not an enabled role in agents/ROSTER.yaml"
             )
-        if kind in (RULING, EXECUTED, ESCALATION, PROJECT, AMEND, ABANDON):
+        if kind in (RULING, ESCALATION, ABANDON):
             writer = sole_writer()
             if role != writer:
                 errors.append(
                     f"record.role: only the roster's sole_writer ({writer!r}) may "
                     f"write a {kind}; got {role!r}"
                 )
+        if kind in (EXECUTED, PROJECT, AMEND):
+            # The executor writes these for routed steps; the store refuses
+            # the sole writer for a routed type (it needs the ruling's type).
+            writer, runner = sole_writer(), executor()
+            if role not in (writer, runner):
+                errors.append(
+                    f"record.role: only the roster's sole_writer ({writer!r}) or "
+                    f"executor ({runner!r}) may write a {kind}; got {role!r}"
+                )
+        if kind == CLOSE and role != executor():
+            errors.append(
+                f"record.role: only the roster's executor ({executor()!r}) may "
+                f"write a close; got {role!r}"
+            )
         if kind == ASK and role not in ASK_ROLES:
             errors.append(
                 f"record.role: only {ASK_ROLES} may write an ask; got {role!r}"
@@ -1560,5 +1806,7 @@ def validate(record) -> list[str]:
         _validate_amend_fields(record, errors)
     elif kind == ABANDON:
         _validate_abandon_fields(record, errors)
+    elif kind == CLOSE:
+        _validate_close_fields(record, errors)
 
     return errors
