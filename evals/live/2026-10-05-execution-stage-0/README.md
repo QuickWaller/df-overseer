@@ -79,3 +79,30 @@ All four targets drift-clean; live counts overseer 97, conductor 23.
 - Drink is 0 but thirst reads fine (dwarves drink from the Well). The binding
   constraint is empty barrels (2); nobody has yet proposed barrels now that the
   Carpenter's Workshop is reachable.
+
+## First project, under the operator hold (10:01 to 10:28 UTC)
+
+Fort paused throughout. Operator hold set by the orchestrator (2 hours,
+reason logged), cleared after the cycle; the status line read "operator HOLD
+in force ... the fort is never resumed by the conductor". Deployed before it:
+the ruling ask carries out accepted work, and accepted-but-unexecuted
+proposals wake the Overseer (`e7f75fb`).
+
+| Role | Rounds | Wall s | Cost $ | Reasoning tokens |
+|---|---|---|---|---|
+| architect | 10 | 608 | 0.064 | 45,175 |
+| quartermaster | 7 | 270 | 0.030 | 19,529 |
+| consultant | 11 | 295 | 0.042 | 22,752 |
+| overseer | 5 | 392 | 0.047 | 34,218 |
+
+- **project-0001**, the first project record ever written: "Brew drink at the
+  Still", `from_ruling` ruling-0018, then `executed-0008` naming step
+  `project-0001/s1` (brew job 3032 queued with a concrete plant and barrel).
+  The project rule, the unexecuted wake and the hold worked together.
+- Rulings: proposal-0017 (bedrooms) deferred again ("needs beds"); proposal-0020
+  (a standing drink target) deferred ("needs an automated brew route").
+- Waste: the Architect and the Quartermaster each asked the Consultant what
+  proposal-0017 says (ask-0005, ask-0006). Advisors cannot read queue contents,
+  and the Consultant cannot either, so it spent an 11-round turn on questions it
+  cannot answer. A deferred proposal also stays pending and is re-ruled every
+  cycle (red-team H3, stage 4). Day total $0.79.
