@@ -313,11 +313,16 @@ _UNSAFE_PATTERNS: tuple[tuple[str, "re.Pattern[str]"], ...] = (
     ("ipv4", re.compile(r"\b(?:\d{1,3}\.){3}\d{1,3}\b")),
     ("ipv6", re.compile(r"\b[0-9a-fA-F]{1,4}(?::[0-9a-fA-F]{0,4}){5,}\b")),
     ("email", re.compile(r"\b[\w.+-]+@[\w-]+\.[\w.-]+\b")),
-    ("unix_path", re.compile(r"(?:^|[\s(])/(?:[\w.\-]+/){1,}[\w.\-]+")),
+    ("unix_path", re.compile(r"(?:^|[\s(`'\"])/(?:[\w.\-]+/){1,}[\w.\-]+")),
     ("windows_path", re.compile(r"\b[A-Za-z]:\\(?:[^\\\s]+\\)*[^\\\s]+")),
+    # HTML tags, Markdown links and fenced code blocks (which can carry raw
+    # tool dumps). Inline `code` spans are NOT markup here: DeepSeek writes
+    # Markdown and backticks every field name, so this withheld 10 of 14
+    # report paragraphs live (2026-10-05). The page renders text as text, and
+    # every other pattern still checks the whole paragraph, backticks or not.
     (
         "markup",
-        re.compile(r"<[^>\s]+>|`[^`]+`|\[[^\]]+\]\([^)]+\)"),
+        re.compile(r"<[^>\s]+>|```|\[[^\]]+\]\([^)]+\)"),
     ),
     # A long unbroken run of letters/digits/-/_ — token- or hash-shaped.
     # Conservative length (24) so ordinary long compound words rarely trip

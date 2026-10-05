@@ -133,6 +133,11 @@ def test_build_proposal_badges_reflects_the_latest_ruling():
     "Contact admin@example.com for access",
     "The token is aGVsbG93b3JsZHRoaXNpc2FsbG9uZw123456",
     "It links <script>alert(1)</script> in the page",
+    "A fenced dump:\n```\n{\"x\": 1}\n```",
+    "Inline code still checked: `/etc/df-overseer/secrets.yaml`",
+    "Quoted path: '/var/lib/dfmcp/x.sqlite3' leaks",
+    "Inline code with an address: `192.0.2.42`",
+    "A [link](https://example.com) in Markdown",
 ])
 def test_find_unsafe_pattern_catches_leaky_shapes(text):
     assert feed.find_unsafe_pattern(text) is not None
@@ -142,6 +147,9 @@ def test_find_unsafe_pattern_catches_leaky_shapes(text):
     "The fort is still entirely on the surface with no workshops.",
     "Siting the first workshop there raises the landmark count above four.",
     "5 tiles SE of Embark Site, in a 3x3 clearing.",
+    # Live 2026-10-05: inline code spans withheld most of the Overseer's report.
+    "Order #2 reads `validated=true, active=false`, the stuck pattern.",
+    "Accept: drink is at 0, so `drink > 0` is the bar to clear.",
     None,
     "",
 ])
