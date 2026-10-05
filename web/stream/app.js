@@ -1429,21 +1429,21 @@ class StreamPage {
         el("span", { class: "fturnwho", style: `color:${color}`, text: roleTitle(run.role) }),
       ]),
     ];
-    // The turn is the message: its summary is the body, in the agent's
-    // voice; thinking folds away under it; the records follow as receipts.
-    if (run.summary) head.push(el("div", { class: "fturnbody-text md-box" }, [renderMarkdown(run.summary)]));
-    // The whole end-of-run report, when the message above is only its
-    // opening (the public page cuts the summary to 280 characters).
+    // The thread shows only this proposal's own items as receipts below.
+    // The turn's summary is not repeated here (it covers every proposal the
+    // turn touched, user's call 2026-10-05): it lives once on the agent's
+    // Turns tab. Its report and thinking stay reachable, labelled as
+    // covering the whole turn.
     const report = run.report && run.report.replace(/\s+/g, " ").trim() !== (run.summary || "").replace(/\s+/g, " ").trim() ? run.report : null;
     if (report) {
       head.push(el("details", { class: "fx" }, [
-        el("summary", { text: "Full report" }),
+        el("summary", { text: "This turn's full report" }),
         el("div", { class: "fthink freport md-box" }, [renderMarkdown(report)]),
       ]));
     }
     if (run.thinking) {
       head.push(el("details", { class: "fx" }, [
-        el("summary", { text: "Thinking" }),
+        el("summary", { text: "This turn's thinking" }),
         el("div", { class: "fthink md-box" }, [renderMarkdown(run.thinking)]),
       ]));
     }
@@ -1859,6 +1859,13 @@ class SitePage {
     this.feedItems = open.items || [];
   }
 
+  /** runs.json for the turn list on an agent's Turns tab. */
+  async _ensureRuns() {
+    if (this.fortRuns) return;
+    const root = this.fortMeta ? `${this.dataRoot}/forts/${this.fortMeta.id}` : this.dataRoot;
+    this.fortRuns = await fetchJson(`${root}/runs.json`).catch(() => ({ runs: [] }));
+  }
+
   async _ensureProjects() {
     if (this.fortProjects) return;
     const root = this.fortMeta ? `${this.dataRoot}/forts/${this.fortMeta.id}` : this.dataRoot;
@@ -1940,6 +1947,7 @@ class SitePage {
       await this._ensureTools();
       await this._ensureGotchas();
       await this._ensureFeedItems();
+      await this._ensureRuns();
       this.main.appendChild(await this._viewAgents(route.param));
       return;
     }
@@ -2206,12 +2214,14 @@ class SitePage {
 
     const mine = (this.tools ? this.tools.tools : []).filter((t) => t.roles.includes(role));
     const tabs = r.planned ? [["charter", "Charter"]] : [
-      ["tools", `Tools ${mine.length}`], ["lines", "Recent lines"], ["charter", "Charter"],
+      ["tools", `Tools ${mine.length}`], ["turns", "Turns"], ["lines", "Recent lines"], ["charter", "Charter"],
     ];
 
     let body;
     if (this.agentTab === "tools") {
       body = this._toolTree(mine, role);
+    } else if (this.agentTab === "turns") {
+      body = this._turnsEl(role);
     } else if (this.agentTab === "lines") {
       body = this._recentLinesEl(role);
     } else {
@@ -2281,6 +2291,30 @@ class SitePage {
         it.type ? el("div", { class: "ctx", text: it.type }) : null,
       ])),
     ])));
+  }
+
+  /** This role's turns, newest first: the one place a turn's whole-turn
+   * summary is shown (a thread shows only its own proposal's items). Each
+   * turn: why it woke, when and how long, the summary, then its full report
+   * and thinking behind expanders. */
+  _turnsEl(role) {
+    const titles = (this.siteText && this.siteText.wake_reasons) || {};
+    const mine = ((this.fortRuns && this.fortRuns.runs) || []).filter((r) => r.role === role && (r.summary || r.report || r.thinking));
+    if (!mine.length) return el("div", { class: "box" }, [el("div", { class: "faint", text: "No reported turns yet." })]);
+    const norm = (t) => String(t || "").replace(/\s+/g, " ").trim();
+    return el("div", { class: "box" }, mine.map((run) => {
+      const reason = run.wake_reason ? (titles[run.wake_reason] || String(run.wake_reason).replace(/_/g, " ")) : "Turn";
+      const report = run.report && norm(run.report) !== norm(run.summary) ? run.report : null;
+      return el("div", { class: "turnentry" }, [
+        el("div", { class: "fttrow" }, [
+          el("span", { class: "fttreason", text: reason.charAt(0).toUpperCase() + reason.slice(1) }),
+          el("span", { class: "fttmeta", text: [run.started_at ? String(run.started_at).slice(0, 10) : null, durationWords(run.duration_s)].filter(Boolean).join(" · ") }),
+        ]),
+        run.summary ? el("div", { class: "fturnbody-text md-box" }, [renderMarkdown(run.summary)]) : null,
+        report ? el("details", { class: "fx" }, [el("summary", { text: "Full report" }), el("div", { class: "fthink freport md-box" }, [renderMarkdown(report)])]) : null,
+        run.thinking ? el("details", { class: "fx" }, [el("summary", { text: "Thinking" }), el("div", { class: "fthink md-box" }, [renderMarkdown(run.thinking)])]) : null,
+      ].filter(Boolean));
+    }));
   }
 
   _toolTree(tools, role) {
