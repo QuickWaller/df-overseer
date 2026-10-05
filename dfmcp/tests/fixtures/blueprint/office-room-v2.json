@@ -1,0 +1,2131 @@
+{
+  "apply_office_room_v2_build_dry_run": {
+    "blueprint": "office-room-v2",
+    "designated": {
+      "buildings": 1,
+      "dig_tiles": 0,
+      "zones": 0
+    },
+    "dry_run": true,
+    "finish_plan": {
+      "already_finished": 0,
+      "blocked_by_material": [],
+      "blocked_total": 0,
+      "hidden": 0,
+      "occupied_by_building": 0,
+      "other_shape": 0,
+      "required_cells": 0,
+      "smoothable": 0,
+      "unreadable": 0
+    },
+    "finish_required_met": true,
+    "mode": "build",
+    "ok": true,
+    "phase": "office_room_v2_build",
+    "prerequisites": {
+      "carve_cells": 10,
+      "pending_designations": 0,
+      "still_solid": 0
+    },
+    "quickfort": {
+      "error": null,
+      "problems": [],
+      "ran": true,
+      "result_ok": true,
+      "stats": {
+        "Buildings designated": 1
+      }
+    },
+    "read_failures": [],
+    "site": {
+      "direction": "NE",
+      "distance_tiles": 7,
+      "footprint": {
+        "height": 5,
+        "width": 5
+      },
+      "handle": "site-1",
+      "level": 0,
+      "near_landmark": "Well",
+      "orientation": "none",
+      "source": "stored"
+    },
+    "would_designate": 1
+  },
+  "apply_office_room_v2_build_refused_shell_pending": {
+    "blocked": true,
+    "blocked_reason": "the shell is not finished: 0 outstanding dig/smooth designations and 10 carve cells still solid. quickfort would drop the furniture or zone on solid tiles; apply the dig phase and let it complete first",
+    "blueprint": "office-room-v2",
+    "dry_run": false,
+    "mode": "build",
+    "ok": false,
+    "phase": "office_room_v2_build",
+    "prerequisites": {
+      "carve_cells": 10,
+      "pending_designations": 0,
+      "still_solid": 10
+    },
+    "read_failures": [],
+    "site": {
+      "direction": "NE",
+      "distance_tiles": 7,
+      "footprint": {
+        "height": 5,
+        "width": 5
+      },
+      "handle": "site-1",
+      "level": 0,
+      "near_landmark": "Well",
+      "orientation": "none",
+      "source": "stored"
+    }
+  },
+  "apply_office_room_v2_build_success": {
+    "blueprint": "office-room-v2",
+    "designated": {
+      "buildings": 1,
+      "dig_tiles": 0,
+      "zones": 0
+    },
+    "dry_run": false,
+    "finish_plan": {
+      "already_finished": 0,
+      "blocked_by_material": [],
+      "blocked_total": 0,
+      "hidden": 0,
+      "occupied_by_building": 0,
+      "other_shape": 0,
+      "required_cells": 0,
+      "smoothable": 0,
+      "unreadable": 0
+    },
+    "finish_required_met": true,
+    "mode": "build",
+    "ok": true,
+    "phase": "office_room_v2_build",
+    "prerequisites": {
+      "carve_cells": 10,
+      "pending_designations": 0,
+      "still_solid": 0
+    },
+    "quickfort": {
+      "error": null,
+      "problems": [],
+      "ran": true,
+      "result_ok": true,
+      "stats": {
+        "Buildings designated": 1
+      }
+    },
+    "read_back": {
+      "designations_landed": true,
+      "finish_state": {
+        "already_finished": 15,
+        "blocked_by_material": [],
+        "blocked_total": 0,
+        "hidden": 0,
+        "occupied_by_building": 0,
+        "other_shape": 0,
+        "required_cells": 24,
+        "smoothable": 9,
+        "unreadable": 0
+      },
+      "note": "surface reads are only meaningful once dwarves have finished the work; right after apply they describe the site as it stands, not as designated",
+      "pending_designations": 0,
+      "surface": {
+        "by": "df-overseer-surface, room rectangle from the blueprint's own zone section",
+        "enclosure": {
+          "status": "not_enclosed",
+          "w": 3
+        },
+        "finish": {
+          "h": 3
+        },
+        "material": {
+          "ring": 16
+        },
+        "shim_restored": true
+      }
+    },
+    "read_failures": [],
+    "site": {
+      "direction": "NE",
+      "distance_tiles": 7,
+      "footprint": {
+        "height": 5,
+        "width": 5
+      },
+      "handle": "site-1",
+      "level": 0,
+      "near_landmark": "Well",
+      "orientation": "none",
+      "source": "stored"
+    }
+  },
+  "apply_office_room_v2_finish_dry_run": {
+    "blueprint": "office-room-v2",
+    "designated": {
+      "buildings": 1,
+      "dig_tiles": 0,
+      "zones": 1
+    },
+    "dry_run": true,
+    "finish_plan": {
+      "already_finished": 0,
+      "blocked_by_material": [],
+      "blocked_total": 0,
+      "hidden": 0,
+      "occupied_by_building": 0,
+      "other_shape": 0,
+      "required_cells": 0,
+      "smoothable": 0,
+      "unreadable": 0
+    },
+    "finish_required_met": true,
+    "mode": "meta",
+    "ok": true,
+    "phase": "office_room_v2_finish",
+    "prerequisites": {
+      "carve_cells": 10,
+      "pending_designations": 0,
+      "still_solid": 0
+    },
+    "quickfort": {
+      "error": null,
+      "problems": [],
+      "ran": true,
+      "result_ok": true,
+      "stats": {
+        "Blueprints applied": 2,
+        "Buildings designated": 1,
+        "Zone tiles designated": 9,
+        "Zones designated": 1
+      }
+    },
+    "read_failures": [],
+    "site": {
+      "direction": "NE",
+      "distance_tiles": 7,
+      "footprint": {
+        "height": 5,
+        "width": 5
+      },
+      "handle": "site-1",
+      "level": 0,
+      "near_landmark": "Well",
+      "orientation": "none",
+      "source": "stored"
+    },
+    "would_designate": 2
+  },
+  "apply_office_room_v2_finish_refused_shell_pending": {
+    "blocked": true,
+    "blocked_reason": "the shell is not finished: 0 outstanding dig/smooth designations and 10 carve cells still solid. quickfort would drop the furniture or zone on solid tiles; apply the dig phase and let it complete first",
+    "blueprint": "office-room-v2",
+    "dry_run": false,
+    "mode": "meta",
+    "ok": false,
+    "phase": "office_room_v2_finish",
+    "prerequisites": {
+      "carve_cells": 10,
+      "pending_designations": 0,
+      "still_solid": 10
+    },
+    "read_failures": [],
+    "site": {
+      "direction": "NE",
+      "distance_tiles": 7,
+      "footprint": {
+        "height": 5,
+        "width": 5
+      },
+      "handle": "site-1",
+      "level": 0,
+      "near_landmark": "Well",
+      "orientation": "none",
+      "source": "stored"
+    }
+  },
+  "apply_office_room_v2_finish_success": {
+    "blueprint": "office-room-v2",
+    "designated": {
+      "buildings": 1,
+      "dig_tiles": 0,
+      "zones": 1
+    },
+    "dry_run": false,
+    "finish_plan": {
+      "already_finished": 0,
+      "blocked_by_material": [],
+      "blocked_total": 0,
+      "hidden": 0,
+      "occupied_by_building": 0,
+      "other_shape": 0,
+      "required_cells": 0,
+      "smoothable": 0,
+      "unreadable": 0
+    },
+    "finish_required_met": true,
+    "mode": "meta",
+    "ok": true,
+    "phase": "office_room_v2_finish",
+    "prerequisites": {
+      "carve_cells": 10,
+      "pending_designations": 0,
+      "still_solid": 0
+    },
+    "quickfort": {
+      "error": null,
+      "problems": [],
+      "ran": true,
+      "result_ok": true,
+      "stats": {
+        "Blueprints applied": 2,
+        "Buildings designated": 1,
+        "Zone tiles designated": 9,
+        "Zones designated": 1
+      }
+    },
+    "read_back": {
+      "designations_landed": true,
+      "finish_state": {
+        "already_finished": 15,
+        "blocked_by_material": [],
+        "blocked_total": 0,
+        "hidden": 0,
+        "occupied_by_building": 0,
+        "other_shape": 0,
+        "required_cells": 24,
+        "smoothable": 9,
+        "unreadable": 0
+      },
+      "note": "surface reads are only meaningful once dwarves have finished the work; right after apply they describe the site as it stands, not as designated",
+      "pending_designations": 0,
+      "surface": {
+        "by": "df-overseer-surface, room rectangle from the blueprint's own zone section",
+        "enclosure": {
+          "status": "not_enclosed",
+          "w": 3
+        },
+        "finish": {
+          "h": 3
+        },
+        "material": {
+          "ring": 16
+        },
+        "shim_restored": true
+      }
+    },
+    "read_failures": [],
+    "site": {
+      "direction": "NE",
+      "distance_tiles": 7,
+      "footprint": {
+        "height": 5,
+        "width": 5
+      },
+      "handle": "site-1",
+      "level": 0,
+      "near_landmark": "Well",
+      "orientation": "none",
+      "source": "stored"
+    }
+  },
+  "apply_office_room_v2_floor_dry_run": {
+    "blueprint": "office-room-v2",
+    "designated": {
+      "buildings": 0,
+      "dig_tiles": 25,
+      "zones": 0
+    },
+    "dry_run": true,
+    "finish_plan": {
+      "already_finished": 0,
+      "blocked_by_material": [],
+      "blocked_total": 0,
+      "hidden": 0,
+      "occupied_by_building": 0,
+      "other_shape": 0,
+      "required_cells": 9,
+      "smoothable": 9,
+      "unreadable": 0
+    },
+    "finish_required_met": true,
+    "mode": "dig",
+    "ok": true,
+    "phase": "office_room_v2_floor",
+    "quickfort": {
+      "error": null,
+      "problems": [],
+      "ran": true,
+      "result_ok": true,
+      "stats": {
+        "Tiles designated for digging": 25
+      }
+    },
+    "read_failures": [],
+    "site": {
+      "direction": "NE",
+      "distance_tiles": 7,
+      "footprint": {
+        "height": 5,
+        "width": 5
+      },
+      "handle": "site-1",
+      "level": 0,
+      "near_landmark": "Well",
+      "orientation": "none",
+      "source": "stored"
+    },
+    "would_designate": 25
+  },
+  "apply_office_room_v2_floor_success": {
+    "blueprint": "office-room-v2",
+    "designated": {
+      "buildings": 0,
+      "dig_tiles": 25,
+      "zones": 0
+    },
+    "dry_run": false,
+    "finish_plan": {
+      "already_finished": 0,
+      "blocked_by_material": [],
+      "blocked_total": 0,
+      "hidden": 0,
+      "occupied_by_building": 0,
+      "other_shape": 0,
+      "required_cells": 9,
+      "smoothable": 9,
+      "unreadable": 0
+    },
+    "finish_required_met": true,
+    "mode": "dig",
+    "ok": true,
+    "phase": "office_room_v2_floor",
+    "quickfort": {
+      "error": null,
+      "problems": [],
+      "ran": true,
+      "result_ok": true,
+      "stats": {
+        "Tiles designated for digging": 25
+      }
+    },
+    "read_back": {
+      "designations_landed": false,
+      "finish_state": {
+        "already_finished": 15,
+        "blocked_by_material": [],
+        "blocked_total": 0,
+        "hidden": 0,
+        "occupied_by_building": 0,
+        "other_shape": 0,
+        "required_cells": 24,
+        "smoothable": 9,
+        "unreadable": 0
+      },
+      "note": "surface reads are only meaningful once dwarves have finished the work; right after apply they describe the site as it stands, not as designated",
+      "pending_designations": 0,
+      "surface": {
+        "by": "df-overseer-surface, room rectangle from the blueprint's own zone section",
+        "enclosure": {
+          "status": "not_enclosed",
+          "w": 3
+        },
+        "finish": {
+          "h": 3
+        },
+        "material": {
+          "ring": 16
+        },
+        "shim_restored": true
+      }
+    },
+    "read_failures": [],
+    "site": {
+      "direction": "NE",
+      "distance_tiles": 7,
+      "footprint": {
+        "height": 5,
+        "width": 5
+      },
+      "handle": "site-1",
+      "level": 0,
+      "near_landmark": "Well",
+      "orientation": "none",
+      "source": "stored"
+    }
+  },
+  "apply_office_room_v2_shell_dry_run": {
+    "access": {
+      "carve_cells": 10,
+      "carve_cells_reachable": 10,
+      "carve_cells_unreachable": 0,
+      "entrance_reachable": true,
+      "entrances": 1
+    },
+    "blueprint": "office-room-v2",
+    "designated": {
+      "buildings": 0,
+      "dig_tiles": 25,
+      "zones": 0
+    },
+    "dig_can_start": true,
+    "dry_run": true,
+    "entrance_reachable": true,
+    "finish_plan": {
+      "already_finished": 0,
+      "blocked_by_material": [],
+      "blocked_total": 0,
+      "hidden": 0,
+      "occupied_by_building": 0,
+      "other_shape": 0,
+      "required_cells": 15,
+      "smoothable": 15,
+      "unreadable": 0
+    },
+    "finish_required_met": true,
+    "mode": "dig",
+    "ok": true,
+    "phase": "office_room_v2_shell",
+    "quickfort": {
+      "error": null,
+      "problems": [],
+      "ran": true,
+      "result_ok": true,
+      "stats": {
+        "Tiles designated for digging": 25
+      }
+    },
+    "read_failures": [],
+    "site": {
+      "direction": "NE",
+      "distance_tiles": 7,
+      "footprint": {
+        "height": 5,
+        "width": 5
+      },
+      "handle": null,
+      "interior_fully_revealed": null,
+      "level": 0,
+      "near_landmark": "Well",
+      "note": "a real apply registers this as a new site-N handle and marks the reservation in use",
+      "orientation": "none",
+      "reservation": "res-1",
+      "source": "reservation"
+    },
+    "would_designate": 25
+  },
+  "apply_office_room_v2_shell_success": {
+    "access": {
+      "carve_cells": 10,
+      "carve_cells_reachable": 10,
+      "carve_cells_unreachable": 0,
+      "entrance_reachable": true,
+      "entrances": 1
+    },
+    "blueprint": "office-room-v2",
+    "designated": {
+      "buildings": 0,
+      "dig_tiles": 25,
+      "zones": 0
+    },
+    "dig_can_start": true,
+    "dry_run": false,
+    "entrance_reachable": true,
+    "finish_plan": {
+      "already_finished": 0,
+      "blocked_by_material": [],
+      "blocked_total": 0,
+      "hidden": 0,
+      "occupied_by_building": 0,
+      "other_shape": 0,
+      "required_cells": 15,
+      "smoothable": 15,
+      "unreadable": 0
+    },
+    "finish_required_met": true,
+    "mode": "dig",
+    "ok": true,
+    "phase": "office_room_v2_shell",
+    "quickfort": {
+      "error": null,
+      "problems": [],
+      "ran": true,
+      "result_ok": true,
+      "stats": {
+        "Tiles designated for digging": 25
+      }
+    },
+    "read_back": {
+      "designations_landed": false,
+      "finish_state": {
+        "already_finished": 0,
+        "blocked_by_material": [],
+        "blocked_total": 0,
+        "hidden": 0,
+        "occupied_by_building": 0,
+        "other_shape": 0,
+        "required_cells": 24,
+        "smoothable": 24,
+        "unreadable": 0
+      },
+      "note": "surface reads are only meaningful once dwarves have finished the work; right after apply they describe the site as it stands, not as designated",
+      "pending_designations": 0,
+      "surface": {
+        "by": "df-overseer-surface, room rectangle from the blueprint's own zone section",
+        "enclosure": {
+          "status": "not_enclosed",
+          "w": 3
+        },
+        "finish": {
+          "h": 3
+        },
+        "material": {
+          "ring": 16
+        },
+        "shim_restored": true
+      }
+    },
+    "read_failures": [],
+    "site": {
+      "direction": "NE",
+      "distance_tiles": 7,
+      "footprint": {
+        "height": 5,
+        "width": 5
+      },
+      "handle": "site-1",
+      "interior_fully_revealed": null,
+      "level": 0,
+      "near_landmark": "Well",
+      "note": "registered below on success",
+      "orientation": "none",
+      "reservation": "res-1",
+      "source": "reservation"
+    }
+  },
+  "apply_office_room_v2_zone_dry_run": {
+    "blueprint": "office-room-v2",
+    "designated": {
+      "buildings": 0,
+      "dig_tiles": 0,
+      "zones": 1
+    },
+    "dry_run": true,
+    "finish_plan": {
+      "already_finished": 0,
+      "blocked_by_material": [],
+      "blocked_total": 0,
+      "hidden": 0,
+      "occupied_by_building": 0,
+      "other_shape": 0,
+      "required_cells": 0,
+      "smoothable": 0,
+      "unreadable": 0
+    },
+    "finish_required_met": true,
+    "mode": "zone",
+    "ok": true,
+    "phase": "office_room_v2_zone",
+    "prerequisites": {
+      "carve_cells": 10,
+      "pending_designations": 0,
+      "still_solid": 0
+    },
+    "quickfort": {
+      "error": null,
+      "problems": [],
+      "ran": true,
+      "result_ok": true,
+      "stats": {
+        "Zone tiles designated": 9,
+        "Zones designated": 1
+      }
+    },
+    "read_failures": [],
+    "site": {
+      "direction": "NE",
+      "distance_tiles": 7,
+      "footprint": {
+        "height": 5,
+        "width": 5
+      },
+      "handle": "site-1",
+      "level": 0,
+      "near_landmark": "Well",
+      "orientation": "none",
+      "source": "stored"
+    },
+    "would_designate": 1
+  },
+  "apply_office_room_v2_zone_refused_shell_pending": {
+    "blocked": true,
+    "blocked_reason": "the shell is not finished: 0 outstanding dig/smooth designations and 10 carve cells still solid. quickfort would drop the furniture or zone on solid tiles; apply the dig phase and let it complete first",
+    "blueprint": "office-room-v2",
+    "dry_run": false,
+    "mode": "zone",
+    "ok": false,
+    "phase": "office_room_v2_zone",
+    "prerequisites": {
+      "carve_cells": 10,
+      "pending_designations": 0,
+      "still_solid": 10
+    },
+    "read_failures": [],
+    "site": {
+      "direction": "NE",
+      "distance_tiles": 7,
+      "footprint": {
+        "height": 5,
+        "width": 5
+      },
+      "handle": "site-1",
+      "level": 0,
+      "near_landmark": "Well",
+      "orientation": "none",
+      "source": "stored"
+    }
+  },
+  "apply_office_room_v2_zone_success": {
+    "blueprint": "office-room-v2",
+    "designated": {
+      "buildings": 0,
+      "dig_tiles": 0,
+      "zones": 1
+    },
+    "dry_run": false,
+    "finish_plan": {
+      "already_finished": 0,
+      "blocked_by_material": [],
+      "blocked_total": 0,
+      "hidden": 0,
+      "occupied_by_building": 0,
+      "other_shape": 0,
+      "required_cells": 0,
+      "smoothable": 0,
+      "unreadable": 0
+    },
+    "finish_required_met": true,
+    "mode": "zone",
+    "ok": true,
+    "phase": "office_room_v2_zone",
+    "prerequisites": {
+      "carve_cells": 10,
+      "pending_designations": 0,
+      "still_solid": 0
+    },
+    "quickfort": {
+      "error": null,
+      "problems": [],
+      "ran": true,
+      "result_ok": true,
+      "stats": {
+        "Zone tiles designated": 9,
+        "Zones designated": 1
+      }
+    },
+    "read_back": {
+      "designations_landed": true,
+      "finish_state": {
+        "already_finished": 15,
+        "blocked_by_material": [],
+        "blocked_total": 0,
+        "hidden": 0,
+        "occupied_by_building": 0,
+        "other_shape": 0,
+        "required_cells": 24,
+        "smoothable": 9,
+        "unreadable": 0
+      },
+      "note": "surface reads are only meaningful once dwarves have finished the work; right after apply they describe the site as it stands, not as designated",
+      "pending_designations": 0,
+      "surface": {
+        "by": "df-overseer-surface, room rectangle from the blueprint's own zone section",
+        "enclosure": {
+          "status": "not_enclosed",
+          "w": 3
+        },
+        "finish": {
+          "h": 3
+        },
+        "material": {
+          "ring": 16
+        },
+        "shim_restored": true
+      }
+    },
+    "read_failures": [],
+    "site": {
+      "direction": "NE",
+      "distance_tiles": 7,
+      "footprint": {
+        "height": 5,
+        "width": 5
+      },
+      "handle": "site-1",
+      "level": 0,
+      "near_landmark": "Well",
+      "orientation": "none",
+      "source": "stored"
+    }
+  },
+  "release_any_pending_dry_run": {
+    "any_pending": true,
+    "blueprint": "office-room-v2",
+    "dig_before": {
+      "blind_no_walkable_neighbour": 0,
+      "designations_with_a_job": 0,
+      "designations_without_a_job": 0,
+      "job_census_error": null,
+      "jobs_claimed_by_a_worker": 0,
+      "jobs_in_site": 0,
+      "pending_dig_designations": 0,
+      "startable_no_job_yet": 0,
+      "state": "none_pending",
+      "ticks_since_apply": 0,
+      "unreadable": 0
+    },
+    "dry_run": true,
+    "handle": "site-1",
+    "note": "dry run: nothing was withdrawn. Run again with DRY_RUN false",
+    "read_failures": [],
+    "released": false,
+    "runs": [
+      {
+        "error": null,
+        "phase": "office_room_v2_floor",
+        "ran": true,
+        "result_ok": true,
+        "stats": {
+          "Blueprints applied": 2,
+          "Buildings designated": 1,
+          "Zone tiles designated": 9,
+          "Zones designated": 1
+        }
+      },
+      {
+        "error": null,
+        "phase": "office_room_v2_shell",
+        "ran": true,
+        "result_ok": true,
+        "stats": {
+          "Blueprints applied": 2,
+          "Buildings designated": 1,
+          "Zone tiles designated": 9,
+          "Zones designated": 1
+        }
+      }
+    ],
+    "skipped_phases": [
+      "office_room_v2_build",
+      "office_room_v2_zone",
+      "office_room_v2_finish"
+    ],
+    "undesignated": 0
+  },
+  "reservations": [
+    {
+      "age_ticks": 0,
+      "allowed_kinds": [
+        "chair",
+        "office"
+      ],
+      "blueprint": "office-room-v2",
+      "direction": "NE",
+      "distance_tiles": 7,
+      "footprint": {
+        "height": 5,
+        "width": 5
+      },
+      "handle": "res-1",
+      "in_use": false,
+      "last_override_reason": null,
+      "near_landmark": "Well",
+      "override_count": 0,
+      "purpose": "fixture room",
+      "site_handle": null
+    }
+  ],
+  "reserve_dry_run": {
+    "allowed_kinds": [
+      "chair",
+      "office"
+    ],
+    "blueprint": "office-room-v2",
+    "dig_can_start": true,
+    "direction": "NE",
+    "distance_tiles": 7,
+    "dry_run": true,
+    "finish_plan": {
+      "already_finished": 0,
+      "blocked_by_material": [],
+      "blocked_total": 0,
+      "hidden": 0,
+      "occupied_by_building": 0,
+      "other_shape": 0,
+      "required_cells": 24,
+      "smoothable": 24,
+      "unreadable": 0
+    },
+    "footprint": {
+      "height": 5,
+      "width": 5
+    },
+    "level": 0,
+    "near_landmark": "Well",
+    "orientation": "none",
+    "purpose": "fixture room",
+    "read_failures": [],
+    "would_reserve": true
+  },
+  "reserve_refusal_overlap": {
+    "allowed_kinds": [
+      "chair",
+      "office"
+    ],
+    "blocked_reason": "overlaps existing res-1 (fixture room) on at least one tile neither side marks as a shared wall",
+    "blueprint": "office-room-v2",
+    "conflicts": [
+      {
+        "handle": "res-1",
+        "kind": "reservation",
+        "purpose": "fixture room"
+      }
+    ],
+    "dig_can_start": true,
+    "direction": "NE",
+    "distance_tiles": 7,
+    "dry_run": false,
+    "finish_plan": {
+      "already_finished": 0,
+      "blocked_by_material": [],
+      "blocked_total": 0,
+      "hidden": 0,
+      "occupied_by_building": 0,
+      "other_shape": 0,
+      "required_cells": 24,
+      "smoothable": 24,
+      "unreadable": 0
+    },
+    "footprint": {
+      "height": 5,
+      "width": 5
+    },
+    "level": 0,
+    "near_landmark": "Well",
+    "orientation": "none",
+    "purpose": "second room",
+    "read_failures": [],
+    "refused": true
+  },
+  "reserve_success": {
+    "allowed_kinds": [
+      "chair",
+      "office"
+    ],
+    "blueprint": "office-room-v2",
+    "dig_can_start": true,
+    "direction": "NE",
+    "distance_tiles": 7,
+    "dry_run": false,
+    "finish_plan": {
+      "already_finished": 0,
+      "blocked_by_material": [],
+      "blocked_total": 0,
+      "hidden": 0,
+      "occupied_by_building": 0,
+      "other_shape": 0,
+      "required_cells": 24,
+      "smoothable": 24,
+      "unreadable": 0
+    },
+    "footprint": {
+      "height": 5,
+      "width": 5
+    },
+    "handle": "res-1",
+    "level": 0,
+    "near_landmark": "Well",
+    "orientation": "none",
+    "purpose": "fixture room",
+    "read_failures": []
+  },
+  "sites": [
+    {
+      "blueprint": "office-room-v2",
+      "direction": "NE",
+      "distance_tiles": 7,
+      "footprint": {
+        "height": 5,
+        "width": 5
+      },
+      "handle": "site-1",
+      "near_landmark": "Well",
+      "phases_applied": [
+        "office_room_v2_shell"
+      ],
+      "reservation": "res-1"
+    }
+  ],
+  "status_no_phase_after_shell_apply": {
+    "blueprint": "office-room-v2",
+    "dig": {
+      "blind_no_walkable_neighbour": 0,
+      "designations_with_a_job": 0,
+      "designations_without_a_job": 0,
+      "job_census_error": null,
+      "jobs_claimed_by_a_worker": 0,
+      "jobs_in_site": 0,
+      "pending_dig_designations": 0,
+      "startable_no_job_yet": 0,
+      "state": "none_pending",
+      "ticks_since_apply": 0,
+      "unreadable": 0
+    },
+    "finish_required_met": false,
+    "finish_state": {
+      "already_finished": 0,
+      "blocked_by_material": [],
+      "blocked_total": 0,
+      "hidden": 0,
+      "occupied_by_building": 0,
+      "other_shape": 0,
+      "required_cells": 24,
+      "smoothable": 24,
+      "unreadable": 0
+    },
+    "handle": "site-1",
+    "orientation": "none",
+    "phases_applied": [
+      "office_room_v2_shell"
+    ],
+    "read_failures": [],
+    "remedy": null,
+    "shell": {
+      "carve_cells": 10,
+      "pending_designations": 0,
+      "still_solid": 10
+    },
+    "shell_cells": {
+      "carve_dug": 0,
+      "carve_required": 10,
+      "carve_solid": 10,
+      "done": false,
+      "hidden": 0,
+      "rough": 24,
+      "smooth_done": 0,
+      "smooth_required": 24,
+      "undesignated": 24,
+      "unreadable": 0
+    },
+    "shell_done": false,
+    "site": {
+      "direction": "NE",
+      "distance_tiles": 7,
+      "footprint": {
+        "height": 5,
+        "width": 5
+      },
+      "near_landmark": "Well"
+    },
+    "stall_remedy": null,
+    "stalled": false,
+    "surface": {
+      "by": "df-overseer-surface, room rectangle from the blueprint's own zone section",
+      "enclosure": {
+        "status": "not_enclosed",
+        "w": 3
+      },
+      "finish": {
+        "h": 3
+      },
+      "material": {
+        "ring": 16
+      },
+      "shim_restored": true
+    }
+  },
+  "status_office_room_v2_build_complete": {
+    "blueprint": "office-room-v2",
+    "dig": {
+      "blind_no_walkable_neighbour": 0,
+      "designations_with_a_job": 0,
+      "designations_without_a_job": 0,
+      "job_census_error": null,
+      "jobs_claimed_by_a_worker": 0,
+      "jobs_in_site": 0,
+      "pending_dig_designations": 0,
+      "startable_no_job_yet": 0,
+      "state": "none_pending",
+      "ticks_since_apply": 0,
+      "unreadable": 0
+    },
+    "finish_required_met": true,
+    "finish_state": {
+      "already_finished": 24,
+      "blocked_by_material": [],
+      "blocked_total": 0,
+      "hidden": 0,
+      "occupied_by_building": 0,
+      "other_shape": 0,
+      "required_cells": 24,
+      "smoothable": 0,
+      "unreadable": 0
+    },
+    "handle": "site-1",
+    "orientation": "none",
+    "phase": {
+      "applied": true,
+      "buildings": [
+        {
+          "complete": true,
+          "kind": "chair"
+        }
+      ],
+      "cells": {
+        "carve_dug": 0,
+        "carve_required": 0,
+        "carve_solid": 0,
+        "hidden": 0,
+        "rough": 0,
+        "smooth_done": 0,
+        "smooth_required": 0,
+        "undesignated": 0,
+        "unreadable": 0
+      },
+      "done": true,
+      "label": "office_room_v2_build",
+      "leaves": [
+        "office_room_v2_build"
+      ],
+      "mode": "build",
+      "unread_modes": [],
+      "zone_present": null,
+      "zone_required": false
+    },
+    "phases_applied": [
+      "office_room_v2_shell",
+      "office_room_v2_floor",
+      "office_room_v2_build",
+      "office_room_v2_zone",
+      "office_room_v2_finish"
+    ],
+    "read_failures": [],
+    "remedy": null,
+    "shell": {
+      "carve_cells": 10,
+      "pending_designations": 0,
+      "still_solid": 0
+    },
+    "shell_cells": {
+      "carve_dug": 10,
+      "carve_required": 10,
+      "carve_solid": 0,
+      "done": true,
+      "hidden": 0,
+      "rough": 0,
+      "smooth_done": 24,
+      "smooth_required": 24,
+      "undesignated": 0,
+      "unreadable": 0
+    },
+    "shell_done": true,
+    "site": {
+      "direction": "NE",
+      "distance_tiles": 7,
+      "footprint": {
+        "height": 5,
+        "width": 5
+      },
+      "near_landmark": "Well"
+    },
+    "stall_remedy": null,
+    "stalled": false,
+    "surface": {
+      "by": "df-overseer-surface, room rectangle from the blueprint's own zone section",
+      "enclosure": {
+        "status": "not_enclosed",
+        "w": 3
+      },
+      "finish": {
+        "h": 3
+      },
+      "material": {
+        "ring": 16
+      },
+      "shim_restored": true
+    }
+  },
+  "status_office_room_v2_build_furniture_pending": {
+    "blueprint": "office-room-v2",
+    "dig": {
+      "blind_no_walkable_neighbour": 0,
+      "designations_with_a_job": 0,
+      "designations_without_a_job": 0,
+      "job_census_error": null,
+      "jobs_claimed_by_a_worker": 0,
+      "jobs_in_site": 0,
+      "pending_dig_designations": 0,
+      "startable_no_job_yet": 0,
+      "state": "none_pending",
+      "ticks_since_apply": 0,
+      "unreadable": 0
+    },
+    "finish_required_met": false,
+    "finish_state": {
+      "already_finished": 15,
+      "blocked_by_material": [],
+      "blocked_total": 0,
+      "hidden": 0,
+      "occupied_by_building": 1,
+      "other_shape": 0,
+      "required_cells": 24,
+      "smoothable": 8,
+      "unreadable": 0
+    },
+    "handle": "site-1",
+    "orientation": "none",
+    "phase": {
+      "applied": true,
+      "buildings": [
+        {
+          "complete": false,
+          "kind": "chair"
+        }
+      ],
+      "cells": {
+        "carve_dug": 0,
+        "carve_required": 0,
+        "carve_solid": 0,
+        "hidden": 0,
+        "rough": 0,
+        "smooth_done": 0,
+        "smooth_required": 0,
+        "undesignated": 0,
+        "unreadable": 0
+      },
+      "done": false,
+      "label": "office_room_v2_build",
+      "leaves": [
+        "office_room_v2_build"
+      ],
+      "mode": "build",
+      "unread_modes": [],
+      "zone_present": null,
+      "zone_required": false
+    },
+    "phases_applied": [
+      "office_room_v2_shell",
+      "office_room_v2_floor",
+      "office_room_v2_build",
+      "office_room_v2_zone",
+      "office_room_v2_finish"
+    ],
+    "read_failures": [],
+    "remedy": null,
+    "shell": {
+      "carve_cells": 10,
+      "pending_designations": 0,
+      "still_solid": 0
+    },
+    "shell_cells": {
+      "carve_dug": 10,
+      "carve_required": 10,
+      "carve_solid": 0,
+      "done": false,
+      "hidden": 0,
+      "rough": 9,
+      "smooth_done": 15,
+      "smooth_required": 24,
+      "undesignated": 9,
+      "unreadable": 0
+    },
+    "shell_done": false,
+    "site": {
+      "direction": "NE",
+      "distance_tiles": 7,
+      "footprint": {
+        "height": 5,
+        "width": 5
+      },
+      "near_landmark": "Well"
+    },
+    "stall_remedy": null,
+    "stalled": false,
+    "surface": {
+      "by": "df-overseer-surface, room rectangle from the blueprint's own zone section",
+      "enclosure": {
+        "status": "not_enclosed",
+        "w": 3
+      },
+      "finish": {
+        "h": 3
+      },
+      "material": {
+        "ring": 16
+      },
+      "shim_restored": true
+    }
+  },
+  "status_office_room_v2_finish_complete": {
+    "blueprint": "office-room-v2",
+    "dig": {
+      "blind_no_walkable_neighbour": 0,
+      "designations_with_a_job": 0,
+      "designations_without_a_job": 0,
+      "job_census_error": null,
+      "jobs_claimed_by_a_worker": 0,
+      "jobs_in_site": 0,
+      "pending_dig_designations": 0,
+      "startable_no_job_yet": 0,
+      "state": "none_pending",
+      "ticks_since_apply": 0,
+      "unreadable": 0
+    },
+    "finish_required_met": true,
+    "finish_state": {
+      "already_finished": 24,
+      "blocked_by_material": [],
+      "blocked_total": 0,
+      "hidden": 0,
+      "occupied_by_building": 0,
+      "other_shape": 0,
+      "required_cells": 24,
+      "smoothable": 0,
+      "unreadable": 0
+    },
+    "handle": "site-1",
+    "orientation": "none",
+    "phase": {
+      "applied": true,
+      "buildings": [
+        {
+          "complete": true,
+          "kind": "chair"
+        }
+      ],
+      "cells": {
+        "carve_dug": 0,
+        "carve_required": 0,
+        "carve_solid": 0,
+        "hidden": 0,
+        "rough": 0,
+        "smooth_done": 0,
+        "smooth_required": 0,
+        "undesignated": 0,
+        "unreadable": 0
+      },
+      "done": true,
+      "label": "office_room_v2_finish",
+      "leaves": [
+        "office_room_v2_build",
+        "office_room_v2_zone"
+      ],
+      "mode": "meta",
+      "unread_modes": [],
+      "zone_present": true,
+      "zone_required": true
+    },
+    "phases_applied": [
+      "office_room_v2_shell",
+      "office_room_v2_floor",
+      "office_room_v2_build",
+      "office_room_v2_zone",
+      "office_room_v2_finish"
+    ],
+    "read_failures": [],
+    "remedy": null,
+    "shell": {
+      "carve_cells": 10,
+      "pending_designations": 0,
+      "still_solid": 0
+    },
+    "shell_cells": {
+      "carve_dug": 10,
+      "carve_required": 10,
+      "carve_solid": 0,
+      "done": true,
+      "hidden": 0,
+      "rough": 0,
+      "smooth_done": 24,
+      "smooth_required": 24,
+      "undesignated": 0,
+      "unreadable": 0
+    },
+    "shell_done": true,
+    "site": {
+      "direction": "NE",
+      "distance_tiles": 7,
+      "footprint": {
+        "height": 5,
+        "width": 5
+      },
+      "near_landmark": "Well"
+    },
+    "stall_remedy": null,
+    "stalled": false,
+    "surface": {
+      "by": "df-overseer-surface, room rectangle from the blueprint's own zone section",
+      "enclosure": {
+        "status": "not_enclosed",
+        "w": 3
+      },
+      "finish": {
+        "h": 3
+      },
+      "material": {
+        "ring": 16
+      },
+      "shim_restored": true
+    }
+  },
+  "status_office_room_v2_finish_furniture_pending": {
+    "blueprint": "office-room-v2",
+    "dig": {
+      "blind_no_walkable_neighbour": 0,
+      "designations_with_a_job": 0,
+      "designations_without_a_job": 0,
+      "job_census_error": null,
+      "jobs_claimed_by_a_worker": 0,
+      "jobs_in_site": 0,
+      "pending_dig_designations": 0,
+      "startable_no_job_yet": 0,
+      "state": "none_pending",
+      "ticks_since_apply": 0,
+      "unreadable": 0
+    },
+    "finish_required_met": false,
+    "finish_state": {
+      "already_finished": 15,
+      "blocked_by_material": [],
+      "blocked_total": 0,
+      "hidden": 0,
+      "occupied_by_building": 1,
+      "other_shape": 0,
+      "required_cells": 24,
+      "smoothable": 8,
+      "unreadable": 0
+    },
+    "handle": "site-1",
+    "orientation": "none",
+    "phase": {
+      "applied": true,
+      "buildings": [
+        {
+          "complete": false,
+          "kind": "chair"
+        }
+      ],
+      "cells": {
+        "carve_dug": 0,
+        "carve_required": 0,
+        "carve_solid": 0,
+        "hidden": 0,
+        "rough": 0,
+        "smooth_done": 0,
+        "smooth_required": 0,
+        "undesignated": 0,
+        "unreadable": 0
+      },
+      "done": false,
+      "label": "office_room_v2_finish",
+      "leaves": [
+        "office_room_v2_build",
+        "office_room_v2_zone"
+      ],
+      "mode": "meta",
+      "unread_modes": [],
+      "zone_present": false,
+      "zone_required": true
+    },
+    "phases_applied": [
+      "office_room_v2_shell",
+      "office_room_v2_floor",
+      "office_room_v2_build",
+      "office_room_v2_zone",
+      "office_room_v2_finish"
+    ],
+    "read_failures": [],
+    "remedy": null,
+    "shell": {
+      "carve_cells": 10,
+      "pending_designations": 0,
+      "still_solid": 0
+    },
+    "shell_cells": {
+      "carve_dug": 10,
+      "carve_required": 10,
+      "carve_solid": 0,
+      "done": false,
+      "hidden": 0,
+      "rough": 9,
+      "smooth_done": 15,
+      "smooth_required": 24,
+      "undesignated": 9,
+      "unreadable": 0
+    },
+    "shell_done": false,
+    "site": {
+      "direction": "NE",
+      "distance_tiles": 7,
+      "footprint": {
+        "height": 5,
+        "width": 5
+      },
+      "near_landmark": "Well"
+    },
+    "stall_remedy": null,
+    "stalled": false,
+    "surface": {
+      "by": "df-overseer-surface, room rectangle from the blueprint's own zone section",
+      "enclosure": {
+        "status": "not_enclosed",
+        "w": 3
+      },
+      "finish": {
+        "h": 3
+      },
+      "material": {
+        "ring": 16
+      },
+      "shim_restored": true
+    }
+  },
+  "status_office_room_v2_floor_complete": {
+    "blueprint": "office-room-v2",
+    "dig": {
+      "blind_no_walkable_neighbour": 0,
+      "designations_with_a_job": 0,
+      "designations_without_a_job": 0,
+      "job_census_error": null,
+      "jobs_claimed_by_a_worker": 0,
+      "jobs_in_site": 0,
+      "pending_dig_designations": 0,
+      "startable_no_job_yet": 0,
+      "state": "none_pending",
+      "ticks_since_apply": 0,
+      "unreadable": 0
+    },
+    "finish_required_met": true,
+    "finish_state": {
+      "already_finished": 24,
+      "blocked_by_material": [],
+      "blocked_total": 0,
+      "hidden": 0,
+      "occupied_by_building": 0,
+      "other_shape": 0,
+      "required_cells": 24,
+      "smoothable": 0,
+      "unreadable": 0
+    },
+    "handle": "site-1",
+    "orientation": "none",
+    "phase": {
+      "applied": true,
+      "buildings": [],
+      "cells": {
+        "carve_dug": 0,
+        "carve_required": 0,
+        "carve_solid": 0,
+        "hidden": 0,
+        "rough": 0,
+        "smooth_done": 9,
+        "smooth_required": 9,
+        "undesignated": 0,
+        "unreadable": 0
+      },
+      "done": true,
+      "label": "office_room_v2_floor",
+      "leaves": [
+        "office_room_v2_floor"
+      ],
+      "mode": "dig",
+      "unread_modes": [],
+      "zone_present": null,
+      "zone_required": false
+    },
+    "phases_applied": [
+      "office_room_v2_shell",
+      "office_room_v2_floor",
+      "office_room_v2_build",
+      "office_room_v2_zone",
+      "office_room_v2_finish"
+    ],
+    "read_failures": [],
+    "remedy": null,
+    "shell": {
+      "carve_cells": 10,
+      "pending_designations": 0,
+      "still_solid": 0
+    },
+    "shell_cells": {
+      "carve_dug": 10,
+      "carve_required": 10,
+      "carve_solid": 0,
+      "done": true,
+      "hidden": 0,
+      "rough": 0,
+      "smooth_done": 24,
+      "smooth_required": 24,
+      "undesignated": 0,
+      "unreadable": 0
+    },
+    "shell_done": true,
+    "site": {
+      "direction": "NE",
+      "distance_tiles": 7,
+      "footprint": {
+        "height": 5,
+        "width": 5
+      },
+      "near_landmark": "Well"
+    },
+    "stall_remedy": null,
+    "stalled": false,
+    "surface": {
+      "by": "df-overseer-surface, room rectangle from the blueprint's own zone section",
+      "enclosure": {
+        "status": "not_enclosed",
+        "w": 3
+      },
+      "finish": {
+        "h": 3
+      },
+      "material": {
+        "ring": 16
+      },
+      "shim_restored": true
+    }
+  },
+  "status_office_room_v2_floor_furniture_pending": {
+    "blueprint": "office-room-v2",
+    "dig": {
+      "blind_no_walkable_neighbour": 0,
+      "designations_with_a_job": 0,
+      "designations_without_a_job": 0,
+      "job_census_error": null,
+      "jobs_claimed_by_a_worker": 0,
+      "jobs_in_site": 0,
+      "pending_dig_designations": 0,
+      "startable_no_job_yet": 0,
+      "state": "none_pending",
+      "ticks_since_apply": 0,
+      "unreadable": 0
+    },
+    "finish_required_met": false,
+    "finish_state": {
+      "already_finished": 15,
+      "blocked_by_material": [],
+      "blocked_total": 0,
+      "hidden": 0,
+      "occupied_by_building": 1,
+      "other_shape": 0,
+      "required_cells": 24,
+      "smoothable": 8,
+      "unreadable": 0
+    },
+    "handle": "site-1",
+    "orientation": "none",
+    "phase": {
+      "applied": true,
+      "buildings": [],
+      "cells": {
+        "carve_dug": 0,
+        "carve_required": 0,
+        "carve_solid": 0,
+        "hidden": 0,
+        "rough": 9,
+        "smooth_done": 0,
+        "smooth_required": 9,
+        "undesignated": 9,
+        "unreadable": 0
+      },
+      "done": false,
+      "label": "office_room_v2_floor",
+      "leaves": [
+        "office_room_v2_floor"
+      ],
+      "mode": "dig",
+      "unread_modes": [],
+      "zone_present": null,
+      "zone_required": false
+    },
+    "phases_applied": [
+      "office_room_v2_shell",
+      "office_room_v2_floor",
+      "office_room_v2_build",
+      "office_room_v2_zone",
+      "office_room_v2_finish"
+    ],
+    "read_failures": [],
+    "remedy": null,
+    "shell": {
+      "carve_cells": 10,
+      "pending_designations": 0,
+      "still_solid": 0
+    },
+    "shell_cells": {
+      "carve_dug": 10,
+      "carve_required": 10,
+      "carve_solid": 0,
+      "done": false,
+      "hidden": 0,
+      "rough": 9,
+      "smooth_done": 15,
+      "smooth_required": 24,
+      "undesignated": 9,
+      "unreadable": 0
+    },
+    "shell_done": false,
+    "site": {
+      "direction": "NE",
+      "distance_tiles": 7,
+      "footprint": {
+        "height": 5,
+        "width": 5
+      },
+      "near_landmark": "Well"
+    },
+    "stall_remedy": null,
+    "stalled": false,
+    "surface": {
+      "by": "df-overseer-surface, room rectangle from the blueprint's own zone section",
+      "enclosure": {
+        "status": "not_enclosed",
+        "w": 3
+      },
+      "finish": {
+        "h": 3
+      },
+      "material": {
+        "ring": 16
+      },
+      "shim_restored": true
+    }
+  },
+  "status_office_room_v2_shell_complete": {
+    "blueprint": "office-room-v2",
+    "dig": {
+      "blind_no_walkable_neighbour": 0,
+      "designations_with_a_job": 0,
+      "designations_without_a_job": 0,
+      "job_census_error": null,
+      "jobs_claimed_by_a_worker": 0,
+      "jobs_in_site": 0,
+      "pending_dig_designations": 0,
+      "startable_no_job_yet": 0,
+      "state": "none_pending",
+      "ticks_since_apply": 0,
+      "unreadable": 0
+    },
+    "finish_required_met": true,
+    "finish_state": {
+      "already_finished": 24,
+      "blocked_by_material": [],
+      "blocked_total": 0,
+      "hidden": 0,
+      "occupied_by_building": 0,
+      "other_shape": 0,
+      "required_cells": 24,
+      "smoothable": 0,
+      "unreadable": 0
+    },
+    "handle": "site-1",
+    "orientation": "none",
+    "phase": {
+      "applied": true,
+      "buildings": [],
+      "cells": {
+        "carve_dug": 10,
+        "carve_required": 10,
+        "carve_solid": 0,
+        "hidden": 0,
+        "rough": 0,
+        "smooth_done": 15,
+        "smooth_required": 15,
+        "undesignated": 0,
+        "unreadable": 0
+      },
+      "done": true,
+      "label": "office_room_v2_shell",
+      "leaves": [
+        "office_room_v2_shell"
+      ],
+      "mode": "dig",
+      "unread_modes": [],
+      "zone_present": null,
+      "zone_required": false
+    },
+    "phases_applied": [
+      "office_room_v2_shell",
+      "office_room_v2_floor",
+      "office_room_v2_build",
+      "office_room_v2_zone",
+      "office_room_v2_finish"
+    ],
+    "read_failures": [],
+    "remedy": null,
+    "shell": {
+      "carve_cells": 10,
+      "pending_designations": 0,
+      "still_solid": 0
+    },
+    "shell_cells": {
+      "carve_dug": 10,
+      "carve_required": 10,
+      "carve_solid": 0,
+      "done": true,
+      "hidden": 0,
+      "rough": 0,
+      "smooth_done": 24,
+      "smooth_required": 24,
+      "undesignated": 0,
+      "unreadable": 0
+    },
+    "shell_done": true,
+    "site": {
+      "direction": "NE",
+      "distance_tiles": 7,
+      "footprint": {
+        "height": 5,
+        "width": 5
+      },
+      "near_landmark": "Well"
+    },
+    "stall_remedy": null,
+    "stalled": false,
+    "surface": {
+      "by": "df-overseer-surface, room rectangle from the blueprint's own zone section",
+      "enclosure": {
+        "status": "not_enclosed",
+        "w": 3
+      },
+      "finish": {
+        "h": 3
+      },
+      "material": {
+        "ring": 16
+      },
+      "shim_restored": true
+    }
+  },
+  "status_office_room_v2_shell_furniture_pending": {
+    "blueprint": "office-room-v2",
+    "dig": {
+      "blind_no_walkable_neighbour": 0,
+      "designations_with_a_job": 0,
+      "designations_without_a_job": 0,
+      "job_census_error": null,
+      "jobs_claimed_by_a_worker": 0,
+      "jobs_in_site": 0,
+      "pending_dig_designations": 0,
+      "startable_no_job_yet": 0,
+      "state": "none_pending",
+      "ticks_since_apply": 0,
+      "unreadable": 0
+    },
+    "finish_required_met": false,
+    "finish_state": {
+      "already_finished": 15,
+      "blocked_by_material": [],
+      "blocked_total": 0,
+      "hidden": 0,
+      "occupied_by_building": 1,
+      "other_shape": 0,
+      "required_cells": 24,
+      "smoothable": 8,
+      "unreadable": 0
+    },
+    "handle": "site-1",
+    "orientation": "none",
+    "phase": {
+      "applied": true,
+      "buildings": [],
+      "cells": {
+        "carve_dug": 10,
+        "carve_required": 10,
+        "carve_solid": 0,
+        "hidden": 0,
+        "rough": 0,
+        "smooth_done": 15,
+        "smooth_required": 15,
+        "undesignated": 0,
+        "unreadable": 0
+      },
+      "done": true,
+      "label": "office_room_v2_shell",
+      "leaves": [
+        "office_room_v2_shell"
+      ],
+      "mode": "dig",
+      "unread_modes": [],
+      "zone_present": null,
+      "zone_required": false
+    },
+    "phases_applied": [
+      "office_room_v2_shell",
+      "office_room_v2_floor",
+      "office_room_v2_build",
+      "office_room_v2_zone",
+      "office_room_v2_finish"
+    ],
+    "read_failures": [],
+    "remedy": null,
+    "shell": {
+      "carve_cells": 10,
+      "pending_designations": 0,
+      "still_solid": 0
+    },
+    "shell_cells": {
+      "carve_dug": 10,
+      "carve_required": 10,
+      "carve_solid": 0,
+      "done": false,
+      "hidden": 0,
+      "rough": 9,
+      "smooth_done": 15,
+      "smooth_required": 24,
+      "undesignated": 9,
+      "unreadable": 0
+    },
+    "shell_done": false,
+    "site": {
+      "direction": "NE",
+      "distance_tiles": 7,
+      "footprint": {
+        "height": 5,
+        "width": 5
+      },
+      "near_landmark": "Well"
+    },
+    "stall_remedy": null,
+    "stalled": false,
+    "surface": {
+      "by": "df-overseer-surface, room rectangle from the blueprint's own zone section",
+      "enclosure": {
+        "status": "not_enclosed",
+        "w": 3
+      },
+      "finish": {
+        "h": 3
+      },
+      "material": {
+        "ring": 16
+      },
+      "shim_restored": true
+    }
+  },
+  "status_office_room_v2_zone_complete": {
+    "blueprint": "office-room-v2",
+    "dig": {
+      "blind_no_walkable_neighbour": 0,
+      "designations_with_a_job": 0,
+      "designations_without_a_job": 0,
+      "job_census_error": null,
+      "jobs_claimed_by_a_worker": 0,
+      "jobs_in_site": 0,
+      "pending_dig_designations": 0,
+      "startable_no_job_yet": 0,
+      "state": "none_pending",
+      "ticks_since_apply": 0,
+      "unreadable": 0
+    },
+    "finish_required_met": true,
+    "finish_state": {
+      "already_finished": 24,
+      "blocked_by_material": [],
+      "blocked_total": 0,
+      "hidden": 0,
+      "occupied_by_building": 0,
+      "other_shape": 0,
+      "required_cells": 24,
+      "smoothable": 0,
+      "unreadable": 0
+    },
+    "handle": "site-1",
+    "orientation": "none",
+    "phase": {
+      "applied": true,
+      "buildings": [],
+      "cells": {
+        "carve_dug": 0,
+        "carve_required": 0,
+        "carve_solid": 0,
+        "hidden": 0,
+        "rough": 0,
+        "smooth_done": 0,
+        "smooth_required": 0,
+        "undesignated": 0,
+        "unreadable": 0
+      },
+      "done": true,
+      "label": "office_room_v2_zone",
+      "leaves": [
+        "office_room_v2_zone"
+      ],
+      "mode": "zone",
+      "unread_modes": [],
+      "zone_present": true,
+      "zone_required": true
+    },
+    "phases_applied": [
+      "office_room_v2_shell",
+      "office_room_v2_floor",
+      "office_room_v2_build",
+      "office_room_v2_zone",
+      "office_room_v2_finish"
+    ],
+    "read_failures": [],
+    "remedy": null,
+    "shell": {
+      "carve_cells": 10,
+      "pending_designations": 0,
+      "still_solid": 0
+    },
+    "shell_cells": {
+      "carve_dug": 10,
+      "carve_required": 10,
+      "carve_solid": 0,
+      "done": true,
+      "hidden": 0,
+      "rough": 0,
+      "smooth_done": 24,
+      "smooth_required": 24,
+      "undesignated": 0,
+      "unreadable": 0
+    },
+    "shell_done": true,
+    "site": {
+      "direction": "NE",
+      "distance_tiles": 7,
+      "footprint": {
+        "height": 5,
+        "width": 5
+      },
+      "near_landmark": "Well"
+    },
+    "stall_remedy": null,
+    "stalled": false,
+    "surface": {
+      "by": "df-overseer-surface, room rectangle from the blueprint's own zone section",
+      "enclosure": {
+        "status": "not_enclosed",
+        "w": 3
+      },
+      "finish": {
+        "h": 3
+      },
+      "material": {
+        "ring": 16
+      },
+      "shim_restored": true
+    }
+  },
+  "status_office_room_v2_zone_furniture_pending": {
+    "blueprint": "office-room-v2",
+    "dig": {
+      "blind_no_walkable_neighbour": 0,
+      "designations_with_a_job": 0,
+      "designations_without_a_job": 0,
+      "job_census_error": null,
+      "jobs_claimed_by_a_worker": 0,
+      "jobs_in_site": 0,
+      "pending_dig_designations": 0,
+      "startable_no_job_yet": 0,
+      "state": "none_pending",
+      "ticks_since_apply": 0,
+      "unreadable": 0
+    },
+    "finish_required_met": false,
+    "finish_state": {
+      "already_finished": 15,
+      "blocked_by_material": [],
+      "blocked_total": 0,
+      "hidden": 0,
+      "occupied_by_building": 1,
+      "other_shape": 0,
+      "required_cells": 24,
+      "smoothable": 8,
+      "unreadable": 0
+    },
+    "handle": "site-1",
+    "orientation": "none",
+    "phase": {
+      "applied": true,
+      "buildings": [],
+      "cells": {
+        "carve_dug": 0,
+        "carve_required": 0,
+        "carve_solid": 0,
+        "hidden": 0,
+        "rough": 0,
+        "smooth_done": 0,
+        "smooth_required": 0,
+        "undesignated": 0,
+        "unreadable": 0
+      },
+      "done": false,
+      "label": "office_room_v2_zone",
+      "leaves": [
+        "office_room_v2_zone"
+      ],
+      "mode": "zone",
+      "unread_modes": [],
+      "zone_present": false,
+      "zone_required": true
+    },
+    "phases_applied": [
+      "office_room_v2_shell",
+      "office_room_v2_floor",
+      "office_room_v2_build",
+      "office_room_v2_zone",
+      "office_room_v2_finish"
+    ],
+    "read_failures": [],
+    "remedy": null,
+    "shell": {
+      "carve_cells": 10,
+      "pending_designations": 0,
+      "still_solid": 0
+    },
+    "shell_cells": {
+      "carve_dug": 10,
+      "carve_required": 10,
+      "carve_solid": 0,
+      "done": false,
+      "hidden": 0,
+      "rough": 9,
+      "smooth_done": 15,
+      "smooth_required": 24,
+      "undesignated": 9,
+      "unreadable": 0
+    },
+    "shell_done": false,
+    "site": {
+      "direction": "NE",
+      "distance_tiles": 7,
+      "footprint": {
+        "height": 5,
+        "width": 5
+      },
+      "near_landmark": "Well"
+    },
+    "stall_remedy": null,
+    "stalled": false,
+    "surface": {
+      "by": "df-overseer-surface, room rectangle from the blueprint's own zone section",
+      "enclosure": {
+        "status": "not_enclosed",
+        "w": 3
+      },
+      "finish": {
+        "h": 3
+      },
+      "material": {
+        "ring": 16
+      },
+      "shim_restored": true
+    }
+  }
+}

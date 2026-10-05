@@ -114,8 +114,8 @@
 -- Usage: ./dfhack-run df-overseer-blueprint preview TEMPLATE PHASE SITE [LEVEL] [RANK] [RADIUS_TILES]
 -- Usage: ./dfhack-run df-overseer-blueprint apply TEMPLATE PHASE SITE [DRY_RUN] [LEVEL] [RANK] [RADIUS_TILES] [ALLOW_STRANDED]
 -- Usage: ./dfhack-run df-overseer-blueprint sites
--- Usage: ./dfhack-run df-overseer-blueprint status SITE_ID
--- Usage: ./dfhack-run df-overseer-blueprint release SITE_ID [DRY_RUN]
+-- Usage: ./dfhack-run df-overseer-blueprint status SITE_ID [PHASE]
+-- Usage: ./dfhack-run df-overseer-blueprint release SITE_ID [DRY_RUN] [ANY_PENDING]
 
 local json = require('json')
 local landmarks_mod = reqscript('df-overseer-landmarks')
@@ -655,6 +655,133 @@ local function shell_cells(site, leaves_all, failures)
 end
 
 -- ---------------------------------------------------------------------------
+-- Per-phase completion (handoffs/2026-10-05-stage-2b.md, design section 4.3)
+--
+-- `status SITE PHASE` answers "is THIS phase done" from the game, over only
+-- that phase's own leaf sections, so a shell reads done without its floor
+-- phase and furniture reads not done while its construction is pending.
+-- Per leaf mode: dig = shell_cells' own per-cell reads (carve cells dug,
+-- smooth cells smoothed or constructed); build/place = the building at each
+-- cell exists at full construction stage (not merely planned); zone = a
+-- civzone covers every zone cell. Any other grid mode (burrow) has no read
+-- here and is reported in `unread_modes` and holds done false, never assumed.
+-- Tri-state: a read that failed is null and also holds done false.
+-- ---------------------------------------------------------------------------
+
+local function building_stage_complete(bld, failures)
+  local oks, stage = pcall(function() return bld:getBuildStage() end)
+  local okm, max_stage = pcall(function() return bld:getMaxBuildStage() end)
+  if not (oks and okm) then
+    note_failure(failures, "building stage", (oks and max_stage) or stage)
+    return nil
+  end
+  return stage >= max_stage
+end
+
+local function leaf_applied_set(bp, site)
+  local covered = {}
+  for _, p in ipairs(site.phases or {}) do
+    local psec = section_by_label(bp.sections, p.label)
+    local pl = psec and leaf_sections(bp.sections, psec)
+    if pl then for _, l in ipairs(pl) do covered[l.label] = true end end
+  end
+  return covered
+end
+
+local function phase_status(site, bp, phase, failures)
+  if not valid_name(phase) then return nil, "PHASE must be a section label from `plan`" end
+  local sec = section_by_label(bp.sections, phase)
+  if not sec or sec.mode == "notes" or sec.mode == "aliases" or sec.mode == "ignore" then
+    return nil, "no phase '" .. phase .. "' in " .. bp.qname .. " (see plan)"
+  end
+  local leaves, lerr = leaf_sections(bp.sections, sec)
+  if not leaves then return nil, lerr end
+  local covered = leaf_applied_set(bp, site)
+  local applied = true
+  local labels, dig_leaves, unread = {}, {}, {}
+  for _, l in ipairs(leaves) do
+    labels[#labels + 1] = l.label
+    if not covered[l.label] then applied = false end
+    if l.mode == "dig" then dig_leaves[#dig_leaves + 1] = l
+    elseif l.mode ~= "build" and l.mode ~= "place" and l.mode ~= "zone" then
+      unread[#unread + 1] = l.mode
+    end
+  end
+
+  local cells = shell_cells(site, dig_leaves, failures)
+  local dig_done = cells.done
+  cells.done = nil
+
+  local buildings, seen_bld = {}, {}
+  local build_done = true
+  local zone_required, zone_cells_ok, zone_unknown = false, 0, false
+  local zone_cells_total = 0
+  for _, l in ipairs(leaves) do
+    if l.mode == "build" or l.mode == "place" then
+      for _, c in ipairs(l.cells) do
+        local wx, wy = cell_xy(site, c.x, c.y)
+        local kind = c.text
+        if l.mode == "build" then
+          local okk, tok = pcall(building_mod.kind_token_for_key, c.text)
+          if okk and tok then kind = tok end
+        end
+        local okb, bld = pcall(dfhack.buildings.findAtTile, xyz2pos(wx, wy, site.z))
+        local entry
+        if not okb then
+          note_failure(failures, "building at cell", bld)
+          entry = {kind = kind, complete = NULL}
+        elseif not bld then
+          entry = {kind = kind, complete = false}
+        else
+          local idk = bld.id
+          local dedupe = idk ~= nil and ("b" .. tostring(idk)) or nil
+          if not (dedupe and seen_bld[dedupe]) then
+            if dedupe then seen_bld[dedupe] = true end
+            local complete
+            if l.mode == "place" then complete = true   -- a stockpile has no construction stage
+            else complete = building_stage_complete(bld, failures) end
+            entry = {kind = kind, complete = nn(complete)}
+          end
+        end
+        if entry then
+          buildings[#buildings + 1] = entry
+          if entry.complete ~= true then build_done = false end
+        end
+      end
+    elseif l.mode == "zone" then
+      zone_required = true
+      for _, c in ipairs(l.cells) do
+        zone_cells_total = zone_cells_total + 1
+        local wx, wy = cell_xy(site, c.x, c.y)
+        local okz, zones = pcall(dfhack.buildings.findCivzonesAt, xyz2pos(wx, wy, site.z))
+        if not okz then
+          note_failure(failures, "zone at cell", zones)
+          zone_unknown = true
+        elseif zones and #zones > 0 then
+          zone_cells_ok = zone_cells_ok + 1
+        end
+      end
+    end
+  end
+  local zone_present = NULL
+  if zone_required then
+    if zone_cells_ok == zone_cells_total then zone_present = true
+    elseif zone_unknown then zone_present = NULL
+    else zone_present = false end
+  end
+
+  local done = applied and dig_done and build_done and #unread == 0
+    and (not zone_required or zone_present == true)
+  return {
+    label = phase, mode = sec.mode, applied = applied, leaves = labels,
+    cells = cells, buildings = buildings,
+    zone_required = zone_required, zone_present = zone_present,
+    unread_modes = unread,
+    done = done and true or false,
+  }
+end
+
+-- ---------------------------------------------------------------------------
 -- Access: can the dig start at all? (handoffs/2026-09-24-blueprint-access.md)
 --
 -- The live failure (handoffs/2026-09-24-blueprint-access.md, the stalled 2026-09-24 dig): designations on
@@ -1137,7 +1264,7 @@ local function run_phase(name, phase, site_arg, level, rank, radius, dry, allow_
   -- Site: a stored site-N handle, a res-N reservation handle (decision 4:
   -- "blueprint apply of the same template on a reserved site is the
   -- holder"), or a new one found near a landmark.
-  local site, handle, state, from_reservation
+  local site, handle, state, from_reservation, site_level
   if is_handle(site_arg) then
     if level ~= nil or rank ~= nil or radius ~= nil then
       return nil, "LEVEL, RANK and RADIUS_TILES only apply when SITE is a landmark; a handle already fixes the site"
@@ -1150,6 +1277,7 @@ local function run_phase(name, phase, site_arg, level, rank, radius, dry, allow_
         "', not '" .. bp.name .. "'"
     end
     site, handle = s, site_arg
+    site_level = s.level
     result.site = {handle = handle, source = "stored"}
   elseif is_reservation_handle(site_arg) then
     if level ~= nil or rank ~= nil or radius ~= nil then
@@ -1171,6 +1299,7 @@ local function run_phase(name, phase, site_arg, level, rank, radius, dry, allow_
     site = {x = rec.x, y = rec.y, z = rec.z, w = rec.w, h = rec.h,
       orient = rec.orient or "none", bw = rec.bw or rec.w, bh = rec.bh or rec.h, any_hidden = nil}
     from_reservation = site_arg
+    site_level = rec.level
     result.site = {handle = NULL, source = "reservation", reservation = site_arg,
       note = dry and "a real apply registers this as a new site-N handle and marks the reservation in use"
         or "registered below on success",
@@ -1182,6 +1311,7 @@ local function run_phase(name, phase, site_arg, level, rank, radius, dry, allow_
     local s, t, c_ok, an = resolve_new_site(bp, site_arg, level, rank, radius, dig_leaves, carve_needed, failures)
     if not s then return nil, t end
     site, tried, chosen_ok, analysis = s, t, c_ok, an
+    site_level = level or 0
     result.site = {handle = NULL, source = "found", rank = rank or 1,
       note = dry and "a real apply registers this as a new site-N handle"
         or "registered below on success",
@@ -1227,6 +1357,9 @@ local function run_phase(name, phase, site_arg, level, rank, radius, dry, allow_
   result.site.direction = brief.direction
   result.site.distance_tiles = brief.distance_tiles
   result.site.footprint = {width = site.w, height = site.h}
+  -- LEVEL relative to the landmark, the same convention as the LEVEL
+  -- argument; null for a site stored before this field existed.
+  result.site.level = nn(site_level)
 
   -- Reservation check (handoffs/2026-09-30-room-reservations.md decision 3):
   -- refuse any tile of this site that falls inside a reservation this call
@@ -1238,8 +1371,13 @@ local function run_phase(name, phase, site_arg, level, rank, radius, dry, allow_
   -- not gated on dry the way the stranding override is: a preview should
   -- show a reservation conflict just as plainly as a real apply would refuse
   -- it.
+  -- A later phase on a site-N that was carved from a reservation holds that
+  -- reservation too (found in stage 2B: without this every follow-up phase of
+  -- a reserved room was refused by its own reservation, which stays held
+  -- until an explicit unreserve).
+  local holder = from_reservation or (handle and site.reservation) or nil
   local reservation_conflict = reservations_mod.check_tiles(
-    reservations_mod.rect_tiles(site.x, site.y, site.z, site.w, site.h), from_reservation)
+    reservations_mod.rect_tiles(site.x, site.y, site.z, site.w, site.h), holder)
   if reservation_conflict then
     result.blocked = true
     result.blocked_reason = reservation_conflict.message
@@ -1299,7 +1437,7 @@ local function run_phase(name, phase, site_arg, level, rank, radius, dry, allow_
     state.next_id = state.next_id + 1
     state.sites[handle] = {x = site.x, y = site.y, z = site.z, w = site.w, h = site.h,
       orient = site.orient or "none", bw = site.bw or site.w, bh = site.bh or site.h,
-      blueprint = bp.name, phases = {}, reservation = from_reservation}
+      blueprint = bp.name, phases = {}, reservation = from_reservation, level = site_level}
     result.site.handle = handle
     if from_reservation then
       -- Decision 4: the issued site-N handle records the res-N it came
@@ -1351,13 +1489,14 @@ function list_sites()
     local b = site_brief(s)
     out[#out + 1] = {handle = handle, blueprint = s.blueprint, phases_applied = phases,
       footprint = {width = s.w, height = s.h},
-      near_landmark = b.near_landmark, direction = b.direction, distance_tiles = b.distance_tiles}
+      near_landmark = b.near_landmark, direction = b.direction, distance_tiles = b.distance_tiles,
+      reservation = nn(s.reservation)}
   end
   table.sort(out, function(a, b) return a.handle < b.handle end)
   return out
 end
 
-function site_status(handle)
+function site_status(handle, phase)
   if not is_handle(handle) then return nil, "SITE_ID must look like site-3 (see sites)" end
   local state = load_state()
   local site = state.sites[handle]
@@ -1375,8 +1514,15 @@ function site_status(handle)
   local b = site_brief(site)
   local last = (site.phases or {})[#(site.phases or {})]
   local dp = dig_progress(site, failures, last and last.tick or nil)
+  local phase_out = nil
+  if phase ~= nil then
+    local perr
+    phase_out, perr = phase_status(site, bp, phase, failures)
+    if not phase_out then return nil, perr end
+  end
   return {
     handle = handle, blueprint = site.blueprint, phases_applied = phases,
+    phase = phase_out,
     orientation = site.orient or "none",
     dig = dp,
     stalled = dp.state == "stalled",
@@ -1407,7 +1553,7 @@ end
 -- stays as DF made it), an item, a zone or a building. Refused unless the site
 -- is stalled (it is the stall's remedy, not a general cancel) and unless every
 -- phase applied to it was a dig phase. The default is a dry run.
-function release_site(handle, dry_run)
+function release_site(handle, dry_run, any_pending)
   if not is_handle(handle) then return nil, "SITE_ID must look like site-3 (see sites)" end
   local state = load_state()
   local site = state.sites[handle]
@@ -1415,23 +1561,32 @@ function release_site(handle, dry_run)
   local bp, err = load_blueprint(site.blueprint)
   if not bp then return nil, err end
   local dry = truthy_dry_run(dry_run)
+  local any = explicit_true(any_pending)
   local failures = {}
-  local result = {handle = handle, blueprint = bp.name, dry_run = dry, read_failures = failures}
-  local labels = {}
+  local result = {handle = handle, blueprint = bp.name, dry_run = dry, any_pending = any,
+    read_failures = failures}
+  local labels, skipped = {}, {}
   for _, p in ipairs(site.phases or {}) do
     local sec = section_by_label(bp.sections, p.label)
-    if not sec or sec.mode ~= "dig" then
+    if sec and sec.mode == "dig" then
+      labels[#labels + 1] = p.label
+    elseif any then
+      -- ANY_PENDING withdraws dig and smooth designations only. quickfort's
+      -- undo of a planned building or zone is not exercised here, so those
+      -- phases are skipped and named, never silently dropped.
+      skipped[#skipped + 1] = tostring(p.label)
+    else
       result.released = false
       result.refused = "phase '" .. tostring(p.label) .. "' is not a dig phase; release withdraws dig designations only "
         .. "and will not undo a zone, a building or a #meta bundle"
       return result
     end
-    labels[#labels + 1] = p.label
   end
+  if any then result.skipped_phases = skipped end
   local last = (site.phases or {})[#(site.phases or {})]
   local dp = dig_progress(site, failures, last and last.tick or nil)
   result.dig_before = dp
-  if dp.state ~= "stalled" then
+  if dp.state ~= "stalled" and not any then
     result.released = false
     result.refused = "the site is '" .. dp.state .. "', not stalled; release only withdraws designations no dwarf can start"
     return result
@@ -1461,6 +1616,9 @@ function release_site(handle, dry_run)
     result.site_forgotten = true
   end
   result.cannot_undo = "tiles already dug out and walls already smoothed stay as DF made them"
+  if any and #skipped > 0 then
+    result.cannot_undo = result.cannot_undo .. "; planned buildings and zones of the skipped phases are not withdrawn"
+  end
   return result
 end
 
@@ -1519,9 +1677,13 @@ function reserve_site(template, purpose, site_arg, dry_run, level, rank, radius)
     footprint = {width = site.w, height = site.h},
     near_landmark = brief.near_landmark, direction = brief.direction, distance_tiles = brief.distance_tiles,
     orientation = site.orient or "none",
+    level = level or 0,
     dig_can_start = dig_can_start,
     read_failures = failures,
     allowed_kinds = allowed_kinds,
+    -- The finish classification over the template's whole footprint, from the
+    -- tiles as they stand now (the same finish_state `apply` reports).
+    finish_plan = finish_state(site, dig_leaves, failures),
   }
   if #conflicts > 0 then
     local names = {}
@@ -1546,7 +1708,7 @@ function reserve_site(template, purpose, site_arg, dry_run, level, rank, radius)
     x = site.x, y = site.y, z = site.z, w = site.w, h = site.h,
     orient = site.orient or "none", bw = site.bw or site.w, bh = site.bh or site.h,
     blueprint = bp.name, purpose = purpose, wall_cells = wall_cells,
-    allowed_kinds = allowed_kinds,
+    allowed_kinds = allowed_kinds, level = level or 0,
   })
   result.handle = handle
   return result
@@ -1616,8 +1778,8 @@ local USAGE = {
   "usage: df-overseer-blueprint preview TEMPLATE PHASE SITE [LEVEL] [RANK] [RADIUS_TILES]",
   "usage: df-overseer-blueprint apply TEMPLATE PHASE SITE [DRY_RUN] [LEVEL] [RANK] [RADIUS_TILES] [ALLOW_STRANDED]",
   "usage: df-overseer-blueprint sites",
-  "usage: df-overseer-blueprint status SITE_ID",
-  "usage: df-overseer-blueprint release SITE_ID [DRY_RUN]",
+  "usage: df-overseer-blueprint status SITE_ID [PHASE]",
+  "usage: df-overseer-blueprint release SITE_ID [DRY_RUN] [ANY_PENDING]",
   "usage: df-overseer-blueprint reserve TEMPLATE PURPOSE SITE [DRY_RUN] [LEVEL] [RANK] [RADIUS_TILES]",
   "usage: df-overseer-blueprint reservations",
   "usage: df-overseer-blueprint unreserve RES_ID [DRY_RUN]",
@@ -1638,9 +1800,9 @@ elseif cmd == "apply" then
 elseif cmd == "sites" then
   print(encode(list_sites()))
 elseif cmd == "status" then
-  if not args[2] then print(USAGE[5]) else emit(site_status(args[2])) end
+  if not args[2] then print(USAGE[5]) else emit(site_status(args[2], args[3])) end
 elseif cmd == "release" then
-  if not args[2] then print(USAGE[6]) else emit(release_site(args[2], args[3])) end
+  if not args[2] then print(USAGE[6]) else emit(release_site(args[2], args[3], args[4])) end
 elseif cmd == "reserve" then
   if not (args[2] and args[3] and args[4]) then print(USAGE[7])
   else emit(reserve_site(args[2], args[3], args[4], args[5], tonumber(args[6]), tonumber(args[7]), tonumber(args[8]))) end
