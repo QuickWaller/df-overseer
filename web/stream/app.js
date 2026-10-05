@@ -479,6 +479,14 @@ function checkRows(list) {
   }));
 }
 
+/** The words of a lesson (`lessons.json`, dfqueue/lessons.py). */
+function lessonText(l) {
+  if (l.kind === "new") return `Noted: ${l.title}`;
+  if (l.result === "worked") return `Confirmed “${l.title}” worked`;
+  if (l.result === "did_not_work") return `Found “${l.title}” did not work`;
+  return `Recorded an outcome on “${l.title}”`;
+}
+
 /** An executed item's write calls (`feed.public_actions`) as the rows the
  * "Acted" list shows: the tool's display name, what it targeted, the outcome. */
 function actedRows(list) {
@@ -597,6 +605,7 @@ class StreamPage {
     this.itemsById = new Map();
     this.projects = { thread_to_project: {}, projects: {} };
     this.status = null;
+    this.lessons = null; // lessons.json: gotchas written or confirmed per run (dfqueue/lessons.py)
     this.runs = null; // runs.json: summaries and "what it checked" (dfqueue/live.py)
     this.statusFetchedAt = 0;
     this.liveStripEl = el("div", { class: "e-live-strip", hidden: "" });
@@ -670,6 +679,7 @@ class StreamPage {
     );
     const status = await fetchJson(`${root}/status.json`).catch(() => null);
     this.runs = await fetchJson(`${root}/runs.json`).catch(() => null);
+    this.lessons = await fetchJson(`${root}/lessons.json`).catch(() => null);
     if (!this.siteText) this.siteText = await fetchJson(`${this.dataRoot}/site.json`).catch(() => ({}));
 
     this.head = head;
@@ -717,8 +727,10 @@ class StreamPage {
       // and redraw only when it really changed (as_of ticks every cycle).
       const runs = await fetchJson(`${this._feedRoot()}/runs.json`).catch(() => null);
       const key = (r) => JSON.stringify(r, (k, v) => (k === "as_of" ? undefined : v));
-      if (key(runs) !== key(this.runs)) {
+      const lessons = await fetchJson(`${this._feedRoot()}/lessons.json`).catch(() => null);
+      if (key(runs) !== key(this.runs) || key(lessons) !== key(this.lessons)) {
         this.runs = runs;
+        this.lessons = lessons;
         this._render();
       }
     } catch (e) {
@@ -1195,12 +1207,15 @@ class StreamPage {
       const trigger = first.reply_to && byId.get(first.reply_to);
       const answering = trigger && groupOf.get(trigger.id) !== g && first.kind === "answer"
         ? `woke to answer ${speakerName(trigger)}'s question` : null;
+      const lessonPanels = ((this.lessons && this.lessons.lessons) || [])
+        .filter((l) => l.run_id === g.run.run_id && l.thread === thread)
+        .map((l) => this._lessonPanel(l));
       return this._turnBlock(g.run, g.items.flatMap((i) => {
         const r = this._receipt(i);
         const q = quoteFor(i);
         const line = statusAfter(i);
         return [q ? el("div", { class: "fquoted" }, [q, r]) : r, line].filter(Boolean);
-      }), g.items, answering);
+      }).concat(lessonPanels), g.items, answering);
     });
     // Status changes are full-width lines placed right after the record
     // that caused them, even inside a turn (the user's call, 2026-10-05).
@@ -1420,6 +1435,14 @@ class StreamPage {
         el("span", { class: "fwhen", text: item.game_date ? shortDate(item.game_date) : "" }),
       ]),
       el("div", { class: "frbody" }, lines),
+    ]);
+  }
+
+  /** A lesson the run's agent wrote or confirmed, as a receipt panel. */
+  _lessonPanel(l) {
+    return el("div", { class: "freceipt flesson" }, [
+      el("div", { class: "frtop" }, [el("span", { class: "fkindw", text: "Lesson" })]),
+      el("div", { class: "frbody" }, [el("div", { class: "frtext", text: lessonText(l) })]),
     ]);
   }
 
