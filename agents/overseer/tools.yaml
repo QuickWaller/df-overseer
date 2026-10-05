@@ -603,9 +603,9 @@ write:
       same ruling. Restricted to the roster's sole_writer the same way
       queue.rule/queue.executed/queue.escalate are (dfmcp/roles.py rule 6,
       reusing sole_writer_only). Omit 'steps' for a plain one-step project
-      wrapping the whole ruling -- every proposal ruled on before this tool
-      existed keeps working the same way if this call is skipped or is a
-      no-steps call.
+      wrapping the whole ruling. Since 2026-10-05 queue.executed is refused
+      for an accepted ruling with no project, so this call is no longer
+      skippable (older accepted rulings get theirs on demand).
 
   - id: "queue.amend"
     status: exists
