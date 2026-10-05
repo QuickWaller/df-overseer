@@ -328,3 +328,12 @@ def test_substitute_refuses_a_missing_variable():
     assert ad.substitute({"a": ["x-$h"]}, {"h": "1"}) == {"a": ["x-1"]}
     with pytest.raises(ad.ActionDataError):
         ad.substitute("$nope", {})
+
+
+def test_the_fixture_check_can_fail(specs):
+    """Verify the verification: a declaration naming a path no output has must
+    be caught by the same check the fixture tests use."""
+    data = fx("bedroom-cell-v1")
+    wrong = ad.parse("x.y", {"verdict": {"dry_ok": "would_reserv"}, "dry_run_echo": "dry_run"})
+    missing = [p for p in ad.declared_paths(wrong)["dry"] if not ad.get_path(data["reserve_dry_run"], p)[0]]
+    assert missing == ["would_reserv"]
