@@ -481,6 +481,13 @@ _ARG_DESCRIPTIONS: Dict[str, str] = {
         "never make a dig job for it. Anything but the word true, or omitting "
         "it, keeps the gate. When used, the result says stranded_override_used."
     ),
+    "blueprint.ANY_PENDING": (
+        "Optional, give it last. The word true withdraws every outstanding dig "
+        "and smooth designation of the site, not only a stalled one's; a tile "
+        "already dug is never touched. Planned buildings and zones are not "
+        "withdrawn (reported as skipped_phases). Anything but the word true, "
+        "or omitting it, keeps the stalled-only rule."
+    ),
     "blueprint.DRY_RUN": (
         "Optional. true (the default when omitted) asks quickfort what it "
         "would do and writes nothing; only the word false performs the real "

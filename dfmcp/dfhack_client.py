@@ -170,6 +170,14 @@ class DFHackConnectionError(Exception):
     use (see module docstring)."""
 
 
+class DFHackNotSentError(DFHackConnectionError):
+    """A `DFHackConnectionError` raised **before** any byte of the request was
+    written (the pool could not connect, the connection was already closed).
+    The command certainly did not run, so a caller that must not guess about a
+    mutating call (the conductor's executor, handoffs/2026-10-06-stage-2c.md)
+    can retry it; every other `DFHackConnectionError` may have been sent."""
+
+
 class DFHackCallError(Exception):
     """RunCommand completed but returned RPC_REPLY_FAIL. Carries the raw
     `command_result` (`CR_*`) code in `.command_result` -- branch on that
@@ -419,7 +427,10 @@ class DFHackConnection:
                 f"unexpected handshake reply: magic={magic!r} version={version}"
             )
 
-    async def run_command(self, command: str, arguments: Optional[Sequence[str]] = None) -> str:
+    async def run_command(
+        self, command: str, arguments: Optional[Sequence[str]] = None, *,
+        timeout: Optional[float] = None,
+    ) -> str:
         """Run one df-overseer-* console command over RunCommand (method id
         1, no BindMethod needed -- research doc §3) and return its printed
         text output, concatenated in wire order.
@@ -430,13 +441,20 @@ class DFHackConnection:
         discarded) before reuse -- it will not repair itself.
         """
         if self._closed or self._writer is None or self._reader is None:
-            raise DFHackConnectionError("run_command called on a closed connection")
+            raise DFHackNotSentError("run_command called on a closed connection")
 
         arguments = list(arguments or [])
         payload = _encode_run_command_request(command, arguments)
         header = struct.pack(_HEADER_FORMAT, METHOD_RUN_COMMAND, len(payload))
 
         async with self._lock:
+            # `timeout` overrides the per-read bound for this one call (a slow
+            # tool legitimately takes 45 to 80 s under load; the default 10 s
+            # would abandon it mid-run). Restored in `finally`; the lock makes
+            # the swap safe.
+            saved_timeout = self._timeout
+            if timeout is not None:
+                self._timeout = timeout
             try:
                 self._writer.write(header + payload)
                 await self._drain()
@@ -462,6 +480,8 @@ class DFHackConnection:
             except (OSError, asyncio.IncompleteReadError, asyncio.TimeoutError) as exc:
                 await self._force_close()
                 raise DFHackConnectionError(f"connection failed mid-request: {exc}") from exc
+            finally:
+                self._timeout = saved_timeout
 
     async def close(self) -> None:
         """Send RPC_REQUEST_QUIT and close the socket. Per research doc §2,
@@ -569,27 +589,30 @@ class DFHackConnectionPool:
         if conn.is_closed:
             try:
                 await conn.connect()
-            except DFHackConnectionError:
+            except DFHackConnectionError as exc:
                 # Put it back closed so the pool's total count never shrinks
                 # -- the next acquire (this call's or another's) gets to try
                 # again once DFHack is back. See class docstring.
                 self._available.put_nowait(conn)
-                raise
+                raise DFHackNotSentError(str(exc)) from exc
         return conn
 
     def _release(self, conn: DFHackConnection) -> None:
         self._available.put_nowait(conn)
 
-    async def run_command(self, command: str, arguments: Optional[Sequence[str]] = None) -> str:
+    async def run_command(
+        self, command: str, arguments: Optional[Sequence[str]] = None, *,
+        timeout: Optional[float] = None,
+    ) -> str:
         """Run one command on whichever pooled connection is free next,
         blocking if all `size` are currently busy. Use `run_many` instead
         when several independent calls should be issued in the same
         suspend window."""
         if not self._started:
-            raise DFHackConnectionError("pool.start() was not called")
+            raise DFHackNotSentError("pool.start() was not called")
         conn = await self._acquire()
         try:
-            return await conn.run_command(command, arguments)
+            return await conn.run_command(command, arguments, timeout=timeout)
         finally:
             self._release(conn)
 
