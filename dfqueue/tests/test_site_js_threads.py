@@ -103,25 +103,26 @@ def test_event_wording_for_finished_failed_and_hold():
 # ---- the thread DOM: first-level replies open, deeper ones closed; state survives ---
 
 
-def test_first_level_open_deeper_closed_toggle_and_survive_a_rerender():
+def test_turn_replies_open_by_default_toggle_and_survive_a_rerender():
     expr = r"""
       const page = Object.create(StreamPage.prototype);
       page.projects = { projects: {}, thread_to_project: {} };
+      page.runs = DATA.runs;
       const hiddenBoxes = () => { const out = []; const walk = (n) => { if (n.className === "freplies") out.push(n.hidden); n.children.forEach(walk); }; walk(thread[0]); return out; };
-      let thread = page._conversationEl(DATA);
+      let thread = page._conversationEl(DATA.items);
       const before = hiddenBoxes();
       const toggle = (() => { let f = null; const walk = (n) => { if (!f && n.className === "ftoggle") f = n; n.children.forEach(walk); }; walk(thread[0]); return f; })();
       const label0 = toggle.querySelector(".ftl").textContent;
       toggle.listeners.click();
       const label1 = toggle.querySelector(".ftl").textContent;
-      thread = page._conversationEl(DATA);
+      thread = page._conversationEl(DATA.items);
       return { before, label0, label1, after: hiddenBoxes() };
     """
-    res = _run(expr, THREAD)
-    assert res["before"] == [False, True]           # root's replies open, the ask's answer closed
-    assert res["label0"] == "- 4 replies"
-    assert res["label1"] == "+ 4 replies"
-    assert res["after"] == [True, True]             # the closed state survived the re-render
+    res = _run(expr, {"items": THREAD, "runs": RUNS})
+    assert res["before"] == [False, False]          # each turn's replies start open
+    assert res["label0"] == "- 1 reply"
+    assert res["label1"] == "+ 1 reply"
+    assert res["after"] == [True, False]            # the closed state survived the re-render
 
 
 # ---- the board list: every proposal, one entry per thread -------------------------
@@ -204,9 +205,8 @@ def test_a_run_becomes_a_turn_block_with_its_summary_holding_what_it_wrote():
     """
     res = _run(expr, {"items": THREAD, "runs": RUNS})
     assert "Filed a proposal." in res["text"] and "woke for ask open · 6 min" in res["text"]
-    assert any(t.endswith("'s turn") for t in res["text"])
-    assert res["turns"] >= 1
-    assert res["tier1"] == 1  # one reply group under the opening post
+    assert "Architect's turn" in res["text"] and "Overseer's turn" in res["text"]
+    assert res["turns"] == 2  # one root-level block per run, nothing nested across turns
 
 
 def test_what_it_checked_comes_from_calls_by_record_with_counts_and_errors():

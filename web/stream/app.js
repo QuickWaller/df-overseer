@@ -1065,71 +1065,83 @@ class StreamPage {
    * `item.thinking`, on the public page too (the user's call, 2026-10-05;
    * openclaw keeps no reasoning text yet, so it is empty on real data). The tree and
    * the event wording are `threadTree` and `eventLine`, tested under node. */
-  /** The thread grouped by turn (the user's call, 2026-10-05): each agent
-   * run that wrote here is one block, headed by who, why it woke and how
-   * long it took, with its summary and thinking, holding everything that run
-   * wrote in this thread. Items no reported run claims stand alone. Direct
-   * answers still nest under their question. */
+  /** The thread as a sequence of turns (the user's call, 2026-10-05):
+   * every agent run that wrote here is one root-level block, in order,
+   * opening with why it woke, its summary and its thinking, with what that
+   * run wrote under it as replies. Items no reported run claims (a human's
+   * comment, older records) stand alone at the root. Nothing nests across
+   * turns: a post that answers another turn's post quotes it instead. */
   _conversationEl(items) {
-    const { root, kids } = threadTree(items);
-    if (!root) return [el("div", { class: "fthread" }, [])];
+    const sorted = [...items].sort((a, b) => (a.seq || 0) - (b.seq || 0));
+    if (!sorted.length) return [el("div", { class: "fthread" }, [])];
+    const thread = sorted[0].thread;
+    const byId = new Map(sorted.map((i) => [i.id, i]));
     const runOf = new Map();
-    const runs = (this.runs && this.runs.runs) || [];
-    runs.forEach((run) => (run.records || []).forEach((r) => {
-      if (r.thread === root.thread && !runOf.has(r.id)) runOf.set(r.id, run);
+    ((this.runs && this.runs.runs) || []).forEach((run) => (run.records || []).forEach((r) => {
+      if (r.thread === thread && !runOf.has(r.id)) runOf.set(r.id, run);
     }));
     this._replyState = this._replyState || new Map();
-    const renderItem = (item, depth) => {
-      const node = this._threadEvent(item) || this._threadPost(item);
-      const children = kids.get(item.id) || [];
-      if (!children.length || item === root) return node;
-      return this._repliesBlock(item.id, node, children.map((c) => renderItem(c, depth + 1)), children, depth);
-    };
-    // Group the opening post's replies into turns: every item a run wrote
-    // shares that run's one block, placed where its first item falls.
     const groups = [];
     const byRun = new Map();
-    (kids.get(root.id) || []).forEach((item) => {
+    sorted.forEach((item) => {
       const run = runOf.get(item.id) || null;
       if (run && byRun.has(run)) { byRun.get(run).items.push(item); return; }
       const g = { run, items: [item] };
       if (run) byRun.set(run, g);
       groups.push(g);
     });
-    const blocks = groups.map((g) => g.run
-      ? this._turnBlock(g.run, g.items.map((i) => renderItem(i, 1)))
-      : renderItem(g.items[0], 1));
-    const rootRun = runOf.get(root.id);
-    const opening = rootRun
-      ? this._turnBlock(rootRun, [this._threadPost(root)])
-      : this._threadPost(root);
-    const replies = (kids.get(root.id) || []);
-    const body = replies.length
-      ? this._repliesBlock(root.id, opening, blocks, replies, 0)
-      : opening;
-    return [el("div", { class: "fthread" }, [body])];
+    const groupOf = new Map();
+    groups.forEach((g) => g.items.forEach((i) => groupOf.set(i.id, g)));
+    // A post answering something written in a different turn quotes it.
+    const quoteFor = (item) => {
+      const target = item.reply_to && byId.get(item.reply_to);
+      if (!target || groupOf.get(target.id) === groupOf.get(item.id)) return null;
+      if (!["answer", "amend"].includes(item.kind) && target.kind !== "ask") return null;
+      const what = { ask: "question", proposal: "proposal", ruling: "ruling", project: "plan" }[target.kind] || target.kind;
+      return el("div", { class: "fquote" }, [
+        el("span", { class: "fquotewho", style: `color:${ROLE_COLORS[target.role] || "var(--text)"}`, text: `${speakerName(target)}'s ${what}: ` }),
+        el("span", { text: this._bodyText(target) }),
+      ]);
+    };
+    const renderItem = (item) => {
+      const node = this._threadEvent(item) || this._threadPost(item);
+      const q = quoteFor(item);
+      return q ? el("div", { class: "fquoted" }, [q, node]) : node;
+    };
+    const blocks = groups.map((g) => {
+      if (!g.run) return renderItem(g.items[0]);
+      const first = g.items[0];
+      const trigger = first.reply_to && byId.get(first.reply_to);
+      const answering = trigger && groupOf.get(trigger.id) !== g && first.kind === "answer"
+        ? `woke to answer ${speakerName(trigger)}'s question` : null;
+      return this._turnBlock(g.run, g.items.map(renderItem), g.items, answering);
+    });
+    return [el("div", { class: "fthread" }, blocks)];
   }
 
-  /** One agent turn: a header line, the run's summary and thinking, then
-   * what it wrote, indented. */
-  _turnBlock(run, inner) {
+  /** One agent turn: who, why it woke and how long, its summary and
+   * thinking, then what it wrote as replies (open by default). */
+  _turnBlock(run, rendered, items, answering) {
     const color = ROLE_COLORS[run.role] || "var(--text)";
-    const name = roleTitle(run.role);
-    const meta = [wakeWords(run.wake_reason), durationWords(run.duration_s)].filter(Boolean).join(" · ");
-    const head = el("div", { class: "fturnhead" }, [
-      el("span", { class: "fturnwho", style: `color:${color}`, text: `${name}'s turn` }),
-      el("span", { class: "fwhen", text: meta }),
-    ]);
-    const parts = [head];
-    if (run.summary) parts.push(el("div", { class: "fturnsum", text: run.summary }));
+    const meta = [answering || wakeWords(run.wake_reason), durationWords(run.duration_s)].filter(Boolean).join(" · ");
+    const head = [
+      el("div", { class: "fturnhead" }, [
+        el("span", { class: "fav", style: `color:${color}`, text: roleTitle(run.role).charAt(0) }),
+        el("span", { class: "fturnwho", style: `color:${color}`, text: `${roleTitle(run.role)}'s turn` }),
+        el("span", { class: "fwhen", text: meta }),
+      ]),
+    ];
+    if (run.summary) head.push(el("div", { class: "fturnsum", text: run.summary }));
     if (run.thinking) {
-      parts.push(el("details", { class: "fx" }, [
+      head.push(el("details", { class: "fx" }, [
         el("summary", { text: "Thinking" }),
         el("div", { class: "fthink", text: run.thinking }),
       ]));
     }
-    parts.push(el("div", { class: "fturnbody" }, inner));
-    return el("div", { class: "fturn", style: `--turn:${color}` }, parts);
+    const node = el("div", { class: "fturntop" }, head);
+    return el("div", { class: "fturn", style: `--turn:${color}` }, [
+      this._repliesBlock(`turn:${run.run_id}`, node, rendered, items, 0),
+    ]);
   }
 
   /** A node with its replies behind a "+ N replies" toggle. The opening

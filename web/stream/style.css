@@ -588,3 +588,12 @@ a.tagchip:hover { border-color: var(--text); }
 .fturnwho { font-weight: 700; letter-spacing: .02em; }
 .fturnsum { color: var(--muted); font-size: 12.5px; }
 .fturnbody { display: flex; flex-direction: column; }
+/* Turns at the root; a quote marks a post answering another turn. */
+.fthread { gap: 10px; }
+.fturn { margin: 0; padding: 8px 0 4px 12px; }
+.fturntop { display: flex; flex-direction: column; gap: 5px; }
+.fturnhead { align-items: center; }
+.fturnhead .fav { width: 22px; height: 22px; font-size: 11px; }
+.fquoted { display: flex; flex-direction: column; gap: 2px; padding-top: 6px; }
+.fquote { margin-left: 38px; border-left: 2px solid var(--line-strong); padding: 1px 0 1px 8px; font-size: 11.5px; color: var(--faint); }
+.fquotewho { font-weight: 600; }
