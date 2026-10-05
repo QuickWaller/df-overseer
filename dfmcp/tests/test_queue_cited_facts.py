@@ -256,3 +256,38 @@ class TestPendingBrief:
         await _file(db, "architect", "S" * 200 + " tail words", None, rationale="R" * 5000)
         _, out = await _brief(db, None)
         assert len(out["proposals"][0]["rationale"]) <= queue_tools.BRIEF_RATIONALE_MAX
+
+
+class TestAllowlistsForStageOne:
+    """The Overseer rules on cited facts instead of re-reading stocks; proposers
+    keep the reads they cite; only the conductor holds the brief."""
+
+    def _roster(self):
+        from dfmcp.registry import load_registry
+        from dfmcp.roles import load_roster
+        from dfmcp import conductor_tools, doctrine_tools, gotchas_tools, knowledge_tools, series_tools
+
+        native = {
+            **queue_tools.NATIVE_TOOLS, **doctrine_tools.NATIVE_TOOLS, **series_tools.NATIVE_TOOLS,
+            **gotchas_tools.NATIVE_TOOLS, **knowledge_tools.NATIVE_TOOLS, **conductor_tools.NATIVE_TOOLS,
+        }
+        return load_roster(load_registry(native_tools=native))
+
+    async def test_overseer_has_no_stock_reads_but_proposers_do(self):
+        roster = self._roster()
+        stock_reads = ("stocks.food-drink", "stocks.seeds", "stocks.availability")
+        for tool in stock_reads:
+            assert not roster.roles["overseer"].allows(tool), tool
+        for role in ("architect", "quartermaster"):
+            for tool in stock_reads:
+                assert roster.roles[role].allows(tool), (role, tool)
+
+    async def test_only_the_conductor_holds_pending_brief(self):
+        roster = self._roster()
+        holders = [r for r, perms in roster.roles.items() if perms.allows(queue_tools.QUEUE_PENDING_BRIEF)]
+        assert holders == ["conductor"]
+
+    async def test_per_role_tool_counts(self):
+        roster = self._roster()
+        counts = {r: len(p.read) + len(p.write) for r, p in roster.roles.items()}
+        assert counts["conductor"] == 23 and counts["overseer"] == 97
