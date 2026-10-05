@@ -66,3 +66,32 @@ grace, 1800 s alert interval).
 
 The verdict tool, the watchdog rule, the charter paragraph and the strip
 alerts built with tests, deploy targets listed, and a Result section here.
+
+## Result
+
+### Plan (task 1, written before building)
+
+Verdict design. The conductor sees only tool NAMES from a run
+(`toolSummary.tools`), never arguments, so a true/false verdict cannot be read
+from the run envelope. The verdict therefore lives server-side, where the
+conductor can read it mechanically over the MCP connection it already holds:
+
+- `pause.verdict` (native, Overseer only via `sole_writer_only`): `resume`
+  (bool, required) and `reason` (one line, required). The server stamps the
+  time and stores one row in a small SQLite file beside the queue database
+  (`<stem>.pause.sqlite3`). It does nothing to the fort and cannot resume it.
+- `pause.verdict_read` (native, conductor only, allowlist plus a handler
+  refusal): `since_id` returns the verdicts written after that id plus the
+  latest id. The conductor reads a baseline id before the Overseer run and the
+  verdicts after it, so only a verdict from THIS run counts (no clock
+  comparison across hosts).
+- Both live in `dfmcp/conductor_tools.py` (the conductor-owned native module),
+  so the existing native-tool wiring picks them up.
+- Watchdog rule (`finish_after_overseer`): resume (once, tick verified) only
+  when the run was clean, did not escalate, and the last new verdict has
+  `resume: true`. A `false` verdict, no verdict, an unreadable verdict, or an
+  escalation keeps the fort paused and raises an alert. The tripwire branch is
+  untouched. The Overseer gains no `clock.resume`.
+- Site: `pause_watch` status carries `alert` (reason, since) and
+  `waiting_on_human` (the plain-pause grace wait) through `dfqueue/live.py`
+  into the strip on `web/stream/`.
