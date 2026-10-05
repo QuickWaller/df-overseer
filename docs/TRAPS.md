@@ -720,3 +720,23 @@ has no "someone unstuck it on VNC first" fallback, and a real tripwire pause
 is told apart from this case only by the `tripwire` key, a check that must
 stay strict. See `handoffs/2026-09-28-noble-succession-popup-research.md` and
 `decisions/DECISIONS.md` 2026-09-16/2026-09-28.
+
+**Update 2026-10-05 (`handoffs/2026-10-05-pause-safety.md`): the "clean flip"
+reading above is doubtful, and the "never in `conductor.service`" rule is
+superseded.** Read live on the install: `FORT_POSITION_SUCCESSION` carries the
+game's own `DO_MEGA` flag (`df.global.d_init.announcements.flags[type]`), 35
+types do, and **none** carries `PAUSE`. So the 2026-09-28 pause was almost
+certainly a mega popup sitting in `world.status.popups`, which the user had
+clicked away on VNC before the resume test ran (the test's own caveat). A mega
+popup renders inside `viewscreen_dwarfmodest`: the viewscreen type and the
+focus string (`dwarfmode/Default`) cannot see it, only the popups vector can.
+The unattended answer is `df-overseer-pause.lua` (`why`, `dismiss`) plus the
+conductor's pause watchdog (`conductor/pause_watch.py`,
+`conductor/pause_policy.yaml`): dismissing a box a player could dismiss is
+automatic, resuming is allowed only for a cause on a data list and only after
+the tick is verified to move, once per pause, and never over a latched
+tripwire or an Overseer escalation (register 2026-10-01). Everything else
+keeps the fort paused and wakes the Overseer or alerts the human. **Unverified
+live until the supervised test in that handoff runs**: that the Okay click
+closes a real mega popup, and that a real DO_MEGA pause is a popup rather than
+a bare flip.

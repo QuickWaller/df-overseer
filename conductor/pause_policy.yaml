@@ -1,0 +1,63 @@
+# The pause watchdog's policy, held as DATA (handoffs/2026-10-05-pause-safety.md;
+# register 2026-10-01, "No pause goes unowned; harmless self-pauses
+# auto-resume"). conductor/pause_watch.py never branches on an announcement
+# name: it looks the names up here. Adding a harmless kind is one line.
+#
+# Announcement names are df.announcement_type names as `pause.why` reports
+# them (the game's own list; this install's DO_MEGA set was read live on
+# 2026-10-05, 35 types). A type on neither list is UNKNOWN and is treated as
+# a hold: the fort stays paused and the Overseer is woken. Nothing on the
+# harmless list can ever resume over a latched tripwire or an Overseer
+# escalation: those are checked before this list is consulted.
+
+schema_version: 1
+
+# Types whose pause is a notice, not a threat: resuming once (and verifying
+# the tick moves) is what a player would do. The Mega-flagged "arrival" types
+# that name a threat (megabeast, werebeast, night attack, undead, ambush,
+# crime witness, endgame, deity curse, emergency tactical control) are
+# deliberately absent.
+harmless_announcements:
+  - FORT_POSITION_SUCCESSION    # the one confirmed live case, 2026-09-28
+  - FIRST_CARAVAN_ARRIVAL
+  - MONARCH_ARRIVAL
+  - HASTY_MONARCH
+  - SATISFIED_MONARCH
+  - MOUNTAINHOME
+  - NEW_HOLDING
+  - NEW_MARKET_LINK
+  - MADE_ARTIFACT
+  - NAMED_ARTIFACT
+  - STRUCK_DEEP_METAL
+  - FEATURE_DISCOVERY
+  - GAIN_SITE_CONTROL
+
+# `pause.why` looks this far back (game ticks) for DO_MEGA/PAUSE reports.
+cause_window_ticks: 1200
+
+# A harmless report only explains a pause that began about when it was
+# written (ticks between the report and the fort's current tick). Stops a
+# human's deliberate pause from being resumed because a notice happened to
+# be in the window.
+cause_slack_ticks: 120
+
+# Most popup boxes closed per pause.dismiss call ("More" chains boxes).
+dismiss_cap: 5
+
+# A plain pause nothing explains: a human on VNC or a supervised script may
+# have done it, so wait this long (real seconds) before treating it as a hold.
+plain_pause_grace_seconds: 600
+
+# A pause that is unresolved (held, unowned, or owned by an escalation) for
+# this long (real seconds) alerts the human, and again every interval.
+liveness_limit_seconds: 1800
+
+# Resume-and-verify: after clock.resume, wait this long (real seconds) and
+# require the tick to have advanced by at least this many ticks. One attempt
+# per pause episode, never a loop.
+verify_wait_seconds: 3
+verify_min_ticks: 1
+
+# Not paused but the tick has not moved between cycles for this long (real
+# seconds): the fort is frozen behind something (2026-09-16).
+frozen_after_seconds: 60

@@ -120,6 +120,15 @@ read:
       reachable ahead of that, the same order queue.grade/queue.overview
       were granted in. One line per project (status, target counts, the top
       blocker's reason), never the whole graph.
+  - id: "pause.why"
+    status: exists
+    note: >-
+      Added handoffs/2026-10-05-pause-safety.md. Why the fort is paused or
+      not advancing: latch, pending popups with their text, the screen, and
+      recent DO_MEGA/PAUSE announcements by type name. Read by the pause
+      watchdog (conductor/pause_watch.py) in a cycle where the fort is paused
+      with no tripwire, or the tick has stopped. Read-only, player-visible
+      facts only. Granted only here.
 
 write:
   - id: "clock.set-speed"
@@ -172,3 +181,10 @@ write:
       why a role woke. Writes only to its own run store, never the fort.
       Granted only here (the handler also refuses any other role). The
       conductor treats a failed report as a log line, never a cycle failure.
+  - id: "pause.dismiss"
+    status: exists
+    note: >-
+      Added handoffs/2026-10-05-pause-safety.md. Closes the popup boxes a
+      player could close (Okay, More, a help box) and reports what each said.
+      Never resumes and never touches a latch. In dfmcp/roles.py's
+      SYSTEM_CLASS_TOOL_IDS, so only a role of kind system may hold it.

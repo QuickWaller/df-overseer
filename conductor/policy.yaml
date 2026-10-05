@@ -139,6 +139,13 @@ wake_reasons:
   tripwire:
     clock: paused
     wakes: [overseer]
+  # handoffs/2026-10-05-pause-safety.md: the pause watchdog
+  # (conductor/pause_watch.py) wakes the Overseer for a pause no tripwire
+  # explains whose cause is a threat, an unknown announcement type, or a
+  # plain pause past its grace period. The fort stays paused through the run.
+  unexplained_pause:
+    clock: paused
+    wakes: [overseer]
 
 # Per-role cap (real seconds) on one `agent exec` run; roles not listed use
 # CONDUCTOR_ROLE_TIMEOUT_SECONDS (default 600). First real cycle 2026-09-25
