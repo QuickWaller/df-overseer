@@ -55,4 +55,83 @@ facts instead of rediscovering them.
 
 ## Result
 
-(executor fills this in)
+### 1. Measurement (journal 05:20 to 05:52 UTC, 133 tool calls, plus the four runs)
+
+Four role runs in the window: run-0001 quartermaster (stalled_order, 483 s),
+run-0002 architect (prediction_graded, 342 s), run-0003 quartermaster
+(prediction_graded, 195 s), run-0004 overseer (queue_pending, 645 s). No
+consultant run. Run durations are from `runs-public.json`; calls are from the
+journal's `tools/call` lines, split by role and gap. (Captured thinking is
+truncated to about 12k characters per run, so its opening lookups are the
+reliable part.) The conductor's own 33 calls are the cycle's Tier 0 reads.
+
+What the briefing carried then: vitals (alive, dead, worst hunger/thirst,
+warning count), the diff, queue ids, the stuck-job lines past threshold, the
+wake reason. It did not carry stocks, orders, or any per-item count.
+
+Read calls per run (n = how often; "same" = repeats of an identical call):
+
+| read | run-0001 QM | run-0003 QM | run-0002 arch | run-0004 over | in briefing? |
+|---|---|---|---|---|---|
+| stocks.food-drink | 1 | 1 | 1 | 1 | no (4 of 4 runs) |
+| orders.list | 1 | 1 | 1 | 1 | no (conductor reads it, never passes it) |
+| stuckjobs.find | 1 | 1 | 1 | 1 | partly (lines only past threshold) |
+| overview.get | 1 | 1 | 1 | 0 | no (fort summary) |
+| stocks.availability | 3 (BOULDER, BARREL, PLANT) | 3 (BARREL, DRINK, PLANT) | 0 | 2 (WOOD, BED) | no (7 calls; BARREL and PLANT asked in both QM runs) |
+| stocks.seeds | 1 | 1 | 0 | 0 | no |
+| gotchas.get | 6 | 6 | 2 | 4 | no (see below) |
+| orders.check-duplicate | 3 | 1 (error) | 0 | 0 | no (a per-order check, not a fact) |
+| workjob.list-jobs | 3 (2 errors; Still, same as overseer) | 0 | 0 | 1 (Still) | no |
+| series.latest / series.get | 1 / 1 | 2 / 2 (two replies of 41k and 42k chars) | 0 | 0 | no |
+| landmarks.list | 0 | 0 | 1 | 1 | no (names, not a figure) |
+| labor.enabled-counts, zone.list, queue.project_status | 0 | 0 | zone.list, project_status 1 each | 1 each | no |
+| queue.pending | 0 | 0 | 0 | 1 | ids yes, text no |
+
+Repeats worth noting: `gotchas.get` with `{"general": true}` (a 115 char
+reply, effectively empty) was called 4 times across 4 runs; gotcha-0002 (the
+brew order that sits validated but inactive, 1781 chars) was fetched 3 times
+across the three runs that touched the Still; the quartermaster asked for the
+same BARREL and PLANT availability in both its runs; `stocks.food-drink`
+was the first or second call of every run, identical each time (582 chars).
+`workjob.list-jobs` for the Still (5316 chars) was read by both the
+quartermaster and the overseer. Order of play was always: orders and stuck
+jobs first, then gotchas, then stocks, which matches the handoff's opening
+round of lookups.
+
+Not coverable by a briefing: `gotchas.get` by tool/id (what is relevant
+depends on what the model decides to do), `orders.check-duplicate`,
+`series.*` history, `workjob.list-jobs` (one workshop's jobs, 5 KB), and
+`blueprint.*` / `queue.*` working calls.
+
+### 2. Plan
+
+One new briefing key, `facts`, built once per cycle by the conductor (so the
+reads are shared by every woken role) and passed to `build_briefing`:
+
+- Every role: `stocks` (drink units and per citizen, prepared meals units,
+  raw edibles units, unreachable units; from `stocks.food-drink`, fort-owned
+  only), `orders` (count of orders and up to 5 one-line entries for those not
+  progressing: `#2 BrewDrinkFromPlant validated, not active, 1 of 1 left`;
+  from the `orders.list` read the cycle already makes, no new call),
+  `manager_appointed`.
+- Per-role extras as data in `conductor/policy.yaml` under `briefing_extras`:
+  `availability: [ITEM_TYPE, ...]` (each read by `stocks.availability`, one
+  line `BARREL: 2 free of 6, 1 in jobs`) and `seeds: true`. Quartermaster:
+  availability BARREL, PLANT, DRINK, BOULDER and seeds; overseer: BED, WOOD;
+  architect and consultant: none (the architect did none of these calls).
+  The union of types across woken roles is read once per cycle.
+- Reads are total: a failed read (an undeployed allowlist entry, a tool
+  error, odd shape) logs and drops that line; no key is better than a wrong
+  key. Every list capped (`MAX_ORDER_LINES` 5, `MAX_AVAILABILITY_LINES` 6,
+  seeds top 3 plants). Tier 0 and O(1) in fort size; no coordinates, no map.
+- Conductor allowlist gains `stocks.food-drink`, `stocks.seeds` and
+  `stocks.availability` (all read-only, already live on VM 103); conductor
+  count 21 to 24.
+- Token cost estimate: about 150 to 300 tokens per briefing (a dozen short
+  lines), against about 5 to 12 lookups saved per run, each costing a tool
+  round trip of 5 to 30 s of wall clock in the measured runs.
+- Not done, and why: one-line pending-proposal summaries. `queue.overview`
+  returns only ids; the text is in `queue.pending`'s XML, which the
+  conductor's client does not surface, and changing `queue.overview` is
+  `dfmcp/`, outside this handoff's surfaces. Also no gotcha digest (what is
+  relevant depends on the model's intent).
