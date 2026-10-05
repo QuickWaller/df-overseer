@@ -355,6 +355,8 @@ async def _run_role(
         "cost_usd": run_result.cost_usd, "error": run_result.error,
         "final_answer": run_result.final_answer,
     }
+    if run_result.thinking:
+        end_args["thinking"] = run_result.thinking
     if run_id:
         end_args["run_id"] = run_id
     else:

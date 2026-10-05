@@ -37,6 +37,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import shutil
 import time
 import uuid
 from dataclasses import dataclass, replace
@@ -64,6 +65,63 @@ OUTER_KILL_GRACE_SECONDS = 60.0
 
 #: Bound on the best-effort `docker kill` after a timeout.
 DOCKER_KILL_WAIT_SECONDS = 30.0
+
+
+#: Cap on the reasoning text sent on (start and end kept, marker between).
+THINKING_MAX_CHARS = 12000
+THINKING_CUT_MARKER = "\n\n[... middle of the reasoning left out ...]\n\n"
+#: Where the retained openclaw state dir is mounted inside the container.
+THINKING_MOUNT = "/thinking"
+
+
+def cap_thinking(text: Optional[str], limit: int = THINKING_MAX_CHARS) -> Optional[str]:
+    """Keep the start and the end of `text` within `limit` characters."""
+    if not text:
+        return None
+    if len(text) <= limit:
+        return text
+    room = max(0, limit - len(THINKING_CUT_MARKER))
+    head = room // 2
+    return text[:head].rstrip() + THINKING_CUT_MARKER + text[len(text) - (room - head):].lstrip()
+
+
+def read_thinking(state_dir: Path) -> Optional[str]:
+    """The reasoning text of the one run kept in `state_dir` (`agent exec
+    --state-dir`), read from each agent db's `transcript_events` rows: the
+    `thinking` blocks of assistant messages, in order, one paragraph per
+    block. Never raises: None when nothing is there or the db cannot be read.
+    See handoffs/2026-10-05-agent-thinking.md (findings)."""
+    import sqlite3
+    parts: List[str] = []
+    try:
+        for db in sorted(Path(state_dir).glob("agents/*/agent/openclaw-agent.sqlite")):
+            conn = sqlite3.connect(db, timeout=5)
+            try:
+                rows = conn.execute(
+                    "SELECT event_json FROM transcript_events ORDER BY session_id, seq"
+                ).fetchall()
+            finally:
+                conn.close()
+            for (raw,) in rows:
+                try:
+                    event = json.loads(raw)
+                except (TypeError, ValueError):
+                    continue
+                message = event.get("message") if isinstance(event, dict) else None
+                if not isinstance(message, dict) or message.get("role") != "assistant":
+                    continue
+                content = message.get("content")
+                if not isinstance(content, list):
+                    continue
+                for block in content:
+                    if isinstance(block, dict) and block.get("type") == "thinking":
+                        text = block.get("thinking")
+                        if isinstance(text, str) and text.strip():
+                            parts.append(text.strip())
+    except Exception as exc:  # noqa: BLE001 -- observability, never fails a run
+        LOG.warning("conductor runner: could not read the run's reasoning: %s", exc)
+        return None
+    return cap_thinking("\n\n".join(parts)) if parts else None
 
 
 def _final_answer(envelope: dict) -> Optional[str]:
@@ -111,6 +169,8 @@ class RunResult:
     final_answer: Optional[str]
     raw: Dict[str, Any]
     error: Optional[str] = None
+    #: The run's reasoning text (capped), or None when not captured.
+    thinking: Optional[str] = None
 
 
 class RoleRunner(Protocol):
@@ -163,6 +223,7 @@ class DockerOpenClawRunner:
     def __init__(
         self, *, pinned_config_dir: Path, openclaw_state_dir: Path, workspace_root: Path,
         secrets_env_file: Path, image: str = DEFAULT_IMAGE,
+        thinking_state_root: Optional[Path] = None,
         subprocess_exec: SubprocessExec = asyncio.create_subprocess_exec,
         clock: Callable[[], float] = time.monotonic,
         outer_kill_grace_seconds: float = OUTER_KILL_GRACE_SECONDS,
@@ -172,6 +233,10 @@ class DockerOpenClawRunner:
         self.workspace_root = Path(workspace_root)
         self.secrets_env_file = Path(secrets_env_file)
         self.image = image
+        #: When set, each run keeps its openclaw session state under
+        #: `<root>/<container name>` (`--state-dir`), the reasoning is read
+        #: from it, and the dir is deleted. None: reasoning is not captured.
+        self.thinking_state_root = None if thinking_state_root is None else Path(thinking_state_root)
         self._subprocess_exec = subprocess_exec
         self._clock = clock
         self._grace = outer_kill_grace_seconds
@@ -200,6 +265,7 @@ class DockerOpenClawRunner:
     def build_command(
         self, role: str, prompt: str, *, model: str,
         container_name: Optional[str] = None, timeout_seconds: Optional[float] = None,
+        state_dir: Optional[Path] = None,
     ) -> List[str]:
         """The exact docker invocation: `--rm`, `--entrypoint node`, the
         persisted openclaw state dir bind-mounted read-write at
@@ -213,14 +279,17 @@ class DockerOpenClawRunner:
         """
         name_args = ["--name", container_name] if container_name else []
         timeout_args = ["--timeout", str(int(timeout_seconds))] if timeout_seconds else []
+        state_mount = ["-v", f"{state_dir}:{THINKING_MOUNT}"] if state_dir else []
+        state_args = ["--state-dir", THINKING_MOUNT] if state_dir else []
         return [
             "docker", "run", "--rm", *name_args, "--entrypoint", "node",
             "--env-file", str(self.secrets_env_file),
             "-v", f"{self.openclaw_state_dir}:/home/node/.openclaw",
             "-v", f"{self.pinned_config_dir / (role + '.json')}:/home/node/.openclaw/openclaw.json:ro",
             "-v", f"{self._workspace_dir(role)}:{self._workspace_dir(role)}",
+            *state_mount,
             self.image, "openclaw.mjs", "agent", "exec", "--json",
-            *timeout_args, "--model", model, prompt,
+            *state_args, *timeout_args, "--model", model, prompt,
         ]
 
     async def _kill_container(self, container_name: str) -> None:
@@ -283,9 +352,33 @@ class DockerOpenClawRunner:
         self, role: str, prompt: str, *, model: str, timeout_seconds: float, started: float,
     ) -> RunResult:
         container_name = f"conductor-{role}-{uuid.uuid4().hex[:12]}"
+        state_dir: Optional[Path] = None
+        if self.thinking_state_root is not None:
+            try:
+                state_dir = self.thinking_state_root / container_name
+                state_dir.mkdir(parents=True, exist_ok=True)
+            except Exception as exc:  # noqa: BLE001 -- the run goes on without it
+                LOG.warning("conductor runner: no reasoning state dir, run goes on: %s", exc)
+                state_dir = None
+        try:
+            result = await self._launch(
+                role, prompt, model=model, timeout_seconds=timeout_seconds, started=started,
+                container_name=container_name, state_dir=state_dir,
+            )
+            if state_dir is not None and result.status == "ok":
+                result = replace(result, thinking=read_thinking(state_dir))
+            return result
+        finally:
+            if state_dir is not None:
+                shutil.rmtree(state_dir, ignore_errors=True)
+
+    async def _launch(
+        self, role: str, prompt: str, *, model: str, timeout_seconds: float, started: float,
+        container_name: str, state_dir: Optional[Path],
+    ) -> RunResult:
         command = self.build_command(
             role, prompt, model=model, container_name=container_name,
-            timeout_seconds=timeout_seconds,
+            timeout_seconds=timeout_seconds, state_dir=state_dir,
         )
 
         try:

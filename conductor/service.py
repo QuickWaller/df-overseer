@@ -79,6 +79,7 @@ def build_deps(config: ConductorConfig, *, dry_run: bool, agents_dir: Path = DEF
         openclaw_state_dir=config.openclaw_state_dir,
         workspace_root=config.workspace_root,
         secrets_env_file=config.secrets_env_file,
+        thinking_state_root=config.thinking_state_root,
     )
     policy = load_policy(config.policy_path)
     return CycleDeps(
