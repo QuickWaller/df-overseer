@@ -62,6 +62,7 @@ from conductor.briefing import build_briefing
 from conductor.cursors import CursorStore
 from conductor.game_tick import GameTickError, game_tick_from_overview
 from conductor.mcp_client import MCPToolError, ToolCaller, tool_name
+from conductor.job_watch import JobWatchResult, JobWatchStore, evaluate_jobs, jobs_from_result
 from conductor.order_watch import OrderWatchResult, evaluate_orders
 from conductor.pause_watch import (
     OWNED_ESCALATION, UNEXPLAINED_PAUSE, PauseWatchStore, PausePolicy, Verdict,
@@ -89,7 +90,6 @@ EVENT_TYPE_TO_SIGNAL: Dict[str, str] = {
     "migrant_wave": "migrant_wave",
     "caravan_arrived": "caravan_present",
     "season_change": "season_change",
-    "job_stalled": "stuck_job",
     "stock_below_threshold": "stock_below_target",
 }
 
@@ -573,12 +573,14 @@ async def run_cycle(cycle_index: int, deps: CycleDeps) -> CycleResult:
         cursor_store=deps.cursor_store,
         dry_run=deps.dry_run,
     )
+    job_watch = await _job_watch(deps, call, game_tick, cycle_index)
     slow_hit, slow_roles, slow_detail = _classify_slow_announcements(events_by_role)
 
     signals = Signals(
         vital_nearing_threshold=_vital_nearing(vitals),
         vital_ticks_to_consequence=None,  # see module docstring: vitals.summary carries no timer
-        stuck_job=event_hits.get("stuck_job", False),
+        stuck_job=event_hits.get("stuck_job", False) or job_watch.any_due,
+        stuck_job_detail=job_watch.wake_detail(),
         stock_below_target=event_hits.get("stock_below_target", False),
         migrant_wave=event_hits.get("migrant_wave", False),
         caravan_present=event_hits.get("caravan_present", False),
@@ -665,6 +667,7 @@ async def run_cycle(cycle_index: int, deps: CycleDeps) -> CycleResult:
             role=role, game_tick=game_tick or 0, wake=wake, vitals=vitals,
             diff_events=events_by_role.get(role, []),
             queue_summary=_queue_summary_for(role, queue_state),
+            stuck_jobs=job_watch.lines,
         )
         briefings[role] = briefing
 
@@ -737,6 +740,28 @@ async def run_cycle(cycle_index: int, deps: CycleDeps) -> CycleResult:
 
 def _pause_store(deps: "CycleDeps") -> PauseWatchStore:
     return deps.pause_store or PauseWatchStore(deps.cursor_store.path.with_name("pause_watch.json"))
+
+
+def _job_store(deps: "CycleDeps") -> JobWatchStore:
+    return JobWatchStore(deps.cursor_store.path.with_name("job_watch.json"))
+
+
+async def _job_watch(deps: "CycleDeps", call: Callable, game_tick: Optional[int], cycle_index: int) -> JobWatchResult:
+    """Poll `stuckjobs.find` (conductor/job_watch.py). Total by design, like the
+    pause watchdog: an undeployed allowlist entry, a tool error or a corrupt
+    state file logs loudly and the cycle carries on with no stuck-job signal."""
+    try:
+        found = await call("stuckjobs.find", {})
+        return evaluate_jobs(
+            jobs_from_result(found), game_tick=game_tick,
+            unclaimed_threshold_ticks=deps.policy.stuck_job_unclaimed_threshold_ticks,
+            suspended_threshold_ticks=deps.policy.stuck_job_suspended_threshold_ticks,
+            renotify_ticks=deps.policy.stuck_job_renotify_ticks,
+            store=_job_store(deps), dry_run=deps.dry_run,
+        )
+    except Exception:  # noqa: BLE001 -- deliberately total, see docstring
+        LOG.exception("cycle %s: the stuck-job watch failed; carrying on without it", cycle_index)
+        return JobWatchResult()
 
 
 def _mark_pause_owned(deps: "CycleDeps") -> None:

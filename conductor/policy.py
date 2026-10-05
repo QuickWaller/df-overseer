@@ -101,6 +101,11 @@ class Policy:
     #: Per-role cap on one `agent exec` run, seconds. Roles absent here use
     #: the service-wide `CONDUCTOR_ROLE_TIMEOUT_SECONDS`.
     role_timeout_seconds: Dict[str, float] = field(default_factory=dict)
+    #: handoffs/2026-10-05-stuck-job-watch.md, conductor/job_watch.py. Raw game
+    #: ticks. Optional with defaults so a policy file predating the watch loads.
+    stuck_job_unclaimed_threshold_ticks: int = 2400
+    stuck_job_suspended_threshold_ticks: int = 2400
+    stuck_job_renotify_ticks: int = 12000
 
     def reason(self, name: str) -> WakeReasonPolicy:
         try:
@@ -172,6 +177,9 @@ def load_policy(path: "Path | str" = DEFAULT_POLICY_PATH) -> Policy:
         ),
         wake_reasons=wake_reasons,
         consultant_rewake_after_advisors=bool(doc.get("consultant_rewake_after_advisors", True)),
+        stuck_job_unclaimed_threshold_ticks=int(doc.get("stuck_job_unclaimed_threshold_ticks", 2400)),
+        stuck_job_suspended_threshold_ticks=int(doc.get("stuck_job_suspended_threshold_ticks", 2400)),
+        stuck_job_renotify_ticks=int(doc.get("stuck_job_renotify_ticks", 12000)),
         role_timeout_seconds={str(k): float(v) for k, v in (doc.get("role_timeout_seconds") or {}).items()},
     )
 

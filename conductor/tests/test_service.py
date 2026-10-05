@@ -40,6 +40,7 @@ def _quiet_tools():
         },
         "diff.since": lambda args: {"cursor": str(args.get("cursor", 0)), "events": []},
         "orders.list": {"orders": [], "manager_appointed": True},
+        "stuckjobs.find": [],
         "queue.grade": {
             "current_game_tick": 403200 + 1000, "graded_at": "x",
             "graded_count": 0, "graded": [], "unexecuted_count": 0, "unexecuted": [],

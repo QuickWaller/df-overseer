@@ -90,6 +90,12 @@ read:
       role reads its OWN diff.since only for itself (agents/overseer/
       tools.yaml is still the only OTHER grant, for the Overseer's own use
       inside a real run).
+  - id: "stuckjobs.find"
+    status: exists
+    note: >-
+      Added handoffs/2026-10-05-stuck-job-watch.md. Polled once per cycle by
+      conductor/job_watch.py (nothing emits a stalled-job event, so polling is
+      the only route), the same pattern as orders.list below. Read-only.
   - id: "orders.list"
     status: exists
     note: >-
