@@ -1366,7 +1366,11 @@ class StreamPage {
         : el("div", { class: "fnote", text: "Waiting for the Consultant" }));
     }
     if (why) lines.push(el("div", { class: "fwhy" }, [el("span", { class: "fwhyk", text: "Why " }), el("span", { text: why })]));
-    const calls = (item.calls && item.calls.length) ? item.calls : checkRows((this.runs && this.runs.calls_by_record || {})[item.id]);
+    // A question shows no Checked list: the asker's reads are on its
+    // proposal already, and the lookups that matter are the Consultant's,
+    // shown on its own turn.
+    const calls = item.kind === "ask" ? []
+      : (item.calls && item.calls.length) ? item.calls : checkRows((this.runs && this.runs.calls_by_record || {})[item.id]);
     if (calls.length) {
       lines.push(el("details", { class: "fx" }, [
         el("summary", { text: `Checked · ${calls.length}` }),
