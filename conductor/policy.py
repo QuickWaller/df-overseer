@@ -83,6 +83,26 @@ class WakeReasonPolicy:
     computable: bool = False
 
 
+#: What a threshold alert may divide its value by (`per`): nothing, or the
+#: fort's live citizen count (vitals.summary's `alive`).
+ALERT_PER = (None, "alive")
+
+
+@dataclass(frozen=True)
+class ThresholdAlert:
+    """docs/CONDUCTOR-EXECUTION.md 3.3: a briefing line shown only while a read
+    value (divided by `per`, if set) is below `below`. Pure data: the tool, its
+    arguments and the dotted field path are read generically, never by an
+    item-specific branch."""
+    name: str
+    tool: str
+    args: Mapping
+    field: str
+    below: float
+    text: str
+    per: Optional[str] = None
+
+
 @dataclass(frozen=True)
 class Policy:
     base_fps: int
@@ -106,6 +126,8 @@ class Policy:
     stuck_job_unclaimed_threshold_ticks: int = 2400
     stuck_job_suspended_threshold_ticks: int = 2400
     stuck_job_renotify_ticks: int = 12000
+    #: Threshold alerts for every role's briefing (policy.yaml `threshold_alerts`).
+    threshold_alerts: Tuple[ThresholdAlert, ...] = ()
 
     def reason(self, name: str) -> WakeReasonPolicy:
         try:
@@ -161,7 +183,37 @@ def load_policy(path: "Path | str" = DEFAULT_POLICY_PATH) -> Policy:
             computable=bool(entry.get("computable", False)),
         )
 
+    alerts = []
+    raw_alerts = doc.get("threshold_alerts") or []
+    if not isinstance(raw_alerts, list):
+        raise PolicyError(f"{path}: threshold_alerts must be a list")
+    for i, entry in enumerate(raw_alerts):
+        where = f"{path}: threshold_alerts[{i}]"
+        if not isinstance(entry, dict):
+            raise PolicyError(f"{where} must be a mapping")
+        read = entry.get("read")
+        if not isinstance(read, dict) or not read.get("tool") or not read.get("field"):
+            raise PolicyError(f"{where}.read needs a tool and a field")
+        args = read.get("args") or {}
+        if not isinstance(args, dict):
+            raise PolicyError(f"{where}.read.args must be a mapping")
+        per = entry.get("per")
+        if per not in ALERT_PER:
+            raise PolicyError(f"{where}.per is {per!r}, must be one of {ALERT_PER}")
+        try:
+            below = float(entry["below"])
+        except (KeyError, TypeError, ValueError):
+            raise PolicyError(f"{where}.below must be a number") from None
+        text = entry.get("text")
+        if not isinstance(text, str) or not text:
+            raise PolicyError(f"{where}.text must be a non-empty string")
+        alerts.append(ThresholdAlert(
+            name=str(entry.get("name") or f"alert-{i}"), tool=str(read["tool"]), args=dict(args),
+            field=str(read["field"]), below=below, text=text, per=per,
+        ))
+
     return Policy(
+        threshold_alerts=tuple(alerts),
         base_fps=int(_require(doc, "base_fps", path)),
         think_fps=int(_require(doc, "think_fps", path)),
         closing_in_multiple=float(_require(doc, "closing_in_multiple", path)),

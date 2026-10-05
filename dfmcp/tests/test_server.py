@@ -913,6 +913,85 @@ class TestQueueTools:
         assert line["role"] == "architect"
 
 
+class TestCitedFacts:
+    pytestmark = pytest.mark.asyncio
+
+    """Conductor-execution stage 1: `relies_on` is read by the server itself,
+    under the citing role's own allowlist, through the real wiring."""
+
+    async def test_a_cited_read_tool_is_read_and_stored_with_value_and_tick(
+        self, registry, roster, pool, fake_dfhack, tmp_path,
+    ):
+        queue_db = tmp_path / "queue.sqlite3"
+        fake_dfhack.queue_actions(
+            make_ok_action(_OVERVIEW_JSON),
+            make_ok_action(json.dumps({"total_units": 5, "available_units": 3})),
+        )
+        args = {**_VALID_PROPOSE_ARGS, "relies_on": [
+            {"tool": "stocks.availability", "args": {"type": "BED"}, "field": "available_units"},
+        ]}
+        async with mcp_session(_app(registry, roster, pool, queue_db), ARCHITECT_TOKEN) as session:
+            result = await session.call_tool("queue__propose", args)
+        assert result.is_error is False
+        (written,) = _dfqueue_store.load(queue_db)
+        assert written["cited"] == [{
+            "tool": "stocks.availability", "args": {"type": "BED"}, "field": "available_units",
+            "value": 3, "tick": _EXPECTED_GAME_TICK,
+        }]
+
+    async def test_a_mutating_tool_cannot_be_cited_and_nothing_is_written(
+        self, registry, roster, pool, fake_dfhack, tmp_path,
+    ):
+        queue_db = tmp_path / "queue.sqlite3"
+        fake_dfhack.queue_actions(make_ok_action(_OVERVIEW_JSON))
+        args = {**_VALID_PROPOSE_ARGS, "relies_on": [{"tool": "zone.place", "field": "ok"}]}
+        async with mcp_session(_app(registry, roster, pool, queue_db), ARCHITECT_TOKEN) as session:
+            result = await session.call_tool("queue__propose", args)
+        assert result.is_error is True
+        text = "".join(b.text for b in result.content if b.type == "text")
+        assert "cannot be cited" in text or "allowlist" in text
+        assert _dfqueue_store.load(queue_db) == []
+
+    async def test_a_tool_off_the_proposers_allowlist_cannot_be_cited(
+        self, registry, roster, pool, fake_dfhack, tmp_path,
+    ):
+        queue_db = tmp_path / "queue.sqlite3"
+        fake_dfhack.queue_actions(make_ok_action(_OVERVIEW_JSON))
+        # the architect holds no write tools, and a server-side tool is never citable
+        args = {**_VALID_PROPOSE_ARGS, "relies_on": [{"tool": "queue.pending", "field": "count"}]}
+        async with mcp_session(_app(registry, roster, pool, queue_db), ARCHITECT_TOKEN) as session:
+            result = await session.call_tool("queue__propose", args)
+        assert result.is_error is True
+        assert "only DFHack read tools" in "".join(b.text for b in result.content if b.type == "text")
+        assert _dfqueue_store.load(queue_db) == []
+
+    async def test_a_missing_field_refuses_with_a_repair_message(
+        self, registry, roster, pool, fake_dfhack, tmp_path,
+    ):
+        queue_db = tmp_path / "queue.sqlite3"
+        fake_dfhack.queue_actions(
+            make_ok_action(_OVERVIEW_JSON), make_ok_action(json.dumps({"total_units": 5})),
+        )
+        args = {**_VALID_PROPOSE_ARGS, "relies_on": [
+            {"tool": "stocks.availability", "args": {"type": "BED"}, "field": "available_units"},
+        ]}
+        async with mcp_session(_app(registry, roster, pool, queue_db), ARCHITECT_TOKEN) as session:
+            result = await session.call_tool("queue__propose", args)
+        assert result.is_error is True
+        assert "is not in the result" in "".join(b.text for b in result.content if b.type == "text")
+        assert _dfqueue_store.load(queue_db) == []
+
+    async def test_pending_brief_is_conductor_only(self, registry, roster, pool, fake_dfhack, tmp_path):
+        queue_db = tmp_path / "queue.sqlite3"
+        async with mcp_session(_app(registry, roster, pool, queue_db), OVERSEER_TOKEN) as session:
+            denied = await session.call_tool("queue__pending_brief", {})
+        assert denied.is_error is True
+        async with mcp_session(_app(registry, roster, pool, queue_db), CONDUCTOR_TOKEN) as session:
+            ok = await session.call_tool("queue__pending_brief", {})
+        assert ok.is_error is False
+        assert ok.structured_content["count"] == 0
+
+
 # ==========================================================================
 # Config
 # ==========================================================================

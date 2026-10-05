@@ -58,7 +58,7 @@ from dataclasses import dataclass
 from typing import Any, Callable, Dict, List, Mapping, Optional, Tuple
 
 from conductor.archive import CycleArchive
-from conductor.briefing import build_briefing
+from conductor.briefing import build_briefing, build_ruling_briefing, evaluate_threshold_alerts
 from conductor.cursors import CursorStore
 from conductor.game_tick import GameTickError, game_tick_from_overview
 from conductor.hold import HoldState, HoldStore, hold_path_for
@@ -665,6 +665,7 @@ async def _run_cycle(cycle_index: int, deps: CycleDeps, hold: HoldState) -> Cycl
     roles_woken_out: List[str] = list(roles_to_run)
     extra_wakes: Dict[str, Wake] = {}
     queue_refreshed = False
+    alerts: Optional[List[str]] = None
     idx = 0
     while True:
         # Advisors have run; anything they filed (an ask above all) is not in
@@ -702,13 +703,28 @@ async def _run_cycle(cycle_index: int, deps: CycleDeps, hold: HoldState) -> Cycl
         idx += 1
 
         wake = extra_wakes.get(role) or triage_result.wake_for(role)
+        if alerts is None:
+            # Once per cycle, at the first role that runs (policy.yaml threshold_alerts).
+            alerts = await _read_alerts(call, deps.policy, vitals, cycle_index)
         briefing = build_briefing(
             role=role, game_tick=game_tick or 0, wake=wake, vitals=vitals,
             diff_events=events_by_role.get(role, []),
             queue_summary=_queue_summary_for(role, queue_state),
-            stuck_jobs=job_watch.lines,
+            stuck_jobs=job_watch.lines, alerts=alerts,
         )
         briefings[role] = briefing
+        prompt = json.dumps(briefing, default=str)
+        if role == OVERSEER and not deps.dry_run:
+            # docs/CONDUCTOR-EXECUTION.md 3.3: the ruling turn gets a fixed-order
+            # text briefing built from queue.pending_brief, ask last. A failed
+            # read says so in the briefing; the run still goes ahead.
+            pending_brief = await _read_pending_brief(call, cycle_index)
+            prompt = build_ruling_briefing(
+                game_tick=game_tick or 0, wake=wake, vitals=vitals, alerts=alerts,
+                pending_brief=pending_brief, diff_events=events_by_role.get(role, []),
+                stuck_jobs=job_watch.lines,
+            )
+            briefings[role] = {"ruling_prompt": prompt, "pending_brief": pending_brief}
 
         if deps.dry_run:
             continue
@@ -719,7 +735,7 @@ async def _run_cycle(cycle_index: int, deps: CycleDeps, hold: HoldState) -> Cycl
             await _call_write(call, "fort.quicksave", {}, clock_changes=clock_changes, cycle_index=cycle_index)
 
         run_result = await _run_role(
-            deps, call, role, json.dumps(briefing, default=str), wake=wake, cycle_index=cycle_index,
+            deps, call, role, prompt, wake=wake, cycle_index=cycle_index,
         )
         role_runs.append(run_result)
 
@@ -775,6 +791,39 @@ async def _run_cycle(cycle_index: int, deps: CycleDeps, hold: HoldState) -> Cycl
     if not deps.dry_run:
         result.archived_path = _archive(deps, cycle_index, result, briefings=briefings)
     return result
+
+
+async def _read_alerts(call: Callable, policy: Policy, vitals: Mapping[str, Any], cycle_index: int) -> List[str]:
+    """Threshold-alert lines for this cycle (policy.yaml `threshold_alerts`):
+    each distinct read taken once, a failed read logged and its line dropped.
+    Total by design, like the job watch."""
+    reads: Dict[str, Any] = {}
+    cache: Dict[str, Any] = {}
+    for alert in policy.threshold_alerts:
+        key = json.dumps([alert.tool, alert.args], sort_keys=True, default=str)
+        if key not in cache:
+            try:
+                cache[key] = await call(alert.tool, dict(alert.args))
+            except Exception as exc:  # noqa: BLE001 -- deliberately total
+                LOG.warning("cycle %s: alert read %s failed: %s", cycle_index, alert.tool, exc)
+                cache[key] = None
+        reads[alert.name] = cache[key]
+    try:
+        return evaluate_threshold_alerts(policy.threshold_alerts, reads, vitals.get("alive"))
+    except Exception:  # noqa: BLE001 -- deliberately total
+        LOG.exception("cycle %s: could not evaluate threshold alerts", cycle_index)
+        return []
+
+
+async def _read_pending_brief(call: Callable, cycle_index: int) -> Optional[Dict[str, Any]]:
+    """`queue.pending_brief` for the Overseer's ruling briefing; `None` if the
+    read fails (the briefing then says so)."""
+    try:
+        result = await call("queue.pending_brief", {})
+    except Exception as exc:  # noqa: BLE001 -- deliberately total
+        LOG.error("cycle %s: queue.pending_brief failed: %s", cycle_index, exc)
+        return None
+    return result if isinstance(result, dict) else None
 
 
 def _pause_store(deps: "CycleDeps") -> PauseWatchStore:

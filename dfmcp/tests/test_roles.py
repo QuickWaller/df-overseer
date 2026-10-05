@@ -156,7 +156,7 @@ def test_stocks_availability_follows_the_stocks_food_drink_pairing(registry):
     overseer = roster.roles["overseer"]
     architect = roster.roles["architect"]
 
-    assert overseer.allows("stocks.availability")
+    assert not overseer.allows("stocks.availability")  # left the Overseer in stage 1
     assert architect.allows("stocks.availability")
     assert registry.get("stocks.availability").mutates is False
 

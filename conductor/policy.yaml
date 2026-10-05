@@ -177,3 +177,24 @@ role_timeout_seconds:
 # After the advisors run, re-read the queue and wake the Consultant for an ask
 # they filed this cycle (otherwise it waits a whole cycle; ask-0001 did).
 consultant_rewake_after_advisors: true
+
+# docs/CONDUCTOR-EXECUTION.md 3.3: threshold alerts replace fixed stock lists.
+# A line appears in every role's briefing only while the read value (divided by
+# `per`, "alive" for the live citizen count, or omitted) is BELOW `below`; a
+# failed read drops its line. Generic: `read` is any read tool on the
+# conductor's own allowlist (agents/conductor/tools.yaml), `field` a dotted
+# path to one number in its result. `text` may use {value}, {per_value} and
+# {threshold}. Starting values, not tuned against a real run: retune from the
+# journal. Adding an alert is a data entry here plus, for a new tool, one
+# allowlist line.
+threshold_alerts:
+  - name: drink_per_citizen
+    read: {tool: stocks.food-drink, args: {}, field: drink.units}
+    per: alive
+    below: 2
+    text: "Drink is low: {value} units, {per_value} per citizen (alert below {threshold})."
+  - name: raw_food_per_citizen
+    read: {tool: stocks.food-drink, args: {}, field: raw_edibles.units}
+    per: alive
+    below: 1
+    text: "Raw food is low: {value} units, {per_value} per citizen (alert below {threshold})."

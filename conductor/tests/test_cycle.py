@@ -93,12 +93,30 @@ def _orders_list(orders=None, **overrides):
     return base
 
 
+def _pending_brief(proposals=None, **extra):
+    proposals = proposals if proposals is not None else [{
+        "id": "proposal-0001", "role": "architect", "type": "room_siting", "summary": "a room",
+        "rationale": "because", "prediction": {"signal": "x", "op": "exists", "check_after_ticks": 10},
+        "cost": {"estimate": 5, "unit": "dwarf_ticks"}, "priority": 3, "cited": [],
+    }]
+    return {
+        "count": len(proposals), "shown": len(proposals), "truncated": False, "proposals": proposals,
+        "decided": {"open_projects": [], "wip_count": 0, "recent_rulings": []}, **extra,
+    }
+
+
+def _food_drink(drink=100, raw=100):
+    return {"drink": {"units": drink}, "raw_edibles": {"units": raw}, "prepared_meals": {"units": 5}}
+
+
 def _base_tools(**overrides):
     results = {
         "vitals.summary": _vitals(),
         "clock.status": _clock_status(),
         "overview.get": _overview(),
         "queue.overview": _queue_overview(),
+        "queue.pending_brief": _pending_brief(),
+        "stocks.food-drink": _food_drink(),
         "orders.list": _orders_list(),
         "stuckjobs.find": [],
         "diff.since": _diff_sequence(),
@@ -550,9 +568,11 @@ async def test_the_consultants_briefing_carries_ask_ids_not_proposal_ids(tmp_pat
     briefing = json.loads(consultant_call["prompt"])
     assert briefing["queue"]["ids"]["items"] == ["ask-0001"]
 
+    # Stage 1: the Overseer's prompt is the fixed-order ruling briefing (text),
+    # built from queue.pending_brief, not the JSON briefing.
     overseer_call = next(c for c in runner.calls if c["role"] == OVERSEER)
-    overseer_briefing = json.loads(overseer_call["prompt"])
-    assert overseer_briefing["queue"]["ids"]["items"] == ["proposal-0001"]
+    assert "PENDING PROPOSALS (1 shown of 1)" in overseer_call["prompt"]
+    assert "proposal-0001" in overseer_call["prompt"]
 
 
 # ---------------------------------------------------------------------------
@@ -907,3 +927,79 @@ async def test_a_dry_run_polls_stuck_jobs_but_writes_no_state(tmp_path):
     await run_cycle(1, deps)
     assert not deps.cursor_store.path.with_name("job_watch.json").exists()
 
+
+
+# ---------------------------------------------------------------------------
+# Stage 1: threshold alerts and the ruling briefing (docs/CONDUCTOR-EXECUTION.md 3.3)
+# ---------------------------------------------------------------------------
+
+
+async def test_the_overseers_ruling_briefing_is_ordered_with_the_ask_last_and_alerts_only_when_crossed(tmp_path):
+    tools = _base_tools()
+    tools["queue.overview"] = _queue_overview(proposals={"count": 1, "proposal_ids": ["proposal-0001"]})
+    tools["stocks.food-drink"] = _food_drink(drink=4, raw=500)  # 20 alive: 0.2 per citizen, below 2
+    tools["queue.pending_brief"] = _pending_brief(proposals=[{
+        "id": "proposal-0001", "role": "quartermaster", "type": "work_order", "summary": "brew",
+        "rationale": "low drink", "prediction": {"signal": "s", "op": "gte", "value": 1, "check_after_ticks": 9},
+        "cost": {"estimate": 2, "unit": "dwarf_ticks"}, "priority": 5,
+        "cited": [{"tool": "stocks.availability", "args": {"type": "BARREL"}, "field": "available_units",
+                   "value": 1, "tick": 100, "now": 0}],
+    }])
+    runner = FakeRoleRunner()
+    deps = _deps(tmp_path, tools=tools, runner=runner)
+    await run_cycle(1, deps)
+
+    prompt = next(c for c in runner.calls if c["role"] == OVERSEER)["prompt"]
+    order = [prompt.index(k) for k in ("WAKE ", "VITALS", "ALERT Drink is low", "DECIDED, DO NOT REDO",
+                                        "PENDING PROPOSALS", "OTHER OPEN ITEMS", "Rule on each pending")]
+    assert order == sorted(order)
+    assert prompt.rstrip().endswith("calls.")
+    assert "Raw food is low" not in prompt  # 500 units is not below its threshold
+    assert "stocks.availability(type=BARREL).available_units = 1 at tick 100, now 0" in prompt
+
+
+async def test_a_failed_alert_read_drops_its_line_and_the_cycle_still_runs(tmp_path):
+    tools = _base_tools()
+
+    def _boom(_arguments):
+        raise MCPToolError("stocks.food-drink: unavailable")
+
+    tools["stocks.food-drink"] = _boom
+    tools["queue.overview"] = _queue_overview(proposals={"count": 1, "proposal_ids": ["proposal-0001"]})
+    runner = FakeRoleRunner()
+    deps = _deps(tmp_path, tools=tools, runner=runner)
+    await run_cycle(1, deps)
+    prompt = next(c for c in runner.calls if c["role"] == OVERSEER)["prompt"]
+    assert "ALERT" not in prompt
+
+
+async def test_other_roles_briefings_carry_alerts_only_while_crossed(tmp_path):
+    tools = _base_tools()
+    tools["queue.overview"] = _queue_overview(
+        asks={"count": 1, "ask_ids": ["ask-0001"]},
+    )
+    tools["stocks.food-drink"] = _food_drink(drink=0)
+    runner = FakeRoleRunner()
+    await run_cycle(1, _deps(tmp_path, tools=tools, runner=runner))
+    briefing = json.loads(next(c for c in runner.calls if c["role"] == CONSULTANT)["prompt"])
+    assert briefing["alerts"] and "Drink is low" in briefing["alerts"][0]
+
+    tools["stocks.food-drink"] = _food_drink()
+    runner2 = FakeRoleRunner()
+    await run_cycle(1, _deps(tmp_path / "again", tools=tools, runner=runner2))
+    briefing2 = json.loads(next(c for c in runner2.calls if c["role"] == CONSULTANT)["prompt"])
+    assert "alerts" not in briefing2
+
+
+async def test_a_failed_pending_brief_read_is_said_in_the_briefing_not_hidden(tmp_path):
+    tools = _base_tools()
+
+    def _boom(_arguments):
+        raise MCPToolError("queue.pending_brief: db locked")
+
+    tools["queue.pending_brief"] = _boom
+    tools["queue.overview"] = _queue_overview(proposals={"count": 1, "proposal_ids": ["proposal-0001"]})
+    runner = FakeRoleRunner()
+    await run_cycle(1, _deps(tmp_path, tools=tools, runner=runner))
+    prompt = next(c for c in runner.calls if c["role"] == OVERSEER)["prompt"]
+    assert "the queue read failed" in prompt

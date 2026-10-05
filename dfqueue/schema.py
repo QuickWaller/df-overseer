@@ -364,7 +364,7 @@ KIND_FIELDS: dict[str, tuple[str, ...]] = {
     PROPOSAL: (
         "type", "summary", "rationale", "prediction", "cost",
         "suggested_priority", "preconditions", "public_rationale",
-        "duplicate_of",
+        "duplicate_of", "relies_on", "cited",
     ),
     PASS: ("reason",),
     RULING: ("decision", "proposal_id", "reason", "public_rationale"),
@@ -708,7 +708,60 @@ def _validate_prediction(prediction, errors: list[str], prefix: str) -> None:
                 )
 
 
+#: `docs/CONDUCTOR-EXECUTION.md` 2.1/2.2 item 4: a proposal may cite up to this
+#: many facts it rests on; the server reads each at filing.
+RELIES_ON_MAX = 6
+CITED_VALUE_TEXT_MAX = 80
+
+
+def _is_scalar_fact(value) -> bool:
+    if value is None:
+        return False
+    if isinstance(value, str):
+        return len(value) <= CITED_VALUE_TEXT_MAX
+    return isinstance(value, (bool, int, float))
+
+
+def _validate_fact_ref(item, errors: list[str], prefix: str, *, cited: bool) -> None:
+    if not isinstance(item, dict):
+        errors.append(f"{prefix}: expected an object")
+        return
+    allowed = {"tool", "args", "field"} | ({"value", "tick"} if cited else set())
+    for key in item:
+        if key not in allowed:
+            errors.append(f"{prefix}.{key}: not a field of a {'cited fact' if cited else 'relies_on entry'}")
+    for key in ("tool", "field"):
+        v = item.get(key)
+        if not isinstance(v, str) or not v:
+            errors.append(f"{prefix}.{key}: expected a non-empty string")
+    if "args" in item and not isinstance(item["args"], dict):
+        errors.append(f"{prefix}.args: expected an object when given")
+    if cited:
+        if "value" not in item or not _is_scalar_fact(item.get("value")):
+            errors.append(f"{prefix}.value: expected a number, boolean or short string")
+        tick = item.get("tick")
+        if isinstance(tick, bool) or not isinstance(tick, int) or tick < 0:
+            errors.append(f"{prefix}.tick: expected a non-negative integer")
+
+
+def _validate_fact_list(record: dict, name: str, errors: list[str], *, cited: bool) -> None:
+    if name not in record:
+        return
+    items = record[name]
+    if not isinstance(items, list):
+        errors.append(f"record.{name}: expected a list")
+        return
+    if len(items) > RELIES_ON_MAX:
+        errors.append(f"record.{name}: at most {RELIES_ON_MAX} entries, got {len(items)}")
+    for i, item in enumerate(items):
+        _validate_fact_ref(item, errors, f"record.{name}[{i}]", cited=cited)
+
+
 def _validate_proposal_fields(record: dict, role, errors: list[str]) -> None:
+    _validate_fact_list(record, "relies_on", errors, cited=False)
+    _validate_fact_list(record, "cited", errors, cited=True)
+    if "cited" in record and len(record.get("cited") or []) != len(record.get("relies_on") or []):
+        errors.append("record.cited: must have one entry per relies_on entry (the server sets it)")
     for name in ("summary", "rationale", "public_rationale"):
         _validate_text_field(record, name, errors)
 

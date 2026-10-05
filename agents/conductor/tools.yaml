@@ -71,6 +71,22 @@ read:
       own triage (docs/AGENT-LOOP.md step 3) see what the queue holds for
       BOTH the Overseer and the Consultant before deciding who to wake.
       Granted only here: no other role's tools.yaml references this id.
+  - id: "queue.pending_brief"
+    status: exists
+    note: >-
+      Added handoffs/2026-10-05-execution-stage-1.md (docs/CONDUCTOR-EXECUTION.md
+      3.3). Native tool (dfmcp/queue_tools.py). The Overseer's ruling briefing
+      block: pending proposals (at most 8, true count given), each with its
+      cited facts re-read by the server ("now V" only if changed), overlap
+      flags, plus open projects and the last five rulings. The handler refuses
+      any role but the conductor. Read-only.
+  - id: "stocks.food-drink"
+    status: exists
+    note: >-
+      Re-granted handoffs/2026-10-05-execution-stage-1.md, for threshold alerts
+      only (conductor/policy.yaml threshold_alerts): one read per cycle, a line
+      in a briefing only while a threshold is crossed. Not a fixed stock list.
+      Read-only.
   - id: "diff.since"
     status: exists
     note: >-

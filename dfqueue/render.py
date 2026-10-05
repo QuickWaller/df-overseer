@@ -82,6 +82,12 @@ def _proposal_xml(record: dict) -> str:
         )
     lines.append("  </preconditions>")
 
+    for fact in record.get("cited") or []:
+        lines.append(
+            f"  <cited tool={quoteattr(str(fact['tool']))} field={quoteattr(str(fact['field']))} "
+            f"value={quoteattr(str(fact['value']))} tick={quoteattr(str(fact['tick']))}/>"
+        )
+
     lines.append(f"  <public_rationale>{escape(record['public_rationale'])}</public_rationale>")
     lines.append("</proposal>")
     return "\n".join(lines)
