@@ -55,10 +55,13 @@ from typing import Iterator
 
 from learning.predictions.schema import PENDING
 
+from . import routing
 from .schema import (
-    ABANDON, ABANDONED, ACCEPT, AMEND, ANSWER, ASK, DONE, EXECUTED, FAILED,
-    HELD, ISSUED, OBSERVATION, PROJECT, PROPOSAL, READY, REJECT, RULING,
-    TRIGGER_ALL_DONE, TRIGGER_ALL_SUCCESS, WAITING, fort_name,
+    ABANDON, ABANDONED, ACCEPT, AMEND, ANSWER, ASK, CLOSE, CLOSE_COMPLETED,
+    CLOSE_NOT_DONE, DONE, EXECUTED, FAILED, GUARDS_DEFAULT, HELD, ISSUED,
+    OBSERVATION, OBS_CONSISTENT, OBSERVATION_ROLE, PROJECT, PROPOSAL,
+    PUBLIC_RATIONALE_MAX, READY, REJECT, RULING, SUCCESS, FAILURE,
+    TRIGGER_ALL_DONE, TRIGGER_ALL_SUCCESS, WAITING, executor, fort_name,
     near_duplicate_reason, normalize_project, sole_writer, validate,
 )
 
@@ -93,7 +96,7 @@ VOID = "void"
 #: never left that status.
 _VOIDABLE_STATUSES = (AWAITING_EXECUTION, PENDING)
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 
 DEFAULT_DIR = Path(__file__).resolve().parent
 
@@ -152,6 +155,34 @@ CREATE TABLE IF NOT EXISTS step_targets (
 );
 
 CREATE INDEX IF NOT EXISTS idx_step_targets_project ON step_targets(project_id);
+
+-- Added handoffs/2026-10-05-stage-2a.md (docs/CONDUCTOR-EXECUTION.md 6.1).
+-- `meta` holds the cutovers (`cutover:<group>` -> ruling id). `step_runs` is
+-- the executor's write-ahead marker for one real call: written `issuing`
+-- before the call, `recorded` once its `executed` record is appended. A row
+-- left `issuing` is an Uncertain run (4.1, 4.2). `step_id` is a step id, or
+-- `cleanup:<handle>` for an abandon cleanup call (4.4).
+CREATE TABLE IF NOT EXISTS meta (
+    key TEXT PRIMARY KEY,
+    value TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS step_runs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    project_id TEXT NOT NULL,
+    step_id TEXT NOT NULL,
+    status TEXT NOT NULL,
+    outcome TEXT,
+    tick INTEGER NOT NULL,
+    baseline TEXT,
+    handle TEXT,
+    executed_id TEXT,
+    started_at TEXT NOT NULL,
+    ended_at TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_step_runs_step ON step_runs(project_id, step_id);
+CREATE INDEX IF NOT EXISTS idx_step_runs_status ON step_runs(status);
 """
 
 #: Schema migrations, keyed by the version they upgrade FROM. Applied in
@@ -164,6 +195,9 @@ _MIGRATIONS: dict[int, str] = {
     UPDATE predictions SET check_after_ticks = due_game_tick - registered_game_tick
         WHERE check_after_ticks IS NULL;
     """,
+    # v2 -> v3 only adds the `meta` and `step_runs` tables, which
+    # `_SCHEMA_SQL`'s `CREATE TABLE IF NOT EXISTS` already created on open.
+    2: "SELECT 1;",
 }
 
 
@@ -235,6 +269,34 @@ def _connect(path: str | Path) -> Iterator[sqlite3.Connection]:
         yield conn
     finally:
         conn.close()
+
+
+@contextmanager
+def _locked(path: str | Path) -> Iterator[sqlite3.Connection]:
+    """A connection holding the write lock (`BEGIN IMMEDIATE`) for a whole
+    read-decide-write: two executor calls can never both read the same base
+    (P2-L1, "reads and appends under the one write lock"). Commits on
+    success, rolls back on any exception."""
+    with _connect(path) as conn:
+        conn.execute("BEGIN IMMEDIATE")
+        try:
+            yield conn
+        except BaseException:
+            conn.rollback()
+            raise
+        else:
+            conn.commit()
+
+
+@contextmanager
+def _write_txn(conn: sqlite3.Connection, commit: bool) -> Iterator[None]:
+    """`with conn:` when `commit`, else no-op (the caller holds `_locked`
+    and commits once, so the record and its bookkeeping are one unit)."""
+    if commit:
+        with conn:
+            yield
+    else:
+        yield
 
 
 def _next_id(conn: sqlite3.Connection, kind: str) -> str:
@@ -469,426 +531,457 @@ def append(record: dict, path: str | Path, *, game_tick: int | None = None) -> d
     if not isinstance(record, dict):
         raise QueueError("refusing to append a malformed record:\n  record: expected an object")
 
+    with _connect(path) as conn:
+        return _append_in_conn(conn, record, game_tick)
+
+
+def _append_in_conn(
+    conn: sqlite3.Connection, record: dict, game_tick: int | None = None, *, commit: bool = True,
+) -> dict:
+    """`append()` on an open connection. Everything `append()` documents
+    applies; the split lets a caller that already holds the write lock
+    (`BEGIN IMMEDIATE`, see `_locked`) read, decide and write as one unit."""
     record = dict(record)  # never mutate the caller's dict
 
-    with _connect(path) as conn:
-        if not record.get("id"):
-            record["id"] = _next_id(conn, record.get("kind"))
-        if not record.get("ts"):
-            record["ts"] = datetime.now(timezone.utc).isoformat()
+    if not record.get("id"):
+        record["id"] = _next_id(conn, record.get("kind"))
+    if not record.get("ts"):
+        record["ts"] = datetime.now(timezone.utc).isoformat()
 
-        if record.get("kind") == PROJECT:
-            # Design §5.3: "a proposal with no steps block is a one-step
-            # project, so every existing proposal type keeps working
-            # unchanged." Normalisation, not validation -- must run before
-            # `validate()` below, once `id` is assigned (the implicit step's
-            # own id is derived from the project's id).
-            record = normalize_project(record)
+    if record.get("kind") == PROJECT:
+        # Design §5.3: "a proposal with no steps block is a one-step
+        # project, so every existing proposal type keeps working
+        # unchanged." Normalisation, not validation -- must run before
+        # `validate()` below, once `id` is assigned (the implicit step's
+        # own id is derived from the project's id).
+        record = normalize_project(record)
 
-        errors = validate(record)
-        kind = record.get("kind")
+    errors = validate(record)
+    kind = record.get("kind")
 
-        existing = conn.execute(
-            "SELECT 1 FROM records WHERE id = ?", (record["id"],)
+    existing = conn.execute(
+        "SELECT 1 FROM records WHERE id = ?", (record["id"],)
+    ).fetchone()
+    if existing is not None:
+        errors.append(f"record.id: {record['id']!r} is already in the queue")
+
+    if kind == RULING and not _proposal_id_already_flagged(errors):
+        proposal_id = record.get("proposal_id")
+        found = conn.execute(
+            "SELECT 1 FROM records WHERE id = ? AND kind = ?", (proposal_id, PROPOSAL)
         ).fetchone()
-        if existing is not None:
-            errors.append(f"record.id: {record['id']!r} is already in the queue")
-
-        if kind == RULING and not _proposal_id_already_flagged(errors):
-            proposal_id = record.get("proposal_id")
-            found = conn.execute(
-                "SELECT 1 FROM records WHERE id = ? AND kind = ?", (proposal_id, PROPOSAL)
+        if found is None:
+            errors.append(
+                f"record.proposal_id: {proposal_id!r} does not refer to an "
+                "existing proposal in this queue"
+            )
+        elif _proposal_is_covered_or_closed(conn, proposal_id):
+            errors.append(
+                f"record.proposal_id: {proposal_id!r} is covered or closed; "
+                "it needs no ruling"
+            )
+        else:
+            # A defer ("decide later") never closes a proposal, so a
+            # ruling after a defer is fine; a second FINAL ruling
+            # (accept/reject after an accept/reject, or a defer after
+            # one) is refused -- the proposal is already closed. Uses
+            # json_extract over the stored payload rather than a new
+            # column, so this needs no schema_version bump; see this
+            # module's own docstring, "Atomicity", for why payload is
+            # already the single source of truth for a record's fields.
+            already_final = conn.execute(
+                "SELECT 1 FROM records WHERE kind = ? AND proposal_id = ? "
+                "AND json_extract(payload, '$.decision') IN (?, ?)",
+                (RULING, proposal_id, *FINAL_DECISIONS),
             ).fetchone()
-            if found is None:
+            if already_final is not None:
                 errors.append(
-                    f"record.proposal_id: {proposal_id!r} does not refer to an "
-                    "existing proposal in this queue"
+                    f"record.proposal_id: {proposal_id!r} already has a final "
+                    "ruling (accept or reject); a proposal may be ruled on "
+                    "again only if its only ruling(s) so far were defer"
                 )
-            else:
-                # A defer ("decide later") never closes a proposal, so a
-                # ruling after a defer is fine; a second FINAL ruling
-                # (accept/reject after an accept/reject, or a defer after
-                # one) is refused -- the proposal is already closed. Uses
-                # json_extract over the stored payload rather than a new
-                # column, so this needs no schema_version bump; see this
-                # module's own docstring, "Atomicity", for why payload is
-                # already the single source of truth for a record's fields.
-                already_final = conn.execute(
-                    "SELECT 1 FROM records WHERE kind = ? AND proposal_id = ? "
-                    "AND json_extract(payload, '$.decision') IN (?, ?)",
-                    (RULING, proposal_id, *FINAL_DECISIONS),
-                ).fetchone()
-                if already_final is not None:
-                    errors.append(
-                        f"record.proposal_id: {proposal_id!r} already has a final "
-                        "ruling (accept or reject); a proposal may be ruled on "
-                        "again only if its only ruling(s) so far were defer"
-                    )
 
-                # Fact-check gate (docs/AGENT-ARCHITECTURE.md, "Consultant
-                # fact-check before ruling"; docs/AGENT-LOOP.md item 7):
-                # an `ask` from the Overseer naming this proposal, with no
-                # `answer` yet, blocks a ruling on it. A plain lookup ask
-                # (role != overseer, or no proposal_id at all) never blocks
-                # anything -- only role=overseer's own routed fact-check
-                # does.
-                open_fact_check = conn.execute(
-                    "SELECT a.id FROM records a WHERE a.kind = ? AND a.role = ? "
-                    "AND a.proposal_id = ? "
-                    "AND NOT EXISTS (SELECT 1 FROM records r WHERE r.kind = ? "
-                    "AND json_extract(r.payload, '$.ask_id') = a.id)",
-                    (ASK, sole_writer(), proposal_id, ANSWER),
-                ).fetchone()
-                if open_fact_check is not None:
-                    errors.append(
-                        f"record.proposal_id: {proposal_id!r} has an open fact-check "
-                        f"({open_fact_check['id']!r}, no answer yet); it cannot be "
-                        "ruled on until the Consultant answers"
-                    )
-
-        if kind == EXECUTED and not _ruling_id_already_flagged(errors):
-            ruling_id = record.get("ruling_id")
-            ruling_row = conn.execute(
-                "SELECT payload FROM records WHERE id = ? AND kind = ?", (ruling_id, RULING)
+            # Fact-check gate (docs/AGENT-ARCHITECTURE.md, "Consultant
+            # fact-check before ruling"; docs/AGENT-LOOP.md item 7):
+            # an `ask` from the Overseer naming this proposal, with no
+            # `answer` yet, blocks a ruling on it. A plain lookup ask
+            # (role != overseer, or no proposal_id at all) never blocks
+            # anything -- only role=overseer's own routed fact-check
+            # does.
+            open_fact_check = conn.execute(
+                "SELECT a.id FROM records a WHERE a.kind = ? AND a.role = ? "
+                "AND a.proposal_id = ? "
+                "AND NOT EXISTS (SELECT 1 FROM records r WHERE r.kind = ? "
+                "AND json_extract(r.payload, '$.ask_id') = a.id)",
+                (ASK, sole_writer(), proposal_id, ANSWER),
             ).fetchone()
-            if ruling_row is None:
+            if open_fact_check is not None:
                 errors.append(
-                    f"record.ruling_id: {ruling_id!r} does not refer to an "
-                    "existing ruling in this queue"
+                    f"record.proposal_id: {proposal_id!r} has an open fact-check "
+                    f"({open_fact_check['id']!r}, no answer yet); it cannot be "
+                    "ruled on until the Consultant answers"
                 )
-            else:
-                ruling_payload = json.loads(ruling_row["payload"])
-                if ruling_payload.get("decision") != ACCEPT:
-                    errors.append(
-                        f"record.ruling_id: {ruling_id!r} is a ruling whose decision "
-                        f"is {ruling_payload.get('decision')!r}, not {ACCEPT!r}; only "
-                        "an accepted proposal may be executed"
-                    )
 
-                # `step_id` added handoffs/2026-09-28-dfqueue-project-step-schema.md:
-                # must name a real step of `ruling_id`'s own project. Only
-                # checked once `ruling_id` itself resolves to something real.
-                # Resolved against the CURRENT version of the project
-                # (`_current_steps_and_version`, handoffs/2026-10-01-
-                # queue-bugs-and-amend.md item 3) rather than only the
-                # original `project` record's own `steps`, so a step added
-                # by an `amend` is a legal `step_id` here too.
-                #
-                # 2026-10-05 (handoffs/2026-10-05-project-before-executed.md):
-                # an accepted ruling with no project is refused outright, with
-                # or without a `step_id`. A charter rule alone left the live
-                # queue with zero projects; the server is the boundary. Older
-                # accepted rulings stay executable: `queue.project` with
-                # `from_ruling` works for any accepted ruling with no project,
-                # whenever it was written. Once a project exists, `step_id` is
-                # required: without it no step_targets row advances and the
-                # job graph never moves. An implicit-step (legacy one-step)
-                # project is the one exception: it has no step id to name.
-                project = None
-                if ruling_payload.get("decision") == ACCEPT:
-                    project = _find_project_for_ruling(conn, ruling_id)
-                    if project is None:
-                        errors.append(
-                            f"record.ruling_id: {ruling_id!r} is accepted but has no "
-                            "project yet, so it cannot be recorded as executed. Call "
-                            f"queue.project with from_ruling={ruling_id!r} first (one "
-                            "step per action, 'requires' edges where one step needs "
-                            "another done first; a one-action job is a one-step "
-                            "project), then call queue.executed again naming that "
-                            "step's id as step_id. This also applies to an accepted "
-                            "proposal from before this rule: create its project now, "
-                            "then execute"
-                        )
-                    elif record.get("step_id") is None and not all(
-                        st.get("implicit") for st in _current_steps_and_version(conn, project)[0]
-                    ):
-                        errors.append(
-                            f"record.step_id: required: {ruling_id!r} has project "
-                            f"{project['id']!r}; name the step this execution carries "
-                            "out (call queue.project_status to see its step ids)"
-                        )
-                if record.get("step_id") is not None and not _project_step_ids_already_flagged(errors):
-                    step_id = record["step_id"]
-                    if project is None:
-                        errors.append(
-                            f"record.step_id: {ruling_id!r} has no project yet "
-                            "(write a 'project' record for this ruling first)"
-                        )
-                    else:
-                        current_steps, _version = _current_steps_and_version(conn, project)
-                        if step_id not in _step_ids_list(current_steps):
-                            errors.append(
-                                f"record.step_id: {step_id!r} is not a step of "
-                                f"{project['id']!r}, the project for {ruling_id!r}"
-                            )
-                        else:
-                            # item 2: an `executed` record for a real step
-                            # must actually match that step's own
-                            # declaration, not just name it -- `queue.executed`
-                            # used to accept any tool for any step_id, and to
-                            # accept a step whose own `requires` were not yet
-                            # satisfied.
-                            step = next(s for s in current_steps if s.get("id") == step_id)
-                            if step.get("tool") is not None:
-                                for i, action in enumerate(record.get("actions", [])):
-                                    if isinstance(action, dict) and action.get("tool") != step["tool"]:
-                                        errors.append(
-                                            f"record.actions.{i}.tool: {action.get('tool')!r} "
-                                            f"does not match step {step_id!r}'s own declared "
-                                            f"tool {step['tool']!r}"
-                                        )
-
-                            target_rows = conn.execute(
-                                "SELECT step_id, state FROM step_targets WHERE project_id = ?",
-                                (project["id"],),
-                            ).fetchall()
-                            target_states_by_step: dict = {}
-                            for r in target_rows:
-                                target_states_by_step.setdefault(r["step_id"], []).append(r["state"])
-                            if not step_prerequisites_satisfied(step, target_states_by_step):
-                                errors.append(
-                                    f"record.step_id: {step_id!r}'s own 'requires' are not "
-                                    "yet satisfied (see queue.project_status); it cannot be "
-                                    "executed until its prerequisite steps finish"
-                                )
-
-        if kind == PROJECT and not _from_ruling_already_flagged(errors):
-            from_ruling = record.get("from_ruling")
-            ruling_row = conn.execute(
-                "SELECT payload FROM records WHERE id = ? AND kind = ?", (from_ruling, RULING)
-            ).fetchone()
-            if ruling_row is None:
+    if kind == EXECUTED and not _ruling_id_already_flagged(errors):
+        _check_writer_vs_routing(conn, errors, record, _proposal_type_of_ruling(conn, record.get("ruling_id")))
+        _check_executor_executed(conn, errors, record)
+        ruling_id = record.get("ruling_id")
+        ruling_row = conn.execute(
+            "SELECT payload FROM records WHERE id = ? AND kind = ?", (ruling_id, RULING)
+        ).fetchone()
+        if ruling_row is None:
+            errors.append(
+                f"record.ruling_id: {ruling_id!r} does not refer to an "
+                "existing ruling in this queue"
+            )
+        else:
+            ruling_payload = json.loads(ruling_row["payload"])
+            if ruling_payload.get("decision") != ACCEPT:
                 errors.append(
-                    f"record.from_ruling: {from_ruling!r} does not refer to an "
-                    "existing ruling in this queue"
+                    f"record.ruling_id: {ruling_id!r} is a ruling whose decision "
+                    f"is {ruling_payload.get('decision')!r}, not {ACCEPT!r}; only "
+                    "an accepted proposal may be executed"
                 )
-            else:
-                ruling_payload = json.loads(ruling_row["payload"])
-                if ruling_payload.get("decision") != ACCEPT:
-                    errors.append(
-                        f"record.from_ruling: {from_ruling!r} is a ruling whose "
-                        f"decision is {ruling_payload.get('decision')!r}, not "
-                        f"{ACCEPT!r}; only an accepted proposal has a project"
-                    )
-                elif _find_project_for_ruling(conn, from_ruling) is not None:
-                    # §9: the Overseer "writes its ordered plan... before
-                    # executing" -- once, not per retry. A second `project`
-                    # for the same ruling would leave `_find_project_for_ruling`
-                    # ambiguous about which one an `executed`/`observation`
-                    # record's `step_id` belongs to.
-                    errors.append(
-                        f"record.from_ruling: {from_ruling!r} already has a "
-                        "project; a ruling gets exactly one"
-                    )
 
-        if kind == AMEND and not _project_id_already_flagged(errors):
-            project_id = record.get("project_id")
-            proj_row = conn.execute(
-                "SELECT payload FROM records WHERE id = ? AND kind = ?", (project_id, PROJECT)
-            ).fetchone()
-            if proj_row is None:
-                errors.append(
-                    f"record.project_id: {project_id!r} does not refer to an "
-                    "existing project in this queue"
-                )
-            else:
-                project = json.loads(proj_row["payload"])
-                if conn.execute(
-                    "SELECT 1 FROM records WHERE kind = ? AND "
-                    "json_extract(payload, '$.project_id') = ?",
-                    (ABANDON, project_id),
-                ).fetchone() is not None:
+            # `step_id` added handoffs/2026-09-28-dfqueue-project-step-schema.md:
+            # must name a real step of `ruling_id`'s own project. Only
+            # checked once `ruling_id` itself resolves to something real.
+            # Resolved against the CURRENT version of the project
+            # (`_current_steps_and_version`, handoffs/2026-10-01-
+            # queue-bugs-and-amend.md item 3) rather than only the
+            # original `project` record's own `steps`, so a step added
+            # by an `amend` is a legal `step_id` here too.
+            #
+            # 2026-10-05 (handoffs/2026-10-05-project-before-executed.md):
+            # an accepted ruling with no project is refused outright, with
+            # or without a `step_id`. A charter rule alone left the live
+            # queue with zero projects; the server is the boundary. Older
+            # accepted rulings stay executable: `queue.project` with
+            # `from_ruling` works for any accepted ruling with no project,
+            # whenever it was written. Once a project exists, `step_id` is
+            # required: without it no step_targets row advances and the
+            # job graph never moves. An implicit-step (legacy one-step)
+            # project is the one exception: it has no step id to name.
+            project = None
+            if ruling_payload.get("decision") == ACCEPT:
+                project = _find_project_for_ruling(conn, ruling_id)
+                if project is None:
                     errors.append(
-                        f"record.project_id: {project_id!r} is abandoned; an "
-                        "abandoned project cannot be amended"
+                        f"record.ruling_id: {ruling_id!r} is accepted but has no "
+                        "project yet, so it cannot be recorded as executed. Call "
+                        f"queue.project with from_ruling={ruling_id!r} first (one "
+                        "step per action, 'requires' edges where one step needs "
+                        "another done first; a one-action job is a one-step "
+                        "project), then call queue.executed again naming that "
+                        "step's id as step_id. This also applies to an accepted "
+                        "proposal from before this rule: create its project now, "
+                        "then execute"
+                    )
+                elif record.get("step_id") is None and not all(
+                    st.get("implicit") for st in _current_steps_and_version(conn, project)[0]
+                ):
+                    errors.append(
+                        f"record.step_id: required: {ruling_id!r} has project "
+                        f"{project['id']!r}; name the step this execution carries "
+                        "out (call queue.project_status to see its step ids)"
+                    )
+            if record.get("step_id") is not None and not _project_step_ids_already_flagged(errors):
+                step_id = record["step_id"]
+                if project is None:
+                    errors.append(
+                        f"record.step_id: {ruling_id!r} has no project yet "
+                        "(write a 'project' record for this ruling first)"
                     )
                 else:
-                    previous_steps, _version = _current_steps_and_version(conn, project)
-                    previous_step_ids = _step_ids_list(previous_steps)
-                    new_step_ids = _step_ids_list(record.get("steps") or [])
-                    for name in ("replaces", "drops"):
-                        for sid in record.get(name) or []:
-                            if sid not in previous_step_ids:
-                                errors.append(
-                                    f"record.{name}: {sid!r} is not a step id in the "
-                                    f"previous version of {project_id!r}"
-                                )
-                    for sid in record.get("adds") or []:
-                        if sid not in new_step_ids:
+                    current_steps, _version = _current_steps_and_version(conn, project)
+                    if step_id not in _step_ids_list(current_steps):
+                        errors.append(
+                            f"record.step_id: {step_id!r} is not a step of "
+                            f"{project['id']!r}, the project for {ruling_id!r}"
+                        )
+                    else:
+                        # item 2: an `executed` record for a real step
+                        # must actually match that step's own
+                        # declaration, not just name it -- `queue.executed`
+                        # used to accept any tool for any step_id, and to
+                        # accept a step whose own `requires` were not yet
+                        # satisfied.
+                        step = next(s for s in current_steps if s.get("id") == step_id)
+                        if step.get("tool") is not None:
+                            for i, action in enumerate(record.get("actions", [])):
+                                if isinstance(action, dict) and action.get("tool") != step["tool"]:
+                                    errors.append(
+                                        f"record.actions.{i}.tool: {action.get('tool')!r} "
+                                        f"does not match step {step_id!r}'s own declared "
+                                        f"tool {step['tool']!r}"
+                                    )
+
+                        target_rows = conn.execute(
+                            "SELECT step_id, state FROM step_targets WHERE project_id = ?",
+                            (project["id"],),
+                        ).fetchall()
+                        target_states_by_step: dict = {}
+                        for r in target_rows:
+                            target_states_by_step.setdefault(r["step_id"], []).append(r["state"])
+                        if not step_prerequisites_satisfied(step, target_states_by_step):
                             errors.append(
-                                f"record.adds: {sid!r} is not a step id in this "
-                                "amendment's own steps"
+                                f"record.step_id: {step_id!r}'s own 'requires' are not "
+                                "yet satisfied (see queue.project_status); it cannot be "
+                                "executed until its prerequisite steps finish"
                             )
 
-                    # Enforced, not merely conventional (user's call,
-                    # 2026-10-01): a step id kept from the previous version
-                    # must be byte-identical to it after canonical JSON, or
-                    # this call is refused naming the step id. Without this,
-                    # a step reusing its old id while quietly changing its
-                    # own `targets` would leave the OLD version's now-stale
-                    # target rows lingering in `step_targets` forever
-                    # (`_seed_step_targets` only ever adds rows, never
-                    # prunes one a later version stopped declaring) --
-                    # a changed step must take a fresh id and name the old
-                    # one in `replaces`/`drops` instead, so its old rows are
-                    # left behind cleanly rather than silently reinterpreted
-                    # under an id that no longer means what it used to.
-                    previous_steps_by_id = {
-                        s["id"]: s for s in previous_steps
-                        if isinstance(s, dict) and isinstance(s.get("id"), str) and s["id"]
-                    }
-                    for step in record.get("steps") or []:
-                        if not (isinstance(step, dict) and isinstance(step.get("id"), str) and step["id"]):
-                            continue
-                        sid = step["id"]
-                        prev_step = previous_steps_by_id.get(sid)
-                        if prev_step is not None and _canonical_step_json(step) != _canonical_step_json(prev_step):
-                            errors.append(
-                                f"record.steps: {sid!r} reuses a step id from the "
-                                "previous version but its own definition changed; "
-                                "a changed step must take a fresh id and list the "
-                                "old one in replaces/drops, never redefine an "
-                                "existing id in place"
-                            )
-
-        if kind == ABANDON and not _project_id_already_flagged(errors):
-            project_id = record.get("project_id")
-            proj_row = conn.execute(
-                "SELECT 1 FROM records WHERE id = ? AND kind = ?", (project_id, PROJECT)
-            ).fetchone()
-            if proj_row is None:
+    if kind == PROJECT and not _from_ruling_already_flagged(errors):
+        _check_writer_vs_routing(conn, errors, record, _proposal_type_of_ruling(conn, record.get("from_ruling")))
+        from_ruling = record.get("from_ruling")
+        ruling_row = conn.execute(
+            "SELECT payload FROM records WHERE id = ? AND kind = ?", (from_ruling, RULING)
+        ).fetchone()
+        if ruling_row is None:
+            errors.append(
+                f"record.from_ruling: {from_ruling!r} does not refer to an "
+                "existing ruling in this queue"
+            )
+        else:
+            ruling_payload = json.loads(ruling_row["payload"])
+            if ruling_payload.get("decision") != ACCEPT:
                 errors.append(
-                    f"record.project_id: {project_id!r} does not refer to an "
-                    "existing project in this queue"
+                    f"record.from_ruling: {from_ruling!r} is a ruling whose "
+                    f"decision is {ruling_payload.get('decision')!r}, not "
+                    f"{ACCEPT!r}; only an accepted proposal has a project"
                 )
-            elif conn.execute(
+            elif _find_project_for_ruling(conn, from_ruling) is not None:
+                # §9: the Overseer "writes its ordered plan... before
+                # executing" -- once, not per retry. A second `project`
+                # for the same ruling would leave `_find_project_for_ruling`
+                # ambiguous about which one an `executed`/`observation`
+                # record's `step_id` belongs to.
+                errors.append(
+                    f"record.from_ruling: {from_ruling!r} already has a "
+                    "project; a ruling gets exactly one"
+                )
+
+    if kind == AMEND and not _project_id_already_flagged(errors):
+        project_id = record.get("project_id")
+        _check_writer_vs_routing(conn, errors, record, _proposal_type_of_project(conn, project_id))
+        proj_row = conn.execute(
+            "SELECT payload FROM records WHERE id = ? AND kind = ?", (project_id, PROJECT)
+        ).fetchone()
+        if proj_row is None:
+            errors.append(
+                f"record.project_id: {project_id!r} does not refer to an "
+                "existing project in this queue"
+            )
+        else:
+            project = json.loads(proj_row["payload"])
+            if conn.execute(
                 "SELECT 1 FROM records WHERE kind = ? AND "
                 "json_extract(payload, '$.project_id') = ?",
                 (ABANDON, project_id),
             ).fetchone() is not None:
                 errors.append(
-                    f"record.project_id: {project_id!r} is already abandoned"
+                    f"record.project_id: {project_id!r} is abandoned; an "
+                    "abandoned project cannot be amended"
                 )
-
-        if kind == OBSERVATION:
-            project = None
-            if not _project_step_ids_already_flagged(errors):
-                project_id = record.get("project_id")
-                row = conn.execute(
-                    "SELECT payload FROM records WHERE id = ? AND kind = ?",
-                    (project_id, PROJECT),
-                ).fetchone()
-                if row is None:
-                    errors.append(
-                        f"record.project_id: {project_id!r} does not refer to an "
-                        "existing project in this queue"
-                    )
-                else:
-                    project = json.loads(row["payload"])
-                    step_id = record.get("step_id")
-                    if step_id not in _step_ids(project):
+            else:
+                previous_steps, _version = _current_steps_and_version(conn, project)
+                previous_step_ids = _step_ids_list(previous_steps)
+                new_step_ids = _step_ids_list(record.get("steps") or [])
+                for name in ("replaces", "drops"):
+                    for sid in record.get(name) or []:
+                        if sid not in previous_step_ids:
+                            errors.append(
+                                f"record.{name}: {sid!r} is not a step id in the "
+                                f"previous version of {project_id!r}"
+                            )
+                for sid in record.get("adds") or []:
+                    if sid not in new_step_ids:
                         errors.append(
-                            f"record.step_id: {step_id!r} is not a step of "
-                            f"{project_id!r}"
+                            f"record.adds: {sid!r} is not a step id in this "
+                            "amendment's own steps"
                         )
 
-        if kind == ASK and "proposal_id" in record and not _proposal_id_already_flagged(errors):
-            proposal_id = record.get("proposal_id")
+                # Enforced, not merely conventional (user's call,
+                # 2026-10-01): a step id kept from the previous version
+                # must be byte-identical to it after canonical JSON, or
+                # this call is refused naming the step id. Without this,
+                # a step reusing its old id while quietly changing its
+                # own `targets` would leave the OLD version's now-stale
+                # target rows lingering in `step_targets` forever
+                # (`_seed_step_targets` only ever adds rows, never
+                # prunes one a later version stopped declaring) --
+                # a changed step must take a fresh id and name the old
+                # one in `replaces`/`drops` instead, so its old rows are
+                # left behind cleanly rather than silently reinterpreted
+                # under an id that no longer means what it used to.
+                previous_steps_by_id = {
+                    s["id"]: s for s in previous_steps
+                    if isinstance(s, dict) and isinstance(s.get("id"), str) and s["id"]
+                }
+                for step in record.get("steps") or []:
+                    if not (isinstance(step, dict) and isinstance(step.get("id"), str) and step["id"]):
+                        continue
+                    sid = step["id"]
+                    prev_step = previous_steps_by_id.get(sid)
+                    if prev_step is not None and _canonical_step_json(step) != _canonical_step_json(prev_step):
+                        errors.append(
+                            f"record.steps: {sid!r} reuses a step id from the "
+                            "previous version but its own definition changed; "
+                            "a changed step must take a fresh id and list the "
+                            "old one in replaces/drops, never redefine an "
+                            "existing id in place"
+                        )
+
+    if kind == AMEND and not _project_id_already_flagged(errors):
+        _check_amend_base(conn, errors, record)
+
+    if kind == CLOSE:
+        _check_close(conn, errors, record)
+
+    if kind == ABANDON and not _project_id_already_flagged(errors):
+        project_id = record.get("project_id")
+        proj_row = conn.execute(
+            "SELECT 1 FROM records WHERE id = ? AND kind = ?", (project_id, PROJECT)
+        ).fetchone()
+        if proj_row is None:
+            errors.append(
+                f"record.project_id: {project_id!r} does not refer to an "
+                "existing project in this queue"
+            )
+        elif conn.execute(
+            "SELECT 1 FROM records WHERE kind = ? AND "
+            "json_extract(payload, '$.project_id') = ?",
+            (ABANDON, project_id),
+        ).fetchone() is not None:
+            errors.append(
+                f"record.project_id: {project_id!r} is already abandoned"
+            )
+
+    if kind == OBSERVATION:
+        project = None
+        if not _project_step_ids_already_flagged(errors):
+            project_id = record.get("project_id")
+            row = conn.execute(
+                "SELECT payload FROM records WHERE id = ? AND kind = ?",
+                (project_id, PROJECT),
+            ).fetchone()
+            if row is None:
+                errors.append(
+                    f"record.project_id: {project_id!r} does not refer to an "
+                    "existing project in this queue"
+                )
+            else:
+                project = json.loads(row["payload"])
+                step_id = record.get("step_id")
+                if step_id not in _step_ids_list(_current_steps_and_version(conn, project)[0]):
+                    errors.append(
+                        f"record.step_id: {step_id!r} is not a step of "
+                        f"{project_id!r}"
+                    )
+
+    if kind == ASK and "proposal_id" in record and not _proposal_id_already_flagged(errors):
+        proposal_id = record.get("proposal_id")
+        found = conn.execute(
+            "SELECT 1 FROM records WHERE id = ? AND kind = ?", (proposal_id, PROPOSAL)
+        ).fetchone()
+        if found is None:
+            errors.append(
+                f"record.proposal_id: {proposal_id!r} does not refer to an "
+                "existing proposal in this queue"
+            )
+
+    if kind == ANSWER and not _ask_id_already_flagged(errors):
+        ask_id = record.get("ask_id")
+        ask_row = conn.execute(
+            "SELECT 1 FROM records WHERE id = ? AND kind = ?", (ask_id, ASK)
+        ).fetchone()
+        if ask_row is None:
+            errors.append(
+                f"record.ask_id: {ask_id!r} does not refer to an existing ask "
+                "in this queue"
+            )
+        else:
+            already_answered = conn.execute(
+                "SELECT 1 FROM records WHERE kind = ? AND "
+                "json_extract(payload, '$.ask_id') = ?", (ANSWER, ask_id),
+            ).fetchone()
+            if already_answered is not None:
+                errors.append(
+                    f"record.ask_id: {ask_id!r} already has an answer; one ask, "
+                    "one answer, no threads"
+                )
+
+    duplicate_reason: str | None = None
+    if kind == PROPOSAL:
+        _check_proposal_routing(conn, errors, record)
+        if isinstance(game_tick, bool) or not isinstance(game_tick, int):
+            errors.append(
+                "game_tick: a proposal must be appended with an integer "
+                f"game_tick (its prediction's due_game_tick depends on it), got {game_tick!r}"
+            )
+
+        if record.get("duplicate_of") is not None and not _duplicate_of_already_flagged(errors):
+            # A caller (or a re-append) already set duplicate_of itself;
+            # validate it the same way a ruling's proposal_id is
+            # validated -- must name a real proposal already here.
             found = conn.execute(
-                "SELECT 1 FROM records WHERE id = ? AND kind = ?", (proposal_id, PROPOSAL)
+                "SELECT 1 FROM records WHERE id = ? AND kind = ?",
+                (record["duplicate_of"], PROPOSAL),
             ).fetchone()
             if found is None:
                 errors.append(
-                    f"record.proposal_id: {proposal_id!r} does not refer to an "
-                    "existing proposal in this queue"
+                    f"record.duplicate_of: {record['duplicate_of']!r} does not "
+                    "refer to an existing proposal in this queue"
                 )
+        elif "duplicate_of" not in record and not errors:
+            # `handoffs/2026-09-28-queue-duplicate-proposal-check.md`:
+            # never silently refuse a duplicate (unlike gotchas) -- still
+            # write it, but flag it so the Overseer's ruling and the
+            # history can see the relationship. Only run once the record
+            # is otherwise valid: a malformed `type`/`summary` is
+            # reported as its own error, not compared against anything.
+            found_dup = _find_duplicate_proposal(conn, record)
+            if found_dup is not None:
+                dup_id, duplicate_reason = found_dup
+                record["duplicate_of"] = dup_id
 
-        if kind == ANSWER and not _ask_id_already_flagged(errors):
-            ask_id = record.get("ask_id")
-            ask_row = conn.execute(
-                "SELECT 1 FROM records WHERE id = ? AND kind = ?", (ask_id, ASK)
-            ).fetchone()
-            if ask_row is None:
-                errors.append(
-                    f"record.ask_id: {ask_id!r} does not refer to an existing ask "
-                    "in this queue"
-                )
-            else:
-                already_answered = conn.execute(
-                    "SELECT 1 FROM records WHERE kind = ? AND "
-                    "json_extract(payload, '$.ask_id') = ?", (ANSWER, ask_id),
-                ).fetchone()
-                if already_answered is not None:
-                    errors.append(
-                        f"record.ask_id: {ask_id!r} already has an answer; one ask, "
-                        "one answer, no threads"
-                    )
+    if errors:
+        raise QueueError("refusing to append an invalid record:\n  " + "\n  ".join(errors))
 
-        duplicate_reason: str | None = None
+    with _write_txn(conn, commit):  # one transaction: commits on success, rolls back on any exception
+        _insert_record(conn, record)
         if kind == PROPOSAL:
-            if isinstance(game_tick, bool) or not isinstance(game_tick, int):
-                errors.append(
-                    "game_tick: a proposal must be appended with an integer "
-                    f"game_tick (its prediction's due_game_tick depends on it), got {game_tick!r}"
-                )
-
-            if record.get("duplicate_of") is not None and not _duplicate_of_already_flagged(errors):
-                # A caller (or a re-append) already set duplicate_of itself;
-                # validate it the same way a ruling's proposal_id is
-                # validated -- must name a real proposal already here.
-                found = conn.execute(
-                    "SELECT 1 FROM records WHERE id = ? AND kind = ?",
-                    (record["duplicate_of"], PROPOSAL),
-                ).fetchone()
-                if found is None:
-                    errors.append(
-                        f"record.duplicate_of: {record['duplicate_of']!r} does not "
-                        "refer to an existing proposal in this queue"
-                    )
-            elif "duplicate_of" not in record and not errors:
-                # `handoffs/2026-09-28-queue-duplicate-proposal-check.md`:
-                # never silently refuse a duplicate (unlike gotchas) -- still
-                # write it, but flag it so the Overseer's ruling and the
-                # history can see the relationship. Only run once the record
-                # is otherwise valid: a malformed `type`/`summary` is
-                # reported as its own error, not compared against anything.
-                found_dup = _find_duplicate_proposal(conn, record)
-                if found_dup is not None:
-                    dup_id, duplicate_reason = found_dup
-                    record["duplicate_of"] = dup_id
-
-        if errors:
-            raise QueueError("refusing to append an invalid record:\n  " + "\n  ".join(errors))
-
-        with conn:  # one transaction: commits on success, rolls back on any exception
-            _insert_record(conn, record)
-            if kind == PROPOSAL:
-                pred = record["prediction"]
-                _insert_prediction(
-                    conn,
-                    record_id=record["id"],
-                    signal=pred["signal"],
-                    op=pred["op"],
-                    value=pred.get("value"),
-                    registered_game_tick=game_tick,
-                    due_game_tick=game_tick + pred["check_after_ticks"],
-                    check_after_ticks=pred["check_after_ticks"],
-                )
-            elif kind == EXECUTED:
+            pred = record["prediction"]
+            _insert_prediction(
+                conn,
+                record_id=record["id"],
+                signal=pred["signal"],
+                op=pred["op"],
+                value=pred.get("value"),
+                registered_game_tick=game_tick,
+                due_game_tick=game_tick + pred["check_after_ticks"],
+                check_after_ticks=pred["check_after_ticks"],
+            )
+        elif kind == EXECUTED:
+            if record.get("proposal_id") is None:
+                # Legacy rule (Overseer-written): the window starts at the
+                # first execution. An executor step's proposal arms when the
+                # step reaches `done` instead, never on a failure.
                 _arm_prediction_on_first_execution(conn, record)
-                _apply_executed_target_states(conn, record)
-            elif kind == PROJECT:
-                _seed_step_targets(conn, record["id"], record.get("steps", []))
-            elif kind == AMEND:
-                _seed_step_targets(conn, record["project_id"], record.get("steps", []))
+            _apply_executed_target_states(conn, record)
+        elif kind == PROJECT:
+            _seed_step_targets(conn, record["id"], record.get("steps", []))
+        elif kind == AMEND:
+            _seed_step_targets(conn, record["project_id"], record.get("steps", []))
+        elif kind == OBSERVATION:
+            _apply_observation(conn, record)
 
-        if duplicate_reason is not None:
-            # The reason is reported to the caller of THIS append() so the
-            # tool layer can surface it in the write's own result -- it is
-            # not persisted (only `duplicate_of`, a real schema field, is:
-            # see `_insert_record` above, called before this copy is made).
-            return {**record, "duplicate_reason": duplicate_reason}
-        return record
+    if duplicate_reason is not None:
+        # The reason is reported to the caller of THIS append() so the
+        # tool layer can surface it in the write's own result -- it is
+        # not persisted (only `duplicate_of`, a real schema field, is:
+        # see `_insert_record` above, called before this copy is made).
+        return {**record, "duplicate_reason": duplicate_reason}
+    return record
 
 
 def _arm_prediction_on_first_execution(conn: sqlite3.Connection, record: dict) -> None:
@@ -1184,52 +1277,58 @@ def project_status(path: str | Path, project_id: str) -> dict:
     any special-casing here.
     """
     with _connect(path) as conn:
-        proj_row = conn.execute(
-            "SELECT payload FROM records WHERE id = ? AND kind = ?", (project_id, PROJECT)
-        ).fetchone()
-        if proj_row is None:
-            raise QueueError(f"no such project: {project_id!r}")
-        project = json.loads(proj_row["payload"])
+        return _project_status_conn(conn, project_id)
 
-        abandon_row = conn.execute(
-            "SELECT payload FROM records WHERE kind = ? AND "
-            "json_extract(payload, '$.project_id') = ?",
-            (ABANDON, project_id),
-        ).fetchone()
 
-        steps, version = _current_steps_and_version(conn, project)
+def _project_status_conn(conn: sqlite3.Connection, project_id: str) -> dict:
+    """`project_status` on an open connection (also used by `open_projects`
+    and the legacy listing, which already hold one)."""
+    proj_row = conn.execute(
+        "SELECT payload FROM records WHERE id = ? AND kind = ?", (project_id, PROJECT)
+    ).fetchone()
+    if proj_row is None:
+        raise QueueError(f"no such project: {project_id!r}")
+    project = json.loads(proj_row["payload"])
 
-        rows = conn.execute(
-            "SELECT id, step_id, target, state, reason FROM step_targets "
-            "WHERE project_id = ? ORDER BY id ASC",
-            (project_id,),
-        ).fetchall()
+    abandon_row = conn.execute(
+        "SELECT payload FROM records WHERE kind = ? AND "
+        "json_extract(payload, '$.project_id') = ?",
+        (ABANDON, project_id),
+    ).fetchone()
 
-        counts: dict[str, int] = {}
-        top_blocker = None
-        rows_by_step: dict = {}
-        for r in rows:
-            counts[r["state"]] = counts.get(r["state"], 0) + 1
-            rows_by_step.setdefault(r["step_id"], []).append(r["state"])
-            if top_blocker is None and r["state"] == HELD:
-                top_blocker = {"step_id": r["step_id"], "target": r["target"], "reason": r["reason"]}
+    steps, version = _current_steps_and_version(conn, project)
 
-        if abandon_row is not None:
-            status = PROJECT_ABANDONED
-            abandoned_reason = json.loads(abandon_row["payload"]).get("reason")
-        else:
-            abandoned_reason = None
-            ruling_id = project["from_ruling"]
-            all_done = True
-            for step in steps:
-                if not (isinstance(step, dict) and isinstance(step.get("id"), str) and step["id"]):
-                    continue
-                own_rows = rows_by_step.get(step["id"], [])
-                has_executed = own_rows == [] and _step_has_executed_record(conn, ruling_id, step)
-                if step_status(own_rows, has_executed) != DONE:
-                    all_done = False
-                    break
-            status = "done" if all_done else "active"
+    rows = conn.execute(
+        "SELECT id, step_id, target, state, reason FROM step_targets "
+        "WHERE project_id = ? ORDER BY id ASC",
+        (project_id,),
+    ).fetchall()
+
+    counts: dict[str, int] = {}
+    top_blocker = None
+    rows_by_step: dict = {}
+    for r in rows:
+        counts[r["state"]] = counts.get(r["state"], 0) + 1
+        rows_by_step.setdefault(r["step_id"], []).append(r["state"])
+        if top_blocker is None and r["state"] == HELD:
+            top_blocker = {"step_id": r["step_id"], "target": r["target"], "reason": r["reason"]}
+
+    if abandon_row is not None:
+        status = PROJECT_ABANDONED
+        abandoned_reason = json.loads(abandon_row["payload"]).get("reason")
+    else:
+        abandoned_reason = None
+        ruling_id = project["from_ruling"]
+        all_done = True
+        for step in steps:
+            if not (isinstance(step, dict) and isinstance(step.get("id"), str) and step["id"]):
+                continue
+            own_rows = rows_by_step.get(step["id"], [])
+            has_executed = own_rows == [] and _step_has_executed_record(conn, ruling_id, step)
+            if step_status(own_rows, has_executed) != DONE:
+                all_done = False
+                break
+        status = "done" if all_done else "active"
 
     result = {
         "project_id": project_id,
@@ -1346,9 +1445,12 @@ def pending_proposals(path: str | Path, limit: int | None = None) -> list[dict]:
         "SELECT r.payload FROM records r WHERE r.kind = ? AND NOT EXISTS ("
         "SELECT 1 FROM records r2 WHERE r2.kind = ? AND r2.proposal_id = r.id "
         "AND json_extract(r2.payload, '$.decision') IN (?, ?)"
-        ") ORDER BY r.ts ASC, r.rowid ASC"
+        ") AND json_extract(r.payload, '$.covered_by') IS NULL "
+        "AND NOT EXISTS (SELECT 1 FROM records c WHERE c.kind = ? AND "
+        "json_extract(c.payload, '$.proposal_id') = r.id) "
+        "ORDER BY r.ts ASC, r.rowid ASC"
     )
-    params: list = [PROPOSAL, RULING, *FINAL_DECISIONS]
+    params: list = [PROPOSAL, RULING, *FINAL_DECISIONS, CLOSE]
     if limit is not None:
         query += " LIMIT ?"
         params.append(limit)
@@ -1384,13 +1486,18 @@ def open_asks(path: str | Path, limit: int | None = None) -> list[dict]:
 
 def unexecuted_accepted_proposals(path: str | Path) -> list[dict]:
     """Every proposal whose ruling was `accept` but that has no `executed`
-    record referencing that ruling yet, oldest proposal first. `docs/
-    AGENT-LOOP.md` item 4: "an accepted but never-executed proposal is
-    never graded as a miss, it is reported as unexecuted" -- this is that
-    report. `dfqueue/grade.py`'s `run_grading_cycle` calls this every time
-    it grades, alongside (never instead of) `pending_due`'s real misses/
-    hits, so a caller sees both in one pass rather than only the graded
-    half of the picture.
+    record yet, oldest proposal first. `docs/AGENT-LOOP.md` item 4: "an
+    accepted but never-executed proposal is never graded as a miss, it is
+    reported as unexecuted" -- this is that report. `dfqueue/grade.py`'s
+    `run_grading_cycle` calls this every time it grades, alongside (never
+    instead of) `pending_due`'s real misses/hits.
+
+    `docs/CONDUCTOR-EXECUTION.md` 6.1 (P3-B1, P2-M3): **unrouted types only**
+    (a routed proposal is the conductor's, never the Overseer's to-do), keyed
+    by the proposal's own id (an `executed` covers it by `proposal_id`, or by
+    its ruling's id for the Overseer's own records), excluding a follow-up's
+    ruling (its step belongs to the parent project) and any ruling a `close`
+    has closed (the 2a legacy sweep).
 
     Each entry is `{"proposal": <the proposal record>, "ruling_id": <the
     accepting ruling's id>}` -- the ruling id is what a caller would pass
@@ -1398,21 +1505,31 @@ def unexecuted_accepted_proposals(path: str | Path) -> list[dict]:
     caller re-derive it.
     """
     query = (
-        "SELECT p.payload AS proposal_payload, rl.id AS ruling_id "
+        "SELECT p.id AS proposal_id, p.payload AS proposal_payload, rl.id AS ruling_id "
         "FROM records p "
         "JOIN records rl ON rl.kind = ? AND rl.proposal_id = p.id "
         "AND json_extract(rl.payload, '$.decision') = ? "
         "WHERE p.kind = ? AND NOT EXISTS ("
         "SELECT 1 FROM records ex WHERE ex.kind = ? AND "
-        "json_extract(ex.payload, '$.ruling_id') = rl.id"
+        "(json_extract(ex.payload, '$.ruling_id') = rl.id "
+        "OR json_extract(ex.payload, '$.proposal_id') = p.id)"
+        ") AND NOT EXISTS ("
+        "SELECT 1 FROM records c WHERE c.kind = ? AND "
+        "(json_extract(c.payload, '$.ruling_id') = rl.id "
+        "OR json_extract(c.payload, '$.proposal_id') = p.id)"
         ") ORDER BY p.ts ASC, p.rowid ASC"
     )
     with _connect(path) as conn:
-        rows = conn.execute(query, (RULING, ACCEPT, PROPOSAL, EXECUTED)).fetchall()
-    return [
-        {"proposal": json.loads(r["proposal_payload"]), "ruling_id": r["ruling_id"]}
-        for r in rows
-    ]
+        rows = conn.execute(query, (RULING, ACCEPT, PROPOSAL, EXECUTED, CLOSE)).fetchall()
+    out = []
+    for r in rows:
+        proposal = json.loads(r["proposal_payload"])
+        if routing.is_routed(proposal.get("type")):
+            continue
+        if proposal.get("project_id") is not None:
+            continue  # a follow-up: its step is the parent project's
+        out.append({"proposal": proposal, "ruling_id": r["ruling_id"]})
+    return out
 
 
 def apply_grades(path: str | Path, updates: list[dict]) -> None:
@@ -1460,6 +1577,1107 @@ def export_jsonl(path: str | Path, out_dir: str | Path) -> None:
     with (out_dir / "predictions.jsonl").open("w", encoding="utf-8") as fh:
         for p in predictions:
             fh.write(json.dumps(_prediction_row(p), sort_keys=True, ensure_ascii=False) + "\n")
+
+
+# ---------------------------------------------------------------------------
+# Stage 2A: the executor's queue model (handoffs/2026-10-05-stage-2a.md,
+# docs/CONDUCTOR-EXECUTION.md section 6.1).
+#
+# What this adds, in one place: routed-type checks at write time, the
+# executor's own writes (`open_project_from_ruling`, `apply_followup`,
+# `begin/finish/resolve_step_run`, `record_observation`, `close`), the legacy
+# cutover and sweep (`set_cutover`, `legacy_targets`, `close_legacy`), and the
+# one definition of an open project (`open_projects`). Nothing here calls
+# DFHack. Nothing is routed until `dfqueue/action_tools.yaml` says so.
+#
+# Completion rule (one rule, both readers agree): a routed step has one
+# synthetic target, the step's own id. `executed` moves it `issued` (or
+# `held`/`failed`), and only an `observation` with `done: true` moves it
+# `done`, which is what `step_prerequisites_satisfied` and `step_status`
+# already read.
+# ---------------------------------------------------------------------------
+
+LEGACY = routing.LEGACY_GROUP
+
+#: Statuses of a `step_runs` row (docs/CONDUCTOR-EXECUTION.md 4.1, 4.2).
+RUN_ISSUING = "issuing"      # marker written, the real call may or may not have landed
+RUN_RECORDED = "recorded"    # the call returned and its `executed` record is appended
+RUN_RESOLVED = "resolved"    # an Uncertain run settled as success by a `landed` read
+RUN_VOID = "void"            # an Uncertain run settled as "nothing landed": retryable
+RUN_HELD = "held"            # unreadable: blocks the step until a person or close
+RUN_STATUSES = (RUN_ISSUING, RUN_RECORDED, RUN_RESOLVED, RUN_VOID, RUN_HELD)
+#: What `resolve_step_run` accepts.
+RESOLVE_OUTCOMES = ("success", "transient", "held")
+CLEANUP_PREFIX = "cleanup:"
+
+
+def _num(record_id: str) -> int:
+    """The number in `ruling-0007` (queue order of rulings)."""
+    try:
+        return int(str(record_id).rsplit("-", 1)[1])
+    except (IndexError, ValueError):
+        raise QueueError(f"not a queue id: {record_id!r}") from None
+
+
+def _get(conn: sqlite3.Connection, record_id, kind: str) -> dict | None:
+    if not isinstance(record_id, str):
+        return None
+    row = conn.execute(
+        "SELECT payload FROM records WHERE id = ? AND kind = ?", (record_id, kind)
+    ).fetchone()
+    return json.loads(row["payload"]) if row is not None else None
+
+
+def _proposal_of_ruling(conn: sqlite3.Connection, ruling_id) -> dict | None:
+    ruling = _get(conn, ruling_id, RULING)
+    return _get(conn, ruling["proposal_id"], PROPOSAL) if ruling else None
+
+
+def _proposal_type_of_ruling(conn: sqlite3.Connection, ruling_id) -> str | None:
+    p = _proposal_of_ruling(conn, ruling_id)
+    return p.get("type") if p else None
+
+
+def _proposal_type_of_project(conn: sqlite3.Connection, project_id) -> str | None:
+    project = _get(conn, project_id, PROJECT)
+    return _proposal_type_of_ruling(conn, project["from_ruling"]) if project else None
+
+
+def _is_closed(conn: sqlite3.Connection, field: str, record_id: str) -> bool:
+    return conn.execute(
+        f"SELECT 1 FROM records WHERE kind = ? AND json_extract(payload, '$.{field}') = ?",
+        (CLOSE, record_id),
+    ).fetchone() is not None
+
+
+def _is_abandoned(conn: sqlite3.Connection, project_id: str) -> bool:
+    return conn.execute(
+        "SELECT 1 FROM records WHERE kind = ? AND json_extract(payload, '$.project_id') = ?",
+        (ABANDON, project_id),
+    ).fetchone() is not None
+
+
+def _proposal_is_covered_or_closed(conn: sqlite3.Connection, proposal_id: str) -> bool:
+    p = _get(conn, proposal_id, PROPOSAL)
+    if p is not None and p.get("covered_by") is not None:
+        return True
+    return _is_closed(conn, "proposal_id", proposal_id)
+
+
+def _latest_cycle(conn: sqlite3.Connection) -> int:
+    row = conn.execute("SELECT MAX(cycle) AS c FROM records").fetchone()
+    return int(row["c"] or 0)
+
+
+def _canon(value) -> str:
+    return json.dumps(value, sort_keys=True, ensure_ascii=False)
+
+
+def _has_final_ruling(conn: sqlite3.Connection, proposal_id: str) -> bool:
+    return conn.execute(
+        "SELECT 1 FROM records WHERE kind = ? AND proposal_id = ? "
+        "AND json_extract(payload, '$.decision') IN (?, ?)",
+        (RULING, proposal_id, *FINAL_DECISIONS),
+    ).fetchone() is not None
+
+
+def _accepting_ruling(conn: sqlite3.Connection, proposal_id: str) -> dict | None:
+    row = conn.execute(
+        "SELECT payload FROM records WHERE kind = ? AND proposal_id = ? "
+        "AND json_extract(payload, '$.decision') = ? ORDER BY rowid ASC",
+        (RULING, proposal_id, ACCEPT),
+    ).fetchone()
+    return json.loads(row["payload"]) if row is not None else None
+
+
+# ---- checks run inside `_append_in_conn` ----------------------------------------
+
+
+def _check_writer_vs_routing(conn, errors: list[str], record: dict, ptype) -> None:
+    """P3-B1: the sole writer may not write a `project`, `executed` or
+    `amend` for a routed type; the executor may write them only for one.
+    Skipped when the proposal type cannot be resolved (a dangling reference
+    is already its own error)."""
+    if ptype is None:
+        return
+    role = record.get("role")
+    routed = routing.is_routed(ptype)
+    writer, runner = sole_writer(), executor()
+    if role == writer and role != runner and routed:
+        errors.append(
+            f"record.role: {ptype!r} is a routed proposal type; the conductor "
+            f"runs it, so the {writer!r} may not write a {record.get('kind')} for it "
+            "(docs/CONDUCTOR-EXECUTION.md 1, P3-B1)"
+        )
+    if role == runner and role != writer and not routed:
+        errors.append(
+            f"record.role: {ptype!r} is not a routed proposal type; the "
+            f"{runner!r} writes a {record.get('kind')} only for a routed one"
+        )
+
+
+def _check_executor_executed(conn, errors: list[str], record: dict) -> None:
+    """An executor-written `executed` is one step's real call: it names the
+    step and that step's own `proposal_id`, and its actions may only move
+    the step's synthetic target to `issued`, `held` or `failed` (only an
+    observation makes it `done`)."""
+    if record.get("role") != executor() or executor() == sole_writer():
+        return
+    project = _find_project_for_ruling(conn, record.get("ruling_id"))
+    step_id = record.get("step_id")
+    if project is None or step_id is None:
+        return  # reported by the existing project/step_id checks
+    step = next(
+        (st for st in _current_steps_and_version(conn, project)[0] if st.get("id") == step_id),
+        None,
+    )
+    if step is None:
+        return
+    if step.get("proposal_id") is None:
+        errors.append(
+            f"record.step_id: {step_id!r} was not built by the executor (it carries "
+            "no proposal_id), so the executor may not record it"
+        )
+    elif record.get("proposal_id") != step["proposal_id"]:
+        errors.append(
+            f"record.proposal_id: must be the step's own proposal "
+            f"{step['proposal_id']!r}, got {record.get('proposal_id')!r}"
+        )
+    for i, action in enumerate(record.get("actions") or []):
+        if not isinstance(action, dict):
+            continue
+        state = action.get("target_state")
+        if state is None:
+            continue
+        if state not in (ISSUED, HELD, FAILED):
+            errors.append(
+                f"record.actions.{i}.target_state: an executor records {ISSUED!r}, "
+                f"{HELD!r} or {FAILED!r}; only an observation makes a step {DONE!r}"
+            )
+        if action.get("targets") != [step_id]:
+            errors.append(
+                f"record.actions.{i}.targets: must be exactly [{step_id!r}] (the "
+                "step's synthetic target)"
+            )
+
+
+def _check_amend_base(conn, errors: list[str], record: dict) -> None:
+    """P2-L1: an amend is a whole plan, so one built from a stale base would
+    silently drop a step. Every step of the previous version must be kept
+    or named in `drops` or `replaces`."""
+    project = _get(conn, record.get("project_id"), PROJECT)
+    if project is None or not isinstance(record.get("steps"), list):
+        return
+    previous = _step_ids_list(_current_steps_and_version(conn, project)[0])
+    kept = _step_ids_list(record["steps"])
+    named = set(record.get("drops") or []) | set(record.get("replaces") or [])
+    for sid in sorted(previous - kept - named):
+        errors.append(
+            f"record.steps: omits step {sid!r} of the previous version without "
+            "naming it in drops or replaces (an amend carries the whole plan; "
+            "re-read the project and build from its latest version)"
+        )
+
+
+def _check_close(conn, errors: list[str], record: dict) -> None:
+    for field in ("project_id", "proposal_id", "ruling_id"):
+        if field not in record:
+            continue
+        tid = record[field]
+        if not isinstance(tid, str) or not tid:
+            return
+        if field == "project_id":
+            if _get(conn, tid, PROJECT) is None:
+                errors.append(f"record.project_id: {tid!r} does not refer to an existing project")
+        elif field == "proposal_id":
+            if _get(conn, tid, PROPOSAL) is None:
+                errors.append(f"record.proposal_id: {tid!r} does not refer to an existing proposal")
+            elif _has_final_ruling(conn, tid):
+                errors.append(
+                    f"record.proposal_id: {tid!r} already has a final ruling; close "
+                    "its ruling_id instead"
+                )
+        else:
+            ruling = _get(conn, tid, RULING)
+            if ruling is None:
+                errors.append(f"record.ruling_id: {tid!r} does not refer to an existing ruling")
+            elif ruling.get("decision") != ACCEPT:
+                errors.append(f"record.ruling_id: {tid!r} is not an accepting ruling")
+        if _is_closed(conn, field, tid):
+            errors.append(f"record.{field}: {tid!r} is already closed")
+
+
+def _check_proposal_routing(conn, errors: list[str], record: dict) -> None:
+    """A proposal's routed-type rules (docs/CONDUCTOR-EXECUTION.md 1, 2.2
+    items 1 and 6, the freeze in 6.6). The per-tool parts of filing (the dry
+    run, argument shape, cited handles) are the server's, 2C."""
+    ptype = record.get("type")
+    if not isinstance(ptype, str):
+        return
+    group = routing.group_of(ptype)
+    has_step = "step" in record
+    follow = "project_id" in record
+    if group is None:
+        if has_step:
+            errors.append(
+                f"record.step: {ptype!r} is in no routing group "
+                "(dfqueue/action_tools.yaml), so it takes no step"
+            )
+        return
+    routed = routing.is_routed(ptype)
+    if has_step and not routed:
+        errors.append(
+            f"record.step: {ptype!r} is not routed yet (group {group!r}); a step is "
+            "refused and the Overseer acts on the proposal as before"
+        )
+    if routed and not has_step:
+        errors.append(
+            f"record.step: {ptype!r} is routed to the executor, so a proposal needs an "
+            "exact step (one tool, exact arguments)"
+        )
+    if not has_step and routing.is_frozen(ptype):
+        errors.append(
+            f"record.step: {group!r} proposals move to exact actions at the next "
+            "deploy; file after it"
+        )
+    if has_step and isinstance(record["step"], dict):
+        tool = record["step"].get("tool")
+        if isinstance(tool, str) and tool not in routing.tools(group):
+            errors.append(
+                f"record.step.tool: {tool!r} is not a tool of group {group!r} "
+                f"({routing.tools(group)})"
+            )
+    phases = record.get("phases")
+    if isinstance(phases, dict) and isinstance(phases.get("tool"), str):
+        if phases["tool"] not in routing.tools(group):
+            errors.append(f"record.phases.tool: {phases['tool']!r} is not a tool of group {group!r}")
+
+    if follow and isinstance(record.get("project_id"), str):
+        project = _get(conn, record["project_id"], PROJECT)
+        if project is None:
+            errors.append(
+                f"record.project_id: {record['project_id']!r} does not refer to an "
+                "existing project"
+            )
+        else:
+            if _is_closed(conn, "project_id", project["id"]) or _is_abandoned(conn, project["id"]):
+                errors.append(f"record.project_id: {project['id']!r} is closed or abandoned")
+            root = _proposal_of_ruling(conn, project["from_ruling"])
+            if root is None or root.get("role") != record.get("role"):
+                errors.append(
+                    f"record.project_id: {project['id']!r} is not a project this role proposed"
+                )
+            elif routing.group_of(root.get("type")) != group:
+                errors.append(
+                    f"record.type: a follow-up must stay in its project's group "
+                    f"({routing.group_of(root.get('type'))!r}), got {group!r}"
+                )
+            steps = _current_steps_and_version(conn, project)[0]
+            after = record.get("after_step")
+            if isinstance(after, str) and after not in _step_ids_list(steps):
+                errors.append(
+                    f"record.after_step: {after!r} is not a step of {project['id']!r}"
+                )
+            covered = record.get("covered_by")
+            if covered is not None:
+                if not routing.coverage_on(ptype):
+                    errors.append(
+                        f"record.covered_by: coverage is not on for group {group!r}"
+                    )
+                elif covered not in _step_ids_list(steps):
+                    errors.append(
+                        f"record.covered_by: {covered!r} is not a step of {project['id']!r}"
+                    )
+    elif "covered_by" in record and not follow:
+        pass  # the schema already refused it
+
+
+# ---- cutovers (meta table) ------------------------------------------------------
+
+
+def cutover(path: str | Path, group: str) -> str | None:
+    """The ruling id at or below which a group's old work is legacy, or
+    `None` if no cutover has been set. `"legacy"` is a group (deploy 2a)."""
+    with _connect(path) as conn:
+        return _cutover_conn(conn, group)
+
+
+def _cutover_conn(conn: sqlite3.Connection, group: str) -> str | None:
+    row = conn.execute("SELECT value FROM meta WHERE key = ?", (f"cutover:{group}",)).fetchone()
+    return row["value"] if row is not None else None
+
+
+def set_cutover(path: str | Path, group: str, ruling_id: str) -> None:
+    """Record a group's cutover. Raise-only: a cutover never moves down, so
+    closing is never undone. `ruling_id` must be an existing ruling."""
+    if group != LEGACY and group not in routing.groups():
+        raise QueueError(f"no such routing group: {group!r}")
+    with _locked(path) as conn:
+        if _get(conn, ruling_id, RULING) is None:
+            raise QueueError(f"cutover: {ruling_id!r} is not an existing ruling")
+        current = _cutover_conn(conn, group)
+        if current is not None and _num(ruling_id) < _num(current):
+            raise QueueError(
+                f"cutover for {group!r} is {current!r}; it only moves up, not to {ruling_id!r}"
+            )
+        conn.execute(
+            "INSERT INTO meta (key, value) VALUES (?, ?) "
+            "ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+            (f"cutover:{group}", ruling_id),
+        )
+
+
+def highest_ruling(path: str | Path) -> str | None:
+    """The id of the latest ruling (what a `--check` lists up to)."""
+    with _connect(path) as conn:
+        return _highest_ruling_conn(conn)
+
+
+def _highest_ruling_conn(conn: sqlite3.Connection) -> str | None:
+    rows = conn.execute("SELECT id FROM records WHERE kind = ?", (RULING,)).fetchall()
+    return max((r["id"] for r in rows), key=_num, default=None)
+
+
+def _effective_cutover_num(conn: sqlite3.Connection, group: str | None) -> int | None:
+    """The larger of the legacy cutover and the group's own; `None` if
+    neither is set."""
+    nums = []
+    for g in {LEGACY, group} - {None}:
+        c = _cutover_conn(conn, g)
+        if c is not None:
+            nums.append(_num(c))
+    return max(nums) if nums else None
+
+
+# ---- the executor's writes ------------------------------------------------------
+
+
+def _fail(errors: list[str]) -> None:
+    raise QueueError("refusing: " + "; ".join(errors))
+
+
+def _build_step(project_id: str, n: int, proposal: dict, requires: list[str]) -> dict:
+    sid = f"{project_id}/s{n}"
+    step = {
+        "id": sid,
+        "tool": proposal["step"]["tool"],
+        "args": json.loads(_canon(proposal["step"].get("args") or {})),
+        "targets": {"set": [sid]},
+        "requires": list(requires),
+        "trigger": TRIGGER_ALL_SUCCESS,
+        "prefer_after": [],
+        "guards": GUARDS_DEFAULT,
+        "proposal_id": proposal["id"],
+    }
+    label = proposal["step"].get("label")
+    if label:
+        step["label"] = label
+    return step
+
+
+def open_project_from_ruling(
+    path: str | Path, ruling_id: str, *, urgency: str | None = None,
+    tick: int | None = None, snapshot: str = "executor",
+) -> dict:
+    """The executor opens the project for an accepted routed proposal: one
+    step (`<project id>/s1`, its own synthetic target, the proposal's tool
+    and arguments, `proposal_id` set). Refuses: a ruling that is not an
+    accept, a follow-up (it joins its parent, `apply_followup`), an
+    unrouted type, a proposal with no step, a ruling at or below the group's
+    cutover (or with no cutover set: unset means nothing may open), a closed
+    ruling, and a ruling that already has a project (P2-M3, P3-B1).
+    `urgency` is the project's (`normal` if omitted); the record's `cycle`
+    is `tick`, or the ruling's own. Returns the `project` record."""
+    with _locked(path) as conn:
+        errors: list[str] = []
+        ruling = _get(conn, ruling_id, RULING)
+        proposal = None
+        if ruling is None:
+            _fail([f"{ruling_id!r} is not a ruling"])
+        if ruling.get("decision") != ACCEPT:
+            errors.append(f"{ruling_id!r} is not an accepting ruling")
+        proposal = _get(conn, ruling["proposal_id"], PROPOSAL)
+        group = routing.group_of(proposal.get("type")) if proposal else None
+        if proposal is not None:
+            if proposal.get("project_id") is not None:
+                errors.append(
+                    f"{proposal['id']!r} is a follow-up of {proposal['project_id']!r}; it "
+                    "joins that project (apply_followup), it never opens one"
+                )
+            if group is None or not routing.is_routed(proposal["type"]):
+                errors.append(f"type {proposal['type']!r} is not routed")
+            if "step" not in proposal:
+                errors.append(f"{proposal['id']!r} has no step")
+        if group is not None:
+            cut = _effective_cutover_num(conn, group)
+            if cut is None:
+                errors.append(f"no cutover is set for group {group!r}, so nothing may open")
+            elif _num(ruling_id) <= cut:
+                errors.append(f"{ruling_id!r} is at or below the cutover (legacy work)")
+        if _is_closed(conn, "ruling_id", ruling_id):
+            errors.append(f"{ruling_id!r} is closed")
+        if _find_project_for_ruling(conn, ruling_id) is not None:
+            errors.append(f"{ruling_id!r} already has a project")
+        if errors:
+            _fail(errors)
+
+        pid = _next_id(conn, PROJECT)
+        record = {
+            "id": pid, "kind": PROJECT, "role": executor(),
+            "cycle": ruling["cycle"] if tick is None else tick,
+            "snapshot": snapshot,
+            "from_ruling": ruling_id,
+            "summary": proposal["summary"],
+            "because": proposal["rationale"],
+            "steps": [_build_step(pid, 1, proposal, [])],
+        }
+        if urgency is not None:
+            record["urgency"] = urgency
+        if proposal.get("public_title"):
+            record["public_title"] = proposal["public_title"]
+        if proposal.get("public_rationale"):
+            record["public_rationale"] = proposal["public_rationale"][:PUBLIC_RATIONALE_MAX]
+        tmpl = record["steps"][0]["args"].get("template")
+        if isinstance(tmpl, str) and tmpl:
+            record["template"] = tmpl
+        return _append_in_conn(conn, record, commit=False)
+
+
+def apply_followup(
+    path: str | Path, proposal_id: str, *, tick: int | None = None,
+    snapshot: str = "executor",
+) -> dict:
+    """Apply an accepted (or covered) follow-up: one `amend` that carries
+    the project's whole current plan plus the new step
+    (`<project id>/s<N>`, `requires: [after_step]`). Reads and writes under
+    one lock, so two follow-ups cannot build from the same base (P2-L1);
+    the store's own amend base check backs it. Refuses a follow-up that is
+    not ruled accept or covered, one already applied, a closed or abandoned
+    project, and an `after_step` that is not in the plan."""
+    with _locked(path) as conn:
+        errors: list[str] = []
+        proposal = _get(conn, proposal_id, PROPOSAL)
+        if proposal is None:
+            _fail([f"{proposal_id!r} is not a proposal"])
+        project = _get(conn, proposal.get("project_id"), PROJECT)
+        if project is None:
+            _fail([f"{proposal_id!r} is not a follow-up of an existing project"])
+        if proposal.get("covered_by") is None and _accepting_ruling(conn, proposal_id) is None:
+            errors.append(f"{proposal_id!r} is neither accepted nor covered")
+        if _is_closed(conn, "project_id", project["id"]) or _is_abandoned(conn, project["id"]):
+            errors.append(f"{project['id']!r} is closed or abandoned")
+        if _is_closed(conn, "proposal_id", proposal_id):
+            errors.append(f"{proposal_id!r} is closed")
+        steps, _version = _current_steps_and_version(conn, project)
+        if proposal.get("after_step") not in _step_ids_list(steps):
+            errors.append(f"after_step {proposal.get('after_step')!r} is not in the plan")
+        if any(st.get("proposal_id") == proposal_id for st in steps):
+            errors.append(f"{proposal_id!r} is already applied")
+        if "step" not in proposal:
+            errors.append(f"{proposal_id!r} has no step")
+        if errors:
+            _fail(errors)
+
+        n = 1 + max(
+            (int(str(st["id"]).rsplit("/s", 1)[1]) for st in steps
+             if "/s" in str(st.get("id")) and str(st["id"]).rsplit("/s", 1)[1].isdigit()),
+            default=0,
+        )
+        new_step = _build_step(project["id"], n, proposal, [proposal["after_step"]])
+        record = {
+            "kind": AMEND, "role": executor(),
+            "cycle": _latest_cycle(conn) if tick is None else tick,
+            "snapshot": snapshot,
+            "project_id": project["id"],
+            "steps": [*steps, new_step],
+            "adds": [new_step["id"]],
+            "reason": f"follow-up {proposal_id}",
+        }
+        if proposal.get("public_rationale"):
+            record["public_rationale"] = proposal["public_rationale"][:PUBLIC_RATIONALE_MAX]
+        return _append_in_conn(conn, record, commit=False)
+
+
+def _step_of(conn, project: dict, step_id: str) -> dict | None:
+    return next(
+        (st for st in _current_steps_and_version(conn, project)[0] if st.get("id") == step_id),
+        None,
+    )
+
+
+def _runnable_reasons(conn, project_id: str, step_id: str, latched: bool) -> list[str]:
+    project = _get(conn, project_id, PROJECT)
+    if project is None:
+        return [f"no such project {project_id!r}"]
+    if _is_closed(conn, "project_id", project_id):
+        return [f"project {project_id!r} is closed"]
+    if _is_abandoned(conn, project_id):
+        return [f"project {project_id!r} is abandoned"]
+    ruling = _get(conn, project["from_ruling"], RULING)
+    if ruling is None or ruling.get("decision") != ACCEPT:
+        return ["the project's ruling is not accepted"]
+    step = _step_of(conn, project, step_id)
+    if step is None:
+        return [f"{step_id!r} is not a step of the current plan"]
+    pid = step.get("proposal_id")
+    if pid is None:
+        return ["the step carries no proposal_id: it was not built by the executor (P3-B1)"]
+    proposal = _get(conn, pid, PROPOSAL)
+    if proposal is None or "step" not in proposal:
+        return [f"the step's proposal {pid!r} has no step"]
+    reasons: list[str] = []
+    if (
+        step.get("tool") != proposal["step"].get("tool")
+        or _canon(step.get("args") or {}) != _canon(proposal["step"].get("args") or {})
+    ):
+        reasons.append(
+            f"the step's content differs from proposal {pid!r}'s step; the executor runs "
+            "only what was proposed and ruled"
+        )
+    if proposal.get("project_id") is None:
+        if proposal.get("id") != _proposal_of_ruling(conn, project["from_ruling"]).get("id"):
+            reasons.append(f"proposal {pid!r} is not the project's own")
+    else:
+        if proposal["project_id"] != project_id:
+            reasons.append(f"proposal {pid!r} belongs to {proposal['project_id']!r}")
+        if proposal.get("covered_by") is None and _accepting_ruling(conn, pid) is None:
+            reasons.append(f"follow-up {pid!r} is neither accepted nor covered")
+    states: dict = {}
+    for r in conn.execute(
+        "SELECT step_id, state FROM step_targets WHERE project_id = ?", (project_id,)
+    ).fetchall():
+        states.setdefault(r["step_id"], []).append(r["state"])
+    if not step_prerequisites_satisfied(step, states):
+        reasons.append("the step's prerequisites are not done")
+    own = states.get(step_id, [])
+    if any(s in (ISSUED, DONE) for s in own):
+        reasons.append("the step already succeeded")
+    if any(s == FAILED for s in own):
+        reasons.append("the step failed")
+    open_run = conn.execute(
+        "SELECT status FROM step_runs WHERE project_id = ? AND step_id = ? AND status IN (?, ?)",
+        (project_id, step_id, RUN_ISSUING, RUN_HELD),
+    ).fetchone()
+    if open_run is not None:
+        reasons.append(f"an earlier run of the step is unresolved ({open_run['status']})")
+    if latched and project.get("urgency") != "high":
+        reasons.append("the tripwire is latched and the project is not urgency high")
+    return reasons
+
+
+def check_step_runnable(
+    path: str | Path, project_id: str, step_id: str, *, latched: bool,
+) -> list[str]:
+    """Every reason the step may not run now; `[]` means runnable
+    (docs/CONDUCTOR-EXECUTION.md 4.1 step 1): ruling accepted, project open,
+    step in the current plan, prerequisites done, not succeeded, no
+    unresolved run, the tripwire not latched unless the project's urgency is
+    `high`, and **the step's content equals its `proposal_id`'s `step`**
+    (P3-B1). A step with no `proposal_id` (anything the Overseer wrote) is
+    never runnable."""
+    with _connect(path) as conn:
+        return _runnable_reasons(conn, project_id, step_id, latched)
+
+
+def begin_step_run(
+    path: str | Path, project_id: str, step_id: str, *, tick: int, baseline,
+) -> int:
+    """Write the `issuing` marker for one real call, before it is made
+    (4.1 step 3). `baseline` is the JSON-able `landed` baseline (for a
+    reserve, the set of reservation handles). `step_id` may be
+    `cleanup:<handle>` for an abandon cleanup call (4.4), which is not
+    checked against the plan. Re-checks runnability under the lock (the
+    tripwire excepted: that is the caller's call) and returns the run id."""
+    with _locked(path) as conn:
+        if step_id.startswith(CLEANUP_PREFIX):
+            if _get(conn, project_id, PROJECT) is None:
+                _fail([f"no such project {project_id!r}"])
+        else:
+            reasons = _runnable_reasons(conn, project_id, step_id, latched=False)
+            if reasons:
+                _fail(reasons)
+        cur = conn.execute(
+            "INSERT INTO step_runs (project_id, step_id, status, tick, baseline, started_at) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
+            (project_id, step_id, RUN_ISSUING, int(tick), json.dumps(baseline),
+             datetime.now(timezone.utc).isoformat()),
+        )
+        return cur.lastrowid
+
+
+def _run_row(conn, run_id: int) -> sqlite3.Row:
+    row = conn.execute("SELECT * FROM step_runs WHERE id = ?", (run_id,)).fetchone()
+    if row is None:
+        raise QueueError(f"no such step run: {run_id!r}")
+    return row
+
+
+def _run_dict(row: sqlite3.Row) -> dict:
+    return {
+        "run_id": row["id"], "project_id": row["project_id"], "step_id": row["step_id"],
+        "status": row["status"], "outcome": row["outcome"], "tick": row["tick"],
+        "baseline": json.loads(row["baseline"]) if row["baseline"] is not None else None,
+        "handle": row["handle"], "executed_id": row["executed_id"],
+        "started_at": row["started_at"], "ended_at": row["ended_at"],
+    }
+
+
+def get_step_run(path: str | Path, run_id: int) -> dict:
+    with _connect(path) as conn:
+        return _run_dict(_run_row(conn, run_id))
+
+
+def step_runs(path: str | Path, project_id: str, step_id: str | None = None) -> list[dict]:
+    """Every run of a project (or one step), oldest first: what the
+    conductor counts retries from (`void` and `recorded` failures)."""
+    q, params = "SELECT * FROM step_runs WHERE project_id = ?", [project_id]
+    if step_id is not None:
+        q, params = q + " AND step_id = ?", [*params, step_id]
+    with _connect(path) as conn:
+        return [_run_dict(r) for r in conn.execute(q + " ORDER BY id ASC", params).fetchall()]
+
+
+def _first_handle(executed: dict) -> str | None:
+    for a in executed.get("actions") or []:
+        for ref in (a or {}).get("game_refs") or []:
+            if isinstance(ref, str) and ref:
+                return ref
+    return None
+
+
+def finish_step_run(
+    path: str | Path, run_id: int, executed: dict, *, handle: str | None = None,
+) -> dict:
+    """The real call returned: append the step's `executed` record and mark
+    the run `recorded`, in one transaction (4.1 step 5). `executed` carries
+    `actions` (each `{tool, outcome, detail?, game_refs?}`; to move the
+    step's target add `targets: [<step id>]` and `target_state` `issued`,
+    `held` or `failed`; **leave both off for a first failure, so the step
+    stays retryable**), `notes` (defaults to a one-line note), and
+    optionally `cycle` (default: the run's tick) and `snapshot`. The store
+    fills `role`, `ruling_id`, `step_id` and `proposal_id`. `handle` is the
+    handle the call issued (default: the first string in `game_refs`); it is
+    what `issued_handles` returns. A `cleanup:<handle>` run appends no
+    `executed`. Returns `{"run": ..., "executed": <record or None>}`."""
+    with _locked(path) as conn:
+        row = _run_row(conn, run_id)
+        if row["status"] != RUN_ISSUING:
+            _fail([f"run {run_id} is {row['status']!r}, not {RUN_ISSUING!r}"])
+        handle = handle or _first_handle(executed)
+        written = None
+        now = datetime.now(timezone.utc).isoformat()
+        if not row["step_id"].startswith(CLEANUP_PREFIX):
+            project = _get(conn, row["project_id"], PROJECT)
+            step = _step_of(conn, project, row["step_id"])
+            record = {
+                **{k: v for k, v in executed.items() if k not in ("kind", "role")},
+                "kind": EXECUTED, "role": executor(),
+                "ruling_id": project["from_ruling"], "step_id": step["id"],
+                "proposal_id": step["proposal_id"],
+            }
+            record.setdefault("cycle", row["tick"])
+            record.setdefault("snapshot", "executor")
+            record.setdefault("notes", f"run {run_id} of {step['id']}")
+            written = _append_in_conn(conn, record, commit=False)
+        conn.execute(
+            "UPDATE step_runs SET status = ?, outcome = ?, handle = ?, executed_id = ?, "
+            "ended_at = ? WHERE id = ?",
+            (RUN_RECORDED,
+             "success" if all((a or {}).get("outcome") == SUCCESS for a in executed.get("actions") or [])
+             else "failure",
+             handle, written["id"] if written else None, now, run_id),
+        )
+        return {"run": _run_dict(_run_row(conn, run_id)), "executed": written}
+
+
+def unresolved_step_runs(path: str | Path) -> list[dict]:
+    """Runs left `issuing` (an Uncertain outcome, 4.2), oldest first. A run
+    the conductor settled as `held` is not listed (it needs a person)."""
+    with _connect(path) as conn:
+        rows = conn.execute(
+            "SELECT * FROM step_runs WHERE status = ? ORDER BY id ASC", (RUN_ISSUING,)
+        ).fetchall()
+    return [_run_dict(r) for r in rows]
+
+
+def resolve_step_run(
+    path: str | Path, run_id: int, outcome: str, handle: str | None = None,
+    *, tick: int | None = None, notes: str | None = None,
+) -> dict:
+    """Settle an `issuing` run after its `landed` read (4.2 Uncertain).
+    `success` (a handle is required): the call did land; appends the step's
+    `executed` (success, target `issued`, `game_refs` the handle), run
+    `resolved`. `transient`: nothing landed; run `void`, the step may run
+    again. `held`: unreadable; run `held`, the step is blocked until the
+    project is closed. A `cleanup:` run appends no record."""
+    if outcome not in RESOLVE_OUTCOMES:
+        raise QueueError(f"resolve outcome {outcome!r} is not in {RESOLVE_OUTCOMES}")
+    if outcome == "success" and not handle:
+        raise QueueError("resolving as success needs the handle the call issued")
+    with _locked(path) as conn:
+        row = _run_row(conn, run_id)
+        if row["status"] != RUN_ISSUING:
+            _fail([f"run {run_id} is {row['status']!r}, not {RUN_ISSUING!r}"])
+        now = datetime.now(timezone.utc).isoformat()
+        written = None
+        if outcome == "success" and not row["step_id"].startswith(CLEANUP_PREFIX):
+            project = _get(conn, row["project_id"], PROJECT)
+            step = _step_of(conn, project, row["step_id"])
+            record = {
+                "kind": EXECUTED, "role": executor(),
+                "cycle": row["tick"] if tick is None else tick, "snapshot": "executor",
+                "ruling_id": project["from_ruling"], "step_id": step["id"],
+                "proposal_id": step["proposal_id"],
+                "actions": [{
+                    "tool": step["tool"], "outcome": SUCCESS,
+                    "detail": "settled as landed by a read against the baseline",
+                    "targets": [step["id"]], "target_state": ISSUED,
+                    "game_refs": [handle],
+                }],
+                "notes": notes or f"run {run_id} settled as success by its landed read",
+            }
+            written = _append_in_conn(conn, record, commit=False)
+        status = {"success": RUN_RESOLVED, "transient": RUN_VOID, "held": RUN_HELD}[outcome]
+        conn.execute(
+            "UPDATE step_runs SET status = ?, outcome = ?, handle = ?, executed_id = ?, "
+            "ended_at = ? WHERE id = ?",
+            (status, outcome, handle, written["id"] if written else None, now, run_id),
+        )
+        return {"run": _run_dict(_run_row(conn, run_id)), "executed": written}
+
+
+def issued_handles(path: str | Path, project_id: str) -> list[str]:
+    """The handles this project's real calls issued, oldest first (2.2
+    item 6: a follow-up may cite only a handle its project issued)."""
+    with _connect(path) as conn:
+        rows = conn.execute(
+            "SELECT handle FROM step_runs WHERE project_id = ? AND handle IS NOT NULL "
+            "AND status IN (?, ?) ORDER BY id ASC",
+            (project_id, RUN_RECORDED, RUN_RESOLVED),
+        ).fetchall()
+    seen: list[str] = []
+    for r in rows:
+        if r["handle"] not in seen:
+            seen.append(r["handle"])
+    return seen
+
+
+def _apply_observation(conn: sqlite3.Connection, record: dict) -> None:
+    """An `observation` with `done: true` is the completion rule's only way
+    to `done`: it flips the step's synthetic target and, for a step carrying
+    a `proposal_id`, arms that proposal's prediction (prediction arming on
+    the proposal's own step reaching `done`, never a failure; 6.1). An
+    observation without `done`, or `done: false`, touches nothing."""
+    if record.get("done") is not True:
+        return
+    project = _get(conn, record["project_id"], PROJECT)
+    step = _step_of(conn, project, record["step_id"]) if project else None
+    if step is None:
+        return
+    tick = record["game_tick"]
+    targets = (step.get("targets") or {}).get("set") or []
+    for target in targets:
+        conn.execute(
+            "INSERT INTO step_targets (project_id, step_id, target, state, reason, last_tick) "
+            "VALUES (?, ?, ?, ?, ?, ?) "
+            "ON CONFLICT(project_id, step_id, target) DO UPDATE SET "
+            "state = excluded.state, reason = excluded.reason, last_tick = excluded.last_tick",
+            (project["id"], step["id"], str(target), DONE, "observed done", tick),
+        )
+    proposal_id = step.get("proposal_id")
+    if proposal_id is None:
+        return
+    pred = conn.execute(
+        "SELECT id, check_after_ticks FROM predictions WHERE record_id = ? AND status = ?",
+        (proposal_id, AWAITING_EXECUTION),
+    ).fetchone()
+    if pred is not None:
+        conn.execute(
+            "UPDATE predictions SET status = ?, due_game_tick = ? WHERE id = ?",
+            (PENDING, tick + pred["check_after_ticks"], pred["id"]),
+        )
+
+
+def record_observation(
+    path: str | Path, project_id: str, step_id: str, *, tick: int, done: bool,
+    detail: dict, snapshot: str = "executor",
+) -> dict:
+    """Write one `observation` for a step at a game tick. `done: true` is
+    the executor's completion verdict (the game says so, 4.3): the step's
+    target becomes `done` and its proposal's prediction arms. `detail` is a
+    bounded object (the status read, counts); `detail["status"]`
+    (`consistent`, `contradicted`, `not_observable`, default `consistent`),
+    `detail["reason"]` and `detail["hold_code"]` fill the one result line.
+    A step must be `issued` (or already `done`, which only re-records) to be
+    observed `done`."""
+    status = detail.get("status", OBS_CONSISTENT)
+    reason = detail.get("reason") or ("phase done" if done else "in progress")
+    result = {"target": step_id, "status": status, "reason": reason}
+    if detail.get("hold_code"):
+        result["hold_code"] = detail["hold_code"]
+    rest = {k: v for k, v in detail.items() if k not in ("status", "reason", "hold_code")}
+    record = {
+        "kind": OBSERVATION, "role": OBSERVATION_ROLE, "cycle": int(tick), "snapshot": snapshot,
+        "project_id": project_id, "step_id": step_id, "game_tick": int(tick),
+        "results": [result], "done": bool(done),
+    }
+    if rest:
+        record["detail"] = rest
+    with _locked(path) as conn:
+        if done:
+            states = [
+                r["state"] for r in conn.execute(
+                    "SELECT state FROM step_targets WHERE project_id = ? AND step_id = ?",
+                    (project_id, step_id),
+                ).fetchall()
+            ]
+            if states and not all(s in (ISSUED, DONE) for s in states):
+                _fail([f"{step_id!r} is {sorted(set(states))}; only an issued step is observed done"])
+            if not states:
+                _fail([f"{step_id!r} has no tracked target; nothing to observe done"])
+        return _append_in_conn(conn, record, commit=False)
+
+
+def close(
+    path: str | Path, *, target_id: str, outcome: str, reason: str,
+    cleanup: list | None = None, tick: int | None = None, snapshot: str = "executor",
+) -> dict:
+    """Write a `close` for a project (`project-N`), a pending proposal
+    (`proposal-N`) or an accepted ruling (`ruling-N`); the id's prefix picks
+    the field. `outcome` is `completed`, `not_done`, `abandoned` or
+    `superseded`. `cleanup` lists an abandon cleanup's results
+    (`{handle, tool?, outcome, detail?}`). Refuses a target already closed
+    and a proposal that has a final ruling (close its ruling instead)."""
+    field = {"project": "project_id", "proposal": "proposal_id", "ruling": "ruling_id"}.get(
+        str(target_id).rsplit("-", 1)[0]
+    )
+    if field is None:
+        raise QueueError(f"close: cannot tell what {target_id!r} is")
+    with _locked(path) as conn:
+        return _close_conn(conn, field, target_id, outcome, reason, cleanup, tick, snapshot)
+
+
+def _close_conn(conn, field, target_id, outcome, reason, cleanup, tick, snapshot) -> dict:
+    record = {
+        "kind": CLOSE, "role": executor(),
+        "cycle": _latest_cycle(conn) if tick is None else tick, "snapshot": snapshot,
+        field: target_id, "outcome": outcome, "reason": reason,
+    }
+    if cleanup is not None:
+        record["cleanup"] = cleanup
+    return _append_in_conn(conn, record, commit=False)
+
+
+def projects_awaiting_cleanup(path: str | Path) -> list[dict]:
+    """Abandoned routed projects not yet closed (4.4): the Overseer
+    abandoned them; the executor's next execute phase releases what they
+    reserved, then `close`s them with the results. Each entry is
+    `{project_id, handles}` (`issued_handles`)."""
+    out = []
+    with _connect(path) as conn:
+        rows = conn.execute(
+            "SELECT json_extract(a.payload, '$.project_id') AS pid FROM records a "
+            "WHERE a.kind = ? ORDER BY a.rowid ASC", (ABANDON,)
+        ).fetchall()
+        for r in rows:
+            pid = r["pid"]
+            if _is_closed(conn, "project_id", pid):
+                continue
+            if not routing.is_routed(_proposal_type_of_project(conn, pid) or ""):
+                continue
+            hs = [
+                x["handle"] for x in conn.execute(
+                    "SELECT DISTINCT handle FROM step_runs WHERE project_id = ? "
+                    "AND handle IS NOT NULL AND status IN (?, ?) ORDER BY id ASC",
+                    (pid, RUN_RECORDED, RUN_RESOLVED),
+                ).fetchall()
+            ]
+            out.append({"project_id": pid, "handles": hs})
+    return out
+
+
+# ---- legacy sweep (deploy 2a, 2b) -----------------------------------------------
+
+
+def _executed_exists(conn, ruling_id: str) -> bool:
+    return conn.execute(
+        "SELECT 1 FROM records WHERE kind = ? AND json_extract(payload, '$.ruling_id') = ?",
+        (EXECUTED, ruling_id),
+    ).fetchone() is not None
+
+
+def _legacy_bound(conn, group: str) -> int:
+    """What `legacy_targets` lists up to: the cutover if one is set, else
+    the highest ruling (a `--check` before anything is set)."""
+    c = _cutover_conn(conn, group)
+    if c is not None:
+        return _num(c)
+    h = _highest_ruling_conn(conn)
+    return _num(h) if h else 0
+
+
+def legacy_targets(path: str | Path, group: str = LEGACY) -> list[dict]:
+    """Everything a cutover would close, not yet closed, oldest first. Each
+    entry is `{kind, id, group, ruling_id, proposal_id, executed, summary}`.
+    For `"legacy"` (deploy 2a): every accepted ruling at or below the legacy
+    cutover (or, before one is set, the highest ruling). For a routing group
+    (2b): its accepted rulings, its open Overseer-written projects, and its
+    pending step-less proposals. Lists only; writes nothing."""
+    if group != LEGACY and group not in routing.groups():
+        raise QueueError(f"no such routing group: {group!r}")
+    out: list[dict] = []
+    with _connect(path) as conn:
+        bound = _legacy_bound(conn, group)
+        rulings = conn.execute(
+            "SELECT payload FROM records WHERE kind = ? ORDER BY rowid ASC", (RULING,)
+        ).fetchall()
+        for r in rulings:
+            ruling = json.loads(r["payload"])
+            if ruling.get("decision") != ACCEPT or _num(ruling["id"]) > bound:
+                continue
+            proposal = _get(conn, ruling["proposal_id"], PROPOSAL) or {}
+            g = routing.group_of(proposal.get("type"))
+            if group != LEGACY and g != group:
+                continue
+            if _is_closed(conn, "ruling_id", ruling["id"]):
+                continue
+            out.append({
+                "kind": "ruling", "id": ruling["id"], "group": g or LEGACY,
+                "ruling_id": ruling["id"], "proposal_id": proposal.get("id"),
+                "executed": _executed_exists(conn, ruling["id"]),
+                "summary": proposal.get("summary"),
+            })
+        if group != LEGACY:
+            for pid in [x["id"] for x in conn.execute(
+                "SELECT id FROM records WHERE kind = ? ORDER BY rowid ASC", (PROJECT,)
+            ).fetchall()]:
+                project = _get(conn, pid, PROJECT)
+                if project.get("role") == executor() and executor() != sole_writer():
+                    continue  # an executor project is live work, not legacy
+                if _num(project["from_ruling"]) > bound:
+                    continue
+                proposal = _proposal_of_ruling(conn, project["from_ruling"]) or {}
+                if routing.group_of(proposal.get("type")) != group:
+                    continue
+                if _is_closed(conn, "project_id", pid) or _is_abandoned(conn, pid):
+                    continue
+                if _project_status_conn(conn, pid)["status"] == "done":
+                    continue
+                out.append({
+                    "kind": "project", "id": pid, "group": group,
+                    "ruling_id": project["from_ruling"], "proposal_id": proposal.get("id"),
+                    "executed": _executed_exists(conn, project["from_ruling"]),
+                    "summary": project.get("summary"),
+                })
+            for p in conn.execute(
+                "SELECT payload FROM records WHERE kind = ? ORDER BY rowid ASC", (PROPOSAL,)
+            ).fetchall():
+                proposal = json.loads(p["payload"])
+                if routing.group_of(proposal.get("type")) != group or "step" in proposal:
+                    continue
+                if _has_final_ruling(conn, proposal["id"]) or _is_closed(conn, "proposal_id", proposal["id"]):
+                    continue
+                out.append({
+                    "kind": "proposal", "id": proposal["id"], "group": group,
+                    "ruling_id": None, "proposal_id": proposal["id"], "executed": False,
+                    "summary": proposal.get("summary"),
+                })
+    return out
+
+
+def close_legacy(
+    path: str | Path, target_id: str, *, reason: str, tick: int | None = None,
+    snapshot: str = "executor",
+) -> dict:
+    """Close a ruling, a project or a pending step-less proposal that is at
+    or below its cutover, under the executor's name, **touching no game
+    state** (this module makes no DFHack call). The outcome is computed:
+    `completed` if an `executed` record exists (for a project: the project
+    reads `done`; see the Result note), else `not_done`. Refused when the
+    target is above its cutover, when no cutover applies, or already
+    closed. A ruling or project is checked against the larger of the legacy
+    cutover and its group's; a pending proposal against its group's."""
+    prefix = str(target_id).rsplit("-", 1)[0]
+    with _locked(path) as conn:
+        if prefix == "ruling":
+            ruling = _get(conn, target_id, RULING)
+            if ruling is None:
+                _fail([f"{target_id!r} is not a ruling"])
+            proposal = _get(conn, ruling["proposal_id"], PROPOSAL) or {}
+            group = routing.group_of(proposal.get("type"))
+            cut = _effective_cutover_num(conn, group)
+            if cut is None or _num(target_id) > cut:
+                _fail([f"{target_id!r} is above its cutover; close_legacy only closes legacy work"])
+            done = _executed_exists(conn, target_id)
+            field = "ruling_id"
+        elif prefix == "project":
+            project = _get(conn, target_id, PROJECT)
+            if project is None:
+                _fail([f"{target_id!r} is not a project"])
+            if project.get("role") == executor() and executor() != sole_writer():
+                _fail([f"{target_id!r} is an executor project, not legacy work"])
+            proposal = _proposal_of_ruling(conn, project["from_ruling"]) or {}
+            cut = _effective_cutover_num(conn, routing.group_of(proposal.get("type")))
+            if cut is None or _num(project["from_ruling"]) > cut:
+                _fail([f"{target_id!r} is above its cutover; close_legacy only closes legacy work"])
+            done = _project_status_conn(conn, target_id)["status"] == "done"
+            field = "project_id"
+        elif prefix == "proposal":
+            proposal = _get(conn, target_id, PROPOSAL)
+            if proposal is None:
+                _fail([f"{target_id!r} is not a proposal"])
+            group = routing.group_of(proposal.get("type"))
+            if group is None or _cutover_conn(conn, group) is None:
+                _fail([f"{target_id!r} has no cutover for its group; nothing to close it under"])
+            if "step" in proposal:
+                _fail([f"{target_id!r} carries a step, so it is not legacy work"])
+            done = False
+            field = "proposal_id"
+        else:
+            raise QueueError(f"close_legacy: cannot tell what {target_id!r} is")
+        outcome = CLOSE_COMPLETED if done else CLOSE_NOT_DONE
+        return _close_conn(conn, field, target_id, outcome, reason, None, tick, snapshot)
+
+
+# ---- the one definition of an open project --------------------------------------
+
+
+def open_projects(path: str | Path) -> list[dict]:
+    """The one WIP definition (design section 3, P3-M3), shared by the cap
+    and `queue.pending_brief`: a project that is not closed and not
+    abandoned, from a ruling above the larger of the legacy cutover and its
+    group's (no cutover set counts everything, so nothing changes before
+    2a), and with a step not done **or** a declared phase not yet applied.
+    Each entry: `{project_id, from_ruling, group, role, urgency, summary,
+    status, steps_open, phases_remaining}`; oldest first."""
+    out = []
+    with _connect(path) as conn:
+        for row in conn.execute(
+            "SELECT id FROM records WHERE kind = ? ORDER BY rowid ASC", (PROJECT,)
+        ).fetchall():
+            pid = row["id"]
+            project = _get(conn, pid, PROJECT)
+            if _is_closed(conn, "project_id", pid) or _is_abandoned(conn, pid):
+                continue
+            proposal = _proposal_of_ruling(conn, project["from_ruling"]) or {}
+            group = routing.group_of(proposal.get("type"))
+            cut = _effective_cutover_num(conn, group)
+            if cut is not None and _num(project["from_ruling"]) <= cut:
+                continue
+            status = _project_status_conn(conn, pid)
+            steps = _current_steps_and_version(conn, project)[0]
+            declared = len(((proposal.get("phases") or {}).get("list")) or [])
+            remaining = max(0, declared - max(0, len(steps) - 1))
+            steps_open = status["status"] != "done"
+            if not steps_open and remaining == 0:
+                continue
+            out.append({
+                "project_id": pid, "from_ruling": project["from_ruling"], "group": group,
+                "role": proposal.get("role"), "urgency": project.get("urgency") or "normal",
+                "summary": project.get("summary"), "status": status["status"],
+                "steps_open": steps_open, "phases_remaining": remaining,
+            })
+    return out
 
 
 # ---------------------------------------------------------------------------
