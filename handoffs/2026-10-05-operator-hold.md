@@ -81,4 +81,45 @@ target and operator commands listed, and a Result section here.
 
 ## Result
 
-(executor fills this in)
+### Plan (written before building)
+
+- **Store**: new `conductor/hold.py`. `hold.json` beside `pause_watch.json`
+  (path = the cursor store's path with the name swapped, so the same
+  runtime directory). Fields: `reason` (required, one line), `since` (epoch
+  seconds), `who` (default OS user), optional `expires_at`. Atomic write
+  (temp file plus replace). `HoldStore.read(now)` returns a `HoldState`
+  (`held`, `reason`, `since`, `who`, `expires_at`, `corrupt`, `expired`).
+- **Expiry**: yes, optional (`--for-hours N`), because a hold nobody
+  remembers to clear is a fort that never resumes silently. An expired hold
+  reads as no hold and is logged once per read at WARNING; `show` says it
+  expired. No expiry by default.
+- **Corrupt file fails toward held**: unparseable JSON, wrong shape, a
+  missing reason or a bad expiry reads as held (`corrupt: true`, reason says
+  so). The hold only ever removes resume paths, so the unsafe error is
+  "reads as no hold". A missing file is no hold. Any exception while reading
+  also reads as held.
+- **Operator only**: a CLI (`python -m conductor.hold set|clear|show`). No
+  MCP tool, no allowlist entry, no role tool; nothing in `agents/` or
+  `dfmcp/` changes. The conductor only ever reads the file.
+- **Watchdog while held** (`decide` gains a `held` flag; still pure):
+  tripwire, owned, modal viewscreen and popup rows are unchanged (dismiss
+  still runs: closing a box is not resuming). Then a plain pause or a
+  harmless-listed notice gives new verdict `ordinary_held`: no WAIT, no
+  RESUME, no Overseer wake, no liveness alert (the operator owns the
+  pause); `run_cycle` falls through to the ordinary path (grade, job watch,
+  triage, roles, briefing) with the fort paused. A threat or unknown cause
+  still wakes the Overseer once as today, but `finish_after_overseer`
+  refuses to resume (even on `resume: true`), logs "held by operator" and
+  keeps the pause. Later cycles of such an episode read `held` as today.
+- **Tripwire branch** (cycle.py): under a hold the clean-run
+  `clock.resume` is skipped and logged; `clock.clear` still runs, so the
+  next cycle sees a plain pause under hold and takes the ordinary path.
+- **Visible**: dry-run plan gets a `hold` key (always, in every branch);
+  `log_cycle` emits one extra line when held; `status_from_cycle`'s
+  `pause_watch` block gains `held` (`reason`, `since`, `who`,
+  `expires_at`, `corrupt`) or null. Dry run writes nothing (the store read
+  is read-only).
+- **Docs**: a short operator note in `docs/TRAPS.md` under the pause
+  watchdog, and a row 11 in the pause-safety decision table.
+
+(Build, tests and operator commands: see below once done.)
