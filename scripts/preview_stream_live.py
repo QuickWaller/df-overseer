@@ -47,16 +47,20 @@ DEMO_SUMMARIES = {  # EXAMPLE DATA (preview only)
     "overseer": ("Accepted the stair and the bedroom cell and planned their jobs. Deferred a second stair until the "
                  "first is dug. Added a haul step after the Consultant said boulders block a bed."),
     "quartermaster": "Drink is at zero. Proposed a standing target of thirty drinks and a direct brew at the Still.",
+    "consultant": ("Answered the Architect's fact-check: soil can't be smoothed, so bedrooms need the stone level. "
+                   "Checked the wiki's smoothing page and the doctrine on room quality."),
 }
 DEMO_WAKE_DETAIL = {  # EXAMPLE DATA, worded like the conductor's own details
     "architect": "45 game days since the last routine review",
     "overseer": "2 proposals waiting for a ruling",
     "quartermaster": "45 game days since the last routine review",
+    "consultant": "1 open question from the Architect",
 }
 DEMO_READS = {
     "architect": ["overview.get", "overview.get", "zone.list", "tree.find"],
     "overseer": ["queue.pending", "overview.get", "stocks.food-drink"],
     "quartermaster": ["stocks.food-drink", "stocks.food-drink", "overview.get"],
+    "consultant": ["wiki.search", "wiki.page", "doctrine.get"],
 }
 
 
@@ -102,6 +106,14 @@ EXAMPLE_RUN_THINKING = {
         "Start the dig now so the miners have work while the rest waits."
     ),
     "architect": "Housing is the gap. One stone cell below the farm; the soil level can never be smoothed.",
+    "consultant": (
+        "The Architect wants to know if a bedroom on the soil level can be smoothed."
+        "\n\n"
+        "The wiki's smoothing page is clear: only natural stone can be smoothed or engraved. Soil, sand and clay "
+        "cannot. The doctrine says the same and adds that room value depends on it."
+        "\n\n"
+        "So the answer is no, and the useful part is the fix: dig down to the stone level first."
+    ),
 }
 
 
@@ -116,7 +128,7 @@ def _demo_runs(now: float) -> tuple:
     for n, role in enumerate(DEMO_SUMMARIES, start=1):
         linked = runs_store.records_in_window(records, role, DEMO_START.isoformat(), DEMO_END.isoformat())
         rows.append({
-            "run_id": f"run-{n:04d}", "role": role, "wake_reason": "routine_review" if role != "overseer" else "queue_pending",
+            "run_id": f"run-{n:04d}", "role": role, "wake_reason": {"overseer": "queue_pending", "consultant": "open_ask"}.get(role, "routine_review"),
             "wake_detail": DEMO_WAKE_DETAIL[role], "cycle": n, "started_at": DEMO_START.isoformat(), "ended_at": DEMO_END.isoformat(),
             "status": "ok", "ok": 1, "timed_out": 0, "duration_s": 372.4 + n * 40, "cost_usd": 0.05 * n,
             "error": None, "final_answer": DEMO_SUMMARIES[role], "records_json": json.dumps(linked),
