@@ -59,3 +59,96 @@ player could dismiss is fine; anything a player cannot do is not.
 
 The design table, the built pieces with tests, the deploy and live-test
 plan, and a Result section here.
+
+## Design (written before building, 2026-10-05)
+
+### Findings that shape the design (read-only live probes on VM 103, 2026-10-05)
+
+- `FORT_POSITION_SUCCESSION` carries the game's own **`DO_MEGA`** flag
+  (`df.global.d_init.announcements.flags[type].DO_MEGA`; the flag names are
+  `DO_MEGA`, `PAUSE`, `RECENTER`, `A_DISPLAY`, `D_DISPLAY`, `ALERT` and the
+  combat-report flags). 35 announcement types are DO_MEGA on this install
+  (succession, first caravan, monarch and mountainhome arrivals, megabeast
+  and werebeast arrival, night attack, undead attack, the crime-witness
+  types, endgame events, deity curse, emergency tactical control, artifact
+  and deep-metal finds, and more). **Zero** types carry the `PAUSE` flag. So
+  a game-forced pause on this install is a **mega popup**, not a bare
+  `pause_state` flip. The 2026-09-28 "clean flip" reading is therefore
+  doubtful: that resume test ran after the user had already clicked the box
+  away on VNC (the handoff itself says so), which is exactly when
+  `world.status.popups` is empty again and `resume` works. Not proven either
+  way; the live test plan below provokes a real one.
+- Mega popups live in `df.global.world.status.popups` (`popup_message`:
+  `text`, `color`, `bright`, `portrait_hfid`), plus `world.status.mega_text`.
+  The popup carries no announcement type, so the type comes from the newest
+  report(s) of a DO_MEGA type at the current tick. The popup renders inside
+  `viewscreen_dwarfmodest` (focus `dwarfmode/Default`), so neither the
+  viewscreen type nor the focus string can see it; the vector must be read.
+- Live state at probe time: `popups` empty, `help.open` false, paused, focus
+  `dwarfmode/Default`.
+- DFHack's `hide-tutorials.lua` closes the embark help box by clicking its
+  button at a known position; the repo's `df-overseer-ui.lua` clicks by
+  scanning the character buffer for a text. Both are player-equivalent.
+
+### Inventory: every way the fort is paused or stuck, and the answer
+
+Two separate questions per case. **Dismiss** (D): closing a box is
+player-equivalent, changes no game state, and the text and announcement type
+are recorded first, so it is always allowed. **Resume** (R): allowed only
+when the cause is on the harmless list (data). Nothing here ever overrides a
+latch.
+
+| # | Case | Detect | Auto-clear? | Otherwise |
+|---|---|---|---|---|
+| 1 | Tripwire latch (death, hunger/thirst, reachable hostile, pause-level announcement) | `clock.status.tripwire` present | **No, never.** The existing tripwire branch only (Overseer run; resume only after a clean un-escalated run) | Stays paused, Overseer woken (exists) |
+| 2 | Overseer escalated (`queue.escalate`), with or without a latch | Latch stays; an ordinary-cycle escalation pause is recorded in the watchdog state as `owned: escalation` | **No.** The watchdog does nothing while owned | Human alert (log, status) at the liveness limit |
+| 3 | Mega popup pending (any DO_MEGA type) | `#world.status.popups > 0` (`pause.why`) | **Dismiss: yes** (D); data list of popup kinds, click the box's own button | Dismiss fails after the listed strategies: alert human, keep paused |
+| 4 | Pause after dismissal, cause on the harmless list (succession, first caravan, monarch/holding/market arrivals, artifact or deep-metal finds, world-history notices) | Newest DO_MEGA/PAUSE reports at the current tick, by announcement type name | **Resume once and verify the tick advances** (R), once per pause episode | Tick does not move: stay paused, wake Overseer, alert human, no retry |
+| 5 | Pause after dismissal, cause is a threat or unknown type (megabeast/werebeast arrival, night attack, undead attack, crime witness, endgame event, deity curse, emergency tactical control, any type on neither list) | Same read | **No** | Stay paused, wake the Overseer (new wake reason `unexplained_pause`, clock paused); a clean un-escalated run counts as the decision to resume (same convention as the tripwire branch), resume-and-verify once; escalation or a failed verify: alert human |
+| 6 | Plain pause, no latch, no popup, no recent mega/pause report (a human on VNC, the supervised script mid-window, anything DFHack issued) | `paused` and nothing explains it | **Not at first**: a human may have done it. After a grace period (data, default 10 real minutes) treat as case 5 | Alert human at the liveness limit |
+| 7 | Stuck modal viewscreen (2026-09-16 welcome dialog, load/save screens) | `pause.why.viewscreen_type` is not `viewscreen_dwarfmodest`, or `help.open` | Tutorial help box: dismiss (a kind in the list). Any other screen: **no** | Alert human at once; the Overseer cannot click |
+| 8 | Frozen with `pause_state` false (2026-09-16: tick not advancing between cycles though not paused) | Not paused, `abs_tick` identical to the previous cycle's while real time passed more than a minimum (data) | As cases 3 and 7 after a `pause.why` read | Alert human |
+| 9 | Wedged command pipe (2026-09-19) | `clock.status` errors or times out | **Nothing to do from here**: the in-game tripwire is the defence; the conductor already raises `CycleError` and retries next cycle | N consecutive failures alert human (data) |
+| 10 | Any unresolved non-tripwire pause past the liveness limit | Paused, unowned or held, longer than the limit (data, default 30 real minutes) | n/a | **Alert the human**, repeat each limit ("no pause goes unowned", register 2026-10-01) |
+
+"Alert the human" today means a CRITICAL log line, a `pause_watch` block in
+`status.json` and in the cycle's archived summary. Telegram is designed and
+not built (register 2026-10-01); the alert sink is one function the Telegram
+stream can extend.
+
+### Where each piece lives
+
+| Piece | Where | Notes |
+|---|---|---|
+| `why` (read): pause cause report | `scripts/dfhack/df-overseer-pause.lua` on VM 103; MCP id `pause.why`, conductor-only | popup count and texts (bounded), viewscreen type, focus, `help.open`, latch, recent DO_MEGA/PAUSE reports with announcement type names, a derived `cause` |
+| `dismiss` (mutate): generic popup dismiss | same script; MCP id `pause.dismiss`, added to `dfmcp/roles.py` `SYSTEM_CLASS_TOOL_IDS` (one line, flagged below) so only a `kind: system` role may hold it | a registry of popup KINDS (`mega`, `tutorial_help`), each with a detector and ordered dismiss strategies, all data at the top of the file; a new kind is a table entry. Verifies by re-reading the popup count. Never resumes |
+| Decision table (pure function) | `conductor/pause_watch.py` plus `conductor/pause_policy.yaml` (harmless list, grace, liveness, caps as DATA) | no announcement or wake string is branched on in code |
+| Watchdog state | `conductor/pause_watch.py` `PauseWatchStore`, one small JSON beside the cursors | atomic write like `cursors.py` |
+| Wiring | `conductor/cycle.py`: one call after the tripwire branch and before triage; an `unexplained_pause` wake runs the Overseer through the same path the tripwire uses; the ordinary-cycle escalation pause records `owned: escalation` | does not touch `runner.py` |
+| Wake reason | `conductor/policy.yaml`: `unexplained_pause` (clock paused, wakes overseer) | |
+| Allowlist | `agents/conductor/tools.yaml`: `pause.why` (read), `pause.dismiss` (write) | |
+
+What the conductor does today (`conductor/cycle.py`): it reads `clock.status`
+each cycle; with a latch it quicksaves, wakes the Overseer, and clears and
+resumes only after a clean un-escalated run; an ordinary-cycle
+`queue.escalate` calls `clock.pause`. It has **no** handling for a paused
+fort with no latch (the 2026-09-28 case), a pending popup, or liveness.
+`scripts/supervised-unpause.sh` stays as the supervised-window tool; the
+watchdog supersedes its "never in conductor.service" rule per register
+2026-10-01 and reuses its resume-and-verify discipline.
+
+### Decision order inside the watchdog (first match wins)
+
+1. Not paused: end any episode; run the frozen-but-unpaused check (case 8).
+2. Paused with a latch: do nothing (the tripwire branch owns it).
+3. Paused and owned by the conductor's own escalation: do nothing except
+   the liveness clock.
+4. Paused, unowned, no latch: read `pause.why`; while a popup is pending and
+   the dismiss cap (data, 5) is not reached, `pause.dismiss`, recording each
+   box's text and type.
+5. A non-dwarfmode screen, or a failed dismiss: alert human.
+6. Recent causes all on the harmless list: resume once, re-read, verify the
+   tick advanced; record.
+7. A threat or unknown cause, or nothing explains it past the grace period:
+   wake the Overseer with `unexplained_pause`, carrying the `why` report.
+8. Over the liveness limit: alert human.
