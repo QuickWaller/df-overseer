@@ -28,8 +28,9 @@ import sqlite3
 from dataclasses import dataclass
 from typing import Any, Dict, Mapping, Optional, Tuple
 
-from dfqueue import routing, store
+from dfqueue import routing, schema as dq_schema, store
 
+from . import executor_run as run
 from .queue_tools import QueueToolError
 
 EXECUTOR_ROLE = "conductor"
@@ -62,7 +63,19 @@ class NativeTool:
         return _DESCRIPTIONS[self.id], _SCHEMAS[self.id]
 
 
-_TOOL_IDS = [QUEUE_CLOSE_LEGACY, QUEUE_CUTOVER, QUEUE_EXECUTION_STATE]
+QUEUE_OPEN_PROJECT = "queue.open_project"
+QUEUE_APPLY_FOLLOWUP = "queue.apply_followup"
+QUEUE_RUN_STEP = "queue.run_step"
+QUEUE_RESOLVE_UNCERTAIN = "queue.resolve_uncertain"
+QUEUE_OBSERVE = "queue.observe"
+QUEUE_CLEANUP_PROJECT = "queue.cleanup_project"
+QUEUE_CLOSE = "queue.close"
+
+_TOOL_IDS = [
+    QUEUE_CLOSE_LEGACY, QUEUE_CUTOVER, QUEUE_EXECUTION_STATE,
+    QUEUE_OPEN_PROJECT, QUEUE_APPLY_FOLLOWUP, QUEUE_RUN_STEP, QUEUE_RESOLVE_UNCERTAIN,
+    QUEUE_OBSERVE, QUEUE_CLEANUP_PROJECT, QUEUE_CLOSE,
+]
 NATIVE_TOOLS: Dict[str, NativeTool] = {i: NativeTool(id=i) for i in _TOOL_IDS}
 NATIVE_TOOL_IDS = tuple(NATIVE_TOOLS)
 
@@ -113,6 +126,79 @@ _register(
     "ready to run now, unresolved (Uncertain) step runs, abandoned projects awaiting cleanup, and "
     "steps observed done after `since` (an observation id; omit for none).",
     {"since": {"type": "string", "description": "An observation id; steps observed done after it are listed."}},
+)
+
+
+_PROJECT_ID = {"type": "string", "description": "A project-N id."}
+_STEP_ID = {"type": "string", "description": "A step id such as project-0001/s1."}
+
+_register(
+    QUEUE_OPEN_PROJECT,
+    "Conductor only. Open the project for an accepted routed proposal's ruling: one step, its own "
+    "tracked target, the proposal's tool and exact arguments. Refused for a follow-up, an unrouted "
+    "type, a ruling at or below the group's cutover, a closed ruling or one that already has a "
+    "project. The project's urgency is the proposal's (normal if it gave none).",
+    {"ruling_id": {"type": "string", "description": "A ruling-N id."}},
+    ("ruling_id",),
+)
+_register(
+    QUEUE_APPLY_FOLLOWUP,
+    "Conductor only. Apply an accepted (or covered) follow-up: one amend carrying the project's "
+    "whole plan plus the follow-up's step, which requires the step the follow-up cited.",
+    {"proposal_id": {"type": "string", "description": "A proposal-N id of a follow-up."}},
+    ("proposal_id",),
+)
+_register(
+    QUEUE_RUN_STEP,
+    "Conductor only. Run one step of a project as code, in the fixed order: runnable check, dry run "
+    "judged by the tool's declared verdict, landed baseline, a step-run marker, the real call, the "
+    "executed record. Returns {class, ...}: success (executed_id, handle), transient (retry next "
+    "cycle), waiting (prerequisites issued, not done), needs_judgment (blocked with prerequisites "
+    "done, or a reserve's resolution changed), failed (retryable true on the first), uncertain (the "
+    "real call was sent and the outcome is unknown; resolve it with queue.resolve_uncertain, never "
+    "run it again), not_runnable (reasons). A call that may have been sent is never retried blind.",
+    {"project_id": _PROJECT_ID, "step_id": _STEP_ID},
+    ("project_id", "step_id"),
+)
+_register(
+    QUEUE_RESOLVE_UNCERTAIN,
+    "Conductor only. Settle a step run left `issuing` by reading what the call should have changed "
+    "against the baseline taken before it: success (the handle it issued; the step's executed "
+    "record is written), transient (nothing landed; the step may run again) or uncertain (the read "
+    "was unusable; the run stays unresolved, or is held when hold is true).",
+    {
+        "run_id": {"type": "integer", "minimum": 1},
+        "hold": {"type": "boolean", "description": "Only after repeated unreadable results: block the step."},
+    },
+    ("run_id",),
+)
+_register(
+    QUEUE_OBSERVE,
+    "Conductor only. Read an issued step's progress through its tool's declared progress read and "
+    "record one observation. Returns {state: issued|done|stalled|unknown|blocked_material, "
+    "observation_id}. Only `done` completes the step (the game says so, not the call).",
+    {"project_id": _PROJECT_ID, "step_id": _STEP_ID},
+    ("project_id", "step_id"),
+)
+_register(
+    QUEUE_CLEANUP_PROJECT,
+    "Conductor only. Abandon cleanup for a project the Overseer abandoned: for each handle it "
+    "issued, newest first, the tool declared for that handle's kind withdraws its outstanding "
+    "designations or frees its reservation. Dug tiles are never touched. Returns {released, "
+    "unreserved, failed}; the project is closed with the results listed once nothing failed.",
+    {"project_id": _PROJECT_ID},
+    ("project_id",),
+)
+_register(
+    QUEUE_CLOSE,
+    "Conductor only. Close a project with a reason (an idle project, or one the proposer passed on). "
+    "Writes a `close` record only; touches no game state.",
+    {
+        "project_id": _PROJECT_ID,
+        "outcome": {"type": "string", "enum": list(dq_schema.CLOSE_OUTCOMES)},
+        "reason": {"type": "string", "minLength": 1, "maxLength": 300},
+    },
+    ("project_id", "outcome", "reason"),
 )
 
 
@@ -280,6 +366,8 @@ def _execution_state_sync(arguments: Mapping[str, Any], db_path: Any) -> Tuple[s
     ), out
 
 
+
+
 # ---------------------------------------------------------------- dispatch
 
 _SYNC = {
@@ -288,19 +376,38 @@ _SYNC = {
     QUEUE_EXECUTION_STATE: _execution_state_sync,
 }
 _READ_ONLY = frozenset({QUEUE_EXECUTION_STATE})
+_RUN = {
+    QUEUE_OPEN_PROJECT: run.open_project,
+    QUEUE_APPLY_FOLLOWUP: run.apply_followup,
+    QUEUE_RUN_STEP: run.run_step,
+    QUEUE_RESOLVE_UNCERTAIN: run.resolve_uncertain,
+    QUEUE_OBSERVE: run.observe,
+    QUEUE_CLEANUP_PROJECT: run.cleanup_project,
+    QUEUE_CLOSE: run.close_project,
+}
 
 
 async def call(
     tool_id: str, role: str, arguments: Mapping[str, Any], *, db_path: Any,
-    write_lock: "asyncio.Lock", call_dfhack: Optional[Any] = None, **_unused: Any,
+    write_lock: "asyncio.Lock", call_dfhack: Optional[Any] = None,
+    call_tool: Optional[Any] = None, registry: Optional[Any] = None, **_unused: Any,
 ) -> Tuple[str, Optional[dict]]:
-    """Dispatch one executor tool. Raises `QueueToolError` for a refusal."""
-    handler = _SYNC.get(tool_id)
-    if handler is None:  # pragma: no cover -- the server routes only known ids here
+    """Dispatch one executor tool. Raises `QueueToolError` for a refusal.
+    `call_tool` and `registry` are needed only by the tools that reach DFHack
+    (run_step, resolve_uncertain, observe, cleanup_project)."""
+    if tool_id not in _SYNC and tool_id not in _RUN:  # pragma: no cover -- the server routes only known ids here
         raise AssertionError(f"executor_tools.call: unknown tool id {tool_id!r}")
     _refuse_role(tool_id, role)
     _reject_unknown(tool_id, arguments)
-    if tool_id in _READ_ONLY:
-        return await asyncio.to_thread(handler, arguments, db_path)
-    async with write_lock:
-        return await asyncio.to_thread(handler, arguments, db_path)
+    handler = _SYNC.get(tool_id)
+    if handler is not None:
+        if tool_id in _READ_ONLY:
+            return await asyncio.to_thread(handler, arguments, db_path)
+        async with write_lock:
+            return await asyncio.to_thread(handler, arguments, db_path)
+    if call_dfhack is None or call_tool is None or registry is None:
+        raise QueueToolError(f"{tool_id}: this server was built without a DFHack route for the executor")
+    env = run.ExecEnv(
+        db_path=db_path, write_lock=write_lock, call_tool=call_tool, call_dfhack=call_dfhack, registry=registry,
+    )
+    return await _RUN[tool_id](env, arguments)
