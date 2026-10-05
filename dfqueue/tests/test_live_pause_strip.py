@@ -117,3 +117,15 @@ def test_an_alert_sits_before_an_awake_role_on_the_same_one_line_strip():
     res = _run(STRIP, {"available": True, "running": True, "awake": awake, "last_runs": {},
                        "pause": {"alert": {"reason": "held", "since": None}, "waiting_on_human": False}})
     assert res["seen"].index("ls-seg ls-pause ls-alert") < res["seen"].index("queue.pending")
+
+
+def test_an_idle_alert_replaces_the_last_run_line_and_a_crowded_one_keeps_only_a_short_heading():
+    last = {"overseer": {"duration_s": 40, "ended_at": "2026-10-05T11:00:00+00:00", "wake_reason": "routine_review"}}
+    alert = {"alert": {"reason": "held for a human", "since": None}, "waiting_on_human": False}
+    idle = _run(STRIP, {"available": True, "running": False, "awake": [], "last_runs": last, "pause": alert})
+    assert "Last run" not in idle["seen"] and "Paused, needs attention" in idle["seen"]
+    assert "held for a human" in idle["seen"]
+    awake = [{"role": "overseer", "elapsed_s": 30, "last_tool": "queue.pending", "wake_reason": None}]
+    crowded = _run(STRIP, {"available": True, "running": True, "awake": awake, "last_runs": {}, "pause": alert})
+    assert "Paused" in crowded["seen"] and "Paused, needs attention" not in crowded["seen"]
+    assert "held for a human" not in crowded["seen"]
