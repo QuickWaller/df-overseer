@@ -115,10 +115,13 @@ def test_unreachable_host_alerts_for_real_when_not_dry_run(monkeypatch, tmp_path
 
 
 def test_main_clean_report_returns_zero_without_formatting(monkeypatch):
+    import drift_check
     head = dc.current_commit()
     real_hash = dc.sha256_at_commit(head, "agents/ROSTER.yaml")
+    sample = dc.Target(name="sample", host="df", destination_root_raw="/opt/sample",
+                       paths=["agents/ROSTER.yaml"])
     runner = dc.FakeRunner({
-        ("df", f"cat /opt/sample/DEPLOYED_COMMIT 2>/dev/null || true"): f"commit={head}\n",
+        ("df", drift_check.stamp_command(sample, "/opt/sample")): f"commit={head}\n",
         ("df", "cd /opt/sample && sha256sum agents/ROSTER.yaml 2>&1 || true"):
             f"{real_hash}  agents/ROSTER.yaml\n",
         ("df", "test -f /opt/sample/scripts/ops/mcpcall.py && echo present || echo absent"): "absent\n",
@@ -129,6 +132,12 @@ def test_main_clean_report_returns_zero_without_formatting(monkeypatch):
     }
     monkeypatch.setattr(dc, "load_manifest", lambda path=dc.MANIFEST_PATH: targets)
     monkeypatch.setattr(dc, "SSHRunner", lambda env_file=None: runner)
+
+    # Never a real send from a test: an unexpected drift here once read the
+    # real .env and sent a Telegram alert on every full test run (2026-10-05).
+    def fail_if_called(*_a, **_k):
+        raise AssertionError("send_telegram_message must not be called by a test")
+    monkeypatch.setattr(alert, "send_telegram_message", fail_if_called)
 
     rc = alert.main([])
     assert rc == 0
