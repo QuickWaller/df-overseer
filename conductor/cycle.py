@@ -55,10 +55,11 @@ import json
 import logging
 import time
 from dataclasses import dataclass
-from typing import Any, Callable, Dict, List, Mapping, Optional, Tuple
+from typing import Any, Callable, Dict, List, Mapping, Optional, Set, Tuple
 
 from conductor.archive import CycleArchive
 from conductor.briefing import build_briefing, build_ruling_briefing, evaluate_threshold_alerts
+from conductor import lanes
 from conductor.cursors import CursorStore
 from conductor.game_tick import GameTickError, game_tick_from_overview
 from conductor.hold import HoldState, HoldStore, hold_path_for
@@ -590,6 +591,7 @@ async def _run_cycle(cycle_index: int, deps: CycleDeps, hold: HoldState) -> Cycl
 
     # ---- 2. GRADE -----------------------------------------------------------
     prediction_graded = False
+    prediction_misses = 0
     unexecuted: List[dict] = []
     to_carry_out: List[str] = []
     if not deps.dry_run:
@@ -597,7 +599,15 @@ async def _run_cycle(cycle_index: int, deps: CycleDeps, hold: HoldState) -> Cycl
             grade_result = await call("queue.grade", {})
         except MCPToolError as exc:
             raise CycleError(f"cycle {cycle_index}: grading failed: {exc}") from exc
-        prediction_graded = grade_result.get("graded_count", 0) > 0
+        # Only a MISS wakes anyone (handoffs/2026-10-05-stricter-wakes.md): a hit
+        # is recorded by the grader and needs no advisor. queue.grade does not
+        # say who proposed a prediction, so the wake cannot be narrowed to the
+        # proposer yet (policy.yaml prediction_graded names both advisors).
+        prediction_misses = sum(
+            1 for g in (grade_result.get("graded") or ())
+            if isinstance(g, Mapping) and g.get("status") == "graded_false"
+        )
+        prediction_graded = prediction_misses > 0
         unexecuted = grade_result.get("unexecuted", []) or []
         # Over MCP, queue.grade returns only `unexecuted_proposal_ids` (the
         # local dfqueue call returns full `unexecuted` dicts). Read both.
@@ -625,11 +635,39 @@ async def _run_cycle(cycle_index: int, deps: CycleDeps, hold: HoldState) -> Cycl
     job_watch = await _job_watch(deps, call, game_tick, cycle_index)
     slow_hit, slow_roles, slow_detail = _classify_slow_announcements(events_by_role)
 
+    # Lane triggers (handoffs/2026-10-05-stricter-wakes.md): what changed in
+    # each role's own lane. Alerts are read here, once, so a fresh crossing can
+    # wake the role it belongs to; the briefings reuse the same lines.
+    alerts, alert_crossed, alert_lines = await _read_alert_state(call, deps.policy, vitals, cycle_index)
+    lane_store = _lane_store(deps)
+    lane_state = lanes.LaneState()
+    lane_wakes: Tuple[Any, ...] = ()
+    pending_ids: List[str] = []
+    if deps.policy.lane_triggers:
+        try:
+            lane_state = lane_store.load()
+            pending_ids = list((queue_state.get("proposals") or {}).get("proposal_ids") or [])
+            lanes.apply_alert_edges(deps.policy, lane_state, alert_crossed, alert_lines)
+            lanes.apply_rulings(deps.policy, lane_state, pending_ids)
+            lane_wakes = lanes.lane_wakes(deps.policy, lane_state, events_by_role)
+            if not deps.dry_run:
+                lane_store.save(lane_state)
+        except Exception:  # noqa: BLE001 -- a lane-state fault must not stop the cycle
+            LOG.exception("cycle %s: lane state unavailable; no lane wakes this cycle", cycle_index)
+            lane_state = lanes.LaneState()
+            lane_wakes = ()
+    stuck_roles: Optional[Tuple[str, ...]] = None
+    if deps.policy.lane_triggers and not event_hits.get("stuck_job", False):
+        stuck_roles = lanes.stuck_job_roles(deps.policy, job_watch.due)
+        if job_watch.any_due and not stuck_roles:
+            LOG.info("cycle %s: due stuck job(s) belong to no role's lane; no wake", cycle_index)
+
     signals = Signals(
         vital_nearing_threshold=_vital_nearing(vitals),
         vital_ticks_to_consequence=None,  # see module docstring: vitals.summary carries no timer
         stuck_job=event_hits.get("stuck_job", False) or job_watch.any_due,
         stuck_job_detail=job_watch.wake_detail(),
+        stuck_job_roles=stuck_roles,
         stock_below_target=event_hits.get("stock_below_target", False),
         migrant_wave=event_hits.get("migrant_wave", False),
         caravan_present=event_hits.get("caravan_present", False),
@@ -644,6 +682,8 @@ async def _run_cycle(cycle_index: int, deps: CycleDeps, hold: HoldState) -> Cycl
         slow_announcement_detail=slow_detail,
         prediction_due=False,             # folded into prediction_graded, see module docstring
         prediction_graded=prediction_graded,
+        prediction_misses=prediction_misses,
+        lane_wakes=lane_wakes,
         game_days_since_routine_review=_game_days_since(deps.cursor_store, game_tick, deps.policy),
         queue_holds_for_overseer=bool((queue_state.get("proposals") or {}).get("count", 0)) or bool(to_carry_out),
         open_ask_for_consultant=bool((queue_state.get("asks") or {}).get("count", 0)),  # gap 1, fixed
@@ -675,7 +715,7 @@ async def _run_cycle(cycle_index: int, deps: CycleDeps, hold: HoldState) -> Cycl
     roles_woken_out: List[str] = list(roles_to_run)
     extra_wakes: Dict[str, Wake] = {}
     queue_refreshed = False
-    alerts: Optional[List[str]] = None
+    known_ids: Set[str] = set(pending_ids) | set(lane_state.proposers)
     idx = 0
     while True:
         # Advisors have run; anything they filed (an ask above all) is not in
@@ -713,9 +753,6 @@ async def _run_cycle(cycle_index: int, deps: CycleDeps, hold: HoldState) -> Cycl
         idx += 1
 
         wake = extra_wakes.get(role) or triage_result.wake_for(role)
-        if alerts is None:
-            # Once per cycle, at the first role that runs (policy.yaml threshold_alerts).
-            alerts = await _read_alerts(call, deps.policy, vitals, cycle_index)
         briefing = build_briefing(
             role=role, game_tick=game_tick or 0, wake=wake, vitals=vitals,
             diff_events=events_by_role.get(role, []),
@@ -748,6 +785,24 @@ async def _run_cycle(cycle_index: int, deps: CycleDeps, hold: HoldState) -> Cycl
             deps, call, role, prompt, wake=wake, cycle_index=cycle_index,
         )
         role_runs.append(run_result)
+
+        # Learn who proposed what: a pending proposal id that appeared during an
+        # advisor's run is that advisor's (the conductor cannot read an author).
+        # A completed run also serves whatever lane wakes were owed to the role.
+        if deps.policy.lane_triggers and role in ADVISORS:
+            try:
+                after = await call("queue.overview", {})
+                known_ids = lanes.attribute_new_proposals(
+                    lane_state, role, known_ids, (after.get("proposals") or {}).get("proposal_ids") or [],
+                )
+            except Exception as exc:  # noqa: BLE001 -- total: attribution is best effort
+                LOG.warning("cycle %s: proposer attribution after %s failed: %s", cycle_index, role, exc)
+            if run_result.ok:
+                lanes.clear_served(lane_state, role)
+            try:
+                lane_store.save(lane_state)
+            except Exception:  # noqa: BLE001
+                LOG.exception("cycle %s: could not save lane state", cycle_index)
 
         # Only a run that completed consumes its diff window and counts as
         # having performed a routine review.
@@ -803,9 +858,13 @@ async def _run_cycle(cycle_index: int, deps: CycleDeps, hold: HoldState) -> Cycl
     return result
 
 
-async def _read_alerts(call: Callable, policy: Policy, vitals: Mapping[str, Any], cycle_index: int) -> List[str]:
+async def _read_alert_state(
+    call: Callable, policy: Policy, vitals: Mapping[str, Any], cycle_index: int,
+) -> Tuple[List[str], Dict[str, Optional[bool]], Dict[str, str]]:
     """Threshold-alert lines for this cycle (policy.yaml `threshold_alerts`):
     each distinct read taken once, a failed read logged and its line dropped.
+    Also returns, per alert name, whether it is crossed (`None` when its read
+    failed, so edge state is kept rather than read as cleared) and its line.
     Total by design, like the job watch."""
     reads: Dict[str, Any] = {}
     cache: Dict[str, Any] = {}
@@ -818,11 +877,26 @@ async def _read_alerts(call: Callable, policy: Policy, vitals: Mapping[str, Any]
                 LOG.warning("cycle %s: alert read %s failed: %s", cycle_index, alert.tool, exc)
                 cache[key] = None
         reads[alert.name] = cache[key]
+    crossed: Dict[str, Optional[bool]] = {}
+    by_name: Dict[str, str] = {}
     try:
-        return evaluate_threshold_alerts(policy.threshold_alerts, reads, vitals.get("alive"))
+        for alert in policy.threshold_alerts:
+            if reads.get(alert.name) is None:
+                crossed[alert.name] = None
+                continue
+            found = evaluate_threshold_alerts([alert], reads, vitals.get("alive"))
+            crossed[alert.name] = bool(found)
+            if found:
+                by_name[alert.name] = found[0]
+        lines = evaluate_threshold_alerts(policy.threshold_alerts, reads, vitals.get("alive"))
     except Exception:  # noqa: BLE001 -- deliberately total
         LOG.exception("cycle %s: could not evaluate threshold alerts", cycle_index)
-        return []
+        return [], {}, {}
+    return lines, crossed, by_name
+
+
+async def _read_alerts(call: Callable, policy: Policy, vitals: Mapping[str, Any], cycle_index: int) -> List[str]:
+    return (await _read_alert_state(call, policy, vitals, cycle_index))[0]
 
 
 async def _read_pending_brief(call: Callable, cycle_index: int) -> Optional[Dict[str, Any]]:
@@ -838,6 +912,10 @@ async def _read_pending_brief(call: Callable, cycle_index: int) -> Optional[Dict
 
 def _pause_store(deps: "CycleDeps") -> PauseWatchStore:
     return deps.pause_store or PauseWatchStore(deps.cursor_store.path.with_name("pause_watch.json"))
+
+
+def _lane_store(deps: "CycleDeps") -> "lanes.LaneStore":
+    return lanes.LaneStore(deps.cursor_store.path.with_name("lane_state.json"))
 
 
 def _job_store(deps: "CycleDeps") -> JobWatchStore:
