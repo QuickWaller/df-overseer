@@ -170,11 +170,16 @@ def build_briefing(
 MAX_ALERT_LINES = 6
 
 #: The ask, last. Cited facts are refreshed by the server; the Overseer judges
-#: reasoning and does not re-read them.
+#: reasoning and does not re-read them. Until a proposal type is routed to the
+#: executor (docs/CONDUCTOR-EXECUTION.md stage 2), nothing else carries out an
+#: accepted proposal, so the ask must say to execute it (live 2026-10-05:
+#: "stop when each has a ruling" left an accepted brew unexecuted).
 RULING_ASK = (
     "Rule on each pending proposal: accept, reject, or defer naming what would "
     "change your mind. Cited facts are checked and refreshed; judge the reasoning. "
-    "Stop when each has a ruling. Expected about {calls} calls."
+    "Then carry out each proposal you accept, following your charter's Execution "
+    "steps (queue.project, act, queue.executed with step_id). Stop when each has "
+    "a ruling and every accepted one is carried out. Expected about {calls} calls."
 )
 
 
@@ -260,5 +265,5 @@ def build_ruling_briefing(
     out.append("OTHER OPEN ITEMS" + ("" if items else ": none"))
     out.extend(f"- {i}" for i in items)
 
-    out.append(RULING_ASK.format(calls=max(2, 2 * shown + 2) if shown else 2))
+    out.append(RULING_ASK.format(calls=max(2, 4 * shown + 2) if shown else 2))
     return "\n".join(out)

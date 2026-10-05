@@ -161,3 +161,11 @@ def test_every_alert_read_is_on_the_conductors_own_allowlist():
     granted = {t["id"] for t in (doc.get("read") or [])}
     assert {a.tool for a in load_policy().threshold_alerts} <= granted
     assert "queue.pending_brief" in granted
+
+
+def test_the_ask_says_to_carry_out_accepted_proposals_until_routing_exists():
+    # Live 2026-10-05: "stop when each has a ruling" left an accepted brew
+    # unexecuted, since no executor exists before stage 2.
+    last = _build().splitlines()[-1]
+    assert "carry out each proposal you accept" in last
+    assert "queue.project" in last and "queue.executed" in last
