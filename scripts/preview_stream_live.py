@@ -29,7 +29,7 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT))
 
-from dfqueue import live, runs as runs_store, site_data  # noqa: E402
+from dfqueue import lessons, live, runs as runs_store, site_data  # noqa: E402
 
 WEB = REPO_ROOT / "web" / "stream"
 FIXTURE = WEB / "fixtures" / "board-demo.jsonl"
@@ -156,6 +156,20 @@ def _demo_runs(now: float) -> tuple:
     return rows, calls
 
 
+# EXAMPLE DATA (preview only): gotchas written or confirmed inside the demo
+# runs' window, so the LESSON panels can be judged. Built into lessons.json by
+# the real `lessons.build_lessons`, not hand-edited output.
+DEMO_GOTCHAS = [
+    {"id": "gotcha-9001", "title": "Soil cannot be smoothed, so bedrooms need stone", "written_by_role": "consultant",
+     "created_at": "2026-01-01T00:02:00+00:00", "outcomes": []},
+    {"id": "gotcha-9002", "title": "A bed will not place on a floor with boulders", "written_by_role": "overseer",
+     "created_at": "2025-12-01T00:00:00+00:00", "outcomes": [
+         {"at": "2026-01-01T00:03:00+00:00", "role": "overseer", "result": "worked", "note": "hauled first"}]},
+    {"id": "gotcha-9003", "title": "Two miners are enough for one stair", "written_by_role": "architect",
+     "created_at": "2025-12-31T23:58:00+00:00", "outcomes": []},
+]
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--idle", action="store_true", help="nobody awake")
@@ -194,6 +208,8 @@ def main(argv: list[str] | None = None) -> int:
         for fort_dir in (out / side / "forts").glob("*"):
             (fort_dir / "runs.json").write_text(json.dumps(runs_doc, indent=2), encoding="utf-8")
             print(f"wrote {fort_dir.relative_to(REPO_ROOT)}/runs.json")
+            (fort_dir / "lessons.json").write_text(
+                json.dumps(lessons.build_lessons(run_rows, DEMO_GOTCHAS, public=public), indent=2), encoding="utf-8")
         # EXAMPLE DATA, preview only: sample "Thinking" text on the First
         # bedroom cell project's posts, so the expander can be judged
         # (user's ask, 2026-10-05). The real publisher never sends this.
