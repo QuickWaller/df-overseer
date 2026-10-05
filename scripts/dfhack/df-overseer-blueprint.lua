@@ -1371,8 +1371,13 @@ local function run_phase(name, phase, site_arg, level, rank, radius, dry, allow_
   -- not gated on dry the way the stranding override is: a preview should
   -- show a reservation conflict just as plainly as a real apply would refuse
   -- it.
+  -- A later phase on a site-N that was carved from a reservation holds that
+  -- reservation too (found in stage 2B: without this every follow-up phase of
+  -- a reserved room was refused by its own reservation, which stays held
+  -- until an explicit unreserve).
+  local holder = from_reservation or (handle and site.reservation) or nil
   local reservation_conflict = reservations_mod.check_tiles(
-    reservations_mod.rect_tiles(site.x, site.y, site.z, site.w, site.h), from_reservation)
+    reservations_mod.rect_tiles(site.x, site.y, site.z, site.w, site.h), holder)
   if reservation_conflict then
     result.blocked = true
     result.blocked_reason = reservation_conflict.message

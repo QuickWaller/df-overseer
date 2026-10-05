@@ -288,3 +288,17 @@ def test_any_pending_false_is_not_any_pending(world):
     _pending_site(world)
     r, _ = world.call("release_site", "site-1", "false", "false")
     assert r["released"] is False and "not stalled" in r["refused"]
+
+
+def test_later_phases_of_a_reserved_room_are_not_refused_by_their_own_reservation(world):
+    world.stone_block(10, 10)
+    world.call("reserve_site", BP, "p", "Well", "false")
+    world.qf_output(DIG_OK)
+    world.call("apply_phase", BP, SHELL, "res-1", "false")
+    world.carve_and_smooth()
+    world.qf_output(FINISH_OK)
+    r, _ = world.call("apply_phase", BP, FINISH, "site-1", "false")
+    assert r.get("blocked") is None and r["ok"] is True
+    # a stranger's site elsewhere on the same reservation is still refused
+    s, _ = world.call("apply_phase", BP, SHELL, "Well", "false")
+    assert s["blocked"] is True and "res-1" in s["blocked_reason"]
