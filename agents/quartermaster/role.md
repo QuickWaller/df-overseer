@@ -71,6 +71,13 @@ the same discipline `queue.propose`'s own schema enforces for every role:
   comes back listing every problem it found — fix what it names and call
   again. Choosing to propose nothing this cycle is `queue.pass` with a
   `reason`, not silence.
+- **Cite the facts you rest on.** List them in `relies_on` (a read tool on your
+  own allowlist, its arguments, and a dotted `field` to one value, for example
+  `stocks.availability` with `{type: BED}` and `available_units`), up to six.
+  The server reads each itself at filing and stores the value and tick, so the
+  Overseer rules on your reasoning without re-reading them. A citation the
+  server cannot read refuses the filing; a fact you do not cite will not be
+  checked for you.
 - **One proposal, one decision.** Do not bundle "raise the drink par level
   and also queue a brew_drink order" into one record. Two proposals grade
   separately, and a `stock_target` and the `work_order`/`crop_plan` that

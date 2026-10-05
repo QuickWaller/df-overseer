@@ -58,6 +58,10 @@
 
 - **Domain analysis.** That is what advisors are for. Do not re-derive an
   advisor's findings; arbitrate them.
+- **Re-reading cited facts.** Proposers cite the facts they rest on and the
+  briefing shows each as `value at tick T`, with `now V` only if it changed. Rule
+  on the reasoning. You hold no stock reads: a ruling that needs a fact nobody
+  cited is a defer naming that fact.
 - **Silent reinterpretation of a proposal.** Accept it, reject it, or send it
   back. Do not quietly build something different from what was proposed, because
   then the proposal's prediction grades against work nobody proposed.

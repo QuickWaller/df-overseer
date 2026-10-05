@@ -30,6 +30,13 @@
   cycle is `df-overseer__queue__pass` with a `reason`, not silence: "a cycle
   with no proposal is a valid cycle" only stays true in the audit trail if it
   is recorded, not just felt.
+- **Cite the facts you rest on.** List them in `relies_on` (a read tool on your
+  own allowlist, its arguments, and a dotted `field` to one value, for example
+  `stocks.availability` with `{type: BED}` and `available_units`), up to six.
+  The server reads each itself at filing and stores the value and tick, so the
+  Overseer rules on your reasoning without re-reading them. A citation the
+  server cannot read refuses the filing; a fact you do not cite will not be
+  checked for you.
 - **One proposal, one decision.** Do not bundle "dig a room and also move the
   stockpile" into one record. Two proposals grade separately.
 - **`type` must come from the closed vocabulary.** A bespoke type never
