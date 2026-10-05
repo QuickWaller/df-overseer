@@ -152,3 +152,142 @@ watchdog supersedes its "never in conductor.service" rule per register
 7. A threat or unknown cause, or nothing explains it past the grace period:
    wake the Overseer with `unexplained_pause`, carrying the `why` report.
 8. Over the liveness limit: alert human.
+
+## Built (2026-10-05)
+
+| Piece | File | Tests |
+|---|---|---|
+| `why` and `dismiss` (popup kinds and strategies as data) | `scripts/dfhack/df-overseer-pause.lua`; `TOOLS.yaml` entry (`pause.why` read, `pause.dismiss` mutate) | `tests/test_pause_lua_logic.py` (20, real script on a fake world, `tests/lua_stubs/dfhack_pause_world.lua`) |
+| Decision table, executor, state, policy | `conductor/pause_watch.py`, `conductor/pause_policy.yaml` | `conductor/tests/test_pause_watch.py` (42: table, executor over a fake fort, state file, cycle integration) |
+| Wiring | `conductor/cycle.py` (watchdog pass after the tripwire branch; `_paused_cycle_result`; ordinary-cycle escalation recorded as owned), `conductor/policy.yaml` (`unexplained_pause` wake reason), `conductor/status.py` (`pause_watch` block) | covered by the cycle tests above |
+| Allowlist and system-class id | `agents/conductor/tools.yaml`, `dfmcp/roles.py` `SYSTEM_CLASS_TOOL_IDS` (+`pause.dismiss`) | `dfmcp/tests/test_gotchas_tools.py` baseline (conductor 17 to 19), `tests/test_drift_check.py` made count-agnostic |
+| Docs | `docs/TRAPS.md` update under the self-pause section | |
+
+Test results: ambient `python -m pytest` 2656 passed, 3 skipped, 1 failed, the
+failure being the documented deliberate race
+(`test_concurrent_raw_appends_without_serialization_can_collide`, it ran while
+a second pytest was loading the machine; 3 of 3 pass alone straight after).
+`dfmcp/tests` in `.venv-dfmcp`: 789 passed. `lupa` was already installed, so
+the Lua logic tests ran rather than skipped.
+
+Verification of the verification: mutation checks on `pause_watch.py`. Removing
+the tripwire guard in `decide` fails `test_a_latched_tripwire_wins_over_everything...`;
+removing the owned-escalation guard fails 5 tests (decide, executor, two cycle
+tests, liveness); removing the tick-did-not-move branch fails
+`test_a_resume_whose_tick_does_not_move_pauses_again_alerts_and_never_retries`.
+(The executor also checks the latch itself, so the tripwire guard is double.)
+
+### Decisions and flags for the orchestrator
+
+- **The 2026-09-28 reading is probably wrong.** `FORT_POSITION_SUCCESSION` is
+  `DO_MEGA`; no announcement type on this install has `PAUSE`. The pause was
+  most likely a mega popup the user clicked away before the resume test. The
+  design handles both readings (a popup is dismissed; a bare flip falls to the
+  announcement or plain-pause rows). The supervised test settles it.
+- **Dismiss is separated from resume.** Closing a box is player-equivalent and
+  always allowed (its text is recorded first); resuming needs a cause on the
+  harmless list. A threat popup is closed but the fort stays paused for the
+  Overseer.
+- **Clean Overseer run on an `unexplained_pause` = the decision to resume**
+  (resume-and-verify once), copying the tripwire branch's convention; the
+  register says the Overseer "decides (resume, act, or escalate)" but it has no
+  `clock.resume` (and must not). Say if you want a different mechanism.
+- **A held pause now stops ordinary cycles.** While a pause is owned or held,
+  the cycle returns early (no advisors woken over a frozen fort). Before, a
+  non-latched escalation pause let the next cycle run advisors against a paused
+  fort.
+- **One edit to `dfmcp/roles.py`** (one id in `SYSTEM_CLASS_TOOL_IDS`): the
+  handoff allowed `dfmcp/` only for a read tool, but a mutating tool for the
+  conductor cannot load without it. Also touched `conductor/status.py` and
+  `conductor/policy.yaml` (inside `conductor/`), and two tests whose hardcoded
+  conductor tool count (17) the new grants change.
+- **Not built, said plainly.** Case 9 (N consecutive failed reads alert the
+  human) is not implemented: `CycleError` is already logged and retried, and
+  the service loop is where a counter would live. Telegram is not built; the
+  alert sink is the single `_alert` function. `docs/STATE.md` (generated tool
+  counts) was not regenerated: run `scripts/drift_check.py --write-state` after
+  the deploy. If `pause.why` is not deployed when the conductor is, the
+  watchdog degrades to waiting then a liveness alert and never resumes.
+- **Unverified live (honest list):** that clicking the box's Okay button closes
+  a real mega popup (the strategy order in `POPUP_KINDS` is a hypothesis);
+  the real text of any popup other than the succession one; whether a DO_MEGA
+  announcement pauses the game by itself; `popup_message.text` shape and
+  `world.status.mega_text` semantics (the script tolerates string or vector).
+- Hygiene: my read-only probes copied one scratch file to the fort VM's temp
+  directory and ran read-only `dfhack-run lua` expressions; the file was
+  removed. No VM state was changed; the fort stayed paused.
+
+## Deploy plan (for the orchestrator; every step needs the user's go-ahead)
+
+Order: VM 103 first (tools exist before anything calls them), VM 106 second.
+
+1. **VM 103, DFHack side.** Ship `scripts/dfhack/df-overseer-pause.lua` to
+   `hack/scripts/` the way the other `df-overseer-*.lua` files go (use
+   `git -c core.autocrlf=false archive`). The script is a module with no side
+   effects on load, so no restart is needed.
+2. **VM 103, dfmcp.** Ship `scripts/dfhack/TOOLS.yaml`, `dfmcp/roles.py`,
+   `agents/conductor/tools.yaml` and the test files; restart
+   `dfmcp-server.service`. Check: conductor tool count 19, every other role's
+   count unchanged (overseer 99, architect 53, consultant 29, quartermaster
+   25), and `pause.dismiss` refused to the Overseer's token.
+3. **VM 106, conductor files.** `conductor/cycle.py`, `pause_watch.py`,
+   `pause_policy.yaml`, `policy.yaml`, `status.py`. The service stays disabled;
+   nothing runs until a hand `--once`. Confirm no `CONDUCTOR_*` override
+   changes the cursor path (the watchdog state sits beside it as
+   `pause_watch.json`).
+
+## Supervised live test plan (fort paused unless a step says otherwise)
+
+Rollback for all of it: delete the Lua file, revert the dfmcp files, restart
+dfmcp. Stay paused and at the recorded fps between steps.
+
+1. **Read only.** `dfhack-run df-overseer-pause why` on the paused fort:
+   expect `paused: true`, `popups_pending: 0`, `cause` `plain_pause` (or
+   `announcement` if a flagged report is within 1200 ticks). Then the same over
+   MCP as `pause.why` with the conductor token.
+2. **Provoke a plain mega popup, fort paused.** Push one the way the game's own
+   BOX path does: `dfhack-run lua "dfhack.gui.showPopupAnnouncement('pause-safety test', COLOR_WHITE)"`.
+   `why` should say `cause: popup`, `popups_pending: 1`, the text. Ask the user
+   to watch VNC. Then `df-overseer-pause dismiss`: expect `ok: true`,
+   `remaining: 0`, the box gone on VNC, tick unchanged, still paused. **If it
+   does not close:** `df-overseer-ui dump` for the real button label, edit the
+   `click_text` arguments in `POPUP_KINDS`, redeploy the file, repeat; the
+   inert `pop_front` strategy is the documented last resort and must be
+   enabled deliberately.
+3. **Provoke the real thing.** On the paused fort, fire the announcement
+   through the game's own flag path:
+   `dfhack-run lua "dfhack.gui.showAutoAnnouncement(df.announcement_type.FORT_POSITION_SUCCESSION, nil, 'test succession', COLOR_WHITE, true)"`
+   (adjust the call to the install's signature if it errors). Read `why`:
+   expect a popup and a `recent_reports` row naming `FORT_POSITION_SUCCESSION`.
+   This answers whether DO_MEGA creates a popup. To learn whether the game
+   pauses itself, repeat once inside a `scripts/supervised-unpause.sh` window at
+   10 fps and see whether `pause_state` flips.
+4. **The watchdog, harmless path.** With step 3's popup pending and the fort
+   paused, run the conductor once on VM 106 through the transient unit
+   mirroring the service (`--once`). Expect in the cycle archive:
+   `pause_watch.verdict` after dismiss, a `clock.resume`, a status read with a
+   higher tick, and the fort running; then re-pause it by hand, per the
+   supervised-window rules.
+5. **The hold path.** Repeat with `MEGABEAST_ARRIVAL` as the announcement type
+   (text only; nothing spawns). First `--once --dry-run`: the plan should show
+   `wake_overseer`, no resume. A real run costs one Overseer run; expect the
+   briefing's `wake_reason` to be `unexplained_pause`. Optional, since it spends
+   money.
+6. **Guards, live.** A latched tripwire is covered by the offline tests and the
+   existing tripwire live evidence; if the user wants it seen live, latch one
+   deliberately in a supervised window and confirm `pause_watch` is `null` in
+   the cycle archive and `pause.dismiss` is never called.
+7. **Record** the real popup text and the strategy that worked in
+   `evals/live/<date>-pause-safety/`, update `TOOLS.yaml` `verified:` for both
+   commands, and extend `conductor/pause_policy.yaml` with any real
+   harmless type text seen.
+
+## Result
+
+Status: built offline, tests green, nothing deployed, nothing committed to
+`main`. The design table, the built pieces and the plans are above. Open
+questions for the user: (a) whether a clean Overseer run on an unexplained
+pause is the right "resume" decision (the Overseer cannot call `clock.resume`
+itself); (b) whether the 600 second grace for a plain pause and the 1800 second
+liveness limit are right for an unattended year; (c) how soon Telegram should
+become the alert sink.
