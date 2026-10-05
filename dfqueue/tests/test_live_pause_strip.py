@@ -48,10 +48,10 @@ def test_a_stale_status_file_never_leaves_an_alert_up():
 
 
 def test_the_public_reason_goes_through_the_feed_safety_net():
-    bad = {**ALERT, "alert": {"reason": "see http://10.0.0.5/secret for why", "since": T0}}
+    bad = {**ALERT, "alert": {"reason": "see http://203.0.113.7/secret for why", "since": T0}}
     pub = live.build_live([], T0, public=True, conductor=_conductor(bad))
     assert pub["pause"]["alert"]["reason"] == live.PAUSE_REASON_GENERIC
-    assert "10.0.0.5" not in json.dumps(pub)
+    assert "203.0.113.7" not in json.dumps(pub)
     long = {**ALERT, "alert": {"reason": "word " * 100, "since": T0}}
     out = live.build_live([], T0, public=True, conductor=_conductor(long))
     assert len(out["pause"]["alert"]["reason"]) <= live.PAUSE_REASON_MAX
