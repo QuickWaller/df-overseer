@@ -51,6 +51,9 @@ class ConductorConfig:
     runtime_root: Path                # runtime/cycles, runtime/cost
     status_path: Path
 
+    #: Optional. Where each run keeps its session state so its reasoning can be
+    #: read (`agent exec --state-dir`). Unset: reasoning is not captured.
+    thinking_state_root: Optional[Path] = None
     role_timeout_seconds: float = 600.0
     cycle_interval_seconds: float = 60.0
     models: Mapping[str, str] = field(default_factory=lambda: {r: DEFAULT_MODEL for r in ROLES})
@@ -67,6 +70,7 @@ _ENV_KEYS = {
     "cursor_store_path": "CONDUCTOR_CURSOR_STORE_PATH",
     "runtime_root": "CONDUCTOR_RUNTIME_ROOT",
     "status_path": "CONDUCTOR_STATUS_PATH",
+    "thinking_state_root": "CONDUCTOR_THINKING_STATE_DIR",
     "role_timeout_seconds": "CONDUCTOR_ROLE_TIMEOUT_SECONDS",
     "cycle_interval_seconds": "CONDUCTOR_CYCLE_INTERVAL_SECONDS",
 }
@@ -74,6 +78,7 @@ _ENV_KEYS = {
 _PATH_FIELDS = {
     "pinned_config_dir", "openclaw_state_dir", "workspace_root", "secrets_env_file",
     "policy_path", "cursor_store_path", "runtime_root", "status_path",
+    "thinking_state_root",
 }
 _FLOAT_FIELDS = {"role_timeout_seconds", "cycle_interval_seconds"}
 _REQUIRED_FIELDS = {
