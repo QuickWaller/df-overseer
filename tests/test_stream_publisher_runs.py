@@ -247,3 +247,11 @@ def test_full_report_is_public_whole_with_unsafe_paragraphs_replaced():
     pub = live.build_runs(rows, NOW, public=True)["runs"][0]
     assert pub["report"].split("\n\n") == ["Ruled two proposals.", live.THINKING_WITHHELD_MARKER, "Started the dig."]
     assert live.build_runs(rows, NOW, public=False)["runs"][0]["report"] == report
+
+
+def test_public_summary_keeps_line_breaks_and_still_checks_the_safety_rule():
+    s = live._public_summary("Wake summary:\n\n\n**Rulings**\n- **a** accepted   fine\n  - nested\n- b  \n")
+    assert s == "Wake summary:\n\n**Rulings**\n- **a** accepted fine\n  - nested\n- b"
+    # an unsafe pattern on a later line still withholds the whole summary
+    assert live._public_summary("Fine.\n- see http://example.com/x") is None
+    assert live._public_summary("Fine.\n- see /home/user/file") is None

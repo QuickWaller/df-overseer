@@ -53,4 +53,36 @@ safe but unreadable.
 
 ## Result
 
-(executor fills this in; deploy targets expected: relay-web, relay-web-operator)
+Done. Asset version now v60.
+
+- `renderMarkdown(text)` and `mdInline` in `web/stream/app.js`: createElement and
+  text nodes only, no innerHTML, no HTML parsing, no href. Supported: paragraphs,
+  hard line breaks, headings `#` to `###` (small bold line), `-`/`*` bullets,
+  `1.` numbers, one nesting level, `**bold**`, `*italic*`/`_italic_` (underscore
+  only at word edges, so snake_case stays), inline code (content literal).
+  Everything else (links, images, HTML, tables, fences, entities, `####`) is
+  literal text. `mdPlain(text)` strips the markers for single-line places.
+- Scope addition (user, 2026-10-05). Rendered as blocks: run summary, Full
+  report, run Thinking, item Thinking, thread replies (`ftext`, `frtext`), the
+  proposal "Why", project and proposal detail (`pdesc`), lesson panel. Plain
+  (markers stripped): board card description, reply quote, answer preview, the
+  agent page's recent lines, wake detail, executed/hold reasons, pause reason.
+  Left alone: Chronicle fixture quotes, site-text roster lines.
+- Newline loss: only `dfqueue/live.py::_public_summary` collapsed whitespace
+  (a join of `body.split()`). It now uses `_keep_lines` (spaces collapsed per
+  line, blank runs reduced to one, nesting indent kept, sentence cut also at a
+  full stop plus newline). `find_unsafe_pattern` is untouched and still checked
+  on the whole text and on the final cut. Feed items, reports and thinking
+  already kept newlines; the operator summary is the raw answer.
+- Tests: `dfqueue/tests/test_site_js_markdown.py` (21: constructs, mdPlain, and
+  hostile `<script>`, `<img onerror>`, `[x](javascript:...)`, entities, nested
+  hostile cases; assert only allowed tags are created and no attribute is ever
+  set); `tests/test_stream_publisher_runs.py` (newlines kept, an unsafe later
+  line still withholds). Full `python -m pytest`: 2847 passed, 3 skipped.
+- Headless (Chrome via CDP, preview data with markdown injected into runs.json):
+  1280x700 and 390x800, no horizontal scroll, long code span wraps, no console
+  errors (only a favicon 404 from the plain static server), zero script, img,
+  a or iframe elements inside `.md`, hostile text shown literally.
+- Deploy targets: relay-web, relay-web-operator, and vm103-stream-publisher
+  (live.py change; already-published summaries stay collapsed until the
+  publisher runs).
