@@ -106,3 +106,12 @@ proposals wake the Overseer (`e7f75fb`).
   and the Consultant cannot either, so it spent an 11-round turn on questions it
   cannot answer. A deferred proposal also stays pending and is re-ruled every
   cycle (red-team H3, stage 4). Day total $0.79.
+
+## Ore-exposed signal, live read (2026-10-06, deployed 2c12e0d)
+
+`blueprint sites` now carries `ore_exposed` per site: site-5 and site-6
+(the bedrooms dug 2026-10-05) each show 1 HEMATITE tile exposed, matching the
+user's own observation on VNC (one bottom-left corner each); site-2, site-3 and
+site-4 show none. `construction mine-vein-site site-5 DRY_RUN`: 1 ore tile
+found, 1 tile would be designated, no refusals. Nothing mined: the Architect
+proposes it on its next wake (lane `ore`), ruled as usual.
