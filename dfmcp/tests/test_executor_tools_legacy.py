@@ -198,7 +198,7 @@ def test_real_roster_loads_and_only_the_conductor_holds_executor_tools():
     for role, perms in roster.roles.items():
         held = {t for t in set(perms.read) | set(perms.write) if getattr(registry.get(t), "executor_only", False)}
         if role == "conductor":
-            assert {et.QUEUE_CLOSE_LEGACY, et.QUEUE_CUTOVER, et.QUEUE_EXECUTION_STATE} <= held
+            assert held == set(et.NATIVE_TOOLS)  # all ten, and nothing else
         else:
             assert held == set(), role
 

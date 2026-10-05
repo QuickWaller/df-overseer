@@ -185,6 +185,8 @@ def test_conductor_is_kind_system_and_holds_exactly_the_clock_writes(registry):
     assert conductor.kind == "system"
     assert set(conductor.write) == SYSTEM_CLASS_TOOL_IDS | {
         "queue.grade", "conductor.report", "queue.close_legacy", "queue.cutover",
+        "queue.open_project", "queue.apply_followup", "queue.run_step", "queue.resolve_uncertain",
+        "queue.observe", "queue.cleanup_project", "queue.close",
     }
     # conductor.report (handoffs/2026-10-05-conductor-report.md): native, never
     # mutates the fort, and granted to no other role.
@@ -192,7 +194,7 @@ def test_conductor_is_kind_system_and_holds_exactly_the_clock_writes(registry):
         if other_name != "conductor":
             assert "conductor.report" not in other.write and "conductor.report" not in other.read
     for tool_id in conductor.write:
-        if tool_id in ("queue.grade", "conductor.report", "queue.close_legacy", "queue.cutover"):
+        if tool_id in ("queue.grade", "conductor.report") or tool_id.startswith("queue."):
             assert registry.get(tool_id).mutates is False
             continue
         assert registry.get(tool_id).mutates is True

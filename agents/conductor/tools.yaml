@@ -239,3 +239,45 @@ write:
       conductor.cutover`). Checks (apply false) or records (apply true) a
       group's cutover and closes everything at or below it through the same
       store call as queue.close_legacy. Never calls DFHack. Executor-only.
+  - id: "queue.open_project"
+    status: exists
+    note: >-
+      Added handoffs/2026-10-06-stage-2c.md (docs/CONDUCTOR-EXECUTION.md 6.3). Opens the project for an accepted routed proposal's ruling (one step, the proposal's exact tool and arguments). Writes a `project` record only.
+      Native tool (dfmcp/executor_tools.py), executor-only (dfmcp/roles.py rule 8: only a
+      role of kind system may hold it). Granted only here.
+  - id: "queue.apply_followup"
+    status: exists
+    note: >-
+      Added handoffs/2026-10-06-stage-2c.md (docs/CONDUCTOR-EXECUTION.md 6.3). Applies an accepted or covered follow-up as one amend adding its step. Writes an `amend` record only.
+      Native tool (dfmcp/executor_tools.py), executor-only (dfmcp/roles.py rule 8: only a
+      role of kind system may hold it). Granted only here.
+  - id: "queue.run_step"
+    status: exists
+    note: >-
+      Added handoffs/2026-10-06-stage-2c.md (docs/CONDUCTOR-EXECUTION.md 6.3). Runs one step as code: runnable check, dry run judged by the tool's declared verdict, landed baseline, step-run marker, the real call, the executed record. Reaches DFHack through the server's internal route (never Roster.check), only for the tools in a routed group of dfqueue/action_tools.yaml. Nothing is routed until the cutover deploy, so until then it can only report not_runnable.
+      Native tool (dfmcp/executor_tools.py), executor-only (dfmcp/roles.py rule 8: only a
+      role of kind system may hold it). Granted only here.
+  - id: "queue.resolve_uncertain"
+    status: exists
+    note: >-
+      Added handoffs/2026-10-06-stage-2c.md (docs/CONDUCTOR-EXECUTION.md 6.3). Settles a step run left issuing by a landed read against its baseline. Read-only against the game; writes the step's executed record when the call is found to have landed.
+      Native tool (dfmcp/executor_tools.py), executor-only (dfmcp/roles.py rule 8: only a
+      role of kind system may hold it). Granted only here.
+  - id: "queue.observe"
+    status: exists
+    note: >-
+      Added handoffs/2026-10-06-stage-2c.md (docs/CONDUCTOR-EXECUTION.md 6.3). Reads an issued step's progress through its tool's declared progress read and records one observation; only `done` completes a step.
+      Native tool (dfmcp/executor_tools.py), executor-only (dfmcp/roles.py rule 8: only a
+      role of kind system may hold it). Granted only here.
+  - id: "queue.cleanup_project"
+    status: exists
+    note: >-
+      Added handoffs/2026-10-06-stage-2c.md (docs/CONDUCTOR-EXECUTION.md 6.3). Abandon cleanup: releases what the abandoned project reserved and designated (never dug tiles) through each handle's declared cleanup tool, then closes it with the results.
+      Native tool (dfmcp/executor_tools.py), executor-only (dfmcp/roles.py rule 8: only a
+      role of kind system may hold it). Granted only here.
+  - id: "queue.close"
+    status: exists
+    note: >-
+      Added handoffs/2026-10-06-stage-2c.md (docs/CONDUCTOR-EXECUTION.md 6.3). Closes a project (idle or passed) with a reason. Writes a `close` record only; touches no game state.
+      Native tool (dfmcp/executor_tools.py), executor-only (dfmcp/roles.py rule 8: only a
+      role of kind system may hold it). Granted only here.

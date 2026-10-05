@@ -290,4 +290,4 @@ class TestAllowlistsForStageOne:
     async def test_per_role_tool_counts(self):
         roster = self._roster()
         counts = {r: len(p.read) + len(p.write) for r, p in roster.roles.items()}
-        assert counts["conductor"] == 26 and counts["overseer"] == 97
+        assert counts["conductor"] == 33 and counts["overseer"] == 97
