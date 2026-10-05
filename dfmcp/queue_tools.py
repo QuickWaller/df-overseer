@@ -1614,8 +1614,11 @@ async def _pending_brief(
         )
     try:
         pending = await asyncio.to_thread(store.pending_proposals, db_path)
-        project_ids = await asyncio.to_thread(store.list_project_ids, db_path)
-        statuses = [await asyncio.to_thread(store.project_status, db_path, pid) for pid in project_ids]
+        # The one WIP definition (docs/CONDUCTOR-EXECUTION.md section 3, P3-M3):
+        # the store's `open_projects`, shared with the cap, not a count of
+        # projects whose status reads `active`.
+        open_rows = await asyncio.to_thread(store.open_projects, db_path)
+        statuses = [await asyncio.to_thread(store.project_status, db_path, o["project_id"]) for o in open_rows]
         rulings = await asyncio.to_thread(store.recent_rulings, db_path, BRIEF_RECENT_RULINGS)
     except store.QueueError as exc:
         raise _write_error(QUEUE_PENDING_BRIEF, exc) from exc
@@ -1652,15 +1655,14 @@ async def _pending_brief(
         items.append(item)
 
     open_projects = []
-    for st in statuses:
-        if st.get("status") != "active":
-            continue
+    for row, st in zip(open_rows, statuses):
         counts = st.get("counts") or {}
         blocker = st.get("top_blocker") or {}
         open_projects.append({
             "id": st["project_id"], "title": _clip(st.get("summary"), 80),
             "steps_done": counts.get(schema.DONE, 0), "steps_total": sum(counts.values()),
             "top_blocker": _clip(blocker.get("reason"), 120) if blocker else None,
+            "urgency": row.get("urgency"), "phases_remaining": row.get("phases_remaining", 0),
         })
     structured = {
         "count": len(pending), "shown": len(items), "truncated": len(pending) > len(items),
