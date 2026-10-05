@@ -22,6 +22,7 @@ import pytest
 lupa = pytest.importorskip("lupa")
 
 LUA = Path(__file__).resolve().parent.parent / "scripts" / "dfhack" / "df-overseer-workjob.lua"
+TEXTUTIL = LUA.parent / "df-overseer-textutil.lua"
 
 STUB = r"""
 dfhack_flags = {module = true}
@@ -58,7 +59,12 @@ package.loaded['json'] = json
 package.loaded['utils'] = {listpairs = function() return function() end end}
 package.loaded['dfhack.workshops'] = {getJobs = function() return BREW_JOBS end}
 function reqscript(name)
-  if name == 'df-overseer-textutil' then return {to_utf8 = function(x) return x end} end
+  if name == 'df-overseer-textutil' then
+    -- the REAL shared helper (to_utf8 and the name matcher), loaded as a module env
+    local env = setmetatable({}, {__index = _G})
+    assert(load(TEXTUTIL_SRC, 'textutil.lua', 't', env))()
+    return env
+  end
   return {}
 end
 _G.require = function(n) return package.loaded[n] end
@@ -108,6 +114,7 @@ def _py(v):
 class World:
     def __init__(self):
         self.lua = lupa.LuaRuntime(unpack_returned_tuples=True)
+        self.lua.globals().TEXTUTIL_SRC = TEXTUTIL.read_text(encoding="utf-8")
         self.lua.execute(STUB)
         load = self.lua.eval("function(src) return load(src, 'workjob.lua') end")
         chunk = load(LUA.read_text(encoding="utf-8"))

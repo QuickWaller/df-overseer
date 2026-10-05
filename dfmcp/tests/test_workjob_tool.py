@@ -224,33 +224,27 @@ def test_argv_for_queue_required_only(registry):
     assert argv == ["df-overseer-workjob", "queue", "blocks", "North Workshop"]
 
 
-def test_apostrophed_workshop_names_are_refused_by_the_mcp_layer(registry):
-    """REAL, LOAD-BEARING FINDING (not this stream's bug, dfmcp/tools.py is
-    not a touched surface and was not changed): DF's own vanilla default
-    workshop names carry an apostrophe (\"Mason's Workshop\",
-    \"Mechanic's Workshop\" -- and handoffs/2026-09-19-well-and-harvest.md's
-    own live write-up names this fort's actual Mason's Workshop
-    \"Stoneworker's Workshop\", the in-game display name for a Masons
-    subtype built of stone). dfmcp/tools.py's `_SHELL_METACHAR_RE` refuses
-    any string argument containing a literal `'` (it becomes a literal word
-    on a live command line, so this is a deliberate, pre-existing security
-    boundary, not a bug to route around here). The practical effect: a
-    workjob.queue call routed through the MCP server for a workshop whose
-    real default name contains an apostrophe is refused BEFORE it ever
-    reaches df-overseer-workjob.lua at all -- a caller must rename the
-    workshop (dfhack.buildings.getName has no setter used anywhere in this
-    project) or invoke the .lua file's CLI directly
-    (`./dfhack-run df-overseer-workjob ...`), bypassing dfmcp/tools.py's
-    argv construction entirely. Recorded here rather than silently worked
-    around, and named again in the handoff's own first-live-run checklist."""
+def test_apostrophed_workshop_names_pass_through_the_mcp_layer(registry):
+    """DF's own default workshop names carry an apostrophe ("Carpenter's
+    Workshop", "Stoneworker's Workshop"). handoffs/2026-10-05-landmark-name-
+    punctuation.md: the apostrophe is no longer refused, because the RPC
+    transport carries each argument as a protobuf string in a list, never
+    through a shell (see `_SHELL_METACHAR_RE`'s comment). Names also match
+    ignoring punctuation on the game side, so omitting it works too."""
+    tool = registry.get("workjob.queue")
+    argv = argv_for_call(
+        tool, {"job": "blocks", "workshop_landmark_name": "Stoneworker's Workshop"}
+    )
+    assert argv == ["df-overseer-workjob", "queue", "blocks", "Stoneworker's Workshop"]
+
+
+def test_double_quote_still_refused_and_message_says_what_to_do(registry):
     from dfmcp.tools import ArgumentError
 
     tool = registry.get("workjob.queue")
-    with pytest.raises(ArgumentError):
-        argv_for_call(
-            tool,
-            {"job": "blocks", "workshop_landmark_name": "Stoneworker's Workshop"},
-        )
+    with pytest.raises(ArgumentError) as exc:
+        argv_for_call(tool, {"job": "blocks", "workshop_landmark_name": 'Mason"s Workshop'})
+    assert "ignoring case, spacing and punctuation" in str(exc.value)
 
 
 def test_argv_for_queue_with_dry_run(registry):

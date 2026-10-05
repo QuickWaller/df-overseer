@@ -261,10 +261,24 @@ end
 -- landmark name -- see header. Returns the building object; callers must
 -- never print or return it directly (no coordinates in output).
 local function resolve_building_generic(name)
+  -- Names match ignoring case, spacing and punctuation (textutil.match_name),
+  -- so "Carpenters Workshop" finds "Carpenter's Workshop"; an ambiguous
+  -- normalised match is refused with the candidates listed.
+  local blds, names = {}, {}
   for _, bld in ipairs(df.global.world.buildings.all) do
     local ok_name, bname = pcall(dfhack.buildings.getName, bld)
-    bname = ok_name and textutil.to_utf8(bname) or bname
-    if ok_name and bname == name then
+    if ok_name and type(bname) == "string" then
+      blds[#blds + 1] = bld
+      names[#names + 1] = textutil.to_utf8(bname)
+    end
+  end
+  local idx, match_err = textutil.match_name(name, names)
+  if not idx and match_err and match_err:find("ambiguous", 1, true) then
+    return nil, match_err
+  end
+  if idx then
+    local bld = blds[idx]
+    do
       local ok_btype, btype = pcall(function() return bld:getType() end)
       if not ok_btype then
         return nil, "landmark '" .. name .. "': could not read building type"
