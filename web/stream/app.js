@@ -167,6 +167,17 @@ function mdInline(s) {
   return out;
 }
 
+/** The same text for a single-line place (a card, a strip, a quote): the
+ * Markdown markers dropped, lines joined, nothing rendered as a block. */
+function mdPlain(text) {
+  return String(text == null ? "" : text).replace(/\r\n?/g, "\n").split("\n")
+    .map((l) => l.replace(/^\s*(?:#{1,3}\s+|[-*]\s+|\d+\.\s+)/, "").trim())
+    .filter(Boolean).join(" ")
+    .replace(/\*\*(.+?)\*\*/g, "$1")
+    .replace(/`([^`]+)`/g, "$1")
+    .replace(/(^|\W)[*_]([^\s*_](?:[^*_]*[^\s*_])?)[*_](?=\W|$)/g, "$1$2");
+}
+
 const MD_ITEM = /^(\s*)([-*]|\d+\.)\s+(.*)$/;
 
 /** Markdown text -> a div.md holding paragraphs, headings and lists. */
@@ -640,7 +651,7 @@ function actedRows(list) {
     return {
       name: a.name || String(a.tool).replace(/[._-]/g, " "),
       failed,
-      note: [target, failed ? `failed${a.reason ? ": " + a.reason : ""}` : "ok"].join(" · "),
+      note: [target, failed ? `failed${a.reason ? ": " + mdPlain(a.reason) : ""}` : "ok"].join(" · "),
     };
   });
 }
@@ -683,7 +694,7 @@ function eventLine(item, projectsDoc) {
   if (item.kind === "observation") {
     const r = (rec.results || [])[0];
     const step = rec.step_id ? findStep(rec.step_id) : null;
-    return { cls: " hold", text: `put job "${(step && step.label) || "a job"}" on hold${r && r.reason ? ": " + r.reason : ""}` };
+    return { cls: " hold", text: `put job "${(step && step.label) || "a job"}" on hold${r && r.reason ? ": " + mdPlain(r.reason) : ""}` };
   }
   return null;
 }
@@ -739,7 +750,7 @@ function pauseStripSegment(pause, crowded) {
       el("span", { class: "ls-dot" }),
       el("span", { class: "ls-pause-h", text: crowded ? "Paused" : "Paused, needs attention" }),
       age === null ? null : el("span", { class: "ls-t", text: formatElapsed(age) }),
-      crowded ? null : el("span", { class: "ls-pause-why", text: pause.alert.reason || "" }),
+      crowded ? null : el("span", { class: "ls-pause-why", text: mdPlain(pause.alert.reason) }),
     ]);
   }
   return el("span", { class: "ls-seg ls-pause ls-wait" }, [
@@ -1171,7 +1182,7 @@ class StreamPage {
       meta.length ? el("div", { class: "bmeta" }, meta) : null,
     ];
     if (entry.description) {
-      parts.push(el("div", { class: "bdesc", text: entry.description }));
+      parts.push(el("div", { class: "bdesc", text: mdPlain(entry.description) }));
     }
     if (entry.noPlan) {
       parts.push(el("div", { class: "bstatus" }, [
@@ -1263,7 +1274,7 @@ class StreamPage {
         back,
       ]),
       metaLine,
-      p.description ? el("p", { class: "pdesc", text: p.description }) : null,
+      p.description ? el("div", { class: "pdesc md-box" }, [renderMarkdown(p.description)]) : null,
       ...sections,
     ]);
   }
@@ -1285,7 +1296,7 @@ class StreamPage {
         back,
       ]),
       el("div", { class: "meta" }, [el("span", { text: roleTitle(item.role) + "  " }), el("span", { class: "date", text: shortDate(item.game_date) })]),
-      item.text ? el("p", { class: "pdesc", text: item.text }) : null,
+      item.text ? el("div", { class: "pdesc md-box" }, [renderMarkdown(item.text)]) : null,
       el("section", { class: "psec" }, [
         el("div", { class: "sectionlabel", text: "Conversation" }),
         ...this._conversationEl(convo),
@@ -1336,7 +1347,7 @@ class StreamPage {
       const what = { ask: "question", proposal: "proposal", ruling: "ruling", project: "plan" }[target.kind] || target.kind;
       return el("div", { class: "fquote" }, [
         el("span", { class: "fquotewho", style: `color:${ROLE_COLORS[target.role] || "var(--text)"}`, text: `${speakerName(target)}'s ${what}: ` }),
-        el("span", { text: this._bodyText(target) }),
+        el("span", { text: mdPlain(this._bodyText(target)) }),
       ]);
     };
     const renderItem = (item) => {
@@ -1410,7 +1421,7 @@ class StreamPage {
         el("span", { class: "fttreason", text: reason.charAt(0).toUpperCase() + reason.slice(1) }),
         el("span", { class: "fttmeta", text: [day ? shortDate(day.game_date) : null, durationWords(run.duration_s)].filter(Boolean).join(" · ") }),
       ]),
-      run.wake_detail && !answering ? el("div", { class: "fttdetail", text: run.wake_detail }) : null,
+      run.wake_detail && !answering ? el("div", { class: "fttdetail", text: mdPlain(run.wake_detail) }) : null,
     ]);
     const head = [
       el("div", { class: "fturnhead" }, [
@@ -1517,7 +1528,7 @@ class StreamPage {
       const what = item.title || rec.summary;
       if (what && what !== body) { why = body; body = what; }
     }
-    if (why) extras.push(el("div", { class: "fwhy" }, [el("span", { class: "fwhyk", text: "Why " }), el("span", { text: why })]));
+    if (why) extras.push(el("div", { class: "fwhy" }, [el("span", { class: "fwhyk", text: "Why " }), el("div", { class: "md-box" }, [renderMarkdown(why)])]));
     const calls = (item.calls && item.calls.length) ? item.calls : checkRows((this.runs && this.runs.calls_by_record || {})[item.id]);
     if (calls.length) {
       extras.push(el("details", { class: "fx" }, [
@@ -1538,7 +1549,7 @@ class StreamPage {
       el("div", { class: "fav", style: `color:${color}`, text: (name || "?").charAt(0) }),
       el("div", { class: "fbody" }, [
         el("div", { class: "fmeta" }, meta),
-        el("div", { class: "ftext", text: body }),
+        el("div", { class: "ftext md-box" }, [renderMarkdown(body)]),
         ...extras,
       ]),
     ]);
@@ -1575,17 +1586,17 @@ class StreamPage {
       const what = item.title || rec.summary;
       if (what && what !== body) { why = body; body = what; }
     }
-    const lines = [el("div", { class: "frtext", text: body })];
+    const lines = [el("div", { class: "frtext md-box" }, [renderMarkdown(body)])];
     if (item.kind === "ask") {
       if (item.fact_check) lines.push(el("div", { class: "fnote", text: "Fact-check on this proposal · the Overseer waits for the answer before ruling" }));
       lines.push(item.answered
         ? el("div", { class: "fanswer" }, [
             el("span", { class: "fanswerk", style: `color:${ROLE_COLORS.consultant || "var(--text)"}`, text: "Answered by the Consultant: " }),
-            el("span", { text: item.answer_preview || "see its turn below" }),
+            el("span", { text: mdPlain(item.answer_preview) || "see its turn below" }),
           ])
         : el("div", { class: "fnote", text: "Waiting for the Consultant" }));
     }
-    if (why) lines.push(el("div", { class: "fwhy" }, [el("span", { class: "fwhyk", text: "Why " }), el("span", { text: why })]));
+    if (why) lines.push(el("div", { class: "fwhy" }, [el("span", { class: "fwhyk", text: "Why " }), el("div", { class: "md-box" }, [renderMarkdown(why)])]));
     // A question shows no Checked list: the asker's reads are on its
     // proposal already, and the lookups that matter are the Consultant's,
     // shown on its own turn.
@@ -1613,7 +1624,7 @@ class StreamPage {
   _lessonPanel(l) {
     return el("div", { class: "freceipt flesson" }, [
       el("div", { class: "frtop" }, [el("span", { class: "fkindw", text: "Lesson" })]),
-      el("div", { class: "frbody" }, [el("div", { class: "frtext", text: lessonText(l) })]),
+      el("div", { class: "frbody" }, [el("div", { class: "frtext md-box" }, [renderMarkdown(lessonText(l))])]),
     ]);
   }
 
@@ -2266,7 +2277,7 @@ class SitePage {
     return el("div", { class: "box" }, groups.map(([day, items]) => el("div", {}, [
       el("div", { class: "day", text: day ? shortDate(day) : "Now" }),
       ...items.map((it) => el("div", { class: "line" }, [
-        document.createTextNode(it.withheld ? "(one message withheld)" : it.text),
+        document.createTextNode(it.withheld ? "(one message withheld)" : mdPlain(it.text)),
         it.type ? el("div", { class: "ctx", text: it.type }) : null,
       ])),
     ])));

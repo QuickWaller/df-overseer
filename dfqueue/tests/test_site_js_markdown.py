@@ -122,3 +122,20 @@ def test_hostile_text_survives_verbatim():
     assert html("[x](javascript:alert(1))") == "<div><p>[x](javascript:alert(1))</p></div>"
     assert html("&lt;b&gt;") == "<div><p>&lt;b&gt;</p></div>"
     assert html('<img src=x onerror="alert(1)">') == '<div><p><img src=x onerror="alert(1)"></p></div>'
+
+
+def _plain(text):
+    src = APP.read_text(encoding="utf8")
+    script = STUB + src + "\nconsole.log(JSON.stringify(mdPlain(%s)));" % json.dumps(text)
+    with tempfile.TemporaryDirectory() as tmp:
+        path = Path(tmp) / "run.js"
+        path.write_text(script, encoding="utf8")
+        out = subprocess.run(["node", str(path)], capture_output=True, text=True, encoding="utf8")
+    assert out.returncode == 0, out.stderr[-2000:]
+    return json.loads(out.stdout.strip().splitlines()[-1])
+
+
+def test_mdplain_strips_markers_for_single_line_places():
+    assert _plain("**Rulings**\n- **proposal-0014** (brew) -> *accepted* `x`\n1. next") == "Rulings proposal-0014 (brew) -> accepted x next"
+    assert _plain("# Head\nsnake_case_name and 2 * 3") == "Head snake_case_name and 2 * 3"
+    assert _plain("<script>x</script>") == "<script>x</script>"
