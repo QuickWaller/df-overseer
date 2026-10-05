@@ -47,6 +47,15 @@ def configure_logging(level: int = logging.INFO) -> None:
     root.propagate = False
 
 
+def _pause_watch_block(result: CycleResult):
+    """The `pause_watch` block, plus `held` (reason, since, who, expires_at,
+    corrupt) when an operator hold stood this cycle (conductor/hold.py). With
+    no hold the block is exactly what it was before (or None)."""
+    if not result.hold:
+        return result.pause_watch
+    return {**(result.pause_watch or {}), "held": result.hold}
+
+
 def status_from_cycle(result: CycleResult, *, state: str = "running") -> Dict[str, Any]:
     """`state`: the conductor service's own lifecycle word (`"running"`,
     `"starting"`, `"stopped"`) -- distinct from `result.clock_level`, which
@@ -64,7 +73,7 @@ def status_from_cycle(result: CycleResult, *, state: str = "running") -> Dict[st
         },
         "tripwire": result.tripwire,
         "escalated": result.escalated,
-        "pause_watch": result.pause_watch,
+        "pause_watch": _pause_watch_block(result),
     }
 
 
@@ -121,6 +130,12 @@ def log_cycle(result: CycleResult) -> None:
             "cycle %s: game_tick could not be read (%s); routine review and "
             "the stalled-order poller were both skipped this cycle",
             result.cycle_index, result.game_tick_error,
+        )
+    if result.hold:
+        LOG.info(
+            "cycle %s: operator HOLD in force (%s, since %s, by %s%s): the fort is never resumed by the conductor",
+            result.cycle_index, result.hold.get("reason"), result.hold.get("since"), result.hold.get("who"),
+            ", CORRUPT FILE read as held" if result.hold.get("corrupt") else "",
         )
     if result.tripwire is not None and result.escalated:
         LOG.error(

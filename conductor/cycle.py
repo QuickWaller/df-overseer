@@ -61,6 +61,7 @@ from conductor.archive import CycleArchive
 from conductor.briefing import build_briefing
 from conductor.cursors import CursorStore
 from conductor.game_tick import GameTickError, game_tick_from_overview
+from conductor.hold import HoldState, HoldStore, hold_path_for
 from conductor.mcp_client import MCPToolError, ToolCaller, tool_name
 from conductor.job_watch import JobWatchResult, JobWatchStore, evaluate_jobs, jobs_from_result
 from conductor.order_watch import OrderWatchResult, evaluate_orders
@@ -191,6 +192,10 @@ class CycleDeps:
     #: is the wait between a resume and its tick check.
     pause_policy: Optional[PausePolicy] = None
     pause_store: Optional[PauseWatchStore] = None
+    #: The operator hold (conductor/hold.py, handoffs/2026-10-05-operator-hold.md),
+    #: `hold.json` beside the cursor store unless set. Read-only here: only the
+    #: operator's CLI writes it.
+    hold_store: Optional[HoldStore] = None
     wall_clock: Callable[[], float] = time.time
     pause_sleep: Callable[[float], Any] = asyncio.sleep
 
@@ -214,6 +219,9 @@ class CycleResult:
     #: The pause watchdog's pass this cycle (verdict, reason, actions, alerts),
     #: None when it did not run. handoffs/2026-10-05-pause-safety.md.
     pause_watch: Optional[Dict[str, Any]] = None
+    #: The operator hold in force this cycle (`HoldState.as_dict()`), None when
+    #: there is none. Carried to the status block and the cycle log line.
+    hold: Optional[Dict[str, Any]] = None
 
 
 #: Fix 3 (`handoffs/2026-09-22-loop-conductor-fixes.md`): the queue tool
@@ -420,7 +428,26 @@ def _game_tick(overview: Mapping[str, Any]) -> Tuple[Optional[int], Optional[str
         return None, str(exc)
 
 
+def _hold_store(deps: "CycleDeps") -> HoldStore:
+    return deps.hold_store or HoldStore(hold_path_for(deps.cursor_store.path))
+
+
 async def run_cycle(cycle_index: int, deps: CycleDeps) -> CycleResult:
+    """One cycle, under whatever operator hold stands (conductor/hold.py). The
+    hold is read once, up front, by a total reader: a corrupt file reads as
+    held. It is carried on the result (and the dry-run plan) so every consumer
+    can show it. The hold never adds an action; it only removes resume paths."""
+    hold: HoldState = _hold_store(deps).read(deps.wall_clock())
+    if hold.held:
+        LOG.info("cycle %s: HELD by operator (%s); the conductor will not resume the fort", cycle_index, hold.reason)
+    result = await _run_cycle(cycle_index, deps, hold)
+    result.hold = hold.as_dict()
+    if isinstance(result.plan, dict):
+        result.plan["hold"] = result.hold
+    return result
+
+
+async def _run_cycle(cycle_index: int, deps: CycleDeps, hold: HoldState) -> CycleResult:
     """`docs/AGENT-LOOP.md` §1, one full cycle. `deps.dry_run`: every read
     below still happens (so the plan reflects real state), but no clock
     change, no quicksave, no grading write, and no role is actually
@@ -502,11 +529,17 @@ async def run_cycle(cycle_index: int, deps: CycleDeps) -> CycleResult:
             escalated = run_unclean or called_escalate
 
             if not escalated:
+                if hold.held:
+                    LOG.warning(
+                        "cycle %s: tripwire handled by a clean Overseer run, but the fort is HELD by operator "
+                        "(%s); clearing the latch and NOT resuming", cycle_index, hold.reason,
+                    )
                 await _call_write(call, "clock.clear", {}, clock_changes=clock_changes, cycle_index=cycle_index)
                 # _call_write already logs any refusal (e.g. clock.resume
                 # refused after clearing) at ERROR -- see its own docstring
                 # and fix 2 in this module's report.
-                await _call_write(call, "clock.resume", {}, clock_changes=clock_changes, cycle_index=cycle_index)
+                if not hold.held:
+                    await _call_write(call, "clock.resume", {}, clock_changes=clock_changes, cycle_index=cycle_index)
             elif called_escalate:
                 LOG.error(
                     "ESCALATION: cycle %s's Overseer explicitly escalated via "
@@ -539,14 +572,20 @@ async def run_cycle(cycle_index: int, deps: CycleDeps) -> CycleResult:
     # handoffs/2026-10-05-pause-safety.md. Runs only here, after the tripwire
     # branch has had its turn, so a latched tripwire is never seen by it as
     # unowned and never resumed by it.
-    pause_outcome = await _pause_watch(deps, call, clock_status, cycle_index)
+    pause_outcome = await _pause_watch(deps, call, clock_status, cycle_index, hold)
     pause_watch_dict = pause_outcome.as_dict() if pause_outcome is not None else None
-    if pause_outcome is not None and pause_outcome.verdict is not Verdict.IDLE and pause_outcome.still_paused:
+    # ORDINARY_HELD: a plain or harmless pause under an operator hold is not
+    # the watchdog's to resolve; fall through to the ordinary path with the
+    # fort paused (roles wake on their usual signals, the job watch polls).
+    if (
+        pause_outcome is not None and pause_outcome.verdict not in (Verdict.IDLE, Verdict.ORDINARY_HELD)
+        and pause_outcome.still_paused
+    ):
         return await _paused_cycle_result(
             deps, call, cycle_index=cycle_index, game_tick=game_tick, game_tick_error=game_tick_error,
             clock_status=clock_status, vitals=vitals, events_by_role=events_by_role,
             queue_state=queue_state, new_cursors=new_cursors, clock_changes=clock_changes,
-            pause_outcome=pause_outcome,
+            pause_outcome=pause_outcome, hold=hold,
         )
 
     # ---- 2. GRADE -----------------------------------------------------------
@@ -773,7 +812,9 @@ def _mark_pause_owned(deps: "CycleDeps") -> None:
         LOG.exception("could not record the escalation pause as owned")
 
 
-async def _pause_watch(deps: "CycleDeps", call: Callable, clock_status: Mapping[str, Any], cycle_index: int):
+async def _pause_watch(
+    deps: "CycleDeps", call: Callable, clock_status: Mapping[str, Any], cycle_index: int, hold: HoldState,
+):
     """One watchdog pass. Total by design: a bug or an undeployed tool in the
     watchdog logs loudly and the cycle goes on as it did before the watchdog
     existed; it must never be the reason a cycle fails."""
@@ -781,7 +822,7 @@ async def _pause_watch(deps: "CycleDeps", call: Callable, clock_status: Mapping[
         return await run_pause_watch(
             call, _pause_store(deps), deps.pause_policy or load_pause_policy(),
             clock_status=clock_status, now=deps.wall_clock(), sleep=deps.pause_sleep,
-            dry_run=deps.dry_run,
+            dry_run=deps.dry_run, held=hold.held,
         )
     except Exception:  # noqa: BLE001 -- deliberately total, see docstring
         LOG.exception("cycle %s: the pause watchdog failed; carrying on without it", cycle_index)
@@ -791,7 +832,7 @@ async def _pause_watch(deps: "CycleDeps", call: Callable, clock_status: Mapping[
 async def _paused_cycle_result(
     deps: "CycleDeps", call: Callable, *, cycle_index: int, game_tick, game_tick_error,
     clock_status: Mapping[str, Any], vitals: Mapping[str, Any], events_by_role, queue_state, new_cursors,
-    clock_changes: List[Dict[str, Any]], pause_outcome,
+    clock_changes: List[Dict[str, Any]], pause_outcome, hold: HoldState,
 ) -> "CycleResult":
     """The fort is still paused after the watchdog's pass: no ordinary triage
     (advisors would deliberate over a frozen fort). When the verdict is
@@ -832,7 +873,7 @@ async def _paused_cycle_result(
         finished = await finish_after_overseer(
             call, _pause_store(deps), deps.pause_policy or load_pause_policy(),
             escalated=escalated, clock_status=clock_status, now=deps.wall_clock(), sleep=deps.pause_sleep,
-            verdict=verdict,
+            verdict=verdict, held=hold.held,
         )
         pause_outcome.actions.extend(finished.actions)
         pause_outcome.alerts.extend(finished.alerts)
@@ -840,8 +881,8 @@ async def _paused_cycle_result(
         pause_outcome.still_paused = finished.still_paused
         pause_outcome.alert = finished.alert
         pause_outcome.waiting_on_human = False
-        if finished.verdict is Verdict.ALERT:
-            pause_outcome.verdict = Verdict.ALERT
+        if finished.verdict in (Verdict.ALERT, Verdict.HELD):
+            pause_outcome.verdict = finished.verdict
 
     # Nothing woken (a hold, an owned pause, a grace wait): no role consumes
     # anything, so no cursor moves.

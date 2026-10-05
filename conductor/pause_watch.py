@@ -211,6 +211,10 @@ class Verdict(str, enum.Enum):
     WAKE_OVERSEER = "wake_overseer"    # a threat, an unknown cause, or an unexplained pause
     WAIT = "wait"                      # a plain pause inside the grace period
     HELD = "held"                      # already handled this episode; stay paused
+    #: Under an operator hold (conductor/hold.py), a plain pause or a harmless
+    #: notice: nothing to resolve, nothing to resume. The cycle takes the
+    #: ordinary path with the fort paused.
+    ORDINARY_HELD = "ordinary_held"
 
 
 @dataclass(frozen=True)
@@ -254,7 +258,12 @@ def classify_causes(obs: Observation, policy: PausePolicy, *, popup_dismissed: b
     return "hold"
 
 
-def decide(obs: Observation, policy: PausePolicy, state: WatchState, now: float) -> Decision:
+def decide(
+    obs: Observation, policy: PausePolicy, state: WatchState, now: float, *, held: bool = False,
+) -> Decision:
+    """`held`: the operator hold (conductor/hold.py) stands. It removes every
+    resume path and the wait/wake for a plain or harmless pause (those become
+    ORDINARY_HELD); every other row is unchanged."""
     if not obs.paused:
         return Decision(Verdict.IDLE, "not paused")
     if obs.tripwire:
@@ -268,6 +277,12 @@ def decide(obs: Observation, policy: PausePolicy, state: WatchState, now: float)
         if state.dismiss_failed or state.dismissed >= policy.dismiss_cap:
             return Decision(Verdict.ALERT, "a popup is pending and dismissing did not clear it")
         return Decision(Verdict.DISMISS, "a popup is pending; close it (dismiss never resumes)")
+
+    if held and all(t in policy.harmless_announcements for t in obs.report_types):
+        return Decision(
+            Verdict.ORDINARY_HELD,
+            "held by operator: a plain or harmless pause is not resumed and not escalated; the ordinary cycle goes on",
+        )
 
     if state.resume_attempts >= 1 or state.overseer_woken:
         return Decision(Verdict.HELD, "this episode was already handled once; staying paused")
@@ -315,6 +330,8 @@ class WatchOutcome:
     #: True while a plain pause sits inside the grace period: the watchdog
     #: attributes it to a human and is waiting.
     waiting_on_human: bool = False
+    #: True when an operator hold stood on this pass.
+    held_by_operator: bool = False
 
     def as_dict(self) -> Dict[str, Any]:
         return {
@@ -323,6 +340,7 @@ class WatchOutcome:
             "still_paused": self.still_paused, "resumed": self.resumed,
             "cause": (self.why or {}).get("cause"),
             "alert": self.alert, "waiting_on_human": self.waiting_on_human,
+            "held_by_operator": self.held_by_operator,
         }
 
 
@@ -432,16 +450,17 @@ async def resume_and_verify(
 
 async def run_pause_watch(
     call: Callable, store: PauseWatchStore, policy: PausePolicy, *,
-    clock_status: Mapping[str, Any], now: float, sleep: Sleep, dry_run: bool = False,
+    clock_status: Mapping[str, Any], now: float, sleep: Sleep, dry_run: bool = False, held: bool = False,
 ) -> WatchOutcome:
     """One watchdog pass over this cycle's `clock.status`. Reads `pause.why`
     only when it is needed (a pause with no latch, or a frozen tick). A dry
     run reads and decides but writes nothing: no dismiss, no resume, no
-    state."""
+    state. `held`: an operator hold stands (conductor/hold.py): nothing here
+    resumes the fort, whatever the verdict."""
     state = store.load()
     paused = bool(clock_status.get("paused"))
     abs_tick = clock_status.get("abs_tick")
-    outcome = WatchOutcome(Verdict.IDLE, "not paused")
+    outcome = WatchOutcome(Verdict.IDLE, "not paused", held_by_operator=held)
 
     # Track whether the tick is moving, for the frozen-but-unpaused check.
     frozen = False
@@ -471,7 +490,10 @@ async def run_pause_watch(
         state.end_episode()
         if not dry_run:
             store.save(state)
-        return WatchOutcome(Verdict.TRIPWIRE, "a tripwire is latched; the tripwire branch owns this pause", still_paused=True)
+        return WatchOutcome(
+            Verdict.TRIPWIRE, "a tripwire is latched; the tripwire branch owns this pause",
+            still_paused=True, held_by_operator=held,
+        )
 
     if state.episode_started is None:
         state.episode_started = now
@@ -484,7 +506,7 @@ async def run_pause_watch(
 
     for _pass in range(3):
         obs = _observation(clock_status, why)
-        decision = decide(obs, policy, state, now)
+        decision = decide(obs, policy, state, now, held=held)
         outcome.verdict, outcome.reason = decision.verdict, decision.reason
 
         if decision.verdict is Verdict.DISMISS:
@@ -497,8 +519,19 @@ async def run_pause_watch(
         break
 
     verdict = outcome.verdict
+    if held and verdict is Verdict.RESUME:
+        # decide() never returns this under a hold; belt and braces: the hold
+        # removes every resume path.
+        LOG.warning("pause watchdog: resume suppressed, held by operator")
+        outcome.actions.append({"suppressed": "clock.resume", "why": "held by operator"})
+        outcome.verdict = verdict = Verdict.ORDINARY_HELD
     if not dry_run:
-        if verdict is Verdict.RESUME:
+        if verdict is Verdict.ORDINARY_HELD:
+            # Deliberate pause: restart the plain-pause grace so clearing the
+            # hold restores today's behaviour from a fresh clock, and raise no
+            # liveness alert (the operator owns this pause).
+            state.episode_started = now
+        elif verdict is Verdict.RESUME:
             state.resume_attempts += 1
             moved = await resume_and_verify(call, policy, sleep, before_tick=abs_tick, outcome=outcome)
             if moved:
@@ -519,7 +552,7 @@ async def run_pause_watch(
                 f"dismissed_this_episode={state.dismissed}"
             )
 
-        if not outcome.alerts and liveness_due(state, policy, now):
+        if verdict is not Verdict.ORDINARY_HELD and not outcome.alerts and liveness_due(state, policy, now):
             _alert(state, outcome, now, "the pause has gone unresolved past the liveness limit")
         store.save(state)
 
@@ -590,7 +623,7 @@ async def read_verdict_after(call: Callable, baseline: Optional[int]) -> Optiona
 async def finish_after_overseer(
     call: Callable, store: PauseWatchStore, policy: PausePolicy, *,
     escalated: bool, clock_status: Mapping[str, Any], now: float, sleep: Sleep,
-    verdict: Optional[Mapping[str, Any]] = None,
+    verdict: Optional[Mapping[str, Any]] = None, held: bool = False,
 ) -> WatchOutcome:
     """After the Overseer ran on an `unexplained_pause` wake. Silence is not
     consent (user's call 2026-10-05, handoffs/2026-10-05-safe-to-resume.md):
@@ -606,7 +639,9 @@ async def finish_after_overseer(
     function is the only thing that resumes, and the tripwire branch in
     `conductor/cycle.py` does not come through here."""
     state = store.load()
-    outcome = WatchOutcome(Verdict.WAKE_OVERSEER, "the Overseer ran on an unexplained pause", still_paused=True)
+    outcome = WatchOutcome(
+        Verdict.WAKE_OVERSEER, "the Overseer ran on an unexplained pause", still_paused=True, held_by_operator=held,
+    )
     if escalated:
         state.owned = OWNED_ESCALATION
         state.note(now, "owned", OWNED_ESCALATION)
@@ -622,6 +657,15 @@ async def finish_after_overseer(
         reason = " ".join(str(verdict.get("reason") or "").split())
         _alert(state, outcome, now, f"the Overseer says do not resume an unexplained pause: {reason}"[:300])
         outcome.verdict = Verdict.ALERT
+        store.save(state)
+        return outcome
+    if held:
+        # An operator hold removes every resume path, an explicit verdict included.
+        LOG.warning("pause watchdog: the Overseer said resume; suppressed, held by operator")
+        state.note(now, "overseer_verdict_suppressed", {"resume": True, "reason": verdict.get("reason")})
+        outcome.actions.append({"suppressed": "clock.resume", "why": "held by operator"})
+        outcome.verdict = Verdict.HELD
+        outcome.reason = "held by operator: the Overseer's resume verdict was not acted on"
         store.save(state)
         return outcome
     state.resume_attempts += 1
