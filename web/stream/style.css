@@ -661,3 +661,10 @@ a.tagchip:hover { border-color: var(--text); }
 .ftoggle .ftl { color: var(--text); }
 .liveitem { border-left-color: var(--st-act); }
 a { color: var(--accent); }
+/* Kind = a plain grey word; state = the only filled chip. */
+.fkindw { color: var(--faint); font-size: 11px; letter-spacing: .08em; text-transform: uppercase; flex: none; min-width: 64px; }
+.fstate { font-size: 10.5px; letter-spacing: .06em; text-transform: uppercase; padding: 1px 6px; flex: none; }
+.fstate.s-accepted { background: var(--st-ok); color: #000; }
+.fstate.s-deferred, .fstate.s-rejected, .fstate.s-hold { background: var(--st-hold); color: #fff; }
+.fstate.s-bad { background: var(--st-bad); color: #fff; }
+.fkind { border: 0; padding: 0; color: var(--faint); }

@@ -1195,11 +1195,12 @@ class StreamPage {
     if (!line) return null;
     // Events are records of what happened, not something an agent said:
     // a small tag in place of an avatar, quieter text, the name unbolded.
-    const tag = line.cls.includes("fail") ? "Failed"
-      : line.cls.includes("hold") ? "On hold"
-      : item.kind === "project" ? "Plan" : "Job";
+    // Kind is a plain word; a state, when there is one, is a filled chip.
+    const kind = item.kind === "project" ? "Plan" : item.kind === "observation" ? "Job" : "Job";
+    const state = line.cls.includes("fail") ? ["Failed", "s-bad"] : line.cls.includes("hold") ? ["On hold", "s-hold"] : null;
     return el("div", { class: "fevent" + line.cls }, [
-      el("span", { class: "ftag", text: tag }),
+      el("span", { class: "fkindw", text: kind }),
+      state ? el("span", { class: "fstate " + state[1], text: state[0] }) : null,
       el("span", { class: "fetext" }, [
         el("span", { class: "fename", text: speakerName(item) + " " }),
         el("span", { text: line.text }),
@@ -1271,11 +1272,12 @@ class StreamPage {
     const ev = this._threadEvent(item);
     if (ev) return ev;
     let body = this._bodyText(item);
-    let tag = { proposal: "Proposal", amend: "Plan change", ask: "Question", answer: "Answer", abandon: "Abandoned" }[item.kind] || item.kind;
+    const kind = { proposal: "Proposal", ruling: "Ruling", amend: "Plan change", ask: "Question", answer: "Answer", abandon: "Abandoned" }[item.kind] || item.kind;
+    let state = null;
     let cls = "";
     if (item.kind === "ruling") {
       const m = /^(Accepted|Rejected|Deferred)\s*:?\s*(.*)$/s.exec(body || "");
-      if (m) { tag = m[1]; body = m[2]; cls = " r-" + m[1].toLowerCase(); }
+      if (m) { state = m[1]; body = m[2]; cls = " r-" + m[1].toLowerCase(); }
     }
     const rec = item.record || {};
     let why = null;
@@ -1297,7 +1299,8 @@ class StreamPage {
     }
     return el("div", { class: "freceipt" + cls }, [
       el("div", { class: "frtop" }, [
-        el("span", { class: "ftag", text: tag }),
+        el("span", { class: "fkindw", text: kind }),
+        state ? el("span", { class: "fstate s-" + state.toLowerCase(), text: state }) : null,
         el("span", { class: "fwhen", text: item.game_date ? shortDate(item.game_date) : "" }),
       ]),
       el("div", { class: "frbody" }, lines),

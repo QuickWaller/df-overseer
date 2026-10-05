@@ -110,7 +110,7 @@ def test_a_turn_lists_its_records_as_receipts_with_their_verdicts():
       page.runs = DATA.runs;
       const thread = page._conversationEl(DATA.items);
       const out = []; const walk = (n) => { if (n.className && n.className.startsWith("freceipt ")) out.push(n.className); if (n.className === "freceipt") out.push("plain"); n.children.forEach(walk); }; walk(thread[0]);
-      const tags = []; const walk2 = (n) => { if (n.className === "ftag") tags.push(n.textContent); n.children.forEach(walk2); }; walk2(thread[0]);
+      const tags = []; const walk2 = (n) => { if (n.className === "fkindw" || (n.className || "").startsWith("fstate")) tags.push(n.textContent); n.children.forEach(walk2); }; walk2(thread[0]);
       return { out, tags };
     """
     res = _run(expr, {"items": THREAD, "runs": RUNS})
