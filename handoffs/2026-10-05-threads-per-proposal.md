@@ -52,4 +52,11 @@ check at 1280x700 and phone width against the preview data, console clean.
 
 ## Result
 
-(executor fills this in; deploy targets expected relay-web, relay-web-operator, vm103-stream-publisher if live.py changes)
+Done 2026-10-06. Offline, no deploys. Asset version v60 -> v61 (index.html, operator.html).
+
+- **Thread now shows**: per turn that wrote here, the title band (why it woke, when, how long), then only this proposal's own receipts: the proposal, its ruling (the ruling's own `public_rationale`, already the item text in feed.py, so no data change), project and executed items, status lines, lessons. The whole-turn summary is gone from threads. The run's full report and thinking stay as collapsed expanders labelled "This turn's full report" and "This turn's thinking".
+- **Turn summary lives once on the agent's page**, a new "Turns" tab (`_turnsEl` in `SitePage`, fed by `runs.json` via `_ensureRuns`): newest first, wake reason, date, duration, summary, then Full report and Thinking expanders. Why there: a turn belongs to an agent, not a proposal; the Board is a per-proposal list with no turn list, and the agent page already holds Tools, Recent lines and Charter.
+- **`_public_summary` untouched**: the summary is still cut at its existing length, but the uncut (separately redacted) `report` is on the same turn entry behind "Full report", so later items no longer vanish. Safety filter unchanged. `dfqueue/live.py`, `feed.py` and the preview script not touched.
+- Tests: `dfqueue/tests/test_site_js_threads.py` gained three node tests (own rationale not another's; summary absent from both threads with expanders labelled; summary exactly once on the Turns tab) and one updated assertion. Ambient `python -m pytest`: 2898 passed, 3 skipped.
+- Headless (Chrome via DevTools protocol against `scripts/preview_stream_live.py --no-serve` data, 1280x700 and 390x800): thread has no turn summary, expanders read "This turn's full report/thinking", Turns tab shows one Overseer entry with the summary; console clean apart from a favicon 404. Local server stopped.
+- Deploy targets (static web assets only, since live.py is unchanged): relay-web and relay-web-operator. vm103-stream-publisher not needed.

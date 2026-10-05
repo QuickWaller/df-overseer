@@ -191,7 +191,7 @@ def test_each_run_becomes_a_summary_reply_after_its_last_record_and_blank_ones_a
     assert _run("return summaryItems(DATA, null).length;", THREAD) == 0
 
 
-def test_a_run_becomes_a_turn_block_with_its_summary_holding_what_it_wrote():
+def test_a_run_becomes_a_turn_block_holding_what_it_wrote_without_the_turn_summary():
     expr = r"""
       const page = Object.create(StreamPage.prototype);
       page.projects = { projects: {}, thread_to_project: {} };
@@ -202,7 +202,7 @@ def test_a_run_becomes_a_turn_block_with_its_summary_holding_what_it_wrote():
       return { text, turns: classes.filter((c) => c === "fturn").length, tier1: classes.filter((c) => c === "fkids tier-1").length };
     """
     res = _run(expr, {"items": THREAD, "runs": RUNS})
-    assert "Filed a proposal." in res["text"] and "Ask open" in res["text"]
+    assert "Filed a proposal." not in res["text"] and "Ask open" in res["text"]
     assert any(t.endswith("6 min") for t in res["text"])
     assert "Architect" in res["text"] and "Overseer" in res["text"]
     assert res["turns"] == 6  # 2 reported runs plus 4 records no run claims, each its own root-level turn
@@ -221,3 +221,58 @@ def test_what_it_checked_comes_from_calls_by_record_with_counts_and_errors():
     """
     seen = _run(expr, {"items": THREAD, "runs": RUNS})
     assert "What it checked · 2" in seen and "overview.get" in seen
+
+
+# ---- a thread shows only its own proposal; the turn summary lives once (2026-10-05) ----
+
+TURN_SUMMARY = "Done. Every pending proposal has a ruling. Rulings: proposal-1 accepted, proposal-2 rejected."
+TWO = [
+    P("proposal-1", 1, badge="accepted", text="Dig the shell."),
+    R("ruling-1", 2, "proposal-1", "proposal-1", "Accepted: the shell is cheap."),
+    P("proposal-2", 3, badge="rejected", text="Brew more."),
+    R("ruling-2", 4, "proposal-2", "proposal-2", "Rejected: no barrels."),
+]
+TWO_RUNS = {"runs": [{
+    "run_id": "run-9", "role": "overseer", "wake_reason": "routine_review", "duration_s": 60,
+    "summary": TURN_SUMMARY, "report": TURN_SUMMARY + " More detail in the full report.", "thinking": "Weighed both.",
+    "records": [{"id": "ruling-1", "kind": "ruling", "thread": "proposal-1"}, {"id": "ruling-2", "kind": "ruling", "thread": "proposal-2"}],
+}], "calls_by_record": {}}
+
+THREAD_EXPR = r"""
+  const page = Object.create(StreamPage.prototype);
+  page.projects = { projects: {}, thread_to_project: {} };
+  page.runs = DATA.runs;
+  const thread = page._conversationEl(DATA.items.filter((i) => i.thread === DATA.thread));
+  const text = []; const walk = (n) => { if (n.textContent) text.push(n.textContent); n.children.forEach(walk); }; walk(thread[0]);
+  return text;
+"""
+
+
+def test_a_thread_shows_its_own_ruling_rationale_and_not_another_proposals():
+    text = _run(THREAD_EXPR, {"items": TWO, "runs": TWO_RUNS, "thread": "proposal-1"})
+    joined = " | ".join(text)
+    assert "the shell is cheap." in joined
+    assert "no barrels" not in joined and "Brew more" not in joined
+
+
+def test_the_turn_summary_is_not_in_the_thread_but_its_report_and_thinking_are_labelled_whole_turn():
+    for thread in ("proposal-1", "proposal-2"):
+        text = _run(THREAD_EXPR, {"items": TWO, "runs": TWO_RUNS, "thread": thread})
+        assert TURN_SUMMARY not in text
+        assert "This turn's full report" in text and "This turn's thinking" in text
+        assert "Thinking" not in text and "Full report" not in text
+
+
+def test_the_turn_summary_appears_once_on_the_agents_turns_tab():
+    expr = r"""
+      const page = Object.create(SitePage.prototype);
+      page.fortRuns = DATA.runs; page.siteText = {};
+      const el1 = page._turnsEl("overseer");
+      const text = []; const walk = (n) => { if (n.textContent) text.push(n.textContent); n.children.forEach(walk); }; walk(el1);
+      const other = page._turnsEl("architect"); const t2 = []; const w2 = (n) => { if (n.textContent) t2.push(n.textContent); n.children.forEach(w2); }; w2(other);
+      return { text, other: t2 };
+    """
+    res = _run(expr, {"runs": TWO_RUNS})
+    assert res["text"].count(TURN_SUMMARY) == 1
+    assert "Full report" in res["text"] and "Thinking" in res["text"]
+    assert "No reported turns yet." in res["other"]
