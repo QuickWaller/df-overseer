@@ -172,9 +172,15 @@ def test_overseer_gets_everything():
 
 def test_nobody_else_is_granted_any_of_it():
     roster = _roster()
+    # The conductor polls blueprint.sites (read-only) for ore_exposed
+    # (handoffs/2026-10-05-ore-exposed-signal.md); nothing else of it.
+    conductor_reads = {"blueprint.sites"}
     for role in ("consultant", "quartermaster", "conductor"):
         for tool_id in ALL_IDS:
             allowed, _ = roster.check(role, tool_id)
+            if role == "conductor" and tool_id in conductor_reads:
+                assert allowed, f"conductor should hold {tool_id}"
+                continue
             assert not allowed, f"{role} must not hold {tool_id}"
 
 
@@ -237,7 +243,10 @@ def test_shim_contract_holds_in_the_surface_layer():
         f"surface now reads {fields - supplied} off the zone; "
         "the blueprint verb's rectangle shim does not supply it"
     )
-    assert "upvalue_by_name(fns.enclosure, 'find_zone')" in _text()
+    assert "upvalue_by_name(anchor, 'find_zone')" in _text()
+    # vein_material shares the same find_zone upvalue, so the shim reaches it too
+    vm_start = surface.index("\nfunction vein_material(")
+    assert "find_zone(zone_id)" in surface[vm_start:surface.index("\nend", vm_start)]
     assert "shim_restored" in _text()
 
 

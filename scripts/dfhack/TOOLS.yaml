@@ -4943,11 +4943,16 @@ df-overseer-surface.lua:
         same rule). vein_status is one of not_mineral /
         ore_or_gem / not_economic / hidden / unreadable / unknown -- unknown
         covers a MINERAL/FEATURE tile whose vein event could not be matched
-        or decoded, NEVER a guessed name. Reports `ring_position` (a 1-based
+        or decoded, NEVER a guessed name.
+        `exposed` (handoffs/2026-10-05-ore-exposed-signal.md) summarises the
+        ore/gem tiles that are still WALL-shaped and player-visible (a vein
+        smoothed into a wall counts; one already mined open or hidden does
+        not), as materials with tile counts, plus `unclassified_tiles` (the
+        unknown count, never folded into ore) and `mine_with`. Reports `ring_position` (a 1-based
         sequence number, never a coordinate) per tile, matching design
         commitment #1. Bounded to the zone's own 900-tile ring cap, same as
         `material` above.
-      summary: "Reports whether any of a zone's boundary ring tiles are an exposed ore or gem vein, even one already smoothed into an ordinary-looking wall."
+      summary: "Reports whether any of a zone's boundary ring tiles are an exposed ore or gem vein, even one already smoothed into an ordinary-looking wall, with a summary of the materials still exposed."
       guide:
         arguments:
           - name: "ZONE_ID"
@@ -4961,7 +4966,9 @@ df-overseer-surface.lua:
         returns: >-
           Each tile's status is one of not_mineral, ore_or_gem, not_economic, hidden, unreadable, or
           unknown; unknown covers a tile whose vein could not be decoded and is never guessed at as
-          a specific mineral. Bounded to the zone's 900-tile ring cap, same as surface.material.
+          a specific mineral. Also an exposed summary: the materials (mineral name, ore or gem, tile
+          count) still walled in and visible, which construction.mine-vein can dig out. Bounded to
+          the zone's 900-tile ring cap, same as surface.material.
         before_a_real_run: []
         traps: []
 df-overseer-construction.lua:
@@ -5006,6 +5013,74 @@ df-overseer-construction.lua:
               owner, zone.clear-owner and zone.contents). Never a coordinate, the zone's id is
               resolved to its real footprint server-side. An id that is not an activity zone (a
               workshop id, for example) is a named error, not a guess.
+          - name: "DRY_RUN"
+            required: false
+            default: "true"
+            meaning: >-
+              true (the default) only reports what would change; only the exact word false makes the
+              change.
+          - name: "RES_ID"
+            required: false
+            default: null
+            meaning: >-
+              Optional. A reservation handle such as res-3, as blueprint.reservations lists it.
+              Without it, a tile inside any reservation is refused outright. With it, a tile inside
+              THAT reservation is allowed if this call's own kind is one the reservation lists as
+              belonging there (blueprint.reservations shows the list, derived from the room's own
+              template); a tile inside any OTHER reservation is still refused. Pair with OVERRIDE
+              for a one-off exception when the kind is not on the list. Never a coordinate.
+          - name: "OVERRIDE"
+            required: false
+            default: null
+            meaning: >-
+              A free-text reason string for a one-off exception to RES_ID's own allowed-kinds gate
+              (building.build, zone.place, workshop.build, farm.build, well.build, openarea.build,
+              diggable.dig/dig-stair, construction.mine-vein/build, landmarks.build), valid only
+              together with RES_ID, recorded on the reservation (see blueprint.reservations); it
+              never changes the reservation's own purpose or allowed kinds, re-purposing a room is
+              unreserve plus a new reserve, never this. Leave it out otherwise; the refusal names
+              the handle, its purpose and the kinds it does allow.
+        returns: >-
+          Designates digging for every ore or gem vein tile found on a zone's boundary ring.
+        before_a_real_run:
+          - >-
+            Only designates a tile that is confidently identified as ore or gem (via surface.vein-
+            material's own decoding); anything it cannot classify confidently is refused by name
+            rather than guessed.
+        traps: []
+    "mine-vein-site SITE_ID [DRY_RUN] [RES_ID] [OVERRIDE]":
+      lua_function: mine_vein
+      effect: mutate
+      coordinate_bearing: internal-only
+      live_deployed: false
+      verified: "unverified (offline, 2026-10-06, handoffs/2026-10-05-ore-exposed-signal.md; same function as mine-vein, resolved from a site handle). Original: unverified (offline build, lupa-tested against a fake world only, 2026-09-28). Depends on surface.vein-material's own unverified tile-decode chain; never run against a real DFHack process. DRY_RUN defaults to true."
+      knowledge_scope: player_derivable
+      notes: >
+        Same as mine-vein, for a blueprint site handle instead of a zone id
+        (handoffs/2026-10-05-ore-exposed-signal.md): a freshly dug room has no
+        zone yet, so the handle stands for the room rectangle its template
+        declares (the same rectangle blueprint.status reads). Exists as its own
+        command because ZONE_ID is an integer argument and a site handle is
+        not. For a zone's own boundary-ring tiles, identifies which are ore/gem
+        (via df-overseer-surface.lua's decode_vein_tile, reused not
+        duplicated) and designates a real dig on each one still shaped
+        WALL, one single-cell #dig blueprint per tile applied via quickfort
+        `-c` (never a raw coordinate returned). Reports what it found
+        (ore_tiles_found), what was already open (already_open, not
+        re-designated), and refuses (refused, named why) any tile it could
+        not classify confidently rather than guessing it is ore. DRY_RUN
+        defaults to true; only the word false performs the real
+        designation. Granted to the overseer only (mutates fort state,
+        dfmcp/roles.py rule 2).
+      summary: "Designates digging for every ore or gem vein tile on the walls ringing a carved room, named by its site handle."
+      guide:
+        arguments:
+          - name: "SITE_ID"
+            required: true
+            default: null
+            meaning: >-
+              A site handle such as site-3, as blueprint.sites lists it (its ore_exposed field says
+              which sites have ore to mine). Never a coordinate.
           - name: "DRY_RUN"
             required: false
             default: "true"
@@ -5562,13 +5637,20 @@ df-overseer-blueprint.lua:
       notes: >
         Every site handle a real apply has issued: its blueprint, the phases
         applied so far, footprint size and nearest landmark with direction
-        and distance. Never a tile position.
-      summary: "Lists every site handle a real blueprint.apply has issued."
+        and distance. Never a tile position. Each site also carries
+        `ore_exposed` (handoffs/2026-10-05-ore-exposed-signal.md): the ore or
+        gem tiles still walled in on the faces ringing its room rectangle,
+        read through the same rectangle shim as status; null when the
+        blueprint cannot be read, `skipped` when it declares no room. The
+        conductor polls this one field to wake the Architect.
+      summary: "Lists every site handle a real blueprint.apply has issued, with any ore exposed on its room's walls."
       guide:
         arguments: []
         returns: >-
           Reports each site's template, phases applied so far, footprint size and nearest landmark,
-          never a tile position.
+          never a tile position, plus ore_exposed: total_tiles and a list of materials (mineral name,
+          ore or gem, tile count) visible on the room's walls, still unmined. Mine it with
+          construction.mine-vein-site and the site handle.
         before_a_real_run: []
         traps: []
     "status SITE_ID":
