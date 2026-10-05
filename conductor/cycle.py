@@ -591,6 +591,7 @@ async def _run_cycle(cycle_index: int, deps: CycleDeps, hold: HoldState) -> Cycl
     # ---- 2. GRADE -----------------------------------------------------------
     prediction_graded = False
     unexecuted: List[dict] = []
+    to_carry_out: List[str] = []
     if not deps.dry_run:
         try:
             grade_result = await call("queue.grade", {})
@@ -598,6 +599,15 @@ async def _run_cycle(cycle_index: int, deps: CycleDeps, hold: HoldState) -> Cycl
             raise CycleError(f"cycle {cycle_index}: grading failed: {exc}") from exc
         prediction_graded = grade_result.get("graded_count", 0) > 0
         unexecuted = grade_result.get("unexecuted", []) or []
+        # Over MCP, queue.grade returns only `unexecuted_proposal_ids` (the
+        # local dfqueue call returns full `unexecuted` dicts). Read both.
+        unexecuted_ids = list(grade_result.get("unexecuted_proposal_ids") or []) or [
+            (u.get("proposal") or {}).get("id") for u in unexecuted if isinstance(u, dict)
+        ]
+        to_carry_out = [
+            i for i in unexecuted_ids
+            if isinstance(i, str) and i not in deps.policy.unexecuted_wake_ignore
+        ]
 
     # ---- 3. TRIAGE ------------------------------------------------------------
     event_hits: Dict[str, bool] = {}
@@ -635,7 +645,7 @@ async def _run_cycle(cycle_index: int, deps: CycleDeps, hold: HoldState) -> Cycl
         prediction_due=False,             # folded into prediction_graded, see module docstring
         prediction_graded=prediction_graded,
         game_days_since_routine_review=_game_days_since(deps.cursor_store, game_tick, deps.policy),
-        queue_holds_for_overseer=bool((queue_state.get("proposals") or {}).get("count", 0)),
+        queue_holds_for_overseer=bool((queue_state.get("proposals") or {}).get("count", 0)) or bool(to_carry_out),
         open_ask_for_consultant=bool((queue_state.get("asks") or {}).get("count", 0)),  # gap 1, fixed
     )
     triage_result = triage(signals, deps.policy, base_fps=clock_status.get("fps"))
@@ -722,7 +732,7 @@ async def _run_cycle(cycle_index: int, deps: CycleDeps, hold: HoldState) -> Cycl
             prompt = build_ruling_briefing(
                 game_tick=game_tick or 0, wake=wake, vitals=vitals, alerts=alerts,
                 pending_brief=pending_brief, diff_events=events_by_role.get(role, []),
-                stuck_jobs=job_watch.lines,
+                stuck_jobs=job_watch.lines, to_carry_out=to_carry_out,
             )
             briefings[role] = {"ruling_prompt": prompt, "pending_brief": pending_brief}
 

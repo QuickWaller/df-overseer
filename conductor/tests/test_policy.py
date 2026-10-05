@@ -222,3 +222,8 @@ def test_the_real_policy_has_no_fixed_per_role_stock_lists():
     # The user rejected fixed stock lists in the briefing (register 2026-10-05).
     assert not hasattr(load_policy(DEFAULT_POLICY_PATH), "briefing_extras")
     assert "briefing_extras" not in DEFAULT_POLICY_PATH.read_text(encoding="utf-8")
+
+
+def test_the_shipped_policy_ignores_only_the_two_legacy_unexecuted_proposals():
+    policy = load_policy(DEFAULT_POLICY_PATH)
+    assert policy.unexecuted_wake_ignore == ("proposal-0001", "proposal-0006")

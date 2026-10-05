@@ -198,7 +198,7 @@ def _fmt_cited(c: Mapping[str, Any]) -> str:
 def build_ruling_briefing(
     *, game_tick: int, wake: Wake, vitals: Mapping[str, Any], alerts: Sequence[str],
     pending_brief: Optional[Mapping[str, Any]], diff_events: Sequence[Mapping[str, Any]] = (),
-    stuck_jobs: Sequence[str] = (),
+    stuck_jobs: Sequence[str] = (), to_carry_out: Sequence[str] = (),
 ) -> str:
     """The Overseer's prompt for an ordinary ruling wake, as text in a fixed
     order, stable material first and the ask last (cache-friendly, bounded):
@@ -256,6 +256,13 @@ def build_ruling_briefing(
             out.append(f"  Duplicate of {p['duplicate_of']}.")
         if p.get("overlaps"):
             out.append(f"  Overlaps {', '.join(p['overlaps'])}.")
+
+    todo = [str(i) for i in to_carry_out][:MAX_QUEUE_IDS]
+    if todo:
+        out.append(
+            "ACCEPTED, NOT YET CARRIED OUT: " + ", ".join(todo)
+            + ". You accepted these; carry each out now (queue.project, act, queue.executed)."
+        )
 
     items: List[str] = []
     for line in list(stuck_jobs)[:MAX_STUCK_JOB_LINES]:

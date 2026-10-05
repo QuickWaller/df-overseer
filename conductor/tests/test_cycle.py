@@ -1003,3 +1003,33 @@ async def test_a_failed_pending_brief_read_is_said_in_the_briefing_not_hidden(tm
     await run_cycle(1, _deps(tmp_path, tools=tools, runner=runner))
     prompt = next(c for c in runner.calls if c["role"] == OVERSEER)["prompt"]
     assert "the queue read failed" in prompt
+
+
+async def test_an_accepted_but_unexecuted_proposal_wakes_the_overseer_with_a_to_do_line(tmp_path):
+    # Live 2026-10-05: proposal-0018 was accepted and never carried out, and
+    # nothing woke the Overseer for it. Over MCP, queue.grade returns only
+    # unexecuted_proposal_ids; legacy ids in policy are ignored.
+    from dataclasses import replace
+    from conductor.policy import load_policy, DEFAULT_POLICY_PATH
+    tools = _base_tools()
+    tools["queue.grade"] = _grade_result(
+        unexecuted_count=3, unexecuted_proposal_ids=["proposal-0001", "proposal-0006", "proposal-0018"])
+    runner = FakeRoleRunner()
+    policy = replace(load_policy(DEFAULT_POLICY_PATH), unexecuted_wake_ignore=("proposal-0001", "proposal-0006"))
+    deps = _deps(tmp_path, tools=tools, runner=runner, policy=policy)
+    result = await run_cycle(1, deps)
+
+    assert OVERSEER in result.roles_woken
+    prompt = next(c for c in runner.calls if c["role"] == OVERSEER)["prompt"]
+    assert "ACCEPTED, NOT YET CARRIED OUT: proposal-0018." in prompt
+    assert "proposal-0001" not in prompt.split("ACCEPTED, NOT YET CARRIED OUT")[1].split("\n")[0]
+
+
+async def test_only_legacy_unexecuted_proposals_do_not_wake_the_overseer(tmp_path):
+    from dataclasses import replace
+    from conductor.policy import load_policy, DEFAULT_POLICY_PATH
+    tools = _base_tools()
+    tools["queue.grade"] = _grade_result(unexecuted_count=2, unexecuted_proposal_ids=["proposal-0001", "proposal-0006"])
+    policy = replace(load_policy(DEFAULT_POLICY_PATH), unexecuted_wake_ignore=("proposal-0001", "proposal-0006"))
+    result = await run_cycle(1, _deps(tmp_path, tools=tools, policy=policy))
+    assert OVERSEER not in result.roles_woken

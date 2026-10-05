@@ -198,3 +198,11 @@ threshold_alerts:
     per: alive
     below: 1
     text: "Raw food is low: {value} units, {per_value} per citizen (alert below {threshold})."
+
+# Accepted proposals never carried out that must NOT wake the Overseer: the
+# two legacy rulings (ruling-0001 voided, ruling-0006 never executed) that the
+# executor closes under its own role (docs/CONDUCTOR-EXECUTION.md 8.1). Any
+# other accepted proposal not yet carried out wakes the Overseer until it is.
+unexecuted_wake_ignore:
+  - proposal-0001
+  - proposal-0006

@@ -128,6 +128,10 @@ class Policy:
     stuck_job_renotify_ticks: int = 12000
     #: Threshold alerts for every role's briefing (policy.yaml `threshold_alerts`).
     threshold_alerts: Tuple[ThresholdAlert, ...] = ()
+    #: Accepted proposals never carried out that must NOT wake the Overseer
+    #: (legacy rulings the executor closes later, design 8.1). Every other
+    #: accepted-but-unexecuted proposal wakes it until carried out.
+    unexecuted_wake_ignore: Tuple[str, ...] = ()
 
     def reason(self, name: str) -> WakeReasonPolicy:
         try:
@@ -212,8 +216,13 @@ def load_policy(path: "Path | str" = DEFAULT_POLICY_PATH) -> Policy:
             field=str(read["field"]), below=below, text=text, per=per,
         ))
 
+    raw_ignore = doc.get("unexecuted_wake_ignore") or []
+    if not isinstance(raw_ignore, list) or not all(isinstance(x, str) for x in raw_ignore):
+        raise PolicyError(f"{path}: unexecuted_wake_ignore must be a list of proposal ids")
+
     return Policy(
         threshold_alerts=tuple(alerts),
+        unexecuted_wake_ignore=tuple(raw_ignore),
         base_fps=int(_require(doc, "base_fps", path)),
         think_fps=int(_require(doc, "think_fps", path)),
         closing_in_multiple=float(_require(doc, "closing_in_multiple", path)),
