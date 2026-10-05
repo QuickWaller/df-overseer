@@ -51,6 +51,44 @@ cycle run more than 600 s after the first one would wake the Overseer with
 resume the fort. There is no "paused on purpose, carry on planning" hold for
 the operator.
 
-## 3. Real conductor cycle
+## 3. Real conductor cycles on a running fort
 
-Not run yet; the user paused the session after the popup test.
+The user chose a running fort over a paused one for the real cycles (an
+operator hold was also built for maintenance, `handoffs/2026-10-05-operator-hold.md`,
+merged, not deployed). `scripts/supervised-unpause.sh 10 900 30` on VM 103:
+10 FPS, tripwire armed, 900 s, tick 250046 to about 258990 (about 7.5 game
+days). 22 alive and 0 warnings throughout, hunger and thirst fine, tripwire
+never fired, re-paused and 100 FPS restored by the script's trap.
+
+**Cycle 1** (05:23 UTC, 8 min, about $0.06): pause watchdog `idle` ("not
+paused"), clock `slowed`. Woke the Quartermaster (`stalled_order`: manager
+orders 0, 1, 2 validated but not dispatched). It filed proposal-0012 (brew at
+the Still). The stuck-job watch's first poll recorded 5 workerless jobs:
+the Bed and Wall constructions and three digs at Activity Zone #5.
+
+**Cycle 2** (05:31 UTC, about 20 min, about $0.21; day total $0.27): woke the
+Architect and Quartermaster (`prediction_graded`) and the Overseer
+(`queue_pending`). The three digs had cleared during the window (dug); the Bed
+and Wall passed the 2400-tick threshold and were notified (`last_notified`
+12756017), so `stuck_job` fired for the first time live, but the wake was
+shown under `prediction_graded` and the Quartermaster's proposal was about
+drink, not the Bed. Records: proposal-0013 (Architect, five more bedrooms),
+proposal-0014 (Quartermaster, brew, drink at 4 units for 22, matching the
+user's "4 drinks made" on VNC). Overseer accepted 0013 and 0014, rejected
+0012 as a duplicate, queued two brew jobs (2903, 2904, concrete barrels after
+a dry run refused a wildcard reagent) and dug two bedroom shells (site-5,
+site-6) with `blueprint.apply`.
+
+Findings:
+
+- **No project, again.** The Overseer accepted and executed without
+  `queue.project`. The live queue has never held a project record, so the
+  Board shows no job graph (the user spotted this). The charter rule
+  (2026-10-02) did not change behaviour. Fix dispatched: the server refuses
+  `queue.executed` without a project
+  (`handoffs/2026-10-05-project-before-executed.md`).
+- `stuck_job` fired but did not lead to action on the Bed (no bed item, no
+  order to make one). Unknown whether the Quartermaster saw it as a reason;
+  the wake shown was another signal.
+- Pause safety stayed out of the way on a running fort, as designed. The
+  Overseer's `pause.verdict` remains unexercised live.
