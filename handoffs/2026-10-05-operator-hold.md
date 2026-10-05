@@ -123,3 +123,41 @@ target and operator commands listed, and a Result section here.
   watchdog, and a row 11 in the pause-safety decision table.
 
 (Build, tests and operator commands: see below once done.)
+
+### Built
+
+- `conductor/hold.py`: `HoldStore` (atomic write, total reader, corrupt reads as
+  held, optional expiry) and the CLI. `conductor/pause_watch.py`: `decide(...,
+  held=)`, new verdict `ordinary_held`, `held=` on `run_pause_watch` and
+  `finish_after_overseer` (a `resume: true` verdict is logged and not acted on).
+  `conductor/cycle.py`: hold read once per cycle (`CycleDeps.hold_store`,
+  default `hold.json` beside the cursor store), tripwire branch skips only
+  `clock.resume` (latch still cleared), `ordinary_held` falls through to the
+  ordinary path. `conductor/status.py`: `pause_watch.held` and one log line.
+  `CycleResult.hold`; dry-run plan key `hold`.
+- Decisions: `pause.dismiss` still runs under a hold; threats and unknown
+  causes still wake the Overseer once (resume suppressed); a plain-pause
+  episode restarts its grace every held cycle, so clearing the hold gives a
+  fresh 600 s, not an instant Overseer wake; no liveness alert for a held plain
+  pause. Harmless-listed reports under a hold count as harmless regardless of
+  age (so a dismissed notice does not turn into a "threat" next cycle).
+- Docs: `docs/TRAPS.md` note, row 11 in the pause-safety decision table.
+
+### Tests
+
+New `conductor/tests/test_hold.py` (24). Full ambient `python -m pytest`:
+2743 passed, 3 skipped (no failures, run without `lupa` skips as listed).
+`dfmcp/tests` in `.venv-dfmcp`: 797 passed.
+
+### Deploy target
+
+`vm106-conductor` only (`conductor/` package files: `hold.py`, `pause_watch.py`,
+`cycle.py`, `status.py`). No VM 103, no dfmcp, no allowlist change. Not
+deployed; the service stays disabled.
+
+### Operator commands (on VM 106, with the conductor env loaded so
+`CONDUCTOR_CURSOR_STORE_PATH` is set, else add `--cursor-store PATH`)
+
+    python -m conductor.hold set --reason "paused on purpose, planning" [--for-hours N] [--who NAME]
+    python -m conductor.hold show
+    python -m conductor.hold clear
