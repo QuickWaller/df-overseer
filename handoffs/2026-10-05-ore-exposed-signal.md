@@ -57,4 +57,28 @@ the Architect proposes mining the vein; dwarves dig and haul.
 
 ## Result
 
-(executor fills this in)
+### Plan (executor, 2026-10-06)
+
+1. **The read extends `surface.vein-material`** (it already decodes every ring
+   tile with `isOre()`/`isGem()`; a second tool would duplicate it). Adds an
+   `exposed` block: ore or gem tiles still shaped WALL and player-visible
+   (smoothed walls count; already-mined floor and hidden tiles do not), as a
+   list of `{mineral_name, kind, tiles}` plus the `mine_with` handle. Ring
+   corners are included (the site-5/site-6 case).
+2. **Sites without a zone**: `blueprint.status` and `blueprint.sites` re-read
+   through the existing find_zone rectangle shim (room rectangle from the
+   blueprint), so a freshly dug room reports `ore_exposed` before any zone
+   exists. `construction.mine-vein` accepts a `site-N` handle as well as a
+   zone id, resolved to the same room rectangle.
+3. **Signal**: `conductor/ore_watch.py` parses `blueprint.sites`; edge state in
+   `lane_state.json` (`lanes.apply_ore_edges`); wake reason `ore_exposed`
+   through `lane_triggers.architect.ore_exposed` in `policy.yaml`. Edge rule:
+   a (site, mineral) wakes once on first sight, re-arms when it leaves the
+   read (mined) or after `ore_renotify_ticks` still exposed (the backstop for
+   a ruled-but-not-mined case). A failed poll keeps state.
+4. Briefing: one line per standing exposure, Architect only.
+5. Allowlists: conductor gains `blueprint.sites`; Architect already holds
+   `surface.vein-material`, `blueprint.sites/status`; Overseer holds
+   `construction.mine-vein`. Counts and docs updated.
+6. Finish-waits-for-ore: recorded below as a note for stage 2D, not built.
+
