@@ -749,3 +749,20 @@ run); a `false` verdict, no verdict, an unreadable verdict store or an
 escalation keeps the fort paused and raises an alert (shown on the site's live
 strip). A clean run is no longer the decision to resume. The Overseer still
 holds no `clock.resume`; the tripwire branch is unchanged.
+
+**Update 2026-10-05 (`handoffs/2026-10-05-operator-hold.md`): the operator
+hold.** A fort the operator keeps paused on purpose would otherwise block
+every ordinary cycle (the watchdog treats any pause as something to resolve,
+and after the grace wakes the Overseer, whose `resume: true` verdict would
+resume the fort). Set a hold on VM 106 and the conductor never resumes the
+fort by any route; a plain or harmless pause takes the ordinary cycle path
+with the fort paused (roles wake on their usual signals, the stuck-job watch
+polls). Threats and unknown causes still wake the Overseer, a tripwire still
+goes through its branch, popups are still dismissed; only resuming is
+removed. Operator only: a file beside `pause_watch.json`, no MCP tool, no
+role can set or clear it. A corrupt hold file reads as held. Visible in the
+dry-run plan (`hold`), the cycle log (`operator HOLD in force`) and the
+status block (`pause_watch.held`). Commands, with the conductor's env file
+loaded so `CONDUCTOR_CURSOR_STORE_PATH` is set (or pass `--cursor-store PATH`):
+`python -m conductor.hold set --reason "..." [--for-hours N]`,
+`python -m conductor.hold show`, `python -m conductor.hold clear`.

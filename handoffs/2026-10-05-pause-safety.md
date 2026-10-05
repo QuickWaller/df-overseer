@@ -110,6 +110,7 @@ latch.
 | 8 | Frozen with `pause_state` false (2026-09-16: tick not advancing between cycles though not paused) | Not paused, `abs_tick` identical to the previous cycle's while real time passed more than a minimum (data) | As cases 3 and 7 after a `pause.why` read | Alert human |
 | 9 | Wedged command pipe (2026-09-19) | `clock.status` errors or times out | **Nothing to do from here**: the in-game tripwire is the defence; the conductor already raises `CycleError` and retries next cycle | N consecutive failures alert human (data) |
 | 10 | Any unresolved non-tripwire pause past the liveness limit | Paused, unowned or held, longer than the limit (data, default 30 real minutes) | n/a | **Alert the human**, repeat each limit ("no pause goes unowned", register 2026-10-01) |
+| 11 | **Operator hold** (`handoffs/2026-10-05-operator-hold.md`): the operator set `hold.json` beside `pause_watch.json` | `HoldStore.read` (a corrupt file reads as held) | **Never resume, by any route** (not a harmless notice, not a `resume: true` verdict, not the tripwire branch). A plain pause or harmless notice takes the **ordinary cycle path** (verdict `ordinary_held`); popups are still dismissed | Threat or unknown cause still wakes the Overseer as today; tripwire as today minus resume; no liveness alert for a deliberate pause |
 
 "Alert the human" today means a CRITICAL log line, a `pause_watch` block in
 `status.json` and in the cycle's archived summary. Telegram is designed and
