@@ -127,7 +127,7 @@ from .dfhack_client import (
     DFHackConnectionPool,
     DFHackProtocolError,
 )
-from . import conductor_tools, doctrine_tools, gotchas_store, gotchas_tools, knowledge_tools, labor_join, queue_tools, series_tools
+from . import conductor_tools, doctrine_tools, executor_tools, gotchas_store, gotchas_tools, knowledge_tools, labor_join, queue_tools, series_tools
 from .confidence import DEFAULT_CONFIDENCE_PATH, ConfidenceConfig, load_confidence
 from .registry import Registry, load_registry
 from .roles import Roster, load_roster
@@ -638,6 +638,12 @@ def build_mcp_server(
                         tool_id, role, params.arguments or {},
                         db_path=queue_db_path, call_dfhack=_call_dfhack,
                         write_lock=queue_write_lock, fact_reader=_read_fact,
+                    )
+                elif tool_id in executor_tools.NATIVE_TOOL_IDS:
+                    text, structured = await executor_tools.call(
+                        tool_id, role, params.arguments or {},
+                        db_path=queue_db_path, write_lock=queue_write_lock,
+                        call_dfhack=_call_dfhack,
                     )
                 elif tool_id in conductor_tools.NATIVE_TOOL_IDS:
                     text, structured = await conductor_tools.call(

@@ -158,6 +158,14 @@ read:
       pause.verdict records written after a given id, so the watchdog resumes
       only on an explicit resume=true from the run it just woke. Read-only.
       Granted only here (the handler also refuses any other role).
+  - id: "queue.execution_state"
+    status: exists
+    note: >-
+      Added handoffs/2026-10-06-stage-2c.md (docs/CONDUCTOR-EXECUTION.md 6.3).
+      Native tool (dfmcp/executor_tools.py), executor-only (dfmcp/roles.py rule
+      8: only a role of kind system may hold it). Read-only: open projects,
+      steps ready to run, unresolved runs, abandoned projects awaiting cleanup,
+      steps observed done after a cursor. Granted only here.
 
 write:
   - id: "clock.set-speed"
@@ -217,3 +225,17 @@ write:
       player could close (Okay, More, a help box) and reports what each said.
       Never resumes and never touches a latch. In dfmcp/roles.py's
       SYSTEM_CLASS_TOOL_IDS, so only a role of kind system may hold it.
+  - id: "queue.close_legacy"
+    status: exists
+    note: >-
+      Added handoffs/2026-10-06-stage-2c.md (deploy 2a). Closes one old ruling,
+      project or pending step-less proposal at or below its cutover under the
+      executor's name. Writes a `close` record only: touches no game state and
+      never calls DFHack. Executor-only.
+  - id: "queue.cutover"
+    status: exists
+    note: >-
+      Added handoffs/2026-10-06-stage-2c.md (deploy 2a, `python -m
+      conductor.cutover`). Checks (apply false) or records (apply true) a
+      group's cutover and closes everything at or below it through the same
+      store call as queue.close_legacy. Never calls DFHack. Executor-only.
