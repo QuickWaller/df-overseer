@@ -603,3 +603,20 @@ a.tagchip:hover { border-color: var(--text); }
 .fwhy { color: var(--muted); font-size: 12.5px; }
 .fwhyk { color: var(--faint); font-size: 11px; letter-spacing: .06em; text-transform: uppercase; margin-right: 4px; }
 .fturnsum { padding: 4px 10px 6px 24px; }
+/* Turn = the message (summary as body), records = receipts under it. */
+.fturnbody-text { color: var(--text); padding-left: 32px; }
+.fturntop > .fx { margin-left: 32px; }
+.freceipts { display: flex; flex-direction: column; margin: 6px 0 2px 32px; border-left: 1px solid var(--line-strong); padding-left: 10px; gap: 2px; }
+.freceipt { display: flex; align-items: baseline; gap: 10px; padding: 4px 0; font-size: 12.5px; }
+.frbody { min-width: 0; flex: 1; display: flex; flex-direction: column; gap: 3px; }
+.frtext { color: var(--text); }
+.freceipt .fwhen { margin-left: 0; }
+.freceipt.r-accepted .ftag { color: var(--ok); border-color: var(--ok-line); background: var(--ok-bg); }
+.freceipt.r-rejected .ftag, .freceipt.r-deferred .ftag { color: var(--no); border-color: var(--no-line); background: var(--no-bg); }
+.freceipts .fevent { padding-left: 0; }
+/* Turn title band: why it woke, as the heading of the turn. */
+.fturn { padding-top: 0; }
+.fturntitle { display: flex; align-items: baseline; gap: 10px; margin: 0 0 6px -12px; padding: 4px 10px 4px 12px; background: color-mix(in srgb, var(--turn) 12%, transparent); border-bottom: 1px solid color-mix(in srgb, var(--turn) 35%, transparent); }
+.fttreason { color: var(--turn); font-size: 11.5px; letter-spacing: .08em; text-transform: uppercase; font-weight: 700; }
+.fttmeta { margin-left: auto; color: var(--faint); font-size: 11.5px; white-space: nowrap; }
+.freceipts .ftag { width: 78px; }

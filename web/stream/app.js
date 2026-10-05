@@ -1114,7 +1114,11 @@ class StreamPage {
       const trigger = first.reply_to && byId.get(first.reply_to);
       const answering = trigger && groupOf.get(trigger.id) !== g && first.kind === "answer"
         ? `woke to answer ${speakerName(trigger)}'s question` : null;
-      return this._turnBlock(g.run, g.items.map(renderItem), g.items, answering);
+      return this._turnBlock(g.run, g.items.map((i) => {
+        const r = this._receipt(i);
+        const q = quoteFor(i);
+        return q ? el("div", { class: "fquoted" }, [q, r]) : r;
+      }), g.items, answering);
     });
     return [el("div", { class: "fthread" }, blocks)];
   }
@@ -1123,27 +1127,33 @@ class StreamPage {
    * thinking, then what it wrote as replies (open by default). */
   _turnBlock(run, rendered, items, answering) {
     const color = ROLE_COLORS[run.role] || "var(--text)";
-    // Why it woke is the headline of a turn, so it gets a chip, not grey
-    // small print; summary and thinking fold into one "Turn notes" box (a
-    // run's summary covers the whole run, not only this thread).
-    const reason = answering || (run.wake_reason ? String(run.wake_reason).replace(/_/g, " ") : null);
+    // The turn's title band says why it woke, when and for how long; under
+    // it the agent speaks (its summary), then its receipts.
+    const reason = answering || (run.wake_reason ? "Woke for " + String(run.wake_reason).replace(/_/g, " ") : "Turn");
+    const day = items.find((i) => i.game_date);
+    const title = el("div", { class: "fturntitle" }, [
+      el("span", { class: "fttreason", text: reason.charAt(0).toUpperCase() + reason.slice(1) }),
+      el("span", { class: "fttmeta", text: [day ? shortDate(day.game_date) : null, durationWords(run.duration_s)].filter(Boolean).join(" · ") }),
+    ]);
     const head = [
       el("div", { class: "fturnhead" }, [
         el("span", { class: "fav", style: `color:${color}`, text: roleTitle(run.role).charAt(0) }),
-        el("span", { class: "fturnwho", style: `color:${color}`, text: `${roleTitle(run.role)}'s turn` }),
-        reason ? el("span", { class: "fwake", style: `color:${color}`, text: answering ? reason : "woke: " + reason }) : null,
-        el("span", { class: "fwhen", text: durationWords(run.duration_s) || "" }),
+        el("span", { class: "fturnwho", style: `color:${color}`, text: roleTitle(run.role) }),
       ]),
     ];
-    if (run.summary || run.thinking) {
-      const notes = [];
-      if (run.summary) notes.push(el("div", { class: "fturnsum" }, [el("span", { class: "fwhyk", text: "Whole turn " }), el("span", { text: run.summary })]));
-      if (run.thinking) notes.push(el("div", { class: "fthink", text: run.thinking }));
-      head.push(el("details", { class: "fx" }, [el("summary", { text: run.thinking ? "Turn notes · summary and thinking" : "Turn notes · summary" }), ...notes]));
+    // The turn is the message: its summary is the body, in the agent's
+    // voice; thinking folds away under it; the records follow as receipts.
+    if (run.summary) head.push(el("div", { class: "fturnbody-text", text: run.summary }));
+    if (run.thinking) {
+      head.push(el("details", { class: "fx" }, [
+        el("summary", { text: "Thinking" }),
+        el("div", { class: "fthink", text: run.thinking }),
+      ]));
     }
-    const node = el("div", { class: "fturntop" }, head);
     return el("div", { class: "fturn", style: `--turn:${color}` }, [
-      this._repliesBlock(`turn:${run.run_id}`, node, rendered, items, 0),
+      title,
+      el("div", { class: "fturntop" }, head),
+      el("div", { class: "freceipts" }, rendered),
     ]);
   }
 
@@ -1244,6 +1254,46 @@ class StreamPage {
         el("div", { class: "ftext", text: body }),
         ...extras,
       ]),
+    ]);
+  }
+
+  /** One record inside a turn, as a compact receipt line: a chip (the
+   * verdict, or what kind of record it is), the record's own words, and its
+   * Checked list behind an expander. Events (plan, job, hold) keep their
+   * own line. */
+  _receipt(item) {
+    const ev = this._threadEvent(item);
+    if (ev) return ev;
+    let body = this._bodyText(item);
+    let tag = { proposal: "Proposal", amend: "Plan change", ask: "Question", answer: "Answer", abandon: "Abandoned" }[item.kind] || item.kind;
+    let cls = "";
+    if (item.kind === "ruling") {
+      const m = /^(Accepted|Rejected|Deferred)\s*:?\s*(.*)$/s.exec(body || "");
+      if (m) { tag = m[1]; body = m[2]; cls = " r-" + m[1].toLowerCase(); }
+    }
+    const rec = item.record || {};
+    let why = null;
+    if (item.kind === "proposal") {
+      const what = item.title || rec.summary;
+      if (what && what !== body) { why = body; body = what; }
+      if (item.badge) cls = " r-" + item.badge;
+    }
+    const lines = [el("div", { class: "frtext", text: body })];
+    if (why) lines.push(el("div", { class: "fwhy" }, [el("span", { class: "fwhyk", text: "Why " }), el("span", { text: why })]));
+    const calls = (item.calls && item.calls.length) ? item.calls : checkRows((this.runs && this.runs.calls_by_record || {})[item.id]);
+    if (calls.length) {
+      lines.push(el("details", { class: "fx" }, [
+        el("summary", { text: `Checked · ${calls.length}` }),
+        el("div", { class: "fcalls" }, calls.flatMap((c) => [
+          el("span", { class: "ft", text: c.tool || c.tool_id || "" }),
+          el("span", { text: c.note || c.result || "" }),
+        ])),
+      ]));
+    }
+    return el("div", { class: "freceipt" + cls }, [
+      el("span", { class: "ftag", text: tag }),
+      el("div", { class: "frbody" }, lines),
+      el("span", { class: "fwhen", text: item.game_date ? shortDate(item.game_date) : "" }),
     ]);
   }
 

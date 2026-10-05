@@ -103,26 +103,19 @@ def test_event_wording_for_finished_failed_and_hold():
 # ---- the thread DOM: first-level replies open, deeper ones closed; state survives ---
 
 
-def test_turn_replies_open_by_default_toggle_and_survive_a_rerender():
+def test_a_turn_lists_its_records_as_receipts_with_their_verdicts():
     expr = r"""
       const page = Object.create(StreamPage.prototype);
       page.projects = { projects: {}, thread_to_project: {} };
       page.runs = DATA.runs;
-      const hiddenBoxes = () => { const out = []; const walk = (n) => { if (n.className === "freplies") out.push(n.hidden); n.children.forEach(walk); }; walk(thread[0]); return out; };
-      let thread = page._conversationEl(DATA.items);
-      const before = hiddenBoxes();
-      const toggle = (() => { let f = null; const walk = (n) => { if (!f && n.className === "ftoggle") f = n; n.children.forEach(walk); }; walk(thread[0]); return f; })();
-      const label0 = toggle.querySelector(".ftl").textContent;
-      toggle.listeners.click();
-      const label1 = toggle.querySelector(".ftl").textContent;
-      thread = page._conversationEl(DATA.items);
-      return { before, label0, label1, after: hiddenBoxes() };
+      const thread = page._conversationEl(DATA.items);
+      const out = []; const walk = (n) => { if (n.className && n.className.startsWith("freceipt ")) out.push(n.className); if (n.className === "freceipt") out.push("plain"); n.children.forEach(walk); }; walk(thread[0]);
+      const tags = []; const walk2 = (n) => { if (n.className === "ftag") tags.push(n.textContent); n.children.forEach(walk2); }; walk2(thread[0]);
+      return { out, tags };
     """
     res = _run(expr, {"items": THREAD, "runs": RUNS})
-    assert res["before"] == [False, False]          # each turn's replies start open
-    assert res["label0"] == "- 1 reply"
-    assert res["label1"] == "+ 1 reply"
-    assert res["after"] == [True, False]            # the closed state survived the re-render
+    assert "Proposal" in res["tags"] and "Accepted" in res["tags"]
+    assert any("r-accepted" in c for c in res["out"])
 
 
 # ---- the board list: every proposal, one entry per thread -------------------------
@@ -204,8 +197,9 @@ def test_a_run_becomes_a_turn_block_with_its_summary_holding_what_it_wrote():
       return { text, turns: classes.filter((c) => c === "fturn").length, tier1: classes.filter((c) => c === "fkids tier-1").length };
     """
     res = _run(expr, {"items": THREAD, "runs": RUNS})
-    assert "Filed a proposal." in res["text"] and "woke: ask open" in res["text"] and "6 min" in res["text"]
-    assert "Architect's turn" in res["text"] and "Overseer's turn" in res["text"]
+    assert "Filed a proposal." in res["text"] and "Woke for ask open" in res["text"]
+    assert any(t.endswith("6 min") for t in res["text"])
+    assert "Architect" in res["text"] and "Overseer" in res["text"]
     assert res["turns"] == 2  # one root-level block per run, nothing nested across turns
 
 
