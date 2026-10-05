@@ -294,13 +294,23 @@ function list_landmarks()
   return landmarks
 end
 
+-- Name resolution is shared and punctuation/case/spacing tolerant
+-- (df-overseer-textutil.match_name): "Carpenters Workshop" finds "Carpenter's
+-- Workshop". An exact match wins; an ambiguous normalised match is refused
+-- with the candidates listed, never guessed.
+local function name_list(landmarks)
+  local names = {}
+  for i, lm in ipairs(landmarks) do names[i] = lm.name end
+  return names
+end
+
 local function get_landmark(name)
-  for _, lm in ipairs(list_landmarks()) do
-    if lm.name == name then
-      return lm
-    end
+  local landmarks = list_landmarks()
+  local idx, err = textutil.match_name(name, name_list(landmarks))
+  if not idx then
+    return nil, err
   end
-  return nil
+  return landmarks[idx]
 end
 
 -- Exported for other df-overseer-*.lua scripts via reqscript -- see the
@@ -311,12 +321,14 @@ function get_landmark_centroid(name)
   if err then
     return nil
   end
-  for _, lm in ipairs(landmarks) do
-    if lm.name == name then
-      return lm.x, lm.y, lm.z
-    end
+  local idx, match_err = textutil.match_name(name, name_list(landmarks))
+  if not idx then
+    -- 4th value carries the reason (ambiguity candidates); callers that only
+    -- take x, y, z keep working and treat it as not found.
+    return nil, nil, nil, match_err
   end
-  return nil
+  local lm = landmarks[idx]
+  return lm.x, lm.y, lm.z
 end
 
 -- Parses quickfort's own "Blueprint statistics:" block into a plain
@@ -364,8 +376,11 @@ function build_at_landmark(name, blueprint_file, res_id, override)
   if override ~= nil and res_id == nil then
     return nil, "OVERRIDE requires RES_ID"
   end
-  local cx, cy, cz = get_landmark_centroid(name)
+  local cx, cy, cz, name_err = get_landmark_centroid(name)
   if not cx then
+    if name_err and name_err:find("ambiguous", 1, true) then
+      return nil, name_err
+    end
     return nil, "landmark not found: " .. name
   end
 
@@ -436,8 +451,8 @@ elseif cmd == "get" then
   if not args[2] then
     print("usage: df-overseer-landmarks get NAME")
   else
-    local lm = get_landmark(args[2])
-    print(lm and json.encode(lm) or json.encode({error = "not found"}))
+    local lm, name_err = get_landmark(args[2])
+    print(lm and json.encode(lm) or json.encode({error = name_err or "not found"}))
   end
 elseif cmd == "build" then
   if not (args[2] and args[3]) then

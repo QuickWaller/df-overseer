@@ -68,3 +68,57 @@ function to_utf8(s)
   end
   return s
 end
+
+-- ---------------------------------------------------------------------------
+-- Landmark/building name matching (handoffs/2026-10-05-landmark-name-
+-- punctuation.md). DF's own default workshop names carry an apostrophe
+-- ("Carpenter's Workshop"), and the MCP layer used to refuse an apostrophe in
+-- an argument, so a name must be addressable without it. ONE shared matcher,
+-- used by every tool that resolves a landmark or building by name.
+
+-- Lower-cases and drops everything that is not a letter or digit, so
+-- "Carpenter's Workshop", "carpenters workshop" and "CARPENTERS-WORKSHOP"
+-- are the same key. Non-string input yields "".
+function normalize_name(s)
+  if type(s) ~= "string" then
+    return ""
+  end
+  return (s:lower():gsub("[^%w]", ""))
+end
+
+-- Resolves QUERY against NAMES (an array of strings). Returns
+-- `index` on a match; `nil, err, candidates` on none or an ambiguity.
+-- An exact match always wins first (existing behaviour unchanged, including
+-- duplicate identical names resolving to the first). Otherwise normalised
+-- keys are compared; if more than one DISTINCT name matches, the query is
+-- refused with the candidates listed, never guessed.
+function match_name(query, names)
+  if type(query) ~= "string" or query == "" then
+    return nil, "no name given", {}
+  end
+  for i, n in ipairs(names) do
+    if n == query then
+      return i
+    end
+  end
+  local key = normalize_name(query)
+  if key == "" then
+    return nil, "name has no letters or digits: " .. query, {}
+  end
+  local first, seen, cands = nil, {}, {}
+  for i, n in ipairs(names) do
+    if normalize_name(n) == key and not seen[n] then
+      seen[n] = true
+      cands[#cands + 1] = n
+      first = first or i
+    end
+  end
+  if #cands == 1 then
+    return first
+  end
+  if #cands == 0 then
+    return nil, "no name matches '" .. query .. "' (matching ignores case, spacing and punctuation)", {}
+  end
+  return nil, "ambiguous name '" .. query .. "' matches " .. #cands
+    .. " names (" .. table.concat(cands, "; ") .. "); use one of them exactly", cands
+end

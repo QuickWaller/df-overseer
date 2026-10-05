@@ -218,7 +218,7 @@ gap check.
 
 `argv_for_call` also rejects: any argument name not in the tool's schema,
 any missing required argument, and any string-typed value containing a
-shell metacharacter (`_SHELL_METACHAR_RE`) -- these values become literal
+shell metacharacter (`_SHELL_METACHAR_RE`, apostrophe excepted, see its comment) -- these values become literal
 words on a command line run against a live game host, so smuggling a `;` or
 a backtick through a string argument is exactly the kind of thing this layer
 exists to catch before it reaches a transport this module has never heard of.
@@ -557,8 +557,16 @@ _ARG_DESCRIPTIONS: Dict[str, str] = {
 
 # Conservative and deliberately wide: these values become literal words on a
 # command line run against a live game host (see module docstring). Blocks
-# shell metacharacters, quotes, backslashes and newlines/carriage returns.
-_SHELL_METACHAR_RE = re.compile(r'[;&|`$()<>\\"\'\n\r]')
+# shell metacharacters, double quotes, backslashes and newlines/carriage
+# returns. The apostrophe is deliberately NOT blocked
+# (handoffs/2026-10-05-landmark-name-punctuation.md): DF's own default
+# workshop names carry one ("Carpenter's Workshop"). It is safe because the
+# transport is protobuf RunCommand, whose `repeated string arguments` field is
+# a list that no shell and no DFHack tokenizer re-parses (see
+# dfmcp/dfhack_client.py `_encode_run_command_request`), so a `'` is only a
+# literal character inside one argument. Landmark name matching also ignores
+# punctuation, so a caller may omit it.
+_SHELL_METACHAR_RE = re.compile(r'[;&|`$()<>\\"\n\r]')
 
 
 @dataclass(frozen=True)
@@ -874,7 +882,9 @@ def _validate_value(tool_id: str, spec: ArgSpec, value: Any) -> str:
     if bad:
         raise ArgumentError(
             f"{tool_id}: {spec.name!r} contains a character not allowed in a DFHack "
-            f"command-line argument ({bad.group(0)!r}): {value!r}"
+            f"command-line argument ({bad.group(0)!r}): {value!r}. Remove it and retry; "
+            "landmark and workshop names match ignoring case, spacing and punctuation "
+            "(\"Carpenters Workshop\" finds \"Carpenter's Workshop\")."
         )
     return text
 
