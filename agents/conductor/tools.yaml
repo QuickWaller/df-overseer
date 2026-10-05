@@ -135,6 +135,13 @@ read:
       watchdog (conductor/pause_watch.py) in a cycle where the fort is paused
       with no tripwire, or the tick has stopped. Read-only, player-visible
       facts only. Granted only here.
+  - id: "pause.verdict_read"
+    status: exists
+    note: >-
+      Added handoffs/2026-10-05-safe-to-resume.md. Reads the Overseer's
+      pause.verdict records written after a given id, so the watchdog resumes
+      only on an explicit resume=true from the run it just woke. Read-only.
+      Granted only here (the handler also refuses any other role).
 
 write:
   - id: "clock.set-speed"

@@ -630,6 +630,16 @@ write:
       go. Restricted to the roster's sole_writer the same way queue.amend
       is; refused a second time on an already-abandoned project.
 
+  - id: "pause.verdict"
+    status: exists
+    note: >-
+      Added handoffs/2026-10-05-safe-to-resume.md. The explicit answer to a
+      pause woken as unexplained_pause: resume true or false plus a one-line
+      reason. Recorded server-side for the conductor to read; it resumes
+      nothing, and this role still holds no clock.resume. No verdict, a false
+      one, or an escalation keeps the fort paused. Restricted to the roster's
+      sole_writer the same way queue.escalate is (reusing sole_writer_only).
+
   - id: "nobles.appoint"
     status: exists
     note: >-
