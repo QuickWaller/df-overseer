@@ -345,3 +345,237 @@ the step's.
    `queue.rule` per proposal; keep `queue.pending` and drop the rest of the
    reads from the start, as the design proposes, rather than adding the call
    cap first.
+
+---
+
+# Pass 2: revision 2 (commit 68fb6aa)
+
+Date: 2026-10-05. Repo code only this pass; no host access. Same severity
+scale as pass 1.
+
+**Verdict.** Revision 2 closes the three pass-1 blockers in design: tool
+verdicts, the issuing marker and Uncertain class, and one completion rule
+with a synthetic target. The simpler route removes `open`, `fill_step` and
+`from_step`, and the cracks they carried go with them. Nothing blocks stage 0.
+**Stage 1 needs one fix first** (P2-M6: "defer closes with a flag" depends on
+`queue.flag`, which is stage 5). Four new high findings (P2-H1 to P2-H4)
+must be settled before stages 3 and 4 are built.
+
+## Pass-1 findings: closed or open
+
+| Finding | Status | Note |
+|---|---|---|
+| C1 | **Closed in principle; the example data is wrong** | `blueprint.reserve` has no `ok` field. A conflict returns `refused: true` with `blocked_reason` (`df-overseer-blueprint.lua:1525-1535`), and a stranded footprint only sets `would_strand` and still reserves (`:1536-1540`). A declared `verdict: {ok: ok}` sees no verdict. See P2-H1. |
+| C2 | Closed | Marker and tick before the call, and nothing after it needs DFHack (4.2). Residual in P2-M2. |
+| C3 | Closed for sequencing | A synthetic target per step and one completion rule make `step_prerequisites_satisfied` (`store.py:1032-1057`) and `step_status` agree. Its new "done" input has its own problem, P2-H2. |
+| H1, M4, M9 | Closed | `open`, `confirm` and `from_step` are gone. |
+| H2 | Closed | Canonical `dry_run` refused, set after merge, echo required. |
+| H3 | **Open until stage 5** | A defer closes and flags the proposer, but `queue.flag` lands in stage 5 while the defer change is stage 1. See P2-M6. |
+| H4 | Closed | Tripwires now need an explicit `pause.verdict`; owners are woken. New questions in P2-M5. |
+| H5 | Closed | Per-tool removal plus a mapping test. |
+| H6 | Closed | The 300 s timeout moves to stage 6. |
+| H7 | **Partly** | The cutover id and the project-first abandon work against `store.py:754-768`. New problem in P2-H4. |
+| M1 | Partly | Arms on done. Covered follow-ups' own predictions never arm (P2-M3), and done comes too early for non-dig phases (P2-H2). |
+| M2 | Closed in principle; data wrong | `designated` is a table (`dig_tiles`, `zones`, `buildings`, `df-overseer-blueprint.lua:988`), so `nothing_applied: {field: designated, equals: 0}` never holds and every not-ok call becomes Uncertain. Fail-safe, but fix the path. |
+| M3 | **Closed for digs only** | See P2-H2. |
+| M5 | Mostly gone | `replaces_step` brings a variant back, P2-M4. |
+| M6 | Closed, one gap | P2-M1. |
+| M7 | Closed, to measure | Stage 0 `--hostname`; see P2-L2. |
+| M8, M10 | Closed | |
+| M11 | **Open as worded** | P2-H3. |
+| L1, L2, L5 | Closed | L3 deferred with a sound reason; L4 is the orchestrator's. |
+
+## New findings
+
+### P2-H1. A missing verdict field must refuse, and the reserve example has none (high)
+
+The design says `ok: false` or `blocked: true` refuses (2.2 item 3), but not
+what a result with neither means. `blueprint.reserve`'s conflict result has
+neither (`refused: true` instead, `df-overseer-blueprint.lua:1525-1535`). With
+the declared map, a conflicting reserve passes filing, and at execution its
+real call "succeeds" with no handle issued. **Fix:** a declared verdict field
+that is absent is a refusal (fail closed). The reserve entry declares
+`refused`, and treats `would_strand` as a refusal too, since a stranded
+reservation can only feed a dig the access gate will block. Add a build-time
+test that every routed tool's declared verdict, echo and handle fields appear
+in a recorded real output.
+
+### P2-H2. `progress` is per tool, but done differs per phase (high)
+
+`blueprint.apply` has one `progress` entry: done at `dig.state:
+none_pending`. `dig_progress` counts only `flags.dig`
+(`df-overseer-blueprint.lua:835-866`, the test at `:844`), not smoothing, and
+a build, zone or meta phase makes no dig designations at all. So:
+
+- a **finish** (smooth) phase reads `none_pending` as soon as it is applied,
+  before DF has made jobs (the file's own note: jobs appear lazily);
+- a **furnish** phase reads done before the bed exists;
+- the next phase's dry run is then blocked by the shell check, which does
+  count smoothing (`:521`). Its prerequisite already reads done, so the step
+  is "blocked with no moving prerequisite": **Needs judgment on every room**;
+- a phased room's prediction arms at the last phase's designation, not its
+  completion, which undoes M1 for the case M1 was about.
+
+`state: unknown` (read failures or a job census error, `:862`) matches none
+of done, moving or stalled, so a step can stay issued forever with no flag.
+**Fix:** key `progress` by tool and phase `mode` (from `blueprint.plan`'s
+`phases[].mode`, `:1006-1025`). Dig mode is done on `shell_done` plus no
+pending smoothing; build, place and zone modes are done on the built items
+and zone existing (the `shell`/`surface` fields `site_status` already
+returns, `:1360-1395`). Repeated `unknown` flags the proposer after N reads.
+
+### P2-H3. Stages 2 and 3 together leave rooms with no route (high)
+
+Stage 3 routes only work-order tools. After its cutover, 3.5 refuses
+accepting a proposal with no `step` "when its type has action tools", and
+2.2 item 1 accepts a `step` for any tool listed in `action_tools.yaml`. If
+the table lists room tools at stage 2, an Architect room proposal does one
+of two things. It carries a `step` the executor cannot run, and the Overseer,
+still holding the tool, runs it by hand (the mixed case 9.2 says cannot
+happen). Or it carries none and cannot be accepted. Either way rooms stall
+from stage 3 to stage 4. **Fix:** both rules apply only to **routed** types
+(types whose tools have left the Overseer). Until a type is routed, a `step`
+is refused for it and step-less proposals stay valid. With that, shipping
+stages 2 and 3 together is safe.
+
+### P2-H4. The migration fills the WIP cap for a week (high)
+
+9.1 writes 9 projects, of which 7 read done. 5.4 closes a done project only
+when its proposer passes, or when `follow_up_window_ticks` (start: 7 game
+days) runs out. 3.5 refuses accepts while 3 projects are open. Once the
+stage 4 WIP cap lands, the 7 legacy projects count as open and every
+non-`high` accept is refused until the window runs out. If any of the 7 has
+only failure records, section 7's success-only rule for implicit steps keeps
+it active indefinitely. **Fix:** the same operator script closes the 7 (an
+abandon or close with reason "pre-executor history"), and the WIP count
+excludes rulings at or below the cutover id.
+
+### P2-M1. A begun run that never ends caps the next one (medium)
+
+`run.begin`/`run.end` counts per role (3.4). A conductor crash, an OOM, or a
+manual `--once` interrupted between the two leaves the role's count open.
+The next run then inherits a spent budget, including a manual run that is
+supposed to have no cap. The exempt list also misses `queue.pass` (the
+follow-up wake's close verb, 5.1), `queue.abandon` and `queue.flag_close`.
+**Fix:** `run.begin` carries an expiry (role timeout plus grace) and replaces
+any open run; exempt every verb that ends a turn's business.
+
+### P2-M2. Uncertain is terminal for tools with no progress read (medium)
+
+4.3 reconciles Uncertain through `queue.observe`, but only tools with a
+`progress` entry have a read. For `orders.create`, `workjob.queue` and
+`farm.set-crop` (all of stage 3), nothing proves whether a call landed. Every
+timeout therefore ends held and flagged, and the proposer's only moves are a
+re-file that risks a duplicate, or a close. With a 10 s RPC timeout against
+the design's own 45 to 80 s figure, that could be most stage 3 runs.
+**Fix:** a declared `landed` read per tool (for orders: `orders.list` matched
+on exact job, amount and material, with the matching count before the call
+stored in the `step_runs` row). Measure real-call latency in stage 0, before
+stage 3's live check depends on it.
+
+### P2-M3. Follow-up rulings and covered proposals do not map to the parent project (medium)
+
+The store finds a project by `from_ruling` (`store.py:282-294`) and refuses
+`executed` for an accepted ruling with no project (`store.py:577-618`). An
+ordinary follow-up is accepted by its own ruling, which has no project:
+
+- the execute phase's "open projects for accepted post-cutover rulings"
+  (4.5) would open a second, separate project for it unless `open_project`
+  refuses proposals that carry `project_id`;
+- its `executed` must cite the parent's ruling to pass the store, so
+  `unexecuted_accepted_proposals` (`store.py:1374-1405`) lists the
+  follow-up's own ruling as unexecuted forever;
+- a covered follow-up has no ruling at all, so its own prediction is never
+  armed or graded, which hides the proposer's per-phase hit rate.
+
+**Fix:** state the mapping. `open_project` refuses follow-ups; `executed`
+carries the step's proposal id; the unexecuted report and prediction arming
+key on the step's `proposal_id` (which section 7 already adds to each step).
+
+### P2-M4. `replaces_step` breaks dependents and can strand a live action (medium)
+
+Dropping step S while a later step `requires: [S]` leaves a dangling edge,
+which `_validate_step` refuses (`schema.py:1008-1021`). The design's "no
+earlier step changes" argument for the fresh-id rule (4.1) holds for
+`apply_followup`, not here. Replacing an issued or Uncertain step also drops
+the only plan entry recording that a designation may still be live in the
+game. **Fix:** allow `replaces_step` only for a step with no dependents and
+no `issued` or `issuing` run; otherwise the move is a recovery follow-up
+(release first).
+
+### P2-M5. Covered follow-ups do not pin their order; tripwires can loop (medium)
+
+Covered checks the tool, the carried arguments, the next phase and an issued
+handle (5.2), but not `after_step`. A proposer can attach the finish phase to
+the reserve step instead of the dig step, so it runs while the dig is still
+going. `finish` is dig mode, which the order guard does not cover
+(`NEEDS_DUG_SHELL` is build, place and zone only,
+`df-overseer-blueprint.lua:165`). Nothing else in a covered follow-up can
+exceed the accepted plan. With `after_step` pinned, the answer to "can one be
+crafted to do something the Overseer never accepted" is no. **Fix:** a covered
+follow-up's `after_step` must be the step that applied the previous declared
+phase, and that step must be done.
+
+Separately, on tripwires (4.6): if the cause persists (thirst still critical
+after a resume verdict), the watcher re-latches, and each cycle runs an
+advisor and the Overseer again. Whether the in-game watcher has any
+hysteresis was not checked this pass. **Fix:** a per-cause episode counter
+that escalates on the second episode within N ticks.
+
+### P2-M6. Stage 1 depends on a stage 5 tool (medium; blocks stage 1 as written)
+
+Stage 1 ships "defer closes with a flag (H3)", but `queue.flag`, its record
+kinds and its wake are stage 5 (9.2). Built as listed, a stage 1 defer either
+cannot be written or closes silently, whereas today a deferred proposal at
+least stays visible. Deploying the new `pending_proposals` rule also silently
+closes every live deferred proposal. **Fix:** move "defer closes" to stage 5,
+or ship a minimal flag in stage 1 (the record plus an owner briefing line, no
+wake). Record the live deferred proposals before the deploy.
+
+### P2-L1. Amends are whole plans with no base check (low)
+
+`_current_steps_and_version` reads the latest amend as the full plan
+(`store.py:348-361`), and append does not check that every previous step is
+kept or named in `drops`/`replaces`. Two follow-ups built from the same base
+would silently drop one step. The conductor applies them in sequence, so the
+risk is small. **Fix:** `apply_followup` reads and appends under the one write
+lock, and the store refuses an amend that omits a previous step not named in
+`drops`/`replaces`.
+
+### P2-L2. Fixed hostnames and openclaw's state (low)
+
+All runs share one bind-mounted openclaw state directory, which holds a
+device-identity lock file. Whether openclaw keys anything on the hostname was
+not checked. Stage 0's live check should confirm that a second run with the
+same `--hostname` still authenticates and is not refused by a lock.
+
+### P2-L3. Resolution fields are coarse (low)
+
+Near landmark, direction, distance and footprint (`reserve_site`'s
+`site_brief`, `df-overseer-blueprint.lua:1516-1524`) can match for two
+different sites, for example on different levels. **Fix:** add `orientation`
+and the level the tools already take.
+
+### P2-L4. The migration writes in the Overseer's name (low)
+
+The 9 projects, 2 abandons and any rejects carry role `overseer` (9.1, open
+question 1). The rejects count in the Overseer's accept-rate figures, and the
+public Board shows the Overseer doing it. **Fix:** a `written_by: operator`
+field that the Board and the rate figures read, or wait for the executor
+role.
+
+## Checked and sound in revision 2
+
+- Apart from P2-M5's `after_step`, covered follow-ups cannot exceed the
+  accepted plan: tool, carried arguments, next declared phase and an issued
+  handle are all checked, and `blueprint.apply` refuses a reservation made
+  for another template or already carved
+  (`df-overseer-blueprint.lua:1161-1170`).
+- `apply_followup` adds a step without changing earlier ones, so the fresh-id
+  rule (`store.py:732-755`) holds.
+- The `step_runs` order (preconditions, dry run, tick and marker, call,
+  record) leaves nothing that needs DFHack after the real call.
+- No rendered map, no armok power, no per-kind code: phases come from the
+  template through `blueprint.plan`, and `resolution_fields` are
+  coordinate-free.
+- Stage 0 is safe. Stage 1 is safe alone once P2-M6 is resolved.
