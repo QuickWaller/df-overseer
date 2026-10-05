@@ -1282,7 +1282,6 @@ class StreamPage {
     if (item.kind === "proposal") {
       const what = item.title || rec.summary;
       if (what && what !== body) { why = body; body = what; }
-      if (item.badge) cls = " r-" + item.badge;
     }
     const lines = [el("div", { class: "frtext", text: body })];
     if (why) lines.push(el("div", { class: "fwhy" }, [el("span", { class: "fwhyk", text: "Why " }), el("span", { text: why })]));

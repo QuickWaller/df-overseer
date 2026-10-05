@@ -629,3 +629,35 @@ a.tagchip:hover { border-color: var(--text); }
 .frtop { display: flex; align-items: baseline; gap: 10px; }
 .frtop .fwhen { margin-left: auto; }
 .freceipts .ftag { width: auto; padding: 0 6px; }
+
+/* ==== Colour roles (user's call, 2026-10-05) ===============================
+   Bright DF colours mean WHO (agent names, avatars, turn bands) and nothing
+   else. STATE uses the DF palette's darker shades, always as filled chips:
+   done or accepted dark green, active blue, deferred, held or rejected
+   brown, failed or urgent dark red. KIND (proposal, plan, job, question) is
+   a grey outline. The accent is plain white, not the Overseer's yellow. */
+.e-wrap, .site {
+  --st-ok: #00aa00; --st-act: #5555ff; --st-hold: #aa5500; --st-bad: #aa0000;
+  --accent: #e6e6e6;
+  --ok: #00aa00; --ok-bg: #001a00; --ok-line: #006600;
+  --no: #aa5500; --no-bg: #1a0e00; --no-line: #6b3a00;
+  --g-done-bg: #001200; --g-done-line: #006600; --g-done-fg: #33bb33; --g-done-mini: #008800;
+  --g-now-bg: #0a0a2a; --g-now-line: #5555ff; --g-now-fg: #d6d6ff; --g-now-barbg: #1c1c4a; --g-now-bar: #5555ff;
+  --g-ready-line: #5555ff; --g-ready-fg: #b8b8ff;
+  --g-hold-bg: #1a0e00; --g-hold-line: #aa5500; --g-hold-fg: #e0b080; --g-hold-icon: #aa5500;
+}
+.chip.ok, .chip.accepted, .chip.done { background: var(--st-ok); color: #000; }
+.chip.active { background: var(--st-act); color: #fff; }
+.chip.no, .chip.rejected, .chip.hold, .chip.deferred { background: var(--st-hold); color: #fff; }
+.chip.wait, .chip.pending { background: #555; color: #fff; }
+.urg.u-high { background: var(--st-bad); color: #fff; border-color: var(--st-bad); }
+.urg.u-elevated { background: var(--st-hold); color: #fff; border-color: var(--st-hold); }
+.fverdict.v-accepted { background: var(--st-ok); color: #000; border-color: var(--st-ok); }
+.fverdict.v-rejected, .fverdict.v-deferred { background: var(--st-hold); color: #fff; border-color: var(--st-hold); }
+.freceipt.r-accepted .ftag { background: var(--st-ok); color: #000; border-color: var(--st-ok); }
+.freceipt.r-rejected .ftag, .freceipt.r-deferred .ftag { background: var(--st-hold); color: #fff; border-color: var(--st-hold); }
+.fevent.hold .ftag { background: var(--st-hold); color: #fff; border-color: var(--st-hold); }
+.fevent.fail .ftag { background: var(--st-bad); color: #fff; border-color: var(--st-bad); }
+.ftoggle .ftl { color: var(--text); }
+.liveitem { border-left-color: var(--st-act); }
+a { color: var(--accent); }
