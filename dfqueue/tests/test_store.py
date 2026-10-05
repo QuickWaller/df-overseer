@@ -1734,7 +1734,7 @@ def test_amend_does_not_overwrite_the_original_project_record(tmp_path):
     store.append(
         make_amend(
             project_id=project["id"],
-            drops=["project-0001/s1"],
+            drops=["project-0001/s1", "project-0001/s2"],
             adds=["project-0001/s1b"],
             steps=[{
                 "id": "project-0001/s1b",
