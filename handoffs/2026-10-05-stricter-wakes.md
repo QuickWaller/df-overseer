@@ -100,3 +100,58 @@ pending per-role lane flags cleared when that role completes a run).
 roles on `stuck_job` and a generic `lane_wakes` signal. Pause watchdog,
 tripwire, hold and Overseer paths are not edited.
 
+
+### Built
+
+Lane triggers as data (`lane_triggers` in `conductor/policy.yaml`, parsed by
+`conductor/policy.py`), evaluated by new `conductor/lanes.py`; state in
+`lane_state.json` beside the cursor store. `triage.py` gained `LaneWake`,
+per-signal roles for `stuck_job`, and a miss-only `prediction_graded`.
+`cycle.py` changes are signal building plus a proposer-attribution step after
+each advisor run. Pause watchdog, tripwire, hold, Overseer and Consultant
+paths are not edited.
+
+Triggers and what each reads:
+
+- Architect: JOB_COMPLETED events in its OWN drain whose detail matches
+  dig, channel, carve, smooth, engrave, construct, build or detail (the
+  stand-in for a new landmark); a due stuck job of those kinds (stuck-job
+  watch); a ruling on a proposal it filed.
+- Quartermaster: `stock_below_threshold` diff events; a threshold alert newly
+  crossed (alert reads, edge-triggered in `lane_state.json`); a due stuck job
+  of a production kind; a ruling on a proposal it filed. Orders: the existing
+  stalled and blocked order watch still wakes it (unchanged).
+- Both advisors: `prediction_graded` only for a graded MISS (`queue.grade`
+  `graded[].status == graded_false`); `migrant_wave`; routine review.
+  `season_change` now wakes the Quartermaster only.
+- Consultant, Overseer: unchanged.
+
+Not observable by the conductor, and the substitute:
+
+- A new landmark: no landmark read on its allowlist, and `agents/` is outside
+  this stream. Dig and construction completions stand in.
+- The proposer of a graded prediction: `queue.grade` omits it, so a miss wakes
+  both advisors rather than only the proposer. Narrowing needs the grade
+  result to carry the prediction's role (a `dfmcp` change).
+- The proposer of a proposal: `queue.overview` has ids only. The conductor
+  attributes a new pending id to the advisor whose run added it (re-reading
+  the overview after each advisor run); a proposal filed by anyone else, or
+  before this deploys, is never attributed and so never wakes its author on a
+  ruling. Rulings are detected as a learned id leaving the pending list (a
+  deferral stays pending).
+- A due stuck job matching no lane wakes nobody; the routine review is its
+  backstop.
+
+Tests: new `conductor/tests/test_lane_wakes.py` (21: each lane trigger wakes
+only its role, hit wakes nobody, miss wakes the advisors, alert once until it
+clears and re-crosses, failed read is not a clear, an unserved alert survives
+a failed run, ruling wakes only the proposer once, routine review wakes all,
+quiet cycle wakes nobody). One existing test moved its stuck job from a Bed to
+a brew (a Bed is now the Architect's). Full ambient `python -m pytest`: 2846
+passed, 3 skipped. `dfmcp/tests` in `.venv-dfmcp`: 828 passed.
+
+Deploy target: `vm106-conductor` (conductor code and `policy.yaml`). Not
+deployed. Live check: count wakes per role over a window of cycles from the
+cycle archives (`summary.json` `roles_woken`) against the 2026-10-05 baseline
+(advisors on nearly every cycle); expect advisor wakes only with a lane
+change, a miss, a migrant wave, or the 7-day review.
