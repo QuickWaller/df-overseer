@@ -479,6 +479,21 @@ function checkRows(list) {
   }));
 }
 
+/** An executed item's write calls (`feed.public_actions`) as the rows the
+ * "Acted" list shows: the tool's display name, what it targeted, the outcome. */
+function actedRows(list) {
+  return (list || []).filter((a) => a && a.tool).map((a) => {
+    const failed = a.outcome === "failed";
+    const n = a.targets || 0;
+    const target = n ? `${n} ${n === 1 ? "target" : "targets"}` : "no targets";
+    return {
+      name: a.name || String(a.tool).replace(/[._-]/g, " "),
+      failed,
+      note: [target, failed ? `failed${a.reason ? ": " + a.reason : ""}` : "ok"].join(" · "),
+    };
+  });
+}
+
 /** The one-line wording of an event item (what the speaker did), or null
  * when the item is a post, not an event. `cls` is "", " plan", " fail" or
  * " hold" (amber for the last two). */
@@ -1349,7 +1364,17 @@ class StreamPage {
    * own line. */
   _receipt(item) {
     const ev = this._threadEvent(item);
-    if (ev) return ev;
+    if (ev) {
+      const acted = item.kind === "executed" ? actedRows(item.actions) : [];
+      if (!acted.length) return ev;
+      return el("div", { class: "fevent-wrap" }, [ev, el("details", { class: "fx facted" }, [
+        el("summary", { text: `Acted · ${acted.length}` }),
+        el("div", { class: "fcalls" }, acted.flatMap((a) => [
+          el("span", { class: "ft", text: a.name }),
+          el("span", { class: a.failed ? "factfail" : "", text: a.note }),
+        ])),
+      ])]);
+    }
     let body = this._bodyText(item);
     const kind = { proposal: "Proposal", ruling: "Ruling", amend: "Plan change", ask: "Question", answer: "Answer", abandon: "Abandoned" }[item.kind] || item.kind;
     let state = null;
