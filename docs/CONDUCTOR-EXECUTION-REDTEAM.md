@@ -579,3 +579,278 @@ role.
   template through `blueprint.plan`, and `resolution_fields` are
   coordinate-free.
 - Stage 0 is safe. Stage 1 is safe alone once P2-M6 is resolved.
+
+---
+
+# Pass 3: stage 2, rooms routed (revision 3, commit ed6f8f5)
+
+Date: 2026-10-05. Read against main after stages 0 and 1 went live
+(`evals/live/2026-10-05-execution-stage-0/README.md`), including the
+unexecuted wake (`e7f75fb`), the ruling ask (`942ae36`), `relies_on`/`cited`
+and `queue.pending_brief` (`dfmcp/queue_tools.py`), and the real templates in
+`blueprints/templates/`. Repo only; no host access.
+
+**Verdict.** Stage 2 is buildable, but not as one block, and **four
+blockers** must be designed before its handoffs are written:
+
+1. The Overseer can still write a project for a routed ruling, and today's
+   unexecuted wake tells it to (P3-B1).
+2. The per-mode done reads stall or finish early on the real templates
+   (P3-B2).
+3. The cutover's wait condition may never be met (P3-B3).
+4. A `landed` read cannot recover a reserve or a first dig (P3-B4).
+
+The split proposed below is five offline handoffs and two deploys. Moving the
+tripwire sequence and the legacy closes out of the cutover shrinks it.
+
+## Pass-2 findings against revision 3
+
+| Finding | Status | Note |
+|---|---|---|
+| P2-H1 | Closed by design | Fail closed plus the fixture test. The test will catch one bad path already: `blueprint.reserve` outputs no `level` (result fields at `df-overseer-blueprint.lua:1516-1524`), yet `level` is declared in its `resolution_fields` (design 2.3). |
+| P2-H2 | **Open** | Per-mode is right, but `shell_done` and "buildings exist" do not mean what 4.4 needs. P3-B2. |
+| P2-H3 | Closed | `routed` flag per type plus the mapping test (design 1). |
+| P2-H4 | Closed for legacy | Superseded by an idle-project variant, P3-M3. |
+| P2-M1 | Closed | Expiry and the wider exempt list (3.4). |
+| P2-M2 | **Partly** | `landed` declared, but the two room entries cannot recover a handle. P3-B4. |
+| P2-M3 | Closed in design; **live code disagrees** | The new unexecuted wake keys on `executed.ruling_id` (`store.py:1385`, read at `cycle.py:594-610`). P3-B1. |
+| P2-M4, P2-M5, P2-L1 | Closed | `replaces_step` limits, `after_step` pinned, repeat counter, base check. |
+| P2-M6 | Closed (moved to stage 4) | But a defer still keeps a proposal pending until stage 4, which feeds P3-B3. |
+| P2-L2 | Closed | Fixed hostname deployed in stage 0. |
+| P2-L3 | Partly | Orientation and level are declared, but reserve outputs no level (see P2-H1). |
+| P2-L4 | Closed | `close_legacy` writes as the conductor. |
+
+## Blockers
+
+### P3-B1. The Overseer can still author a routed project, and is told to (critical)
+
+The Overseer keeps `queue.project`, `queue.executed` and `queue.amend` until
+its last mutating tool leaves (design 3.2; `agents/overseer/tools.yaml:530-600`).
+The store accepts a `project` for any accepted ruling that has none
+(`store.py:655-680`). Meanwhile the deployed unexecuted wake lists every
+accepted proposal with no `executed` record, minus a fixed ignore list
+(`cycle.py:594-610`), and the briefing tells the Overseer to "carry each out
+now (queue.project, act, queue.executed)" (`briefing.py:260-265`).
+
+After the cutover, a routed room proposal sits accepted with no `executed`
+record whenever its step does not run in the same cycle. That happens under
+an operator hold (no execute phase, design 4.6), past the cap of 4, while
+Waiting, during a tripwire, or for a follow-up's own ruling (whose step's
+`executed` cites the parent ruling, design 4.2 item 5). Each cycle then wakes
+the Overseer with that instruction. If it obeys:
+
+- its `project` takes the slot, so `open_project` is refused ("a project
+  exists");
+- its steps carry whatever tool and arguments it wrote;
+- if `run_step` runs any project's steps, the Overseer has chosen
+  arguments the executor will run, which the design exists to prevent.
+
+**Fix (all three needed, one handoff):**
+
+- the store refuses a sole-writer `project`, `executed` or `amend` whose
+  ruling's proposal type is routed;
+- `run_step` runs only steps carrying a `proposal_id` whose content equals
+  that proposal's `step` (built by `open_project` or `apply_followup`);
+- the unexecuted wake and its briefing line exclude routed types and key on
+  the step's `proposal_id`, as design 7 says.
+
+### P3-B2. The done reads do not fit the real templates (high)
+
+Design 4.4 makes dig mode done at `shell_done`. But `site_status` computes
+`shell_cells` over **every** dig section of the template, not the applied
+phase's (`df-overseer-blueprint.lua:1366-1374`, `610-660`). `office-room-v2`
+has two dig sections: `shell`, then `floor`, which smooths the interior
+floor (`blueprints/templates/office-room-v2.csv:29-43`). After the shell
+phase is dug and smoothed, the floor cells are still rough, so `shell_done`
+stays false. The shell step never reads done, no `step_done` wake fires, the
+floor is never filed, and nothing flags it: `dig.state` is `none_pending`,
+which is neither stalled nor unknown. The room hangs silently.
+
+Build mode is done when "the phase's buildings exist" (4.4). DF creates the
+building object the moment quickfort places it, with a construction job still
+pending, so "exists" reads done before the bed is built. That is P2-H2 again,
+for furniture.
+
+The design's example phases `[dig, finish, meta]` also do not match the real
+labels (`bedroom_cell_v1_shell`, `_zone`, `_build`, `_finish`, a meta of zone
+then build, `bedroom-cell-v1.csv:30-54`). A declared list naming both
+`_zone` and `_finish` applies the zone twice.
+
+**Fix:**
+
+- `blueprint.status` takes the phase and reports `shell_cells` over that
+  phase's own leaves (the `leaf_sections` it already has);
+- build mode is done on construction complete (the building's build stage),
+  not existence;
+- declared-phase validation refuses a list in which a meta's leaves repeat
+  another listed phase;
+- fixtures come from the real templates.
+
+### P3-B3. "Cutover when no room proposal is pending" may never come (high)
+
+The user's rule: hold the deploy until no pre-cutover room proposal is
+pending, and reject none. But:
+
+- a deferred proposal stays pending until stage 4 (P2-M6), and
+  `proposal-0017` (bedrooms) was deferred today, with no withdraw verb for
+  its proposer;
+- the Architect files room proposals most wakes (it re-proposed accepted
+  bedrooms twice today, per the eval README);
+- the condition ignores accepted-but-unexecuted room rulings, which after the
+  cutover have no path at all: `open_project` refuses them (at or below the
+  cutover), the Overseer no longer has the tools, and the unexecuted wake
+  fires for them every cycle;
+- it ignores open pre-cutover room projects the Overseer wrote under the
+  project rule (live since 2026-10-05). Nobody can finish those after the
+  cutover, and 2.2 item 6 would let the Architect file a follow-up into one,
+  which `run_step` would then run against a project it did not build.
+
+**Fix:**
+
+- a freeze before the deploy: a data flag that refuses new step-less room
+  proposals (with the message "rooms move to exact actions at the next
+  deploy; file after it");
+- the precondition becomes: no pending room proposal, no accepted room
+  ruling without `executed`, no open room project;
+- whatever remains is listed and handled by `close_legacy` (extended to
+  open projects), or by an explicit user call.
+
+Whether the frozen Architect should still be woken is a user question
+(Q1 below).
+
+### P3-B4. `landed` cannot recover a reserve or a first dig (high)
+
+- **`blueprint.reserve`'s landed** matches `purpose` (design 2.3). Purpose is
+  free text, and an Uncertain re-run or a re-filed proposal can reuse it.
+  A match then names an older reservation, and the Uncertain step is recorded
+  as a success holding the wrong `res-N`. The handle cannot come from the
+  call's result, because there was no result.
+- **`blueprint.apply`'s landed** matches `phase_applied` and `handle` on
+  `blueprint.sites`. For the carving phase, the input handle is `res-N`, but
+  the new `site-N` is unknown, and `list_sites` carries no reservation link
+  (`df-overseer-blueprint.lua:1345-1357`).
+
+**Fix:**
+
+- the server appends the proposal id to `purpose`, so the match is exact and
+  unique, and the `step_runs` baseline stores the set of reservation handles
+  before the call;
+- for a carving dig, landed reads `blueprint.reservations` for that `res-N`'s
+  `site_handle` (already output, `:1566-1569`).
+
+## Other new findings
+
+**P3-H1. Resolution-field checks on pinned handles cause false Needs
+judgment (high).** 4.2 compares `resolution_fields` on every step. For a step
+on `res-N` or `site-N` the place cannot drift. But `near_landmark` is the
+**nearest** landmark (`site_brief`, `df-overseer-blueprint.lua:457-467`), and
+it changes when a nearer landmark appears (a new zone or workshop). A pinned
+step then reads "the site changed" and goes to the proposer. **Fix:** compare
+only for steps that resolve a site by landmark and rank (the reserve);
+handle-pinned steps skip the check.
+
+**P3-H2. Abandoned or closed rooms keep their ground forever (high).**
+Reservations are released only by an explicit `unreserve`
+(`df-overseer-blueprint.lua:1305-1309`), and a stalled dig's designations
+need `release`. Both are routed tools that run only through a proposer's
+follow-up, and follow-ups into a closed project are refused (2.2 item 6,
+5.4). Each abandoned room therefore blocks its footprint for every later
+reservation, and may leave live designations behind. **Fix:** closing or
+abandoning a project lets its proposer file cleanup follow-ups
+(`unreserve`, `release`) for handles the project issued, as covered actions;
+or the executor runs `unreserve` itself on an abandon with `not_done`.
+
+**P3-M1. The reserve preview hides what the Overseer is accepting (medium).**
+The Overseer accepts the declared phases on a `blueprint.reserve` dry run.
+`reserve_site` reports `would_strand` but no finish plan (`:1481-1556`). A
+soil site therefore reserves, digs, and only then flags the proposer that its
+walls cannot be smoothed. **Fix:** the reserve dry run also returns
+`finish_plan` for the footprint (the classification `blueprint.apply` already
+does, `finish_state`, `:531-575`).
+
+**P3-M2. Success fixtures need real applies before the cutover (medium).**
+The fixture test (2.3) needs recorded real `success` outputs for `reserve`
+and `apply`. Before the cutover only the Overseer may make those calls, and
+after it only the executor, which needs the fixtures to be routed. **Fix:**
+the handoff captures them through one supervised operator run (an operator
+harness action, recorded in its evals entry), or the fixtures are built from
+the Lua source and confirmed by the cutover's supervised live check, which
+then counts as their capture.
+
+**P3-M3. Idle projects hold the WIP cap; two definitions of "open" (medium).**
+Design 5.4 keeps a done project open up to 14 game days, and the WIP cap
+counts open projects (3.5). But `queue.pending_brief` counts only projects
+whose `project_status` is `active` (`queue_tools.py:1654-1670`), and a room
+between phases (reserve done, dig not yet filed) reads `done`. So the briefing
+and the accept refusal would disagree, and three finished rooms awaiting
+their idle windows refuse every new accept. **Fix:** one definition used by
+both: count projects with a step not yet done, or any declared phase not yet
+applied.
+
+**P3-M4. The ruling ask has to switch per type (medium).** The live ask tells
+the Overseer to carry out every accepted proposal (`briefing.py:177-183`).
+After the cutover that is wrong for rooms but still right for work orders
+until stage 3. **Fix:** the ask and the to-do line name only unrouted types,
+from `action_tools.yaml`.
+
+**P3-L1. Hold plus unexecuted wake costs a run per cycle (low, after P3-B1).**
+Even with routed types excluded, any accepted unrouted proposal under a hold
+still wakes the Overseer each cycle. The hold's intent ("a hold only removes
+things") suggests the to-do wake should be suppressed under a hold.
+
+**Checked and sound.**
+
+- Executor-only ids-only tools.
+- `close_legacy` refusing rulings above the cutover.
+- Covered follow-ups, given P3-B2's list check.
+- `match_name` (`df-overseer-textutil.lua`): it refuses colliding names
+  rather than guessing, so a renamed landmark cannot silently move a reserve.
+
+## Stage 2: proposed split
+
+Five handoffs, each green offline, then two deploys. A and B run in parallel
+(disjoint files); C needs A's store API; D needs C's tool contracts (fakes are
+enough); E is last.
+
+| Handoff | Surfaces | Content |
+|---|---|---|
+| A. Queue model | `dfqueue/` | proposal `step`, `phases` and follow-up fields; `executor` writer split with the routed-type refusal (P3-B1); synthetic targets; one completion rule; `check_step_runnable`; `step_runs`; `close` kind; mapping and unexecuted by step `proposal_id`; prediction arming; amend base check; cutover id; one WIP definition (P3-M3) |
+| B. Lua reads | `scripts/dfhack/` | per-phase `blueprint.status` (P3-B2), build-complete read, `level` in reserve and apply output, reserve `finish_plan` (P3-M1), unique purpose suffix support (P3-B4) |
+| C. Server tools | `dfmcp/`, `scripts/dfhack/TOOLS.yaml`, `dfqueue/action_tools.yaml` | `TOOLS.yaml` per-tool data loader and fixture test; `action_tools.yaml` with `routed`; Rule 2; filing validation, dry run and coverage; `open_project`, `apply_followup`, `run_step`, `observe`, `close`, `close_legacy`; `pending_brief` WIP |
+| D. Conductor | `conductor/` | execute phase and reconciler; `step_done`, `step_attention`, `project_idle`; unexecuted wake and ruling ask per routed type (P3-B1, P3-M4); hold gating; cutover runner |
+| E. Charters and allowlists | `agents/` | Architect step, phase and follow-up lines; Overseer loses siting tools and reads; tool counts |
+
+**Deploy 2a (no fort action):** A's writer split and `close` kind, C's
+`close_legacy`, D's cutover runner, with no type routed. It closes the 9
+legacy rulings under the conductor's name and removes the
+`unexecuted_wake_ignore` stopgap. It is reversible and touches no fort state.
+
+**Deploy 2b (the cutover):** the room freeze (P3-B3) first, then once its
+precondition holds, flip `routed: true` for the room types with E's allowlist
+cut in the same deploy, followed by the supervised bedroom.
+
+## Move out of stage 2
+
+- **Tripwire sequence, repeat counter and `tripwire_owners`** (4.6). These
+  change the live loop's safety behaviour and do not depend on rooms. Ship
+  them alone, before 2b; only "execute high-urgency routed steps while
+  latched" needs the executor, and it can follow.
+- **Legacy closes** go to deploy 2a, as above.
+- **`replaces_step`.** Recovery by a `release` follow-up plus abandon covers
+  the cases; it can come later.
+- **Optional:** declared-phase coverage as a second step after 2b (rule each
+  follow-up first, then switch coverage on). This costs a few rulings per
+  room for one cycle of evidence. It would reverse a user's call, so ask
+  first.
+
+## Questions for the user
+
+1. **The room freeze:** while it holds, should the Architect still be woken
+   for rooms (and get the freeze refusal), or skip room work until the
+   cutover?
+2. **Open pre-cutover room projects** at the cutover: close them through
+   `close_legacy` (the room stays as dug), or let the Overseer finish them
+   under the old path before the freeze lifts?
+3. **Abandoned rooms' ground** (P3-H2): should the executor unreserve and
+   release automatically on an abandon, or only after the proposer's cleanup
+   follow-up?
