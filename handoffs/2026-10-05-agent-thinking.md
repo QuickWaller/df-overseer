@@ -76,3 +76,29 @@ session. How the conductor launches a run: `conductor/runner.py`
 
 Findings with citations, the proving run's result, the build with tests, the
 deploy plan, and a Result section here.
+
+## Findings (task 1 and 2, executor, 2026-10-05)
+
+openclaw version 2026.9.4 (image `ghcr.io/openclaw/openclaw:latest`, `/app/package.json`).
+
+Supported route: `openclaw agent exec --state-dir <existing dir>` retains sessions and run state
+(`/app/docs/cli/agent.md`, "agent exec": "Use `--state-dir <dir>` to retain sessions and other run
+state. The directory must already exist ... requires exclusive ownership"). Without it, state is a
+temp dir deleted after the run, which is why the transcript tables were empty. `--json` itself has no
+reasoning text (envelope fields in the same doc: only `usage.reasoningTokens`). Trajectory capture is
+on by default and stored in the per-agent SQLite db (`/app/docs/tools/trajectory.md`, "Capture
+storage"); `openclaw sessions export-trajectory` is a documented export (`/app/docs/cli/sessions.md`).
+`--thinking <level>` sets the level (`/app/docs/tools/thinking.md`); the default for this model was
+`medium` (thinking_level_change event).
+
+Proving run (consultant pinned config, transient unit shape, trivial prompt, no tools): exit 0, cost
+about 0.0046 USD, 15 reasoning tokens. With `--state-dir /thinking` (a throwaway host dir mounted
+there), `agents/consultant/agent/openclaw-agent.sqlite` held 6 `transcript_events` rows and 7
+`trajectory_runtime_events` rows. The assistant message event (`event_json`, `message.content`) has a
+`{"type":"thinking","thinking":"<text>"}` block before the `{"type":"text"}` block. So the reasoning
+text is retrievable per run from `transcript_events.event_json`. Host writes made: `/tmp/think-proof`,
+`/tmp/think-copy`, `/tmp/think-proof.out|err` (all disposable).
+
+Design consequences: state dir must be exclusive per run, so use one per role (or per run) outside the
+shared `/opt/openclaw/config` state; the container user is uid 1000, so the dir must be writable by
+it. Read the db with node:sqlite inside the image (a read-only mount fails on WAL).
