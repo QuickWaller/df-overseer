@@ -41,10 +41,12 @@ def _call(now: float, age_s: float, role: str, tool: str) -> dict:
 
 DEMO_START = datetime(2025, 12, 31, 23, 55, tzinfo=timezone.utc)
 DEMO_END = datetime(2026, 1, 1, 0, 5, tzinfo=timezone.utc)
-DEMO_SUMMARIES = {
-    "architect": "Looked over the fort, found no workshop area and filed proposals for the first rooms.",
-    "overseer": "Ruled on the open proposals and turned the accepted ones into jobs.",
-    "quartermaster": "Checked stocks and asked for food and drink to be stored.",
+DEMO_SUMMARIES = {  # EXAMPLE DATA (preview only)
+    "architect": ("Reviewed the layout. Proposed a stair down to stone so bedrooms can be smoothed, then a first "
+                  "bedroom cell on that level, and asked the Consultant whether soil walls can ever be smoothed."),
+    "overseer": ("Accepted the stair and the bedroom cell and planned their jobs. Deferred a second stair until the "
+                 "first is dug. Added a haul step after the Consultant said boulders block a bed."),
+    "quartermaster": "Drink is at zero. Proposed a standing target of thirty drinks and a direct brew at the Still.",
 }
 DEMO_READS = {
     "architect": ["overview.get", "overview.get", "zone.list", "tree.find"],

@@ -1123,20 +1123,23 @@ class StreamPage {
    * thinking, then what it wrote as replies (open by default). */
   _turnBlock(run, rendered, items, answering) {
     const color = ROLE_COLORS[run.role] || "var(--text)";
-    const meta = [answering || wakeWords(run.wake_reason), durationWords(run.duration_s)].filter(Boolean).join(" · ");
+    // Why it woke is the headline of a turn, so it gets a chip, not grey
+    // small print; summary and thinking fold into one "Turn notes" box (a
+    // run's summary covers the whole run, not only this thread).
+    const reason = answering || (run.wake_reason ? String(run.wake_reason).replace(/_/g, " ") : null);
     const head = [
       el("div", { class: "fturnhead" }, [
         el("span", { class: "fav", style: `color:${color}`, text: roleTitle(run.role).charAt(0) }),
         el("span", { class: "fturnwho", style: `color:${color}`, text: `${roleTitle(run.role)}'s turn` }),
-        el("span", { class: "fwhen", text: meta }),
+        reason ? el("span", { class: "fwake", style: `color:${color}`, text: answering ? reason : "woke: " + reason }) : null,
+        el("span", { class: "fwhen", text: durationWords(run.duration_s) || "" }),
       ]),
     ];
-    if (run.summary) head.push(el("div", { class: "fturnsum", text: run.summary }));
-    if (run.thinking) {
-      head.push(el("details", { class: "fx" }, [
-        el("summary", { text: "Thinking" }),
-        el("div", { class: "fthink", text: run.thinking }),
-      ]));
+    if (run.summary || run.thinking) {
+      const notes = [];
+      if (run.summary) notes.push(el("div", { class: "fturnsum" }, [el("span", { class: "fwhyk", text: "Whole turn " }), el("span", { text: run.summary })]));
+      if (run.thinking) notes.push(el("div", { class: "fthink", text: run.thinking }));
+      head.push(el("details", { class: "fx" }, [el("summary", { text: run.thinking ? "Turn notes · summary and thinking" : "Turn notes · summary" }), ...notes]));
     }
     const node = el("div", { class: "fturntop" }, head);
     return el("div", { class: "fturn", style: `--turn:${color}` }, [
@@ -1211,7 +1214,13 @@ class StreamPage {
     ];
     const extras = [];
     const rec = item.record || {};
-    if (item.kind === "proposal" && rec.summary) extras.push(el("div", { class: "fsub", text: rec.summary }));
+    // A proposal leads with what it proposes; its public rationale is the why.
+    let why = null;
+    if (item.kind === "proposal") {
+      const what = item.title || rec.summary;
+      if (what && what !== body) { why = body; body = what; }
+    }
+    if (why) extras.push(el("div", { class: "fwhy" }, [el("span", { class: "fwhyk", text: "Why " }), el("span", { text: why })]));
     const calls = (item.calls && item.calls.length) ? item.calls : checkRows((this.runs && this.runs.calls_by_record || {})[item.id]);
     if (calls.length) {
       extras.push(el("details", { class: "fx" }, [

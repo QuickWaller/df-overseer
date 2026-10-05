@@ -204,7 +204,7 @@ def test_a_run_becomes_a_turn_block_with_its_summary_holding_what_it_wrote():
       return { text, turns: classes.filter((c) => c === "fturn").length, tier1: classes.filter((c) => c === "fkids tier-1").length };
     """
     res = _run(expr, {"items": THREAD, "runs": RUNS})
-    assert "Filed a proposal." in res["text"] and "woke for ask open · 6 min" in res["text"]
+    assert "Filed a proposal." in res["text"] and "woke: ask open" in res["text"] and "6 min" in res["text"]
     assert "Architect's turn" in res["text"] and "Overseer's turn" in res["text"]
     assert res["turns"] == 2  # one root-level block per run, nothing nested across turns
 

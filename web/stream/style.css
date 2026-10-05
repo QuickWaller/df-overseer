@@ -597,3 +597,9 @@ a.tagchip:hover { border-color: var(--text); }
 .fquoted { display: flex; flex-direction: column; gap: 2px; padding-top: 6px; }
 .fquote { margin-left: 38px; border-left: 2px solid var(--line-strong); padding: 1px 0 1px 8px; font-size: 11.5px; color: var(--faint); }
 .fquotewho { font-weight: 600; }
+/* Wake reason as a chip; a proposal's "why" under its "what". */
+.fwake { font-size: 11px; letter-spacing: .04em; text-transform: uppercase; border: 1px solid currentColor; padding: 0 6px; opacity: .9; }
+.fturnhead .fwhen { margin-left: auto; }
+.fwhy { color: var(--muted); font-size: 12.5px; }
+.fwhyk { color: var(--faint); font-size: 11px; letter-spacing: .06em; text-transform: uppercase; margin-right: 4px; }
+.fturnsum { padding: 4px 10px 6px 24px; }

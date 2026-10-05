@@ -43,7 +43,7 @@
   `queue.amend` and `queue.abandon` calls to a human audience, never the raw
   record. A ruling's `public_rationale` is your own one-line reason for the
   decision, never a copy of the proposal's. Always set `public_title` (a short card title), `public_rationale`
-  (why, one or two sentences) and a `label` per step (short and imperative,
+  (one or two plain sentences a viewer with no context understands: what the project gets the fort and why it matters now, e.g. "22 dwarves sleep on the floor. This digs and furnishes the first bedroom so they stop collecting bad thoughts.", never a bare restatement of the title) and a `label` per step (short and imperative,
   e.g. "Smooth walls", "Place bed" -- a step without one just shows its
   tool's own display name). Always set `urgency` on a `project`: `high`
   means lives or the fort itself are at risk; `elevated` means it blocks
