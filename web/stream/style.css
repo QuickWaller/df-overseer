@@ -712,3 +712,15 @@ a { color: var(--accent); }
 .freceipts .fstatusline { margin-left: -56px; margin-right: 0; }
 .fstatusline.st-pending { color: #999; }
 .fstatusline.st-active { color: #7777ff; }
+/* Each record in a turn is its own subtle panel, so they read as separate
+   messages (the user's call, 2026-10-05). */
+.freceipts { border-left: 0; padding-left: 0; gap: 6px; }
+.freceipts > .freceipt, .freceipts > .fevent, .freceipts > .fquoted { background: #0b0b0b; border: 1px solid var(--line); padding: 7px 10px; }
+.freceipts > .fevent { align-items: baseline; }
+.freceipts .fstatusline { margin-left: -44px; }
+/* Event panels match record panels: kind and date on top, text below. */
+.freceipts > .fevent { flex-wrap: wrap; gap: 3px 10px; font-size: 12.5px; }
+.freceipts > .fevent .fkindw { order: 0; }
+.freceipts > .fevent .fstate { order: 1; }
+.freceipts > .fevent .fwhen { order: 2; margin-left: auto; }
+.freceipts > .fevent .fetext { order: 3; flex-basis: 100%; color: var(--text); }
