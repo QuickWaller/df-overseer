@@ -33,9 +33,23 @@ Findings:
   rather than one raised through DFHack; the dismissal path is the same
   `world.status.popups` queue and the same on-screen button.
 
-## 2. Dry-run conductor cycle
+## 2. Dry-run conductor cycle (pass, with a finding)
 
-Not run yet; the user paused the session after the popup test.
+`/tmp/cycle.sh --dry-run` on VM 106 (transient unit mirroring
+`conductor.service`; the service itself still disabled and inactive). Exit 0
+in about 2 s. Plan: `would_read` all four roles, `would_wake` none,
+`pause_watch` verdict `wait` ("a plain pause inside the grace period; a human
+may have paused it"), cause `plain_pause`, `waiting_on_human: true`, no
+actions, no alerts.
+
+Finding: the watchdog does what it was built to do, and that means **a fort
+we pause on purpose blocks every ordinary cycle**. The pause path returns
+early, so no role wakes and the stuck-job poll never runs. A dry run never
+writes the watchdog's state, so it always reads as a first sighting. A real
+cycle run more than 600 s after the first one would wake the Overseer with
+`unexplained_pause`, and a `resume: true` verdict would have the conductor
+resume the fort. There is no "paused on purpose, carry on planning" hold for
+the operator.
 
 ## 3. Real conductor cycle
 
