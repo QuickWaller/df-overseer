@@ -68,4 +68,12 @@ server is (`docs/AGENT-ARCHITECTURE.md` principle 8).
 
 ## Result
 
-(executor fills this in)
+### Plan (executor, 2026-10-05)
+
+- Rule lives in `dfqueue/store.py` `append`, the existing EXECUTED validation block (where `step_id` and project checks already live), so every writer gets it, not only the MCP handler. `queue.executed` surfaces it as a normal refusal.
+- Accepted ruling with no project: refuse, message tells the model to call `queue.project` with `from_ruling` first, then `queue.executed` with `step_id`.
+- `step_id` becomes required once a project exists (otherwise no step_targets row advances and the job graph never moves), except for a legacy implicit-step project (empty `steps`), which has no step id to name.
+- Older accepted rulings (0013, 0014 and older): `queue.project from_ruling` already works for any accepted ruling with no project, regardless of age; add a test that writes the ruling, a long gap, then the project, then executes. No migration.
+- Acting tools (`workjob.queue`, `blueprint.apply`, `orders.create`) are NOT gated: the server cannot link a raw game action to a proposal; enforcement at `queue.executed` plus the record is enough.
+- Charter Execution bullet becomes a short numbered order; tools.yaml descriptions for the two tools get one line.
+- Fix fixtures that executed without a project (do not weaken the rule).
