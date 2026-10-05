@@ -45,3 +45,37 @@ dispatched: `handoffs/2026-10-05-landmark-name-punctuation.md`.
 
 The project rule (deployed earlier today) was not exercised: nothing was
 accepted.
+
+## Stage 1 and the apostrophe fix, live (deployed 97ae95c)
+
+All four targets drift-clean; live counts overseer 97, conductor 23.
+`workjob list-jobs` resolves "Carpenter's Workshop", "Carpenters Workshop" and
+"carpenters workshop" alike (45 jobs). Window `10 1500 30`: tick 270870 to
+285626, 22 alive, 0 warnings, tripwire never fired, re-paused by the trap.
+
+| Cycle | Role | Rounds | Wall s | Cost $ | Input | Cache read | Output | Reasoning |
+|---|---|---|---|---|---|---|---|---|
+| 1 (09:13) | architect | 7 | 361 | 0.047 | 47,769 | 309,760 | 28,308 | 26,676 |
+| 1 | quartermaster | 7 | 178 | 0.027 | 33,434 | 140,416 | 13,904 | 12,058 |
+| 2 (09:22) | architect | 6 | 607 | 0.056 | 46,731 | 163,712 | 40,893 | 40,108 |
+| 2 | quartermaster | 7 | 208 | 0.038 | 53,595 | 198,784 | 16,299 | 14,740 |
+| 2 | overseer | 5 | 189 | 0.046 | 71,912 | 254,720 | 16,169 | 14,475 |
+
+- **Cited facts work.** proposal-0017 (Architect) and proposal-0018
+  (Quartermaster) carry server-read `cited` values with ticks. The
+  Quartermaster's prose said "~1 unit" of drink; the server read 0.
+- **The Overseer's ruling turn:** 5 rounds, 189 s (against 645 s and 37 calls
+  this morning), 13 tool calls, zero `stocks.*` calls. Rulings: accept the
+  brew (0018), reject a duplicate (0019), defer the bedrooms (0017) because
+  "furnishing is blocked until the fort can produce beds".
+- **Regression found:** it accepted the brew and did not execute it. Stage 1's
+  ask ended "Stop when each has a ruling", correct once the executor exists
+  (stage 2) but wrong before it. Fixed in `942ae36` (the ask says to carry out
+  accepted proposals per the charter until types are routed), not yet deployed.
+- The Architect's turns are the longest (361 s and 607 s), mostly reasoning,
+  and it re-proposed bedrooms already accepted and dug this morning. Wake
+  strictness (wake a role only when something in its lane changed) is the
+  next cheap lever.
+- Drink is 0 but thirst reads fine (dwarves drink from the Well). The binding
+  constraint is empty barrels (2); nobody has yet proposed barrels now that the
+  Carpenter's Workshop is reachable.
