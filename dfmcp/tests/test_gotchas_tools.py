@@ -499,7 +499,7 @@ class TestRoleToolCountsUnchanged:
             "architect": 53,
             "consultant": 29,
             "quartermaster": 26,
-            "conductor": 21,
+            "conductor": 24,
         }
 
 

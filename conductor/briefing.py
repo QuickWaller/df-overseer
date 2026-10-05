@@ -19,7 +19,7 @@ is always small in the worst case (a role that slept for a very long time).
 
 from __future__ import annotations
 
-from typing import Any, Dict, Mapping, Optional, Sequence
+from typing import Any, Dict, List, Mapping, Optional, Sequence
 
 from conductor.triage import Wake
 
@@ -47,6 +47,15 @@ MAX_LEDGER_ROWS = 10
 MAX_STUCK_JOB_LINES = 5
 
 
+#: handoffs/2026-10-05-better-briefing.md: the first lookups every role made
+#: in the 2026-10-05 runs (stock, orders, per-item availability, seeds), put in
+#: the briefing so a turn starts from the facts. All capped, all numbers or
+#: short lines, never coordinates and never a map.
+MAX_ORDER_LINES = 5
+MAX_AVAILABILITY_LINES = 6
+MAX_SEED_PLANTS = 3
+
+
 def _capped(items: Sequence[Any], cap: int) -> Dict[str, Any]:
     items = list(items)
     return {
@@ -61,6 +70,7 @@ def build_briefing(
     diff_events: Sequence[Mapping[str, Any]], queue_summary: Mapping[str, Any],
     ledger_digest: Optional[Sequence[Mapping[str, Any]]] = None,
     stuck_jobs: Optional[Sequence[str]] = None,
+    facts: Optional[Mapping[str, Any]] = None,
 ) -> Dict[str, Any]:
     """One role's briefing for this cycle. `vitals` is `vitals.summary`'s own
     result, passed through as-is (already Tier 0 by construction -- see
@@ -108,6 +118,129 @@ def build_briefing(
     if stuck_jobs is not None:
         # Tier 0: a count plus a few short lines, bounded like every other list.
         briefing["stuck_jobs"] = _capped([str(s)[:160] for s in stuck_jobs], MAX_STUCK_JOB_LINES)
+    if facts:
+        briefing["facts"] = dict(facts)
     if ledger_digest is not None:
         briefing["ledger"] = _capped(ledger_digest, MAX_LEDGER_ROWS)
     return briefing
+
+
+# ---------------------------------------------------------------------------
+# Facts: what each role used to look up first. Pure functions over reads the
+# conductor already made; each returns None (or nothing) when its input is
+# missing or the wrong shape, so a failed read drops that line only.
+# ---------------------------------------------------------------------------
+
+def _int(value: Any) -> Optional[int]:
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    return int(value)
+
+
+def stock_facts(food_drink: Any, alive: Any) -> Optional[Dict[str, Any]]:
+    """From `stocks.food-drink` (fort-owned units; caravan goods excluded by
+    the tool). `drink_per_citizen` is a plain division, one decimal."""
+    if not isinstance(food_drink, Mapping):
+        return None
+    out: Dict[str, Any] = {}
+    for bucket in ("drink", "prepared_meals", "raw_edibles"):
+        row = food_drink.get(bucket)
+        units = _int(row.get("units")) if isinstance(row, Mapping) else None
+        if units is not None:
+            out[f"{bucket}_units"] = units
+            unreachable = _int(row.get("unreachable_units"))
+            if unreachable:
+                out[f"{bucket}_unreachable_units"] = unreachable
+    if not out:
+        return None
+    citizens = _int(alive)
+    if citizens and "drink_units" in out:
+        out["drink_per_citizen"] = round(out["drink_units"] / citizens, 1)
+    return out
+
+
+def order_facts(orders_state: Any) -> Optional[Dict[str, Any]]:
+    """From the `orders.list` read the cycle already makes. Lists only orders
+    not progressing (validated but inactive, or not validated), the same two
+    conditions as `conductor/order_watch.py`; the total is always given."""
+    if not isinstance(orders_state, Mapping) or not isinstance(orders_state.get("orders"), list):
+        return None
+    orders = [o for o in orders_state["orders"] if isinstance(o, Mapping)]
+    lines = []
+    for o in orders:
+        validated, active = o.get("validated"), o.get("active")
+        if validated is False:
+            state = "not validated"
+        elif validated is True and active is False:
+            state = "validated, not active"
+        else:
+            continue
+        name = str(o.get("job") or o.get("reaction") or "order")
+        left, total = _int(o.get("amount_left")), _int(o.get("amount_total"))
+        amount = f", {left} of {total} left" if left is not None and total is not None else ""
+        lines.append(f"#{o.get('id')} {name} {state}{amount}"[:120])
+    out: Dict[str, Any] = {"total": len(orders), "not_progressing": _capped(lines, MAX_ORDER_LINES)}
+    if "manager_appointed" in orders_state:
+        out["manager_appointed"] = orders_state.get("manager_appointed")
+    return out
+
+
+def availability_line(item_type: str, row: Any) -> Optional[str]:
+    """One line from `stocks.availability`: `BARREL: 2 free of 6, 1 in jobs`."""
+    if not isinstance(row, Mapping):
+        return None
+    total, free = _int(row.get("total_units")), _int(row.get("available_units"))
+    if total is None or free is None:
+        return None
+    line = f"{item_type}: {free} free of {total}"
+    in_job = _int(row.get("in_job_units"))
+    if in_job:
+        line += f", {in_job} in jobs"
+    return line
+
+
+def seed_facts(seeds: Any) -> Optional[Dict[str, Any]]:
+    if not isinstance(seeds, Mapping):
+        return None
+    total = _int(seeds.get("total_units"))
+    if total is None:
+        return None
+    by_plant = seeds.get("by_plant_units")
+    top: List[str] = []
+    if isinstance(by_plant, Mapping):
+        ranked = sorted(
+            ((str(k), _int(v)) for k, v in by_plant.items() if _int(v) is not None),
+            key=lambda kv: (-kv[1], kv[0]),
+        )
+        top = [f"{name} {n}" for name, n in ranked[:MAX_SEED_PLANTS]]
+    return {"total_units": total, "top_plants": top}
+
+
+def build_facts(
+    *, vitals: Mapping[str, Any], food_drink: Any = None, orders_state: Any = None,
+    availability: Optional[Mapping[str, Any]] = None, seeds: Any = None,
+    want_availability: Sequence[str] = (), want_seeds: bool = False,
+) -> Dict[str, Any]:
+    """One role's `facts` block. `availability` maps item type to its raw
+    `stocks.availability` row; only the types this role asked for
+    (`want_availability`, from `policy.yaml`'s `briefing_extras`) are shown.
+    Keys with no usable input are omitted."""
+    facts: Dict[str, Any] = {}
+    stocks = stock_facts(food_drink, vitals.get("alive"))
+    if stocks:
+        facts["stocks"] = stocks
+    orders = order_facts(orders_state)
+    if orders:
+        facts["orders"] = orders
+    lines = [
+        line for line in (
+            availability_line(t, (availability or {}).get(t)) for t in want_availability
+        ) if line
+    ]
+    if lines:
+        facts["availability"] = _capped(lines, MAX_AVAILABILITY_LINES)
+    if want_seeds:
+        seed = seed_facts(seeds)
+        if seed:
+            facts["seeds"] = seed
+    return facts

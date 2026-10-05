@@ -143,6 +143,26 @@ read:
       only on an explicit resume=true from the run it just woke. Read-only.
       Granted only here (the handler also refuses any other role).
 
+  - id: "stocks.food-drink"
+    status: exists
+    note: >-
+      Added handoffs/2026-10-05-better-briefing.md. Read once per cycle so
+      every woken role's briefing carries drink, meal and raw-food units
+      (fort-owned only) instead of each role opening with this call: it was
+      the first or second call of all four 2026-10-05 runs. Read-only.
+  - id: "stocks.availability"
+    status: exists
+    note: >-
+      Added handoffs/2026-10-05-better-briefing.md. One call per item type
+      named in conductor/policy.yaml's briefing_extras (BARREL, PLANT, BED
+      and so on), shared by every woken role that cycle. Read-only.
+  - id: "stocks.seeds"
+    status: exists
+    note: >-
+      Added handoffs/2026-10-05-better-briefing.md. The Quartermaster's seed
+      stock line (total and top plants), read once per cycle only when
+      briefing_extras asks for it. Read-only.
+
 write:
   - id: "clock.set-speed"
     status: exists

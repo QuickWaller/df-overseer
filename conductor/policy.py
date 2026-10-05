@@ -84,6 +84,15 @@ class WakeReasonPolicy:
 
 
 @dataclass(frozen=True)
+class BriefingExtras:
+    """handoffs/2026-10-05-better-briefing.md: what one role's briefing carries
+    beyond the facts every role gets. `availability` is a tuple of DF item
+    types read with `stocks.availability`; `seeds` adds the seed stock."""
+    availability: Tuple[str, ...] = ()
+    seeds: bool = False
+
+
+@dataclass(frozen=True)
 class Policy:
     base_fps: int
     think_fps: int
@@ -106,6 +115,8 @@ class Policy:
     stuck_job_unclaimed_threshold_ticks: int = 2400
     stuck_job_suspended_threshold_ticks: int = 2400
     stuck_job_renotify_ticks: int = 12000
+    #: Per-role extras for the briefing's `facts` block; absent roles get none.
+    briefing_extras: Dict[str, BriefingExtras] = field(default_factory=dict)
 
     def reason(self, name: str) -> WakeReasonPolicy:
         try:
@@ -161,6 +172,17 @@ def load_policy(path: "Path | str" = DEFAULT_POLICY_PATH) -> Policy:
             computable=bool(entry.get("computable", False)),
         )
 
+    extras: Dict[str, BriefingExtras] = {}
+    raw_extras = doc.get("briefing_extras") or {}
+    if not isinstance(raw_extras, dict):
+        raise PolicyError(f"{path}: briefing_extras must be a mapping")
+    for role_name, entry in raw_extras.items():
+        entry = entry or {}
+        types = entry.get("availability") or []
+        if not isinstance(types, list) or not all(isinstance(t, str) and t for t in types):
+            raise PolicyError(f"{path}: briefing_extras.{role_name}.availability must be a list of item types")
+        extras[str(role_name)] = BriefingExtras(availability=tuple(types), seeds=bool(entry.get("seeds", False)))
+
     return Policy(
         base_fps=int(_require(doc, "base_fps", path)),
         think_fps=int(_require(doc, "think_fps", path)),
@@ -180,6 +202,7 @@ def load_policy(path: "Path | str" = DEFAULT_POLICY_PATH) -> Policy:
         stuck_job_unclaimed_threshold_ticks=int(doc.get("stuck_job_unclaimed_threshold_ticks", 2400)),
         stuck_job_suspended_threshold_ticks=int(doc.get("stuck_job_suspended_threshold_ticks", 2400)),
         stuck_job_renotify_ticks=int(doc.get("stuck_job_renotify_ticks", 12000)),
+        briefing_extras=extras,
         role_timeout_seconds={str(k): float(v) for k, v in (doc.get("role_timeout_seconds") or {}).items()},
     )
 

@@ -177,3 +177,17 @@ role_timeout_seconds:
 # After the advisors run, re-read the queue and wake the Consultant for an ask
 # they filed this cycle (otherwise it waits a whole cycle; ask-0001 did).
 consultant_rewake_after_advisors: true
+
+# handoffs/2026-10-05-better-briefing.md: what each role briefing carries on
+# top of the facts every role gets (stocks, stalled orders, stuck jobs).
+# Measured from the 2026-10-05 runs (evals/live/2026-10-05-pause-safety/): the
+# Quartermaster asked for BARREL and PLANT availability and the seed stock in
+# both its runs; the Overseer asked for BED and WOOD. `availability` is a list
+# of DF item types read with stocks.availability (one line each); `seeds`
+# adds the fort seed stock. Retune from the next run journal.
+briefing_extras:
+  quartermaster:
+    availability: [BARREL, PLANT, DRINK, BOULDER]
+    seeds: true
+  overseer:
+    availability: [BED, WOOD]

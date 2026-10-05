@@ -58,7 +58,7 @@ from dataclasses import dataclass
 from typing import Any, Callable, Dict, List, Mapping, Optional, Tuple
 
 from conductor.archive import CycleArchive
-from conductor.briefing import build_briefing
+from conductor.briefing import build_briefing, build_facts
 from conductor.cursors import CursorStore
 from conductor.game_tick import GameTickError, game_tick_from_overview
 from conductor.hold import HoldState, HoldStore, hold_path_for
@@ -508,6 +508,11 @@ async def _run_cycle(cycle_index: int, deps: CycleDeps, hold: HoldState) -> Cycl
                 role=OVERSEER, game_tick=game_tick or 0, wake=wake, vitals=vitals,
                 diff_events=events_by_role.get(OVERSEER, []),
                 queue_summary=_queue_summary_for(OVERSEER, queue_state),
+                facts=_facts_for(
+                    OVERSEER, deps.policy,
+                    await _read_fact_sources(call, deps.policy, [OVERSEER], cycle_index),
+                    vitals, orders_state,
+                ),
             )
             overseer_run = await _run_role(
                 deps, call, OVERSEER, json.dumps(briefing, default=str), wake=wake,
@@ -665,6 +670,7 @@ async def _run_cycle(cycle_index: int, deps: CycleDeps, hold: HoldState) -> Cycl
     roles_woken_out: List[str] = list(roles_to_run)
     extra_wakes: Dict[str, Wake] = {}
     queue_refreshed = False
+    fact_sources: Optional[Dict[str, Any]] = None
     idx = 0
     while True:
         # Advisors have run; anything they filed (an ask above all) is not in
@@ -702,11 +708,16 @@ async def _run_cycle(cycle_index: int, deps: CycleDeps, hold: HoldState) -> Cycl
         idx += 1
 
         wake = extra_wakes.get(role) or triage_result.wake_for(role)
+        if fact_sources is None:
+            # Once per cycle, at the first role that runs; covers every role
+            # the cycle may still run (a Consultant added mid-cycle has none).
+            fact_sources = await _read_fact_sources(call, deps.policy, list(roles_to_run), cycle_index)
         briefing = build_briefing(
             role=role, game_tick=game_tick or 0, wake=wake, vitals=vitals,
             diff_events=events_by_role.get(role, []),
             queue_summary=_queue_summary_for(role, queue_state),
             stuck_jobs=job_watch.lines,
+            facts=_facts_for(role, deps.policy, fact_sources, vitals, orders_state),
         )
         briefings[role] = briefing
 
@@ -775,6 +786,54 @@ async def _run_cycle(cycle_index: int, deps: CycleDeps, hold: HoldState) -> Cycl
     if not deps.dry_run:
         result.archived_path = _archive(deps, cycle_index, result, briefings=briefings)
     return result
+
+
+async def _read_fact_sources(
+    call: Callable, policy: Policy, roles: List[str], cycle_index: int,
+) -> Dict[str, Any]:
+    """handoffs/2026-10-05-better-briefing.md: the reads behind each role's
+    `facts` block, taken once per cycle and shared by every woken role. Total
+    by design, like the stuck-job poll: a read that fails (an undeployed
+    allowlist entry, a tool error) logs and leaves that source out, and the
+    briefing simply lacks that line."""
+    sources: Dict[str, Any] = {"availability": {}}
+
+    async def _try(tool_id: str, arguments: Mapping[str, Any]) -> Any:
+        try:
+            return await call(tool_id, arguments)
+        except Exception as exc:  # noqa: BLE001 -- deliberately total
+            LOG.warning("cycle %s: briefing read %s failed: %s", cycle_index, tool_id, exc)
+            return None
+
+    sources["food_drink"] = await _try("stocks.food-drink", {})
+    extras = [policy.briefing_extras.get(r) for r in roles]
+    types: List[str] = []
+    for extra in extras:
+        for t in (extra.availability if extra else ()):
+            if t not in types:
+                types.append(t)
+    for t in types:
+        sources["availability"][t] = await _try("stocks.availability", {"type": t})
+    if any(extra and extra.seeds for extra in extras):
+        sources["seeds"] = await _try("stocks.seeds", {})
+    return sources
+
+
+def _facts_for(
+    role: str, policy: Policy, sources: Optional[Mapping[str, Any]], vitals: Mapping[str, Any], orders_state: Any,
+) -> Dict[str, Any]:
+    """One role's `facts` block from the shared reads; empty if nothing usable."""
+    sources = sources or {}
+    extra = policy.briefing_extras.get(role)
+    try:
+        return build_facts(
+            vitals=vitals, food_drink=sources.get("food_drink"), orders_state=orders_state,
+            availability=sources.get("availability"), seeds=sources.get("seeds"),
+            want_availability=extra.availability if extra else (), want_seeds=bool(extra and extra.seeds),
+        )
+    except Exception:  # noqa: BLE001 -- deliberately total
+        LOG.exception("could not build the facts block for %s; briefing goes without it", role)
+        return {}
 
 
 def _pause_store(deps: "CycleDeps") -> PauseWatchStore:
