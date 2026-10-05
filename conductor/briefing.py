@@ -47,6 +47,52 @@ MAX_LEDGER_ROWS = 10
 MAX_STUCK_JOB_LINES = 5
 
 
+def _field(result: Any, path: str) -> Any:
+    node = result
+    for part in path.split("."):
+        if isinstance(node, list):
+            node = node[int(part)]
+        elif isinstance(node, Mapping):
+            node = node[part]
+        else:
+            raise TypeError(part)
+    return node
+
+
+def evaluate_threshold_alerts(alerts: Sequence[Any], read_results: Mapping[Any, Any], alive: Any) -> List[str]:
+    """Alert lines for the thresholds currently crossed. `alerts` are
+    `conductor.policy.ThresholdAlert`s; `read_results` maps `alert.name` to the
+    parsed result of its read (absent or `None` when the read failed). Total: a
+    missing result, a missing field, a non-number or an unusable `alive` simply
+    drops that alert's line."""
+    lines: List[str] = []
+    for alert in alerts:
+        result = read_results.get(alert.name)
+        if result is None:
+            continue
+        try:
+            value = _field(result, alert.field)
+        except (KeyError, IndexError, TypeError, ValueError):
+            continue
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            continue
+        measured = float(value)
+        per_value: Optional[float] = None
+        if alert.per == "alive":
+            if isinstance(alive, bool) or not isinstance(alive, (int, float)) or alive <= 0:
+                continue
+            per_value = round(measured / float(alive), 1)
+            measured_for_test = per_value
+        else:
+            measured_for_test = measured
+        if measured_for_test < alert.below:
+            lines.append(alert.text.format_map({
+                "value": value, "per_value": per_value if per_value is not None else value,
+                "threshold": alert.below if alert.below != int(alert.below) else int(alert.below),
+            }))
+    return lines
+
+
 def _capped(items: Sequence[Any], cap: int) -> Dict[str, Any]:
     items = list(items)
     return {
@@ -61,6 +107,7 @@ def build_briefing(
     diff_events: Sequence[Mapping[str, Any]], queue_summary: Mapping[str, Any],
     ledger_digest: Optional[Sequence[Mapping[str, Any]]] = None,
     stuck_jobs: Optional[Sequence[str]] = None,
+    alerts: Optional[Sequence[str]] = None,
 ) -> Dict[str, Any]:
     """One role's briefing for this cycle. `vitals` is `vitals.summary`'s own
     result, passed through as-is (already Tier 0 by construction -- see
@@ -108,6 +155,110 @@ def build_briefing(
     if stuck_jobs is not None:
         # Tier 0: a count plus a few short lines, bounded like every other list.
         briefing["stuck_jobs"] = _capped([str(s)[:160] for s in stuck_jobs], MAX_STUCK_JOB_LINES)
+    if alerts:
+        # Only while a policy threshold is crossed; absent otherwise.
+        briefing["alerts"] = [str(a)[:200] for a in alerts][:MAX_ALERT_LINES]
     if ledger_digest is not None:
         briefing["ledger"] = _capped(ledger_digest, MAX_LEDGER_ROWS)
     return briefing
+
+
+# ---------------------------------------------------------------------------
+# The Overseer's ruling briefing (docs/CONDUCTOR-EXECUTION.md 3.3)
+# ---------------------------------------------------------------------------
+
+MAX_ALERT_LINES = 6
+
+#: The ask, last. Cited facts are refreshed by the server; the Overseer judges
+#: reasoning and does not re-read them.
+RULING_ASK = (
+    "Rule on each pending proposal: accept, reject, or defer naming what would "
+    "change your mind. Cited facts are checked and refreshed; judge the reasoning. "
+    "Stop when each has a ruling. Expected about {calls} calls."
+)
+
+
+def _fmt_cited(c: Mapping[str, Any]) -> str:
+    args = c.get("args") or {}
+    arg_text = ",".join(f"{k}={v}" for k, v in sorted(args.items()))
+    name = f"{c.get('tool')}({arg_text}).{c.get('field')}" if arg_text else f"{c.get('tool')}.{c.get('field')}"
+    line = f"{name} = {c.get('value')} at tick {c.get('tick')}"
+    if "now" in c:
+        line += f", now {c['now']}"
+    elif c.get("now_unreadable"):
+        line += ", now unreadable"
+    return line
+
+
+def build_ruling_briefing(
+    *, game_tick: int, wake: Wake, vitals: Mapping[str, Any], alerts: Sequence[str],
+    pending_brief: Optional[Mapping[str, Any]], diff_events: Sequence[Mapping[str, Any]] = (),
+    stuck_jobs: Sequence[str] = (),
+) -> str:
+    """The Overseer's prompt for an ordinary ruling wake, as text in a fixed
+    order, stable material first and the ask last (cache-friendly, bounded):
+    header, vitals plus threshold alerts, decided-do-not-redo, pending
+    proposals, other open items, the ask. `pending_brief` is
+    `queue.pending_brief`'s structured result; `None` (the read failed) is said
+    plainly rather than dropped. Pure and total over its inputs."""
+    out: List[str] = []
+    head = f"WAKE {wake.reason}: {wake.detail}. Game tick {game_tick}. Clock {wake.clock}."
+    out.append(head)
+
+    v = vitals
+    out.append(
+        "VITALS alive={a} dead_total={d} worst_hunger={h} worst_thirst={t} warnings={w}".format(
+            a=v.get("alive"), d=v.get("dead_total"), h=v.get("worst_hunger_status"),
+            t=v.get("worst_thirst_status"), w=v.get("warning_count"),
+        )
+    )
+    for line in list(alerts)[:MAX_ALERT_LINES]:
+        out.append(f"ALERT {line}")
+
+    out.append("DECIDED, DO NOT REDO")
+    proposals: List[Mapping[str, Any]] = []
+    if pending_brief is None:
+        out.append("  (the queue read failed this cycle; call queue.pending for the proposals)")
+    else:
+        decided = pending_brief.get("decided") or {}
+        projects = decided.get("open_projects") or []
+        out.append(f"  Open projects: {decided.get('wip_count', len(projects))}")
+        for pr in projects:
+            blocker = f"; blocked: {pr['top_blocker']}" if pr.get("top_blocker") else ""
+            out.append(f"  - {pr.get('id')} {pr.get('title')}: {pr.get('steps_done')}/{pr.get('steps_total')} steps done{blocker}")
+        rulings = decided.get("recent_rulings") or []
+        if rulings:
+            out.append("  Last rulings:")
+            for r in rulings:
+                out.append(f"  - {r.get('id')} {r.get('decision')} {r.get('proposal_id')}: {r.get('reason')}")
+        proposals = list(pending_brief.get("proposals") or [])
+
+    count = (pending_brief or {}).get("count", 0)
+    shown = len(proposals)
+    out.append(f"PENDING PROPOSALS ({shown} shown of {count})")
+    for p in proposals:
+        pred = p.get("prediction") or {}
+        cost = p.get("cost") or {}
+        out.append(f"- {p.get('id')} [{p.get('role')}, {p.get('type')}] priority {p.get('priority')}: {p.get('summary')}")
+        out.append(f"  Rationale: {p.get('rationale')}")
+        out.append(
+            f"  Prediction: {pred.get('signal')} {pred.get('op')} {pred.get('value')} "
+            f"within {pred.get('check_after_ticks')} ticks. Cost: {cost.get('estimate')} {cost.get('unit')}."
+        )
+        for c in p.get("cited") or []:
+            out.append(f"  Cites: {_fmt_cited(c)}")
+        if p.get("duplicate_of"):
+            out.append(f"  Duplicate of {p['duplicate_of']}.")
+        if p.get("overlaps"):
+            out.append(f"  Overlaps {', '.join(p['overlaps'])}.")
+
+    items: List[str] = []
+    for line in list(stuck_jobs)[:MAX_STUCK_JOB_LINES]:
+        items.append(f"stuck job: {str(line)[:160]}")
+    for ev in list(diff_events)[:MAX_DIFF_EVENTS]:
+        items.append(f"event: {str(dict(ev))[:160]}")
+    out.append("OTHER OPEN ITEMS" + ("" if items else ": none"))
+    out.extend(f"- {i}" for i in items)
+
+    out.append(RULING_ASK.format(calls=max(2, 2 * shown + 2) if shown else 2))
+    return "\n".join(out)

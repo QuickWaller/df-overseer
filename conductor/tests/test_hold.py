@@ -118,8 +118,8 @@ async def test_held_plain_pause_takes_the_ordinary_path_even_past_the_grace(tmp_
     called = [c[0] for c in deps.tool_caller.calls]
     assert "stuckjobs.find" in called and "queue.grade" in called   # the ordinary path ran
     assert [c["role"] for c in runner.calls] == ["overseer"]        # woken on its usual signal
-    briefing = json.loads(runner.calls[0]["prompt"])
-    assert briefing["wake_reason"] != "unexplained_pause"
+    prompt = runner.calls[0]["prompt"]  # the ruling briefing (text), not an unexplained_pause wake
+    assert "WAKE unexplained_pause" not in prompt and prompt.startswith("WAKE ")
     assert fort.resume_calls == 0 and fort.paused is True
     assert not result.pause_watch["alerts"]
 
