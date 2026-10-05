@@ -746,3 +746,40 @@ def test_audit_finds_and_suspends_the_building_that_would_seal_the_last_exit(w):
     zone = real_res["zones"][0]
     assert zone["suspended"] == [{"building_id": 22, "ok": True}]
     assert w.job_suspended_for_tile(ex, ey, ez) is True
+
+
+# --- handoffs/2026-10-05-ore-exposed-signal.md: mine-vein for a site handle ---
+
+
+def _site_blueprint_module(w, handle="site-1", err=None):
+    w.lua.execute(
+        "package.loaded['df-overseer-blueprint'] = {site_room_rect = function(h) "
+        "if h ~= %r then return nil, 'no site ' .. h end "
+        "return {id = h, x1 = 1, y1 = 1, x2 = 1, y2 = 1, z = 0} end}" % handle
+    )
+
+
+def test_mine_vein_takes_a_site_handle_and_mines_its_corner_ore(w):
+    _site_blueprint_module(w)
+    w.set_ring("site-1", [(0, 0, 0), (2, 2, 0)])
+    w.set_tile(0, 0, 0, "WALL")
+    w.set_vein(0, 0, 0, "ore_or_gem", "HEMATITE")
+    w.set_tile(2, 2, 0, "WALL")
+    w.set_vein(2, 2, 0, "ore_or_gem", "HEMATITE")
+    w.queue_quickfort("  Tiles designated for digging: 1\n", res=0)
+    res = w.mine_vein("site-1", "true")
+    assert res["zone_id"] == "site-1"
+    assert res["ore_tiles_found"] == 2
+    assert [r["mineral_name"] for r in res["results"]] == ["HEMATITE", "HEMATITE"]
+
+
+def test_mine_vein_site_handle_unknown_is_a_named_error(w):
+    _site_blueprint_module(w)
+    res = w.mine_vein("site-7", "true")
+    assert "no site" in res["error"]
+
+
+def test_mine_vein_site_handle_without_the_blueprint_module_says_so(w):
+    w.lua.execute("package.loaded['df-overseer-blueprint'] = nil")
+    res = w.mine_vein("site-1", "true")
+    assert "not available" in res["error"]

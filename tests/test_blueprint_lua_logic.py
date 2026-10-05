@@ -724,3 +724,62 @@ def test_reserve_dry_run_still_reports_allowed_kinds(world):
     r, _ = world.call("reserve_site", BP, "planned bedroom", "Well")
     assert r["dry_run"] is True
     assert sorted(r["allowed_kinds"]) == ["bed", "bedroom"]
+
+
+# --- handoffs/2026-10-05-ore-exposed-signal.md: ore exposed on a site's room ---
+
+
+def _hematite(world, tiles=2):
+    world.lua.execute(
+        "VEIN_EXPOSED = {total_tiles = %d, unclassified_tiles = 0, mine_with = 'construction.mine-vein', "
+        "materials = {{mineral_name = 'HEMATITE', kind = 'ore', tiles = %d}}}" % (tiles, tiles)
+    )
+
+
+def _carved_site(world):
+    world.stone_block(10, 10)
+    world.qf_output(DIG_OK)
+    world.call("apply_phase", BP, SHELL, "Well", "false")
+
+
+def test_sites_report_ore_exposed_on_each_sites_room(world):
+    _carved_site(world)
+    _hematite(world)
+    rows, _ = world.call("list_sites")
+    ore = rows[0]["ore_exposed"]
+    assert ore["total_tiles"] == 2
+    assert ore["materials"] == [{"mineral_name": "HEMATITE", "kind": "ore", "tiles": 2}]
+
+
+def test_sites_with_no_ore_report_an_empty_exposure_not_null(world):
+    _carved_site(world)
+    rows, _ = world.call("list_sites")
+    assert rows[0]["ore_exposed"]["total_tiles"] == 0
+
+
+def test_status_carries_the_vein_summary_without_the_tile_list(world):
+    _carved_site(world)
+    _hematite(world, 1)
+    r, _ = world.call("site_status", "site-1")
+    vm = r["surface"]["vein_material"]
+    assert vm["exposed"]["total_tiles"] == 1
+    assert "tiles" not in vm
+    assert r["surface"]["shim_restored"] is True
+
+
+def test_the_shim_is_restored_after_the_sites_listing(world):
+    _carved_site(world)
+    world.call("list_sites")
+    assert world.lua.eval("SURFACE_ORIG() ~= nil")  # the real find_zone is back
+    r, err = world.call("site_status", "site-1")
+    assert r["surface"]["shim_restored"] is True
+
+
+def test_site_room_rect_resolves_a_handle_to_the_room_rectangle(world):
+    _carved_site(world)
+    rect, err = world.call("site_room_rect", "site-1")
+    assert err is None
+    assert rect["id"] == "site-1"
+    assert rect["x2"] - rect["x1"] == 2 and rect["y2"] - rect["y1"] == 2  # the 3x3 room
+    assert world.call("site_room_rect", "site-9")[1].startswith("no site")
+    assert "must look like" in world.call("site_room_rect", "12")[1]

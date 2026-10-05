@@ -116,6 +116,8 @@ local surface = {}
 function surface.enclosure(id) local b = find_zone(id); return {zone_id = b.id, w = b.x2 - b.x1 + 1, status = "not_enclosed"} end
 function surface.finish(id) local b = find_zone(id); return {zone_id = b.id, h = b.y2 - b.y1 + 1} end
 function surface.boundary_material(id) local b = find_zone(id); return {zone_id = b.id, ring = 16} end
+-- handoffs/2026-10-05-ore-exposed-signal.md: vein_material shares the find_zone upvalue too
+function surface.vein_material(id) local b = find_zone(id); return {zone_id = b.id, tiles = {{ring_position = 1}}, exposed = VEIN_EXPOSED or {total_tiles = 0, materials = {}, unclassified_tiles = 0, mine_with = 'construction.mine-vein'}} end
 SURFACE_ORIG = function() return find_zone end
 SURFACE = surface
 local RESERVATIONS_MOD = nil
