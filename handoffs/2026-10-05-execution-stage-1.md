@@ -69,4 +69,43 @@ old `facts` plumbing; do not bring it back.
 
 ## Result
 
-(executor fills this in)
+### Plan (committed first)
+
+Built from design section 8.2 stage 1 only; nothing of `step`, `phases`,
+`project_id`, routing, timeouts or defer.
+
+1. `relies_on` (0..6 of `{tool, args, field}`) on `queue.propose`. A new
+   injected `fact_reader(role, tool, args)` in `dfmcp/queue_tools.py`, built in
+   `dfmcp/server.py` from the registry, roster and pool. It reads only
+   DFHack-backed, non-mutating tools on the caller's own allowlist; native
+   tools (series, queue, doctrine) are refused as citations. `field` is a
+   dotted path into the result (list indexes as digits) and must land on a
+   scalar. Unreadable, wrong role or missing field refuses with a repair
+   message. Filing reads are bounded at 60 s total, timeout giving a distinct
+   "server busy, file again" refusal. Stored: `relies_on` as given, plus
+   server-set `cited` = `[{tool, args, field, value, tick}]`, both validated
+   in `dfqueue/schema.py`.
+2. `queue.pending_brief` (conductor only, handler refuses other roles):
+   capped at 8 with the true count, per-proposal summary, prediction, cost,
+   priority, `duplicate_of`, cited facts refreshed by the same reader using
+   the proposer's role (`now` only when changed, "unreadable" flagged,
+   identical reads shared), `overlaps` (stage 1 meaning: same type and a
+   shared landmark or area in preconditions, since resolution fields come
+   with `step` in stage 2), plus a `decided` block (open projects one line
+   each, last five rulings). WIP cap is stage 2, so only the count shows.
+3. `build_ruling_briefing` in `conductor/briefing.py`: one text prompt in the
+   design's fixed order (header, vitals plus threshold alerts, decided,
+   pending proposals, other open items, the ask last). Used for the
+   Overseer's ordinary wake. The tripwire and unexplained-pause wakes keep
+   the JSON briefing (they are not ruling wakes; stage 1 must not alter the
+   pause-safety paths). Threshold alerts live in `conductor/policy.yaml`
+   (`threshold_alerts`: read tool, args, field, per, below, text) and are
+   read once per cycle by generic code; a failed read drops its line. They
+   appear for every role (as an `alerts` list in JSON briefings, only when a
+   threshold is crossed). The conductor regains `stocks.food-drink` for them.
+4. Charter lines in architect, quartermaster (cite in `relies_on`) and
+   overseer (rule on reasoning, do not re-read cited facts). Overseer loses
+   `stocks.food-drink`, `stocks.seeds`, `stocks.availability`. Tool counts
+   updated (STATE.md, tests).
+5. Tests; then this Result is completed.
+
