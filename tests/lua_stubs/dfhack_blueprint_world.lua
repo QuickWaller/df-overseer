@@ -38,6 +38,15 @@ function set_tile(x, y, z, shape, mat, special, extra)
   df.tiletype.attrs[id] = {shape = df.tiletype_shape[shape], material = df.tiletype_material[mat], special = df.tiletype_special[special or "NORMAL"]}
   TILES[key(x, y, z)] = {tt = id, dig = 0, smooth = 0, occupied = extra and extra.occupied, hidden = extra and extra.hidden}
 end
+-- set_building(x, y, z, id, stage, max): a building object on a tile, with the
+-- getBuildStage/getMaxBuildStage methods the real one has. One id may be set
+-- on several tiles (a multi-tile building).
+function set_building(x, y, z, id, stage, max)
+  TILES[key(x, y, z)].building = {id = id,
+    getBuildStage = function() return stage end,
+    getMaxBuildStage = function() return max end}
+end
+function set_zone(x, y, z, present) TILES[key(x, y, z)].zone = present end
 dfhack = {
   job = {getWorker = function(job) if job.worker_fails then error("getWorker boom") end return job.worker end},
   maps = {
@@ -52,7 +61,21 @@ dfhack = {
     end,
     getTileFlags = function(pos) local t = TILES[key(pos.x, pos.y, pos.z)]; return {dig = t.dig, smooth = t.smooth} end,
   },
-  buildings = {findAtTile = function(pos) return TILES[key(pos.x, pos.y, pos.z)].occupied and {} or nil end},
+  buildings = {
+    findAtTile = function(pos)
+      local t = TILES[key(pos.x, pos.y, pos.z)]
+      if t.building then
+        if t.building.fail then error("findAtTile boom") end
+        return t.building
+      end
+      return t.occupied and {} or nil
+    end,
+    findCivzonesAt = function(pos)
+      local t = TILES[key(pos.x, pos.y, pos.z)]
+      if t and t.zone_fails then error("findCivzonesAt boom") end
+      return (t and t.zone) and {{}} or {}
+    end,
+  },
   persistent = {
     -- Keyed by STATE_KEY (handoffs/2026-09-30-room-reservations.md: this
     -- stub now also loads the real df-overseer-reservations.lua, which

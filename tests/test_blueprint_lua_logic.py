@@ -29,6 +29,7 @@ LUA = Path(os.environ.get("BLUEPRINT_LUA_UNDER_TEST")
            or REPO_ROOT / "scripts" / "dfhack" / "df-overseer-blueprint.lua")
 STUB = REPO_ROOT / "tests" / "lua_stubs" / "dfhack_blueprint_world.lua"
 TEMPLATE = REPO_ROOT / "blueprints" / "templates" / "bedroom-cell-v1.csv"
+OFFICE_TEMPLATE = REPO_ROOT / "blueprints" / "templates" / "office-room-v2.csv"
 
 SHELL, ZONE, BUILD, FINISH = (
     "bedroom_cell_v1_shell", "bedroom_cell_v1_zone", "bedroom_cell_v1_build", "bedroom_cell_v1_finish")
@@ -50,7 +51,8 @@ class World:
     def __init__(self, tmp_path):
         guest = tmp_path / "guest"
         (guest / "dfhack-config" / "blueprints" / "templates").mkdir(parents=True)
-        shutil.copy(TEMPLATE, guest / "dfhack-config" / "blueprints" / "templates" / TEMPLATE.name)
+        for tpl in (TEMPLATE, OFFICE_TEMPLATE):
+            shutil.copy(tpl, guest / "dfhack-config" / "blueprints" / "templates" / tpl.name)
         self._old = os.getcwd()
         os.chdir(guest)
         self.lua = lupa.LuaRuntime(unpack_returned_tuples=True)
