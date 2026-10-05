@@ -592,6 +592,18 @@ a.tagchip:hover { border-color: var(--text); }
 .fkids.tier-2 { border-left: 2px solid var(--muted); margin-left: 13px; padding-left: 12px; background: var(--raised); padding-block: 2px 6px; }
 .fkids.tier-2 .ftoggle { padding-top: 6px; }
 .fthink { max-height: 240px; overflow-y: auto; }
+/* Markdown rendered from agents' text (renderMarkdown in app.js): compact,
+   inside the existing summary / fthink boxes, wraps long code on phones. */
+.md-box { white-space: normal; overflow-wrap: anywhere; }
+.md p { margin: 0 0 5px; }
+.md > :last-child { margin-bottom: 0; }
+.md-h { font-weight: 700; color: var(--text); margin: 6px 0 2px; }
+.md ul, .md ol { margin: 0 0 5px; padding-left: 18px; }
+.md li { margin: 1px 0; }
+.md li > ul, .md li > ol { margin: 1px 0 2px; padding-left: 16px; }
+.md strong { font-weight: 700; color: var(--text); }
+.md em { font-style: italic; }
+.md code { font-family: ui-monospace, "Cascadia Mono", Menlo, Consolas, monospace; font-size: .92em; padding: 0 3px; border-radius: 3px; background: rgba(255, 255, 255, .07); overflow-wrap: anywhere; }
 /* Turns: one block per agent run, a coloured rule down its left. */
 .fturn { border-left: 2px solid var(--turn, var(--line-strong)); padding: 6px 0 4px 12px; margin: 6px 0; display: flex; flex-direction: column; gap: 4px; }
 .fturnhead { display: flex; align-items: baseline; gap: 10px; font-size: 12px; }
