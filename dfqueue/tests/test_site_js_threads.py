@@ -192,7 +192,7 @@ def test_each_run_becomes_a_summary_reply_after_its_last_record_and_blank_ones_a
     assert _run("return summaryItems(DATA, null).length;", THREAD) == 0
 
 
-def test_summaries_nest_one_level_under_the_opening_post_and_render_with_the_summary_label():
+def test_a_run_becomes_a_turn_block_with_its_summary_holding_what_it_wrote():
     expr = r"""
       const page = Object.create(StreamPage.prototype);
       page.projects = { projects: {}, thread_to_project: {} };
@@ -200,11 +200,13 @@ def test_summaries_nest_one_level_under_the_opening_post_and_render_with_the_sum
       const thread = page._conversationEl(DATA.items);
       const text = []; const walk = (n) => { if (n.textContent) text.push(n.textContent); n.children.forEach(walk); }; walk(thread[0]);
       const classes = []; const walk2 = (n) => { classes.push(n.className); n.children.forEach(walk2); }; walk2(thread[0]);
-      return { text, tier1: classes.filter((c) => c === "fkids tier-1").length, tier2: classes.filter((c) => c === "fkids tier-2").length };
+      return { text, turns: classes.filter((c) => c === "fturn").length, tier1: classes.filter((c) => c === "fkids tier-1").length };
     """
     res = _run(expr, {"items": THREAD, "runs": RUNS})
-    assert "Summary" in res["text"] and "Filed a proposal." in res["text"] and "woke for ask open · 6 min" in res["text"]
-    assert res["tier1"] == 1  # one reply group under the opening post, summaries included
+    assert "Filed a proposal." in res["text"] and "woke for ask open · 6 min" in res["text"]
+    assert any(t.endswith("'s turn") for t in res["text"])
+    assert res["turns"] >= 1
+    assert res["tier1"] == 1  # one reply group under the opening post
 
 
 def test_what_it_checked_comes_from_calls_by_record_with_counts_and_errors():

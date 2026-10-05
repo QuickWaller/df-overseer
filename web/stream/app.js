@@ -1065,39 +1065,98 @@ class StreamPage {
    * `item.thinking`, on the public page too (the user's call, 2026-10-05;
    * openclaw keeps no reasoning text yet, so it is empty on real data). The tree and
    * the event wording are `threadTree` and `eventLine`, tested under node. */
+  /** The thread grouped by turn (the user's call, 2026-10-05): each agent
+   * run that wrote here is one block, headed by who, why it woke and how
+   * long it took, with its summary and thinking, holding everything that run
+   * wrote in this thread. Items no reported run claims stand alone. Direct
+   * answers still nest under their question. */
   _conversationEl(items) {
-    const { root, kids } = threadTree([...items, ...summaryItems(items, this.runs)]);
-    // Explicit open/closed per post; unset means the default: the opening
-    // post's replies start open, deeper ones (an answer under its question)
-    // start closed (the user's call, 2026-10-05).
+    const { root, kids } = threadTree(items);
+    if (!root) return [el("div", { class: "fthread" }, [])];
+    const runOf = new Map();
+    const runs = (this.runs && this.runs.runs) || [];
+    runs.forEach((run) => (run.records || []).forEach((r) => {
+      if (r.thread === root.thread && !runOf.has(r.id)) runOf.set(r.id, run);
+    }));
     this._replyState = this._replyState || new Map();
-    const render = (item, depth = 0) => {
+    const renderItem = (item, depth) => {
       const node = this._threadEvent(item) || this._threadPost(item);
       const children = kids.get(item.id) || [];
-      if (!children.length) return node;
-      const open = this._replyState.has(item.id) ? this._replyState.get(item.id) : depth === 0;
-      const who = [...new Set(children.map((c) => speakerName(c)))];
-      const last = children[children.length - 1];
-      const box = el("div", { class: "freplies" }, children.map((c) => render(c, depth + 1)));
-      box.hidden = !open;
-      const label = () => `${box.hidden ? "+" : "-"} ${children.length} ${children.length === 1 ? "reply" : "replies"}`;
-      const btn = el("button", { type: "button", class: "ftoggle", "aria-expanded": String(open) }, [
-        el("span", { class: "ftl", text: label() }),
-        el("span", { class: "ftwho" }, who.map((w, k) => {
-          const c = children.find((x) => speakerName(x) === w);
-          return el("span", { style: `color:${ROLE_COLORS[c.role] || "var(--text)"}`, text: (k ? ", " : "") + w });
-        })),
-        el("span", { class: "fwhen", text: last.game_date ? "last " + shortDate(last.game_date) : "" }),
-      ]);
-      btn.onclick = () => {
-        box.hidden = !box.hidden;
-        this._replyState.set(item.id, !box.hidden);
-        btn.setAttribute("aria-expanded", String(!box.hidden));
-        btn.querySelector(".ftl").textContent = label();
-      };
-      return el("div", { class: "fnode" }, [node, el("div", { class: `fkids tier-${depth + 1}` }, [btn, box])]);
+      if (!children.length || item === root) return node;
+      return this._repliesBlock(item.id, node, children.map((c) => renderItem(c, depth + 1)), children, depth);
     };
-    return [el("div", { class: "fthread" }, root ? [render(root)] : [])];
+    // Group the opening post's replies into turns: every item a run wrote
+    // shares that run's one block, placed where its first item falls.
+    const groups = [];
+    const byRun = new Map();
+    (kids.get(root.id) || []).forEach((item) => {
+      const run = runOf.get(item.id) || null;
+      if (run && byRun.has(run)) { byRun.get(run).items.push(item); return; }
+      const g = { run, items: [item] };
+      if (run) byRun.set(run, g);
+      groups.push(g);
+    });
+    const blocks = groups.map((g) => g.run
+      ? this._turnBlock(g.run, g.items.map((i) => renderItem(i, 1)))
+      : renderItem(g.items[0], 1));
+    const rootRun = runOf.get(root.id);
+    const opening = rootRun
+      ? this._turnBlock(rootRun, [this._threadPost(root)])
+      : this._threadPost(root);
+    const replies = (kids.get(root.id) || []);
+    const body = replies.length
+      ? this._repliesBlock(root.id, opening, blocks, replies, 0)
+      : opening;
+    return [el("div", { class: "fthread" }, [body])];
+  }
+
+  /** One agent turn: a header line, the run's summary and thinking, then
+   * what it wrote, indented. */
+  _turnBlock(run, inner) {
+    const color = ROLE_COLORS[run.role] || "var(--text)";
+    const name = roleTitle(run.role);
+    const meta = [wakeWords(run.wake_reason), durationWords(run.duration_s)].filter(Boolean).join(" · ");
+    const head = el("div", { class: "fturnhead" }, [
+      el("span", { class: "fturnwho", style: `color:${color}`, text: `${name}'s turn` }),
+      el("span", { class: "fwhen", text: meta }),
+    ]);
+    const parts = [head];
+    if (run.summary) parts.push(el("div", { class: "fturnsum", text: run.summary }));
+    if (run.thinking) {
+      parts.push(el("details", { class: "fx" }, [
+        el("summary", { text: "Thinking" }),
+        el("div", { class: "fthink", text: run.thinking }),
+      ]));
+    }
+    parts.push(el("div", { class: "fturnbody" }, inner));
+    return el("div", { class: "fturn", style: `--turn:${color}` }, parts);
+  }
+
+  /** A node with its replies behind a "+ N replies" toggle. The opening
+   * post's replies start open, deeper ones closed; the state survives
+   * re-renders. */
+  _repliesBlock(id, node, rendered, children, depth) {
+    const open = this._replyState.has(id) ? this._replyState.get(id) : depth === 0;
+    const who = [...new Set(children.map((c) => speakerName(c)))];
+    const last = children[children.length - 1];
+    const box = el("div", { class: "freplies" }, rendered);
+    box.hidden = !open;
+    const label = () => `${box.hidden ? "+" : "-"} ${children.length} ${children.length === 1 ? "reply" : "replies"}`;
+    const btn = el("button", { type: "button", class: "ftoggle", "aria-expanded": String(open) }, [
+      el("span", { class: "ftl", text: label() }),
+      el("span", { class: "ftwho" }, who.map((w, k) => {
+        const c = children.find((x) => speakerName(x) === w);
+        return el("span", { style: `color:${ROLE_COLORS[c.role] || "var(--text)"}`, text: (k ? ", " : "") + w });
+      })),
+      el("span", { class: "fwhen", text: last.game_date ? "last " + shortDate(last.game_date) : "" }),
+    ]);
+    btn.onclick = () => {
+      box.hidden = !box.hidden;
+      this._replyState.set(id, !box.hidden);
+      btn.setAttribute("aria-expanded", String(!box.hidden));
+      btn.querySelector(".ftl").textContent = label();
+    };
+    return el("div", { class: "fnode" }, [node, el("div", { class: `fkids tier-${depth + 1}` }, [btn, box])]);
   }
 
   _threadEvent(item) {

@@ -582,3 +582,9 @@ a.tagchip:hover { border-color: var(--text); }
 .fkids.tier-2 { border-left: 2px solid var(--muted); margin-left: 13px; padding-left: 12px; background: var(--raised); padding-block: 2px 6px; }
 .fkids.tier-2 .ftoggle { padding-top: 6px; }
 .fthink { max-height: 240px; overflow-y: auto; }
+/* Turns: one block per agent run, a coloured rule down its left. */
+.fturn { border-left: 2px solid var(--turn, var(--line-strong)); padding: 6px 0 4px 12px; margin: 6px 0; display: flex; flex-direction: column; gap: 4px; }
+.fturnhead { display: flex; align-items: baseline; gap: 10px; font-size: 12px; }
+.fturnwho { font-weight: 700; letter-spacing: .02em; }
+.fturnsum { color: var(--muted); font-size: 12.5px; }
+.fturnbody { display: flex; flex-direction: column; }

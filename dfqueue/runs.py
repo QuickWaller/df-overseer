@@ -243,13 +243,16 @@ def queue_records_readonly(queue_db: "str | Path") -> list:
 def records_in_window(records: list, role: str, started_at: str, ended_at: str) -> list:
     """`[{id, kind, thread}]` for every queue record written by `role`
     between the two server-stamped times, oldest first. `thread` is the
-    record's own thread id for the page: its `proposal_id` or `project_id`
-    if it has one; an `executed` record resolves through its ruling's
-    `proposal_id`; anything else (a proposal, ask, project) is its own."""
+    thread id exactly as the feed computes it (`feed.compute_thread`), so a
+    project, plan change or executed step lands in its founding proposal's
+    thread on the page."""
     start, end = _parse(started_at), _parse(ended_at)
     if start is None or end is None:
         return []
-    by_id: Mapping[str, dict] = {r.get("id"): r for r in records if isinstance(r, dict)}
+    # The page's thread ids come from the feed, so resolve them the same way
+    # (a project or plan change belongs to its founding proposal's thread).
+    from dfqueue import feed
+    reply_to_by_id = {r["id"]: feed.compute_reply_to(r) for r in records if isinstance(r, dict) and r.get("id")}
     out = []
     for rec in records:
         if not isinstance(rec, dict) or rec.get("role") != role:
@@ -257,9 +260,6 @@ def records_in_window(records: list, role: str, started_at: str, ended_at: str) 
         ts = _parse(rec.get("ts"))
         if ts is None or ts < start or ts > end:
             continue
-        thread = rec.get("proposal_id") or rec.get("project_id")
-        if thread is None and rec.get("kind") == "executed":
-            ruling = by_id.get(rec.get("ruling_id"))
-            thread = (ruling or {}).get("proposal_id") or rec.get("ruling_id")
+        thread = feed.compute_thread(rec["id"], reply_to_by_id) if rec.get("id") else None
         out.append({"id": rec.get("id"), "kind": rec.get("kind"), "thread": thread or rec.get("id")})
     return out

@@ -82,6 +82,22 @@ EXAMPLE_THINKING = {
 }
 
 
+# EXAMPLE DATA for the local preview only: a whole turn's thinking.
+EXAMPLE_RUN_THINKING = {
+    "overseer": (
+        "Two things are waiting for me: the Architect's bedroom proposal and the Consultant's answer about boulders."
+        "\n\n"
+        "Bedroom first. Its claims check out live, so accept it and plan it as two jobs, dig then bed."
+        "\n\n"
+        "The Consultant says a bed cannot go on a floor with boulders on it. The dig will leave boulders, so the plan "
+        "is missing a step. Add hauling the stone out, between the dig and the bed."
+        "\n\n"
+        "Start the dig now so the miners have work while the rest waits."
+    ),
+    "architect": "Housing is the gap. One stone cell below the farm; the soil level can never be smoothed.",
+}
+
+
 def _demo_runs(now: float) -> tuple:
     """Run rows linked to the demo fixture's records by the real
     `records_in_window`, and a made-up call journal in the same window, so
@@ -97,6 +113,8 @@ def _demo_runs(now: float) -> tuple:
             "wake_detail": "demo", "cycle": n, "started_at": DEMO_START.isoformat(), "ended_at": DEMO_END.isoformat(),
             "status": "ok", "ok": 1, "timed_out": 0, "duration_s": 372.4 + n * 40, "cost_usd": 0.05 * n,
             "error": None, "final_answer": DEMO_SUMMARIES[role], "records_json": json.dumps(linked),
+            # EXAMPLE DATA (preview only): a turn's thinking.
+            "thinking": EXAMPLE_RUN_THINKING.get(role),
         })
         for k, tool in enumerate(DEMO_READS[role]):
             calls.append({"ts": base + 10 + k, "role": role, "tool": tool, "is_error": role == "quartermaster" and k == 1})
