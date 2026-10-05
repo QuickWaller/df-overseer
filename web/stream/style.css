@@ -581,3 +581,4 @@ a.tagchip:hover { border-color: var(--text); }
 .fkids.tier-1 { border-left: 2px solid var(--line-strong); margin-left: 13px; padding-left: 14px; }
 .fkids.tier-2 { border-left: 2px solid var(--muted); margin-left: 13px; padding-left: 12px; background: var(--raised); padding-block: 2px 6px; }
 .fkids.tier-2 .ftoggle { padding-top: 6px; }
+.fthink { max-height: 240px; overflow-y: auto; }

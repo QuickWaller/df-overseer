@@ -53,6 +53,35 @@ DEMO_READS = {
 }
 
 
+# EXAMPLE DATA for the local preview only (see main): what a "Thinking"
+# expander might hold on the First bedroom cell project's two posts.
+EXAMPLE_THINKING = {
+    "proposal-0008": (
+        "22 dwarves and not one bed or bedroom zone. Everyone is sleeping on the floor, which stacks "
+        "unhappy thoughts every night, so housing is the gap to close after drink.\n\n"
+        "Where? The obvious spot is beside the Farm Plot, close to food and the stair. But the farm level "
+        "is soil, and gotcha-0001 says smoothing never finishes on soil, so a bedroom there could never be "
+        "made nice. One level down is stone: the down-stair dug last week opens it.\n\n"
+        "I considered proposing a whole row of cells at once. Too much for two miners, and if the template "
+        "is wrong we'd have dug it wrong ten times. One cell first; the Overseer can extend it once a real "
+        "dig shows the template works.\n\n"
+        "blueprint.plan says bedroom-cell-v1 fits with all 10 tiles reachable. Proposing one cell, stone, "
+        "one level below the farm."
+    ),
+    "ruling-0008": (
+        "Checking the Architect's claims before ruling.\n\n"
+        "Reachable: blueprint.preview agrees, 10 of 10. Stone, not soil: yes, matches gotcha-0001's "
+        "warning about the farm level. Labour: 2 miners. Thin, but nothing else needs them right now; the "
+        "brew job is at the Still and needs a brewer, not a miner.\n\n"
+        "Beds: stocks show 0. So the plan needs a Make bed job too, and that needs a carpenter's workshop, "
+        "which we don't have yet. I nearly rejected on that, but the dig is worth starting anyway: digging "
+        "takes days, and the bed can follow once carpentry exists.\n\n"
+        "Work in progress is 1 project, under the cap of 3. Accept. Plan: Dig shell, then Make bed, with "
+        "the bed waiting on the dig."
+    ),
+}
+
+
 def _demo_runs(now: float) -> tuple:
     """Run rows linked to the demo fixture's records by the real
     `records_in_window`, and a made-up call journal in the same window, so
@@ -112,6 +141,15 @@ def main(argv: list[str] | None = None) -> int:
         for fort_dir in (out / side / "forts").glob("*"):
             (fort_dir / "runs.json").write_text(json.dumps(runs_doc, indent=2), encoding="utf-8")
             print(f"wrote {fort_dir.relative_to(REPO_ROOT)}/runs.json")
+        # EXAMPLE DATA, preview only: sample "Thinking" text on the First
+        # bedroom cell project's posts, so the expander can be judged
+        # (user's ask, 2026-10-05). The real publisher never sends this.
+        for open_path in (out / side / "forts").glob("*/open.json"):
+            feed = json.loads(open_path.read_text(encoding="utf-8"))
+            for item in feed.get("items", []):
+                if item.get("id") in EXAMPLE_THINKING:
+                    item["thinking"] = EXAMPLE_THINKING[item["id"]]
+            open_path.write_text(json.dumps(feed), encoding="utf-8")
         for status_path in (out / side / "forts").glob("*/status.json"):
             status = json.loads(status_path.read_text(encoding="utf-8")) if status_path.exists() else {}
             status["live"] = built
