@@ -310,7 +310,7 @@ def test_check_live_tool_counts_probe_absent_is_clean_with_note():
 
 def test_check_live_tool_counts_probe_present_clean_when_ids_match():
     """A real `names-all` dump of conductor's exact own tool ids (the
-    smallest role, 17 tools) must compare clean -- this exercises the real
+    smallest role) must compare clean -- this exercises the real
     id.replace(".", "__") <-> name_to_id round trip against the real
     registry, not a stubbed-out comparison."""
     conductor_ids = sorted(drift_check.offline_role_tool_ids()["conductor"])
@@ -323,11 +323,11 @@ def test_check_live_tool_counts_probe_present_clean_when_ids_match():
     result = drift_check.check_live_tool_counts(targets, runner)
     assert result["probe_deployed"] is True
     assert result["clean"] is True
-    assert result["live_counts"]["conductor"] == 17
+    assert result["live_counts"]["conductor"] == len(conductor_ids)
 
 
 def test_check_live_tool_counts_catches_id_level_mismatch_with_equal_counts():
-    """Same COUNT (17) as the real conductor role, but one real id swapped
+    """Same COUNT as the real conductor role, but one real id swapped
     for another role's real id ("overview.get" replaced by architect's
     "zone.list") plus one name the current registry does not recognise at
     all -- a count-only check would miss both; this must not."""
@@ -346,7 +346,7 @@ def test_check_live_tool_counts_catches_id_level_mismatch_with_equal_counts():
     assert result["probe_deployed"] is True
     assert result["clean"] is False
     m = result["mismatches"]["conductor"]
-    assert m["offline"] == m["live"] == 17  # counts agree; ids still caught the drift
+    assert m["offline"] == m["live"] == len(conductor_ids)  # counts agree; ids still caught the drift
     assert m["missing_live"] == ["overview.get"]
     assert m["extra_live"] == ["zone.list"]
     assert m["unknown_live_names"] == ["not-a-real-tool"]
