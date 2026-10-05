@@ -263,26 +263,6 @@ def test_build_public_item_refuses_an_unrecognised_kind():
 # ---- generated text for the always-generated kinds --------------------------
 
 
-def test_ask_public_text_never_carries_the_real_question():
-    record = make_ask(id="ask-0001", question="Does a workshop on soil ever stall?")
-    item = feed.build_public_item(
-        record, seq=1, reply_to=None, thread="ask-0001", badge=None, ctx={},
-    )
-    assert item["text"] == "The Architect asked the Consultant a question."
-    assert "soil" not in item["text"]
-
-
-def test_answer_public_text_never_carries_the_real_answer():
-    ask = make_ask(id="ask-0001", role="quartermaster")
-    answer = make_answer(id="answer-0001", ask_id="ask-0001", answer="Yes, on peat specifically.")
-    ctx = {"records_by_id": {"ask-0001": ask}}
-    item = feed.build_public_item(
-        answer, seq=2, reply_to="ask-0001", thread="ask-0001", badge=None, ctx=ctx,
-    )
-    assert item["text"] == "The Consultant answered the Quartermaster's question."
-    assert "peat" not in item["text"]
-
-
 def test_executed_public_text_never_names_the_tool_or_arguments():
     record = make_executed(id="executed-0001", ruling_id="ruling-0001")
     item = feed.build_public_item(
@@ -856,3 +836,25 @@ def test_a_later_amend_with_a_public_title_renames_the_project():
     assert feed.build_projects_view(records, public=True)["projects"]["project-0001"]["name"] == "Dig the deep shell"
     records[3]["public_title"] = "see https://example.com/x"
     assert feed.build_projects_view(records, public=True)["projects"]["project-0001"]["name"] == "Dig the shell"
+
+
+def test_ask_and_answer_show_their_real_text_and_the_ask_knows_its_answer():
+    from dfqueue import feed as _feed
+    recs = [
+        {"id": "proposal-0004", "kind": "proposal", "role": "architect", "type": "dig_order",
+         "summary": "Dig one down-stair.", "public_rationale": "Bedrooms need stone.", "cycle": 1, "ts": "2026-01-01T00:00:00+00:00"},
+        {"id": "ask-0001", "kind": "ask", "role": "architect", "proposal_id": "proposal-0004",
+         "question": "Can a bedroom be smoothed on this soil level?", "cycle": 1, "ts": "2026-01-01T00:00:01+00:00"},
+        {"id": "answer-0001", "kind": "answer", "role": "consultant", "ask_id": "ask-0001",
+         "answer": "No. Soil can't be smoothed; dig down to stone first.", "cycle": 1, "ts": "2026-01-01T00:00:02+00:00"},
+        {"id": "ask-0002", "kind": "ask", "role": "quartermaster",
+         "question": "See /opt/df/secret.txt for the stock list?", "cycle": 1, "ts": "2026-01-01T00:00:03+00:00"},
+    ]
+    items = {i["id"]: i for i in _feed.build_items(recs, public=True)}
+    assert items["ask-0001"]["text"] == "Can a bedroom be smoothed on this soil level?"
+    assert items["ask-0001"]["fact_check"] is True and items["ask-0001"]["answered"] is True
+    assert items["ask-0001"]["answer_preview"].startswith("No. Soil can't be smoothed")
+    assert items["answer-0001"]["text"] == "No. Soil can't be smoothed; dig down to stone first."
+    # An unsafe question falls back to the generic line; it is not echoed.
+    assert items["ask-0002"]["text"] == "The Quartermaster asked the Consultant a question."
+    assert items["ask-0002"]["answered"] is False and items["ask-0002"]["fact_check"] is False

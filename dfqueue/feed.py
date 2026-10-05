@@ -417,15 +417,45 @@ def _executed_public_text(record: dict, ctx: dict) -> Optional[str]:
 
 
 def _ask_public_text(record: dict, ctx: dict) -> Optional[str]:
+    # The question itself is public (user's call, 2026-10-05, alongside run
+    # summaries and thinking), behind the same pattern check; an unsafe one
+    # falls back to the generic line rather than being withheld outright.
+    question = record.get("question")
+    if isinstance(question, str) and question.strip() and _safe_public_text(question.strip()):
+        return question.strip()
     asker = role_display_name(record.get("role"))
     return f"The {asker} asked the Consultant a question."
 
 
 def _answer_public_text(record: dict, ctx: dict) -> Optional[str]:
+    answer = record.get("answer")
+    if isinstance(answer, str) and answer.strip() and _safe_public_text(answer.strip()):
+        return answer.strip()
     asks_by_id = ctx.get("records_by_id", {})
     ask = asks_by_id.get(record.get("ask_id"))
     asker = role_display_name(ask.get("role")) if ask else "an advisor"
     return f"The Consultant answered the {asker}'s question."
+
+
+ANSWER_PREVIEW_MAX = 160
+
+
+def ask_info(record: dict, ctx: dict) -> dict:
+    """Display facts about an `ask` for the page: whether it is a fact-check
+    on a proposal (the Overseer cannot rule until it is answered), whether
+    it has been answered, and a short public-safe preview of the answer."""
+    answer = None
+    for r in (ctx.get("records_by_id") or {}).values():
+        if r.get("kind") == ANSWER and r.get("ask_id") == record.get("id"):
+            answer = r
+            break
+    preview = None
+    if answer is not None:
+        text = _answer_public_text(answer, ctx)
+        if text and _safe_public_text(text):
+            preview = text if len(text) <= ANSWER_PREVIEW_MAX else text[: ANSWER_PREVIEW_MAX - 3].rstrip() + "..."
+    return {"fact_check": bool(record.get("proposal_id")), "answered": answer is not None,
+            "answer_preview": preview}
 
 
 def _pass_public_text(record: dict, ctx: dict) -> Optional[str]:
@@ -470,7 +500,7 @@ PUBLIC_ITEM_FIELDS = frozenset({
     "seq", "id", "kind", "role", "speaker", "type", "tick", "game_date",
     "ts", "reply_to", "thread", "text", "badge", "withheld",
     "withheld_reason", "step_label", "step_targets", "step_total",
-    "step_outcome", "title",
+    "step_outcome", "title", "fact_check", "answered", "answer_preview",
 })
 
 #: Kinds this module knows how to render at all, public or operator side.
@@ -519,6 +549,8 @@ def build_public_item(record: dict, *, seq: int, reply_to: Optional[str],
         out["title"] = _public_display_name({"summary": record.get("summary")})
     if kind == EXECUTED:
         out.update(executed_step_info(record, ctx))
+    if kind == ASK:
+        out.update(ask_info(record, ctx))
 
     builder = PUBLIC_TEXT_BUILDERS.get(kind)
     text = builder(record, ctx) if builder else None
@@ -563,6 +595,8 @@ def build_operator_item(record: dict, *, seq: int, reply_to: Optional[str],
     builder = PUBLIC_TEXT_BUILDERS.get(kind)
     text = builder(record, ctx or {}) if builder else None
     extra = executed_step_info(record, ctx or {}) if kind == EXECUTED else {}
+    if kind == ASK:
+        extra.update(ask_info(record, ctx or {}))
     if kind == PROPOSAL:
         extra["title"] = _public_display_name({"summary": record.get("summary")}, safe=False)
     return {

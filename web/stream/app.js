@@ -1356,6 +1356,15 @@ class StreamPage {
       if (what && what !== body) { why = body; body = what; }
     }
     const lines = [el("div", { class: "frtext", text: body })];
+    if (item.kind === "ask") {
+      if (item.fact_check) lines.push(el("div", { class: "fnote", text: "Fact-check on this proposal · the Overseer waits for the answer before ruling" }));
+      lines.push(item.answered
+        ? el("div", { class: "fanswer" }, [
+            el("span", { class: "fanswerk", style: `color:${ROLE_COLORS.consultant || "var(--text)"}`, text: "Answered by the Consultant: " }),
+            el("span", { text: item.answer_preview || "see its turn below" }),
+          ])
+        : el("div", { class: "fnote", text: "Waiting for the Consultant" }));
+    }
     if (why) lines.push(el("div", { class: "fwhy" }, [el("span", { class: "fwhyk", text: "Why " }), el("span", { text: why })]));
     const calls = (item.calls && item.calls.length) ? item.calls : checkRows((this.runs && this.runs.calls_by_record || {})[item.id]);
     if (calls.length) {
