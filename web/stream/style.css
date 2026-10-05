@@ -668,3 +668,26 @@ a { color: var(--accent); }
 .fstate.s-deferred, .fstate.s-rejected, .fstate.s-hold { background: var(--st-hold); color: #fff; }
 .fstate.s-bad { background: var(--st-bad); color: #fff; }
 .fkind { border: 0; padding: 0; color: var(--faint); }
+/* ==== One look per level =================================================
+   Proposal state: outlined chip. Project state: filled chip with a glyph.
+   Job state: only the job graph's boxes. Urgency: a marker, not a chip. */
+.pstate { font-size: 11px; letter-spacing: .06em; text-transform: uppercase; padding: 1px 7px; border: 1.5px solid; white-space: nowrap; flex: none; background: none; }
+.pstate.ps-pending { color: #aaaaaa; border-color: #666; }
+.pstate.ps-accepted { color: #33bb33; border-color: var(--st-ok); }
+.pstate.ps-deferred { color: #d08a3a; border-color: var(--st-hold); border-style: dashed; }
+.pstate.ps-rejected { color: #e05050; border-color: var(--st-bad); }
+.jstate { display: inline-flex; align-items: center; gap: 5px; font-size: 11px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; padding: 2px 8px; white-space: nowrap; flex: none; }
+.jstate .jsg { font-size: 9px; }
+.jstate.js-active { background: #0000aa; color: #fff; }
+.jstate.js-hold { background: #aa5500; color: #fff; }
+.jstate.js-done { background: #00aa00; color: #000; }
+.jstate.js-abandoned { background: #555555; color: #ddd; }
+.umark { font-size: 11.5px; letter-spacing: .03em; white-space: nowrap; }
+.umark.u-high { color: #ff6b6b; }
+.umark.u-elevated { color: #d08a3a; }
+.ecard.urg-high { box-shadow: inset 3px 0 0 #aa0000; }
+.ecard.urg-elevated { box-shadow: inset 3px 0 0 #aa5500; }
+.btop { display: flex; align-items: flex-start; gap: 12px; }
+.btop .bt { flex: 1; min-width: 0; }
+.bmeta { display: flex; gap: 12px; align-items: baseline; font-size: 12px; margin-top: 2px; }
+.levelw { color: var(--faint); font-size: 11px; letter-spacing: .08em; text-transform: uppercase; align-self: center; }

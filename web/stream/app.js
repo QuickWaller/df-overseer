@@ -68,9 +68,9 @@ const DEFAULT_THEME = "terminal2";
 //: collects. Every proposal is listed under exactly one of them; "All" is
 //: first. An abandoned project counts as done (no further work).
 const BOARD_STATES = [
-  ["Under way", "active"],
+  ["In progress", "active"],
   ["On hold", "hold"],
-  ["Done", "done"],
+  ["Completed", "done"],
   ["Pending", "pending"],
   ["Deferred", "deferred"],
   ["Rejected", "rejected"],
@@ -524,6 +524,32 @@ function eventLine(item, projectsDoc) {
 
 // ---- end board model --------------------------------------------------------
 
+/** Status chips, one look per level (the user's call, 2026-10-05): a
+ * proposal's state is an OUTLINED chip, a project's state a FILLED chip with
+ * a glyph, and a job's state lives only in the job graph's boxes. Urgency is
+ * not a status: it is a marker (`urgencyMark`), never a chip. */
+const PROPOSAL_STATE = {
+  pending: "Pending", accepted: "Accepted", deferred: "Deferred", rejected: "Rejected",
+};
+const PROJECT_STATE = {
+  active: ["In progress", "▶"], hold: ["On hold", "❚❚"],
+  done: ["Completed", "✓"], abandoned: ["Abandoned", "✕"],
+};
+function proposalStateChip(state) {
+  const label = PROPOSAL_STATE[state] || PROPOSAL_STATE.pending;
+  return el("span", { class: "pstate ps-" + (PROPOSAL_STATE[state] ? state : "pending"), text: label });
+}
+function projectStateChip(state) {
+  const [label, glyph] = PROJECT_STATE[state] || PROJECT_STATE.active;
+  return el("span", { class: "jstate js-" + (PROJECT_STATE[state] ? state : "active") }, [
+    el("span", { class: "jsg", "aria-hidden": "true", text: glyph }), el("span", { text: label }),
+  ]);
+}
+function urgencyMark(urgency) {
+  if (!urgency || urgency === "normal") return null;
+  return el("span", { class: "umark u-" + urgency, text: (urgency === "high" ? "▲ " : "▴ ") + urgency + " urgency" });
+}
+
 class StreamPage {
   constructor({ dataRoot, mode, root, liveViewSrc, embedded }) {
     this.dataRoot = dataRoot;
@@ -924,17 +950,18 @@ class StreamPage {
   }
 
   _cardEl(entry) {
+    const isProposal = ["pending", "deferred", "rejected"].includes(entry.state);
+    const projectState = entry.abandoned ? "abandoned" : entry.state;
+    const meta = [
+      entry.role ? el("span", { class: "brole", style: `color:${ROLE_COLORS[entry.role] || "var(--muted)"}`, text: roleTitle(entry.role) }) : null,
+      urgencyMark(entry.urgency),
+    ].filter(Boolean);
     const parts = [
       el("div", { class: "btop" }, [
         el("span", { class: "bt", text: entry.name }),
-        ["pending", "deferred", "rejected"].includes(entry.state)
-          ? el("span", { class: "chip " + entry.state, text: entry.state })
-          : null,
-        entry.urgency && entry.urgency !== "normal"
-          ? el("span", { class: "urg u-" + entry.urgency, text: entry.urgency })
-          : null,
-        entry.role ? el("span", { class: "brole", style: `color:${ROLE_COLORS[entry.role] || "var(--muted)"}`, text: roleTitle(entry.role) }) : null,
+        isProposal ? proposalStateChip(entry.state) : projectStateChip(projectState),
       ]),
+      meta.length ? el("div", { class: "bmeta" }, meta) : null,
     ];
     if (entry.description) {
       parts.push(el("div", { class: "bdesc", text: entry.description }));
@@ -948,7 +975,7 @@ class StreamPage {
       const done = entry.steps.filter((s) => s.state === "done").length;
       const total = entry.steps.length;
       const label = entry.abandoned ? "Abandoned"
-        : entry.state === "done" ? "All done"
+        : entry.state === "done" ? "All jobs completed"
         : entry.state === "hold" ? `${done}/${total} steps · held`
         : `${done}/${total} steps done`;
       parts.push(el("div", { class: "bstatus" }, [
@@ -957,7 +984,7 @@ class StreamPage {
       ]));
     }
     return el("button", {
-      class: "ecard", type: "button",
+      class: "ecard" + (entry.urgency && entry.urgency !== "normal" ? " urg-" + entry.urgency : ""), type: "button",
       onclick: () => { this.selected = { kind: entry.kind, id: entry.id }; this._renderColumn(); },
     }, parts);
   }
@@ -988,8 +1015,9 @@ class StreamPage {
       return el("aside", { class: "cpanel in-col" }, [back, el("p", { class: "muted", text: "This project is no longer in the feed." })]);
     }
     const name = p.name || `Project ${p.id}`;
-    const chips = [el("span", { class: "chip " + (p.status === "done" ? "ok" : p.status === "hold" ? "no" : "active"), text: p.status })];
-    if (p.urgency && p.urgency !== "normal") chips.push(el("span", { class: "urg u-" + p.urgency, text: p.urgency }));
+    const chips = [el("span", { class: "levelw", text: "Project" }), projectStateChip(p.abandoned ? "abandoned" : (p.status || "active"))];
+    const um = urgencyMark(p.urgency);
+    if (um) chips.push(um);
 
     const convo = this._projectConversation(projectId);
     const founder = convo.find((i) => i.kind === "proposal");
@@ -1044,7 +1072,7 @@ class StreamPage {
     return el("aside", { class: "cpanel in-col", "aria-label": "Proposal details" }, [
       el("div", { class: "cph" }, [
         el("div", { class: "cphl" }, [
-          el("div", { class: "chips" }, [el("span", { class: "chip " + (item.badge || "pending"), text: item.badge || "pending" })]),
+          el("div", { class: "chips" }, [el("span", { class: "levelw", text: "Proposal" }), proposalStateChip(item.badge || "pending")]),
           el("h2", { text: item.type || "Proposal" }),
         ]),
         back,
