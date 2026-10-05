@@ -691,3 +691,20 @@ a { color: var(--accent); }
 .btop .bt { flex: 1; min-width: 0; }
 .bmeta { display: flex; gap: 12px; align-items: baseline; font-size: 12px; margin-top: 2px; }
 .levelw { color: var(--faint); font-size: 11px; letter-spacing: .08em; text-transform: uppercase; align-self: center; }
+/* One chip style for every status: filled, same size, no symbols. */
+.pstate, .jstate { display: inline-block; font-size: 11px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; padding: 2px 8px; border: 0; white-space: nowrap; flex: none; }
+.pstate.ps-pending { background: #555555; color: #fff; }
+.pstate.ps-accepted, .jstate.js-done { background: #00aa00; color: #000; }
+.pstate.ps-deferred, .jstate.js-hold { background: #aa5500; color: #fff; }
+.pstate.ps-rejected { background: #aa0000; color: #fff; }
+.jstate.js-active { background: #0000aa; color: #fff; }
+.jstate.js-abandoned { background: #555555; color: #ddd; }
+/* Status lines across the conversation. */
+.fstatusline { display: flex; align-items: center; gap: 10px; margin: 4px 0; font-size: 11px; letter-spacing: .08em; text-transform: uppercase; font-weight: 700; }
+.fslrule { flex: 1; height: 1px; background: currentColor; opacity: .5; }
+.fsltext { white-space: nowrap; }
+.fsldate { color: var(--faint); font-weight: 400; letter-spacing: 0; text-transform: none; white-space: nowrap; }
+.fstatusline.st-accepted, .fstatusline.st-done { color: #33bb33; }
+.fstatusline.st-deferred, .fstatusline.st-hold { color: #d08a3a; }
+.fstatusline.st-rejected { color: #e05050; }
+.fstatusline.st-abandoned { color: #999; }

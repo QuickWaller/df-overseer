@@ -541,13 +541,22 @@ function proposalStateChip(state) {
 }
 function projectStateChip(state) {
   const [label, glyph] = PROJECT_STATE[state] || PROJECT_STATE.active;
-  return el("span", { class: "jstate js-" + (PROJECT_STATE[state] ? state : "active") }, [
-    el("span", { class: "jsg", "aria-hidden": "true", text: glyph }), el("span", { text: label }),
-  ]);
+  return el("span", { class: "jstate js-" + (PROJECT_STATE[state] ? state : "active"), text: label });
 }
 function urgencyMark(urgency) {
   if (!urgency || urgency === "normal") return null;
   return el("span", { class: "umark u-" + urgency, text: (urgency === "high" ? "▲ " : "▴ ") + urgency + " urgency" });
+}
+
+/** A full-width status line in a conversation: "Proposal accepted",
+ * "Project completed". */
+function statusLine(text, state, gameDate) {
+  return el("div", { class: "fstatusline st-" + state }, [
+    el("span", { class: "fslrule" }),
+    el("span", { class: "fsltext", text }),
+    gameDate ? el("span", { class: "fsldate", text: shortDate(gameDate) }) : null,
+    el("span", { class: "fslrule" }),
+  ]);
 }
 
 class StreamPage {
@@ -1149,7 +1158,28 @@ class StreamPage {
         return q ? el("div", { class: "fquoted" }, [q, r]) : r;
       }), g.items, answering);
     });
-    return [el("div", { class: "fthread" }, blocks)];
+    // Status changes are full-width lines in the conversation, placed after
+    // the turn (or post) in which they happened (the user's call, 2026-10-05).
+    const project = Object.values((this.projects && this.projects.projects) || {})
+      .find((p) => p.proposal_id === sorted[0].id || (this.projects.thread_to_project || {})[thread] === p.id);
+    const lastExecuted = [...sorted].reverse().find((i) => i.kind === "executed");
+    const out = [];
+    groups.forEach((g, k) => {
+      out.push(blocks[k]);
+      g.items.forEach((i) => {
+        if (i.kind === "ruling") {
+          const m = /^(Accepted|Rejected|Deferred)/.exec(this._bodyText(i) || "");
+          if (m) out.push(statusLine(`Proposal ${m[1].toLowerCase()}`, m[1].toLowerCase(), i.game_date));
+        } else if (i.kind === "observation") {
+          out.push(statusLine("Project on hold", "hold", i.game_date));
+        } else if (i.kind === "abandon") {
+          out.push(statusLine("Project abandoned", "abandoned", i.game_date));
+        } else if (i === lastExecuted && project && project.status === "done") {
+          out.push(statusLine("Project completed", "done", i.game_date));
+        }
+      });
+    });
+    return [el("div", { class: "fthread" }, out)];
   }
 
   /** One agent turn: who, why it woke and how long, its summary and
@@ -1328,7 +1358,6 @@ class StreamPage {
     return el("div", { class: "freceipt" + cls }, [
       el("div", { class: "frtop" }, [
         el("span", { class: "fkindw", text: kind }),
-        state ? el("span", { class: "fstate s-" + state.toLowerCase(), text: state }) : null,
         el("span", { class: "fwhen", text: item.game_date ? shortDate(item.game_date) : "" }),
       ]),
       el("div", { class: "frbody" }, lines),

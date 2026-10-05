@@ -103,19 +103,24 @@ def test_event_wording_for_finished_failed_and_hold():
 # ---- the thread DOM: first-level replies open, deeper ones closed; state survives ---
 
 
-def test_a_turn_lists_its_records_as_receipts_with_their_verdicts():
+def test_receipts_name_their_kind_and_a_verdict_becomes_a_full_width_status_line():
     expr = r"""
       const page = Object.create(StreamPage.prototype);
       page.projects = { projects: {}, thread_to_project: {} };
       page.runs = DATA.runs;
       const thread = page._conversationEl(DATA.items);
-      const out = []; const walk = (n) => { if (n.className && n.className.startsWith("freceipt ")) out.push(n.className); if (n.className === "freceipt") out.push("plain"); n.children.forEach(walk); }; walk(thread[0]);
-      const tags = []; const walk2 = (n) => { if (n.className === "fkindw" || (n.className || "").startsWith("fstate")) tags.push(n.textContent); n.children.forEach(walk2); }; walk2(thread[0]);
-      return { out, tags };
+      const kinds = [], lines = [];
+      const walk = (n) => {
+        if (n.className === "fkindw") kinds.push(n.textContent);
+        if ((n.className || "").startsWith("fstatusline")) lines.push(n.className);
+        n.children.forEach(walk);
+      };
+      walk(thread[0]);
+      return { kinds, lines };
     """
     res = _run(expr, {"items": THREAD, "runs": RUNS})
-    assert "Proposal" in res["tags"] and "Accepted" in res["tags"]
-    assert any("r-accepted" in c for c in res["out"])
+    assert "Proposal" in res["kinds"] and "Ruling" in res["kinds"]
+    assert "fstatusline st-accepted" in res["lines"]
 
 
 # ---- the board list: every proposal, one entry per thread -------------------------
