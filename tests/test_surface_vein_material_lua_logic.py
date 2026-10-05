@@ -216,3 +216,92 @@ def test_unreadable_ring_tile_is_counted_and_logged_not_silently_dropped(w):
     assert res["counts"]["unreadable"] == 7
     assert len(res["read_failures"]) == 7
     assert res["counts"]["not_mineral"] == 1
+
+
+# ---------------------------------------------------------------------------
+# exposed: handoffs/2026-10-05-ore-exposed-signal.md (the site-5/site-6 shape:
+# hematite in the corners of a freshly dug bedroom)
+# ---------------------------------------------------------------------------
+
+
+def _ring_of_stone(w, zone=13, at=(5, 5)):
+    w.add_zone(zone, at[0], at[1], at[0], at[1], 0)
+    for x in range(at[0] - 1, at[0] + 2):
+        for y in range(at[1] - 1, at[1] + 2):
+            if (x, y) != at:
+                w.set_tile(x, y, 0, "WALL", "STONE")
+
+
+def _ore(w, x, y, idx, name, **kw):
+    w.set_tile(x, y, 0, "WALL", "MINERAL")
+    w.set_vein_event(x, y, 0, idx, present=True)
+    w.set_inorganic(idx, name, **kw)
+
+
+def test_exposed_reports_corner_ore_by_material_with_counts(w):
+    _ring_of_stone(w)
+    _ore(w, 4, 4, 1, "HEMATITE", is_ore=True)  # a corner, the case the user saw
+    _ore(w, 6, 6, 1, "HEMATITE", is_ore=True)
+    exp = w.vein_material(13)["exposed"]
+    assert exp["total_tiles"] == 2
+    assert exp["materials"] == [{"mineral_name": "HEMATITE", "kind": "ore", "tiles": 2}]
+    assert exp["mine_with"] == "construction.mine-vein"
+    assert exp["unclassified_tiles"] == 0
+
+
+def test_exposed_is_empty_when_there_is_no_ore(w):
+    _ring_of_stone(w)
+    exp = w.vein_material(13)["exposed"]
+    assert exp["total_tiles"] == 0
+    assert not exp["materials"]  # empty Lua table: {} or [] after json
+
+
+def test_exposed_separates_materials_and_names_gems(w):
+    _ring_of_stone(w)
+    _ore(w, 4, 4, 1, "HEMATITE", is_ore=True)
+    _ore(w, 6, 4, 2, "NATIVE_GOLD", is_ore=True)
+    _ore(w, 4, 6, 3, "CUT_THING", is_gem=True)
+    exp = w.vein_material(13)["exposed"]
+    assert exp["total_tiles"] == 3
+    assert [(m["mineral_name"], m["kind"]) for m in exp["materials"]] == [
+        ("CUT_THING", "gem"), ("HEMATITE", "ore"), ("NATIVE_GOLD", "ore"),
+    ]
+
+
+def test_exposed_ignores_non_economic_veins(w):
+    _ring_of_stone(w)
+    _ore(w, 4, 4, 9, "MICROCLINE")
+    assert w.vein_material(13)["exposed"]["total_tiles"] == 0
+
+
+def test_exposed_ignores_ore_already_mined_open(w):
+    _ring_of_stone(w)
+    w.set_tile(4, 4, 0, "FLOOR", "MINERAL")
+    w.set_vein_event(4, 4, 0, 1, present=True)
+    w.set_inorganic(1, "HEMATITE", is_ore=True)
+    res = w.vein_material(13)
+    assert res["counts"]["ore_or_gem"] == 1  # still ore by material
+    assert res["exposed"]["total_tiles"] == 0  # but nothing left to mine
+
+
+def test_exposed_never_reads_a_hidden_tile(w):
+    _ring_of_stone(w)
+    _ore(w, 4, 4, 1, "HEMATITE", is_ore=True)
+    w.set_hidden(4, 4, 0, True)
+    assert w.vein_material(13)["exposed"]["total_tiles"] == 0
+
+
+def test_exposed_counts_a_smoothed_vein_wall(w):
+    _ring_of_stone(w)
+    _ore(w, 4, 4, 1, "HEMATITE", is_ore=True)
+    w.set_tile(4, 4, 0, "WALL", "MINERAL", "SMOOTH")
+    assert w.vein_material(13)["exposed"]["total_tiles"] == 1
+
+
+def test_exposed_reports_unclassifiable_tiles_apart_never_as_ore(w):
+    _ring_of_stone(w)
+    w.set_tile(4, 4, 0, "WALL", "MINERAL")
+    w.set_no_vein_event(4, 4, 0)
+    exp = w.vein_material(13)["exposed"]
+    assert exp["total_tiles"] == 0
+    assert exp["unclassified_tiles"] == 1

@@ -245,10 +245,8 @@ def test_shim_contract_holds_in_the_surface_layer():
     )
     assert "upvalue_by_name(anchor, 'find_zone')" in _text()
     # vein_material shares the same find_zone upvalue, so the shim reaches it too
-    vm_start = surface.index("
-function vein_material(")
-    assert "find_zone(zone_id)" in surface[vm_start:surface.index("
-end", vm_start)]
+    vm_start = surface.index("\nfunction vein_material(")
+    assert "find_zone(zone_id)" in surface[vm_start:surface.index("\nend", vm_start)]
     assert "shim_restored" in _text()
 
 
