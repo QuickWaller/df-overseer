@@ -30,6 +30,9 @@ def _accept_and_execute(path, proposal_id, *, execution_cycle, ruling_id=None, *
     ruling = store.append(
         make_ruling(id=ruling_id, proposal_id=proposal_id), path,
     )
+    # A project (implicit single step) must exist before any execution:
+    # the server refuses `executed` for an accepted ruling with no project.
+    store.append(make_project(from_ruling=ruling["id"], steps=[]), path)
     executed = store.append(
         make_executed(ruling_id=ruling["id"], cycle=execution_cycle, **executed_overrides),
         path,
@@ -502,6 +505,7 @@ def test_executed_round_trips_a_failed_action(tmp_path):
     path = _db(tmp_path)
     proposal = store.append(make_proposal(), path, game_tick=0)
     ruling = store.append(make_ruling(proposal_id=proposal["id"]), path)
+    store.append(make_project(from_ruling=ruling["id"], steps=[]), path)
     executed = store.append(
         make_executed(
             ruling_id=ruling["id"],
@@ -512,6 +516,63 @@ def test_executed_round_trips_a_failed_action(tmp_path):
     )
     assert store.load(path)[-1] == executed
     assert executed["actions"][0]["outcome"] == "failure"
+
+
+# ---- 2026-10-05: no execution without a project --------------------------------
+
+
+def test_executed_is_refused_for_an_accepted_ruling_with_no_project(tmp_path):
+    path = _db(tmp_path)
+    proposal = store.append(make_proposal(), path, game_tick=0)
+    ruling = store.append(make_ruling(proposal_id=proposal["id"]), path)
+    with pytest.raises(store.QueueError) as exc:
+        store.append(make_executed(ruling_id=ruling["id"]), path)
+    text = str(exc.value)
+    assert "queue.project" in text and f"from_ruling='{ruling['id']}'" in text
+    assert "step_id" in text
+    assert [r for r in store.load(path) if r["kind"] == "executed"] == []
+
+
+def test_executed_is_refused_with_a_step_id_and_no_project_too(tmp_path):
+    path = _db(tmp_path)
+    proposal = store.append(make_proposal(), path, game_tick=0)
+    ruling = store.append(make_ruling(proposal_id=proposal["id"]), path)
+    with pytest.raises(store.QueueError, match="queue.project"):
+        store.append(make_executed(ruling_id=ruling["id"], step_id="s1"), path)
+
+
+def test_executed_requires_step_id_once_a_real_project_exists(tmp_path):
+    path = _db(tmp_path)
+    store.append(make_proposal(), path, game_tick=100)
+    ruling, _project = _rule_and_project(path)
+    with pytest.raises(store.QueueError, match="step_id: required"):
+        store.append(make_executed(ruling_id=ruling["id"], cycle=2), path)
+
+
+def test_an_older_accepted_ruling_can_get_a_project_later_and_then_execute(tmp_path):
+    """The live case: proposal-0013/0014 were accepted before the rule and
+    have no project. Creating the project now, long after the ruling, must
+    unblock execution."""
+    path = _db(tmp_path)
+    proposal = store.append(make_proposal(), path, game_tick=100)
+    ruling = store.append(make_ruling(proposal_id=proposal["id"]), path)
+    with pytest.raises(store.QueueError, match="queue.project"):
+        store.append(make_executed(ruling_id=ruling["id"], cycle=900000), path)
+    # Much later: a project for the old ruling, then the execution.
+    project = store.append(make_project(from_ruling=ruling["id"], cycle=900000), path)
+    s1 = project["steps"][0]["id"]
+    with pytest.raises(store.QueueError, match="step_id: required"):
+        store.append(make_executed(ruling_id=ruling["id"], cycle=900001), path)
+    executed = store.append(
+        make_executed(
+            ruling_id=ruling["id"], cycle=900001, step_id=s1,
+            actions=[{"tool": "construction.mine-vein", "outcome": "success",
+                      "targets": ["ring-13-ore-1", "ring-13-ore-2", "ring-13-ore-3"],
+                      "target_state": "done"}],
+        ),
+        path,
+    )
+    assert executed["step_id"] == s1
 
 
 # ---- unexecuted_accepted_proposals() -- docs/AGENT-LOOP.md item 4 ----------------

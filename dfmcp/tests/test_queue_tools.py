@@ -334,6 +334,11 @@ class TestExecuted:
     async def test_executed_arms_the_prediction_and_is_overseer_only(self, tmp_path):
         path = tmp_path / "queue.sqlite3"
         proposal, ruling = await _propose_and_rule(path)
+        await queue_tools.call(
+            queue_tools.QUEUE_PROJECT, "overseer",
+            {**_project_args(ruling["id"]), "steps": []},
+            db_path=path, call_dfhack=_ok_call_dfhack, write_lock=asyncio.Lock(),
+        )
 
         text, structured = await queue_tools.call(
             queue_tools.QUEUE_EXECUTED, "overseer",
@@ -350,6 +355,62 @@ class TestExecuted:
         due = store.pending_due(path, structured["cycle"] + 1200)
         assert len(due) == 1
         assert due[0]["due_game_tick"] == structured["cycle"] + 1200
+
+    async def test_executed_without_a_project_is_refused_with_a_model_facing_message(self, tmp_path):
+        path = tmp_path / "queue.sqlite3"
+        _proposal, ruling = await _propose_and_rule(path)
+
+        with pytest.raises(queue_tools.QueueToolError) as exc:
+            await queue_tools.call(
+                queue_tools.QUEUE_EXECUTED, "overseer",
+                {
+                    "ruling_id": ruling["id"],
+                    "actions": [{"tool": "workshop.build", "outcome": "success"}],
+                    "notes": "Built as ruled.",
+                },
+                db_path=path, call_dfhack=_ok_call_dfhack, write_lock=asyncio.Lock(),
+            )
+        message = str(exc.value)
+        assert "queue.project" in message and "from_ruling" in message
+        assert "step_id" in message
+
+    async def test_older_accepted_ruling_gets_a_project_then_executes_with_step_id(self, tmp_path):
+        path = tmp_path / "queue.sqlite3"
+        _proposal, ruling = await _propose_and_rule(path)
+        lock = asyncio.Lock()
+        # Refused first (the ruling pre-dates any project, like proposal-0013).
+        with pytest.raises(queue_tools.QueueToolError, match="queue.project"):
+            await queue_tools.call(
+                queue_tools.QUEUE_EXECUTED, "overseer",
+                {"ruling_id": ruling["id"],
+                 "actions": [{"tool": "construction.mine-vein", "outcome": "success",
+                              "targets": ["ring-13-ore-1", "ring-13-ore-2"],
+                              "target_state": "done"}],
+                 "notes": "x"},
+                db_path=path, call_dfhack=_ok_call_dfhack, write_lock=lock,
+            )
+        await queue_tools.call(
+            queue_tools.QUEUE_PROJECT, "overseer", _project_args(ruling["id"]),
+            db_path=path, call_dfhack=_ok_call_dfhack, write_lock=lock,
+        )
+        with pytest.raises(queue_tools.QueueToolError, match="step_id: required"):
+            await queue_tools.call(
+                queue_tools.QUEUE_EXECUTED, "overseer",
+                {"ruling_id": ruling["id"],
+                 "actions": [{"tool": "construction.mine-vein", "outcome": "success"}],
+                 "notes": "x"},
+                db_path=path, call_dfhack=_ok_call_dfhack, write_lock=lock,
+            )
+        _text, structured = await queue_tools.call(
+            queue_tools.QUEUE_EXECUTED, "overseer",
+            {"ruling_id": ruling["id"], "step_id": "s1",
+             "actions": [{"tool": "construction.mine-vein", "outcome": "success",
+                          "targets": ["ring-13-ore-1", "ring-13-ore-2"],
+                          "target_state": "done"}],
+             "notes": "x"},
+            db_path=path, call_dfhack=_ok_call_dfhack, write_lock=lock,
+        )
+        assert structured["step_id"] == "s1"
 
     async def test_executed_refuses_role_arguments(self, tmp_path):
         path = tmp_path / "queue.sqlite3"
@@ -433,6 +494,11 @@ class TestGrade:
                 "proposal_id": proposal["id"], "decision": "accept",
                 "reason": "Charter-clean.", "public_rationale": "Approved.",
             },
+            db_path=path, call_dfhack=call_dfhack, write_lock=lock,
+        )
+        await queue_tools.call(
+            queue_tools.QUEUE_PROJECT, "overseer",
+            {**_project_args(ruling["id"]), "steps": []},
             db_path=path, call_dfhack=call_dfhack, write_lock=lock,
         )
         await queue_tools.call(

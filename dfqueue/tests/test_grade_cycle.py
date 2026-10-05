@@ -11,7 +11,7 @@ import json
 import pytest
 
 from dfqueue import grade, store
-from dfqueue.tests._helpers import make_executed, make_proposal, make_ruling
+from dfqueue.tests._helpers import make_executed, make_project, make_proposal, make_ruling
 from learning.predictions.schema import GRADED_TRUE, PENDING
 
 _OVERVIEW_JSON = {
@@ -50,6 +50,7 @@ def test_run_grading_cycle_grades_a_due_prediction_and_reports_unexecuted(tmp_pa
         path, game_tick=0,
     )
     ruling = store.append(make_ruling(proposal_id=due_soon["id"]), path)
+    store.append(make_project(from_ruling=ruling["id"], steps=[]), path)
     store.append(make_executed(ruling_id=ruling["id"], cycle=0), path)
 
     # A second, accepted-but-never-executed proposal.
@@ -76,6 +77,7 @@ def test_run_grading_cycle_is_idempotent(tmp_path):
         path, game_tick=0,
     )
     ruling = store.append(make_ruling(proposal_id=due_soon["id"]), path)
+    store.append(make_project(from_ruling=ruling["id"], steps=[]), path)
     store.append(make_executed(ruling_id=ruling["id"], cycle=0), path)
 
     first = grade.run_grading_cycle(path, _call_tool, graded_at="2026-09-22T00:00:00+00:00")
@@ -113,6 +115,7 @@ def test_cli_main_runs_a_grading_cycle_and_prints_json(tmp_path, capsys):
         path, game_tick=0,
     )
     ruling = store.append(make_ruling(proposal_id=due_soon["id"]), path)
+    store.append(make_project(from_ruling=ruling["id"], steps=[]), path)
     store.append(make_executed(ruling_id=ruling["id"], cycle=0), path)
 
     replay_path = _write_replay(tmp_path)

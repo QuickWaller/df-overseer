@@ -25,7 +25,7 @@ import pytest
 
 from dfqueue import grade as dfqueue_grade
 from dfqueue import schema, store
-from dfqueue.tests._helpers import make_executed, make_ruling
+from dfqueue.tests._helpers import make_executed, make_project, make_ruling
 from learning.predictions.schema import GRADED_FALSE, GRADED_TRUE
 
 RUN1_PATH = (
@@ -168,6 +168,7 @@ def test_run1_proposal_with_the_corrected_signal_is_appended_and_graded_true(tmp
     assert store.pending_due(path, 10**9) == []
 
     ruling = store.append(make_ruling(proposal_id=written["id"]), path)
+    store.append(make_project(from_ruling=ruling["id"], steps=[]), path)
     store.append(make_executed(ruling_id=ruling["id"], cycle=178877), path)
     # Now armed from the execution tick: due at 178877 + 1200.
 
@@ -200,6 +201,7 @@ def test_run1_proposal_grades_false_if_the_workshop_lands_further_than_predicted
     path = tmp_path / "queue.sqlite3"
     written = store.append(record, path, game_tick=178877)
     ruling = store.append(make_ruling(proposal_id=written["id"]), path)
+    store.append(make_project(from_ruling=ruling["id"], steps=[]), path)
     store.append(make_executed(ruling_id=ruling["id"], cycle=178877), path)
 
     def call_tool(tool_id, arguments):
@@ -222,6 +224,7 @@ def test_run1_proposal_grades_unresolvable_if_the_workshop_still_does_not_exist(
     path = tmp_path / "queue.sqlite3"
     written = store.append(record, path, game_tick=178877)
     ruling = store.append(make_ruling(proposal_id=written["id"]), path)
+    store.append(make_project(from_ruling=ruling["id"], steps=[]), path)
     store.append(make_executed(ruling_id=ruling["id"], cycle=178877), path)
 
     def call_tool(tool_id, arguments):
