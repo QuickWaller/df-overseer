@@ -482,6 +482,24 @@ async def test_daily_cost_accumulates_across_role_runs(tmp_path):
     assert deps.archive.daily_cost(today) == pytest.approx(0.03)
 
 
+async def test_the_run_archive_keeps_usage_and_turns(tmp_path):
+    tools = _base_tools()
+    tools["diff.since"] = _diff_sequence([[{"id": 1, "type": "migrant_wave"}]])
+    usage = {"input": 100, "output": 20, "cacheRead": 900, "total": 1020}
+    runner = FakeRoleRunner({
+        "architect": RunResult(
+            role="architect", ok=True, status="ok", cost_usd=0.01, wall_clock_seconds=1,
+            timed_out=False, tool_summary={}, final_answer="x", raw={},
+            usage=usage, assistant_turns=4,
+        ),
+    })
+    result = await run_cycle(1, _deps(tmp_path, tools=tools, runner=runner))
+    run = json.loads((result.archived_path / "run-architect.json").read_text(encoding="utf-8"))
+    assert run["usage"] == usage and run["assistant_turns"] == 4
+    other = json.loads((result.archived_path / "run-quartermaster.json").read_text(encoding="utf-8"))
+    assert other["usage"] is None and other["assistant_turns"] is None
+
+
 # ---------------------------------------------------------------------------
 # The charter and briefing actually reach the runner
 # ---------------------------------------------------------------------------

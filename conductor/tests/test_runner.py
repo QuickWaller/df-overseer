@@ -71,11 +71,20 @@ class TestBuildCommand:
         runner = _runner(tmp_path, _fake_exec(_FakeProcess(b"{}")))
         command = runner.build_command("overseer", "do the thing", model="deepseek/deepseek-v4-pro")
         joined = " ".join(command)
-        assert "docker run --rm --entrypoint node" in joined
+        assert "docker run --rm --hostname overseer --entrypoint node" in joined
         assert str(tmp_path / "config" / "overseer.json") in joined
         assert joined.count(":ro") == 1  # only the pinned config overlay is read-only
         assert "--env-file" in command
         assert str(tmp_path / "secrets.env") in command
+
+    def test_hostname_is_fixed_per_role_so_the_prompt_prefix_is_stable(self, tmp_path):
+        runner = _runner(tmp_path, _fake_exec(_FakeProcess(b"")))
+        for role in ("overseer", "architect"):
+            first = runner.build_command(role, "x", model="m", container_name="conductor-a-1")
+            second = runner.build_command(role, "x", model="m", container_name="conductor-a-2")
+            assert first[first.index("--hostname") + 1] == role
+            assert second[second.index("--hostname") + 1] == role
+            assert first.index("--hostname") < first.index("--entrypoint")
 
     def test_command_carries_the_model_and_prompt(self, tmp_path):
         runner = _runner(tmp_path, _fake_exec(_FakeProcess(b"{}")))

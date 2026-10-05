@@ -1002,6 +1002,7 @@ def _archive(
             "role": r.role, "ok": r.ok, "status": r.status, "cost_usd": r.cost_usd,
             "wall_clock_seconds": r.wall_clock_seconds, "timed_out": r.timed_out,
             "tool_summary": r.tool_summary, "final_answer": r.final_answer, "error": r.error,
+            "usage": r.usage, "assistant_turns": r.assistant_turns,
         }
         for r in result.role_runs
     ]
@@ -1015,6 +1016,11 @@ def _archive(
             "daily_total_usd=%.6f (known only; %d run(s) today with unknown cost)",
             cycle_index, r.role, cost_text, r.wall_clock_seconds, total, unknown,
         )
+        if r.usage or r.assistant_turns is not None:
+            LOG.info(
+                "cycle %s: role=%s turns=%s usage=%s", cycle_index, r.role,
+                r.assistant_turns, json.dumps(r.usage, sort_keys=True),
+            )
     return deps.archive.write_cycle(
         cycle_index, summary=summary, briefings=briefings,
         clock_changes=result.clock_changes, role_runs=role_run_dicts,

@@ -149,6 +149,38 @@ def _cost_from(envelope: dict) -> Optional[float]:
     return float(v)
 
 
+#: The `usage` keys kept in the archive, as openclaw names them (seen in the
+#: real envelopes, `evals/live/2026-09-15-overseer-first-ruling/run.json`).
+USAGE_KEYS = ("input", "output", "cacheRead", "cacheWrite", "reasoningTokens", "total")
+
+
+def _number(v: Any) -> Optional[float]:
+    if isinstance(v, bool) or not isinstance(v, (int, float)):
+        return None
+    return v
+
+
+def usage_from(envelope: dict) -> Optional[Dict[str, Any]]:
+    """The envelope's token `usage`, bounded: only the known keys, numbers
+    only. A key the envelope lacks is absent here, never 0. None when the
+    envelope carries no usable `usage`."""
+    raw = envelope.get("usage")
+    if not isinstance(raw, dict):
+        return None
+    out: Dict[str, Any] = {}
+    for key in USAGE_KEYS:
+        n = _number(raw.get(key))
+        if n is not None:
+            out[key] = n
+    return out or None
+
+
+def turns_from(envelope: dict) -> Optional[int]:
+    """`assistantTurns` (model rounds in the run) if a non-negative number."""
+    n = _number(envelope.get("assistantTurns"))
+    return int(n) if n is not None and n >= 0 else None
+
+
 @dataclass(frozen=True)
 class RunResult:
     """The one shape every `RoleRunner` returns, real or fake. Mirrors
@@ -171,6 +203,11 @@ class RunResult:
     error: Optional[str] = None
     #: The run's reasoning text (capped), or None when not captured.
     thinking: Optional[str] = None
+    #: Token usage from the envelope (`usage_from`): input, output, cacheRead,
+    #: cacheWrite, reasoningTokens, total. None when unknown (killed run).
+    usage: Optional[Dict[str, Any]] = None
+    #: Model rounds in the run (`assistantTurns`); None when unknown.
+    assistant_turns: Optional[int] = None
 
 
 class RoleRunner(Protocol):
@@ -278,11 +315,16 @@ class DockerOpenClawRunner:
         project has done, never over stdin.
         """
         name_args = ["--name", container_name] if container_name else []
+        # A fixed hostname per role: openclaw's system prompt ends in a
+        # `## Runtime` line carrying `host=`, which was a fresh container id
+        # each run and so changed the prompt prefix every time
+        # (docs/CONDUCTOR-EXECUTION.md 3.1).
+        hostname_args = ["--hostname", role]
         timeout_args = ["--timeout", str(int(timeout_seconds))] if timeout_seconds else []
         state_mount = ["-v", f"{state_dir}:{THINKING_MOUNT}"] if state_dir else []
         state_args = ["--state-dir", THINKING_MOUNT] if state_dir else []
         return [
-            "docker", "run", "--rm", *name_args, "--entrypoint", "node",
+            "docker", "run", "--rm", *name_args, *hostname_args, "--entrypoint", "node",
             "--env-file", str(self.secrets_env_file),
             "-v", f"{self.openclaw_state_dir}:/home/node/.openclaw",
             "-v", f"{self.pinned_config_dir / (role + '.json')}:/home/node/.openclaw/openclaw.json:ro",
@@ -333,7 +375,7 @@ class DockerOpenClawRunner:
                 return replace(
                     failed, cost_usd=result.cost_usd, timed_out=result.timed_out,
                     tool_summary=result.tool_summary, final_answer=result.final_answer,
-                    raw=result.raw,
+                    raw=result.raw, usage=result.usage, assistant_turns=result.assistant_turns,
                 )
         return result
 
@@ -440,4 +482,6 @@ class DockerOpenClawRunner:
             tool_summary=envelope.get("toolSummary", {}) or {},
             final_answer=_final_answer(envelope),
             raw=envelope,
+            usage=usage_from(envelope),
+            assistant_turns=turns_from(envelope),
         )
