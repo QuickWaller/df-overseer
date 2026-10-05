@@ -1,546 +1,467 @@
 # Conductor execution: proposers pick, the Overseer rules, code acts
 
-Date: 2026-10-05, revision 3 (after red-team passes 1 and 2,
-`docs/CONDUCTOR-EXECUTION-REDTEAM.md`, and the user's answers in the last two
-2026-10-05 register rows). Status: **design; stage 0 in build**
-(`handoffs/2026-10-05-execution-stage-0.md`), nothing else built. **[verified]**
-means read in code or on a host; everything else is **[proposed]**.
-Revisions 1 and 2: `2f1bf68`, `68fb6aa`.
-
-Governing: the 2026-10-05 register rows. Inputs:
-`research/2026-10-05-procedure-briefing-and-bounded-turns.md`,
-`research/2026-09-12-multi-agent-architecture-prior-art.md`,
-`research/2026-09-28-job-dependency-graph.md`,
-`handoffs/2026-10-05-cited-facts-briefing.md` (folded in),
-`evals/live/2026-10-05-pause-safety/`.
+Date: 2026-10-05, revision 4 (after red-team passes 1 to 3,
+`docs/CONDUCTOR-EXECUTION-REDTEAM.md`, and the user's 2026-10-05 register
+rows). Status: **stages 0 and 1 deployed** (`evals/live/2026-10-05-execution-stage-0/`;
+cited facts, `queue.pending_brief` and the ruling ask, per red-team pass 3);
+everything from stage 2 on is design. **[verified]** means read in code or on
+a host; the rest is **[proposed]**. Earlier revisions: `2f1bf68`, `68fb6aa`,
+`ed6f8f5`.
 
 ## 0. The design in one screen
 
-1. **One step per proposal:** one tool, exact arguments. At filing the server
-   checks them, dry-runs the step, judges it by the tool's declared verdict
-   fields (a missing field refuses), and reads every cited fact itself.
+1. **One step per proposal:** one tool, exact arguments, dry-run by the
+   server at filing and judged by the tool's declared verdict fields (a
+   missing field refuses).
 2. **A room is a project that grows.** The first proposal reserves the site
    and may declare the template's later phases. Each later phase is a
-   follow-up proposal that joins the same project as a new step, citing the
-   handle the earlier step issued; the server writes it as an `amend`, so the
-   Board's graph grows (reserve, dig, finish, furnish). A follow-up that is
-   exactly the next declared phase is accepted by the server; anything else
-   goes to the Overseer.
-3. **Rooms are the first type routed to the executor** (user's call); work
-   orders follow. A type's tools leave the Overseer when it is routed.
-4. **The conductor executes as code.** Its tools take ids only, so only
-   accepted arguments can run. Anything failing after the real call was sent
-   is **Uncertain** and is reconciled by a declared `landed` read, never
-   retried blind.
-5. **Done means the game says so:** a reconciler reads real progress per
-   phase mode, and only then wakes the proposer.
-6. **The Overseer only rules,** on content in its briefing, in a bounded
-   turn. **Noticed problems get owners** (`queue.flag`).
+   follow-up that joins the same project as a new step, citing the handle the
+   earlier step issued; the server writes it as an `amend`, so the Board's
+   graph grows. Once switched on (2c), a follow-up that is exactly the next
+   declared phase needs no new ruling.
+3. **Rooms are the first type routed to the executor;** work orders follow.
+   A routed type's tools leave the Overseer, and the Overseer can no longer
+   write projects or records for it.
+4. **The conductor executes as code** through ids-only tools. Anything that
+   fails after the real call was sent is Uncertain, resolved by a declared
+   `landed` read, never retried blind.
+5. **Done means the game says so,** per phase: the phase's own cells dug and
+   smoothed, its buildings fully constructed, its zone present.
+6. **Abandoning a room** releases what that project reserved and
+   designated, never the dug tiles (user's call).
+7. **Old work is closed first (user's call):** deploy 2a closes every
+   accepted ruling from before its cutover, under the executor's name,
+   touching no game state.
 
 Kept: one decider, no peer chat, the queue as write-ahead log, tripwire,
 pause watchdog and operator hold, set intent and let the game execute.
-
-**[verified]** Why: run-0004 (Overseer, 2026-10-05) took 645 s and 37 calls,
-re-read stocks to check proposals, sited bedrooms itself ("overreaching"),
-skipped `queue.project` and left the stuck Bed unowned. The live queue holds
-9 accepted rulings and **0 projects ever**.
 
 ---
 
 ## 1. Routed types
 
-A proposal `type` is **routed** once its tools have left the Overseer and
-the executor runs them. Every new rule below applies only to routed types
-(P2-H3): for an unrouted type a `step` is refused and step-less proposals
-stay valid, and the Overseer acts as today under project-before-executed.
-`dfqueue/action_tools.yaml` lists each type's tools and a `routed: true|false`
-flag; flipping a type is one data line plus the same deploy that removes its
-tools from `agents/overseer/tools.yaml`. A test fails if a mutating tool is
-in no type, not on the Overseer's allowlist, and not on a written `retired`
-list, or if a tool is both routed and on the Overseer's allowlist (no tool
-belongs to both, so no mixed period by charter prose).
+A proposal `type` is **routed** when `dfqueue/action_tools.yaml` says
+`routed: true`; its tools then leave `agents/overseer/tools.yaml` in the same
+deploy. New rules apply only to routed types: for an unrouted type a `step`
+is refused, step-less proposals stay valid, and the Overseer acts as today.
+For a routed type the store refuses a sole-writer `project`, `executed` or
+`amend` (P3-B1). A test fails if a mutating tool is in no type and not on
+the Overseer's allowlist or a written `retired` list, or if a routed tool is
+still on the Overseer's allowlist.
 
-Draft table (checked against the charters at build time): `room_siting`,
-`workshop_siting`, `corridor`, `smoothing`, `dig_order`: `blueprint.reserve`,
-`blueprint.apply`, `blueprint.release`, `blueprint.unreserve`, `zone.place`,
-`zone.assign-owner`, `building.build`, `diggable.dig-stair`,
-`construction.mine-vein`; `stockpile_siting`: `stockpile.*` writes;
-`work_order`: `orders.*` and `workjob.*` writes; `crop_plan`:
-`farm.set-crop`; `stock_target`: none.
+```yaml
+# dfqueue/action_tools.yaml (draft; check against charters when built)
+rooms:      {types: [room_siting, workshop_siting, corridor, smoothing, dig_order],
+             tools: [blueprint.reserve, blueprint.apply, blueprint.release, blueprint.unreserve,
+                     zone.place, zone.assign-owner, building.build, diggable.dig-stair,
+                     construction.mine-vein],
+             routed: false, frozen: false, coverage: false}
+stockpiles: {types: [stockpile_siting], tools: [stockpile.place, stockpile.configure, stockpile.link], routed: false}
+orders:     {types: [work_order, crop_plan], tools: [orders.create, orders.reorder, orders.cancel,
+             orders.recheck, workjob.queue, workjob.cancel, farm.set-crop], routed: false}
+```
 
-**Order (user's call): siting first.** Siting is the bulk of the Overseer's
-measured turn and the user's explicit call; the reservations, follow-ups and
-progress reads it needs are built with it. Work orders come second, not
-together: they need `landed` reads (4.3) whose design depends on stage 0's
-latency data, and one type per cutover keeps a failed cutover small.
+**Order (user's call):** rooms first; work orders second (stage 3), because
+their `landed` reads are designed from stage 0's latency data and one group
+per cutover keeps a failed cutover small.
 
 ---
 
 ## 2. Proposals
 
-### 2.1 Shape [proposed]
+### 2.1 Shape
 
 ```yaml
-public_title: "Bedroom off the dining hall"     # <= 60 chars, required with a step
+public_title: "Bedroom off the dining hall"
 step:
   tool: blueprint.reserve
   args: {template: bedroom-cell-v1, purpose: "bedroom row 1", site: "Dining Hall", rank: 2}
-  label: "Reserve bedroom"                      # <= 24 chars
-phases: {tool: blueprint.apply, list: [dig, finish, meta]}   # optional
-relies_on:                                      # cited facts, 0..6
-  - {tool: stocks.availability, args: {type: BED}, field: available_units}
+  label: "Reserve bedroom"
+phases: {tool: blueprint.apply, list: [bedroom_cell_v1_shell, bedroom_cell_v1_finish]}
+relies_on: [{tool: stocks.availability, args: {type: BED}, field: available_units}]
 # a follow-up adds:
 project_id: project-0004
-after_step: project-0004/s1                     # becomes this step's requires edge
+after_step: project-0004/s1
 ```
 
-A follow-up cites the issued handle literally: the dig phase with
-`site: res-7`, later phases with `site: site-12`. `blueprint.apply` carves
-exactly a `res-N` and refuses one made for another template or already
-carved **[verified]** (`df-overseer-blueprint.lua`, reservation branch).
+Real phase labels **[verified]** (`blueprints/templates/bedroom-cell-v1.csv`):
+`_shell` (dig), `_zone`, `_build`, and `_finish`, a meta of zone then build.
+Listing `_finish` together with `_zone` or `_build` would apply them twice
+and is refused (2.2 item 5).
+A follow-up cites the issued handle: the shell phase with `site: res-7`,
+later phases with `site: site-12`.
 
-### 2.2 Validation at filing [proposed]
+### 2.2 Validation at filing
 
-Every refusal carries a repair message.
-
-1. **Tool:** mutating, not system-class or `ui.*`, in a **routed** type's
-   list, takes `DRY_RUN`, and has a verdict declaration (2.3).
-2. **Arguments:** checked by `argv_for_call`, as a real call is. A canonical
-   `dry_run` argument is refused (names are lower-cased **[verified]**,
-   `dfmcp/tools.py`); the server sets it after merging. Override-class
-   arguments (`allow_stranded`, `override`) are refused unless the type's
-   data allows them. Coordinates are refused by the existing pattern.
-3. **Dry run** through the server's internal DFHack path (the bypass
-   `_stamp_cycle_snapshot` uses **[verified]**). The result must echo
-   `dry_run: true`. The declared verdict decides; **a declared field that is
-   absent refuses** (fail closed, P2-H1). A bounded `preview` is stored:
-   verdict, one-line summary, tick, declared `resolution_fields`.
-4. **Cited facts:** a read tool on the proposer's own allowlist; the server
-   reads and stores `{value, tick}`; an unreadable citation refuses.
-5. **Declared phases:** `phases.tool` has a `phases` entry (2.3); every
-   listed phase appears, in order, in the template's own phase list read
-   through that entry's source.
+1. **Tool** in a routed group, takes `DRY_RUN`, has a verdict declaration.
+2. **Arguments** via `argv_for_call`; canonical `dry_run` refused (set by
+   the server after merging); override-class arguments refused unless the
+   group allows them; coordinates refused. For `blueprint.reserve` the server
+   appends ` <proposal id>` to `purpose` (P3-B4).
+3. **Dry run** through the server's internal path; must echo `dry_run:
+   true`; the declared verdict decides; **an absent declared field
+   refuses**. A bounded `preview` is stored (verdict, summary, tick,
+   `finish_plan` for a reserve, P3-M1).
+4. **Cited facts** as deployed in stage 1.
+5. **Declared phases:** each listed phase exists in the template's phase
+   list, in order; a list in which a `meta` phase's leaves repeat another
+   listed phase is refused (P3-B2).
 6. **Follow-ups:** `project_id` is a project the caller's role proposed, not
-   closed; `after_step` is one of its steps; every handle argument was issued
-   by a step of this project.
-7. **Time bound:** 60 s per filing; a DFHack timeout returns a distinct
-   "server busy, file again" refusal, not counted as a refused filing.
+   closed; `after_step` is one of its steps; each handle was issued by this
+   project. **A first proposal** may cite an existing `site-N` that no open
+   project issued: that is how the Architect re-proposes finishing a
+   legacy room from its handles (user's call).
+7. **Time bound** 60 s; a DFHack timeout returns "server busy, file again".
 
-### 2.3 Per-tool data in `TOOLS.yaml` [proposed]
-
-Example entries (field paths to confirm by the test below):
+### 2.3 Per-tool data in `TOOLS.yaml`
 
 ```yaml
+blueprint.reserve:
+  verdict: {refused_if_true: [refused], refused_if_present: [would_strand], reason: blocked_reason}
+  dry_run_echo: dry_run
+  issues_handle: handle
+  resolution_fields: [near_landmark, direction, distance_tiles, orientation, level]   # level added by B
+  landed: {tool: blueprint.reservations, new_handle_where: {purpose_ends_with: "$proposal_id"}}
 blueprint.apply:
   verdict: {ok: ok, refused_if_true: [blocked], reason: blocked_reason}
   dry_run_echo: dry_run
   nothing_applied: {all_zero: [designated.dig_tiles, designated.zones, designated.buildings]}
   issues_handle: site.handle
-  resolution_fields: [site.near_landmark, site.direction, site.distance_tiles,
-                      site.footprint, site.orientation, level]
-  phases: {arg: phase, site_arg: site, carry: [template],
-           source: {tool: blueprint.plan, args: [template], list: phases, label: label, mode: mode}}
-  progress: {tool: blueprint.status, args: {site_id: "$handle"}, by_mode: {...}}   # 4.4
-  landed: {tool: blueprint.sites, match: {phase_applied: "$phase", handle: "$handle"}}
-blueprint.reserve:
-  verdict: {refused_if_true: [refused], refused_if_present: [would_strand], reason: blocked_reason}
-  dry_run_echo: dry_run
-  issues_handle: handle
-  resolution_fields: [near_landmark, direction, distance_tiles, orientation, level]
-  landed: {tool: blueprint.reservations, match: {purpose: "$purpose"}}
+  phases: {arg: phase, site_arg: site, carry: [template], source: {tool: blueprint.plan, args: [template]}}
+  progress: {tool: blueprint.status, args: {site_id: "$handle", phase: "$phase"}, done_field: phase.done}
+  landed: {carve:   {tool: blueprint.reservations, handle_field: site_handle, of: "$site"},
+           on_site: {tool: blueprint.sites, phase_applied: "$phase", of: "$site"}}
 ```
 
-**[verified]** `blueprint.reserve` has no `ok` field: a conflict returns
-`refused: true`, and a stranded footprint only sets `would_strand` and still
-reserves; `designated` on `blueprint.apply` is a table of three counts. Both
-fixed above (P2-H1, P2-M2 data). `would_strand` refuses because a stranded
-reservation can only feed a dig the access gate will block.
+**Resolution check (P3-H1):** `resolution_fields` are compared only for a
+step whose site is resolved by landmark and rank (a reserve). A step on
+`res-N` or `site-N` cannot drift, and `near_landmark` changes whenever a
+nearer landmark appears, so pinned steps skip the check.
 
-**Build-time test (P2-H1):** each routed tool has recorded real outputs
-(dry run, success, refusal) as fixtures, captured live during its stage; the
-test fails if any declared verdict, echo, handle, resolution, progress or
-landed path is absent from them.
+**Fixtures (P3-M2):** the fixture test runs on outputs built from the Lua
+source and the real templates in B. The first real outputs come from 2b's
+supervised bedroom, which records them and re-runs the test. Until then a
+wrong path fails closed (refused at filing, Uncertain at execution), so no
+operator-run apply is needed.
 
-**Tools without `DRY_RUN`** **[verified]**: `landmarks.build`,
-`openarea.build`, `diggable.dig`, `labor.set-labor`, `ledger.record`. None is
-proposable; adding `DRY_RUN` to the first three is stage 5 work.
-
----
-
-## 3. The Overseer's ruling turn
-
-### 3.1 Prompt layout [proposed]
-
-**[verified by the red team, openclaw image on VM 106]** openclaw puts its
-framework text and `SOUL.md` before a cache boundary, then a dynamic tail
-with `host=` and `sessionId=`; the runner sets no `--hostname`, so `host=` is
-a new container id each run. Stage 0 fixes the hostname and measures. Order
-regardless: charter (nothing volatile), tools, per-wake briefing, ask last.
-
-### 3.2 Allowlist [proposed]
-
-Keeps throughout: `queue.rule`, `queue.abandon`, `queue.escalate`,
-`pause.verdict`, `queue.ask`, `queue.pending`, `queue.project_status`,
-`overview.get`, `threat.scan`, `breach.check`, `stuckjobs.find`,
-`gotchas.get`, `gotchas.write`; `queue.flag` and `queue.flag_close` from
-stage 4. **Stock reads** leave in stage 1 (cited facts land). **Siting tools
-and siting reads** leave together at the stage 2 cutover (user's call).
-Work-order tools leave at stage 3. `queue.project` and `queue.executed`
-leave with its last mutating tool. A ruling that needs an uncited fact is a
-defer naming it.
-
-### 3.3 Briefing, fixed order [proposed]
-
-Replaces the fixed stock lists (removed in stage 0).
-
-1. **Header:** wake reason and detail, tick, clock, severity word.
-2. **Vitals** plus **threshold alerts** (a line only while a `policy.yaml`
-   threshold is crossed: `{read: {tool, args, field}, per: alive|null,
-   below: N, text}`; a failed read drops its line). Same for every role.
-3. **Decided, do not redo:** open projects one line each (title, steps done
-   of total, top blocker), the WIP count against its cap, last five rulings.
-4. **Pending proposals,** capped at 8, count shown: id, role, type, summary;
-   the step (tool, every argument, override-class ones always shown);
-   declared phases; for a follow-up, its project and prior step; the filing
-   verdict line; cited facts as `value at tick T`, plus `now V` only if
-   changed; prediction, cost, priority; `duplicate_of`; `overlaps
-   proposal-N` when resolution fields match.
-5. **Open items addressed to the Overseer.**
-6. **The ask, last:** "Rule on each pending proposal: accept (with urgency),
-   reject, or defer naming what would change your mind. Cited facts are
-   checked and refreshed; judge the reasoning. Stop when each has a ruling.
-   Expected about N calls."
-
-Block 4 comes from a conductor-only read, `queue.pending_brief`, so
-citation refreshes are server reads. `docs/AGENT-LOOP.md` item 6 gains one
-line: bounded proposal text is allowed beside Tier 0 figures.
-
-### 3.4 Bounding the turn [proposed]
-
-- **Told:** expected calls in the ask.
-- **Server call cap (M6, P2-M1).** The conductor calls `run.begin(role, cap,
-  expires_at)` before a role and `run.end` after (roles run one at a time
-  **[verified]**, `conductor/cycle.py`). The server counts that role's calls
-  between them, whatever sessions openclaw opens. A new `run.begin` replaces
-  any open run; an expired one counts nothing (expiry = role timeout plus
-  grace), so a crash never caps the next or a manual run. Past the cap:
-  "this wake's call budget is spent: defer what is unruled and stop".
-  **Exempt:** `queue.rule`, `queue.escalate`, `pause.verdict`, `queue.pass`,
-  `queue.abandon`, `queue.flag_close`.
-- **Wall clock:** `queue_pending` 300 s only once the Overseer holds no
-  mutating tool (H6); 1200 s until then **[verified]**.
-- **Effort:** a per-role `reasoning_effort` only if openclaw passes one.
-
-### 3.5 Ruling changes [proposed]
-
-- `urgency` on the ruling (`normal`, `elevated`, `high`).
-- **WIP cap (user's call):** accept refused while 3 projects are open,
-  unless urgency is `high`. Counts only projects from rulings above the
-  cutover id (P2-H4); follow-ups joining a project are not new projects.
-- **Defer closes, from stage 4 (P2-M6):** with `queue.flag`, a deferred
-  proposal closes and the proposer gets a flag carrying the reason. Until
-  then a defer behaves as today (stays pending). Before that deploy, the
-  live deferred proposals are listed in the stage's evals record.
-- For a routed type, accepting a proposal with no `step` is refused.
+**Unproposable** (no `DRY_RUN`, **[verified]**): `landmarks.build`,
+`openarea.build`, `diggable.dig`, `labor.set-labor`, `ledger.record`.
 
 ---
 
-## 4. The conductor as executor
+## 3. The Overseer's turn
 
-### 4.1 Authority [proposed]
+Stages 0 and 1 shipped the fixed hostname, usage measurement, cited facts,
+`queue.pending_brief` and the ruling ask. Remaining changes:
 
-- **ROSTER:** `sole_writer: overseer` stays "the one decider" (`ruling`,
-  `escalation`, `abandon`). New `executor: conductor`, which writes
-  `project`, `executed`, `amend`, `observation` and the new `close` record
-  (schema check plus an `executor_only` registry flag, the two layers
-  `sole_writer_only` uses **[verified]**). For unrouted types the sole writer
-  still writes `project` and `executed`.
-- **roles.py Rule 2:** a mutating DFHack tool may be held only by the sole
-  writer, and never if it belongs to a routed type.
-- **Executor-only tools, ids only:**
-  - `queue.open_project(ruling_id)`: builds the project from the accepted
-    proposal alone. Refused if not accepted, a project exists, the ruling is
-    at or below the cutover, or the proposal carries `project_id` (a
-    follow-up, P2-M3).
-  - `queue.apply_followup(proposal_id)`: builds an `amend` from an accepted
-    or covered follow-up alone: current steps unchanged plus the new step
-    (with its `proposal_id`) requiring `after_step`. Runs under the one
-    write lock (P2-L1).
-  - `queue.run_step(project_id, step_id)` (4.2), `queue.observe(project_id,
-    step_id)` (4.4), `queue.close(project_id, outcome, reason)` (5.4, 8.1).
+- **Ask and to-do line per routed type (P3-M4):** the ruling ask and the
+  unexecuted line name only unrouted types, read from `action_tools.yaml`;
+  for routed types the line becomes "accepted; the conductor runs it".
+- **Unexecuted wake (P3-B1):** the deployed wake (`conductor/cycle.py`
+  `to_carry_out`, from `queue.grade`'s `unexecuted_proposal_ids`; the
+  briefing line "carry each out now (queue.project, act, queue.executed)" in
+  `conductor/briefing.py`) **[verified]** must exclude routed types and key
+  on the step's `proposal_id`, and is suppressed under an operator hold
+  (P3-L1). Once 2a has closed every pre-cutover ruling, closed rulings no
+  longer count as unexecuted, so the wake sees only post-cutover work and
+  the `unexecuted_wake_ignore` stopgap is removed.
+- **WIP cap 3, `high` may exceed (user's call),** with one definition of an
+  open project shared by the cap and `pending_brief` (P3-M3): not closed,
+  from a ruling above its group's cutover, and with a step not done or a
+  declared phase not yet applied.
+- **Allowlist:** siting tools and siting reads leave at 2b; work-order tools
+  at stage 3; `queue.project`, `queue.executed` stay for unrouted types.
+- **Call cap and 300 s timeout:** stage 6, unchanged from revision 3.
 
-### 4.2 `run_step` [proposed]
+---
 
-One server call, in order:
+## 4. The executor
 
-1. **Preconditions** (`check_step_runnable`, also used by `append`): ruling
-   accepted; project open; step current; `requires` done; not succeeded; no
-   unresolved `step_runs` row; tripwire not latched unless urgency `high`.
-2. **Dry run,** judged by the verdict; blocked means Waiting or Needs
-   judgment (4.3). `resolution_fields` differing from the preview: Needs
-   judgment.
-3. **Marker:** read the tick and, if the tool declares `landed`, the
-   landed read's baseline; write a `step_runs` row (project, step, attempt,
-   tick, baseline, `issuing`) in the queue's SQLite file.
-4. **Real call** with `dry_run=false`.
-5. **Record** `executed` (role `conductor`, `ruling_id` of the project,
-   `step_id`, the step's `proposal_id`, outcome from the verdict, the issued
-   handle as target and `game_refs`) with the tick from 3; row `recorded`.
-   Any exception from 4 onward leaves the row `issuing`.
+### 4.1 `run_step`
 
-Why: the DFHack client times out at 10 s **[verified]**
-(`dfmcp/dfhack_client.py`) against 45 to 80 s tick-gated latencies, and a
-client timeout does not cancel a queued command.
+One server call: (1) `check_step_runnable` (ruling accepted, project open,
+step current, `requires` done, not succeeded, no unresolved run, tripwire not
+latched unless urgency `high`, and **the step's content equals its
+`proposal_id`'s `step`**, P3-B1); (2) dry run, judged by the verdict; (3)
+read the tick and the `landed` baseline (for a reserve, the set of
+reservation handles), write a `step_runs` row `issuing`; (4) the real call;
+(5) append `executed` with the step's `proposal_id` and the issued handle,
+row `recorded`. Any exception from (4) on leaves the row `issuing`. The
+DFHack client times out at 10 s against 45 to 80 s latencies **[verified]**,
+and a timeout does not cancel the command.
 
-### 4.3 Outcomes [proposed]
+### 4.2 Outcomes
 
 | Class | When | Next |
 |---|---|---|
 | Success | verdict ok | target `issued`; reconciler takes over |
-| Transient | failure before the real call was sent | retry next cycle; third in a row: Needs judgment |
-| Waiting | dry run blocked while a prerequisite is still issued (not done) | retry next cycle |
-| Needs judgment | dry run blocked with all prerequisites done; resolution fields changed | held; proposer flagged (5.3) |
-| Failed | verdict not ok and `nothing_applied` holds | `executed` failure; one retry; second: step `failed`, proposer flagged |
-| Uncertain | anything from the real call on that is not a clean verdict, a not-ok verdict without `nothing_applied`, or a row left `issuing` | never retried blind: run the `landed` read against the stored baseline; landed is success, not landed is Transient, unreadable is held `uncertain` and flagged to the proposer |
+| Transient | failed before the real call | retry next cycle; third: needs judgment |
+| Waiting | dry run blocked while a prerequisite is issued, not done | retry next cycle |
+| Needs judgment | blocked with prerequisites done; a reserve's resolution changed | held; `step_attention` to the proposer |
+| Failed | verdict not ok and `nothing_applied` | one retry; then `failed`, proposer told |
+| Uncertain | anything else from the real call on, or a row left `issuing` | `landed` read against the baseline: a new reservation ending in this proposal id, or the `res-N`'s `site_handle`, or the phase on the site, is success with that handle; nothing new is Transient; unreadable is held and the proposer told |
 
-**`landed` (P2-M2):** every routed tool declares one. For orders it is
-`orders.list` matched on job, amount and material, compared with the count
-stored before the call; for blueprint phases, the phase listed as applied on
-the handle. A tool without a usable `landed` read cannot be routed. Stage 0's
-live runs give real-call latency from the existing per-call `duration_ms`
-in the server's journal **[verified]** (`_call_log_line`), with no change to
-stage 0's scope.
+### 4.3 Done per phase (P3-B2)
 
-### 4.4 The reconciler: done per phase mode (P2-H2) [proposed]
+`queue.observe` runs `blueprint.status SITE PHASE`, which after B reports
+for **that phase's own leaves**: dig cells dug and smooth cells smoothed or
+constructed; every building the phase placed at full construction stage
+(not merely existing); the phase's zone present. `phase.done` is true when
+all its leaves' rules hold; a meta phase uses its leaves. Not done while
+`dig.state` is `in_progress`; `stalled`, three `unknown` reads, or an
+unsmoothable wall (`finish_state.blocked_total`) sends `step_attention`. Only
+`done` fires `step_done`.
 
-Each cycle the conductor calls `queue.observe` for issued, not-done steps
-(capped). The server runs the declared progress read, writes an
-`observation`, and sets the step's target `done` when the rule for the
-step's **mode** holds. The mode comes from `blueprint.plan`'s
-`phases[].mode` **[verified]** (meta phases list their leaves under
-`applies`). `blueprint.apply`'s `progress.by_mode`, as data:
+### 4.4 Abandon cleanup (P3-H2, user's call)
 
-| Mode | Done when (fields from `blueprint.status` **[verified]**) |
-|---|---|
-| `dig` (including smoothing) | `shell_done` true: read cell by cell, carve cells dug and smooth cells smoothed or constructed. A wall quickfort cannot smooth (`finish_state.blocked_total` above 0, with a `remedy`) flags the proposer instead |
-| `build`, `place` | the phase's buildings exist on the site (field to add to `blueprint.status` if absent, stage 2 work) |
-| `zone` | the phase's zone exists on the site (same) |
-| `meta` | the rule of every leaf mode it applies holds |
+When the Overseer abandons a project, the next execute phase calls
+`queue.cleanup_project`: for each handle the project issued, `blueprint.release`
+withdraws that site's outstanding designations (B extends release to do so
+for any pending designation of the site, not only a stalled one) and
+`blueprint.unreserve` frees each `res-N` it reserved. Dug tiles are never
+touched. Each call uses the `step_runs` marker as a `cleanup:<handle>` run;
+results are listed on the `close` record.
 
-**[verified]** `dig_progress` counts only dig flags, not smoothing, and a
-build or zone phase makes no dig designations, which is why one rule per
-tool read done too early. **Slow work (M3):** a step stays issued while it
-is not done and `dig.state` is `in_progress` or pending counts fall.
-`stalled` flags the proposer (remedy: a `blueprint.release` follow-up).
-**`state: unknown`** three reads in a row flags the proposer. A tool with no
-`progress` entry is done at its first success. The follow-up wake fires only
-on done.
+### 4.5 Execute phase, hold, tripwire
 
-### 4.5 The execute phase [proposed]
-
-Ordinary cycle: read, grade, triage, advisors, Consultant, Overseer,
-**execute**, archive. Execute: open projects for accepted post-cutover
-non-follow-up rulings; apply accepted or covered follow-ups; observe issued
-steps; run ready steps by urgency then age, capped at 4; quicksave once if
-any will run. A step made ready by this phase waits a cycle. Execute runs
-when nobody woke, once the conductor runs as a service (today by hand).
-
-### 4.6 Tripwire, pause, hold [proposed]
-
-The executor never calls `clock.resume` or `clock.set-speed`; designations
-and orders work paused **[verified]**.
-
-- **Tripwire** (user's calls): quicksave; wake the owner from
-  `tripwire_owners` in `policy.yaml` (thirst and hunger: Quartermaster;
-  hostiles: the Overseer until a military role exists) with the fort paused;
-  the Overseer rules and must give `pause.verdict`; execute routed steps
-  accepted this episode with urgency `high` (allowed while latched); clear
-  and resume **only on `resume: true`** with no escalation.
-- **Repeated tripwires (P2-M5):** a per-cause episode counter in the
-  conductor's state; a second episode of the same cause within
-  `tripwire_repeat_ticks` (data) is escalated, not re-run.
-- **Watchdog-owned pause or an escalation this cycle:** no execute phase.
-- **Operator hold:** no execute phase unless set with `--allow-execution`.
+Execute (after the Overseer): open projects for accepted post-cutover rulings
+(not follow-ups); apply accepted or covered follow-ups; resolve Uncertain
+runs; observe issued steps; cleanup abandoned projects; run ready steps by
+urgency then age, at most 4, quicksaving once first. No execute phase under a
+watchdog-owned pause, an escalation this cycle, or an operator hold without
+`--allow-execution`. The tripwire sequence is its own stage (T, 6.2); there,
+high-urgency routed steps accepted in the episode may run while latched.
 
 ---
 
-## 5. Follow-ups: one project per room
+## 5. Follow-ups
 
-### 5.1 The wake [proposed]
-
-When a step reaches done, the conductor raises `step_done` for the
-project's proposer, once per step. Briefing: the project line, the done step,
-its handle and progress read, declared phases left. Ask: "File the next step
-as a follow-up naming project P and step S, or `queue.pass` naming P to close
-it." Bound: 240 s and the call cap. Same charter and tools as routine wakes,
-so the same cached prefix. Replaces the 2026-10-01 cheap executor model.
-
-### 5.2 Declared phases skip re-ruling [proposed]
-
-The Overseer's accept of the first proposal accepts its declared phases. A
-follow-up is **covered** when the server checks all of: same proposer role;
-tool equal to `phases.tool`; arguments exactly the carried ones (equal to
-the first step's), the next declared phase not yet applied, and a site
-handle this project issued; and **`after_step` is the step that applied the
-previous declared phase (or, for the first, the reserve step), and it is
-done** (P2-M5). A covered follow-up is closed `covered_by: <ruling id>` and
-goes to `apply_followup`; the briefing shows it under Decided. Anything else
-goes to the Overseer.
-
-### 5.3 Judgment at execution [proposed]
-
-Needs judgment, Failed after retry, Uncertain unreadable, stalled and
-unknown progress all flag the proposer on its project. Its moves: a recovery
-follow-up (for example `blueprint.release`), a follow-up with
-`replaces_step: S`, allowed only when S has no dependents and no `issued` or
-`issuing` run (P2-M4; otherwise release first), or a close request
-(`queue.pass` naming the project), after which the Overseer may abandon it.
-
-### 5.4 Idle and closed projects [proposed]
-
-**User's call:** a project with every step done and no next step is idle;
-after 7 game days idle the proposer gets a `project_idle` wake (once), and
-if it is still idle 7 game days later the executor closes it
-(`queue.close`, outcome `completed`, reason `idle`). A proposer's
-`queue.pass` naming the project closes it at once. Closed projects leave the
-WIP count and refuse follow-ups. Abandoned projects are closed too.
+- **`step_done` wake** to the project's proposer, once per step: the
+  project line, the done step and handle, declared phases left; "file the
+  next step as a follow-up naming project P and step S, or `queue.pass`
+  naming P to close it". 240 s.
+- **Coverage (from 2c, user's call on timing):** a follow-up is covered when
+  it has the same proposer role, tool `phases.tool`, exactly the carried
+  arguments, the next declared phase, a handle this project issued, and
+  `after_step` is the done step of the previous declared phase. Covered
+  follow-ups skip the Overseer. Before 2c every follow-up is ruled.
+- **Idle (user's call):** a project with every step done and no follow-up
+  gets one `project_idle` wake after 7 game days and is closed (`completed`,
+  `idle`) after another 7; `queue.pass` naming it closes it at once.
+- **`replaces_step`** is deferred: a `release` follow-up plus abandon covers
+  recovery for now (pass 3).
 
 ---
 
-## 6. Owned follow-ups and stuck jobs (stage 4) [proposed]
+## 6. Stage 2 build: five handoffs, then deploys
 
-**`queue.flag`:** any model role writes `what`, `evidence`, `owner`,
-`next_action`, `expires_after_ticks`; refused without owner and next action.
-The owner's briefing lists open flags; the wake is edge-triggered (once at
-open, once at expiry). An expired flag goes to the Overseer, which may close
-or reassign it. Closed by `queue.flag_close` or a proposal naming
-`flag_id`. Until stage 4, "flags the proposer" in 4 and 5 means a
-`step_attention` wake to the proposer carrying the same fields, once per
-event.
+A and B run in parallel; C needs A's store API and B's outputs; D needs C's
+tool contracts (fakes suffice); E last. Every handoff: `git merge --ff-only
+main` first, commit after each milestone, full ambient pytest and
+`dfmcp/tests` in `.venv-dfmcp` green, no edits to `Working.md`, the register
+or `memory/`.
 
-**Stuck jobs:** a stuck job whose id matches a step's `game_refs` belongs to
-that project's proposer (needs `job_id` in `stuckjobs.find` rows); otherwise
-`stuck_job_owner` in `policy.yaml` maps job class to role. At the renotify
-threshold the conductor opens a flag with the owner filled in.
+### 6.1 A. Queue model
+
+**Files:** `dfqueue/schema.py`, `dfqueue/store.py`, new
+`dfqueue/action_tools.yaml` and `dfqueue/routing.py`, `dfqueue/tests/`.
+
+**Schema:** proposal `step`, `phases`, `project_id`, `after_step`, server-set
+`preview`, `covered_by`; `executed.proposal_id`; step key `proposal_id`; a
+synthetic target per executor step (`targets: {set: ["<step id>"]}`); kind
+`close` (`project_id` or `proposal_id` or `ruling_id`, `outcome`
+`completed|not_done|abandoned|superseded`, `reason`, `cleanup`); roster
+`executor: conductor` writes `project`, `executed`, `amend`, `observation`,
+`close`; sole-writer `project`/`executed`/`amend` refused for routed groups.
+
+**Store API (C calls only these):**
+
+```python
+routing.group_of(type) -> str | None;  routing.is_routed(type) -> bool;  routing.tools(group)
+open_project_from_ruling(path, ruling_id) -> dict          # refuses follow-ups, unrouted, <= cutover, existing
+apply_followup(path, proposal_id) -> dict                  # amend: old steps + new step; base check
+check_step_runnable(path, project_id, step_id, *, latched: bool) -> list[str]   # [] = runnable
+begin_step_run(path, project_id, step_id, *, tick, baseline) -> int
+finish_step_run(path, run_id, executed: dict) -> dict       # appends executed, row recorded
+unresolved_step_runs(path) -> list[dict];  resolve_step_run(path, run_id, outcome, handle=None)
+record_observation(path, project_id, step_id, *, tick, done: bool, detail: dict) -> dict
+close(path, *, target_id, outcome, reason, cleanup=None) -> dict
+close_legacy(path, target_id, *, reason) -> dict   # ruling, project or pending proposal at or below its cutover;
+                                                  # outcome computed: completed if an executed record exists, else not_done
+legacy_targets(path, group) -> list[dict]          # every accepted ruling (and, per group, open project or
+                                                  # pending proposal) at or below the cutover not yet closed
+set_cutover(path, group, ruling_id) / cutover(path, group) -> str | None   # "legacy" is a group
+open_projects(path) -> list[dict]                           # the one WIP definition (section 3)
+unexecuted_accepted_proposals(path) -> list[dict]           # unrouted only, keyed by proposal_id
+issued_handles(path, project_id) -> list[str]
+```
+
+Plus: one completion rule (synthetic target `waiting`, `issued`, `done` by
+observation, `failed`), `step_runs` table and a `meta` table for cutovers,
+prediction arming on a proposal's own step reaching `done` (never a failure;
+legacy keeps today's rule), amend base check, `pending_proposals` excludes
+covered and closed.
+
+**Tests:** `close_legacy` computes `completed`/`not_done` and makes no
+DFHack call; routed refusal for each sole-writer kind; a step whose content
+differs from its proposal is not runnable; prerequisites through synthetic
+targets; arming on done only; unexecuted excludes routed and follow-up
+rulings; WIP count; `close_legacy` refused above the legacy cutover; amend
+base check; step-run lifecycle. **Deploy:** vm103-dfmcp, with 2a.
+
+### 6.2 B. Lua reads
+
+**Files:** `scripts/dfhack/df-overseer-blueprint.lua`,
+`df-overseer-reservations.lua` if needed, Lua logic tests (lupa). Not
+`TOOLS.yaml` (C owns it; B states each new signature and output in its
+Result).
+
+**Outputs:**
+- `blueprint.status SITE_ID [PHASE]`: with a phase, `phase: {label, mode,
+  leaves, cells: {...}, buildings: [{kind, complete}], zone_present, done}`,
+  computed over that phase's own leaves (`leaf_sections`); completion from
+  the building's construction stage. Without a phase, today's output.
+- `level` (relative to the landmark, like the `LEVEL` argument) in reserve
+  and apply outputs; `reservation` in `blueprint.sites` rows.
+- Reserve dry run returns `finish_plan` (the `finish_state` classification).
+- `blueprint.release SITE [DRY_RUN] [ANY_PENDING]`: with `ANY_PENDING`,
+  withdraws every outstanding designation of the site, not only a stalled
+  one; never touches dug tiles. A player can erase designations; no armok.
+- Fixture outputs for dry run, success and refusal of reserve, apply (each
+  phase of `bedroom-cell-v1` and `office-room-v2`) and status, derived from
+  the source, saved under `dfmcp/tests/fixtures/blueprint/`.
+
+**Tests:** `office-room-v2`'s shell reads done without its floor phase;
+furniture reads not done while its construction is pending; a meta phase
+reads done only when its leaves do. **Deploy:** vm103-dfmcp (Lua), before
+2b (reads only, safe).
+
+### 6.3 C. Server tools
+
+**Files:** new `dfmcp/executor_tools.py` and `dfmcp/action_data.py`,
+`dfmcp/queue_tools.py` (`queue.propose` filing, `pending_brief` WIP),
+`dfmcp/registry.py` (per-tool data fields), `dfmcp/roles.py` (Rule 2:
+no routed tool on any model role; `executor_only` flag), `dfmcp/server.py`
+(route the new module), `scripts/dfhack/TOOLS.yaml` (B's signatures, the
+per-tool data), `agents/conductor/tools.yaml`, `dfmcp/tests/`.
+
+**Tool contracts (executor-only, ids only; D uses only these):**
+
+| Tool | Arguments | Returns |
+|---|---|---|
+| `queue.open_project` | `ruling_id` | `{project_id, step_ids}` or error text |
+| `queue.apply_followup` | `proposal_id` | `{project_id, version, step_id}` |
+| `queue.run_step` | `project_id, step_id` | `{class, executed_id?, handle?, detail}`; `class` in success, transient, waiting, needs_judgment, failed, uncertain, not_runnable (with `reasons`) |
+| `queue.resolve_uncertain` | `run_id` | `{class: success|transient|uncertain, handle?}` |
+| `queue.observe` | `project_id, step_id` | `{state: issued|done|stalled|unknown|blocked_material, observation_id}` |
+| `queue.cleanup_project` | `project_id` | `{released: [...], unreserved: [...], failed: [...]}` |
+| `queue.close` | `project_id, outcome, reason` | `{close_id}` (idle and pass closes) |
+| `queue.close_legacy` | `target_id, reason` | `{close_id, outcome}`; outcome computed by the store; never calls DFHack |
+| `queue.cutover` | `group, apply: bool` | `{ok, blockers: [...], cutover_id?}`; check only unless `apply` |
+| `queue.execution_state` | none | open projects, ready steps, unresolved runs, abandoned awaiting cleanup, steps done since last read |
+
+**Tests:** filing refusals (each 2.2 item, absent verdict field, `dry_run`
+smuggling, meta repeat); fixture test over B's fixtures; `run_step` order
+(a fake DFHack that times out after the call yields Uncertain, never a
+second call); Rule 2 load refusal; WIP from `pending_brief` equals the
+store's. **Deploy:** vm103-dfmcp: the close tools with 2a, the rest before
+2b (inert while nothing is routed).
+
+### 6.4 D. Conductor
+
+**Files:** new `conductor/execute.py` (the phase, pure over a tool caller),
+new `conductor/cutover.py` (`python -m conductor.cutover legacy|rooms
+--check|--apply`), `conductor/cycle.py` (wire execute; unexecuted wake per
+section 3), `conductor/briefing.py` (ask per unrouted type; `step_done`,
+`step_attention`, `project_idle` briefings; the freeze line),
+`conductor/triage.py`, `conductor/policy.py`, `conductor/policy.yaml` (new
+wake reasons, `max_steps_per_cycle`, idle ticks, remove
+`unexecuted_wake_ignore`), `conductor/hold.py` (`--allow-execution`),
+`conductor/tests/`.
+
+**Tests:** execute order and cap; no execute under hold, escalation or an
+owned pause; Uncertain resolved before any rerun; `step_done` once per step;
+idle wake then close; the unexecuted wake ignores routed types and fires no
+wake under a hold; the cutover check reports blockers. **Deploy:**
+vm106-conductor: `cutover.py` and the unexecuted-wake change with 2a, the
+rest before 2b.
+
+### 6.5 E. Charters and allowlists
+
+**Files:** `agents/architect/role.md` and `tools.yaml` (the `queue.propose`
+description: one step, declared phases, follow-ups, citing handles, re-
+proposing a legacy room from its handles), `agents/overseer/role.md` and
+`tools.yaml` (siting tools and reads removed; rooms are ruled, not
+executed), `docs/STATE.md` (regenerated tool counts). **Tests:** roles load;
+the routed-tool test passes with `rooms: routed: true`. **Deploy:**
+vm106-agents and vm103-dfmcp, with 2b.
+
+### 6.6 Deploys
+
+- **2a, first and as early as possible (touches nothing in the game):**
+  A, plus C's `close_legacy`, `cutover` and the conductor allowlist entries,
+  plus D's `conductor/cutover.py` and the unexecuted-wake change; the rest of
+  B, C and D ships later. Nothing is routed. Live: `conductor.cutover
+  legacy --check` sets nothing and lists **every accepted ruling** up to the
+  current highest (user: "the current projects could just be nixed"), not
+  only the 9 with no project; `--apply` records the legacy cutover and closes
+  each under the conductor's name, `completed` where an `executed` record
+  exists and `not_done` otherwise, with no DFHack call. The Board shows the
+  conductor's closes; the unexecuted wake is empty; `unexecuted_wake_ignore`
+  is then removed.
+- **T, tripwire alone:** `tripwire_owners` (thirst and hunger: Quartermaster;
+  hostiles: the Overseer), explicit `pause.verdict` to resume, the per-cause
+  repeat counter. `conductor/cycle.py`, `policy.yaml`, the Overseer
+  charter's verdict line. Deploy vm106-conductor, vm106-agents; live check
+  by a forced test tripwire on the paused fort.
+- **2b, rooms routed:** first set `rooms.frozen: true`; the Architect's
+  briefing then says room work waits for the next deploy and it skips room
+  work (user's call: skipped, not refused). After at least one Overseer wake
+  under the freeze, `conductor.cutover rooms --check` lists what remains:
+  accepted room rulings without `executed`, open room projects, pending room
+  proposals. `--apply` closes all of them through `close_legacy` (user's
+  call for accepted work; the Architect may re-propose from the same
+  handles), sets the rooms cutover, and the same deploy flips `routed: true`
+  and ships E. Then the supervised bedroom, every follow-up ruled, recording
+  the first real outputs as fixtures.
+- **2c, coverage on:** `rooms.coverage: true` after the supervised bedroom
+  works (user's call on timing).
+
+Later stages as in revision 3: 3 work orders routed (with their `landed`
+reads), 4 `queue.flag` and defer-closes and stuck-job owners, 5 `DRY_RUN`
+for the unproposable tools and the `retired` list, 6 call cap and the 300 s
+timeout.
 
 ---
 
-## 7. Schema and store changes [proposed]
+## 7. Findings: where each landed
 
-`dfqueue/schema.py`: proposal fields `public_title`, `step`, `phases`,
-`relies_on`, `project_id`, `after_step`, `replaces_step`, and server-set
-`preview`, `cited`, `covered_by`; ruling `urgency`; `executed` gains
-`proposal_id`; a server-set `proposal_id` key on steps; each executor step
-gets one synthetic target, `targets: {set: ["<step id>"]}`; new kinds
-`close` (executor), `flag` and `flag_close` (stage 4); executor writers as
-in 4.1.
+Pass 3: B1 sections 1, 3, 4.1 and A; B2 2.1, 2.2, 4.3 and B; B3 6.6 (freeze,
+broadened precondition, `close_legacy` for what remains); B4 2.2, 2.3, 4.2;
+H1 2.3; H2 4.4 (user's call); M1 2.2 and B; M2 2.3; M3 section 3 and A; M4
+section 3; L1 section 3 and D. Passes 1 and 2: as listed in revision 3 (9),
+with `replaces_step` now deferred.
 
-`dfqueue/store.py`:
+**Deferred:** `replaces_step` (recovery by `release` plus abandon is enough
+until a real case needs it); pass-1 L3 (overlap flag matches only identical
+resolution fields; reservations refuse overlapping footprints at reserve
+time **[verified]**).
 
-- **One completion rule:** the synthetic target is seeded `waiting`, set
-  `issued` by a success record, `done` by an observation (or at success for
-  a tool with no `progress`), `failed` by a final failure.
-  `step_prerequisites_satisfied` and `step_status` judge a step by its rows
-  when rows exist **[verified]**, so they work unchanged. Legacy implicit
-  steps count only `outcome: success`.
-- **`check_step_runnable`**, shared by `run_step` and `append`.
-- **`step_runs`** table (markers and `landed` baselines), same file.
-- **Mapping by proposal (P2-M3):** a follow-up's ruling, or its `covered_by`,
-  maps to the parent project through the step's `proposal_id`.
-  `unexecuted_accepted_proposals` and prediction arming key on the step's
-  `proposal_id` (falling back to `ruling_id` for legacy records), so a
-  follow-up's own ruling is never listed as unexecuted forever.
-- **Prediction arming (M1):** each proposal, covered follow-ups included,
-  arms when its own step first reaches `done`; never on a failure. Legacy
-  rulings keep today's rule.
-- **Amend base check (P2-L1):** an amend that omits a previous step not
-  named in `drops` or `replaces` is refused.
-- `pending_proposals` excludes covered proposals, and from stage 4 deferred
-  ones; WIP and follow-up refusals as above.
+## 8. Risks, questions, measures
 
----
+**Risks.** Rubber-stamping (dry runs, guards, reservations, quicksave,
+per-proposer grades). Fixtures built from source until 2b (fail closed). The
+freeze stalls new rooms for as long as 2b takes. `ANY_PENDING` release must
+never erase another project's designations: it acts only on the site's own
+footprint, which reservations keep exclusive.
 
-## 8. Migration and stages
+**Open question for the user.** Pending room proposals at the 2b cutover
+(not yet ruled): close them through `close_legacy` with "re-file as an exact
+action" (proposed, consistent with your call on accepted work), or have the
+Overseer rule them first?
 
-### 8.1 Legacy rulings (H7, P2-H4, P2-L4) [proposed]
-
-User's call: the 9 accepted rulings with no project are closed **only by
-the executor, under its own name**, never as `overseer`. At the stage 2
-cutover, after a SQLite online backup, the conductor runs a one-off
-`queue.close_legacy(ruling_id, reason)` (executor-only, refused above the
-cutover id) for each: it writes an implicit `project` with role `conductor`
-(`normalize_project` makes one implicit step **[verified]**) and a `close`
-record, outcome `completed` for the 7 executed ("pre-executor history") and
-`not_done` for `ruling-0001` and `ruling-0006`. They never count toward the
-WIP cap (cutover rule) and the Board shows them as the conductor's
-housekeeping. Pending pre-cutover proposals of the newly routed type get an
-open item in the Overseer's briefing: rule them as they are (the Overseer
-still executes them under the old path for that type until the cutover, so
-the cutover waits until none is pending), or the proposer re-files.
-
-### 8.2 Stages
-
-Each stage is one or more handoffs; tests green; commit as you go; a live
-check before the next. A type cutover is one deploy.
-
-| Stage | Build | Deploy targets | Live check |
-|---|---|---|---|
-| 0 (in build, scope fixed) | `handoffs/2026-10-05-execution-stage-0.md`: usage and turn measurement, fixed hostname, fixed stock lists removed, operator hold shipped | vm106-conductor | per that handoff; read real-call latency from the server journal for 4.3 |
-| 1. Cited facts and briefing | `relies_on` with server reads; `queue.pending_brief`; threshold alerts; fixed order, ask last; Overseer loses stock reads | vm103-dfmcp, vm106-conductor, vm106-agents | a ruling wake: re-fetches of cited facts (target 0) |
-| 2. Rooms routed | filing format and validation; `TOOLS.yaml` data and fixtures for the room tools (and the build/zone fields `blueprint.status` lacks); `action_tools.yaml`; ROSTER `executor`, schema and store changes; `open_project`, `apply_followup`, `run_step`, `observe`, `close`, `close_legacy`; execute phase; follow-ups, declared phases, `step_done`, `step_attention`, `project_idle`; WIP cap; tripwire sequence and repeat counter; legacy closes; siting tools and reads leave the Overseer | vm103-dfmcp (incl. Lua), vm106-conductor, vm106-agents | supervised: one bedroom through reserve, dig, finish, meta, the Board's graph growing; a forced timeout lands Uncertain and its `landed` read resolves it; a slow dig stays Waiting |
-| 3. Work orders routed | `landed` reads for orders and workjobs (designed from stage 0 latency), their data and fixtures; `work_order` and `crop_plan` routed; their tools leave the Overseer | vm103-dfmcp, vm106-conductor, vm106-agents | an order through the executor; a timed-out create resolved by `landed`, never doubled |
-| 4. Ownership | `queue.flag`, edge-triggered wakes, defer closes, stuck-job owners, `job_id` in `stuckjobs.find` | vm103-dfmcp (incl. Lua), vm106-conductor, vm106-agents | a defer reaches its proposer; a stuck job yields a flag and a close |
-| 5. Remaining tools | `DRY_RUN` for `landmarks.build`, `openarea.build`, `diggable.dig`; types for the Overseer's remaining tools or the `retired` list | vm103-dfmcp (incl. Lua), vm106-agents | each newly routed tool through the executor once |
-| 6. Bounds | `run.begin`/`run.end` cap; 300 s `queue_pending` once the Overseer holds no mutating tool; effort if exposed | vm103-dfmcp, vm106-conductor | compare with stage 0's baseline |
-
-**Stage 1 is safe alone:** it adds a proposal field, server reads, a
-conductor-only read and briefing order. No write path, timeout, routing or
-defer behaviour changes (P2-M6 moved defer-closes to stage 4).
-
----
-
-## 9. Findings: where each landed
-
-Pass 1: C1 2.2-2.3, 4.3; C2 4.2-4.3; C3 7; H1, M4, M9 removed with `open`,
-`fill_step`, `from_step`; H2 2.2; H3 3.5 (stage 4); H4 4.6; H5 1; H6 3.4;
-H7 8.1; M1 7; M2 4.3; M3 4.4; M5 5.3; M6 3.4; M7 3.1 and stage 0; M8 2.2;
-M10 6; M11 1; L1 2.3; L2 4.3; L4 register (2026-10-05); L5 4.5.
-
-Pass 2: H1 2.2-2.3 and fixture test; H2 4.4; H3 1; H4 3.5 and 8.1; M1 3.4;
-M2 4.3 (stage 0 data, no scope change); M3 4.1 and 7; M4 5.3; M5 5.2 and
-4.6; M6 3.5 and stage 4; L1 4.1 and 7; L2 in stage 0's handoff (task 3);
-L3 orientation and level added to `resolution_fields` (2.3); L4 8.1.
-
-**Deferred:** pass-1 L3 (overlap flag matches only identical resolution
-fields; adjacent sites are left to reservations, which refuse overlapping
-footprints at reserve time **[verified]**, `reserve_site`).
-
----
-
-## 10. Risks, open questions, measures
-
-**Risks.** Rubber-stamping (backstop: dry runs, guards, reservations,
-quicksave, per-proposer grades; watch accept rate against hit rate). Stage 2
-is large: it carries the whole executor plus rooms, so its handoffs must
-land and pass offline before one cutover deploy. Wrong `progress` or
-`landed` data (each tool's fixtures and one live run before routing). Filing
-latency (busy refusal). Rooms cost one ruling plus covered follow-ups;
-measure rulings per finished room.
-
-**Open questions for the user.**
-
-1. **Pending room proposals at the cutover** (8.1): hold the stage 2 deploy
-   until no pre-cutover room proposal is pending (recommended), or reject
-   them with "re-file as an exact action"?
-2. **`build`/`zone` done fields:** if `blueprint.status` lacks a per-phase
-   "buildings and zone exist" read, stage 2 adds it to the Lua tool (a read
-   of what a player can see). Agreed?
-
-**Measures.** Baseline **[verified]**: Overseer 645 s, 37 calls; advisors 195
-to 483 s. Per run from stage 0: wall clock, calls and failures,
-`assistantTurns`, input, output and cache-read tokens, and real-call
-latency. Detectors: re-fetches of briefed facts; refused and busy filings;
-rulings and follow-up turns per finished room; steps per outcome class;
-Uncertain count and how `landed` resolved it. Targets, not promises: a
-three-proposal ruling wake under 120 s and 10 calls; cache-read share above
-half from a turn's second round.
+**Measures.** Stage 0 baseline **[verified]**: Overseer 13 rounds, 323 s;
+Quartermaster 9 rounds, about 300 s; 90 to 93% of input tokens cache reads.
+Track rounds, reasoning tokens and calls per wake; rulings and follow-up
+turns per finished room; steps per outcome class; Uncertain and how `landed`
+resolved it; cleanup results per abandon.
