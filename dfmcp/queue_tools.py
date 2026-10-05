@@ -655,10 +655,12 @@ _EXECUTED_DESCRIPTION = (
     "execution is still a valid, required record. This is what starts the "
     "proposal's prediction grading window: it now runs from THIS call's own "
     "stamped game tick, never from the original proposal's write time. Only "
-    "the roster's sole writer may call this. Optionally names 'step_id', "
+    "the roster's sole writer may call this. REFUSED unless the ruling "
+    "already has a project: call queue.project with from_ruling first (this "
+    "includes accepted proposals from before the rule). Name 'step_id', "
     "one step of ruling_id's own project (queue.project/queue.project_status), "
-    "when this execution is for a real, granular step rather than a plain "
-    "one-step project; an action naming 'targets' and 'target_state' folds "
+    "which is required unless the project is a plain one-step project with "
+    "no declared steps; an action naming 'targets' and 'target_state' folds "
     "into that step's own per-target state (design §4.4/§4.5), the same "
     "state queue.project_status's counts and top_blocker are read from. "
     "role/id/ts/cycle/snapshot are stamped by the server; do not pass them."
@@ -675,10 +677,9 @@ _EXECUTED_SCHEMA = {
         "step_id": {
             "type": "string",
             "description": (
-                "Optional: which step of ruling_id's own project this execution is "
-                "for (see queue.project_status). Omit for a ruling whose project has "
-                "no real steps (a plain one-step project) -- executed exactly as it "
-                "was before steps existed."
+                "Which step of ruling_id's own project this execution is for (see "
+                "queue.project_status). Required whenever the project has declared "
+                "steps; omit only for a plain one-step project with no declared steps."
             ),
         },
         "actions": {
@@ -877,9 +878,11 @@ _PROJECT_DESCRIPTION = (
     "again at write time in dfqueue.schema) -- a ruling's own project is "
     "created by the ruling on it, never proposed. A ruling gets exactly one "
     "project, ever; a second queue.project call for the same from_ruling is "
-    "refused. Omit 'steps' (or pass an empty list) for a plain one-step "
-    "project wrapping the whole ruling, unchanged from before this existed; "
-    "declare real steps with 'requires' edges for a multi-step plan whose "
+    "refused. Call this right after accepting and BEFORE queue.executed: "
+    "queue.executed is refused for an accepted ruling with no project. "
+    "Prefer real steps, one per action; omit 'steps' (or pass an empty "
+    "list) only for a plain one-step project wrapping the whole ruling. "
+    "Declare real steps with 'requires' edges for a multi-step plan whose "
     "progress queue.project_status and queue.executed's own step_id can then "
     "track. role/id/ts/cycle/snapshot are stamped by the server; do not pass "
     "them."

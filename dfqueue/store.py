@@ -573,9 +573,42 @@ def append(record: dict, path: str | Path, *, game_tick: int | None = None) -> d
                 # queue-bugs-and-amend.md item 3) rather than only the
                 # original `project` record's own `steps`, so a step added
                 # by an `amend` is a legal `step_id` here too.
+                #
+                # 2026-10-05 (handoffs/2026-10-05-project-before-executed.md):
+                # an accepted ruling with no project is refused outright, with
+                # or without a `step_id`. A charter rule alone left the live
+                # queue with zero projects; the server is the boundary. Older
+                # accepted rulings stay executable: `queue.project` with
+                # `from_ruling` works for any accepted ruling with no project,
+                # whenever it was written. Once a project exists, `step_id` is
+                # required: without it no step_targets row advances and the
+                # job graph never moves. An implicit-step (legacy one-step)
+                # project is the one exception: it has no step id to name.
+                project = None
+                if ruling_payload.get("decision") == ACCEPT:
+                    project = _find_project_for_ruling(conn, ruling_id)
+                    if project is None:
+                        errors.append(
+                            f"record.ruling_id: {ruling_id!r} is accepted but has no "
+                            "project yet, so it cannot be recorded as executed. Call "
+                            f"queue.project with from_ruling={ruling_id!r} first (one "
+                            "step per action, 'requires' edges where one step needs "
+                            "another done first; a one-action job is a one-step "
+                            "project), then call queue.executed again naming that "
+                            "step's id as step_id. This also applies to an accepted "
+                            "proposal from before this rule: create its project now, "
+                            "then execute"
+                        )
+                    elif record.get("step_id") is None and not all(
+                        st.get("implicit") for st in _current_steps_and_version(conn, project)[0]
+                    ):
+                        errors.append(
+                            f"record.step_id: required: {ruling_id!r} has project "
+                            f"{project['id']!r}; name the step this execution carries "
+                            "out (call queue.project_status to see its step ids)"
+                        )
                 if record.get("step_id") is not None and not _project_step_ids_already_flagged(errors):
                     step_id = record["step_id"]
-                    project = _find_project_for_ruling(conn, ruling_id)
                     if project is None:
                         errors.append(
                             f"record.step_id: {ruling_id!r} has no project yet "
