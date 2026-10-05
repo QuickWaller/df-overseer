@@ -367,7 +367,20 @@ function mine_vein(zone_id, dry_run, res_id, override)
   end
   local hooks, herr = surface_hooks()
   if not hooks then return {error = herr} end
-  local b, err = hooks.find_zone(zone_id)
+  local b, err
+  if tostring(zone_id or ""):match("^site%-%d+$") then
+    -- handoffs/2026-10-05-ore-exposed-signal.md: a blueprint site handle
+    -- stands for the room rectangle its template declares, so ore exposed in
+    -- a freshly dug room (no zone yet) can be mined. Lazy reqscript: only a
+    -- site handle pays for loading the blueprint module.
+    local okm, bp_mod = pcall(reqscript, 'df-overseer-blueprint')
+    if not okm or type(bp_mod) ~= 'table' or type(bp_mod.site_room_rect) ~= 'function' then
+      return {error = "df-overseer-blueprint is not available to resolve " .. tostring(zone_id)}
+    end
+    b, err = bp_mod.site_room_rect(zone_id)
+  else
+    b, err = hooks.find_zone(zone_id)
+  end
   if not b then return {error = err} end
   local ring = hooks.ring_tiles(b)
   if #ring > MAX_RING_TILES then
@@ -1334,6 +1347,12 @@ if cmd == "mine-vein" then
   else
     emit(mine_vein(args[2], args[3], args[4], args[5]))
   end
+elseif cmd == "mine-vein-site" then
+  if not args[2] then
+    print("usage: df-overseer-construction mine-vein-site SITE_ID [DRY_RUN] [RES_ID] [OVERRIDE]")
+  else
+    emit(mine_vein(args[2], args[3], args[4], args[5]))
+  end
 elseif cmd == "build" then
   if not (args[2] and args[3]) then
     print("usage: df-overseer-construction build ZONE_ID KIND [DRY_RUN] [MATERIAL_CHOICE] [RES_ID] [OVERRIDE]")
@@ -1350,6 +1369,7 @@ elseif cmd == "audit" then
   emit(audit_constructions(args[2], args[3]))
 else
   print("usage: df-overseer-construction mine-vein ZONE_ID [DRY_RUN] [RES_ID] [OVERRIDE]")
+  print("usage: df-overseer-construction mine-vein-site SITE_ID [DRY_RUN] [RES_ID] [OVERRIDE]")
   print("usage: df-overseer-construction build ZONE_ID KIND [DRY_RUN] [MATERIAL_CHOICE] [RES_ID] [OVERRIDE]")
   print("usage: df-overseer-construction door ZONE_ID [DRY_RUN] [RES_ID] [OVERRIDE]")
   print("usage: df-overseer-construction audit [ZONE_ID] [DRY_RUN]")

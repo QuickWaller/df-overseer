@@ -1019,50 +1019,93 @@ end
 -- Surface re-read through the zone-id shim (see header)
 -- ---------------------------------------------------------------------------
 
-local function surface_reread(site, room)
-  if not room then
-    return {skipped = "the blueprint has no zone section, so it declares no room rectangle to re-read"}
-  end
+-- The room rectangle of a site as a zone-shaped table (`id = 0`; x1..y2, z),
+-- the only thing surface.lua's find_zone consumers read.
+local function room_rect_of(site, room)
+  if not room then return nil end
   local ax, ay = cell_xy(site, room.x1, room.y1)
   local bx, by = cell_xy(site, room.x2, room.y2)
-  local rect = {
+  return {
     id = 0,
     x1 = math.min(ax, bx), y1 = math.min(ay, by),
     x2 = math.max(ax, bx), y2 = math.max(ay, by), z = site.z,
   }
-  local fns = {enclosure = surface_mod.enclosure, finish = surface_mod.finish,
-    material = surface_mod.boundary_material}
-  local orig, idx = upvalue_by_name(fns.enclosure, 'find_zone')
+end
+
+-- Global so df-overseer-construction.lua's mine-vein can take a site handle
+-- (handoffs/2026-10-05-ore-exposed-signal.md). One-directional: construction
+-- reqscripts this file; this file never reqscripts construction.
+function site_room_rect(handle)
+  if not is_handle(handle) then return nil, "SITE_ID must look like site-3 (see sites)" end
+  local site = load_state().sites[handle]
+  if not site then return nil, "no site '" .. handle .. "' (see sites)" end
+  local bp, err = load_blueprint(site.blueprint)
+  if not bp then return nil, err end
+  local rect = room_rect_of(site, bp.room)
+  if not rect then return nil, "site '" .. handle .. "' has no zone section, so it declares no room rectangle" end
+  rect.id = handle
+  return rect
+end
+
+-- Runs surface.lua reads (name -> function, each taking the zone id 0) with
+-- find_zone swapped for the room rectangle, then restores it.
+local function shimmed_reads(site, room, fns)
+  local rect = room_rect_of(site, room)
+  if not rect then
+    return {skipped = "the blueprint has no zone section, so it declares no room rectangle to re-read"}
+  end
+  local anchor = fns.enclosure or fns.vein_material
+  local orig, idx = upvalue_by_name(anchor, 'find_zone')
   if type(orig) ~= 'function' then
-    return {error = "df-overseer-surface no longer exposes find_zone as an upvalue of enclosure; the re-read cannot run (see this file's header)"}
+    return {error = "df-overseer-surface no longer exposes find_zone as an upvalue of its reads; the re-read cannot run (see this file's header)"}
   end
   local shim = function() return rect end
   local out = {by = "df-overseer-surface, room rectangle from the blueprint's own zone section"}
   local function swap_in()
-    debug.setupvalue(fns.enclosure, idx, shim)
-    -- Prove the swap reached the other two closures (same shared local):
-    local seen = upvalue_by_name(fns.finish, 'find_zone')
-    local seen2 = upvalue_by_name(fns.material, 'find_zone')
-    return seen == shim and seen2 == shim
+    debug.setupvalue(anchor, idx, shim)
+    -- Prove the swap reached every other closure (same shared local):
+    for _, fn in pairs(fns) do
+      if upvalue_by_name(fn, 'find_zone') ~= shim then return false end
+    end
+    return true
   end
   local okc, took = pcall(swap_in)
   if not okc or not took then
-    pcall(debug.setupvalue, fns.enclosure, idx, orig)
-    return {error = "the surface shim did not take effect in all three reads (" .. tostring(took) .. "); nothing was read"}
+    pcall(debug.setupvalue, anchor, idx, orig)
+    return {error = "the surface shim did not take effect in all reads (" .. tostring(took) .. "); nothing was read"}
   end
   local results = {}
   for name, fn in pairs(fns) do
     local ok, res = pcall(fn, 0)
     results[name] = ok and res or {error = tostring(res)}
   end
-  pcall(debug.setupvalue, fns.enclosure, idx, orig)
-  local restored = upvalue_by_name(fns.finish, 'find_zone') == orig
+  pcall(debug.setupvalue, anchor, idx, orig)
+  local restored = upvalue_by_name(anchor, 'find_zone') == orig
   for name, res in pairs(results) do
     if type(res) == 'table' then res.zone_id = nil end
     out[name] = res
   end
   out.shim_restored = restored
   return out
+end
+
+local function surface_reread(site, room)
+  local out = shimmed_reads(site, room, {enclosure = surface_mod.enclosure, finish = surface_mod.finish,
+    material = surface_mod.boundary_material, vein_material = surface_mod.vein_material})
+  -- The per-tile list is bulky and not needed here; keep the summary.
+  local vm = out.vein_material
+  if type(vm) == 'table' then vm.tiles = nil end
+  return out
+end
+
+-- Exposed ore on the walls ringing a site's room rectangle, as a small table.
+-- Player-visible faces only (see surface.lua's vein_material `exposed`).
+local function site_ore_exposed(site, room)
+  local out = shimmed_reads(site, room, {vein_material = surface_mod.vein_material})
+  if out.skipped or out.error then return {skipped = out.skipped, error = out.error} end
+  local vm = out.vein_material
+  if type(vm) ~= 'table' or vm.error then return {error = vm and vm.error or "no vein read"} end
+  return vm.exposed
 end
 
 -- ---------------------------------------------------------------------------
@@ -1487,10 +1530,16 @@ function list_sites()
     local phases = {}
     for _, p in ipairs(s.phases or {}) do phases[#phases + 1] = p.label end
     local b = site_brief(s)
+    local ore = NULL
+    local sbp = load_blueprint(s.blueprint)
+    if sbp then
+      local okr, res = pcall(site_ore_exposed, s, sbp.room)
+      ore = okr and res or {error = tostring(res)}
+    end
     out[#out + 1] = {handle = handle, blueprint = s.blueprint, phases_applied = phases,
       footprint = {width = s.w, height = s.h},
       near_landmark = b.near_landmark, direction = b.direction, distance_tiles = b.distance_tiles,
-      reservation = nn(s.reservation)}
+      reservation = nn(s.reservation), ore_exposed = ore}
   end
   table.sort(out, function(a, b) return a.handle < b.handle end)
   return out

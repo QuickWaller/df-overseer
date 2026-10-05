@@ -106,6 +106,13 @@ read:
       role reads its OWN diff.since only for itself (agents/overseer/
       tools.yaml is still the only OTHER grant, for the Overseer's own use
       inside a real run).
+  - id: "blueprint.sites"
+    status: exists
+    note: >-
+      Added handoffs/2026-10-05-ore-exposed-signal.md. Polled once per cycle by
+      conductor/ore_watch.py: each site carries ore_exposed, the ore or gem
+      still walled in on its room's faces (player-visible tiles only). The
+      edge-triggered wake for the Architect is built from this. Read-only.
   - id: "stuckjobs.find"
     status: exists
     note: >-

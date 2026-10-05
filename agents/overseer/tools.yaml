@@ -680,6 +680,16 @@ write:
       Offline build, lupa-tested against a fake world only; the real vein
       decode this depends on has never run live -- HIGH RISK, verify
       surface.vein-material against zone 13's real 5 hematite tiles first.
+  - id: "construction.mine-vein-site"
+    status: planned
+    note: >-
+      Added handoffs/2026-10-05-ore-exposed-signal.md. construction.mine-vein
+      for a blueprint site handle (a freshly dug room has no zone yet, and
+      ZONE_ID is an integer argument). Same function, same guards: dry run by
+      default, reservations respected, anything unclassifiable refused.
+      blueprint.sites' ore_exposed field says which sites have ore to mine.
+      Mutating, overseer only. Offline build, lupa-tested against a fake world
+      only; never run live.
   - id: "construction.build"
     status: planned
     note: >-

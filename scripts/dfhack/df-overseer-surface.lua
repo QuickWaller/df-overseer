@@ -784,6 +784,8 @@ local function decode_vein_tile(x, y, z)
   local economic = is_ore or is_gem
   return {
     ok = true, material_class = mclass, mineral_name = name, economic = economic,
+    kind = economic and (is_ore and "ore" or "gem") or nil,
+    shape = t.shape,
     vein_status = economic and "ore_or_gem" or "not_economic",
   }
 end
@@ -800,10 +802,24 @@ function vein_material(zone_id)
   local tiles = {}
   local counts = {ore_or_gem = 0, not_economic = 0, not_mineral = 0, hidden = 0, unknown = 0}
   local read_failures = {}
+  -- `exposed` (handoffs/2026-10-05-ore-exposed-signal.md): ore/gem tiles on
+  -- the ring that are still WALL-shaped (a smoothed wall is still WALL, so a
+  -- vein smoothed over counts) and visible to the player; a tile already
+  -- mined open is not exposed, a hidden tile is never read.
+  local exposed_by_mineral, exposed_order, exposed_total = {}, {}, 0
   for i, xyz in ipairs(ring) do
     local rec = decode_vein_tile(xyz[1], xyz[2], xyz[3])
     local status = rec.vein_status or "unknown"
     counts[status] = (counts[status] or 0) + 1
+    if status == "ore_or_gem" and rec.shape == df.tiletype_shape.WALL then
+      local m = rec.mineral_name
+      if not exposed_by_mineral[m] then
+        exposed_by_mineral[m] = {mineral_name = m, kind = rec.kind, tiles = 0}
+        exposed_order[#exposed_order + 1] = m
+      end
+      exposed_by_mineral[m].tiles = exposed_by_mineral[m].tiles + 1
+      exposed_total = exposed_total + 1
+    end
     if rec.error then
       table.insert(read_failures, "ring tile " .. i .. ": " .. rec.error)
       pcall(function() dfhack.printerr("df-overseer-surface: vein-material zone=" .. b.id .. " ring tile " .. i .. ": " .. rec.error) end)
@@ -817,11 +833,20 @@ function vein_material(zone_id)
     }
   end
 
+  table.sort(exposed_order)
+  local exposed_list = {}
+  for _, m in ipairs(exposed_order) do exposed_list[#exposed_list + 1] = exposed_by_mineral[m] end
   return {
     zone_id = b.id,
     boundary_ring_tiles = #ring,
     tiles = tiles,
     counts = counts,
+    exposed = {
+      total_tiles = exposed_total,
+      materials = exposed_list,
+      unclassified_tiles = counts.unknown or 0,
+      mine_with = "construction.mine-vein",
+    },
     read_failures = read_failures,
   }
 end
