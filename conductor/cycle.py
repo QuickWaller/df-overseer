@@ -50,6 +50,7 @@ same code path with `FakeToolCaller`/`FakeRoleRunner` instead.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import time
@@ -62,6 +63,10 @@ from conductor.cursors import CursorStore
 from conductor.game_tick import GameTickError, game_tick_from_overview
 from conductor.mcp_client import MCPToolError, ToolCaller, tool_name
 from conductor.order_watch import OrderWatchResult, evaluate_orders
+from conductor.pause_watch import (
+    OWNED_ESCALATION, UNEXPLAINED_PAUSE, PauseWatchStore, PausePolicy, Verdict,
+    finish_after_overseer, load_pause_policy, run_pause_watch,
+)
 from conductor.policy import FULL_SPEED, PAUSED, Policy
 from conductor.runner import RoleRunner, RunResult
 from conductor.triage import ADVISORS, CONSULTANT, OVERSEER, Signals, Wake, triage
@@ -179,6 +184,15 @@ class CycleDeps:
     role_timeout_seconds: float = 600.0
     dry_run: bool = False
     clock: Callable[[], float] = time.monotonic
+    #: The pause watchdog (conductor/pause_watch.py). All optional: unset, the
+    #: policy is the committed conductor/pause_policy.yaml and the state file
+    #: sits beside the cursor store. `wall_clock` is real time (the state
+    #: outlives a process, so a monotonic clock will not do); `pause_sleep`
+    #: is the wait between a resume and its tick check.
+    pause_policy: Optional[PausePolicy] = None
+    pause_store: Optional[PauseWatchStore] = None
+    wall_clock: Callable[[], float] = time.time
+    pause_sleep: Callable[[float], Any] = asyncio.sleep
 
 
 @dataclass
@@ -197,6 +211,9 @@ class CycleResult:
     archived_path: Optional[Any]
     dry_run: bool
     plan: Optional[Dict[str, Any]] = None  # dry-run only: what WOULD have happened
+    #: The pause watchdog's pass this cycle (verdict, reason, actions, alerts),
+    #: None when it did not run. handoffs/2026-10-05-pause-safety.md.
+    pause_watch: Optional[Dict[str, Any]] = None
 
 
 #: Fix 3 (`handoffs/2026-09-22-loop-conductor-fixes.md`): the queue tool
@@ -518,6 +535,20 @@ async def run_cycle(cycle_index: int, deps: CycleDeps) -> CycleResult:
             result.archived_path = _archive(deps, cycle_index, result, briefings={OVERSEER: briefing})
         return result
 
+    # ---- Pause watchdog: a pause the tripwire does not explain --------------
+    # handoffs/2026-10-05-pause-safety.md. Runs only here, after the tripwire
+    # branch has had its turn, so a latched tripwire is never seen by it as
+    # unowned and never resumed by it.
+    pause_outcome = await _pause_watch(deps, call, clock_status, cycle_index)
+    pause_watch_dict = pause_outcome.as_dict() if pause_outcome is not None else None
+    if pause_outcome is not None and pause_outcome.verdict is not Verdict.IDLE and pause_outcome.still_paused:
+        return await _paused_cycle_result(
+            deps, call, cycle_index=cycle_index, game_tick=game_tick, game_tick_error=game_tick_error,
+            clock_status=clock_status, vitals=vitals, events_by_role=events_by_role,
+            queue_state=queue_state, new_cursors=new_cursors, clock_changes=clock_changes,
+            pause_outcome=pause_outcome,
+        )
+
     # ---- 2. GRADE -----------------------------------------------------------
     prediction_graded = False
     unexecuted: List[dict] = []
@@ -670,6 +701,7 @@ async def run_cycle(cycle_index: int, deps: CycleDeps) -> CycleResult:
         if role == OVERSEER and _overseer_called_escalate(run_result):
             ordinary_escalated = True
             await _call_write(call, "clock.pause", {}, clock_changes=clock_changes, cycle_index=cycle_index)
+            _mark_pause_owned(deps)
             LOG.error(
                 "ESCALATION: cycle %s's Overseer explicitly escalated via queue.escalate "
                 "during an ordinary cycle; the fort is now PAUSED.",
@@ -684,6 +716,7 @@ async def run_cycle(cycle_index: int, deps: CycleDeps) -> CycleResult:
         clock_changes=clock_changes, role_runs=role_runs, tripwire=None,
         escalated=ordinary_escalated,
         unexecuted=unexecuted, archived_path=None, dry_run=deps.dry_run,
+        pause_watch=pause_watch_dict,
         plan=(
             {
                 "would_read": list(ALL_ROLES),
@@ -694,6 +727,99 @@ async def run_cycle(cycle_index: int, deps: CycleDeps) -> CycleResult:
                     for w in triage_result.wakes
                 ],
             }
+            if deps.dry_run else None
+        ),
+    )
+    if not deps.dry_run:
+        result.archived_path = _archive(deps, cycle_index, result, briefings=briefings)
+    return result
+
+
+def _pause_store(deps: "CycleDeps") -> PauseWatchStore:
+    return deps.pause_store or PauseWatchStore(deps.cursor_store.path.with_name("pause_watch.json"))
+
+
+def _mark_pause_owned(deps: "CycleDeps") -> None:
+    """The conductor's own escalation pause is recorded so the watchdog never
+    treats it as unowned. Never raises: bookkeeping must not fail a cycle."""
+    try:
+        _pause_store(deps).mark_owned(OWNED_ESCALATION, deps.wall_clock())
+    except Exception:  # noqa: BLE001 -- deliberately total, see docstring
+        LOG.exception("could not record the escalation pause as owned")
+
+
+async def _pause_watch(deps: "CycleDeps", call: Callable, clock_status: Mapping[str, Any], cycle_index: int):
+    """One watchdog pass. Total by design: a bug or an undeployed tool in the
+    watchdog logs loudly and the cycle goes on as it did before the watchdog
+    existed; it must never be the reason a cycle fails."""
+    try:
+        return await run_pause_watch(
+            call, _pause_store(deps), deps.pause_policy or load_pause_policy(),
+            clock_status=clock_status, now=deps.wall_clock(), sleep=deps.pause_sleep,
+            dry_run=deps.dry_run,
+        )
+    except Exception:  # noqa: BLE001 -- deliberately total, see docstring
+        LOG.exception("cycle %s: the pause watchdog failed; carrying on without it", cycle_index)
+        return None
+
+
+async def _paused_cycle_result(
+    deps: "CycleDeps", call: Callable, *, cycle_index: int, game_tick, game_tick_error,
+    clock_status: Mapping[str, Any], vitals: Mapping[str, Any], events_by_role, queue_state, new_cursors,
+    clock_changes: List[Dict[str, Any]], pause_outcome,
+) -> "CycleResult":
+    """The fort is still paused after the watchdog's pass: no ordinary triage
+    (advisors would deliberate over a frozen fort). When the verdict is
+    `wake_overseer`, run the Overseer once on an `unexplained_pause` wake and
+    let `finish_after_overseer` apply the tripwire branch's own convention: a
+    clean un-escalated run is the decision to resume (once, verified), an
+    escalation or an unclean run keeps the fort paused and alerts the human."""
+    role_runs: List[RunResult] = []
+    escalated = False
+    briefings: Dict[str, Any] = {}
+    woken: tuple = ()
+
+    if pause_outcome.verdict is Verdict.WAKE_OVERSEER and pause_outcome.wake_detail and not deps.dry_run:
+        wake = Wake(UNEXPLAINED_PAUSE, pause_outcome.wake_detail, (OVERSEER,), PAUSED)
+        woken = (OVERSEER,)
+        for other in ALL_ROLES:
+            if other != OVERSEER:
+                _commit_cursor(deps, new_cursors, other)
+        await _call_write(call, "fort.quicksave", {}, clock_changes=clock_changes, cycle_index=cycle_index)
+        briefing = build_briefing(
+            role=OVERSEER, game_tick=game_tick or 0, wake=wake, vitals=vitals,
+            diff_events=events_by_role.get(OVERSEER, []),
+            queue_summary=_queue_summary_for(OVERSEER, queue_state),
+        )
+        briefings[OVERSEER] = briefing
+        run_result = await _run_role(
+            deps, call, OVERSEER, json.dumps(briefing, default=str), wake=wake, cycle_index=cycle_index,
+        )
+        role_runs.append(run_result)
+        if run_result.ok:
+            _commit_cursor(deps, new_cursors, OVERSEER)
+        escalated = _overseer_called_escalate(run_result) or (not run_result.ok) or run_result.timed_out
+        finished = await finish_after_overseer(
+            call, _pause_store(deps), deps.pause_policy or load_pause_policy(),
+            escalated=escalated, clock_status=clock_status, now=deps.wall_clock(), sleep=deps.pause_sleep,
+        )
+        pause_outcome.actions.extend(finished.actions)
+        pause_outcome.alerts.extend(finished.alerts)
+        pause_outcome.resumed = finished.resumed
+        pause_outcome.still_paused = finished.still_paused
+        if finished.verdict is Verdict.ALERT:
+            pause_outcome.verdict = Verdict.ALERT
+
+    # Nothing woken (a hold, an owned pause, a grace wait): no role consumes
+    # anything, so no cursor moves.
+    result = CycleResult(
+        cycle_index=cycle_index, game_tick=game_tick, game_tick_error=game_tick_error,
+        signals=Signals(), clock_level=PAUSED if pause_outcome.still_paused else FULL_SPEED,
+        roles_woken=woken, clock_changes=clock_changes, role_runs=role_runs, tripwire=None,
+        escalated=escalated, unexecuted=[], archived_path=None, dry_run=deps.dry_run,
+        pause_watch=pause_outcome.as_dict(),
+        plan=(
+            {"would_read": list(ALL_ROLES), "would_wake": [], "pause_watch": pause_outcome.as_dict()}
             if deps.dry_run else None
         ),
     )
@@ -735,6 +861,7 @@ def _archive(
         "roles_woken": list(result.roles_woken),
         "tripwire": result.tripwire,
         "escalated": result.escalated,
+        "pause_watch": result.pause_watch,
         "unexecuted_proposal_ids": [u.get("proposal", {}).get("id") for u in result.unexecuted],
     }
     role_run_dicts = [
