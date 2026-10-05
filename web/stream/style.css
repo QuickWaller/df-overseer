@@ -708,3 +708,7 @@ a { color: var(--accent); }
 .fstatusline.st-deferred, .fstatusline.st-hold { color: #d08a3a; }
 .fstatusline.st-rejected { color: #e05050; }
 .fstatusline.st-abandoned { color: #999; }
+/* A status line inside a turn breaks out of the turn's indent to full width. */
+.freceipts .fstatusline { margin-left: -56px; margin-right: 0; }
+.fstatusline.st-pending { color: #999; }
+.fstatusline.st-active { color: #7777ff; }

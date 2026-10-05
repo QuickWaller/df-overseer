@@ -1146,39 +1146,41 @@ class StreamPage {
       const q = quoteFor(item);
       return q ? el("div", { class: "fquoted" }, [q, node]) : node;
     };
+    const project = Object.values((this.projects && this.projects.projects) || {})
+      .find((p) => p.proposal_id === sorted[0].id || ((this.projects && this.projects.thread_to_project) || {})[thread] === p.id);
+    const lastExecuted = [...sorted].reverse().find((i) => i.kind === "executed");
+    const statusAfter = (i) => {
+      if (i.kind === "proposal") return statusLine("Proposal pending", "pending", i.game_date);
+      if (i.kind === "ruling") {
+        const m = /^(Accepted|Rejected|Deferred)/.exec(this._bodyText(i) || "");
+        return m ? statusLine(`Proposal ${m[1].toLowerCase()}`, m[1].toLowerCase(), i.game_date) : null;
+      }
+      if (i.kind === "project") return statusLine("Project in progress", "active", i.game_date);
+      if (i.kind === "observation") return statusLine("Project on hold", "hold", i.game_date);
+      if (i.kind === "abandon") return statusLine("Project abandoned", "abandoned", i.game_date);
+      if (i === lastExecuted && project && project.status === "done") return statusLine("Project completed", "done", i.game_date);
+      return null;
+    };
     const blocks = groups.map((g) => {
-      if (!g.run) return renderItem(g.items[0]);
+      if (!g.run) {
+        const line = statusAfter(g.items[0]);
+        return line ? el("div", {}, [renderItem(g.items[0]), line]) : renderItem(g.items[0]);
+      }
       const first = g.items[0];
       const trigger = first.reply_to && byId.get(first.reply_to);
       const answering = trigger && groupOf.get(trigger.id) !== g && first.kind === "answer"
         ? `woke to answer ${speakerName(trigger)}'s question` : null;
-      return this._turnBlock(g.run, g.items.map((i) => {
+      return this._turnBlock(g.run, g.items.flatMap((i) => {
         const r = this._receipt(i);
         const q = quoteFor(i);
-        return q ? el("div", { class: "fquoted" }, [q, r]) : r;
+        const line = statusAfter(i);
+        return [q ? el("div", { class: "fquoted" }, [q, r]) : r, line].filter(Boolean);
       }), g.items, answering);
     });
-    // Status changes are full-width lines in the conversation, placed after
-    // the turn (or post) in which they happened (the user's call, 2026-10-05).
-    const project = Object.values((this.projects && this.projects.projects) || {})
-      .find((p) => p.proposal_id === sorted[0].id || (this.projects.thread_to_project || {})[thread] === p.id);
-    const lastExecuted = [...sorted].reverse().find((i) => i.kind === "executed");
+    // Status changes are full-width lines placed right after the record
+    // that caused them, even inside a turn (the user's call, 2026-10-05).
     const out = [];
-    groups.forEach((g, k) => {
-      out.push(blocks[k]);
-      g.items.forEach((i) => {
-        if (i.kind === "ruling") {
-          const m = /^(Accepted|Rejected|Deferred)/.exec(this._bodyText(i) || "");
-          if (m) out.push(statusLine(`Proposal ${m[1].toLowerCase()}`, m[1].toLowerCase(), i.game_date));
-        } else if (i.kind === "observation") {
-          out.push(statusLine("Project on hold", "hold", i.game_date));
-        } else if (i.kind === "abandon") {
-          out.push(statusLine("Project abandoned", "abandoned", i.game_date));
-        } else if (i === lastExecuted && project && project.status === "done") {
-          out.push(statusLine("Project completed", "done", i.game_date));
-        }
-      });
-    });
+    groups.forEach((g, k) => out.push(blocks[k]));
     return [el("div", { class: "fthread" }, out)];
   }
 
