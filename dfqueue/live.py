@@ -55,6 +55,13 @@ JOURNAL_LOOKBACK_MIN = 720
 #: `conductor/status.py::status_running`'s block is ignored once older than this.
 RUNNING_BLOCK_MAX_AGE_S = 900
 
+#: The pause watchdog's block in the conductor's `status.json` is ignored once
+#: the file is older than this (a stopped conductor must not leave an alert on
+#: the strip for ever). Cycles are well inside it.
+PAUSE_BLOCK_MAX_AGE_S = 1800
+PAUSE_REASON_MAX = 160
+PAUSE_REASON_GENERIC = "the fort is paused and needs a human"
+
 #: A run report with no end older than this is shown as `lost`, not `running`
 #: (the conductor died, or its end call failed). The role timeout is 600 s.
 RUN_OPEN_MAX_AGE_S = 1200
@@ -166,6 +173,8 @@ def read_conductor_dir(path: "str | Path | None", *, cycles_scanned: int = 6) ->
     status = _load_json(root / "status.json")
     if isinstance(status, dict) and isinstance(status.get("running"), dict):
         out["running"] = status["running"]
+    if isinstance(status, dict) and isinstance(status.get("pause_watch"), dict):
+        out["pause"] = {"block": status["pause_watch"], "updated_at": status.get("updated_at")}
     cycles_dir = root / "cycles"
     cycle_dirs = sorted(p for p in cycles_dir.glob("cycle-*") if p.is_dir()) if cycles_dir.is_dir() else []
     for cdir in reversed(cycle_dirs[-cycles_scanned:]):
@@ -421,6 +430,50 @@ def _iso(ts: float) -> str:
     return datetime.fromtimestamp(ts, timezone.utc).isoformat(timespec="seconds")
 
 
+def _public_pause_reason(text: Any) -> str:
+    """The alert's reason as the public strip may show it. The watchdog's own
+    reasons are fixed phrases, but one can carry the Overseer's own one-line
+    verdict reason (model text), so the feed's safety net runs on it and an
+    unsafe or empty one falls back to a generic line, never the matched text."""
+    if not isinstance(text, str) or not text.strip():
+        return PAUSE_REASON_GENERIC
+    from dfqueue import feed
+    body = " ".join(text.split())
+    if len(body) > PAUSE_REASON_MAX:
+        body = body[: PAUSE_REASON_MAX - 3].rstrip() + "..."
+    return PAUSE_REASON_GENERIC if feed.find_unsafe_pattern(body) else body
+
+
+def build_pause(conductor: Optional[Mapping[str, Any]], now: float, *, public: bool) -> Optional[dict]:
+    """`{"alert": {reason, since} | None, "waiting_on_human": bool}` from the
+    conductor's pause watchdog block, or `None` when there is nothing to show
+    (no block, a stale status file, no alert and not waiting). `waiting_on_human`
+    is the watchdog attributing a plain pause to a person and waiting
+    (handoffs/2026-10-05-safe-to-resume.md)."""
+    pause = (conductor or {}).get("pause")
+    if not isinstance(pause, Mapping):
+        return None
+    updated = _parse_ts(pause.get("updated_at"))
+    if updated is None or now - updated > PAUSE_BLOCK_MAX_AGE_S:
+        return None
+    block = pause.get("block")
+    if not isinstance(block, Mapping) or not block.get("still_paused"):
+        return None
+    alert = None
+    raw = block.get("alert")
+    if isinstance(raw, Mapping) and raw.get("reason"):
+        since = raw.get("since")
+        reason = _public_pause_reason(raw["reason"]) if public else " ".join(str(raw["reason"]).split())[:PAUSE_REASON_MAX * 2]
+        alert = {
+            "reason": reason,
+            "since": _iso(since) if isinstance(since, (int, float)) and not isinstance(since, bool) else None,
+        }
+    waiting = bool(block.get("waiting_on_human")) and alert is None
+    if alert is None and not waiting:
+        return None
+    return {"alert": alert, "waiting_on_human": waiting}
+
+
 def build_live(
     calls: Optional[list[dict]], now: float, *, public: bool,
     conductor: Optional[Mapping[str, Any]] = None, window: float = AWAKE_WINDOW_S,
@@ -532,6 +585,9 @@ def build_live(
         "last_runs": last_runs,
         "source": "journal+archive" if conductor else "journal",
     })
+    pause_block = build_pause(conductor, now, public=public)
+    if pause_block is not None:
+        base["pause"] = pause_block
     if runs is not None:
         base["source"] = base["source"] + "+reports"
     if calls is None:

@@ -582,6 +582,27 @@ function statusLine(text, state, gameDate) {
   ]);
 }
 
+/** The paused-fort segment of the live strip (`live.pause`, built by
+ * dfqueue/live.py `build_pause`): `{alert: {reason, since} | null,
+ * waiting_on_human}`. Returns null when there is nothing to show. */
+function pauseStripSegment(pause, sinceFetch) {
+  if (!pause || (!pause.alert && !pause.waiting_on_human)) return null;
+  if (pause.alert) {
+    const sinceMs = pause.alert.since ? Date.parse(pause.alert.since) : NaN;
+    const age = Number.isFinite(sinceMs) ? Math.max(0, (Date.now() - sinceMs) / 1000) : null;
+    return el("span", { class: "ls-seg ls-pause ls-alert" }, [
+      el("span", { class: "ls-dot" }),
+      el("span", { class: "ls-pause-h", text: "Paused, needs attention" }),
+      age === null ? null : el("span", { class: "ls-t", text: formatElapsed(age) }),
+      el("span", { class: "ls-pause-why", text: pause.alert.reason || "" }),
+    ]);
+  }
+  return el("span", { class: "ls-seg ls-pause ls-wait" }, [
+    el("span", { class: "ls-dot" }),
+    el("span", { class: "ls-pause-h", text: "Paused, waiting for a person" }),
+  ]);
+}
+
 class StreamPage {
   constructor({ dataRoot, mode, root, liveViewSrc, embedded }) {
     this.dataRoot = dataRoot;
@@ -750,6 +771,11 @@ class StreamPage {
     const sinceFetch = Math.max(0, (Date.now() - this.statusFetchedAt) / 1000);
     const parts = [];
     const reason = wakeWords;
+    // A paused fort that needs a person (alert, red) or that the watchdog
+    // attributes to one and is waiting on (hold shade) comes first. One line:
+    // the reason is the only part that gives way (ellipsis).
+    const pauseSeg = pauseStripSegment(live.pause, sinceFetch);
+    if (pauseSeg) parts.push(pauseSeg);
     if (live.awake && live.awake.length) {
       live.awake.forEach((a) => {
         const seg = el("span", { class: "ls-seg" }, [
@@ -767,7 +793,13 @@ class StreamPage {
       const runs = Object.entries(live.last_runs || {})
         .filter(([, r]) => r.duration_s !== null && r.duration_s !== undefined)
         .sort((x, y) => String(y[1].ended_at || "").localeCompare(String(x[1].ended_at || "")));
-      if (!runs.length) { strip.hidden = true; return; }
+      if (!runs.length) {
+        if (!parts.length) { strip.hidden = true; return; }
+        strip.textContent = "";
+        parts.forEach((p) => strip.appendChild(p));
+        strip.hidden = false;
+        return;
+      }
       const [role, r] = runs[0];
       parts.push(el("span", { class: "ls-seg faint" }, [
         el("span", { text: "Last run" }),
