@@ -64,3 +64,24 @@ past_forts:
     name: Artobcatten
     status: lost
     fate: Lost while founding. The first fort.
+
+# Why an agent woke, as the title of its turn on the Board. Keys are the
+# conductor's wake-reason codes (conductor/policy.yaml, conductor/triage.py,
+# conductor/cycle.py). A code with no entry shows as its own words.
+wake_reasons:
+  routine_review: Regular check-in
+  queue_pending: Proposals waiting for a ruling
+  open_ask: Asked a question
+  stalled_order: A work order stalled
+  blocked_order: A work order was blocked
+  stuck_job: A job is stuck
+  stock_below_target: Running low
+  vital_nearing_threshold: Dwarves in trouble
+  prediction_due: Time to check a prediction
+  prediction_graded: A prediction was graded
+  season_change: New season
+  migrant_wave: Migrants arrived
+  caravan_present: A caravan is here
+  hostile_seen_unreachable: Hostiles spotted
+  slow_announcement: Something to look at
+  tripwire: Emergency stop

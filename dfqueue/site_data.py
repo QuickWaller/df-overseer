@@ -652,6 +652,7 @@ def write_site_data(
     _write_json(root_dir / "site.json", {
         "past_forts": text.get("past_forts") or [],
         "map_ring": text.get("map_ring") or {},
+        "wake_reasons": text.get("wake_reasons") or {},
     })
     _write_json(root_dir / "agents.json", agents_json)
     _write_json(root_dir / "tools.json", tools_json)

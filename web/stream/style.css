@@ -620,3 +620,12 @@ a.tagchip:hover { border-color: var(--text); }
 .fttreason { color: var(--turn); font-size: 11.5px; letter-spacing: .08em; text-transform: uppercase; font-weight: 700; }
 .fttmeta { margin-left: auto; color: var(--faint); font-size: 11.5px; white-space: nowrap; }
 .freceipts .ftag { width: 78px; }
+/* Title band: reason and when on one row, the conductor's detail under. */
+.fturntitle { flex-direction: column; align-items: stretch; gap: 1px; }
+.fttrow { display: flex; align-items: baseline; gap: 10px; }
+.fttdetail { color: var(--muted); font-size: 11.5px; }
+/* Receipts: the chip and date on top, the text full width below. */
+.freceipt { flex-direction: column; align-items: stretch; gap: 3px; padding: 6px 0; }
+.frtop { display: flex; align-items: baseline; gap: 10px; }
+.frtop .fwhen { margin-left: auto; }
+.freceipts .ftag { width: auto; padding: 0 6px; }

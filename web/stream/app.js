@@ -620,6 +620,7 @@ class StreamPage {
     );
     const status = await fetchJson(`${root}/status.json`).catch(() => null);
     this.runs = await fetchJson(`${root}/runs.json`).catch(() => null);
+    if (!this.siteText) this.siteText = await fetchJson(`${this.dataRoot}/site.json`).catch(() => ({}));
 
     this.head = head;
     // S0/S1 have no closed segments to speak of in the small local exports
@@ -1129,11 +1130,16 @@ class StreamPage {
     const color = ROLE_COLORS[run.role] || "var(--text)";
     // The turn's title band says why it woke, when and for how long; under
     // it the agent speaks (its summary), then its receipts.
-    const reason = answering || (run.wake_reason ? "Woke for " + String(run.wake_reason).replace(/_/g, " ") : "Turn");
+    const titles = (this.siteText && this.siteText.wake_reasons) || {};
+    const reason = answering
+      || (run.wake_reason ? (titles[run.wake_reason] || String(run.wake_reason).replace(/_/g, " ")) : "Turn");
     const day = items.find((i) => i.game_date);
     const title = el("div", { class: "fturntitle" }, [
-      el("span", { class: "fttreason", text: reason.charAt(0).toUpperCase() + reason.slice(1) }),
-      el("span", { class: "fttmeta", text: [day ? shortDate(day.game_date) : null, durationWords(run.duration_s)].filter(Boolean).join(" · ") }),
+      el("div", { class: "fttrow" }, [
+        el("span", { class: "fttreason", text: reason.charAt(0).toUpperCase() + reason.slice(1) }),
+        el("span", { class: "fttmeta", text: [day ? shortDate(day.game_date) : null, durationWords(run.duration_s)].filter(Boolean).join(" · ") }),
+      ]),
+      run.wake_detail && !answering ? el("div", { class: "fttdetail", text: run.wake_detail }) : null,
     ]);
     const head = [
       el("div", { class: "fturnhead" }, [
@@ -1291,9 +1297,11 @@ class StreamPage {
       ]));
     }
     return el("div", { class: "freceipt" + cls }, [
-      el("span", { class: "ftag", text: tag }),
+      el("div", { class: "frtop" }, [
+        el("span", { class: "ftag", text: tag }),
+        el("span", { class: "fwhen", text: item.game_date ? shortDate(item.game_date) : "" }),
+      ]),
       el("div", { class: "frbody" }, lines),
-      el("span", { class: "fwhen", text: item.game_date ? shortDate(item.game_date) : "" }),
     ]);
   }
 

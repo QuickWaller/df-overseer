@@ -37,6 +37,10 @@ def _row(run_id, role, *, started=300, ended=None, **kw):
     return row
 
 
+def pub_runs_have_detail(doc):
+    return any(r.get("wake_detail") == "internal detail" for r in doc["runs"])
+
+
 def _call(role, tool, age):
     return {"ts": NOW - age, "role": role, "tool": tool, "is_error": False}
 
@@ -88,7 +92,10 @@ def test_public_runs_json_shape_and_the_summary_rule():
     assert by_id["run-0003"]["wake_reason"] is None  # not a plain code
     assert pub["by_thread"]["proposal-0001"] == ["run-0001", "run-0002", "run-0003"]
     blob = json.dumps(pub)
-    for forbidden in ("cost_usd", "wake_detail", "internal detail", "error", "boom", "example.org"):
+    # The wake detail is conductor-written, so it is public (2026-10-05);
+    # costs, errors and model text that trips the pattern check are not.
+    assert pub_runs_have_detail(pub)
+    for forbidden in ("cost_usd", "error", "boom", "example.org"):
         assert forbidden not in blob
 
 

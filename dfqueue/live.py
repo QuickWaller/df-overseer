@@ -341,6 +341,14 @@ def build_runs(
                     entry["summary_withheld"] = True
                 else:
                     entry["summary"] = summary
+            # The wake detail is written by the conductor's own code, never a
+            # model, so it is public (user's call, 2026-10-05) once it passes
+            # the feed's pattern check.
+            detail = row.get("wake_detail")
+            if isinstance(detail, str) and detail.strip():
+                from dfqueue import feed
+                if not feed.find_unsafe_pattern(detail):
+                    entry["wake_detail"] = detail.strip()[:300]
             if entry["status"] == "ok":
                 thinking = _public_thinking(row.get("thinking"))
                 if thinking:

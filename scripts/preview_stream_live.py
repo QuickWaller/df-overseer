@@ -48,6 +48,11 @@ DEMO_SUMMARIES = {  # EXAMPLE DATA (preview only)
                  "first is dug. Added a haul step after the Consultant said boulders block a bed."),
     "quartermaster": "Drink is at zero. Proposed a standing target of thirty drinks and a direct brew at the Still.",
 }
+DEMO_WAKE_DETAIL = {  # EXAMPLE DATA, worded like the conductor's own details
+    "architect": "45 game days since the last routine review",
+    "overseer": "2 proposals waiting for a ruling",
+    "quartermaster": "45 game days since the last routine review",
+}
 DEMO_READS = {
     "architect": ["overview.get", "overview.get", "zone.list", "tree.find"],
     "overseer": ["queue.pending", "overview.get", "stocks.food-drink"],
@@ -111,8 +116,8 @@ def _demo_runs(now: float) -> tuple:
     for n, role in enumerate(DEMO_SUMMARIES, start=1):
         linked = runs_store.records_in_window(records, role, DEMO_START.isoformat(), DEMO_END.isoformat())
         rows.append({
-            "run_id": f"run-{n:04d}", "role": role, "wake_reason": "routine_review" if role != "overseer" else "ask_open",
-            "wake_detail": "demo", "cycle": n, "started_at": DEMO_START.isoformat(), "ended_at": DEMO_END.isoformat(),
+            "run_id": f"run-{n:04d}", "role": role, "wake_reason": "routine_review" if role != "overseer" else "queue_pending",
+            "wake_detail": DEMO_WAKE_DETAIL[role], "cycle": n, "started_at": DEMO_START.isoformat(), "ended_at": DEMO_END.isoformat(),
             "status": "ok", "ok": 1, "timed_out": 0, "duration_s": 372.4 + n * 40, "cost_usd": 0.05 * n,
             "error": None, "final_answer": DEMO_SUMMARIES[role], "records_json": json.dumps(linked),
             # EXAMPLE DATA (preview only): a turn's thinking.
@@ -146,7 +151,7 @@ def main(argv: list[str] | None = None) -> int:
     ended = datetime.fromtimestamp(now - 700, timezone.utc).isoformat(timespec="seconds")
     conductor = {
         "running": None if args.idle else {
-            "role": "architect", "wake_reason": "ask_open",
+            "role": "architect", "wake_reason": "open_ask",
             "started_at": datetime.fromtimestamp(now - 250, timezone.utc).isoformat(),
         },
         "last_runs": {"overseer": {"duration_s": 372.4, "cost_usd": 1.84, "wake_reason": "routine_review",
