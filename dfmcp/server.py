@@ -543,6 +543,30 @@ def build_mcp_server(
             raise DFHackCallError(parsed["error"])
         return parsed
 
+    async def _read_fact(role: str, tool_id: str, arguments: Mapping[str, Any]) -> Any:
+        """A cited fact's read (queue.propose's `relies_on`, queue.pending_brief's
+        refresh): one DFHack-backed, non-mutating tool on `role`'s own allowlist,
+        run through the same path as `_call_dfhack`. A list result is wrapped as
+        {"result": [...]} exactly as a normal tool result is, so a cited field
+        path means the same thing it does to the model reading that tool."""
+        if tool_id not in registry:
+            raise queue_tools.FactReadError(f"{tool_id!r} is not a tool on this server")
+        tool = registry.get(tool_id)
+        if getattr(tool, "native", False):
+            raise queue_tools.FactReadError(
+                f"{tool_id}: only DFHack read tools can be cited, not server-side tools"
+            )
+        if getattr(tool, "mutates", False):
+            raise queue_tools.FactReadError(f"{tool_id}: a tool that changes the fort cannot be cited")
+        allowed, reason = roster.check(role, tool_id)
+        if not allowed:
+            raise queue_tools.FactReadError(f"{tool_id}: not on your allowlist ({reason})")
+        try:
+            parsed = await _call_dfhack(tool_id, arguments)
+        except ArgumentError as exc:
+            raise queue_tools.FactReadError(f"{tool_id}: {exc}") from exc
+        return parsed if isinstance(parsed, dict) else {"result": parsed}
+
     async def _count_labors(labors: list) -> Any:
         """C1's `labor.enabled-counts LABOR [LABOR...]`, for the labor join only.
         Server bookkeeping, so it bypasses `Roster.check` (see
@@ -613,7 +637,7 @@ def build_mcp_server(
                     text, structured = await queue_tools.call(
                         tool_id, role, params.arguments or {},
                         db_path=queue_db_path, call_dfhack=_call_dfhack,
-                        write_lock=queue_write_lock,
+                        write_lock=queue_write_lock, fact_reader=_read_fact,
                     )
                 elif tool_id in conductor_tools.NATIVE_TOOL_IDS:
                     text, structured = await conductor_tools.call(

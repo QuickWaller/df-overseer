@@ -172,6 +172,16 @@ from learning import live_signals
 from learning.predictions.schema import PREDICATE_OPS
 
 CallDFHack = Callable[[str, Mapping[str, Any]], Awaitable[Any]]
+#: `(role, tool_id, arguments) -> parsed result`, injected by `dfmcp/server.py`
+#: (conductor-execution stage 1). Reads one DFHack-backed, non-mutating tool
+#: under `role`'s own allowlist; raises `FactReadError` with a repair message
+#: when it may not or cannot.
+FactReader = Callable[[str, str, Mapping[str, Any]], Awaitable[Any]]
+
+
+class FactReadError(Exception):
+    """A cited fact could not be read: the tool is unknown, native, mutating
+    or not on the citing role's allowlist, or the read itself failed."""
 
 # --------------------------------------------------------------------------
 # Tool ids
@@ -251,11 +261,18 @@ QUEUE_AMEND = "queue.amend"
 #: executed history is untouched. Same sole_writer_only restriction as
 #: queue.amend above.
 QUEUE_ABANDON = "queue.abandon"
+#: Added handoffs/2026-10-05-execution-stage-1.md (docs/CONDUCTOR-EXECUTION.md
+#: 3.3). The conductor's read for the Overseer's ruling briefing: pending
+#: proposals (capped) with cited facts refreshed by the server, overlap flags,
+#: open projects and the last rulings. Conductor only: granted by
+#: agents/conductor/tools.yaml and refused by the handler for any other role.
+QUEUE_PENDING_BRIEF = "queue.pending_brief"
 
 NATIVE_TOOL_IDS = (
     QUEUE_PROPOSE, QUEUE_PASS, QUEUE_RULE, QUEUE_PENDING, QUEUE_ASK,
     QUEUE_ANSWER, QUEUE_EXECUTED, QUEUE_GRADE, QUEUE_OVERVIEW, QUEUE_ESCALATE,
     QUEUE_PROJECT, QUEUE_PROJECT_STATUS, QUEUE_AMEND, QUEUE_ABANDON,
+    QUEUE_PENDING_BRIEF,
 )
 
 
@@ -318,6 +335,8 @@ class NativeTool:
             return _AMEND_DESCRIPTION, _AMEND_SCHEMA
         if self.id == QUEUE_ABANDON:
             return _ABANDON_DESCRIPTION, _ABANDON_SCHEMA
+        if self.id == QUEUE_PENDING_BRIEF:
+            return _PENDING_BRIEF_DESCRIPTION, _PENDING_BRIEF_SCHEMA
         raise AssertionError(f"NativeTool.describe: unknown id {self.id!r}")  # pragma: no cover
 
 
@@ -369,6 +388,9 @@ NATIVE_TOOLS: Dict[str, NativeTool] = {
     QUEUE_AMEND: NativeTool(id=QUEUE_AMEND, mutates=False, sole_writer_only=True),
     # queue.abandon: same restriction as queue.amend/queue.project.
     QUEUE_ABANDON: NativeTool(id=QUEUE_ABANDON, mutates=False, sole_writer_only=True),
+    # queue.pending_brief: a read, restricted to the conductor by its
+    # tools.yaml grant and again by the handler (the role check).
+    QUEUE_PENDING_BRIEF: NativeTool(id=QUEUE_PENDING_BRIEF, mutates=False, sole_writer_only=False),
 }
 
 
@@ -417,7 +439,10 @@ def _propose_description(role: str) -> str:
         "near-duplicate is NOT refused, but is still written flagged with "
         "duplicate_of (the existing proposal's id) so the Overseer sees both "
         "and decides on the merits; this call's own result reports which "
-        "proposal it matched and why."
+        "proposal it matched and why. Cite the facts your proposal rests on in "
+        "`relies_on` (read tools on your own allowlist, a field path into the "
+        "result): the server reads each itself, stores the value and tick, and "
+        "the Overseer rules on your reasoning without re-reading them."
     )
 
 
@@ -530,6 +555,38 @@ def _propose_schema(role: str) -> dict:
                     "Coordinate-free."
                 ),
             },
+            "relies_on": {
+                "type": "array",
+                "maxItems": schema.RELIES_ON_MAX,
+                "items": {
+                    "type": "object",
+                    "additionalProperties": False,
+                    "required": ["tool", "field"],
+                    "properties": {
+                        "tool": {
+                            "type": "string",
+                            "description": "A DFHack-backed read tool on your own allowlist, e.g. stocks.availability.",
+                        },
+                        "args": {
+                            "type": "object",
+                            "description": "That tool's arguments, as you would pass them to call it.",
+                        },
+                        "field": {
+                            "type": "string",
+                            "description": (
+                                "Dotted path into the tool's result, to one number, "
+                                "boolean or short string, e.g. available_units or "
+                                "drink.units (list items by index, e.g. rows.0.count)."
+                            ),
+                        },
+                    },
+                },
+                "description": (
+                    "Optional, at most 6: the facts this proposal rests on. The "
+                    "server reads each at filing and stores the value and tick; a "
+                    "citation it cannot read refuses the filing."
+                ),
+            },
         },
     }
 
@@ -596,6 +653,25 @@ _PENDING_SCHEMA = {
             "type": "integer",
             "minimum": 1,
             "description": "Return at most this many pending records. Omit for all of them.",
+        },
+    },
+}
+
+_PENDING_BRIEF_DESCRIPTION = (
+    "Conductor only. The pending proposals for the Overseer's ruling briefing, "
+    "capped, with each proposal's cited facts refreshed by the server (a `now` "
+    "value only when it changed), overlap flags, open projects and the last "
+    "rulings. Read-only."
+)
+_PENDING_BRIEF_SCHEMA = {
+    "type": "object",
+    "additionalProperties": False,
+    "properties": {
+        "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 8,
+            "description": "Show at most this many proposals (default and maximum 8); the true count is always given.",
         },
     },
 }
@@ -1114,11 +1190,12 @@ def _reject_unknown_arguments(tool_id: str, arguments: Mapping[str, Any], known:
 
 _PROPOSE_FIELDS = {
     "type", "summary", "rationale", "prediction", "cost",
-    "suggested_priority", "preconditions", "public_rationale",
+    "suggested_priority", "preconditions", "public_rationale", "relies_on",
 }
 _PASS_FIELDS = {"reason"}
 _RULE_FIELDS = {"proposal_id", "decision", "reason", "public_rationale"}
 _PENDING_FIELDS = {"limit"}
+_PENDING_BRIEF_FIELDS = {"limit"}
 _ASK_FIELDS = {"question", "proposal_id"}
 _ANSWER_FIELDS = {"ask_id", "answer"}
 _EXECUTED_FIELDS = {"ruling_id", "step_id", "actions", "notes"}
@@ -1162,9 +1239,82 @@ async def _append_locked(
         raise _storage_error(tool_id, exc) from exc
 
 
+#: `docs/CONDUCTOR-EXECUTION.md` 2.2 item 7: the filing's cited reads share
+#: this bound; a timeout is a distinct "busy, file again" refusal.
+FILING_READ_TIMEOUT_SECONDS = 60.0
+
+
+def extract_field(result: Any, path: str) -> Any:
+    """Value at a dotted `path` in a tool result (dict keys, list items by
+    index). Raises `KeyError`/`IndexError`/`TypeError` if the path is absent."""
+    node = result
+    for part in path.split("."):
+        if isinstance(node, list):
+            node = node[int(part)]
+        elif isinstance(node, Mapping):
+            node = node[part]
+        else:
+            raise TypeError(part)
+    return node
+
+
+async def read_cited_fact(role: str, ref: Mapping[str, Any], fact_reader: Optional[FactReader]) -> Any:
+    """One cited fact's current scalar value, read as `role`. Raises
+    `FactReadError` with a repair message for anything that is not a clean read."""
+    if fact_reader is None:
+        raise FactReadError("cited facts cannot be read on this server")
+    tool, field = ref["tool"], ref["field"]
+    try:
+        result = await fact_reader(role, tool, ref.get("args") or {})
+    except FactReadError:
+        raise
+    except Exception as exc:  # the injected reader's own transport errors
+        raise FactReadError(f"{tool}: the read failed: {exc}") from exc
+    try:
+        value = extract_field(result, field)
+    except (KeyError, IndexError, TypeError, ValueError):
+        raise FactReadError(
+            f"{tool}: field {field!r} is not in the result; cite a dotted path to one value "
+            "(read the tool once yourself to see its fields)"
+        ) from None
+    if not schema._is_scalar_fact(value):
+        raise FactReadError(
+            f"{tool}: field {field!r} is not a single number, boolean or short string; cite a more specific field"
+        )
+    return value
+
+
+async def _read_citations(
+    role: str, relies_on: Any, fact_reader: Optional[FactReader], tick: int,
+) -> list:
+    """Server-side reads of every `relies_on` entry, in order, bounded at
+    `FILING_READ_TIMEOUT_SECONDS` in total. The caller has already checked
+    the entries' shape."""
+    cited: list = []
+
+    async def _all() -> None:
+        for i, ref in enumerate(relies_on):
+            try:
+                value = await read_cited_fact(role, ref, fact_reader)
+            except FactReadError as exc:
+                raise QueueToolError(f"{QUEUE_PROPOSE}: relies_on[{i}]: {exc}") from exc
+            cited.append({
+                "tool": ref["tool"], "args": dict(ref.get("args") or {}), "field": ref["field"],
+                "value": value, "tick": tick,
+            })
+
+    try:
+        await asyncio.wait_for(_all(), timeout=FILING_READ_TIMEOUT_SECONDS)
+    except asyncio.TimeoutError:
+        raise QueueToolError(
+            f"{QUEUE_PROPOSE}: server busy, file again (the cited reads timed out; nothing was written)"
+        ) from None
+    return cited
+
+
 async def _propose(
     role: str, arguments: Mapping[str, Any], *, db_path, call_dfhack: CallDFHack,
-    write_lock: "asyncio.Lock",
+    write_lock: "asyncio.Lock", fact_reader: Optional[FactReader] = None,
 ) -> Tuple[str, dict]:
     _reject_unknown_arguments(QUEUE_PROPOSE, arguments, _PROPOSE_FIELDS)
     tick, snapshot = await _stamp_cycle_snapshot(call_dfhack)
@@ -1172,6 +1322,12 @@ async def _propose(
         "kind": schema.PROPOSAL, "role": role, "cycle": tick, "snapshot": snapshot,
         **{k: arguments[k] for k in _PROPOSE_FIELDS if k in arguments},
     }
+    if "relies_on" in record:
+        shape_errors: list = []
+        schema._validate_fact_list(record, "relies_on", shape_errors, cited=False)
+        if shape_errors:
+            raise QueueToolError(f"{QUEUE_PROPOSE}: refused: " + "; ".join(shape_errors))
+        record["cited"] = await _read_citations(role, record["relies_on"], fact_reader, tick)
     written = await _append_locked(QUEUE_PROPOSE, record, db_path, tick, write_lock)
     return render.to_xml(written), written
 
@@ -1379,6 +1535,149 @@ async def _overview(
     return text, structured
 
 
+#: Proposals shown in one ruling briefing, and the bounds on proposal text
+#: (docs/CONDUCTOR-EXECUTION.md 3.3: bounded text beside Tier 0 figures).
+BRIEF_MAX_PROPOSALS = 8
+BRIEF_SUMMARY_MAX = 240
+BRIEF_RATIONALE_MAX = 600
+BRIEF_RECENT_RULINGS = 5
+#: One bound for every refresh read of a brief, in total.
+BRIEF_REFRESH_TIMEOUT_SECONDS = 30.0
+
+
+def _clip(text: Any, cap: int) -> str:
+    text = str(text if text is not None else "")
+    return text if len(text) <= cap else text[: cap - 1] + "\u2026"
+
+
+def overlap_flags(proposals: list) -> Dict[str, list]:
+    """`{proposal_id: [other ids]}` for pending proposals of the same type that
+    name the same landmark or area in their preconditions. Stage 1 stand-in
+    for the design's "resolution fields match" (those arrive with `step`)."""
+    sites: Dict[str, set] = {}
+    for p in proposals:
+        keys = set()
+        for item in p.get("preconditions") or []:
+            for kind in ("landmark", "area"):
+                if item.get(kind):
+                    keys.add((p.get("type"), kind, str(item[kind]).strip().lower()))
+        sites[p["id"]] = keys
+    flags: Dict[str, list] = {}
+    for p in proposals:
+        others = [q["id"] for q in proposals if q["id"] != p["id"] and sites[p["id"]] & sites[q["id"]]]
+        if others:
+            flags[p["id"]] = others
+    return flags
+
+
+async def _refresh_cited(proposals: list, fact_reader: Optional[FactReader]) -> Dict[tuple, Any]:
+    """Current value per distinct `(role, tool, args, field)` among the cited
+    facts of `proposals`, read once each as the citing role. A read that fails
+    maps to `FactReadError` (shown as unreadable, never as unchanged)."""
+    now: Dict[tuple, Any] = {}
+
+    def _key(role: str, c: Mapping[str, Any]) -> tuple:
+        return (role, c["tool"], json.dumps(c.get("args") or {}, sort_keys=True), c["field"])
+
+    async def _all() -> None:
+        for p in proposals:
+            for c in p.get("cited") or []:
+                key = _key(p["role"], c)
+                if key in now:
+                    continue
+                try:
+                    now[key] = await read_cited_fact(p["role"], c, fact_reader)
+                except FactReadError as exc:
+                    now[key] = exc
+
+    try:
+        await asyncio.wait_for(_all(), timeout=BRIEF_REFRESH_TIMEOUT_SECONDS)
+    except asyncio.TimeoutError:
+        pass
+    for p in proposals:
+        for c in p.get("cited") or []:
+            now.setdefault(_key(p["role"], c), FactReadError("timed out"))
+    return now
+
+
+async def _pending_brief(
+    role: str, arguments: Mapping[str, Any], *, db_path, call_dfhack: CallDFHack,
+    write_lock: "asyncio.Lock", fact_reader: Optional[FactReader] = None,
+) -> Tuple[str, dict]:
+    _reject_unknown_arguments(QUEUE_PENDING_BRIEF, arguments, _PENDING_BRIEF_FIELDS)
+    if role != "conductor":
+        raise QueueToolError(f"{QUEUE_PENDING_BRIEF}: only the conductor may call this tool")
+    limit = arguments.get("limit", BRIEF_MAX_PROPOSALS)
+    if isinstance(limit, bool) or not isinstance(limit, int) or not (1 <= limit <= BRIEF_MAX_PROPOSALS):
+        raise QueueToolError(
+            f"{QUEUE_PENDING_BRIEF}: 'limit' must be an integer 1-{BRIEF_MAX_PROPOSALS}, got {limit!r}"
+        )
+    try:
+        pending = await asyncio.to_thread(store.pending_proposals, db_path)
+        project_ids = await asyncio.to_thread(store.list_project_ids, db_path)
+        statuses = [await asyncio.to_thread(store.project_status, db_path, pid) for pid in project_ids]
+        rulings = await asyncio.to_thread(store.recent_rulings, db_path, BRIEF_RECENT_RULINGS)
+    except store.QueueError as exc:
+        raise _write_error(QUEUE_PENDING_BRIEF, exc) from exc
+    except (sqlite3.Error, OSError) as exc:
+        raise _storage_error(QUEUE_PENDING_BRIEF, exc) from exc
+
+    shown = pending[:limit]
+    overlaps = overlap_flags(pending)
+    refreshed = await _refresh_cited(shown, fact_reader)
+
+    items = []
+    for p in shown:
+        cited = []
+        for c in p.get("cited") or []:
+            row = {k: c[k] for k in ("tool", "args", "field", "value", "tick")}
+            fresh = refreshed[(p["role"], c["tool"], json.dumps(c.get("args") or {}, sort_keys=True), c["field"])]
+            if isinstance(fresh, FactReadError):
+                row["now_unreadable"] = True
+            elif fresh != c["value"]:
+                row["now"] = fresh
+            cited.append(row)
+        item = {
+            "id": p["id"], "role": p["role"], "type": p["type"],
+            "summary": _clip(p.get("summary"), BRIEF_SUMMARY_MAX),
+            "rationale": _clip(p.get("rationale"), BRIEF_RATIONALE_MAX),
+            "prediction": p.get("prediction"), "cost": p.get("cost"),
+            "priority": p.get("suggested_priority"),
+            "cited": cited,
+        }
+        if p.get("duplicate_of"):
+            item["duplicate_of"] = p["duplicate_of"]
+        if p["id"] in overlaps:
+            item["overlaps"] = overlaps[p["id"]]
+        items.append(item)
+
+    open_projects = []
+    for st in statuses:
+        if st.get("status") != "active":
+            continue
+        counts = st.get("counts") or {}
+        blocker = st.get("top_blocker") or {}
+        open_projects.append({
+            "id": st["project_id"], "title": _clip(st.get("summary"), 80),
+            "steps_done": counts.get(schema.DONE, 0), "steps_total": sum(counts.values()),
+            "top_blocker": _clip(blocker.get("reason"), 120) if blocker else None,
+        })
+    structured = {
+        "count": len(pending), "shown": len(items), "truncated": len(pending) > len(items),
+        "proposals": items,
+        "decided": {
+            "open_projects": open_projects,
+            "wip_count": len(open_projects),
+            "recent_rulings": [
+                {"id": r["id"], "proposal_id": r.get("proposal_id"), "decision": r.get("decision"),
+                 "reason": _clip(r.get("reason"), 160)}
+                for r in rulings
+            ],
+        },
+    }
+    return json.dumps(structured, default=str, sort_keys=True), structured
+
+
 _ESCALATE_FIELDS = {"reason"}
 
 
@@ -1514,12 +1813,16 @@ _HANDLERS = {
     QUEUE_PROJECT_STATUS: _project_status,
     QUEUE_AMEND: _amend,
     QUEUE_ABANDON: _abandon,
+    QUEUE_PENDING_BRIEF: _pending_brief,
 }
+
+#: Handlers that read other tools at call time and so take the injected reader.
+_FACT_READING = frozenset({QUEUE_PROPOSE, QUEUE_PENDING_BRIEF})
 
 
 async def call(
     tool_id: str, role: str, arguments: Mapping[str, Any], *, db_path, call_dfhack: CallDFHack,
-    write_lock: "asyncio.Lock",
+    write_lock: "asyncio.Lock", fact_reader: Optional[FactReader] = None,
 ) -> Tuple[str, Optional[dict]]:
     """Dispatch one native tool call. Returns `(text, structured)` for
     `dfmcp.server` to wrap into a `CallToolResult(isError=False, ...)`, or
@@ -1537,4 +1840,9 @@ async def call(
     handler = _HANDLERS.get(tool_id)
     if handler is None:  # pragma: no cover -- server.py only routes known native ids here
         raise AssertionError(f"queue_tools.call: unknown native tool id {tool_id!r}")
+    if tool_id in _FACT_READING:
+        return await handler(
+            role, arguments, db_path=db_path, call_dfhack=call_dfhack, write_lock=write_lock,
+            fact_reader=fact_reader,
+        )
     return await handler(role, arguments, db_path=db_path, call_dfhack=call_dfhack, write_lock=write_lock)

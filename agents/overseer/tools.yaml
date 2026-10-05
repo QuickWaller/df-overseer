@@ -43,31 +43,10 @@ read:
     note: Primary input to Triage. Keep a per-role cursor, do not re-read history.
   - id: "stuckjobs.find"
     status: exists
-  - id: "stocks.food-drink"
-    status: exists
-    note: >-
-      Added handoffs/2026-09-16-stocks-read-and-labor-race.md. Fort-owned (never
-      caravan-owned) drink/prepared-meal/raw-edible counts plus
-      rotten/unreachable flags per bucket. Deployed to VM 103 2026-09-16 and
-      redeployed 2026-09-19; see TOOLS.yaml's own notes.
-  - id: "stocks.seeds"
-    status: exists
-    note: >-
-      Same file, deployed with stocks.food-drink above.
-  - id: "stocks.availability"
-    status: exists
-    note: >-
-      Added handoffs/2026-09-19-per-item-flags-tool.md as an offline build;
-      deployed and run live 2026-09-19 (handoffs/2026-09-19-deploy-and-live-
-      verify.md), and the six-deduction form (in_job, owned+UNIT_HOLDER, forbid,
-      trader, in_building, construction) deployed 2026-09-20
-      (handoffs/2026-09-19-deploy-batch.md). Per-item-type netting, so 3 empty
-      buckets that are all job-claimed reads differently from all forbidden or
-      all dwarf-owned: different actions, not one 'need bucket' alarm.
-      owned_ref_check.verified_offline is true since both UNIT_HOLDER branches
-      were exercised live 2026-09-19. TOOLS.yaml still tags the command
-      unverified (a registry test pins that), so read it as run live once, not
-      as settled.
+  # stocks.food-drink, stocks.seeds and stocks.availability left this role in
+  # conductor-execution stage 1 (docs/CONDUCTOR-EXECUTION.md 3.2): proposers
+  # cite the facts they rest on (relies_on, read by the server at filing) and
+  # the briefing refreshes them; a ruling that needs an uncited fact is a defer.
   - id: "farm.find"
     status: exists
     note: >-

@@ -1282,6 +1282,17 @@ def latest(path: str | Path, n: int) -> list[dict]:
     return [json.loads(r["payload"]) for r in rows]
 
 
+def recent_rulings(path: str | Path, n: int) -> list[dict]:
+    """The `n` most recent `ruling` records, newest first (the ruling
+    briefing's "decided, do not redo" list)."""
+    with _connect(path) as conn:
+        rows = conn.execute(
+            "SELECT payload FROM records WHERE kind = ? ORDER BY ts DESC, rowid DESC LIMIT ?",
+            (RULING, n),
+        ).fetchall()
+    return [json.loads(r["payload"]) for r in rows]
+
+
 def _prediction_row(row: sqlite3.Row) -> dict:
     return {
         "id": row["id"],
