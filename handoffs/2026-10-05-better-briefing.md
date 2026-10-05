@@ -135,3 +135,79 @@ reads are shared by every woken role) and passed to `build_briefing`:
   conductor's client does not surface, and changing `queue.overview` is
   `dfmcp/`, outside this handoff's surfaces. Also no gotcha digest (what is
   relevant depends on the model's intent).
+
+### 3. Built
+
+- `conductor/briefing.py`: `build_briefing(..., facts=)` adds a `facts` key
+  when non-empty. New pure functions `stock_facts`, `order_facts`,
+  `availability_line`, `seed_facts`, `build_facts`, caps `MAX_ORDER_LINES` 5,
+  `MAX_AVAILABILITY_LINES` 6, `MAX_SEED_PLANTS` 3. Each returns nothing on a
+  wrong shape, so a bad read drops its line only. A 5000-order, 100-type,
+  500-plant input stays under 2.5 KB (tested).
+- `conductor/cycle.py` (wiring only): `_read_fact_sources` takes
+  `stocks.food-drink` once, `stocks.availability` once per distinct item type
+  across the roles that cycle, `stocks.seeds` once if any role wants it, all
+  total (log and continue); `_facts_for` builds each role's block. Read lazily
+  at the first role that runs, so a quiet cycle makes no extra reads. The
+  orders line reuses the `orders.list` read the cycle already makes. The
+  tripwire-wake Overseer briefing gets facts too; the paused-cycle
+  (`unexplained_pause`) Overseer briefing does not (touching it is not in the
+  surfaces, and the fort is frozen there).
+- `conductor/policy.py` / `policy.yaml`: `briefing_extras` per role as data
+  (quartermaster: BARREL, PLANT, DRINK, BOULDER, seeds; overseer: BED, WOOD).
+  Adding an item type for a role is one line of YAML.
+- `agents/conductor/tools.yaml`: three read grants (`stocks.food-drink`,
+  `stocks.availability`, `stocks.seeds`); conductor count 21 to 24. Hardcoded
+  count updated in `dfmcp/tests/test_gotchas_tools.py`.
+- Tests: `conductor/tests/test_briefing_facts.py` (new, 10), two in
+  `test_policy.py`, two in `test_cycle.py` (shared single read per cycle,
+  per-role extras, failed reads drop lines and never fail the cycle).
+
+### 4. Verification
+
+- `python -m pytest` (ambient, no `lupa`, so the Lua-logic files skip as the
+  3 skipped): 2763 passed, 3 skipped, 0 failed. The one known date-sensitive
+  failure did not occur today.
+- `dfmcp/tests` in the main checkout's `.venv-dfmcp`: 799 passed.
+- Not run live (no deploy). The result shapes the parsers expect were taken
+  from the Lua sources (`get_food_drink`, `count_availability`, `get_seeds`,
+  `describe_order`), not from a live reply: `units`, `unreachable_units`,
+  `total_units`, `available_units`, `in_job_units`, `by_plant_units`. First
+  live cycle after deploy should confirm each line appears; a missing line
+  means a shape mismatch, and the cycle still carries on.
+
+### 5. Expected lookups saved
+
+Calls in the four measured runs that the briefing now answers (of 100 role
+calls in the window): run-0001 quartermaster 6 (food-drink, orders.list,
+BARREL, PLANT, BOULDER availability, seeds), run-0003 quartermaster 6
+(food-drink, orders.list, BARREL, DRINK, PLANT, seeds), architect 2
+(food-drink, orders.list), overseer 4 (food-drink, orders.list, WOOD, BED),
+consultant 0 (made none, it just gets the shared facts). Total 18 of 100,
+about one in five, and they were all in the opening round. `stuckjobs.find`
+(4 more calls) is only partly answered, since the briefing lists a stuck job
+only once past its threshold; left alone. Not answered: gotchas (12 of the
+QM's 44 calls, 4 the `general` call that returns almost nothing), the
+`series.*` history reads (two of 41 KB each), per-order duplicate checks,
+Still job lists, landmarks. A real saving also needs the roles' charters to
+say "the briefing's `facts` already holds stocks and orders, do not re-read
+them"; charters are outside this handoff.
+
+Token cost: roughly 150 to 300 tokens per briefing, against 6 saved tool
+round trips on a quartermaster run.
+
+### 6. Deploy targets and owed items (for the orchestrator)
+
+- `vm106-conductor`: `conductor/` (briefing.py, cycle.py, policy.py,
+  policy.yaml). Conductor is disabled and run by hand, so no service restart.
+- `vm103-dfmcp`: `agents/conductor/tools.yaml` (server-side allowlist; the
+  server loads it at start, so restart `dfmcp-server`). Deploy this before
+  the conductor change goes live, or the three stock reads are refused (they
+  are caught and logged, nothing breaks, the facts just lack stocks).
+- `vm106-agents`: its copy of `agents/` (no restart).
+- `docs/STATE.md` still says conductor 21: it is generated from the live
+  probe (`scripts/drift_check.py --write-state`); regenerate after deploy,
+  expect 24. Not hand-edited here.
+- Owed, outside these surfaces: one-line pending-proposal summaries (needs
+  `queue.overview` to return them, `dfmcp/`); a charter line telling roles to
+  trust `facts`; the paused-cycle Overseer briefing; a gotcha digest.
