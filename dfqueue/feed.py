@@ -387,6 +387,36 @@ def executed_step_info(record: dict, ctx: dict) -> dict:
     }
 
 
+#: Longest failure reason an `executed` item's "Acted" list carries.
+ACTION_REASON_MAX = 140
+
+
+def public_actions(record: dict, *, public: bool = True) -> list:
+    """The write calls an `executed` record made, as the page's "Acted"
+    list: `[{tool, name, targets, outcome, reason}]`. `tool` is the id,
+    `name` its humanised display name, `targets` a COUNT (never the target
+    ids, which can be coordinates), `outcome` is "ok" or "failed", and
+    `reason` the action's own `detail`, for a failure only. Public reasons
+    must pass `find_unsafe_pattern` (withheld, never edited, like every
+    public text); the operator list keeps them raw."""
+    out = []
+    for a in record.get("actions") or []:
+        if not isinstance(a, dict) or not isinstance(a.get("tool"), str):
+            continue
+        failed = a.get("outcome") not in (None, "success")
+        reason = a.get("detail") if failed and isinstance(a.get("detail"), str) else None
+        if reason and public and find_unsafe_pattern(reason) is not None:
+            reason = None
+        out.append({
+            "tool": a["tool"],
+            "name": feed_status._humanize_tool(a["tool"]),
+            "targets": len(a.get("targets") or []),
+            "outcome": "failed" if failed else "ok",
+            "reason": _truncate(reason, ACTION_REASON_MAX) if reason else None,
+        })
+    return out
+
+
 # ---- public text per kind (design §3.5) -------------------------------------
 
 
@@ -501,6 +531,7 @@ PUBLIC_ITEM_FIELDS = frozenset({
     "ts", "reply_to", "thread", "text", "badge", "withheld",
     "withheld_reason", "step_label", "step_targets", "step_total",
     "step_outcome", "title", "fact_check", "answered", "answer_preview",
+    "actions",
 })
 
 #: Kinds this module knows how to render at all, public or operator side.
@@ -549,6 +580,7 @@ def build_public_item(record: dict, *, seq: int, reply_to: Optional[str],
         out["title"] = _public_display_name({"summary": record.get("summary")})
     if kind == EXECUTED:
         out.update(executed_step_info(record, ctx))
+        out["actions"] = public_actions(record)
     if kind == ASK:
         out.update(ask_info(record, ctx))
 
@@ -595,6 +627,8 @@ def build_operator_item(record: dict, *, seq: int, reply_to: Optional[str],
     builder = PUBLIC_TEXT_BUILDERS.get(kind)
     text = builder(record, ctx or {}) if builder else None
     extra = executed_step_info(record, ctx or {}) if kind == EXECUTED else {}
+    if kind == EXECUTED:
+        extra["actions"] = public_actions(record, public=False)
     if kind == ASK:
         extra.update(ask_info(record, ctx or {}))
     if kind == PROPOSAL:
