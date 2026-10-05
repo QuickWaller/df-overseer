@@ -251,7 +251,7 @@ lane_triggers:
   architect:
     events:
       - type: JOB_COMPLETED
-        detail_matches: ['(dig|channel|carve|smooth|engrave|construct|build|detail)']
+        detail_matches: ['\b(dig|channel|carve|smooth|engrave|construct|build|detail)\b']
     stuck_jobs: ['dig|channel|carve|smooth|engrave|construct|build|detail']
     rulings: true
   quartermaster:
