@@ -68,4 +68,32 @@ the conductor ships again; the operator hold rides along.
 
 ## Result
 
-(executor fills this in)
+### Plan (written before building)
+
+Findings that shape it, read from the code and from the committed live
+envelopes (`evals/live/2026-09-15-overseer-first-ruling/run.json`, the
+2026-09-24 consultant runs) and a read-only look at the agent VM:
+
+- The envelope's keys are `ok, status, final, payloads, usage, costUsd,
+  codeModeEngaged, assistantTurns, toolSummary, model, provider, sessionId`.
+  `usage` is `{input, output, cacheRead, cacheWrite, reasoningTokens, total,
+  cost: {total}}`. Cache-read tokens are present.
+- The archive today writes `RunResult` minus `raw`, so `usage` and
+  `assistantTurns` are dropped. Confirmed on the live archive: a recent
+  `run-<role>.json` has only cost, error, final answer, ok, role, status,
+  timed_out, tool_summary, wall clock.
+
+Steps:
+1. `runner.py`: `usage_from(envelope)` and `turns_from(envelope)`, total and
+   bounded (numbers only, known keys only); new `RunResult.usage` and
+   `assistant_turns`; carried through the cleanup-failed path.
+2. `cycle.py` archive: write `usage` and `assistant_turns` in each run dict.
+   Report them as numbers on `conductor.report` only if its schema already
+   takes run metadata beyond the summary (checked in step 2).
+3. `build_command`: `--hostname <role>`. Check the state-dir and lock question.
+4. Remove `briefing_extras`, `BriefingExtras`, `build_facts` and the stock,
+   order, availability and seed helpers, `_read_fact_sources`, `_facts_for`,
+   and the `facts` argument; drop the three `stocks.*` grants from the
+   conductor allowlist; update counts and docs.
+5. Confirm hold tests; run the full suites; Result.
+
