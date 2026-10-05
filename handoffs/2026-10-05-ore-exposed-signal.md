@@ -135,7 +135,7 @@ fail, not retry), send `step_attention` to the proposer naming the materials, an
 release it when the count reads 0 (a vein mined open leaves the read). It needs
 no new tool: the status call is already made, and `exposed.unclassified_tiles`
 non-zero should hold too rather than guess. A tool-level alternative (refusing a
-finish apply in `blueprint.py`'s order guard while ore shows) was not built, since
+finish apply in `df-overseer-blueprint.lua`'s order guard while ore shows) was not built, since
 it would change the live smoothing path without the executor's hold semantics.
 
 **Files.** `scripts/dfhack/df-overseer-surface.lua`, `-blueprint.lua`,
