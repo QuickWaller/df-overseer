@@ -199,6 +199,7 @@ targets:
       - dfqueue/live.py                # who-is-awake view (journal + conductor dir + run reports)
       - dfqueue/runs.py                # the conductor's run-report store (read-only here; the
                                        # publisher imports it lazily, so it must ship with live.py)
+      - dfqueue/lessons.py             # gotchas written or confirmed per run (lessons.json)
       - dfqueue/site_data.py
       - dfqueue/charter_changes.json   # charter history; the VM has no git
       - web/stream/site-text.yaml      # role labels, map ring, past forts

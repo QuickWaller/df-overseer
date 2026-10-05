@@ -59,3 +59,29 @@ Overseer's allowlists (`agents/*/tools.yaml`), `docs/TRAPS.md`.
 
 All four questions answered with the commands you ran and what they
 returned, and a Result section here.
+
+## Result
+
+Done, read-only, all reads at tick 250046 (fort paused throughout; no writes,
+no labour or quota changes). Full evidence and the ranked fixes are in
+`evals/live/2026-10-05-stuck-jobs-diagnosis/README.md`.
+
+1. Labour: autolabor on, suspendmanager off, buildingplan on. Hands are not
+   the shortage: 20 of 22 citizens idle. BREWER and BUILD_CONSTRUCTION each
+   have a single holder (unit 353, idle); MINE has two (192 digging, 346 idle).
+2. Stuck jobs: the Bed has no bed item and no order exists to make one;
+   the second miner has no pick (one pick in the fort, held by 192; no
+   Forge); site-4 dig 2879 waits behind 2872; the Wall is suspended for an
+   unrecoverable reason with suspendmanager off; brew 2861 is unclaimed with
+   no visible blocker (cause unproven; brew 2860 is now in progress).
+3. Nobody could have caught it: the briefing carries no stuck jobs, the
+   Quartermaster (the `stuck_job` wake target) lacks `stuckjobs.find`, and
+   `job_stalled` is never emitted so `stuck_job` cannot fire; `stalled_order`
+   watches manager orders only and none exist. No agent ran after 2026-10-02.
+4. Ranked fixes are in the README (bed order now; BREWER min 2 now; briefing
+   and wake wiring code change; suspend visibility and unsuspend tool gap;
+   second pick needs a Forge).
+
+Note: Working.md's "carpentry still unbuilt" is stale: a Carpenters workshop
+exists. A separately modified `dfqueue/feed.py` in this worktree is not part
+of this stream and was left uncommitted.

@@ -858,3 +858,55 @@ def test_ask_and_answer_show_their_real_text_and_the_ask_knows_its_answer():
     # An unsafe question falls back to the generic line; it is not echoed.
     assert items["ask-0002"]["text"] == "The Quartermaster asked the Consultant a question."
     assert items["ask-0002"]["answered"] is False and items["ask-0002"]["fact_check"] is False
+
+
+# ---- executed items' "Acted" list --------------------------------------------
+
+
+def _executed_with(actions):
+    return make_executed(id="executed-0001", ruling_id="ruling-0001", actions=actions)
+
+
+def test_public_actions_carry_tool_name_target_count_and_outcome_but_never_target_ids():
+    record = _executed_with([
+        {"tool": "diggable.dig-stair", "outcome": "success", "targets": ["12,40,3", "13,40,3"]},
+        {"tool": "workshop.build", "outcome": "failure", "targets": ["t1"],
+         "detail": "Every barrel is full of plants."},
+    ])
+    item = feed.build_public_item(
+        record, seq=1, reply_to="ruling-0001", thread="ruling-0001", badge=None, ctx={},
+    )
+    assert item["actions"] == [
+        {"tool": "diggable.dig-stair", "name": "Diggable dig stair", "targets": 2,
+         "outcome": "ok", "reason": None},
+        {"tool": "workshop.build", "name": "Workshop build", "targets": 1,
+         "outcome": "failed", "reason": "Every barrel is full of plants."},
+    ]
+    assert "12,40,3" not in json.dumps(item)
+
+
+def test_public_action_reason_is_withheld_when_unsafe_but_the_operator_keeps_it():
+    record = _executed_with([
+        {"tool": "stocks.availability", "outcome": "failure", "targets": [],
+         "detail": "see https://example.test/x for the cause"},
+    ])
+    public = feed.build_public_item(
+        record, seq=1, reply_to="ruling-0001", thread="ruling-0001", badge=None, ctx={},
+    )
+    assert public["actions"][0]["reason"] is None
+    assert public["actions"][0]["outcome"] == "failed"
+    operator = feed.build_operator_item(
+        record, seq=1, reply_to="ruling-0001", thread="ruling-0001", badge=None,
+    )
+    assert "example.test" in operator["actions"][0]["reason"]
+
+
+def test_a_successful_action_never_carries_a_reason_and_long_reasons_are_cut():
+    ok = feed.public_actions(_executed_with([
+        {"tool": "trees.fell", "outcome": "success", "targets": ["a"], "detail": "fine"},
+    ]))
+    assert ok[0]["reason"] is None
+    long = feed.public_actions(_executed_with([
+        {"tool": "trees.fell", "outcome": "failure", "targets": [], "detail": "x " * 200},
+    ]))
+    assert len(long[0]["reason"]) <= feed.ACTION_REASON_MAX
