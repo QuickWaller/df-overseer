@@ -92,3 +92,19 @@ Findings:
   the wake shown was another signal.
 - Pause safety stayed out of the way on a running fort, as designed. The
   Overseer's `pause.verdict` remains unexercised live.
+
+## The Overseer's thinking (run-0004)
+
+`runs-public.json` holds the four runs' public reports and captured thinking,
+exactly as the site published them. Thinking is capped at 12000 chars (start
+and end kept, middle cut, `conductor/runner.py` `THINKING_MAX_CHARS`), and the
+full transcript in `/var/lib/conductor/thinking` is deleted after each run,
+so the middle of this run's reasoning is gone. What survives explains the
+missing project directly: "Since I didn't create a project for the bedroom
+ruling, I'll just record a plain executed entry", and "I could create a
+project. But honestly, I've already done the dig work". It read
+`queue.project` as optional for multi-step work and unneeded for a simple
+one. It did see the stuck-job digest (the suspended Bed and Wall) and noted
+them for its next wake rather than acting. Most of its 11 minutes went on
+re-deriving the same facts several times and siting bedrooms itself
+(six previews, two applies), which it then judged was "overreaching".
