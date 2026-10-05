@@ -42,6 +42,8 @@ fast run does not itself become next cycle's whole expectation.
 
 from __future__ import annotations
 
+import re
+
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Dict, Iterable, Mapping, Optional, Tuple
@@ -104,6 +106,29 @@ class ThresholdAlert:
 
 
 @dataclass(frozen=True)
+class EventLane:
+    """One diff.since event kind a role's lane watches: `type` is the event's
+    own `type`; `detail_matches` (regexes, case-insensitive, any one) narrows
+    it by the event's `detail`, empty meaning every event of that type."""
+    type: str
+    detail_matches: Tuple["re.Pattern", ...] = ()
+
+
+@dataclass(frozen=True)
+class LaneTriggers:
+    """What counts as a change in one role's own lane (handoffs/2026-10-05-
+    stricter-wakes.md). Pure data; conductor/lanes.py reads it generically.
+    `events`: drained diff events in the role's OWN drain. `stuck_jobs`:
+    regexes over a due stuck job's type and description. `alerts`: threshold
+    alert names whose fresh crossing wakes the role (`"*"` for any). `rulings`:
+    a ruling on a proposal this role filed."""
+    events: Tuple[EventLane, ...] = ()
+    stuck_jobs: Tuple["re.Pattern", ...] = ()
+    alerts: Tuple[str, ...] = ()
+    rulings: bool = False
+
+
+@dataclass(frozen=True)
 class Policy:
     base_fps: int
     think_fps: int
@@ -132,6 +157,9 @@ class Policy:
     #: (legacy rulings the executor closes later, design 8.1). Every other
     #: accepted-but-unexecuted proposal wakes it until carried out.
     unexecuted_wake_ignore: Tuple[str, ...] = ()
+    #: Per-role lane triggers (policy.yaml `lane_triggers`). Empty: no lane
+    #: filtering, every wake reason wakes the roles its table entry names.
+    lane_triggers: Dict[str, LaneTriggers] = field(default_factory=dict)
 
     def reason(self, name: str) -> WakeReasonPolicy:
         try:
@@ -155,6 +183,50 @@ def _require(doc: Mapping, key: str, path: Path):
     if key not in doc:
         raise PolicyError(f"{path}: missing required key {key!r}")
     return doc[key]
+
+
+def _patterns(raw, where: str) -> Tuple["re.Pattern", ...]:
+    if raw is None:
+        return ()
+    if not isinstance(raw, list) or not all(isinstance(x, str) for x in raw):
+        raise PolicyError(f"{where} must be a list of regex strings")
+    out = []
+    for text in raw:
+        try:
+            out.append(re.compile(text, re.IGNORECASE))
+        except re.error as exc:
+            raise PolicyError(f"{where}: bad regex {text!r}: {exc}") from None
+    return tuple(out)
+
+
+def _load_lane_triggers(raw, path: Path) -> Dict[str, LaneTriggers]:
+    if raw is None:
+        return {}
+    if not isinstance(raw, dict):
+        raise PolicyError(f"{path}: lane_triggers must be a mapping of role to triggers")
+    lanes: Dict[str, LaneTriggers] = {}
+    for role, entry in raw.items():
+        where = f"{path}: lane_triggers.{role}"
+        entry = entry or {}
+        if not isinstance(entry, dict):
+            raise PolicyError(f"{where} must be a mapping")
+        events = []
+        for i, ev in enumerate(entry.get("events") or []):
+            if not isinstance(ev, dict) or not isinstance(ev.get("type"), str):
+                raise PolicyError(f"{where}.events[{i}] needs a string `type`")
+            events.append(EventLane(
+                type=ev["type"], detail_matches=_patterns(ev.get("detail_matches"), f"{where}.events[{i}].detail_matches"),
+            ))
+        alerts = entry.get("alerts") or []
+        if not isinstance(alerts, list) or not all(isinstance(x, str) for x in alerts):
+            raise PolicyError(f"{where}.alerts must be a list of alert names")
+        lanes[str(role)] = LaneTriggers(
+            events=tuple(events),
+            stuck_jobs=_patterns(entry.get("stuck_jobs"), f"{where}.stuck_jobs"),
+            alerts=tuple(alerts),
+            rulings=bool(entry.get("rulings", False)),
+        )
+    return lanes
 
 
 def load_policy(path: "Path | str" = DEFAULT_POLICY_PATH) -> Policy:
@@ -220,7 +292,10 @@ def load_policy(path: "Path | str" = DEFAULT_POLICY_PATH) -> Policy:
     if not isinstance(raw_ignore, list) or not all(isinstance(x, str) for x in raw_ignore):
         raise PolicyError(f"{path}: unexecuted_wake_ignore must be a list of proposal ids")
 
+    lane_triggers = _load_lane_triggers(doc.get("lane_triggers"), path)
+
     return Policy(
+        lane_triggers=lane_triggers,
         threshold_alerts=tuple(alerts),
         unexecuted_wake_ignore=tuple(raw_ignore),
         base_fps=int(_require(doc, "base_fps", path)),
