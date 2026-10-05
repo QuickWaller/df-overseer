@@ -62,6 +62,19 @@ routine_review_interval_game_days: 7
 stalled_order_threshold_ticks: 1200
 stalled_order_renotify_ticks: 1200
 
+# handoffs/2026-10-05-stuck-job-watch.md (conductor/job_watch.py): the
+# stuck_job wake below fires from polling stuckjobs.find, not from a diff
+# event (nothing emits one). A job with no worker counts as stuck once it
+# has sat that way for the threshold, in raw game ticks; 2400 = 2 game days,
+# since a fresh job is routinely unclaimed for hours. Suspended jobs have
+# their own key because a suspended job is often a deliberate wait
+# (buildingplan holds one until an item attaches), so it is tunable alone.
+# Renotify: a still-stuck job wakes again only after this many ticks (10
+# game days), never every cycle. Not tuned against a real run.
+stuck_job_unclaimed_threshold_ticks: 2400
+stuck_job_suspended_threshold_ticks: 2400
+stuck_job_renotify_ticks: 12000
+
 # Every wake reason this conductor build knows about. `clock` is the
 # fallback table entry (§2); `computable: true` means conductor/cycle.py
 # will prefer the ticks-to-consequence rule over this fallback whenever it

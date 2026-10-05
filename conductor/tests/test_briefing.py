@@ -77,3 +77,22 @@ def test_briefing_never_carries_a_raw_coordinate_shaped_field():
     assert "x" not in briefing
     assert "y" not in briefing
     assert "z" not in briefing
+
+
+def test_stuck_jobs_digest_is_capped_and_omitted_when_not_given():
+    from conductor.briefing import MAX_STUCK_JOB_LINES
+
+    absent = build_briefing(
+        role="quartermaster", game_tick=1, wake=_WAKE, vitals=_VITALS,
+        diff_events=[], queue_summary={"count": 0},
+    )
+    assert "stuck_jobs" not in absent
+
+    lines = [f"Job {i} unclaimed for 2 game days" + " x" * 500 for i in range(500)]
+    digest = build_briefing(
+        role="quartermaster", game_tick=1, wake=_WAKE, vitals=_VITALS,
+        diff_events=[], queue_summary={"count": 0}, stuck_jobs=lines,
+    )["stuck_jobs"]
+    assert digest["count"] == 500 and digest["truncated"] is True
+    assert len(digest["items"]) == MAX_STUCK_JOB_LINES
+    assert all(len(s) <= 160 for s in digest["items"])

@@ -498,8 +498,8 @@ class TestRoleToolCountsUnchanged:
             "overseer": 99,
             "architect": 53,
             "consultant": 29,
-            "quartermaster": 25,
-            "conductor": 19,
+            "quartermaster": 26,
+            "conductor": 20,
         }
 
 

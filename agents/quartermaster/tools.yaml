@@ -40,6 +40,14 @@ read:
       observation ledger (sightings/outcomes, never per-unit). Research
       doc S:E3(6): a confirmed theft pattern ("kea, 2 confirmed thefts") is
       restock/threshold proposal material for this role.
+  - id: "stuckjobs.find"
+    status: exists
+    note: >-
+      Added handoffs/2026-10-05-stuck-job-watch.md. Read-only list of jobs with
+      no worker (unclaimed or suspended). The Quartermaster is the only role
+      the stuck_job wake reaches, and a stuck Bed, pick-less dig or blockless
+      Wall is usually a supply gap its orders and stock proposals can close.
+      Already on the architect's and overseer's lists.
   - id: "overview.get"
     status: exists
     note: Enough situational context to ground a proposal, same as every other advisor.

@@ -164,3 +164,13 @@ def test_a_ledger_row_alone_is_never_a_wake_reason():
     is nothing here for a ledger row to set."""
     assert not hasattr(Signals(), "ledger")
     assert not hasattr(Signals(), "ledger_rows")
+
+
+def test_stuck_job_detail_replaces_the_generic_detail_and_wakes_the_quartermaster():
+    result = triage(
+        Signals(stuck_job=True, stuck_job_detail="1 stuck job: Construct Bed suspended for 3 game days"),
+        POLICY, base_fps=100,
+    )
+    wake = next(w for w in result.wakes if w.reason == "stuck_job")
+    assert wake.detail == "1 stuck job: Construct Bed suspended for 3 game days"
+    assert result.roles_to_wake == ("quartermaster",)

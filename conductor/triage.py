@@ -68,6 +68,9 @@ class Signals:
     # parses a raw DFHack event.
     stuck_job: bool = False
     stuck_job_ticks_to_consequence: Optional[int] = None
+    #: One-line summary of the jobs conductor/job_watch.py found due, replacing
+    #: the generic detail when set (handoffs/2026-10-05-stuck-job-watch.md).
+    stuck_job_detail: str = ""
     stock_below_target: bool = False
     stock_below_target_ticks_to_consequence: Optional[int] = None
     migrant_wave: bool = False
@@ -174,6 +177,8 @@ def triage(signals: Signals, policy: Policy, *, base_fps: Optional[int] = None) 
             rp = policy.reason(reason)
             clock = clock_for_reason(reason, policy, ticks_to_consequence=ticks, base_fps=base_fps)
             detail = reason.replace("_", " ")
+            if reason == "stuck_job" and signals.stuck_job_detail:
+                detail = signals.stuck_job_detail
             if ticks is not None:
                 detail += f" ({ticks} ticks to consequence)"
             wakes.append(Wake(reason, detail, rp.wakes, clock))

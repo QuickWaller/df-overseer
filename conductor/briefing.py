@@ -42,6 +42,10 @@ MAX_QUEUE_IDS = 20
 #: `_capped()` use here), never re-ranked by this function.
 MAX_LEDGER_ROWS = 10
 
+#: Stuck-job lines shown per briefing (handoffs/2026-10-05-stuck-job-watch.md);
+#: the count is always the full figure, the lines are the oldest few.
+MAX_STUCK_JOB_LINES = 5
+
 
 def _capped(items: Sequence[Any], cap: int) -> Dict[str, Any]:
     items = list(items)
@@ -56,6 +60,7 @@ def build_briefing(
     *, role: str, game_tick: int, wake: Wake, vitals: Mapping[str, Any],
     diff_events: Sequence[Mapping[str, Any]], queue_summary: Mapping[str, Any],
     ledger_digest: Optional[Sequence[Mapping[str, Any]]] = None,
+    stuck_jobs: Optional[Sequence[str]] = None,
 ) -> Dict[str, Any]:
     """One role's briefing for this cycle. `vitals` is `vitals.summary`'s own
     result, passed through as-is (already Tier 0 by construction -- see
@@ -100,6 +105,9 @@ def build_briefing(
             ),
         },
     }
+    if stuck_jobs is not None:
+        # Tier 0: a count plus a few short lines, bounded like every other list.
+        briefing["stuck_jobs"] = _capped([str(s)[:160] for s in stuck_jobs], MAX_STUCK_JOB_LINES)
     if ledger_digest is not None:
         briefing["ledger"] = _capped(ledger_digest, MAX_LEDGER_ROWS)
     return briefing

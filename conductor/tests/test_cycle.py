@@ -100,6 +100,7 @@ def _base_tools(**overrides):
         "overview.get": _overview(),
         "queue.overview": _queue_overview(),
         "orders.list": _orders_list(),
+        "stuckjobs.find": [],
         "diff.since": _diff_sequence(),
         "queue.grade": _grade_result(),
         "clock.set-speed": {"ok": True, "old_fps": 100, "new_fps": 100},
@@ -835,3 +836,55 @@ async def test_a_soul_write_failure_is_a_recorded_failed_run_and_keeps_the_curso
     deps = _deps(tmp_path, tools=tools, runner=runner)
     await run_cycle(1, deps)  # must not raise
     assert deps.cursor_store.get("architect") == 0  # failed run: not advanced
+
+
+# ---------------------------------------------------------------------------
+# Stuck jobs (conductor/job_watch.py), handoffs/2026-10-05-stuck-job-watch.md
+# ---------------------------------------------------------------------------
+
+_STUCK_BED = {
+    "job_type": "ConstructBuilding", "detail": "Construct Bed", "building": "Bed",
+    "waiting_on": "suspended", "idle_ticks": None, "near_landmark": "Well",
+    "direction": "N", "distance_tiles": 4, "order_id": None, "from_order": None,
+}
+
+
+async def test_a_job_stuck_past_the_threshold_wakes_the_quartermaster_with_a_detail_line(tmp_path):
+    import json as _json
+    from conductor.job_watch import JobWatchStore, _base_key
+
+    tools = _base_tools()
+    tools["stuckjobs.find"] = [_STUCK_BED]
+    deps = _deps(tmp_path, tools=tools)
+    store = JobWatchStore(deps.cursor_store.path.with_name("job_watch.json"))
+    # Pre-seed the first sighting three game days ago (the watch's own
+    # threshold/renotify logic is covered in test_job_watch.py).
+    store.save({f"{_base_key(_STUCK_BED)}#0": {"first_seen": 403200 + 1000 - 3600, "last_notified": None}})
+
+    result = await run_cycle(1, deps)
+
+    assert "quartermaster" in result.roles_woken
+    brief = _json.loads((result.archived_path / "briefings.json").read_text(encoding="utf-8"))["quartermaster"]
+    assert brief["wake_reason"] == "stuck_job"
+    assert brief["wake_detail"].startswith("1 stuck job: Construct Bed suspended for 3 game days")
+    assert brief["stuck_jobs"]["count"] == 1
+
+    # Next cycle: still stuck, but inside the renotify window, so no new wake.
+    result2 = await run_cycle(2, deps)
+    assert "quartermaster" not in result2.roles_woken
+
+
+async def test_a_failing_stuckjobs_poll_never_fails_the_cycle(tmp_path):
+    tools = _base_tools()
+    del tools["stuckjobs.find"]  # FakeToolCaller raises MCPToolError for it
+    deps = _deps(tmp_path, tools=tools)
+    result = await run_cycle(1, deps)
+    assert result.roles_woken == ()
+
+
+async def test_a_dry_run_polls_stuck_jobs_but_writes_no_state(tmp_path):
+    tools = _base_tools()
+    tools["stuckjobs.find"] = [_STUCK_BED]
+    deps = _deps(tmp_path, tools=tools, dry_run=True)
+    await run_cycle(1, deps)
+    assert not deps.cursor_store.path.with_name("job_watch.json").exists()
