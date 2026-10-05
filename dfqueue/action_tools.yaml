@@ -54,4 +54,10 @@ groups:
     frozen: false
     coverage: false
 
-retired: []
+retired:
+  # Mutating tools held by no proposing role and by no conductor allowlist
+  # entry: nothing proposes or runs them, and that is deliberate.
+  - ui.click
+  - ui.embark-mode
+  - ui.leave-embark-mode
+  - ledger.record

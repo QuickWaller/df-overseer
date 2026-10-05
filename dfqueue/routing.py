@@ -7,12 +7,13 @@ project, `executed` or `amend` for it, and the conductor runs the step. For
 an unrouted type a `step` is refused and everything behaves as before.
 
 Pure data: no DFHack, no queue access. The file is re-read when its
-modification time changes, so a deploy that flips a flag is seen by a
+content changes, so a deploy that flips a flag is seen by a
 running server, and tests can point `ACTION_TOOLS_PATH` at a temp file.
 """
 
 from __future__ import annotations
 
+import hashlib
 from pathlib import Path
 
 import yaml
@@ -32,12 +33,12 @@ class RoutingError(Exception):
 
 def _load() -> dict:
     path = Path(ACTION_TOOLS_PATH)
-    key = (str(path), path.stat().st_mtime_ns)
+    blob = path.read_bytes()
+    key = (str(path), hashlib.sha256(blob).hexdigest())
     hit = _cache.get("entry")
     if hit is not None and hit[0] == key:
         return hit[1]
-    with path.open(encoding="utf-8") as fh:
-        raw = yaml.safe_load(fh) or {}
+    raw = yaml.safe_load(blob.decode("utf-8")) or {}
     data = _validate(raw)
     _cache["entry"] = (key, data)
     return data

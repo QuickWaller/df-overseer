@@ -15,8 +15,8 @@ from __future__ import annotations
 from xml.sax.saxutils import escape, quoteattr
 
 from .schema import (
-    ABANDON, AMEND, ANSWER, ASK, ESCALATION, EXECUTED, OBSERVATION, PASS,
-    PROJECT, PROPOSAL, RULING,
+    ABANDON, AMEND, ANSWER, ASK, CLOSE, ESCALATION, EXECUTED, OBSERVATION,
+    PASS, PROJECT, PROPOSAL, RULING,
 )
 
 #: §8's allowlist, plus id/ts/kind "so the feed can order and thread items"
@@ -236,6 +236,17 @@ def _abandon_xml(record: dict) -> str:
     ])
 
 
+def _close_xml(record: dict) -> str:
+    lines = [_open_tag("close", record)]
+    for field in ("project_id", "proposal_id", "ruling_id"):
+        if record.get(field) is not None:
+            lines.append(f"  <{field}>{escape(record[field])}</{field}>")
+    lines.append(f"  <outcome>{escape(record['outcome'])}</outcome>")
+    lines.append(f"  <reason>{escape(record['reason'])}</reason>")
+    lines.append("</close>")
+    return "\n".join(lines)
+
+
 def _ask_xml(record: dict) -> str:
     lines = [_open_tag("ask", record)]
     lines.append(f"  <question>{escape(record['question'])}</question>")
@@ -267,6 +278,7 @@ _RENDERERS = {
     EXECUTED: _executed_xml, ASK: _ask_xml, ANSWER: _answer_xml,
     ESCALATION: _escalation_xml, PROJECT: _project_xml,
     OBSERVATION: _observation_xml, AMEND: _amend_xml, ABANDON: _abandon_xml,
+    CLOSE: _close_xml,
 }
 
 

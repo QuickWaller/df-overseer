@@ -86,7 +86,7 @@ from typing import Any, Iterable, Optional
 
 from . import feed_status
 from .schema import (
-    ABANDON, ACCEPT, AMEND, ANSWER, ASK, DEFER, ESCALATION, EXECUTED,
+    ABANDON, ACCEPT, AMEND, ANSWER, ASK, CLOSE, DEFER, ESCALATION, EXECUTED,
     OBSERVATION, PASS, PROJECT, PROPOSAL, REJECT, RULING,
 )
 
@@ -249,6 +249,10 @@ def compute_reply_to(record: dict) -> Optional[str]:
         return record.get("from_ruling")
     if kind in (AMEND, ABANDON, OBSERVATION):
         return record.get("project_id")
+    if kind == CLOSE:
+        # handoffs/2026-10-05-stage-2a.md: a close names exactly one of these.
+        return (record.get("project_id") or record.get("ruling_id")
+                or record.get("proposal_id"))
     if kind == ASK:
         # `docs/AGENT-ARCHITECTURE.md`'s fact-check exception: an ask that
         # names `proposal_id` IS about that proposal. A plain lookup ask
@@ -512,7 +516,22 @@ def _project_amend_abandon_public_text(record: dict, ctx: dict) -> Optional[str]
     return record.get("public_rationale")
 
 
+#: Fixed public lines for a `close` (never its `reason`, which is written for
+#: the model audience): what the executor closed, by outcome.
+_CLOSE_PUBLIC_TEXT = {
+    "completed": "Closed as completed.",
+    "not_done": "Closed without being carried out.",
+    "abandoned": "Closed after the project was abandoned.",
+    "superseded": "Closed, replaced by newer work.",
+}
+
+
+def _close_public_text(record: dict, ctx: dict) -> Optional[str]:
+    return _CLOSE_PUBLIC_TEXT.get(record.get("outcome"), "Closed.")
+
+
 PUBLIC_TEXT_BUILDERS = {
+    CLOSE: _close_public_text,
     PROPOSAL: _proposal_public_text,
     RULING: _ruling_public_text,
     EXECUTED: _executed_public_text,
@@ -546,7 +565,7 @@ PUBLIC_ITEM_FIELDS = frozenset({
 #: of vanishing from the feed.
 KNOWN_KINDS = frozenset({
     PROPOSAL, PASS, RULING, EXECUTED, ASK, ANSWER, ESCALATION, PROJECT,
-    OBSERVATION, AMEND, ABANDON,
+    OBSERVATION, AMEND, ABANDON, CLOSE,
 })
 
 
