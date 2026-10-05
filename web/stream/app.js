@@ -1220,6 +1220,15 @@ class StreamPage {
     // The turn is the message: its summary is the body, in the agent's
     // voice; thinking folds away under it; the records follow as receipts.
     if (run.summary) head.push(el("div", { class: "fturnbody-text", text: run.summary }));
+    // The whole end-of-run report, when the message above is only its
+    // opening (the public page cuts the summary to 280 characters).
+    const report = run.report && run.report.replace(/\s+/g, " ").trim() !== (run.summary || "").replace(/\s+/g, " ").trim() ? run.report : null;
+    if (report) {
+      head.push(el("details", { class: "fx" }, [
+        el("summary", { text: "Full report" }),
+        el("div", { class: "fthink freport", text: report }),
+      ]));
+    }
     if (run.thinking) {
       head.push(el("details", { class: "fx" }, [
         el("summary", { text: "Thinking" }),

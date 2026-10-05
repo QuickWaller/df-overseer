@@ -239,3 +239,11 @@ def test_thinking_switch_and_failed_runs_hide_it(monkeypatch):
     monkeypatch.setattr(live, "PUBLIC_THINKING", True)
     failed = [_row("run-0002", "architect", ended=100, ok=0, status="failed", thinking="A plain thought.")]
     assert "thinking" not in live.build_runs(failed, NOW, public=True)["runs"][0]
+
+
+def test_full_report_is_public_whole_with_unsafe_paragraphs_replaced():
+    report = "Ruled two proposals.\n\nThe tool said /opt/df/x.lua failed.\n\nStarted the dig."
+    rows = [_row("run-0001", "overseer", ended=100, final_answer=report)]
+    pub = live.build_runs(rows, NOW, public=True)["runs"][0]
+    assert pub["report"].split("\n\n") == ["Ruled two proposals.", live.THINKING_WITHHELD_MARKER, "Started the dig."]
+    assert live.build_runs(rows, NOW, public=False)["runs"][0]["report"] == report

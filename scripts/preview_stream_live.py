@@ -50,6 +50,22 @@ DEMO_SUMMARIES = {  # EXAMPLE DATA (preview only)
     "consultant": ("Answered the Architect's fact-check: soil can't be smoothed, so bedrooms need the stone level. "
                    "Checked the wiki's smoothing page and the doctrine on room quality."),
 }
+# EXAMPLE DATA (preview only): a full end-of-run report, longer than the
+# 280-character public summary, so "Full report" has something to show.
+DEMO_REPORTS = {
+    "overseer": (
+        "Accepted the stair and the bedroom cell and planned their jobs. Deferred a second stair until the first is "
+        "dug. Added a haul step after the Consultant said boulders block a bed."
+        "\n\n"
+        "Stair (proposal-0004): checked the dry run, one down-stair reachable from the Farm Plot, two miners free. "
+        "Accepted, planned as one job, and designated it. It was dug the next day."
+        "\n\n"
+        "Bedroom cell (proposal-0008): previewed the template, 10 of 10 cells reachable on stone. There are no beds in "
+        "stock, so the plan has a Make bed job after the dig. Started the dig: 4 of 12 tiles ordered."
+        "\n\n"
+        "Second stair (proposal-0011): deferred. One stair is enough until it is finished; I will look again then."
+    ),
+}
 DEMO_WAKE_DETAIL = {  # EXAMPLE DATA, worded like the conductor's own details
     "architect": "45 game days since the last routine review",
     "overseer": "2 proposals waiting for a ruling",
@@ -131,7 +147,7 @@ def _demo_runs(now: float) -> tuple:
             "run_id": f"run-{n:04d}", "role": role, "wake_reason": {"overseer": "queue_pending", "consultant": "open_ask"}.get(role, "routine_review"),
             "wake_detail": DEMO_WAKE_DETAIL[role], "cycle": n, "started_at": DEMO_START.isoformat(), "ended_at": DEMO_END.isoformat(),
             "status": "ok", "ok": 1, "timed_out": 0, "duration_s": 372.4 + n * 40, "cost_usd": 0.05 * n,
-            "error": None, "final_answer": DEMO_SUMMARIES[role], "records_json": json.dumps(linked),
+            "error": None, "final_answer": DEMO_REPORTS.get(role, DEMO_SUMMARIES[role]), "records_json": json.dumps(linked),
             # EXAMPLE DATA (preview only): a turn's thinking.
             "thinking": EXAMPLE_RUN_THINKING.get(role),
         })

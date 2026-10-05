@@ -236,6 +236,26 @@ def _public_summary(text: Optional[str]) -> Optional[str]:
     return None if feed.find_unsafe_pattern(body) else body
 
 
+def _public_report(text: Optional[str]) -> Optional[str]:
+    """The whole end-of-run report for the public "Full report" expander:
+    the same paragraph-by-paragraph redaction as thinking, under the
+    summaries' own switch (it is the same text, uncut)."""
+    if not PUBLIC_SUMMARIES or not text:
+        return None
+    body = text.replace("\n[truncated]", "").strip()
+    if not body:
+        return None
+    from dfqueue import feed
+    out = []
+    for para in body.split(PARA):
+        para = para.strip()
+        if para:
+            out.append(THINKING_WITHHELD_MARKER if feed.find_unsafe_pattern(para) else para)
+    if not out or all(p == THINKING_WITHHELD_MARKER for p in out):
+        return None
+    return PARA.join(out)
+
+
 def _public_thinking(text: Optional[str]) -> Optional[str]:
     """The public form of a run's thinking, or `None` when there is none to
     show: unsafe paragraphs replaced by a marker, never the matched text."""
@@ -349,6 +369,10 @@ def build_runs(
                 from dfqueue import feed
                 if not feed.find_unsafe_pattern(detail):
                     entry["wake_detail"] = detail.strip()[:300]
+            if entry["status"] == "ok" and answer:
+                report = _public_report(answer)
+                if report:
+                    entry["report"] = report
             if entry["status"] == "ok":
                 thinking = _public_thinking(row.get("thinking"))
                 if thinking:
@@ -359,7 +383,7 @@ def build_runs(
             entry.update({
                 "wake_detail": row.get("wake_detail"), "cycle": row.get("cycle"),
                 "cost_usd": row.get("cost_usd"), "error": row.get("error"),
-                "summary": answer,
+                "summary": answer, "report": answer,
             })
         out_runs.append(entry)
         if calls and row.get("ended_at") is not None:
