@@ -97,3 +97,65 @@ Steps:
    conductor allowlist; update counts and docs.
 5. Confirm hold tests; run the full suites; Result.
 
+### Result
+
+Built (commits `c79a402`, `da6f632`, plus the plan commit `8f9b5ed`):
+
+- `conductor/runner.py`: `usage_from` and `turns_from`; `RunResult.usage` and
+  `assistant_turns`; `docker run ... --hostname <role>`. The cycle log line
+  now also prints turns and usage per run.
+- `conductor/cycle.py`: each `run-<role>.json` in the archive carries `usage`
+  and `assistant_turns` beside `tool_summary` (null when unknown, never 0).
+- Removed: `briefing_extras` and `BriefingExtras` (policy.py, policy.yaml),
+  `build_facts` and the stock, order, availability and seed helpers
+  (briefing.py), `_read_fact_sources`, `_facts_for` and the `facts` argument
+  (cycle.py), `test_briefing_facts.py`, the facts tests in `test_cycle.py`
+  and `test_policy.py`. Orders lines went with the block (3.3 replaces the
+  whole facts block); `orders.list` is still read for the stalled-order watch.
+- `agents/conductor/tools.yaml`: the three `stocks.*` grants removed; conductor
+  tool count 24 to 21 (`dfmcp/tests/test_gotchas_tools.py`, `docs/STATE.md`
+  by hand, one number; not regenerated, since `--write-state` does live
+  checks).
+- Operator hold: `conductor/hold.py` and its tests untouched and green.
+
+Not done: `conductor.report` carries no usage numbers. Its schema and the run
+store (`dfqueue/runs.py`) have fixed columns, and adding fields means a
+`dfqueue` change outside this stream's surfaces. The archive has the data.
+
+Tests: ambient `python -m pytest`: 2755 passed, 3 skipped, 0 failed (the
+known date-sensitive test passed today). `dfmcp/tests` in `.venv-dfmcp`: 799
+passed. `conductor/`: 303 passed.
+
+Envelope, read from the committed real envelopes (`evals/live/2026-09-15-
+overseer-first-ruling/run.json`, the 2026-09-24 consultant runs): top-level
+keys `ok, status, final, payloads, usage, costUsd, codeModeEngaged,
+assistantTurns, toolSummary, model, provider, sessionId`. `usage` is `{input,
+output, cacheRead, cacheWrite, reasoningTokens, total, cost: {total}}`.
+Cache-read tokens are present as `cacheRead` (for example 28928 against 10212
+input on a 5-turn run). Also confirmed read-only on the agent VM that the
+live archive's `run-<role>.json` has only cost, error, final answer, ok, role,
+status, timed_out, tool_summary, wall clock: usage is dropped today.
+
+Fixed hostname (P2-L2). Verified: the container `--name` stays unique per
+run, so the hostname adds no collision there. On the agent VM the shared state
+directory's only lock is one `device-identity.<hash>.lock.sqlite` under
+`config/tmp/openclaw-1000/`, created 2026-09-15; every run since has used a
+fresh random container id as hostname and the same single lock file remained,
+so the lock is not keyed on the hostname. Not verified: what the `<hash>` is
+derived from (needs the openclaw source in the image, which needs docker, not
+allowed), and behaviour of two concurrent same-role runs (the conductor runs
+roles serially). The live check settles it.
+
+Deploy targets: `vm106-conductor` (required). `vm103-dfmcp` optional (the
+shrunk allowlist only removes grants the conductor no longer uses; deploying
+it keeps the server, STATE.md and the repo in step). `vm106-agents` not
+needed (the conductor is not an openclaw agent).
+
+Live check after deploy: (1) a `--once --dry-run` cycle: briefings carry no
+`facts` key, no `stocks.*` calls in the dfmcp journal. (2) One real advisor
+wake: read `run-<role>.json`, confirm `usage` (with `cacheRead`) and
+`assistant_turns` are present and the run authenticates (no lock refusal)
+under `--hostname <role>`. (3) A second run of the same role soon after:
+compare `cacheRead` to `input` against the first; the prompt prefix should now
+match up to the `sessionId` in the `## Runtime` line.
+
