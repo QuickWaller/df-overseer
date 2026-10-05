@@ -144,7 +144,15 @@
         "material": {
           "ring": 16
         },
-        "shim_restored": true
+        "shim_restored": true,
+        "vein_material": {
+          "exposed": {
+            "materials": [],
+            "mine_with": "construction.mine-vein-site",
+            "total_tiles": 0,
+            "unclassified_tiles": 0
+          }
+        }
       }
     },
     "read_failures": [],
@@ -313,7 +321,15 @@
         "material": {
           "ring": 16
         },
-        "shim_restored": true
+        "shim_restored": true,
+        "vein_material": {
+          "exposed": {
+            "materials": [],
+            "mine_with": "construction.mine-vein-site",
+            "total_tiles": 0,
+            "unclassified_tiles": 0
+          }
+        }
       }
     },
     "read_failures": [],
@@ -459,7 +475,15 @@
         "material": {
           "ring": 16
         },
-        "shim_restored": true
+        "shim_restored": true,
+        "vein_material": {
+          "exposed": {
+            "materials": [],
+            "mine_with": "construction.mine-vein-site",
+            "total_tiles": 0,
+            "unclassified_tiles": 0
+          }
+        }
       }
     },
     "read_failures": [],
@@ -627,7 +651,15 @@
         "material": {
           "ring": 16
         },
-        "shim_restored": true
+        "shim_restored": true,
+        "vein_material": {
+          "exposed": {
+            "materials": [],
+            "mine_with": "construction.mine-vein-site",
+            "total_tiles": 0,
+            "unclassified_tiles": 0
+          }
+        }
       }
     },
     "read_failures": [],
@@ -825,6 +857,12 @@
       },
       "handle": "site-1",
       "near_landmark": "Well",
+      "ore_exposed": {
+        "materials": [],
+        "mine_with": "construction.mine-vein-site",
+        "total_tiles": 0,
+        "unclassified_tiles": 0
+      },
       "phases_applied": [
         "bedroom_cell_v1_shell"
       ],
@@ -938,7 +976,15 @@
       "material": {
         "ring": 16
       },
-      "shim_restored": true
+      "shim_restored": true,
+      "vein_material": {
+        "exposed": {
+          "materials": [],
+          "mine_with": "construction.mine-vein-site",
+          "total_tiles": 0,
+          "unclassified_tiles": 0
+        }
+      }
     }
   },
   "status_bedroom_cell_v1_build_furniture_pending": {
@@ -1048,7 +1094,15 @@
       "material": {
         "ring": 16
       },
-      "shim_restored": true
+      "shim_restored": true,
+      "vein_material": {
+        "exposed": {
+          "materials": [],
+          "mine_with": "construction.mine-vein-site",
+          "total_tiles": 0,
+          "unclassified_tiles": 0
+        }
+      }
     }
   },
   "status_bedroom_cell_v1_finish_complete": {
@@ -1159,7 +1213,15 @@
       "material": {
         "ring": 16
       },
-      "shim_restored": true
+      "shim_restored": true,
+      "vein_material": {
+        "exposed": {
+          "materials": [],
+          "mine_with": "construction.mine-vein-site",
+          "total_tiles": 0,
+          "unclassified_tiles": 0
+        }
+      }
     }
   },
   "status_bedroom_cell_v1_finish_furniture_pending": {
@@ -1270,7 +1332,15 @@
       "material": {
         "ring": 16
       },
-      "shim_restored": true
+      "shim_restored": true,
+      "vein_material": {
+        "exposed": {
+          "materials": [],
+          "mine_with": "construction.mine-vein-site",
+          "total_tiles": 0,
+          "unclassified_tiles": 0
+        }
+      }
     }
   },
   "status_bedroom_cell_v1_shell_complete": {
@@ -1375,7 +1445,15 @@
       "material": {
         "ring": 16
       },
-      "shim_restored": true
+      "shim_restored": true,
+      "vein_material": {
+        "exposed": {
+          "materials": [],
+          "mine_with": "construction.mine-vein-site",
+          "total_tiles": 0,
+          "unclassified_tiles": 0
+        }
+      }
     }
   },
   "status_bedroom_cell_v1_shell_furniture_pending": {
@@ -1480,7 +1558,15 @@
       "material": {
         "ring": 16
       },
-      "shim_restored": true
+      "shim_restored": true,
+      "vein_material": {
+        "exposed": {
+          "materials": [],
+          "mine_with": "construction.mine-vein-site",
+          "total_tiles": 0,
+          "unclassified_tiles": 0
+        }
+      }
     }
   },
   "status_bedroom_cell_v1_zone_complete": {
@@ -1585,7 +1671,15 @@
       "material": {
         "ring": 16
       },
-      "shim_restored": true
+      "shim_restored": true,
+      "vein_material": {
+        "exposed": {
+          "materials": [],
+          "mine_with": "construction.mine-vein-site",
+          "total_tiles": 0,
+          "unclassified_tiles": 0
+        }
+      }
     }
   },
   "status_bedroom_cell_v1_zone_furniture_pending": {
@@ -1690,7 +1784,15 @@
       "material": {
         "ring": 16
       },
-      "shim_restored": true
+      "shim_restored": true,
+      "vein_material": {
+        "exposed": {
+          "materials": [],
+          "mine_with": "construction.mine-vein-site",
+          "total_tiles": 0,
+          "unclassified_tiles": 0
+        }
+      }
     }
   },
   "status_no_phase_after_shell_apply": {
@@ -1768,7 +1870,15 @@
       "material": {
         "ring": 16
       },
-      "shim_restored": true
+      "shim_restored": true,
+      "vein_material": {
+        "exposed": {
+          "materials": [],
+          "mine_with": "construction.mine-vein-site",
+          "total_tiles": 0,
+          "unclassified_tiles": 0
+        }
+      }
     }
   }
 }

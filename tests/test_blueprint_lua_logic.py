@@ -748,6 +748,7 @@ def test_sites_report_ore_exposed_on_each_sites_room(world):
     rows, _ = world.call("list_sites")
     ore = rows[0]["ore_exposed"]
     assert ore["total_tiles"] == 2
+    assert ore["mine_with"] == "construction.mine-vein-site"
     assert ore["materials"] == [{"mineral_name": "HEMATITE", "kind": "ore", "tiles": 2}]
 
 

@@ -24,9 +24,9 @@ Last check: 2026-10-05T06:34:49Z, overall: clean
 ## Per-role tool counts (offline, from the repo's own registry + roster)
 
 - **architect**: 53
-- **conductor**: 23
+- **conductor**: 24
 - **consultant**: 29
-- **overseer**: 97
+- **overseer**: 98
 - **quartermaster**: 26
 
 ## Services

@@ -1094,7 +1094,11 @@ local function surface_reread(site, room)
     material = surface_mod.boundary_material, vein_material = surface_mod.vein_material})
   -- The per-tile list is bulky and not needed here; keep the summary.
   local vm = out.vein_material
-  if type(vm) == 'table' then vm.tiles = nil end
+  if type(vm) == 'table' then
+    vm.tiles = nil
+    -- A site has no zone id: it is mined by its handle, not by ZONE_ID.
+    if type(vm.exposed) == 'table' then vm.exposed.mine_with = "construction.mine-vein-site" end
+  end
   return out
 end
 
@@ -1105,6 +1109,7 @@ local function site_ore_exposed(site, room)
   if out.skipped or out.error then return {unreadable = true, skipped = out.skipped, error = out.error} end
   local vm = out.vein_material
   if type(vm) ~= 'table' or vm.error or type(vm.exposed) ~= 'table' then return {unreadable = true, error = vm and vm.error or "no vein read"} end
+  vm.exposed.mine_with = "construction.mine-vein-site"
   return vm.exposed
 end
 

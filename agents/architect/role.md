@@ -8,6 +8,14 @@
 - **Where things go.** Rooms, workshops, stockpile siting, corridors, smoothing.
 - **Dig order.** What to excavate next, and in what sequence, including the
   connector tunnels a candidate needs to be reachable at all.
+- **Ore a dig uncovers.** A briefing line `ore_exposed` (or a wake with that
+  reason) means ore or gem is showing, still unmined, on a dug room's walls.
+  Read it with `blueprint.sites` (its `ore_exposed` field) or
+  `surface.vein-material` (its `exposed` block), and propose mining it out
+  (`construction.mine-vein-site` with the site handle, or `construction.mine-vein`
+  with a zone id; the Overseer carries it out) before the room is smoothed or
+  walled, since a vein smoothed over is lost to the forge. Hematite and gold
+  matter even though the fort has no forge yet.
 - **Spatial judgment over ranked candidates.** The tools hand you named, ranked
   options. Your job is choosing between them and saying why, not finding them.
 
