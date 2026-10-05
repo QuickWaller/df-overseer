@@ -210,3 +210,25 @@ def test_a_failed_read_is_flagged_and_no_journal_means_no_checks():
     out = live.build_runs(rows, NOW, public=True, calls=bad, tools=TOOLS, record_ts={"proposal-0001": _iso(190)})
     assert out["calls_by_record"]["proposal-0001"][0]["failed"] is True
     assert live.build_runs(rows, NOW, public=True)["calls_by_record"] == {}
+
+
+def test_thinking_is_public_with_unsafe_paragraphs_replaced():
+    thinking = ("The farm level is soil, so go down a level.\n\n"
+                "The tool said /opt/df/scripts/x.lua failed.\n\n"
+                "Proposing one stone cell.")
+    rows = [_row("run-0001", "architect", ended=100, thinking=thinking)]
+    pub = live.build_runs(rows, NOW, public=True)["runs"][0]
+    assert pub["thinking"].split("\n\n") == [
+        "The farm level is soil, so go down a level.", live.THINKING_WITHHELD_MARKER, "Proposing one stone cell."]
+    assert "/opt/" not in json.dumps(pub)
+    op = live.build_runs(rows, NOW, public=False)["runs"][0]
+    assert op["thinking"] == thinking
+
+
+def test_thinking_switch_and_failed_runs_hide_it(monkeypatch):
+    rows = [_row("run-0001", "architect", ended=100, thinking="A plain thought.")]
+    monkeypatch.setattr(live, "PUBLIC_THINKING", False)
+    assert "thinking" not in live.build_runs(rows, NOW, public=True)["runs"][0]
+    monkeypatch.setattr(live, "PUBLIC_THINKING", True)
+    failed = [_row("run-0002", "architect", ended=100, ok=0, status="failed", thinking="A plain thought.")]
+    assert "thinking" not in live.build_runs(failed, NOW, public=True)["runs"][0]

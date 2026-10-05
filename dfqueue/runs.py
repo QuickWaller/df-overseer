@@ -25,6 +25,9 @@ from typing import Any, Iterator, Mapping, Optional
 RUN_ROLES = ("architect", "overseer", "quartermaster", "consultant")
 
 FINAL_ANSWER_MAX = 4000
+#: The conductor already caps reasoning at 12,000 characters (start and end
+#: kept, conductor/runner.py cap_thinking); this is the store's own backstop.
+THINKING_MAX = 12500
 WAKE_REASON_MAX = 64
 WAKE_DETAIL_MAX = 300
 ERROR_MAX = 500
@@ -49,7 +52,8 @@ CREATE TABLE IF NOT EXISTS runs (
     cost_usd REAL,
     error TEXT,
     final_answer TEXT,
-    records_json TEXT
+    records_json TEXT,
+    thinking TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_runs_started ON runs(started_at);
 """
@@ -74,6 +78,9 @@ def _connect(path: "str | Path") -> Iterator[sqlite3.Connection]:
         conn.execute("PRAGMA journal_mode=WAL")
         conn.row_factory = sqlite3.Row
         conn.executescript(_SCHEMA)
+        cols = {r[1] for r in conn.execute("PRAGMA table_info(runs)")}
+        if "thinking" not in cols:  # stores made before 2026-10-05
+            conn.execute("ALTER TABLE runs ADD COLUMN thinking TEXT")
         yield conn
     finally:
         conn.close()
@@ -141,6 +148,7 @@ def end_run(
     status: Optional[str], ok: Optional[bool], timed_out: Optional[bool],
     duration_s: Optional[float], cost_usd: Optional[float], error: Optional[str],
     final_answer: Optional[str], records: list, now: Optional[datetime] = None,
+    thinking: Optional[str] = None,
 ) -> dict:
     """Completes `run_id`, or, when it is None (the start call failed),
     creates the row from `role` and backdates `started_at` by `duration_s`."""
@@ -165,13 +173,14 @@ def end_run(
             )
         conn.execute(
             "UPDATE runs SET ended_at=?, status=?, ok=?, timed_out=?, duration_s=?, cost_usd=?, "
-            "error=?, final_answer=?, records_json=? WHERE run_id=?",
+            "error=?, final_answer=?, records_json=?, thinking=? WHERE run_id=?",
             (now.isoformat(), _cap(status, STATUS_MAX),
              None if ok is None else int(bool(ok)),
              None if timed_out is None else int(bool(timed_out)),
              duration_s, cost_usd, _cap(error, ERROR_MAX),
              _cap(final_answer, FINAL_ANSWER_MAX, marker=True),
-             json.dumps(records[:RECORDS_MAX]), run_id),
+             json.dumps(records[:RECORDS_MAX]),
+             _cap(thinking, THINKING_MAX, marker=True), run_id),
         )
         conn.execute(
             "DELETE FROM runs WHERE run_id NOT IN "

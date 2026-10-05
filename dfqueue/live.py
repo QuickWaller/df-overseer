@@ -65,6 +65,14 @@ RUN_OPEN_MAX_AGE_S = 1200
 #: meaning), so flipping this to False is the one switch that makes summaries
 #: operator-only.
 PUBLIC_SUMMARIES = True
+#: The same switch for a run's thinking (the model's reasoning, captured by
+#: the conductor). Public by the user's call, 2026-10-05 (register). Thinking
+#: is long free text, so it is checked paragraph by paragraph: a paragraph
+#: that trips `feed.find_unsafe_pattern` is replaced by a marker rather than
+#: withholding the whole run's thinking.
+PUBLIC_THINKING = True
+THINKING_WITHHELD_MARKER = "[one paragraph withheld]"
+PARA = chr(10) * 2
 SUMMARY_PUBLIC_MAX = 280
 RUNS_LIMIT = 40
 CHECK_NOTE_MAX = 80
@@ -228,6 +236,23 @@ def _public_summary(text: Optional[str]) -> Optional[str]:
     return None if feed.find_unsafe_pattern(body) else body
 
 
+def _public_thinking(text: Optional[str]) -> Optional[str]:
+    """The public form of a run's thinking, or `None` when there is none to
+    show: unsafe paragraphs replaced by a marker, never the matched text."""
+    if not PUBLIC_THINKING or not text or not text.strip():
+        return None
+    from dfqueue import feed
+    out = []
+    for para in text.split(PARA):
+        para = para.strip()
+        if not para:
+            continue
+        out.append(THINKING_WITHHELD_MARKER if feed.find_unsafe_pattern(para) else para)
+    if not out or all(p == THINKING_WITHHELD_MARKER for p in out):
+        return None
+    return PARA.join(out)
+
+
 def _first_sentence(text: Any, limit: int = CHECK_NOTE_MAX) -> Optional[str]:
     if not isinstance(text, str) or not text.strip():
         return None
@@ -316,7 +341,13 @@ def build_runs(
                     entry["summary_withheld"] = True
                 else:
                     entry["summary"] = summary
+            if entry["status"] == "ok":
+                thinking = _public_thinking(row.get("thinking"))
+                if thinking:
+                    entry["thinking"] = thinking
         else:
+            if row.get("thinking"):
+                entry["thinking"] = row.get("thinking")
             entry.update({
                 "wake_detail": row.get("wake_detail"), "cycle": row.get("cycle"),
                 "cost_usd": row.get("cost_usd"), "error": row.get("error"),

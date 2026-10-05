@@ -169,3 +169,27 @@ def test_tool_is_registered_for_the_conductor_only():
         assert roster.check(role, "conductor.report")[0] is False
     desc, schema_ = reg.get("conductor.report").describe("conductor")
     assert schema_["additionalProperties"] is False and "role" in schema_["properties"]
+
+
+async def test_end_carries_thinking_capped(db):
+    await _call({"phase": "start", "role": "architect"}, db)
+    await _call({"phase": "end", "run_id": "run-0001", "status": "ok", "ok": True,
+                 "thinking": "Weighing the farm level.\n\nStone is one level down."}, db)
+    row = runs.get_run(runs.runs_path(db), "run-0001")
+    assert row["thinking"] == "Weighing the farm level.\n\nStone is one level down."
+    await _call({"phase": "start", "role": "overseer"}, db)
+    await _call({"phase": "end", "run_id": "run-0002", "thinking": "y" * 20000}, db)
+    t = runs.get_run(runs.runs_path(db), "run-0002")["thinking"]
+    assert len(t) == runs.THINKING_MAX and t.endswith("[truncated]")
+
+
+async def test_a_store_made_before_thinking_gains_the_column(db):
+    path = runs.runs_path(db)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    conn = sqlite3.connect(path)
+    conn.executescript(runs._SCHEMA.replace(",\n    thinking TEXT", ""))
+    conn.close()
+    assert "thinking" not in {r[1] for r in sqlite3.connect(path).execute("PRAGMA table_info(runs)")}
+    await _call({"phase": "start", "role": "architect"}, db)
+    await _call({"phase": "end", "run_id": "run-0001", "thinking": "Short thought."}, db)
+    assert runs.get_run(path, "run-0001")["thinking"] == "Short thought."
