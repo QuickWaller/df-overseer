@@ -19,7 +19,8 @@ from conductor.cursors import CursorStore
 from conductor.mcp_client import FakeToolCaller, MCPToolError
 from conductor.pause_watch import (
     OWNED_ESCALATION, Observation, PausePolicy, PausePolicyError, PauseWatchStore, Verdict, WatchState,
-    classify_causes, decide, finish_after_overseer, liveness_due, load_pause_policy, run_pause_watch,
+    classify_causes, decide, finish_after_overseer, liveness_due, load_pause_policy, read_verdict_after,
+    read_verdict_baseline, run_pause_watch,
 )
 
 POLICY = load_pause_policy()  # the real, committed conductor/pause_policy.yaml
@@ -149,7 +150,8 @@ def test_liveness_fires_once_per_interval():
 
 class FakeFort:
     def __init__(self, *, paused=True, popups=0, reports=(), tripwire=None, resume_moves_tick=True,
-                 dismiss_works=True, viewscreen="viewscreen_dwarfmodest", why_available=True):
+                 dismiss_works=True, viewscreen="viewscreen_dwarfmodest", why_available=True,
+                 verdict=None, verdict_store_down=False):
         self.paused = paused
         self.tick = TICK
         self.popups = popups
@@ -160,6 +162,20 @@ class FakeFort:
         self.viewscreen = viewscreen
         self.why_available = why_available
         self.resume_calls = 0
+        #: The Overseer's pause.verdict, as the store would show it once the
+        #: Overseer's run has written it: None (silence) or {"resume", "reason"}.
+        self.verdict = verdict
+        self.verdict_store_down = verdict_store_down
+        self._verdict_reads = 0
+
+    def verdict_read(self, _a=None):
+        if self.verdict_store_down:
+            raise MCPToolError("unknown tool pause.verdict_read")
+        self._verdict_reads += 1
+        if self._verdict_reads == 1:  # the baseline read, before the Overseer runs
+            return {"latest_id": 0, "verdicts": []}
+        rows = [{"id": 1, "at": "t", **self.verdict}] if self.verdict else []
+        return {"latest_id": len(rows), "verdicts": rows}
 
     def status(self, _a=None):
         return {"paused": self.paused, "fps": 100, "abs_tick": self.tick, "armed": True, "tripwire": self.tripwire}
@@ -208,6 +224,7 @@ class FakeFort:
         return {
             "clock.status": self.status, "pause.why": self.why, "pause.dismiss": self.dismiss,
             "clock.resume": self.resume, "clock.pause": self.pause,
+            "pause.verdict_read": self.verdict_read,
         }
 
     def tools(self):
@@ -400,14 +417,90 @@ async def test_after_the_overseer_a_clean_run_resumes_and_an_escalation_does_not
     assert esc.alerts and fort.resume_calls == 0 and fort.paused is True
     assert store.load().owned == OWNED_ESCALATION
 
-    # A fresh episode, clean Overseer run: the tripwire branch's convention.
+    # A fresh episode, an explicit resume=true verdict: the only resume.
     fort2 = FakeFort(reports=[_report("MEGABEAST_ARRIVAL")])
     store2 = PauseWatchStore(tmp_path / "pw2.json")
     out2, caller2 = await _run(fort2, store2)
     fin = await finish_after_overseer(
-        caller2.call_tool, store2, POLICY, escalated=False, clock_status=fort2.status(), now=NOW + 1, sleep=fort2.sleep,
+        caller2.call_tool, store2, POLICY, escalated=False, clock_status=fort2.status(), now=NOW + 1,
+        sleep=fort2.sleep, verdict={"resume": True, "reason": "a visiting trader, nothing hostile"},
     )
     assert fin.resumed is True and fort2.paused is False
+
+
+async def _after_overseer(tmp_path, verdict, *, escalated=False, resume_moves_tick=True):
+    fort = FakeFort(reports=[_report("MEGABEAST_ARRIVAL")], resume_moves_tick=resume_moves_tick)
+    store = PauseWatchStore(tmp_path / "pw.json")
+    await _run(fort, store)
+    fin = await finish_after_overseer(
+        fort.tools().call_tool, store, POLICY, escalated=escalated, clock_status=fort.status(),
+        now=NOW + 1, sleep=fort.sleep, verdict=verdict,
+    )
+    return fort, store, fin
+
+
+@pytest.mark.asyncio
+async def test_no_verdict_keeps_the_fort_paused_and_alerts(tmp_path):
+    fort, store, fin = await _after_overseer(tmp_path, None)
+    assert fin.resumed is False and fort.resume_calls == 0 and fort.paused is True
+    assert fin.verdict is Verdict.ALERT and fin.alerts and "no verdict" in fin.alerts[0]["reason"]
+    assert fin.alert["reason"] == store.load().alert_reason
+
+
+@pytest.mark.asyncio
+async def test_a_false_verdict_keeps_the_fort_paused_and_alerts_with_the_reason(tmp_path):
+    fort, store, fin = await _after_overseer(tmp_path, {"resume": False, "reason": "a siege may be forming"})
+    assert fin.resumed is False and fort.resume_calls == 0 and fort.paused is True
+    assert fin.alerts and "siege may be forming" in fin.alerts[0]["reason"]
+
+
+@pytest.mark.asyncio
+async def test_a_true_verdict_resumes_once_and_verifies_the_tick(tmp_path):
+    fort, store, fin = await _after_overseer(tmp_path, {"resume": True, "reason": "harmless"})
+    assert fin.resumed is True and fort.resume_calls == 1 and fort.paused is False
+    assert store.load().episode_started is None and store.load().alert_reason is None
+
+
+@pytest.mark.asyncio
+async def test_a_true_verdict_whose_resume_does_not_move_the_tick_pauses_again_and_alerts(tmp_path):
+    fort, store, fin = await _after_overseer(tmp_path, {"resume": True, "reason": "ok"}, resume_moves_tick=False)
+    assert fin.resumed is False and fort.paused is True and fin.alerts
+
+
+@pytest.mark.asyncio
+async def test_an_escalation_overrides_even_a_true_verdict(tmp_path):
+    fort, store, fin = await _after_overseer(tmp_path, {"resume": True, "reason": "ok"}, escalated=True)
+    assert fort.resume_calls == 0 and fort.paused is True
+    assert store.load().owned == OWNED_ESCALATION
+
+
+@pytest.mark.asyncio
+async def test_baseline_and_after_reads_only_count_a_verdict_written_after_the_baseline():
+    fort = FakeFort(verdict={"resume": True, "reason": "x"})
+    call = fort.tools().call_tool
+    base = await read_verdict_baseline(call)
+    assert base == 0
+    assert (await read_verdict_after(call, base)) == {"resume": True, "reason": "x"}
+    assert (await read_verdict_after(call, None)) is None  # no baseline: safe direction
+    down = FakeFort(verdict_store_down=True).tools().call_tool
+    assert (await read_verdict_baseline(down)) is None
+    assert (await read_verdict_after(down, 0)) is None
+
+
+@pytest.mark.asyncio
+async def test_the_plain_pause_grace_wait_is_waiting_on_a_human_and_a_hold_carries_the_alert(tmp_path):
+    fort = FakeFort()
+    store = PauseWatchStore(tmp_path / "pw.json")
+    out, _ = await _run(fort, store)
+    assert out.verdict is Verdict.WAIT and out.waiting_on_human is True and out.alert is None
+    assert out.as_dict()["waiting_on_human"] is True
+    # A stuck screen alerts at once; the next pass still carries the standing alert.
+    fort2 = FakeFort(viewscreen="viewscreen_titlest")
+    store2 = PauseWatchStore(tmp_path / "pw2.json")
+    first, _ = await _run(fort2, store2)
+    assert first.alert and first.alert["since"] == NOW
+    later, _ = await _run(fort2, store2, now=NOW + 5)
+    assert later.alert and later.alert["since"] == NOW and later.waiting_on_human is False
 
 
 # ---------------------------------------------------------------------------
@@ -484,8 +577,42 @@ async def test_cycle_a_threat_pause_wakes_only_the_overseer_with_the_unexplained
     assert briefing["wake_reason"] == "unexplained_pause"
     assert "MEGABEAST_ARRIVAL" in json.dumps(briefing)
     assert result.roles_woken == ("overseer",)
-    # A clean un-escalated Overseer run is the decision to resume (verified).
-    assert fort.paused is False and result.pause_watch["resumed"] is True
+    # Silence is not consent: no pause.verdict from the run, so it stays paused.
+    assert fort.paused is True and result.pause_watch["resumed"] is False
+    assert fort.resume_calls == 0
+    assert result.pause_watch["alert"]["reason"].startswith("the Overseer gave no verdict")
+
+
+@pytest.mark.asyncio
+async def test_cycle_an_explicit_resume_true_verdict_from_the_run_resumes_once(tmp_path):
+    fort = FakeFort(reports=[_report("MEGABEAST_ARRIVAL")], verdict={"resume": True, "reason": "harmless"})
+    deps = _cycle_deps(tmp_path, fort)
+    result = await run_cycle(1, deps)
+    assert fort.paused is False and fort.resume_calls == 1 and result.pause_watch["resumed"] is True
+    assert result.pause_watch["alert"] is None
+
+
+@pytest.mark.asyncio
+async def test_cycle_a_false_verdict_holds_and_the_standing_alert_reaches_the_status_block(tmp_path):
+    fort = FakeFort(reports=[_report("MEGABEAST_ARRIVAL")], verdict={"resume": False, "reason": "unsure"})
+    deps = _cycle_deps(tmp_path, fort)
+    result = await run_cycle(1, deps)
+    assert fort.paused is True and fort.resume_calls == 0
+    from conductor.status import status_from_cycle
+    block = status_from_cycle(result)["pause_watch"]
+    assert block["alert"]["reason"].startswith("the Overseer says do not resume")
+    # The next cycle holds (episode handled) and still carries the alert.
+    result2 = await run_cycle(2, _cycle_deps(tmp_path, fort, runner=FakeRoleRunner()))
+    assert result2.pause_watch["verdict"] == "held" and result2.pause_watch["alert"]
+
+
+@pytest.mark.asyncio
+async def test_cycle_an_unreadable_verdict_store_is_silence_not_consent(tmp_path):
+    fort = FakeFort(reports=[_report("MEGABEAST_ARRIVAL")], verdict={"resume": True, "reason": "x"},
+                    verdict_store_down=True)
+    deps = _cycle_deps(tmp_path, fort)
+    result = await run_cycle(1, deps)
+    assert fort.paused is True and fort.resume_calls == 0 and result.pause_watch["alert"]
 
 
 @pytest.mark.asyncio
