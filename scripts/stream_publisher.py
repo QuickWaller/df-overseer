@@ -148,7 +148,7 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from dfqueue import feed, feed_status, live, site_data  # noqa: E402  (path setup must run first)
+from dfqueue import feed, feed_status, lessons, live, site_data  # noqa: E402  (path setup must run first)
 
 DEFAULT_ENV_PATH = REPO_ROOT / ".env"
 DEFAULT_HEARTBEAT_INTERVAL_SECONDS = 60
@@ -502,13 +502,16 @@ def _site_hash_payload(agents_json: dict, tools_json: dict, gotchas: list) -> di
     return {"agents": agents_stable, "tools": tools_stable, "gotchas": gotchas}
 
 
-def _with_runs(site: dict, runs_payload: Optional[dict]) -> dict:
+def _with_runs(site: dict, runs_payload: Optional[dict], lessons_payload: Optional[dict] = None) -> dict:
     """Folds the run reports into the change-detection payload (minus their
     wall-clock `as_of`), only when a run store exists, so a fort without one
     hashes exactly as before."""
     if runs_payload is None:
         return site
-    return {**site, "runs": live.live_hash_payload(runs_payload)}
+    out = {**site, "runs": live.live_hash_payload(runs_payload)}
+    if lessons_payload is not None:
+        out["lessons"] = lessons_payload
+    return out
 
 
 def _write_runs(out_root: Path, fort_id: str, runs_payload: Optional[dict]) -> None:
@@ -520,6 +523,17 @@ def _write_runs(out_root: Path, fort_id: str, runs_payload: Optional[dict]) -> N
     target = feed.fort_feed_dir(out_root, fort_id) / "runs.json"
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_text(_canonical_json(runs_payload), encoding="utf-8")
+
+
+def _write_lessons(out_root: Path, fort_id: str, lessons_payload: Optional[dict]) -> None:
+    """`<root>/forts/<fort_id>/lessons.json`: the gotchas written or
+    confirmed during each run (`dfqueue/lessons.py`). Written only with a run
+    store, like `runs.json`."""
+    if lessons_payload is None:
+        return
+    target = feed.fort_feed_dir(out_root, fort_id) / "lessons.json"
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(_canonical_json(lessons_payload), encoding="utf-8")
 
 
 # ---- one cycle --------------------------------------------------------------
@@ -592,6 +606,8 @@ def run_cycle(
     )
     public_gotchas = site_data.build_gotchas_json(gotchas_entries, public=True)
     operator_gotchas = site_data.build_gotchas_json(gotchas_entries, public=False)
+    lessons_public = None if run_rows is None else lessons.build_lessons(run_rows, gotchas_entries, public=True)
+    lessons_operator = None if run_rows is None else lessons.build_lessons(run_rows, gotchas_entries, public=False)
 
     fort_id = cfg.resolved_fort_id()
     staging = Path(cfg.staging_dir)
@@ -616,9 +632,10 @@ def run_cycle(
         gotchas_entries=gotchas_entries, public=False,
     )
     _write_runs(operator_out, fort_id, runs_operator)
+    _write_lessons(operator_out, fort_id, lessons_operator)
     operator_hash = compute_content_hash(
         operator_items, operator_projects, hash_status_operator,
-        site=_with_runs(_site_hash_payload(agents_json, tools_json, operator_gotchas), runs_operator),
+        site=_with_runs(_site_hash_payload(agents_json, tools_json, operator_gotchas), runs_operator, lessons_operator),
     )
     if kill_switch_active:
         result["operator"]["reason"] = "kill_switch_file"
@@ -661,12 +678,13 @@ def run_cycle(
     )
     if not public_off:
         _write_runs(public_out, fort_id, runs_public)
+        _write_lessons(public_out, fort_id, lessons_public)
     public_hash = compute_content_hash(
         [] if public_off else public_items,
         {"thread_to_project": {}, "projects": {}} if public_off else public_projects,
         None if public_off else hash_status_public,
         site=None if public_off else _with_runs(
-            _site_hash_payload(agents_json, tools_json, public_gotchas), runs_public),
+            _site_hash_payload(agents_json, tools_json, public_gotchas), runs_public, lessons_public),
     )
 
     if kill_switch_active:
