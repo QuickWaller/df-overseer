@@ -66,7 +66,7 @@ from conductor.job_watch import JobWatchResult, JobWatchStore, evaluate_jobs, jo
 from conductor.order_watch import OrderWatchResult, evaluate_orders
 from conductor.pause_watch import (
     OWNED_ESCALATION, UNEXPLAINED_PAUSE, PauseWatchStore, PausePolicy, Verdict,
-    finish_after_overseer, load_pause_policy, run_pause_watch,
+    finish_after_overseer, load_pause_policy, read_verdict_after, read_verdict_baseline, run_pause_watch,
 )
 from conductor.policy import FULL_SPEED, PAUSED, Policy
 from conductor.runner import RoleRunner, RunResult
@@ -796,9 +796,10 @@ async def _paused_cycle_result(
     """The fort is still paused after the watchdog's pass: no ordinary triage
     (advisors would deliberate over a frozen fort). When the verdict is
     `wake_overseer`, run the Overseer once on an `unexplained_pause` wake and
-    let `finish_after_overseer` apply the tripwire branch's own convention: a
-    clean un-escalated run is the decision to resume (once, verified), an
-    escalation or an unclean run keeps the fort paused and alerts the human."""
+    let `finish_after_overseer` decide: only an explicit `pause.verdict`
+    resume=true from that run resumes (once, tick verified); no verdict, a
+    false one, an escalation or an unclean run keeps the fort paused and
+    alerts the human (silence is not consent)."""
     role_runs: List[RunResult] = []
     escalated = False
     briefings: Dict[str, Any] = {}
@@ -817,6 +818,7 @@ async def _paused_cycle_result(
             queue_summary=_queue_summary_for(OVERSEER, queue_state),
         )
         briefings[OVERSEER] = briefing
+        verdict_baseline = await read_verdict_baseline(call)
         run_result = await _run_role(
             deps, call, OVERSEER, json.dumps(briefing, default=str), wake=wake, cycle_index=cycle_index,
         )
@@ -824,14 +826,20 @@ async def _paused_cycle_result(
         if run_result.ok:
             _commit_cursor(deps, new_cursors, OVERSEER)
         escalated = _overseer_called_escalate(run_result) or (not run_result.ok) or run_result.timed_out
+        # Silence is not consent: resume only on an explicit pause.verdict
+        # resume=true written by THIS run (baseline id taken before it ran).
+        verdict = None if escalated else await read_verdict_after(call, verdict_baseline)
         finished = await finish_after_overseer(
             call, _pause_store(deps), deps.pause_policy or load_pause_policy(),
             escalated=escalated, clock_status=clock_status, now=deps.wall_clock(), sleep=deps.pause_sleep,
+            verdict=verdict,
         )
         pause_outcome.actions.extend(finished.actions)
         pause_outcome.alerts.extend(finished.alerts)
         pause_outcome.resumed = finished.resumed
         pause_outcome.still_paused = finished.still_paused
+        pause_outcome.alert = finished.alert
+        pause_outcome.waiting_on_human = False
         if finished.verdict is Verdict.ALERT:
             pause_outcome.verdict = Verdict.ALERT
 

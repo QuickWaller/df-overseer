@@ -193,3 +193,59 @@ async def test_a_store_made_before_thinking_gains_the_column(db):
     await _call({"phase": "start", "role": "architect"}, db)
     await _call({"phase": "end", "run_id": "run-0001", "thinking": "Short thought."}, db)
     assert runs.get_run(path, "run-0001")["thinking"] == "Short thought."
+
+
+# ---- pause.verdict / pause.verdict_read (handoffs/2026-10-05-safe-to-resume.md) ----
+
+
+def _vcall(tool, args, db, role):
+    return ct.call(tool, role, args, queue_db_path=db, write_lock=asyncio.Lock())
+
+
+async def test_pause_verdict_is_the_overseers_alone(db):
+    for role in ("architect", "quartermaster", "consultant", "conductor"):
+        with pytest.raises(ct.ConductorToolError, match="only the Overseer"):
+            await _vcall(ct.PAUSE_VERDICT, {"resume": True, "reason": "x"}, db, role)
+    assert not ct.pause_verdict_path(db).exists()
+
+
+async def test_pause_verdict_read_is_the_conductors_alone(db):
+    for role in ("architect", "overseer", "quartermaster", "consultant"):
+        with pytest.raises(ct.ConductorToolError, match="only the conductor"):
+            await _vcall(ct.PAUSE_VERDICT_READ, {}, db, role)
+
+
+async def test_pause_verdict_roundtrip_and_since_id(db):
+    _, empty = await _vcall(ct.PAUSE_VERDICT_READ, {}, db, "conductor")
+    assert empty == {"latest_id": 0, "verdicts": []}
+    _, v1 = await _vcall(ct.PAUSE_VERDICT, {"resume": False, "reason": "  a   siege\nmay form "}, db, "overseer")
+    assert v1["id"] == 1 and v1["resume"] is False and v1["reason"] == "a siege may form"
+    _, v2 = await _vcall(ct.PAUSE_VERDICT, {"resume": True, "reason": "harmless"}, db, "overseer")
+    _, out = await _vcall(ct.PAUSE_VERDICT_READ, {"since_id": 1}, db, "conductor")
+    assert out["latest_id"] == 2 and [r["id"] for r in out["verdicts"]] == [2] and out["verdicts"][0]["resume"] is True
+
+
+@pytest.mark.parametrize("args", [
+    {"resume": "yes", "reason": "x"}, {"resume": True}, {"resume": True, "reason": "  "},
+    {"resume": True, "reason": "x", "extra": 1},
+])
+async def test_pause_verdict_bad_arguments_write_nothing(db, args):
+    with pytest.raises(ct.ConductorToolError):
+        await _vcall(ct.PAUSE_VERDICT, args, db, "overseer")
+    assert not ct.pause_verdict_path(db).exists()
+
+
+def test_pause_verdict_allowlists_and_the_overseer_still_has_no_resume():
+    reg = load_registry(native_tools={
+        **queue_tools.NATIVE_TOOLS, **doctrine_tools.NATIVE_TOOLS, **series_tools.NATIVE_TOOLS,
+        **gotchas_tools.NATIVE_TOOLS, **knowledge_tools.NATIVE_TOOLS, **ct.NATIVE_TOOLS,
+    })
+    roster = load_roster(reg)
+    assert roster.check("overseer", "pause.verdict")[0] is True
+    assert roster.check("conductor", "pause.verdict")[0] is False
+    assert roster.check("conductor", "pause.verdict_read")[0] is True
+    for role in ("architect", "overseer", "quartermaster", "consultant"):
+        assert roster.check(role, "pause.verdict_read")[0] is False
+    for role in ("architect", "quartermaster", "consultant"):
+        assert roster.check(role, "pause.verdict")[0] is False
+    assert roster.check("overseer", "clock.resume")[0] is False

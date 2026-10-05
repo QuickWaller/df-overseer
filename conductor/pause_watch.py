@@ -24,6 +24,11 @@ owns. This module is the conductor's answer, in two parts:
    Resuming needs a cause on the harmless list, verified by the tick moving,
    once per pause episode.
 
+4. Silence is not consent. After the Overseer runs on an unexplained pause,
+   the watchdog resumes only on an explicit `pause.verdict` with
+   `resume: true` from that run (`finish_after_overseer`); no verdict, a
+   `false` verdict or an escalation holds and alerts.
+
 Everything else is a hold: the fort stays paused, the Overseer is woken
 (`unexplained_pause`) or the human is alerted. "Alert the human" is one
 function (`_alert`) today a CRITICAL log line plus a record in the status
@@ -50,6 +55,7 @@ DEFAULT_PAUSE_POLICY_PATH = Path(__file__).resolve().parent / "pause_policy.yaml
 
 WHY_TOOL_ID = "pause.why"
 DISMISS_TOOL_ID = "pause.dismiss"
+VERDICT_READ_TOOL_ID = "pause.verdict_read"
 
 #: The wake reason this watchdog hands the cycle (conductor/policy.yaml).
 UNEXPLAINED_PAUSE = "unexplained_pause"
@@ -126,6 +132,8 @@ class WatchState:
     resume_attempts: int = 0                  # resume-and-verify tries this episode (max one)
     overseer_woken: bool = False
     last_alert: Optional[float] = None
+    alert_reason: Optional[str] = None        # the standing alert, for the site's live strip
+    alert_since: Optional[float] = None       # wall seconds when this episode's alert first rose
     last_abs_tick: Optional[int] = None       # for the frozen-but-unpaused check
     last_tick_change: Optional[float] = None  # wall seconds when abs_tick last changed
     history: List[Dict[str, Any]] = field(default_factory=list)
@@ -138,6 +146,8 @@ class WatchState:
         self.resume_attempts = 0
         self.overseer_woken = False
         self.last_alert = None
+        self.alert_reason = None
+        self.alert_since = None
 
     def note(self, now: float, kind: str, detail: Any) -> None:
         self.history.append({"at": now, "kind": kind, "detail": detail})
@@ -299,6 +309,12 @@ class WatchOutcome:
     still_paused: bool = False
     #: True once this pass resumed the fort and the tick advanced.
     resumed: bool = False
+    #: The standing alert for this pause episode, `{"reason", "since"}`, or
+    #: None. Carried to the site's live strip (handoffs/2026-10-05-safe-to-resume.md).
+    alert: Optional[Dict[str, Any]] = None
+    #: True while a plain pause sits inside the grace period: the watchdog
+    #: attributes it to a human and is waiting.
+    waiting_on_human: bool = False
 
     def as_dict(self) -> Dict[str, Any]:
         return {
@@ -306,7 +322,14 @@ class WatchOutcome:
             "actions": self.actions, "alerts": self.alerts,
             "still_paused": self.still_paused, "resumed": self.resumed,
             "cause": (self.why or {}).get("cause"),
+            "alert": self.alert, "waiting_on_human": self.waiting_on_human,
         }
+
+
+def _standing_alert(state: WatchState) -> Optional[Dict[str, Any]]:
+    if state.alert_reason is None:
+        return None
+    return {"reason": state.alert_reason, "since": state.alert_since}
 
 
 Sleep = Callable[[float], Awaitable[None]]
@@ -333,6 +356,10 @@ def _alert(state: WatchState, outcome: WatchOutcome, now: float, reason: str) ->
     alert = {"at": now, "reason": reason}
     outcome.alerts.append(alert)
     state.last_alert = now
+    state.alert_reason = reason
+    if state.alert_since is None:
+        state.alert_since = now
+    outcome.alert = _standing_alert(state)
     state.note(now, "alert", reason)
 
 
@@ -497,6 +524,10 @@ async def run_pause_watch(
         store.save(state)
 
     outcome.still_paused = not outcome.resumed
+    if outcome.still_paused:
+        outcome.waiting_on_human = outcome.verdict is Verdict.WAIT
+        if outcome.alert is None:
+            outcome.alert = _standing_alert(state)
     return outcome
 
 
@@ -523,14 +554,57 @@ async def _frozen_pass(
     return outcome
 
 
+async def read_verdict_baseline(call: Callable) -> Optional[int]:
+    """The latest `pause.verdict` id before the Overseer runs, so only a
+    verdict written by THAT run counts. None when unreadable: the caller then
+    treats the run as having given no verdict (the safe direction)."""
+    try:
+        res = await call(VERDICT_READ_TOOL_ID, {"since_id": 0})
+    except MCPToolError as exc:
+        LOG.error("pause watchdog: %s failed (deployed yet?): %s", VERDICT_READ_TOOL_ID, exc)
+        return None
+    if isinstance(res, dict) and isinstance(res.get("latest_id"), int):
+        return res["latest_id"]
+    return None
+
+
+async def read_verdict_after(call: Callable, baseline: Optional[int]) -> Optional[Dict[str, Any]]:
+    """The newest verdict written after `baseline`, or None (no verdict, an
+    unreadable store, or no baseline to compare against)."""
+    if baseline is None:
+        return None
+    try:
+        res = await call(VERDICT_READ_TOOL_ID, {"since_id": baseline})
+    except MCPToolError as exc:
+        LOG.error("pause watchdog: %s failed: %s", VERDICT_READ_TOOL_ID, exc)
+        return None
+    rows = res.get("verdicts") if isinstance(res, dict) else None
+    if not rows or not isinstance(rows, list):
+        return None
+    last = rows[-1]
+    if not isinstance(last, dict) or not isinstance(last.get("resume"), bool):
+        return None
+    return {"resume": last["resume"], "reason": str(last.get("reason") or "")}
+
+
 async def finish_after_overseer(
     call: Callable, store: PauseWatchStore, policy: PausePolicy, *,
     escalated: bool, clock_status: Mapping[str, Any], now: float, sleep: Sleep,
+    verdict: Optional[Mapping[str, Any]] = None,
 ) -> WatchOutcome:
-    """After the Overseer ran on an `unexplained_pause` wake. Mirrors the
-    tripwire branch: an escalation (or an unclean run, the caller folds that
-    in) keeps the fort paused and owned by it, with a human alert; a clean
-    un-escalated run is the decision to resume, once, verified."""
+    """After the Overseer ran on an `unexplained_pause` wake. Silence is not
+    consent (user's call 2026-10-05, handoffs/2026-10-05-safe-to-resume.md):
+
+    - an escalation (or an unclean run, the caller folds that in) keeps the
+      fort paused and owned by it, with a human alert;
+    - no verdict, or `resume: false`, keeps it paused with an alert;
+    - only an explicit `resume: true` from this run is the decision to
+      resume, once, with the tick verified.
+
+    `verdict` is `{"resume": bool, "reason": str}` read from `pause.verdict`
+    by the caller, or None. The Overseer holds no `clock.resume`: this
+    function is the only thing that resumes, and the tripwire branch in
+    `conductor/cycle.py` does not come through here."""
     state = store.load()
     outcome = WatchOutcome(Verdict.WAKE_OVERSEER, "the Overseer ran on an unexplained pause", still_paused=True)
     if escalated:
@@ -539,7 +613,19 @@ async def finish_after_overseer(
         _alert(state, outcome, now, "the Overseer escalated an unexplained pause")
         store.save(state)
         return outcome
+    if verdict is None:
+        _alert(state, outcome, now, "the Overseer gave no verdict on an unexplained pause; staying paused")
+        outcome.verdict = Verdict.ALERT
+        store.save(state)
+        return outcome
+    if not verdict.get("resume"):
+        reason = " ".join(str(verdict.get("reason") or "").split())
+        _alert(state, outcome, now, f"the Overseer says do not resume an unexplained pause: {reason}"[:300])
+        outcome.verdict = Verdict.ALERT
+        store.save(state)
+        return outcome
     state.resume_attempts += 1
+    state.note(now, "overseer_verdict", {"resume": True, "reason": verdict.get("reason")})
     moved = await resume_and_verify(
         call, policy, sleep, before_tick=clock_status.get("abs_tick"), outcome=outcome,
     )
@@ -549,7 +635,7 @@ async def finish_after_overseer(
         state.note(now, "resumed_after_overseer", None)
         state.end_episode()
     else:
-        _alert(state, outcome, now, "resuming after the Overseer's decision did not move the tick; staying paused")
+        _alert(state, outcome, now, "resuming after the Overseer's verdict did not move the tick; staying paused")
         outcome.verdict = Verdict.ALERT
     store.save(state)
     return outcome

@@ -130,6 +130,16 @@ a { color: var(--accent); }
 .e-live-strip .ls-t { font-variant-numeric: tabular-nums; color: var(--muted); }
 .e-live-strip .ls-tool { color: var(--muted); overflow: hidden; text-overflow: ellipsis; }
 .e-live-strip .faint { color: var(--faint); }
+/* paused-fort segment: alert in the red state shade, waiting in the hold shade */
+.e-live-strip .ls-pause { min-width: 0; flex: 0 0 auto; overflow: hidden; }
+.e-live-strip .ls-pause:only-child { flex: 0 1 auto; }
+.e-live-strip .ls-pause-h { font-weight: 600; white-space: nowrap; flex: 0 0 auto; }
+.e-live-strip .ls-pause .ls-t { flex: 0 0 auto; }
+.e-live-strip .ls-pause-why { overflow: hidden; text-overflow: ellipsis; min-width: 0; color: var(--muted); }
+.e-live-strip .ls-alert .ls-dot { background: var(--bad, var(--g-hold-line)); }
+.e-live-strip .ls-alert .ls-pause-h { color: var(--bad, var(--g-hold-line)); }
+.e-live-strip .ls-wait .ls-dot { background: var(--g-hold-line); animation: none; }
+.e-live-strip .ls-wait .ls-pause-h { color: var(--g-hold-fg); }
 @keyframes ls-pulse { 50% { opacity: 0.35; } }
 @media (prefers-reduced-motion: reduce) { .e-live-strip .ls-dot { animation: none; } }
 .sectionlabel { font-size: 11px; letter-spacing: 0.08em; color: var(--faint); text-transform: uppercase; }
