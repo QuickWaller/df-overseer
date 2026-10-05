@@ -74,3 +74,11 @@ The look is decided; keep it exactly:
 
 All three tasks committed with tests, headless results in the Result, the
 deploy targets listed, and a Result section here.
+
+## Result (2026-10-05)
+
+- Task 1: `feed.public_actions` (tool id, display name, target COUNT, ok/failed, failure reason only through `find_unsafe_pattern`, cut to 140) on public and operator `executed` items as `actions`; the Board shows a collapsed "Acted" expander under a job line (`actedRows`).
+- Task 2: `dfqueue/lessons.py` (`build_lessons`), `lessons.json` per fort written by `scripts/stream_publisher.py` (only with a run store, in the change hash), page reads it and shows a LESSON panel inside the matching run turn (`lessonText`, `_lessonPanel`). Unsafe public titles are skipped.
+- Task 3: preview writes demo gotchas (marked EXAMPLE DATA) through the real matcher; node tests in `dfqueue/tests/test_site_js_acted_lessons.py`; asset version 58. Headless Edge at 1280x700, public and operator: 7 threads opened, 6 Acted lists and 12 Lesson panels rendered, page never scrolls (inner pane does), no console errors (only a favicon 404).
+- Full ambient suite: 2610 passed, 3 skipped.
+- Deploy targets: `vm103-stream-publisher` (adds `dfqueue/lessons.py`; also `scripts/stream_publisher.py`, `dfqueue/feed.py`) and the relay web targets for `web/stream/` (index.html, operator.html, app.js, style.css).
