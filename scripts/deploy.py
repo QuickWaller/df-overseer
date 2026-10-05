@@ -121,6 +121,7 @@ def plan_for_target(target: dc.Target, commit: str, env: Dict[str, str]) -> dict
         "high_risk_restarts": [r.service for r in high_risk_restarts],
         "post_deploy": target.post_deploy,
         "stamp": target.stamp,
+        "stamp_file": target.stamp_file,
         "daemon_reload": target.daemon_reload,
         "sudo": target.sudo,
         "remote_files": [target.remote_path(f) for f in files],
@@ -139,7 +140,7 @@ def print_plan(plan: dict) -> None:
     if plan["file_count"] > 20:
         print(f"    ... and {plan['file_count'] - 20} more")
     if plan["stamp"]:
-        print(f"  write stamp: DEPLOYED_COMMIT at {plan['destination_root']}")
+        print(f"  write stamp: {plan['stamp_file']} at {plan['destination_root']}")
         print(f"    {plan['stamp_contents'].strip().replace(chr(10), ', ')}")
     else:
         print("  no DEPLOYED_COMMIT stamp (destination is not a code checkout; drift compares to origin/main)")
@@ -185,7 +186,7 @@ def deploy_target(
     if target.stamp:
         runner.run(
             target.host,
-            f"{su}tee {destination}/DEPLOYED_COMMIT >/dev/null <<'EOF'\n{plan['stamp_contents']}EOF",
+            f"{su}tee {destination}/{target.stamp_file} >/dev/null <<'EOF'\n{plan['stamp_contents']}EOF",
         )
         print("  files copied, stamp written")
     else:

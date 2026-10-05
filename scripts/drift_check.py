@@ -70,9 +70,16 @@ STATE_PATH = REPO_ROOT / "docs" / "STATE.md"
 # ---------------------------------------------------------------------------
 
 
+def stamp_command(target: dc.Target, destination: str) -> str:
+    """The target's own stamp, else the legacy shared one (see
+    `Target.stamp_file`)."""
+    return (f"cat {destination}/{target.stamp_file} 2>/dev/null"
+            f" || cat {destination}/DEPLOYED_COMMIT 2>/dev/null || true")
+
+
 def read_stamp(target: dc.Target, destination: str, runner) -> Optional[Dict[str, str]]:
     try:
-        out = runner.run(target.host, f"cat {destination}/DEPLOYED_COMMIT 2>/dev/null || true")
+        out = runner.run(target.host, stamp_command(target, destination))
     except dc.SSHError:
         return None
     stamp: Dict[str, str] = {}

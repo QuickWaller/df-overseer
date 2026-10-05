@@ -64,6 +64,15 @@ class Target:
     #: write DEPLOYED_COMMIT at destination_root. False for a destination that
     #: is not a code checkout (/etc/systemd/system must not collect stray files).
     stamp: bool = True
+
+    @property
+    def stamp_file(self) -> str:
+        """Per-target stamp name. Two targets can share a destination_root
+        (vm103-dfmcp and vm103-stream-publisher both deploy into the dfmcp
+        checkout), so one shared DEPLOYED_COMMIT made one target's deploy
+        look like the other's (2026-10-05). The bare DEPLOYED_COMMIT is
+        still read as a fallback until each target is redeployed."""
+        return f"DEPLOYED_COMMIT.{self.name}"
     #: run `systemctl daemon-reload` after copying (units and drop-ins only;
     #: re-reads definitions, restarts nothing).
     daemon_reload: bool = False

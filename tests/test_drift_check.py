@@ -38,7 +38,7 @@ def _target(**overrides) -> dc.Target:
 
 def test_read_stamp_parses_key_value_lines():
     runner = dc.FakeRunner({
-        ("df", "cat /opt/sample/DEPLOYED_COMMIT 2>/dev/null || true"):
+        ("df", "cat /opt/sample/DEPLOYED_COMMIT.sample 2>/dev/null || cat /opt/sample/DEPLOYED_COMMIT 2>/dev/null || true"):
             "commit=abc123\ndeployed_at=2026-10-02T00:00:00Z\nmanifest_sha256=deadbeef\n",
     })
     stamp = drift_check.read_stamp(_target(), "/opt/sample", runner)
@@ -46,7 +46,7 @@ def test_read_stamp_parses_key_value_lines():
 
 
 def test_read_stamp_missing_returns_none():
-    runner = dc.FakeRunner({("df", "cat /opt/sample/DEPLOYED_COMMIT 2>/dev/null || true"): ""})
+    runner = dc.FakeRunner({("df", "cat /opt/sample/DEPLOYED_COMMIT.sample 2>/dev/null || cat /opt/sample/DEPLOYED_COMMIT 2>/dev/null || true"): ""})
     assert drift_check.read_stamp(_target(), "/opt/sample", runner) is None
 
 
@@ -129,7 +129,7 @@ def test_check_target_files_clean_when_hashes_match():
     target = _target(paths=["agents/ROSTER.yaml"])
     real_hash = dc.sha256_at_commit(head, "agents/ROSTER.yaml")
     runner = dc.FakeRunner({
-        ("df", "cat /opt/sample/DEPLOYED_COMMIT 2>/dev/null || true"): f"commit={head}\n",
+        ("df", "cat /opt/sample/DEPLOYED_COMMIT.sample 2>/dev/null || cat /opt/sample/DEPLOYED_COMMIT 2>/dev/null || true"): f"commit={head}\n",
         ("df", f"cd /opt/sample && sha256sum agents/ROSTER.yaml 2>&1 || true"): f"{real_hash}  agents/ROSTER.yaml\n",
     })
     result = drift_check.check_target_files(target, {}, runner)
@@ -143,7 +143,7 @@ def test_check_target_files_detects_drift():
     target = _target(paths=["agents/ROSTER.yaml"])
     wrong_hash = "f" * 64
     runner = dc.FakeRunner({
-        ("df", "cat /opt/sample/DEPLOYED_COMMIT 2>/dev/null || true"): f"commit={head}\n",
+        ("df", "cat /opt/sample/DEPLOYED_COMMIT.sample 2>/dev/null || cat /opt/sample/DEPLOYED_COMMIT 2>/dev/null || true"): f"commit={head}\n",
         ("df", f"cd /opt/sample && sha256sum agents/ROSTER.yaml 2>&1 || true"): f"{wrong_hash}  agents/ROSTER.yaml\n",
     })
     result = drift_check.check_target_files(target, {}, runner)
@@ -156,7 +156,7 @@ def test_check_target_files_no_stamp_compares_against_origin_main():
     target = _target(paths=["agents/ROSTER.yaml"])
     origin_main_hash = dc.sha256_at_commit("origin/main", "agents/ROSTER.yaml")
     runner = dc.FakeRunner({
-        ("df", "cat /opt/sample/DEPLOYED_COMMIT 2>/dev/null || true"): "",
+        ("df", "cat /opt/sample/DEPLOYED_COMMIT.sample 2>/dev/null || cat /opt/sample/DEPLOYED_COMMIT 2>/dev/null || true"): "",
         ("df", "cd /opt/sample && sha256sum agents/ROSTER.yaml 2>&1 || true"):
             f"{origin_main_hash}  agents/ROSTER.yaml\n",
     })
@@ -169,7 +169,7 @@ def test_check_target_files_no_stamp_compares_against_origin_main():
 def test_check_target_files_missing_on_host_counts_as_drift():
     target = _target(paths=["agents/ROSTER.yaml"])
     runner = dc.FakeRunner({
-        ("df", "cat /opt/sample/DEPLOYED_COMMIT 2>/dev/null || true"): "",
+        ("df", "cat /opt/sample/DEPLOYED_COMMIT.sample 2>/dev/null || cat /opt/sample/DEPLOYED_COMMIT 2>/dev/null || true"): "",
         ("df", "cd /opt/sample && sha256sum agents/ROSTER.yaml 2>&1 || true"):
             "sha256sum: agents/ROSTER.yaml: No such file or directory\n",
     })
@@ -274,7 +274,7 @@ def test_non_unit_target_does_not_list_untracked():
     target = _target(paths=["agents/ROSTER.yaml"])
     real_hash = dc.sha256_at_commit("origin/main", "agents/ROSTER.yaml")
     runner = dc.FakeRunner({
-        ("df", "cat /opt/sample/DEPLOYED_COMMIT 2>/dev/null || true"): "",
+        ("df", "cat /opt/sample/DEPLOYED_COMMIT.sample 2>/dev/null || cat /opt/sample/DEPLOYED_COMMIT 2>/dev/null || true"): "",
         ("df", "cd /opt/sample && sha256sum agents/ROSTER.yaml 2>&1 || true"): f"{real_hash}  agents/ROSTER.yaml\n",
     })
     result = drift_check.check_target_files(target, {}, runner)
@@ -432,7 +432,7 @@ def test_main_single_target_clean_exit_zero(monkeypatch, capsys):
 
     def fake_init():
         return dc.FakeRunner({
-            ("df", "cat /opt/df/dfmcp-smoke/DEPLOYED_COMMIT 2>/dev/null || true"): f"commit={head}\n",
+            ("df", "cat /opt/df/dfmcp-smoke/DEPLOYED_COMMIT.vm103-dfmcp 2>/dev/null || cat /opt/df/dfmcp-smoke/DEPLOYED_COMMIT 2>/dev/null || true"): f"commit={head}\n",
             ("df", "test -f /opt/df/dfmcp-smoke/scripts/ops/mcpcall.py && echo present || echo absent"): "absent\n",
             ("relay", "*"): "",
         })
@@ -461,3 +461,11 @@ def test_main_single_target_clean_exit_zero(monkeypatch, capsys):
 def test_main_unknown_target_exits_two():
     rc = drift_check.main(["--target", "no-such-target"])
     assert rc == 2
+
+
+def test_read_stamp_prefers_the_targets_own_stamp():
+    """Two targets sharing a destination_root each read their own stamp, so
+    one target's deploy never looks like the other's (2026-10-05)."""
+    t = _target(name="vm103-dfmcp")
+    assert drift_check.stamp_command(t, "/opt/x").startswith("cat /opt/x/DEPLOYED_COMMIT.vm103-dfmcp ")
+    assert "|| cat /opt/x/DEPLOYED_COMMIT 2>/dev/null" in drift_check.stamp_command(t, "/opt/x")
