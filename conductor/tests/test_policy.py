@@ -218,28 +218,7 @@ def test_repeated_updates_converge_toward_a_new_steady_measurement():
     assert policy.expected_thinking_seconds == pytest.approx(30, abs=0.5)
 
 
-def test_the_real_policy_names_briefing_extras_as_data():
-    policy = load_policy(DEFAULT_POLICY_PATH)
-    qm = policy.briefing_extras["quartermaster"]
-    assert "BARREL" in qm.availability and qm.seeds is True
-    assert policy.briefing_extras["overseer"].availability == ("BED", "WOOD")
-    assert "architect" not in policy.briefing_extras
-
-
-def test_load_policy_refuses_malformed_briefing_extras(tmp_path):
-    bad = tmp_path / "policy.yaml"
-    bad.write_text(textwrap.dedent("""\
-        base_fps: 100
-        think_fps: 10
-        closing_in_multiple: 3
-        expected_thinking_seconds: 60
-        routine_review_interval_game_days: 7
-        stalled_order_threshold_ticks: 1200
-        stalled_order_renotify_ticks: 1200
-        wake_reasons: {}
-        briefing_extras:
-          quartermaster:
-            availability: BARREL
-    """), encoding="utf-8")
-    with pytest.raises(PolicyError, match="availability"):
-        load_policy(bad)
+def test_the_real_policy_has_no_fixed_per_role_stock_lists():
+    # The user rejected fixed stock lists in the briefing (register 2026-10-05).
+    assert not hasattr(load_policy(DEFAULT_POLICY_PATH), "briefing_extras")
+    assert "briefing_extras" not in DEFAULT_POLICY_PATH.read_text(encoding="utf-8")
