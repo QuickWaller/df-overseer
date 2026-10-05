@@ -121,11 +121,13 @@ class LaneTriggers:
     `events`: drained diff events in the role's OWN drain. `stuck_jobs`:
     regexes over a due stuck job's type and description. `alerts`: threshold
     alert names whose fresh crossing wakes the role (`"*"` for any). `rulings`:
-    a ruling on a proposal this role filed."""
+    a ruling on a proposal this role filed. `ore`: an ore or gem newly exposed
+    on a dug room's walls (handoffs/2026-10-05-ore-exposed-signal.md)."""
     events: Tuple[EventLane, ...] = ()
     stuck_jobs: Tuple["re.Pattern", ...] = ()
     alerts: Tuple[str, ...] = ()
     rulings: bool = False
+    ore: bool = False
 
 
 @dataclass(frozen=True)
@@ -151,6 +153,11 @@ class Policy:
     stuck_job_unclaimed_threshold_ticks: int = 2400
     stuck_job_suspended_threshold_ticks: int = 2400
     stuck_job_renotify_ticks: int = 12000
+    #: handoffs/2026-10-05-ore-exposed-signal.md, conductor/ore_watch.py: a
+    #: vein that is still exposed this many game ticks after it first woke the
+    #: Architect wakes it once more (the backstop for a ruled-but-not-mined
+    #: case). 12000 = 10 game days.
+    ore_renotify_ticks: int = 12000
     #: Threshold alerts for every role's briefing (policy.yaml `threshold_alerts`).
     threshold_alerts: Tuple[ThresholdAlert, ...] = ()
     #: Accepted proposals never carried out that must NOT wake the Overseer
@@ -225,6 +232,7 @@ def _load_lane_triggers(raw, path: Path) -> Dict[str, LaneTriggers]:
             stuck_jobs=_patterns(entry.get("stuck_jobs"), f"{where}.stuck_jobs"),
             alerts=tuple(alerts),
             rulings=bool(entry.get("rulings", False)),
+            ore=bool(entry.get("ore", False)),
         )
     return lanes
 
@@ -316,6 +324,7 @@ def load_policy(path: "Path | str" = DEFAULT_POLICY_PATH) -> Policy:
         stuck_job_unclaimed_threshold_ticks=int(doc.get("stuck_job_unclaimed_threshold_ticks", 2400)),
         stuck_job_suspended_threshold_ticks=int(doc.get("stuck_job_suspended_threshold_ticks", 2400)),
         stuck_job_renotify_ticks=int(doc.get("stuck_job_renotify_ticks", 12000)),
+        ore_renotify_ticks=int(doc.get("ore_renotify_ticks", 12000)),
         role_timeout_seconds={str(k): float(v) for k, v in (doc.get("role_timeout_seconds") or {}).items()},
     )
 

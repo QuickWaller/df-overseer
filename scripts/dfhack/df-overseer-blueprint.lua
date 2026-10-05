@@ -1102,9 +1102,9 @@ end
 -- Player-visible faces only (see surface.lua's vein_material `exposed`).
 local function site_ore_exposed(site, room)
   local out = shimmed_reads(site, room, {vein_material = surface_mod.vein_material})
-  if out.skipped or out.error then return {skipped = out.skipped, error = out.error} end
+  if out.skipped or out.error then return {unreadable = true, skipped = out.skipped, error = out.error} end
   local vm = out.vein_material
-  if type(vm) ~= 'table' or vm.error then return {error = vm and vm.error or "no vein read"} end
+  if type(vm) ~= 'table' or vm.error or type(vm.exposed) ~= 'table' then return {unreadable = true, error = vm and vm.error or "no vein read"} end
   return vm.exposed
 end
 

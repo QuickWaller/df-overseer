@@ -65,6 +65,7 @@ from conductor.game_tick import GameTickError, game_tick_from_overview
 from conductor.hold import HoldState, HoldStore, hold_path_for
 from conductor.mcp_client import MCPToolError, ToolCaller, tool_name
 from conductor.job_watch import JobWatchResult, JobWatchStore, evaluate_jobs, jobs_from_result
+from conductor.ore_watch import POLL_TOOL as ORE_POLL_TOOL, OreRead, ore_read_from_sites
 from conductor.order_watch import OrderWatchResult, evaluate_orders
 from conductor.pause_watch import (
     OWNED_ESCALATION, UNEXPLAINED_PAUSE, PauseWatchStore, PausePolicy, Verdict,
@@ -639,6 +640,7 @@ async def _run_cycle(cycle_index: int, deps: CycleDeps, hold: HoldState) -> Cycl
     # each role's own lane. Alerts are read here, once, so a fresh crossing can
     # wake the role it belongs to; the briefings reuse the same lines.
     alerts, alert_crossed, alert_lines = await _read_alert_state(call, deps.policy, vitals, cycle_index)
+    ore_read = await _ore_watch(deps, call, cycle_index)
     lane_store = _lane_store(deps)
     lane_state = lanes.LaneState()
     lane_wakes: Tuple[Any, ...] = ()
@@ -648,6 +650,7 @@ async def _run_cycle(cycle_index: int, deps: CycleDeps, hold: HoldState) -> Cycl
             lane_state = lane_store.load()
             pending_ids = list((queue_state.get("proposals") or {}).get("proposal_ids") or [])
             lanes.apply_alert_edges(deps.policy, lane_state, alert_crossed, alert_lines)
+            lanes.apply_ore_edges(deps.policy, lane_state, ore_read, game_tick)
             lanes.apply_rulings(deps.policy, lane_state, pending_ids)
             lane_wakes = lanes.lane_wakes(deps.policy, lane_state, events_by_role)
             if not deps.dry_run:
@@ -758,6 +761,7 @@ async def _run_cycle(cycle_index: int, deps: CycleDeps, hold: HoldState) -> Cycl
             diff_events=events_by_role.get(role, []),
             queue_summary=_queue_summary_for(role, queue_state),
             stuck_jobs=job_watch.lines, alerts=alerts,
+            ore_exposed=_ore_lines_for(deps.policy, role, ore_read),
         )
         briefings[role] = briefing
         prompt = json.dumps(briefing, default=str)
@@ -920,6 +924,29 @@ def _lane_store(deps: "CycleDeps") -> "lanes.LaneStore":
 
 def _job_store(deps: "CycleDeps") -> JobWatchStore:
     return JobWatchStore(deps.cursor_store.path.with_name("job_watch.json"))
+
+
+async def _ore_watch(deps: "CycleDeps", call: Callable, cycle_index: int) -> Optional[OreRead]:
+    """Poll `blueprint.sites` for exposed ore (conductor/ore_watch.py). Total by
+    design, like the job watch: an undeployed allowlist entry or a tool error
+    logs loudly, returns `None`, and the lane state is left exactly as it was
+    (a failed poll never reads as "mined")."""
+    if not any(lane.ore for lane in deps.policy.lane_triggers.values()):
+        return None
+    try:
+        return ore_read_from_sites(await call(ORE_POLL_TOOL, {}))
+    except Exception:  # noqa: BLE001 -- deliberately total, see docstring
+        LOG.exception("cycle %s: the ore watch failed; carrying on without it", cycle_index)
+        return None
+
+
+def _ore_lines_for(policy: Any, role: str, ore_read: Optional[OreRead]) -> Optional[List[str]]:
+    """The standing exposure lines for a role whose lane has `ore`, else `None`
+    (the briefing then has no `ore_exposed` key at all)."""
+    lane = policy.lane_triggers.get(role)
+    if ore_read is None or lane is None or not lane.ore:
+        return None
+    return ore_read.lines
 
 
 async def _job_watch(deps: "CycleDeps", call: Callable, game_tick: Optional[int], cycle_index: int) -> JobWatchResult:

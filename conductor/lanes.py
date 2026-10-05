@@ -10,7 +10,7 @@ What a lane is, and what it reads, is DATA (`lane_triggers` in
 `conductor/policy.yaml`, parsed into `conductor.policy.LaneTriggers`). This
 module only evaluates it, generically; there is no per-role branch.
 
-Four kinds of change, each read from something the conductor already
+Five kinds of change, each read from something the conductor already
 observes:
 
 - **events**: the role's OWN `diff.since` drain (the per-role cursor is
@@ -25,6 +25,13 @@ observes:
 - **rulings**: a proposal this role filed leaving the pending list. The
   conductor cannot read a proposal's author, so it learns it by watching
   which advisor's run added a pending proposal id (`attribute_new_proposals`).
+- **ore**: ore or gem newly exposed on a dug room's walls
+  (`conductor/ore_watch.py`, handoffs/2026-10-05-ore-exposed-signal.md). Edge
+  triggered per (site, material): wakes once on first sight; re-arms when the
+  pair leaves the read (the vein was mined) or after `ore_renotify_ticks`
+  still exposed (the backstop when a proposal was ruled but the vein is still
+  there). A site the poll could not read keeps its state, and a failed poll
+  is never applied at all.
 
 State that must survive a cycle (alert edge state, proposer map, wakes still
 owed to a role whose run has not completed) lives in `lane_state.json` beside
@@ -44,6 +51,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Set, Tuple
 
+from conductor.ore_watch import OreRead
 from conductor.policy import LaneTriggers, Policy
 from conductor.triage import LaneWake
 
@@ -52,10 +60,12 @@ from conductor.triage import LaneWake
 REASON_EVENT = "lane_event"
 REASON_ALERT = "alert_crossed"
 REASON_RULING = "ruling_on_own"
+REASON_ORE = "ore_exposed"
 
-#: `pending` keys: `alert:<name>`, `ruling:<proposal id>`.
+#: `pending` keys: `alert:<name>`, `ruling:<proposal id>`, `ore:<site>:<mineral>`.
 _ALERT = "alert:"
 _RULING = "ruling:"
+_ORE = "ore:"
 
 
 @dataclass
@@ -66,6 +76,8 @@ class LaneState:
     proposers: Dict[str, str] = field(default_factory=dict)
     #: role -> {key: one-line detail} for wakes owed until that role completes a run.
     pending: Dict[str, Dict[str, str]] = field(default_factory=dict)
+    #: "<site>:<mineral>" -> game tick it last woke a role, while still exposed.
+    ore: Dict[str, int] = field(default_factory=dict)
 
 
 class LaneStore:
@@ -85,6 +97,7 @@ class LaneStore:
                 str(r): {str(k): str(v) for k, v in (m or {}).items()}
                 for r, m in (raw.get("pending") or {}).items()
             },
+            ore={str(k): int(v) for k, v in (raw.get("ore") or {}).items()},
         )
 
     def save(self, state: LaneState) -> None:
@@ -93,7 +106,8 @@ class LaneStore:
         try:
             with open(fd, "w", encoding="utf-8") as fh:
                 json.dump(
-                    {"alerts": state.alerts, "proposers": state.proposers, "pending": state.pending},
+                    {"alerts": state.alerts, "proposers": state.proposers, "pending": state.pending,
+                     "ore": state.ore},
                     fh, indent=2, sort_keys=True,
                 )
             Path(tmp_name).replace(self.path)
@@ -163,6 +177,37 @@ def apply_alert_edges(
                 entries.pop(key, None)
 
 
+def apply_ore_edges(
+    policy: Policy, state: LaneState, read: Optional[OreRead], game_tick: Optional[int],
+) -> None:
+    """Fold one ore poll into `state`. `read=None` (the poll failed) changes
+    nothing. A (site, material) seen for the first time, or still exposed
+    `policy.ore_renotify_ticks` after it last woke, adds a pending wake for
+    every role whose lane has `ore`; one that has left the read (and whose
+    site was readable) has been mined, so its state and any wake not yet
+    served are dropped and a later exposure wakes afresh."""
+    if read is None:
+        return
+    now = game_tick if game_tick is not None else 0
+    roles = [role for role, lane in policy.lane_triggers.items() if lane.ore]
+    live = set()
+    for exp in read.exposures:
+        live.add(exp.key)
+        last = state.ore.get(exp.key)
+        # A last-woke tick in the future means the save was reloaded: re-arm.
+        due = last is None or last > now or (now - last) >= policy.ore_renotify_ticks
+        if due:
+            state.ore[exp.key] = now
+            for role in roles:
+                state.pending.setdefault(role, {})[_ORE + exp.key] = exp.line
+    for key in [k for k in state.ore if k not in live]:
+        if key.split(":", 1)[0] in read.unreadable_handles:
+            continue
+        del state.ore[key]
+        for entries in state.pending.values():
+            entries.pop(_ORE + key, None)
+
+
 def attribute_new_proposals(state: LaneState, role: str, known_ids: Set[str], pending_ids: Iterable[str]) -> Set[str]:
     """After `role`'s run: every pending proposal id not seen before was added
     by that run. Records the author and returns the enlarged known set."""
@@ -192,7 +237,7 @@ def lane_wakes(policy: Policy, state: LaneState, events_by_role: Mapping[str, Se
             more = f" (and {len(lines) - 1} more)" if len(lines) > 1 else ""
             out.append(LaneWake(REASON_EVENT, f"{lines[0]}{more}", (role,)))
         entries = state.pending.get(role) or {}
-        for prefix, reason in ((_ALERT, REASON_ALERT), (_RULING, REASON_RULING)):
+        for prefix, reason in ((_ALERT, REASON_ALERT), (_RULING, REASON_RULING), (_ORE, REASON_ORE)):
             details = [v for k, v in sorted(entries.items()) if k.startswith(prefix)]
             if details:
                 out.append(LaneWake(reason, "; ".join(details), (role,)))

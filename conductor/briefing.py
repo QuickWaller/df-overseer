@@ -45,6 +45,7 @@ MAX_LEDGER_ROWS = 10
 #: Stuck-job lines shown per briefing (handoffs/2026-10-05-stuck-job-watch.md);
 #: the count is always the full figure, the lines are the oldest few.
 MAX_STUCK_JOB_LINES = 5
+MAX_ORE_LINES = 5
 
 
 def _field(result: Any, path: str) -> Any:
@@ -108,6 +109,7 @@ def build_briefing(
     ledger_digest: Optional[Sequence[Mapping[str, Any]]] = None,
     stuck_jobs: Optional[Sequence[str]] = None,
     alerts: Optional[Sequence[str]] = None,
+    ore_exposed: Optional[Sequence[str]] = None,
 ) -> Dict[str, Any]:
     """One role's briefing for this cycle. `vitals` is `vitals.summary`'s own
     result, passed through as-is (already Tier 0 by construction -- see
@@ -158,6 +160,10 @@ def build_briefing(
     if alerts:
         # Only while a policy threshold is crossed; absent otherwise.
         briefing["alerts"] = [str(a)[:200] for a in alerts][:MAX_ALERT_LINES]
+    if ore_exposed:
+        # One line per standing exposure (handoffs/2026-10-05-ore-exposed-signal.md),
+        # only for a role whose lane carries ore; absent when nothing is exposed.
+        briefing["ore_exposed"] = _capped([str(s)[:200] for s in ore_exposed], MAX_ORE_LINES)
     if ledger_digest is not None:
         briefing["ledger"] = _capped(ledger_digest, MAX_LEDGER_ROWS)
     return briefing

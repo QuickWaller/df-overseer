@@ -75,6 +75,15 @@ stuck_job_unclaimed_threshold_ticks: 2400
 stuck_job_suspended_threshold_ticks: 2400
 stuck_job_renotify_ticks: 12000
 
+# handoffs/2026-10-05-ore-exposed-signal.md (conductor/ore_watch.py,
+# conductor/lanes.py): the conductor polls blueprint.sites, whose rows carry
+# `ore_exposed` (ore or gem still walled in on a dug room's faces). A
+# (site, material) wakes the Architect once when first seen, re-arms when it
+# leaves the read (mined), and otherwise wakes again only after this many
+# game ticks still exposed (12000 = 10 game days), so a vein never wakes it
+# every cycle. Not tuned against a real run.
+ore_renotify_ticks: 12000
+
 # Every wake reason this conductor build knows about. `clock` is the
 # fallback table entry (§2); `computable: true` means conductor/cycle.py
 # will prefer the ticks-to-consequence rule over this fallback whenever it
@@ -111,6 +120,10 @@ wake_reasons:
     clock: full_speed
     wakes: [architect, quartermaster]
   lane_event:
+    clock: full_speed
+    wakes: []
+  # Roles come from `lane_triggers.<role>.ore`, like the three below.
+  ore_exposed:
     clock: full_speed
     wakes: []
   alert_crossed:
@@ -244,6 +257,8 @@ unexecuted_wake_ignore:
 #   again only after the alert clears and re-crosses.
 # rulings: a ruling on a proposal this role filed (the conductor learns the
 #   proposer by watching which advisor's run added a pending proposal).
+# ore: an ore or gem newly exposed on a dug room's walls (edge triggered, see
+#   ore_renotify_ticks above).
 #
 # Not observable by the conductor today: a new landmark. Dig and construction
 # completions stand in for it. Starting patterns, not tuned against a run.
@@ -254,6 +269,9 @@ lane_triggers:
         detail_matches: ['\b(dig|channel|carve|smooth|engrave|construct|build|detail)\b']
     stuck_jobs: ['dig|channel|carve|smooth|engrave|construct|build|detail']
     rulings: true
+    # Ore exposed by a dig is the Architect's to propose mining
+    # (handoffs/2026-10-05-ore-exposed-signal.md).
+    ore: true
   quartermaster:
     events:
       - type: stock_below_threshold
