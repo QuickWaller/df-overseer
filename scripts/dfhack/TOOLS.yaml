@@ -6282,3 +6282,68 @@ df-overseer-announcement-levels.lua:
           Convenience single-id lookup over the pause-ids and slow-ids tables.
         before_a_real_run: []
         traps: []
+df-overseer-pause.lua:
+  build_order_item: "pause safety for unattended running (docs/TRAPS.md, a fort can self-pause); handoffs/2026-10-05-pause-safety.md"
+  commands:
+    "why [WINDOW_TICKS]":
+      lua_function: pause_why
+      effect: read
+      coordinate_bearing: false
+      live_deployed: false
+      verified: "unverified (offline build, handoffs/2026-10-05-pause-safety.md). The announcement flag table it reads (d_init.announcements.flags[type].DO_MEGA/PAUSE) and the popups vector were probed read-only on the live install 2026-10-05; the script itself has only run against a fake world."
+      knowledge_scope: player_visible
+      notes: >
+        Reports why the game is paused or not advancing: a derived `cause`
+        (tripwire, modal_viewscreen, popup, announcement, plain_pause or
+        running), the pending popups per kind with their text, the
+        viewscreen type and focus string, and the recent reports whose
+        announcement type carries the game's own DO_MEGA or PAUSE flag
+        (named by announcement type). The mega popup renders inside the
+        ordinary play screen, so the popups vector is read directly. Reads
+        only what a player can see. Conductor only.
+      summary: "Reports why the fort is paused or stuck: a latched tripwire, a pending popup, a non-play screen, a recent announcement, or a plain pause."
+      guide:
+        arguments:
+          - name: "WINDOW_TICKS"
+            required: false
+            default: "1200"
+            meaning: >-
+              Optional. How far back, in game ticks, a flagged announcement still counts as a likely cause.
+        returns: >-
+          `cause` is the first match in the order tripwire, modal_viewscreen, popup, announcement,
+          plain_pause, running. `recent_reports` names the announcement type of each recent
+          DO_MEGA or PAUSE report, which the conductor checks against its own harmless list.
+        before_a_real_run: []
+        traps:
+          - >-
+            The viewscreen type and focus string read the ordinary play screen while a mega popup is
+            showing; only popups_pending sees the popup.
+    "dismiss [MAX]":
+      lua_function: pause_dismiss
+      effect: mutate
+      coordinate_bearing: false
+      live_deployed: false
+      verified: "unverified (offline build, handoffs/2026-10-05-pause-safety.md). Run only against a fake world; which strategy closes a real mega popup is settled by the supervised live test in that handoff."
+      knowledge_scope: player_visible
+      notes: >
+        Closes pending popups a player could close, up to MAX boxes (default
+        5): a registry of popup kinds (mega popup, tutorial help box), each
+        with an ordered list of dismiss strategies held as data in the
+        script. Each box's text is returned before it is gone. Verifies by
+        re-reading the pending count after each strategy. Never resumes the
+        game, never touches a tripwire latch. System-kind only.
+      summary: "Closes the popup boxes a player could close (Okay, More, a help box) and reports what each said; never resumes the game."
+      guide:
+        arguments:
+          - name: "MAX"
+            required: false
+            default: "5"
+            meaning: >-
+              Optional. The most boxes to close in one call.
+        returns: >-
+          `dismissed` lists each closed box (kind, strategy, what it said); `remaining` is how many
+          are still pending, and `ok` is false when any are.
+        before_a_real_run: []
+        traps:
+          - >-
+            Dismissing does not unpause. Call clock.resume separately, and only after reading why.

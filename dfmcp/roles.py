@@ -52,6 +52,9 @@ SYSTEM_CLASS_TOOL_IDS = frozenset({
     "clock.disarm",
     "clock.clear",
     "fort.quicksave",
+    # handoffs/2026-10-05-pause-safety.md: closes a popup box a player could
+    # close (never resumes). Code's job, like the clock verbs above.
+    "pause.dismiss",
 })
 
 
