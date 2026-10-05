@@ -1163,8 +1163,18 @@ class StreamPage {
     };
     const blocks = groups.map((g) => {
       if (!g.run) {
-        const line = statusAfter(g.items[0]);
-        return line ? el("div", {}, [renderItem(g.items[0]), line]) : renderItem(g.items[0]);
+        // No reported run claims it: it still gets a turn of its own, so
+        // every message in the thread looks the same way (the user's call,
+        // 2026-10-05). The band says what the post was.
+        const item = g.items[0];
+        const target = item.reply_to && byId.get(item.reply_to);
+        const label = item.kind === "answer" && target ? `Answered ${speakerName(target)}'s question`
+          : item.kind === "ask" ? "Asked a question"
+          : { proposal: "Made a proposal", ruling: "Ruled", amend: "Changed the plan" }[item.kind] || "Wrote";
+        const line = statusAfter(item);
+        const r = this._receipt(item);
+        const q = quoteFor(item);
+        return this._turnBlock({ role: item.role }, [q ? el("div", { class: "fquoted" }, [q, r]) : r, line].filter(Boolean), g.items, label);
       }
       const first = g.items[0];
       const trigger = first.reply_to && byId.get(first.reply_to);

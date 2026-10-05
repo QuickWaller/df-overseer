@@ -205,7 +205,7 @@ def test_a_run_becomes_a_turn_block_with_its_summary_holding_what_it_wrote():
     assert "Filed a proposal." in res["text"] and "Ask open" in res["text"]
     assert any(t.endswith("6 min") for t in res["text"])
     assert "Architect" in res["text"] and "Overseer" in res["text"]
-    assert res["turns"] == 2  # one root-level block per run, nothing nested across turns
+    assert res["turns"] == 6  # 2 reported runs plus 4 records no run claims, each its own root-level turn
 
 
 def test_what_it_checked_comes_from_calls_by_record_with_counts_and_errors():

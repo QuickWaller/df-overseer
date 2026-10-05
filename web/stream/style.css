@@ -724,3 +724,10 @@ a { color: var(--accent); }
 .freceipts > .fevent .fstate { order: 1; }
 .freceipts > .fevent .fwhen { order: 2; margin-left: auto; }
 .freceipts > .fevent .fetext { order: 3; flex-basis: 100%; color: var(--text); }
+/* Accepted is teal (a go-ahead); green is kept for completed, matching the
+   job graph's done boxes. */
+.pstate.ps-accepted { background: #00aaaa; color: #000; }
+.fstatusline.st-accepted { color: #22c4c4; }
+/* A quoted question inside an answer's panel. */
+.freceipts > .fquoted .fquote { margin: 0 0 6px 0; }
+.freceipts > .fquoted .freceipt { background: none; border: 0; padding: 0; }
