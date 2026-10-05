@@ -740,3 +740,12 @@ keeps the fort paused and wakes the Overseer or alerts the human. **Unverified
 live until the supervised test in that handoff runs**: that the Okay click
 closes a real mega popup, and that a real DO_MEGA pause is a popup rather than
 a bare flip.
+
+**Update 2026-10-05 (`handoffs/2026-10-05-safe-to-resume.md`): silence is not
+consent.** After the Overseer runs on an `unexplained_pause` wake, the
+conductor resumes only on an explicit `pause.verdict` `resume: true` written
+by that run (read back with `pause.verdict_read`, baseline id taken before the
+run); a `false` verdict, no verdict, an unreadable verdict store or an
+escalation keeps the fort paused and raises an alert (shown on the site's live
+strip). A clean run is no longer the decision to resume. The Overseer still
+holds no `clock.resume`; the tripwire branch is unchanged.

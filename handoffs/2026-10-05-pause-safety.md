@@ -104,7 +104,7 @@ latch.
 | 2 | Overseer escalated (`queue.escalate`), with or without a latch | Latch stays; an ordinary-cycle escalation pause is recorded in the watchdog state as `owned: escalation` | **No.** The watchdog does nothing while owned | Human alert (log, status) at the liveness limit |
 | 3 | Mega popup pending (any DO_MEGA type) | `#world.status.popups > 0` (`pause.why`) | **Dismiss: yes** (D); data list of popup kinds, click the box's own button | Dismiss fails after the listed strategies: alert human, keep paused |
 | 4 | Pause after dismissal, cause on the harmless list (succession, first caravan, monarch/holding/market arrivals, artifact or deep-metal finds, world-history notices) | Newest DO_MEGA/PAUSE reports at the current tick, by announcement type name | **Resume once and verify the tick advances** (R), once per pause episode | Tick does not move: stay paused, wake Overseer, alert human, no retry |
-| 5 | Pause after dismissal, cause is a threat or unknown type (megabeast/werebeast arrival, night attack, undead attack, crime witness, endgame event, deity curse, emergency tactical control, any type on neither list) | Same read | **No** | Stay paused, wake the Overseer (new wake reason `unexplained_pause`, clock paused); a clean un-escalated run counts as the decision to resume (same convention as the tripwire branch), resume-and-verify once; escalation or a failed verify: alert human |
+| 5 | Pause after dismissal, cause is a threat or unknown type (megabeast/werebeast arrival, night attack, undead attack, crime witness, endgame event, deity curse, emergency tactical control, any type on neither list) | Same read | **No** | Stay paused, wake the Overseer (new wake reason `unexplained_pause`, clock paused); **Superseded 2026-10-05 (`handoffs/2026-10-05-safe-to-resume.md`): silence is not consent.** The conductor resumes (verify once) only on an explicit `pause.verdict` `resume: true` written by that Overseer run; a `false` verdict, no verdict, an unreadable verdict, an escalation or a failed verify: stay paused, alert human |
 | 6 | Plain pause, no latch, no popup, no recent mega/pause report (a human on VNC, the supervised script mid-window, anything DFHack issued) | `paused` and nothing explains it | **Not at first**: a human may have done it. After a grace period (data, default 10 real minutes) treat as case 5 | Alert human at the liveness limit |
 | 7 | Stuck modal viewscreen (2026-09-16 welcome dialog, load/save screens) | `pause.why.viewscreen_type` is not `viewscreen_dwarfmodest`, or `help.open` | Tutorial help box: dismiss (a kind in the list). Any other screen: **no** | Alert human at once; the Overseer cannot click |
 | 8 | Frozen with `pause_state` false (2026-09-16: tick not advancing between cycles though not paused) | Not paused, `abs_tick` identical to the previous cycle's while real time passed more than a minimum (data) | As cases 3 and 7 after a `pause.why` read | Alert human |
@@ -189,9 +189,11 @@ tests, liveness); removing the tick-did-not-move branch fails
   harmless list. A threat popup is closed but the fort stays paused for the
   Overseer.
 - **Clean Overseer run on an `unexplained_pause` = the decision to resume**
-  (resume-and-verify once), copying the tripwire branch's convention; the
-  register says the Overseer "decides (resume, act, or escalate)" but it has no
-  `clock.resume` (and must not). Say if you want a different mechanism.
+  (resume-and-verify once), copying the tripwire branch's convention. **Superseded
+  2026-10-05 by the user: silence is not consent.** Now an explicit
+  `pause.verdict` `resume: true` from that run is required
+  (`handoffs/2026-10-05-safe-to-resume.md`); the Overseer still has no
+  `clock.resume` (and must not), the conductor resumes.
 - **A held pause now stops ordinary cycles.** While a pause is owned or held,
   the cycle returns early (no advisors woken over a frozen fort). Before, a
   non-latched escalation pause let the next cycle run advisors against a paused
