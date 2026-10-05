@@ -47,6 +47,17 @@ class Wake:
 
 
 @dataclass(frozen=True)
+class LaneWake:
+    """A change in one role's own lane (conductor/lanes.py). `reason` is a
+    policy.yaml wake reason read only for its clock level; the roles come
+    from the change itself, never from the reason's `wakes` list."""
+
+    reason: str
+    detail: str
+    roles: Tuple[str, ...]
+
+
+@dataclass(frozen=True)
 class Signals:
     """Already-read Tier 0 data for one cycle. Every field defaults to
     "nothing to report", so a caller can build a mostly-empty `Signals` for
@@ -71,6 +82,10 @@ class Signals:
     #: One-line summary of the jobs conductor/job_watch.py found due, replacing
     #: the generic detail when set (handoffs/2026-10-05-stuck-job-watch.md).
     stuck_job_detail: str = ""
+    #: Roles whose lane claims the due stuck job(s). `None`: no lane filtering,
+    #: wake the roles policy.yaml names for `stuck_job`
+    #: (handoffs/2026-10-05-stricter-wakes.md).
+    stuck_job_roles: Optional[Tuple[str, ...]] = None
     stock_below_target: bool = False
     stock_below_target_ticks_to_consequence: Optional[int] = None
     migrant_wave: bool = False
@@ -101,7 +116,14 @@ class Signals:
 
     # This cycle's own queue.grade result.
     prediction_due: bool = False
+    #: A prediction graded as a MISS this cycle. A hit is recorded and wakes
+    #: nobody (handoffs/2026-10-05-stricter-wakes.md).
     prediction_graded: bool = False
+    prediction_misses: int = 0
+
+    #: Changes in a single role's own lane (conductor/lanes.py), each naming
+    #: the role it wakes.
+    lane_wakes: Tuple[LaneWake, ...] = ()
 
     # Routine review: game days since advisors last woke for any reason.
     game_days_since_routine_review: float = 0.0
@@ -158,8 +180,11 @@ def triage(signals: Signals, policy: Policy, *, base_fps: Optional[int] = None) 
         ))
     if signals.prediction_graded:
         rp = policy.reason("prediction_graded")
+        detail = "a prediction was graded this cycle"
+        if signals.prediction_misses:
+            detail = f"{signals.prediction_misses} prediction(s) missed when graded this cycle"
         wakes.append(Wake(
-            "prediction_graded", "a prediction was graded this cycle",
+            "prediction_graded", detail,
             rp.wakes, clock_for_reason("prediction_graded", policy),
         ))
 
@@ -181,7 +206,10 @@ def triage(signals: Signals, policy: Policy, *, base_fps: Optional[int] = None) 
                 detail = signals.stuck_job_detail
             if ticks is not None:
                 detail += f" ({ticks} ticks to consequence)"
-            wakes.append(Wake(reason, detail, rp.wakes, clock))
+            roles = rp.wakes
+            if reason == "stuck_job" and signals.stuck_job_roles is not None:
+                roles = signals.stuck_job_roles
+            wakes.append(Wake(reason, detail, roles, clock))
 
     if signals.game_days_since_routine_review >= policy.routine_review_interval_game_days:
         rp = policy.reason("routine_review")
@@ -191,6 +219,9 @@ def triage(signals: Signals, policy: Policy, *, base_fps: Optional[int] = None) 
             f"routine review (interval {policy.routine_review_interval_game_days})",
             rp.wakes, clock_for_reason("routine_review", policy),
         ))
+
+    for lane in signals.lane_wakes:
+        wakes.append(Wake(lane.reason, lane.detail, lane.roles, clock_for_reason(lane.reason, policy)))
 
     # handoffs/2026-09-23-stalled-order-poller.md item 1. Dedicated blocks
     # (not the generic _BOOLEAN_REASONS loop above) because the detail
