@@ -1,0 +1,63 @@
+# dfqueue/action_tools.yaml
+#
+# Which proposal types the conductor executes as code ("routed"), and which
+# tools belong to each group. docs/CONDUCTOR-EXECUTION.md section 1.
+# `dfqueue/routing.py` reads this file; it is data, so adding a type or a
+# tool is one entry and no code.
+#
+# Per group:
+#   types     proposal types (dfqueue/schema.py vocabularies) in the group
+#   tools     tool ids the group's steps may name; when the group is routed
+#             these leave the Overseer's allowlist in the same deploy
+#   routed    false until the group's cutover deploy; nothing is routed by
+#             default, so the live fort's behaviour is unchanged
+#   frozen    true only during the freeze before a cutover: step-less
+#             proposals of the group's types are refused with a message
+#   coverage  true once covered follow-ups skip the Overseer (2c)
+#
+# `retired` lists mutating tools that are in no group on purpose and are not
+# on the Overseer's allowlist (a test fails on any other mutating tool that
+# is in neither place).
+groups:
+  rooms:
+    types: [room_siting, workshop_siting, corridor, smoothing, dig_order]
+    tools:
+      - blueprint.reserve
+      - blueprint.apply
+      - blueprint.release
+      - blueprint.unreserve
+      - zone.place
+      - zone.assign-owner
+      - building.build
+      - diggable.dig-stair
+      - construction.mine-vein
+    routed: false
+    frozen: false
+    coverage: false
+  stockpiles:
+    types: [stockpile_siting]
+    tools: [stockpile.place, stockpile.configure, stockpile.link]
+    routed: false
+    frozen: false
+    coverage: false
+  orders:
+    types: [work_order, crop_plan]
+    tools:
+      - orders.create
+      - orders.reorder
+      - orders.cancel
+      - orders.recheck
+      - workjob.queue
+      - workjob.cancel
+      - farm.set-crop
+    routed: false
+    frozen: false
+    coverage: false
+
+retired:
+  # Mutating tools held by no proposing role and by no conductor allowlist
+  # entry: nothing proposes or runs them, and that is deliberate.
+  - ui.click
+  - ui.embark-mode
+  - ui.leave-embark-mode
+  - ledger.record

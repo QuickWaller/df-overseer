@@ -34,6 +34,13 @@ fort: Uniboslan            # "Ragwind", VM 103. One roster per fort.
 # extra writers buy no throughput. This is settled, not a v1 simplification.
 sole_writer: overseer
 
+# The code role that runs routed steps (docs/CONDUCTOR-EXECUTION.md 6.1,
+# handoffs/2026-10-05-stage-2a.md). It writes project, executed, amend,
+# observation and close records for routed proposal types; never a model.
+# The sole_writer still writes ruling, escalation and abandon, and can no
+# longer write project, executed or amend for a routed type.
+executor: conductor
+
 roles:
 
   overseer:
