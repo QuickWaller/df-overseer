@@ -887,24 +887,31 @@ _STUCK_BED = {
 }
 
 
+_STUCK_BREW = {
+    "job_type": "BrewDrink", "detail": "Brew Drink From Plant", "building": "Still",
+    "waiting_on": "suspended", "idle_ticks": None, "near_landmark": "Well",
+    "direction": "N", "distance_tiles": 4, "order_id": None, "from_order": None,
+}
+
+
 async def test_a_job_stuck_past_the_threshold_wakes_the_quartermaster_with_a_detail_line(tmp_path):
     import json as _json
     from conductor.job_watch import JobWatchStore, _base_key
 
     tools = _base_tools()
-    tools["stuckjobs.find"] = [_STUCK_BED]
+    tools["stuckjobs.find"] = [_STUCK_BREW]
     deps = _deps(tmp_path, tools=tools)
     store = JobWatchStore(deps.cursor_store.path.with_name("job_watch.json"))
     # Pre-seed the first sighting three game days ago (the watch's own
     # threshold/renotify logic is covered in test_job_watch.py).
-    store.save({f"{_base_key(_STUCK_BED)}#0": {"first_seen": 403200 + 1000 - 3600, "last_notified": None}})
+    store.save({f"{_base_key(_STUCK_BREW)}#0": {"first_seen": 403200 + 1000 - 3600, "last_notified": None}})
 
     result = await run_cycle(1, deps)
 
     assert "quartermaster" in result.roles_woken
     brief = _json.loads((result.archived_path / "briefings.json").read_text(encoding="utf-8"))["quartermaster"]
     assert brief["wake_reason"] == "stuck_job"
-    assert brief["wake_detail"].startswith("1 stuck job: Construct Bed suspended for 3 game days")
+    assert brief["wake_detail"].startswith("1 stuck job: Brew Drink From Plant suspended for 3 game days")
     assert brief["stuck_jobs"]["count"] == 1
 
     # Next cycle: still stuck, but inside the renotify window, so no new wake.

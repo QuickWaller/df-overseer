@@ -82,6 +82,15 @@ stuck_job_renotify_ticks: 12000
 # policy.clock_for_reason. `wakes` names which role(s) this reason wakes;
 # an empty list means the reason affects the clock but wakes nobody by
 # itself (docs/AGENT-LOOP.md §2's hostile-seen-but-unreachable row).
+#
+# handoffs/2026-10-05-stricter-wakes.md: a role wakes only on a change in its
+# own lane. `routine_review` still wakes both advisors every interval, so
+# nothing goes unchecked long. `prediction_graded` is raised by the cycle only
+# for a MISS (a hit is recorded, nobody wakes); its `wakes` lists both advisors
+# because queue.grade does not say who proposed the prediction, so a miss
+# cannot yet be narrowed to its proposer. `lane_event`, `alert_crossed` and
+# `ruling_on_own` carry no fixed role list: the roles come from `lane_triggers`
+# below, per event.
 wake_reasons:
   routine_review:
     clock: full_speed
@@ -92,12 +101,26 @@ wake_reasons:
   prediction_graded:
     clock: full_speed
     wakes: [architect, quartermaster]
+  # Planting and the season's food plan are the Quartermaster's; the
+  # Architect's lane has its own triggers (dig and construction completions).
   season_change:
     clock: full_speed
-    wakes: [architect, quartermaster]
+    wakes: [quartermaster]
+  # New citizens need beds (Architect) and food (Quartermaster).
   migrant_wave:
     clock: full_speed
     wakes: [architect, quartermaster]
+  lane_event:
+    clock: full_speed
+    wakes: []
+  alert_crossed:
+    clock: full_speed
+    wakes: []
+  ruling_on_own:
+    clock: full_speed
+    wakes: []
+  # Which role wakes is read per stuck job from `lane_triggers.<role>.
+  # stuck_jobs` below; this list is only the fallback when no lane is defined.
   stuck_job:
     clock: full_speed
     wakes: [quartermaster]
@@ -206,3 +229,34 @@ threshold_alerts:
 unexecuted_wake_ignore:
   - proposal-0001
   - proposal-0006
+
+# handoffs/2026-10-05-stricter-wakes.md: what counts as a change in a role's
+# own lane. Read generically by conductor/lanes.py; adding a trigger is an
+# edit here. The Consultant (open asks) and the Overseer (pending proposals,
+# accepted-not-carried-out, tripwire, pause paths) keep their existing wakes
+# and have no lane here.
+#
+# events: drained diff.since events in the role's OWN drain, so "since its last
+#   completed run" is the cursor. Matched on the event `type`, optionally on a
+#   regex over its `detail` (the job name, for JOB_COMPLETED).
+# stuck_jobs: regexes over a due stuck job's type and description.
+# alerts: threshold_alerts names ("*" = any); wakes once when newly crossed,
+#   again only after the alert clears and re-crosses.
+# rulings: a ruling on a proposal this role filed (the conductor learns the
+#   proposer by watching which advisor's run added a pending proposal).
+#
+# Not observable by the conductor today: a new landmark. Dig and construction
+# completions stand in for it. Starting patterns, not tuned against a run.
+lane_triggers:
+  architect:
+    events:
+      - type: JOB_COMPLETED
+        detail_matches: ['\b(dig|channel|carve|smooth|engrave|construct|build|detail)\b']
+    stuck_jobs: ['dig|channel|carve|smooth|engrave|construct|build|detail']
+    rulings: true
+  quartermaster:
+    events:
+      - type: stock_below_threshold
+    stuck_jobs: ['brew|cook|prepare|make|craft|forge|weave|mill|process|butcher|tan|smelt|sew|clothes|plant|harvest|kiln|still|farm|collect']
+    alerts: ["*"]
+    rulings: true

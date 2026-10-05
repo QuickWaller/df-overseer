@@ -227,6 +227,22 @@ def _run_status(row: Mapping[str, Any], now: float) -> str:
     return "ok" if row.get("ok") else "failed"
 
 
+def _keep_lines(text: str) -> str:
+    """Whitespace tidied but line breaks kept (the page renders the agent's
+    Markdown, so a list must stay a list): spaces collapsed within a line,
+    trailing space dropped, runs of blank lines reduced to one."""
+    out: list[str] = []
+    for line in text.splitlines():
+        indented = line.startswith(("  ", chr(9)))
+        line = " ".join(line.split())
+        if not line:
+            if out and out[-1]:
+                out.append("")
+            continue
+        out.append(("  " + line) if indented else line)
+    return chr(10).join(out).strip()
+
+
 def _public_summary(text: Optional[str]) -> Optional[str]:
     """The public form of a run's final answer, or `None` when it must be
     withheld. Checked on the whole text and again on the published cut, so a
@@ -237,10 +253,10 @@ def _public_summary(text: Optional[str]) -> Optional[str]:
     body = text.replace("\n[truncated]", "").strip()
     if not body or feed.find_unsafe_pattern(body):
         return None
-    body = " ".join(body.split())
+    body = _keep_lines(body)
     if len(body) > SUMMARY_PUBLIC_MAX:
         cut = body[:SUMMARY_PUBLIC_MAX]
-        stop = max(cut.rfind(". "), cut.rfind("! "), cut.rfind("? "))
+        stop = max(cut.rfind(". "), cut.rfind("! "), cut.rfind("? "), cut.rfind("." + chr(10)))
         body = cut[: stop + 1] if stop >= 80 else cut.rstrip() + "..."
     return None if feed.find_unsafe_pattern(body) else body
 
