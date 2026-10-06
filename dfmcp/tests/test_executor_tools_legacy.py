@@ -39,6 +39,7 @@ def db(tmp_path):
 
 def set_routing(monkeypatch, tmp_path, **flags):
     data = yaml.safe_load(REAL_YAML.read_text(encoding="utf-8"))
+    data["groups"]["rooms"].update({"routed": False, "frozen": False})
     data["groups"]["rooms"].update(flags)
     p = tmp_path / "action_tools.yaml"
     p.write_text(yaml.safe_dump(data), encoding="utf-8")
