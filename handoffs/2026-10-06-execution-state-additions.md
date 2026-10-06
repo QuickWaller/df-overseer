@@ -46,4 +46,42 @@ store fixture, including a conductor-side round trip with
 
 ## Result
 
-(executor fills this in)
+Built, offline, not deployed. Commit `86d0033` on branch
+`worktree-agent-a62332fd53fe74732` (code and tests) plus this Result.
+
+**Keys as built** (`queue.execution_state`, `dfmcp/executor_tools.py`; all
+read-only; every one lines up with what `conductor/execute.py` reads):
+
+1. `to_open: [{ruling_id, role}]`, from new `store.openable_rulings`: accepting
+   ruling of a routed, non-follow-up proposal that has a step, above the
+   effective cutover (none set means none listed), not closed, no project yet.
+   `role` is the proposer. Mirrors `open_project_from_ruling`'s refusals.
+2. `to_apply: [{proposal_id}]`, from new `store.applicable_followups`:
+   follow-up accepted or covered, project open and not abandoned, proposal not
+   closed, `after_step` in the plan, not already carried by a step. Mirrors
+   `apply_followup`'s refusals.
+3. `issued_steps: [{project_id, step_id}]`, from new `store.issued_step_ids`:
+   steps of open routed projects with a target in `issued`; gone once observed
+   done.
+4. Open project entries now carry `role`; each ready step carries `tool` and
+   `args` (copied from the current plan via new `store.current_plan_steps`, so
+   amended follow-up steps are covered).
+5. `routing: {routed_types, unrouted_types, frozen_types}`, from `dfqueue.routing`
+   (frozen types computed in the tool; `routing.py` untouched).
+
+The summary text also counts issued, to open and to apply.
+
+**Mismatches with conductor/execute.py:** none blocking. Notes: `steps_open` in
+`open_projects` is a bool, which the conductor's `int()` accepts; the existing
+`test_execution_state_lists_ready_steps...` assertion was widened because ready
+steps now carry `tool` and `args`. Not changed (out of surface): the cleanup
+wake, the 240 s `step_done` timeout.
+
+**Tests:** 8 new in `dfmcp/tests/test_executor_run.py` (each key, read-only,
+and a round trip running `conductor.execute.run_execute` and
+`conductor.briefing.routing_from_state` against the real tool: open, run,
+observe done, apply follow-up). Ambient `python -m pytest` (lupa present):
+3179 passed, 3 skipped. `dfmcp/tests` in `.venv-dfmcp`: 926 passed.
+
+**Deploy target:** vm103-dfmcp (dfmcp plus dfqueue/store.py), before the 2b
+room cutover; then vm106-conductor already reads these keys.
