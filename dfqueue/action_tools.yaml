@@ -37,7 +37,7 @@ groups:
     coverage: false
   stockpiles:
     types: [stockpile_siting]
-    tools: [stockpile.place, stockpile.configure, stockpile.link]
+    tools: [stockpile.place, stockpile.configure, stockpile.link, stockpile.settings, stockpile.set-materials, stockpile.remove]
     routed: false
     frozen: false
     coverage: false
