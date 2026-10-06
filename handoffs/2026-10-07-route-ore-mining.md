@@ -58,7 +58,7 @@ Done offline on branch worktree-agent-a76783a21022f6c51. No deploys, no live VMs
   handle is done once issued (observe), and nothing resolves an Uncertain call
   by a read. Field names taken from the Lua return in `mine_vein`.
 - `dfqueue/action_tools.yaml`: `construction.mine-vein-site` added to the rooms
-  group. It was already off nothing else: `construction.mine-vein` had already
+  group. `construction.mine-vein` had already
   left the Overseer; the site tool is removed from `agents/overseer/tools.yaml`.
   Overseer is 81. Count updated in `docs/STATE.md`,
   `dfmcp/tests/test_gotchas_tools.py`, `dfmcp/tests/test_queue_cited_facts.py`;
