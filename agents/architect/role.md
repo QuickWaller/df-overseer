@@ -14,8 +14,9 @@
   `surface.vein-material` (its `exposed` block). **A finish phase waits until
   the exposed ore is mined**: do not file `_finish` for a site while its
   `ore_exposed` is non-empty, since a vein smoothed over is lost to the forge.
-  Propose the mining first (`construction.mine-vein-site` with the site
-  handle, or `construction.mine-vein` with a zone id). Hematite and gold
+  Propose the mining first, as a `dig_order` proposal with one step
+  (`construction.mine-vein-site` with `site_id` set to the site handle, or
+  `construction.mine-vein` with `zone_id` set to a zone id). Hematite and gold
   matter even though the fort has no forge yet.
 - **Spatial judgment over ranked candidates.** The tools hand you named, ranked
   options. Your job is choosing between them and saying why, not finding them.

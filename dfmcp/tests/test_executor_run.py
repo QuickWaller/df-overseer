@@ -71,6 +71,8 @@ class FakeWorld:
                     raise CallNotSent("DFHack is unreachable")
                 if self.fail_real == "lost":
                     raise CallOutcomeUnknown("connection dropped")
+        if tool == "construction.mine-vein-site":
+            return self._mine_vein_site(args, dry)
         out = getattr(self, "_" + tool.split(".")[1])(args, dry)
         mutating = tool in ("blueprint.reserve", "blueprint.apply", "blueprint.release", "blueprint.unreserve")
         if mutating and not dry and self.fail_real == "landed":
@@ -78,6 +80,21 @@ class FakeWorld:
         return out
 
     # -- verbs
+    def _mine_vein_site(self, args, dry):
+        """The shape of df-overseer-construction.lua mine_vein: lists, never an ok flag."""
+        self.mined = getattr(self, "mined", [])
+        out = {"zone_id": args["site_id"], "boundary_ring_tiles": 12, "ore_tiles_found": 2, "already_open": [],
+               "refused": list(getattr(self, "mine_refused", [])), "held": list(getattr(self, "mine_held", [])),
+               "dry_run": dry, "results": [{"ring_position": 1, "ok": True}]}
+        out["designated_tiles"] = 0 if getattr(self, "mine_none_real", False) and not dry else 2
+        out["nothing_designated"] = out["designated_tiles"] == 0
+        if getattr(self, "mine_none_real", False) and not dry:
+            out["refused"] = ["ring tile 1: could not confirm its shape"]
+            out["blocked_reason"] = "ring tile 1: could not confirm its shape"
+        if not dry:
+            self.mined.append(args["site_id"])
+        return out
+
     def _plan(self, args, dry):
         return self.plan
 
@@ -892,3 +909,58 @@ async def test_conductor_phase_round_trips_the_state_end_to_end(rig):
     rep = await run_execute(call, ExecutionPolicy(), state, game_tick=300)
     assert "queue.apply_followup" in calls and not rep.errors
     assert any(st["id"] == f"{pid}/s2" for st in store.current_plan_steps(rig.db, pid))
+
+
+# ---- mining exposed ore (handoffs/2026-10-07-route-ore-mining.md) ----------------------
+
+
+def mine_step(site="site-1"):
+    return {"tool": "construction.mine-vein-site", "args": {"site_id": site}, "label": "Mine the exposed ore"}
+
+
+async def test_a_dig_order_mining_step_is_dry_run_run_and_observed_done(rig):
+    p = await rig.propose(mine_step(), type="dig_order")
+    assert p["step"]["tool"] == "construction.mine-vein-site"
+    r = rig.rule(p["id"])
+    _t, out = await rig.tool("queue.open_project", ruling_id=r["id"])
+    pid = out["project_id"]
+    res = await rig.run(pid, f"{pid}/s1")
+    assert res["class"] == "success" and not res.get("handle")
+    real = rig.world.real_calls("construction.mine-vein-site")
+    assert len(real) == 1 and real[0][1] == {"site_id": "site-1", "dry_run": "false"}
+    assert rig.world.mined == ["site-1"]
+    # no progress read is declared, so a step with no handle is done once issued
+    _t, ob = await rig.tool("queue.observe", project_id=pid, step_id=f"{pid}/s1")
+    assert ob["state"] == "done" and rig.target_states(pid, f"{pid}/s1") == ["done"]
+    again = await rig.run(pid, f"{pid}/s1")
+    assert again["class"] == "not_runnable"
+
+
+async def test_a_mining_step_that_leaves_ore_held_or_refused_is_refused_at_filing(rig):
+    rig.world.mine_held = ["ring tile 3: held (reservation) -- inside res-1"]
+    with pytest.raises(Exception) as ei:
+        await rig.propose(mine_step(), type="dig_order")
+    assert "refused" in str(ei.value) and "construction.mine-vein-site" in str(ei.value)
+    rig.world.mine_held = []
+    rig.world.mine_refused = ["ring tile 4: vein classification unknown"]
+    with pytest.raises(Exception):
+        await rig.propose(mine_step(), type="dig_order")
+    assert rig.world.real_calls("construction.mine-vein-site") == []
+
+
+async def test_a_mining_step_may_not_carry_an_override(rig):
+    bad = mine_step()
+    bad["args"]["override"] = "because"
+    with pytest.raises(Exception):
+        await rig.propose(bad, type="dig_order")
+
+
+async def test_a_real_mining_run_that_designated_nothing_is_a_retryable_failure(rig):
+    p = await rig.propose(mine_step(), type="dig_order")
+    r = rig.rule(p["id"])
+    _t, out = await rig.tool("queue.open_project", ruling_id=r["id"])
+    pid = out["project_id"]
+    rig.world.mine_none_real = True
+    res = await rig.run(pid, f"{pid}/s1")
+    assert res["class"] == "failed" and res["retryable"] is True
+    assert "could not confirm" in res["detail"]

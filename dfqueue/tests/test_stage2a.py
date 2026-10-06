@@ -190,8 +190,8 @@ def test_a_routed_tool_must_have_left_the_overseer_allowlist(tmp_path, monkeypat
     set_routing(monkeypatch, tmp_path, routed=True)
     assert "blueprint.reserve" in routing.routed_tools()
     assert not [t for t in routing.routed_tools() if t in overseer]
-    assert "construction.mine-vein-site" in overseer  # an unrouted tool the Overseer keeps
-    assert "construction.mine-vein-site" not in routing.routed_tools()
+    assert "construction.build" in overseer  # an unrouted tool the Overseer keeps
+    assert "construction.build" not in routing.routed_tools()
 
 
 # ---- schema -----------------------------------------------------------------------
