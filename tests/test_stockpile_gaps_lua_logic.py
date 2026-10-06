@@ -214,7 +214,7 @@ def test_link_warns_single_class_trap_on_a_still_with_only_plants(world):
     assert r["dry_run"] is True
     assert codes(world, r) == ["single_class_trap"]
     w = L(world, r["warnings"])[0]
-    assert "barrel" in L(world, w["uncovered"])[0]
+    assert "container:furniture" in L(world, w["uncovered"])[0]
 
 
 def test_link_no_trap_once_every_class_has_a_linked_source(world):
@@ -306,11 +306,11 @@ def test_health_flags_a_class_with_no_linked_source_and_fort_supply(world):
     rec = L(world, r["workshops"])[0]
     assert rec["kind"] == "Still" and rec["input_mode"] == "linked_piles_only"
     by_id = {c["id"]: c for c in L(world, rec["classes"])}
-    assert by_id["plants"]["status"] == "ok"
-    assert by_id["barrel"]["status"] == "no_linked_source"
+    assert by_id["input:food"]["status"] == "ok"
+    assert by_id["container:furniture"]["status"] == "no_linked_source"
     # the fix is a link, not production: barrels exist fort-wide
-    assert by_id["barrel"]["fort_wide_available_units"] == 7
-    assert L(world, rec["problems"]) == ["no_linked_source:barrel"]
+    assert by_id["container:furniture"]["fort_wide_available_units"] == 7
+    assert L(world, rec["problems"]) == ["no_linked_source:container:furniture"]
     assert r["problem_count"] == 1
 
 
@@ -322,9 +322,9 @@ def test_health_distinguishes_an_empty_linked_source(world):
     world.stockpile_link(barrels.id, still.id, "give", "false")
     rec = L(world, d(world, world.stockpile_health()[0])["workshops"])[0]
     by_id = {c["id"]: c for c in L(world, rec["classes"])}
-    assert by_id["plants"]["status"] == "linked_source_empty"
-    assert by_id["barrel"]["status"] == "ok"
-    assert L(world, rec["problems"]) == ["linked_source_empty:plants"]
+    assert by_id["input:food"]["status"] == "linked_source_empty"
+    assert by_id["container:furniture"]["status"] == "ok"
+    assert L(world, rec["problems"]) == ["linked_source_empty:input:food"]
 
 
 def test_health_output_link_must_accept_products(world):
@@ -380,14 +380,14 @@ def test_plan_feed_by_kind_specs_feeders_source_and_output(world):
     r = d(world, r)
     assert r["kind"] == "Still" and r.get("workshop_id") is None and r["dry_run"] is True
     piles = {p["handle"]: p for p in L(world, r["piles"])}
-    assert set(piles) == {"feeder:plants", "source:food", "feeder:barrel", "source:furniture", "output"}
-    feeder = piles["feeder:plants"]
+    assert set(piles) == {"feeder:input:food", "source:food", "feeder:container:furniture", "source:furniture", "output"}
+    feeder = piles["feeder:input:food"]
     assert feeder["links_only"] is True and feeder["size_tiles"] == 4
     assert d(world, feeder["containers"]) == {"max_barrels": 0, "max_bins": 0, "max_wheelbarrows": 0}
     assert piles["source:food"]["links_only"] is False
     links = [(l["pile"], l["target"], l["direction"]) for l in L(world, r["links"])]
-    assert ("source:food", "feeder:plants", "give") in links
-    assert ("feeder:plants", "workshop", "give") in links
+    assert ("source:food", "feeder:input:food", "give") in links
+    assert ("feeder:input:food", "workshop", "give") in links
     assert ("output", "workshop", "take") in links
 
 
@@ -401,10 +401,10 @@ def test_plan_feed_by_workshop_id_leaves_out_covered_classes(world):
     assert err is None
     r = d(world, r)
     assert r["workshop_id"] == still.id
-    assert L(world, r["already_covered_classes"]) == ["plants"]
+    assert L(world, r["already_covered_classes"]) == ["input:food"]
     handles = [p["handle"] for p in L(world, r["piles"])]
-    assert "feeder:plants" not in handles and "output" not in handles
-    assert "feeder:barrel" in handles
+    assert "feeder:input:food" not in handles and "output" not in handles
+    assert "feeder:container:furniture" in handles
 
 
 def test_plan_feed_shares_one_source_per_category_set(world):
@@ -490,8 +490,10 @@ CATEGORIES = {
 }
 
 
-def test_kinds_table_is_well_formed(world):
-    kinds = d(world, world.g["reqscript"]("df-overseer-stockpile-kinds").KINDS)
+def test_hand_data_is_well_formed(world):
+    mod = world.g["reqscript"]("df-overseer-stockpile-kinds")
+    # the fallback table (also the test fixture for the hand data)
+    kinds = d(world, mod.FALLBACK_KINDS)
     assert {"Still", "Kitchen", "Masons", "Carpenters", "Smelter"} <= set(kinds)
     for name, entry in kinds.items():
         assert entry["verified"] is False, name  # hand-authored, says so
@@ -505,3 +507,97 @@ def test_kinds_table_is_well_formed(world):
             assert set(cls["categories"].values()) <= CATEGORIES, (name, cls["id"])
         for prod in entry["outputs"].values():
             assert set(prod["categories"].values()) <= CATEGORIES, (name, prod["id"])
+    for k, cats in d(world, mod.ITEM_TYPE_CATEGORIES).items():
+        assert set(cats.values()) <= CATEGORIES, k
+    for k, v in d(world, mod.FLAG_CATEGORIES).items():
+        assert set(v["categories"].values()) <= CATEGORIES, k
+    for k, ovs in d(world, mod.OVERLAYS).items():
+        for ov in ovs.values():
+            assert ov["optional_when"], k  # fuel is optional unless magma-fed
+            assert set(ov["categories"].values()) <= CATEGORIES, k
+
+
+# ---------------------------------------------------------------------------
+# runtime derivation from the game's own job definitions
+# ---------------------------------------------------------------------------
+
+def plan(world, kind):
+    r, err = world.stockpile_plan_feed(kind)
+    assert err is None, err
+    return d(world, r)
+
+
+def test_kind_is_derived_from_game_jobs_not_the_hand_table(world):
+    r = plan(world, "Still")
+    assert r["kind_source"] == "game_data"
+    handles = {p["handle"] for p in L(world, r["piles"])}
+    # the container class comes from the tag-matched reagent, no hand entry
+    assert "feeder:container:furniture" in handles and "feeder:input:food" in handles
+    assert world.g["GETJOBS_CALLS"] >= 1
+
+
+def test_derived_kind_is_cached_per_process(world):
+    plan(world, "Still")
+    n = world.g["GETJOBS_CALLS"]
+    plan(world, "still")
+    assert world.g["GETJOBS_CALLS"] == n
+
+
+def test_derivation_failure_falls_back_to_the_flagged_hand_table(world):
+    r = plan(world, "Mechanics")  # fake getJobs returns nil for it
+    assert r["kind_source"] == "fallback_table"
+    assert r["derive_error"]
+    assert L(world, r["piles"])  # still produces a spec
+
+
+def test_smelter_fuel_comes_from_the_overlay_and_is_optional(world):
+    r = plan(world, "Smelter")
+    assert r["kind_source"] == "game_data"
+    fuel = [p for p in L(world, r["piles"]) if p["handle"] == "feeder:fuel"][0]
+    assert fuel["optional_when"] == "the smelter is fed by magma"
+
+
+def test_classes_needed_by_only_some_jobs_are_partial_not_a_trap(world):
+    craft = world.make_shop("Craftsdwarfs")
+    stone = world.make_pile(["stone"])
+    r, err = world.stockpile_link(stone.id, craft.id, "give", None)
+    assert err is None
+    # wood is needed by 1 of 2 jobs: optional, never single_class_trap
+    assert codes(world, r) == ["optional_class_unlinked"]
+    w = L(world, d(world, r)["warnings"])[0]
+    assert "1 of 2 jobs" in w["message"]
+
+
+def test_unmapped_item_types_are_reported_not_guessed(world):
+    r = plan(world, "Butchers")
+    assert "item type GEM_ODD" in L(world, r["unmapped"])
+    handles = {p["handle"] for p in L(world, r["piles"])}
+    assert "feeder:input:food" in handles
+
+
+def test_reaction_products_are_derived_and_unmapped_ones_reported(world):
+    r = plan(world, "Kitchen")
+    out = [p for p in L(world, r["piles"]) if p["handle"] == "output"][0]
+    assert "food" in L(world, out["accepts"])
+    assert "product GEM_ODD" in L(world, r["unmapped"])
+
+
+def test_builtin_job_products_use_the_marked_hand_hints(world):
+    mason = world.make_shop("Masons")
+    wrong = world.make_pile(["stone"])
+    r, err = world.stockpile_link(wrong.id, mason.id, "take", None)
+    assert codes(world, r) == ["output_pile_rejects_products"]
+
+
+def test_health_reports_kind_source(world):
+    mason = world.make_shop("Masons")
+    stone = world.make_pile(["stone"], items=1)
+    world.stockpile_link(stone.id, mason.id, "give", "false")
+    rec = L(world, d(world, world.stockpile_health()[0])["workshops"])[0]
+    assert rec["kind_source"] == "game_data"
+
+
+def test_plan_feed_unknown_kind_lists_enum_kinds(world):
+    r, err = world.stockpile_plan_feed("Teleporter")
+    assert r is None
+    assert "Craftsdwarfs" in err and "Custom" not in err

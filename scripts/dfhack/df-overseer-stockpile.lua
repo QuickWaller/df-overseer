@@ -914,6 +914,308 @@ end
 -- df-overseer-stockpile-kinds.lua; everything below is generic over it.
 -- ---------------------------------------------------------------------------
 
+-- ---------------------------------------------------------------------------
+-- Runtime derivation of a workshop kind's input/output classes from the
+-- game's own data (coordinator ruling 2026-10-07, CLAUDE.md "Tools must be
+-- generalisable"): `dfhack.workshops.getJobs(building_type, subtype, custom)`
+-- is the module behind the in-game "add job" menu and the source
+-- workjob.list-jobs reads: per job, its reagent specs (`items`) and
+-- `job_fields` (job_type, reaction_name). Products of reaction jobs come from
+-- `df.global.world.raws.reactions.reactions[].products`. What the game does
+-- not encode (item type to stockpile category, a smelter's fuel, products of
+-- built-in jobs) is HAND DATA in df-overseer-stockpile-kinds.lua, each part
+-- marked there. If derivation fails for a kind the hand FALLBACK table is
+-- used and the entry says source = "fallback_table".
+--
+-- A kind has many jobs and a workshop runs ONE at a time, so reagents of
+-- different jobs are alternatives, not a joint requirement. A class is
+-- therefore `partial` (needed by some jobs, not all) or mandatory (every job
+-- of the kind needs it); only a mandatory class is a trap when unlinked.
+-- UNVERIFIED LIVE: the spec field shapes (item_type, flags1/2/3 tables) are
+-- the ones df-overseer-workjob.lua reads live; the category mapping is hand
+-- data; reaction product field names (`item_type`) are recalled.
+-- ---------------------------------------------------------------------------
+
+local FLAG_FIELDS = {"flags1", "flags2", "flags3"}
+
+-- (building_type, subtype, canonical_name) for a workshop/furnace kind name,
+-- case-insensitive, via the enums' own bounds (pairs() over a DFHack enum
+-- does not yield names, per df-overseer-workjob.lua's header).
+local function kind_ids(name)
+  if not name then
+    return nil
+  end
+  local want = tostring(name):lower()
+  for _, spec in ipairs({{"workshop_type", df.building_type.Workshop},
+                         {"furnace_type", df.building_type.Furnace}}) do
+    local enum = df[spec[1]]
+    if enum and spec[2] ~= nil then
+      local ok_f, first = pcall(function() return enum._first_item end)
+      local ok_l, last = pcall(function() return enum._last_item end)
+      if ok_f and ok_l and first and last then
+        for i = first, last do
+          local ok_n, n = pcall(function() return enum[i] end)
+          if ok_n and type(n) == "string" and n:lower() == want and n ~= "Custom" then
+            return spec[2], i, n
+          end
+        end
+      end
+    end
+  end
+  return nil
+end
+
+local function known_kind_names()
+  local out, seen = {}, {}
+  for _, enum_name in ipairs({"workshop_type", "furnace_type"}) do
+    local enum = df[enum_name]
+    local ok_f, first = pcall(function() return enum._first_item end)
+    local ok_l, last = pcall(function() return enum._last_item end)
+    if ok_f and ok_l and first and last then
+      for i = first, last do
+        local ok_n, n = pcall(function() return enum[i] end)
+        if ok_n and type(n) == "string" and n ~= "Custom" and not seen[n] then
+          seen[n] = true
+          table.insert(out, n)
+        end
+      end
+    end
+  end
+  for n in pairs(kinds_mod.FALLBACK_KINDS) do
+    if not seen[n] then
+      seen[n] = true
+      table.insert(out, n)
+    end
+  end
+  table.sort(out)
+  return out
+end
+
+-- One reagent spec -> {categories, role, type_name} or nil, unmapped_reason.
+local function classify_spec(spec)
+  local ok_t, itype = pcall(function() return spec.item_type end)
+  local type_name = nil
+  if ok_t and type(itype) == "number" and itype >= 0 then
+    local ok_n, n = pcall(function() return df.item_type[itype] end)
+    if ok_n and type(n) == "string" then
+      type_name = n
+    end
+  end
+  if type_name then
+    local cats = kinds_mod.ITEM_TYPE_CATEGORIES[type_name]
+    if not cats then
+      return nil, "item type " .. type_name
+    end
+    local role = kinds_mod.CONTAINER_ITEM_TYPES[type_name] and "container" or "input"
+    return {categories = cats, role = role, type_name = type_name, availability = type_name}
+  end
+  -- Tag-matched reagent: look for a flag the hand data knows.
+  for _, field in ipairs(FLAG_FIELDS) do
+    local ok_f, tbl = pcall(function() return spec[field] end)
+    if ok_f and type(tbl) == "table" then
+      local flag_names = {}
+      for flag, on in pairs(tbl) do
+        if on then
+          table.insert(flag_names, tostring(flag))
+        end
+      end
+      table.sort(flag_names)  -- deterministic: pairs() order is not
+      for _, flag in ipairs(flag_names) do
+        local fc = kinds_mod.FLAG_CATEGORIES[flag]
+        if fc then
+          return {categories = fc.categories, role = fc.role, type_name = "flag:" .. flag,
+                  availability = fc.availability}
+        end
+      end
+    end
+  end
+  return nil, "wildcard reagent with no known flag"
+end
+
+local function cats_key(role, cats)
+  return role .. ":" .. table.concat(cats, "+")
+end
+
+local function reaction_products(reaction_name)
+  local out = {}
+  local ok, reactions = pcall(function() return df.global.world.raws.reactions.reactions end)
+  if not ok or not reactions then
+    return out
+  end
+  local ok_n, n = pcall(function() return #reactions end)
+  if not ok_n or not n then
+    return out
+  end
+  for i = 0, n - 1 do
+    local ok_r, r = pcall(function() return reactions[i] end)
+    if ok_r and r and r.code == reaction_name then
+      local ok_p, prods = pcall(function() return r.products end)
+      if ok_p and prods then
+        local ok_pn, pn = pcall(function() return #prods end)
+        for j = 0, (ok_pn and pn or 0) - 1 do
+          local ok_pp, p = pcall(function() return prods[j] end)
+          local ok_it, it = pcall(function() return p.item_type end)
+          if ok_pp and p and ok_it and type(it) == "number" and it >= 0 then
+            local ok_in, iname = pcall(function() return df.item_type[it] end)
+            if ok_in and type(iname) == "string" then
+              table.insert(out, iname)
+            end
+          end
+        end
+      end
+      break
+    end
+  end
+  return out
+end
+
+-- Derives one kind from the game's job table. Returns an entry or nil, why.
+local function derive_kind(btype, sub, canonical)
+  local ok_m, workshops_mod = pcall(require, 'dfhack.workshops')
+  if not ok_m or type(workshops_mod) ~= "table" or not workshops_mod.getJobs then
+    return nil, "dfhack.workshops.getJobs unavailable"
+  end
+  local ok_j, jobs = pcall(workshops_mod.getJobs, btype, sub, -1)
+  if not ok_j or jobs == nil then
+    return nil, "getJobs failed"
+  end
+  local classes, order, unmapped, unmapped_seen = {}, {}, {}, {}
+  local product_types, product_seen = {}, {}
+  local job_count = 0
+  local keys = {}
+  for k in pairs(jobs) do
+    table.insert(keys, k)
+  end
+  table.sort(keys, function(a, b) return tostring(a) < tostring(b) end)
+  for _, k in ipairs(keys) do
+    local job = jobs[k]
+    local specs = job.items
+    if type(specs) == "table" and #specs > 0 then
+      job_count = job_count + 1
+      local in_this_job = {}
+      for _, spec in ipairs(specs) do
+        local c, why = classify_spec(spec)
+        if not c then
+          if not unmapped_seen[why] then
+            unmapped_seen[why] = true
+            table.insert(unmapped, why)
+          end
+        else
+          local key = cats_key(c.role, c.categories)
+          if not classes[key] then
+            classes[key] = {role = c.role, categories = c.categories, types = {}, type_seen = {}, jobs = 0}
+            table.insert(order, key)
+          end
+          local cl = classes[key]
+          cl.avail = cl.avail or c.availability
+          if not cl.type_seen[c.type_name] then
+            cl.type_seen[c.type_name] = true
+            table.insert(cl.types, c.type_name)
+          end
+          if not in_this_job[key] then
+            in_this_job[key] = true
+            cl.jobs = cl.jobs + 1
+          end
+        end
+      end
+    end
+    local rn = job.job_fields and job.job_fields.reaction_name
+    if rn then
+      for _, t in ipairs(reaction_products(rn)) do
+        if not product_seen[t] then
+          product_seen[t] = true
+          table.insert(product_types, t)
+        end
+      end
+    end
+  end
+  if job_count == 0 then
+    return nil, "no jobs with reagents"
+  end
+  local inputs = {}
+  for _, key in ipairs(order) do
+    local cl = classes[key]
+    local partial = cl.jobs < job_count
+    local avail = cl.avail
+    table.insert(inputs, {
+      id = cl.role .. ":" .. table.concat(cl.categories, "+"),
+      label = table.concat(cl.types, "/"):lower(),
+      role = cl.role, categories = cl.categories, availability = avail,
+      feeder_tiles = kinds_mod.FEEDER_TILES[cl.role] or 4,
+      partial = partial,
+      optional_when = partial and ("only " .. cl.jobs .. " of " .. job_count
+        .. " jobs of this workshop need it") or nil,
+      jobs_needing = cl.jobs, job_count = job_count,
+    })
+  end
+  local have = {}
+  for _, c in ipairs(inputs) do
+    have[c.role .. ":" .. table.concat(c.categories, "+")] = true
+  end
+  for _, ov in ipairs(kinds_mod.OVERLAYS[canonical] or {}) do
+    local oid = ov.role .. ":" .. table.concat(ov.categories, "+")
+    if not have[oid] then
+      table.insert(inputs, {
+        id = ov.id, label = ov.label, role = ov.role, categories = ov.categories,
+        feeder_tiles = kinds_mod.FEEDER_TILES[ov.role] or 4,
+        optional_when = ov.optional_when, overlay = true,
+      })
+    end
+  end
+  local outputs, out_seen = {}, {}
+  for _, t in ipairs(product_types) do
+    local cats = kinds_mod.ITEM_TYPE_CATEGORIES[t]
+    if cats then
+      local oid = "product:" .. table.concat(cats, "+")
+      if not out_seen[oid] then
+        out_seen[oid] = true
+        table.insert(outputs, {id = oid, label = t:lower(), categories = cats, derived = true})
+      end
+    elseif not unmapped_seen["product " .. t] then
+      unmapped_seen["product " .. t] = true
+      table.insert(unmapped, "product " .. t)
+    end
+  end
+  for _, h in ipairs(kinds_mod.OUTPUT_HINTS[canonical] or {}) do
+    table.insert(outputs, {id = h.id, label = h.label, categories = h.categories, hand_hint = true})
+  end
+  return {source = "game_data", inputs = inputs, outputs = outputs,
+          unmapped = unmapped, job_count = job_count}
+end
+
+local derived_cache = {}
+
+-- Returns (canonical_name, entry) or nil. entry.source is "game_data" (derived
+-- from the game's jobs) or "fallback_table" (hand table; derivation failed,
+-- entry.derive_error says why). Cached per process: the job table does not
+-- change while the game runs.
+local function find_kind(name)
+  local btype, sub, canonical = kind_ids(name)
+  local fb_name, fb = kinds_mod.find_fallback_kind(name)
+  canonical = canonical or fb_name
+  if not canonical then
+    return nil
+  end
+  if derived_cache[canonical] == nil then
+    local entry, why
+    if btype then
+      entry, why = derive_kind(btype, sub, canonical)
+    else
+      why = "kind not in the game's workshop/furnace enums"
+    end
+    if not entry and fb then
+      entry = {source = "fallback_table", inputs = fb.inputs, outputs = fb.outputs,
+               unmapped = {}, derive_error = why}
+    end
+    derived_cache[canonical] = entry or false
+  end
+  local e = derived_cache[canonical]
+  if not e then
+    return nil
+  end
+  return canonical, e
+end
+
 local function vec_to_list(vec)
   local out = {}
   if not vec then
@@ -1005,7 +1307,7 @@ local function uncovered_classes(entry, piles)
       end
     end
     if not covered then
-      if cls.optional_when then
+      if cls.optional_when or cls.partial then
         table.insert(optional, cls)
       else
         table.insert(missing, cls)
@@ -1029,7 +1331,7 @@ end
 local function link_warnings(pile, shop, direction)
   local warnings = {}
   local kname = workshop_kind_name(shop)
-  local _, entry = kinds_mod.find_kind(kname)
+  local _, entry = find_kind(kname)
   if not entry then
     table.insert(warnings, {
       code = "unknown_workshop_kind",
@@ -1538,10 +1840,12 @@ function stockpile_health()
       local out_piles = links and vec_to_list(links.give_to_pile) or {}
       if #in_piles > 0 or #out_piles > 0 then
         local kname = workshop_kind_name(bld)
-        local _, entry = kinds_mod.find_kind(kname)
+        local _, entry = find_kind(kname)
         local info = landmark_info(bld.x1, bld.x2, bld.y1, bld.y2, bld.z)
         local rec = {
           id = bld.id, kind = kname, kind_known = entry ~= nil,
+          kind_source = entry and entry.source or nil,
+          unmapped = entry and entry.unmapped or nil,
           near_landmark = info and info.name or nil,
           direction = info and info.direction or nil,
           distance_tiles = info and info.distance_tiles or nil,
@@ -1571,7 +1875,7 @@ function stockpile_health()
                 status = "ok"
               elseif any_accepting then
                 status = "linked_source_empty"
-              elseif cls.optional_when then
+              elseif cls.optional_when or cls.partial then
                 status = "not_linked_optional"
               else
                 status = "no_linked_source"
@@ -1611,7 +1915,9 @@ function stockpile_health()
     end
   end
   return {workshops = out, problem_count = problem_count,
-          table_provenance = "hand-authored per-kind table, unverified live"}
+          table_provenance = "per-kind classes derived from the game's job definitions at runtime "
+            .. "(see each workshop's kind_source); hand data only for item-type categories, fuel and "
+            .. "built-in job products; unverified live"}
 end
 
 -- ---------------------------------------------------------------------------
@@ -1639,19 +1945,15 @@ function stockpile_plan_feed(kind_or_id)
     end
     shop = bld
     kname = workshop_kind_name(bld)
-    local _, e = kinds_mod.find_kind(kname)
+    local _, e = find_kind(kname)
     entry = e
     if not entry then
       return nil, "no input/output table for workshop kind '" .. tostring(kname) .. "'"
     end
   else
-    local k, e = kinds_mod.find_kind(kind_or_id)
+    local k, e = find_kind(kind_or_id)
     if not e then
-      local names = {}
-      for name in pairs(kinds_mod.KINDS) do
-        table.insert(names, name)
-      end
-      table.sort(names)
+      local names = known_kind_names()
       return nil, "unknown workshop kind '" .. tostring(kind_or_id) .. "'; known: " .. table.concat(names, ", ")
     end
     kname, entry = k, e
@@ -1725,6 +2027,7 @@ function stockpile_plan_feed(kind_or_id)
   table.sort(covered_ids)
   return {
     kind = kname, workshop_id = shop and shop.id or nil, dry_run = true,
+    kind_source = entry.source, unmapped = entry.unmapped, derive_error = entry.derive_error,
     already_covered_classes = covered_ids,
     piles = piles, links = plinks, notes = notes,
   }
@@ -1772,7 +2075,7 @@ function stockpile_remove(id, dry_run)
         end
       end
     end
-    local _, entry = kinds_mod.find_kind(shop and workshop_kind_name(shop))
+    local _, entry = find_kind(shop and workshop_kind_name(shop))
     if #remaining == 0 then
       table.insert(warnings, {code = "workshop_loses_all_feeders", message = "workshop " .. tostring(t.id)
         .. " would have no linked input pile and would draw from anywhere again"})

@@ -25,8 +25,15 @@ df = {
   -- handoffs/2026-10-07-stockpile-tool-gaps.md: subtype enums, name <-> id,
   -- enough for workshop_kind_name (df[enum][bld.type] -> name).
   workshop_type = {[0] = "Carpenters", [1] = "Still", [2] = "Masons", [3] = "Kitchen",
-                   [4] = "Custom", Carpenters = 0, Still = 1, Masons = 2, Kitchen = 3, Custom = 4},
-  furnace_type = {[0] = "WoodFurnace", [1] = "Smelter", WoodFurnace = 0, Smelter = 1},
+                   [4] = "Custom", [5] = "Mechanics", [6] = "Craftsdwarfs", [7] = "Butchers",
+                   Carpenters = 0, Still = 1, Masons = 2, Kitchen = 3, Custom = 4,
+                   Mechanics = 5, Craftsdwarfs = 6, Butchers = 7,
+                   _first_item = 0, _last_item = 7},
+  furnace_type = {[0] = "WoodFurnace", [1] = "Smelter", WoodFurnace = 0, Smelter = 1,
+                  _first_item = 0, _last_item = 1},
+  -- 6 (GEM_ODD) is deliberately absent from the hand category table.
+  item_type = {[0] = "BOULDER", [1] = "WOOD", [2] = "PLANT", [3] = "BARREL", [4] = "BAR",
+               [5] = "BLOCKS", [6] = "GEM_ODD", [7] = "DRINK"},
 }
 dfhack_flags = {module = true}
 package.loaded["json"] = {encode = function() return "" end}
@@ -111,6 +118,7 @@ RAWS = {
     {id = "MARBLE", material = {flags = {IS_STONE = true}}},
     {id = "HEMATITE", material = {flags = {IS_STONE = true}}},
   }),
+  reactions = {reactions = new_vec({}), },
   plants = {all = new_vec({
     {id = "OAK", flags = {TREE = true}},
     {id = "WHEAT", flags = {TREE = false}},
@@ -220,6 +228,42 @@ function dfhack.buildings.deconstruct(bld)
     if b == bld then table.remove(BUILDINGS, i) break end
   end
 end
+
+-- Fake dfhack.workshops.getJobs: per kind NAME, a list of jobs shaped like the
+-- real module's output (items = reagent specs, job_fields). A kind with no
+-- entry returns nil, like a failed getJobs, so the hand fallback table is used.
+FAKE_JOBS = {}
+local function spec(item_type, flags)
+  local f = flags or {}
+  return {item_type = item_type, quantity = 1, flags1 = f.flags1 or {}, flags2 = f.flags2 or {},
+          flags3 = f.flags3 or {}}
+end
+local function job(items, reaction)
+  return {items = items, job_fields = {job_type = 0, reaction_name = reaction}}
+end
+-- the tag-matched "empty food storage container" reagent of a brew job
+local function container_spec() return spec(-1, {flags2 = {food_storage = true, empty = true}}) end
+FAKE_JOBS.Still = {job({spec(2), container_spec()}, "BREW_FROM_PLANT"),
+                   job({spec(2), container_spec()}, "BREW_FROM_PLANT_2")}
+FAKE_JOBS.Masons = {job({spec(0)}), job({spec(0)}), job({spec(0)})}
+FAKE_JOBS.Carpenters = {job({spec(1)}), job({spec(1)})}
+FAKE_JOBS.Kitchen = {job({spec(2)}, "PREPARE_MEAL")}
+FAKE_JOBS.Smelter = {job({spec(0)}), job({spec(0)})}
+FAKE_JOBS.Craftsdwarfs = {job({spec(0)}), job({spec(1)})}
+FAKE_JOBS.Butchers = {job({spec(6), spec(2)})}
+RAWS.reactions.reactions = new_vec({
+  {code = "BREW_FROM_PLANT", products = new_vec({{item_type = 7}})},
+  {code = "BREW_FROM_PLANT_2", products = new_vec({{item_type = 7}})},
+  {code = "PREPARE_MEAL", products = new_vec({{item_type = 2}, {item_type = 6}})},
+})
+GETJOBS_CALLS = 0
+package.loaded["dfhack.workshops"] = {
+  getJobs = function(btype, sub, custom)
+    GETJOBS_CALLS = GETJOBS_CALLS + 1
+    local name = (btype == df.building_type.Workshop) and df.workshop_type[sub] or df.furnace_type[sub]
+    return FAKE_JOBS[name]
+  end,
+}
 
 STOCKS_AVAILABLE = {}
 function set_availability(key, units) STOCKS_AVAILABLE[key] = units end
