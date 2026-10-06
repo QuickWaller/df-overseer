@@ -49,4 +49,34 @@ phone width against the preview, console clean. Stop any server you start.
 
 ## Result
 
-(executor fills this in; deploy targets expected vm103-stream-publisher, relay-web, relay-web-operator)
+Done (executor, offline, no deploy). Asset version **v62**. Deploy targets:
+vm103-stream-publisher (feed.py), relay-web, relay-web-operator (app.js,
+style.css, index.html, operator.html).
+
+- `dfqueue/feed.py`: new `close_proposal_map` and `close_badge`;
+  `build_proposal_badges` now lets the last `close` override the ruling badge
+  (`completed` for outcome completed, `closed` for not_done, superseded,
+  abandoned). A close naming a proposal, a ruling or a project all map to the
+  proposal (a project via its founding ruling). `build_projects_view` also sets
+  a closed project's `status` (`done` or the new `closed`), so `projects.json`
+  agrees with the badge.
+- `web/stream/app.js`: new Closed state and tab (after Completed); closed
+  and completed work leaves the In progress tab (stays under All and its own
+  tab); `closed`/`completed` proposal and project chips; closed project detail
+  shows no live jobs; a thread ends with the close receipt (existing public
+  close text, never the reason) and a full-width "Closed" status line (grey,
+  or green "Closed as completed"). `style.css`: filled grey `ps-closed`,
+  `js-closed`, `chip closed`, plus green `ps-completed`; no glyph.
+- Preview: `scripts/preview_stream_live.py` appends two example close records
+  to a temp copy of the demo records (the committed fixture is untouched).
+- Tests: `test_feed.py` (+7: ruling then close, close of a ruling id, of a
+  project id, of a proposal, projects view), new
+  `test_site_js_closed.py` (6, node on the real `app.js`).
+- Headless (Edge via CDP, 1280x700 and 390x800, public and operator): tabs
+  show Closed 1 and Completed 2, In progress lists only the live project, the
+  closed card shows the grey chip, the thread ends with the close and its status
+  line, no horizontal scroll, desktop page never scrolls, console clean (only
+  a favicon 404). On the phone width the page itself scrolls (stacked mobile
+  layout; not compared against v61, flag if it matters). Preview server and browser stopped.
+- Note for the deploy: the publisher must be deployed first, or the page keeps
+  showing closed work as accepted (the badge comes from the feed).

@@ -22,6 +22,7 @@ import json
 import os
 import subprocess
 import sys
+import tempfile
 import time
 from datetime import datetime, timezone
 from pathlib import Path
@@ -178,11 +179,28 @@ def main(argv: list[str] | None = None) -> int:
     args = ap.parse_args(argv)
 
     out = WEB / "data"
-    subprocess.run(
-        [sys.executable, str(REPO_ROOT / "scripts" / "export_stream_feed.py"),
-         "--records", str(FIXTURE), "--out-dir", str(out)],
-        check=True,
-    )
+    # EXAMPLE DATA (preview only): two `close` records appended to a temp copy
+    # of the demo records (the committed fixture is schema-checked and counted),
+    # so the Board's closed and completed looks can be judged: the first
+    # project closed as completed, the held one closed without being carried out.
+    closes = [
+        {"id": "close-0001", "kind": "close", "role": "conductor", "ruling_id": "ruling-0001",
+         "outcome": "completed", "reason": "model-side reason, never shown", "cycle": 12693600,
+         "snapshot": "tick 12693600", "ts": "2026-01-01T00:00:00+00:00"},
+        {"id": "close-0002", "kind": "close", "role": "conductor", "ruling_id": "ruling-0005",
+         "outcome": "not_done", "reason": "model-side reason, never shown", "cycle": 12693600,
+         "snapshot": "tick 12693600", "ts": "2026-01-01T00:00:00+00:00"},
+    ]
+    with tempfile.TemporaryDirectory() as tmp:
+        records = Path(tmp) / "records.jsonl"
+        records.write_text(
+            FIXTURE.read_text(encoding="utf8").rstrip("\n") + "\n"
+            + "".join(json.dumps(c) + "\n" for c in closes), encoding="utf8")
+        subprocess.run(
+            [sys.executable, str(REPO_ROOT / "scripts" / "export_stream_feed.py"),
+             "--records", str(records), "--out-dir", str(out)],
+            check=True,
+        )
 
     now = time.time()
     if args.idle:
