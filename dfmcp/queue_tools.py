@@ -652,7 +652,8 @@ _PASS_SCHEMA = {
 _RULE_DESCRIPTION = (
     "Rule on one pending proposal: accept, reject or defer. Only the roster's "
     "sole writer may call this (enforced at load time in dfmcp.roles and again "
-    "at write time in dfqueue.schema). role/id/ts/cycle/snapshot are stamped "
+    "at write time in dfqueue.schema). An accept may carry an optional urgency "
+    "for the project it opens. role/id/ts/cycle/snapshot are stamped "
     "by the server; do not pass them."
 )
 _RULE_SCHEMA = {
@@ -670,6 +671,15 @@ _RULE_SCHEMA = {
             "type": "string",
             "description": (
                 "The only reasoning field ever published to the public feed. Coordinate-free."
+            ),
+        },
+        "urgency": {
+            "type": "string",
+            "enum": list(schema.URGENCIES),
+            "description": (
+                "Optional, accept only (refused on reject or defer): the urgency of the "
+                "project this accept opens. high (lives or the fort at risk), elevated "
+                "(blocks other work or a need running short), normal (the default)."
             ),
         },
     },
@@ -1241,7 +1251,7 @@ _PROPOSE_FIELDS = {
     "step", "phases", "project_id", "after_step", "public_title", "urgency",
 }
 _PASS_FIELDS = {"reason"}
-_RULE_FIELDS = {"proposal_id", "decision", "reason", "public_rationale"}
+_RULE_FIELDS = {"proposal_id", "decision", "reason", "public_rationale", "urgency"}
 _PENDING_FIELDS = {"limit"}
 _PENDING_BRIEF_FIELDS = {"limit"}
 _ASK_FIELDS = {"question", "proposal_id"}

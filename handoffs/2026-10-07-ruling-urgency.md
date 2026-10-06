@@ -42,4 +42,30 @@ memory. Full ambient `python -m pytest` and `dfmcp/tests` in
 
 ## Result
 
-(executor fills this in)
+(executor filled in 2026-10-07; branch worktree-agent-a88fcce543cf17b94)
+
+Done, offline:
+- `dfqueue/schema.py`: ruling kind gains optional `urgency`; validated against
+  `URGENCIES`, and refused unless `decision` is accept (write-time).
+- `dfmcp/queue_tools.py`: `queue.rule` takes `urgency` (schema enum, field
+  whitelist); the tool description says an accept may carry one.
+- `dfmcp/executor_run.py` `open_project`: ruling urgency, else proposal
+  `preview.urgency`, else normal. `apply_followup` untouched. Description in
+  `dfmcp/executor_tools.py` updated.
+- `conductor/briefing.py`: one clause, "On an accept, give an urgency when it is
+  not normal.", added to both ask forms immediately before the closing
+  "Expected about N calls." (an existing test pins the ask ending in "calls.").
+- Tests: schema (valid, bad value, reject/defer refused), queue_tools
+  (accept stores, reject/defer refused, bad value refused), executor_run
+  (ruling over proposal over normal).
+- Test results: ambient `python -m pytest --ignore=dfmcp/tests` 2352 passed
+  (lupa installed); `.venv-dfmcp` `dfmcp/tests` 926 passed.
+
+For the orchestrator, after stage 2E (agents/overseer/ not touched):
+- Charter line: "When you accept a proposal, set `urgency` on `queue.rule` if
+  the project is not normal: high for lives or the fort at risk, elevated when
+  it blocks other work or a need is running short; omit it for normal. Never
+  pass urgency on a reject or defer."
+- `agents/overseer/tools.yaml` `queue.rule` note: append "Optional `urgency`
+  (normal/elevated/high), accept only; it sets the opened project's urgency,
+  overriding the proposal's." The live tool description already carries it.
