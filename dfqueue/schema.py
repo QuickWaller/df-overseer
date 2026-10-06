@@ -389,7 +389,8 @@ KIND_FIELDS: dict[str, tuple[str, ...]] = {
         "public_title",
     ),
     PASS: ("reason",),
-    RULING: ("decision", "proposal_id", "reason", "public_rationale"),
+    #: `urgency` (optional, accept only) added handoffs/2026-10-07-ruling-urgency.md.
+    RULING: ("decision", "proposal_id", "reason", "public_rationale", "urgency"),
     #: `step_id` added handoffs/2026-09-28-dfqueue-project-step-schema.md:
     #: which step of `from_ruling`'s project this execution is for. Optional
     #: -- a `ruling` whose project has no real steps (see `normalize_project`)
@@ -993,6 +994,16 @@ def _validate_ruling_fields(record: dict, errors: list[str]) -> None:
 
     _validate_text_field(record, "reason", errors)
     _validate_text_field(record, "public_rationale", errors)
+
+    if "urgency" in record:
+        if record["urgency"] not in URGENCIES:
+            errors.append(
+                f"record.urgency: {record['urgency']!r} is not in {URGENCIES}"
+            )
+        elif record.get("decision") != ACCEPT:
+            errors.append(
+                "record.urgency: only an accept ruling sets a project's urgency"
+            )
 
 
 def _validate_handle_list(value, errors: list[str], prefix: str) -> None:
