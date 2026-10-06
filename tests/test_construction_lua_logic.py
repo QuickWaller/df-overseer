@@ -804,6 +804,7 @@ def test_the_conductors_verdict_reads_the_real_mine_vein_output(w):
         w.set_tile(xy[0], xy[1], 0, "WALL")
         w.set_vein(xy[0], xy[1], 0, "ore_or_gem", "HEMATITE")
     w.queue_quickfort("  Tiles designated for digging: 1\n", res=0)
+    w.queue_quickfort("  Tiles designated for digging: 1\n", res=0)
     dry = w.mine_vein("site-1", "true")
     assert ad.judge(site_spec, dry, dry=True).ok
     # the same output is not a real run: the echo must match the call
@@ -841,3 +842,71 @@ def test_the_conductors_verdict_refuses_an_unclassifiable_or_held_ring_tile(w):
     assert held["held"] and ad.judge(site_spec, held, dry=True).kind == "refused"
     # a script error object is a refusal with its message
     assert ad.judge(site_spec, w2.mine_vein("site-9", "true"), dry=True).kind == "refused"
+
+
+def test_a_sites_own_reservation_does_not_hold_its_own_ring_ore(w):
+    _site_blueprint_module(w)
+    w.set_ring("site-1", [(0, 0, 0), (2, 2, 0)])
+    for xy in ((0, 0), (2, 2)):
+        w.set_tile(xy[0], xy[1], 0, "WALL")
+        w.set_vein(xy[0], xy[1], 0, "ore_or_gem", "HEMATITE")
+    # res-1 was carved into site-1 (its own); no RES_ID is passed
+    w.set_reserved([
+        {"x": 0, "y": 0, "z": 0, "handle": "res-1", "purpose": "planned bedroom", "site_handle": "site-1"},
+        {"x": 2, "y": 2, "z": 0, "handle": "res-1", "purpose": "planned bedroom", "site_handle": "site-1"},
+    ])
+    w.queue_quickfort("  Tiles designated for digging: 1\n", res=0)
+    w.queue_quickfort("  Tiles designated for digging: 1\n", res=0)
+    res = w.mine_vein("site-1", "true")
+    assert res["held"] == [] and res["designated_tiles"] == 2
+    assert res["nothing_designated"] is False and res["blocked_reason"] == "\x00"
+
+
+def test_ore_inside_a_different_reservation_is_still_held_for_a_site(w):
+    ad, site_spec, _ = _mine_specs()
+    _site_blueprint_module(w)
+    w.set_ring("site-1", [(0, 0, 0), (2, 2, 0)])
+    for xy in ((0, 0), (2, 2)):
+        w.set_tile(xy[0], xy[1], 0, "WALL")
+        w.set_vein(xy[0], xy[1], 0, "ore_or_gem", "HEMATITE")
+    w.set_reserved([
+        {"x": 0, "y": 0, "z": 0, "handle": "res-1", "purpose": "planned bedroom", "site_handle": "site-1"},
+        {"x": 2, "y": 2, "z": 0, "handle": "res-2", "purpose": "planned office", "site_handle": "site-2"},
+    ])
+    w.queue_quickfort("  Tiles designated for digging: 1\n", res=0)
+    res = w.mine_vein("site-1", "true")
+    assert len(res["held"]) == 1 and "res-2" in res["held"][0]
+    assert res["designated_tiles"] == 1 and res["nothing_designated"] is False
+    assert "res-2" in res["blocked_reason"]
+    verdict = ad.judge(site_spec, res, dry=True)
+    assert verdict.kind == "refused" and "res-2" in verdict.reason
+
+
+def test_a_zone_id_has_no_own_reservation_so_its_ring_ore_is_still_held(w):
+    w.add_zone(13)
+    w.set_ring(13, [(1, 1, 0)])
+    w.set_tile(1, 1, 0, "WALL")
+    w.set_vein(1, 1, 0, "ore_or_gem", "HEMATITE")
+    w.set_reserved([{"x": 1, "y": 1, "z": 0, "handle": "res-1", "purpose": "planned bedroom", "site_handle": "site-1"}])
+    assert len(w.mine_vein(13, "true")["held"]) == 1
+
+
+def test_nothing_designated_and_nothing_applied_on_a_real_refusal(w):
+    ad, site_spec, _ = _mine_specs()
+    _site_blueprint_module(w)
+    w.set_ring("site-1", [(0, 0, 0)])
+    w.set_tile(0, 0, 0, "WALL")
+    w.set_vein(0, 0, 0, "unknown", None, "no matching vein event")
+    res = w.mine_vein("site-1", "false")
+    assert res["designated_tiles"] == 0 and res["nothing_designated"] is True
+    assert "unknown" in res["blocked_reason"]
+    assert ad.judge(site_spec, res, dry=False).kind == "refused"
+    assert ad.nothing_applied(site_spec, res) is True
+    # some tiles designated alongside a refusal: cannot claim nothing changed
+    w.set_ring("site-1", [(0, 0, 0), (2, 2, 0)])
+    w.set_tile(2, 2, 0, "WALL")
+    w.set_vein(2, 2, 0, "ore_or_gem", "HEMATITE")
+    w.queue_quickfort("  Tiles designated for digging: 1\n", res=0)
+    part = w.mine_vein("site-1", "false")
+    assert part["designated_tiles"] == 1
+    assert ad.nothing_applied(site_spec, part) is False

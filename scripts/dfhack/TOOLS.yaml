@@ -5012,13 +5012,15 @@ df-overseer-construction.lua:
       summary: "Designates digging for every ore or gem vein tile found on a zone's boundary ring."
       # Per-tool execution data (docs/CONDUCTOR-EXECUTION.md 2.3, handoffs/2026-10-07-route-ore-mining.md).
       # The Lua return has no `ok`: `refused` and `held` are lists of strings, empty when clean, so a
-      # non-empty one refuses (an unclassifiable ring tile, or a tile held by a reservation, would leave
-      # ore behind). nothing_applied is left undeclared on purpose: a real run designates the clean
-      # tiles even when others are refused, so a refusal cannot prove nothing changed.
+      # non-empty one refuses (an unclassifiable ring tile, a failed designation, or a tile held by
+      # another reservation would leave ore behind). blocked_reason joins them. nothing_applied reads
+      # the count of tiles designated: a real run that designated nothing is a retryable failure, one
+      # that designated some is Uncertain (a partial change cannot be called a clean refusal).
       execution:
-        verdict: {refused_if_true: [refused, held]}
+        verdict: {refused_if_true: [refused, held], reason: blocked_reason}
         dry_run_echo: dry_run
-        preview_fields: [ore_tiles_found, already_open, refused, held]
+        nothing_applied: {all_zero: [designated_tiles]}
+        preview_fields: [ore_tiles_found, designated_tiles, already_open, refused, held]
       guide:
         arguments:
           - name: "ZONE_ID"
@@ -5091,13 +5093,15 @@ df-overseer-construction.lua:
       summary: "Designates digging for every ore or gem vein tile on the walls ringing a carved room, named by its site handle."
       # Per-tool execution data (docs/CONDUCTOR-EXECUTION.md 2.3, handoffs/2026-10-07-route-ore-mining.md).
       # The Lua return has no `ok`: `refused` and `held` are lists of strings, empty when clean, so a
-      # non-empty one refuses (an unclassifiable ring tile, or a tile held by a reservation, would leave
-      # ore behind). nothing_applied is left undeclared on purpose: a real run designates the clean
-      # tiles even when others are refused, so a refusal cannot prove nothing changed.
+      # non-empty one refuses (an unclassifiable ring tile, a failed designation, or a tile held by
+      # another reservation would leave ore behind). blocked_reason joins them. nothing_applied reads
+      # the count of tiles designated: a real run that designated nothing is a retryable failure, one
+      # that designated some is Uncertain (a partial change cannot be called a clean refusal).
       execution:
-        verdict: {refused_if_true: [refused, held]}
+        verdict: {refused_if_true: [refused, held], reason: blocked_reason}
         dry_run_echo: dry_run
-        preview_fields: [ore_tiles_found, already_open, refused, held]
+        nothing_applied: {all_zero: [designated_tiles]}
+        preview_fields: [ore_tiles_found, designated_tiles, already_open, refused, held]
         handle_args: [site_id]
       guide:
         arguments:

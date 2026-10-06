@@ -86,6 +86,11 @@ class FakeWorld:
         out = {"zone_id": args["site_id"], "boundary_ring_tiles": 12, "ore_tiles_found": 2, "already_open": [],
                "refused": list(getattr(self, "mine_refused", [])), "held": list(getattr(self, "mine_held", [])),
                "dry_run": dry, "results": [{"ring_position": 1, "ok": True}]}
+        out["designated_tiles"] = 0 if getattr(self, "mine_none_real", False) and not dry else 2
+        out["nothing_designated"] = out["designated_tiles"] == 0
+        if getattr(self, "mine_none_real", False) and not dry:
+            out["refused"] = ["ring tile 1: could not confirm its shape"]
+            out["blocked_reason"] = "ring tile 1: could not confirm its shape"
         if not dry:
             self.mined.append(args["site_id"])
         return out
@@ -948,3 +953,14 @@ async def test_a_mining_step_may_not_carry_an_override(rig):
     bad["args"]["override"] = "because"
     with pytest.raises(Exception):
         await rig.propose(bad, type="dig_order")
+
+
+async def test_a_real_mining_run_that_designated_nothing_is_a_retryable_failure(rig):
+    p = await rig.propose(mine_step(), type="dig_order")
+    r = rig.rule(p["id"])
+    _t, out = await rig.tool("queue.open_project", ruling_id=r["id"])
+    pid = out["project_id"]
+    rig.world.mine_none_real = True
+    res = await rig.run(pid, f"{pid}/s1")
+    assert res["class"] == "failed" and res["retryable"] is True
+    assert "could not confirm" in res["detail"]

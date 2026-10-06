@@ -339,10 +339,10 @@ end
 -- exactly "check_tiles refused this one tile" -- either it belongs to an
 -- unrelated reservation, or it belongs to res_id's own reservation but this
 -- call's kind is not one it allows and no override was given.
-local function apply_reservation_guard(candidates, res_id, kind, override)
+local function apply_reservation_guard(candidates, res_id, kind, override, holding)
   local held, kept = {}, {}
   for _, c in ipairs(candidates) do
-    local conflict = reservations_mod.check_tiles({{x = c.x, y = c.y, z = c.z}}, nil, res_id, kind, override)
+    local conflict = reservations_mod.check_tiles({{x = c.x, y = c.y, z = c.z}}, holding, res_id, kind, override)
     if conflict then
       held[#held + 1] = {ring_position = c.ring_position, reason = conflict.message}
     else
@@ -382,6 +382,21 @@ function mine_vein(zone_id, dry_run, res_id, override)
     b, err = hooks.find_zone(zone_id)
   end
   if not b then return {error = err} end
+  -- A site's own reservation (handoffs/2026-10-07-route-ore-mining.md): ore on
+  -- a room's own walls is that room's work, so with no RES_ID given the site
+  -- HOLDS the reservation that was carved into it (reservations.mark_in_use
+  -- records site_handle). Tiles in any OTHER reservation are still held. An
+  -- explicit RES_ID keeps its old, kind-gated meaning.
+  local own_reservation = nil
+  if res_id == nil and tostring(zone_id or ""):match("^site%-%d+$")
+      and type(reservations_mod.list_raw) == 'function' then
+    for _, rec in ipairs(reservations_mod.list_raw()) do
+      if rec.site_handle == zone_id then
+        own_reservation = rec.handle
+        break
+      end
+    end
+  end
   local ring = hooks.ring_tiles(b)
   if #ring > MAX_RING_TILES then
     return {error = "zone " .. b.id .. "'s boundary ring is " .. #ring
@@ -418,7 +433,7 @@ function mine_vein(zone_id, dry_run, res_id, override)
   -- run before digging any candidate: this tool already reports a `held`
   -- bucket separate from `refused`, so a reservation conflict holds just
   -- that ring tile rather than refusing the whole call.
-  local reservation_held, kept_candidates = apply_reservation_guard(candidates, res_id, "mine_vein", override)
+  local reservation_held, kept_candidates = apply_reservation_guard(candidates, res_id, "mine_vein", override, own_reservation)
   local held = {}
   for _, h in ipairs(reservation_held) do
     held[#held + 1] = string.format("ring tile %d: held (reservation) -- %s", h.ring_position, h.reason)
@@ -461,6 +476,22 @@ function mine_vein(zone_id, dry_run, res_id, override)
     end
   end
 
+  -- Summary for the conductor's verdict (handoffs/2026-10-07-route-ore-mining.md):
+  -- a failed designation is a refusal too, and `designated_tiles` counts the
+  -- tiles designated (or, on a dry run, that would be).
+  local designated = 0
+  for _, r in ipairs(results) do
+    if r.ok then
+      designated = designated + 1
+    else
+      refused[#refused + 1] = string.format("ring tile %d: designation failed (%s)",
+        r.ring_position, tostring(r.error ~= NULL and r.error or "no reason given"))
+    end
+  end
+  local reasons = {}
+  for _, t in ipairs(refused) do reasons[#reasons + 1] = t end
+  for _, t in ipairs(held) do reasons[#reasons + 1] = t end
+
   return {
     zone_id = b.id,
     boundary_ring_tiles = #ring,
@@ -470,6 +501,9 @@ function mine_vein(zone_id, dry_run, res_id, override)
     held = held,
     dry_run = dry,
     results = results,
+    designated_tiles = designated,
+    nothing_designated = designated == 0,
+    blocked_reason = nn(#reasons > 0 and table.concat(reasons, "; ") or nil),
   }
 end
 
