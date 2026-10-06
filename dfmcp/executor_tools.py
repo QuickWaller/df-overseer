@@ -323,6 +323,11 @@ def _cutover_sync(arguments: Mapping[str, Any], db_path: Any) -> Tuple[str, dict
 # ---------------------------------------------------------------- execution_state
 
 
+def _frozen_types() -> list:
+    """Types of every frozen group."""
+    return [t for g in routing.groups() for t in routing.types(g) if routing.is_frozen(t)]
+
+
 def _execution_state_sync(arguments: Mapping[str, Any], db_path: Any) -> Tuple[str, dict]:
     since = arguments.get("since")
     if since is not None and (not isinstance(since, str) or not since.startswith("observation-")):
@@ -330,6 +335,8 @@ def _execution_state_sync(arguments: Mapping[str, Any], db_path: Any) -> Tuple[s
     with _store_errors(QUEUE_EXECUTION_STATE):
         opens = store.open_projects(db_path)
         ready: list = []
+        issued: list = []
+        plans: dict = {}
         for p in opens:
             if p.get("group") is None or p["group"] not in routing.routed_groups():
                 continue
@@ -339,7 +346,20 @@ def _execution_state_sync(arguments: Mapping[str, Any], db_path: Any) -> Tuple[s
                     seen.append(row["step_id"])
             for sid in seen:
                 if not store.check_step_runnable(db_path, p["project_id"], sid, latched=False):
-                    ready.append({"project_id": p["project_id"], "step_id": sid, "urgency": p["urgency"]})
+                    if p["project_id"] not in plans:
+                        plans[p["project_id"]] = {
+                            st.get("id"): st for st in store.current_plan_steps(db_path, p["project_id"])
+                        }
+                    step = plans[p["project_id"]].get(sid) or {}
+                    args = step.get("args")
+                    ready.append({
+                        "project_id": p["project_id"], "step_id": sid, "urgency": p["urgency"],
+                        "tool": step.get("tool"), "args": dict(args) if isinstance(args, Mapping) else {},
+                    })
+            issued.extend(
+                {"project_id": p["project_id"], "step_id": sid}
+                for sid in store.issued_step_ids(db_path, p["project_id"])
+            )
         records = store.load(db_path)
         obs = [r for r in records if r.get("kind") == "observation" and r.get("done") is True]
         latest = max((r["id"] for r in records if r.get("kind") == "observation"),
@@ -350,18 +370,30 @@ def _execution_state_sync(arguments: Mapping[str, Any], db_path: Any) -> Tuple[s
         ]
         out = {
             "open_projects": [
-                {k: p[k] for k in ("project_id", "group", "urgency", "status", "steps_open", "phases_remaining")}
+                {k: p[k] for k in ("project_id", "group", "role", "urgency", "status", "steps_open",
+                                   "phases_remaining")}
                 | {"summary": _clip(p.get("summary"))}
                 for p in opens
             ],
             "ready_steps": ready,
+            "issued_steps": issued,
+            "to_open": [
+                {"ruling_id": r["ruling_id"], "role": r["role"]} for r in store.openable_rulings(db_path)
+            ],
+            "to_apply": [{"proposal_id": f["proposal_id"]} for f in store.applicable_followups(db_path)],
+            "routing": {
+                "routed_types": routing.routed_types(),
+                "unrouted_types": routing.unrouted_types(),
+                "frozen_types": _frozen_types(),
+            },
             "unresolved_runs": store.unresolved_step_runs(db_path),
             "awaiting_cleanup": store.projects_awaiting_cleanup(db_path),
             "done_since": done_since,
             "latest_observation_id": latest,
         }
     return (
-        f"{len(opens)} open, {len(ready)} ready, {len(out['unresolved_runs'])} unresolved, "
+        f"{len(opens)} open, {len(ready)} ready, {len(issued)} issued, {len(out['to_open'])} to open, "
+        f"{len(out['to_apply'])} to apply, {len(out['unresolved_runs'])} unresolved, "
         f"{len(out['awaiting_cleanup'])} to clean up, {len(done_since)} newly done"
     ), out
 

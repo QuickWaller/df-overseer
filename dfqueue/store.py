@@ -2680,6 +2680,84 @@ def open_projects(path: str | Path) -> list[dict]:
     return out
 
 
+def openable_rulings(path: str | Path) -> list[dict]:
+    """Read-only: the accepted rulings the conductor should open a project for
+    (`open_project_from_ruling` would accept them now): an accepting ruling of
+    a routed, non-follow-up proposal that has a step, above its group's
+    cutover (none set means none), not closed, with no project yet. Oldest
+    first; `{ruling_id, proposal_id, role}` where `role` is the proposer."""
+    out = []
+    with _connect(path) as conn:
+        for row in conn.execute(
+            "SELECT id, payload FROM records WHERE kind = ? AND "
+            "json_extract(payload, '$.decision') = ? ORDER BY rowid ASC", (RULING, ACCEPT),
+        ).fetchall():
+            ruling = json.loads(row["payload"])
+            proposal = _get(conn, ruling.get("proposal_id"), PROPOSAL)
+            if proposal is None or proposal.get("project_id") is not None or "step" not in proposal:
+                continue
+            ptype = proposal.get("type")
+            group = routing.group_of(ptype)
+            if group is None or not routing.is_routed(ptype):
+                continue
+            cut = _effective_cutover_num(conn, group)
+            if cut is None or _num(row["id"]) <= cut:
+                continue
+            if _is_closed(conn, "ruling_id", row["id"]) or _find_project_for_ruling(conn, row["id"]):
+                continue
+            out.append({"ruling_id": row["id"], "proposal_id": proposal["id"], "role": proposal.get("role")})
+    return out
+
+
+def applicable_followups(path: str | Path) -> list[dict]:
+    """Read-only: the follow-ups `apply_followup` would accept now: a proposal
+    naming an existing, open, not abandoned project, accepted or covered, not
+    closed, with a step, whose `after_step` is in the plan and which no step of
+    the plan carries yet. Oldest first; `{proposal_id, project_id}`."""
+    out = []
+    with _connect(path) as conn:
+        for row in conn.execute(
+            "SELECT id, payload FROM records WHERE kind = ? AND "
+            "json_extract(payload, '$.project_id') IS NOT NULL ORDER BY rowid ASC", (PROPOSAL,),
+        ).fetchall():
+            proposal = json.loads(row["payload"])
+            project = _get(conn, proposal.get("project_id"), PROJECT)
+            if project is None or "step" not in proposal:
+                continue
+            if proposal.get("covered_by") is None and _accepting_ruling(conn, row["id"]) is None:
+                continue
+            if _is_closed(conn, "project_id", project["id"]) or _is_abandoned(conn, project["id"]):
+                continue
+            if _is_closed(conn, "proposal_id", row["id"]):
+                continue
+            steps, _version = _current_steps_and_version(conn, project)
+            if proposal.get("after_step") not in _step_ids_list(steps):
+                continue
+            if any(st.get("proposal_id") == row["id"] for st in steps):
+                continue
+            out.append({"proposal_id": row["id"], "project_id": project["id"]})
+    return out
+
+
+def current_plan_steps(path: str | Path, project_id: str) -> list[dict]:
+    """Read-only: the project's current plan (its `project` record's steps, or
+    the latest `amend`'s). `[]` for an unknown project."""
+    with _connect(path) as conn:
+        project = _get(conn, project_id, PROJECT)
+        return list(_current_steps_and_version(conn, project)[0]) if project else []
+
+
+def issued_step_ids(path: str | Path, project_id: str) -> list[str]:
+    """Read-only: the project's step ids with at least one target in `issued`
+    (the executor's call went through and completion is not yet observed),
+    in first-seen order."""
+    seen: list[str] = []
+    for row in target_states(path, project_id):
+        if row["state"] == ISSUED and row["step_id"] not in seen:
+            seen.append(row["step_id"])
+    return seen
+
+
 # ---------------------------------------------------------------------------
 # Voiding a prediction -- admin-only, by code, never an agent tool.
 #
