@@ -85,3 +85,81 @@ What changes:
    has latched more than `limit` times within `window_ticks` the cycle skips the
    sequence, alerts the human and leaves the latch standing.
 6. Overseer charter: the verdict section also covers a tripwire.
+
+### Result (executor, 2026-10-06)
+
+Built offline; no deploy, no live call.
+
+**New tripwire sequence** (`conductor/cycle.py` `_tripwire_cycle`):
+
+1. Repeat check first. The latch is recorded as an episode keyed by
+   (reason, latch tick) in `tripwire_state.json` beside the cursors, so a
+   standing latch seen every cycle counts once. More than
+   `tripwire_repeat.limit` (3) episodes of the same cause within
+   `window_ticks` (4800 game ticks) means: no quicksave, no run, a human alert
+   (the `pause_watch._alert` sink and the status block's standing alert), the
+   latch and the pause left standing, and the same refusal on every later cycle
+   for that latch. An unreadable counter file is treated the same way.
+2. `fort.quicksave`, then the owners from `tripwire_owners` in order (thirst and
+   hunger: quartermaster, with a `tripwire` wake and its normal briefing), then
+   the Overseer with the ruling briefing over a fresh `queue.pending_brief`
+   (so it sees what the owner filed) and a wake detail telling it to rule and
+   then give its `pause.verdict`. `hostile_reachable`, any unlisted reason and
+   an unknown cause: the Overseer alone. A failed owner run is logged and does
+   not stop the Overseer. The `pause.verdict` baseline is read just before the
+   Overseer runs.
+3. Verdict through `finish_after_overseer` (reused; it gained an optional
+   `what` argument so alerts say "tripwire thirst_critical", default unchanged).
+   `resume: true`, not held: `clock.clear` first (resume refuses under a
+   latch), then one `clock.resume` with the tick verified, an unmoved tick
+   re-pauses and alerts. `resume: true` while held: the latch is cleared, the
+   fort stays paused (as before). No verdict, `false`, a `queue.escalate`, or an
+   unclean or timed-out run: no clear, no resume, latch stands, alert. A latch
+   with no verdict is retried (owner and Overseer again) on the next cycle, as
+   an escalated latch was before; only a re-latch counts toward the limit.
+
+Dry run plans the sequence (`would_wake`) and writes nothing.
+
+**Hysteresis in the in-game watcher: none.** `df-overseer-clock.lua`: while a
+latch file stands it re-asserts pause and keeps the first reason; once
+`clock.clear` removes it the next check re-derives from scratch, so a dwarf
+still past `thirst_critical` or `hunger_critical` re-latches on the next
+interval with a new latch tick. There is no cooldown or recovery band (its own
+header says slow-tier clearing is likewise immediate). The repeat counter is
+therefore the only brake. Not changed (`scripts/dfhack/` is read only here).
+
+**Files:** `conductor/cycle.py`, `conductor/tripwire.py` (new),
+`conductor/policy.py`, `conductor/policy.yaml` (`tripwire_owners`,
+`tripwire_repeat`), `conductor/pause_watch.py` (`what` argument only),
+`agents/overseer/role.md` (verdict paragraph, and its old "never over a
+tripwire" clause corrected), tests: new `conductor/tests/test_tripwire.py`
+(22), old tripwire tests in `test_cycle.py`, `test_hold.py`,
+`test_pause_watch.py`, `test_report.py` updated to the new contract (a clean
+run no longer resumes). `FakeFort` in `test_pause_watch.py` gained `clock.clear`.
+
+**Tests:** `conductor/tests` 393 passed. Full ambient `python -m pytest` with
+lupa: 3023 passed, 3 skipped (the known date-sensitive wiki test passed on
+this date). `dfmcp/tests` in `.venv-dfmcp`: 828 passed.
+
+**Deploy targets:** vm106-conductor (the `conductor/` package: `cycle.py`,
+`tripwire.py`, `policy.py`, `policy.yaml`, `pause_watch.py`; restart the
+transient `--once` unit, the service is disabled) and vm106-agents (the
+Overseer charter, `agents/overseer/role.md`, through the usual soul sync).
+Nothing for vm103: `pause.verdict` and `pause.verdict_read` are already live.
+Confirm both tools still answer before the check.
+
+**Live check (for the orchestrator, not run):** on the paused fort with the
+conductor held off the live loop:
+1. `clock.status` shows no latch, `armed` true; note `abs_tick`.
+2. Force one test latch by lowering `thirst_critical` through
+   `clock.arm` so a real citizen is past it (no armok power), let the watcher
+   latch and pause; `clock.status` shows `tripwire.reason = thirst_critical`.
+3. Run one `--once` cycle with no hold. Expect: quicksave, a Quartermaster run,
+   an Overseer run (ruling briefing), and, if the Overseer files no verdict,
+   the fort stays paused with the latch standing and a CRITICAL "HUMAN ALERT".
+4. Run another `--once`: the Overseer should give `pause.verdict`; with
+   `resume: true` expect `clock.clear` then `clock.resume`, `abs_tick`
+   advancing in the cycle's `pause_watch.actions`, `resumed: true`.
+5. Repeat the latch three more times inside 4800 ticks: the fourth cycle must
+   run nothing and alert on the repeat.
+6. Finally re-arm with the normal thresholds and pause the fort again.
