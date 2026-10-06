@@ -198,8 +198,8 @@ def test_zone_ranked_rects_and_water_bodies_call_filter_reserved():
     assert "reservations_mod.filter_reserved(components, res_id, function(c)" in water_fn
     assert "t.x = t[1], t[2], z" not in water_fn  # sanity: not asserting a typo'd conversion
     assert "tiles[#tiles + 1] = {x = t[1], y = t[2], z = z}" in water_fn
-    assert "ranked_water_bodies(level, near, radius_tiles, nil)" in src
-    assert "ranked_water_bodies(level, near, radius_tiles, res_id)" in src
+    assert "ranked_water_bodies(k, level, near, radius_tiles, nil)" in src
+    assert "ranked_water_bodies(k, level, near, radius_tiles, res_id)" in src
 
 
 def test_farm_ranked_candidates_calls_filter_reserved():
