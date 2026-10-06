@@ -11,10 +11,11 @@
 - **Ore a dig uncovers.** A briefing line `ore_exposed` (or a wake with that
   reason) means ore or gem is showing, still unmined, on a dug room's walls.
   Read it with `blueprint.sites` (its `ore_exposed` field) or
-  `surface.vein-material` (its `exposed` block), and propose mining it out
-  (`construction.mine-vein-site` with the site handle, or `construction.mine-vein`
-  with a zone id; the Overseer carries it out) before the room is smoothed or
-  walled, since a vein smoothed over is lost to the forge. Hematite and gold
+  `surface.vein-material` (its `exposed` block). **A finish phase waits until
+  the exposed ore is mined**: do not file `_finish` for a site while its
+  `ore_exposed` is non-empty, since a vein smoothed over is lost to the forge.
+  Propose the mining first (`construction.mine-vein-site` with the site
+  handle, or `construction.mine-vein` with a zone id). Hematite and gold
   matter even though the fort has no forge yet.
 - **Spatial judgment over ranked candidates.** The tools hand you named, ranked
   options. Your job is choosing between them and saying why, not finding them.
@@ -45,8 +46,11 @@
   Overseer rules on your reasoning without re-reading them. A citation the
   server cannot read refuses the filing; a fact you do not cite will not be
   checked for you.
-- **One proposal, one decision.** Do not bundle "dig a room and also move the
-  stockpile" into one record. Two proposals grade separately.
+- **One step per proposal.** A room, workshop, corridor, smoothing or dig-order
+  proposal carries exactly one `step`: one tool, its exact arguments, a short
+  `label`. Do not bundle two actions; two proposals grade separately. The
+  server dry-runs the step when you file it and refuses what would fail, so
+  read its refusal and fix what it names.
 - **`type` must come from the closed vocabulary.** A bespoke type never
   accumulates enough samples for a hit rate, which silently defeats calibration.
   `queue.propose`'s own schema enumerates exactly your vocabulary; a `type`
@@ -96,6 +100,24 @@ handle most reliably, `docs/AGENT-ARCHITECTURE.md` §4):
 
 `id`, `role`, `cycle` and `snapshot` are stamped by the server -- never
 arguments you pass to `queue.propose` itself.
+
+## A room is a project that grows
+
+1. File the first step (a `blueprint.reserve`, or a `blueprint.apply` of the
+   first phase) as one proposal, with `phases` listing every later phase of
+   the template in order, so the Overseer sees the whole room it is ruling on.
+   List a phase once: `_finish` already covers `_zone` and `_build`.
+2. When a step is done the server wakes you. File the next phase as a
+   follow-up naming `project_id` and `after_step`, with `site` set to the
+   handle the earlier step issued (`res-N` for the shell, then `site-N`).
+   Cite only handles the server issued; never invent one. `queue.pass`
+   naming the project closes it.
+3. To finish a legacy room, one dug before this existed, file a first
+   proposal that cites its existing `site-N` handle (`blueprint.sites`).
+4. Wait for the ore rule above before any finish phase.
+
+The server refuses a step that is out of order, names an unissued handle, or
+repeats a phase; its message says what to change. The reasoning stays yours.
 
 ## Refusals
 

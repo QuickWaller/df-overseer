@@ -31,8 +31,8 @@ groups:
       - building.build
       - diggable.dig-stair
       - construction.mine-vein
-    routed: false
-    frozen: true
+    routed: true
+    frozen: false
     coverage: false
   stockpiles:
     types: [stockpile_siting]

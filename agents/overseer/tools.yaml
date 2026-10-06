@@ -66,15 +66,6 @@ read:
       item 3 with mason/mechanic/carpenter and a building_material report shared
       by all five kinds. Deployed to VM 103 2026-09-17. It covers five kinds
       only; building.find is the generic one.
-  - id: "zone.find"
-    status: exists
-    note: >-
-      Added handoffs/2026-09-17-water-and-industry-tools.md item 1 as a water-
-      body finder, deployed 2026-09-17. Generalised by handoffs/2026-09-21-zone-
-      tool-generalise.md to any of the install's 18 zone kinds (WaterSource
-      keeps its own finder), deployed with the new script 2026-09-21; not called
-      after that deploy, only zone.list-kinds and zone.check-owner were. Read
-      this before zone.place, same pairing as farm.find/workshop.find above.
   - id: "trees.find"
     status: exists
     note: >-
@@ -220,16 +211,6 @@ read:
       Same handoff. Records a proposed gotcha, or an outcome on an existing one.
       It changes no fort state, only the gotcha store. Deployed 2026-09-21; the
       write path was tested only against a temporary store, never the live one.
-  - id: "building.list-kinds"
-    status: exists
-    note: >-
-      Added handoffs/2026-09-21-building-tool-lua.md. Every building kind the
-      game can place, from quickfort's own table. Deployed 2026-09-21.
-  - id: "building.find"
-    status: exists
-    note: >-
-      Same handoff. Ranked sites and what the kind needs, for any kind. Read-
-      only. Deployed 2026-09-21.
   - id: "labor.quota-status"
     status: exists
     note: >-
@@ -260,14 +241,6 @@ read:
       Office before two days were spent investigating why no order
       validated (nobles.verify alone never read required_office at all).
 
-  - id: "zone.list-kinds"
-    status: exists
-    note: >-
-      Added handoffs/2026-09-21-zone-tool-generalise.md. Every zone kind the game can place.
-  - id: "zone.check-owner"
-    status: exists
-    note: >-
-      Same handoff. Read-only: whether a zone kind can be given this owner (a unit or a position).
   - id: "zone.list"
     status: planned
     note: >-
@@ -329,17 +302,6 @@ read:
       known 5 hematite ring tiles before trusting it elsewhere. Read this
       before construction.mine-vein/construction.build below.
 
-  - id: "blueprint.plan"
-    status: planned
-    note: >-
-      Added handoffs/2026-09-24-blueprint-hands.md. What a template declares
-      (footprint, room rectangle, smooth-finish cells, phases). Reads a file.
-  - id: "blueprint.preview"
-    status: planned
-    note: >-
-      Same handoff. A dry run of one phase against a site. Read the soil rule
-      (`finish_plan`, `remedy`) and the order guard (`blocked`) before
-      ruling a proposal into an apply.
   - id: "blueprint.sites"
     status: planned
     note: Same handoff. Site handles a real apply has issued.
@@ -361,20 +323,6 @@ write:
     note: Resolves its own coordinate internally. Never pass one in.
   - id: "diggable.dig"
     status: exists
-  - id: "diggable.dig-stair"
-    status: exists
-    note: >-
-      Added handoffs/2026-09-17-dig-down-to-stone.md. Designates a
-      downstair/upstair pair to extend the walkable network down one level,
-      never one half without the other. No paired diggable.find-stair read here,
-      matching diggable.find/diggable.dig's own established pairing (the
-      Overseer acts on the Architect's discovery, it does not discover for
-      itself; dfmcp/tests/test_roles.py
-      test_the_overseer_can_act_but_cannot_discover), not the newer
-      farm/zone/trees/well read-before-write pattern. DRY_RUN defaults to true.
-      The dry-run path was live-verified 2026-09-17 and the real designation ran
-      2026-09-18, both halves read back (handoffs/2026-09-18-well-unblock.md);
-      the rollback-on-partial-failure branch is untested.
   - id: "landmarks.build"
     status: exists
   - id: "farm.build"
@@ -404,22 +352,6 @@ write:
       mason/mechanic/carpenter (handoffs/2026-09-17-water-and-industry-tools.md
       item 3) is untested live. It covers five kinds only; building.build is the
       generic one.
-  - id: "zone.place"
-    status: exists
-    note: >-
-      Added handoffs/2026-09-17-water-and-industry-tools.md item 1, generalised
-      by handoffs/2026-09-21-zone-tool-generalise.md to any of the install's 18
-      zone kinds with an optional OWNER. DRY_RUN defaults to true. Deployed
-      2026-09-21. Only dry runs have been run through this tool (an Office dry
-      run validated in quickfort); the real placement, the read-back and both
-      owner assignments have never been run.
-  - id: "zone.assign-owner"
-    status: planned
-    note: >-
-      Added handoffs/2026-09-24-zone-owner-assign.md. Gives an existing zone an
-      owner (place could only do it at creation), both link directions read
-      back. DRY_RUN defaults to true. Overseer only, it mutates. Offline build,
-      not deployed.
   - id: "zone.clear-owner"
     status: planned
     note: >-
@@ -515,6 +447,8 @@ write:
       design (it rules on proposals, it never writes one -- §3, "Specialists
       propose, the Overseer decides"). Refused (dfqueue.store) while an open
       fact-check (see queue.ask below) is on the proposal you name.
+      Optional `urgency` (normal/elevated/high), accept only; it sets the
+      opened project's urgency, overriding the proposal's.
   - id: "queue.ask"
     status: exists
     note: >-
@@ -550,12 +484,6 @@ write:
       that step's own per-target state, the state queue.project_status's
       counts and top_blocker are read from.
 
-  - id: "building.build"
-    status: exists
-    note: >-
-      Same handoff. Places any kind at a ranked site; dry run by default.
-      Deployed 2026-09-21 and dry-run only so far: the first real build of a
-      never-built kind needs the user's go-ahead.
 
   - id: "queue.escalate"
     status: exists
@@ -628,58 +556,9 @@ write:
     note: >-
       Same handoff. Removes a position's holder; dry run by default.
 
-  - id: "blueprint.apply"
-    status: planned
-    note: >-
-      Added handoffs/2026-09-24-blueprint-hands.md, the carving, smoothing and
-      furnishing verb the Architect proposes and only this role may run.
-      DRY_RUN defaults to true. Offline build: the real path has never run
-      anywhere; the first real apply needs its own go-ahead and the live check
-      in that handoff's Result (throwaway site, dry run first).
 
-  - id: "blueprint.release"
-    status: planned
-    note: >-
-      Added handoffs/2026-09-24-blueprint-access.md. Withdraws the dig
-      designations of a stalled site (blueprint.status dig.state stalled) via
-      quickfort undo; refuses a site that is not stalled. Mutating, so the
-      overseer only (dfmcp/roles.py rule 2). DRY_RUN defaults to true. Never
-      run live.
 
-  - id: "blueprint.reserve"
-    status: planned
-    note: >-
-      Added handoffs/2026-09-30-room-reservations.md. Holds a specific
-      planned room's footprint (never a district or region -- that is the
-      still-owed zoning design session, memory/zoning-design-session-owed.md)
-      so no designating tool can take it out from under a plan. Resolves the
-      footprint the same way apply resolves a new dig site, with the same
-      access gate, and refuses any overlap with an existing reservation or
-      carved site unless every overlapping tile is wall on both sides (a
-      shared wall between tiled rooms). DRY_RUN defaults to true. Mutating,
-      overseer only. Offline build, lupa-tested against a fake world only;
-      never run live.
-  - id: "blueprint.unreserve"
-    status: planned
-    note: >-
-      Same handoff. Releases a reservation outright; no automatic expiry, so
-      this is the only way one ends. A shared wall tile stays held by any
-      other reservation still covering it. DRY_RUN defaults to true.
-      Mutating, overseer only. Offline build, never run live.
 
-  - id: "construction.mine-vein"
-    status: planned
-    note: >-
-      Added handoffs/2026-09-28-ore-vein-recovery-and-construction-tool.md,
-      recovering the fort's known ore veins that got smoothed into walls
-      instead of mined (decisions/DECISIONS.md 2026-09-24). Designates a
-      real dig on each of a zone's own ring tiles that surface.vein-material
-      classifies confidently as ore/gem and that is still shaped WALL;
-      refuses (named why) anything it cannot classify confidently rather
-      than guessing. DRY_RUN defaults to true. Mutating, overseer only.
-      Offline build, lupa-tested against a fake world only; the real vein
-      decode this depends on has never run live -- HIGH RISK, verify
-      surface.vein-material against zone 13's real 5 hematite tiles first.
   - id: "construction.mine-vein-site"
     status: planned
     note: >-

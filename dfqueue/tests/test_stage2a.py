@@ -182,15 +182,16 @@ def test_every_mutating_tool_is_routed_on_the_overseer_the_conductor_or_retired(
 
 
 def test_a_routed_tool_must_have_left_the_overseer_allowlist(tmp_path, monkeypatch):
-    """Verify the verification: with the real file nothing is routed so the
-    check passes; with `rooms` routed it must see the tools still on the
-    Overseer's allowlist (they are, until the cutover deploy removes them)."""
+    """Stage 2E removed the rooms tools from the Overseer. With `rooms` routed
+    none may remain; the same check must still be able to fail, so it is also
+    run against a tool that is on the Overseer's allowlist."""
     registry, roster = _tool_universe()
-    overseer = set(roster.roles["overseer"].write)
-    assert not [t for t in routing.routed_tools() if t in overseer]
+    overseer = set(roster.roles["overseer"].read) | set(roster.roles["overseer"].write)
     set_routing(monkeypatch, tmp_path, routed=True)
-    still_there = [t for t in routing.routed_tools() if t in overseer]
-    assert "blueprint.reserve" in still_there  # the check could fail, and would
+    assert "blueprint.reserve" in routing.routed_tools()
+    assert not [t for t in routing.routed_tools() if t in overseer]
+    assert "construction.mine-vein-site" in overseer  # an unrouted tool the Overseer keeps
+    assert "construction.mine-vein-site" not in routing.routed_tools()
 
 
 # ---- schema -----------------------------------------------------------------------

@@ -110,7 +110,7 @@ def test_the_overseer_can_act_but_cannot_discover(registry):
     overseer = roster.roles["overseer"]
     assert "openarea.build" in overseer.write
     assert "diggable.dig" in overseer.write
-    assert "diggable.dig-stair" in overseer.write
+    assert "diggable.dig-stair" not in overseer.write  # rooms group, stage 2E
     for discovery in ("openarea.find", "diggable.find", "diggable.find-stair", "chokepoints.find"):
         assert not overseer.allows(discovery), (
             f"the Overseer now holds {discovery}; that removes its dependency on "
@@ -133,11 +133,15 @@ def test_water_and_industry_tools_follow_the_farm_find_pairing(registry):
     overseer = roster.roles["overseer"]
     architect = roster.roles["architect"]
 
-    for discovery in ("zone.find", "trees.find", "well.find", "orders.list"):
+    for discovery in ("trees.find", "well.find", "orders.list"):
         assert overseer.allows(discovery), f"overseer should hold {discovery}"
         assert architect.allows(discovery), f"architect should hold {discovery}"
+    # Stage 2E: the rooms siting reads left the Overseer with the rooms tools.
+    assert not overseer.allows("zone.find") and architect.allows("zone.find")
 
-    for write_id in ("zone.place", "trees.fell", "well.build", "orders.create", "orders.cancel"):
+    for write_id in ("zone.place",):
+        assert write_id not in overseer.write and not architect.allows(write_id)
+    for write_id in ("trees.fell", "well.build", "orders.create", "orders.cancel"):
         assert write_id in overseer.write, f"overseer should hold write {write_id}"
         assert registry.get(write_id).mutates is True
         assert not architect.allows(write_id), f"architect must not hold {write_id}"
