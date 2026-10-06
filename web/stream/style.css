@@ -763,3 +763,10 @@ a { color: var(--accent); }
 .factfail { color: #e05050; }
 .turnentry { padding: 10px 0; border-bottom: 1px solid var(--line, #2a2a2a); }
 .turnentry .fturnbody-text { padding-left: 0; margin-top: 6px; }
+/* Closed work (a `close` record): completed is the green completed state, every
+   other outcome is a neutral grey chip, the same filled style, no glyph. */
+.pstate.ps-completed { background: #00aa00; color: #000; }
+.pstate.ps-closed, .jstate.js-closed { background: #666666; color: #eee; }
+.chip.completed { background: var(--st-ok); color: #000; }
+.chip.closed { background: #666666; color: #eee; }
+.fstatusline.st-closed { color: #999; }

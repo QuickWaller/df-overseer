@@ -66,11 +66,14 @@ const DEFAULT_THEME = "terminal2";
 
 //: The board's state tabs, in display order, with the entry state each one
 //: collects. Every proposal is listed under exactly one of them; "All" is
-//: first. An abandoned project counts as done (no further work).
+//: first. An abandoned project counts as done (no further work). A `close`
+//: record decides the final state after any ruling: completed is "done",
+//: every other outcome is "closed".
 const BOARD_STATES = [
   ["In progress", "active"],
   ["On hold", "hold"],
   ["Completed", "done"],
+  ["Closed", "closed"],
   ["Pending", "pending"],
   ["Deferred", "deferred"],
   ["Rejected", "rejected"],
@@ -520,18 +523,21 @@ function boardEntries(items, projectsDoc) {
   const byId = new Map(items.map((i) => [i.id, i]));
   const used = new Set();
   const entries = [];
+  // The state a close gives (feed badge "completed" or "closed"), else null.
+  const closeState = (item) => (item.badge === "completed" ? "done" : item.badge === "closed" ? "closed" : null);
   const rulingOf = (proposal) => items.filter((r) => r.kind === "ruling" && r.reply_to === proposal.id).pop();
   items.filter((i) => i.kind === "proposal").forEach((item) => {
     const pid = threadToProject[item.thread];
     const p = pid && projects[pid];
     if (p) {
       used.add(pid);
+      const closed = closeState(item);
       entries.push({
         kind: "project", id: pid, role: item.role, seq: item.seq || 0,
         name: p.name || item.title || item.type || `Project ${pid}`,
         description: p.description || item.text || null, urgency: p.urgency || null,
-        state: p.status === "abandoned" ? "done" : (p.status || "active"),
-        abandoned: p.status === "abandoned", steps: p.steps || [],
+        state: closed || (p.status === "abandoned" ? "done" : (p.status || "active")),
+        abandoned: !closed && p.status === "abandoned", steps: p.steps || [], closedByClose: !!closed,
       });
       return;
     }
@@ -539,7 +545,9 @@ function boardEntries(items, projectsDoc) {
       kind: "proposal", id: item.id, role: item.role, seq: item.seq || 0,
       name: item.title || item.type || "Proposal", urgency: null, steps: [],
     };
-    if (item.badge === "accepted") {
+    if (closeState(item)) {
+      entries.push({ ...base, description: item.text || null, state: closeState(item), noPlan: true, closedByClose: true });
+    } else if (item.badge === "accepted") {
       // Accepted before project records existed: no plan, so done when
       // something was carried out on its thread, otherwise under way.
       const executed = items.some((i) => i.kind === "executed" && i.thread === item.thread);
@@ -560,6 +568,7 @@ function boardEntries(items, projectsDoc) {
       name: p.name || `Project ${p.id}`, description: p.description || null, urgency: p.urgency || null,
       state: p.status === "abandoned" ? "done" : (p.status || "active"),
       abandoned: p.status === "abandoned", steps: p.steps || [],
+      closedByClose: p.status === "closed",
     });
   });
   return entries.sort((a, b) => b.seq - a.seq);
@@ -707,10 +716,11 @@ function eventLine(item, projectsDoc) {
  * not a status: it is a marker (`urgencyMark`), never a chip. */
 const PROPOSAL_STATE = {
   pending: "Pending", accepted: "Accepted", deferred: "Deferred", rejected: "Rejected",
+  completed: "Completed", closed: "Closed",
 };
 const PROJECT_STATE = {
   active: ["In progress", "▶"], hold: ["On hold", "❚❚"],
-  done: ["Completed", "✓"], abandoned: ["Abandoned", "✕"],
+  done: ["Completed", "✓"], abandoned: ["Abandoned", "✕"], closed: ["Closed", ""],
 };
 function proposalStateChip(state) {
   const label = PROPOSAL_STATE[state] || PROPOSAL_STATE.pending;
@@ -1186,13 +1196,14 @@ class StreamPage {
     }
     if (entry.noPlan) {
       parts.push(el("div", { class: "bstatus" }, [
-        el("span", { class: "slabel", text: entry.state === "done" ? "Done, before job plans existed" : "Accepted" }),
+        el("span", { class: "slabel", text: entry.closedByClose ? (entry.state === "done" ? "Closed as completed" : "Closed") : entry.state === "done" ? "Done, before job plans existed" : "Accepted" }),
       ]));
     }
     if (entry.steps.length) {
       const done = entry.steps.filter((s) => s.state === "done").length;
       const total = entry.steps.length;
       const label = entry.abandoned ? "Abandoned"
+        : entry.state === "closed" ? "Closed"
         : entry.state === "done" ? "All jobs completed"
         : entry.state === "hold" ? `${done}/${total} steps · held`
         : `${done}/${total} steps done`;
@@ -1252,7 +1263,7 @@ class StreamPage {
         el("div", { class: "sectionlabel", text: "Jobs" }),
         el("div", { class: "jgraph-wrap" }, [jobGraph(p.steps)]),
       ]));
-      const live = p.steps.filter((s) => s.state === "active" || s.state === "hold");
+      const live = p.status === "closed" || p.status === "done" ? [] : p.steps.filter((s) => s.state === "active" || s.state === "hold");
       if (live.length) {
         sections.push(el("section", { class: "psec" }, [
           el("div", { class: "sectionlabel", text: "Happening now" }),
@@ -1364,6 +1375,10 @@ class StreamPage {
         const m = /^(Accepted|Rejected|Deferred)/.exec(this._bodyText(i) || "");
         return m ? statusLine(`Proposal ${m[1].toLowerCase()}`, m[1].toLowerCase(), i.game_date) : null;
       }
+      if (i.kind === "close") {
+        const completed = sorted[0].badge === "completed";
+        return statusLine(completed ? "Closed as completed" : "Closed", completed ? "done" : "closed", i.game_date);
+      }
       if (i.kind === "project") return statusLine("Project in progress", "active", i.game_date);
       if (i.kind === "observation") return statusLine("Project on hold", "hold", i.game_date);
       if (i.kind === "abandon") return statusLine("Project abandoned", "abandoned", i.game_date);
@@ -1379,7 +1394,7 @@ class StreamPage {
         const target = item.reply_to && byId.get(item.reply_to);
         const label = item.kind === "answer" && target ? `Answered ${speakerName(target)}'s question`
           : item.kind === "ask" ? "Asked a question"
-          : { proposal: "Made a proposal", ruling: "Ruled", amend: "Changed the plan" }[item.kind] || "Wrote";
+          : { proposal: "Made a proposal", ruling: "Ruled", amend: "Changed the plan", close: "Closed the work" }[item.kind] || "Wrote";
         const line = statusAfter(item);
         const r = this._receipt(item);
         const q = quoteFor(item);
@@ -1573,7 +1588,7 @@ class StreamPage {
       ])]);
     }
     let body = this._bodyText(item);
-    const kind = { proposal: "Proposal", ruling: "Ruling", amend: "Plan change", ask: "Question", answer: "Answer", abandon: "Abandoned" }[item.kind] || item.kind;
+    const kind = { proposal: "Proposal", ruling: "Ruling", amend: "Plan change", ask: "Question", answer: "Answer", abandon: "Abandoned", close: "Closed" }[item.kind] || item.kind;
     let state = null;
     let cls = "";
     if (item.kind === "ruling") {
