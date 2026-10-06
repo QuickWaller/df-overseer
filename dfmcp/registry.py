@@ -274,6 +274,9 @@ class Tool:
     # caller skipped while naming a later optional argument. Only a value the
     # Lua script itself treats as identical to omission belongs here.
     defaults: dict = field(default_factory=dict)
+    #: The command's raw `execution` block (docs/CONDUCTOR-EXECUTION.md 2.3), or
+    #: None. Parsed and validated by dfmcp/action_data.py, not here.
+    execution: Optional[dict] = None
 
     @property
     def mutates(self) -> bool:
@@ -529,6 +532,7 @@ def load_registry(path=DEFAULT_TOOLS_YAML, *, native_tools: Optional[Mapping[str
                 build_order_item=build_order_item,
                 skippable=tuple(skippable),
                 defaults=defaults,
+                execution=spec.get("execution"),
             )
 
     collisions = {tid: sigs for tid, sigs in seen.items() if len(sigs) > 1}

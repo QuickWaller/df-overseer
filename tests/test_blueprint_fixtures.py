@@ -84,6 +84,7 @@ def _generate(tmp_path, bp):
             out[name] = _clean({"error": err} if err else r)
 
         w.stone_block(10, 10)
+        rec("plan", w.call("plan_template", bp))
         rec("reserve_dry_run", w.call("reserve_site", bp, "fixture room", "Well"))
         rec("reserve_success", w.call("reserve_site", bp, "fixture room", "Well", "false"))
         rec("reserve_refusal_overlap", w.call("reserve_site", bp, "second room", "Well", "false"))
@@ -94,6 +95,7 @@ def _generate(tmp_path, bp):
         rec("apply_%s_dry_run" % shell, w.call("apply_phase", bp, shell, "res-1"))
         rec("apply_%s_success" % shell, w.call("apply_phase", bp, shell, "res-1", "false"))
         rec("sites", (w.call("list_sites")[0], None))
+        rec("reservations_after_shell_apply", (w.call("list_reservations")[0], None))
         rec("status_no_phase_after_shell_apply", w.call("site_status", "site-1"))
         # later phases are refused until the shell is dug and smoothed
         for phase in sc["phases"][1:]:

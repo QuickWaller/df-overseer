@@ -21,6 +21,8 @@ from typing import Dict, List, Optional, Tuple
 
 import yaml
 
+from dfqueue import routing
+
 from .registry import Registry
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -251,6 +253,34 @@ def _load_role_permissions(
                         f"restricted to the roster's sole_writer ('{sole_writer}'), not "
                         f"'{role_name}'."
                     )
+
+    # Rule 8 (added handoffs/2026-10-06-stage-2c.md, docs/CONDUCTOR-EXECUTION.md
+    # 6.3): the executor's tools (dfmcp/executor_tools.py) are code's, never a
+    # model's. A tool flagged `executor_only` may be granted only to a role of
+    # kind "system", with no carve-out for the sole_writer.
+    for section_name, granted in (("read", read), ("write", write)):
+        for tool_id in granted:
+            if getattr(registry.get(tool_id), "executor_only", False) and kind != "system":
+                raise RoleValidationError(
+                    f"'{role_name}' is granted '{tool_id}' under {section_name}, but it is an "
+                    f"executor-only tool: only a role of kind 'system' (the conductor, which is "
+                    f"code) may hold it -- '{role_name}' is kind '{kind}'."
+                )
+
+    # Rule 9 (same handoff, design section 1): a tool of a ROUTED group
+    # (dfqueue/action_tools.yaml `routed: true`) is run by the executor, so it
+    # may be on no role's allowlist at all, model or not. Flipping a group to
+    # routed with its tools still on the Overseer's allowlist fails the load,
+    # so the two can never disagree in one deploy.
+    routed = set(routing.routed_tools())
+    for section_name, granted in (("read", read), ("write", write)):
+        for tool_id in granted:
+            if tool_id in routed:
+                raise RoleValidationError(
+                    f"'{role_name}' is granted '{tool_id}' under {section_name}, but it belongs to "
+                    f"a routed group ({routing.group_of_tool(tool_id)!r}, dfqueue/action_tools.yaml): "
+                    "the conductor runs it as code, so it must leave every allowlist in the same deploy."
+                )
 
     # Rule 7 (added 2026-09-16, decisions/DECISIONS.md "Agents may only know
     # what a vanilla player could know"): NO role -- including the sole

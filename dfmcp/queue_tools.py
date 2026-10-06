@@ -167,7 +167,7 @@ import sqlite3
 from dataclasses import dataclass
 from typing import Any, Awaitable, Callable, Dict, Mapping, Optional, Tuple
 
-from dfqueue import grade, render, schema, store
+from dfqueue import grade, render, routing, schema, store
 from learning import live_signals
 from learning.predictions.schema import PREDICATE_OPS
 
@@ -446,7 +446,50 @@ def _propose_description(role: str) -> str:
     )
 
 
+_STEP_PROPERTIES = {
+    "step": {
+        "type": "object",
+        "additionalProperties": False,
+        "required": ["tool", "args"],
+        "description": (
+            "Required for a routed type: ONE exact action. The server dry-runs it at filing and "
+            "refuses the proposal unless the tool's own verdict passes. Arguments are exactly what "
+            "the tool takes (never a coordinate, never dry_run); the conductor runs it as code "
+            "once ruled."
+        ),
+        "properties": {
+            "tool": {"type": "string"},
+            "args": {"type": "object"},
+            "label": {"type": "string", "description": "A short Board label for the step."},
+        },
+    },
+    "phases": {
+        "type": "object",
+        "additionalProperties": False,
+        "required": ["tool", "list"],
+        "description": (
+            "Optional, first proposal only: the later phases of this room, in the template's order, "
+            "each filed later as a follow-up that cites the handle the earlier step issued."
+        ),
+        "properties": {"tool": {"type": "string"}, "list": {"type": "array", "items": {"type": "string"}}},
+    },
+    "project_id": {"type": "string", "description": "A follow-up: the project (project-N) it joins."},
+    "after_step": {"type": "string", "description": "A follow-up: the step id (project-N/sK) it follows."},
+    "public_title": {"type": "string", "description": "A short title for the public Board."},
+    "urgency": {"type": "string", "enum": list(schema.URGENCIES), "description": "Optional; default normal."},
+}
+
+
 def _propose_schema(role: str) -> dict:
+    """The role's `queue.propose` schema, plus the step fields once any group is
+    routed (until then a step is refused, so the schema does not offer one)."""
+    base = _propose_schema_base(role)
+    if routing.routed_groups():
+        base["properties"] = {**base["properties"], **_STEP_PROPERTIES}
+    return base
+
+
+def _propose_schema_base(role: str) -> dict:
     vocab = list(schema.TYPE_VOCAB_BY_ROLE.get(role, ()))
     return {
         "type": "object",
@@ -1191,6 +1234,11 @@ def _reject_unknown_arguments(tool_id: str, arguments: Mapping[str, Any], known:
 _PROPOSE_FIELDS = {
     "type", "summary", "rationale", "prediction", "cost",
     "suggested_priority", "preconditions", "public_rationale", "relies_on",
+    # Stage 2 (docs/CONDUCTOR-EXECUTION.md 2.1): an exact step, its declared
+    # phases, a follow-up's project and the step it follows, a Board title and an
+    # optional urgency. The store refuses all of them for a type that is not
+    # routed; `urgency` is kept in the server-set `preview`, not on the record.
+    "step", "phases", "project_id", "after_step", "public_title", "urgency",
 }
 _PASS_FIELDS = {"reason"}
 _RULE_FIELDS = {"proposal_id", "decision", "reason", "public_rationale"}
@@ -1312,9 +1360,16 @@ async def _read_citations(
     return cited
 
 
+#: `(role, record, urgency) -> {preview?, covered_by?}`, injected by
+#: `dfmcp/server.py`: the per-tool checks on a routed step
+#: (`dfmcp/executor_filing.py`). Raises `QueueToolError` to refuse.
+StepChecker = Callable[[str, Mapping[str, Any], Optional[str]], Awaitable[Dict[str, Any]]]
+
+
 async def _propose(
     role: str, arguments: Mapping[str, Any], *, db_path, call_dfhack: CallDFHack,
     write_lock: "asyncio.Lock", fact_reader: Optional[FactReader] = None,
+    step_checker: Optional[StepChecker] = None,
 ) -> Tuple[str, dict]:
     _reject_unknown_arguments(QUEUE_PROPOSE, arguments, _PROPOSE_FIELDS)
     tick, snapshot = await _stamp_cycle_snapshot(call_dfhack)
@@ -1322,12 +1377,24 @@ async def _propose(
         "kind": schema.PROPOSAL, "role": role, "cycle": tick, "snapshot": snapshot,
         **{k: arguments[k] for k in _PROPOSE_FIELDS if k in arguments},
     }
+    urgency = record.pop("urgency", None)
+    if urgency is not None and "step" not in record:
+        raise QueueToolError(f"{QUEUE_PROPOSE}: 'urgency' belongs to a proposal with a step")
     if "relies_on" in record:
         shape_errors: list = []
         schema._validate_fact_list(record, "relies_on", shape_errors, cited=False)
         if shape_errors:
             raise QueueToolError(f"{QUEUE_PROPOSE}: refused: " + "; ".join(shape_errors))
         record["cited"] = await _read_citations(role, record["relies_on"], fact_reader, tick)
+    if "step" in record:
+        # The per-tool checks: arguments, dry run, handles, phases. A refusal here
+        # writes nothing. The store re-validates the whole record at append.
+        step = record["step"]
+        if not (isinstance(step, dict) and isinstance(step.get("tool"), str) and isinstance(step.get("args"), dict)):
+            raise QueueToolError(f"{QUEUE_PROPOSE}: 'step' needs a tool and an args object")
+        if step_checker is None:
+            raise QueueToolError(f"{QUEUE_PROPOSE}: steps cannot be checked on this server")
+        record.update(await step_checker(role, record, urgency))
     written = await _append_locked(QUEUE_PROPOSE, record, db_path, tick, write_lock)
     return render.to_xml(written), written
 
@@ -1614,8 +1681,11 @@ async def _pending_brief(
         )
     try:
         pending = await asyncio.to_thread(store.pending_proposals, db_path)
-        project_ids = await asyncio.to_thread(store.list_project_ids, db_path)
-        statuses = [await asyncio.to_thread(store.project_status, db_path, pid) for pid in project_ids]
+        # The one WIP definition (docs/CONDUCTOR-EXECUTION.md section 3, P3-M3):
+        # the store's `open_projects`, shared with the cap, not a count of
+        # projects whose status reads `active`.
+        open_rows = await asyncio.to_thread(store.open_projects, db_path)
+        statuses = [await asyncio.to_thread(store.project_status, db_path, o["project_id"]) for o in open_rows]
         rulings = await asyncio.to_thread(store.recent_rulings, db_path, BRIEF_RECENT_RULINGS)
     except store.QueueError as exc:
         raise _write_error(QUEUE_PENDING_BRIEF, exc) from exc
@@ -1652,15 +1722,14 @@ async def _pending_brief(
         items.append(item)
 
     open_projects = []
-    for st in statuses:
-        if st.get("status") != "active":
-            continue
+    for row, st in zip(open_rows, statuses):
         counts = st.get("counts") or {}
         blocker = st.get("top_blocker") or {}
         open_projects.append({
             "id": st["project_id"], "title": _clip(st.get("summary"), 80),
             "steps_done": counts.get(schema.DONE, 0), "steps_total": sum(counts.values()),
             "top_blocker": _clip(blocker.get("reason"), 120) if blocker else None,
+            "urgency": row.get("urgency"), "phases_remaining": row.get("phases_remaining", 0),
         })
     structured = {
         "count": len(pending), "shown": len(items), "truncated": len(pending) > len(items),
@@ -1823,6 +1892,7 @@ _FACT_READING = frozenset({QUEUE_PROPOSE, QUEUE_PENDING_BRIEF})
 async def call(
     tool_id: str, role: str, arguments: Mapping[str, Any], *, db_path, call_dfhack: CallDFHack,
     write_lock: "asyncio.Lock", fact_reader: Optional[FactReader] = None,
+    step_checker: Optional[StepChecker] = None,
 ) -> Tuple[str, Optional[dict]]:
     """Dispatch one native tool call. Returns `(text, structured)` for
     `dfmcp.server` to wrap into a `CallToolResult(isError=False, ...)`, or
@@ -1840,6 +1910,11 @@ async def call(
     handler = _HANDLERS.get(tool_id)
     if handler is None:  # pragma: no cover -- server.py only routes known native ids here
         raise AssertionError(f"queue_tools.call: unknown native tool id {tool_id!r}")
+    if tool_id == QUEUE_PROPOSE:
+        return await handler(
+            role, arguments, db_path=db_path, call_dfhack=call_dfhack, write_lock=write_lock,
+            fact_reader=fact_reader, step_checker=step_checker,
+        )
     if tool_id in _FACT_READING:
         return await handler(
             role, arguments, db_path=db_path, call_dfhack=call_dfhack, write_lock=write_lock,

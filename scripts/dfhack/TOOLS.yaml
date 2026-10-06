@@ -53,6 +53,13 @@
 #     whose code was fixed in the repo but where VM 103 is still running an
 #     older version of the file -- distinct from a clean true/false, since
 #     the file IS present, just not the current code.
+#   execution
+#     Optional, per command. How the conductor (code) runs this tool as a proposed step and
+#     judges its output (docs/CONDUCTOR-EXECUTION.md 2.3), as DATA so the next tool is one entry
+#     and no code: verdict (ok / dry_ok / real_ok positive fields, refused_if_true,
+#     refused_if_present, reason), dry_run_echo, issues_handle, resolution_fields,
+#     nothing_applied, append_to_arg, handle_args, phases, progress, landed, cleanup.
+#     Parsed and validated by dfmcp/action_data.py; a tool with none cannot be proposed.
 #   verified
 #     Last date this SPECIFIC command was confirmed against a real, running
 #     fort (not just "the file loads without error"). "unverified" is an
@@ -5549,6 +5556,38 @@ df-overseer-blueprint.lua:
         ALLOW_STRANDED set to the word true; the result then says
         `stranded_override_used: true`. Never the default.
       summary: "Applies one phase of a blueprint template to a site for real."
+      execution:
+        verdict: {ok: ok, refused_if_true: [blocked], reason: blocked_reason}
+        dry_run_echo: dry_run
+        issues_handle: site.handle
+        preview_fields: [designated, finish_plan, access]
+        nothing_applied: {all_zero: [designated.dig_tiles, designated.zones, designated.buildings]}
+        override_args: [allow_stranded]
+        handle_args: [site]
+        phases:
+          arg: phase
+          site_arg: site
+          carry: [template]
+          source: {tool: blueprint.plan, args: [template], rows: phases, label_field: label, applies_field: applies}
+        progress:
+          read: {tool: blueprint.status, args: {site_id: "$handle", phase: "$phase"}}
+          done_field: phase.done
+          not_done_if: {path: dig.state, equals: in_progress}
+          stalled_if: {path: dig.state, equals: stalled}
+          blocked_if: {path: finish_state.blocked_total, greater_than: 0}
+        landed:
+          - when: {arg: site, matches: '^res-[0-9]+$'}
+            kind: field_set
+            read: {tool: blueprint.reservations, rows: result}
+            find: {field: handle, equals: "$site"}
+            field: site_handle
+          - when: {arg: site, matches: '^site-[0-9]+$'}
+            kind: list_gains
+            read: {tool: blueprint.sites, rows: result}
+            find: {field: handle, equals: "$site"}
+            field: phases_applied
+            value: "$phase"
+            handle: "$site"
       guide:
         arguments:
           - name: "TEMPLATE"
@@ -5653,7 +5692,7 @@ df-overseer-blueprint.lua:
           construction.mine-vein-site and the site handle.
         before_a_real_run: []
         traps: []
-    "status SITE_ID":
+    "status SITE_ID [PHASE]":
       lua_function: site_status
       effect: read
       coordinate_bearing: internal-only
@@ -5689,6 +5728,13 @@ df-overseer-blueprint.lua:
             default: null
             meaning: >-
               A site handle such as site-3, as blueprint.sites lists it. Never a coordinate.
+          - name: "PHASE"
+            required: false
+            default: null
+            meaning: >-
+              Optional. A phase label from blueprint.plan. Adds a `phase` block: whether that phase's own
+              cells are dug and smoothed, its buildings fully constructed (not merely planned) and its
+              zone present; `phase.done` is true only when all of them hold.
         returns: >-
           Reports outstanding designations, the finish state of anything the template asks to be
           smoothed, and whether digging has stalled (no job exists for a startable designation after
@@ -5696,7 +5742,7 @@ df-overseer-blueprint.lua:
           this again after some time has passed rather than checking immediately.
         before_a_real_run: []
         traps: []
-    "release SITE_ID [DRY_RUN]":
+    "release SITE_ID [DRY_RUN] [ANY_PENDING]":
       lua_function: release_site
       effect: mutate
       coordinate_bearing: internal-only
@@ -5714,6 +5760,14 @@ df-overseer-blueprint.lua:
         designation, the site handle is forgotten. Granted to the overseer
         only.
       summary: "Withdraws the dig designations of a stalled site."
+      execution:
+        verdict: {real_ok: released, refused_if_present: [refused], reason: refused}
+        dry_run_echo: dry_run
+        cleanup:
+          handle_prefix: "site-"
+          report_as: released
+          args: {site_id: "$handle", dry_run: "false", any_pending: "true"}
+          already_done_if_error_contains: ["no site"]
       guide:
         arguments:
           - name: "SITE_ID"
@@ -5727,6 +5781,14 @@ df-overseer-blueprint.lua:
             meaning: >-
               Optional. true (the default when omitted) asks quickfort what it would undo and
               writes nothing; only the word false actually withdraws the designations.
+          - name: "ANY_PENDING"
+            required: false
+            default: "false"
+            meaning: >-
+              Optional, give it last. The word true withdraws every outstanding dig and smooth designation
+              of the site, not only a stalled one's, and never touches a tile already dug. Planned buildings
+              and zones are not withdrawn and come back as skipped_phases. Used by the conductor's abandon
+              cleanup.
         returns: >-
           Only works on a site blueprint.status reports as stalled, and only undoes dig phases; it
           cannot undo a tile already dug, a wall already smoothed, or a built zone or building.
@@ -5757,6 +5819,22 @@ df-overseer-blueprint.lua:
         Granted to overseer for a real reserve; architect and overseer may
         dry-run.
       summary: "Holds a template's whole footprint so no other designating tool can take it, without digging anything yet."
+      # Per-tool execution data (docs/CONDUCTOR-EXECUTION.md 2.3, handoffs/2026-10-06-stage-2c.md).
+      # Read by dfmcp/action_data.py; every path below must exist in a real output, which
+      # dfmcp/tests/test_action_data.py checks against dfmcp/tests/fixtures/blueprint/.
+      execution:
+        verdict: {dry_ok: would_reserve, refused_if_true: [refused], reason: blocked_reason}
+        dry_run_echo: dry_run
+        issues_handle: handle
+        append_to_arg: {arg: purpose, text: "$proposal_id"}
+        resolution_fields: [near_landmark, direction, distance_tiles, orientation, level]
+        preview_fields: [finish_plan, footprint, allowed_kinds]
+        nothing_applied: {refusal: true}
+        landed:
+          - kind: new_row
+            read: {tool: blueprint.reservations, rows: result}
+            handle_field: handle
+            match: {field: purpose, ends_with: "$proposal_id"}
       guide:
         arguments:
           - name: "TEMPLATE"
@@ -5858,6 +5936,14 @@ df-overseer-blueprint.lua:
         (`still_held_by`); nothing else is freed or undone. DRY_RUN defaults
         to true. Granted to the overseer only.
       summary: "Releases a footprint reservation outright."
+      execution:
+        verdict: {dry_ok: would_release, real_ok: released}
+        dry_run_echo: dry_run
+        cleanup:
+          handle_prefix: "res-"
+          report_as: unreserved
+          args: {res_id: "$handle", dry_run: "false"}
+          already_done_if_error_contains: ["no reservation"]
       guide:
         arguments:
           - name: "RES_ID"

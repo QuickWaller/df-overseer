@@ -125,9 +125,10 @@ from .dfhack_client import (
     DFHackCallError,
     DFHackConnectionError,
     DFHackConnectionPool,
+    DFHackNotSentError,
     DFHackProtocolError,
 )
-from . import conductor_tools, doctrine_tools, gotchas_store, gotchas_tools, knowledge_tools, labor_join, queue_tools, series_tools
+from . import conductor_tools, doctrine_tools, executor_filing, executor_run, executor_tools, gotchas_store, gotchas_tools, knowledge_tools, labor_join, queue_tools, series_tools
 from .confidence import DEFAULT_CONFIDENCE_PATH, ConfidenceConfig, load_confidence
 from .registry import Registry, load_registry
 from .roles import Roster, load_roster
@@ -543,6 +544,46 @@ def build_mcp_server(
             raise DFHackCallError(parsed["error"])
         return parsed
 
+    async def _exec_call_tool(
+        tool_id: str, arguments: Mapping[str, Any], *, timeout: Optional[float] = None,
+    ) -> Any:
+        """One DFHack-backed tool call for the executor (`dfmcp/executor_run.py`):
+        no `Roster.check` (the executor is the conductor's own machinery, and
+        the tools it may run are fixed by `action_tools.yaml` and checked at
+        filing), a per-call timeout, and failures sorted into the three the
+        executor needs: never sent, outcome unknown, DFHack said it failed.
+        Returns the parsed output (a bare list wrapped as {"result": [...]});
+        a script's own {"error": ...} refusal is returned, not raised."""
+        tool = registry.get(tool_id)
+        try:
+            argv = argv_for_call(tool, arguments)
+        except ArgumentError as exc:
+            raise executor_run.CallNotSent(str(exc)) from exc
+        try:
+            raw = await pool.run_command(argv[0], argv[1:], timeout=timeout)
+        except DFHackNotSentError as exc:
+            raise executor_run.CallNotSent(str(exc)) from exc
+        except DFHackCallError as exc:
+            raise executor_run.CallFailed(str(exc)) from exc
+        except (DFHackConnectionError, DFHackProtocolError) as exc:
+            raise executor_run.CallOutcomeUnknown(str(exc)) from exc
+        stripped = raw.strip()
+        if not stripped:
+            raise executor_run.CallOutcomeUnknown("the command printed nothing")
+        try:
+            parsed = json.loads(stripped)
+        except json.JSONDecodeError as exc:
+            raise executor_run.CallOutcomeUnknown(f"the output is not JSON: {exc}") from exc
+        return parsed if isinstance(parsed, dict) else {"result": parsed}
+
+    async def _check_step_filing(role: str, record: Mapping[str, Any], urgency: Optional[str]) -> dict:
+        """`queue.propose`'s per-tool checks on a routed step (`dfmcp/executor_filing.py`)."""
+        env = executor_run.ExecEnv(
+            db_path=queue_db_path, write_lock=queue_write_lock, call_tool=_exec_call_tool,
+            call_dfhack=_call_dfhack, registry=registry,
+        )
+        return await executor_filing.check_filing(env, role, record, urgency)
+
     async def _read_fact(role: str, tool_id: str, arguments: Mapping[str, Any]) -> Any:
         """A cited fact's read (queue.propose's `relies_on`, queue.pending_brief's
         refresh): one DFHack-backed, non-mutating tool on `role`'s own allowlist,
@@ -638,6 +679,13 @@ def build_mcp_server(
                         tool_id, role, params.arguments or {},
                         db_path=queue_db_path, call_dfhack=_call_dfhack,
                         write_lock=queue_write_lock, fact_reader=_read_fact,
+                        step_checker=_check_step_filing,
+                    )
+                elif tool_id in executor_tools.NATIVE_TOOL_IDS:
+                    text, structured = await executor_tools.call(
+                        tool_id, role, params.arguments or {},
+                        db_path=queue_db_path, write_lock=queue_write_lock,
+                        call_dfhack=_call_dfhack, call_tool=_exec_call_tool, registry=registry,
                     )
                 elif tool_id in conductor_tools.NATIVE_TOOL_IDS:
                     text, structured = await conductor_tools.call(

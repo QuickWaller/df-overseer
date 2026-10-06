@@ -677,6 +677,49 @@
       "source": "stored"
     }
   },
+  "plan": {
+    "blueprint": "bedroom-cell-v1",
+    "finish_required_cells": 15,
+    "footprint": {
+      "height": 5,
+      "width": 5
+    },
+    "phases": [
+      {
+        "cells": 25,
+        "label": "bedroom_cell_v1_shell",
+        "mode": "dig",
+        "needs_dug_shell": false
+      },
+      {
+        "cells": 9,
+        "label": "bedroom_cell_v1_zone",
+        "mode": "zone",
+        "needs_dug_shell": true
+      },
+      {
+        "cells": 1,
+        "label": "bedroom_cell_v1_build",
+        "mode": "build",
+        "needs_dug_shell": true
+      },
+      {
+        "applies": [
+          "bedroom_cell_v1_zone",
+          "bedroom_cell_v1_build"
+        ],
+        "cells": 2,
+        "label": "bedroom_cell_v1_finish",
+        "mode": "meta",
+        "needs_dug_shell": true
+      }
+    ],
+    "room": {
+      "height": 3,
+      "width": 3
+    },
+    "site_argument": "SITE is a landmark name for the first (dig) phase of a new room, or a site-N handle for every later phase"
+  },
   "release_any_pending_dry_run": {
     "any_pending": true,
     "blueprint": "bedroom-cell-v1",
@@ -740,6 +783,29 @@
       "override_count": 0,
       "purpose": "fixture room",
       "site_handle": null
+    }
+  ],
+  "reservations_after_shell_apply": [
+    {
+      "age_ticks": 0,
+      "allowed_kinds": [
+        "bed",
+        "bedroom"
+      ],
+      "blueprint": "bedroom-cell-v1",
+      "direction": "NE",
+      "distance_tiles": 7,
+      "footprint": {
+        "height": 5,
+        "width": 5
+      },
+      "handle": "res-1",
+      "in_use": true,
+      "last_override_reason": null,
+      "near_landmark": "Well",
+      "override_count": 0,
+      "purpose": "fixture room",
+      "site_handle": "site-1"
     }
   ],
   "reserve_dry_run": {

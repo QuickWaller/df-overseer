@@ -29,6 +29,8 @@ from typing import Any, Dict, Mapping, Optional, Tuple
 
 from dfqueue import runs
 
+from . import executor_tools
+
 CONDUCTOR_REPORT = "conductor.report"
 #: handoffs/2026-10-05-safe-to-resume.md. The Overseer's explicit answer to
 #: "is it safe to resume this unexplained pause?", and the conductor's read of
@@ -59,12 +61,17 @@ class NativeTool:
         return _DESCRIPTIONS[self.id], _SCHEMAS[self.id]
 
 
-NATIVE_TOOLS: Dict[str, NativeTool] = {
+NATIVE_TOOLS: Dict[str, Any] = {
     CONDUCTOR_REPORT: NativeTool(id=CONDUCTOR_REPORT),
     # Overseer only, by the same sole_writer_only mechanism as queue.escalate.
     PAUSE_VERDICT: NativeTool(id=PAUSE_VERDICT, sole_writer_only=True),
     PAUSE_VERDICT_READ: NativeTool(id=PAUSE_VERDICT_READ),
 }
+# The executor tools (dfmcp/executor_tools.py) are the conductor's too. They are
+# merged into this table, and not into a fifth dict at every merge site, so every
+# place that registers "the conductor's native tools" picks them up; the server
+# routes their calls to `executor_tools.call`, ahead of this module's own.
+NATIVE_TOOLS.update(executor_tools.NATIVE_TOOLS)
 
 _DESCRIPTION = (
     "Report one role run to the operator's record, conductor only. phase='start' when "
