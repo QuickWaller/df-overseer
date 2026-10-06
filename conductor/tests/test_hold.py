@@ -262,3 +262,30 @@ async def test_with_no_hold_the_status_block_is_unchanged(tmp_path):
     result = await run_cycle(1, _cycle_deps(tmp_path, fort))
     assert result.hold is None
     assert "held" not in status_from_cycle(result)["pause_watch"]
+
+
+def test_allow_execution_defaults_off_round_trips_and_reads_false_unless_literally_true(tmp_path):
+    import json
+    store = HoldStore(tmp_path / "hold.json")
+    assert store.set("r", who="t").allow_execution is False
+    assert store.read().allow_execution is False
+    assert store.set("r", who="t", allow_execution=True).allow_execution is True
+    assert store.read().as_dict()["allow_execution"] is True
+    doc = json.loads((tmp_path / "hold.json").read_text(encoding="utf-8"))
+    doc["allow_execution"] = "yes"
+    (tmp_path / "hold.json").write_text(json.dumps(doc), encoding="utf-8")
+    assert store.read().allow_execution is False
+
+
+def test_a_corrupt_hold_never_allows_execution(tmp_path):
+    (tmp_path / "hold.json").write_text("{not json", encoding="utf-8")
+    state = HoldStore(tmp_path / "hold.json").read()
+    assert state.held and state.corrupt and state.allow_execution is False
+
+
+def test_the_cli_sets_allow_execution(tmp_path, capsys):
+    from conductor.hold import main
+    f = str(tmp_path / "hold.json")
+    assert main(["--file", f, "set", "--reason", "r", "--allow-execution"]) == 0
+    assert "routed steps still run" in capsys.readouterr().out
+    assert HoldStore(tmp_path / "hold.json").read().allow_execution is True

@@ -61,6 +61,11 @@ REASON_EVENT = "lane_event"
 REASON_ALERT = "alert_crossed"
 REASON_RULING = "ruling_on_own"
 REASON_ORE = "ore_exposed"
+#: The execute phase's wakes (conductor/execute.py), queued into `pending`
+#: under `<reason>:<key>` for the project's proposer.
+REASON_STEP_DONE = "step_done"
+REASON_STEP_ATTENTION = "step_attention"
+REASON_PROJECT_IDLE = "project_idle"
 
 #: `pending` keys: `alert:<name>`, `ruling:<proposal id>`, `ore:<site>:<mineral>`.
 _ALERT = "alert:"
@@ -237,11 +242,21 @@ def lane_wakes(policy: Policy, state: LaneState, events_by_role: Mapping[str, Se
             more = f" (and {len(lines) - 1} more)" if len(lines) > 1 else ""
             out.append(LaneWake(REASON_EVENT, f"{lines[0]}{more}", (role,)))
         entries = state.pending.get(role) or {}
-        for prefix, reason in ((_ALERT, REASON_ALERT), (_RULING, REASON_RULING), (_ORE, REASON_ORE)):
+        for prefix, reason in (
+            (_ALERT, REASON_ALERT), (_RULING, REASON_RULING), (_ORE, REASON_ORE),
+            (REASON_STEP_DONE + ":", REASON_STEP_DONE), (REASON_STEP_ATTENTION + ":", REASON_STEP_ATTENTION),
+            (REASON_PROJECT_IDLE + ":", REASON_PROJECT_IDLE),
+        ):
             details = [v for k, v in sorted(entries.items()) if k.startswith(prefix)]
             if details:
                 out.append(LaneWake(reason, "; ".join(details), (role,)))
     return tuple(out)
+
+
+def add_pending(state: LaneState, role: str, key: str, text: str) -> None:
+    """Owe `role` a wake (`key` is `<reason>:<id>`), served when its next run
+    completes. Used by the execute phase for the step wakes."""
+    state.pending.setdefault(role, {})[key] = text
 
 
 def clear_served(state: LaneState, role: str) -> None:

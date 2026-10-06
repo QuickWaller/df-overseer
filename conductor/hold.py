@@ -46,6 +46,11 @@ class HoldState:
     expires_at: Optional[float] = None
     corrupt: bool = False
     expired: bool = False
+    #: The operator allows the execute phase while held (docs/CONDUCTOR-
+    #: EXECUTION.md 4.5): routed steps still run, the fort is still never
+    #: resumed. Anything but a literal true reads as False, and a corrupt file
+    #: never allows it.
+    allow_execution: bool = False
 
     def as_dict(self) -> Optional[Dict[str, Any]]:
         """The block for the status file and the dry-run plan: None when no hold."""
@@ -54,6 +59,7 @@ class HoldState:
         return {
             "reason": self.reason, "since": self.since, "who": self.who,
             "expires_at": self.expires_at, "corrupt": self.corrupt,
+            "allow_execution": self.allow_execution,
         }
 
 
@@ -96,10 +102,11 @@ class HoldStore:
         if expires is not None and now >= expires:
             LOG.warning("operator hold (%r, set by %s) has expired; reading as no hold", reason, who)
             return HoldState(held=False, reason=reason, since=since, who=who, expires_at=expires, expired=True)
-        return HoldState(held=True, reason=reason, since=since, who=str(who) if who else None, expires_at=expires)
+        return HoldState(held=True, reason=reason, since=since, who=str(who) if who else None, expires_at=expires,
+                         allow_execution=raw.get("allow_execution") is True)
 
     def set(self, reason: str, *, who: Optional[str] = None, now: Optional[float] = None,
-            expires_in_seconds: Optional[float] = None) -> HoldState:
+            expires_in_seconds: Optional[float] = None, allow_execution: bool = False) -> HoldState:
         reason = " ".join((reason or "").split())
         if not reason:
             raise ValueError("a hold needs a reason (one line)")
@@ -109,6 +116,7 @@ class HoldStore:
         doc = {
             "reason": reason, "since": now, "who": who or _os_user(),
             "expires_at": None if expires_in_seconds is None else now + expires_in_seconds,
+            "allow_execution": bool(allow_execution),
         }
         self.path.parent.mkdir(parents=True, exist_ok=True)
         fd, tmp_name = tempfile.mkstemp(dir=str(self.path.parent), prefix=f".{self.path.name}.", suffix=".tmp")
@@ -151,8 +159,9 @@ def describe(state: HoldState) -> str:
     if not state.held:
         return "no hold"
     tag = " [CORRUPT FILE, read as held]" if state.corrupt else ""
+    ex = "; routed steps still run (--allow-execution)" if state.allow_execution else "; no routed steps run"
     return (f"HELD{tag}: {state.reason} (since {_fmt(state.since)}, by {state.who or 'unknown'}, "
-            f"expires {_fmt(state.expires_at)})")
+            f"expires {_fmt(state.expires_at)}{ex})")
 
 
 def main(argv: Optional[list] = None) -> int:
@@ -170,6 +179,10 @@ def main(argv: Optional[list] = None) -> int:
     p_set.add_argument("--reason", required=True)
     p_set.add_argument("--who", default=None, help="default: the OS user")
     p_set.add_argument("--for-hours", type=float, default=None, help="optional expiry")
+    p_set.add_argument(
+        "--allow-execution", action="store_true",
+        help="let the execute phase run routed steps while held (it still never resumes the fort)",
+    )
     sub.add_parser("clear", help="clear the hold")
     sub.add_parser("show", help="show the hold")
     args = parser.parse_args(argv)
@@ -184,7 +197,8 @@ def main(argv: Optional[list] = None) -> int:
     if args.cmd == "set":
         try:
             state = store.set(args.reason, who=args.who,
-                              expires_in_seconds=None if args.for_hours is None else args.for_hours * 3600)
+                              expires_in_seconds=None if args.for_hours is None else args.for_hours * 3600,
+                              allow_execution=args.allow_execution)
         except ValueError as exc:
             print(f"error: {exc}", file=sys.stderr)
             return 2

@@ -62,6 +62,7 @@ from conductor.briefing import build_briefing, build_ruling_briefing, evaluate_t
 from conductor import lanes
 from conductor.cursors import CursorStore
 from conductor.game_tick import GameTickError, game_tick_from_overview
+from conductor.execute import ExecuteStore, ExecuteReport, run_execute, skipped_report
 from conductor.hold import HoldState, HoldStore, hold_path_for
 from conductor.mcp_client import MCPToolError, ToolCaller, tool_name
 from conductor.job_watch import JobWatchResult, JobWatchStore, evaluate_jobs, jobs_from_result
@@ -165,6 +166,69 @@ async def _carry_out_wake_ids(
     return ids
 
 
+
+def _execute_store(deps: "CycleDeps") -> ExecuteStore:
+    return ExecuteStore(deps.cursor_store.path.with_name("execute_state.json"))
+
+
+async def _execute_phase(
+    deps: "CycleDeps", call: Callable, *, cycle_index: int, game_tick: Optional[int], hold: HoldState,
+    escalated: bool, ore_read: Optional[OreRead], lane_state: "lanes.LaneState",
+    clock_changes: List[Dict[str, Any]], latched: bool,
+) -> ExecuteReport:
+    """The execute phase's gate and plumbing (conductor/execute.py has the
+    work). Skipped, with the reason recorded, for an escalation this cycle or
+    an operator hold that does not allow execution; never run for a
+    watchdog-owned pause or a latched tripwire in the ordinary path, since
+    those cycles return before reaching here (a latch runs it through
+    `_tripwire_cycle` with `latched=True`, high urgency only). Total: a fault
+    here is logged and never stops the cycle, and the phase never touches the
+    clock, so it can never resume the fort."""
+    if escalated:
+        return skipped_report("an escalation this cycle")
+    if hold.held and not hold.allow_execution:
+        LOG.info("cycle %s: execute phase skipped: operator hold without --allow-execution", cycle_index)
+        return skipped_report("operator hold")
+    store = _execute_store(deps)
+    try:
+        state = store.load()
+    except Exception:  # noqa: BLE001 -- a corrupt state would resend every wake: skip, say so
+        LOG.exception("cycle %s: execute state unreadable; the execute phase is skipped", cycle_index)
+        return skipped_report("execute state unreadable")
+
+    async def quicksave() -> None:
+        await _call_write(call, "fort.quicksave", {}, clock_changes=clock_changes, cycle_index=cycle_index)
+
+    fallback = tuple(r for r, lane in deps.policy.lane_triggers.items() if lane.execution)
+    try:
+        report = await run_execute(
+            deps.tool_caller.call_tool, deps.policy.execution, state, game_tick=game_tick, ore_read=ore_read,
+            quicksave=quicksave, fallback_roles=fallback, latched=latched,
+        )
+    except Exception:  # noqa: BLE001
+        LOG.exception("cycle %s: the execute phase failed", cycle_index)
+        return skipped_report("the execute phase raised")
+    if not report.ran:
+        LOG.warning("cycle %s: execute phase did not run: %s", cycle_index, report.skipped)
+        return report
+    try:
+        store.save(state)
+    except Exception:  # noqa: BLE001
+        LOG.exception("cycle %s: could not save the execute state", cycle_index)
+    if report.wakes and deps.policy.lane_triggers:
+        for w in report.wakes:
+            lanes.add_pending(lane_state, w.role, w.key, w.text)
+        try:
+            _lane_store(deps).save(lane_state)
+        except Exception:  # noqa: BLE001
+            LOG.exception("cycle %s: could not save lane state after the execute phase", cycle_index)
+    for action in report.actions:
+        LOG.info("cycle %s: execute: %s", cycle_index, action)
+    for err in report.errors:
+        LOG.warning("cycle %s: execute error: %s", cycle_index, err)
+    return report
+
+
 def _queue_summary_for(role: str, queue_state: Mapping[str, Any]) -> Mapping[str, Any]:
     """`queue.overview`'s own result carries BOTH halves of the queue
     (`proposals`, `asks`) in one read (fix 1, this module's own docstring
@@ -266,6 +330,9 @@ class CycleResult:
     #: The operator hold in force this cycle (`HoldState.as_dict()`), None when
     #: there is none. Carried to the status block and the cycle log line.
     hold: Optional[Dict[str, Any]] = None
+    #: The execute phase's report (`conductor.execute.ExecuteReport.as_dict()`),
+    #: None when it did not run or was not attempted (dry run).
+    execute: Optional[Dict[str, Any]] = None
 
 
 #: Fix 3 (`handoffs/2026-09-22-loop-conductor-fixes.md`): the queue tool
@@ -808,6 +875,14 @@ async def _run_cycle(cycle_index: int, deps: CycleDeps, hold: HoldState) -> Cycl
                 cycle_index,
             )
 
+    # ---- 6. EXECUTE (docs/CONDUCTOR-EXECUTION.md 4.5) --------------------------
+    execute_report: Optional[ExecuteReport] = None
+    if not deps.dry_run:
+        execute_report = await _execute_phase(
+            deps, call, cycle_index=cycle_index, game_tick=game_tick, hold=hold, escalated=ordinary_escalated,
+            ore_read=ore_read, lane_state=lane_state, clock_changes=clock_changes, latched=False,
+        )
+
     result = CycleResult(
         cycle_index=cycle_index, game_tick=game_tick, game_tick_error=game_tick_error,
         signals=signals,
@@ -817,6 +892,7 @@ async def _run_cycle(cycle_index: int, deps: CycleDeps, hold: HoldState) -> Cycl
         escalated=ordinary_escalated,
         unexecuted=unexecuted, archived_path=None, dry_run=deps.dry_run,
         pause_watch=pause_watch_dict,
+        execute=execute_report.as_dict() if execute_report is not None else None,
         plan=(
             {
                 "would_read": list(ALL_ROLES),
@@ -1029,6 +1105,22 @@ async def _tripwire_cycle(
     called_escalate = _overseer_called_escalate(overseer_run)
     run_unclean = (not overseer_run.ok) or overseer_run.timed_out
     escalated = run_unclean or called_escalate
+    # Stage 2D (docs/CONDUCTOR-EXECUTION.md 4.5): while the latch still stands,
+    # the execute phase may run only high-urgency routed steps, accepted in this
+    # episode. It runs before the verdict is acted on, never after a resume, and
+    # never under an escalation or an operator hold without --allow-execution.
+    execute_report: Optional[ExecuteReport] = None
+    if not escalated:
+        lane_state = lanes.LaneState()
+        try:
+            lane_state = _lane_store(deps).load()
+        except Exception:  # noqa: BLE001
+            LOG.exception("cycle %s: lane state unavailable during the tripwire execute pass", cycle_index)
+        execute_report = await _execute_phase(
+            deps, call, cycle_index=cycle_index, game_tick=game_tick, hold=hold, escalated=False,
+            ore_read=await _ore_watch(deps, call, cycle_index), lane_state=lane_state,
+            clock_changes=clock_changes, latched=True,
+        )
     verdict = None if escalated else await read_verdict_after(call, verdict_baseline)
     if verdict is not None and verdict.get("resume"):
         # clock.resume refuses while a latch stands: clear it first. Under an
@@ -1064,6 +1156,7 @@ async def _tripwire_cycle(
         signals=Signals(), clock_level=clock_level, roles_woken=sequence, clock_changes=clock_changes,
         role_runs=role_runs, tripwire=tripwire, escalated=escalated, unexecuted=[],
         archived_path=None, dry_run=False, pause_watch=pause_dict,
+        execute=execute_report.as_dict() if execute_report is not None else None,
     )
     result.archived_path = _archive(deps, cycle_index, result, briefings=briefings)
     return result
@@ -1255,6 +1348,7 @@ def _archive(
         "tripwire": result.tripwire,
         "escalated": result.escalated,
         "pause_watch": result.pause_watch,
+        "execute": result.execute,
         "unexecuted_proposal_ids": [u.get("proposal", {}).get("id") for u in result.unexecuted],
     }
     role_run_dicts = [
