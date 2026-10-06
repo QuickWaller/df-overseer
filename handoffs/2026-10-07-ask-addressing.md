@@ -41,4 +41,44 @@ green.
 
 ## Result
 
-(executor fills this in, with deploy targets)
+Done, offline. Branch `worktree-agent-a40212511f2cf4cdb`.
+
+- `agents/ROSTER.yaml`: `answerer: true` on the consultant only.
+- `dfqueue/schema.py`: `answer_roles()` (enabled roles marked answerer),
+  `ask_addressee()` (absent `to` means consultant), `DEFAULT_ASK_ADDRESSEE`;
+  `ANSWER_ROLE` kept as an alias of the default. `ask.to` must be an answerer
+  role and not the asker. Answers may be written by any answerer role; the
+  store refuses anyone but the ask's addressee. Optional `answer.pile_spec`
+  validated: list of at most 8 entries; new-pile entries `purpose`,
+  `classes` (the 17 stockpile categories), `tiles` 1..961, optional
+  `adjacent_to`, `links_only`, `note`; reuse entries `purpose: reuse`, `pile`,
+  `note`. Unknown keys (x, y, pos, ...) and raw-coordinate text refused.
+- `dfqueue/store.py`: `open_asks(path, limit, to=None)` filters by addressee;
+  the answer-addressee check lives in `append`.
+- `dfqueue/render.py` (not on the touched list, needed so the addressee sees
+  `to` and `pile_spec`): renders both.
+- `dfmcp/queue_tools.py`: `to` and `pile_spec` in the schemas;
+  `queue.pending` for any answerer lists asks addressed to it;
+  `queue.overview` asks gains `to`: `{role: [ask ids]}` (count and ask_ids
+  unchanged).
+- `conductor/triage.py`, `conductor/cycle.py`: wake and briefing follow the
+  addressee, including the post-advisor re-wake; a summary without the `to`
+  map is still all the Consultant's. An addressee the conductor has no runner
+  for (not in its fixed four) wakes nobody and is logged.
+- Tests: `dfqueue/tests/test_ask_addressing.py` (39),
+  `dfmcp/tests/test_queue_ask_addressing.py` (5),
+  `conductor/tests/test_ask_routing.py` (4); two existing assertions updated
+  (answer-role message text, overview `asks.to`). Fixture roster for logistics.
+- Results: ambient `python -m pytest --ignore=dfmcp/tests` 2412 passed;
+  `dfmcp/tests` in `.venv-dfmcp` 935 passed.
+
+Deploy targets (none done): VM 103 (`dfmcp-server`, `dfqueue`, roster) and
+VM 106 (conductor). The conductor reads `asks.to` from the server, so deploy
+server first; the conductor tolerates the old shape.
+
+Open design points for the orchestrator: (1) `ASK_ROLES` does not yet gain
+`planner` (that waits for the role); (2) `queue.pending` for a role that is
+both a proposer and an answerer would list asks, not proposals, as the
+consultant branch always did; (3) the conductor will need a runner and charter
+for logistics before an ask to it can be answered; until then it is logged and
+left open.
