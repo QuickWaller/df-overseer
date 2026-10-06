@@ -12,6 +12,8 @@ what gets added to the schema later.
 
 from __future__ import annotations
 
+import json
+
 from xml.sax.saxutils import escape, quoteattr
 
 from .schema import (
@@ -249,6 +251,8 @@ def _close_xml(record: dict) -> str:
 
 def _ask_xml(record: dict) -> str:
     lines = [_open_tag("ask", record)]
+    if record.get("to") is not None:
+        lines.append(f"  <to>{escape(record['to'])}</to>")
     lines.append(f"  <question>{escape(record['question'])}</question>")
     if record.get("proposal_id") is not None:
         lines.append(f"  <proposal_id>{escape(record['proposal_id'])}</proposal_id>")
@@ -257,12 +261,15 @@ def _ask_xml(record: dict) -> str:
 
 
 def _answer_xml(record: dict) -> str:
-    return "\n".join([
+    lines = [
         _open_tag("answer", record),
         f"  <ask_id>{escape(record['ask_id'])}</ask_id>",
         f"  <answer>{escape(record['answer'])}</answer>",
-        "</answer>",
-    ])
+    ]
+    if record.get("pile_spec") is not None:
+        lines.append(f"  <pile_spec>{escape(json.dumps(record['pile_spec'], sort_keys=True))}</pile_spec>")
+    lines.append("</answer>")
+    return "\n".join(lines)
 
 
 def _escalation_xml(record: dict) -> str:

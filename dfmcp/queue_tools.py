@@ -730,7 +730,8 @@ _PENDING_BRIEF_SCHEMA = {
 }
 
 _ASK_DESCRIPTION = (
-    "Ask the Consultant a question: a lookup (any of architect, quartermaster "
+    "Ask an answerer role (default: the Consultant; `to` names another) a "
+    "question: a lookup (any of architect, quartermaster "
     "or overseer may ask) or a fact-check (the Overseer only, by naming an "
     "existing proposal_id) that routes a specific proposal for verification "
     "before ruling. One ask, one answer, no threads. While a fact-check (an "
@@ -746,6 +747,14 @@ _ASK_SCHEMA = {
         "question": {
             "type": "string",
             "description": "What you want to know. Coordinate-free.",
+        },
+        "to": {
+            "type": "string",
+            "description": (
+                "Optional: the answerer role this ask is addressed to (a roster "
+                "role marked answerer). Default 'consultant'. Only the addressee "
+                "may answer it."
+            ),
         },
         "proposal_id": {
             "type": "string",
@@ -775,6 +784,18 @@ _ANSWER_SCHEMA = {
             "description": "The id of an open ask (see queue.pending).",
         },
         "answer": {"type": "string", "description": "Coordinate-free."},
+        "pile_spec": {
+            "type": "array",
+            "description": (
+                "Optional, structured and coordinate-free: stockpile space an "
+                "answer asks the asker to leave. Each entry is either "
+                "{purpose, classes (stockpile categories), tiles (1..961, the "
+                "31 x 31 place cap), adjacent_to?, links_only?, note?} or a "
+                "reuse entry {purpose: 'reuse', pile (an existing pile's "
+                "name), note?}. Anything positional is refused."
+            ),
+            "items": {"type": "object"},
+        },
     },
 }
 
@@ -1254,8 +1275,8 @@ _PASS_FIELDS = {"reason"}
 _RULE_FIELDS = {"proposal_id", "decision", "reason", "public_rationale", "urgency"}
 _PENDING_FIELDS = {"limit"}
 _PENDING_BRIEF_FIELDS = {"limit"}
-_ASK_FIELDS = {"question", "proposal_id"}
-_ANSWER_FIELDS = {"ask_id", "answer"}
+_ASK_FIELDS = {"question", "proposal_id", "to"}
+_ANSWER_FIELDS = {"ask_id", "answer", "pile_spec"}
 _EXECUTED_FIELDS = {"ruling_id", "step_id", "actions", "notes"}
 _PROJECT_FIELDS = {
     "from_ruling", "objective_id", "template", "summary", "because", "steps",
@@ -1457,15 +1478,15 @@ async def _pending(
     # No write_lock here on purpose: a plain read, not part of the
     # _next_id/insert race the lock exists to serialise (module docstring).
     try:
-        if role == "consultant":
-            records = await asyncio.to_thread(store.open_asks, db_path, limit=limit)
+        if role in schema.answer_roles():
+            records = await asyncio.to_thread(store.open_asks, db_path, limit=limit, to=role)
         else:
             records = await asyncio.to_thread(store.pending_proposals, db_path, limit=limit)
     except (sqlite3.Error, OSError) as exc:
         raise _storage_error(QUEUE_PENDING, exc) from exc
     xml = "\n\n".join(render.to_xml(r) for r in records) if records else "<pending/>"
     ids = [r["id"] for r in records]
-    if role == "consultant":
+    if role in schema.answer_roles():
         structured = {"count": len(records), "ask_ids": ids}
     else:
         structured = {"count": len(records), "proposal_ids": ids}  # unchanged key, pre-existing callers
@@ -1602,9 +1623,15 @@ async def _overview(
 
     proposal_ids = [r["id"] for r in proposals]
     ask_ids = [r["id"] for r in asks]
+    # `to`: open asks per addressee, so the conductor wakes the right answerer
+    # (an ask with no `to` is the Consultant's). `count`/`ask_ids` stay the
+    # total, as before.
+    asks_to: dict = {}
+    for r in asks:
+        asks_to.setdefault(schema.ask_addressee(r), []).append(r["id"])
     structured = {
         "proposals": {"count": len(proposals), "proposal_ids": proposal_ids},
-        "asks": {"count": len(asks), "ask_ids": ask_ids},
+        "asks": {"count": len(asks), "ask_ids": ask_ids, "to": asks_to},
     }
     proposals_xml = "\n\n".join(render.to_xml(r) for r in proposals) if proposals else "<proposals/>"
     asks_xml = "\n\n".join(render.to_xml(r) for r in asks) if asks else "<asks/>"

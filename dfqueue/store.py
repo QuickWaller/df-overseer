@@ -61,7 +61,7 @@ from .schema import (
     CLOSE_NOT_DONE, DONE, EXECUTED, FAILED, GUARDS_DEFAULT, HELD, ISSUED,
     OBSERVATION, OBS_CONSISTENT, OBSERVATION_ROLE, PROJECT, PROPOSAL,
     PUBLIC_RATIONALE_MAX, READY, REJECT, RULING, SUCCESS, FAILURE,
-    TRIGGER_ALL_DONE, TRIGGER_ALL_SUCCESS, WAITING, executor, fort_name,
+    TRIGGER_ALL_DONE, TRIGGER_ALL_SUCCESS, WAITING, ask_addressee, executor, fort_name,
     near_duplicate_reason, normalize_project, sole_writer, validate,
 )
 
@@ -892,8 +892,15 @@ def _append_in_conn(
     if kind == ANSWER and not _ask_id_already_flagged(errors):
         ask_id = record.get("ask_id")
         ask_row = conn.execute(
-            "SELECT 1 FROM records WHERE id = ? AND kind = ?", (ask_id, ASK)
+            "SELECT payload FROM records WHERE id = ? AND kind = ?", (ask_id, ASK)
         ).fetchone()
+        if ask_row is not None:
+            addressee = ask_addressee(json.loads(ask_row["payload"]))
+            if record.get("role") != addressee:
+                errors.append(
+                    f"record.role: {ask_id!r} is addressed to {addressee!r}; "
+                    f"only its addressee may answer it, got {record.get('role')!r}"
+                )
         if ask_row is None:
             errors.append(
                 f"record.ask_id: {ask_id!r} does not refer to an existing ask "
@@ -1459,7 +1466,9 @@ def pending_proposals(path: str | Path, limit: int | None = None) -> list[dict]:
     return [json.loads(r["payload"]) for r in rows]
 
 
-def open_asks(path: str | Path, limit: int | None = None) -> list[dict]:
+def open_asks(
+    path: str | Path, limit: int | None = None, to: str | None = None,
+) -> list[dict]:
     """Every `ask` record with no `answer` yet, oldest first -- the
     Consultant's own read (`dfmcp/queue_tools.py`'s `queue.pending`, for
     role `consultant`, branches to this instead of `pending_proposals`:
@@ -1468,6 +1477,10 @@ def open_asks(path: str | Path, limit: int | None = None) -> list[dict]:
     enforces at write time: at most one `answer` per `ask`, so "open" here
     just means "answer count is zero", no defer-like open/closed
     distinction to track.
+
+    `to` (an answerer role) keeps only asks addressed to it; an ask with no
+    `to` is the Consultant's (`schema.ask_addressee`). `None` lists every
+    open ask regardless of addressee (`queue.overview`, the conductor).
     """
     query = (
         "SELECT a.payload FROM records a WHERE a.kind = ? AND NOT EXISTS ("
@@ -1476,12 +1489,12 @@ def open_asks(path: str | Path, limit: int | None = None) -> list[dict]:
         ") ORDER BY a.ts ASC, a.rowid ASC"
     )
     params: list = [ASK, ANSWER]
-    if limit is not None:
-        query += " LIMIT ?"
-        params.append(limit)
     with _connect(path) as conn:
         rows = conn.execute(query, params).fetchall()
-    return [json.loads(r["payload"]) for r in rows]
+    asks = [json.loads(r["payload"]) for r in rows]
+    if to is not None:
+        asks = [a for a in asks if ask_addressee(a) == to]
+    return asks[:limit] if limit is not None else asks
 
 
 def unexecuted_accepted_proposals(path: str | Path) -> list[dict]:
