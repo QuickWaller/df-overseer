@@ -33,6 +33,7 @@ SCRIPTS = Path(__file__).resolve().parent.parent / "scripts" / "dfhack"
 STUBS = Path(__file__).resolve().parent / "lua_stubs"
 STOCKPILE_LUA = SCRIPTS / "df-overseer-stockpile.lua"
 RESERVATIONS_LUA = SCRIPTS / "df-overseer-reservations.lua"
+KINDS_LUA = SCRIPTS / "df-overseer-stockpile-kinds.lua"
 STUB = STUBS / "dfhack_stockpile_world.lua"
 
 
@@ -47,7 +48,7 @@ class StockpileWorld:
         # already established. The real file's path is the stub chunk's own
         # `...` argument.
         stub_chunk = load(STUB.read_text(encoding="utf-8"), "stockpile_world")
-        stub_chunk(str(RESERVATIONS_LUA))
+        stub_chunk(str(RESERVATIONS_LUA), str(KINDS_LUA))
 
         stockpile_chunk = load(STOCKPILE_LUA.read_text(encoding="utf-8"), "stockpile.lua")
         stockpile_chunk()
@@ -61,6 +62,14 @@ class StockpileWorld:
         self._stockpile_configure = g["stockpile_configure"]
         self._stockpile_link = g["stockpile_link"]
         self._stockpile_unlink = g["stockpile_unlink"]
+        # handoffs/2026-10-07-stockpile-tool-gaps.md verbs
+        self._stockpile_settings = g["stockpile_settings"]
+        self._stockpile_materials = g["stockpile_materials"]
+        self._stockpile_set_materials = g["stockpile_set_materials"]
+        self._stockpile_health = g["stockpile_health"]
+        self._stockpile_plan_feed = g["stockpile_plan_feed"]
+        self._stockpile_remove = g["stockpile_remove"]
+        self.g = g
         self.reservations_mod = reservations_mod
         self._set_free = g["set_free"]
         self._make_workshop = g["make_workshop"]
@@ -96,6 +105,39 @@ class StockpileWorld:
 
     def stockpile_unlink(self, *args):
         return self._as_pair(self._stockpile_unlink(*args))
+
+    def stockpile_settings(self, *args):
+        return self._as_pair(self._stockpile_settings(*args))
+
+    def stockpile_materials(self, *args):
+        return self._as_pair(self._stockpile_materials(*args))
+
+    def stockpile_set_materials(self, *args):
+        return self._as_pair(self._stockpile_set_materials(*args))
+
+    def stockpile_health(self):
+        return self._as_pair(self._stockpile_health())
+
+    def stockpile_plan_feed(self, *args):
+        return self._as_pair(self._stockpile_plan_feed(*args))
+
+    def stockpile_remove(self, *args):
+        return self._as_pair(self._stockpile_remove(*args))
+
+    def make_pile(self, flags=(), w=2, h=2, no_container_fields=False, items=0):
+        """A stockpile accepting `flags` (category names), optionally filled."""
+        table = self.lua.table_from({f: True for f in flags})
+        bld = self.g["make_pile"](10, 10, 0, w, h, table, no_container_fields)
+        if items:
+            self.g["fill_pile"](bld, items)
+        return bld
+
+    def make_shop(self, kind, furnace=False):
+        fn = self.g["make_furnace"] if furnace else self.g["make_workshop"]
+        return fn(0, 0, 0, kind) if furnace else fn(0, 0, 0, kind)
+
+    def set_availability(self, key, units):
+        self.g["set_availability"](key, units)
 
     def set_free(self, x, y, z, free=True):
         self._set_free(x, y, z, free)

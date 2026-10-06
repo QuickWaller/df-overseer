@@ -21,7 +21,12 @@
 local NULL = "\0"
 
 df = {
-  building_type = {Stockpile = 1, Workshop = 2, FarmPlot = 3},
+  building_type = {Stockpile = 1, Workshop = 2, FarmPlot = 3, Furnace = 4},
+  -- handoffs/2026-10-07-stockpile-tool-gaps.md: subtype enums, name <-> id,
+  -- enough for workshop_kind_name (df[enum][bld.type] -> name).
+  workshop_type = {[0] = "Carpenters", [1] = "Still", [2] = "Masons", [3] = "Kitchen",
+                   [4] = "Custom", Carpenters = 0, Still = 1, Masons = 2, Kitchen = 3, Custom = 4},
+  furnace_type = {[0] = "WoodFurnace", [1] = "Smelter", WoodFurnace = 0, Smelter = 1},
 }
 dfhack_flags = {module = true}
 package.loaded["json"] = {encode = function() return "" end}
@@ -90,26 +95,74 @@ local function new_link_vec()
   return setmetatable({n = 0}, {__len = function(self) return self.n end})
 end
 
-local function make_stockpile(x, y, z, w, h, flags)
+-- A 0-indexed dfhack-style vector of booleans/values, with __len.
+function new_vec(values)
+  local v = setmetatable({n = #values}, {__len = function(self) return self.n end})
+  for i, val in ipairs(values) do v[i - 1] = val end
+  return v
+end
+
+-- Game material lists the material filters read (df.global.world.raws).
+-- Index 0 is a metal (not IS_STONE) so the include filter has work to do.
+RAWS = {
+  inorganics = new_vec({
+    {id = "NATIVE_GOLD", material = {flags = {IS_STONE = false}}},
+    {id = "GRANITE", material = {flags = {IS_STONE = true}}},
+    {id = "MARBLE", material = {flags = {IS_STONE = true}}},
+    {id = "HEMATITE", material = {flags = {IS_STONE = true}}},
+  }),
+  plants = {all = new_vec({
+    {id = "OAK", flags = {TREE = true}},
+    {id = "WHEAT", flags = {TREE = false}},
+    {id = "BIRCH", flags = {TREE = true}},
+  })},
+}
+
+local function make_stockpile(x, y, z, w, h, flags, no_container_fields)
   local bld = {
     id = next_id, x1 = x, x2 = x + w - 1, y1 = y, y2 = y + h - 1, z = z,
     _type = df.building_type.Stockpile,
-    settings = {flags = flags or {}},
+    settings = {
+      flags = flags or {},
+      stone = {mats = new_vec({false, false, false, false})},
+      wood = {mats = new_vec({false, false, false})},
+    },
+    _contents = {},
     links = {
       give_to_pile = new_link_vec(), take_from_pile = new_link_vec(),
       give_to_workshop = new_link_vec(), take_from_workshop = new_link_vec(),
     },
   }
+  if not no_container_fields then
+    bld.use_links_only = 0
+    bld.max_barrels = w * h
+    bld.max_bins = w * h
+    bld.max_wheelbarrows = 0
+  end
   function bld:getType() return self._type end
   next_id = next_id + 1
   table.insert(BUILDINGS, bld)
   return bld
 end
 
-function make_workshop(x, y, z)
+-- Test helper: a stockpile with chosen category flags, no quickfort.
+function make_pile(x, y, z, w, h, flags, no_container_fields)
+  return make_stockpile(x, y, z, w, h, flags, no_container_fields)
+end
+
+-- Test helper: put n items in a pile, one per tile along its top row.
+function fill_pile(bld, n)
+  bld._contents = {}
+  for i = 1, n do
+    table.insert(bld._contents, {x = bld.x1 + (i - 1) % (bld.x2 - bld.x1 + 1), y = bld.y1, z = bld.z})
+  end
+end
+
+function make_workshop(x, y, z, kind, building_type)
   local bld = {
     id = next_id, x1 = x, x2 = x, y1 = y, y2 = y, z = z,
-    _type = df.building_type.Workshop,
+    _type = building_type or df.building_type.Workshop,
+    type = (kind and (df.workshop_type[kind] or df.furnace_type[kind])) or 0,
     profile = {
       links = {
         give_to_pile = new_link_vec(), take_from_pile = new_link_vec(),
@@ -126,6 +179,7 @@ end
 df.global = {
   cur_year = 1,  -- df-overseer-reservations.lua's own abs_tick reads this
   world = {
+    raws = RAWS,
     buildings = {
       all = BUILDINGS,
       other = {
@@ -152,7 +206,23 @@ function dfhack.buildings.containsTile(bld, x, y)
   return x >= bld.x1 and x <= bld.x2 and y >= bld.y1 and y <= bld.y2
 end
 
-function dfhack.buildings.getStockpileContents(bld) return {} end
+function dfhack.buildings.getStockpileContents(bld) return bld._contents or {} end
+dfhack.items.getPosition = function(it) return it.x, it.y, it.z end
+
+function make_furnace(x, y, z, kind)
+  return make_workshop(x, y, z, kind, df.building_type.Furnace)
+end
+
+DECONSTRUCTED = {}
+function dfhack.buildings.deconstruct(bld)
+  table.insert(DECONSTRUCTED, bld.id)
+  for i, b in ipairs(BUILDINGS) do
+    if b == bld then table.remove(BUILDINGS, i) break end
+  end
+end
+
+STOCKS_AVAILABLE = {}
+function set_availability(key, units) STOCKS_AVAILABLE[key] = units end
 
 dfhack.maps.isTileVisible = function() return true end
 
@@ -302,8 +372,9 @@ local openarea = {is_free = is_free}
 -- `__index = _G`, which is what turns reservations.lua's own unqualified
 -- `function get_raw(...)` etc. into `reservations_mod.get_raw`. The path to
 -- the real file is passed as this stub chunk's own `...` argument.
-local RESERVATIONS_LUA_PATH = ...
+local RESERVATIONS_LUA_PATH, KINDS_LUA_PATH = ...
 local RESERVATIONS_MOD = nil
+local KINDS_MOD = nil
 
 function reqscript(n)
   if n == "df-overseer-landmarks" then return landmarks end
@@ -319,6 +390,23 @@ function reqscript(n)
       RESERVATIONS_MOD = env
     end
     return RESERVATIONS_MOD
+  end
+  if n == "df-overseer-stockpile-kinds" then
+    if not KINDS_MOD then
+      local f = io.open(KINDS_LUA_PATH, "r")
+      local src = f:read("*a")
+      f:close()
+      local env = setmetatable({dfhack_flags = {module = true}}, {__index = _G})
+      local chunk = assert(load(src, "stockpile-kinds.lua", "t", env))
+      chunk()
+      KINDS_MOD = env
+    end
+    return KINDS_MOD
+  end
+  if n == "df-overseer-stocks" then
+    return {get_availability = function(key)
+      return {available_units = STOCKS_AVAILABLE[key] or 0}
+    end}
   end
   return {}
 end
