@@ -5010,6 +5010,15 @@ df-overseer-construction.lua:
         designation. Granted to the overseer only (mutates fort state,
         dfmcp/roles.py rule 2).
       summary: "Designates digging for every ore or gem vein tile found on a zone's boundary ring."
+      # Per-tool execution data (docs/CONDUCTOR-EXECUTION.md 2.3, handoffs/2026-10-07-route-ore-mining.md).
+      # The Lua return has no `ok`: `refused` and `held` are lists of strings, empty when clean, so a
+      # non-empty one refuses (an unclassifiable ring tile, or a tile held by a reservation, would leave
+      # ore behind). nothing_applied is left undeclared on purpose: a real run designates the clean
+      # tiles even when others are refused, so a refusal cannot prove nothing changed.
+      execution:
+        verdict: {refused_if_true: [refused, held]}
+        dry_run_echo: dry_run
+        preview_fields: [ore_tiles_found, already_open, refused, held]
       guide:
         arguments:
           - name: "ZONE_ID"
@@ -5080,6 +5089,16 @@ df-overseer-construction.lua:
         designation. Granted to the overseer only (mutates fort state,
         dfmcp/roles.py rule 2).
       summary: "Designates digging for every ore or gem vein tile on the walls ringing a carved room, named by its site handle."
+      # Per-tool execution data (docs/CONDUCTOR-EXECUTION.md 2.3, handoffs/2026-10-07-route-ore-mining.md).
+      # The Lua return has no `ok`: `refused` and `held` are lists of strings, empty when clean, so a
+      # non-empty one refuses (an unclassifiable ring tile, or a tile held by a reservation, would leave
+      # ore behind). nothing_applied is left undeclared on purpose: a real run designates the clean
+      # tiles even when others are refused, so a refusal cannot prove nothing changed.
+      execution:
+        verdict: {refused_if_true: [refused, held]}
+        dry_run_echo: dry_run
+        preview_fields: [ore_tiles_found, already_open, refused, held]
+        handle_args: [site_id]
       guide:
         arguments:
           - name: "SITE_ID"
