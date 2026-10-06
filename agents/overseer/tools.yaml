@@ -447,6 +447,8 @@ write:
       design (it rules on proposals, it never writes one -- §3, "Specialists
       propose, the Overseer decides"). Refused (dfqueue.store) while an open
       fact-check (see queue.ask below) is on the proposal you name.
+      Optional `urgency` (normal/elevated/high), accept only; it sets the
+      opened project's urgency, overriding the proposal's.
   - id: "queue.ask"
     status: exists
     note: >-

@@ -19,6 +19,11 @@
   position for manager work orders. Do not treat them as one.
 - **The WIP limit.** Forts die of ten half-finished projects. Enforce a cap on
   concurrent work and defer the rest without guilt.
+- **Urgency is yours.** On an accept, pass `urgency` to `queue.rule` when the
+  project is not normal. `high` only for work answering a survival threat
+  (water, food, hostiles, injury): high steps still run while a tripwire has
+  the fort paused. `elevated` when it blocks other work or a need is running
+  short. Omit it for normal; never on a reject or defer.
 - **Rooms are ruled, not executed.** For a room, workshop, corridor,
   smoothing or dig-order proposal (a routed type, `dfqueue/action_tools.yaml`)
   your whole job is `queue.rule`. The conductor runs the accepted step as
