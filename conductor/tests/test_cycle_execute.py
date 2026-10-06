@@ -168,3 +168,30 @@ async def test_a_latch_under_a_plain_hold_runs_no_step(tmp_path):
     HoldStore(hold_path_for(deps.cursor_store.path)).set("keep paused", who="test")
     await run_cycle(1, deps)
     assert "queue.run_step" not in _names(deps)
+
+
+# ---- routing lines in briefings ----------------------------------------------
+
+
+async def test_routing_from_the_server_shapes_the_ruling_ask_and_freezes_the_architect(tmp_path):
+    state = {**READY, "routing": {"routed_types": ["work_order"], "unrouted_types": ["room_siting"],
+                                   "frozen_types": ["room_siting"]}}
+    tools = _tools(state)
+    tools["queue.overview"] = {"proposals": {"count": 1, "proposal_ids": ["proposal-0001"]}, "asks": {"count": 0, "ask_ids": []}}
+    tools["diff.since"] = __import__("conductor.tests.test_cycle", fromlist=["x"])._diff_sequence(
+        [[{"id": 1, "type": "JOB_COMPLETED", "detail": "Dig"}], []])
+    runner = FakeRoleRunner()
+    await run_cycle(1, _deps(tmp_path, tools=tools, runner=runner))
+    overseer = next(c for c in runner.calls if c["role"] == OVERSEER)["prompt"]
+    assert "work_order are carried out by the conductor" in overseer
+    architect = json.loads(next(c for c in runner.calls if c["role"] == ARCHITECT)["prompt"])
+    assert architect["frozen"]["types"] == ["room_siting"]
+
+
+async def test_a_server_that_reports_no_routing_leaves_the_briefings_as_they_were(tmp_path):
+    runner = FakeRoleRunner()
+    tools = _tools()
+    tools["queue.overview"] = {"proposals": {"count": 1, "proposal_ids": ["proposal-0001"]}, "asks": {"count": 0, "ask_ids": []}}
+    await run_cycle(1, _deps(tmp_path, tools=tools, runner=runner))
+    overseer = next(c for c in runner.calls if c["role"] == OVERSEER)["prompt"]
+    assert "ACCEPTED ROUTED WORK" not in overseer and "carry out each proposal you accept" in overseer

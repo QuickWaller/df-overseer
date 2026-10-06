@@ -47,6 +47,12 @@ MAX_LEDGER_ROWS = 10
 MAX_STUCK_JOB_LINES = 5
 MAX_ORE_LINES = 5
 
+#: The freeze line (docs/CONDUCTOR-EXECUTION.md 6.6, 2b).
+FREEZE_LINE = (
+    "Proposals of these types move to exact actions at the next deploy and wait until it. "
+    "Skip this work now: do not file proposals of these types."
+)
+
 
 def _field(result: Any, path: str) -> Any:
     node = result
@@ -110,6 +116,7 @@ def build_briefing(
     stuck_jobs: Optional[Sequence[str]] = None,
     alerts: Optional[Sequence[str]] = None,
     ore_exposed: Optional[Sequence[str]] = None,
+    frozen_types: Optional[Sequence[str]] = None,
 ) -> Dict[str, Any]:
     """One role's briefing for this cycle. `vitals` is `vitals.summary`'s own
     result, passed through as-is (already Tier 0 by construction -- see
@@ -164,6 +171,10 @@ def build_briefing(
         # One line per standing exposure (handoffs/2026-10-05-ore-exposed-signal.md),
         # only for a role whose lane carries ore; absent when nothing is exposed.
         briefing["ore_exposed"] = _capped([str(s)[:200] for s in ore_exposed], MAX_ORE_LINES)
+    if frozen_types:
+        # docs/CONDUCTOR-EXECUTION.md 6.6 (2b): a group frozen ahead of its cutover.
+        # Skipped, not refused (the user's call): the role does not file these types.
+        briefing["frozen"] = {"types": [str(t) for t in frozen_types][:MAX_QUEUE_IDS], "note": FREEZE_LINE}
     if ledger_digest is not None:
         briefing["ledger"] = _capped(ledger_digest, MAX_LEDGER_ROWS)
     return briefing
@@ -189,6 +200,47 @@ RULING_ASK = (
 )
 
 
+def routing_from_state(state: Any) -> Optional[Dict[str, List[str]]]:
+    """`queue.execution_state`'s optional `routing` block (which proposal types
+    the conductor runs, which are still the Overseer's, which are frozen), or
+    `None` when the server does not report one: every caller then behaves
+    exactly as before routing existed. Total."""
+    block = state.get("routing") if isinstance(state, Mapping) else None
+    if not isinstance(block, Mapping):
+        return None
+    out: Dict[str, List[str]] = {}
+    for key in ("routed_types", "unrouted_types", "frozen_types"):
+        value = block.get(key)
+        out[key] = [str(v) for v in value] if isinstance(value, list) else []
+    return out
+
+
+def ruling_ask(routing: Optional[Mapping[str, Sequence[str]]], calls: int) -> str:
+    """The ask, last. Without routing it is the original ask. With it, the
+    carry-out instruction names only the unrouted types and the routed ones are
+    said to be the conductor's (docs/CONDUCTOR-EXECUTION.md 3, P3-M4)."""
+    if not routing or not routing.get("routed_types"):
+        return RULING_ASK.format(calls=calls)
+    routed = ", ".join(routing["routed_types"])
+    unrouted = ", ".join(routing.get("unrouted_types") or ())
+    out = [
+        "Rule on each pending proposal: accept, reject, or defer naming what would "
+        "change your mind. Cited facts are checked and refreshed; judge the reasoning."
+    ]
+    if unrouted:
+        out.append(
+            f"Then carry out each proposal you accept of type {unrouted}, following your charter's "
+            "Execution steps (queue.project, act, queue.executed with step_id)."
+        )
+    out.append(
+        f"Accepted proposals of type {routed} are carried out by the conductor: rule only, and do not "
+        "open a project or record execution for them."
+    )
+    tail = "Stop when each has a ruling" + (" and every accepted one of the other types is carried out." if unrouted else ".")
+    out.append(f"{tail} Expected about {calls} calls.")
+    return " ".join(out)
+
+
 def _fmt_cited(c: Mapping[str, Any]) -> str:
     args = c.get("args") or {}
     arg_text = ",".join(f"{k}={v}" for k, v in sorted(args.items()))
@@ -205,6 +257,7 @@ def build_ruling_briefing(
     *, game_tick: int, wake: Wake, vitals: Mapping[str, Any], alerts: Sequence[str],
     pending_brief: Optional[Mapping[str, Any]], diff_events: Sequence[Mapping[str, Any]] = (),
     stuck_jobs: Sequence[str] = (), to_carry_out: Sequence[str] = (),
+    routing: Optional[Mapping[str, Sequence[str]]] = None,
 ) -> str:
     """The Overseer's prompt for an ordinary ruling wake, as text in a fixed
     order, stable material first and the ask last (cache-friendly, bounded):
@@ -247,10 +300,13 @@ def build_ruling_briefing(
     count = (pending_brief or {}).get("count", 0)
     shown = len(proposals)
     out.append(f"PENDING PROPOSALS ({shown} shown of {count})")
+    routed_types = set((routing or {}).get("routed_types") or ())
     for p in proposals:
         pred = p.get("prediction") or {}
         cost = p.get("cost") or {}
         out.append(f"- {p.get('id')} [{p.get('role')}, {p.get('type')}] priority {p.get('priority')}: {p.get('summary')}")
+        if p.get("type") in routed_types:
+            out.append("  Routed: if you accept it, the conductor runs it. Rule only.")
         out.append(f"  Rationale: {p.get('rationale')}")
         out.append(
             f"  Prediction: {pred.get('signal')} {pred.get('op')} {pred.get('value')} "
@@ -270,6 +326,12 @@ def build_ruling_briefing(
             + ". You accepted these; carry each out now (queue.project, act, queue.executed)."
         )
 
+    if routed_types:
+        out.append(
+            "ACCEPTED ROUTED WORK: " + ", ".join(sorted(routed_types))
+            + " proposals you accept are run by the conductor; nothing for you to carry out."
+        )
+
     items: List[str] = []
     for line in list(stuck_jobs)[:MAX_STUCK_JOB_LINES]:
         items.append(f"stuck job: {str(line)[:160]}")
@@ -278,5 +340,5 @@ def build_ruling_briefing(
     out.append("OTHER OPEN ITEMS" + ("" if items else ": none"))
     out.extend(f"- {i}" for i in items)
 
-    out.append(RULING_ASK.format(calls=max(2, 4 * shown + 2) if shown else 2))
+    out.append(ruling_ask(routing, max(2, 4 * shown + 2) if shown else 2))
     return "\n".join(out)

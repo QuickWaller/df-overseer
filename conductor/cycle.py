@@ -58,7 +58,7 @@ from dataclasses import dataclass
 from typing import Any, Callable, Dict, List, Mapping, Optional, Sequence, Set, Tuple
 
 from conductor.archive import CycleArchive
-from conductor.briefing import build_briefing, build_ruling_briefing, evaluate_threshold_alerts
+from conductor.briefing import build_briefing, build_ruling_briefing, evaluate_threshold_alerts, routing_from_state
 from conductor import lanes
 from conductor.cursors import CursorStore
 from conductor.game_tick import GameTickError, game_tick_from_overview
@@ -165,6 +165,17 @@ async def _carry_out_wake_ids(
         return []
     return ids
 
+
+
+async def _read_routing(call: Callable, cycle_index: int) -> Optional[Mapping[str, Any]]:
+    """The routed, unrouted and frozen proposal types, from `queue.execution_state`'s
+    `routing` block. `None` (not reported, or the read failed) means every
+    briefing is exactly what it was before routing existed."""
+    try:
+        return routing_from_state(await call("queue.execution_state", {}))
+    except Exception as exc:  # noqa: BLE001 -- total: a briefing never depends on this read
+        LOG.warning("cycle %s: routing read failed (%s); briefings carry no routing lines", cycle_index, exc)
+        return None
 
 
 def _execute_store(deps: "CycleDeps") -> ExecuteStore:
@@ -759,6 +770,8 @@ async def _run_cycle(cycle_index: int, deps: CycleDeps, hold: HoldState) -> Cycl
     extra_wakes: Dict[str, Wake] = {}
     queue_refreshed = False
     known_ids: Set[str] = set(pending_ids) | set(lane_state.proposers)
+    routing: Optional[Mapping[str, Any]] = None
+    routing_read = False
     idx = 0
     while True:
         # Advisors have run; anything they filed (an ask above all) is not in
@@ -796,12 +809,18 @@ async def _run_cycle(cycle_index: int, deps: CycleDeps, hold: HoldState) -> Cycl
         idx += 1
 
         wake = extra_wakes.get(role) or triage_result.wake_for(role)
+        # Which proposal types the conductor runs or has frozen (stage 2D): one
+        # cheap read, only when a role that needs it is about to be briefed.
+        if not routing_read and not deps.dry_run and role in (*ADVISORS, OVERSEER):
+            routing_read = True
+            routing = await _read_routing(call, cycle_index)
         briefing = build_briefing(
             role=role, game_tick=game_tick or 0, wake=wake, vitals=vitals,
             diff_events=events_by_role.get(role, []),
             queue_summary=_queue_summary_for(role, queue_state),
             stuck_jobs=job_watch.lines, alerts=alerts,
             ore_exposed=_ore_lines_for(deps.policy, role, ore_read),
+            frozen_types=(routing or {}).get("frozen_types") if role in ADVISORS else None,
         )
         briefings[role] = briefing
         prompt = json.dumps(briefing, default=str)
@@ -813,7 +832,7 @@ async def _run_cycle(cycle_index: int, deps: CycleDeps, hold: HoldState) -> Cycl
             prompt = build_ruling_briefing(
                 game_tick=game_tick or 0, wake=wake, vitals=vitals, alerts=alerts,
                 pending_brief=pending_brief, diff_events=events_by_role.get(role, []),
-                stuck_jobs=job_watch.lines, to_carry_out=to_carry_out,
+                stuck_jobs=job_watch.lines, to_carry_out=to_carry_out, routing=routing,
             )
             briefings[role] = {"ruling_prompt": prompt, "pending_brief": pending_brief}
 
