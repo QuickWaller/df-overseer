@@ -918,3 +918,51 @@ def test_a_successful_action_never_carries_a_reason_and_long_reasons_are_cut():
         {"tool": "trees.fell", "outcome": "failure", "targets": [], "detail": "x " * 200},
     ]))
     assert len(long[0]["reason"]) <= feed.ACTION_REASON_MAX
+
+
+# ---- a close decides the final status ------------------------------------------
+
+
+def _close(cid, outcome, **target):
+    return {"id": cid, "kind": "close", "role": "conductor", "outcome": outcome,
+            "reason": "private model-side reason", **target}
+
+
+def _ruled():
+    return [
+        make_proposal(id="proposal-0001"),
+        make_ruling(id="ruling-0001", proposal_id="proposal-0001", decision="accept"),
+        make_project(id="project-0001", from_ruling="ruling-0001"),
+    ]
+
+
+@pytest.mark.parametrize("outcome,badge", [
+    ("completed", "completed"), ("not_done", "closed"),
+    ("superseded", "closed"), ("abandoned", "closed"),
+])
+def test_badge_close_after_ruling_decides_status(outcome, badge):
+    records = _ruled() + [_close("close-0001", outcome, ruling_id="ruling-0001")]
+    assert feed.build_proposal_badges(records) == {"proposal-0001": badge}
+
+
+def test_badge_close_naming_a_proposal_a_ruling_or_a_project_all_map():
+    for target in ({"proposal_id": "proposal-0001"}, {"ruling_id": "ruling-0001"},
+                   {"project_id": "project-0001"}):
+        records = _ruled() + [_close("close-0001", "not_done", **target)]
+        assert feed.build_proposal_badges(records) == {"proposal-0001": "closed"}
+
+
+def test_badge_close_of_one_proposal_leaves_the_other_alone():
+    records = [make_proposal(id="proposal-0001"), make_proposal(id="proposal-0002"),
+               _close("close-0001", "not_done", proposal_id="proposal-0002")]
+    assert feed.build_proposal_badges(records) == {"proposal-0002": "closed"}
+
+
+def test_projects_view_closed_project_status_follows_the_close():
+    done = feed.build_projects_view(
+        _ruled() + [_close("close-0001", "completed", ruling_id="ruling-0001")], public=True)
+    assert done["projects"]["project-0001"]["status"] == "done"
+    closed = feed.build_projects_view(
+        _ruled() + [_close("close-0001", "not_done", project_id="project-0001")], public=True)
+    assert closed["projects"]["project-0001"]["status"] == "closed"
+    assert feed.build_projects_view(_ruled(), public=True)["projects"]["project-0001"]["status"] == "active"

@@ -285,12 +285,46 @@ def compute_thread(item_id: str, reply_to_by_id: dict) -> str:
 _DECISION_BADGES = {ACCEPT: "accepted", REJECT: "rejected", DEFER: "deferred"}
 
 
+def close_proposal_map(records: list[dict]) -> dict:
+    """proposal_id -> the outcome of the LAST `close` that reaches it. A close
+    names exactly one of a ruling, a proposal or a project
+    (`compute_reply_to`'s own order); a ruling maps to its proposal, a project
+    to its founding ruling's proposal."""
+    rulings = {r["id"]: r.get("proposal_id") for r in records
+               if r.get("kind") == RULING and r.get("id")}
+    projects = {r["id"]: r.get("from_ruling") for r in records
+                if r.get("kind") == PROJECT and r.get("id")}
+    out: dict[str, str] = {}
+    for r in records:
+        if r.get("kind") != CLOSE:
+            continue
+        if r.get("proposal_id"):
+            pid = r["proposal_id"]
+        elif r.get("ruling_id"):
+            pid = rulings.get(r["ruling_id"])
+        elif r.get("project_id"):
+            pid = rulings.get(projects.get(r["project_id"]))
+        else:
+            pid = None
+        if pid:
+            out[pid] = r.get("outcome")
+    return out
+
+
+def close_badge(outcome: Optional[str]) -> str:
+    """The Board state a close outcome gives: `completed` stays the green
+    completed state, every other outcome is the grey `closed` state."""
+    return "completed" if outcome == "completed" else "closed"
+
+
 def build_proposal_badges(records: list[dict]) -> dict:
     """proposal_id -> "pending"/"accepted"/"rejected"/"deferred", the LATEST
     ruling's decision (a `defer` can be followed by another ruling; only
-    `accept`/`reject` are final, `dfqueue/store.py`'s own `FINAL_DECISIONS`).
-    Records are assumed already in append order (`load_records_readonly`'s
-    contract), so "latest" is simply "last seen"."""
+    `accept`/`reject` are final, `dfqueue/store.py`'s own `FINAL_DECISIONS`),
+    then overridden by a `close` (`completed` or `closed`), which decides the
+    final status after any ruling. Records are assumed already in append
+    order (`load_records_readonly`'s contract), so "latest" is simply "last
+    seen"."""
     badges: dict[str, str] = {}
     for r in records:
         if r.get("kind") == RULING:
@@ -298,6 +332,8 @@ def build_proposal_badges(records: list[dict]) -> dict:
             decision = r.get("decision")
             if pid:
                 badges[pid] = _DECISION_BADGES.get(decision, decision)
+    for pid, outcome in close_proposal_map(records).items():
+        badges[pid] = close_badge(outcome)
     return badges
 
 
@@ -818,6 +854,9 @@ def build_projects_view(records: list[dict], *, public: bool) -> dict:
             # `public_rationale` (design §3.3 item 6), surfaced through the
             # project's chat item (build_public_item), not duplicated here.
 
+    closes = close_proposal_map(records)
+    direct_closes = {r["project_id"]: r.get("outcome") for r in records
+                     if r.get("kind") == CLOSE and r.get("project_id")}
     for pid in projects:
         steps = (
             _public_board_steps(records, pid) if public
@@ -825,6 +864,12 @@ def build_projects_view(records: list[dict], *, public: bool) -> dict:
         )
         projects[pid]["steps"] = steps
         projects[pid]["status"] = feed_status.project_board_status(records, pid)
+        closed = closes.get(projects[pid].get("proposal_id"))
+        if closed is None:
+            closed = direct_closes.get(pid)
+        if closed is not None:
+            # A close decides the final state, after any plan progress.
+            projects[pid]["status"] = "done" if closed == "completed" else "closed"
         if public:
             for step in steps:
                 if step.get("state") == "hold":
