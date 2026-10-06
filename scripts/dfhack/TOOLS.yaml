@@ -3385,7 +3385,7 @@ df-overseer-stockpile.lua:
   # Same convention as df-overseer-zone.lua's own arg_defaults (dfmcp/tools.py
   # fills a slot an agent skipped while naming a later optional argument by
   # name).
-  arg_defaults: {LEVEL: "0", RANK: "1", RADIUS_TILES: "30", DRY_RUN: "true"}
+  arg_defaults: {LEVEL: "0", RANK: "1", RADIUS_TILES: "30", DRY_RUN: "true", LINKS_ONLY: "keep", MAX_BINS: "keep", MAX_BARRELS: "keep", MAX_WHEELBARROWS: "keep"}
   commands:
     list:
       lua_function: list_stockpiles
@@ -3406,7 +3406,10 @@ df-overseer-stockpile.lua:
         dfhack.buildings.getStockpileContents' item positions by (x,y,z),
         deliberately NOT the raw item count (a bin or a stack puts several
         items on one tile). Live-verified against Uniboslan's two real
-        stockpiles.
+        stockpiles. ADDED 2026-10-07 (handoffs/2026-10-07-stockpile-tool-gaps.md): each pile also
+        reports `links_only` and `containers` (max_barrels, max_bins, max_wheelbarrows), each
+        null when the install does not expose the field; the field names are recalled and
+        UNVERIFIED live, the pre-existing fields stay live-verified.
       summary: "Lists every stockpile with its id, name, fill level and which top-level categories it accepts."
       guide:
         arguments: []
@@ -3436,7 +3439,9 @@ df-overseer-stockpile.lua:
         independently exercised live, since nothing on this fort is
         linked; resolve_link_target is defensive (pcall throughout) and
         marks an entry unresolved rather than guessing if this assumption
-        is ever wrong.
+        is ever wrong. ADDED 2026-10-07: a stockpile's
+        result also carries `links_only` and `containers` (same unverified
+        field names as `list`).
       summary: "Reports the give/take links of one stockpile or workshop."
       guide:
         arguments:
@@ -3640,7 +3645,16 @@ df-overseer-stockpile.lua:
         `stockpile_links` the read-only command uses. UNTESTED LIVE this
         stream: proven against a fake world (both directions, both
         target kinds); the real vectors' exact field types on a live
-        building are unverified.
+        building are unverified. ADDED 2026-10-07
+        (handoffs/2026-10-07-stockpile-tool-gaps.md item 5): a link to a workshop or furnace
+        also returns `warnings` (never a refusal), dry run and real alike:
+        `single_class_trap` when, after the link, some input class of that workshop kind has no
+        linked source (a linked workshop looks ONLY in linked piles), `optional_class_unlinked`
+        for a class needed unless a condition holds (smelter fuel unless magma),
+        `pile_feeds_no_input_class`, and, for a take link (the pile receives the workshop's
+        output), `output_pile_rejects_products`. Checked against the per-kind table in
+        df-overseer-stockpile-kinds.lua, hand-authored and unverified live. A furnace is
+        accepted as a link target alongside a workshop (UNVERIFIED live).
       summary: "Links one stockpile to another stockpile or a workshop, for automatic give/take."
       guide:
         arguments:
@@ -3711,6 +3725,244 @@ df-overseer-stockpile.lua:
         before_a_real_run:
           - >-
             Optional DRY_RUN (default true).
+        traps: []
+    "settings ID [LINKS_ONLY] [MAX_BINS] [MAX_BARRELS] [MAX_WHEELBARROWS] [DRY_RUN]":
+      lua_function: stockpile_settings
+      skippable: ["[LINKS_ONLY]", "[MAX_BINS]", "[MAX_BARRELS]", "[MAX_WHEELBARROWS]"]
+      effect: mutate
+      coordinate_bearing: false
+      live_deployed: false
+      verified: unverified
+      knowledge_scope: player_derivable
+      notes: >
+        ADDED 2026-10-07 (handoffs/2026-10-07-stockpile-tool-gaps.md items 1 and 2).
+        Writes the links-only flag and the container counts (max bins, barrels, wheelbarrows)
+        of an existing stockpile; an omitted argument or the word keep leaves a field alone. The
+        building field names (`use_links_only`, `max_barrels`, `max_bins`, `max_wheelbarrows`)
+        are RECALLED from df-structures, not confirmed against source anywhere in this repo
+        (no df-structures is available offline), and the links-only polarity is unconfirmed:
+        every read is pcall'd, a field the install lacks reads as null and a write to it is
+        refused rather than done blind, and no default is hard-coded. The same fields are
+        reported by `list` and `links`. DRY_RUN defaults to true; a real run reads the values
+        back. UNTESTED LIVE: proven only against the fake world in
+        tests/test_stockpile_gaps_lua_logic.py.
+      summary: "Sets a stockpile's links-only flag and its bin, barrel and wheelbarrow counts."
+      guide:
+        arguments:
+          - name: "ID"
+            required: true
+            default: null
+            meaning: >-
+              The stockpile's building id.
+          - name: "LINKS_ONLY"
+            required: false
+            default: "keep"
+            meaning: >-
+              true to take items only from linked sources, false to take from anywhere, keep to
+              leave it as it is.
+          - name: "MAX_BINS"
+            required: false
+            default: "keep"
+            meaning: >-
+              The most bins the pile may use (0 stops bin use), or keep.
+          - name: "MAX_BARRELS"
+            required: false
+            default: "keep"
+            meaning: >-
+              The most barrels the pile may use (0 stops barrel use), or keep.
+          - name: "MAX_WHEELBARROWS"
+            required: false
+            default: "keep"
+            meaning: >-
+              The most wheelbarrows assigned to the pile, or keep.
+          - name: "DRY_RUN"
+            required: false
+            default: "true"
+            meaning: >-
+              true (the default) only reports what would change; only the exact word false makes the
+              change.
+        returns: >-
+          A dry run lists each field's current and requested value; a real run reads the pile's
+          links-only flag and counts back. A field this install does not expose is refused.
+        before_a_real_run:
+          - >-
+            Read the pile with stockpile.list first: a null field means the field name is not
+            confirmed on this install.
+        traps:
+          - >-
+            A links-only pile with no links takes nothing.
+    "materials ID CATEGORY":
+      lua_function: stockpile_materials
+      effect: read
+      coordinate_bearing: false
+      live_deployed: false
+      verified: unverified
+      knowledge_scope: player_visible
+      notes: >
+        ADDED 2026-10-07 (handoffs/2026-10-07-stockpile-tool-gaps.md item 3). The finer-than-a-
+        category filter: for one category (stone, wood) lists which of the game's own materials
+        the pile accepts and which it does not, read from the game's material list (the raws
+        vector the pile's per-material booleans are indexed by), never a table of ours. Adding a
+        category is one MATERIAL_FILTERS entry in the Lua file. UNVERIFIED LIVE: the recalled
+        layout is `settings.<category>.mats` indexed like the raws list, and the include test
+        that picks which raws belong in the list may differ from the in-game list.
+      summary: "Lists which materials of a category (which stone, which wood) a stockpile accepts."
+      guide:
+        arguments:
+          - name: "ID"
+            required: true
+            default: null
+            meaning: >-
+              The stockpile's building id.
+          - name: "CATEGORY"
+            required: true
+            default: null
+            meaning: >-
+              A category with a material list: stone or wood.
+        returns: >-
+          The accepted and not-accepted material names, the total, and whether the pile accepts the
+          category at all (a pile that does not takes none of it whatever the materials say).
+        before_a_real_run: []
+        traps: []
+    "set-materials ID CATEGORY MATERIALS [DRY_RUN]":
+      lua_function: stockpile_set_materials
+      effect: mutate
+      coordinate_bearing: false
+      live_deployed: false
+      verified: unverified
+      knowledge_scope: player_derivable
+      notes: >
+        ADDED 2026-10-07 (handoffs/2026-10-07-stockpile-tool-gaps.md item 3). Replace semantics
+        over the materials `materials` lists: names in MATERIALS are enabled, every other listed
+        material is disabled; all and none are accepted. An unknown name is refused before
+        anything is written, and a pile that does not accept the category at all gets a warning.
+        DRY_RUN defaults to true. UNTESTED LIVE; same unverified layout caveat as `materials`.
+      summary: "Sets exactly which materials of a category a stockpile accepts."
+      guide:
+        arguments:
+          - name: "ID"
+            required: true
+            default: null
+            meaning: >-
+              The stockpile's building id.
+          - name: "CATEGORY"
+            required: true
+            default: null
+            meaning: >-
+              A category with a material list: stone or wood.
+          - name: "MATERIALS"
+            required: true
+            default: null
+            meaning: >-
+              Comma-separated material names exactly as stockpile.materials gives them, or all, or
+              none. Every other listed material is turned off.
+          - name: "DRY_RUN"
+            required: false
+            default: "true"
+            meaning: >-
+              true (the default) only reports what would change; only the exact word false makes the
+              change.
+        returns: >-
+          Which materials would be enabled and disabled, plus warnings; a real run reads the list
+          back.
+        before_a_real_run:
+          - >-
+            Read the current list with stockpile.materials.
+        traps: []
+    "health":
+      lua_function: stockpile_health
+      effect: read
+      coordinate_bearing: false
+      live_deployed: false
+      verified: unverified
+      knowledge_scope: player_derivable
+      notes: >
+        ADDED 2026-10-07 (handoffs/2026-10-07-stockpile-tool-gaps.md item 4). For every workshop
+        or furnace with any stockpile link: whether each of its input classes (including
+        containers and fuel) has a non-empty linked source, whether a class with no usable
+        source exists fort-wide (via stocks.availability's own count, asked only for a
+        problem class), and whether its output link accepts each product. A workshop with no
+        links is skipped (it draws from anywhere). Driven by the per-kind table in
+        df-overseer-stockpile-kinds.lua, which is HAND-AUTHORED from the wiki and unverified live;
+        an unrecognised kind is reported as unknown_kind, never skipped. Coordinate-free.
+      summary: "Checks each linked workshop for starved inputs and an output pile that rejects its products."
+      guide:
+        arguments: []
+        returns: >-
+          Per linked workshop: its kind, linked input and output piles, each input class with a
+          status (ok, linked_source_empty, no_linked_source, not_linked_optional) and the
+          fort-wide supply for a failing class, each product with whether its output link accepts
+          it, and a problems list. A workshop with only an output link draws its inputs from
+          anywhere.
+        before_a_real_run: []
+        traps:
+          - >-
+            Only the coarse category is compared, so a pile of the right category but the wrong
+            material reads as a source.
+    "plan-feed WORKSHOP_KIND|ID":
+      lua_function: stockpile_plan_feed
+      effect: read
+      coordinate_bearing: false
+      live_deployed: false
+      verified: unverified
+      knowledge_scope: player_derivable
+      notes: >
+        ADDED 2026-10-07 (handoffs/2026-10-07-stockpile-tool-gaps.md item 4). A dry-run spec,
+        nothing is built: for a workshop kind (or a workshop id) the piles, categories, sizes,
+        links and container counts that feed it: a bounded links-only feeder per input class
+        (including containers and fuel) with no bins, barrels or wheelbarrows, a shared any-source
+        pile each feeder takes from, and an output pile that accepts every product. Given an id,
+        classes its current links already cover are left out. From the same hand-authored,
+        unverified per-kind table as `health`.
+      summary: "Specs the feeder, source and output piles and links a workshop kind needs."
+      guide:
+        arguments:
+          - name: "WORKSHOP_KIND|ID"
+            required: true
+            default: null
+            meaning: >-
+              A workshop kind name (Still, Kitchen, Masons, Carpenters, Mechanics, Smelter and so
+              on) or the building id of one workshop.
+        returns: >-
+          Piles (handle, purpose, accepted categories, size in tiles, links-only, container
+          counts), links between them by handle, and notes. The handles are labels for the plan,
+          not building ids.
+        before_a_real_run: []
+        traps: []
+    "remove ID [DRY_RUN]":
+      lua_function: stockpile_remove
+      effect: mutate
+      coordinate_bearing: false
+      live_deployed: false
+      verified: unverified
+      knowledge_scope: player_derivable
+      notes: >
+        ADDED 2026-10-07 (handoffs/2026-10-07-stockpile-tool-gaps.md item 6). Retires a
+        stockpile. DRY_RUN defaults to true and reports the items in the pile, the links that
+        would be dropped, and warnings (items left lying, a workshop that would lose its last
+        feeder or be left without an input class). A real run asks DFHack to deconstruct the
+        building and reads back whether it is gone; whether that removes a stockpile at once and
+        cleans the other ends' link vectors is UNVERIFIED live.
+      summary: "Removes a stockpile, after reporting what it holds and which workshops it feeds."
+      guide:
+        arguments:
+          - name: "ID"
+            required: true
+            default: null
+            meaning: >-
+              The stockpile's building id.
+          - name: "DRY_RUN"
+            required: false
+            default: "true"
+            meaning: >-
+              true (the default) only reports what would change; only the exact word false makes the
+              change.
+        returns: >-
+          Items in the pile, links that would be dropped and warnings; a real run reports whether
+          the building is gone.
+        before_a_real_run:
+          - >-
+            Run the dry run and read the warnings; items in the pile stay where they lie.
         traps: []
 df-overseer-stuckjobs.lua:
   build_order_item: 8

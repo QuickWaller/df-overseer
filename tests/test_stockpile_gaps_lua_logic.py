@@ -477,3 +477,31 @@ def test_remove_rejects_a_workshop_id(world):
     r, err = world.stockpile_remove(shop.id, None)
     assert r is None
     assert "not a stockpile" in err
+
+
+# ---------------------------------------------------------------------------
+# the per-kind data table itself
+# ---------------------------------------------------------------------------
+
+CATEGORIES = {
+    "animals", "food", "furniture", "refuse", "stone", "wood", "gems",
+    "finished_goods", "leather", "cloth", "sheet", "bars_blocks", "weapons",
+    "armor", "ammo", "coins", "corpses",
+}
+
+
+def test_kinds_table_is_well_formed(world):
+    kinds = d(world, world.g["reqscript"]("df-overseer-stockpile-kinds").KINDS)
+    assert {"Still", "Kitchen", "Masons", "Carpenters", "Smelter"} <= set(kinds)
+    for name, entry in kinds.items():
+        assert entry["verified"] is False, name  # hand-authored, says so
+        assert entry["inputs"] and entry["outputs"], name
+        seen = set()
+        for cls in entry["inputs"].values():
+            assert cls["id"] not in seen, (name, cls["id"])
+            seen.add(cls["id"])
+            assert cls["role"] in {"input", "container", "fuel"}, (name, cls["id"])
+            assert cls["feeder_tiles"] >= 1
+            assert set(cls["categories"].values()) <= CATEGORIES, (name, cls["id"])
+        for prod in entry["outputs"].values():
+            assert set(prod["categories"].values()) <= CATEGORIES, (name, prod["id"])
