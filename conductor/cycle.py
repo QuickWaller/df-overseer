@@ -272,6 +272,22 @@ def _open_ask_addressees(queue_state: Mapping[str, Any]) -> Tuple[str, ...]:
     return tuple(role for role, ids in to.items() if ids)
 
 
+def _runnable_ask_addressees(queue_state: Mapping[str, Any], cycle_index: int) -> Tuple[str, ...]:
+    """Open-ask addressees other than the Consultant that the conductor can
+    actually run. An ask addressed to a role it has no runner for (a role added
+    to the roster before the conductor learns to run it) wakes nobody and is
+    logged, never a crash or a blind wake."""
+    out = []
+    for role in _open_ask_addressees(queue_state):
+        if role == CONSULTANT:
+            continue
+        if role in ALL_ROLES and role != OVERSEER:
+            out.append(role)
+        else:
+            LOG.warning("cycle %s: an ask is open for %r, which the conductor does not run", cycle_index, role)
+    return tuple(out)
+
+
 async def _call_write(
     call: Callable, tool_id: str, arguments: Mapping[str, Any], *,
     clock_changes: List[Dict[str, Any]], cycle_index: int,
@@ -760,7 +776,7 @@ async def _run_cycle(cycle_index: int, deps: CycleDeps, hold: HoldState) -> Cycl
         game_days_since_routine_review=_game_days_since(deps.cursor_store, game_tick, deps.policy),
         queue_holds_for_overseer=bool((queue_state.get("proposals") or {}).get("count", 0)) or bool(to_carry_out),
         open_ask_for_consultant=CONSULTANT in _open_ask_addressees(queue_state),  # gap 1, fixed
-        open_ask_for_roles=tuple(r for r in _open_ask_addressees(queue_state) if r != CONSULTANT),
+        open_ask_for_roles=_runnable_ask_addressees(queue_state, cycle_index),
     )
     triage_result = triage(signals, deps.policy, base_fps=clock_status.get("fps"))
 

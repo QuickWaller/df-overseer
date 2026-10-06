@@ -767,7 +767,7 @@ class TestQueueOverview:
         )
         assert overview == {
             "proposals": {"count": 0, "proposal_ids": []},
-            "asks": {"count": 0, "ask_ids": []},
+            "asks": {"count": 0, "ask_ids": [], "to": {}},
         }
 
     async def test_overview_ignores_the_caller_role_entirely(self, tmp_path):
