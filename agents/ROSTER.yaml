@@ -59,6 +59,7 @@ roles:
     enabled: true
     dir: consultant
     kind: advisor
+    answerer: true            # may be the addressee of a queue.ask `to` (handoffs/2026-10-07-ask-addressing.md)
     summary: Dwarf Fortress domain knowledge on demand. Answers questions, never decides.
 
   # `kind: system`, added handoffs/2026-09-22-loop-clock-conductor-role.md:

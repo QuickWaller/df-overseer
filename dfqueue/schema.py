@@ -210,10 +210,28 @@ EXECUTION_OUTCOMES = (SUCCESS, FAILURE)
 # asks (it answers), and a disabled role has no business writing anything.
 ASK_ROLES = ("architect", "quartermaster", "overseer")
 
-#: Only the Consultant may answer. Distinct from `sole_writer()`, which
-#: names the Overseer -- this is a second, independent single-role
-#: restriction, not the same one reused.
-ANSWER_ROLE = "consultant"
+#: The default addressee of an `ask`: an ask with no `to` goes to the
+#: Consultant, exactly as every ask did before asks could be addressed
+#: (handoffs/2026-10-07-ask-addressing.md).
+DEFAULT_ASK_ADDRESSEE = "consultant"
+
+#: Kept for callers that mean "the default answerer". The set of roles that
+#: may answer at all is `answer_roles()`, read from the roster's `answerer`
+#: field; and an answer is accepted only from the ask's own addressee.
+ANSWER_ROLE = DEFAULT_ASK_ADDRESSEE
+
+#: The 17 top-level stockpile categories a `pile_spec` may name
+#: (`scripts/dfhack/df-overseer-stockpile.lua`'s CATEGORY_NAMES, DF's own
+#: stockpile screen list).
+PILE_CLASSES = (
+    "animals", "food", "furniture", "refuse", "stone", "wood", "gems",
+    "finished_goods", "leather", "cloth", "sheet", "bars_blocks", "weapons",
+    "armor", "ammo", "coins", "corpses",
+)
+#: `place`'s own cap is 31 x 31 tiles.
+PILE_MAX_TILES = 31 * 31
+#: A `pile_spec` is bounded: a handful of piles per workshop, never a layout.
+PILE_SPEC_MAX_ENTRIES = 8
 
 #: `observation` is written only by code, never a model (design §4.4:
 #: "written only by code, the conductor role, never by a model"). Same
@@ -398,8 +416,8 @@ KIND_FIELDS: dict[str, tuple[str, ...]] = {
     #: `proposal_id` added handoffs/2026-10-05-stage-2a.md: the executor's
     #: step's own proposal (a follow-up's step is not the root ruling's).
     EXECUTED: ("ruling_id", "step_id", "actions", "notes", "proposal_id"),
-    ASK: ("question", "proposal_id"),
-    ANSWER: ("ask_id", "answer"),
+    ASK: ("question", "proposal_id", "to"),
+    ANSWER: ("ask_id", "answer", "pile_spec"),
     ESCALATION: ("reason",),
     #: `research/2026-09-28-job-dependency-graph.md` §4.1. `public_title`,
     #: `public_rationale` and `urgency` added
@@ -540,6 +558,23 @@ def enabled_roles() -> frozenset[str]:
 
 def sole_writer() -> str:
     return _load_roster()["sole_writer"]
+
+
+def answer_roles() -> frozenset[str]:
+    """Enabled roster roles marked `answerer: true`: the closed set an
+    `ask`'s `to` may name, and the only roles that may write an `answer`.
+    Data, not code: a new answerer is one roster line."""
+    roster = _load_roster()
+    return frozenset(
+        name for name, cfg in roster.get("roles", {}).items()
+        if cfg.get("enabled") and cfg.get("answerer")
+    )
+
+
+def ask_addressee(ask: dict) -> str:
+    """Who an `ask` record is addressed to: its `to`, or the Consultant for
+    an ask written before `to` existed (or one that omitted it)."""
+    return ask.get("to") or DEFAULT_ASK_ADDRESSEE
 
 
 def fort_name() -> str:
@@ -1686,6 +1721,74 @@ def _validate_ask_fields(record: dict, errors: list[str]) -> None:
         if not isinstance(pid, str) or not pid:
             errors.append("record.proposal_id: expected a non-empty string")
 
+    if "to" in record:
+        to = record["to"]
+        answerers = answer_roles()
+        if not isinstance(to, str) or to not in answerers:
+            errors.append(
+                f"record.to: {to!r} is not an answerer role; expected one of "
+                f"{sorted(answerers)} (roster roles marked `answerer: true`)"
+            )
+        elif to == record.get("role"):
+            errors.append("record.to: a role may not ask itself")
+
+
+def _validate_pile_spec(spec, errors: list[str]) -> None:
+    """The optional, structured, coordinate-free `pile_spec` of an answer
+    (research/2026-10-07-planner-design.md 6.3). A list of entries, each
+    either a new-pile entry (`purpose`, `classes`, `tiles`, optional
+    `adjacent_to`, `links_only`, `note`) or a reuse entry (`purpose:
+    reuse`, `pile` naming an existing pile, optional `note`). Anything
+    positional is refused: unknown keys outright, and raw-coordinate
+    patterns inside every text value."""
+    if not isinstance(spec, list) or not spec:
+        errors.append("record.pile_spec: expected a non-empty list of entries")
+        return
+    if len(spec) > PILE_SPEC_MAX_ENTRIES:
+        errors.append(f"record.pile_spec: at most {PILE_SPEC_MAX_ENTRIES} entries")
+    new_keys = {"purpose", "classes", "tiles", "adjacent_to", "links_only", "note"}
+    reuse_keys = {"purpose", "pile", "note"}
+    for i, entry in enumerate(spec):
+        pre = f"record.pile_spec.{i}"
+        if not isinstance(entry, dict):
+            errors.append(f"{pre}: expected an object")
+            continue
+        purpose = entry.get("purpose")
+        if not isinstance(purpose, str) or not purpose:
+            errors.append(f"{pre}.purpose: required, a non-empty string")
+        reuse = purpose == "reuse"
+        allowed = reuse_keys if reuse else new_keys
+        for key in entry:
+            if key not in allowed:
+                errors.append(
+                    f"{pre}.{key}: not a field of a {'reuse' if reuse else 'new-pile'} "
+                    f"entry (allowed: {sorted(allowed)}); a pile_spec is "
+                    "coordinate-free, never a position"
+                )
+        for key in ("purpose", "adjacent_to", "note", "pile"):
+            if key in entry:
+                v = entry[key]
+                if not isinstance(v, str) or not v:
+                    errors.append(f"{pre}.{key}: expected a non-empty string")
+                elif _find_coordinate(v):
+                    errors.append(f"{pre}.{key}: contains a raw-coordinate pattern")
+        if reuse:
+            if "pile" not in entry:
+                errors.append(f"{pre}.pile: required for a reuse entry (the existing pile's name)")
+            continue
+        classes = entry.get("classes")
+        if not isinstance(classes, list) or not classes:
+            errors.append(f"{pre}.classes: required, a non-empty list")
+        else:
+            for c in classes:
+                if c not in PILE_CLASSES:
+                    errors.append(f"{pre}.classes: {c!r} is not a stockpile category ({PILE_CLASSES})")
+        tiles = entry.get("tiles")
+        if isinstance(tiles, bool) or not isinstance(tiles, int) or not 1 <= tiles <= PILE_MAX_TILES:
+            errors.append(f"{pre}.tiles: required, an integer from 1 to {PILE_MAX_TILES} (place's 31 x 31 cap)")
+        if "links_only" in entry and not isinstance(entry["links_only"], bool):
+            errors.append(f"{pre}.links_only: expected true or false")
+
 
 def _validate_answer_fields(record: dict, errors: list[str]) -> None:
     """`ask_id`'s existence, and whether it already has an answer, need the
@@ -1699,6 +1802,8 @@ def _validate_answer_fields(record: dict, errors: list[str]) -> None:
             errors.append("record.ask_id: expected a non-empty string")
 
     _validate_text_field(record, "answer", errors)
+    if "pile_spec" in record:
+        _validate_pile_spec(record["pile_spec"], errors)
 
 
 # ---- top-level validation ------------------------------------------------------
@@ -1771,9 +1876,10 @@ def validate(record) -> list[str]:
             errors.append(
                 f"record.role: only {ASK_ROLES} may write an ask; got {role!r}"
             )
-        if kind == ANSWER and role != ANSWER_ROLE:
+        if kind == ANSWER and role not in answer_roles():
             errors.append(
-                f"record.role: only {ANSWER_ROLE!r} may write an answer; got {role!r}"
+                f"record.role: only an answerer role {sorted(answer_roles())} "
+                f"may write an answer; got {role!r}"
             )
         if kind == OBSERVATION and role != OBSERVATION_ROLE:
             errors.append(
