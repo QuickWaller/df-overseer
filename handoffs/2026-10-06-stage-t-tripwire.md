@@ -56,4 +56,32 @@ the revision-2 questions" items 3 and 4.
 
 ## Result
 
-(executor fills this in)
+### Plan (executor, 2026-10-06)
+
+Today's tripwire branch (`conductor/cycle.py`, `_run_cycle`): on a latch it
+quicksaves, runs the Overseer alone, and after a clean, non-escalated run
+calls `clock.clear` then (unless held) `clock.resume`. Silence is consent.
+
+What changes:
+
+1. `policy.yaml` gains `tripwire_owners` (reason to owner roles; thirst and
+   hunger: quartermaster; hostile_reachable: overseer; unlisted reasons, so an
+   unknown cause: overseer) and `tripwire_repeat` (limit, window in game
+   ticks). `policy.py` loads and validates both.
+2. New `conductor/tripwire.py`: `TripwireStore` (a small JSON file beside the
+   cursors) holding per-cause latch episodes keyed by (reason, latch tick), and
+   the pure repeat-count check.
+3. Sequence in one cycle: quicksave, owner run(s) (a `tripwire` wake, may file
+   proposals), then the Overseer (ruling briefing over a fresh
+   `queue.pending_brief`, so it sees what the owner filed). The Overseer's
+   `pause.verdict` baseline is read just before its run.
+4. Resume only on an explicit verdict: reuse `finish_after_overseer`. On
+   `resume: true` and not held: `clock.clear` first (resume refuses under a
+   latch), then `finish_after_overseer` resumes once with the tick verified. On
+   a held fort with `resume: true`: clear, never resume (as before). No
+   verdict, `false`, an escalation or an unclean run: the latch stays, the fort
+   stays paused, a human alert is raised.
+5. Repeat counter: a new (reason, tick) latch is recorded; when the same cause
+   has latched more than `limit` times within `window_ticks` the cycle skips the
+   sequence, alerts the human and leaves the latch standing.
+6. Overseer charter: the verdict section also covers a tripwire.
