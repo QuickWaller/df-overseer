@@ -160,10 +160,6 @@ class Policy:
     ore_renotify_ticks: int = 12000
     #: Threshold alerts for every role's briefing (policy.yaml `threshold_alerts`).
     threshold_alerts: Tuple[ThresholdAlert, ...] = ()
-    #: Accepted proposals never carried out that must NOT wake the Overseer
-    #: (legacy rulings the executor closes later, design 8.1). Every other
-    #: accepted-but-unexecuted proposal wakes it until carried out.
-    unexecuted_wake_ignore: Tuple[str, ...] = ()
     #: Per-role lane triggers (policy.yaml `lane_triggers`). Empty: no lane
     #: filtering, every wake reason wakes the roles its table entry names.
     lane_triggers: Dict[str, LaneTriggers] = field(default_factory=dict)
@@ -343,10 +339,6 @@ def load_policy(path: "Path | str" = DEFAULT_POLICY_PATH) -> Policy:
             field=str(read["field"]), below=below, text=text, per=per,
         ))
 
-    raw_ignore = doc.get("unexecuted_wake_ignore") or []
-    if not isinstance(raw_ignore, list) or not all(isinstance(x, str) for x in raw_ignore):
-        raise PolicyError(f"{path}: unexecuted_wake_ignore must be a list of proposal ids")
-
     lane_triggers = _load_lane_triggers(doc.get("lane_triggers"), path)
     tripwire_owners = _load_tripwire_owners(doc.get("tripwire_owners"), path)
     repeat_limit, repeat_window = _load_tripwire_repeat(doc.get("tripwire_repeat"), path)
@@ -357,7 +349,6 @@ def load_policy(path: "Path | str" = DEFAULT_POLICY_PATH) -> Policy:
         tripwire_repeat_window_ticks=repeat_window,
         lane_triggers=lane_triggers,
         threshold_alerts=tuple(alerts),
-        unexecuted_wake_ignore=tuple(raw_ignore),
         base_fps=int(_require(doc, "base_fps", path)),
         think_fps=int(_require(doc, "think_fps", path)),
         closing_in_multiple=float(_require(doc, "closing_in_multiple", path)),

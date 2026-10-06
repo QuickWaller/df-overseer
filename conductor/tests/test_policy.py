@@ -224,6 +224,7 @@ def test_the_real_policy_has_no_fixed_per_role_stock_lists():
     assert "briefing_extras" not in DEFAULT_POLICY_PATH.read_text(encoding="utf-8")
 
 
-def test_the_shipped_policy_ignores_only_the_two_legacy_unexecuted_proposals():
-    policy = load_policy(DEFAULT_POLICY_PATH)
-    assert policy.unexecuted_wake_ignore == ("proposal-0001", "proposal-0006")
+def test_the_shipped_policy_has_no_unexecuted_wake_ignore_list():
+    # Removed in stage 2D: deploy 2a closes the legacy rulings instead.
+    assert not hasattr(load_policy(DEFAULT_POLICY_PATH), "unexecuted_wake_ignore")
+    assert "unexecuted_wake_ignore:" not in DEFAULT_POLICY_PATH.read_text(encoding="utf-8")

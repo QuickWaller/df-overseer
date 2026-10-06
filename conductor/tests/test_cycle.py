@@ -1032,31 +1032,54 @@ async def test_a_failed_pending_brief_read_is_said_in_the_briefing_not_hidden(tm
     assert "the queue read failed" in prompt
 
 
+def _cutover_state(set_at="ruling-0030"):
+    return {"ok": True, "blockers": [], "group": "legacy", "cutover_set": set_at, "would_close": 0,
+            "targets": [], "applied": False}
+
+
 async def test_an_accepted_but_unexecuted_proposal_wakes_the_overseer_with_a_to_do_line(tmp_path):
     # Live 2026-10-05: proposal-0018 was accepted and never carried out, and
     # nothing woke the Overseer for it. Over MCP, queue.grade returns only
-    # unexecuted_proposal_ids; legacy ids in policy are ignored.
-    from dataclasses import replace
-    from conductor.policy import load_policy, DEFAULT_POLICY_PATH
+    # unexecuted_proposal_ids. Once 2a has set the legacy cutover and closed the
+    # old rulings, the store lists only post-cutover work and all of it wakes.
     tools = _base_tools()
-    tools["queue.grade"] = _grade_result(
-        unexecuted_count=3, unexecuted_proposal_ids=["proposal-0001", "proposal-0006", "proposal-0018"])
+    tools["queue.grade"] = _grade_result(unexecuted_count=1, unexecuted_proposal_ids=["proposal-0018"])
+    tools["queue.cutover"] = _cutover_state()
     runner = FakeRoleRunner()
-    policy = replace(load_policy(DEFAULT_POLICY_PATH), unexecuted_wake_ignore=("proposal-0001", "proposal-0006"))
-    deps = _deps(tmp_path, tools=tools, runner=runner, policy=policy)
-    result = await run_cycle(1, deps)
+    result = await run_cycle(1, _deps(tmp_path, tools=tools, runner=runner))
 
     assert OVERSEER in result.roles_woken
     prompt = next(c for c in runner.calls if c["role"] == OVERSEER)["prompt"]
     assert "ACCEPTED, NOT YET CARRIED OUT: proposal-0018." in prompt
-    assert "proposal-0001" not in prompt.split("ACCEPTED, NOT YET CARRIED OUT")[1].split("\n")[0]
 
 
-async def test_only_legacy_unexecuted_proposals_do_not_wake_the_overseer(tmp_path):
-    from dataclasses import replace
-    from conductor.policy import load_policy, DEFAULT_POLICY_PATH
+async def test_no_unexecuted_wake_until_the_legacy_cutover_is_applied(tmp_path):
     tools = _base_tools()
     tools["queue.grade"] = _grade_result(unexecuted_count=2, unexecuted_proposal_ids=["proposal-0001", "proposal-0006"])
-    policy = replace(load_policy(DEFAULT_POLICY_PATH), unexecuted_wake_ignore=("proposal-0001", "proposal-0006"))
-    result = await run_cycle(1, _deps(tmp_path, tools=tools, policy=policy))
+    tools["queue.cutover"] = _cutover_state(set_at=None)
+    result = await run_cycle(1, _deps(tmp_path, tools=tools))
     assert OVERSEER not in result.roles_woken
+
+
+async def test_an_unreadable_cutover_sends_no_unexecuted_wake(tmp_path):
+    tools = _base_tools()
+    tools["queue.grade"] = _grade_result(unexecuted_count=1, unexecuted_proposal_ids=["proposal-0018"])
+
+    def _boom(_arguments):
+        raise MCPToolError("queue.cutover: db locked")
+
+    tools["queue.cutover"] = _boom
+    result = await run_cycle(1, _deps(tmp_path, tools=tools))
+    assert OVERSEER not in result.roles_woken
+
+
+async def test_the_unexecuted_wake_is_suppressed_under_an_operator_hold(tmp_path):
+    from conductor.hold import HoldStore, hold_path_for
+    tools = _base_tools()
+    tools["queue.grade"] = _grade_result(unexecuted_count=1, unexecuted_proposal_ids=["proposal-0018"])
+    tools["queue.cutover"] = _cutover_state()
+    deps = _deps(tmp_path, tools=tools)
+    HoldStore(hold_path_for(deps.cursor_store.path)).set("keep it paused", who="test")
+    result = await run_cycle(1, deps)
+    assert OVERSEER not in result.roles_woken
+    assert not [c for c in deps.tool_caller.calls if c[0] == "queue.cutover"]

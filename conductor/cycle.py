@@ -55,7 +55,7 @@ import json
 import logging
 import time
 from dataclasses import dataclass
-from typing import Any, Callable, Dict, List, Mapping, Optional, Set, Tuple
+from typing import Any, Callable, Dict, List, Mapping, Optional, Sequence, Set, Tuple
 
 from conductor.archive import CycleArchive
 from conductor.briefing import build_briefing, build_ruling_briefing, evaluate_threshold_alerts
@@ -125,6 +125,44 @@ _NEARING_STATUSES = ("hungry", "thirsty")
 #: An empty sub-summary, used whenever queue.overview's own result is
 #: missing a key it should always carry (defensive, not expected live).
 _EMPTY_QUEUE_SUB_SUMMARY: Dict[str, Any] = {"count": 0}
+
+
+
+async def _carry_out_wake_ids(
+    call: Callable, unexecuted_ids: Sequence[Any], hold: HoldState, cycle_index: int,
+) -> List[str]:
+    """The unexecuted wake (docs/CONDUCTOR-EXECUTION.md 3, P3-B1, P3-L1).
+
+    `queue.grade` already lists only accepted work the executor does not own:
+    the store excludes routed types, follow-up and closed rulings and keys on
+    the step's `proposal_id`. This adds the two conductor-side rules:
+
+    - under an operator hold nothing is carried out and nothing wakes, so a
+      held fort is not nagged about work that cannot run;
+    - until deploy 2a has set the legacy cutover (`conductor.cutover legacy
+      --apply`), every unexecuted ruling is pre-cutover work that 2a will
+      close, so none wakes (this replaces the old `unexecuted_wake_ignore`
+      stopgap). An unreadable cutover reads as not set: a missed wake is
+      recovered next cycle, a wrong one sends the Overseer after dead work.
+    """
+    ids = [i for i in unexecuted_ids if isinstance(i, str)]
+    if not ids:
+        return []
+    if hold.held:
+        LOG.info("cycle %s: %d unexecuted ruling(s) not woken for: operator hold", cycle_index, len(ids))
+        return []
+    try:
+        state = await call("queue.cutover", {"group": "legacy", "apply": False})
+    except MCPToolError as exc:
+        LOG.warning("cycle %s: legacy cutover unreadable (%s); no unexecuted wake", cycle_index, exc)
+        return []
+    if not isinstance(state, Mapping) or state.get("cutover_set") is None:
+        LOG.info(
+            "cycle %s: legacy cutover not applied; %d unexecuted ruling(s) are pre-cutover, no wake",
+            cycle_index, len(ids),
+        )
+        return []
+    return ids
 
 
 def _queue_summary_for(role: str, queue_state: Mapping[str, Any]) -> Mapping[str, Any]:
@@ -553,10 +591,7 @@ async def _run_cycle(cycle_index: int, deps: CycleDeps, hold: HoldState) -> Cycl
         unexecuted_ids = list(grade_result.get("unexecuted_proposal_ids") or []) or [
             (u.get("proposal") or {}).get("id") for u in unexecuted if isinstance(u, dict)
         ]
-        to_carry_out = [
-            i for i in unexecuted_ids
-            if isinstance(i, str) and i not in deps.policy.unexecuted_wake_ignore
-        ]
+        to_carry_out = await _carry_out_wake_ids(call, unexecuted_ids, hold, cycle_index)
 
     # ---- 3. TRIAGE ------------------------------------------------------------
     event_hits: Dict[str, bool] = {}
