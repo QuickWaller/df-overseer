@@ -167,6 +167,16 @@ class Policy:
     #: Per-role lane triggers (policy.yaml `lane_triggers`). Empty: no lane
     #: filtering, every wake reason wakes the roles its table entry names.
     lane_triggers: Dict[str, LaneTriggers] = field(default_factory=dict)
+    #: Stage T (handoffs/2026-10-06-stage-t-tripwire.md): per latch reason, the
+    #: roles that run BEFORE the Overseer after a tripwire. A reason absent
+    #: here (an unknown cause included) has no owner and wakes the Overseer
+    #: alone; the Overseer always runs last and always gives the verdict.
+    tripwire_owners: Dict[str, Tuple[str, ...]] = field(default_factory=dict)
+    #: The same cause latching more than `tripwire_repeat_limit` times within
+    #: `tripwire_repeat_window_ticks` game ticks goes to the human instead of
+    #: re-running the sequence.
+    tripwire_repeat_limit: int = 3
+    tripwire_repeat_window_ticks: int = 4800
 
     def reason(self, name: str) -> WakeReasonPolicy:
         try:
@@ -237,6 +247,43 @@ def _load_lane_triggers(raw, path: Path) -> Dict[str, LaneTriggers]:
     return lanes
 
 
+#: Roles a tripwire owner may name (the roster; the Overseer is implicit).
+_OWNER_ROLES = ("architect", "quartermaster", "consultant", "overseer")
+
+
+def _load_tripwire_owners(raw, path: Path) -> Dict[str, Tuple[str, ...]]:
+    if raw is None:
+        return {}
+    if not isinstance(raw, dict):
+        raise PolicyError(f"{path}: tripwire_owners must be a mapping of latch reason to roles")
+    out: Dict[str, Tuple[str, ...]] = {}
+    for reason, roles in raw.items():
+        where = f"{path}: tripwire_owners.{reason}"
+        if not isinstance(roles, list) or not all(isinstance(r, str) for r in roles):
+            raise PolicyError(f"{where} must be a list of role names")
+        for r in roles:
+            if r not in _OWNER_ROLES:
+                raise PolicyError(f"{where}: {r!r} is not a role (known: {list(_OWNER_ROLES)})")
+        # The Overseer runs last regardless; naming it here is a statement of
+        # intent, not an extra run.
+        out[str(reason)] = tuple(dict.fromkeys(r for r in roles if r != "overseer"))
+    return out
+
+
+def _load_tripwire_repeat(raw, path: Path) -> Tuple[int, int]:
+    if raw is None:
+        return 3, 4800
+    if not isinstance(raw, dict):
+        raise PolicyError(f"{path}: tripwire_repeat must be a mapping")
+    out = []
+    for key, default in (("limit", 3), ("window_ticks", 4800)):
+        v = raw.get(key, default)
+        if isinstance(v, bool) or not isinstance(v, int) or v < 1:
+            raise PolicyError(f"{path}: tripwire_repeat.{key} must be a positive integer")
+        out.append(v)
+    return out[0], out[1]
+
+
 def load_policy(path: "Path | str" = DEFAULT_POLICY_PATH) -> Policy:
     """Load and validate `conductor/policy.yaml` (or an override path, e.g.
     a test fixture). Raises `PolicyError` for anything malformed -- a typo
@@ -301,8 +348,13 @@ def load_policy(path: "Path | str" = DEFAULT_POLICY_PATH) -> Policy:
         raise PolicyError(f"{path}: unexecuted_wake_ignore must be a list of proposal ids")
 
     lane_triggers = _load_lane_triggers(doc.get("lane_triggers"), path)
+    tripwire_owners = _load_tripwire_owners(doc.get("tripwire_owners"), path)
+    repeat_limit, repeat_window = _load_tripwire_repeat(doc.get("tripwire_repeat"), path)
 
     return Policy(
+        tripwire_owners=tripwire_owners,
+        tripwire_repeat_limit=repeat_limit,
+        tripwire_repeat_window_ticks=repeat_window,
         lane_triggers=lane_triggers,
         threshold_alerts=tuple(alerts),
         unexecuted_wake_ignore=tuple(raw_ignore),
