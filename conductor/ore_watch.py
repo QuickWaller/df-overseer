@@ -32,7 +32,7 @@ This module never designates, mines or proposes anything.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, FrozenSet, List, Mapping, Optional, Tuple
 
 #: Tool the conductor polls (agents/conductor/tools.yaml).
@@ -64,6 +64,12 @@ class OreRead:
     exposures: Tuple[OreExposure, ...] = ()
     #: Sites polled but not readable this time: their edge state is kept.
     unreadable_handles: FrozenSet[str] = frozenset()
+    #: handle -> tiles the read could not classify (never folded into ore, but
+    #: a finish phase waits on them too, stage 2D).
+    unclassified: Mapping[str, int] = field(default_factory=dict)
+
+    def exposed_on(self, handle: str) -> List[OreExposure]:
+        return [e for e in self.exposures if e.handle == handle]
 
     @property
     def lines(self) -> List[str]:
@@ -114,6 +120,7 @@ def ore_read_from_sites(result: Any) -> Optional[OreRead]:
 
     exposures: List[OreExposure] = []
     unreadable: List[str] = []
+    unclassified: dict = {}
     for row in rows:
         if not isinstance(row, Mapping):
             continue
@@ -124,6 +131,12 @@ def ore_read_from_sites(result: Any) -> Optional[OreRead]:
         if not isinstance(exposed, Mapping) or exposed.get("unreadable") or exposed.get("error") or exposed.get("skipped"):
             unreadable.append(handle)
             continue
+        try:
+            unknown = int(exposed.get("unclassified_tiles") or 0)
+        except (TypeError, ValueError):
+            unknown = 0
+        if unknown > 0:
+            unclassified[handle] = unknown
         for mat in _materials(exposed):
             mineral = _text(mat.get("mineral_name"))
             try:
@@ -135,4 +148,4 @@ def ore_read_from_sites(result: Any) -> Optional[OreRead]:
             kind = _text(mat.get("kind"))
             exposures.append(OreExposure(handle, mineral, kind, tiles, describe(row, mineral, kind, tiles)))
     exposures.sort(key=lambda e: (e.handle, e.mineral))
-    return OreRead(tuple(exposures), frozenset(unreadable))
+    return OreRead(tuple(exposures), frozenset(unreadable), unclassified)

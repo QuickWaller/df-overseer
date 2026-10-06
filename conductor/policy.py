@@ -128,6 +128,34 @@ class LaneTriggers:
     alerts: Tuple[str, ...] = ()
     rulings: bool = False
     ore: bool = False
+    #: The role is told of its routed projects' progress and holds
+    #: (`step_done`, `step_attention`, `project_idle`) when the project's
+    #: proposer is unknown to the conductor (docs/CONDUCTOR-EXECUTION.md 5).
+    execution: bool = False
+
+
+@dataclass(frozen=True)
+class ExecutionPolicy:
+    """The execute phase's knobs (policy.yaml `execution`, docs/CONDUCTOR-
+    EXECUTION.md 4 and 5), all data. Game ticks are raw ticks."""
+    #: Real calls to `queue.run_step` per cycle, a cap on the whole phase.
+    max_steps_per_cycle: int = 4
+    #: A project with every step done and no follow-up: one `project_idle` wake
+    #: after this many ticks, closed (`completed`, idle) after the same again.
+    idle_wake_ticks: int = 8400
+    idle_close_ticks: int = 8400
+    #: Unreadable resolutions of one Uncertain run before it is held.
+    uncertain_hold_after: int = 3
+    #: Consecutive transient results before a step goes to its proposer.
+    transient_attention_after: int = 3
+    #: Consecutive `unknown` reads of an issued step before its proposer is told.
+    unknown_attention_after: int = 3
+    #: Phase labels matching this wait on exposed ore before they run.
+    ore_hold_phase: Optional["re.Pattern"] = None
+    #: Ready steps run in this urgency order, then oldest first.
+    urgency_order: Tuple[str, ...] = ("high", "normal", "low")
+    #: A refused open or apply is tried at most this many times.
+    refusal_limit: int = 3
 
 
 @dataclass(frozen=True)
@@ -173,6 +201,8 @@ class Policy:
     #: re-running the sequence.
     tripwire_repeat_limit: int = 3
     tripwire_repeat_window_ticks: int = 4800
+    #: The execute phase (docs/CONDUCTOR-EXECUTION.md 4.5, 5).
+    execution: ExecutionPolicy = field(default_factory=ExecutionPolicy)
 
     def reason(self, name: str) -> WakeReasonPolicy:
         try:
@@ -239,8 +269,37 @@ def _load_lane_triggers(raw, path: Path) -> Dict[str, LaneTriggers]:
             alerts=tuple(alerts),
             rulings=bool(entry.get("rulings", False)),
             ore=bool(entry.get("ore", False)),
+            execution=bool(entry.get("execution", False)),
         )
     return lanes
+
+
+def _load_execution(raw, path: Path) -> ExecutionPolicy:
+    if raw is None:
+        return ExecutionPolicy()
+    if not isinstance(raw, dict):
+        raise PolicyError(f"{path}: execution must be a mapping")
+    base = ExecutionPolicy()
+    ints = {}
+    for key in ("max_steps_per_cycle", "idle_wake_ticks", "idle_close_ticks", "uncertain_hold_after",
+                "transient_attention_after", "unknown_attention_after", "refusal_limit"):
+        value = raw.get(key, getattr(base, key))
+        if isinstance(value, bool) or not isinstance(value, int) or value < 1:
+            raise PolicyError(f"{path}: execution.{key} must be a positive integer")
+        ints[key] = value
+    order = raw.get("urgency_order", list(base.urgency_order))
+    if not isinstance(order, list) or not order or not all(isinstance(x, str) for x in order):
+        raise PolicyError(f"{path}: execution.urgency_order must be a list of urgency names")
+    pattern = raw.get("ore_hold_phase")
+    compiled = None
+    if pattern is not None:
+        if not isinstance(pattern, str):
+            raise PolicyError(f"{path}: execution.ore_hold_phase must be a regex string")
+        try:
+            compiled = re.compile(pattern, re.IGNORECASE)
+        except re.error as exc:
+            raise PolicyError(f"{path}: execution.ore_hold_phase is not a valid regex: {exc}") from None
+    return ExecutionPolicy(ore_hold_phase=compiled, urgency_order=tuple(order), **ints)
 
 
 #: Roles a tripwire owner may name (the roster; the Overseer is implicit).
@@ -342,12 +401,14 @@ def load_policy(path: "Path | str" = DEFAULT_POLICY_PATH) -> Policy:
     lane_triggers = _load_lane_triggers(doc.get("lane_triggers"), path)
     tripwire_owners = _load_tripwire_owners(doc.get("tripwire_owners"), path)
     repeat_limit, repeat_window = _load_tripwire_repeat(doc.get("tripwire_repeat"), path)
+    execution = _load_execution(doc.get("execution"), path)
 
     return Policy(
         tripwire_owners=tripwire_owners,
         tripwire_repeat_limit=repeat_limit,
         tripwire_repeat_window_ticks=repeat_window,
         lane_triggers=lane_triggers,
+        execution=execution,
         threshold_alerts=tuple(alerts),
         base_fps=int(_require(doc, "base_fps", path)),
         think_fps=int(_require(doc, "think_fps", path)),

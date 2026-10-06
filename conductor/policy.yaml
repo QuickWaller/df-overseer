@@ -185,6 +185,18 @@ wake_reasons:
   slow_announcement:
     clock: slowed
     wakes: []
+  # Stage 2D (docs/CONDUCTOR-EXECUTION.md 5): the execute phase tells a routed
+  # project's proposer how its work went. The role comes from the project, not
+  # from this list (lanes.py, `lane_triggers.<role>.execution` is the fallback).
+  step_done:
+    clock: full_speed
+    wakes: []
+  step_attention:
+    clock: full_speed
+    wakes: []
+  project_idle:
+    clock: full_speed
+    wakes: []
   tripwire:
     clock: paused
     wakes: [overseer]
@@ -215,6 +227,21 @@ tripwire_owners:
 tripwire_repeat:
   limit: 3
   window_ticks: 4800
+
+# Stage 2D (docs/CONDUCTOR-EXECUTION.md 4.5, 5): the execute phase, after the
+# Overseer. Ticks are raw game ticks (8400 = 7 game days). Starting values.
+# ore_hold_phase: a phase whose label matches waits while ore or an unclassified
+# tile shows on its site's room walls (handoffs/2026-10-05-ore-exposed-signal.md).
+execution:
+  max_steps_per_cycle: 4
+  idle_wake_ticks: 8400
+  idle_close_ticks: 8400
+  uncertain_hold_after: 3
+  transient_attention_after: 3
+  unknown_attention_after: 3
+  refusal_limit: 3
+  urgency_order: [high, normal, low]
+  ore_hold_phase: '(_finish|_zone|_build)$'
 
 # Per-role cap (real seconds) on one `agent exec` run; roles not listed use
 # CONDUCTOR_ROLE_TIMEOUT_SECONDS (default 600). First real cycle 2026-09-25
@@ -290,6 +317,9 @@ lane_triggers:
     # Ore exposed by a dig is the Architect's to propose mining
     # (handoffs/2026-10-05-ore-exposed-signal.md).
     ore: true
+    # The Architect proposes rooms, so it is the fallback recipient of the
+    # execute phase's step_done / step_attention / project_idle.
+    execution: true
   quartermaster:
     events:
       - type: stock_below_threshold
