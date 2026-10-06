@@ -31,6 +31,7 @@ groups:
       - building.build
       - diggable.dig-stair
       - construction.mine-vein
+      - construction.mine-vein-site
     routed: true
     frozen: false
     coverage: false

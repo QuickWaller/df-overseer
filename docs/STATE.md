@@ -26,7 +26,7 @@ Last check: 2026-10-05T06:34:49Z, overall: clean
 - **architect**: 53
 - **conductor**: 35
 - **consultant**: 29
-- **overseer**: 82
+- **overseer**: 81
 - **quartermaster**: 26
 
 ## Services

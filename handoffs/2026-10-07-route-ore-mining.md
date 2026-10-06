@@ -48,4 +48,79 @@ green.
 
 ## Result
 
-(executor fills this in)
+Done offline on branch worktree-agent-a76783a21022f6c51. No deploys, no live VMs.
+
+- `scripts/dfhack/TOOLS.yaml`: `execution:` for `construction.mine-vein-site`
+  (`handle_args: [site_id]`) and `construction.mine-vein` (no handle arg, its
+  ZONE_ID is an integer). Both: `verdict: {refused_if_true: [refused, held]}`,
+  `dry_run_echo: dry_run`, `preview_fields: [ore_tiles_found, already_open,
+  refused, held]`. No `issues_handle`, `progress` or `landed`: a step with no
+  handle is done once issued (observe), and nothing resolves an Uncertain call
+  by a read. Field names taken from the Lua return in `mine_vein`.
+- `dfqueue/action_tools.yaml`: `construction.mine-vein-site` added to the rooms
+  group. `construction.mine-vein` had already
+  left the Overseer; the site tool is removed from `agents/overseer/tools.yaml`.
+  Overseer is 81. Count updated in `docs/STATE.md`,
+  `dfmcp/tests/test_gotchas_tools.py`, `dfmcp/tests/test_queue_cited_facts.py`;
+  `dfqueue/tests/test_stage2a.py` now uses `construction.build` as its
+  "unrouted tool the Overseer keeps" (the old one is routed now).
+- `agents/architect/role.md`: the mining line now names the `dig_order`
+  proposal and the arg names (`site_id`, `zone_id`).
+- Tests: `tests/test_construction_lua_logic.py` runs the declared verdict on
+  the REAL Lua output (clean ore passes, unclassifiable tile refuses, reservation-held
+  tile refuses, unknown site refuses, echo mismatch invalid). `dfmcp/tests/test_executor_run.py`
+  runs a `dig_order` mining step end to end through the conductor (filing dry
+  run with preview, real run, no handle, observe done, not re-runnable;
+  refusal at filing on held or refused; override arg rejected).
+- Results: ambient `python -m pytest` 3198 passed, 3 skipped, 1 failed, the
+  known flaky `test_concurrent_raw_appends_without_serialization_can_collide`,
+  which passed alone on rerun; `dfmcp/tests` in `.venv-dfmcp` 929 passed.
+
+Design notes for the orchestrator (nothing invented, none blocking):
+
+1. The Lua return has no `ok` field, so there is no positive verdict path; the
+   verdict is refusal-only on the `refused` and `held` lists (non-empty list is
+   truthy). The reason text shown to the Architect on refusal is the generic
+   "refused is set" or "held is set", not the per-tile strings, because the
+   `reason` path must be a string and these are lists. A small Lua field
+   (e.g. `blocked_reason`) would give a better message.
+2. `held` is treated as a refusal. A site's own walls sit inside its own
+   reservation, so a mining step without `res_id` (the site's reservation) is
+   held on every ring tile and refused at filing. The Architect charter does
+   not tell it to pass `res_id`. Probably needs a charter line (or the
+   Architect reading the site's reservation from `blueprint.sites`), a
+   judgment call left to the orchestrator. `res_id` is accepted as a step arg
+   (only `override` is blocked).
+3. `nothing_applied` is deliberately undeclared: a real run designates the
+   clean tiles even when others are refused, so a refusal cannot prove nothing
+   changed; a real-run refusal therefore lands as Uncertain, not a retryable
+   failure. Likewise per-tile `results[i].ok == false` on a real run is not
+   inspected (the path language cannot walk a list), so a failed designation
+   passes silently. A Lua summary flag would close both.
+4. `live_deployed: false` / unverified on both tools stands; the first real
+   outputs should be recorded and fed back into a fixture.
+
+
+Follow-up (orchestrator's calls on questions 1 to 3), same branch:
+
+- Q2: `mine_vein` for a `site-N` handle now finds the reservation whose
+  `site_handle` is that site (reservations.mark_in_use records it) and passes
+  it as the `holding` handle to `check_tiles`, so ore on the room's own walls
+  is not held without RES_ID, and ore inside any OTHER reservation is still
+  held. An explicit RES_ID keeps its old kind-gated meaning; a zone id has no
+  own reservation. This needed no allowed_kinds entry and no per-kind branch,
+  because holding bypasses kind gating (the mining kind is not in any room
+  template's allowed kinds, and is not added).
+- Q1 and Q3: the Lua return now carries `designated_tiles` (count, a failed
+  designation also lands in `refused`), `nothing_designated` (boolean) and
+  `blocked_reason` (refused and held strings joined, the NULL sentinel when
+  none). TOOLS.yaml: `reason: blocked_reason`,
+  `nothing_applied: {all_zero: [designated_tiles]}`, and `designated_tiles` in
+  the preview. A real run that designated nothing is a retryable failure; one
+  that designated some alongside a refusal is still Uncertain.
+- Tests: own-reservation not held, different reservation held, zone id still
+  held, reason text and nothing_applied on the real Lua output, and a
+  run_step test for the retryable failure. The construction stub gained
+  `list_raw`. Item 4 of the earlier notes (unverified live) stands.
+- Results: ambient `python -m pytest` 3204 passed, 3 skipped, 0 failed;
+  `dfmcp/tests` in `.venv-dfmcp` 930 passed.

@@ -278,6 +278,17 @@ local FAKE_RESERVATIONS = {
     end
     return false
   end,
+  -- RESERVED entries may carry site_handle = "site-N" (the real record's own field).
+  list_raw = function()
+    local out, seen = {}, {}
+    for _, r in ipairs(RESERVED) do
+      if not seen[r.handle] then
+        seen[r.handle] = true
+        out[#out + 1] = {handle = r.handle, site_handle = r.site_handle}
+      end
+    end
+    return out
+  end,
   record_override = function(handle, tool, kind, reason)
     OVERRIDES[#OVERRIDES + 1] = {handle = handle, tool = tool, kind = kind, reason = reason}
     return true
