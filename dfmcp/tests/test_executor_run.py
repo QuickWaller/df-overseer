@@ -689,7 +689,8 @@ async def test_close_writes_a_close_record_and_touches_no_game_state(rig):
 async def test_execution_state_lists_ready_steps_and_what_finished_since(rig):
     p, r, pid = await rig.open_room()
     _t, st = await rig.tool("queue.execution_state")
-    assert st["ready_steps"] == [{"project_id": pid, "step_id": f"{pid}/s1", "urgency": "normal"}]
+    assert [{k: v for k, v in s.items() if k not in ("tool", "args")} for s in st["ready_steps"]] == [
+        {"project_id": pid, "step_id": f"{pid}/s1", "urgency": "normal"}]
     assert st["open_projects"][0]["project_id"] == pid
     await rig.run(pid, f"{pid}/s1")
     await rig.tool("queue.observe", project_id=pid, step_id=f"{pid}/s1")
@@ -774,3 +775,120 @@ async def test_no_model_role_may_run_a_step(rig):
             await et.call("queue.run_step", role, {"project_id": "p", "step_id": "s"}, db_path=rig.db,
                           write_lock=rig.lock, call_dfhack=rig.dfhack, call_tool=rig.world.call_tool,
                           registry=rig.env.registry)
+
+
+# ---- the five execution_state additions (handoffs/2026-10-06-execution-state-additions.md) ----
+
+
+async def test_to_open_lists_an_accepted_routed_ruling_with_no_project_and_its_role(rig):
+    p = await rig.propose(rig.reserve_step(), role="architect")
+    _t, st = await rig.tool("queue.execution_state")
+    assert st["to_open"] == []  # not ruled yet
+    r = rig.rule(p["id"])
+    _t, st = await rig.tool("queue.execution_state")
+    assert st["to_open"] == [{"ruling_id": r["id"], "role": "architect"}]
+    await rig.tool("queue.open_project", ruling_id=r["id"])
+    _t, st = await rig.tool("queue.execution_state")
+    assert st["to_open"] == []  # now it has a project
+
+
+async def test_to_open_skips_rejected_and_the_legacy_ruling(rig):
+    p = await rig.propose(rig.reserve_step())
+    rig.rule(p["id"], decision="reject")
+    _t, st = await rig.tool("queue.execution_state")
+    assert st["to_open"] == []
+
+
+async def test_to_apply_lists_an_accepted_follow_up_until_it_is_applied(rig):
+    p, r, pid = await rig.open_room()
+    s1 = f"{pid}/s1"
+    await rig.run(pid, s1)
+    f1 = await rig.propose(rig.apply_step("res-1", SHELL), project_id=pid, after_step=s1)
+    _t, st = await rig.tool("queue.execution_state")
+    assert st["to_apply"] == []  # filed, not ruled
+    rig.rule(f1["id"])
+    _t, st = await rig.tool("queue.execution_state")
+    assert st["to_apply"] == [{"proposal_id": f1["id"]}]
+    await rig.tool("queue.apply_followup", proposal_id=f1["id"])
+    _t, st = await rig.tool("queue.execution_state")
+    assert st["to_apply"] == []
+
+
+async def test_issued_steps_are_listed_until_observed_done(rig):
+    p, r, pid = await rig.open_room()
+    s1 = f"{pid}/s1"
+    _t, st = await rig.tool("queue.execution_state")
+    assert st["issued_steps"] == []
+    await rig.run(pid, s1)
+    _t, st = await rig.tool("queue.execution_state")
+    assert st["issued_steps"] == [{"project_id": pid, "step_id": s1}]
+    await rig.tool("queue.observe", project_id=pid, step_id=s1)
+    _t, st = await rig.tool("queue.execution_state")
+    assert st["issued_steps"] == []
+
+
+async def test_open_projects_carry_role_and_ready_steps_carry_tool_and_args(rig):
+    p, r, pid = await rig.open_room()
+    _t, st = await rig.tool("queue.execution_state")
+    assert st["open_projects"][0]["role"] == "architect"
+    (ready,) = st["ready_steps"]
+    assert ready["tool"] == "blueprint.reserve" and ready["args"] == rig.reserve_step()["args"]
+    # a later step's args (the ore hold reads phase and site) come from the amended plan
+    s1 = f"{pid}/s1"
+    await rig.run(pid, s1)
+    await rig.tool("queue.observe", project_id=pid, step_id=s1)
+    f1 = await rig.propose(rig.apply_step("res-1", SHELL), project_id=pid, after_step=s1)
+    rig.rule(f1["id"])
+    await rig.tool("queue.apply_followup", proposal_id=f1["id"])
+    _t, st = await rig.tool("queue.execution_state")
+    (ready,) = st["ready_steps"]
+    assert ready["step_id"] == f"{pid}/s2" and ready["tool"] == "blueprint.apply"
+    assert ready["args"]["phase"] == SHELL and ready["args"]["site"] == "res-1"
+
+
+async def test_routing_block_matches_the_routing_module(rig):
+    _t, st = await rig.tool("queue.execution_state")
+    assert st["routing"] == {
+        "routed_types": routing.routed_types(), "unrouted_types": routing.unrouted_types(),
+        "frozen_types": [t for g in routing.groups() for t in routing.types(g) if routing.is_frozen(t)],
+    }
+    assert "room_siting" in st["routing"]["routed_types"]
+    from conductor.briefing import routing_from_state
+    assert routing_from_state(st) == st["routing"]
+
+
+async def test_execution_state_additions_are_read_only(rig):
+    p, r, pid = await rig.open_room()
+    await rig.run(pid, f"{pid}/s1")
+    before = store.load(rig.db)
+    await rig.tool("queue.execution_state")
+    assert store.load(rig.db) == before
+
+
+async def test_conductor_phase_round_trips_the_state_end_to_end(rig):
+    """conductor/execute.py's own parser, fed the real tool: it opens the ruled
+    proposal, runs its step, reconciles it done and applies a follow-up."""
+    from conductor.execute import ExecuteState, run_execute
+    from conductor.policy import ExecutionPolicy
+
+    calls = []
+
+    async def call(tool, args):
+        calls.append(tool)
+        return (await rig.tool(tool, **args))[1]
+
+    p = await rig.propose(rig.reserve_step(), phases={"tool": "blueprint.apply", "list": [SHELL, FINISH]})
+    rig.rule(p["id"])
+    state = ExecuteState()
+    rep = await run_execute(call, ExecutionPolicy(), state, game_tick=100)
+    assert not rep.errors and "queue.open_project" in calls and "queue.run_step" in calls
+    (proj,) = store.open_projects(rig.db)
+    pid, s1 = proj["project_id"], f"{proj['project_id']}/s1"
+    assert state.roles[pid] == "architect"
+    rep = await run_execute(call, ExecutionPolicy(), state, game_tick=200)
+    assert "queue.observe" in calls and rig.target_states(pid, s1) == ["done"]
+    f1 = await rig.propose(rig.apply_step("res-1", SHELL), project_id=pid, after_step=s1)
+    rig.rule(f1["id"])
+    rep = await run_execute(call, ExecutionPolicy(), state, game_tick=300)
+    assert "queue.apply_followup" in calls and not rep.errors
+    assert any(st["id"] == f"{pid}/s2" for st in store.current_plan_steps(rig.db, pid))
