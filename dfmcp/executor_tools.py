@@ -137,7 +137,7 @@ _register(
     "Conductor only. Open the project for an accepted routed proposal's ruling: one step, its own "
     "tracked target, the proposal's tool and exact arguments. Refused for a follow-up, an unrouted "
     "type, a ruling at or below the group's cutover, a closed ruling or one that already has a "
-    "project. The project's urgency is the proposal's (normal if it gave none).",
+    "project. The project's urgency is the ruling's, else the proposal's, else normal.",
     {"ruling_id": {"type": "string", "description": "A ruling-N id."}},
     ("ruling_id",),
 )

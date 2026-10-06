@@ -133,7 +133,8 @@ async def open_project(env: ExecEnv, arguments: Mapping[str, Any]) -> Tuple[str,
     idx = _by_id(records)
     ruling = idx.get(ruling_id)
     proposal = idx.get((ruling or {}).get("proposal_id") or "")
-    urgency = ((proposal or {}).get("preview") or {}).get("urgency")
+    # The Overseer's ruling sets the urgency; else the proposal's, else normal.
+    urgency = (ruling or {}).get("urgency") or ((proposal or {}).get("preview") or {}).get("urgency")
     rec = await _w(env, QUEUE_OPEN, store.open_project_from_ruling, env.db_path, ruling_id, urgency=urgency)
     out = {"project_id": rec["id"], "step_ids": [s["id"] for s in rec["steps"]], "urgency": rec.get("urgency", "normal")}
     return f"{rec['id']} opened from {ruling_id}", out

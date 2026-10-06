@@ -196,7 +196,8 @@ RULING_ASK = (
     "change your mind. Cited facts are checked and refreshed; judge the reasoning. "
     "Then carry out each proposal you accept, following your charter's Execution "
     "steps (queue.project, act, queue.executed with step_id). Stop when each has "
-    "a ruling and every accepted one is carried out. Expected about {calls} calls."
+    "a ruling and every accepted one is carried out. On an accept, give an urgency when it is "
+    "not normal. Expected about {calls} calls."
 )
 
 
@@ -237,7 +238,7 @@ def ruling_ask(routing: Optional[Mapping[str, Sequence[str]]], calls: int) -> st
         "open a project or record execution for them."
     )
     tail = "Stop when each has a ruling" + (" and every accepted one of the other types is carried out." if unrouted else ".")
-    out.append(f"{tail} Expected about {calls} calls.")
+    out.append(f"{tail} On an accept, give an urgency when it is not normal. Expected about {calls} calls.")
     return " ".join(out)
 
 
