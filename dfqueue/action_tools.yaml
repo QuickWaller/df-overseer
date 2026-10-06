@@ -32,7 +32,7 @@ groups:
       - diggable.dig-stair
       - construction.mine-vein
     routed: false
-    frozen: false
+    frozen: true
     coverage: false
   stockpiles:
     types: [stockpile_siting]
