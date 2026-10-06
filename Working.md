@@ -4,6 +4,14 @@ What's currently in progress. Remove an item once it's done, tabled, or
 shelved, don't mark it paused. Any session should read this and know what's
 actually going on right now.
 
+## Order agreed 2026-10-07 (user), conductor-executes rollout
+
+1. Land stage 2E (`handoffs/2026-10-06-stage-2e.md`, held for the cutover) and the ruling-urgency build (`handoffs/2026-10-07-ruling-urgency.md`). After 2E, add the Overseer charter line: **`high` urgency only for work answering a survival threat** (water, food, hostiles, injury), since high is what still runs under a tripwire latch; otherwise `elevated`.
+2. Supervised room cutover with the user: freeze rooms, one Overseer wake, `/tmp/cutover.sh rooms --check` then `--apply`, deploy 2E, one supervised bedroom end to end.
+3. Supervised tripwire live check (no verdict holds, resume verdict resumes, repeat brake, re-arm).
+4. A short unattended stretch with the user watching: measure turn length, which wakes fire, and cross-run cache reuse (unmeasured).
+5. Then decide further Overseer tool cuts (target a ruling-only Overseer, roughly 20 to 30 tools) from that evidence. Stage 2c (coverage) after the first supervised bedroom.
+
 ## START HERE: handover, 2026-09-30 (read this first)
 
 **Fort:** paused throughout the day, year 31, tick 209571, unchanged. `dfmcp-server` active. Repo `main` == `origin/main`, clean, everything pushed.
