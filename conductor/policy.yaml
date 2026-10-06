@@ -196,6 +196,26 @@ wake_reasons:
     clock: paused
     wakes: [overseer]
 
+# Stage T (handoffs/2026-10-06-stage-t-tripwire.md): who runs after a tripwire
+# latches, before the Overseer. Keyed by the latch's own `reason`. A reason
+# with no entry, an unknown cause included, wakes the Overseer alone. The
+# Overseer always runs last and is the only role whose explicit `pause.verdict`
+# (resume true) lets the conductor resume; hostiles name the Overseer here
+# until a military role exists.
+tripwire_owners:
+  thirst_critical: [quartermaster]
+  hunger_critical: [quartermaster]
+  hostile_reachable: [overseer]
+
+# The same cause latching more than `limit` times within `window_ticks` game
+# ticks (4800 = 4 game days) goes to the human instead of re-running the
+# sequence. The in-game watcher has no hysteresis (a resumed fort whose
+# dwarves are still past the threshold re-latches on the next check), so this
+# is the only brake. Starting values.
+tripwire_repeat:
+  limit: 3
+  window_ticks: 4800
+
 # Per-role cap (real seconds) on one `agent exec` run; roles not listed use
 # CONDUCTOR_ROLE_TIMEOUT_SECONDS (default 600). First real cycle 2026-09-25
 # (evals/live/2026-09-25-first-real-conductor-cycle): the Architect took 158 s

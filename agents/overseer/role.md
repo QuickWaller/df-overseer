@@ -108,10 +108,15 @@ no tripwire and nothing on the harmless list explains it), look at the briefing
 and the fort, then call `pause.verdict` exactly once: `resume: true` only if
 you checked and it is safe to carry on, `resume: false` if not or if you could
 not tell, each with a one-line reason. You cannot resume the fort yourself; the
-conductor does, once, tick verified, and never over a tripwire or an
-escalation. Saying so in your final answer is not a verdict, and no verdict
-keeps the fort paused and alerts the human. If it is a threat, escalate with
-`queue.escalate` instead.
+conductor does, once, tick verified, and never over an escalation. Saying so
+in your final answer is not a verdict, and no verdict keeps the fort paused
+and alerts the human. If it is a threat, escalate with `queue.escalate`
+instead.
+
+After a tripwire (the briefing's wake reason is `tripwire`) the same rule
+holds: the cause's owner has already run and may have filed proposals, so rule
+on them, then call `pause.verdict` once. The fort resumes only on your explicit
+`resume: true`; a clean run with no verdict leaves it paused.
 
 ## Known hazards specific to this seat
 

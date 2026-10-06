@@ -624,6 +624,7 @@ async def finish_after_overseer(
     call: Callable, store: PauseWatchStore, policy: PausePolicy, *,
     escalated: bool, clock_status: Mapping[str, Any], now: float, sleep: Sleep,
     verdict: Optional[Mapping[str, Any]] = None, held: bool = False,
+    what: str = "an unexplained pause",
 ) -> WatchOutcome:
     """After the Overseer ran on an `unexplained_pause` wake. Silence is not
     consent (user's call 2026-10-05, handoffs/2026-10-05-safe-to-resume.md):
@@ -636,26 +637,26 @@ async def finish_after_overseer(
 
     `verdict` is `{"resume": bool, "reason": str}` read from `pause.verdict`
     by the caller, or None. The Overseer holds no `clock.resume`: this
-    function is the only thing that resumes, and the tripwire branch in
-    `conductor/cycle.py` does not come through here."""
+    function is the only thing that resumes; the tripwire sequence (stage T) now
+    in `conductor/cycle.py` comes through here too, with `what` naming the pause."""
     state = store.load()
     outcome = WatchOutcome(
-        Verdict.WAKE_OVERSEER, "the Overseer ran on an unexplained pause", still_paused=True, held_by_operator=held,
+        Verdict.WAKE_OVERSEER, f"the Overseer ran on {what}", still_paused=True, held_by_operator=held,
     )
     if escalated:
         state.owned = OWNED_ESCALATION
         state.note(now, "owned", OWNED_ESCALATION)
-        _alert(state, outcome, now, "the Overseer escalated an unexplained pause")
+        _alert(state, outcome, now, f"the Overseer escalated {what}")
         store.save(state)
         return outcome
     if verdict is None:
-        _alert(state, outcome, now, "the Overseer gave no verdict on an unexplained pause; staying paused")
+        _alert(state, outcome, now, f"the Overseer gave no verdict on {what}; staying paused")
         outcome.verdict = Verdict.ALERT
         store.save(state)
         return outcome
     if not verdict.get("resume"):
         reason = " ".join(str(verdict.get("reason") or "").split())
-        _alert(state, outcome, now, f"the Overseer says do not resume an unexplained pause: {reason}"[:300])
+        _alert(state, outcome, now, f"the Overseer says do not resume {what}: {reason}"[:300])
         outcome.verdict = Verdict.ALERT
         store.save(state)
         return outcome

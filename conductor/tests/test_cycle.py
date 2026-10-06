@@ -24,6 +24,8 @@ from conductor.policy import FULL_SPEED, PAUSED, SLOWED, load_policy
 from conductor.runner import FakeRoleRunner, RunResult
 from conductor.triage import ADVISORS, CONSULTANT, OVERSEER
 
+QUARTERMASTER = "quartermaster"
+
 POLICY = load_policy()  # the real, committed conductor/policy.yaml
 
 CHARTERS = {role: f"# {role}\n\nCharter." for role in (*ADVISORS, CONSULTANT, OVERSEER)}
@@ -320,7 +322,7 @@ async def test_overseer_woken_and_quicksaved_before_running_when_the_queue_holds
 # ---------------------------------------------------------------------------
 
 
-async def test_a_tripwire_wakes_the_overseer_and_clears_and_resumes_after_a_clean_run(tmp_path):
+async def test_a_hunger_tripwire_wakes_the_quartermaster_then_the_overseer_and_stays_paused_without_a_verdict(tmp_path):
     tools = _base_tools()
     tools["clock.status"] = _clock_status(
         paused=True, tripwire={"reason": "hunger_critical", "tick": 999, "detail": "Urist is starving"},
@@ -335,11 +337,13 @@ async def test_a_tripwire_wakes_the_overseer_and_clears_and_resumes_after_a_clea
     result = await run_cycle(1, deps)
 
     assert result.tripwire["reason"] == "hunger_critical"
-    assert result.roles_woken == (OVERSEER,)
+    assert result.roles_woken == (QUARTERMASTER, OVERSEER)
     assert result.escalated is False
+    # silence is not consent: a clean run with no pause.verdict clears nothing and resumes nothing
     tool_order = [c["tool"] for c in result.clock_changes]
-    assert tool_order == ["fort.quicksave", "clock.clear", "clock.resume"]
-    assert [c["role"] for c in runner.calls] == [OVERSEER]
+    assert tool_order == ["fort.quicksave"]
+    assert [c["role"] for c in runner.calls] == [QUARTERMASTER, OVERSEER]
+    assert result.pause_watch["verdict"] == "alert" and result.clock_level == PAUSED
 
 
 async def test_a_tripwire_leaves_the_fort_paused_when_the_overseer_run_fails(tmp_path):
@@ -399,7 +403,7 @@ async def test_a_tripwire_takes_priority_over_ordinary_triage_this_cycle(tmp_pat
     deps = _deps(tmp_path, tools=tools, runner=runner)
     result = await run_cycle(1, deps)
 
-    assert result.roles_woken == (OVERSEER,)
+    assert result.roles_woken == (QUARTERMASTER, OVERSEER)
     assert result.clock_level == PAUSED
     assert "architect" not in [c["role"] for c in runner.calls]
 
@@ -581,8 +585,23 @@ async def test_the_consultants_briefing_carries_ask_ids_not_proposal_ids(tmp_pat
 # ---------------------------------------------------------------------------
 
 
+def _verdict_tool(verdict):
+    """pause.verdict_read as the store shows it: the first read is the baseline
+    taken before the Overseer runs, later reads show `verdict` (or nothing)."""
+    n = {"c": 0}
+
+    def read(_a=None):
+        n["c"] += 1
+        if n["c"] == 1:
+            return {"latest_id": 0, "verdicts": []}
+        return {"latest_id": 1, "verdicts": [{"id": 1, "at": "t", **verdict}] if verdict else []}
+
+    return read
+
+
 async def test_a_clock_resume_refusal_is_logged_and_does_not_crash_the_cycle(tmp_path, caplog):
     tools = _base_tools()
+    tools["pause.verdict_read"] = _verdict_tool({"resume": True, "reason": "fine"})
     tools["clock.status"] = _clock_status(
         paused=True, tripwire={"reason": "hunger_critical", "tick": 999, "detail": "x"},
     )
@@ -600,13 +619,14 @@ async def test_a_clock_resume_refusal_is_logged_and_does_not_crash_the_cycle(tmp
     deps = _deps(tmp_path, tools=tools, runner=runner)
 
     import logging
-    with caplog.at_level(logging.ERROR, logger="conductor.cycle"):
+    with caplog.at_level(logging.ERROR, logger="conductor"):
         result = await run_cycle(1, deps)  # must not raise
 
     assert result.escalated is False  # the RUN was clean; only the resume call was refused
-    resume_change = next(c for c in result.clock_changes if c["tool"] == "clock.resume")
-    assert resume_change["result"] == {"ok": False, "error": "clock.resume: refused: a tripwire is latched"}
-    assert any("clock.resume refused" in rec.message for rec in caplog.records)
+    resume_action = next(a for a in result.pause_watch["actions"] if a.get("tool") == "clock.resume")
+    assert "refused" in resume_action["error"]
+    assert result.pause_watch["verdict"] == "alert" and result.clock_level == PAUSED
+    assert any("did not move the tick" in a["reason"] for a in result.pause_watch["alerts"])
 
 
 # ---------------------------------------------------------------------------
@@ -735,9 +755,9 @@ async def test_a_tripwire_stays_paused_when_a_clean_run_calls_queue_escalate(tmp
     assert "clock.resume" not in tool_order
 
 
-async def test_a_tripwire_resumes_when_a_clean_run_never_calls_queue_escalate(tmp_path):
-    """The companion invariant: a clean run with NO escalate call must no
-    longer be (mis)treated as an escalation."""
+async def test_a_clean_tripwire_run_with_no_escalate_call_is_not_an_escalation_but_still_needs_a_verdict(tmp_path):
+    """The companion invariant: a clean run with NO escalate call is not an
+    escalation, and (stage T) not a resume either: only a verdict resumes."""
     tools = _base_tools()
     tools["clock.status"] = _clock_status(
         paused=True, tripwire={"reason": "hunger_critical", "tick": 999, "detail": "x"},
@@ -748,7 +768,7 @@ async def test_a_tripwire_resumes_when_a_clean_run_never_calls_queue_escalate(tm
 
     assert result.escalated is False
     tool_order = [c["tool"] for c in result.clock_changes]
-    assert tool_order == ["fort.quicksave", "clock.clear", "clock.resume"]
+    assert tool_order == ["fort.quicksave"]
 
 
 async def test_the_overseer_can_escalate_during_an_ordinary_cycle_and_pauses_the_fort(tmp_path):

@@ -212,6 +212,11 @@ class FakeFort:
         self.paused = False
         return {"ok": True, "paused": False}
 
+    def clear(self, _a=None):
+        had = self.tripwire is not None
+        self.tripwire = None
+        return {"ok": True, "had_latch": had}
+
     def pause(self, _a=None):
         self.paused = True
         return {"ok": True, "paused": True}
@@ -223,7 +228,7 @@ class FakeFort:
     def tool_map(self):
         return {
             "clock.status": self.status, "pause.why": self.why, "pause.dismiss": self.dismiss,
-            "clock.resume": self.resume, "clock.pause": self.pause,
+            "clock.resume": self.resume, "clock.pause": self.pause, "clock.clear": self.clear,
             "pause.verdict_read": self.verdict_read,
         }
 
@@ -640,7 +645,7 @@ async def test_cycle_a_latched_tripwire_still_goes_through_the_tripwire_branch_o
     deps = _cycle_deps(tmp_path, fort, runner=runner)
     result = await run_cycle(1, deps)
     assert result.tripwire is not None
-    assert result.pause_watch is None          # the watchdog never ran
+    assert "pause.why" not in [c[0] for c in deps.tool_caller.calls]  # the watchdog never ran
     assert fort.popups == 1                    # and dismissed nothing
     assert fort.resume_calls == 0              # escalated: still paused
 
