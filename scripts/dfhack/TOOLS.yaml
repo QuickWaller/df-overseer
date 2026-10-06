@@ -1895,8 +1895,8 @@ df-overseer-zone.lua:
         never an empty list). The install has 18 kinds, not the 17 the
         handoff counted. Each row: token (the game's civzone_type name, the
         name to pass as KIND), key (quickfort's own letter, also accepted),
-        label (display only), finder (`rectangle`, or `water_body` for
-        WaterSource), min and max size (max is the string "unbounded" for
+        label (display only), finder (`rectangle`, or `shore` for
+        WaterSource and FishingArea), min and max size (max is the string "unbounded" for
         every zone), default_dims, owner_capable, room_value_field (which
         position field asks this kind for a room value, or null),
         prefer_indoors, caveat and policy_source ("ZONE_POLICY entry" or
@@ -1947,8 +1947,21 @@ df-overseer-zone.lua:
         statement that what counts toward the value is not exposed by the
         game (an external, older-version wiki account is included and marked
         unverified). A `caveat` says when a kind needs terrain this tool does
-        not check. WaterSource keeps its own finder (connected revealed water
-        bodies, W H refused) and its old output.
+        not check. WaterSource and FishingArea share ONE finder, `shore` (W H
+        refused): dry, unbuilt, standable ground BESIDE water, never the water
+        itself, because the game's Water Source and Fishing zones only count
+        tiles adjacent to water (wiki Zone page and the user's own play,
+        2026-10-07; research/2026-10-07-stockpile-logistics.md section 6).
+        LEVEL is the level of the ground the zone goes on: a sunken pool is
+        found from the level above it. A tile is offered when water is on an
+        orthogonal neighbour at that level, or directly below it or below an
+        orthogonal neighbour. Diagonals are NOT counted and water two levels
+        down is not counted: UNVERIFIED LIVE, the sources do not settle
+        either. Each result adds `water_same_level`, `water_one_level_below`
+        and `adjacency_rule`; the old depth/stagnant/salt keys describe the
+        adjacent water. A ramp or ramp top counts as standable on its shape
+        (getWalkableGroup reads 0 for them on this build). `place` refuses
+        outright when no ground beside water is in reach.
         ADDED 2026-09-23 (handoffs/2026-09-23-zone-inventory-and-validity.md
         item 3): AROUND_FURNITURE (default false, RADIUS_TILES now
         `skippable` too so it can be given without W H/LEVEL) admits a tile
@@ -1993,15 +2006,15 @@ df-overseer-zone.lua:
             default: null
             meaning: >-
               Width in tiles of the zone. Optional; give both W and H or neither. Leave both out for
-              the kind's default size (zone.list-kinds shows it). Refused for WaterSource, whose
-              shape follows the water.
+              the kind's default size (zone.list-kinds shows it). Refused for WaterSource and FishingArea,
+              whose shape follows the shore.
           - name: "H"
             required: false
             default: null
             meaning: >-
               Height in tiles of the zone. Optional; give both W and H or neither. Leave both out
-              for the kind's default size (zone.list-kinds shows it). Refused for WaterSource, whose
-              shape follows the water.
+              for the kind's default size (zone.list-kinds shows it). Refused for WaterSource and FishingArea,
+              whose shape follows the shore.
           - name: "LEVEL"
             required: false
             default: "0"
@@ -2044,15 +2057,15 @@ df-overseer-zone.lua:
           - >-
             AROUND_FURNITURE is refused by name for a kind with no qualifying furniture of its own.
           - >-
-            KIND "water_source" is a special case: it keeps its own finder over connected water
-            bodies and refuses W H entirely, never a rectangle search.
+            KIND water_source and fishing_area are special cases: they share the shore finder (ground
+            beside water, never the water) and refuse W H entirely, never a rectangle search.
         traps:
           - >-
             AROUND_FURNITURE is refused by name outright for a kind with no qualifying furniture,
             rather than silently falling back to the ordinary search.
           - >-
-            KIND water_source refuses W H entirely and runs its own finder over real water, never a
-            rectangle search.
+            KIND water_source and fishing_area refuse W H entirely and run the shore finder over ground
+            beside real water, never a rectangle search and never the water tiles themselves.
     "check-owner KIND OWNER":
       lua_function: check_owner
       effect: read
@@ -2125,8 +2138,10 @@ df-overseer-zone.lua:
         This is a placement-time observation only, not a per-position
         verdict: nobles.requirements is the tool that says whether any
         specific position's requirement is met.
-        WaterSource keeps its old behaviour exactly (a dry run reports the
-        body and `would_zone_tiles`, no quickfort). OWNER (last argument, so
+        WaterSource and FishingArea use the shore finder (2026-10-07: a dry run
+        reports the shore and `would_zone_tiles`, no quickfort; a real run
+        zones the shore tiles, never the water; no ground beside water in
+        reach is refused). OWNER (last argument, so
         RANK RADIUS_TILES and DRY_RUN must be given before it) assigns the
         new zone: a unit id or a position code, validated as in check-owner
         before anything is touched. quickfort's own dry run stops before it
@@ -2164,15 +2179,15 @@ df-overseer-zone.lua:
             default: null
             meaning: >-
               Width in tiles of the zone. Optional; give both W and H or neither. Leave both out for
-              the kind's default size (zone.list-kinds shows it). Refused for WaterSource, whose
-              shape follows the water.
+              the kind's default size (zone.list-kinds shows it). Refused for WaterSource and FishingArea,
+              whose shape follows the shore.
           - name: "H"
             required: false
             default: null
             meaning: >-
               Height in tiles of the zone. Optional; give both W and H or neither. Leave both out
-              for the kind's default size (zone.list-kinds shows it). Refused for WaterSource, whose
-              shape follows the water.
+              for the kind's default size (zone.list-kinds shows it). Refused for WaterSource and FishingArea,
+              whose shape follows the shore.
           - name: "LEVEL"
             required: false
             default: "0"
