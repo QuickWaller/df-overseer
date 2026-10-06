@@ -30,8 +30,9 @@ A conductor watch modelled on `conductor/ore_watch.py` (and
   list of planned buildings with their unmet item filters), add it to the
   right Lua tool as a read-only command with TOOLS.yaml data, coordinate-free.
 - Edge-triggered like the lane alerts (wake once when it appears, again
-  only after it clears and re-appears); suppressed under an operator hold
-  like the other watches if they are.
+  only after it clears and re-appears). The operator hold gates no wake
+  today (research/2026-10-07-wake-audit.md finding 5), so do not suppress
+  it under a hold; follow the audit's backoff advice (stalled after 3).
 - Quartermaster charter: one line naming the wake and the expected
   response. User's call 2026-10-07: the preferred response is a **standing
   manager order with an item condition that keeps a small buffer** (for
