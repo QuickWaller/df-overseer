@@ -70,7 +70,8 @@ def evaluate_threshold_alerts(alerts: Sequence[Any], read_results: Mapping[Any, 
     """Alert lines for the thresholds currently crossed. `alerts` are
     `conductor.policy.ThresholdAlert`s; `read_results` maps `alert.name` to the
     parsed result of its read (absent or `None` when the read failed). Total: a
-    missing result, a missing field, a non-number or an unusable `alive` simply
+    missing result, a missing field (unless the alert declares a `missing`
+    default, which then stands in for it), a non-number or an unusable `alive` simply
     drops that alert's line."""
     lines: List[str] = []
     for alert in alerts:
@@ -79,7 +80,13 @@ def evaluate_threshold_alerts(alerts: Sequence[Any], read_results: Mapping[Any, 
             continue
         try:
             value = _field(result, alert.field)
-        except (KeyError, IndexError, TypeError, ValueError):
+        except (KeyError, IndexError):
+            # Absent from a successful read: the alert's own `missing` default
+            # if it declares one, else no line (a failed read never gets here).
+            if getattr(alert, "missing", None) is None:
+                continue
+            value = alert.missing
+        except (TypeError, ValueError):
             continue
         if isinstance(value, bool) or not isinstance(value, (int, float)):
             continue
