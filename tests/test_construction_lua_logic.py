@@ -783,3 +783,61 @@ def test_mine_vein_site_handle_without_the_blueprint_module_says_so(w):
     w.lua.execute("package.loaded['df-overseer-blueprint'] = nil")
     res = w.mine_vein("site-1", "true")
     assert "not available" in res["error"]
+
+
+# --- handoffs/2026-10-07-route-ore-mining.md: the conductor's verdict on the REAL Lua output ---
+
+
+def _mine_specs():
+    from dfmcp import action_data as ad
+    from dfmcp.registry import load_registry
+
+    specs = ad.load_all(load_registry())
+    return ad, specs["construction.mine-vein-site"], specs["construction.mine-vein"]
+
+
+def test_the_conductors_verdict_reads_the_real_mine_vein_output(w):
+    ad, site_spec, zone_spec = _mine_specs()
+    _site_blueprint_module(w)
+    w.set_ring("site-1", [(0, 0, 0), (2, 2, 0)])
+    for xy in ((0, 0), (2, 2)):
+        w.set_tile(xy[0], xy[1], 0, "WALL")
+        w.set_vein(xy[0], xy[1], 0, "ore_or_gem", "HEMATITE")
+    w.queue_quickfort("  Tiles designated for digging: 1\n", res=0)
+    dry = w.mine_vein("site-1", "true")
+    assert ad.judge(site_spec, dry, dry=True).ok
+    # the same output is not a real run: the echo must match the call
+    assert ad.judge(site_spec, dry, dry=False).kind == "invalid"
+    for path in site_spec.preview_fields:
+        assert ad.get_path(dry, path)[0], path
+    # the zone form shares the function and the declaration
+    w.add_zone(13)
+    w.set_ring(13, [(1, 1, 0)])
+    w.set_tile(1, 1, 0, "WALL")
+    w.set_vein(1, 1, 0, "ore_or_gem", "HEMATITE")
+    w.queue_quickfort("  Tiles designated for digging: 1\n", res=0)
+    assert ad.judge(zone_spec, w.mine_vein(13, "true"), dry=True).ok
+
+
+def test_the_conductors_verdict_refuses_an_unclassifiable_or_held_ring_tile(w):
+    ad, site_spec, _ = _mine_specs()
+    _site_blueprint_module(w)
+    w.set_ring("site-1", [(0, 0, 0), (2, 2, 0)])
+    w.set_tile(0, 0, 0, "WALL")
+    w.set_vein(0, 0, 0, "unknown", None, "no matching vein event")
+    w.set_tile(2, 2, 0, "WALL")
+    w.set_vein(2, 2, 0, "ore_or_gem", "HEMATITE")
+    w.queue_quickfort("  Tiles designated for digging: 1\n", res=0)
+    refused = w.mine_vein("site-1", "true")
+    assert ad.judge(site_spec, refused, dry=True).kind == "refused"
+
+    w2 = World()
+    _site_blueprint_module(w2)
+    w2.set_ring("site-1", [(2, 2, 0)])
+    w2.set_tile(2, 2, 0, "WALL")
+    w2.set_vein(2, 2, 0, "ore_or_gem", "HEMATITE")
+    w2.set_reserved([{"x": 2, "y": 2, "z": 0, "handle": "res-1", "purpose": "planned bedroom"}])
+    held = w2.mine_vein("site-1", "true")
+    assert held["held"] and ad.judge(site_spec, held, dry=True).kind == "refused"
+    # a script error object is a refusal with its message
+    assert ad.judge(site_spec, w2.mine_vein("site-9", "true"), dry=True).kind == "refused"
