@@ -245,13 +245,45 @@
       describes: "53.16"
       read: opened
       accessed: 2026-09-19
+    - kind: user
+      ref: >-
+        own play, 2026-10-07: a sunken pool's Water Source zone marked on
+        the upper-level ground beside the pool worked
+      describes: unknown
+      read: recalled
+      accessed: 2026-10-07
+    - kind: research
+      ref: >-
+        research/2026-10-07-stockpile-logistics.md section 6 (the wiki Zone
+        page: "place the zone onto a ground tile next to the water, not over
+        the water itself"; fishing accepts water one z-level below the zone
+        tile)
+      describes: unknown
+      read: opened
+      accessed: 2026-10-07
   statement: >-
     A fort whose only water is a sunken pond may have dwarves that never
     drink. Marking the water itself as a Water Source zone, on the level the
     water is on, got dwarves down to the water and drinking within about four
     game days. Place the zone on the water, not on the open space above it.
   note: >-
-    Refuted 2026-09-19, kept so the mistake is not remade. The 2026-09-17
+    CORRECTED 2026-10-07 (reason for the refutation; the status stands). The
+    claim above, a zone ON the water, is refuted, but not for the reason
+    first written below. The game's own rule, from the wiki Zone page and
+    from the user's play, is that a Water Source zone goes on GROUND NEXT TO
+    the water, not over it: "only tiles adjacent to water qualify". A sunken
+    pool is served by a zone on the dry ground on the level above or beside
+    it, which worked in the user's own game. So the 2026-09-19 conclusion
+    that this pond was undrinkable because no dwarf can reach the water was
+    an over-reading: the zone was on the wrong tiles (the water), and the
+    zero-drinks measurement fits that as well as it fits unreachability. See
+    water-source-needs-walkable-neighbour, amended the same day, and
+    scripts/dfhack/df-overseer-zone.lua's `shore` finder, which now offers
+    ground beside water for WaterSource and FishingArea and never the water.
+    The exact adjacency rule (diagonals, water two levels down) is not
+    settled by the sources and is unverified live.
+
+    History, as written 2026-09-19: Refuted 2026-09-19, kept so the mistake is not remade. The 2026-09-17
     read that this entry was built on was itself flagged correlational, not
     isolated, and the correlation did not hold up: measured across two exact
     reads at Uniboslan, delta tick equalled delta thirst exactly (6,303 =
@@ -292,15 +324,52 @@
       describes: "53.16"
       read: opened
       accessed: 2026-09-19
+    - kind: user
+      ref: >-
+        own play, 2026-10-07: a sunken pool's Water Source zone marked on
+        the upper-level ground beside the pool worked
+      describes: unknown
+      read: recalled
+      accessed: 2026-10-07
+    - kind: research
+      ref: >-
+        research/2026-10-07-stockpile-logistics.md section 6 (the wiki Zone
+        page: "place the zone onto a ground tile next to the water, not over
+        the water itself"; fishing accepts water one z-level below the zone
+        tile)
+      describes: unknown
+      read: opened
+      accessed: 2026-10-07
   statement: >-
     A `WaterSource` zone reading `spec_sub_flag.active = true` says only that
-    the zone exists on water; it says nothing about whether any dwarf can
-    reach that water. Reachability needs a walkable tile adjacent to the
-    water at the water's own z-level. Check tile shapes at the water's
-    z-level before placing a zone, not after: if every wet tile there has
-    zero walkable neighbours, no dwarf can path to it regardless of the
-    zone.
+    the zone exists; it says nothing about whether any dwarf can reach the
+    water. The zone belongs on dry, standable ground ADJACENT to water, not
+    on the water. Adjacent includes the ground on the level directly above a
+    sunken pool (a floor or ramp top above, or beside, a water tile) as well
+    as ground beside water on the water's own level. Check what ground
+    touches the water before placing a zone, not after: if no standable
+    ground is next to the water on either level, there is nothing to zone.
+    The finder for this is the zone tool's `shore` finder (WaterSource and
+    FishingArea).
   note: >-
+    AMENDED 2026-10-07. The original statement required a walkable tile
+    adjacent to the water at the water's OWN z-level. That was over-strict:
+    the user's own play (a sunken pool, zone on the upper-level ground
+    beside it) worked, and the wiki Zone page says a zone goes on ground
+    next to the water. The Uniboslan measurements below stand as true reads
+    (27 wet tiles at z168, none with a walkable neighbour at that level, the
+    z169 ground above all dry), but "so no dwarf can drink" was never
+    tested with a zone on the z169 ground, which is the placement the game
+    documents. Exact adjacency (diagonals, z+1 and z-1 combinations) is not
+    settled by the sources; the tool counts orthogonal neighbours at the
+    same level plus directly below or beside-and-below, and leaves
+    diagonals out. Unverified live.
+
+    History, original statement (2026-09-19): Reachability needs a walkable
+    tile adjacent to the water at the water's own z-level; if every wet tile
+    there has zero walkable neighbours, no dwarf can path to it regardless
+    of the zone.
+
     What this proves: at Uniboslan, the zone was active, all 27 wet tiles at
     z168 had zero walkable neighbours, and thirst_timer rose in exact
     lockstep with tick across all 15 citizens over a 6,303-tick window, so
