@@ -33,8 +33,14 @@ A conductor watch modelled on `conductor/ore_watch.py` (and
   only after it clears and re-appears); suppressed under an operator hold
   like the other watches if they are.
 - Quartermaster charter: one line naming the wake and the expected
-  response (queue the producing job or order), only if the charter does not
-  already cover it.
+  response. User's call 2026-10-07: the preferred response is a **standing
+  manager order with an item condition that keeps a small buffer** (for
+  example, make beds while fewer than 2 are in stock; `orders.create`
+  ITEM_CONDITIONS, repeat), so the game keeps supply itself; a one-off job
+  only when a standing order cannot express it. The wake line should say
+  when a standing order for X exists but is inactive or unvalidated (the
+  stuck-bed read found all five live orders inactive), since that is a
+  different fix.
 - Add a gotcha/doctrine-style note only if there is an existing home for
   "BED 0 plus a suspended Bed means missing supply"; do not invent a store.
 - Tests: fires for a planned building with no supply; silent when a job or
