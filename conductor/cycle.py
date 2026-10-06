@@ -68,12 +68,16 @@ from conductor.job_watch import JobWatchResult, JobWatchStore, evaluate_jobs, jo
 from conductor.ore_watch import POLL_TOOL as ORE_POLL_TOOL, OreRead, ore_read_from_sites
 from conductor.order_watch import OrderWatchResult, evaluate_orders
 from conductor.pause_watch import (
-    OWNED_ESCALATION, UNEXPLAINED_PAUSE, PauseWatchStore, PausePolicy, Verdict,
+    OWNED_ESCALATION, UNEXPLAINED_PAUSE, PauseWatchStore, PausePolicy, Verdict, WatchOutcome,
+    _alert as _pause_alert,
     finish_after_overseer, load_pause_policy, read_verdict_after, read_verdict_baseline, run_pause_watch,
 )
 from conductor.policy import FULL_SPEED, PAUSED, Policy
 from conductor.runner import RoleRunner, RunResult
 from conductor.triage import ADVISORS, CONSULTANT, OVERSEER, Signals, Wake, triage
+from conductor.tripwire import (
+    TripwireStateError, TripwireStore, note_latch, owners_for, repeat_count,
+)
 
 LOG = logging.getLogger("conductor.cycle")
 
@@ -493,82 +497,16 @@ async def _run_cycle(cycle_index: int, deps: CycleDeps, hold: HoldState) -> Cycl
         await _call_write(call, "clock.arm", {}, clock_changes=clock_changes, cycle_index=cycle_index)
 
     # ---- Tripwire: paused, independent of ordinary triage ------------------
+    # Stage T (handoffs/2026-10-06-stage-t-tripwire.md): the cause's owner
+    # runs first, the Overseer rules and gives the verdict, and only an
+    # explicit `pause.verdict` resume=true resumes the fort.
     if tripwire is not None:
-        wake = Wake(
-            "tripwire", f"{tripwire.get('reason')}: {tripwire.get('detail')}", (OVERSEER,), PAUSED,
+        return await _tripwire_cycle(
+            deps, call, cycle_index=cycle_index, game_tick=game_tick, game_tick_error=game_tick_error,
+            clock_status=clock_status, vitals=vitals, events_by_role=events_by_role,
+            queue_state=queue_state, new_cursors=new_cursors, clock_changes=clock_changes,
+            tripwire=tripwire, hold=hold,
         )
-        overseer_run: Optional[RunResult] = None
-        escalated = False
-        for other in ALL_ROLES:  # everyone but the woken Overseer consumes nothing this cycle
-            if other != OVERSEER:
-                _commit_cursor(deps, new_cursors, other)
-
-        if not deps.dry_run:
-            await _call_write(call, "fort.quicksave", {}, clock_changes=clock_changes, cycle_index=cycle_index)
-
-            briefing = build_briefing(
-                role=OVERSEER, game_tick=game_tick or 0, wake=wake, vitals=vitals,
-                diff_events=events_by_role.get(OVERSEER, []),
-                queue_summary=_queue_summary_for(OVERSEER, queue_state),
-            )
-            overseer_run = await _run_role(
-                deps, call, OVERSEER, json.dumps(briefing, default=str), wake=wake,
-                cycle_index=cycle_index,
-            )
-            role_runs.append(overseer_run)
-            if overseer_run.ok:
-                _commit_cursor(deps, new_cursors, OVERSEER)  # a failed run keeps its events
-            # Fix 3: two independent reasons the fort might stay paused, no
-            # longer conflated into one proxy (see _overseer_called_escalate's
-            # own docstring). "A failed or timed-out run still leaves the
-            # fort paused" (unchanged from before); "a clean run with no
-            # escalation [call] must no longer be treated as one" (the
-            # actual behaviour change) -- and the new capability this fixes:
-            # a CLEAN run that DID call queue.escalate now correctly stays
-            # paused too, which the old proxy could never detect.
-            called_escalate = _overseer_called_escalate(overseer_run)
-            run_unclean = (not overseer_run.ok) or overseer_run.timed_out
-            escalated = run_unclean or called_escalate
-
-            if not escalated:
-                if hold.held:
-                    LOG.warning(
-                        "cycle %s: tripwire handled by a clean Overseer run, but the fort is HELD by operator "
-                        "(%s); clearing the latch and NOT resuming", cycle_index, hold.reason,
-                    )
-                await _call_write(call, "clock.clear", {}, clock_changes=clock_changes, cycle_index=cycle_index)
-                # _call_write already logs any refusal (e.g. clock.resume
-                # refused after clearing) at ERROR -- see its own docstring
-                # and fix 2 in this module's report.
-                if not hold.held:
-                    await _call_write(call, "clock.resume", {}, clock_changes=clock_changes, cycle_index=cycle_index)
-            elif called_escalate:
-                LOG.error(
-                    "ESCALATION: cycle %s's Overseer explicitly escalated via "
-                    "queue.escalate; the fort stays PAUSED, tripwire=%s",
-                    cycle_index, tripwire,
-                )
-            else:
-                LOG.error(
-                    "ESCALATION: cycle %s's Overseer run did not complete cleanly "
-                    "(status=%s, ok=%s); the fort stays PAUSED, tripwire=%s",
-                    cycle_index, overseer_run.status, overseer_run.ok, tripwire,
-                )
-
-        result = CycleResult(
-            cycle_index=cycle_index, game_tick=game_tick, game_tick_error=game_tick_error,
-            signals=Signals(),
-            clock_level=PAUSED, roles_woken=(OVERSEER,), clock_changes=clock_changes,
-            role_runs=role_runs, tripwire=tripwire, escalated=escalated, unexecuted=[],
-            archived_path=None, dry_run=deps.dry_run,
-            plan=(
-                {"would_read": list(ALL_ROLES), "would_wake": [OVERSEER], "tripwire": tripwire}
-                if deps.dry_run else None
-            ),
-        )
-        if not deps.dry_run:
-            result.archived_path = _archive(deps, cycle_index, result, briefings={OVERSEER: briefing})
-        return result
 
     # ---- Pause watchdog: a pause the tripwire does not explain --------------
     # handoffs/2026-10-05-pause-safety.md. Runs only here, after the tripwire
@@ -912,6 +850,188 @@ async def _read_pending_brief(call: Callable, cycle_index: int) -> Optional[Dict
         LOG.error("cycle %s: queue.pending_brief failed: %s", cycle_index, exc)
         return None
     return result if isinstance(result, dict) else None
+
+
+
+def _tripwire_store(deps: "CycleDeps") -> TripwireStore:
+    return TripwireStore(deps.cursor_store.path.with_name("tripwire_state.json"))
+
+
+def _human_alert(deps: "CycleDeps", reason: str) -> Dict[str, Any]:
+    """Raise the one human alert (`pause_watch._alert`, today a CRITICAL log
+    line plus the status block's standing alert) for a tripwire the conductor
+    will not resolve. Returns the pause-watch dict for the cycle result."""
+    store = _pause_store(deps)
+    state = store.load()
+    outcome = WatchOutcome(Verdict.ALERT, reason, still_paused=True)
+    _pause_alert(state, outcome, deps.wall_clock(), reason)
+    store.save(state)
+    return outcome.as_dict()
+
+
+async def _tripwire_cycle(
+    deps: "CycleDeps", call: Callable, *, cycle_index: int, game_tick, game_tick_error,
+    clock_status: Mapping[str, Any], vitals: Mapping[str, Any], events_by_role, queue_state, new_cursors,
+    clock_changes: List[Dict[str, Any]], tripwire: dict, hold: HoldState,
+) -> "CycleResult":
+    """One cycle with a latched tripwire. The sequence, all inside this cycle:
+
+    1. a repeat check: the same cause latching more than the policy limit
+       within its window goes to the human and runs nothing;
+    2. quicksave, then the cause's owner run(s) (`tripwire_owners`, may file
+       proposals), then the Overseer, who rules on them and gives the verdict;
+    3. only an explicit `pause.verdict` resume=true from the Overseer's run
+       resumes (`finish_after_overseer`, tick verified, once). The latch is
+       cleared first because `clock.resume` refuses under one. No verdict, a
+       false one, an escalation or an unclean run leaves the latch standing,
+       the fort paused and the human alerted. An operator hold removes the
+       resume even after a true verdict (the latch is still cleared, as it was
+       before this stage).
+    """
+    reason = tripwire.get("reason")
+    owners = owners_for(deps.policy.tripwire_owners, reason)
+    sequence = (*owners, OVERSEER)
+    detail = f"{reason}: {tripwire.get('detail')}"
+    role_runs: List[RunResult] = []
+    briefings: Dict[str, Any] = {}
+    escalated = False
+    pause_dict: Optional[Dict[str, Any]] = None
+
+    for other in ALL_ROLES:  # everyone not in the sequence consumes nothing this cycle
+        if other not in sequence:
+            _commit_cursor(deps, new_cursors, other)
+
+    if deps.dry_run:
+        return CycleResult(
+            cycle_index=cycle_index, game_tick=game_tick, game_tick_error=game_tick_error,
+            signals=Signals(), clock_level=PAUSED, roles_woken=sequence, clock_changes=clock_changes,
+            role_runs=role_runs, tripwire=tripwire, escalated=False, unexecuted=[],
+            archived_path=None, dry_run=True,
+            plan={"would_read": list(ALL_ROLES), "would_wake": list(sequence), "tripwire": tripwire},
+        )
+
+    # ---- 1. the repeat counter ------------------------------------------------
+    key = {"reason": str(reason), "tick": tripwire.get("tick")}
+    repeat_reason: Optional[str] = None
+    store = _tripwire_store(deps)
+    try:
+        tstate = store.load()
+    except TripwireStateError as exc:
+        LOG.error("cycle %s: tripwire state unreadable (%s); treating the latch as a repeat", cycle_index, exc)
+        tstate = None
+        repeat_reason = "the tripwire repeat counter's state file is unreadable"
+    if tstate is not None:
+        note_latch(tstate, tripwire)
+        count = repeat_count(tstate, tripwire, deps.policy.tripwire_repeat_window_ticks)
+        standing = tstate.repeat_escalated == key
+        if standing or count > deps.policy.tripwire_repeat_limit:
+            repeat_reason = (
+                f"tripwire {reason} has latched {count} times within "
+                f"{deps.policy.tripwire_repeat_window_ticks} game ticks (limit "
+                f"{deps.policy.tripwire_repeat_limit}); not re-running the sequence"
+            )
+            tstate.repeat_escalated = key
+        try:
+            store.save(tstate)
+        except Exception:  # noqa: BLE001 -- a counter write fault must not stop the safety path
+            LOG.exception("cycle %s: could not save the tripwire repeat state", cycle_index)
+
+    if repeat_reason is not None:
+        pause_dict = _human_alert(deps, repeat_reason)
+        LOG.error("ESCALATION: cycle %s: %s; the fort stays PAUSED, tripwire=%s", cycle_index, repeat_reason, tripwire)
+        result = CycleResult(
+            cycle_index=cycle_index, game_tick=game_tick, game_tick_error=game_tick_error,
+            signals=Signals(), clock_level=PAUSED, roles_woken=(), clock_changes=clock_changes,
+            role_runs=role_runs, tripwire=tripwire, escalated=True, unexecuted=[],
+            archived_path=None, dry_run=False, pause_watch=pause_dict,
+        )
+        result.archived_path = _archive(deps, cycle_index, result, briefings=briefings)
+        return result
+
+    # ---- 2. quicksave, the owner(s), then the Overseer ----------------------------
+    await _call_write(call, "fort.quicksave", {}, clock_changes=clock_changes, cycle_index=cycle_index)
+    verdict_baseline: Optional[int] = None
+    overseer_run: Optional[RunResult] = None
+    for role in sequence:
+        if role == OVERSEER:
+            note = (
+                f"; the {', '.join(owners)} ran first this cycle and may have filed proposals" if owners else ""
+            )
+            wake = Wake(
+                "tripwire", f"{detail}{note}. Rule on what is pending, then give your pause.verdict.",
+                (OVERSEER,), PAUSED,
+            )
+            pending_brief = await _read_pending_brief(call, cycle_index)
+            prompt = build_ruling_briefing(
+                game_tick=game_tick or 0, wake=wake, vitals=vitals, alerts=[],
+                pending_brief=pending_brief, diff_events=events_by_role.get(OVERSEER, []),
+            )
+            briefings[OVERSEER] = {"ruling_prompt": prompt, "pending_brief": pending_brief}
+            verdict_baseline = await read_verdict_baseline(call)
+        else:
+            wake = Wake("tripwire", detail, (role,), PAUSED)
+            briefing = build_briefing(
+                role=role, game_tick=game_tick or 0, wake=wake, vitals=vitals,
+                diff_events=events_by_role.get(role, []),
+                queue_summary=_queue_summary_for(role, queue_state),
+            )
+            briefings[role] = briefing
+            prompt = json.dumps(briefing, default=str)
+        run_result = await _run_role(deps, call, role, prompt, wake=wake, cycle_index=cycle_index)
+        role_runs.append(run_result)
+        if run_result.ok:
+            _commit_cursor(deps, new_cursors, role)  # a failed run keeps its events
+        elif role != OVERSEER:
+            LOG.error(
+                "cycle %s: tripwire owner %s did not complete (status=%s); the Overseer still runs",
+                cycle_index, role, run_result.status,
+            )
+        if role == OVERSEER:
+            overseer_run = run_result
+
+    # ---- 3. the verdict --------------------------------------------------------------
+    assert overseer_run is not None
+    called_escalate = _overseer_called_escalate(overseer_run)
+    run_unclean = (not overseer_run.ok) or overseer_run.timed_out
+    escalated = run_unclean or called_escalate
+    verdict = None if escalated else await read_verdict_after(call, verdict_baseline)
+    if verdict is not None and verdict.get("resume"):
+        # clock.resume refuses while a latch stands: clear it first. Under an
+        # operator hold the latch is cleared and the fort left paused.
+        await _call_write(call, "clock.clear", {}, clock_changes=clock_changes, cycle_index=cycle_index)
+    finished = await finish_after_overseer(
+        call, _pause_store(deps), deps.pause_policy or load_pause_policy(),
+        escalated=escalated, clock_status=clock_status, now=deps.wall_clock(), sleep=deps.pause_sleep,
+        verdict=verdict, held=hold.held, what=f"tripwire {reason}",
+    )
+    pause_dict = finished.as_dict()
+    clock_level = PAUSED if finished.still_paused else FULL_SPEED
+    if called_escalate:
+        LOG.error(
+            "ESCALATION: cycle %s's Overseer explicitly escalated via queue.escalate; "
+            "the fort stays PAUSED, tripwire=%s", cycle_index, tripwire,
+        )
+    elif run_unclean:
+        LOG.error(
+            "ESCALATION: cycle %s's Overseer run did not complete cleanly (status=%s, ok=%s); "
+            "the fort stays PAUSED, tripwire=%s", cycle_index, overseer_run.status, overseer_run.ok, tripwire,
+        )
+    elif finished.resumed:
+        LOG.info("cycle %s: tripwire %s resumed on the Overseer's explicit verdict", cycle_index, reason)
+    else:
+        LOG.error(
+            "cycle %s: tripwire %s: no resume verdict acted on (%s); the fort stays PAUSED",
+            cycle_index, reason, finished.reason,
+        )
+
+    result = CycleResult(
+        cycle_index=cycle_index, game_tick=game_tick, game_tick_error=game_tick_error,
+        signals=Signals(), clock_level=clock_level, roles_woken=sequence, clock_changes=clock_changes,
+        role_runs=role_runs, tripwire=tripwire, escalated=escalated, unexecuted=[],
+        archived_path=None, dry_run=False, pause_watch=pause_dict,
+    )
+    result.archived_path = _archive(deps, cycle_index, result, briefings=briefings)
+    return result
 
 
 def _pause_store(deps: "CycleDeps") -> PauseWatchStore:
