@@ -182,11 +182,27 @@
 -- Usage: ./dfhack-run df-overseer-stockpile configure ID CATEGORIES [DRY_RUN]
 -- Usage: ./dfhack-run df-overseer-stockpile link ID TARGET_ID give|take [DRY_RUN]
 -- Usage: ./dfhack-run df-overseer-stockpile unlink ID TARGET_ID give|take [DRY_RUN]
+-- Usage: ./dfhack-run df-overseer-stockpile settings ID [LINKS_ONLY] [MAX_BINS] [MAX_BARRELS] [MAX_WHEELBARROWS] [DRY_RUN]
+-- Usage: ./dfhack-run df-overseer-stockpile materials ID CATEGORY
+-- Usage: ./dfhack-run df-overseer-stockpile set-materials ID CATEGORY MATERIALS [DRY_RUN]
+-- Usage: ./dfhack-run df-overseer-stockpile health
+-- Usage: ./dfhack-run df-overseer-stockpile plan-feed WORKSHOP_KIND|ID
+-- Usage: ./dfhack-run df-overseer-stockpile remove ID [DRY_RUN]
+--
+-- handoffs/2026-10-07-stockpile-tool-gaps.md added settings, materials,
+-- set-materials, health, plan-feed and remove, plus links-only/container
+-- reads on list/links and single-class-trap warnings on link. ALL OF IT IS
+-- UNVERIFIED LIVE (offline stream); the building field names for links-only
+-- and container counts, and the settings.<category>.mats layout, are
+-- recalled, not read from source (see links_only_of and MATERIAL_FILTERS).
 
 local json = require('json')
 local landmarks_mod = reqscript('df-overseer-landmarks')
 local openarea_mod = reqscript('df-overseer-openarea')
 local reservations_mod = reqscript('df-overseer-reservations')
+-- handoffs/2026-10-07-stockpile-tool-gaps.md item 4/5: the per-workshop-kind
+-- input/output table, as data (df-overseer-stockpile-kinds.lua).
+local kinds_mod = reqscript('df-overseer-stockpile-kinds')
 
 -- See header: mirrors df-overseer-stocks.lua's is_on_hidden_tile, adapted
 -- to take a bare position rather than an item.
@@ -352,6 +368,63 @@ local function find_building_by_id(id)
   return nil
 end
 
+-- ---------------------------------------------------------------------------
+-- Links-only flag and container counts (handoffs/2026-10-07-stockpile-tool-
+-- gaps.md items 1 and 2).
+--
+-- FIELD NAMES ARE UNVERIFIED. No df-structures or DFHack source is available
+-- offline in this repo (grep over the repo finds the names only in
+-- research/2026-10-07-stockpile-logistics.md, "recalled as `use_links_only`,
+-- not read this session"). Recalled from df-structures'
+-- building_stockpilest: `use_links_only`, `max_barrels`, `max_bins`,
+-- `max_wheelbarrows` directly on the building. Every read is pcall'd and a
+-- field the install does not have reads as nil, reported as such (never a
+-- guessed value): nothing here hard-codes a default, per the research's own
+-- "read the field live" rule. Only a live read on the fort settles the names
+-- and the polarity of `use_links_only`.
+-- ---------------------------------------------------------------------------
+
+local CONTAINER_FIELDS = {"max_barrels", "max_bins", "max_wheelbarrows"}
+local LINKS_ONLY_FIELD = "use_links_only"
+
+local function read_field(bld, name)
+  local ok, v = pcall(function() return bld[name] end)
+  if ok then
+    return v
+  end
+  return nil
+end
+
+-- Normalises the flag whether the install stores it as a bool or an int.
+local function as_bool(v)
+  if v == nil then
+    return nil
+  end
+  if type(v) == "number" then
+    return v ~= 0
+  end
+  return v and true or false
+end
+
+local function links_only_of(bld)
+  return as_bool(read_field(bld, LINKS_ONLY_FIELD))
+end
+
+local function containers_of(bld)
+  local out, any = {}, false
+  for _, f in ipairs(CONTAINER_FIELDS) do
+    local v = read_field(bld, f)
+    if type(v) == "number" then
+      any = true
+    end
+    out[f] = type(v) == "number" and v or nil
+  end
+  if not any then
+    return nil
+  end
+  return out
+end
+
 function list_stockpiles()
   local out = {}
   for _, bld in ipairs(df.global.world.buildings.all) do
@@ -368,6 +441,8 @@ function list_stockpiles()
         total_tiles = total,
         total_tiles_exact = total_exact,
         accepts = accepted_categories(bld),
+        links_only = links_only_of(bld),
+        containers = containers_of(bld),
       })
     end
   end
@@ -448,7 +523,12 @@ local function resolve_pile_or_shop(id)
   end
   if btype == df.building_type.Stockpile then
     return found, "stockpile", nil
-  elseif btype == df.building_type.Workshop then
+  elseif btype == df.building_type.Workshop
+      or (df.building_type.Furnace ~= nil and btype == df.building_type.Furnace) then
+    -- A Furnace (smelter, kiln...) carries the same `profile.links` as a
+    -- Workshop and is a link target in the game; treated as kind "workshop"
+    -- so link/unlink/health/plan-feed need no second branch. UNVERIFIED live:
+    -- the existing live checks covered a Workshop only.
     return found, "workshop", nil
   else
     local ok_name, name = pcall(function() return df.building_type[btype] end)
@@ -463,7 +543,8 @@ function stockpile_links(id)
     return nil, err
   end
   if kind == "stockpile" then
-    return {id = tonumber(id), kind = kind, links = read_links(found.links)}
+    return {id = tonumber(id), kind = kind, links = read_links(found.links),
+            links_only = links_only_of(found), containers = containers_of(found)}
   end
   local ok_p, prof = pcall(function() return found.profile end)
   if not ok_p or not prof then
@@ -828,6 +909,205 @@ function stockpile_configure(id, categories, dry_run)
 end
 
 -- ---------------------------------------------------------------------------
+-- Per-kind input/output reads (handoffs/2026-10-07-stockpile-tool-gaps.md
+-- items 4 and 5). The table itself is DATA in
+-- df-overseer-stockpile-kinds.lua; everything below is generic over it.
+-- ---------------------------------------------------------------------------
+
+local function vec_to_list(vec)
+  local out = {}
+  if not vec then
+    return out
+  end
+  local ok_len, n = pcall(function() return #vec end)
+  if not ok_len or not n then
+    return out
+  end
+  for i = 0, n - 1 do
+    local ok_t, t = pcall(function() return vec[i] end)
+    if ok_t and t then
+      table.insert(out, t)
+    end
+  end
+  return out
+end
+
+-- Game subtype name of a Workshop or Furnace building, or nil (a custom
+-- workshop, or an install where the enum read fails).
+local function workshop_kind_name(bld)
+  local ok_t, btype = pcall(function() return bld:getType() end)
+  if not ok_t then
+    return nil
+  end
+  local enum_name = (btype == df.building_type.Workshop) and "workshop_type" or "furnace_type"
+  local ok, name = pcall(function() return df[enum_name][bld.type] end)
+  if ok and type(name) == "string" then
+    return name
+  end
+  return nil
+end
+
+local function is_shop_type(btype)
+  return btype == df.building_type.Workshop
+    or (df.building_type.Furnace ~= nil and btype == df.building_type.Furnace)
+end
+
+local function shop_links(bld)
+  local ok, prof = pcall(function() return bld.profile end)
+  if not ok or not prof then
+    return nil
+  end
+  return prof.links
+end
+
+local function accepts_set(pile)
+  local set = {}
+  for _, n in ipairs(accepted_categories(pile) or {}) do
+    set[n] = true
+  end
+  return set
+end
+
+local function accepts_any(set, cats)
+  for _, c in ipairs(cats) do
+    if set[c] then
+      return true
+    end
+  end
+  return false
+end
+
+local function cats_text(cats)
+  return table.concat(cats, "/")
+end
+
+-- One pile's id list, for reports.
+local function pile_ids(piles)
+  local out = {}
+  for _, p in ipairs(piles) do
+    table.insert(out, p.id)
+  end
+  return out
+end
+
+-- The single-class-trap check (research section 1, rec 4): which input
+-- classes of `entry` would have NO linked source if the workshop's
+-- take-from piles were `piles` (a list of pile buildings). Optional classes
+-- (optional_when) come back separately: not a trap, but worth saying.
+local function uncovered_classes(entry, piles)
+  local missing, optional = {}, {}
+  for _, cls in ipairs(entry.inputs) do
+    local covered = false
+    for _, p in ipairs(piles) do
+      if accepts_any(accepts_set(p), cls.categories) then
+        covered = true
+        break
+      end
+    end
+    if not covered then
+      if cls.optional_when then
+        table.insert(optional, cls)
+      else
+        table.insert(missing, cls)
+      end
+    end
+  end
+  return missing, optional
+end
+
+local function class_labels(list)
+  local out = {}
+  for _, c in ipairs(list) do
+    table.insert(out, c.id .. " (" .. c.label .. ")")
+  end
+  return out
+end
+
+-- Warnings for a link edge about to be made (or made). `pile` is the
+-- stockpile (ID), `shop` the workshop/furnace target, `direction` give|take
+-- from the PILE's point of view. Never refuses: warns, per the handoff.
+local function link_warnings(pile, shop, direction)
+  local warnings = {}
+  local kname = workshop_kind_name(shop)
+  local _, entry = kinds_mod.find_kind(kname)
+  if not entry then
+    table.insert(warnings, {
+      code = "unknown_workshop_kind",
+      message = "no input/output table for workshop kind '" .. tostring(kname)
+        .. "'; the single-class trap cannot be checked",
+    })
+    return warnings
+  end
+  if direction == "give" then
+    -- The pile will feed the workshop: after this link the workshop draws
+    -- ONLY from its linked piles (wiki Workshop page), so every input class
+    -- needs a source among them.
+    local links = shop_links(shop)
+    local piles = links and vec_to_list(links.take_from_pile) or {}
+    local already = false
+    for _, p in ipairs(piles) do
+      if p.id == pile.id then
+        already = true
+      end
+    end
+    if not already then
+      table.insert(piles, pile)
+    end
+    local feeds_any = false
+    for _, cls in ipairs(entry.inputs) do
+      if accepts_any(accepts_set(pile), cls.categories) then
+        feeds_any = true
+      end
+    end
+    if not feeds_any then
+      table.insert(warnings, {
+        code = "pile_feeds_no_input_class",
+        message = "pile " .. tostring(pile.id) .. " accepts none of the input classes of a "
+          .. kname .. "; once linked the workshop looks only in linked piles",
+      })
+    end
+    local missing, optional = uncovered_classes(entry, piles)
+    if #missing > 0 then
+      table.insert(warnings, {
+        code = "single_class_trap",
+        message = "after this link the " .. kname .. " draws only from linked piles and no linked pile "
+          .. "accepts: " .. table.concat(class_labels(missing), ", ")
+          .. "; it will stall until every input class is linked",
+        uncovered = class_labels(missing),
+      })
+    end
+    if #optional > 0 then
+      table.insert(warnings, {
+        code = "optional_class_unlinked",
+        message = "no linked pile accepts: " .. table.concat(class_labels(optional), ", ")
+          .. " (needed unless " .. tostring(optional[1].optional_when) .. ")",
+        uncovered = class_labels(optional),
+      })
+    end
+  else
+    -- Pile takes from the workshop: an output pile. Products the pile does
+    -- not accept sit in the workshop (wiki Workshop page).
+    local set = accepts_set(pile)
+    local rejected = {}
+    for _, prod in ipairs(entry.outputs) do
+      if not accepts_any(set, prod.categories) then
+        table.insert(rejected, prod.id .. " (" .. prod.label .. ", needs "
+          .. cats_text(prod.categories) .. ")")
+      end
+    end
+    if #rejected > 0 then
+      table.insert(warnings, {
+        code = "output_pile_rejects_products",
+        message = "pile " .. tostring(pile.id) .. " does not accept: " .. table.concat(rejected, ", ")
+          .. "; those products are not moved and sit in the " .. kname .. " until a linked pile accepts them",
+        uncovered = rejected,
+      })
+    end
+  end
+  return warnings
+end
+
+-- ---------------------------------------------------------------------------
 -- link / unlink: one edge (give or take) between this stockpile and another
 -- pile or a workshop, by id. See the file header's LINKS section for the
 -- source citations behind LINK_RULE -- table-driven, no per-kind branch.
@@ -889,6 +1169,14 @@ local function do_link_change(id, target_id, direction, dry_run, apply)
     id = tonumber(id), target_id = tonumber(target_id),
     direction = direction, target_kind = target_kind, dry_run = dry,
   }
+  -- handoffs/2026-10-07-stockpile-tool-gaps.md item 5: warn (never refuse)
+  -- on the single-class trap and on an output pile that rejects the
+  -- workshop's products. Computed BEFORE the link is applied, so a dry run
+  -- and a real run say the same thing. Only a link to a workshop/furnace
+  -- has anything to check.
+  if apply == "link" and target_kind == "workshop" then
+    result.warnings = link_warnings(bld, target_bld, direction)
+  end
   if dry then
     result.would = apply
     return result
@@ -924,6 +1212,600 @@ function stockpile_unlink(id, target_id, direction, dry_run)
   return do_link_change(id, target_id, direction, dry_run, "unlink")
 end
 
+-- ---------------------------------------------------------------------------
+-- settings: links-only flag and container counts, WRITE
+-- (handoffs/2026-10-07-stockpile-tool-gaps.md items 1 and 2). Field names are
+-- UNVERIFIED, see links_only_of's header above. Unchanged fields are left
+-- alone; an omitted argument or the word "keep" means unchanged. Refuses a
+-- field this install does not expose rather than writing blind. DRY_RUN
+-- defaults to true; a real run reads the values back.
+-- ---------------------------------------------------------------------------
+
+local function is_keep(v)
+  return v == nil or tostring(v):lower() == "keep"
+end
+
+local function parse_count(name, v)
+  if is_keep(v) then
+    return nil
+  end
+  local n = tonumber(v)
+  if not n or n < 0 or n ~= math.floor(n) then
+    return nil, name .. " must be a whole number >= 0 (or 'keep')"
+  end
+  return n
+end
+
+function stockpile_settings(id, links_only, max_bins, max_barrels, max_wheelbarrows, dry_run)
+  local bld, kind, rerr = resolve_pile_or_shop(id)
+  if not bld then
+    return nil, rerr
+  end
+  if kind ~= "stockpile" then
+    return nil, "id " .. tostring(id) .. " is not a stockpile (" .. kind .. ")"
+  end
+  local want = {}
+  if not is_keep(links_only) then
+    local s = tostring(links_only):lower()
+    if s == "true" or s == "1" or s == "yes" then
+      want[LINKS_ONLY_FIELD] = true
+    elseif s == "false" or s == "0" or s == "no" then
+      want[LINKS_ONLY_FIELD] = false
+    else
+      return nil, "LINKS_ONLY must be true, false or keep"
+    end
+  end
+  for field, raw in pairs({max_bins = max_bins, max_barrels = max_barrels, max_wheelbarrows = max_wheelbarrows}) do
+    local n, perr = parse_count(field:upper(), raw)
+    if perr then
+      return nil, perr
+    end
+    if n ~= nil then
+      want[field] = n
+    end
+  end
+  if next(want) == nil then
+    return nil, "nothing to change: give LINKS_ONLY, MAX_BINS, MAX_BARRELS or MAX_WHEELBARROWS"
+  end
+  local dry = truthy_dry_run(dry_run)
+
+  local current, changes, unreadable = {}, {}, {}
+  for field, to in pairs(want) do
+    local v = read_field(bld, field)
+    if v == nil then
+      table.insert(unreadable, field)
+    else
+      if field == LINKS_ONLY_FIELD then
+        current[field] = as_bool(v)
+      else
+        current[field] = v
+      end
+      if current[field] ~= to then
+        changes[field] = {from = current[field], to = to}
+      end
+    end
+  end
+  if #unreadable > 0 then
+    table.sort(unreadable)
+    return nil, "this install does not expose: " .. table.concat(unreadable, ", ")
+      .. " on a stockpile (field names are unverified); refusing to write blind"
+  end
+  local result = {id = tonumber(id), dry_run = dry, would_change = changes,
+                  unverified_fields = true}
+  if dry then
+    return result
+  end
+  -- REAL PATH. UNTESTED live.
+  for field, ch in pairs(changes) do
+    local raw = read_field(bld, field)
+    local value = ch.to
+    if field == LINKS_ONLY_FIELD and type(raw) == "number" then
+      value = ch.to and 1 or 0
+    end
+    local ok_w, werr = pcall(function() bld[field] = value end)
+    if not ok_w then
+      return nil, "writing " .. field .. " failed: " .. tostring(werr)
+    end
+  end
+  result.read_back = {links_only = links_only_of(bld), containers = containers_of(bld)}
+  return result
+end
+
+-- ---------------------------------------------------------------------------
+-- materials / set-materials: material filters finer than the 17 categories
+-- (handoffs/2026-10-07-stockpile-tool-gaps.md item 3). Reads the game's OWN
+-- material list for the category (the raws vector the pile's per-material
+-- booleans are indexed by), never a table of ours: adding a category is one
+-- MATERIAL_FILTERS entry. UNVERIFIED live: the recalled layout is
+-- `settings.<key>.mats`, a vector<bool> indexed like the raws vector (stone
+-- by df.global.world.raws.inorganics, wood by raws.plants.all); the
+-- `include` path picks which raws belong in the list (stone: IS_STONE
+-- inorganics; wood: TREE plants) and is the part most likely to differ from
+-- the in-game list. Replace semantics over the LISTED materials only;
+-- indexes the list does not include are never touched.
+-- ---------------------------------------------------------------------------
+
+local MATERIAL_FILTERS = {
+  stone = {settings_key = "stone", vec = "mats", raws = {"inorganics"},
+           include = {"material", "flags", "IS_STONE"}},
+  wood  = {settings_key = "wood", vec = "mats", raws = {"plants", "all"},
+           include = {"flags", "TREE"}},
+}
+
+local function walk_path(root, path)
+  local cur = root
+  for _, key in ipairs(path) do
+    local ok, nxt = pcall(function() return cur[key] end)
+    if not ok or nxt == nil then
+      return nil
+    end
+    cur = nxt
+  end
+  return cur
+end
+
+local function supported_filter_categories()
+  local names = {}
+  for k in pairs(MATERIAL_FILTERS) do
+    table.insert(names, k)
+  end
+  table.sort(names)
+  return names
+end
+
+-- {index =, name =, enabled =} for every listed material of `category`.
+local function material_entries(bld, category)
+  local spec = MATERIAL_FILTERS[category]
+  if not spec then
+    return nil, "no material list for category '" .. tostring(category) .. "'; supported: "
+      .. table.concat(supported_filter_categories(), ", ")
+  end
+  local flags_vec = walk_path(bld, {"settings", spec.settings_key, spec.vec})
+  if not flags_vec then
+    return nil, "this install does not expose settings." .. spec.settings_key .. "." .. spec.vec
+      .. " on a stockpile (layout unverified)"
+  end
+  local raws = walk_path(df.global.world.raws, spec.raws)
+  if not raws then
+    return nil, "could not read the game's " .. table.concat(spec.raws, ".") .. " list"
+  end
+  local out = {}
+  local ok_len, n = pcall(function() return #raws end)
+  if not ok_len or not n then
+    return nil, "could not size the game's material list"
+  end
+  for i = 0, n - 1 do
+    local ok_r, raw = pcall(function() return raws[i] end)
+    if ok_r and raw then
+      local included = walk_path(raw, spec.include)
+      if included then
+        local ok_id, name = pcall(function() return raw.id end)
+        local ok_en, en = pcall(function() return flags_vec[i] end)
+        if ok_id and type(name) == "string" then
+          table.insert(out, {index = i, name = name, enabled = (ok_en and en) and true or false})
+        end
+      end
+    end
+  end
+  return out, nil, spec
+end
+
+function stockpile_materials(id, category)
+  local bld, kind, rerr = resolve_pile_or_shop(id)
+  if not bld then
+    return nil, rerr
+  end
+  if kind ~= "stockpile" then
+    return nil, "id " .. tostring(id) .. " is not a stockpile (" .. kind .. ")"
+  end
+  local entries, err = material_entries(bld, category)
+  if not entries then
+    return nil, err
+  end
+  local enabled, disabled = {}, {}
+  for _, e in ipairs(entries) do
+    table.insert(e.enabled and enabled or disabled, e.name)
+  end
+  local cat_on = false
+  for _, n in ipairs(accepted_categories(bld) or {}) do
+    if n == category then
+      cat_on = true
+    end
+  end
+  return {id = tonumber(id), category = category, category_accepted = cat_on,
+          enabled = enabled, disabled = disabled, total = #entries}
+end
+
+function stockpile_set_materials(id, category, materials, dry_run)
+  local bld, kind, rerr = resolve_pile_or_shop(id)
+  if not bld then
+    return nil, rerr
+  end
+  if kind ~= "stockpile" then
+    return nil, "id " .. tostring(id) .. " is not a stockpile (" .. kind .. ")"
+  end
+  if not materials or materials == "" then
+    return nil, "MATERIALS is required (comma-separated names from stockpile.materials, or 'all' or 'none')"
+  end
+  local entries, err, spec = material_entries(bld, category)
+  if not entries then
+    return nil, err
+  end
+  local by_name = {}
+  for _, e in ipairs(entries) do
+    by_name[e.name:upper()] = e
+  end
+  local want = {}
+  local lowered = materials:lower()
+  if lowered == "all" then
+    for _, e in ipairs(entries) do
+      want[e.name] = true
+    end
+  elseif lowered ~= "none" then
+    for tok in materials:gmatch('[^,]+') do
+      local e = by_name[tok:upper()]
+      if not e then
+        return nil, "unknown " .. category .. " material '" .. tok
+          .. "'; read stockpile.materials for the game's own list"
+      end
+      want[e.name] = true
+    end
+  end
+  local dry = truthy_dry_run(dry_run)
+  local to_enable, to_disable = {}, {}
+  for _, e in ipairs(entries) do
+    if want[e.name] and not e.enabled then
+      table.insert(to_enable, e.name)
+    elseif e.enabled and not want[e.name] then
+      table.insert(to_disable, e.name)
+    end
+  end
+  local warnings = {}
+  local cat_on = false
+  for _, n in ipairs(accepted_categories(bld) or {}) do
+    if n == category then
+      cat_on = true
+    end
+  end
+  if not cat_on then
+    table.insert(warnings, {
+      code = "category_not_accepted",
+      message = "the pile does not accept category '" .. category
+        .. "' at all; material choices do nothing until stockpile.configure enables it",
+    })
+  end
+  local result = {id = tonumber(id), category = category, dry_run = dry,
+                  would_enable = to_enable, would_disable = to_disable, warnings = warnings}
+  if dry then
+    return result
+  end
+  -- REAL PATH. UNTESTED live.
+  local flags_vec = walk_path(bld, {"settings", spec.settings_key, spec.vec})
+  for _, e in ipairs(entries) do
+    local target = want[e.name] and true or false
+    if target ~= e.enabled then
+      local ok_w, werr = pcall(function() flags_vec[e.index] = target end)
+      if not ok_w then
+        return nil, "writing material " .. e.name .. " failed: " .. tostring(werr)
+      end
+    end
+  end
+  result.read_back = stockpile_materials(id, category)
+  return result
+end
+
+-- ---------------------------------------------------------------------------
+-- health (read): per linked workshop, does every input class have a
+-- non-empty linked source, is it available fort-wide when it does not, and
+-- does its output link accept its products
+-- (handoffs/2026-10-07-stockpile-tool-gaps.md item 4; per-kind table in
+-- df-overseer-stockpile-kinds.lua). Coordinate-free: ids and landmarks only.
+-- A workshop with no links at all is skipped (it draws from anywhere).
+-- Fort-wide supply is asked of df-overseer-stocks.lua's get_availability,
+-- only for a class that has a problem (that scan is heavy), and only when
+-- the table names an items.other key for the class.
+-- ---------------------------------------------------------------------------
+
+local function fort_supply(cls)
+  if not cls.availability then
+    return nil
+  end
+  local ok_m, m = pcall(reqscript, 'df-overseer-stocks')
+  if not ok_m or type(m) ~= "table" or not m.get_availability then
+    return nil
+  end
+  local ok, res = pcall(m.get_availability, cls.availability)
+  if not ok or type(res) ~= "table" then
+    return nil
+  end
+  return res.available_units
+end
+
+function stockpile_health()
+  local out, problem_count = {}, 0
+  local occupied_cache = {}
+  local function occupied(p)
+    if occupied_cache[p.id] == nil then
+      occupied_cache[p.id] = occupied_tiles(p) or false
+    end
+    return occupied_cache[p.id] or 0
+  end
+  for _, bld in ipairs(df.global.world.buildings.all) do
+    local ok_t, btype = pcall(function() return bld:getType() end)
+    if ok_t and is_shop_type(btype) then
+      local links = shop_links(bld)
+      local in_piles = links and vec_to_list(links.take_from_pile) or {}
+      local out_piles = links and vec_to_list(links.give_to_pile) or {}
+      if #in_piles > 0 or #out_piles > 0 then
+        local kname = workshop_kind_name(bld)
+        local _, entry = kinds_mod.find_kind(kname)
+        local info = landmark_info(bld.x1, bld.x2, bld.y1, bld.y2, bld.z)
+        local rec = {
+          id = bld.id, kind = kname, kind_known = entry ~= nil,
+          near_landmark = info and info.name or nil,
+          direction = info and info.direction or nil,
+          distance_tiles = info and info.distance_tiles or nil,
+          input_mode = (#in_piles > 0) and "linked_piles_only" or "any_source",
+          linked_input_piles = pile_ids(in_piles),
+          linked_output_piles = pile_ids(out_piles),
+          classes = {}, products = {}, problems = {},
+        }
+        if not entry then
+          table.insert(rec.problems, "unknown_kind")
+        else
+          if #in_piles > 0 then
+            for _, cls in ipairs(entry.inputs) do
+              local sources, any_accepting, any_nonempty = {}, false, false
+              for _, p in ipairs(in_piles) do
+                if accepts_any(accepts_set(p), cls.categories) then
+                  any_accepting = true
+                  local occ = occupied(p)
+                  if occ > 0 then
+                    any_nonempty = true
+                  end
+                  table.insert(sources, {pile_id = p.id, occupied_tiles = occ})
+                end
+              end
+              local status
+              if any_nonempty then
+                status = "ok"
+              elseif any_accepting then
+                status = "linked_source_empty"
+              elseif cls.optional_when then
+                status = "not_linked_optional"
+              else
+                status = "no_linked_source"
+              end
+              local crec = {id = cls.id, label = cls.label, role = cls.role,
+                            status = status, linked_sources = sources}
+              if status == "linked_source_empty" or status == "no_linked_source" then
+                table.insert(rec.problems, status .. ":" .. cls.id)
+                crec.fort_wide_available_units = fort_supply(cls)
+              end
+              table.insert(rec.classes, crec)
+            end
+          end
+          for _, prod in ipairs(entry.outputs) do
+            local accepted_by = {}
+            for _, p in ipairs(out_piles) do
+              if accepts_any(accepts_set(p), prod.categories) then
+                table.insert(accepted_by, p.id)
+              end
+            end
+            local status
+            if #out_piles == 0 then
+              status = "no_output_link"
+            elseif #accepted_by > 0 then
+              status = "ok"
+            else
+              status = "rejected"
+              table.insert(rec.problems, "output_rejected:" .. prod.id)
+            end
+            table.insert(rec.products, {id = prod.id, label = prod.label,
+                                        status = status, accepted_by = accepted_by})
+          end
+        end
+        problem_count = problem_count + #rec.problems
+        table.insert(out, rec)
+      end
+    end
+  end
+  return {workshops = out, problem_count = problem_count,
+          table_provenance = "hand-authored per-kind table, unverified live"}
+end
+
+-- ---------------------------------------------------------------------------
+-- plan-feed (read; a dry-run spec, nothing is built): the piles, classes,
+-- sizes, links and containers a workshop kind needs, from the per-kind
+-- table. Accepts a kind name or a workshop id; with an id, classes already
+-- covered by that workshop's current links are left out of the spec. Each
+-- feeder is the research's point-of-use pile: bounded, links-only, no bins,
+-- barrels or wheelbarrows, fed from a bulk pile that takes from anywhere.
+-- ---------------------------------------------------------------------------
+
+function stockpile_plan_feed(kind_or_id)
+  if not kind_or_id or kind_or_id == "" then
+    return nil, "usage: WORKSHOP_KIND (e.g. Still) or a workshop building id"
+  end
+  local shop, kname, entry
+  local as_id = tonumber(kind_or_id)
+  if as_id then
+    local bld, kind, rerr = resolve_pile_or_shop(as_id)
+    if not bld then
+      return nil, rerr
+    end
+    if kind ~= "workshop" then
+      return nil, "id " .. tostring(kind_or_id) .. " is not a workshop or furnace (" .. kind .. ")"
+    end
+    shop = bld
+    kname = workshop_kind_name(bld)
+    local _, e = kinds_mod.find_kind(kname)
+    entry = e
+    if not entry then
+      return nil, "no input/output table for workshop kind '" .. tostring(kname) .. "'"
+    end
+  else
+    local k, e = kinds_mod.find_kind(kind_or_id)
+    if not e then
+      local names = {}
+      for name in pairs(kinds_mod.KINDS) do
+        table.insert(names, name)
+      end
+      table.sort(names)
+      return nil, "unknown workshop kind '" .. tostring(kind_or_id) .. "'; known: " .. table.concat(names, ", ")
+    end
+    kname, entry = k, e
+  end
+
+  local covered = {}
+  local has_output_link = false
+  if shop then
+    local links = shop_links(shop)
+    local in_piles = links and vec_to_list(links.take_from_pile) or {}
+    has_output_link = links and #vec_to_list(links.give_to_pile) > 0 or false
+    for _, cls in ipairs(entry.inputs) do
+      for _, p in ipairs(in_piles) do
+        if accepts_any(accepts_set(p), cls.categories) then
+          covered[cls.id] = true
+        end
+      end
+    end
+  end
+
+  local piles, plinks, notes = {}, {}, {}
+  local sources_seen = {}
+  local zero_containers = {max_barrels = 0, max_bins = 0, max_wheelbarrows = 0}
+  for _, cls in ipairs(entry.inputs) do
+    if not covered[cls.id] then
+      local handle = "feeder:" .. cls.id
+      local src = "source:" .. cats_text(cls.categories)
+      table.insert(piles, {
+        handle = handle, purpose = "feeder", for_class = cls.id, label = cls.label,
+        role = cls.role, accepts = cls.categories, size_tiles = cls.feeder_tiles,
+        links_only = true, containers = zero_containers,
+        optional_when = cls.optional_when,
+      })
+      if not sources_seen[src] then
+        sources_seen[src] = true
+        table.insert(piles, {
+          handle = src, purpose = "source", accepts = cls.categories,
+          size_tiles = nil, links_only = false,
+          note = "the bulk pile near the producer; reuse an existing any-source pile that "
+            .. "accepts these categories if there is one",
+        })
+      end
+      table.insert(plinks, {pile = src, target = handle, direction = "give"})
+      table.insert(plinks, {pile = handle, target = "workshop", direction = "give"})
+    end
+  end
+  if not has_output_link then
+    local cats, seen = {}, {}
+    for _, prod in ipairs(entry.outputs) do
+      for _, c in ipairs(prod.categories) do
+        if not seen[c] then
+          seen[c] = true
+          table.insert(cats, c)
+        end
+      end
+    end
+    table.insert(piles, {
+      handle = "output", purpose = "output", accepts = cats, size_tiles = 4,
+      links_only = false,
+      note = "must accept every product, or the rejected ones sit in the workshop",
+    })
+    table.insert(plinks, {pile = "output", target = "workshop", direction = "take"})
+  end
+  table.insert(notes, "feeders are links-only with no bins, barrels or wheelbarrows so items travel loose")
+  table.insert(notes, "the table is hand-authored and unverified live; finer material choices go through stockpile.set-materials")
+
+  local covered_ids = {}
+  for id in pairs(covered) do
+    table.insert(covered_ids, id)
+  end
+  table.sort(covered_ids)
+  return {
+    kind = kname, workshop_id = shop and shop.id or nil, dry_run = true,
+    already_covered_classes = covered_ids,
+    piles = piles, links = plinks, notes = notes,
+  }
+end
+
+-- ---------------------------------------------------------------------------
+-- remove: retire a pile (handoffs/2026-10-07-stockpile-tool-gaps.md item 6).
+-- DRY_RUN defaults to true. Stockpiles only. A real run asks DFHack to
+-- deconstruct the building (`dfhack.buildings.deconstruct`); whether that
+-- removes a stockpile at once, and cleans the link vectors on the other ends,
+-- is UNVERIFIED live, so the real run reads the building back and reports
+-- whether it is gone. Items in the pile stay where they lie.
+-- ---------------------------------------------------------------------------
+
+function stockpile_remove(id, dry_run)
+  local bld, kind, rerr = resolve_pile_or_shop(id)
+  if not bld then
+    return nil, rerr
+  end
+  if kind ~= "stockpile" then
+    return nil, "id " .. tostring(id) .. " is not a stockpile (" .. kind .. ")"
+  end
+  local dry = truthy_dry_run(dry_run)
+  local links = read_links(bld.links)
+  local warnings = {}
+  local items = nil
+  local ok_items, contents = pcall(dfhack.buildings.getStockpileContents, bld)
+  if ok_items and contents then
+    items = #contents
+  end
+  if items and items > 0 then
+    table.insert(warnings, {code = "pile_not_empty", message = tostring(items)
+      .. " items are in the pile; they stay where they lie but are no longer in a pile"})
+  end
+  -- Workshops this pile feeds: removing it may leave one with no linked
+  -- source (it then draws from anywhere) or without a class it needed.
+  for _, t in ipairs(links.give_to_workshop.targets) do
+    local shop = find_building_by_id(t.id)
+    local sl = shop and shop_links(shop)
+    local remaining = {}
+    if sl then
+      for _, p in ipairs(vec_to_list(sl.take_from_pile)) do
+        if p.id ~= bld.id then
+          table.insert(remaining, p)
+        end
+      end
+    end
+    local _, entry = kinds_mod.find_kind(shop and workshop_kind_name(shop))
+    if #remaining == 0 then
+      table.insert(warnings, {code = "workshop_loses_all_feeders", message = "workshop " .. tostring(t.id)
+        .. " would have no linked input pile and would draw from anywhere again"})
+    elseif entry then
+      local missing = uncovered_classes(entry, remaining)
+      if #missing > 0 then
+        table.insert(warnings, {code = "single_class_trap", message = "workshop " .. tostring(t.id)
+          .. " would be left with no linked pile accepting: "
+          .. table.concat(class_labels(missing), ", ")})
+      end
+    end
+  end
+  local result = {
+    id = tonumber(id), dry_run = dry, items_in_pile = items,
+    links_dropped = {
+      give_to_pile = links.give_to_pile.count, take_from_pile = links.take_from_pile.count,
+      give_to_workshop = links.give_to_workshop.count, take_from_workshop = links.take_from_workshop.count,
+    },
+    warnings = warnings,
+  }
+  if dry then
+    return result
+  end
+  -- REAL PATH. UNTESTED live.
+  local ok_d, derr = pcall(dfhack.buildings.deconstruct, bld)
+  if not ok_d then
+    return nil, "deconstruct failed: " .. tostring(derr)
+  end
+  result.read_back = {still_present = find_building_by_id(tonumber(id)) ~= nil}
+  return result
+end
+
+
 -- Same module-load guard as every other df-overseer-*.lua script.
 if dfhack_flags.module then
   return
@@ -943,6 +1825,12 @@ local USAGE = {
   "usage: df-overseer-stockpile configure ID CATEGORIES [DRY_RUN]",
   "usage: df-overseer-stockpile link ID TARGET_ID give|take [DRY_RUN]",
   "usage: df-overseer-stockpile unlink ID TARGET_ID give|take [DRY_RUN]",
+  "usage: df-overseer-stockpile settings ID [LINKS_ONLY] [MAX_BINS] [MAX_BARRELS] [MAX_WHEELBARROWS] [DRY_RUN]",
+  "usage: df-overseer-stockpile materials ID CATEGORY",
+  "usage: df-overseer-stockpile set-materials ID CATEGORY MATERIALS [DRY_RUN]",
+  "usage: df-overseer-stockpile health",
+  "usage: df-overseer-stockpile plan-feed WORKSHOP_KIND|ID",
+  "usage: df-overseer-stockpile remove ID [DRY_RUN]",
 }
 local function print_usage()
   for _, line in ipairs(USAGE) do
@@ -998,6 +1886,43 @@ elseif cmd == "unlink" then
     print_usage()
   else
     local result, err = stockpile_unlink(id, target_id, direction, dry_run)
+    print(json.encode(err and {error = err} or result))
+  end
+elseif cmd == "settings" then
+  if not args[2] then
+    print_usage()
+  else
+    local result, err = stockpile_settings(args[2], args[3], args[4], args[5], args[6], args[7])
+    print(json.encode(err and {error = err} or result))
+  end
+elseif cmd == "materials" then
+  if not (args[2] and args[3]) then
+    print_usage()
+  else
+    local result, err = stockpile_materials(args[2], args[3])
+    print(json.encode(err and {error = err} or result))
+  end
+elseif cmd == "set-materials" then
+  if not (args[2] and args[3] and args[4]) then
+    print_usage()
+  else
+    local result, err = stockpile_set_materials(args[2], args[3], args[4], args[5])
+    print(json.encode(err and {error = err} or result))
+  end
+elseif cmd == "health" then
+  print(json.encode(stockpile_health()))
+elseif cmd == "plan-feed" then
+  if not args[2] then
+    print_usage()
+  else
+    local result, err = stockpile_plan_feed(args[2])
+    print(json.encode(err and {error = err} or result))
+  end
+elseif cmd == "remove" then
+  if not args[2] then
+    print_usage()
+  else
+    local result, err = stockpile_remove(args[2], args[3])
     print(json.encode(err and {error = err} or result))
   end
 else
