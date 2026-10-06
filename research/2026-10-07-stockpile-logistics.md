@@ -105,3 +105,9 @@ Added after a further user observation. [USER, direct play, primary]: linking st
 7. Doctrine: amend `water-source-zone-for-ponds` (zone goes beside the water, on the upper level for a sunken pool) and soften `water-source-needs-walkable-neighbour` to "a walkable tile next to the zone, which for a sunken pool may be the level above". Cite the wiki Zone page and the user's observation. Test once on the fort's own pond when live work is next allowed.
 8. Correct research/2026-09-24-df-ai-fort-planner.md: df-ai does set pile-to-pile links; only workshop links and links-only are absent.
 9. Treat material policy as pile-graph data: per workshop kind, a doctrine row naming which material classes its linked input pile should accept and which to reserve (e.g. no ore in the mason pile, premium wood to an unlinked reserve). Needs the finer subtype filter from recommendation 1, then the manager-order tool stops needing per-order MATERIAL filters except for exceptions. Verify live once that an order starved of its linked pile waits rather than falling back to unlinked stock.
+
+## 8. Addendum 2026-10-07 (orchestrator): pinning orders to a workshop
+
+- **User, from play (primary):** manager work orders obey stockpile links, because the links are set on the workshop, and every job it runs (order-spawned or not) draws only from its linked piles. This settles the section 7 inference.
+- **Orders can name the workshop.** `orders.create` already takes `WORKSHOP_ID` (`scripts/dfhack/df-overseer-orders.lua`, sets `order.workshop_id`), the same as adding the order from that workshop's own tab in game, plus `MAX_WORKSHOPS`. No record of it used live yet.
+- **Together:** links fix *what* a workshop may use; the pin fixes *where* the order runs. The crafting graph can carry, per recipe edge, the workshop and its feeder piles, so "beds from the good wood" is one pinned order plus a link, never a per-job material filter.

@@ -10,6 +10,7 @@ actually going on right now.
 2. Supervised room cutover with the user: freeze rooms, one Overseer wake, `/tmp/cutover.sh rooms --check` then `--apply`, deploy 2E, one supervised bedroom end to end.
 3. Supervised tripwire live check (no verdict holds, resume verdict resumes, repeat brake, re-arm).
 4. A short unattended stretch with the user watching: measure turn length, which wakes fire, and cross-run cache reuse (unmeasured).
+After the cutover, from the user's play (register 2026-10-07): fix Water Source/Fishing placement (shore, incl. above a sunken pool; finder plus doctrine), then stockpile links as the logistics layer driven by the crafting graph (`research/2026-10-07-stockpile-logistics.md`).
 5. Then decide further Overseer tool cuts (target a ruling-only Overseer, roughly 20 to 30 tools) from that evidence. Stage 2c (coverage) after the first supervised bedroom.
 
 ## START HERE: handover, 2026-09-30 (read this first)
