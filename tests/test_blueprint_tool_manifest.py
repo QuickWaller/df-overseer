@@ -165,9 +165,15 @@ def test_architect_gets_the_reads_and_never_apply():
 
 def test_overseer_gets_everything():
     roster = _roster()
+    # Stage 2E: the rooms tools (apply, release, reserve, unreserve) are run by
+    # the executor, and plan/preview are the siting reads that went with them.
+    left = {APPLY_ID, RELEASE_ID, RESERVE_ID, UNRESERVE_ID, "blueprint.plan", "blueprint.preview"}
     for tool_id in ALL_IDS:
         allowed, reason = roster.check("overseer", tool_id)
-        assert allowed, f"overseer should be granted {tool_id}: {reason}"
+        if tool_id in left:
+            assert not allowed, f"overseer must no longer hold {tool_id}"
+        else:
+            assert allowed, f"overseer should be granted {tool_id}: {reason}"
 
 
 def test_nobody_else_is_granted_any_of_it():

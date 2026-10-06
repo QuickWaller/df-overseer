@@ -226,7 +226,9 @@ def test_granting_an_executor_tool_to_a_model_fails_the_load(tmp_path, role):
 
 def test_a_routed_tool_on_an_allowlist_fails_the_load(tmp_path, monkeypatch):
     registry = _registry()
-    load_roster(registry)  # passes while nothing is routed
     set_routing(monkeypatch, tmp_path, routed=True)
+    load_roster(registry)  # stage 2E: the Overseer no longer holds a rooms tool
+    # Verify the verification: the same load must refuse once one is granted back.
+    agents = _roster_with(tmp_path, "overseer", "blueprint.reserve", section="write")
     with pytest.raises(RoleValidationError, match="routed group"):
-        load_roster(registry)  # the Overseer still holds the rooms tools
+        load_roster(registry, agents)

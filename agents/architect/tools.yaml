@@ -366,6 +366,12 @@ write:
       The only route into the queue: a specialist cannot emit prose into it
       (docs/AGENT-ARCHITECTURE.md §4). Writes to dfqueue's own SQLite ledger,
       never to the fort; role/id/ts/cycle/snapshot are stamped server-side.
+      For a routed type (rooms, dfqueue/action_tools.yaml; docs/CONDUCTOR-
+      EXECUTION.md) a proposal carries one `step` and may declare `phases`;
+      a later phase is a follow-up naming `project_id` and `after_step` and
+      the handle the earlier step issued; a first proposal may cite an
+      existing `site-N` to finish a legacy room. The server dry-runs the
+      step at filing and refuses what fails, listing every problem.
   - id: "queue.pass"
     status: exists
     note: >-

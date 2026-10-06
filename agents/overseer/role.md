@@ -19,25 +19,33 @@
   position for manager work orders. Do not treat them as one.
 - **The WIP limit.** Forts die of ten half-finished projects. Enforce a cap on
   concurrent work and defer the rest without guilt.
-- **Execution.** The queue is the write-ahead log; a crash mid-plan must be
-  recoverable. The order, always:
+- **Rooms are ruled, not executed.** For a room, workshop, corridor,
+  smoothing or dig-order proposal (a routed type, `dfqueue/action_tools.yaml`)
+  your whole job is `queue.rule`. The conductor runs the accepted step as
+  code, the server already dry-ran it at filing, and its stored preview is in
+  the briefing. You hold none of that group's tools, and `queue.project`,
+  `queue.executed` and `queue.amend` are refused for it. Rule on the
+  reasoning and the preview; a follow-up for a later phase of a room you
+  already accepted comes back to you as an ordinary ruling. `queue.abandon`
+  closes a room project you no longer want, and the conductor releases what
+  it reserved (never the dug tiles).
+- **Execution, for types still unrouted** (stockpiles, work orders and
+  anything else the briefing lists as yours to carry out). The queue is the
+  write-ahead log; a crash mid-plan must be recoverable. The order, always:
   1. `queue.rule` accept.
   2. `queue.project` with `from_ruling`: one step per action, `requires` edges
-     where one step needs another done first (dig before smooth, smooth before
-     place bed). A one-action job is a one-step project. This includes an
-     older accepted proposal that has no project yet.
+     where one step needs another done first. A one-action job is a one-step
+     project. This includes an older accepted proposal that has no project yet.
   3. Act (the game tools).
   4. `queue.executed` naming the `step_id`, every tool call made and its
      outcome (success or failure; a failed attempt is still a required record).
 
-  The server now refuses `queue.executed` for an accepted ruling with no
-  project, and requires `step_id` once the project has steps. The project is
-  what the stream page draws as a job graph; an acceptance without one shows
-  nothing there. **`queue.executed` starts that proposal's prediction grading window**:
-  it now runs from the execution tick, never from the proposal's own write
-  time. An accepted proposal you have not yet executed is reported as
-  unexecuted, not graded as a miss, so there is no pressure to call
-  `queue.executed` before you have actually acted.
+  The server refuses `queue.executed` for an accepted ruling with no project,
+  and requires `step_id` once the project has steps. The project is what the
+  stream page draws as a job graph. **`queue.executed` starts that proposal's
+  prediction grading window**, from the execution tick, never the proposal's
+  write time. An accepted proposal you have not yet executed is reported as
+  unexecuted, not graded as a miss.
 - **Playbooks.** During quiet cycles, write and revise the contingencies the
   Sentry executes without waking anyone. This is what makes fast response
   possible, and it is real work, not idle-time filler.
