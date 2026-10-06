@@ -99,3 +99,28 @@ Design notes for the orchestrator (nothing invented, none blocking):
    passes silently. A Lua summary flag would close both.
 4. `live_deployed: false` / unverified on both tools stands; the first real
    outputs should be recorded and fed back into a fixture.
+
+
+Follow-up (orchestrator's calls on questions 1 to 3), same branch:
+
+- Q2: `mine_vein` for a `site-N` handle now finds the reservation whose
+  `site_handle` is that site (reservations.mark_in_use records it) and passes
+  it as the `holding` handle to `check_tiles`, so ore on the room's own walls
+  is not held without RES_ID, and ore inside any OTHER reservation is still
+  held. An explicit RES_ID keeps its old kind-gated meaning; a zone id has no
+  own reservation. This needed no allowed_kinds entry and no per-kind branch,
+  because holding bypasses kind gating (the mining kind is not in any room
+  template's allowed kinds, and is not added).
+- Q1 and Q3: the Lua return now carries `designated_tiles` (count, a failed
+  designation also lands in `refused`), `nothing_designated` (boolean) and
+  `blocked_reason` (refused and held strings joined, the NULL sentinel when
+  none). TOOLS.yaml: `reason: blocked_reason`,
+  `nothing_applied: {all_zero: [designated_tiles]}`, and `designated_tiles` in
+  the preview. A real run that designated nothing is a retryable failure; one
+  that designated some alongside a refusal is still Uncertain.
+- Tests: own-reservation not held, different reservation held, zone id still
+  held, reason text and nothing_applied on the real Lua output, and a
+  run_step test for the retryable failure. The construction stub gained
+  `list_raw`. Item 4 of the earlier notes (unverified live) stands.
+- Results: ambient `python -m pytest` 3204 passed, 3 skipped, 0 failed;
+  `dfmcp/tests` in `.venv-dfmcp` 930 passed.
