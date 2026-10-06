@@ -73,12 +73,23 @@ and none is on any role allowlist.
    layout and the include test are recalled and unverified.
 4. `stockpile.health` (read) and `stockpile.plan-feed WORKSHOP_KIND|ID` (read
    spec, builds nothing), both over the per-kind table in
-   `df-overseer-stockpile-kinds.lua`. **The table is hand-authored from the
-   wiki, not derived from game data** (11 kinds: Still, Kitchen, Masons,
-   Carpenters, Mechanics, Craftsdwarfs, Butchers, Tanners, Leatherworks,
-   Smelter, WoodFurnace; each `verified = false`; fuel is `optional_when`
-   magma-fed). Deriving it from reaction/job data is future work. Health
-   asks `stocks.get_availability` only for a failing class that names an
+   per-kind classes **derived at runtime from the game's own data**
+   (coordinator ruling 2026-10-07, revising the first cut, which was a hand
+   table): `dfhack.workshops.getJobs` per kind (the source workjob.list-jobs
+   reads) gives each job's reagent specs; reaction products come from
+   `raws.reactions.reactions`. A workshop runs one job at a time, so a class
+   needed by only some of a kind's jobs is `partial` (reported as optional,
+   "1 of 2 jobs"), and only a class every job needs is a trap when unlinked.
+   Hand data lives in `df-overseer-stockpile-kinds.lua`, each part marked:
+   item type to stockpile category (the game exposes no such table),
+   tag-matched reagent flags (food_storage means a container), fuel overlays
+   (optional unless magma-fed), products of built-in jobs, feeder sizes, and
+   the old whole-kind table kept as a FLAGGED FALLBACK (`kind_source =
+   "fallback_table"` plus `derive_error`) when getJobs fails for a kind. An
+   item type with no category is listed in `unmapped`, never guessed. Results
+   are cached per process. Spec field shapes are those workjob.lua reads
+   live; reaction product `item_type` and the category table are recalled.
+   Health asks `stocks.get_availability` only for a failing class that names an
    items.other key.
 5. `stockpile.link` now returns `warnings` (dry run and real alike, never a
    refusal): `single_class_trap`, `optional_class_unlinked`,
@@ -123,8 +134,10 @@ dry run first, read-back compared to the dry-run prediction):
 - `remove`: on the throwaway pile only; confirm the building is gone and the
   other ends' link vectors are clean (`links` on the former target).
 
-**Design questions for the orchestrator:** (a) whether to derive the per-kind
-table from game data (production/extract.py already reads reactions offline)
-rather than keep it hand-authored; (b) `stockpile.unlink` is still missing
-from the routing group's tools list (design 6.5 adds it in stage L).
+**Design questions, answered by the coordinator 2026-10-07:** (a) derive the
+per-kind table from game data: done, see item 4 above; (b) `stockpile.unlink`
+joins the routing group in stage L; (c) the read-only `stockpile.list` live
+check comes first. Live check to add for item 4: compare
+`stockpile.plan-feed Still` `kind_source`, `unmapped` and classes against the
+in-game "add job" menu for a Still and a Smelter.
 

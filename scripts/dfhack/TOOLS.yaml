@@ -3652,8 +3652,11 @@ df-overseer-stockpile.lua:
         linked source (a linked workshop looks ONLY in linked piles), `optional_class_unlinked`
         for a class needed unless a condition holds (smelter fuel unless magma),
         `pile_feeds_no_input_class`, and, for a take link (the pile receives the workshop's
-        output), `output_pile_rejects_products`. Checked against the per-kind table in
-        df-overseer-stockpile-kinds.lua, hand-authored and unverified live. A furnace is
+        output), `output_pile_rejects_products`. Checked against input/output classes DERIVED at
+        runtime from the game's job and reaction definitions (dfhack.workshops.getJobs, the source
+        workjob.list-jobs reads), with hand data (df-overseer-stockpile-kinds.lua) only for what the
+        game does not encode; unverified live. A class needed by only some of a kind's jobs is
+        reported as optional, never as a trap. A furnace is
         accepted as a link target alongside a workshop (UNVERIFIED live).
       summary: "Links one stockpile to another stockpile or a workshop, for automatic give/take."
       guide:
@@ -3882,9 +3885,12 @@ df-overseer-stockpile.lua:
         containers and fuel) has a non-empty linked source, whether a class with no usable
         source exists fort-wide (via stocks.availability's own count, asked only for a
         problem class), and whether its output link accepts each product. A workshop with no
-        links is skipped (it draws from anywhere). Driven by the per-kind table in
-        df-overseer-stockpile-kinds.lua, which is HAND-AUTHORED from the wiki and unverified live;
-        an unrecognised kind is reported as unknown_kind, never skipped. Coordinate-free.
+        links is skipped (it draws from anywhere). Each kind's classes are DERIVED at runtime from
+        the game's own job and reaction definitions (see `kind_source`: game_data, or
+        fallback_table when derivation failed and the flagged hand table in
+        df-overseer-stockpile-kinds.lua was used); `unmapped` lists item types the hand category
+        table lacks. Unverified live. An unrecognised kind is reported as unknown_kind, never
+        skipped. Coordinate-free.
       summary: "Checks each linked workshop for starved inputs and an output pile that rejects its products."
       guide:
         arguments: []
@@ -3912,8 +3918,9 @@ df-overseer-stockpile.lua:
         links and container counts that feed it: a bounded links-only feeder per input class
         (including containers and fuel) with no bins, barrels or wheelbarrows, a shared any-source
         pile each feeder takes from, and an output pile that accepts every product. Given an id,
-        classes its current links already cover are left out. From the same hand-authored,
-        unverified per-kind table as `health`.
+        classes its current links already cover are left out. From the same runtime-derived,
+        unverified per-kind classes as `health`; the result carries `kind_source`, `unmapped`
+        and, on fallback, `derive_error`.
       summary: "Specs the feeder, source and output piles and links a workshop kind needs."
       guide:
         arguments:
