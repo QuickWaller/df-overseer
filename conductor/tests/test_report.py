@@ -100,9 +100,11 @@ async def test_the_tripwire_overseer_run_is_reported_too(tmp_path):
     runner = FakeRoleRunner({OVERSEER: _ok(OVERSEER, final_answer="Handled.")})
     deps = _deps(tmp_path, tools=tools, runner=runner)
     await run_cycle(2, deps)
-    assert seen[0]["role"] == OVERSEER and seen[0]["wake_reason"] == "tripwire"
-    assert "hunger_critical" in seen[0]["wake_detail"]
-    assert seen[1]["final_answer"] == "Handled."
+    # hunger wakes the Quartermaster first, then the Overseer: both are reported
+    overseer_rows = [r for r in seen if r.get("role") == OVERSEER]
+    assert overseer_rows[0]["wake_reason"] == "tripwire"
+    assert "hunger_critical" in overseer_rows[0]["wake_detail"]
+    assert any(r.get("final_answer") == "Handled." for r in seen)
 
 
 async def test_a_dry_run_reports_nothing(tmp_path):

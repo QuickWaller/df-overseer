@@ -168,7 +168,9 @@ async def test_held_threat_wakes_the_overseer_as_today_but_a_resume_true_verdict
 
 @pytest.mark.asyncio
 async def test_held_tripwire_goes_through_the_tripwire_branch_minus_resume(tmp_path):
-    fort = FakeFort(tripwire={"reason": "death", "tick": 1, "detail": "x"})
+    fort = FakeFort(
+        tripwire={"reason": "death", "tick": 1, "detail": "x"}, verdict={"resume": True, "reason": "fine"},
+    )
     _hold(tmp_path)
     runner = FakeRoleRunner({"overseer": _ok_run(tools=[])})  # clean, no escalation
     deps = _cycle_deps(tmp_path, fort, runner=runner)
@@ -177,12 +179,15 @@ async def test_held_tripwire_goes_through_the_tripwire_branch_minus_resume(tmp_p
     called = [c[0] for c in deps.tool_caller.calls]
     assert "clock.clear" in called and "clock.resume" not in called
     assert fort.resume_calls == 0 and fort.paused is True
-    assert result.pause_watch is None and result.hold["reason"]
+    assert result.pause_watch["verdict"] == "held" and result.pause_watch["resumed"] is False
+    assert result.hold["reason"]
 
 
 @pytest.mark.asyncio
 async def test_without_a_hold_the_same_tripwire_still_resumes(tmp_path):
-    fort = FakeFort(tripwire={"reason": "death", "tick": 1, "detail": "x"})
+    fort = FakeFort(
+        tripwire={"reason": "death", "tick": 1, "detail": "x"}, verdict={"resume": True, "reason": "fine"},
+    )
     runner = FakeRoleRunner({"overseer": _ok_run(tools=[])})
     deps = _cycle_deps(tmp_path, fort, runner=runner)
     await run_cycle(1, deps)
