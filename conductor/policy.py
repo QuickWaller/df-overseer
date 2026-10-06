@@ -107,7 +107,7 @@ class ThresholdAlert:
     #: count keyed by kind is simply missing when nothing of that kind
     #: exists). `None` keeps the old behaviour: an absent field drops the
     #: line. A failed read always drops the line, whatever this says.
-    missing: Optional[float] = None
+    missing_leaf: Optional[float] = None
 
 
 @dataclass(frozen=True)
@@ -398,14 +398,14 @@ def load_policy(path: "Path | str" = DEFAULT_POLICY_PATH) -> Policy:
         text = entry.get("text")
         if not isinstance(text, str) or not text:
             raise PolicyError(f"{where}.text must be a non-empty string")
-        missing = entry.get("missing")
+        missing = entry.get("missing_leaf")
         if missing is not None:
             if isinstance(missing, bool) or not isinstance(missing, (int, float)):
-                raise PolicyError(f"{where}.missing must be a number")
+                raise PolicyError(f"{where}.missing_leaf must be a number")
             missing = float(missing)
         alerts.append(ThresholdAlert(
             name=str(entry.get("name") or f"alert-{i}"), tool=str(read["tool"]), args=dict(args),
-            field=str(read["field"]), below=below, text=text, per=per, missing=missing,
+            field=str(read["field"]), below=below, text=text, per=per, missing_leaf=missing,
         ))
 
     lane_triggers = _load_lane_triggers(doc.get("lane_triggers"), path)
