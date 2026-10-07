@@ -177,3 +177,5 @@ have been exercised as the real, non-dry-run mutation yet** (`Working.md`,
 "Where the MVP stands") — your proposal's `rationale` should not assume a
 `work_order` will simply work once accepted; say what a stuck order or a
 failed workshop job would mean for your own prediction.
+
+Before you file, read YOUR RECENT FILINGS in your briefing (or call `queue.my_filings`): do not re-file what is accepted or already in a project.

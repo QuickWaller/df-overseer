@@ -1566,6 +1566,116 @@ def unexecuted_accepted_proposals(path: str | Path) -> list[dict]:
     return out
 
 
+#: Lifecycle states `own_filings` reports for a proposal. `in_project` is
+#: reported with the project id and its step state beside it.
+FILING_STATUSES = (
+    "pending", "accepted", "rejected", "deferred", "closed", "completed", "in_project",
+)
+
+
+def _filing_row(conn: sqlite3.Connection, proposal: dict) -> dict:
+    """One proposal's own-filing line: its lifecycle status computed from the
+    records that name it (rulings, a project opened from its accepting ruling,
+    an `executed`, a `close`), never from a stored flag."""
+    pid = proposal["id"]
+    rulings = [
+        json.loads(r["payload"]) for r in conn.execute(
+            "SELECT payload FROM records WHERE kind = ? AND proposal_id = ? ORDER BY rowid ASC",
+            (RULING, pid),
+        ).fetchall()
+    ]
+    latest = rulings[-1] if rulings else None
+    final = next((r for r in rulings if r.get("decision") in FINAL_DECISIONS), None)
+    row = {
+        "id": pid, "type": proposal.get("type"), "summary": proposal.get("summary"),
+        "urgency": proposal.get("suggested_priority") or proposal.get("urgency"),
+        "ruling": ({"id": latest["id"], "decision": latest.get("decision"), "reason": latest.get("reason")}
+                   if latest else None),
+        "project_id": proposal.get("project_id"), "close": None,
+    }
+    project = None
+    if final is not None and final.get("decision") == ACCEPT:
+        project = _find_project_for_ruling(conn, final["id"])
+    if project is None and proposal.get("project_id"):
+        project = _get(conn, proposal["project_id"], PROJECT)
+    if project is not None:
+        row["project_id"] = project["id"]
+        row["project_status"] = _project_status_conn(conn, project["id"])["status"]
+    # A `close` names exactly one of the proposal, its accepting ruling or its
+    # project; any of the three closes this filing.
+    keys = [("proposal_id", pid)]
+    if final is not None:
+        keys.append(("ruling_id", final["id"]))
+    if project is not None:
+        keys.append(("project_id", project["id"]))
+    close_row = None
+    for field, value in keys:
+        close_row = conn.execute(
+            f"SELECT payload FROM records WHERE kind = ? AND json_extract(payload, '$.{field}') = ? "
+            "ORDER BY rowid DESC", (CLOSE, value),
+        ).fetchone()
+        if close_row is not None:
+            break
+    if close_row is not None:
+        c = json.loads(close_row["payload"])
+        row["close"] = {"outcome": c.get("outcome"), "reason": c.get("reason")}
+        row["status"] = "closed"
+    elif final is None:
+        row["status"] = "deferred" if latest is not None else "pending"
+        if proposal.get("covered_by") is not None and project is None:
+            row["status"] = "accepted"
+    elif final.get("decision") == REJECT:
+        row["status"] = "rejected"
+    elif project is not None:
+        row["status"] = "completed" if row["project_status"] == "done" else "in_project"
+    elif _executed_exists(conn, final["id"]):
+        row["status"] = "completed"
+    else:
+        row["status"] = "accepted"
+    return row
+
+
+def own_filings(
+    path: str | Path, role: str, *, status: str | None = None,
+    proposal_id: str | None = None, limit: int | None = None,
+) -> list[dict]:
+    """The proposals `role` itself filed, newest first, each with a computed
+    lifecycle status (`FILING_STATUSES`). The role is the caller's, never a
+    caller-chosen argument one layer up: this function filters on it so no
+    other role's proposal can be returned. `status` keeps one state;
+    `proposal_id` one record (still only if it is `role`'s own)."""
+    where, params = "kind = ? AND role = ?", [PROPOSAL, role]
+    if proposal_id is not None:
+        where += " AND id = ?"
+        params.append(proposal_id)
+    with _connect(path) as conn:
+        rows = conn.execute(
+            f"SELECT payload FROM records WHERE {where} ORDER BY ts DESC, rowid DESC", params
+        ).fetchall()
+        out = []
+        for r in rows:
+            line = _filing_row(conn, json.loads(r["payload"]))
+            if status is not None and line["status"] != status:
+                continue
+            out.append(line)
+            if limit is not None and len(out) >= limit:
+                break
+    return out
+
+
+#: Statuses a briefing always carries regardless of age: work the role can
+#: still duplicate (accepted or in a project but not done, deferred, pending).
+FILINGS_ALWAYS_SHOWN = ("pending", "accepted", "deferred", "in_project")
+
+
+def briefing_filings(path: str | Path, role: str, recent: int) -> list[dict]:
+    """The filings a role's briefing shows: its `recent` newest, plus every
+    one in `FILINGS_ALWAYS_SHOWN` however old. Newest first, no repeats."""
+    rows = own_filings(path, role)
+    keep = [f for i, f in enumerate(rows) if i < recent or f["status"] in FILINGS_ALWAYS_SHOWN]
+    return keep
+
+
 def apply_grades(path: str | Path, updates: list[dict]) -> None:
     """Persist a grading pass's results, all in one transaction. Each entry
     in `updates` is `{"id", "status", "actual_value", "graded_at",

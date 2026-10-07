@@ -496,10 +496,10 @@ class TestRoleToolCountsUnchanged:
         # commit 52494c9 (the merge base this stream started from).
         assert _real_role_counts() == {
             "overseer": 82,
-            "architect": 54,
+            "architect": 55,
             "consultant": 29,
-            "quartermaster": 27,
-            "conductor": 36,
+            "quartermaster": 28,
+            "conductor": 37,
         }
 
 

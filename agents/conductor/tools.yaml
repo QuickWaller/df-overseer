@@ -80,6 +80,14 @@ read:
       cited facts re-read by the server ("now V" only if changed), overlap
       flags, plus open projects and the last five rulings. The handler refuses
       any role but the conductor. Read-only.
+  - id: "queue.filings_brief"
+    status: exists
+    note: >-
+      Added handoffs/2026-10-07-own-filings.md. Native tool. For each named
+      proposing role, the lines of its YOUR RECENT FILINGS briefing block (its
+      newest few plus anything still pending, accepted, deferred or in a
+      project), so a role sees what it already filed without asking. Refused
+      for any role but the conductor. Read-only.
   - id: "stocks.food-drink"
     status: exists
     note: >-

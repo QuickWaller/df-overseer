@@ -151,3 +151,5 @@ level for that tool (and kind), a short note, and the titles of any known
 gotchas. Read `agents/CONFIDENCE-LEGEND.md` for what each level means and how
 to treat a listed gotcha: try it only if its title applies and the tool fails
 without it, then record the outcome with `gotchas.write`.
+
+Before you file, read YOUR RECENT FILINGS in your briefing (or call `queue.my_filings`): do not re-file what is accepted or already in a project.
