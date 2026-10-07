@@ -3346,6 +3346,41 @@ df-overseer-workjob.lua:
             A workshop name containing an apostrophe can be cut short at the MCP transport layer
             before it reaches the tool; if a call using a landmark name with an apostrophe fails to
             match, try the name without it.
+    unsupplied:
+      lua_function: unsupplied_buildings
+      effect: read
+      coordinate_bearing: false
+      live_deployed: false
+      verified: "unverified (offline build, lupa-tested against a fake world only, handoffs/2026-10-07-unsupplied-building-watch.md, 2026-10-07). The product-name rule and buildingplan's isPlannedBuilding/job_items fields are a live check."
+      knowledge_scope: player_visible
+      notes: >
+        Read-only. For every item kind a buildingplan-planned building is
+        still waiting on (job_items elements with a concrete item_type and
+        quantity left), one row: how many planned buildings and units need it,
+        how many are free (`available`, the same six-deduction read as
+        stocks.availability; omitted when that read failed), which jobs at
+        BUILT workshops and furnaces make it (`producers`: job, reaction code
+        if any, workshop kind), and how many live workshop jobs make it right
+        now (`jobs_queued_now`). Manager orders are not read here; join
+        orders.list (its `job` and `reaction`) against `producers`. The
+        conductor's unsupplied-building watch (conductor/unsupplied_watch.py)
+        is the caller. A hard-coded job's product is taken from its name (the
+        job_type name minus its leading verb, e.g. ConstructBed gives BED,
+        plus a short alias list in the .lua file); a reaction job's products
+        are read from the reaction itself. A job whose product cannot be named
+        is not matched. Wildcard material filters (item_type -1) are skipped,
+        they name no kind. No coordinates.
+      summary: "Lists item kinds that planned buildings are waiting on, with free stock and the jobs and workshops that could make each."
+      guide:
+        arguments: []
+        returns: >-
+          unsupplied: one row per waiting item kind (item, buildings_waiting, units_needed, available,
+          producers, jobs_queued_now); read_failures names any read that failed.
+        before_a_real_run: []
+        traps:
+          - >-
+            A kind with no row is not necessarily supplied: only kinds a planned building names
+            concretely are listed.
     "cancel JOB_ID [DRY_RUN]":
       lua_function: cancel_job
       effect: mutate

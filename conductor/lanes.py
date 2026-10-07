@@ -54,6 +54,7 @@ from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Set, 
 from conductor.ore_watch import OreRead
 from conductor.policy import LaneTriggers, Policy
 from conductor.triage import LaneWake
+from conductor.unsupplied_watch import UnsuppliedRead
 
 #: Reasons this module raises; each must exist in policy.yaml `wake_reasons`
 #: (its `clock` is read from there, its `wakes` is unused).
@@ -61,6 +62,7 @@ REASON_EVENT = "lane_event"
 REASON_ALERT = "alert_crossed"
 REASON_RULING = "ruling_on_own"
 REASON_ORE = "ore_exposed"
+REASON_UNSUPPLIED = "unsupplied_building"
 #: The execute phase's wakes (conductor/execute.py), queued into `pending`
 #: under `<reason>:<key>` for the project's proposer.
 REASON_STEP_DONE = "step_done"
@@ -71,6 +73,7 @@ REASON_PROJECT_IDLE = "project_idle"
 _ALERT = "alert:"
 _RULING = "ruling:"
 _ORE = "ore:"
+_UNSUPPLIED = "unsupplied:"
 
 
 @dataclass
@@ -83,6 +86,10 @@ class LaneState:
     pending: Dict[str, Dict[str, str]] = field(default_factory=dict)
     #: "<site>:<mineral>" -> game tick it last woke a role, while still exposed.
     ore: Dict[str, int] = field(default_factory=dict)
+    #: item kind -> {"first": tick first seen unsupplied, "last": tick of its last
+    #: wake, "wakes": wakes so far, "stalled": no more wakes}, while unsupplied
+    #: (conductor/unsupplied_watch.py).
+    unsupplied: Dict[str, Dict[str, Any]] = field(default_factory=dict)
 
 
 class LaneStore:
@@ -103,6 +110,11 @@ class LaneStore:
                 for r, m in (raw.get("pending") or {}).items()
             },
             ore={str(k): int(v) for k, v in (raw.get("ore") or {}).items()},
+            unsupplied={
+                str(k): {"first": int(v.get("first", 0)), "last": int(v.get("last", 0)),
+                         "wakes": int(v.get("wakes", 0)), "stalled": bool(v.get("stalled", False))}
+                for k, v in (raw.get("unsupplied") or {}).items() if isinstance(v, dict)
+            },
         )
 
     def save(self, state: LaneState) -> None:
@@ -112,7 +124,7 @@ class LaneStore:
             with open(fd, "w", encoding="utf-8") as fh:
                 json.dump(
                     {"alerts": state.alerts, "proposers": state.proposers, "pending": state.pending,
-                     "ore": state.ore},
+                     "ore": state.ore, "unsupplied": state.unsupplied},
                     fh, indent=2, sort_keys=True,
                 )
             Path(tmp_name).replace(self.path)
@@ -213,6 +225,52 @@ def apply_ore_edges(
             entries.pop(_ORE + key, None)
 
 
+def apply_unsupplied_edges(
+    policy: Policy, state: LaneState, read: Optional[UnsuppliedRead], game_tick: Optional[int],
+) -> None:
+    """Fold one unsupplied-building poll into `state` (research/2026-10-07-wake-
+    audit.md rec 3). `read=None` (the poll failed) changes nothing. An item kind
+    seen for the first time wakes every role whose lane has `unsupplied`; while
+    it stays unsupplied it wakes again after `base_ticks`, doubling each time up
+    to `cap_ticks`, and goes `stalled` (no more wakes) once `max_wakes` wakes
+    have been sent. A kind that leaves the read (and was judgeable) is supplied,
+    so its state and any wake not yet served are dropped and a later recurrence
+    wakes afresh. A kind merely unreadable this poll keeps its state."""
+    if read is None:
+        return
+    pol = policy.unsupplied_building
+    now = game_tick if game_tick is not None else 0
+    roles = [role for role, lane in policy.lane_triggers.items() if lane.unsupplied]
+    live = set()
+    for it in read.items:
+        live.add(it.key)
+        rec = state.unsupplied.get(it.key)
+        if rec is None or rec.get("first", 0) > now:
+            # New, or a save reload put the clock behind it: start over.
+            rec = {"first": now, "last": now, "wakes": 1, "stalled": False}
+            state.unsupplied[it.key] = rec
+            due = True
+        elif rec.get("stalled"):
+            due = False
+        else:
+            wait = min(pol.base_ticks * (2 ** max(rec["wakes"] - 1, 0)), pol.cap_ticks)
+            due = (now - rec["last"]) >= wait
+            if due:
+                rec["last"] = now
+                rec["wakes"] += 1
+        if due:
+            if rec["wakes"] >= pol.max_wakes:
+                rec["stalled"] = True
+            for role in roles:
+                state.pending.setdefault(role, {})[_UNSUPPLIED + it.key] = it.line(now - rec["first"])
+    for key in [k for k in state.unsupplied if k not in live]:
+        if key in read.unreadable:
+            continue
+        del state.unsupplied[key]
+        for entries in state.pending.values():
+            entries.pop(_UNSUPPLIED + key, None)
+
+
 def attribute_new_proposals(state: LaneState, role: str, known_ids: Set[str], pending_ids: Iterable[str]) -> Set[str]:
     """After `role`'s run: every pending proposal id not seen before was added
     by that run. Records the author and returns the enlarged known set."""
@@ -244,6 +302,7 @@ def lane_wakes(policy: Policy, state: LaneState, events_by_role: Mapping[str, Se
         entries = state.pending.get(role) or {}
         for prefix, reason in (
             (_ALERT, REASON_ALERT), (_RULING, REASON_RULING), (_ORE, REASON_ORE),
+            (_UNSUPPLIED, REASON_UNSUPPLIED),
             (REASON_STEP_DONE + ":", REASON_STEP_DONE), (REASON_STEP_ATTENTION + ":", REASON_STEP_ATTENTION),
             (REASON_PROJECT_IDLE + ":", REASON_PROJECT_IDLE),
         ):

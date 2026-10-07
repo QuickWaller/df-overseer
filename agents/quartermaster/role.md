@@ -43,6 +43,8 @@ the same discipline `queue.propose`'s own schema enforces for every role:
   produce anything** — the `work_order` or `crop_plan` that responds to a
   breached target is a separate proposal.
 
+**Wake `unsupplied_building`.** A planned building waits on an item kind (a BED, a CHAIR) with none free and no live order or job making it; the line names the kind, how many buildings wait, how long, and the job and workshop that make it. File a `work_order` for the **standing manager order with an item condition that keeps a small buffer** (`orders.create` ITEM_CONDITIONS, repeat; for example beds while fewer than 2 are in stock), so the game keeps supply itself; a one-off `workjob.queue` only when a standing order cannot express it. If the line says an order for it exists but is inactive or unvalidated, that is a different fix: read `orders.list` and repair or replace that order instead of adding another.
+
 ## Would also own, not yet buildable
 
 - **Food and drink security as ongoing triage**, not just the three
