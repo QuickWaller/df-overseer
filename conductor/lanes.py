@@ -39,8 +39,9 @@ the cursor store, single-writer like `CursorStore`.
 
 Not observable today, and substituted rather than faked: a new landmark (no
 landmark read on the conductor's allowlist), approximated by dig and
-construction completions in the Architect's own drain; the author of a graded
-prediction (`queue.grade` omits it), so a miss wakes both advisors.
+construction completions in the Architect's own drain. (The author of a graded
+prediction used to be unobservable too; `queue.grade` now names the proposer
+and a miss wakes only it, `conductor/cycle.py` `_miss_proposers`.)
 """
 
 from __future__ import annotations
@@ -67,6 +68,7 @@ REASON_ALERT = "alert_crossed"
 REASON_RULING = "ruling_on_own"
 REASON_ORE = "ore_exposed"
 REASON_UNSUPPLIED = "unsupplied_building"
+REASON_ANSWER = "answer_ready"
 #: The execute phase's wakes (conductor/execute.py), queued into `pending`
 #: under `<reason>:<key>` for the project's proposer.
 REASON_STEP_DONE = "step_done"
@@ -78,6 +80,7 @@ _ALERT = "alert:"
 _RULING = "ruling:"
 _ORE = "ore:"
 _UNSUPPLIED = "unsupplied:"
+_ANSWER = "answer:"
 
 
 @dataclass
@@ -98,6 +101,8 @@ class LaneState:
     #: wake, "wakes": wakes so far, "stalled": no more wakes}, while unsupplied
     #: (conductor/unsupplied_watch.py).
     unsupplied: Dict[str, Dict[str, Any]] = field(default_factory=dict)
+    #: ask id -> the role whose run added it, until its answer is seen.
+    askers: Dict[str, str] = field(default_factory=dict)
     #: Conductor cycles seen, persisted: the clock for every cycle-counted
     #: window here (a service restart or a `--once` run must not reset it).
     cycles: int = 0
@@ -136,6 +141,7 @@ class LaneStore:
                          "wakes": int(v.get("wakes", 0)), "stalled": bool(v.get("stalled", False))}
                 for k, v in (raw.get("unsupplied") or {}).items() if isinstance(v, dict)
             },
+            askers={str(k): str(v) for k, v in (raw.get("askers") or {}).items()},
             cycles=int(raw.get("cycles") or 0),
             overseer_seen={
                 str(k): {"asks": [str(a) for a in (v.get("asks") or [])], "at": int(v.get("at", 0))}
@@ -152,7 +158,7 @@ class LaneStore:
                     {"alerts": state.alerts, "proposers": state.proposers, "pending": state.pending,
                      "ore": state.ore, "unsupplied": state.unsupplied,
                      "cycles": state.cycles, "overseer_seen": state.overseer_seen,
-                     "ore_wakes": state.ore_wakes, "alert_wakes": state.alert_wakes},
+                     "ore_wakes": state.ore_wakes, "alert_wakes": state.alert_wakes, "askers": state.askers},
                     fh, indent=2, sort_keys=True,
                 )
             Path(tmp_name).replace(self.path)
@@ -392,6 +398,31 @@ def attribute_new_proposals(state: LaneState, role: str, known_ids: Set[str], pe
     return known_ids | now
 
 
+def attribute_new_asks(state: LaneState, role: str, known_ids: Set[str], open_ask_ids: Iterable[str]) -> Set[str]:
+    """After `role`'s run: every open ask id not seen before was filed by that
+    run (the conductor cannot read an ask's author, as with proposals)."""
+    now = {str(i) for i in open_ask_ids}
+    for aid in sorted(now - known_ids):
+        state.askers[aid] = role
+    return known_ids | now
+
+
+def apply_answers(policy: Policy, state: LaneState, open_ask_ids: Iterable[str]) -> None:
+    """A learned ask no longer open was answered. Queue one wake for its asker
+    when the asker's lane has `answers`. If the asker is also being woken for
+    something else this cycle the cycle runs it once (one run per role), so the
+    answer arrives with that run; the place a notes channel would take the
+    answer instead of a wake is here."""
+    now = {str(i) for i in open_ask_ids}
+    for aid in [a for a in state.askers if a not in now]:
+        role = state.askers.pop(aid)
+        lane = _lane(policy, role)
+        if lane is not None and lane.answers:
+            state.pending.setdefault(role, {})[_ANSWER + aid] = f"{aid} was answered"
+        else:
+            LOG.info("%s was answered; its asker %s has no answer wake (lane_triggers.%s.answers is off)", aid, role, role)
+
+
 def apply_rulings(policy: Policy, state: LaneState, pending_ids: Iterable[str]) -> None:
     """A learned proposal no longer pending was ruled (accept or reject; a
     deferral stays pending). Queue the wake for its author, once."""
@@ -414,7 +445,7 @@ def lane_wakes(policy: Policy, state: LaneState, events_by_role: Mapping[str, Se
         entries = state.pending.get(role) or {}
         for prefix, reason in (
             (_ALERT, REASON_ALERT), (_RULING, REASON_RULING), (_ORE, REASON_ORE),
-            (_UNSUPPLIED, REASON_UNSUPPLIED),
+            (_UNSUPPLIED, REASON_UNSUPPLIED), (_ANSWER, REASON_ANSWER),
             (REASON_STEP_DONE + ":", REASON_STEP_DONE), (REASON_STEP_ATTENTION + ":", REASON_STEP_ATTENTION),
             (REASON_PROJECT_IDLE + ":", REASON_PROJECT_IDLE),
         ):

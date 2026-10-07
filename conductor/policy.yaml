@@ -116,9 +116,10 @@ overseer_defer_recheck_cycles: 12
 # handoffs/2026-10-05-stricter-wakes.md: a role wakes only on a change in its
 # own lane. `routine_review` still wakes both advisors every interval, so
 # nothing goes unchecked long. `prediction_graded` is raised by the cycle only
-# for a MISS (a hit is recorded, nobody wakes); its `wakes` lists both advisors
-# because queue.grade does not say who proposed the prediction, so a miss
-# cannot yet be narrowed to its proposer. `lane_event`, `alert_crossed` and
+# for a MISS (a hit is recorded, nobody wakes) and wakes only the PROPOSER, which
+# queue.grade's graded rows now name (2026-10-07, handoffs/2026-10-07-wake-
+# cleanup.md item 6); `wakes` (both advisors) is the fallback only for a grade
+# row that names no proposer (an older server). `lane_event`, `alert_crossed` and
 # `ruling_on_own` carry no fixed role list: the roles come from `lane_triggers`
 # below, per event.
 wake_reasons:
@@ -145,6 +146,11 @@ wake_reasons:
     clock: full_speed
     wakes: []
   alert_crossed:
+    clock: full_speed
+    wakes: []
+  # Roles come from `lane_triggers.<role>.answers`: an ask the role filed was
+  # answered (handoffs/2026-10-07-wake-cleanup.md item 8).
+  answer_ready:
     clock: full_speed
     wakes: []
   ruling_on_own:
@@ -348,6 +354,12 @@ threshold_alerts:
 #   proposer by watching which advisor's run added a pending proposal).
 # ore: an ore or gem newly exposed on a dug room's walls (edge triggered, see
 #   ore_renotify_ticks above).
+# answers: an ask this role filed was answered (`answer_ready`, once per ask).
+#   LEFT OFF for every role: no advisor has a read tool that returns an
+#   answer's text (the Consultant writes it with queue.answer; the asker has
+#   queue.my_filings for proposals only), so the wake would send a role to look
+#   for something it cannot read. Add `answers: true` to a role once it can.
+#   The detection, the pending entry and the wake are built and tested.
 #
 # Not observable by the conductor today: a new landmark. Dig and construction
 # completions stand in for it. Starting patterns, not tuned against a run.

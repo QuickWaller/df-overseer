@@ -1440,12 +1440,15 @@ def pending_due(path: str | Path, tick: int) -> list[dict]:
     `idx_predictions_pending_due`."""
     with _connect(path) as conn:
         rows = conn.execute(
-            "SELECT id, record_id, signal, op, value, registered_game_tick, due_game_tick, "
-            "status, actual_value, graded_at, grade_note FROM predictions "
-            "WHERE status = ? AND due_game_tick <= ? ORDER BY due_game_tick ASC, id ASC",
+            "SELECT p.id, p.record_id, p.signal, p.op, p.value, p.registered_game_tick, "
+            "p.due_game_tick, p.status, p.actual_value, p.graded_at, p.grade_note, "
+            "r.role AS proposer FROM predictions p LEFT JOIN records r ON r.id = p.record_id "
+            "WHERE p.status = ? AND p.due_game_tick <= ? ORDER BY p.due_game_tick ASC, p.id ASC",
             (PENDING, tick),
         ).fetchall()
-    return [_prediction_row(r) for r in rows]
+    # `proposer`: the role that filed the proposal carrying the prediction (the
+    # conductor wakes only that role on a miss, handoffs/2026-10-07-wake-cleanup.md).
+    return [{**_prediction_row(r), "proposer": r["proposer"]} for r in rows]
 
 
 def pending_proposals(path: str | Path, limit: int | None = None) -> list[dict]:

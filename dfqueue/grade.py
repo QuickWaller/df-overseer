@@ -96,6 +96,7 @@ def grade_due(
             updates.append({
                 "id": row["id"], "status": UNRESOLVABLE, "actual_value": None,
                 "graded_at": graded_at, "grade_note": f"signal no longer parses: {exc}",
+                "proposer": row.get("proposer"),
             })
             continue
 
@@ -105,6 +106,7 @@ def grade_due(
                 "graded_at": graded_at,
                 "grade_note": "signal not (yet) resolvable: the landmark or exit it "
                                "names does not exist",
+                "proposer": row.get("proposer"),
             })
             continue
 
@@ -120,7 +122,7 @@ def grade_due(
 
         updates.append({
             "id": row["id"], "status": status, "actual_value": actual,
-            "graded_at": graded_at, "grade_note": "",
+            "graded_at": graded_at, "grade_note": "", "proposer": row.get("proposer"),
         })
 
     store.apply_grades(db, updates)

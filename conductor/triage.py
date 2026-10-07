@@ -122,6 +122,10 @@ class Signals:
     #: nobody (handoffs/2026-10-05-stricter-wakes.md).
     prediction_graded: bool = False
     prediction_misses: int = 0
+    #: The proposer(s) of the missed prediction(s), when the grade record names
+    #: them: only they wake. Empty: the grade record did not say (an older
+    #: server), so the reason's own `wakes` list applies (both advisors).
+    prediction_miss_roles: Tuple[str, ...] = ()
 
     #: Changes in a single role's own lane (conductor/lanes.py), each naming
     #: the role it wakes.
@@ -195,7 +199,7 @@ def triage(signals: Signals, policy: Policy, *, base_fps: Optional[int] = None) 
             detail = f"{signals.prediction_misses} prediction(s) missed when graded this cycle"
         wakes.append(Wake(
             "prediction_graded", detail,
-            rp.wakes, clock_for_reason("prediction_graded", policy),
+            signals.prediction_miss_roles or rp.wakes, clock_for_reason("prediction_graded", policy),
         ))
 
     for reason in _BOOLEAN_REASONS:

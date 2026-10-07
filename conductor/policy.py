@@ -153,6 +153,10 @@ class LaneTriggers:
     #: (`step_done`, `step_attention`, `project_idle`) when the project's
     #: proposer is unknown to the conductor (docs/CONDUCTOR-EXECUTION.md 5).
     execution: bool = False
+    #: An ask this role filed has been answered: wake it once
+    #: (handoffs/2026-10-07-wake-cleanup.md item 8). Off in the shipped policy
+    #: until the role has a read that returns an answer's text.
+    answers: bool = False
 
 
 @dataclass(frozen=True)
@@ -374,6 +378,7 @@ def _load_lane_triggers(raw, path: Path) -> Dict[str, LaneTriggers]:
             ore=bool(entry.get("ore", False)),
             unsupplied=bool(entry.get("unsupplied", False)),
             execution=bool(entry.get("execution", False)),
+            answers=bool(entry.get("answers", False)),
         )
     return lanes
 

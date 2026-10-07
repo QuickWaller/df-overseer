@@ -269,6 +269,34 @@ def _queue_summary_for(role: str, queue_state: Mapping[str, Any]) -> Mapping[str
     return queue_state.get("proposals") or _EMPTY_QUEUE_SUB_SUMMARY
 
 
+def _miss_proposers(policy: Any, grade_result: Mapping[str, Any], cycle_index: int) -> Tuple[str, ...]:
+    """Who a missed prediction wakes: its proposer only
+    (handoffs/2026-10-07-wake-cleanup.md item 6; research/2026-10-07-wake-audit.md
+    row 21, where the other advisor ran for nothing). `queue.grade`'s graded
+    rows carry `proposer`. A row without one (an older server) falls back to the
+    reason's own `wakes` list, so a rollout order cannot silence a miss. A
+    proposer this build does not run (the Planner while it is off, an unknown
+    role) is logged and wakes nobody, never someone else in its place."""
+    misses = [
+        g for g in (grade_result.get("graded") or ())
+        if isinstance(g, Mapping) and g.get("status") == "graded_false"
+    ]
+    if not misses:
+        return ()
+    if any("proposer" not in g for g in misses):
+        return tuple(policy.reason("prediction_graded").wakes)
+    runnable = {*ADVISORS, *((PLANNER,) if policy.plan.enabled else ())}
+    roles: List[str] = []
+    for g in misses:
+        who = g.get("proposer")
+        if who in runnable:
+            if who not in roles:
+                roles.append(who)
+        else:
+            LOG.info("cycle %s: a prediction missed whose proposer %r this build does not run; no wake", cycle_index, who)
+    return tuple(roles)
+
+
 def _open_ask_addressees(queue_state: Mapping[str, Any]) -> Tuple[str, ...]:
     """Roles with an open ask addressed to them, from `queue.overview`'s
     `asks.to` map. A summary without the map is the pre-addressing shape:
@@ -697,6 +725,7 @@ async def _run_cycle(cycle_index: int, deps: CycleDeps, hold: HoldState) -> Cycl
     # ---- 2. GRADE -----------------------------------------------------------
     prediction_graded = False
     prediction_misses = 0
+    prediction_miss_roles: Tuple[str, ...] = ()
     unexecuted: List[dict] = []
     to_carry_out: List[str] = []
     if not deps.dry_run:
@@ -713,6 +742,10 @@ async def _run_cycle(cycle_index: int, deps: CycleDeps, hold: HoldState) -> Cycl
             if isinstance(g, Mapping) and g.get("status") == "graded_false"
         )
         prediction_graded = prediction_misses > 0
+        prediction_miss_roles = _miss_proposers(deps.policy, grade_result, cycle_index)
+        if prediction_graded and not prediction_miss_roles:
+            # Nobody to wake (the proposer is not a role this build runs): no wake.
+            prediction_graded = False
         unexecuted = grade_result.get("unexecuted", []) or []
         # Over MCP, queue.grade returns only `unexecuted_proposal_ids` (the
         # local dfqueue call returns full `unexecuted` dicts). Read both.
@@ -762,6 +795,7 @@ async def _run_cycle(cycle_index: int, deps: CycleDeps, hold: HoldState) -> Cycl
             lanes.apply_ore_edges(deps.policy, lane_state, ore_read, game_tick)
             lanes.apply_unsupplied_edges(deps.policy, lane_state, unsupplied, game_tick)
             lanes.apply_rulings(deps.policy, lane_state, pending_ids)
+            lanes.apply_answers(deps.policy, lane_state, (queue_state.get("asks") or {}).get("ask_ids") or [])
             fresh_pending, quiet_pending = lanes.split_pending_for_overseer(
                 deps.policy, lane_state, pending_ids, (queue_state.get("asks") or {}).get("ask_ids") or [],
             )
@@ -810,6 +844,7 @@ async def _run_cycle(cycle_index: int, deps: CycleDeps, hold: HoldState) -> Cycl
         slow_announcement_detail=slow_detail,
         prediction_graded=prediction_graded,
         prediction_misses=prediction_misses,
+        prediction_miss_roles=prediction_miss_roles,
         lane_wakes=lane_wakes,
         game_days_since_routine_review=_game_days_since(deps.cursor_store, game_tick, deps.policy),
         queue_holds_for_overseer=(
@@ -847,6 +882,7 @@ async def _run_cycle(cycle_index: int, deps: CycleDeps, hold: HoldState) -> Cycl
     extra_wakes: Dict[str, Wake] = {}
     queue_refreshed = False
     known_ids: Set[str] = set(pending_ids) | set(lane_state.proposers)
+    known_ask_ids: Set[str] = set((queue_state.get("asks") or {}).get("ask_ids") or []) | set(lane_state.askers)
     routing: Optional[Mapping[str, Any]] = early_routing
     routing_read = early_routing_read
     idx = 0
@@ -958,6 +994,9 @@ async def _run_cycle(cycle_index: int, deps: CycleDeps, hold: HoldState) -> Cycl
                 after = await call("queue.overview", {})
                 known_ids = lanes.attribute_new_proposals(
                     lane_state, role, known_ids, (after.get("proposals") or {}).get("proposal_ids") or [],
+                )
+                known_ask_ids = lanes.attribute_new_asks(
+                    lane_state, role, known_ask_ids, (after.get("asks") or {}).get("ask_ids") or [],
                 )
             except Exception as exc:  # noqa: BLE001 -- total: attribution is best effort
                 LOG.warning("cycle %s: proposer attribution after %s failed: %s", cycle_index, role, exc)
