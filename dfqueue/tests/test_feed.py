@@ -211,11 +211,32 @@ def test_public_item_never_carries_the_raw_record_or_its_private_fields():
     item = feed.build_public_item(
         record, seq=1, reply_to=None, thread="proposal-0001", badge=None, ctx={},
     )
-    dumped = json.dumps(item)
-    assert "rationale" not in item
-    assert "This full technical rationale" not in dumped
-    assert "prediction" not in item
-    assert "preconditions" not in item
+    # The user's call 2026-10-07 made the full proposal public, but only as
+    # the filtered `detail` block: no raw record, no top-level private fields.
+    assert "record" not in item
+    for key in ("rationale", "prediction", "preconditions", "relies_on", "cited", "step"):
+        assert key not in item
+    assert item["detail"]["rationale"] == "This full technical rationale must never be public."
+
+
+def test_proposal_detail_filters_each_field_and_shows_withheld_ones():
+    record = make_proposal(
+        id="proposal-0001", summary="Dig the stair.",
+        rationale="See /opt/df/notes.txt for why.",
+        preconditions=[{"landmark": "Embark Site", "state": "exists"}, {"area": "Hall", "state": "see 10.0.0.1"}],
+        step={"tool": "diggable.dig-stair", "args": {"site": "south", "note": "http://x.example.com/a"}, "label": "Dig"},
+        cited=[{"tool": "stocks.get", "args": {}, "field": "drink", "value": 12, "tick": 40}],
+    )
+    pub = feed.build_public_item(record, seq=1, reply_to=None, thread="proposal-0001", badge=None, ctx={})["detail"]
+    assert pub["summary"] == "Dig the stair."
+    assert pub["rationale"] is None and "rationale" in pub["withheld"]
+    assert pub["preconditions"] == ["Embark Site: exists", None] and "preconditions" in pub["withheld"]
+    assert pub["step"]["tool"] == "diggable.dig-stair" and pub["step"]["args"] is None and "step" in pub["withheld"]
+    assert pub["cited"] == ["stocks.get drink = 12 (tick 40)"]
+    blob = json.dumps(pub)
+    assert "/opt/" not in blob and "10.0.0.1" not in blob and "example.com" not in blob
+    op = feed.proposal_detail(record, public=False)
+    assert "/opt/df/notes.txt" in op["rationale"] and "withheld" not in op
 
 
 def test_observation_never_produces_a_public_item():
