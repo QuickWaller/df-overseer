@@ -2856,6 +2856,10 @@ df-overseer-orders.lua:
         ConstructThrone, created 2026-09-23) read `validated: false`
         throughout a 900-tick run and did not change state
         (evals/live/2026-09-23-office-and-first-real-build/).
+        UPDATE 2026-10-07 (handoffs/2026-10-07-valid-manager-orders.md): rows
+        also carry `material` and `invalid_material`/`invalid_material_reason`,
+        from the tool's ORDER_MATERIAL_POLICY table (DFHack's own order
+        library reduced to one policy per job). Offline-tested only.
         UPDATE 2026-10-01 (handoffs/2026-10-01-orders-conditions.md): row
         building now goes through describe_order, the same helper
         orders.create's post-write readback uses, adding workshop_id,
@@ -2873,7 +2877,10 @@ df-overseer-orders.lua:
           Reports whether a Manager is currently appointed alongside the order list, since an order
           with no Manager will never be worked. Each order reports whether it has been validated by
           the game, whether it is active, and its frequency, material category, workshop pin and
-          item/order conditions when set.
+          item/order conditions when set. Each order also reports its material when set, and
+          `invalid_material` (true with `invalid_material_reason`) when an item job has no material
+          or material category: the game shows such an order as "Make unknown material" and never
+          works it, so cancel and recreate it with a material.
         before_a_real_run: []
         traps: []
     ? "create JOB AMOUNT [FREQUENCY] [MATERIAL] [MATERIAL_CATEGORY] [WORKSHOP_ID] [MAX_WORKSHOPS] [ITEM_CONDITIONS] [ORDER_CONDITIONS] [DRY_RUN]"
@@ -2958,12 +2965,19 @@ df-overseer-orders.lua:
             required: false
             default: ""
             meaning: >-
-              Optional. Restricts the order to one material.
+              Optional for most item jobs, required for a few. The order's material (INORGANIC for
+              any stone, INORGANIC:IRON for one). Left out, the tool fills in the default DFHack's
+              own order library uses for that job (stone for blocks, mechanisms and furniture); for
+              a job with no honest default (weapons, armour, tools, windows, cloth) the call is
+              refused until a material or material category is given. An order with no material is
+              shown by the game as "Make unknown material" and is never worked.
           - name: "MATERIAL_CATEGORY"
             required: false
             default: ""
             meaning: >-
-              Optional. Restricts the order to a material category rather than one exact material.
+              Optional. A material category (for example wood or leather) instead of one exact
+              material. Left out on a job with a category default (beds, bins, barrels, buckets
+              are wood), the tool fills it in.
           - name: "WORKSHOP_ID"
             required: false
             default: ""

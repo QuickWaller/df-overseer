@@ -386,7 +386,7 @@ end
 -- attribution-and-checks.md: `manager_order.status` carries `validated`/
 -- `active` bits (live-verified on this fort's three stuck orders:
 -- validated=true, active=false -- the failure is a missing announcement,
--- not a missing state); `finished_year`/`finished_year_tick` are both -1 on
+-- not a missing state; superseded 2026-10-07, see evals/live/2026-10-07-manager-orders); `finished_year`/`finished_year_tick` are both -1 on
 -- those same orders. Every field is read defensively (pcall) and reported
 -- as nil, never a guessed default, if the struct shape does not match what
 -- this comment documents.
