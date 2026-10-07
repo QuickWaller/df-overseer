@@ -75,8 +75,11 @@ def test_an_answered_ask_wakes_its_asker_once_when_enabled():
     assert not state.pending
 
 
-def test_an_answer_wakes_nobody_by_default():
+def test_an_answer_wakes_nobody_when_the_lane_flag_is_off():
+    lt = dict(POLICY.lane_triggers)
+    lt["architect"] = dataclasses.replace(lt["architect"], answers=False)
+    policy = dataclasses.replace(POLICY, lane_triggers=lt)
     state = lanes.LaneState()
     lanes.attribute_new_asks(state, "architect", set(), ["ask-0001"])
-    lanes.apply_answers(POLICY, state, [])
+    lanes.apply_answers(policy, state, [])
     assert not state.pending and not state.askers

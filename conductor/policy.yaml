@@ -355,11 +355,10 @@ threshold_alerts:
 # ore: an ore or gem newly exposed on a dug room's walls (edge triggered, see
 #   ore_renotify_ticks above).
 # answers: an ask this role filed was answered (`answer_ready`, once per ask).
-#   LEFT OFF for every role: no advisor has a read tool that returns an
-#   answer's text (the Consultant writes it with queue.answer; the asker has
-#   queue.my_filings for proposals only), so the wake would send a role to look
-#   for something it cannot read. Add `answers: true` to a role once it can.
-#   The detection, the pending entry and the wake are built and tested.
+#   ON for the roles that can ask and hold queue.my_filings (architect,
+#   quartermaster, planner): `queue.my_filings asks=true` returns the answer's
+#   text (handoffs/2026-10-07-filing-hygiene.md). Add `answers: true` to a role
+#   only once it can read answers.
 #
 # Not observable by the conductor today: a new landmark. Dig and construction
 # completions stand in for it. Starting patterns, not tuned against a run.
@@ -378,6 +377,7 @@ lane_triggers:
     # The Architect proposes rooms, so it is the fallback recipient of the
     # execute phase's step_done / step_attention / project_idle.
     execution: true
+    answers: true
   quartermaster:
     stuck_jobs: ['brew|cook|prepare|make|craft|forge|weave|mill|process|butcher|tan|smelt|sew|clothes|plant|harvest|kiln|still|farm|collect']
     alerts: [drink_per_citizen, raw_food_per_citizen]
@@ -385,10 +385,12 @@ lane_triggers:
     # A planned building waits on an item kind nothing makes
     # (handoffs/2026-10-07-unsupplied-building-watch.md).
     unsupplied: true
+    answers: true
   # The Planner files only plan_change proposals; a ruling on one wakes it
   # (`ruling_on_own`). Its other wakes come from conductor/plan_watch.py.
   planner:
     rulings: true
+    answers: true
 
 # Caps on the full per-run transcript the conductor archives and reports
 # (conductor/runner.py build_transcript; handoffs/2026-10-07-transcripts-and-

@@ -40,6 +40,10 @@ loads its allowlist against an enabled copy and pins the 12. Regenerate with
 Hand-edited 2026-10-07 (handoffs/2026-10-07-own-filings.md): `queue.my_filings` granted
 to architect (now 55), quartermaster (28) and planner (13 once enabled).
 
+Hand-edited 2026-10-07 (handoffs/2026-10-07-filing-hygiene.md): no tool added, so no
+count changes. `queue.my_filings` takes `asks=true` (own asks with answer text), and the
+`answers` lane flag is on for architect, quartermaster and planner.
+
 ## Services
 
 - `conductor.service` (openclaw, risk=high): active=inactive, enabled=disabled

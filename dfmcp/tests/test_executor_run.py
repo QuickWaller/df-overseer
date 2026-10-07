@@ -253,8 +253,10 @@ class Rig:
     def apply_step(self, site, phase):
         return {"tool": "blueprint.apply", "args": {"template": BP, "phase": phase, "site": site}}
 
-    async def open_room(self, **extra):
-        p = await self.propose(self.reserve_step(), phases={"tool": "blueprint.apply", "list": [SHELL, FINISH]},
+    async def open_room(self, purpose="bedroom row 1", **extra):
+        step = self.reserve_step()
+        step["args"]["purpose"] = purpose  # a second open room must differ (structural duplicate refusal)
+        p = await self.propose(step, phases={"tool": "blueprint.apply", "list": [SHELL, FINISH]},
                                **extra)
         r = self.rule(p["id"])
         _t, out = await self.tool("queue.open_project", ruling_id=r["id"])
@@ -586,7 +588,7 @@ async def test_the_tripwire_gates_everything_but_a_high_urgency_project(rig):
     rig.clock_error = True  # an unreadable clock counts as latched
     assert (await rig.run(pid, f"{pid}/s1"))["class"] == "not_runnable"
     rig.clock_error = False
-    p2, r2, pid2 = await rig.open_room(urgency="high")
+    p2, r2, pid2 = await rig.open_room(purpose="bedroom row 2", urgency="high")
     rig.tripwire = {"reason": "thirst"}
     assert (await rig.run(pid2, f"{pid2}/s1"))["class"] == "success"
 

@@ -1705,6 +1705,36 @@ def own_filings(
     return out
 
 
+def own_asks(path: str | Path, role: str, *, limit: int | None = None) -> list[dict]:
+    """The asks `role` itself filed, newest first, each with its answer's text
+    when it has one: `{id, to, question, proposal_id, status, answer_id,
+    answer}`, `status` `open` or `answered`. Filtered on `role` here, so no
+    other role's ask (or the answer to it) can be returned."""
+    with _connect(path) as conn:
+        rows = conn.execute(
+            "SELECT payload FROM records WHERE kind = ? AND role = ? ORDER BY ts DESC, rowid DESC",
+            (ASK, role),
+        ).fetchall()
+        out = []
+        for r in rows:
+            ask = json.loads(r["payload"])
+            ans = conn.execute(
+                "SELECT payload FROM records WHERE kind = ? AND json_extract(payload, '$.ask_id') = ? "
+                "ORDER BY rowid ASC", (ANSWER, ask["id"]),
+            ).fetchone()
+            answer = json.loads(ans["payload"]) if ans is not None else None
+            out.append({
+                "id": ask["id"], "to": ask_addressee(ask), "question": ask.get("question"),
+                "proposal_id": ask.get("proposal_id"),
+                "status": "answered" if answer is not None else "open",
+                "answer_id": answer["id"] if answer else None,
+                "answer": answer.get("answer") if answer else None,
+            })
+            if limit is not None and len(out) >= limit:
+                break
+    return out
+
+
 #: Statuses a briefing always carries regardless of age: work the role can
 #: still duplicate (accepted or in a project but not done, deferred, pending).
 FILINGS_ALWAYS_SHOWN = ("pending", "accepted", "deferred", "in_project")
