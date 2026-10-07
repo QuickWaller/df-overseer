@@ -75,3 +75,13 @@ def test_caps_come_from_policy_yaml_and_fall_back(tmp_path):
     caps = load_transcript_caps(p)
     assert caps["max_rounds"] == 5 and caps["max_result_chars"] == DEFAULT_TRANSCRIPT_CAPS["max_result_chars"]
     assert load_transcript_caps(tmp_path / "none.yaml") == DEFAULT_TRANSCRIPT_CAPS
+
+
+def test_the_archive_run_file_carries_the_transcript(tmp_path):
+    from conductor.archive import CycleArchive
+    from conductor.runner import RunResult
+    t = build_transcript(EVENTS)
+    run = RunResult(role="architect", ok=True, status="ok", cost_usd=None, wall_clock_seconds=1.0,
+                    timed_out=False, tool_summary={}, final_answer=None, raw={}, transcript=t)
+    d = CycleArchive(tmp_path).write_cycle(1, summary={}, briefings={}, clock_changes=[], role_runs=[run])
+    assert json.loads((d / "run-architect.json").read_text(encoding="utf-8"))["transcript"] == t

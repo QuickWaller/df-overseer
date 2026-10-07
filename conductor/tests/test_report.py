@@ -113,3 +113,19 @@ async def test_a_dry_run_reports_nothing(tmp_path):
     deps = _deps(tmp_path, tools=tools, dry_run=True)
     await run_cycle(1, deps)
     assert seen == []
+
+
+async def test_the_transcript_goes_out_as_compact_json_and_is_archived(tmp_path):
+    import json
+    seen = []
+    transcript = {"rounds": [{"n": 1, "text": "hi", "calls": [], "reasoning": None, "usage": {"input": 5}}], "omitted_rounds": 0}
+    runner = FakeRoleRunner({CONSULTANT: _ok(CONSULTANT, transcript=transcript)})
+    deps = _deps(tmp_path, tools=_ask_tools(lambda a: (seen.append(dict(a)) or {"run_id": "run-0001"})), runner=runner)
+    await run_cycle(1, deps)
+    end = seen[-1]
+    assert json.loads(end["transcript"]) == transcript and " " not in end["transcript"].replace("hi", "")
+    plain = [dict(a) for a in seen]
+    runner2 = FakeRoleRunner({CONSULTANT: _ok(CONSULTANT)})
+    seen2 = []
+    await run_cycle(2, _deps(tmp_path, tools=_ask_tools(lambda a: (seen2.append(dict(a)) or {"run_id": "run-0002"})), runner=runner2))
+    assert "transcript" not in seen2[-1] and plain
