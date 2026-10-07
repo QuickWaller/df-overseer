@@ -124,6 +124,171 @@ def read_thinking(state_dir: Path) -> Optional[str]:
     return cap_thinking("\n\n".join(parts)) if parts else None
 
 
+# ---- the full transcript (handoffs/2026-10-07-transcripts-and-full-proposals.md)
+
+#: Policy data: `transcript:` in `conductor/policy.yaml`. These are the
+#: fallbacks when the block is absent or unreadable.
+DEFAULT_TRANSCRIPT_CAPS: Dict[str, int] = {
+    "max_rounds": 60,
+    "max_call_args_chars": 600,
+    "max_result_chars": 800,
+    "max_round_text_chars": 2000,
+    "max_total_chars": 60000,
+}
+_DEFAULT_POLICY_PATH = Path(__file__).with_name("policy.yaml")
+
+
+def load_transcript_caps(path: "Path | str | None" = None) -> Dict[str, int]:
+    """The caps from policy.yaml's top-level `transcript:` block, each a
+    positive int, falling back per key to `DEFAULT_TRANSCRIPT_CAPS`. Never
+    raises (a bad file means defaults)."""
+    caps = dict(DEFAULT_TRANSCRIPT_CAPS)
+    try:
+        import yaml
+        doc = yaml.safe_load(Path(path or _DEFAULT_POLICY_PATH).read_text(encoding="utf-8")) or {}
+        block = doc.get("transcript") if isinstance(doc, dict) else None
+        if isinstance(block, dict):
+            for key in caps:
+                v = block.get(key)
+                if isinstance(v, int) and not isinstance(v, bool) and v > 0:
+                    caps[key] = v
+    except Exception as exc:  # noqa: BLE001 -- observability, never fails a run
+        LOG.warning("conductor runner: transcript caps unreadable, defaults used: %s", exc)
+    return caps
+
+
+def _clip(text: Any, limit: int) -> str:
+    s = text if isinstance(text, str) else json.dumps(text, sort_keys=True, default=str)
+    if len(s) <= limit:
+        return s
+    return s[: max(0, limit - 1)].rstrip() + "\u2026"
+
+
+def _block_text(content: Any) -> str:
+    """The text of a message `content` (a string, or a list of blocks)."""
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        return "\n".join(
+            b["text"] for b in content
+            if isinstance(b, dict) and isinstance(b.get("text"), str)
+        )
+    return ""
+
+
+_CALL_TYPES = ("toolCall", "tool_use", "toolUse", "tool-call")
+
+
+def _usage_of(message: dict) -> Optional[Dict[str, Any]]:
+    raw = message.get("usage")
+    if not isinstance(raw, dict):
+        return None
+    out: Dict[str, Any] = {}
+    for key in USAGE_KEYS:
+        n = _number(raw.get(key))
+        if n is None and key == "total":
+            n = _number(raw.get("totalTokens"))
+        if n is not None:
+            out[key] = n
+    return out or None
+
+
+def build_transcript(events: List[dict], caps: Optional[Dict[str, int]] = None) -> Optional[dict]:
+    """Turn openclaw `transcript_events` payloads (in order) into the
+    archived transcript: `{"rounds": [{"n", "reasoning", "text", "calls":
+    [{"id", "name", "args", "result", "error"}], "usage"}], "omitted_rounds"}`.
+
+    One round is one assistant message. Tool results (a `toolResult`-role
+    message, matched by call id) attach to their call. UNVERIFIED against a
+    live run: the thinking and text block shapes are proven
+    (handoffs/2026-10-05-agent-thinking.md); the tool-call block and
+    `toolResult` message shapes follow openclaw's pi-style message format
+    and are read tolerantly (see `_CALL_TYPES`). Texts and results are
+    capped per `caps`; when the whole thing would exceed `max_total_chars`
+    the later rounds are dropped and counted, never silently."""
+    caps = caps or DEFAULT_TRANSCRIPT_CAPS
+    rounds: List[dict] = []
+    by_call: Dict[str, dict] = {}
+    for event in events:
+        message = event.get("message") if isinstance(event, dict) else None
+        if not isinstance(message, dict):
+            continue
+        role = message.get("role")
+        content = message.get("content")
+        if role == "assistant":
+            reasoning: List[str] = []
+            texts: List[str] = []
+            calls: List[dict] = []
+            for block in content if isinstance(content, list) else []:
+                if not isinstance(block, dict):
+                    continue
+                kind = block.get("type")
+                if kind == "thinking" and isinstance(block.get("thinking"), str):
+                    reasoning.append(block["thinking"].strip())
+                elif kind == "text" and isinstance(block.get("text"), str):
+                    texts.append(block["text"].strip())
+                elif kind in _CALL_TYPES:
+                    args = block.get("arguments", block.get("input", block.get("args", {})))
+                    call = {
+                        "id": str(block.get("id") or ""),
+                        "name": _clip(block.get("name") or "unknown", 80),
+                        "args": _clip(args, caps["max_call_args_chars"]),
+                        "result": None, "error": False,
+                    }
+                    calls.append(call)
+                    if call["id"]:
+                        by_call[call["id"]] = call
+            if isinstance(content, str) and content.strip():
+                texts.append(content.strip())
+            rounds.append({
+                "n": len(rounds) + 1,
+                "reasoning": _clip("\n\n".join(r for r in reasoning if r), caps["max_round_text_chars"]) or None,
+                "text": _clip("\n\n".join(t for t in texts if t), caps["max_round_text_chars"]) or None,
+                "calls": calls, "usage": _usage_of(message),
+            })
+        elif role in ("toolResult", "tool"):
+            call = by_call.get(str(message.get("toolCallId") or message.get("tool_call_id") or ""))
+            if call is not None:
+                call["result"] = _clip(_block_text(content), caps["max_result_chars"]) or None
+                call["error"] = bool(message.get("isError"))
+    if not rounds:
+        return None
+    omitted = max(0, len(rounds) - caps["max_rounds"])
+    rounds = rounds[: caps["max_rounds"]]
+    # The total cap: drop whole later rounds until the JSON fits.
+    while len(rounds) > 1 and len(json.dumps(rounds, default=str)) > caps["max_total_chars"]:
+        rounds.pop()
+        omitted += 1
+    return {"rounds": rounds, "omitted_rounds": omitted}
+
+
+def read_transcript(state_dir: Path, caps: Optional[Dict[str, int]] = None) -> Optional[dict]:
+    """The full turn sequence of the one run kept in `state_dir`, from the
+    same `transcript_events` rows `read_thinking` reads. Never raises."""
+    import sqlite3
+    events: List[dict] = []
+    try:
+        for db in sorted(Path(state_dir).glob("agents/*/agent/openclaw-agent.sqlite")):
+            conn = sqlite3.connect(db, timeout=5)
+            try:
+                rows = conn.execute(
+                    "SELECT event_json FROM transcript_events ORDER BY session_id, seq"
+                ).fetchall()
+            finally:
+                conn.close()
+            for (raw,) in rows:
+                try:
+                    ev = json.loads(raw)
+                except (TypeError, ValueError):
+                    continue
+                if isinstance(ev, dict):
+                    events.append(ev)
+        return build_transcript(events, caps)
+    except Exception as exc:  # noqa: BLE001 -- observability, never fails a run
+        LOG.warning("conductor runner: could not read the run's transcript: %s", exc)
+        return None
+
+
 def _final_answer(envelope: dict) -> Optional[str]:
     """The agent's answer text. Order: `finalAnswer`, `final_answer`, `final`
     (the shape the real openclaw envelope returns, seen 2026-09-24), then the
@@ -208,6 +373,8 @@ class RunResult:
     usage: Optional[Dict[str, Any]] = None
     #: Model rounds in the run (`assistantTurns`); None when unknown.
     assistant_turns: Optional[int] = None
+    #: The full turn sequence (`build_transcript`), or None when not captured.
+    transcript: Optional[Dict[str, Any]] = None
 
 
 class RoleRunner(Protocol):
@@ -264,7 +431,9 @@ class DockerOpenClawRunner:
         subprocess_exec: SubprocessExec = asyncio.create_subprocess_exec,
         clock: Callable[[], float] = time.monotonic,
         outer_kill_grace_seconds: float = OUTER_KILL_GRACE_SECONDS,
+        transcript_caps: Optional[Dict[str, int]] = None,
     ):
+        self.transcript_caps = transcript_caps or load_transcript_caps()
         self.pinned_config_dir = Path(pinned_config_dir)
         self.openclaw_state_dir = Path(openclaw_state_dir)
         self.workspace_root = Path(workspace_root)
@@ -408,7 +577,10 @@ class DockerOpenClawRunner:
                 container_name=container_name, state_dir=state_dir,
             )
             if state_dir is not None and result.status == "ok":
-                result = replace(result, thinking=read_thinking(state_dir))
+                result = replace(
+                    result, thinking=read_thinking(state_dir),
+                    transcript=read_transcript(state_dir, self.transcript_caps),
+                )
             return result
         finally:
             if state_dir is not None:

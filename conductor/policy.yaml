@@ -326,3 +326,15 @@ lane_triggers:
     stuck_jobs: ['brew|cook|prepare|make|craft|forge|weave|mill|process|butcher|tan|smelt|sew|clothes|plant|harvest|kiln|still|farm|collect']
     alerts: ["*"]
     rulings: true
+
+# Caps on the full per-run transcript the conductor archives and reports
+# (conductor/runner.py build_transcript; handoffs/2026-10-07-transcripts-and-
+# full-proposals.md). Read by the runner directly, not by conductor/policy.py.
+# Characters, applied per round except max_total_chars (the whole transcript
+# as JSON; later rounds are dropped and counted when it is exceeded).
+transcript:
+  max_rounds: 60
+  max_call_args_chars: 600
+  max_result_chars: 800
+  max_round_text_chars: 2000
+  max_total_chars: 60000
