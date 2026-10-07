@@ -262,7 +262,7 @@ def test_public_summary_keeps_line_breaks_and_still_checks_the_safety_rule():
 def _tx(**over):
     call = {"id": "c1", "name": "stocks.get", "args": '{"kind":"drink"}',
             "result": "drink: 12\nsee /opt/df/x.lua for more\nfood: 9", "error": False}
-    rnd = {"n": 1, "reasoning": "Check drink.\n\nThe host 10.1.2.3 is odd.", "text": "ok",
+    rnd = {"n": 1, "reasoning": "Check drink.\n\nThe host 203.0.113.7 is odd.", "text": "ok",
            "calls": [call], "usage": {"input": 5, "output": 2, "evil": "x"}}
     rnd.update(over)
     return json.dumps({"rounds": [rnd], "omitted_rounds": 0})
@@ -277,17 +277,17 @@ def test_transcript_public_filters_every_field_and_shows_withheld_spans():
     assert r["calls"][0]["name"] == "stocks.get" and r["calls"][0]["args"] == '{"kind":"drink"}'
     assert r["usage"] == {"input": 5, "output": 2}
     blob = json.dumps(pub)
-    assert "/opt/" not in blob and "10.1.2.3" not in blob
+    assert "/opt/" not in blob and "203.0.113.7" not in blob
 
 
 def test_transcript_unsafe_args_and_names_are_withheld_not_echoed():
-    bad = _tx(calls=[{"id": "c", "name": "https://evil.example.com/x", "args": '{"u":"http://10.0.0.1/a"}',
+    bad = _tx(calls=[{"id": "c", "name": "https://evil.example.com/x", "args": '{"u":"http://203.0.113.9/a"}',
                       "result": None, "error": True}])
     rows = [_row("run-0001", "architect", ended=100, transcript=bad)]
     c = live.build_runs(rows, NOW, public=True)["runs"][0]["transcript"]["rounds"][0]["calls"][0]
     assert c["name"] == "tool" and c["name_withheld"] is True
     assert c["args"] is None and c["args_withheld"] is True and c["error"] is True
-    assert "evil" not in json.dumps(c) and "10.0.0.1" not in json.dumps(c)
+    assert "evil" not in json.dumps(c) and "203.0.113.9" not in json.dumps(c)
 
 
 def test_transcript_operator_gets_it_raw_and_switch_and_limits_apply(monkeypatch):

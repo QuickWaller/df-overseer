@@ -223,7 +223,7 @@ def test_proposal_detail_filters_each_field_and_shows_withheld_ones():
     record = make_proposal(
         id="proposal-0001", summary="Dig the stair.",
         rationale="See /opt/df/notes.txt for why.",
-        preconditions=[{"landmark": "Embark Site", "state": "exists"}, {"area": "Hall", "state": "see 10.0.0.1"}],
+        preconditions=[{"landmark": "Embark Site", "state": "exists"}, {"area": "Hall", "state": "see 203.0.113.9"}],
         step={"tool": "diggable.dig-stair", "args": {"site": "south", "note": "http://x.example.com/a"}, "label": "Dig"},
         cited=[{"tool": "stocks.get", "args": {}, "field": "drink", "value": 12, "tick": 40}],
     )
@@ -234,7 +234,7 @@ def test_proposal_detail_filters_each_field_and_shows_withheld_ones():
     assert pub["step"]["tool"] == "diggable.dig-stair" and pub["step"]["args"] is None and "step" in pub["withheld"]
     assert pub["cited"] == ["stocks.get drink = 12 (tick 40)"]
     blob = json.dumps(pub)
-    assert "/opt/" not in blob and "10.0.0.1" not in blob and "example.com" not in blob
+    assert "/opt/" not in blob and "203.0.113.9" not in blob and "example.com" not in blob
     op = feed.proposal_detail(record, public=False)
     assert "/opt/df/notes.txt" in op["rationale"] and "withheld" not in op
 
