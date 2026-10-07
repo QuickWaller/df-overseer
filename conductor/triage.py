@@ -157,6 +157,16 @@ class TriageResult:
                 return wake
         return None
 
+    def reasons_for(self, role: str) -> Tuple[str, ...]:
+        """Every reason `role` was woken for this cycle, in wake order, each
+        once. The runs table, archive and wake metrics record all of them;
+        `wake_for` stays the first, the briefing's headline reason."""
+        out: List[str] = []
+        for wake in self.wakes:
+            if role in wake.roles and wake.reason not in out:
+                out.append(wake.reason)
+        return tuple(out)
+
     def merged_wake_for(self, role: str) -> Optional[Wake]:
         """`wake_for`, but when several wakes name `role` the detail carries
         every one (`reason: detail`, the first reason leading). A role woken for

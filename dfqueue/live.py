@@ -101,6 +101,14 @@ CHECK_NOTE_MAX = 80
 
 _WAKE_REASON_PUBLIC = re.compile(r"^[a-z][a-z0-9_]{0,39}$")
 
+
+def _reasons_of(row: Any, *, public: bool) -> list:
+    """Every wake reason a run row carries (`wake_reasons`, else the single
+    `wake_reason`), ordered; public output keeps only plain codes."""
+    from dfqueue import runs as _runs
+    got = _runs.decode_wake_reasons(row) if isinstance(row, Mapping) else []
+    return [r for r in got if not public or _WAKE_REASON_PUBLIC.match(r)]
+
 JOURNAL_UNIT = "dfmcp-server.service"
 SYSTEM_ROLE = "conductor"
 
@@ -516,6 +524,7 @@ def build_runs(
             "run_id": row.get("run_id"),
             "role": row.get("role"),
             "wake_reason": wake if (not public or (isinstance(wake, str) and _WAKE_REASON_PUBLIC.match(wake))) else None,
+            "wake_reasons": _reasons_of(row, public=public),
             "status": _run_status(row, now),
             "started_at": row.get("started_at"),
             "ended_at": row.get("ended_at"),
@@ -684,6 +693,7 @@ def build_live(
                 "last_tool": last["tool"],
                 "last_call_at": _iso(last["ts"]),
                 "wake_reason": None,
+                "wake_reasons": [],
             }
             if not public:
                 entry["last_error"] = last["is_error"]
@@ -732,6 +742,7 @@ def build_live(
                 "duration_s": None if row.get("duration_s") is None else round(row["duration_s"]),
                 "ended_at": row.get("ended_at"),
                 "wake_reason": row.get("wake_reason"),
+                "wake_reasons": _reasons_of(row, public=public),
                 "ok": None if row.get("ok") is None else bool(row["ok"]),
                 "source": "report",
             }
@@ -742,6 +753,7 @@ def build_live(
         run = open_runs.get(entry["role"])
         if run is not None:
             entry["wake_reason"] = run.get("wake_reason")
+            entry["wake_reasons"] = _reasons_of(run, public=public)
             entry["run_id"] = run.get("run_id")
 
     base.update({

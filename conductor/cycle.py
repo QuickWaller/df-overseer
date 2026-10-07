@@ -557,14 +557,21 @@ async def _report(call: Callable, arguments: Mapping[str, Any]) -> Optional[Dict
 
 async def _run_role(
     deps: "CycleDeps", call: Callable, role: str, prompt: str, *, wake: Any, cycle_index: int,
+    wake_reasons: Any = None,
 ) -> RunResult:
     """`deps.role_runner.run`, bracketed by two `conductor.report` calls (start,
     end). The wake reason and its detail go out at launch; the outcome, cost,
     duration and final answer at the end. When the start call failed, the end
     call carries `role`, `wake_reason` and `cycle` too, so it is self-contained."""
+    # Every reason the role was woken for (ordered, deduplicated), the headline
+    # reason first; a lone wake (tripwire, pause) is just its own reason.
+    reasons = [wake.reason]
+    for r in wake_reasons or ():
+        if r not in reasons:
+            reasons.append(r)
     started = await _report(call, {
         "phase": "start", "role": role, "wake_reason": wake.reason,
-        "wake_detail": wake.detail, "cycle": cycle_index,
+        "wake_reasons": reasons, "wake_detail": wake.detail, "cycle": cycle_index,
     })
     run_id = (started or {}).get("run_id")
     run_result = await deps.role_runner.run(
@@ -585,7 +592,10 @@ async def _run_role(
     if run_id:
         end_args["run_id"] = run_id
     else:
-        end_args.update({"role": role, "wake_reason": wake.reason, "wake_detail": wake.detail, "cycle": cycle_index})
+        end_args.update({
+            "role": role, "wake_reason": wake.reason, "wake_reasons": reasons,
+            "wake_detail": wake.detail, "cycle": cycle_index,
+        })
     await _report(call, end_args)
     return run_result
 
@@ -973,6 +983,7 @@ async def _run_cycle(cycle_index: int, deps: CycleDeps, hold: HoldState) -> Cycl
 
         run_result = await _run_role(
             deps, call, role, prompt, wake=wake, cycle_index=cycle_index,
+            wake_reasons=triage_result.reasons_for(role),
         )
         role_runs.append(run_result)
 

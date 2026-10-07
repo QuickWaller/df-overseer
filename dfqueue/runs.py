@@ -34,6 +34,9 @@ THINKING_MAX = 12500
 TRANSCRIPT_MAX = 70000
 WAKE_REASON_MAX = 64
 WAKE_DETAIL_MAX = 300
+#: Every reason a role was woken for in one run (ordered, deduplicated), a JSON
+#: list of codes in the `wake_reasons` column; `wake_reason` stays the first.
+WAKE_REASONS_MAX = 12
 ERROR_MAX = 500
 STATUS_MAX = 40
 RECORDS_MAX = 50
@@ -46,6 +49,7 @@ CREATE TABLE IF NOT EXISTS runs (
     role TEXT NOT NULL,
     wake_reason TEXT,
     wake_detail TEXT,
+    wake_reasons TEXT,
     cycle INTEGER,
     started_at TEXT NOT NULL,
     ended_at TEXT,
@@ -88,6 +92,8 @@ def _connect(path: "str | Path") -> Iterator[sqlite3.Connection]:
             conn.execute("ALTER TABLE runs ADD COLUMN thinking TEXT")
         if "transcript" not in cols:  # stores made before 2026-10-07
             conn.execute("ALTER TABLE runs ADD COLUMN transcript TEXT")
+        if "wake_reasons" not in cols:  # stores made before 2026-10-07 (all wake reasons)
+            conn.execute("ALTER TABLE runs ADD COLUMN wake_reasons TEXT")
         yield conn
     finally:
         conn.close()
@@ -116,6 +122,32 @@ def _cap(text: Any, limit: int, *, marker: bool = False) -> Optional[str]:
     return s[:limit]
 
 
+def encode_wake_reasons(reasons: Any, first: Optional[str] = None) -> Optional[str]:
+    """The `wake_reasons` column value: a JSON list, ordered and deduplicated,
+    each code capped like `wake_reason`, at most `WAKE_REASONS_MAX` of them.
+    `first` (the single `wake_reason`) leads when given. None when there is
+    nothing to record."""
+    out: list = []
+    for r in [first, *(reasons or [])]:
+        c = _cap(r, WAKE_REASON_MAX) if r else None
+        if c and c not in out:
+            out.append(c)
+    return json.dumps(out[:WAKE_REASONS_MAX]) if out else None
+
+
+def decode_wake_reasons(row: Any) -> list:
+    """A run row's reasons as a list: the column when present, else the single
+    `wake_reason` (rows from before the column)."""
+    try:
+        got = json.loads(row.get("wake_reasons") or "null")
+    except (ValueError, TypeError, AttributeError):
+        got = None
+    if isinstance(got, list) and got:
+        return [x for x in got if isinstance(x, str)]
+    one = row.get("wake_reason") if hasattr(row, "get") else None
+    return [one] if isinstance(one, str) and one else []
+
+
 def _next_run_id(conn: sqlite3.Connection) -> str:
     row = conn.execute("SELECT MAX(CAST(SUBSTR(run_id, 5) AS INTEGER)) AS n FROM runs").fetchone()
     return f"run-{(row['n'] or 0) + 1:04d}"
@@ -123,7 +155,7 @@ def _next_run_id(conn: sqlite3.Connection) -> str:
 
 def start_run(
     path: "str | Path", *, role: str, wake_reason: Optional[str], wake_detail: Optional[str],
-    cycle: Optional[int], now: Optional[datetime] = None,
+    cycle: Optional[int], now: Optional[datetime] = None, wake_reasons: Optional[list] = None,
 ) -> dict:
     if role not in RUN_ROLES:
         raise RunsError(f"role {role!r} is not one of {list(RUN_ROLES)}")
@@ -131,10 +163,10 @@ def start_run(
     with _connect(path) as conn:
         run_id = _next_run_id(conn)
         conn.execute(
-            "INSERT INTO runs (run_id, role, wake_reason, wake_detail, cycle, started_at) "
-            "VALUES (?, ?, ?, ?, ?, ?)",
+            "INSERT INTO runs (run_id, role, wake_reason, wake_detail, wake_reasons, cycle, started_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?)",
             (run_id, role, _cap(wake_reason, WAKE_REASON_MAX), _cap(wake_detail, WAKE_DETAIL_MAX),
-             cycle, now.isoformat()),
+             encode_wake_reasons(wake_reasons, wake_reason), cycle, now.isoformat()),
         )
         conn.commit()
     return {"run_id": run_id, "started_at": now.isoformat()}
@@ -164,6 +196,7 @@ def end_run(
     duration_s: Optional[float], cost_usd: Optional[float], error: Optional[str],
     final_answer: Optional[str], records: list, now: Optional[datetime] = None,
     thinking: Optional[str] = None, transcript: Optional[str] = None,
+    wake_reasons: Optional[list] = None,
 ) -> dict:
     """Completes `run_id`, or, when it is None (the start call failed),
     creates the row from `role` and backdates `started_at` by `duration_s`."""
@@ -181,10 +214,11 @@ def end_run(
             started = now - timedelta(seconds=max(0.0, duration_s or 0.0))
             run_id = _next_run_id(conn)
             conn.execute(
-                "INSERT INTO runs (run_id, role, wake_reason, wake_detail, cycle, started_at) "
-                "VALUES (?, ?, ?, ?, ?, ?)",
+                "INSERT INTO runs (run_id, role, wake_reason, wake_detail, wake_reasons, cycle, started_at) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?)",
                 (run_id, role, _cap(wake_reason, WAKE_REASON_MAX),
-                 _cap(wake_detail, WAKE_DETAIL_MAX), cycle, started.isoformat()),
+                 _cap(wake_detail, WAKE_DETAIL_MAX), encode_wake_reasons(wake_reasons, wake_reason),
+                 cycle, started.isoformat()),
             )
         conn.execute(
             "UPDATE runs SET ended_at=?, status=?, ok=?, timed_out=?, duration_s=?, cost_usd=?, "

@@ -97,6 +97,11 @@ _SCHEMA: dict = {
         "role": {"type": "string", "enum": list(runs.RUN_ROLES)},
         "wake_reason": {"type": "string", "maxLength": runs.WAKE_REASON_MAX},
         "wake_detail": {"type": "string", "maxLength": runs.WAKE_DETAIL_MAX},
+        "wake_reasons": {
+            "type": "array", "maxItems": runs.WAKE_REASONS_MAX,
+            "items": {"type": "string", "maxLength": runs.WAKE_REASON_MAX},
+            "description": "Every reason the role was woken for, ordered, deduplicated.",
+        },
         "cycle": {"type": "integer"},
         "status": {"type": "string", "maxLength": runs.STATUS_MAX},
         "ok": {"type": "boolean"},
@@ -247,6 +252,15 @@ def _opt_int(arguments: Mapping[str, Any], key: str) -> Optional[int]:
     return v
 
 
+def _opt_str_list(arguments: Mapping[str, Any], key: str) -> Optional[list]:
+    v = arguments.get(key)
+    if v is None:
+        return None
+    if not isinstance(v, list) or not all(isinstance(x, str) for x in v):
+        raise ConductorToolError(f"{CONDUCTOR_REPORT}: {key!r} must be a list of strings")
+    return v
+
+
 def _report_sync(arguments: Mapping[str, Any], queue_db_path: Any) -> Tuple[str, dict]:
     phase = arguments.get("phase")
     if phase not in ("start", "end"):
@@ -255,6 +269,7 @@ def _report_sync(arguments: Mapping[str, Any], queue_db_path: Any) -> Tuple[str,
     role = _opt_str(arguments, "role")
     wake_reason = _opt_str(arguments, "wake_reason")
     wake_detail = _opt_str(arguments, "wake_detail")
+    wake_reasons = _opt_str_list(arguments, "wake_reasons")
     cycle = _opt_int(arguments, "cycle")
     try:
         if phase == "start":
@@ -262,6 +277,7 @@ def _report_sync(arguments: Mapping[str, Any], queue_db_path: Any) -> Tuple[str,
                 raise ConductorToolError(f"{CONDUCTOR_REPORT}: start needs 'role'")
             out = runs.start_run(
                 path, role=role, wake_reason=wake_reason, wake_detail=wake_detail, cycle=cycle,
+                wake_reasons=wake_reasons,
             )
             return f"{out['run_id']} started ({role})", out
 
@@ -281,6 +297,7 @@ def _report_sync(arguments: Mapping[str, Any], queue_db_path: Any) -> Tuple[str,
             cost_usd=_opt_num(arguments, "cost_usd"), error=_opt_str(arguments, "error"),
             final_answer=_opt_str(arguments, "final_answer"), records=linked,
             thinking=_opt_str(arguments, "thinking"), transcript=_opt_str(arguments, "transcript"),
+            wake_reasons=wake_reasons,
         )
         return f"{out['run_id']} ended, {out['records']} record(s) linked", out
     except runs.RunsError as exc:

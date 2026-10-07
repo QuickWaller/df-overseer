@@ -594,9 +594,23 @@ function threadTree(items) {
 }
 
 /** A run's wake reason in plain words ("routine_review" -> "woke for routine
- * review"), or null. */
+ * review"), or null. Takes one reason or a list (all of a run's reasons,
+ * "woke for routine review + open ask"). */
 function wakeWords(reason) {
-  return reason ? `woke for ${String(reason).replace(/_/g, " ")}` : null;
+  const list = (Array.isArray(reason) ? reason : [reason]).filter(Boolean);
+  return list.length ? `woke for ${list.map((r) => String(r).replace(/_/g, " ")).join(" + ")}` : null;
+}
+
+/** Every wake reason of a run or awake entry: `wake_reasons` when the feed has
+ * it, else the single `wake_reason` (older feeds). */
+function wakeList(run) {
+  if (run && Array.isArray(run.wake_reasons) && run.wake_reasons.length) return run.wake_reasons;
+  return run && run.wake_reason ? [run.wake_reason] : [];
+}
+
+/** The reasons as a title, each through the site-text titles, joined by " + ". */
+function wakeTitle(run, titles) {
+  return wakeList(run).map((r) => titles[r] || String(r).replace(/_/g, " ")).join(" + ");
 }
 
 /** "42 s", "6 min", "1 h 5 min" from seconds. */
@@ -628,7 +642,7 @@ function summaryItems(items, runsDoc) {
     out.push({
       id: `${runId}:${thread}`, kind: "summary", role: run.role, thread,
       seq: Math.max(...seqs) + 0.5, reply_to: sorted[0].id, text: run.summary,
-      when_text: [wakeWords(run.wake_reason), durationWords(run.duration_s)].filter(Boolean).join(" · "),
+      when_text: [wakeWords(wakeList(run)), durationWords(run.duration_s)].filter(Boolean).join(" · "),
     });
   });
   return out;
@@ -1033,7 +1047,7 @@ class StreamPage {
           el("span", { style: `color:${ROLE_COLORS[a.role] || "var(--text)"};font-weight:600`, text: roleTitle(a.role) }),
           el("span", { class: "ls-t", text: formatElapsed((a.elapsed_s || 0) + sinceFetch) }),
           a.last_tool ? el("span", { class: "ls-tool", text: a.last_tool }) : null,
-          a.wake_reason ? el("span", { class: "faint ls-why", text: reason(a.wake_reason) }) : null,
+          wakeList(a).length ? el("span", { class: "faint ls-why", text: reason(wakeList(a)) }) : null,
         ]);
         parts.push(seg);
       });
@@ -1050,7 +1064,7 @@ class StreamPage {
         el("span", { style: `color:${ROLE_COLORS[role] || "var(--text)"}`, text: roleTitle(role) }),
         el("span", { class: "ls-t", text: formatElapsed(r.duration_s) }),
         this.mode === "operator" && typeof r.cost_usd === "number" ? el("span", { text: `$${r.cost_usd.toFixed(2)}` }) : null,
-        r.wake_reason ? el("span", { text: reason(r.wake_reason) }) : null,
+        wakeList(r).length ? el("span", { text: reason(wakeList(r)) }) : null,
       ]));
     }
     strip.textContent = "";
@@ -1513,7 +1527,7 @@ class StreamPage {
     // it the agent speaks (its summary), then its receipts.
     const titles = (this.siteText && this.siteText.wake_reasons) || {};
     const reason = answering
-      || (run.wake_reason ? (titles[run.wake_reason] || String(run.wake_reason).replace(/_/g, " ")) : "Turn");
+      || (wakeList(run).length ? wakeTitle(run, titles) : "Turn");
     const day = items.find((i) => i.game_date);
     const title = el("div", { class: "fturntitle" }, [
       el("div", { class: "fttrow" }, [
@@ -2427,7 +2441,7 @@ class SitePage {
     if (!mine.length) return el("div", { class: "box" }, [el("div", { class: "faint", text: "No reported turns yet." })]);
     const norm = (t) => String(t || "").replace(/\s+/g, " ").trim();
     return el("div", { class: "box" }, mine.map((run) => {
-      const reason = run.wake_reason ? (titles[run.wake_reason] || String(run.wake_reason).replace(/_/g, " ")) : "Turn";
+      const reason = wakeList(run).length ? wakeTitle(run, titles) : "Turn";
       const report = run.report && norm(run.report) !== norm(run.summary) ? run.report : null;
       return el("div", { class: "turnentry" }, [
         el("div", { class: "fttrow" }, [
@@ -2479,7 +2493,7 @@ class SitePage {
     const mine = ((this.fortRuns && this.fortRuns.runs) || []).filter((r) => r.role === role && r.run_id && r.transcript && r.transcript.available);
     if (!mine.length) return el("div", { class: "box" }, [el("div", { class: "faint", text: "No transcripts kept yet. Only recent turns have one." })]);
     return el("div", { class: "box ftxlist" }, mine.map((run) => {
-      const reason = run.wake_reason ? (titles[run.wake_reason] || String(run.wake_reason).replace(/_/g, " ")) : "Turn";
+      const reason = wakeList(run).length ? wakeTitle(run, titles) : "Turn";
       const size = run.transcript.size ? `${Math.max(1, Math.round(run.transcript.size / 1024))} KB` : null;
       const held = run.transcript.withheld_count ? `${run.transcript.withheld_count} withheld` : null;
       const label = [reason.charAt(0).toUpperCase() + reason.slice(1), run.started_at ? String(run.started_at).slice(0, 10) : null, size, held].filter(Boolean).join(" · ");
