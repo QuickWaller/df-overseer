@@ -43,4 +43,12 @@ and `dfmcp/tests` in `.venv-dfmcp` green.
 
 ## Result
 
-(executor fills this in, with deploy targets)
+Done, offline, nothing deployed.
+
+- **Publisher** (`scripts/stream_publisher.py`): `metrics.json` (`wake_metrics.compute` over the live queue and runs DBs, read-only) written to `forts/<fort>/metrics.json` on both sides, same staging and rsync path. Cadence as data: `metrics_interval_seconds` (default 3600, `STREAM_PUBLISHER_METRICS_SECONDS` or `--metrics-interval`, 0 = every cycle); between recomputes the staged file is reused (`cursor.metrics_last`). Folded into the change hash minus `generated_at`. A compute failure never stops a cycle. No run store, no file. `dfqueue/live.py` needed no change.
+- **Board** (`web/stream/app.js`, `style.css`): a Metrics nav tab (`#metrics`), one screen. Left pane scrolls: repeats per day (stacked bars: defers, duplicates, M1-struct proposals, labelled approximate), rounds per wake, cost per wake, pass rate (lines per role, hollow points where a day has under 3 wakes). Right pane: role tabs and the tool list sorted by calls, then never-called. Every card says how many wakes it rests on and says "Thin" under 10. Epochs are dashed verticals (start = first day an epoch appears in the per-wake rows). Inline SVG, no library. Asset version bumped 64 to 65 in `index.html` and `operator.html`.
+- **Preview**: `scripts/preview_stream_live.py` writes a real `compute` report over the committed window fixture as `metrics.json`.
+- **Extra (coordinator's request)**: the who-is-awake strip now stacks one row per awake role (pause row first, about 5 rows then inner scroll, reason ellipsised); single-role and "Last run" look unchanged. Separate commit; node test `test_two_awake_roles_render_as_two_rows_one_line_each` in `dfqueue/tests/test_live_pause_strip.py`.
+- **Tests**: `tests/test_stream_publisher_metrics.py` (6: both sides written, schema keys and safe strings, no store, cadence, failure isolation, no push on generated_at alone, env/flag), `dfqueue/tests/test_site_js_metrics.py` (6 node tests). Ambient suite 3522 passed, 3 skipped (run before the strip commit; dfqueue tests re-run after: 712 passed); `dfmcp/tests` in `.venv-dfmcp`: 970 passed.
+- **Not checked**: layout in a real browser (only node DOM stubs); judge it with `python scripts/preview_stream_live.py` then `#metrics`.
+- **Deploy targets**: publisher host (`scripts/stream_publisher.py`, `dfqueue/` already there) and the web relay (`web/stream/`: app.js, style.css, index.html, operator.html). Metrics only appear once the publisher can see the runs DB.
