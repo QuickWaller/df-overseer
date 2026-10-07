@@ -265,11 +265,11 @@ class TestAllowlistsForStageOne:
     def _roster(self):
         from dfmcp.registry import load_registry
         from dfmcp.roles import load_roster
-        from dfmcp import conductor_tools, doctrine_tools, gotchas_tools, knowledge_tools, series_tools
+        from dfmcp import conductor_tools, plan_tools, doctrine_tools, gotchas_tools, knowledge_tools, series_tools
 
         native = {
             **queue_tools.NATIVE_TOOLS, **doctrine_tools.NATIVE_TOOLS, **series_tools.NATIVE_TOOLS,
-            **gotchas_tools.NATIVE_TOOLS, **knowledge_tools.NATIVE_TOOLS, **conductor_tools.NATIVE_TOOLS,
+            **gotchas_tools.NATIVE_TOOLS, **knowledge_tools.NATIVE_TOOLS, **conductor_tools.NATIVE_TOOLS, **plan_tools.NATIVE_TOOLS,
         }
         return load_roster(load_registry(native_tools=native))
 

@@ -17,7 +17,7 @@ from pathlib import Path
 import pytest
 import yaml
 
-from dfmcp import conductor_tools, doctrine_tools, executor_filing, executor_run, gotchas_tools
+from dfmcp import conductor_tools, plan_tools, doctrine_tools, executor_filing, executor_run, gotchas_tools
 from dfmcp import executor_tools as et
 from dfmcp import knowledge_tools, queue_tools, series_tools
 from dfmcp.executor_run import CallFailed, CallNotSent, CallOutcomeUnknown, ExecEnv
@@ -175,7 +175,7 @@ def set_routing(monkeypatch, tmp_path, **flags):
 def registry():
     return load_registry(native_tools={
         **queue_tools.NATIVE_TOOLS, **doctrine_tools.NATIVE_TOOLS, **series_tools.NATIVE_TOOLS,
-        **gotchas_tools.NATIVE_TOOLS, **knowledge_tools.NATIVE_TOOLS, **conductor_tools.NATIVE_TOOLS,
+        **gotchas_tools.NATIVE_TOOLS, **knowledge_tools.NATIVE_TOOLS, **conductor_tools.NATIVE_TOOLS, **plan_tools.NATIVE_TOOLS,
     })
 
 

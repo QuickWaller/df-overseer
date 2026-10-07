@@ -55,10 +55,11 @@ from typing import Iterator
 
 from learning.predictions.schema import PENDING
 
-from . import routing
+from . import plan, routing
 from .schema import (
     ABANDON, ABANDONED, ACCEPT, AMEND, ANSWER, ASK, CLOSE, CLOSE_COMPLETED,
-    CLOSE_NOT_DONE, DONE, EXECUTED, FAILED, GUARDS_DEFAULT, HELD, ISSUED,
+    CLOSE_NOT_DONE, DONE, EXECUTED, FAILED, FORT_PLAN, GUARDS_DEFAULT, HELD, ISSUED,
+    PLAN_CHANGE, PLAN_ROLE,
     OBSERVATION, OBS_CONSISTENT, OBSERVATION_ROLE, PROJECT, PROPOSAL,
     PUBLIC_RATIONALE_MAX, READY, REJECT, RULING, SUCCESS, FAILURE,
     TRIGGER_ALL_DONE, TRIGGER_ALL_SUCCESS, WAITING, ask_addressee, executor, fort_name,
@@ -443,8 +444,13 @@ def _find_duplicate_proposal(conn: sqlite3.Connection, record: dict) -> tuple[st
         "ORDER BY r.ts ASC, r.rowid ASC",
         (PROPOSAL, record.get("type"), RULING, *FINAL_DECISIONS),
     ).fetchall()
+    mine = set(record.get("serves") or [])
     for row in rows:
         existing = json.loads(row["payload"])
+        if mine and mine & set(existing.get("serves") or []):
+            # Parallel proposals serving the same plan target are the point
+            # of a target with room for more than one in flight (design 2.5).
+            continue
         reason = near_duplicate_reason(record, existing)
         if reason:
             return row["id"], reason
@@ -917,9 +923,14 @@ def _append_in_conn(
                     "one answer, no threads"
                 )
 
+    if kind == FORT_PLAN and not errors:
+        _check_fort_plan(conn, errors, record, game_tick)
+
     duplicate_reason: str | None = None
     if kind == PROPOSAL:
         _check_proposal_routing(conn, errors, record)
+        _check_serves(conn, errors, record)
+        _check_plan_change_rate(conn, errors, record, game_tick)
         if isinstance(game_tick, bool) or not isinstance(game_tick, int):
             errors.append(
                 "game_tick: a proposal must be appended with an integer "
@@ -981,6 +992,14 @@ def _append_in_conn(
             _seed_step_targets(conn, record["project_id"], record.get("steps", []))
         elif kind == OBSERVATION:
             _apply_observation(conn, record)
+        elif kind == FORT_PLAN and record.get("ruling_id"):
+            # The accepted plan_change this version cites is spent: closed
+            # `completed` by the store (design F-9), so it is neither the
+            # Overseer's to-do nor citable twice.
+            _close_conn(
+                conn, "ruling_id", record["ruling_id"], CLOSE_COMPLETED,
+                f"filed as plan version {record['version']}", None, record["cycle"], record["snapshot"],
+            )
 
     if duplicate_reason is not None:
         # The reason is reported to the caller of THIS append() so the
@@ -1539,6 +1558,8 @@ def unexecuted_accepted_proposals(path: str | Path) -> list[dict]:
         proposal = json.loads(r["proposal_payload"])
         if routing.is_routed(proposal.get("type")):
             continue
+        if routing.is_ruling_only(proposal.get("type")):
+            continue  # nothing executes it (design F-9); see `plan_changes_awaiting`
         if proposal.get("project_id") is not None:
             continue  # a follow-up: its step is the parent project's
         out.append({"proposal": proposal, "ruling_id": r["ruling_id"]})
@@ -1903,6 +1924,261 @@ def _check_proposal_routing(conn, errors: list[str], record: dict) -> None:
                     )
     elif "covered_by" in record and not follow:
         pass  # the schema already refused it
+
+
+# ---- the fort plan (handoffs/2026-10-07-planner-p1a.md) ---------------------------
+
+
+def _active_plan_conn(conn: sqlite3.Connection) -> dict | None:
+    row = conn.execute(
+        "SELECT payload FROM records WHERE kind = ? ORDER BY rowid DESC LIMIT 1", (FORT_PLAN,)
+    ).fetchone()
+    return json.loads(row["payload"]) if row is not None else None
+
+
+def _plan_base_sections(active: dict | None) -> dict:
+    """The sections a new version is diffed against: the active version's, or
+    `plans/default-v1.yaml` for version 1."""
+    src = active if active is not None else plan.default_plan()
+    return {s: list(src.get(s) or []) for s in plan.policy()["open_sections"]}
+
+
+def _check_fort_plan(conn, errors: list[str], record: dict, game_tick) -> None:
+    """The stateful checks on a `fort_plan` (design 2.1, 2.4): the base
+    version (optimistic concurrency, so a retry after a timeout is safe), the
+    stamped season, the server-computed diff, the season interval and the
+    cited ruling. Content mistakes are never an error here: they are flags
+    (`dfqueue/plan.py`)."""
+    active = _active_plan_conn(conn)
+    expected = 1 if active is None else int(active["version"]) + 1
+    if record["version"] != expected:
+        errors.append(
+            f"record.version: the active plan is "
+            f"{'version ' + str(active['version']) if active else 'absent'}, so the next version "
+            f"is {expected}, got {record['version']} (a stale base; re-read plan.read and file "
+            "against the active version)"
+        )
+    if (active["id"] if active else None) != record.get("supersedes"):
+        errors.append(
+            f"record.supersedes: must be the active version's id "
+            f"({active['id'] if active else None!r}), got {record.get('supersedes')!r}"
+        )
+    if isinstance(game_tick, bool) or not isinstance(game_tick, int):
+        errors.append("game_tick: a fort_plan must be appended with an integer game_tick (its season)")
+        return
+    if record["season_index"] != plan.season_index(game_tick):
+        errors.append(
+            f"record.season_index: {record['season_index']} is not the season of tick {game_tick} "
+            f"({plan.season_index(game_tick)}); the server stamps it"
+        )
+    new_sections = {s: list(record.get(s) or []) for s in plan.policy()["open_sections"]}
+    changes = plan.diff_changes(_plan_base_sections(active), new_sections)
+    if record.get("changes") != changes:
+        errors.append("record.changes: server-computed; it does not match the diff against the base")
+    if active is not None and not changes:
+        errors.append("record: nothing changes against the active version; there is nothing to file")
+
+    rid = record.get("ruling_id")
+    ruling_ok = False
+    if rid:
+        problem = _plan_ruling_problem(conn, rid)
+        if problem:
+            errors.append(f"record.ruling_id: {problem}")
+        else:
+            ruling_ok = True
+    verdict = plan.guardrail(active, game_tick, changes, rid if ruling_ok else None)
+    if not verdict["ok"]:
+        errors.append("record: " + verdict["refusal"])
+
+
+def _plan_ruling_problem(conn, rid: str) -> str | None:
+    """Why `rid` cannot authorise a mid-season plan version, or `None` when it
+    can: an accepting ruling on a Planner `plan_change`, not yet cited by a
+    version and not closed (it authorises exactly one)."""
+    ruling = _get(conn, rid, RULING)
+    prop = _get(conn, ruling["proposal_id"], PROPOSAL) if ruling else None
+    if ruling is None:
+        return f"{rid!r} does not refer to an existing ruling"
+    if ruling.get("decision") != ACCEPT:
+        return f"{rid!r} is not an accepting ruling"
+    if prop is None or prop.get("type") != PLAN_CHANGE or prop.get("role") != PLAN_ROLE:
+        return f"{rid!r} is not a ruling on a {PLAN_CHANGE} proposal"
+    if conn.execute(
+        "SELECT 1 FROM records WHERE kind = ? AND json_extract(payload, '$.ruling_id') = ?",
+        (FORT_PLAN, rid),
+    ).fetchone() is not None:
+        return f"{rid!r} already authorised a plan version; it authorises one"
+    if _is_closed(conn, "ruling_id", rid):
+        return f"{rid!r} is closed"
+    return None
+
+
+def plan_ruling_problem(path: str | Path, rid: str) -> str | None:
+    """Read-only `_plan_ruling_problem`, for a dry run."""
+    with _connect(path) as conn:
+        return _plan_ruling_problem(conn, rid)
+
+
+def _check_serves(conn, errors: list[str], record: dict) -> None:
+    """`serves` (design 2.5): every id names a target of the active plan, and
+    the proposer owns the target or one of its derived inputs (F-1)."""
+    if "serves" not in record or any(e.startswith("record.serves") for e in errors):
+        return
+    active = _active_plan_conn(conn)
+    if active is None:
+        errors.append("record.serves: there is no active plan yet, so no target to serve")
+        return
+    by_id = {t.get("id"): t for t in active.get("targets") or [] if isinstance(t, dict)}
+    for tid in record["serves"]:
+        t = by_id.get(tid)
+        if t is None:
+            errors.append(
+                f"record.serves: {tid!r} is not a target of plan version {active['version']} "
+                f"(targets: {sorted(i for i in by_id if isinstance(i, str))})"
+            )
+        elif not plan.may_serve(t, record.get("role")):
+            errors.append(
+                f"record.serves: {record.get('role')!r} may not serve {tid!r}; only its owner "
+                f"({t.get('owner')!r}) or the owner of one of its derived inputs may"
+            )
+
+
+def _check_plan_change_rate(conn, errors: list[str], record: dict, game_tick) -> None:
+    """The server rate-limits `plan_change` requests (design Q2): a cooldown
+    between requests and a cap per season index, policy data. A rejected
+    request still counts. A tick that went backwards (a reload) is elapsed."""
+    if record.get("type") != PLAN_CHANGE or isinstance(game_tick, bool) or not isinstance(game_tick, int):
+        return
+    pol = plan.policy()["plan_change"]
+    ticks = [
+        r["cycle"] for r in conn.execute(
+            "SELECT cycle FROM records WHERE kind = ? AND type = ?", (PROPOSAL, PLAN_CHANGE)
+        ).fetchall()
+    ]
+    if not ticks:
+        return
+    since = game_tick - max(ticks)
+    if 0 <= since < pol["cooldown_ticks"]:
+        errors.append(
+            f"record.type: a {PLAN_CHANGE} was requested {since} ticks ago; the cooldown is "
+            f"{pol['cooldown_ticks']} ticks (ask again after tick {max(ticks) + pol['cooldown_ticks']})"
+        )
+    season = plan.season_index(game_tick)
+    in_season = sum(1 for t in ticks if plan.season_index(t) == season)
+    if in_season >= pol["per_season_cap"]:
+        errors.append(
+            f"record.type: season {season} already has {in_season} {PLAN_CHANGE} requests "
+            f"(the cap is {pol['per_season_cap']}); wait for the next season or the ruling on one"
+        )
+
+
+def active_plan(path: str | Path) -> dict | None:
+    """The latest `fort_plan`, or `None` before version 1."""
+    with _connect(path) as conn:
+        return _active_plan_conn(conn)
+
+
+def plan_version(path: str | Path, version: int) -> dict | None:
+    with _connect(path) as conn:
+        row = conn.execute(
+            "SELECT payload FROM records WHERE kind = ? AND json_extract(payload, '$.version') = ?",
+            (FORT_PLAN, version),
+        ).fetchone()
+    return json.loads(row["payload"]) if row is not None else None
+
+
+def plan_history(path: str | Path, n: int) -> list[dict]:
+    """The last `n` plan versions, newest first."""
+    with _connect(path) as conn:
+        rows = conn.execute(
+            "SELECT payload FROM records WHERE kind = ? ORDER BY rowid DESC LIMIT ?", (FORT_PLAN, n)
+        ).fetchall()
+    return [json.loads(r["payload"]) for r in rows]
+
+
+def plan_changes_awaiting(path: str | Path) -> list[dict]:
+    """Accepted `plan_change` proposals no plan version has cited yet: the
+    Planner's to do, never the Overseer's (design F-9). `{proposal, ruling_id}`,
+    oldest first."""
+    with _connect(path) as conn:
+        rows = conn.execute(
+            "SELECT p.payload AS pp, rl.id AS rid FROM records p "
+            "JOIN records rl ON rl.kind = ? AND rl.proposal_id = p.id "
+            "AND json_extract(rl.payload, '$.decision') = ? "
+            "WHERE p.kind = ? AND p.type = ? AND NOT EXISTS ("
+            "SELECT 1 FROM records f WHERE f.kind = ? AND json_extract(f.payload, '$.ruling_id') = rl.id"
+            ") AND NOT EXISTS (SELECT 1 FROM records c WHERE c.kind = ? AND "
+            "json_extract(c.payload, '$.ruling_id') = rl.id) ORDER BY p.rowid ASC",
+            (RULING, ACCEPT, PROPOSAL, PLAN_CHANGE, FORT_PLAN, CLOSE),
+        ).fetchall()
+    return [{"proposal": json.loads(r["pp"]), "ruling_id": r["rid"]} for r in rows]
+
+
+_PLAN_REVIEWED_KEY = "plan:last_reviewed_tick"
+
+
+def mark_plan_reviewed(path: str | Path, tick: int) -> None:
+    """Record that the Planner reviewed the plan at `tick` and filed nothing
+    (a review that ends in `queue.pass`), so a pass is visible (design 2.4)."""
+    with _connect(path) as conn:
+        with conn:
+            conn.execute(
+                "INSERT INTO meta (key, value) VALUES (?, ?) "
+                "ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+                (_PLAN_REVIEWED_KEY, str(int(tick))),
+            )
+
+
+def plan_last_reviewed_tick(path: str | Path) -> int | None:
+    """The later of the last explicit review (`mark_plan_reviewed`) and the
+    tick of the active version, or `None` with no plan and no review."""
+    with _connect(path) as conn:
+        row = conn.execute("SELECT value FROM meta WHERE key = ?", (_PLAN_REVIEWED_KEY,)).fetchone()
+        active = _active_plan_conn(conn)
+    ticks = []
+    if row is not None:
+        ticks.append(int(row["value"]))
+    if active is not None:
+        ticks.append(int(active["cycle"]))
+    return max(ticks) if ticks else None
+
+
+def serving_work(path: str | Path) -> dict:
+    """In-flight work per plan target id: `{target_id: [{proposal_id, type,
+    role, state}]}`. A root proposal (not a follow-up) naming the target in
+    `serves` is in flight while it is **pending** (no final ruling),
+    **accepted** (ruled, no project yet) or **building** (its project is
+    open, `open_projects`); rejected, closed, abandoned and finished work is
+    not. Follow-ups join their project and are not counted again."""
+    open_ids = {o["project_id"] for o in open_projects(path)}
+    out: dict = {}
+    with _connect(path) as conn:
+        rows = conn.execute(
+            "SELECT id, payload FROM records WHERE kind = ? "
+            "AND json_extract(payload, '$.serves') IS NOT NULL ORDER BY rowid ASC", (PROPOSAL,)
+        ).fetchall()
+        for row in rows:
+            p = json.loads(row["payload"])
+            if p.get("project_id") is not None or _is_closed(conn, "proposal_id", row["id"]):
+                continue
+            if not _has_final_ruling(conn, row["id"]):
+                state = "pending"
+            else:
+                accepting = _accepting_ruling(conn, row["id"])
+                if accepting is None or _is_closed(conn, "ruling_id", accepting["id"]):
+                    continue
+                proj = _find_project_for_ruling(conn, accepting["id"])
+                if proj is None:
+                    state = "accepted"
+                elif proj["id"] in open_ids:
+                    state = "building"
+                else:
+                    continue
+            for tid in p.get("serves") or []:
+                out.setdefault(tid, []).append({
+                    "proposal_id": row["id"], "type": p.get("type"), "role": p.get("role"), "state": state,
+                })
+    return out
 
 
 # ---- cutovers (meta table) ------------------------------------------------------

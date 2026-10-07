@@ -50,6 +50,11 @@ plan_change:
   cooldown_ticks: 12000
   per_season_cap: 2
 
+# Per-owner ceiling on in-flight plan work (design F-7), so an owner's WIP
+# slot is never all plan work. `plan.status` reports usage against it; the
+# shortfall watch (P1b) enforces it.
+in_flight_per_owner: 2
+
 # `plan.read` history length (design F-20).
 history_lines: 8
 

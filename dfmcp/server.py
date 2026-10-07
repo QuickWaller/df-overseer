@@ -128,7 +128,7 @@ from .dfhack_client import (
     DFHackNotSentError,
     DFHackProtocolError,
 )
-from . import conductor_tools, doctrine_tools, executor_filing, executor_run, executor_tools, gotchas_store, gotchas_tools, knowledge_tools, labor_join, queue_tools, series_tools
+from . import conductor_tools, doctrine_tools, executor_filing, executor_run, executor_tools, gotchas_store, gotchas_tools, knowledge_tools, labor_join, plan_tools, queue_tools, series_tools
 from .confidence import DEFAULT_CONFIDENCE_PATH, ConfidenceConfig, load_confidence
 from .registry import Registry, load_registry
 from .roles import Roster, load_roster
@@ -681,6 +681,12 @@ def build_mcp_server(
                         write_lock=queue_write_lock, fact_reader=_read_fact,
                         step_checker=_check_step_filing,
                     )
+                elif tool_id in plan_tools.NATIVE_TOOL_IDS:
+                    text, structured = await plan_tools.call(
+                        tool_id, role, params.arguments or {},
+                        db_path=queue_db_path, call_dfhack=_call_dfhack,
+                        write_lock=queue_write_lock, fact_reader=_read_fact,
+                    )
                 elif tool_id in executor_tools.NATIVE_TOOL_IDS:
                     text, structured = await executor_tools.call(
                         tool_id, role, params.arguments or {},
@@ -969,6 +975,7 @@ def main() -> None:
     registry = load_registry(native_tools={
         **queue_tools.NATIVE_TOOLS, **doctrine_tools.NATIVE_TOOLS, **series_tools.NATIVE_TOOLS,
         **gotchas_tools.NATIVE_TOOLS, **knowledge_tools.NATIVE_TOOLS, **conductor_tools.NATIVE_TOOLS,
+        **plan_tools.NATIVE_TOOLS,
     })
     roster = load_roster(registry)
     tokens = load_role_tokens(roster)
