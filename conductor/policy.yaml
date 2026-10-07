@@ -291,7 +291,7 @@ threshold_alerts:
   # Architect via lane_triggers.architect.alerts; it does not count work in
   # flight, so the Architect reads queue.project_status before filing.
   - name: bedrooms_per_citizen
-    read: {tool: zone.list, args: {KIND_FILTER: "", OWNER_FILTER: "", VALID_FILTER: "", NEAR_LANDMARK_FILTER: ""}, field: counts_by_kind.Bedroom}
+    read: {tool: zone.list, args: {kind_filter: "", owner_filter: "", valid_filter: "", near_landmark_filter: ""}, field: counts_by_kind.Bedroom}
     per: alive
     below: 1
     missing_leaf: 0

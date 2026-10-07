@@ -257,7 +257,7 @@ def test_shipped_bedroom_alert_is_policy_data_with_a_missing_default():
     (alert,) = [a for a in policy.threshold_alerts if a.name == "bedrooms_per_citizen"]
     assert (alert.tool, alert.field, alert.per, alert.below, alert.missing_leaf) == (
         "zone.list", "counts_by_kind.Bedroom", "alive", 1.0, 0.0)
-    assert dict(alert.args) == {"KIND_FILTER": "", "OWNER_FILTER": "", "VALID_FILTER": "", "NEAR_LANDMARK_FILTER": ""}
+    assert dict(alert.args) == {"kind_filter": "", "owner_filter": "", "valid_filter": "", "near_landmark_filter": ""}
     assert "bedrooms_per_citizen" in policy.lane_triggers["architect"].alerts
 
 
