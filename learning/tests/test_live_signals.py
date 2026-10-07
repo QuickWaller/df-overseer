@@ -445,3 +445,68 @@ def test_read_stocks_availability_units():
 def test_read_stocks_availability_units_unresolvable_for_an_unknown_type():
     parsed = parse('stocks.availability."NOT_A_REAL_TYPE".available_units')
     assert read(parsed, _call_tool) is UNRESOLVABLE
+
+
+# ---- the zones."KIND".* family (handoffs/2026-10-07-planner-p1a.md) -------------
+#
+# Shapes: zone.list-kinds is a bare list of rows with a `token`; zone.list with
+# every filter empty answers a summary with `counts_by_kind`. `furnished_by_kind`
+# and `furniture_counts_by_kind` are the field names the later Lua read will
+# carry; until then the signals that need them read UNRESOLVABLE.
+
+ZONE_KINDS = [{"token": "Bedroom"}, {"token": "DiningHall"}, {"token": "Office"}]
+
+
+def _zones(summary, kinds=ZONE_KINDS):
+    def call(tool_id, arguments):
+        if tool_id == "zone.list-kinds":
+            return kinds
+        assert tool_id == "zone.list"
+        assert set(arguments.values()) == {""}, "the summary read takes every filter empty"
+        return summary
+    return call
+
+
+def test_parse_zones_signals():
+    p = parse('zones."Bedroom".count')
+    assert (p.zone_kind, p.furniture, p.value_type) == ("Bedroom", None, INTEGER)
+    assert parse('zones."Bedroom".furnished').zone_kind == "Bedroom"
+    p = parse('zones."DiningHall".furniture."Chair"')
+    assert (p.zone_kind, p.furniture) == ("DiningHall", "Chair")
+    for bad in ('zones.Bedroom.count', 'zones."Bedroom"', 'zones."Bedroom".size', 'zones."A".furniture'):
+        with pytest.raises(SignalError):
+            parse(bad)
+
+
+def test_zones_count_reads_the_summary_and_a_missing_kind_is_zero():
+    call = _zones({"summary": True, "counts_by_kind": {"Office": 2}})
+    assert read(parse('zones."Office".count'), call) == 2
+    assert read(parse('zones."Bedroom".count'), call) == 0     # a real kind with no zone yet
+
+
+def test_a_kind_the_game_lacks_is_unresolvable_never_zero():
+    call = _zones({"counts_by_kind": {}})
+    assert read(parse('zones."Bedrom".count'), call) is UNRESOLVABLE
+    assert read(parse('zones."Bedrom".furnished'), call) is UNRESOLVABLE
+
+
+def test_an_unreadable_kind_list_or_a_failed_zone_list_is_unresolvable():
+    assert read(parse('zones."Bedroom".count'), _zones({"counts_by_kind": {}}, kinds={"error": "x"})) is UNRESOLVABLE
+    assert read(parse('zones."Bedroom".count'), _zones({"error": "boom"})) is UNRESOLVABLE
+    assert read(parse('zones."Bedroom".count'), _zones({"summary": True})) is UNRESOLVABLE
+
+
+def test_furnished_and_furniture_read_their_fields_or_are_unresolvable_until_they_exist():
+    bare = _zones({"counts_by_kind": {"Bedroom": 9}})
+    assert read(parse('zones."Bedroom".furnished'), bare) is UNRESOLVABLE
+    assert read(parse('zones."DiningHall".furniture."Chair"'), bare) is UNRESOLVABLE
+    full = _zones({
+        "counts_by_kind": {"Bedroom": 9},
+        "furnished_by_kind": {"Bedroom": 7},
+        "furniture_counts_by_kind": {"DiningHall": {"Chair": 4}},
+    })
+    assert read(parse('zones."Bedroom".furnished'), full) == 7
+    assert read(parse('zones."Office".furnished'), full) == 0
+    assert read(parse('zones."DiningHall".furniture."Chair"'), full) == 4
+    assert read(parse('zones."DiningHall".furniture."Table"'), full) == 0
+    assert read(parse('zones."Office".furniture."Chair"'), full) == 0

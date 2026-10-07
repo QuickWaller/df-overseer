@@ -28,7 +28,7 @@ write_authority: none  # no fort-mutating tool; plan.write and queue.* write onl
 read:
   - id: "overview.get"
     status: exists
-    note: Situational context: population, alerts, in-game date.
+    note: Situational context (population, alerts, in-game date).
   - id: "vitals.summary"
     status: exists
     note: >-
