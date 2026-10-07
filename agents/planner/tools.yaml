@@ -1,0 +1,101 @@
+# Planner tool allowlist: 12 tools at stage P1 (research/2026-10-07-planner-design.md
+# section 8: 12 at P1, 14 at P2, 17 at P3; revision 1 had 22).
+#
+# Ids are the canonical scheme resolved against scripts/dfhack/TOOLS.yaml by
+# dfmcp/registry.py (native ids from dfmcp/plan_tools.py and dfmcp/queue_tools.py
+# are merged in): see dfmcp/README.md.
+#
+# **The role is `enabled: false` in agents/ROSTER.yaml until stage P1b**, so
+# dfmcp/roles.py does not load this file yet; dfmcp/tests/test_planner_role.py
+# loads it against a roster copy with the role enabled and pins the count.
+#
+# The Planner holds no mutating tool (dfmcp/roles.py rule 2): its one write
+# that matters is `plan.write`, a write to dfqueue's own ledger, never to the
+# fort. It decides what the fort needs; every physical change is somebody
+# else's proposal, ruled by the Overseer and run by the conductor.
+#
+# Why this short: the more, narrower agents principle (design section 7). The
+# digest and the plan slice are in its briefing, so a review is a few reads to
+# check a doubt, an optional ask, a plan.write dry run and the real write, or a
+# pass with a reason. Dropped from revision 1: blueprint.plan (no `provides`
+# there), landmarks.get, stockpile.* (Logistics'), orders.list and
+# workjob.list-jobs (the Quartermaster's).
+
+schema_version: 1
+role: planner
+write_authority: none  # no fort-mutating tool; plan.write and queue.* write only to dfqueue's own ledger
+
+read:
+  - id: "overview.get"
+    status: exists
+    note: Situational context (population, alerts, in-game date).
+  - id: "vitals.summary"
+    status: exists
+    note: >-
+      Alive and dead counts. A per-citizen target divides by alive, so this is
+      the number every such target is measured against.
+  - id: "zone.list"
+    status: exists
+    note: >-
+      Every zone the fort has, summarised by kind (counts_by_kind). The
+      zones."KIND" signals a target names read this tool; read it yourself to
+      check a doubt about a count.
+  - id: "zone.list-kinds"
+    status: exists
+    note: >-
+      Every zone kind the game can place, by token. A target's signal must name
+      one of these tokens exactly; plan.write flags a typo and names the
+      nearest token, but this is where to look first.
+  - id: "nobles.requirements"
+    status: exists
+    note: >-
+      Per position, which room-value and furniture requirements are met, not
+      met, or cannot be told. A noble's room is a capacity the plan may need to
+      name.
+  - id: "blueprint.sites"
+    status: exists
+    note: >-
+      The sites already reserved or built (handle, purpose, footprint, nearest
+      landmark). What the fort already has, before the plan asks for more.
+  - id: "queue.project_status"
+    status: exists
+    note: >-
+      One line per project: what is already in flight toward a target, so a
+      plan does not ask for what is being built.
+  - id: "plan.read"
+    status: exists
+    note: >-
+      The active plan (or a named version), one section, the last 8 version
+      lines, and with status=true each target's computed position. The whole
+      plan, not a slice.
+
+write:
+  - id: "plan.write"
+    status: exists
+    note: >-
+      File a new plan version: base_version plus only the sections you change.
+      Mistakes are accepted and flagged, not refused; use dry_run first.
+  - id: "queue.propose"
+    status: exists
+    note: >-
+      Only a `plan_change` (dfqueue.schema.TYPE_VOCAB_BY_ROLE["planner"]): a
+      request to revise the plan inside a season, ruled by the Overseer. The
+      server rate-limits these.
+  - id: "queue.pass"
+    status: exists
+    note: >-
+      A review with nothing to change, recorded with a reason. The server notes
+      the review tick beside the active version.
+  - id: "queue.ask"
+    status: exists
+    note: >-
+      A lookup question to the Consultant when a fact about game mechanics,
+      not this fort's state, would change a target.
+
+deny:
+  - id: "doctrine.get"
+    reason: >-
+      Withheld for every proposer until a citation field exists
+      (agents/architect/tools.yaml deny note).
+  - id: "ui.*"
+    reason: Embark bootstrap only. No role should use this in steady-state play.

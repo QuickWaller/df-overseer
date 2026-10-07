@@ -22,12 +22,16 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Iterator, Mapping, Optional
 
-RUN_ROLES = ("architect", "overseer", "quartermaster", "consultant")
+RUN_ROLES = ("architect", "overseer", "quartermaster", "consultant", "planner")
 
 FINAL_ANSWER_MAX = 4000
 #: The conductor already caps reasoning at 12,000 characters (start and end
 #: kept, conductor/runner.py cap_thinking); this is the store's own backstop.
 THINKING_MAX = 12500
+#: The run's full transcript, a JSON string the conductor already capped (policy
+#: `transcript:` block). Truncating JSON would corrupt it, so an over-cap one is
+#: dropped whole (stored NULL), never cut.
+TRANSCRIPT_MAX = 70000
 WAKE_REASON_MAX = 64
 WAKE_DETAIL_MAX = 300
 ERROR_MAX = 500
@@ -53,7 +57,8 @@ CREATE TABLE IF NOT EXISTS runs (
     error TEXT,
     final_answer TEXT,
     records_json TEXT,
-    thinking TEXT
+    thinking TEXT,
+    transcript TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_runs_started ON runs(started_at);
 """
@@ -81,6 +86,8 @@ def _connect(path: "str | Path") -> Iterator[sqlite3.Connection]:
         cols = {r[1] for r in conn.execute("PRAGMA table_info(runs)")}
         if "thinking" not in cols:  # stores made before 2026-10-05
             conn.execute("ALTER TABLE runs ADD COLUMN thinking TEXT")
+        if "transcript" not in cols:  # stores made before 2026-10-07
+            conn.execute("ALTER TABLE runs ADD COLUMN transcript TEXT")
         yield conn
     finally:
         conn.close()
@@ -88,6 +95,14 @@ def _connect(path: "str | Path") -> Iterator[sqlite3.Connection]:
 
 def _now() -> datetime:
     return datetime.now(timezone.utc)
+
+
+def _whole_or_none(text: Any, limit: int) -> Optional[str]:
+    """`text` whole, or None when absent or over `limit` (never truncated)."""
+    if text is None:
+        return None
+    s = str(text)
+    return s if len(s) <= limit else None
 
 
 def _cap(text: Any, limit: int, *, marker: bool = False) -> Optional[str]:
@@ -148,7 +163,7 @@ def end_run(
     status: Optional[str], ok: Optional[bool], timed_out: Optional[bool],
     duration_s: Optional[float], cost_usd: Optional[float], error: Optional[str],
     final_answer: Optional[str], records: list, now: Optional[datetime] = None,
-    thinking: Optional[str] = None,
+    thinking: Optional[str] = None, transcript: Optional[str] = None,
 ) -> dict:
     """Completes `run_id`, or, when it is None (the start call failed),
     creates the row from `role` and backdates `started_at` by `duration_s`."""
@@ -173,14 +188,15 @@ def end_run(
             )
         conn.execute(
             "UPDATE runs SET ended_at=?, status=?, ok=?, timed_out=?, duration_s=?, cost_usd=?, "
-            "error=?, final_answer=?, records_json=?, thinking=? WHERE run_id=?",
+            "error=?, final_answer=?, records_json=?, thinking=?, transcript=? WHERE run_id=?",
             (now.isoformat(), _cap(status, STATUS_MAX),
              None if ok is None else int(bool(ok)),
              None if timed_out is None else int(bool(timed_out)),
              duration_s, cost_usd, _cap(error, ERROR_MAX),
              _cap(final_answer, FINAL_ANSWER_MAX, marker=True),
              json.dumps(records[:RECORDS_MAX]),
-             _cap(thinking, THINKING_MAX, marker=True), run_id),
+             _cap(thinking, THINKING_MAX, marker=True), _whole_or_none(transcript, TRANSCRIPT_MAX),
+             run_id),
         )
         conn.execute(
             "DELETE FROM runs WHERE run_id NOT IN "

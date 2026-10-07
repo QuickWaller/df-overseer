@@ -770,3 +770,18 @@ a { color: var(--accent); }
 .chip.completed { background: var(--st-ok); color: #000; }
 .chip.closed { background: #666666; color: #eee; }
 .fstatusline.st-closed { color: #999; }
+
+/* Full proposal and run transcripts (handoffs/2026-10-07-transcripts-and-
+   full-proposals.md): collapsed by default, inner panes scroll. */
+.ffullbody { display: flex; flex-direction: column; gap: 6px; }
+.ffk { color: var(--faint); font-size: 11px; letter-spacing: .06em; text-transform: uppercase; }
+.ffv { color: var(--muted); }
+.fwith { color: var(--faint); font-style: italic; }
+.ftbody { display: flex; flex-direction: column; gap: 8px; padding: 6px 8px; max-height: 60vh; overflow-y: auto; }
+.ftround { border-left: 1px solid var(--line-strong); padding-left: 8px; display: flex; flex-direction: column; gap: 4px; }
+.ftrhead { display: flex; gap: 10px; font-size: 11.5px; color: var(--faint); }
+.ftrn { color: var(--muted); font-weight: 600; }
+.ftrtext { color: var(--text); font-size: 12.5px; }
+.ftpre { white-space: pre-wrap; overflow-wrap: anywhere; font-family: ui-monospace, "Cascadia Mono", Menlo, Consolas, monospace; font-size: 11.5px; color: var(--muted); }
+.ftfail summary { color: var(--no); }
+.ftrun + .ftrun { margin-top: 4px; }

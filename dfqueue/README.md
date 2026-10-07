@@ -214,6 +214,31 @@ may use, drafted from that role's `role.md` "Owns" section:
 | `overseer` | none — it rules on proposals, it never writes one |
 | `consultant` | none — `role.md`: "Does NOT own: Any fort-specific decision... Do not propose a build" |
 | `quartermaster`, `marshal`, `chronicler` | none — disabled in `agents/ROSTER.yaml`, no tool surface yet |
+| `planner` | `plan_change` only, a **ruling-only** type (`action_tools.yaml` group `plan`): the Overseer rules it, nothing executes it, the version that cites its ruling closes it. Disabled until stage P1b |
+
+## The fort plan: `fort_plan`, `plan.py`, `plan_policy.yaml`
+
+`handoffs/2026-10-07-planner-p1a.md`, `research/2026-10-07-planner-design.md`.
+A thirteenth record kind, **`fort_plan`**: the plan as versioned data,
+append-only, written only by the `planner`, each version a full document with
+a `reason` (required from version 2), a server-stamped `season_index`
+(`tick // 100,800`) and a server-computed `changes`. Named so code never shares
+the word "plan" with the Overseer's ordered plan (the `project` record). Today
+it holds `targets`: a measured signal, a wanted level, one reorder rule and an
+owner. `dfqueue/plan.py` is the pure logic (composition, the diff, flags, the
+season interval, the shortfall arithmetic), `store.py` the stateful checks
+(the base version, the cited ruling, `plan_change` rate limit, `serves`,
+in-flight work), `plan_policy.yaml` the limits, `templates.py` the loader for
+a template's `provides` and `requires`, `plans/default-v1.yaml` the base for
+version 1.
+
+**Accept and flag, never refuse for content.** A kind typo, an unknown
+landmark, an oversized section or a bad signal is stored and flagged, inert
+until fixed; a version that changes only flagged entries is exempt from the
+season interval. Only a payload that cannot be stored is refused (the wrong
+writer, a coordinate, not the schema shape, a section with no home yet).
+`serves` on a proposal names the plan targets it serves, checked against the
+active plan.
 
 A role can only use its own types **by construction**: a proposal is refused
 if `type` isn't in its author's vocabulary, so `agents/ROSTER.yaml` gaining a

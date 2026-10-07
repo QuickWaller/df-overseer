@@ -12,11 +12,13 @@ what gets added to the schema later.
 
 from __future__ import annotations
 
+import json
+
 from xml.sax.saxutils import escape, quoteattr
 
 from .schema import (
-    ABANDON, AMEND, ANSWER, ASK, CLOSE, ESCALATION, EXECUTED, OBSERVATION,
-    PASS, PROJECT, PROPOSAL, RULING,
+    ABANDON, AMEND, ANSWER, ASK, CLOSE, ESCALATION, EXECUTED, FORT_PLAN,
+    OBSERVATION, PASS, PROJECT, PROPOSAL, RULING,
 )
 
 #: §8's allowlist, plus id/ts/kind "so the feed can order and thread items"
@@ -249,6 +251,8 @@ def _close_xml(record: dict) -> str:
 
 def _ask_xml(record: dict) -> str:
     lines = [_open_tag("ask", record)]
+    if record.get("to") is not None:
+        lines.append(f"  <to>{escape(record['to'])}</to>")
     lines.append(f"  <question>{escape(record['question'])}</question>")
     if record.get("proposal_id") is not None:
         lines.append(f"  <proposal_id>{escape(record['proposal_id'])}</proposal_id>")
@@ -257,12 +261,15 @@ def _ask_xml(record: dict) -> str:
 
 
 def _answer_xml(record: dict) -> str:
-    return "\n".join([
+    lines = [
         _open_tag("answer", record),
         f"  <ask_id>{escape(record['ask_id'])}</ask_id>",
         f"  <answer>{escape(record['answer'])}</answer>",
-        "</answer>",
-    ])
+    ]
+    if record.get("pile_spec") is not None:
+        lines.append(f"  <pile_spec>{escape(json.dumps(record['pile_spec'], sort_keys=True))}</pile_spec>")
+    lines.append("</answer>")
+    return "\n".join(lines)
 
 
 def _escalation_xml(record: dict) -> str:
@@ -273,12 +280,30 @@ def _escalation_xml(record: dict) -> str:
     ])
 
 
+def _fort_plan_xml(record: dict) -> str:
+    """A fort plan version (handoffs/2026-10-07-planner-p1a.md): who it
+    supersedes, why, what changed, what the server flagged, and the targets."""
+    lines = [_open_tag("fort_plan", record)]
+    lines.append(f"  <version>{escape(str(record.get('version')))}</version>")
+    if record.get("supersedes") is not None:
+        lines.append(f"  <supersedes>{escape(record['supersedes'])}</supersedes>")
+    lines.append(f"  <season_index>{escape(str(record.get('season_index')))}</season_index>")
+    if record.get("reason") is not None:
+        lines.append(f"  <reason>{escape(record['reason'])}</reason>")
+    if record.get("ruling_id") is not None:
+        lines.append(f"  <ruling_id>{escape(record['ruling_id'])}</ruling_id>")
+    for tag in ("changes", "flags", "targets"):
+        lines.append(f"  <{tag}>{escape(json.dumps(record.get(tag) or [], sort_keys=True))}</{tag}>")
+    lines.append("</fort_plan>")
+    return "\n".join(lines)
+
+
 _RENDERERS = {
     PROPOSAL: _proposal_xml, PASS: _pass_xml, RULING: _ruling_xml,
     EXECUTED: _executed_xml, ASK: _ask_xml, ANSWER: _answer_xml,
     ESCALATION: _escalation_xml, PROJECT: _project_xml,
     OBSERVATION: _observation_xml, AMEND: _amend_xml, ABANDON: _abandon_xml,
-    CLOSE: _close_xml,
+    CLOSE: _close_xml, FORT_PLAN: _fort_plan_xml,
 }
 
 

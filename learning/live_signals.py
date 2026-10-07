@@ -141,6 +141,30 @@ never a rate, and this module's own rule (every signal reads through an
 *existing* tool, never invents one) means cover days is not addable here
 until such a tool exists. Left as a known gap, not built around.
 
+## The `zones."KIND".*` signals -- added `handoffs/2026-10-07-planner-p1a.md`
+
+The fort plan's targets (`research/2026-10-07-planner-design.md` 2.2) measure
+capacity by kind, so the signal grammar gains a zone family. All three read
+`zone.list` with every filter empty, which answers with a summary rather than
+a row per zone, and all three are INTEGER.
+
+- `zones."KIND".count` -- `counts_by_kind[KIND]`. A kind with no zone yet reads
+  **0** (an absent leaf under a successful read is a zero, the same rule the
+  conductor's alerts use); a failed read is `UNRESOLVABLE`, never 0.
+- `zones."KIND".furnished` -- zones of the kind holding all of the kind's
+  defining furniture, complete (design F-6): `furnished_by_kind[KIND]`.
+- `zones."KIND".furniture."F"` -- buildings of kind F inside zones of the kind:
+  `furniture_counts_by_kind[KIND][F]`.
+
+**`furnished` and `furniture` name fields `zone.list` does not carry yet** (the
+Lua read is a separate, later change; this stream touched no Lua). Until it
+does, those two read `UNRESOLVABLE`, which a target reports as `unresolved`,
+never as a shortfall: an honest "cannot tell", not a wrong zero.
+
+A `KIND` the game does not have reads `UNRESOLVABLE`, never 0 (design F-13):
+`read()` checks the token against `zone.list-kinds` first. A kind that cannot
+be verified because that read failed is also `UNRESOLVABLE`.
+
 ## Quoting a landmark name
 
 Landmark names come straight from the game (`"Stockpile #2"`) and may
@@ -190,11 +214,18 @@ STOCKS_SEEDS_UNITS = "stocks.seeds.units"
 ORDER_EXISTS = "order.exists"
 STOCKS_AVAILABILITY_UNITS = "stocks.availability.units"
 
+#: `handoffs/2026-10-07-planner-p1a.md`. See this module's docstring, "The
+#: zones signals".
+ZONES_COUNT = "zones.count"
+ZONES_FURNISHED = "zones.furnished"
+ZONES_FURNITURE = "zones.furniture"
+
 SIGNAL_KINDS = (
     FORT_POPULATION, FORT_ALERTS_COUNT, FORT_STUCK_JOBS_COUNT,
     FORT_LANDMARKS_COUNT, LANDMARK_EXISTS, LANDMARK_EXIT_DISTANCE,
     STOCKS_DRINK_UNITS, STOCKS_PREPARED_MEALS_UNITS, STOCKS_RAW_EDIBLES_UNITS,
     STOCKS_SEEDS_UNITS, ORDER_EXISTS, STOCKS_AVAILABILITY_UNITS,
+    ZONES_COUNT, ZONES_FURNISHED, ZONES_FURNITURE,
 )
 
 VALUE_TYPE = {
@@ -210,6 +241,9 @@ VALUE_TYPE = {
     STOCKS_SEEDS_UNITS: INTEGER,
     ORDER_EXISTS: BOOLEAN,
     STOCKS_AVAILABILITY_UNITS: INTEGER,
+    ZONES_COUNT: INTEGER,
+    ZONES_FURNISHED: INTEGER,
+    ZONES_FURNITURE: INTEGER,
 }
 
 #: Every live signal is MECHANICAL: read straight off a read tool's own
@@ -230,6 +264,8 @@ class ParsedSignal:
     exit_to: Optional[str] = None
     order_id: Optional[str] = None
     item_type: Optional[str] = None
+    zone_kind: Optional[str] = None
+    furniture: Optional[str] = None
 
     @property
     def value_type(self) -> str:
@@ -250,6 +286,10 @@ _EXISTS_RE = re.compile(rf'^landmark\.{_QUOTED}\.exists$')
 _EXIT_RE = re.compile(rf'^landmark\.{_QUOTED}\.exit\.{_QUOTED}\.distance_tiles$')
 _ORDER_EXISTS_RE = re.compile(rf'^order\.{_QUOTED}\.exists$')
 _STOCKS_AVAILABILITY_RE = re.compile(rf'^stocks\.availability\.{_QUOTED}\.available_units$')
+
+_ZONES_COUNT_RE = re.compile(rf'^zones\.{_QUOTED}\.count$')
+_ZONES_FURNISHED_RE = re.compile(rf'^zones\.{_QUOTED}\.furnished$')
+_ZONES_FURNITURE_RE = re.compile(rf'^zones\.{_QUOTED}\.furniture\.{_QUOTED}$')
 
 _FIXED_SIGNALS = {
     FORT_POPULATION: FORT_POPULATION,
@@ -308,13 +348,25 @@ def parse(signal: Any) -> ParsedSignal:
             kind=STOCKS_AVAILABILITY_UNITS, signal=signal, item_type=_unquote(m.group(1)),
         )
 
+    for rx, kind in ((_ZONES_COUNT_RE, ZONES_COUNT), (_ZONES_FURNISHED_RE, ZONES_FURNISHED)):
+        m = rx.match(signal)
+        if m:
+            return ParsedSignal(kind=kind, signal=signal, zone_kind=_unquote(m.group(1)))
+    m = _ZONES_FURNITURE_RE.match(signal)
+    if m:
+        return ParsedSignal(
+            kind=ZONES_FURNITURE, signal=signal,
+            zone_kind=_unquote(m.group(1)), furniture=_unquote(m.group(2)),
+        )
+
     raise SignalError(
         f"signal {signal!r} is not a known live signal (fort.population, "
         "fort.alerts.count, fort.stuck_jobs.count, fort.landmarks.count, "
         'landmark."NAME".exists, landmark."NAME".exit."TO".distance_tiles, '
         "stocks.drink.units, stocks.prepared_meals.units, "
         'stocks.raw_edibles.units, stocks.seeds.units, order."ID".exists, '
-        'stocks.availability."TYPE".available_units)'
+        'stocks.availability."TYPE".available_units, zones."KIND".count, '
+        'zones."KIND".furnished, zones."KIND".furniture."FURNITURE")'
     )
 
 
@@ -345,6 +397,47 @@ def _landmarks_list(call_tool: CallTool) -> list:
     if isinstance(result, list):
         return result
     return []
+
+
+def _zone_kind_tokens(call_tool: CallTool) -> Optional[set]:
+    """The zone kind tokens the game has (`zone.list-kinds`), or `None` when
+    that read failed (an error object, or anything but a list of rows)."""
+    rows = call_tool("zone.list-kinds", {})
+    if isinstance(rows, dict) and isinstance(rows.get("result"), list):
+        rows = rows["result"]
+    if not isinstance(rows, list):
+        return None
+    return {r.get("token") for r in rows if isinstance(r, dict) and r.get("token")}
+
+
+def _read_zone_signal(parsed: ParsedSignal, call_tool: CallTool):
+    tokens = _zone_kind_tokens(call_tool)
+    if tokens is None or parsed.zone_kind not in tokens:
+        return UNRESOLVABLE  # unknown kind, or the kind list could not be read: never a zero
+    summary = call_tool("zone.list", {
+        "kind_filter": "", "owner_filter": "", "valid_filter": "", "near_landmark_filter": "",
+    })
+    if not isinstance(summary, dict) or summary.get("error"):
+        return UNRESOLVABLE
+    if parsed.kind == ZONES_COUNT:
+        counts = summary.get("counts_by_kind")
+        if not isinstance(counts, dict):
+            return UNRESOLVABLE
+        return counts.get(parsed.zone_kind, 0)
+    if parsed.kind == ZONES_FURNISHED:
+        by_kind = summary.get("furnished_by_kind")
+        if not isinstance(by_kind, dict):
+            return UNRESOLVABLE  # zone.list does not carry the field yet
+        return by_kind.get(parsed.zone_kind, 0)
+    by_kind = summary.get("furniture_counts_by_kind")
+    if not isinstance(by_kind, dict):
+        return UNRESOLVABLE
+    inner = by_kind.get(parsed.zone_kind)
+    if inner is None:
+        return 0
+    if not isinstance(inner, dict):
+        return UNRESOLVABLE
+    return inner.get(parsed.furniture, 0)
 
 
 def read(parsed: ParsedSignal, call_tool: CallTool):
@@ -408,5 +501,8 @@ def read(parsed: ParsedSignal, call_tool: CallTool):
         if not isinstance(result, dict) or result.get("error"):
             return UNRESOLVABLE  # an unresolved TYPE (get_availability's own {error: ...} shape)
         return result["available_units"]
+
+    if parsed.kind in (ZONES_COUNT, ZONES_FURNISHED, ZONES_FURNITURE):
+        return _read_zone_signal(parsed, call_tool)
 
     raise SignalError(f"read(): unhandled signal kind {parsed.kind!r}")  # pragma: no cover

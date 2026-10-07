@@ -29,7 +29,7 @@ from typing import Any, Dict, Mapping, Optional, Tuple
 
 from dfqueue import runs
 
-from . import executor_tools
+from . import executor_tools, plan_tools
 
 CONDUCTOR_REPORT = "conductor.report"
 #: handoffs/2026-10-05-safe-to-resume.md. The Overseer's explicit answer to
@@ -72,12 +72,18 @@ NATIVE_TOOLS: Dict[str, Any] = {
 # place that registers "the conductor's native tools" picks them up; the server
 # routes their calls to `executor_tools.call`, ahead of this module's own.
 NATIVE_TOOLS.update(executor_tools.NATIVE_TOOLS)
+# The plan tools (dfmcp/plan_tools.py: plan.write, plan.read, plan.status) ride
+# the same table for the same reason: roles other than the conductor hold them
+# (the Planner writes, four roles read), and every place that builds a registry
+# from "the native tools" already merges this table, so none can forget them.
+# The server routes their calls to `plan_tools.call`, ahead of this module's.
+NATIVE_TOOLS.update(plan_tools.NATIVE_TOOLS)
 
 _DESCRIPTION = (
     "Report one role run to the operator's record, conductor only. phase='start' when "
     "launching a run (role, wake_reason, wake_detail, cycle); it returns a run_id. "
     "phase='end' when it finishes (run_id, status, ok, timed_out, duration_s, cost_usd, "
-    "error, final_answer, thinking; both texts are capped). The server stamps times and works "
+    "error, final_answer, thinking, transcript; the texts are capped, transcript is a JSON string). The server stamps times and works "
     "out which queue records the run wrote. Never changes the fort."
 )
 
@@ -100,6 +106,7 @@ _SCHEMA: dict = {
         "error": {"type": ["string", "null"]},
         "final_answer": {"type": ["string", "null"]},
         "thinking": {"type": ["string", "null"]},
+        "transcript": {"type": ["string", "null"]},
     },
 }
 
@@ -273,7 +280,7 @@ def _report_sync(arguments: Mapping[str, Any], queue_db_path: Any) -> Tuple[str,
             timed_out=_opt_bool(arguments, "timed_out"), duration_s=duration_s,
             cost_usd=_opt_num(arguments, "cost_usd"), error=_opt_str(arguments, "error"),
             final_answer=_opt_str(arguments, "final_answer"), records=linked,
-            thinking=_opt_str(arguments, "thinking"),
+            thinking=_opt_str(arguments, "thinking"), transcript=_opt_str(arguments, "transcript"),
         )
         return f"{out['run_id']} ended, {out['records']} record(s) linked", out
     except runs.RunsError as exc:

@@ -36,8 +36,9 @@
 -- is special. A kind with no entry is a plain rectangle of DEFAULT_DIMS on
 -- walkable floor with no owner: that is what a new kind costs, zero entries.
 -- WaterSource is the one kind with its own candidate finder (`finder =
--- "water_body"`, unchanged in behaviour from the water-source-only tool: a
--- pond is not a rectangle the caller sizes, so W H are refused for it).
+-- "shore"`, shared with FishingArea: ground beside water, never the water
+-- itself, see SHORE_OFFSETS. A shoreline is not a rectangle the caller
+-- sizes, so W H are refused for it).
 -- Sizes, `prefer_indoors` and the caveats are THIS PROJECT'S choices, not
 -- game data, and are labelled so in the result.
 --
@@ -224,7 +225,9 @@ local DEFAULT_POLICY = {
 }
 
 local ZONE_POLICY = {
-  WaterSource = {finder = "water_body"},
+  -- WaterSource and FishingArea share ONE finder, `shore`: ground beside water
+  -- (SHORE_OFFSETS), never the water itself.
+  WaterSource = {finder = "shore"},
   -- Rooms. `owner` per the preserve-rooms docs and overlay (Bedroom,
   -- DiningHall, Office, Tomb); position_field per df.entity_position.
   -- `furniture_kinds` (2026-09-23, handoffs/2026-09-23-zone-inventory-and-
@@ -245,7 +248,7 @@ local ZONE_POLICY = {
   Barracks = {default_dims = {5, 5}, prefer_indoors = true},
   -- Kinds that are only useful on particular terrain. No terrain rule is
   -- encoded, so the tool says so instead of implying it checked.
-  FishingArea = {caveat = "only useful with water in reach; this tool does not check terrain for this kind"},
+  FishingArea = {finder = "shore"},
   SandCollection = {caveat = "only useful on sand; this tool does not check terrain for this kind"},
   ClayCollection = {caveat = "only useful on clay; this tool does not check terrain for this kind"},
   PlantGathering = {caveat = "only useful where trees or shrubs grow; this tool does not check terrain for this kind"},
@@ -494,14 +497,12 @@ local function overlaps(a, b, w, h)
 end
 
 -- ---------------------------------------------------------------------------
--- WaterSource: the water-body finder, unchanged in behaviour
+-- WaterSource and FishingArea: the shore finder (ground beside water)
 -- ---------------------------------------------------------------------------
 
 -- Revealed, not magma, actually carrying water (flow_size >= 1), and not
--- already under a building. This is this project's OWN domain rule
--- ("targeting revealed water tiles"), layered on top of quickfort's own
--- (much looser) is_valid_zone_tile: a WaterSource zone is only useful on
--- water. Returns (ok, info) where info carries flow_size/stagnant/salt.
+-- already under a building. This is the ANCHOR the shore finder looks for
+-- water with, not a placement: the zone goes on ground beside it. Returns (ok, info) where info carries flow_size/stagnant/salt.
 local function is_water_source_tile(x, y, z)
   local ok_vis, visible = pcall(dfhack.maps.isTileVisible, x, y, z)
   if not ok_vis or not visible then
@@ -532,17 +533,102 @@ local function is_water_source_tile(x, y, z)
   }
 end
 
--- 4-connected flood fill over the scoped box, water tiles only. Returns a
--- list of components, each {tiles = {{x,y},...}, min_x,max_x,min_y,max_y,
--- flow_min,flow_max,any_stagnant,any_salt}.
-local function find_water_components(z, min_x, max_x, min_y, max_y)
+-- SHORE ADJACENCY RULE (data, 2026-10-07, handoffs/2026-10-07-shore-water-
+-- zones.md). A Water Source or Fishing zone belongs on GROUND next to water,
+-- not on the water: the wiki Zone page ("a ground tile next to the water, not
+-- over the water itself") and the user's own play (a sunken pool, the zone on
+-- the upper-level ground beside it, worked) agree; the wiki's fishing line
+-- accepts water one z-level below the zone tile. A ground tile at level z
+-- qualifies when water is on a tile in one of these (dx, dy, dz) offsets.
+-- UNVERIFIED LIVE where the sources do not settle it: whether diagonal
+-- neighbours count (left OUT, the conservative choice) and whether water
+-- two levels down counts (left out). The same-level orthogonal case and the
+-- directly-below / beside-and-below case are what the sources support.
+local SHORE_OFFSETS = {
+  {1, 0, 0}, {-1, 0, 0}, {0, 1, 0}, {0, -1, 0},                    -- beside, same level
+  {0, 0, -1}, {1, 0, -1}, {-1, 0, -1}, {0, 1, -1}, {0, -1, -1},    -- below, or beside-and-below
+}
+
+-- A tile a dwarf can stand on to reach water. getWalkableGroup reads 0 for
+-- RAMP and RAMP_TOP shapes on this build regardless of truth
+-- (research/2026-09-17-pool-reachability.md), so those two shapes are
+-- admitted on their own shape; every other shape must read a nonzero group.
+local function standable(pos)
+  local ok_g, g = pcall(dfhack.maps.getWalkableGroup, pos)
+  if ok_g and g ~= nil and g ~= 0 then return true end
+  local ok_t, tt = pcall(dfhack.maps.getTileType, pos)
+  if not ok_t or tt == nil then return false end
+  local attrs = df.tiletype.attrs[tt]
+  local shape = attrs and attrs.shape
+  return shape ~= nil and (shape == df.tiletype_shape.RAMP or shape == df.tiletype_shape.RAMP_TOP)
+end
+
+-- Dry, unbuilt, revealed ground a dwarf can stand on, accepted by quickfort's
+-- own tile rule for the kind and not already zoned the same way.
+local function shore_ground_tile(k, x, y, z)
+  if not dfhack.maps.isValidTilePos(x, y, z) then return false end
+  local ok_vis, visible = pcall(dfhack.maps.isTileVisible, x, y, z)
+  if not ok_vis or not visible then return false end
+  local pos = xyz2pos(x, y, z)
+  local ok_f, flags, occ = pcall(dfhack.maps.getTileFlags, pos)
+  if not ok_f or not flags or not occ then return false end
+  if occ.building ~= 0 then return false end
+  if flags.flow_size and flags.flow_size >= 1 then return false end
+  local ok_v, valid = pcall(k.entry.is_valid_tile_fn, pos, k.entry, nil)
+  if not ok_v or not valid then return false end
+  if not standable(pos) then return false end
+  local ok_z, zones = pcall(dfhack.buildings.findCivzonesAt, pos)
+  if ok_z and zones then
+    for _, zn in ipairs(zones) do
+      if zn.type == k.type_id then return false end
+    end
+  end
+  return true
+end
+
+-- 4-connected flood fill over the scoped box of SHORE tiles: ground at level
+-- z next to water per SHORE_OFFSETS. Returns a list of components, each
+-- {tiles = {{x,y},...}, min_x,max_x,min_y,max_y, flow_min,flow_max (depth of
+-- the adjacent water), any_stagnant, any_salt, water_same, water_below}.
+local function find_shore_components(k, z, min_x, max_x, min_y, max_y)
+  -- water cache over the box plus a one-tile margin, at z and z-1
+  local water = {}
+  local function water_at(x, y, zz)
+    if zz < 0 then return nil end
+    local key = zz == z and 1 or 2
+    water[key] = water[key] or {}
+    local row = water[key][x]
+    if not row then row = {}; water[key][x] = row end
+    local v = row[y]
+    if v == nil then
+      local ok, tinfo = is_water_source_tile(x, y, zz)
+      v = ok and tinfo or false
+      row[y] = v
+    end
+    return v or nil
+  end
+
   local info = {}
   for x = min_x, max_x do
     for y = min_y, max_y do
-      local ok, tinfo = is_water_source_tile(x, y, z)
-      if ok then
+      local near
+      for _, o in ipairs(SHORE_OFFSETS) do
+        local w = water_at(x + o[1], y + o[2], z + o[3])
+        if w then
+          near = near or {flow_min = math.huge, flow_max = -math.huge, stagnant = false,
+            salt = false, same = false, below = false}
+          near.flow_min = math.min(near.flow_min, w.flow_size)
+          near.flow_max = math.max(near.flow_max, w.flow_size)
+          near.stagnant = near.stagnant or w.stagnant
+          near.salt = near.salt or w.salt
+          if o[3] == 0 then near.same = true else near.below = true end
+        end
+      end
+      -- the water tile itself is never a placement: shore_ground_tile
+      -- refuses any wet tile
+      if near and shore_ground_tile(k, x, y, z) then
         info[x] = info[x] or {}
-        info[x][y] = tinfo
+        info[x][y] = near
       end
     end
   end
@@ -552,15 +638,12 @@ local function find_water_components(z, min_x, max_x, min_y, max_y)
   for x = min_x, max_x do
     for y = min_y, max_y do
       if info[x] and info[x][y] and not (visited[x] and visited[x][y]) then
-        -- Explicit stack, no recursion, no per-tile pcall inside the
-        -- flood loop itself -- docs/TRAPS.md's per-tile-closure/pcall cost
-        -- warning; is_water_source_tile above already ran its own pcalls
-        -- once per tile during the scan pass, not per flood-fill step.
         local stack = {{x, y}}
         local comp = {
           tiles = {}, min_x = x, max_x = x, min_y = y, max_y = y,
           flow_min = math.huge, flow_max = -math.huge,
           any_stagnant = false, any_salt = false,
+          water_same = false, water_below = false,
         }
         visited[x] = visited[x] or {}
         visited[x][y] = true
@@ -573,10 +656,12 @@ local function find_water_components(z, min_x, max_x, min_y, max_y)
           comp.max_x = math.max(comp.max_x, cx)
           comp.min_y = math.min(comp.min_y, cy)
           comp.max_y = math.max(comp.max_y, cy)
-          comp.flow_min = math.min(comp.flow_min, tinfo.flow_size)
-          comp.flow_max = math.max(comp.flow_max, tinfo.flow_size)
+          comp.flow_min = math.min(comp.flow_min, tinfo.flow_min)
+          comp.flow_max = math.max(comp.flow_max, tinfo.flow_max)
           comp.any_stagnant = comp.any_stagnant or tinfo.stagnant
           comp.any_salt = comp.any_salt or tinfo.salt
+          comp.water_same = comp.water_same or tinfo.same
+          comp.water_below = comp.water_below or tinfo.below
           local neighbors = {{cx + 1, cy}, {cx - 1, cy}, {cx, cy + 1}, {cx, cy - 1}}
           for _, n in ipairs(neighbors) do
             local nx, ny = n[1], n[2]
@@ -608,7 +693,7 @@ end
 -- expects, exactly as place_water's own final check already does. find_water
 -- passes nil (find_zone_area has no RES_ID argument); place_water passes its
 -- own res_id.
-local function ranked_water_bodies(level, near, radius_tiles, res_id)
+local function ranked_water_bodies(k, level, near, radius_tiles, res_id)
   local ax, ay, az = landmarks_mod.get_landmark_centroid(near)
   if not ax then
     return nil, "landmark not found: " .. near
@@ -619,7 +704,7 @@ local function ranked_water_bodies(level, near, radius_tiles, res_id)
   end
   local radius = math.min(radius_tiles or DEFAULT_RADIUS, MAX_RADIUS)
 
-  local components = find_water_components(z, ax - radius, ax + radius, ay - radius, ay + radius)
+  local components = find_shore_components(k, z, ax - radius, ax + radius, ay - radius, ay + radius)
   components = reservations_mod.filter_reserved(components, res_id, function(c)
     local tiles = {}
     for _, t in ipairs(c.tiles) do tiles[#tiles + 1] = {x = t[1], y = t[2], z = z} end
@@ -687,13 +772,18 @@ local function water_info(kind_label, token, c, z, rank)
     depth_max = c.flow_max,
     stagnant = c.any_stagnant,
     salt = c.any_salt,
+    -- where the water is relative to the shore tiles: beside them on the
+    -- same level, and/or one level below (a sunken pool seen from above)
+    water_same_level = c.water_same,
+    water_one_level_below = c.water_below,
+    adjacency_rule = "orthogonal same level, or directly below / beside-and-below; diagonals not counted (unverified live)",
   }
   if rank then r.rank = rank end
   return r
 end
 
 local function find_water(k, level, near, radius_tiles)
-  local chosen, err, z = ranked_water_bodies(level, near, radius_tiles, nil)
+  local chosen, err, z = ranked_water_bodies(k, level, near, radius_tiles, nil)
   if err then return nil, err end
   local results = {}
   for _, c in ipairs(chosen) do
@@ -704,8 +794,13 @@ end
 
 local function place_water(k, level, near, rank, radius_tiles, dry, res_id, override)
   rank = rank or 1
-  local chosen, err, z = ranked_water_bodies(level, near, radius_tiles, res_id)
+  local chosen, err, z = ranked_water_bodies(k, level, near, radius_tiles, res_id)
   if err then return nil, err end
+  if #chosen == 0 then
+    return nil, string.format(
+      "refused: no ground beside water near %s at this level (a %s zone goes on dry, standable, unbuilt ground next to water, on the same level or the level above a sunken pool, never on the water itself); widen RADIUS_TILES or change LEVEL",
+      tostring(near), k.token)
+  end
   if rank < 1 or rank > #chosen then
     return nil, string.format(
       "no candidate at rank %d (found %d near %s)", rank, #chosen, near)
@@ -1284,9 +1379,9 @@ function find_zone_area(kind_name, w, h, level, near, radius_tiles, around_furni
   local k, kerr = resolve_kind(kind_name)
   if not k then return nil, kerr end
   local p = policy_for(k)
-  if p.finder == "water_body" then
+  if p.finder == "shore" then
     if w ~= nil or h ~= nil then
-      return nil, k.token .. " takes no W H: its footprint follows the water body"
+      return nil, k.token .. " takes no W H: its footprint follows the shore"
     end
     return find_water(k, level, near, radius_tiles)
   end
@@ -1607,9 +1702,9 @@ function place_zone(kind_name, w, h, level, near, rank, radius_tiles, dry_run, o
   local plan, oerr = resolve_owner(k, p, owner)
   if oerr then return nil, oerr end
 
-  if p.finder == "water_body" then
+  if p.finder == "shore" then
     if w ~= nil or h ~= nil then
-      return nil, k.token .. " takes no W H: its footprint follows the water body"
+      return nil, k.token .. " takes no W H: its footprint follows the shore"
     end
     local res, err = place_water(k, level, near, rank, radius_tiles, dry, res_id, override)
     return res, err

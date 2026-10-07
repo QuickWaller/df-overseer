@@ -317,6 +317,16 @@ read:
       handle, purpose, footprint size, nearest landmark, age in ticks, and
       whether a site-N has been carved from it. Never a coordinate.
 
+  - id: "plan.read"
+    status: exists
+    note: >-
+      Added handoffs/2026-10-07-planner-p1a.md. The whole fort plan, read-only:
+      the active version, its flags, the last 8 version lines and accepted
+      plan_change rulings awaiting the Planner. You rule action proposals, not
+      plan versions (the plan stands on the Planner's say-so); read it to judge
+      whether a proposal that serves a target is the right next step, and to rule
+      a plan_change. Dispatched natively, not DFHack.
+
 write:
   - id: "openarea.build"
     status: exists

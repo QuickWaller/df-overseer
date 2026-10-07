@@ -180,10 +180,21 @@ AMEND, ABANDON = "amend", "abandon"
 #: closed, with an outcome and a reason. Written only by the roster's
 #: `executor`.
 CLOSE = "close"
+#: Added handoffs/2026-10-07-planner-p1a.md (research/2026-10-07-planner-design.md
+#: 2.1): the fort plan as versioned data. Append-only, written only by
+#: `PLAN_ROLE`, each version a full document with a reason. Named `fort_plan`
+#: so code never shares the word "plan" with the Overseer's ordered plan (the
+#: `project` record, F-22). Section composition, flags, the season interval and
+#: the diff live in `dfqueue/plan.py`; the stateful checks in `dfqueue/store.py`.
+FORT_PLAN = "fort_plan"
 KINDS = (
     PROPOSAL, PASS, RULING, EXECUTED, ASK, ANSWER, ESCALATION, PROJECT,
-    OBSERVATION, AMEND, ABANDON, CLOSE,
+    OBSERVATION, AMEND, ABANDON, CLOSE, FORT_PLAN,
 )
+
+#: The one role that may write a `fort_plan` (same single-role shape as
+#: `OBSERVATION_ROLE`). A ledger write, never a fort write.
+PLAN_ROLE = "planner"
 
 #: A `close` record's `outcome` (docs/CONDUCTOR-EXECUTION.md 6.1).
 CLOSE_COMPLETED, CLOSE_NOT_DONE = "completed", "not_done"
@@ -208,12 +219,32 @@ EXECUTION_OUTCOMES = (SUCCESS, FAILURE)
 # (2026-09-15) plus "the Overseer may hand a proposal to the Consultant for
 # fact-checking before ruling" (2026-09-17). The Consultant itself never
 # asks (it answers), and a disabled role has no business writing anything.
-ASK_ROLES = ("architect", "quartermaster", "overseer")
+#: `planner` added handoffs/2026-10-07-planner-p1a.md (design F-9): it may ask
+#: the Consultant a question before a review.
+ASK_ROLES = ("architect", "quartermaster", "overseer", "planner")
 
-#: Only the Consultant may answer. Distinct from `sole_writer()`, which
-#: names the Overseer -- this is a second, independent single-role
-#: restriction, not the same one reused.
-ANSWER_ROLE = "consultant"
+#: The default addressee of an `ask`: an ask with no `to` goes to the
+#: Consultant, exactly as every ask did before asks could be addressed
+#: (handoffs/2026-10-07-ask-addressing.md).
+DEFAULT_ASK_ADDRESSEE = "consultant"
+
+#: Kept for callers that mean "the default answerer". The set of roles that
+#: may answer at all is `answer_roles()`, read from the roster's `answerer`
+#: field; and an answer is accepted only from the ask's own addressee.
+ANSWER_ROLE = DEFAULT_ASK_ADDRESSEE
+
+#: The 17 top-level stockpile categories a `pile_spec` may name
+#: (`scripts/dfhack/df-overseer-stockpile.lua`'s CATEGORY_NAMES, DF's own
+#: stockpile screen list).
+PILE_CLASSES = (
+    "animals", "food", "furniture", "refuse", "stone", "wood", "gems",
+    "finished_goods", "leather", "cloth", "sheet", "bars_blocks", "weapons",
+    "armor", "ammo", "coins", "corpses",
+)
+#: `place`'s own cap is 31 x 31 tiles.
+PILE_MAX_TILES = 31 * 31
+#: A `pile_spec` is bounded: a handful of piles per workshop, never a layout.
+PILE_SPEC_MAX_ENTRIES = 8
 
 #: `observation` is written only by code, never a model (design §4.4:
 #: "written only by code, the conductor role, never by a model"). Same
@@ -339,6 +370,13 @@ STOCK_TARGET = "stock_target"
 #: proposal (`set_labor` still races `autolabor`, unfixed).
 QUARTERMASTER_TYPES = (WORK_ORDER, CROP_PLAN, STOCK_TARGET)
 
+#: `plan_change` (research/2026-10-07-planner-design.md 2.4 item 3): the
+#: Planner's request for a revision inside a season, ruled by the Overseer,
+#: closed by the version that cites its ruling. A **ruling-only** type
+#: (`dfqueue/action_tools.yaml` group `plan`): nothing executes it.
+PLAN_CHANGE = "plan_change"
+PLANNER_TYPES = (PLAN_CHANGE,)
+
 TYPE_VOCAB_BY_ROLE: dict[str, tuple[str, ...]] = {
     "architect": ARCHITECT_TYPES,
     # The Overseer arbitrates proposals and writes rulings; it never writes
@@ -367,6 +405,8 @@ TYPE_VOCAB_BY_ROLE: dict[str, tuple[str, ...]] = {
     # unlisted role to "anything goes".
     "marshal": (),
     "chronicler": (),
+    # Added handoffs/2026-10-07-planner-p1a.md: the Planner's only proposal.
+    "planner": PLANNER_TYPES,
 }
 
 # ---- fields, by kind ----------------------------------------------------------
@@ -387,6 +427,9 @@ KIND_FIELDS: dict[str, tuple[str, ...]] = {
         #: project it opens).
         "step", "phases", "project_id", "after_step", "preview", "covered_by",
         "public_title",
+        #: handoffs/2026-10-07-planner-p1a.md (design 2.5): the plan target ids
+        #: this proposal serves. Checked against the active plan at write time.
+        "serves",
     ),
     PASS: ("reason",),
     #: `urgency` (optional, accept only) added handoffs/2026-10-07-ruling-urgency.md.
@@ -398,8 +441,8 @@ KIND_FIELDS: dict[str, tuple[str, ...]] = {
     #: `proposal_id` added handoffs/2026-10-05-stage-2a.md: the executor's
     #: step's own proposal (a follow-up's step is not the root ruling's).
     EXECUTED: ("ruling_id", "step_id", "actions", "notes", "proposal_id"),
-    ASK: ("question", "proposal_id"),
-    ANSWER: ("ask_id", "answer"),
+    ASK: ("question", "proposal_id", "to"),
+    ANSWER: ("ask_id", "answer", "pile_spec"),
     ESCALATION: ("reason",),
     #: `research/2026-09-28-job-dependency-graph.md` §4.1. `public_title`,
     #: `public_rationale` and `urgency` added
@@ -432,6 +475,13 @@ KIND_FIELDS: dict[str, tuple[str, ...]] = {
     CLOSE: (
         "project_id", "proposal_id", "ruling_id", "outcome", "reason",
         "cleanup",
+    ),
+    #: `version`/`supersedes`/`season_index`/`changes`/`flags`/`cited` are
+    #: server-stamped by `plan.write`. `ruling_id` names the accepted
+    #: `plan_change` ruling that authorises a mid-season version.
+    FORT_PLAN: (
+        "version", "supersedes", "season_index", "reason", "changes", "flags",
+        "relies_on", "cited", "public_rationale", "ruling_id", "targets",
     ),
 }
 
@@ -540,6 +590,23 @@ def enabled_roles() -> frozenset[str]:
 
 def sole_writer() -> str:
     return _load_roster()["sole_writer"]
+
+
+def answer_roles() -> frozenset[str]:
+    """Enabled roster roles marked `answerer: true`: the closed set an
+    `ask`'s `to` may name, and the only roles that may write an `answer`.
+    Data, not code: a new answerer is one roster line."""
+    roster = _load_roster()
+    return frozenset(
+        name for name, cfg in roster.get("roles", {}).items()
+        if cfg.get("enabled") and cfg.get("answerer")
+    )
+
+
+def ask_addressee(ask: dict) -> str:
+    """Who an `ask` record is addressed to: its `to`, or the Consultant for
+    an ask written before `to` existed (or one that omitted it)."""
+    return ask.get("to") or DEFAULT_ASK_ADDRESSEE
 
 
 def fort_name() -> str:
@@ -920,6 +987,7 @@ def _validate_routed_fields(record: dict, errors: list[str]) -> None:
 
 def _validate_proposal_fields(record: dict, role, errors: list[str]) -> None:
     _validate_routed_fields(record, errors)
+    _validate_serves(record, errors)
     _validate_fact_list(record, "relies_on", errors, cited=False)
     _validate_fact_list(record, "cited", errors, cited=True)
     if "cited" in record and len(record.get("cited") or []) != len(record.get("relies_on") or []):
@@ -1676,6 +1744,91 @@ def _validate_close_fields(record: dict, errors: list[str]) -> None:
                         errors.append(f"{pre}.detail: contains a raw-coordinate pattern")
 
 
+#: Most target ids one proposal may serve (design 2.5).
+SERVES_MAX = 4
+
+#: A `fort_plan` is bounded by item caps (flagged, `dfqueue/plan.py`), not
+#: refused for them (register 2026-10-07, Planner open question 1, option b).
+#: This is only the backstop for a payload that cannot sensibly be stored.
+PLAN_HARD_MAX_CHARS = 60000
+
+
+def _validate_serves(record: dict, errors: list[str]) -> None:
+    """`serves`: a non-empty list of distinct target-id strings. Whether each
+    names a target of the active plan, and whether the proposer may serve it,
+    need the queue (`store.append`)."""
+    if "serves" not in record:
+        return
+    v = record["serves"]
+    if not isinstance(v, list) or not v:
+        errors.append("record.serves: expected a non-empty list of plan target ids")
+        return
+    if len(v) > SERVES_MAX:
+        errors.append(f"record.serves: at most {SERVES_MAX} target ids, got {len(v)}")
+    for i, tid in enumerate(v):
+        if not isinstance(tid, str) or not tid:
+            errors.append(f"record.serves.{i}: expected a non-empty string")
+    if len({t for t in v if isinstance(t, str)}) != len([t for t in v if isinstance(t, str)]):
+        errors.append("record.serves: a target id may be listed once")
+
+
+def _validate_fort_plan_fields(record: dict, errors: list[str]) -> None:
+    """The stateless shape of a `fort_plan`. **Only what cannot be stored at
+    all is refused here**: a payload that is not the schema shape, and
+    coordinates. Content mistakes (a kind typo, an unknown landmark, an
+    oversized section, a malformed signal) are accepted and flagged by
+    `dfqueue/plan.py`, inert until fixed (Planner open question 1, option b).
+    The season interval, the base version and the ruling citation need the
+    queue (`store.append`)."""
+    version = record.get("version")
+    if isinstance(version, bool) or not isinstance(version, int) or version < 1:
+        errors.append("record.version: required, an integer of 1 or more")
+        version = None
+    sup = record.get("supersedes")
+    if version == 1 and sup is not None:
+        errors.append("record.supersedes: version 1 supersedes nothing")
+    if version is not None and version > 1 and (not isinstance(sup, str) or not sup):
+        errors.append("record.supersedes: required from version 2, the previous version's id")
+    si = record.get("season_index")
+    if isinstance(si, bool) or not isinstance(si, int) or si < 0:
+        errors.append("record.season_index: required, a non-negative integer (the server stamps it)")
+    if version is not None and version > 1:
+        _validate_text_field(record, "reason", errors)
+    elif "reason" in record and record["reason"] is not None:
+        _validate_text_field(record, "reason", errors)
+    _validate_optional_text_field(record, "public_rationale", errors)
+    if "ruling_id" in record and record["ruling_id"] is not None:
+        if not isinstance(record["ruling_id"], str) or not record["ruling_id"]:
+            errors.append("record.ruling_id: expected a non-empty string when given")
+    for name in ("targets", "changes", "flags", "relies_on", "cited"):
+        if name not in record:
+            if name == "targets":
+                errors.append("record.targets: required (a list, possibly empty)")
+            continue
+        items = record[name]
+        if not isinstance(items, list):
+            errors.append(f"record.{name}: expected a list")
+            continue
+        for i, item in enumerate(items):
+            if not isinstance(item, dict):
+                errors.append(f"record.{name}.{i}: expected an object")
+    body = json.dumps(
+        {k: record.get(k) for k in ("targets", "reason", "public_rationale", "relies_on")},
+        ensure_ascii=False, sort_keys=True, default=str,
+    )
+    coord = _find_coordinate(body)
+    if coord:
+        errors.append(
+            f"record: contains a raw-coordinate pattern ({coord!r}); a plan names kinds "
+            "and landmark anchors, never a position (design commitment #1)"
+        )
+    if len(json.dumps(record, ensure_ascii=False, default=str)) > PLAN_HARD_MAX_CHARS:
+        errors.append(
+            f"record: larger than {PLAN_HARD_MAX_CHARS} characters, which cannot be stored; "
+            "file fewer or shorter entries"
+        )
+
+
 def _validate_ask_fields(record: dict, errors: list[str]) -> None:
     """`proposal_id`'s existence, when present, needs the rest of the queue
     (`store.append()`), same split as `ruling`'s own `proposal_id`."""
@@ -1685,6 +1838,74 @@ def _validate_ask_fields(record: dict, errors: list[str]) -> None:
         pid = record["proposal_id"]
         if not isinstance(pid, str) or not pid:
             errors.append("record.proposal_id: expected a non-empty string")
+
+    if "to" in record:
+        to = record["to"]
+        answerers = answer_roles()
+        if not isinstance(to, str) or to not in answerers:
+            errors.append(
+                f"record.to: {to!r} is not an answerer role; expected one of "
+                f"{sorted(answerers)} (roster roles marked `answerer: true`)"
+            )
+        elif to == record.get("role"):
+            errors.append("record.to: a role may not ask itself")
+
+
+def _validate_pile_spec(spec, errors: list[str]) -> None:
+    """The optional, structured, coordinate-free `pile_spec` of an answer
+    (research/2026-10-07-planner-design.md 6.3). A list of entries, each
+    either a new-pile entry (`purpose`, `classes`, `tiles`, optional
+    `adjacent_to`, `links_only`, `note`) or a reuse entry (`purpose:
+    reuse`, `pile` naming an existing pile, optional `note`). Anything
+    positional is refused: unknown keys outright, and raw-coordinate
+    patterns inside every text value."""
+    if not isinstance(spec, list) or not spec:
+        errors.append("record.pile_spec: expected a non-empty list of entries")
+        return
+    if len(spec) > PILE_SPEC_MAX_ENTRIES:
+        errors.append(f"record.pile_spec: at most {PILE_SPEC_MAX_ENTRIES} entries")
+    new_keys = {"purpose", "classes", "tiles", "adjacent_to", "links_only", "note"}
+    reuse_keys = {"purpose", "pile", "note"}
+    for i, entry in enumerate(spec):
+        pre = f"record.pile_spec.{i}"
+        if not isinstance(entry, dict):
+            errors.append(f"{pre}: expected an object")
+            continue
+        purpose = entry.get("purpose")
+        if not isinstance(purpose, str) or not purpose:
+            errors.append(f"{pre}.purpose: required, a non-empty string")
+        reuse = purpose == "reuse"
+        allowed = reuse_keys if reuse else new_keys
+        for key in entry:
+            if key not in allowed:
+                errors.append(
+                    f"{pre}.{key}: not a field of a {'reuse' if reuse else 'new-pile'} "
+                    f"entry (allowed: {sorted(allowed)}); a pile_spec is "
+                    "coordinate-free, never a position"
+                )
+        for key in ("purpose", "adjacent_to", "note", "pile"):
+            if key in entry:
+                v = entry[key]
+                if not isinstance(v, str) or not v:
+                    errors.append(f"{pre}.{key}: expected a non-empty string")
+                elif _find_coordinate(v):
+                    errors.append(f"{pre}.{key}: contains a raw-coordinate pattern")
+        if reuse:
+            if "pile" not in entry:
+                errors.append(f"{pre}.pile: required for a reuse entry (the existing pile's name)")
+            continue
+        classes = entry.get("classes")
+        if not isinstance(classes, list) or not classes:
+            errors.append(f"{pre}.classes: required, a non-empty list")
+        else:
+            for c in classes:
+                if c not in PILE_CLASSES:
+                    errors.append(f"{pre}.classes: {c!r} is not a stockpile category ({PILE_CLASSES})")
+        tiles = entry.get("tiles")
+        if isinstance(tiles, bool) or not isinstance(tiles, int) or not 1 <= tiles <= PILE_MAX_TILES:
+            errors.append(f"{pre}.tiles: required, an integer from 1 to {PILE_MAX_TILES} (place's 31 x 31 cap)")
+        if "links_only" in entry and not isinstance(entry["links_only"], bool):
+            errors.append(f"{pre}.links_only: expected true or false")
 
 
 def _validate_answer_fields(record: dict, errors: list[str]) -> None:
@@ -1699,6 +1920,8 @@ def _validate_answer_fields(record: dict, errors: list[str]) -> None:
             errors.append("record.ask_id: expected a non-empty string")
 
     _validate_text_field(record, "answer", errors)
+    if "pile_spec" in record:
+        _validate_pile_spec(record["pile_spec"], errors)
 
 
 # ---- top-level validation ------------------------------------------------------
@@ -1771,9 +1994,14 @@ def validate(record) -> list[str]:
             errors.append(
                 f"record.role: only {ASK_ROLES} may write an ask; got {role!r}"
             )
-        if kind == ANSWER and role != ANSWER_ROLE:
+        if kind == ANSWER and role not in answer_roles():
             errors.append(
-                f"record.role: only {ANSWER_ROLE!r} may write an answer; got {role!r}"
+                f"record.role: only an answerer role {sorted(answer_roles())} "
+                f"may write an answer; got {role!r}"
+            )
+        if kind == FORT_PLAN and role != PLAN_ROLE:
+            errors.append(
+                f"record.role: only {PLAN_ROLE!r} may write a fort_plan; got {role!r}"
             )
         if kind == OBSERVATION and role != OBSERVATION_ROLE:
             errors.append(
@@ -1819,5 +2047,7 @@ def validate(record) -> list[str]:
         _validate_abandon_fields(record, errors)
     elif kind == CLOSE:
         _validate_close_fields(record, errors)
+    elif kind == FORT_PLAN:
+        _validate_fort_plan_fields(record, errors)
 
     return errors

@@ -47,7 +47,7 @@ roles:
     enabled: true
     dir: overseer
     kind: actor
-    summary: Arbitrates proposals, sets priorities, owns the plan and the WIP limit, writes playbooks, and is the only component that mutates the fort.
+    summary: Arbitrates proposals, sets priorities, owns the ordered plan of accepted work (not the fort plan, which is the Planner's) and the WIP limit, writes playbooks, and is the only component that mutates the fort.
 
   architect:
     enabled: true
@@ -59,7 +59,25 @@ roles:
     enabled: true
     dir: consultant
     kind: advisor
+    answerer: true            # may be the addressee of a queue.ask `to` (handoffs/2026-10-07-ask-addressing.md)
     summary: Dwarf Fortress domain knowledge on demand. Answers questions, never decides.
+
+  # Added handoffs/2026-10-07-planner-p1a.md (research/2026-10-07-planner-design.md,
+  # register 2026-10-07 "A Planner role"). Defined but NOT enabled: the server
+  # side (the fort_plan record, plan.write/read/status, the plan_change type) is
+  # built, the conductor wiring that wakes it is stage P1b. Flip `enabled` there.
+  # "Owns the plan" for the overseer entry above means its ordered plan of
+  # accepted work (the `project` record), not this: the record kind here is
+  # `fort_plan` so code never shares the word.
+  planner:
+    enabled: false
+    dir: planner
+    kind: advisor
+    blocked_on: >-
+      Stage P1b: conductor wiring (triage run-first order, the plan_review and
+      plan_bootstrap wakes, the computed season cursor, config, token, pinned
+      openclaw config). Nothing wakes it until then.
+    summary: Owns the fort plan as versioned data (targets now; districts, industries and flows later). Decides what the fort needs and how much, never where or how it is built.
 
   # `kind: system`, added handoffs/2026-09-22-loop-clock-conductor-role.md:
   # code, never an agent (docs/AGENT-LOOP.md). Its token

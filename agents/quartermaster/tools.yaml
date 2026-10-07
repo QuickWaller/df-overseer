@@ -168,6 +168,15 @@ read:
       minimum, maximum and current count, plus an independent count of
       citizens holding the labour: target versus actual. Not yet live-verified.
 
+  - id: "plan.read"
+    status: exists
+    note: >-
+      Added handoffs/2026-10-07-planner-p1a.md (research/2026-10-07-planner-design.md
+      2.5, F-1). The fort plan: the targets whose derived inputs (the bed a
+      bedroom needs, from the serving template's requires) are yours, with their
+      computed position when status=true. A proposal that serves one names its id
+      in `serves`. Read-only. Dispatched natively, not DFHack.
+
 write:
   - id: "queue.propose"
     status: exists

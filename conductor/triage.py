@@ -131,6 +131,9 @@ class Signals:
     # Queue state.
     queue_holds_for_overseer: bool = False
     open_ask_for_consultant: bool = False
+    #: Roles OTHER than the Consultant with an open ask addressed to them
+    #: (`queue.ask`'s `to`, handoffs/2026-10-07-ask-addressing.md).
+    open_ask_for_roles: Tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -276,6 +279,14 @@ def triage(signals: Signals, policy: Policy, *, base_fps: Optional[int] = None) 
             (CONSULTANT,), FULL_SPEED,
         ))
 
+    for answerer in signals.open_ask_for_roles:
+        if answerer == CONSULTANT:
+            continue
+        wakes.append(Wake(
+            "open_ask", f"an ask is open for {answerer}",
+            (answerer,), FULL_SPEED,
+        ))
+
     clock = most_urgent(w.clock for w in wakes)
 
     roles_to_wake: List[str] = []
@@ -284,5 +295,11 @@ def triage(signals: Signals, policy: Policy, *, base_fps: Optional[int] = None) 
             if role and role not in roles_to_wake:
                 roles_to_wake.append(role)
     ordered = tuple(r for r in (*ADVISORS, CONSULTANT, OVERSEER) if r in roles_to_wake)
+    # An addressee the conductor has no fixed slot for runs after the
+    # Consultant and before the Overseer, never silently dropped.
+    extras = tuple(r for r in roles_to_wake if r not in ordered)
+    if extras:
+        head = tuple(r for r in ordered if r != OVERSEER)
+        ordered = (*head, *extras, *(r for r in ordered if r == OVERSEER))
 
     return TriageResult(wakes=tuple(wakes), clock=clock, roles_to_wake=ordered)

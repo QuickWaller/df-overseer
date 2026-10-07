@@ -14,6 +14,10 @@
 #   frozen    true only during the freeze before a cutover: step-less
 #             proposals of the group's types are refused with a message
 #   coverage  true once covered follow-ups skip the Overseer (2c)
+#   ruling_only  true for a type the Overseer rules and nothing executes
+#             (handoffs/2026-10-07-planner-p1a.md, design F-9): no tools, never
+#             routed, never on the unexecuted list; the store closes it when the
+#             thing it authorises files
 #
 # `retired` lists mutating tools that are in no group on purpose and are not
 # on the Overseer's allowlist (a test fails on any other mutating tool that
@@ -37,7 +41,7 @@ groups:
     coverage: false
   stockpiles:
     types: [stockpile_siting]
-    tools: [stockpile.place, stockpile.configure, stockpile.link]
+    tools: [stockpile.place, stockpile.configure, stockpile.link, stockpile.settings, stockpile.set-materials, stockpile.remove]
     routed: false
     frozen: false
     coverage: false
@@ -54,6 +58,12 @@ groups:
     routed: false
     frozen: false
     coverage: false
+  plan:
+    types: [plan_change]
+    routed: false
+    frozen: false
+    coverage: false
+    ruling_only: true
 
 retired:
   # Mutating tools held by no proposing role and by no conductor allowlist

@@ -56,6 +56,13 @@ walls:
     generator's job, not this file's; this template only declares the
     intent and documents both resolutions.
 
+# What one built copy adds to a fort-plan target's signal (read by
+# dfqueue/templates.py; the plan derives a target's inputs from `requires`
+# below and counts a serving site in flight from this).
+provides:
+  - signal: 'zones."Bedroom".furnished'
+    units: 1
+
 requires:
   - bed
 

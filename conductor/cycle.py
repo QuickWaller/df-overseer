@@ -249,8 +249,43 @@ def _queue_summary_for(role: str, queue_state: Mapping[str, Any]) -> Mapping[str
     queue_tools.py`'s old per-caller-role `queue.pending` branch used to
     draw at the SERVER -- now drawn here instead, once, from one
     role-independent read."""
-    key = "asks" if role == CONSULTANT else "proposals"
-    return queue_state.get(key) or _EMPTY_QUEUE_SUB_SUMMARY
+    asks = queue_state.get("asks") or _EMPTY_QUEUE_SUB_SUMMARY
+    if role == CONSULTANT or role in (asks.get("to") or {}):
+        # Asks addressed to this role only; a summary with no `to` map is the
+        # pre-addressing shape, where every ask is the Consultant's.
+        to = asks.get("to")
+        if to is None:
+            return asks if role == CONSULTANT else _EMPTY_QUEUE_SUB_SUMMARY
+        ids = list(to.get(role) or ())
+        return {"count": len(ids), "ask_ids": ids}
+    return queue_state.get("proposals") or _EMPTY_QUEUE_SUB_SUMMARY
+
+
+def _open_ask_addressees(queue_state: Mapping[str, Any]) -> Tuple[str, ...]:
+    """Roles with an open ask addressed to them, from `queue.overview`'s
+    `asks.to` map. A summary without the map is the pre-addressing shape:
+    any open ask is the Consultant's."""
+    asks = queue_state.get("asks") or {}
+    to = asks.get("to")
+    if to is None:
+        return (CONSULTANT,) if asks.get("count", 0) else ()
+    return tuple(role for role, ids in to.items() if ids)
+
+
+def _runnable_ask_addressees(queue_state: Mapping[str, Any], cycle_index: int) -> Tuple[str, ...]:
+    """Open-ask addressees other than the Consultant that the conductor can
+    actually run. An ask addressed to a role it has no runner for (a role added
+    to the roster before the conductor learns to run it) wakes nobody and is
+    logged, never a crash or a blind wake."""
+    out = []
+    for role in _open_ask_addressees(queue_state):
+        if role == CONSULTANT:
+            continue
+        if role in ALL_ROLES and role != OVERSEER:
+            out.append(role)
+        else:
+            LOG.warning("cycle %s: an ask is open for %r, which the conductor does not run", cycle_index, role)
+    return tuple(out)
 
 
 async def _call_write(
@@ -504,6 +539,8 @@ async def _run_role(
     }
     if run_result.thinking:
         end_args["thinking"] = run_result.thinking
+    if run_result.transcript:
+        end_args["transcript"] = json.dumps(run_result.transcript, sort_keys=True, separators=(",", ":"))
     if run_id:
         end_args["run_id"] = run_id
     else:
@@ -740,7 +777,8 @@ async def _run_cycle(cycle_index: int, deps: CycleDeps, hold: HoldState) -> Cycl
         lane_wakes=lane_wakes,
         game_days_since_routine_review=_game_days_since(deps.cursor_store, game_tick, deps.policy),
         queue_holds_for_overseer=bool((queue_state.get("proposals") or {}).get("count", 0)) or bool(to_carry_out),
-        open_ask_for_consultant=bool((queue_state.get("asks") or {}).get("count", 0)),  # gap 1, fixed
+        open_ask_for_consultant=CONSULTANT in _open_ask_addressees(queue_state),  # gap 1, fixed
+        open_ask_for_roles=_runnable_ask_addressees(queue_state, cycle_index),
     )
     triage_result = triage(signals, deps.policy, base_fps=clock_status.get("fps"))
 
@@ -790,18 +828,24 @@ async def _run_cycle(cycle_index: int, deps: CycleDeps, hold: HoldState) -> Cycl
             except MCPToolError as exc:
                 LOG.error("cycle %s: queue re-read after the advisors failed: %s", cycle_index, exc)
             else:
-                if (
-                    bool((queue_state.get("asks") or {}).get("count", 0))
-                    and CONSULTANT not in roles_to_run
-                ):
-                    extra_wakes[CONSULTANT] = Wake(
-                        "open_ask", "an ask filed earlier this cycle is open for the Consultant",
-                        (CONSULTANT,), FULL_SPEED,
+                ran = {r.role for r in role_runs}
+                for addressee in _open_ask_addressees(queue_state):
+                    if addressee in roles_to_run or addressee in ran:
+                        continue
+                    if addressee not in ALL_ROLES or addressee == OVERSEER:
+                        LOG.warning(
+                            "cycle %s: an ask is open for %r, which the conductor does not run",
+                            cycle_index, addressee,
+                        )
+                        continue
+                    extra_wakes[addressee] = Wake(
+                        "open_ask", f"an ask filed earlier this cycle is open for {addressee}",
+                        (addressee,), FULL_SPEED,
                     )
-                    # Inserted at idx: the Consultant runs before the Overseer
-                    # (if any) and after every advisor.
-                    roles_to_run.insert(idx, CONSULTANT)
-                    roles_woken_out.append(CONSULTANT)
+                    # Inserted at idx: runs before the Overseer (if any) and
+                    # after every advisor that already ran.
+                    roles_to_run.insert(idx, addressee)
+                    roles_woken_out.append(addressee)
 
         if idx >= len(roles_to_run):
             break

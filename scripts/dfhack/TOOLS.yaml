@@ -1895,8 +1895,8 @@ df-overseer-zone.lua:
         never an empty list). The install has 18 kinds, not the 17 the
         handoff counted. Each row: token (the game's civzone_type name, the
         name to pass as KIND), key (quickfort's own letter, also accepted),
-        label (display only), finder (`rectangle`, or `water_body` for
-        WaterSource), min and max size (max is the string "unbounded" for
+        label (display only), finder (`rectangle`, or `shore` for
+        WaterSource and FishingArea), min and max size (max is the string "unbounded" for
         every zone), default_dims, owner_capable, room_value_field (which
         position field asks this kind for a room value, or null),
         prefer_indoors, caveat and policy_source ("ZONE_POLICY entry" or
@@ -1947,8 +1947,21 @@ df-overseer-zone.lua:
         statement that what counts toward the value is not exposed by the
         game (an external, older-version wiki account is included and marked
         unverified). A `caveat` says when a kind needs terrain this tool does
-        not check. WaterSource keeps its own finder (connected revealed water
-        bodies, W H refused) and its old output.
+        not check. WaterSource and FishingArea share ONE finder, `shore` (W H
+        refused): dry, unbuilt, standable ground BESIDE water, never the water
+        itself, because the game's Water Source and Fishing zones only count
+        tiles adjacent to water (wiki Zone page and the user's own play,
+        2026-10-07; research/2026-10-07-stockpile-logistics.md section 6).
+        LEVEL is the level of the ground the zone goes on: a sunken pool is
+        found from the level above it. A tile is offered when water is on an
+        orthogonal neighbour at that level, or directly below it or below an
+        orthogonal neighbour. Diagonals are NOT counted and water two levels
+        down is not counted: UNVERIFIED LIVE, the sources do not settle
+        either. Each result adds `water_same_level`, `water_one_level_below`
+        and `adjacency_rule`; the old depth/stagnant/salt keys describe the
+        adjacent water. A ramp or ramp top counts as standable on its shape
+        (getWalkableGroup reads 0 for them on this build). `place` refuses
+        outright when no ground beside water is in reach.
         ADDED 2026-09-23 (handoffs/2026-09-23-zone-inventory-and-validity.md
         item 3): AROUND_FURNITURE (default false, RADIUS_TILES now
         `skippable` too so it can be given without W H/LEVEL) admits a tile
@@ -1993,15 +2006,15 @@ df-overseer-zone.lua:
             default: null
             meaning: >-
               Width in tiles of the zone. Optional; give both W and H or neither. Leave both out for
-              the kind's default size (zone.list-kinds shows it). Refused for WaterSource, whose
-              shape follows the water.
+              the kind's default size (zone.list-kinds shows it). Refused for WaterSource and FishingArea,
+              whose shape follows the shore.
           - name: "H"
             required: false
             default: null
             meaning: >-
               Height in tiles of the zone. Optional; give both W and H or neither. Leave both out
-              for the kind's default size (zone.list-kinds shows it). Refused for WaterSource, whose
-              shape follows the water.
+              for the kind's default size (zone.list-kinds shows it). Refused for WaterSource and FishingArea,
+              whose shape follows the shore.
           - name: "LEVEL"
             required: false
             default: "0"
@@ -2044,15 +2057,15 @@ df-overseer-zone.lua:
           - >-
             AROUND_FURNITURE is refused by name for a kind with no qualifying furniture of its own.
           - >-
-            KIND "water_source" is a special case: it keeps its own finder over connected water
-            bodies and refuses W H entirely, never a rectangle search.
+            KIND water_source and fishing_area are special cases: they share the shore finder (ground
+            beside water, never the water) and refuse W H entirely, never a rectangle search.
         traps:
           - >-
             AROUND_FURNITURE is refused by name outright for a kind with no qualifying furniture,
             rather than silently falling back to the ordinary search.
           - >-
-            KIND water_source refuses W H entirely and runs its own finder over real water, never a
-            rectangle search.
+            KIND water_source and fishing_area refuse W H entirely and run the shore finder over ground
+            beside real water, never a rectangle search and never the water tiles themselves.
     "check-owner KIND OWNER":
       lua_function: check_owner
       effect: read
@@ -2125,8 +2138,10 @@ df-overseer-zone.lua:
         This is a placement-time observation only, not a per-position
         verdict: nobles.requirements is the tool that says whether any
         specific position's requirement is met.
-        WaterSource keeps its old behaviour exactly (a dry run reports the
-        body and `would_zone_tiles`, no quickfort). OWNER (last argument, so
+        WaterSource and FishingArea use the shore finder (2026-10-07: a dry run
+        reports the shore and `would_zone_tiles`, no quickfort; a real run
+        zones the shore tiles, never the water; no ground beside water in
+        reach is refused). OWNER (last argument, so
         RANK RADIUS_TILES and DRY_RUN must be given before it) assigns the
         new zone: a unit id or a position code, validated as in check-owner
         before anything is touched. quickfort's own dry run stops before it
@@ -2164,15 +2179,15 @@ df-overseer-zone.lua:
             default: null
             meaning: >-
               Width in tiles of the zone. Optional; give both W and H or neither. Leave both out for
-              the kind's default size (zone.list-kinds shows it). Refused for WaterSource, whose
-              shape follows the water.
+              the kind's default size (zone.list-kinds shows it). Refused for WaterSource and FishingArea,
+              whose shape follows the shore.
           - name: "H"
             required: false
             default: null
             meaning: >-
               Height in tiles of the zone. Optional; give both W and H or neither. Leave both out
-              for the kind's default size (zone.list-kinds shows it). Refused for WaterSource, whose
-              shape follows the water.
+              for the kind's default size (zone.list-kinds shows it). Refused for WaterSource and FishingArea,
+              whose shape follows the shore.
           - name: "LEVEL"
             required: false
             default: "0"
@@ -3370,7 +3385,7 @@ df-overseer-stockpile.lua:
   # Same convention as df-overseer-zone.lua's own arg_defaults (dfmcp/tools.py
   # fills a slot an agent skipped while naming a later optional argument by
   # name).
-  arg_defaults: {LEVEL: "0", RANK: "1", RADIUS_TILES: "30", DRY_RUN: "true"}
+  arg_defaults: {LEVEL: "0", RANK: "1", RADIUS_TILES: "30", DRY_RUN: "true", LINKS_ONLY: "keep", MAX_BINS: "keep", MAX_BARRELS: "keep", MAX_WHEELBARROWS: "keep"}
   commands:
     list:
       lua_function: list_stockpiles
@@ -3391,7 +3406,12 @@ df-overseer-stockpile.lua:
         dfhack.buildings.getStockpileContents' item positions by (x,y,z),
         deliberately NOT the raw item count (a bin or a stack puts several
         items on one tile). Live-verified against Uniboslan's two real
-        stockpiles.
+        stockpiles. ADDED 2026-10-07 (handoffs/2026-10-07-stockpile-tool-gaps.md): each pile also
+        reports `links_only` and `containers` (max_barrels, max_bins, max_wheelbarrows), each
+        null when the install does not expose the field. Field PATHS verified: live read
+        2026-10-07 (stockpile id 1): `stockpile_flag.use_links_only` (bitfield, false there) and
+        `storage.max_barrels` 25, `storage.max_bins` 25, `storage.max_wheelbarrows` 0, all on the
+        building. (A first cut read them as direct building fields; the live read showed null.)
       summary: "Lists every stockpile with its id, name, fill level and which top-level categories it accepts."
       guide:
         arguments: []
@@ -3421,7 +3441,9 @@ df-overseer-stockpile.lua:
         independently exercised live, since nothing on this fort is
         linked; resolve_link_target is defensive (pcall throughout) and
         marks an entry unresolved rather than guessing if this assumption
-        is ever wrong.
+        is ever wrong. ADDED 2026-10-07: a stockpile's
+        result also carries `links_only` and `containers` (same unverified
+        field names as `list`).
       summary: "Reports the give/take links of one stockpile or workshop."
       guide:
         arguments:
@@ -3625,7 +3647,19 @@ df-overseer-stockpile.lua:
         `stockpile_links` the read-only command uses. UNTESTED LIVE this
         stream: proven against a fake world (both directions, both
         target kinds); the real vectors' exact field types on a live
-        building are unverified.
+        building are unverified. ADDED 2026-10-07
+        (handoffs/2026-10-07-stockpile-tool-gaps.md item 5): a link to a workshop or furnace
+        also returns `warnings` (never a refusal), dry run and real alike:
+        `single_class_trap` when, after the link, some input class of that workshop kind has no
+        linked source (a linked workshop looks ONLY in linked piles), `optional_class_unlinked`
+        for a class needed unless a condition holds (smelter fuel unless magma),
+        `pile_feeds_no_input_class`, and, for a take link (the pile receives the workshop's
+        output), `output_pile_rejects_products`. Checked against input/output classes DERIVED at
+        runtime from the game's job and reaction definitions (dfhack.workshops.getJobs, the source
+        workjob.list-jobs reads), with hand data (df-overseer-stockpile-kinds.lua) only for what the
+        game does not encode; unverified live. A class needed by only some of a kind's jobs is
+        reported as optional, never as a trap. A furnace is
+        accepted as a link target alongside a workshop (UNVERIFIED live).
       summary: "Links one stockpile to another stockpile or a workshop, for automatic give/take."
       guide:
         arguments:
@@ -3696,6 +3730,248 @@ df-overseer-stockpile.lua:
         before_a_real_run:
           - >-
             Optional DRY_RUN (default true).
+        traps: []
+    "settings ID [LINKS_ONLY] [MAX_BINS] [MAX_BARRELS] [MAX_WHEELBARROWS] [DRY_RUN]":
+      lua_function: stockpile_settings
+      skippable: ["[LINKS_ONLY]", "[MAX_BINS]", "[MAX_BARRELS]", "[MAX_WHEELBARROWS]"]
+      effect: mutate
+      coordinate_bearing: false
+      live_deployed: false
+      verified: unverified
+      knowledge_scope: player_derivable
+      notes: >
+        ADDED 2026-10-07 (handoffs/2026-10-07-stockpile-tool-gaps.md items 1 and 2).
+        Writes the links-only flag and the container counts (max bins, barrels, wheelbarrows)
+        of an existing stockpile; an omitted argument or the word keep leaves a field alone. The
+        field paths are `stockpile_flag.use_links_only` (bitfield) and `storage.max_barrels`,
+        `storage.max_bins`, `storage.max_wheelbarrows` (stockpile_storage_infost), VERIFIED BY LIVE
+        READ 2026-10-07; every read is pcall'd, a field the install lacks reads as null and a write
+        to it is refused rather than done blind, and no default is hard-coded. The same fields are
+        reported by `list` and `links`. DRY_RUN defaults to true; a real run reads the values
+        back. WRITES UNTESTED LIVE: proven only against the fake world in
+        tests/test_stockpile_gaps_lua_logic.py.
+      summary: "Sets a stockpile's links-only flag and its bin, barrel and wheelbarrow counts."
+      guide:
+        arguments:
+          - name: "ID"
+            required: true
+            default: null
+            meaning: >-
+              The stockpile's building id.
+          - name: "LINKS_ONLY"
+            required: false
+            default: "keep"
+            meaning: >-
+              true to take items only from linked sources, false to take from anywhere, keep to
+              leave it as it is.
+          - name: "MAX_BINS"
+            required: false
+            default: "keep"
+            meaning: >-
+              The most bins the pile may use (0 stops bin use), or keep.
+          - name: "MAX_BARRELS"
+            required: false
+            default: "keep"
+            meaning: >-
+              The most barrels the pile may use (0 stops barrel use), or keep.
+          - name: "MAX_WHEELBARROWS"
+            required: false
+            default: "keep"
+            meaning: >-
+              The most wheelbarrows assigned to the pile, or keep.
+          - name: "DRY_RUN"
+            required: false
+            default: "true"
+            meaning: >-
+              true (the default) only reports what would change; only the exact word false makes the
+              change.
+        returns: >-
+          A dry run lists each field's current and requested value; a real run reads the pile's
+          links-only flag and counts back. A field this install does not expose is refused.
+        before_a_real_run:
+          - >-
+            Read the pile with stockpile.list first: a null field means the field name is not
+            confirmed on this install.
+        traps:
+          - >-
+            A links-only pile with no links takes nothing.
+    "materials ID CATEGORY":
+      lua_function: stockpile_materials
+      effect: read
+      coordinate_bearing: false
+      live_deployed: false
+      verified: unverified
+      knowledge_scope: player_visible
+      notes: >
+        ADDED 2026-10-07 (handoffs/2026-10-07-stockpile-tool-gaps.md item 3). The finer-than-a-
+        category filter: for one category (stone, wood) lists which of the game's own materials
+        the pile accepts and which it does not, read from the game's material list (the raws
+        vector the pile's per-material booleans are indexed by), never a table of ours. Adding a
+        category is one MATERIAL_FILTERS entry in the Lua file. The layout `settings.<category>.mats`
+        is VERIFIED BY LIVE READ 2026-10-07 (vector<char> of 0/1: 311 entries for stone, 225 for
+        wood). STILL UNVERIFIED: that the vector is indexed like the raws list, and the include
+        test that picks which raws belong in the list, which may differ from the in-game list.
+      summary: "Lists which materials of a category (which stone, which wood) a stockpile accepts."
+      guide:
+        arguments:
+          - name: "ID"
+            required: true
+            default: null
+            meaning: >-
+              The stockpile's building id.
+          - name: "CATEGORY"
+            required: true
+            default: null
+            meaning: >-
+              A category with a material list: stone or wood.
+        returns: >-
+          The accepted and not-accepted material names, the total, and whether the pile accepts the
+          category at all (a pile that does not takes none of it whatever the materials say).
+        before_a_real_run: []
+        traps: []
+    "set-materials ID CATEGORY MATERIALS [DRY_RUN]":
+      lua_function: stockpile_set_materials
+      effect: mutate
+      coordinate_bearing: false
+      live_deployed: false
+      verified: unverified
+      knowledge_scope: player_derivable
+      notes: >
+        ADDED 2026-10-07 (handoffs/2026-10-07-stockpile-tool-gaps.md item 3). Replace semantics
+        over the materials `materials` lists: names in MATERIALS are enabled, every other listed
+        material is disabled; all and none are accepted. An unknown name is refused before
+        anything is written, and a pile that does not accept the category at all gets a warning.
+        DRY_RUN defaults to true. UNTESTED LIVE; same unverified layout caveat as `materials`.
+      summary: "Sets exactly which materials of a category a stockpile accepts."
+      guide:
+        arguments:
+          - name: "ID"
+            required: true
+            default: null
+            meaning: >-
+              The stockpile's building id.
+          - name: "CATEGORY"
+            required: true
+            default: null
+            meaning: >-
+              A category with a material list: stone or wood.
+          - name: "MATERIALS"
+            required: true
+            default: null
+            meaning: >-
+              Comma-separated material names exactly as stockpile.materials gives them, or all, or
+              none. Every other listed material is turned off.
+          - name: "DRY_RUN"
+            required: false
+            default: "true"
+            meaning: >-
+              true (the default) only reports what would change; only the exact word false makes the
+              change.
+        returns: >-
+          Which materials would be enabled and disabled, plus warnings; a real run reads the list
+          back.
+        before_a_real_run:
+          - >-
+            Read the current list with stockpile.materials.
+        traps: []
+    "health":
+      lua_function: stockpile_health
+      effect: read
+      coordinate_bearing: false
+      live_deployed: false
+      verified: unverified
+      knowledge_scope: player_derivable
+      notes: >
+        ADDED 2026-10-07 (handoffs/2026-10-07-stockpile-tool-gaps.md item 4). For every workshop
+        or furnace with any stockpile link: whether each of its input classes (including
+        containers and fuel) has a non-empty linked source, whether a class with no usable
+        source exists fort-wide (via stocks.availability's own count, asked only for a
+        problem class), and whether its output link accepts each product. A workshop with no
+        links is skipped (it draws from anywhere). Each kind's classes are DERIVED at runtime from
+        the game's own job and reaction definitions (see `kind_source`: game_data, or
+        fallback_table when derivation failed and the flagged hand table in
+        df-overseer-stockpile-kinds.lua was used); `unmapped` lists item types the hand category
+        table lacks. Unverified live. An unrecognised kind is reported as unknown_kind, never
+        skipped. Coordinate-free.
+      summary: "Checks each linked workshop for starved inputs and an output pile that rejects its products."
+      guide:
+        arguments: []
+        returns: >-
+          Per linked workshop: its kind, linked input and output piles, each input class with a
+          status (ok, linked_source_empty, no_linked_source, not_linked_optional) and the
+          fort-wide supply for a failing class, each product with whether its output link accepts
+          it, and a problems list. A workshop with only an output link draws its inputs from
+          anywhere.
+        before_a_real_run: []
+        traps:
+          - >-
+            Only the coarse category is compared, so a pile of the right category but the wrong
+            material reads as a source.
+    "plan-feed WORKSHOP_KIND|ID":
+      lua_function: stockpile_plan_feed
+      effect: read
+      coordinate_bearing: false
+      live_deployed: false
+      verified: unverified
+      knowledge_scope: player_derivable
+      notes: >
+        ADDED 2026-10-07 (handoffs/2026-10-07-stockpile-tool-gaps.md item 4). A dry-run spec,
+        nothing is built: for a workshop kind (or a workshop id) the piles, categories, sizes,
+        links and container counts that feed it: a bounded links-only feeder per input class
+        (including containers and fuel) with no bins, barrels or wheelbarrows, a shared any-source
+        pile each feeder takes from, and an output pile that accepts every product. Given an id,
+        classes its current links already cover are left out. From the same runtime-derived,
+        unverified per-kind classes as `health`; the result carries `kind_source`, `unmapped`
+        and, on fallback, `derive_error`.
+      summary: "Specs the feeder, source and output piles and links a workshop kind needs."
+      guide:
+        arguments:
+          - name: "WORKSHOP_KIND|ID"
+            required: true
+            default: null
+            meaning: >-
+              A workshop kind name (Still, Kitchen, Masons, Carpenters, Mechanics, Smelter and so
+              on) or the building id of one workshop.
+        returns: >-
+          Piles (handle, purpose, accepted categories, size in tiles, links-only, container
+          counts), links between them by handle, and notes. The handles are labels for the plan,
+          not building ids.
+        before_a_real_run: []
+        traps: []
+    "remove ID [DRY_RUN]":
+      lua_function: stockpile_remove
+      effect: mutate
+      coordinate_bearing: false
+      live_deployed: false
+      verified: unverified
+      knowledge_scope: player_derivable
+      notes: >
+        ADDED 2026-10-07 (handoffs/2026-10-07-stockpile-tool-gaps.md item 6). Retires a
+        stockpile. DRY_RUN defaults to true and reports the items in the pile, the links that
+        would be dropped, and warnings (items left lying, a workshop that would lose its last
+        feeder or be left without an input class). A real run asks DFHack to deconstruct the
+        building and reads back whether it is gone; whether that removes a stockpile at once and
+        cleans the other ends' link vectors is UNVERIFIED live.
+      summary: "Removes a stockpile, after reporting what it holds and which workshops it feeds."
+      guide:
+        arguments:
+          - name: "ID"
+            required: true
+            default: null
+            meaning: >-
+              The stockpile's building id.
+          - name: "DRY_RUN"
+            required: false
+            default: "true"
+            meaning: >-
+              true (the default) only reports what would change; only the exact word false makes the
+              change.
+        returns: >-
+          Items in the pile, links that would be dropped and warnings; a real run reports whether
+          the building is gone.
+        before_a_real_run:
+          - >-
+            Run the dry run and read the warnings; items in the pile stay where they lie.
         traps: []
 df-overseer-stuckjobs.lua:
   build_order_item: 8

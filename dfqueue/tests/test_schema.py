@@ -488,7 +488,7 @@ def test_answer_requires_answer_text():
 def test_answer_is_refused_from_any_role_but_consultant():
     record = make_answer(role="architect")
     errors = schema.validate(record)
-    assert _errors_mentioning(errors, "only 'consultant' may write an answer")
+    assert _errors_mentioning(errors, "may write an answer")
 
 
 # ---- escalation (handoffs/2026-09-22-loop-conductor-fixes.md item 3) ------------
