@@ -1,0 +1,9 @@
+# Hand-kept deploy epochs for dfqueue/wake_metrics.py. Used only when the
+# runs rows carry no charter/tools/policy hash (none do yet). An epoch is the
+# interval from its `since` to the next entry. Add a line when a deploy
+# changes a role's charter, allowlist or wake policy.
+epochs:
+  - id: e1-runs-store
+    since: "2026-10-05T00:00:00+00:00"   # runs store and the 2026-10-05 lane change
+  - id: e2-transcripts
+    since: "2026-10-07T00:00:00+00:00"   # per-run transcripts recorded
