@@ -449,13 +449,13 @@ def _roster_copy(tmp_path):
     return agents
 
 
-async def test_the_real_roster_has_the_planner_enabled():
+async def test_the_real_roster_has_the_planner_defined_but_disabled():
     manifest = yaml.safe_load((REPO / "agents" / "ROSTER.yaml").read_text(encoding="utf-8"))
-    assert manifest["roles"]["planner"]["enabled"] is True
+    assert manifest["roles"]["planner"]["enabled"] is False
     assert manifest["roles"]["planner"]["kind"] == "advisor"
     for f in ("role.md", "tools.yaml", "model.yaml"):
         assert (REPO / "agents" / "planner" / f).is_file()
-    assert "planner" in load_roster(load_registry(native_tools=ALL_NATIVE_TOOLS)).roles
+    assert "planner" not in load_roster(load_registry(native_tools=ALL_NATIVE_TOOLS)).roles
 
 
 async def test_the_planner_allowlist_loads_enabled_with_twelve_non_mutating_tools(tmp_path):

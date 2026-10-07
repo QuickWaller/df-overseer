@@ -24,18 +24,18 @@ Last check: 2026-10-05T06:34:49Z, overall: clean
 ## Per-role tool counts (offline, from the repo's own registry + roster)
 
 - **architect**: 54
-- **conductor**: 36
+- **conductor**: 35
 - **consultant**: 29
 - **overseer**: 82
-- **planner**: 12
 - **quartermaster**: 27
 
-Hand-edited 2026-10-07 (handoffs/2026-10-07-planner-p1b.md), not yet regenerated:
-the **planner** (8 reads, 4 writes) is enabled in `agents/ROSTER.yaml`, and the
-conductor gained `plan.status` (35 to 36). Architect, overseer and quartermaster
-each gained `plan.read` in P1a. The conductor's own `plan.enabled` switch in
-`conductor/policy.yaml` is separate: the Planner is never woken while it is off.
-Regenerate with `python scripts/drift_check.py --write-state` after the P1b deploy.
+Hand-edited 2026-10-07 (handoffs/2026-10-07-planner-p1a.md), not yet regenerated:
+architect, overseer and quartermaster each gained `plan.read` (53, 81, 26 before).
+The **planner** (12 tools: 8 reads, 4 writes) is defined in `agents/ROSTER.yaml` but
+`enabled: false` until stage P1b, so the roster loader does not count it and the
+generator will not list it until it is enabled; `dfmcp/tests/test_plan_tools.py`
+loads its allowlist against an enabled copy and pins the 12. Regenerate with
+`python scripts/drift_check.py --write-state` after the P1b deploy.
 
 ## Services
 

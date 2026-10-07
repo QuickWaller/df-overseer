@@ -288,7 +288,7 @@ def test_non_unit_target_does_not_list_untracked():
 
 def test_offline_role_tool_counts_matches_real_roster():
     counts = drift_check.offline_role_tool_counts()
-    assert set(counts) == {"overseer", "architect", "consultant", "conductor", "quartermaster", "planner"}
+    assert set(counts) == {"overseer", "architect", "consultant", "conductor", "quartermaster"}
     assert all(c > 0 for c in counts.values())
 
 

@@ -149,17 +149,6 @@ read:
       reachable ahead of that, the same order queue.grade/queue.overview
       were granted in. One line per project (status, target counts, the top
       blocker's reason), never the whole graph.
-  - id: "plan.status"
-    status: exists
-    note: >-
-      Added handoffs/2026-10-07-planner-p1b.md. Native tool (dfmcp/plan_tools.py),
-      conductor only (the handler also refuses any other role). Read once a cycle
-      by conductor/plan_watch.py when `plan.enabled`: the active plan with every
-      target's computed position (on hand, in flight, serving proposals, derived
-      inputs, state), per-owner in-flight use, accepted plan_change rulings
-      awaiting the Planner, and the last review tick. The server does all the
-      arithmetic; the conductor keeps only the wake bookkeeping (backoff,
-      stalled). Read-only.
   - id: "pause.why"
     status: exists
     note: >-
