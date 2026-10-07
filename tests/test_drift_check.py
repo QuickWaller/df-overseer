@@ -329,11 +329,11 @@ def test_check_live_tool_counts_probe_present_clean_when_ids_match():
 def test_check_live_tool_counts_catches_id_level_mismatch_with_equal_counts():
     """Same COUNT as the real conductor role, but one real id swapped
     for another role's real id ("overview.get" replaced by architect's
-    "zone.list") plus one name the current registry does not recognise at
+    "stockpile.list") plus one name the current registry does not recognise at
     all -- a count-only check would miss both; this must not."""
     conductor_ids = sorted(drift_check.offline_role_tool_ids()["conductor"])
     assert "overview.get" in conductor_ids
-    swapped = [tid for tid in conductor_ids if tid != "overview.get"] + ["zone.list"]
+    swapped = [tid for tid in conductor_ids if tid != "overview.get"] + ["stockpile.list"]
     assert len(swapped) == len(conductor_ids)
     names_all = "".join(f"conductor\t{tid.replace('.', '__')}\n" for tid in swapped)
     names_all += "conductor\tnot-a-real-tool\n"
@@ -348,7 +348,7 @@ def test_check_live_tool_counts_catches_id_level_mismatch_with_equal_counts():
     m = result["mismatches"]["conductor"]
     assert m["offline"] == m["live"] == len(conductor_ids)  # counts agree; ids still caught the drift
     assert m["missing_live"] == ["overview.get"]
-    assert m["extra_live"] == ["zone.list"]
+    assert m["extra_live"] == ["stockpile.list"]
     assert m["unknown_live_names"] == ["not-a-real-tool"]
 
 
