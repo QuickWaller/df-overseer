@@ -267,12 +267,20 @@ QUEUE_ABANDON = "queue.abandon"
 #: open projects and the last rulings. Conductor only: granted by
 #: agents/conductor/tools.yaml and refused by the handler for any other role.
 QUEUE_PENDING_BRIEF = "queue.pending_brief"
+#: Added handoffs/2026-10-07-own-filings.md (research/2026-10-07-notebook-red-
+#: team.md finding 6). A proposing role's own filings and where each stands.
+#: The role is the caller's authenticated role, never an argument, so no role
+#: can read another's. Read-only; granted to architect, quartermaster, planner.
+QUEUE_MY_FILINGS = "queue.my_filings"
+#: Cap and default for `queue.my_filings`'s `limit`.
+MY_FILINGS_MAX = 25
+MY_FILINGS_DEFAULT = 10
 
 NATIVE_TOOL_IDS = (
     QUEUE_PROPOSE, QUEUE_PASS, QUEUE_RULE, QUEUE_PENDING, QUEUE_ASK,
     QUEUE_ANSWER, QUEUE_EXECUTED, QUEUE_GRADE, QUEUE_OVERVIEW, QUEUE_ESCALATE,
     QUEUE_PROJECT, QUEUE_PROJECT_STATUS, QUEUE_AMEND, QUEUE_ABANDON,
-    QUEUE_PENDING_BRIEF,
+    QUEUE_PENDING_BRIEF, QUEUE_MY_FILINGS,
 )
 
 
@@ -337,6 +345,8 @@ class NativeTool:
             return _ABANDON_DESCRIPTION, _ABANDON_SCHEMA
         if self.id == QUEUE_PENDING_BRIEF:
             return _PENDING_BRIEF_DESCRIPTION, _PENDING_BRIEF_SCHEMA
+        if self.id == QUEUE_MY_FILINGS:
+            return _MY_FILINGS_DESCRIPTION, _MY_FILINGS_SCHEMA
         raise AssertionError(f"NativeTool.describe: unknown id {self.id!r}")  # pragma: no cover
 
 
@@ -391,6 +401,8 @@ NATIVE_TOOLS: Dict[str, NativeTool] = {
     # queue.pending_brief: a read, restricted to the conductor by its
     # tools.yaml grant and again by the handler (the role check).
     QUEUE_PENDING_BRIEF: NativeTool(id=QUEUE_PENDING_BRIEF, mutates=False, sole_writer_only=False),
+    # queue.my_filings: a read keyed to the caller's own role.
+    QUEUE_MY_FILINGS: NativeTool(id=QUEUE_MY_FILINGS, mutates=False, sole_writer_only=False),
 }
 
 
@@ -717,6 +729,32 @@ _PENDING_SCHEMA = {
             "type": "integer",
             "minimum": 1,
             "description": "Return at most this many pending records. Omit for all of them.",
+        },
+    },
+}
+
+_MY_FILINGS_DESCRIPTION = (
+    "Read-only: the proposals YOU filed, newest first, each with its id, type, "
+    "summary, status (pending, accepted, rejected, deferred, closed, completed, "
+    "in_project with the project's step state), urgency, the latest ruling's "
+    "decision and reason, and the project or close outcome. Check it before "
+    "filing: do not re-file what is accepted or already in a project. Filters: "
+    "status, proposal_id, limit."
+)
+
+_MY_FILINGS_SCHEMA = {
+    "type": "object",
+    "additionalProperties": False,
+    "properties": {
+        "status": {
+            "type": "string",
+            "enum": list(store.FILING_STATUSES),
+            "description": "Keep only filings in this state.",
+        },
+        "proposal_id": {"type": "string", "description": "One of your own proposals, by id."},
+        "limit": {
+            "type": "integer", "minimum": 1, "maximum": MY_FILINGS_MAX,
+            "description": f"At most this many (default {MY_FILINGS_DEFAULT}, max {MY_FILINGS_MAX}).",
         },
     },
 }
@@ -1287,6 +1325,7 @@ _PROPOSE_FIELDS = {
 _PASS_FIELDS = {"reason"}
 _RULE_FIELDS = {"proposal_id", "decision", "reason", "public_rationale", "urgency"}
 _PENDING_FIELDS = {"limit"}
+_MY_FILINGS_FIELDS = {"status", "proposal_id", "limit"}
 _PENDING_BRIEF_FIELDS = {"limit"}
 _ASK_FIELDS = {"question", "proposal_id", "to"}
 _ANSWER_FIELDS = {"ask_id", "answer", "pile_spec"}
@@ -1511,6 +1550,52 @@ async def _pending(
     else:
         structured = {"count": len(records), "proposal_ids": ids}  # unchanged key, pre-existing callers
     return xml, structured
+
+
+def filing_line(f: Mapping[str, Any]) -> str:
+    """One filing as a single plain line (the tool's text and the briefing
+    block share it)."""
+    status = f["status"]
+    if f.get("project_id"):
+        status = f"{status} [{f['project_id']}: {f.get('project_status')}]"
+    line = f"{f['id']} {f.get('type')} {status}"
+    if f.get("urgency"):
+        line += f" urgency={f['urgency']}"
+    line += f": {_clip(f.get('summary'), 120)}"
+    ruling = f.get("ruling")
+    if ruling:
+        line += f" | {ruling.get('decision')}: {_clip(ruling.get('reason'), 160)}"
+    if f.get("close"):
+        line += f" | closed {f['close'].get('outcome')}: {_clip(f['close'].get('reason'), 120)}"
+    return line
+
+
+async def _my_filings(
+    role: str, arguments: Mapping[str, Any], *, db_path, call_dfhack: CallDFHack,
+    write_lock: "asyncio.Lock",
+) -> Tuple[str, dict]:
+    """The caller's own proposals only: `role` comes from the credential, and
+    there is no argument that names another role."""
+    _reject_unknown_arguments(QUEUE_MY_FILINGS, arguments, _MY_FILINGS_FIELDS)
+    status = arguments.get("status")
+    if status is not None and status not in store.FILING_STATUSES:
+        raise QueueToolError(f"{QUEUE_MY_FILINGS}: 'status' must be one of {list(store.FILING_STATUSES)}, got {status!r}")
+    proposal_id = arguments.get("proposal_id")
+    if proposal_id is not None and not isinstance(proposal_id, str):
+        raise QueueToolError(f"{QUEUE_MY_FILINGS}: 'proposal_id' must be a string")
+    limit = arguments.get("limit", MY_FILINGS_DEFAULT)
+    if isinstance(limit, bool) or not isinstance(limit, int) or not (1 <= limit <= MY_FILINGS_MAX):
+        raise QueueToolError(f"{QUEUE_MY_FILINGS}: 'limit' must be an integer 1-{MY_FILINGS_MAX}, got {limit!r}")
+    try:
+        rows = await asyncio.to_thread(
+            store.own_filings, db_path, role, status=status, proposal_id=proposal_id, limit=limit,
+        )
+    except store.QueueError as exc:
+        raise _write_error(QUEUE_MY_FILINGS, exc) from exc
+    except (sqlite3.Error, OSError) as exc:
+        raise _storage_error(QUEUE_MY_FILINGS, exc) from exc
+    text = "\n".join(filing_line(r) for r in rows) if rows else "No filings match."
+    return text, {"count": len(rows), "filings": rows}
 
 
 async def _ask(
@@ -1940,6 +2025,7 @@ _HANDLERS = {
     QUEUE_AMEND: _amend,
     QUEUE_ABANDON: _abandon,
     QUEUE_PENDING_BRIEF: _pending_brief,
+    QUEUE_MY_FILINGS: _my_filings,
 }
 
 #: Handlers that read other tools at call time and so take the injected reader.

@@ -177,6 +177,16 @@ read:
       computed position when status=true. A proposal that serves one names its id
       in `serves`. Read-only. Dispatched natively, not DFHack.
 
+  - id: "queue.my_filings"
+    status: exists
+    note: >-
+      Added handoffs/2026-10-07-own-filings.md (research/2026-10-07-notebook-
+      red-team.md finding 6). Your own proposals, newest first, with each one's
+      status (pending, accepted, rejected, deferred, closed, completed, in a
+      project), the latest ruling's reason and the project's step state. Your
+      role comes from your credential; you cannot read anyone else's. Check it
+      before filing: do not re-file what is accepted or in a project.
+
 write:
   - id: "queue.propose"
     status: exists
