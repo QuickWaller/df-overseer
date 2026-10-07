@@ -29,6 +29,15 @@ assigns no workers and runs no manager orders, which is normal.
     needs a constant key; keep the prompt prefix byte-stable before
     `game_tick`).
   Wording as policy data, not code.
+- **State stamp on every tool reply** (user, 2026-10-07: agents must not
+  work from a stale fort state mid-turn, but are never interrupted
+  mid-thought): the MCP server adds a one-line header to every tool result
+  for fort agents, e.g. `fort: paused, held` or `fort: running`, read from a
+  cheap cached state (refresh at most every few seconds; never a slow read
+  per call). It must not change tool result bodies tests rely on beyond the
+  header; keep it out of conductor-only tools if that is simpler. Note any
+  prompt-cache impact (it sits in tool results, which are after the stable
+  prefix).
 - Overseer charter: one sentence under Known hazards: do not record a
   gotcha or defer on "stuck" jobs or orders while the briefing says paused.
 - `gotchas.write`: refuse (server-side) a new gotcha while the fort is
@@ -41,7 +50,7 @@ assigns no workers and runs no manager orders, which is normal.
 
 Touched surfaces: `conductor/briefing.py`, `conductor/cycle.py`,
 `conductor/policy.yaml` (own small block), `agents/overseer/role.md` (one
-sentence), `dfmcp/gotchas_*` only for the gotcha rule, tests, this handoff.
+sentence), `dfmcp/gotchas_*` only for the gotcha rule, `dfmcp/server.py` (or wherever tool results are wrapped) for the stamp, tests, this handoff.
 Public repo: no hostnames, IPs or tokens. No em dashes. No attribution
 lines. Commit after each milestone. Do not write Working.md, DECISIONS.md,
 memory or INDEX.md. Full ambient `python -m pytest` (lupa on PYTHONPATH)
