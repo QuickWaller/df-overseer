@@ -194,3 +194,67 @@ thirst fine; same after. Fort left PAUSED, fps 100, tripwire re-armed on default
 validated, job with `order_id=2` at a workshop, items rising (14 to 52 DRINK) is therefore observed
 at its two ends and by the finished order; the intermediate `amount_left` was not sampled, so the exact
 tick of each brew is not recorded.
+
+## Phase D: the real Overseer, one shot (not a conductor cycle)
+
+Setup, by hand, fort paused (tick 376560): `nobles__unappoint MANAGER` (event written, vacant), and
+`orders__create BREW_DRINK_FROM_PLANT 4` (order 9, `validated: false`, `manager_appointed: false`).
+
+Run: the conductor's own `DockerOpenClawRunner.run` (`conductor/runner.py`), driven by a small script
+through a transient systemd unit mirroring `conductor.service` (User df, SupplementaryGroups docker, its
+EnvironmentFile, its WorkingDirectory), role `overseer`, charter `agents/overseer/role.md` as SOUL.md,
+the conductor's pinned config, model `CONDUCTOR_MODEL_OVERSEER`, 600 s cap. conductor.service itself was
+not started or enabled, and no cycle ran. The only input was this factual message (no tool, unit or step
+named): the Manager position is vacant; one manager work order (id 9, brew drink from plant, 4) is
+queued and unvalidated; fort paused, 24 alive, no warnings; "decide what, if anything, to do about this,
+and do it if you decide to". Wall clock 1 min 42 s, 7 assistant turns, 2 failed calls.
+
+What it did (its toolset, from the dfmcp journal, role overseer): `nobles.list`, `orders.list`,
+`nobles.requirements`, `plan.read` (FAILED, see below), `gotchas.get`, `labor.unit-status idle`
+(FAILED, see below), `zone.list`, `nobles.verify`, `nobles.appoint` dry run, then `nobles.appoint
+dry_run=false unit 194`, `nobles.verify`. It chose unit 194 (a Woodworker, idle) by reading idle
+citizens, appointed MANAGER, verified it (consistent, both cached indexes, event found), and said in
+its answer that the Manager needs an office (`nobles.requirements`: Office required, not met) and
+that it could not assign one: two unowned Office zones exist but it has no owner-assign tool. It
+stopped there. No refusals; no queue or ruling was involved (nobles.appoint is a direct Overseer write).
+
+Finding, tool gap: `zone.assign-owner` is in NO role's allowlist (architect has check-owner, overseer has
+clear-owner, nobody can assign), so the agent path cannot complete "appoint a manager with an office".
+Not fixed here (a role-allowlist decision for the orchestrator/user).
+
+Result of the incomplete appointment (unit 194 holds MANAGER, owns no office; 24 citizens, so the
+manager must work in an office): supervised unpause 100 FPS, ticks 376560 to 395401 (about 19000
+ticks, 200 s): order 9 stayed `validated: false, active: false, left 4/4` the whole time, no job
+with order_id. DRINK fell 52 to 30 (consumption). That is the "no manager message" state silently
+failing for a different reason: the manager had no office.
+
+Then, by hand, `df-overseer-zone assign-owner 13 194 false true` (OVERRIDE; zone 13 was still owned by
+the previous manager 347; this is the same step a player does). Created order 10 (brew, 3) and sampled
+`/tmp/a8.lua` every 12 s while the supervised window ran (fps 100):
+
+| tick | order 10 | jobs with order_id | DRINK units |
+|---|---|---|---|
+| 13598 (year 32, paused) | validated false, active false, 3/3 | none | 28 |
+| 14790, 15993 | validated false | none | 28 |
+| 17194 | validated TRUE, active false, 3/3 | none | 25 |
+| 18397 | validated true | none | 24 |
+| 19600 | active TRUE, 3/3 | CustomReaction order_id=10 | 24 |
+| 20606 | left 2/3 | CustomReaction order_id=10 | 28 |
+| 21995 | left 1/3 | CustomReaction order_id=10 | 29 |
+| 23197 | order finished and gone | none | 34 |
+| 24400 to 26804 | | | 33, 32, 30 (consumption) |
+
+Validation about 3600 ticks after the office was assigned (the manager has to do the paperwork), a
+job at the workshop linked by `order_id`, `amount_left` stepping 3, 2, 1, DRINK stack rising 24 to 34
+(brews are consumed in parallel). 24 alive at every poll and after, warning_count 0, hunger and thirst
+fine. Fort left PAUSED (fps 100, tripwire on defaults). Order 9 was no longer listed at tick 13598
+(it ran during the second window, validated once the office was owned).
+
+Not restored: the manager is now unit 194 (Woodworker, office zone 13); the previous manager 347 holds
+only EXPEDITION_LEADER. This is reversible from the in-game Nobles screen. The agent's choice was
+reasonable, not bad.
+
+Side findings: (1) `plan.read` fails on VM 103 with FileNotFoundError for `plans/default-v1.yaml`
+under `/opt/df/dfmcp-smoke/`: the dfmcp deploy does not ship the plans file, or the path is wrong
+(planner role will hit this). (2) `labor.unit-status` with an idle filter printed text that is not
+valid JSON, so the call errored for the Overseer (CITIZEN id=... lines).
