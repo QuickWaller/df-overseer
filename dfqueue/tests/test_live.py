@@ -122,3 +122,17 @@ def test_read_journal_lines_handles_failure_and_success():
         return subprocess.CompletedProcess(cmd, 0, "a\nb\n", "")
 
     assert live.read_journal_lines(run=ok) == ["a", "b"]
+
+
+def test_runs_payload_carries_every_wake_reason_and_falls_back_for_old_rows():
+    row = {"run_id": "run-0002", "role": "architect", "wake_reason": "stuck_job",
+           "wake_reasons": json.dumps(["stuck_job", "season_change", "Bad Reason"]),
+           "started_at": "2026-10-07T00:00:00+00:00", "ended_at": "2026-10-07T00:01:00+00:00",
+           "status": "ok", "ok": 1, "duration_s": 60.0, "records_json": "[]"}
+    old = {**row, "run_id": "run-0001", "wake_reason": "routine_review", "wake_reasons": None}
+    for public, expected in ((True, ["stuck_job", "season_change"]),
+                             (False, ["stuck_job", "season_change", "Bad Reason"])):
+        out = live.build_runs([row, old], 0.0, public=public)
+        by_id = {r["run_id"]: r for r in out["runs"]}
+        assert by_id["run-0002"]["wake_reasons"] == expected
+        assert by_id["run-0001"]["wake_reasons"] == ["routine_review"]

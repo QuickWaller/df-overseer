@@ -271,3 +271,45 @@ def test_pause_verdict_allowlists_and_the_overseer_still_has_no_resume():
     for role in ("architect", "quartermaster", "consultant"):
         assert roster.check(role, "pause.verdict")[0] is False
     assert roster.check("overseer", "clock.resume")[0] is False
+
+
+async def test_every_wake_reason_is_stored_ordered_and_deduplicated(db):
+    await _call({"phase": "start", "role": "architect", "wake_reason": "stuck_job",
+                 "wake_reasons": ["stuck_job", "season_change", "stuck_job", "open_ask"]}, db)
+    row = runs.get_run(runs.runs_path(db), "run-0001")
+    assert row["wake_reason"] == "stuck_job"
+    assert json.loads(row["wake_reasons"]) == ["stuck_job", "season_change", "open_ask"]
+    assert runs.decode_wake_reasons(row) == ["stuck_job", "season_change", "open_ask"]
+
+
+async def test_end_without_a_start_still_records_the_reasons(db):
+    await _call({"phase": "end", "role": "consultant", "wake_reason": "open_ask",
+                 "wake_reasons": ["open_ask", "routine_review"], "duration_s": 5, "status": "ok"}, db)
+    row = runs.get_run(runs.runs_path(db), "run-0001")
+    assert runs.decode_wake_reasons(row) == ["open_ask", "routine_review"]
+
+
+async def test_a_lone_wake_reason_leads_the_list_and_bad_lists_are_refused(db):
+    await _call({"phase": "start", "role": "overseer", "wake_reason": "queue_pending"}, db)
+    assert runs.decode_wake_reasons(runs.get_run(runs.runs_path(db), "run-0001")) == ["queue_pending"]
+    with pytest.raises(ct.ConductorToolError):
+        await _call({"phase": "start", "role": "overseer", "wake_reasons": "queue_pending"}, db)
+    with pytest.raises(ct.ConductorToolError):
+        await _call({"phase": "start", "role": "overseer", "wake_reasons": [1]}, db)
+
+
+def test_an_old_store_is_migrated_and_old_rows_fall_back_to_the_one_reason(tmp_path):
+    p = tmp_path / "old.runs.sqlite3"
+    conn = sqlite3.connect(p)
+    conn.execute("CREATE TABLE runs (run_id TEXT PRIMARY KEY, role TEXT NOT NULL, wake_reason TEXT, "
+                 "wake_detail TEXT, cycle INTEGER, started_at TEXT NOT NULL, ended_at TEXT, status TEXT, "
+                 "ok INTEGER, timed_out INTEGER, duration_s REAL, cost_usd REAL, error TEXT, "
+                 "final_answer TEXT, records_json TEXT)")
+    conn.execute("INSERT INTO runs (run_id, role, wake_reason, started_at) VALUES "
+                 "('run-0001', 'architect', 'routine_review', '2026-10-01T00:00:00+00:00')")
+    conn.commit()
+    conn.close()
+    runs.start_run(p, role="overseer", wake_reason="a", wake_detail=None, cycle=1, wake_reasons=["a", "b"])
+    old, new = runs.get_run(p, "run-0001"), runs.get_run(p, "run-0002")
+    assert runs.decode_wake_reasons(old) == ["routine_review"]
+    assert runs.decode_wake_reasons(new) == ["a", "b"]

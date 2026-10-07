@@ -395,3 +395,9 @@ def test_sweeps_cluster_back_to_back_runs_not_the_cycle_column():
             {"run_id": "b", "started_at": "2026-10-05T01:05:10+00:00", "ended_at": "2026-10-05T01:08:00+00:00"},
             {"run_id": "c", "started_at": "2026-10-05T05:00:00+00:00", "ended_at": "2026-10-05T05:01:00+00:00"}]
     assert wm._sweeps(runs) == {"a": 1, "b": 1, "c": 2}
+
+
+def test_per_wake_reasons_list_falls_back_to_the_single_reason_and_stays_safe():
+    assert wm._wake_reasons({"wake_reason": "queue_pending"}) == ["queue_pending"]
+    assert wm._wake_reasons({"wake_reason": "a", "wake_reasons": json.dumps(["a", "b c", "d"])}) == ["a", "other", "d"]
+    assert wm._wake_reasons({}) == []
