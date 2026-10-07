@@ -36,7 +36,7 @@ breaking change; additions are not breaking):
   "unattributed": {"proposals", "repeats"},   # records no run wrote
   "notes": [str]                              # fixed strings
 }
-<group> = {"wakes","killed","at_risk_wakes","m1","m1_wide","m2","m3",
+<group> = {"wakes","killed","at_risk_wakes","m1","m1_wide","m1_struct","m2","m3",
            "m3_cross_role","r","r_per_wake","r_per_at_risk_wake",
            "cost": {"n","mean","median","sum"}, "rounds": {...},
            "rounds_to_first_write": {...}, "orientation_reads": {...},
@@ -99,6 +99,7 @@ _SAFE_TOOL_RE = re.compile(r"^[A-Za-z0-9_.\-*]{1,80}$")
 DEFINITIONS = {
     "m1": "repeat proposal: same role and type, summary or rationale near-duplicate of an earlier proposal still open, rejected or accepted-not-completed within the role's last 10 wakes",
     "m1_wide": "m1 plus same role, type, prediction signal and operator (sensitivity only)",
+    "m1_struct": "m1 plus same role, type, prediction signal and operator and mostly the same precondition landmarks (sensitivity only)",
     "m2": "repeat defer: a defer whose previous ruling on the proposal was also a defer and nothing about the proposal changed between them",
     "m3": "same-role duplicate: duplicate_of set, or final rejection with a duplicate-style reason",
     "r": "m1 or m3 proposals plus m2 defers written in the wake, each record once",
@@ -256,6 +257,7 @@ class Classified:
     def __init__(self) -> None:
         self.m1: Dict[str, str] = {}
         self.m1_wide: Dict[str, str] = {}
+        self.m1_struct: Dict[str, str] = {}
         self.m1_status: Dict[str, str] = {}
         self.m3: Dict[str, Optional[str]] = {}
         self.m3_cross: set = set()
@@ -321,6 +323,24 @@ def _signal_key(rec: dict, predictions: dict) -> Optional[tuple]:
     return None
 
 
+def _landmarks(rec: dict) -> frozenset:
+    pre = rec.get("preconditions")
+    return frozenset(
+        str(p["landmark"]).lower() for p in pre if isinstance(p, dict) and p.get("landmark")
+    ) if isinstance(pre, list) else frozenset()
+
+
+def _struct_match(a: dict, b: dict, sk_a: Optional[tuple], sk_b: Optional[tuple]) -> bool:
+    """Same prediction signal and operator, and the preconditions name
+    mostly the same landmarks (Jaccard at least 0.5). Catches a paraphrased
+    repeat the text rule misses without matching every proposal that shares
+    a signal (M1-wide does)."""
+    if not sk_a or sk_a != sk_b:
+        return False
+    la, lb = _landmarks(a), _landmarks(b)
+    return bool(la | lb) and len(la & lb) / len(la | lb) >= 0.5
+
+
 def classify(records: List[dict], predictions: Optional[dict] = None,
              runs: Optional[List[dict]] = None, epochs: Optional[List[dict]] = None) -> Classified:
     """Pure over records. M1 within role, M3 same-role, M2 with the spec's
@@ -358,6 +378,8 @@ def classify(records: List[dict], predictions: Optional[dict] = None,
             sk_a, sk_b = _signal_key(a, predictions), _signal_key(b, predictions)
             if (text_match or (sk_a and sk_a == sk_b)) and b["id"] not in out.m1_wide:
                 out.m1_wide[b["id"]] = a["id"]
+            if (text_match or _struct_match(a, b, sk_a, sk_b)) and b["id"] not in out.m1_struct:
+                out.m1_struct[b["id"]] = a["id"]
 
     for p in props:
         ref = p.get("duplicate_of")
@@ -543,6 +565,7 @@ def per_wake_rows(queue: dict, runs: List[dict], cls: Classified, epochs: List[d
         props = [i for i in ids if by_id.get(i, {}).get("kind") == "proposal"]
         m1 = [i for i in props if i in cls.m1]
         m1w = [i for i in props if i in cls.m1_wide]
+        m1s = [i for i in props if i in cls.m1_struct]
         m3 = [i for i in props if i in cls.m3]
         m2 = [i for i in ids if i in cls.m2]
         r_events = set(m1) | set(m3) | set(m2)
@@ -560,7 +583,7 @@ def per_wake_rows(queue: dict, runs: List[dict], cls: Classified, epochs: List[d
             "cycle": run.get("cycle"), "status": _safe_word(run.get("status")),
             "killed": killed,
             "at_risk": _at_risk(run, records, cls, idx, predictions, runs),
-            "m1": len(m1), "m1_wide": len(m1w), "m2": len(m2), "m3": len(m3),
+            "m1": len(m1), "m1_wide": len(m1w), "m1_struct": len(m1s), "m2": len(m2), "m3": len(m3),
             "m3_cross_role": len([i for i in props if i in cls.m3_cross]),
             "r": len(r_events),
             "r_ids": sorted(r_events),
@@ -615,6 +638,7 @@ def _group(rows: List[dict]) -> dict:
         "killed": sum(1 for r in rows if r["killed"]),
         "at_risk_wakes": len(at_risk),
         "m1": sum(r["m1"] for r in rows), "m1_wide": sum(r["m1_wide"] for r in rows),
+        "m1_struct": sum(r["m1_struct"] for r in rows),
         "m2": sum(r["m2"] for r in rows), "m3": sum(r["m3"] for r in rows),
         "m3_cross_role": sum(r["m3_cross_role"] for r in rows),
         "r": r_total,

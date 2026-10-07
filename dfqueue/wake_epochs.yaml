@@ -5,5 +5,5 @@
 epochs:
   - id: e1-runs-store
     since: "2026-10-05T00:00:00+00:00"   # runs store and the 2026-10-05 lane change
-  - id: e2-transcripts
-    since: "2026-10-07T00:00:00+00:00"   # per-run transcripts recorded
+# Not an epoch: the 2026-10-07 transcripts deploy (observability only, no
+# change to what a role sees or may do).
