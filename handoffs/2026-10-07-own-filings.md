@@ -51,4 +51,39 @@ PYTHONPATH) and `dfmcp/tests` in `.venv-dfmcp` green.
 
 ## Result
 
-(executor fills this in, with deploy targets)
+Done offline, 2026-10-07 (executor, worktree; Planner P1b was merged first).
+
+Part 1: `queue.my_filings` (native, read-only, `dfmcp/queue_tools.py`) over
+`store.own_filings` (`dfqueue/store.py`). Role from the credential, no role
+argument (an unexpected `role` is refused); newest first; filters `status`,
+`proposal_id`, `limit` (default 10, cap 25). Statuses are computed, never
+stored: pending, accepted (accepted, not executed, no project), rejected,
+deferred, in_project (with the project's step state), completed (executed, or
+project done), closed (a `close` naming the proposal, its ruling or its
+project, with outcome and reason). Granted to architect, quartermaster and
+planner (`tools.yaml`).
+
+Part 2: the briefing key `your_recent_filings` (note plus capped lines),
+placed straight after `game_tick`, built server-side. The conductor cannot use
+the role-scoped tool, so a conductor-only native `queue.filings_brief` (roles,
+recent) was added, backed by `store.briefing_filings`: the `recent` newest
+plus every filing still pending, accepted, deferred or in a project.
+`conductor/cycle.py` reads it per proposer (architect, quartermaster, planner)
+before building the briefing; a failed read omits the block and never blocks
+the role. Policy data: `conductor/policy.yaml` `own_filings.recent: 5`
+(0 turns it off). One charter line each in the three `role.md` files.
+Not implemented, per the orchestrator: need-to-know visibility changes.
+
+Counts: architect 55, quartermaster 28, conductor 37 (the new conductor tool),
+planner 13 once enabled; `docs/STATE.md` hand-edited, regenerate after deploy.
+
+Deploy targets (not done): dfmcp-server on VM 103 (new native tools, the three
+allowlists and the conductor allowlist, new `store` code), and the conductor
+code and `policy.yaml` plus the three `role.md` charters on VM 106. The
+openclaw role configs need no change (tool lists are server-side).
+
+Tests: new `dfmcp/tests/test_my_filings.py` (all lifecycles, role isolation,
+caps, grants, the 0024-then-0026 shape, conductor-only brief), briefing tests
+(placement after `game_tick`, prefix byte-stable, cap), cycle tests (block
+present; read failure omits it). Ambient `python -m pytest` with lupa: 3615
+passed, 3 skipped, 0 failed. `.venv-dfmcp` `dfmcp/tests`: 983 passed.
