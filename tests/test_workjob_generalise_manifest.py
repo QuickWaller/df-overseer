@@ -35,7 +35,8 @@ from dfmcp.registry import load_registry  # noqa: E402
 
 WORKJOB_LUA = REPO_ROOT / "scripts" / "dfhack" / "df-overseer-workjob.lua"
 
-WORKJOB_IDS = {"workjob.list", "workjob.list-jobs", "workjob.queue", "workjob.cancel"}
+WORKJOB_IDS = {"workjob.list", "workjob.list-jobs", "workjob.queue", "workjob.cancel",
+               "workjob.unsupplied"}
 
 
 def _text(path):
