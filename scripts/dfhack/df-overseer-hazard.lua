@@ -241,21 +241,21 @@ function check_rect(x, y, z, w, h)
 end
 
 -- A coordinate-free sentence. `where_text` is the caller's landmark-relative
--- description of the offending tile (for example "12 tiles east of the Well"),
+-- description of the offending spot (for example "12 tiles east of the Well"),
 -- or nil.
 function message(hz, where_text)
   local phrase = KINDS[hz.kind].phrase
-  local loc = where_text and (" " .. where_text) or ""
+  local loc = where_text and (" [the spot is " .. where_text .. "]") or ""
   if hz.via == "unknown_band" then
     return string.format(
-      "refused by the siting policy: an unrevealed tile%s could be %s, and %s has been revealed on this level band "
-      .. "(policy: only sites with no aquifer or magma; hidden rock near revealed hazard counts as unsafe)",
-      loc, phrase, phrase)
+      "refused by the siting policy: an unrevealed tile here could be %s, and that has been revealed on this "
+      .. "level band (policy: only sites with no aquifer or magma; hidden rock near a revealed hazard counts "
+      .. "as unsafe)%s", phrase, loc)
   end
   return string.format(
-    "refused by the siting policy: the dig %s%s %s (policy: only sites with no aquifer or magma, "
-    .. "adjacency radius %d; relax in df-overseer-hazard POLICY)",
-    hz.where == "tile" and "would be in" or "would touch", loc, phrase, POLICY.adjacency_radius or 0)
+    "refused by the siting policy: the dig %s %s (policy: only sites with no aquifer or magma, adjacency "
+    .. "radius %d; relax in df-overseer-hazard POLICY)%s",
+    hz.where == "tile" and "would be in" or "would touch", phrase, POLICY.adjacency_radius or 0, loc)
 end
 
 -- Appended to a "nothing found" error when candidates were dropped for this.

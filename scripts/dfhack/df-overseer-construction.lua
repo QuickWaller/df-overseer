@@ -410,7 +410,12 @@ function mine_vein(zone_id, dry_run, res_id, override)
     local rec = hooks.decode_vein_tile(x, y, z)
     if rec.vein_status == "ore_or_gem" then
       local t = hooks.tile_read(x, y, z)
-      if t.ok and not t.hidden and t.shape == df.tiletype_shape.WALL then
+      local hz = (t.ok and not t.hidden and t.shape == df.tiletype_shape.WALL) and hazard_mod.check_tile(x, y, z) or nil
+      if hz then
+        -- Siting policy 2026-10-08: no dig on or beside aquifer or magma stone.
+        refused[#refused + 1] = string.format("ring tile %d (%s): %s", i, tostring(rec.mineral_name),
+          hazard_mod.message(hz, nil))
+      elseif t.ok and not t.hidden and t.shape == df.tiletype_shape.WALL then
         candidates[#candidates + 1] = {ring_position = i, x = x, y = y, z = z, mineral_name = rec.mineral_name}
       elseif t.ok and not t.hidden then
         already_open[#already_open + 1] = string.format(
