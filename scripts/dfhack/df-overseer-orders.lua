@@ -204,6 +204,96 @@ local json = require('json')
 local workorder_mod = reqscript('workorder')
 local stuckjobs_mod = reqscript('df-overseer-stuckjobs')
 
+-- MATERIAL POLICY, handoffs/2026-10-07-valid-manager-orders.md. A manager
+-- order for an item job with no material (mat_type -1, mat_index -1, empty
+-- material_category) is shown by the game as "Make unknown material ..." and
+-- never produced anything on the live fort (evals/live/2026-10-07-manager-
+-- orders/README.md). DFHack's own shipped order library
+-- (hack/data/orders/*.json, read on the live install 2026-10-07: 228 orders
+-- over 6 files) never issues one: every item job carries a material or a
+-- material_category, and only reactions and raw-processing jobs carry none.
+-- This table is that library, reduced to one policy per job type, as DATA
+-- (a new job is one entry, no new code):
+--   material = "INORGANIC"   default `material` (any stone; the library's own
+--                            value for stone furniture, blocks, mechanisms)
+--   category = {"wood"}      default `material_category` flag names
+--   none = true              a job that takes no material (the library issues
+--                            these bare); a reaction (CustomReaction) is
+--                            always this
+--   requires = true          the library carries several variants (a metal
+--                            per order, leather/silk/cloth, glass colours),
+--                            so no default is honest: the caller must pass
+--                            MATERIAL or MATERIAL_CATEGORY
+-- A job in none of these (not in the library) is neither defaulted nor
+-- flagged: create still demands an explicit material, list stays silent.
+-- tests/test_orders_library_parity.py checks every entry against the
+-- library files (tests/fixtures/dfhack_orders/).
+-- MakeBarrel is not in the library; it takes wood by analogy with its
+-- library sibling MakeBucket (marked inferred, not library-derived).
+ORDER_MATERIAL_POLICY = {
+  ConstructArmorStand = {material = "INORGANIC"},
+  ConstructBlocks = {material = "INORGANIC"},
+  ConstructCabinet = {material = "INORGANIC"},
+  ConstructChest = {material = "INORGANIC"},
+  ConstructCoffin = {material = "INORGANIC"},
+  ConstructDoor = {material = "INORGANIC"},
+  ConstructFloodgate = {material = "INORGANIC"},
+  ConstructGrate = {material = "INORGANIC"},
+  ConstructHatchCover = {material = "INORGANIC"},
+  ConstructMechanisms = {material = "INORGANIC"},
+  ConstructSlab = {material = "INORGANIC"},
+  ConstructStatue = {material = "INORGANIC"},
+  ConstructTable = {material = "INORGANIC"},
+  ConstructThrone = {material = "INORGANIC"},
+  ConstructWeaponRack = {material = "INORGANIC"},
+  MakeGoblet = {material = "INORGANIC"},
+  ConstructBed = {category = {"wood"}},
+  ConstructBin = {category = {"wood"}},
+  ConstructCrutch = {category = {"wood"}},
+  ConstructSplint = {category = {"wood"}},
+  MakeBucket = {category = {"wood"}},
+  MakeCage = {category = {"wood"}},
+  MakeBarrel = {category = {"wood"}, inferred = true},
+  MakeBackpack = {category = {"leather"}},
+  MakeQuiver = {category = {"leather"}},
+  SpinThread = {category = {"strand"}},
+  CollectSand = {none = true},
+  DyeCloth = {none = true},
+  MakeAsh = {none = true},
+  MakeCharcoal = {none = true},
+  MakeLye = {none = true},
+  MakePotashFromAsh = {none = true},
+  MakeTotem = {none = true},
+  MeltMetalObject = {none = true},
+  MillPlants = {none = true},
+  PrepareMeal = {none = true},
+  ProcessPlants = {none = true},
+  ProcessPlantsBarrel = {none = true},
+  CustomReaction = {none = true},
+  ConstructBag = {requires = true},
+  ExtractMetalStrands = {requires = true},
+  MakeAmmo = {requires = true},
+  MakeArmor = {requires = true},
+  MakeFlask = {requires = true},
+  MakeGloves = {requires = true},
+  MakeHelm = {requires = true},
+  MakePants = {requires = true},
+  MakePipeSection = {requires = true},
+  MakeRawGlass = {requires = true},
+  MakeShield = {requires = true},
+  MakeShoes = {requires = true},
+  MakeTool = {requires = true},
+  MakeTrapComponent = {requires = true},
+  MakeWeapon = {requires = true},
+  MakeWindow = {requires = true},
+  SmeltOre = {requires = true},
+  WeaveCloth = {requires = true},
+}
+
+local function needs_material(policy)
+  return policy ~= nil and (policy.material ~= nil or policy.category ~= nil or policy.requires == true)
+end
+
 -- Generic job resolution: a live `df.job_type` name, or (falling back) a
 -- reaction code from world.raws.reactions.reactions -- see header. Never a
 -- per-job branch, never a hardcoded table of known jobs.
@@ -296,7 +386,7 @@ end
 -- attribution-and-checks.md: `manager_order.status` carries `validated`/
 -- `active` bits (live-verified on this fort's three stuck orders:
 -- validated=true, active=false -- the failure is a missing announcement,
--- not a missing state); `finished_year`/`finished_year_tick` are both -1 on
+-- not a missing state; superseded 2026-10-07, see evals/live/2026-10-07-manager-orders); `finished_year`/`finished_year_tick` are both -1 on
 -- those same orders. Every field is read defensively (pcall) and reported
 -- as nil, never a guessed default, if the struct shape does not match what
 -- this comment documents.
@@ -382,6 +472,8 @@ local function describe_order(order)
   local ok_maxws, max_workshops = pcall(function() return order.max_workshops end)
   local ok_wsid, workshop_id = pcall(function() return order.workshop_id end)
   local ok_cat, cat = pcall(function() return order.material_category end)
+  local ok_mt, mat_type = pcall(function() return order.mat_type end)
+  local ok_mi, mat_index = pcall(function() return order.mat_index end)
   local status_fields = order_status_fields(order)
 
   local item_conditions = {}
@@ -416,6 +508,30 @@ local function describe_order(order)
   }
   for k, v in pairs(status_fields) do
     row[k] = v
+  end
+
+  -- Material as the game holds it, and the invalid_material flag: a job the
+  -- policy says needs a material, ordered with none (mat_type < 0 and no
+  -- category flag), is shown by the game as "Make unknown material".
+  local material_set = false
+  if ok_mt and ok_mi and mat_type ~= nil and mat_type >= 0 then
+    material_set = true
+    local ok_m, mi_obj = pcall(dfhack.matinfo.decode, mat_type, mat_index)
+    if ok_m and mi_obj then
+      local ok_s, str = pcall(function() return mi_obj:toString() end)
+      if ok_s then row.material = str end
+    end
+  end
+  local policy = job_name and ORDER_MATERIAL_POLICY[job_name] or nil
+  if needs_material(policy) and not material_set
+      and not (row.material_category and #row.material_category > 0) then
+    row.invalid_material = true
+    row.invalid_material_reason = tostring(job_name)
+      .. " needs a material or material category and this order has none"
+      .. " (the game shows it as \"Make unknown material\" and it makes nothing);"
+      .. " cancel it and create it again with MATERIAL or MATERIAL_CATEGORY"
+  else
+    row.invalid_material = false
   end
   return row
 end
@@ -640,6 +756,25 @@ function create_order(
     order.material_category = category_names
   end
 
+  -- A valid order needs a material for an item job (see ORDER_MATERIAL_POLICY).
+  -- Default it from the policy when the caller gave none, or refuse by name.
+  local defaulted = false
+  if is_blank(material) and #category_names == 0 and not resolved.reaction then
+    local policy = ORDER_MATERIAL_POLICY[resolved.job]
+    if policy == nil or policy.requires then
+      return nil, tostring(resolved.job) .. " needs a material: pass MATERIAL (e.g."
+        .. " INORGANIC:GRANITE, INORGANIC:IRON) or MATERIAL_CATEGORY (e.g. wood, leather)."
+        .. " An order with neither is shown by the game as \"Make unknown material\""
+        .. " and is never worked."
+    elseif policy.material then
+      order.material = policy.material
+      defaulted = true
+    elseif policy.category then
+      order.material_category = {table.unpack(policy.category)}
+      defaulted = true
+    end
+  end
+
   if not is_blank(workshop_id) then
     local wsid = tonumber(workshop_id)
     if not wsid then
@@ -682,6 +817,7 @@ function create_order(
   local base = {
     dry_run = dry,
     manager_appointed = manager_appointed(),
+    material_defaulted = defaulted,
   }
 
   if dry then

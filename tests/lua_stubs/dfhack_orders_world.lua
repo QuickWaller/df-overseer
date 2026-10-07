@@ -107,7 +107,7 @@ dfhack = {
   matinfo = {
     find = function(s)
       if s == nil or s == "" or BAD_MATERIALS[s] then return nil end
-      return {name = s}
+      return {name = s, type = 0, index = (s == "INORGANIC") and -1 or 1}
     end,
     decode = function(mt, mi)
       if mt == nil or mt < 0 then return nil end
@@ -144,6 +144,8 @@ function add_order(id, job, opts)
     max_workshops = opts.max_workshops or 0,
     workshop_id = opts.workshop_id or -1,
     material_category = mc,
+    mat_type = opts.mat_type or -1,
+    mat_index = opts.mat_index or -1,
     item_conditions = vec(opts.item_conditions or {}),
     order_conditions = vec({}),
   }
@@ -236,6 +238,8 @@ function WORKORDER.create_orders(orders)
       max_workshops = it.max_workshops or 0,
       workshop_id = it.workshop_id or -1,
       material_category = mc,
+      mat_type = (it.material and dfhack.matinfo.find(it.material).type) or -1,
+      mat_index = (it.material and dfhack.matinfo.find(it.material).index) or -1,
       item_conditions = vec(item_conditions),
       order_conditions = vec(order_conditions),
     }
