@@ -3,6 +3,12 @@
 Fort stayed paused. Nothing was created, changed, cancelled, validated, assigned or unpaused.
 All live reads were `dfhack-run` Lua and the existing `df-overseer-nobles requirements` read.
 
+> **Correction 2026-10-08 (user's direct observation):** the manager HAS validated orders; the
+> user watched it happen in game. Finding 1 below ("has never validated anything") was an
+> inference from the missing ORGANIZATION skill, not a direct observation, and is wrong. The
+> user's reading: many orders were validated but broken (the "unknown material" ones never ran).
+> Follow-up: `research/2026-10-08-validated-orders-never-run.md`.
+
 ## Verdict (honest)
 
 No single cause is proven. What is verified: the manager has **never done the manager's job**, and
