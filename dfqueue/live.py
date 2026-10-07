@@ -86,10 +86,14 @@ SUMMARY_PUBLIC_MAX = 280
 #: span passes `feed.find_unsafe_pattern`; a span that fails is shown as
 #: withheld, never edited or dropped.
 PUBLIC_TRANSCRIPTS = True
-#: Only the newest runs carry a transcript in `runs.json` (it is polled; 40
-#: runs of 60 KB would be megabytes), and one run's public transcript is cut
-#: at this many JSON characters, dropping whole later rounds and counting them.
-TRANSCRIPT_RUNS_PUBLIC = 8
+#: Transcripts live in their own file per run (`transcripts/<run_id>.json`,
+#: loaded by the Board when a run is expanded; handoffs/2026-10-07-
+#: transcripts-on-demand.md), never in the polled `runs.json`, which carries
+#: only `{available, size, withheld_count}`. The newest this many runs keep
+#: one (retention as data); older files are pruned. One run's public
+#: transcript is cut at TRANSCRIPT_PUBLIC_MAX_CHARS JSON characters, dropping
+#: whole later rounds and counting them, so 24 runs stay near a megabyte.
+TRANSCRIPT_RUNS_KEPT = 24
 TRANSCRIPT_PUBLIC_MAX_CHARS = 40000
 _TOOL_NAME_PUBLIC = re.compile(r"^[A-Za-z][A-Za-z0-9_.\-]{0,79}$")
 RUNS_LIMIT = 40
@@ -433,6 +437,50 @@ def _public_transcript(raw: Any) -> Optional[dict]:
     return {"rounds": rounds, "omitted_rounds": omitted} if rounds else None
 
 
+_RUN_ID_FILE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.\-]{0,79}$")
+
+
+def transcript_file_name(run_id: Any) -> Optional[str]:
+    """`<run_id>.json`, or None when the id is not a plain file-name token."""
+    ok = isinstance(run_id, str) and _RUN_ID_FILE.match(run_id) and ".." not in run_id
+    return f"{run_id}.json" if ok else None
+
+
+def _withheld_count(tx: dict) -> int:
+    """How many spans of a public transcript are shown as withheld."""
+    n = 0
+    for r in tx.get("rounds") or []:
+        for field in ("reasoning", "text"):
+            n += (r.get(field) or "").count(THINKING_WITHHELD_MARKER)
+        for c in r.get("calls") or []:
+            n += (c.get("result") or "").count(THINKING_WITHHELD_MARKER)
+            n += bool(c.get("args_withheld")) + bool(c.get("name_withheld"))
+    return n
+
+
+def build_transcripts(rows: Optional[list], *, public: bool, limit: int = RUNS_LIMIT) -> dict[str, dict]:
+    """`{file name: transcript}` for the newest `TRANSCRIPT_RUNS_KEPT` runs that
+    have one (within the first `limit`, the window `build_runs` shows).
+    Public: only runs that ended ok, every span filtered by
+    `_public_transcript`. Operator: the stored transcript, raw."""
+    out: dict[str, dict] = {}
+    for row in (rows or [])[:limit]:
+        if len(out) >= TRANSCRIPT_RUNS_KEPT:
+            break
+        name = transcript_file_name(row.get("run_id"))
+        if name is None:
+            continue
+        if public:
+            if _run_status(row, 0) != "ok":
+                continue
+            tx = _public_transcript(row.get("transcript"))
+        else:
+            tx = _parse_transcript(row.get("transcript"))
+        if tx:
+            out[name] = tx
+    return out
+
+
 def build_runs(
     rows: Optional[list], now: float, *, public: bool, limit: int = RUNS_LIMIT,
     calls: Optional[list] = None, tools: Optional[Mapping[str, Any]] = None,
@@ -454,6 +502,7 @@ def build_runs(
     if rows is None:
         return None
     out_runs = []
+    kept = build_transcripts(rows, public=public, limit=limit)
     by_thread: dict[str, list[str]] = {}
     calls_by_record: dict[str, list] = {}
     for row in rows[:limit]:
@@ -497,22 +546,20 @@ def build_runs(
                 thinking = _public_thinking(row.get("thinking"))
                 if thinking:
                     entry["thinking"] = thinking
-                if len(out_runs) < TRANSCRIPT_RUNS_PUBLIC:
-                    transcript = _public_transcript(row.get("transcript"))
-                    if transcript:
-                        entry["transcript"] = transcript
         else:
             if row.get("thinking"):
                 entry["thinking"] = row.get("thinking")
-            if len(out_runs) < TRANSCRIPT_RUNS_PUBLIC:
-                transcript = _parse_transcript(row.get("transcript"))
-                if transcript:
-                    entry["transcript"] = transcript
             entry.update({
                 "wake_detail": row.get("wake_detail"), "cycle": row.get("cycle"),
                 "cost_usd": row.get("cost_usd"), "error": row.get("error"),
                 "summary": answer, "report": answer,
             })
+        tx = kept.get(transcript_file_name(row.get("run_id")) or "")
+        if tx:
+            entry["transcript"] = {
+                "available": True, "size": len(json.dumps(tx, sort_keys=True, ensure_ascii=False).encode("utf-8")),
+                "withheld_count": _withheld_count(tx) if public else 0,
+            }
         out_runs.append(entry)
         if calls and row.get("ended_at") is not None:
             run_start, run_end = _parse_ts(row.get("started_at")), _parse_ts(row.get("ended_at"))
