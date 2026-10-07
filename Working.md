@@ -4,6 +4,10 @@ What's currently in progress. Remove an item once it's done, tabled, or
 shelved, don't mark it paused. Any session should read this and know what's
 actually going on right now.
 
+## Owed: inbox and session design session WITH the user (user, 2026-10-07: "I need to be involved here")
+
+Do not decide alone. Inputs ready: `research/2026-10-07-session-inbox-options.md`, `research/2026-10-07-openclaw-source-sessions.md`, `evals/live/2026-10-07-openclaw-multiturn/README.md`, `evals/live/2026-10-07-cache-miss-cause/README.md`, `research/2026-10-07-persistent-sessions.md`, `research/2026-10-07-wake-audit.md`. Depending on it: the own-filings briefing block (left on as a trial), Overseer items one-at-a-time vs grouped, where "the fort is paused" goes (briefing line, tool-reply stamp, pushed message).
+
 ## Order agreed 2026-10-07 (user), conductor-executes rollout
 
 1. Land stage 2E (`handoffs/2026-10-06-stage-2e.md`, held for the cutover) and the ruling-urgency build (`handoffs/2026-10-07-ruling-urgency.md`). After 2E, add the Overseer charter line: **`high` urgency only for work answering a survival threat** (water, food, hostiles, injury), since high is what still runs under a tripwire latch; otherwise `elevated`.
