@@ -785,3 +785,42 @@ a { color: var(--accent); }
 .ftpre { white-space: pre-wrap; overflow-wrap: anywhere; font-family: ui-monospace, "Cascadia Mono", Menlo, Consolas, monospace; font-size: 11.5px; color: var(--muted); }
 .ftfail summary { color: var(--no); }
 .ftrun + .ftrun { margin-top: 4px; }
+
+/* Metrics view (wake_metrics/1): charts left, tool use right, each pane scrolls. */
+.site .mview { display: flex; flex-direction: column; gap: 10px; min-height: 0; flex: 1 1 auto; }
+.site .mhead { display: flex; flex-direction: column; gap: 6px; flex: none; }
+.site .mhead h1 { margin: 0; font-size: 1.25em; }
+.site .mstrip { display: flex; flex-wrap: wrap; gap: 6px; }
+.site .msplit { display: grid; gap: 16px; grid-template-columns: minmax(0, 1.6fr) minmax(300px, 1fr); flex: 1 1 auto; min-height: 0; }
+.site .mpane { display: flex; flex-direction: column; gap: 8px; min-height: 0; min-width: 0; }
+.site .mpane h2 { margin: 0; font-size: 1em; flex: none; }
+.site .mscroll { flex: 1 1 auto; min-height: 0; overflow-y: auto; padding-right: 6px; }
+.site .mcharts { display: grid; gap: 12px; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); align-content: start; }
+.site .mcard { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.site .mcard h3 { margin: 0; font-size: 0.95em; }
+.site .mchart { width: 100%; height: auto; max-height: 190px; }
+.site .mgrid { stroke: var(--line); stroke-width: 1; }
+.site .mtick { fill: var(--faint); font-size: 9px; font-variant-numeric: tabular-nums; }
+.site .mepoch { stroke: var(--muted); stroke-width: 1; stroke-dasharray: 3 3; }
+.site .mline { fill: none; stroke-width: 1.8; }
+.site .mdot { stroke-width: 1.6; }
+.site .mdot.thin { fill: none; }
+.site .mbar { opacity: 0.9; }
+.site .mlegend { display: flex; flex-wrap: wrap; gap: 4px 12px; font-size: 12px; color: var(--muted); }
+.site .mlegend i { display: inline-block; width: 10px; height: 10px; vertical-align: -1px; }
+.site .mlegend i.dash { background: none; width: 0; height: 12px; border-left: 1px dashed var(--muted); }
+.site .mnote { font-size: 12px; color: var(--muted); }
+.site .mnote.approx { color: var(--faint); }
+.site .mnote.few { color: var(--accent); }
+.site .mnone { color: var(--faint); padding: 24px 0; text-align: center; }
+.site .mtoollist h3 { font-size: 0.9em; margin: 14px 0 6px; }
+.site .mtool { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr) 3ch; gap: 8px; align-items: center; font-size: 12.5px; padding-block: 2px; }
+.site .mtid { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.site .mtbar { background: var(--panel); height: 8px; display: block; }
+.site .mtbar i { display: block; height: 100%; background: var(--accent); }
+.site .mtn { text-align: right; font-variant-numeric: tabular-nums; color: var(--muted); }
+.site .mnever { display: flex; flex-wrap: wrap; gap: 4px 6px; }
+@media (max-width: 900px) {
+  .site .msplit { grid-template-columns: minmax(0, 1fr); }
+  .site .mscroll { overflow: visible; }
+}
