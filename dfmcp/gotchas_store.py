@@ -867,6 +867,55 @@ def set_status(path: str | Path, entry_id: str, to_status: str, *, by: str, note
         return _record(conn, row)
 
 
+def revise_entry(
+    path: str | Path,
+    entry_id: str,
+    body: str,
+    *,
+    by: str,
+    title: Optional[str] = None,
+    note: Optional[str] = None,
+) -> dict:
+    """Maintainer-only correction of an entry's text, keeping its id. **Not
+    exposed as a tool** and not reachable by any agent, same as `set_status`.
+
+    The store is append-only for agents; a wrong gotcha still has to be
+    fixable, because agents read it and trust it. The previous title and body
+    are never lost: they go into a `status_history` row (status unchanged,
+    the old text in `note`) in the same transaction. The new text passes the
+    same validation a new entry does."""
+    problems = _text_problems("body", body, BODY_MIN_CHARS, BODY_MAX_CHARS)
+    if title is not None:
+        problems.extend(title_problems(title))
+    if problems:
+        raise GotchaStoreError("; ".join(problems))
+    with _connect(path) as conn:
+        conn.execute("BEGIN IMMEDIATE")
+        try:
+            row = conn.execute(f"SELECT {_ENTRY_COLUMNS} FROM entries WHERE id = ?", (entry_id,)).fetchone()
+            if row is None:
+                raise GotchaStoreError(f"no gotcha entry with id {entry_id!r}")
+            conn.execute(
+                "UPDATE entries SET body = ?, title = ? WHERE id = ?",
+                (body, title if title is not None else row["title"], entry_id),
+            )
+            audit = json.dumps(
+                {"revised": True, "note": note, "old_title": row["title"], "old_body": row["body"]},
+                ensure_ascii=False,
+            )
+            conn.execute(
+                "INSERT INTO status_history (entry_id, at, from_status, to_status, by, note) "
+                "VALUES (?, ?, ?, ?, ?, ?)",
+                (entry_id, _now(), row["status"], row["status"], by, audit),
+            )
+            conn.execute("COMMIT")
+        except BaseException:
+            conn.execute("ROLLBACK")
+            raise
+        row = conn.execute(f"SELECT {_ENTRY_COLUMNS} FROM entries WHERE id = ?", (entry_id,)).fetchone()
+        return _record(conn, row)
+
+
 def export_jsonl(path: str | Path, out_dir: str | Path) -> None:
     """Deterministic dump to `out_dir/gotchas.jsonl`, one entry per line in id
     order with its outcomes, git-trackable (accepted entries are committed to
@@ -882,7 +931,7 @@ def export_jsonl(path: str | Path, out_dir: str | Path) -> None:
 
 
 def _main(argv: Sequence[str]) -> int:
-    usage = "usage: python -m dfmcp.gotchas_store init PATH | migrate PATH | export PATH OUT_DIR"
+    usage = "usage: python -m dfmcp.gotchas_store init PATH | migrate PATH | export PATH OUT_DIR | revise PATH ID BODY_FILE [TITLE]"
     if len(argv) >= 2 and argv[0] == "init" and len(argv) == 2:
         init_store(argv[1])
         print(f"gotcha store ready at {argv[1]}")
@@ -894,6 +943,14 @@ def _main(argv: Sequence[str]) -> int:
     if len(argv) == 3 and argv[0] == "export":
         export_jsonl(argv[1], argv[2])
         print(f"exported to {argv[2]}")
+        return 0
+    if len(argv) in (4, 5) and argv[0] == "revise":
+        body = Path(argv[3]).read_text(encoding="utf-8").strip()
+        rec = revise_entry(
+            argv[1], argv[2], body, by="maintainer-cli",
+            title=argv[4] if len(argv) == 5 else None,
+        )
+        print(f"revised {rec['id']} (old text kept in status_history)")
         return 0
     print(usage, file=sys.stderr)
     return 2

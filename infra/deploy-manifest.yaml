@@ -57,6 +57,10 @@ targets:
       - gotchas/
       - learning/
       - production/
+      - plans/                      # plans/default-v1.yaml: plan.read/write compose
+                                     # version 1 from it (dfqueue/plan.py
+                                     # DEFAULT_PLAN_PATH); not shipping it broke
+                                     # plan.read live 2026-10-08
       - scripts/dfhack/TOOLS.yaml  # the registry source only. CORRECTED
                                      # 2026-10-02 after drift_check.py's first
                                      # real run reported all 37 .lua files

@@ -2846,8 +2846,10 @@ df-overseer-orders.lua:
         (from `order.status`), `finished_year`, `finished_year_tick`,
         `frequency`/`frequency_raw` and `max_workshops`. Live-read on this
         fort's three stuck orders found `validated=true, active=false`,
-        `finished_year=finished_year_tick=-1` -- the failure is a missing
-        announcement, not a missing state. `frequency`'s enum type name is
+        `finished_year=finished_year_tick=-1` -- SUPERSEDED 2026-10-08: not
+        "a missing announcement"; the causes were a bad appointment, orders
+        with no material, and a manager with no office of their own
+        (evals/live/2026-10-08-manager-appointment/README.md). `frequency`'s enum type name is
         NOT confirmed on this install (tried defensively, `frequency_raw`
         always present as a fallback); `max_workshops` is read defensively
         and reported nil if the field does not resolve. DEPLOYED and

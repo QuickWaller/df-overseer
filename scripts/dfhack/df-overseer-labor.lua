@@ -195,22 +195,34 @@ local function describe_position(x, y, z)
   return "unknown", "?", -1
 end
 
-local function citizen_line(unit, is_idle, is_injured, is_military)
+local function citizen_row(unit, is_idle, is_injured, is_military)
   local x, y, z = dfhack.units.getPosition(unit)
   local near, direction, distance = describe_position(x, y, z)
   local job = unit.job.current_job
   local job_name = job and textutil.to_utf8(dfhack.job.getName(job)) or "idle"
   local wounds = unit.body.wounds and #unit.body.wounds or 0
-  return string.format(
-    "CITIZEN id=%d profession=%q near_landmark=%q direction=%s distance_tiles=%d"
-      .. " job=%q wounds=%d idle=%s injured=%s military=%s",
-    unit.id, textutil.to_utf8(dfhack.units.getProfessionName(unit)), near, direction, distance,
-    job_name, wounds, tostring(is_idle), tostring(is_injured),
-    tostring(is_military))
+  return {
+    id = unit.id,
+    profession = textutil.to_utf8(dfhack.units.getProfessionName(unit)),
+    near_landmark = near,
+    direction = direction,
+    distance_tiles = distance,
+    job = job_name,
+    wounds = wounds,
+    idle = is_idle,
+    injured = is_injured,
+    military = is_military,
+  }
 end
 
-local function unit_status(filter)
-  local printed = 0
+-- Returns ONE table for every path (citizens or threats, filtered or not,
+-- empty or not); the caller prints it as a single JSON object, the shape
+-- every other tool uses. The old output was one "CITIZEN id=..." text line
+-- per unit plus a "-- N result(s) --" trailer, which the MCP layer could
+-- not parse (found live 2026-10-08).
+function unit_status(filter)
+  local rows = {}
+  local key = "citizens"
   if filter ~= "hostile" then
     for _, unit in ipairs(dfhack.units.getCitizens()) do
       local is_idle = unit.job.current_job == nil
@@ -222,11 +234,11 @@ local function unit_status(filter)
         or (filter == "injured" and is_injured)
         or (filter == "military" and is_military)
       if include then
-        print(citizen_line(unit, is_idle, is_injured, is_military))
-        printed = printed + 1
+        rows[#rows + 1] = citizen_row(unit, is_idle, is_injured, is_military)
       end
     end
   else
+    key = "threats"
     for _, unit in ipairs(df.global.world.units.active) do
       local ok_hidden, hidden = pcall(dfhack.units.isHidden, unit)
       -- ok_hidden false (isHidden itself errored) is treated as hidden --
@@ -237,17 +249,19 @@ local function unit_status(filter)
           and not is_hidden then
         local x, y, z = dfhack.units.getPosition(unit)
         local near, direction, distance = describe_position(x, y, z)
-        print(string.format(
-          "THREAT id=%d race=%q near_landmark=%q direction=%s distance_tiles=%d"
-            .. " invader=%s danger=%s",
-          unit.id, textutil.to_utf8(dfhack.units.getRaceName(unit)), near, direction, distance,
-          tostring(dfhack.units.isInvader(unit)),
-          tostring(dfhack.units.isDanger(unit))))
-        printed = printed + 1
+        rows[#rows + 1] = {
+          id = unit.id,
+          race = textutil.to_utf8(dfhack.units.getRaceName(unit)),
+          near_landmark = near,
+          direction = direction,
+          distance_tiles = distance,
+          invader = dfhack.units.isInvader(unit) and true or false,
+          danger = dfhack.units.isDanger(unit) and true or false,
+        }
       end
     end
   end
-  print(string.format("-- %d result(s) --", printed))
+  return {filter = filter or "all", count = #rows, [key] = rows}
 end
 
 -- Addresses a citizen by dfhack.units id, never a getCitizens() list index --
@@ -657,9 +671,11 @@ if cmd == "unit-status" then
   local filter = args[2]
   if filter and filter ~= "idle" and filter ~= "injured"
       and filter ~= "military" and filter ~= "hostile" then
-    print("usage: df-overseer-labor unit-status [idle|injured|military|hostile]")
+    print(json.encode(
+      {error = "usage: df-overseer-labor unit-status [idle|injured|military|hostile]"},
+      {null = NULL}))
   else
-    unit_status(filter)
+    print(json.encode(unit_status(filter), {null = NULL}))
   end
 elseif cmd == "labors" then
   local unit, err = find_citizen(args[2])
