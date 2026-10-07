@@ -46,15 +46,19 @@ prediction (`queue.grade` omits it), so a miss wakes both advisors.
 from __future__ import annotations
 
 import json
+import logging
 import tempfile
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Set, Tuple
 
+from conductor import backoff
 from conductor.ore_watch import OreRead
 from conductor.policy import LaneTriggers, Policy
 from conductor.triage import LaneWake
 from conductor.unsupplied_watch import UnsuppliedRead
+
+LOG = logging.getLogger(__name__)
 
 #: Reasons this module raises; each must exist in policy.yaml `wake_reasons`
 #: (its `clock` is read from there, its `wakes` is unused).
@@ -86,6 +90,10 @@ class LaneState:
     pending: Dict[str, Dict[str, str]] = field(default_factory=dict)
     #: "<site>:<mineral>" -> game tick it last woke a role, while still exposed.
     ore: Dict[str, int] = field(default_factory=dict)
+    #: "<site>:<mineral>" -> wakes sent for it so far (conductor/backoff.py).
+    ore_wakes: Dict[str, int] = field(default_factory=dict)
+    #: alert name -> backoff record while the alert stays crossed (renotify).
+    alert_wakes: Dict[str, Dict[str, Any]] = field(default_factory=dict)
     #: item kind -> {"first": tick first seen unsupplied, "last": tick of its last
     #: wake, "wakes": wakes so far, "stalled": no more wakes}, while unsupplied
     #: (conductor/unsupplied_watch.py).
@@ -117,6 +125,12 @@ class LaneStore:
                 for r, m in (raw.get("pending") or {}).items()
             },
             ore={str(k): int(v) for k, v in (raw.get("ore") or {}).items()},
+            ore_wakes={str(k): int(v) for k, v in (raw.get("ore_wakes") or {}).items()},
+            alert_wakes={
+                str(k): {"first": int(v.get("first", 0)), "last": int(v.get("last", 0)),
+                         "wakes": int(v.get("wakes", 0)), "stalled": bool(v.get("stalled", False))}
+                for k, v in (raw.get("alert_wakes") or {}).items() if isinstance(v, dict)
+            },
             unsupplied={
                 str(k): {"first": int(v.get("first", 0)), "last": int(v.get("last", 0)),
                          "wakes": int(v.get("wakes", 0)), "stalled": bool(v.get("stalled", False))}
@@ -137,7 +151,8 @@ class LaneStore:
                 json.dump(
                     {"alerts": state.alerts, "proposers": state.proposers, "pending": state.pending,
                      "ore": state.ore, "unsupplied": state.unsupplied,
-                     "cycles": state.cycles, "overseer_seen": state.overseer_seen},
+                     "cycles": state.cycles, "overseer_seen": state.overseer_seen,
+                     "ore_wakes": state.ore_wakes, "alert_wakes": state.alert_wakes},
                     fh, indent=2, sort_keys=True,
                 )
             Path(tmp_name).replace(self.path)
@@ -187,24 +202,43 @@ def stuck_job_roles(policy: Policy, due_jobs: Sequence[Any]) -> Tuple[str, ...]:
 
 def apply_alert_edges(
     policy: Policy, state: LaneState, crossed: Mapping[str, Optional[bool]], lines: Mapping[str, str],
+    game_tick: Optional[int] = None,
 ) -> None:
     """Fold this cycle's alert readings into `state`. `crossed[name]` is True,
     False, or None for a failed read (state kept). A fresh crossing adds a
     pending entry for every role whose lane lists the alert; an alert that has
-    cleared drops its not-yet-served entries, since the condition is gone."""
+    cleared drops its not-yet-served entries and its backoff record, since the
+    condition is gone. An alert that STAYS crossed wakes its owners again on
+    the shared renotify backoff (`policy.alert_renotify_ticks`, doubling per
+    wake, stalled after `renotify_max_wakes`): a survival signal an owner left
+    standing is not forgotten, and not repeated every cycle either. Without a
+    game tick the renotify is skipped (the edge alone wakes)."""
+    rule = policy.backoff(policy.alert_renotify_ticks)
     for name, now in crossed.items():
         if now is None:
             continue
         was = state.alerts.get(name, False)
         state.alerts[name] = now
         key = _ALERT + name
+        due = False
         if now and not was:
+            due = True
+            if game_tick is not None:
+                rec, _, stalled = backoff.advance(None, game_tick, rule)
+                state.alert_wakes[name] = rec
+        elif now and game_tick is not None:
+            rec, due, stalled = backoff.advance(state.alert_wakes.get(name), game_tick, rule)
+            state.alert_wakes[name] = rec
+            if stalled:
+                LOG.info("alert %s still crossed after %d wakes: no more wakes until it clears (stalled)", name, rec["wakes"])
+        elif not now:
+            state.alert_wakes.pop(name, None)
+            for entries in state.pending.values():
+                entries.pop(key, None)
+        if due:
             for role, lane in policy.lane_triggers.items():
                 if name in lane.alerts or "*" in lane.alerts:
                     state.pending.setdefault(role, {})[key] = lines.get(name) or name
-        elif not now:
-            for entries in state.pending.values():
-                entries.pop(key, None)
 
 
 def apply_ore_edges(
@@ -219,21 +253,30 @@ def apply_ore_edges(
     if read is None:
         return
     now = game_tick if game_tick is not None else 0
+    rule = policy.backoff(policy.ore_renotify_ticks)
     roles = [role for role, lane in policy.lane_triggers.items() if lane.ore]
     live = set()
     for exp in read.exposures:
         live.add(exp.key)
         last = state.ore.get(exp.key)
-        # A last-woke tick in the future means the save was reloaded: re-arm.
-        due = last is None or last > now or (now - last) >= policy.ore_renotify_ticks
+        wakes = state.ore_wakes.get(exp.key, 1 if last is not None else 0)
+        # Exponential backoff in wakes, stalled after `renotify_max_wakes`; a
+        # last-woke tick in the future (a reloaded save) re-arms it
+        # (conductor/backoff.py).
+        rec = {"first": last, "last": last, "wakes": wakes, "stalled": wakes >= rule.max_wakes} if last is not None else None
+        rec, due, newly_stalled = backoff.advance(rec, now, rule)
         if due:
             state.ore[exp.key] = now
+            state.ore_wakes[exp.key] = rec["wakes"]
             for role in roles:
                 state.pending.setdefault(role, {})[_ORE + exp.key] = exp.line
+            if newly_stalled:
+                LOG.info("ore %s still exposed after %d wakes: no more wakes until it is mined (stalled)", exp.key, rec["wakes"])
     for key in [k for k in state.ore if k not in live]:
         if key.split(":", 1)[0] in read.unreadable_handles:
             continue
         del state.ore[key]
+        state.ore_wakes.pop(key, None)
         for entries in state.pending.values():
             entries.pop(_ORE + key, None)
 
@@ -252,28 +295,20 @@ def apply_unsupplied_edges(
     if read is None:
         return
     pol = policy.unsupplied_building
+    rule = backoff.Backoff(pol.base_ticks, pol.cap_ticks, pol.max_wakes)
     now = game_tick if game_tick is not None else 0
     roles = [role for role, lane in policy.lane_triggers.items() if lane.unsupplied]
     live = set()
     for it in read.items:
         live.add(it.key)
-        rec = state.unsupplied.get(it.key)
-        if rec is None or rec.get("first", 0) > now:
-            # New, or a save reload put the clock behind it: start over.
-            rec = {"first": now, "last": now, "wakes": 1, "stalled": False}
-            state.unsupplied[it.key] = rec
-            due = True
-        elif rec.get("stalled"):
-            due = False
-        else:
-            wait = min(pol.base_ticks * (2 ** max(rec["wakes"] - 1, 0)), pol.cap_ticks)
-            due = (now - rec["last"]) >= wait
-            if due:
-                rec["last"] = now
-                rec["wakes"] += 1
+        prior = state.unsupplied.get(it.key)
+        if prior is not None and prior.get("first", 0) > now:
+            prior = None  # a save reload put the clock behind it: start over
+        rec, due, _ = backoff.advance(prior, now, rule)
+        if prior is None:
+            rec["first"] = now
+        state.unsupplied[it.key] = rec
         if due:
-            if rec["wakes"] >= pol.max_wakes:
-                rec["stalled"] = True
             for role in roles:
                 state.pending.setdefault(role, {})[_UNSUPPLIED + it.key] = it.line(now - rec["first"])
     for key in [k for k in state.unsupplied if k not in live]:

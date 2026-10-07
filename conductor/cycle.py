@@ -731,6 +731,8 @@ async def _run_cycle(cycle_index: int, deps: CycleDeps, hold: HoldState) -> Cycl
         game_tick=game_tick,
         threshold_ticks=deps.policy.stalled_order_threshold_ticks,
         renotify_ticks=deps.policy.stalled_order_renotify_ticks,
+        renotify_cap_ticks=deps.policy.renotify_cap_ticks,
+        max_wakes=deps.policy.renotify_max_wakes,
         cursor_store=deps.cursor_store,
         dry_run=deps.dry_run,
     )
@@ -756,7 +758,7 @@ async def _run_cycle(cycle_index: int, deps: CycleDeps, hold: HoldState) -> Cycl
             lane_state = lane_store.load()
             pending_ids = list((queue_state.get("proposals") or {}).get("proposal_ids") or [])
             lane_state.cycles += 1
-            lanes.apply_alert_edges(deps.policy, lane_state, alert_crossed, alert_lines)
+            lanes.apply_alert_edges(deps.policy, lane_state, alert_crossed, alert_lines, game_tick)
             lanes.apply_ore_edges(deps.policy, lane_state, ore_read, game_tick)
             lanes.apply_unsupplied_edges(deps.policy, lane_state, unsupplied, game_tick)
             lanes.apply_rulings(deps.policy, lane_state, pending_ids)
@@ -1427,6 +1429,8 @@ async def _job_watch(deps: "CycleDeps", call: Callable, game_tick: Optional[int]
             unclaimed_threshold_ticks=deps.policy.stuck_job_unclaimed_threshold_ticks,
             suspended_threshold_ticks=deps.policy.stuck_job_suspended_threshold_ticks,
             renotify_ticks=deps.policy.stuck_job_renotify_ticks,
+            renotify_cap_ticks=deps.policy.renotify_cap_ticks,
+            max_wakes=deps.policy.renotify_max_wakes,
             store=_job_store(deps), dry_run=deps.dry_run,
         )
     except Exception:  # noqa: BLE001 -- deliberately total, see docstring
