@@ -6400,11 +6400,13 @@ df-overseer-clock.lua:
         sole_writer: dfmcp/roles.py's exception is gated on role kind, with
         no sole-writer carve-out, specifically so "never unpause without
         being asked to" is a structural guarantee, not just a charter line.
-      summary: "Unpauses the game."
+      summary: "Unpauses the game; names any open panel that will keep it paused."
       guide:
         arguments: []
         returns: >-
-          Unpauses the game.
+          Unpauses the game. When an open panel blocks resume (an Info panel such as Work Orders),
+          the result carries `blocking_panel` ({name, focus}) and a `warning`; the game may stay
+          paused. It never closes the panel.
         before_a_real_run:
           - >-
             Refused outright while a tripwire is latched (clear it first with clock.clear).
@@ -6432,6 +6434,9 @@ df-overseer-clock.lua:
         fort to (what this arm configured, DEFAULT_BASE_FPS 100 if never
         armed on a fresh install). Exposed so "what does the fort go back
         to" is answerable from status alone.
+        ADDED 2026-10-08: `blocking_panel` ({name, focus}, or nil) -- the open
+        in-game panel that blocks resume, read through df-overseer-screen's
+        data table. Lets the conductor name why a resume did not move the tick.
       summary: "Reports the clock's current state: paused or not, current tick, whether the tripwire watcher is armed, and any latched tripwire or slow-tier advisory."
       guide:
         arguments: []
@@ -6888,3 +6893,40 @@ df-overseer-pause.lua:
         traps:
           - >-
             Dismissing does not unpause. Call clock.resume separately, and only after reading why.
+df-overseer-screen.lua:
+  build_order_item: "an open Work Orders panel blocked a scripted resume (evals/live/2026-10-08-manager-appointment/README.md)"
+  commands:
+    "read [WITH_TEXT]":
+      lua_function: screen_read
+      effect: read
+      coordinate_bearing: false
+      live_deployed: false
+      verified: "unverified (offline build). The focus strings were read live read-only on 2026-10-08 (dwarfmode/Default on the plain map); the panel rules are data in the script and each says what was observed."
+      knowledge_scope: player_visible
+      notes: >
+        Reports what the player currently sees as text: the focus strings,
+        the open panel's kind, and `blocks_resume`, derived from a data table
+        of focus-string prefixes in the script (a new panel kind is one table
+        entry, never a branch). With WITH_TEXT true it also returns the
+        panel's own text lines, read from the character buffer and filtered
+        to prose-like lines. It REFUSES the text whenever no readable panel
+        is open (the plain map included), so it never returns a map or tile
+        grid (docs/PURPOSE.md commitment 1). Reads only what a player can see;
+        simulates no input, closes and opens nothing. On NO role allowlist yet.
+      summary: "Reports which panel or menu is open, whether it blocks resuming the fort, and optionally the panel's text; never the map."
+      guide:
+        arguments:
+          - name: "WITH_TEXT"
+            required: false
+            default: "false"
+            meaning: >-
+              Optional. true to include the open panel's text lines. Refused when only the map is showing.
+        returns: >-
+          `focus` lists the game's focus strings; `panel` names the open panel kind (null on the plain map);
+          `blocks_resume` and `blocking` ({name, focus}) say whether a resume would be stuck behind it;
+          `lines` holds the panel's text when asked and allowed, else `text_refused` says why.
+        before_a_real_run: []
+        traps:
+          - >-
+            Only dwarfmode/Info/WORK_ORDERS/Default is a verified blocker; other panels follow the
+            table's stated guess, each entry's `verified` field says which.
