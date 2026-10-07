@@ -45,7 +45,8 @@ ORDERS_IDS = {
     # below for that shape.
     "orders.reorder", "orders.recheck",
 }
-WORKJOB_IDS = {"workjob.list", "workjob.list-jobs", "workjob.queue", "workjob.cancel"}
+WORKJOB_IDS = {"workjob.list", "workjob.list-jobs", "workjob.queue", "workjob.cancel",
+               "workjob.unsupplied"}
 # workjob.list-jobs added by handoffs/2026-09-21-workjob-generalise.md
 # (dispatched 2026-09-23): the job vocabulary is now read live from DFHack's
 # own workshops.getJobs, not a hand-maintained table. See that file's own

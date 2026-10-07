@@ -182,6 +182,14 @@ read:
       `bedrooms_per_citizen` threshold alert, research/2026-10-07-planner-design.md
       section 7). Same read the Architect holds.
 
+  - id: "workjob.unsupplied"
+    status: exists
+    note: >-
+      Added handoffs/2026-10-07-unsupplied-building-watch.md. Read-only: item
+      kinds that buildingplan-planned buildings wait on, free stock, and the
+      jobs and workshops that make each. The unsupplied-building watch polls it
+      (conductor/unsupplied_watch.py).
+
 write:
   - id: "clock.set-speed"
     status: exists

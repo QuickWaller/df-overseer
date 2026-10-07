@@ -120,6 +120,17 @@ class EventLane:
 
 
 @dataclass(frozen=True)
+class UnsuppliedPolicy:
+    """Backoff for the unsupplied-building wake (policy.yaml `unsupplied_building`;
+    research/2026-10-07-wake-audit.md rec 3): wake when a kind first appears, then
+    again after `base_ticks`, doubling each time up to `cap_ticks`, and mark it
+    stalled (no more wakes) after `max_wakes` wakes."""
+    base_ticks: int = 6000
+    cap_ticks: int = 100800
+    max_wakes: int = 3
+
+
+@dataclass(frozen=True)
 class LaneTriggers:
     """What counts as a change in one role's own lane (handoffs/2026-10-05-
     stricter-wakes.md). Pure data; conductor/lanes.py reads it generically.
@@ -133,6 +144,9 @@ class LaneTriggers:
     alerts: Tuple[str, ...] = ()
     rulings: bool = False
     ore: bool = False
+    #: A planned building waits on an item kind nobody makes
+    #: (handoffs/2026-10-07-unsupplied-building-watch.md).
+    unsupplied: bool = False
     #: The role is told of its routed projects' progress and holds
     #: (`step_done`, `step_attention`, `project_idle`) when the project's
     #: proposer is unknown to the conductor (docs/CONDUCTOR-EXECUTION.md 5).
@@ -191,6 +205,8 @@ class Policy:
     #: Architect wakes it once more (the backstop for a ruled-but-not-mined
     #: case). 12000 = 10 game days.
     ore_renotify_ticks: int = 12000
+    #: handoffs/2026-10-07-unsupplied-building-watch.md (its own policy block).
+    unsupplied_building: UnsuppliedPolicy = field(default_factory=UnsuppliedPolicy)
     #: Threshold alerts for every role's briefing (policy.yaml `threshold_alerts`).
     threshold_alerts: Tuple[ThresholdAlert, ...] = ()
     #: Per-role lane triggers (policy.yaml `lane_triggers`). Empty: no lane
@@ -274,9 +290,26 @@ def _load_lane_triggers(raw, path: Path) -> Dict[str, LaneTriggers]:
             alerts=tuple(alerts),
             rulings=bool(entry.get("rulings", False)),
             ore=bool(entry.get("ore", False)),
+            unsupplied=bool(entry.get("unsupplied", False)),
             execution=bool(entry.get("execution", False)),
         )
     return lanes
+
+
+def _load_unsupplied(raw, path: Path) -> UnsuppliedPolicy:
+    if raw is None:
+        return UnsuppliedPolicy()
+    if not isinstance(raw, dict):
+        raise PolicyError(f"{path}: unsupplied_building must be a mapping")
+    out = {}
+    for key, default in (("base_ticks", 6000), ("cap_ticks", 100800), ("max_wakes", 3)):
+        v = raw.get(key, default)
+        if isinstance(v, bool) or not isinstance(v, int) or v < 1:
+            raise PolicyError(f"{path}: unsupplied_building.{key} must be a positive integer")
+        out[key] = v
+    if out["cap_ticks"] < out["base_ticks"]:
+        raise PolicyError(f"{path}: unsupplied_building.cap_ticks must be at least base_ticks")
+    return UnsuppliedPolicy(**out)
 
 
 def _load_execution(raw, path: Path) -> ExecutionPolicy:
@@ -439,6 +472,7 @@ def load_policy(path: "Path | str" = DEFAULT_POLICY_PATH) -> Policy:
         stuck_job_suspended_threshold_ticks=int(doc.get("stuck_job_suspended_threshold_ticks", 2400)),
         stuck_job_renotify_ticks=int(doc.get("stuck_job_renotify_ticks", 12000)),
         ore_renotify_ticks=int(doc.get("ore_renotify_ticks", 12000)),
+        unsupplied_building=_load_unsupplied(doc.get("unsupplied_building"), path),
         role_timeout_seconds={str(k): float(v) for k, v in (doc.get("role_timeout_seconds") or {}).items()},
     )
 
