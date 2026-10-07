@@ -1009,7 +1009,7 @@ class StreamPage {
     }
   }
 
-  /** The one-line "who is awake" strip at the top of the board column
+  /** The "who is awake" strip (one row per awake role) at the top of the board column
    * (`status.live`, built by dfqueue/live.py). Hidden when there is no live
    * data; shows the awake role, how long, its last tool and why it woke, or
    * the last finished run when nobody is awake. Costs show on the operator
@@ -1033,7 +1033,7 @@ class StreamPage {
           el("span", { style: `color:${ROLE_COLORS[a.role] || "var(--text)"};font-weight:600`, text: roleTitle(a.role) }),
           el("span", { class: "ls-t", text: formatElapsed((a.elapsed_s || 0) + sinceFetch) }),
           a.last_tool ? el("span", { class: "ls-tool", text: a.last_tool }) : null,
-          a.wake_reason ? el("span", { class: "faint", text: reason(a.wake_reason) }) : null,
+          a.wake_reason ? el("span", { class: "faint ls-why", text: reason(a.wake_reason) }) : null,
         ]);
         parts.push(seg);
       });
