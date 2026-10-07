@@ -591,3 +591,34 @@ class TestMigrationV1ToV2:
         version = conn.execute("SELECT version FROM schema_version").fetchone()[0]
         conn.close()
         assert version == gs.SCHEMA_VERSION
+
+
+class TestMaintainerRevision:
+    """revise_entry: maintainer-only text correction that keeps the id and the
+    old text (gotcha-0002 was wrong, 2026-10-08)."""
+
+    def test_revise_keeps_id_and_preserves_old_text(self, db):
+        rec = _add(db)
+        new = gs.revise_entry(db, rec["id"], "A corrected body that is long enough.", by="m", note="why")
+        assert new["id"] == rec["id"]
+        assert new["body"] == "A corrected body that is long enough."
+        assert new["title"] == rec["title"]
+        import sqlite3 as _sq
+        conn = _sq.connect(db)
+        (note,) = conn.execute("SELECT note FROM status_history WHERE entry_id = ?", (rec["id"],)).fetchone()
+        conn.close()
+        audit = json.loads(note)
+        assert audit["old_body"] == rec["body"] and audit["old_title"] == rec["title"]
+
+    def test_revise_validates_and_unknown_id_refused(self, db):
+        rec = _add(db)
+        with pytest.raises(gs.GotchaStoreError):
+            gs.revise_entry(db, rec["id"], "short", by="m")
+        with pytest.raises(gs.GotchaStoreError):
+            gs.revise_entry(db, "gotcha-9999", "A corrected body that is long enough.", by="m")
+
+    def test_committed_gotcha_0002_revision_passes_validation(self):
+        from pathlib import Path
+        p = Path(__file__).resolve().parents[2] / "gotchas" / "revisions" / "gotcha-0002.body.txt"
+        body = p.read_text(encoding="utf-8").strip()
+        assert gs._text_problems("body", body, gs.BODY_MIN_CHARS, gs.BODY_MAX_CHARS) == []
