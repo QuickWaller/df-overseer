@@ -1,6 +1,16 @@
 # Roadmap
 
-**Last reviewed:** 2026-10-02 (twenty-sixth pass, full: a week of very heavy
+**Last reviewed:** 2026-10-08 (twenty-seventh pass, targeted: the 2026-10-02
+item's open list was re-read against `Working.md`'s plan of attack and the
+2026-10-07 register rows, and a new top Now item records the week's shift
+from "make the conductor run" to "more, narrower agents, measured": rooms
+and ore routed, the Planner built dark, Logistics designed, transcripts and
+metrics on the Board, filing hygiene, and the manager-order root cause.
+Its open list is the plan of attack's phases 1 to 5. Next and Later were
+not re-scanned; that is owed in the next full pass. Suite measured
+2026-10-07: **3664 passed** ambient, **990** in `.venv-dfmcp`.)
+
+**Previously reviewed:** 2026-10-02 (twenty-sixth pass, full: a week of very heavy
 landings since the last pass -- five real (non-dry-run) conductor `--once`
 cycles made real decisions against the live fort (2026-09-25 through
 2026-09-28); the job-dependency-graph design landed and its first two build
@@ -144,6 +154,39 @@ or `decisions/DECISIONS.md`, not here.
 
 ## Now
 <!-- Actively being worked, or the clear immediate next step. -->
+
+- **NEW 2026-10-08: more, narrower agents, measured; the next gate is
+  proving the fort works when running.** Since the item below, the user's
+  direction moved from one conductor run to a team of narrow roles, each
+  with its own wake signal and tool set, judged by metrics, not impressions.
+  Deployed: rooms and ore mining routed through the conductor; urgency set
+  by the Overseer's ruling (high only for survival); shore Water Source and
+  Fishing zones; ask addressing; a P0 bedroom alert and an unsupplied-
+  building watch; wake cleanup; transcripts, full proposals and a Metrics
+  tab on the Board (`dfqueue/wake_metrics.py`, baseline
+  `evals/live/2026-10-07-wake-baseline/`); filing hygiene (duplicate
+  proposals refused naming the original, `queue.my_filings`). The **Planner**
+  is built and deployed dark (enable commit not deployed, no token).
+  **Logistics** (stockpiles, links, containers) is designed, not built. Live,
+  the manager-order failure turned out to be **invalid orders (no
+  material)**, not a stuck route: they were repaired by hand and the tool now
+  issues valid ones; whether the manager validates them is unseen. Agents
+  stay one-shot (persistent sessions rejected on evidence). **Open, in
+  order:** (1) the tripwire live check, then watch orders 5 to 8 run, then
+  bed and drink buffer orders; (2) a staged arm of `conductor.service`, hold
+  on first (user's yes on the day); (3) supervised firsts: the site-4
+  bedroom, the Planner bootstrap (user reads plan v1), stockpile write verbs;
+  (4) **with the user:** the inbox and session design, then the fort dossier
+  and crafting search (red team says not ready to build); (5) tool cuts by
+  evidence after about a week of transcripts. Carried from below: the
+  goal-tree and item-binding decisions, the districting session, the wiki
+  refresh timers, leaked-key rotation. → `Working.md` START HERE and its
+  plan of attack, `decisions/DECISIONS.md` 2026-10-07 rows,
+  `handoffs/INDEX.md`, `research/2026-10-07-*`, `evals/live/2026-10-07-*`.
+- **SUPERSEDED 2026-10-08 by the item above (kept for the record):** its
+  (1) is done, the conductor has run many hand `--once` cycles (the
+  installed service is still never enabled, now phase 2 above); (2) to (5)
+  are carried unchanged.
 
 - **NEW 2026-10-02: the conductor has made real decisions on the live fort,
   manager orders now work, and the agents' own tool surface just got a
