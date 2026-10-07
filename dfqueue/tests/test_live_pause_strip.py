@@ -129,3 +129,15 @@ def test_an_idle_alert_replaces_the_last_run_line_and_a_crowded_one_keeps_only_a
     crowded = _run(STRIP, {"available": True, "running": True, "awake": awake, "last_runs": {}, "pause": alert})
     assert "Paused" in crowded["seen"] and "Paused, needs attention" not in crowded["seen"]
     assert "held for a human" not in crowded["seen"]
+
+
+def test_two_awake_roles_render_as_two_rows_one_line_each():
+    expr = STRIP.replace(
+        "return { hidden: strip.hidden, seen };",
+        "return { hidden: strip.hidden, rows: strip.children.length, "
+        "first: strip.children.map((c) => c.className), whys: seen.filter((s) => s.includes('ls-why')) };")
+    res = _run(expr, {"available": True, "running": True, "last_runs": {}, "awake": [
+        {"role": "architect", "elapsed_s": 70, "last_tool": "zone.list", "wake_reason": "routine_review"},
+        {"role": "overseer", "elapsed_s": 20, "last_tool": "queue.rule", "wake_reason": "queue_pending"}]})
+    assert res["rows"] == 2 and res["first"] == ["ls-seg", "ls-seg"]
+    assert len(res["whys"]) == 2
