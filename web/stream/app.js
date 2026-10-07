@@ -665,6 +665,90 @@ function actedRows(list) {
   });
 }
 
+//: Shown in place of a span the publisher withheld (never the span itself).
+const WITHHELD_TEXT = "(withheld)";
+
+/** A proposal's `detail` (`feed.proposal_detail`) as labelled rows for the
+ * collapsed "Full proposal": `{label, lines}`, each line `{text}` or
+ * `{withheld: true}` (a null the publisher withheld). Empty when there is
+ * no detail. Pure, so it is tested under node. */
+function detailRows(detail) {
+  if (!detail || typeof detail !== "object") return [];
+  const one = (v) => (v == null ? { withheld: true } : { text: String(v) });
+  const rows = [];
+  const add = (label, lines) => { if (lines.length) rows.push({ label, lines }); };
+  if ("summary" in detail) add("Summary", [one(detail.summary)]);
+  if ("rationale" in detail) add("Rationale", [one(detail.rationale)]);
+  if (Array.isArray(detail.preconditions)) add("Preconditions", detail.preconditions.map(one));
+  if ("prediction" in detail) add("Prediction", [one(detail.prediction)]);
+  const step = detail.step;
+  if (step && typeof step === "object") {
+    const lines = [one(step.tool)];
+    if (step.label !== undefined && step.label !== null) lines.push(one(step.label));
+    if (step.args !== undefined) lines.push(step.args === null && !(detail.withheld || []).includes("step") ? { text: "no arguments" } : one(step.args));
+    add("Step", lines);
+  }
+  if (Array.isArray(detail.cited)) add("Cited facts", detail.cited.map(one));
+  return rows;
+}
+
+/** The collapsed "Full proposal" block (null when the item has no detail). */
+function fullProposalEl(detail) {
+  const rows = detailRows(detail);
+  if (!rows.length) return null;
+  return el("details", { class: "fx ffull" }, [
+    el("summary", { text: "Full proposal" }),
+    el("div", { class: "fthink ffullbody" }, rows.map((r) => el("div", { class: "ffrow" }, [
+      el("div", { class: "ffk", text: r.label }),
+      ...r.lines.map((l) => l.withheld
+        ? el("div", { class: "ffv fwith", text: WITHHELD_TEXT })
+        : el("div", { class: "ffv md-box" }, [renderMarkdown(l.text)])),
+    ]))),
+  ]);
+}
+
+/** Token usage as one short line ("in 5 · out 2 · cache read 80"). */
+function usageLine(u) {
+  if (!u || typeof u !== "object") return "";
+  const names = [["input", "in"], ["output", "out"], ["cacheRead", "cache read"], ["cacheWrite", "cache write"], ["reasoningTokens", "reasoning"], ["total", "total"]];
+  return names.filter(([k]) => typeof u[k] === "number").map(([k, n]) => `${n} ${u[k]}`).join(" · ");
+}
+
+/** One run's transcript (the publisher's `runs.json` form) as DOM: each
+ * round with its reasoning and text, and every tool call as its own
+ * collapsed block (arguments, result). A withheld span shows as withheld. */
+function transcriptEl(tx) {
+  const rounds = (tx && Array.isArray(tx.rounds)) ? tx.rounds : [];
+  const nodes = rounds.map((r) => {
+    const calls = r.calls || [];
+    const kids = [el("div", { class: "ftrhead" }, [
+      el("span", { class: "ftrn", text: `Round ${r.n}` }),
+      usageLine(r.usage) ? el("span", { class: "ftru", text: usageLine(r.usage) }) : null,
+    ])];
+    if (r.reasoning) {
+      kids.push(el("details", { class: "fx" }, [
+        el("summary", { text: "Reasoning" }),
+        el("div", { class: "fthink md-box" }, [renderMarkdown(r.reasoning)]),
+      ]));
+    }
+    if (r.text) kids.push(el("div", { class: "ftrtext md-box" }, [renderMarkdown(r.text)]));
+    calls.forEach((c) => {
+      kids.push(el("details", { class: "fx ftcall" + (c.error ? " ftfail" : "") }, [
+        el("summary", { text: (c.name || "tool") + (c.error ? " (failed)" : "") }),
+        el("div", { class: "fthink" }, [
+          el("div", { class: "ffk", text: "Arguments" }),
+          c.args_withheld ? el("div", { class: "fwith", text: WITHHELD_TEXT }) : el("div", { class: "ftpre", text: c.args || "none" }),
+          el("div", { class: "ffk", text: "Result" }),
+          c.result ? el("div", { class: "ftpre", text: c.result }) : el("div", { class: "faint", text: "none kept" }),
+        ]),
+      ]));
+    });
+    return el("div", { class: "ftround" }, kids);
+  });
+  if (tx && tx.omitted_rounds) nodes.push(el("div", { class: "faint small", text: `${tx.omitted_rounds} later round${tx.omitted_rounds === 1 ? "" : "s"} left out` }));
+  return el("div", { class: "ftbody" }, nodes);
+}
+
 /** The one-line wording of an event item (what the speaker did), or null
  * when the item is a post, not an event. `cls` is "", " plan", " fail" or
  * " hold" (amber for the last two). */
@@ -1560,6 +1644,10 @@ class StreamPage {
         el("div", { class: "fthink md-box" }, [renderMarkdown(item.thinking)]),
       ]));
     }
+    if (item.kind === "proposal") {
+      const full = fullProposalEl(item.detail);
+      if (full) extras.push(full);
+    }
     return el("div", { class: "fpost" }, [
       el("div", { class: "fav", style: `color:${color}`, text: (name || "?").charAt(0) }),
       el("div", { class: "fbody" }, [
@@ -1625,6 +1713,10 @@ class StreamPage {
           el("span", { text: c.note || c.result || "" }),
         ])),
       ]));
+    }
+    if (item.kind === "proposal") {
+      const full = fullProposalEl(item.detail);
+      if (full) lines.push(full);
     }
     return el("div", { class: "freceipt" + cls }, [
       el("div", { class: "frtop" }, [
@@ -2229,7 +2321,7 @@ class SitePage {
 
     const mine = (this.tools ? this.tools.tools : []).filter((t) => t.roles.includes(role));
     const tabs = r.planned ? [["charter", "Charter"]] : [
-      ["tools", `Tools ${mine.length}`], ["turns", "Turns"], ["lines", "Recent lines"], ["charter", "Charter"],
+      ["tools", `Tools ${mine.length}`], ["turns", "Turns"], ["transcript", "Transcript"], ["lines", "Recent lines"], ["charter", "Charter"],
     ];
 
     let body;
@@ -2237,6 +2329,8 @@ class SitePage {
       body = this._toolTree(mine, role);
     } else if (this.agentTab === "turns") {
       body = this._turnsEl(role);
+    } else if (this.agentTab === "transcript") {
+      body = this._transcriptTabEl(role);
     } else if (this.agentTab === "lines") {
       body = this._recentLinesEl(role);
     } else {
@@ -2329,6 +2423,23 @@ class SitePage {
         report ? el("details", { class: "fx" }, [el("summary", { text: "Full report" }), el("div", { class: "fthink freport md-box" }, [renderMarkdown(report)])]) : null,
         run.thinking ? el("details", { class: "fx" }, [el("summary", { text: "Thinking" }), el("div", { class: "fthink md-box" }, [renderMarkdown(run.thinking)])]) : null,
       ].filter(Boolean));
+    }));
+  }
+
+  /** This role's run transcripts, newest first, each collapsed by default
+   * (full detail inside, tool calls collapsed again). Only the newest runs
+   * carry one (`live.TRANSCRIPT_RUNS_PUBLIC`). */
+  _transcriptTabEl(role) {
+    const titles = (this.siteText && this.siteText.wake_reasons) || {};
+    const mine = ((this.fortRuns && this.fortRuns.runs) || []).filter((r) => r.role === role && r.transcript && (r.transcript.rounds || []).length);
+    if (!mine.length) return el("div", { class: "box" }, [el("div", { class: "faint", text: "No transcripts kept yet. Only recent turns have one." })]);
+    return el("div", { class: "box ftxlist" }, mine.map((run) => {
+      const reason = run.wake_reason ? (titles[run.wake_reason] || String(run.wake_reason).replace(/_/g, " ")) : "Turn";
+      const rounds = run.transcript.rounds;
+      const nCalls = rounds.reduce((n, r) => n + (r.calls || []).length, 0);
+      const label = [reason.charAt(0).toUpperCase() + reason.slice(1), run.started_at ? String(run.started_at).slice(0, 10) : null,
+        `${rounds.length} round${rounds.length === 1 ? "" : "s"}`, `${nCalls} tool call${nCalls === 1 ? "" : "s"}`].filter(Boolean).join(" · ");
+      return el("details", { class: "fx ftrun" }, [el("summary", { text: label }), transcriptEl(run.transcript)]);
     }));
   }
 
