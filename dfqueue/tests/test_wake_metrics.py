@@ -388,3 +388,10 @@ def test_validation_against_hand_labels(tmp_path):
     # The landmark-structured candidate: better precision, recall kept.
     assert got["m1_struct"][4] >= 0.8 and got["m1_struct"][3] > got["m1_wide"][3]
     print("VALIDATION", json.dumps(got))
+
+
+def test_sweeps_cluster_back_to_back_runs_not_the_cycle_column():
+    runs = [{"run_id": "a", "started_at": "2026-10-05T01:00:00+00:00", "ended_at": "2026-10-05T01:05:00+00:00"},
+            {"run_id": "b", "started_at": "2026-10-05T01:05:10+00:00", "ended_at": "2026-10-05T01:08:00+00:00"},
+            {"run_id": "c", "started_at": "2026-10-05T05:00:00+00:00", "ended_at": "2026-10-05T05:01:00+00:00"}]
+    assert wm._sweeps(runs) == {"a": 1, "b": 1, "c": 2}

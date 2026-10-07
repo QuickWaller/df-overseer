@@ -42,7 +42,7 @@ breaking change; additions are not breaking):
            "rounds_to_first_write": {...}, "orientation_reads": {...},
            "reread_rate", "pass_rate", "tokens": {"input","output",
            "cache_read","reasoning"}, "with_transcript", "truncated"}
-<per-wake row> = {"run_id","role","day","epoch","wake_reason","cycle",
+<per-wake row> = {"run_id","role","day","epoch","wake_reason","sweep",
            "status","killed","at_risk","m1","m1_wide","m2","m3","r",
            "cost_usd","rounds","first_write_round","orientation_reads",
            "read_calls","redundant_reads","passed","source"}
@@ -546,6 +546,26 @@ def _at_risk(run: dict, records: List[dict], cls: Classified, idx: dict,
     return False
 
 
+SWEEP_GAP_S = 120
+
+
+def _sweeps(runs: List[dict]) -> Dict[str, int]:
+    """`{run_id: sweep}`: runs whose start follows the previous run's end by
+    under two minutes are one conductor sweep. `runs.cycle` is not usable
+    for this (every `--once` run stores 1), so a sweep is the cluster unit."""
+    out: Dict[str, int] = {}
+    prev_end: Optional[datetime] = None
+    sweep = 0
+    for run in sorted(runs, key=lambda r: str(r.get("started_at"))):
+        start, end = _parse(run.get("started_at")), _parse(run.get("ended_at"))
+        if prev_end is None or start is None or (start - prev_end).total_seconds() > SWEEP_GAP_S:
+            sweep += 1
+        out[run["run_id"]] = sweep
+        if end is not None:
+            prev_end = end
+    return out
+
+
 def per_wake_rows(queue: dict, runs: List[dict], cls: Classified, epochs: List[dict],
                   allow: Dict[str, Dict[str, set]]) -> List[dict]:
     records = queue["records"]
@@ -555,6 +575,7 @@ def per_wake_rows(queue: dict, runs: List[dict], cls: Classified, epochs: List[d
     all_known = set()
     for sec in allow.values():
         all_known |= sec["read"] | sec["write"]
+    sweeps = _sweeps(runs)
     rows = []
     for run in runs:
         if not run.get("ended_at"):
@@ -580,7 +601,7 @@ def per_wake_rows(queue: dict, runs: List[dict], cls: Classified, epochs: List[d
             "day": start.date().isoformat() if start else None,
             "epoch": epoch_of(run.get("started_at"), epochs, hashes),
             "wake_reason": _safe_word(run.get("wake_reason")),
-            "cycle": run.get("cycle"), "status": _safe_word(run.get("status")),
+            "sweep": sweeps.get(run["run_id"]), "status": _safe_word(run.get("status")),
             "killed": killed,
             "at_risk": _at_risk(run, records, cls, idx, predictions, runs),
             "m1": len(m1), "m1_wide": len(m1w), "m1_struct": len(m1s), "m2": len(m2), "m3": len(m3),
@@ -699,11 +720,10 @@ def _episodes(rows: List[dict], records: List[dict], cls: Classified) -> dict:
 
 
 def _bootstrap(rows: List[dict]) -> Optional[dict]:
-    """Cluster bootstrap by conductor cycle (rows without one are their own
-    cluster) of R per at-risk wake, 90% interval."""
+    """Cluster bootstrap by conductor sweep of R per at-risk wake, 90% interval."""
     clusters: Dict[Any, List[dict]] = {}
     for r in rows:
-        key = r["cycle"] if r["cycle"] is not None else r["run_id"]
+        key = r["sweep"] if r["sweep"] is not None else r["run_id"]
         clusters.setdefault(key, []).append(r)
     groups = list(clusters.values())
     num = [sum(x["r"] for x in g if x["at_risk"]) for g in groups]
