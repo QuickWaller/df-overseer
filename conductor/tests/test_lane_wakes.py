@@ -219,10 +219,12 @@ async def test_a_ruling_wakes_only_the_proposer(tmp_path):
 # ---------------------------------------------------------------------------
 
 
-async def test_the_routine_review_still_wakes_both_advisors(tmp_path):
+async def test_the_routine_review_wakes_only_the_quartermaster(tmp_path):
+    """Planner P1b (user's call 2026-10-07): the Architect's 7-day routine wake
+    is retired; the Quartermaster's remains, at season length."""
     deps = _deps(tmp_path, just_reviewed=False)
     result = await run_cycle(1, deps)
-    assert result.roles_woken == ADV
+    assert result.roles_woken == ("quartermaster",)
 
 
 async def test_a_quiet_cycle_wakes_nobody(tmp_path):

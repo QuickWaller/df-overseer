@@ -40,15 +40,15 @@ from conductor.mcp_client import StreamableHTTPMCPClient
 from conductor.policy import load_policy
 from conductor.runner import DockerOpenClawRunner
 from conductor.status import configure_logging, log_cycle, status_from_cycle, write_status
-from conductor.triage import ADVISORS, CONSULTANT, OVERSEER
+from conductor.triage import ADVISORS, CONSULTANT, OVERSEER, PLANNER
 
 LOG = logging.getLogger("conductor.service")
 
-#: The four roles this MVP roster launches (docs/AGENT-LOOP.md §4). The
+#: The roles this roster launches (docs/AGENT-LOOP.md §4, plus the Planner, run first). The
 #: conductor's own charter (agents/conductor/role.md) is never loaded here
 #: -- it documents this service to a human reader, never a model, per that
 #: file's own header.
-ROLES = (*ADVISORS, CONSULTANT, OVERSEER)
+ROLES = (PLANNER, *ADVISORS, CONSULTANT, OVERSEER)
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_AGENTS_DIR = REPO_ROOT / "agents"

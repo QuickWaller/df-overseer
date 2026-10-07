@@ -52,11 +52,12 @@ def test_open_ask_wakes_only_the_consultant():
 
 
 def test_routine_review_fires_once_the_interval_is_reached():
-    just_under = triage(Signals(game_days_since_routine_review=6.9), POLICY)
+    interval = POLICY.routine_review_interval_game_days  # a season, 84 game days
+    just_under = triage(Signals(game_days_since_routine_review=interval - 0.1), POLICY)
     assert just_under.roles_to_wake == ()
 
-    at_interval = triage(Signals(game_days_since_routine_review=7.0), POLICY)
-    assert at_interval.roles_to_wake == ("architect", "quartermaster")
+    at_interval = triage(Signals(game_days_since_routine_review=float(interval)), POLICY)
+    assert at_interval.roles_to_wake == ("quartermaster",)
 
 
 def test_roles_to_wake_is_ordered_advisors_then_consultant_then_overseer():
