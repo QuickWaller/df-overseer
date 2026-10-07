@@ -3408,8 +3408,10 @@ df-overseer-stockpile.lua:
         items on one tile). Live-verified against Uniboslan's two real
         stockpiles. ADDED 2026-10-07 (handoffs/2026-10-07-stockpile-tool-gaps.md): each pile also
         reports `links_only` and `containers` (max_barrels, max_bins, max_wheelbarrows), each
-        null when the install does not expose the field; the field names are recalled and
-        UNVERIFIED live, the pre-existing fields stay live-verified.
+        null when the install does not expose the field. Field PATHS verified: live read
+        2026-10-07 (stockpile id 1): `stockpile_flag.use_links_only` (bitfield, false there) and
+        `storage.max_barrels` 25, `storage.max_bins` 25, `storage.max_wheelbarrows` 0, all on the
+        building. (A first cut read them as direct building fields; the live read showed null.)
       summary: "Lists every stockpile with its id, name, fill level and which top-level categories it accepts."
       guide:
         arguments: []
@@ -3741,13 +3743,12 @@ df-overseer-stockpile.lua:
         ADDED 2026-10-07 (handoffs/2026-10-07-stockpile-tool-gaps.md items 1 and 2).
         Writes the links-only flag and the container counts (max bins, barrels, wheelbarrows)
         of an existing stockpile; an omitted argument or the word keep leaves a field alone. The
-        building field names (`use_links_only`, `max_barrels`, `max_bins`, `max_wheelbarrows`)
-        are RECALLED from df-structures, not confirmed against source anywhere in this repo
-        (no df-structures is available offline), and the links-only polarity is unconfirmed:
-        every read is pcall'd, a field the install lacks reads as null and a write to it is
-        refused rather than done blind, and no default is hard-coded. The same fields are
+        field paths are `stockpile_flag.use_links_only` (bitfield) and `storage.max_barrels`,
+        `storage.max_bins`, `storage.max_wheelbarrows` (stockpile_storage_infost), VERIFIED BY LIVE
+        READ 2026-10-07; every read is pcall'd, a field the install lacks reads as null and a write
+        to it is refused rather than done blind, and no default is hard-coded. The same fields are
         reported by `list` and `links`. DRY_RUN defaults to true; a real run reads the values
-        back. UNTESTED LIVE: proven only against the fake world in
+        back. WRITES UNTESTED LIVE: proven only against the fake world in
         tests/test_stockpile_gaps_lua_logic.py.
       summary: "Sets a stockpile's links-only flag and its bin, barrel and wheelbarrow counts."
       guide:
@@ -3806,9 +3807,10 @@ df-overseer-stockpile.lua:
         category filter: for one category (stone, wood) lists which of the game's own materials
         the pile accepts and which it does not, read from the game's material list (the raws
         vector the pile's per-material booleans are indexed by), never a table of ours. Adding a
-        category is one MATERIAL_FILTERS entry in the Lua file. UNVERIFIED LIVE: the recalled
-        layout is `settings.<category>.mats` indexed like the raws list, and the include test
-        that picks which raws belong in the list may differ from the in-game list.
+        category is one MATERIAL_FILTERS entry in the Lua file. The layout `settings.<category>.mats`
+        is VERIFIED BY LIVE READ 2026-10-07 (vector<char> of 0/1: 311 entries for stone, 225 for
+        wood). STILL UNVERIFIED: that the vector is indexed like the raws list, and the include
+        test that picks which raws belong in the list, which may differ from the in-game list.
       summary: "Lists which materials of a category (which stone, which wood) a stockpile accepts."
       guide:
         arguments:

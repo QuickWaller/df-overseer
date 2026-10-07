@@ -141,3 +141,14 @@ check comes first. Live check to add for item 4: compare
 `stockpile.plan-feed Still` `kind_source`, `unmapped` and classes against the
 in-game "add job" menu for a Still and a Smelter.
 
+
+**Update 2026-10-07, after the live read-only check.** `stockpile.list` returned
+neither field, so the recalled names were wrong. Coordinator's live struct read
+(pile 1): links-only is `bld.stockpile_flag.use_links_only` (bitfield, false),
+containers are `bld.storage.max_barrels/max_bins/max_wheelbarrows` (25/25/0),
+and `bld.settings.<stone|wood>.mats` is vector<char> (311/225), so the layout
+was right but values are 0/1 chars. Lua reads and writes now use those paths
+(table `FIELD_PATHS`), the material read goes through `as_bool` (Lua's 0 is
+truthy) and writes 1/0; fake world and tests follow; marked `verified: live
+read 2026-10-07` in the code and TOOLS.yaml. Writes remain unverified, as does
+the raws-index assumption for the material vectors.

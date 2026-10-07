@@ -372,27 +372,62 @@ end
 -- Links-only flag and container counts (handoffs/2026-10-07-stockpile-tool-
 -- gaps.md items 1 and 2).
 --
--- FIELD NAMES ARE UNVERIFIED. No df-structures or DFHack source is available
--- offline in this repo (grep over the repo finds the names only in
--- research/2026-10-07-stockpile-logistics.md, "recalled as `use_links_only`,
--- not read this session"). Recalled from df-structures'
--- building_stockpilest: `use_links_only`, `max_barrels`, `max_bins`,
--- `max_wheelbarrows` directly on the building. Every read is pcall'd and a
--- field the install does not have reads as nil, reported as such (never a
--- guessed value): nothing here hard-codes a default, per the research's own
--- "read the field live" rule. Only a live read on the fort settles the names
--- and the polarity of `use_links_only`.
+-- FIELD PATHS: VERIFIED BY LIVE READ 2026-10-07 (coordinator, dfhack-run lua,
+-- read-only, stockpile id 1, DFHack v50.x/53.x). My first cut recalled
+-- these as direct building fields; the live read showed that wrong:
+--   links-only:  bld.stockpile_flag.use_links_only (a bitfield; false on the
+--                fort's pile 1, so false means takes from anywhere there)
+--   containers:  bld.storage.max_barrels (25), .max_bins (25),
+--                .max_wheelbarrows (0); bld.storage is
+--                stockpile_storage_infost (it also has container_type /
+--                container_item_id vectors, not read here)
+--   materials:   bld.settings.stone.mats vector<char>[311],
+--                bld.settings.wood.mats vector<char>[225]: 0/1 chars, not
+--                booleans, so Lua's 0 is truthy and must go through as_bool
+--   bld.settings.flags is a stockpile_group_set of named booleans;
+--   bld.settings.misc has allow_organic/allow_inorganic (not used here).
+-- WRITES to any of these remain UNVERIFIED (nothing has been written live).
+-- Every read is pcall'd and a missing field reads as nil, never a guess.
 -- ---------------------------------------------------------------------------
 
 local CONTAINER_FIELDS = {"max_barrels", "max_bins", "max_wheelbarrows"}
 local LINKS_ONLY_FIELD = "use_links_only"
+-- field name (as reported and as the settings verb argument maps to it) ->
+-- path from the building. Data, not branches.
+local FIELD_PATHS = {
+  use_links_only = {"stockpile_flag", "use_links_only"},
+  max_barrels = {"storage", "max_barrels"},
+  max_bins = {"storage", "max_bins"},
+  max_wheelbarrows = {"storage", "max_wheelbarrows"},
+}
 
 local function read_field(bld, name)
-  local ok, v = pcall(function() return bld[name] end)
+  local path = FIELD_PATHS[name] or {name}
+  local ok, v = pcall(function()
+    local cur = bld
+    for _, key in ipairs(path) do
+      if cur == nil then
+        return nil
+      end
+      cur = cur[key]
+    end
+    return cur
+  end)
   if ok then
     return v
   end
   return nil
+end
+
+local function write_field(bld, name, value)
+  local path = FIELD_PATHS[name] or {name}
+  return pcall(function()
+    local cur = bld
+    for i = 1, #path - 1 do
+      cur = cur[path[i]]
+    end
+    cur[path[#path]] = value
+  end)
 end
 
 -- Normalises the flag whether the install stores it as a bool or an int.
@@ -1590,10 +1625,10 @@ function stockpile_settings(id, links_only, max_bins, max_barrels, max_wheelbarr
   if #unreadable > 0 then
     table.sort(unreadable)
     return nil, "this install does not expose: " .. table.concat(unreadable, ", ")
-      .. " on a stockpile (field names are unverified); refusing to write blind"
+      .. " on a stockpile; refusing to write blind"
   end
   local result = {id = tonumber(id), dry_run = dry, would_change = changes,
-                  unverified_fields = true}
+                  field_reads_verified = "live read 2026-10-07", writes_verified = false}
   if dry then
     return result
   end
@@ -1604,7 +1639,7 @@ function stockpile_settings(id, links_only, max_bins, max_barrels, max_wheelbarr
     if field == LINKS_ONLY_FIELD and type(raw) == "number" then
       value = ch.to and 1 or 0
     end
-    local ok_w, werr = pcall(function() bld[field] = value end)
+    local ok_w, werr = write_field(bld, field, value)
     if not ok_w then
       return nil, "writing " .. field .. " failed: " .. tostring(werr)
     end
@@ -1618,8 +1653,9 @@ end
 -- (handoffs/2026-10-07-stockpile-tool-gaps.md item 3). Reads the game's OWN
 -- material list for the category (the raws vector the pile's per-material
 -- booleans are indexed by), never a table of ours: adding a category is one
--- MATERIAL_FILTERS entry. UNVERIFIED live: the recalled layout is
--- `settings.<key>.mats`, a vector<bool> indexed like the raws vector (stone
+-- MATERIAL_FILTERS entry. LAYOUT VERIFIED BY LIVE READ 2026-10-07:
+-- `settings.<key>.mats` is a vector<char> (0/1) of 311 (stone) / 225 (wood),
+-- indexed like the raws vector (stone
 -- by df.global.world.raws.inorganics, wood by raws.plants.all); the
 -- `include` path picks which raws belong in the list (stone: IS_STONE
 -- inorganics; wood: TREE plants) and is the part most likely to differ from
@@ -1684,7 +1720,7 @@ local function material_entries(bld, category)
         local ok_id, name = pcall(function() return raw.id end)
         local ok_en, en = pcall(function() return flags_vec[i] end)
         if ok_id and type(name) == "string" then
-          table.insert(out, {index = i, name = name, enabled = (ok_en and en) and true or false})
+          table.insert(out, {index = i, name = name, enabled = ok_en and as_bool(en) or false})
         end
       end
     end
@@ -1786,7 +1822,8 @@ function stockpile_set_materials(id, category, materials, dry_run)
   for _, e in ipairs(entries) do
     local target = want[e.name] and true or false
     if target ~= e.enabled then
-      local ok_w, werr = pcall(function() flags_vec[e.index] = target end)
+      -- the live vector is char (0/1); write the same type back
+      local ok_w, werr = pcall(function() flags_vec[e.index] = target and 1 or 0 end)
       if not ok_w then
         return nil, "writing material " .. e.name .. " failed: " .. tostring(werr)
       end
