@@ -250,6 +250,23 @@ something for it. All thresholds are config.
 **Alerts:** a status JSON and journald lines. Telegram and the public feed
 later.
 
+## 4b. Wake hygiene (2026-10-07)
+
+Every wake that can stand is counted in conductor cycles or wakes, never in
+game ticks (at 100 FPS a game day is 12 real seconds, so a tick-based renotify
+fires every cycle). `conductor/backoff.py` is the one rule: the wait before
+the second wake is the reason's base, doubling per wake up to a season, and
+the fact is `stalled` (no more wakes, still listed in the briefing, logged at
+INFO) after three. It covers stalled and blocked orders, stuck jobs, ore
+exposure, threshold alerts (renotify only while still crossed) and the
+unsupplied-building watch. `queue_pending` is an edge: a proposal the Overseer
+already left pending wakes it again only on a new proposal, an ask answered
+since the defer, or `overseer_defer_recheck_cycles`. A missed prediction wakes
+its proposer only. An answered ask can wake its asker once
+(`lane_triggers.<role>.answers`, off until the role can read the answer). The
+operator hold still gates no optional wake. Spec and the reasons not yet done:
+`research/2026-10-07-wake-audit.md`, `handoffs/2026-10-07-wake-cleanup.md`.
+
 ## 5. Deliberately left out of the MVP
 
 Each can be added without changing the loop's shape: the full per-step

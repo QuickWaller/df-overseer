@@ -50,19 +50,6 @@ async def test_a_production_job_completing_wakes_nobody(tmp_path):
     assert result.roles_woken == ()
 
 
-async def test_a_stock_threshold_event_wakes_only_the_quartermaster(tmp_path):
-    tools = _base_tools(**{"diff.since": _events(quartermaster=[{"id": 1, "type": "stock_below_threshold"}])})
-    result = await run_cycle(1, _deps(tmp_path, tools=tools))
-    assert result.roles_woken == ("quartermaster",)
-
-
-async def test_season_change_wakes_only_the_quartermaster_and_migrants_both(tmp_path):
-    tools = _base_tools(**{"diff.since": _events(architect=[{"id": 1, "type": "season_change"}])})
-    assert (await run_cycle(1, _deps(tmp_path / "a", tools=tools))).roles_woken == ("quartermaster",)
-    tools = _base_tools(**{"diff.since": _events(architect=[{"id": 1, "type": "migrant_wave"}])})
-    assert (await run_cycle(1, _deps(tmp_path / "b", tools=tools))).roles_woken == ADV
-
-
 # ---------------------------------------------------------------------------
 # Stuck jobs
 # ---------------------------------------------------------------------------

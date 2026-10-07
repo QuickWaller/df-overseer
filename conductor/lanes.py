@@ -39,22 +39,27 @@ the cursor store, single-writer like `CursorStore`.
 
 Not observable today, and substituted rather than faked: a new landmark (no
 landmark read on the conductor's allowlist), approximated by dig and
-construction completions in the Architect's own drain; the author of a graded
-prediction (`queue.grade` omits it), so a miss wakes both advisors.
+construction completions in the Architect's own drain. (The author of a graded
+prediction used to be unobservable too; `queue.grade` now names the proposer
+and a miss wakes only it, `conductor/cycle.py` `_miss_proposers`.)
 """
 
 from __future__ import annotations
 
 import json
+import logging
 import tempfile
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Set, Tuple
 
+from conductor import backoff
 from conductor.ore_watch import OreRead
 from conductor.policy import LaneTriggers, Policy
 from conductor.triage import LaneWake
 from conductor.unsupplied_watch import UnsuppliedRead
+
+LOG = logging.getLogger(__name__)
 
 #: Reasons this module raises; each must exist in policy.yaml `wake_reasons`
 #: (its `clock` is read from there, its `wakes` is unused).
@@ -63,6 +68,7 @@ REASON_ALERT = "alert_crossed"
 REASON_RULING = "ruling_on_own"
 REASON_ORE = "ore_exposed"
 REASON_UNSUPPLIED = "unsupplied_building"
+REASON_ANSWER = "answer_ready"
 #: The execute phase's wakes (conductor/execute.py), queued into `pending`
 #: under `<reason>:<key>` for the project's proposer.
 REASON_STEP_DONE = "step_done"
@@ -74,6 +80,7 @@ _ALERT = "alert:"
 _RULING = "ruling:"
 _ORE = "ore:"
 _UNSUPPLIED = "unsupplied:"
+_ANSWER = "answer:"
 
 
 @dataclass
@@ -86,10 +93,23 @@ class LaneState:
     pending: Dict[str, Dict[str, str]] = field(default_factory=dict)
     #: "<site>:<mineral>" -> game tick it last woke a role, while still exposed.
     ore: Dict[str, int] = field(default_factory=dict)
+    #: "<site>:<mineral>" -> wakes sent for it so far (conductor/backoff.py).
+    ore_wakes: Dict[str, int] = field(default_factory=dict)
+    #: alert name -> backoff record while the alert stays crossed (renotify).
+    alert_wakes: Dict[str, Dict[str, Any]] = field(default_factory=dict)
     #: item kind -> {"first": tick first seen unsupplied, "last": tick of its last
     #: wake, "wakes": wakes so far, "stalled": no more wakes}, while unsupplied
     #: (conductor/unsupplied_watch.py).
     unsupplied: Dict[str, Dict[str, Any]] = field(default_factory=dict)
+    #: ask id -> the role whose run added it, until its answer is seen.
+    askers: Dict[str, str] = field(default_factory=dict)
+    #: Conductor cycles seen, persisted: the clock for every cycle-counted
+    #: window here (a service restart or a `--once` run must not reset it).
+    cycles: int = 0
+    #: proposal id -> {"asks": open ask ids when the Overseer last ran and left
+    #: it pending, "at": `cycles` then}. The Overseer's wake for a pending
+    #: proposal is an edge: see `split_pending_for_overseer`.
+    overseer_seen: Dict[str, Dict[str, Any]] = field(default_factory=dict)
 
 
 class LaneStore:
@@ -110,10 +130,22 @@ class LaneStore:
                 for r, m in (raw.get("pending") or {}).items()
             },
             ore={str(k): int(v) for k, v in (raw.get("ore") or {}).items()},
+            ore_wakes={str(k): int(v) for k, v in (raw.get("ore_wakes") or {}).items()},
+            alert_wakes={
+                str(k): {"first": int(v.get("first", 0)), "last": int(v.get("last", 0)),
+                         "wakes": int(v.get("wakes", 0)), "stalled": bool(v.get("stalled", False))}
+                for k, v in (raw.get("alert_wakes") or {}).items() if isinstance(v, dict)
+            },
             unsupplied={
                 str(k): {"first": int(v.get("first", 0)), "last": int(v.get("last", 0)),
                          "wakes": int(v.get("wakes", 0)), "stalled": bool(v.get("stalled", False))}
                 for k, v in (raw.get("unsupplied") or {}).items() if isinstance(v, dict)
+            },
+            askers={str(k): str(v) for k, v in (raw.get("askers") or {}).items()},
+            cycles=int(raw.get("cycles") or 0),
+            overseer_seen={
+                str(k): {"asks": [str(a) for a in (v.get("asks") or [])], "at": int(v.get("at", 0))}
+                for k, v in (raw.get("overseer_seen") or {}).items() if isinstance(v, dict)
             },
         )
 
@@ -124,7 +156,9 @@ class LaneStore:
             with open(fd, "w", encoding="utf-8") as fh:
                 json.dump(
                     {"alerts": state.alerts, "proposers": state.proposers, "pending": state.pending,
-                     "ore": state.ore, "unsupplied": state.unsupplied},
+                     "ore": state.ore, "unsupplied": state.unsupplied,
+                     "cycles": state.cycles, "overseer_seen": state.overseer_seen,
+                     "ore_wakes": state.ore_wakes, "alert_wakes": state.alert_wakes, "askers": state.askers},
                     fh, indent=2, sort_keys=True,
                 )
             Path(tmp_name).replace(self.path)
@@ -174,24 +208,43 @@ def stuck_job_roles(policy: Policy, due_jobs: Sequence[Any]) -> Tuple[str, ...]:
 
 def apply_alert_edges(
     policy: Policy, state: LaneState, crossed: Mapping[str, Optional[bool]], lines: Mapping[str, str],
+    game_tick: Optional[int] = None,
 ) -> None:
     """Fold this cycle's alert readings into `state`. `crossed[name]` is True,
     False, or None for a failed read (state kept). A fresh crossing adds a
     pending entry for every role whose lane lists the alert; an alert that has
-    cleared drops its not-yet-served entries, since the condition is gone."""
+    cleared drops its not-yet-served entries and its backoff record, since the
+    condition is gone. An alert that STAYS crossed wakes its owners again on
+    the shared renotify backoff (`policy.alert_renotify_ticks`, doubling per
+    wake, stalled after `renotify_max_wakes`): a survival signal an owner left
+    standing is not forgotten, and not repeated every cycle either. Without a
+    game tick the renotify is skipped (the edge alone wakes)."""
+    rule = policy.backoff(policy.alert_renotify_ticks)
     for name, now in crossed.items():
         if now is None:
             continue
         was = state.alerts.get(name, False)
         state.alerts[name] = now
         key = _ALERT + name
+        due = False
         if now and not was:
+            due = True
+            if game_tick is not None:
+                rec, _, stalled = backoff.advance(None, game_tick, rule)
+                state.alert_wakes[name] = rec
+        elif now and game_tick is not None:
+            rec, due, stalled = backoff.advance(state.alert_wakes.get(name), game_tick, rule)
+            state.alert_wakes[name] = rec
+            if stalled:
+                LOG.info("alert %s still crossed after %d wakes: no more wakes until it clears (stalled)", name, rec["wakes"])
+        elif not now:
+            state.alert_wakes.pop(name, None)
+            for entries in state.pending.values():
+                entries.pop(key, None)
+        if due:
             for role, lane in policy.lane_triggers.items():
                 if name in lane.alerts or "*" in lane.alerts:
                     state.pending.setdefault(role, {})[key] = lines.get(name) or name
-        elif not now:
-            for entries in state.pending.values():
-                entries.pop(key, None)
 
 
 def apply_ore_edges(
@@ -206,21 +259,30 @@ def apply_ore_edges(
     if read is None:
         return
     now = game_tick if game_tick is not None else 0
+    rule = policy.backoff(policy.ore_renotify_ticks)
     roles = [role for role, lane in policy.lane_triggers.items() if lane.ore]
     live = set()
     for exp in read.exposures:
         live.add(exp.key)
         last = state.ore.get(exp.key)
-        # A last-woke tick in the future means the save was reloaded: re-arm.
-        due = last is None or last > now or (now - last) >= policy.ore_renotify_ticks
+        wakes = state.ore_wakes.get(exp.key, 1 if last is not None else 0)
+        # Exponential backoff in wakes, stalled after `renotify_max_wakes`; a
+        # last-woke tick in the future (a reloaded save) re-arms it
+        # (conductor/backoff.py).
+        rec = {"first": last, "last": last, "wakes": wakes, "stalled": wakes >= rule.max_wakes} if last is not None else None
+        rec, due, newly_stalled = backoff.advance(rec, now, rule)
         if due:
             state.ore[exp.key] = now
+            state.ore_wakes[exp.key] = rec["wakes"]
             for role in roles:
                 state.pending.setdefault(role, {})[_ORE + exp.key] = exp.line
+            if newly_stalled:
+                LOG.info("ore %s still exposed after %d wakes: no more wakes until it is mined (stalled)", exp.key, rec["wakes"])
     for key in [k for k in state.ore if k not in live]:
         if key.split(":", 1)[0] in read.unreadable_handles:
             continue
         del state.ore[key]
+        state.ore_wakes.pop(key, None)
         for entries in state.pending.values():
             entries.pop(_ORE + key, None)
 
@@ -239,28 +301,20 @@ def apply_unsupplied_edges(
     if read is None:
         return
     pol = policy.unsupplied_building
+    rule = backoff.Backoff(pol.base_ticks, pol.cap_ticks, pol.max_wakes)
     now = game_tick if game_tick is not None else 0
     roles = [role for role, lane in policy.lane_triggers.items() if lane.unsupplied]
     live = set()
     for it in read.items:
         live.add(it.key)
-        rec = state.unsupplied.get(it.key)
-        if rec is None or rec.get("first", 0) > now:
-            # New, or a save reload put the clock behind it: start over.
-            rec = {"first": now, "last": now, "wakes": 1, "stalled": False}
-            state.unsupplied[it.key] = rec
-            due = True
-        elif rec.get("stalled"):
-            due = False
-        else:
-            wait = min(pol.base_ticks * (2 ** max(rec["wakes"] - 1, 0)), pol.cap_ticks)
-            due = (now - rec["last"]) >= wait
-            if due:
-                rec["last"] = now
-                rec["wakes"] += 1
+        prior = state.unsupplied.get(it.key)
+        if prior is not None and prior.get("first", 0) > now:
+            prior = None  # a save reload put the clock behind it: start over
+        rec, due, _ = backoff.advance(prior, now, rule)
+        if prior is None:
+            rec["first"] = now
+        state.unsupplied[it.key] = rec
         if due:
-            if rec["wakes"] >= pol.max_wakes:
-                rec["stalled"] = True
             for role in roles:
                 state.pending.setdefault(role, {})[_UNSUPPLIED + it.key] = it.line(now - rec["first"])
     for key in [k for k in state.unsupplied if k not in live]:
@@ -271,6 +325,70 @@ def apply_unsupplied_edges(
             entries.pop(_UNSUPPLIED + key, None)
 
 
+#: How many pending proposals the Overseer's ruling briefing shows (the same
+#: cap as `dfmcp.queue_tools.BRIEF_MAX_PROPOSALS`); a pending proposal past it
+#: was never put in front of the Overseer, so it is never recorded as seen.
+OVERSEER_BRIEF_CAP = 8
+
+
+def defer_changed(policy: Policy, state: LaneState, seen: Mapping[str, Any], open_ask_ids: Iterable[str]) -> Optional[str]:
+    """Why a proposal the Overseer already left pending should be looked at
+    again, or None. The one place that defines "changed since the defer":
+
+    - a new answer: an ask that was open at the defer is no longer open;
+    - the backstop: `policy.overseer_defer_recheck_cycles` cycles elapsed.
+
+    Not observable by the conductor today, and so not tested here: a new
+    citation on the proposal (a proposal record is immutable; the cited facts
+    live in `queue.pending_brief`, which costs a read per cycle) and a defer
+    that names its own condition (free text in a ruling's reason). Both would
+    hook in here."""
+    still_open = {str(a) for a in open_ask_ids}
+    answered = [a for a in seen.get("asks", ()) if a not in still_open]
+    if answered:
+        return f"ask {', '.join(answered)} answered since the defer"
+    if state.cycles - int(seen.get("at", 0)) >= policy.overseer_defer_recheck_cycles:
+        return f"{policy.overseer_defer_recheck_cycles} cycles since the defer"
+    return None
+
+
+def split_pending_for_overseer(
+    policy: Policy, state: LaneState, pending_ids: Sequence[str], open_ask_ids: Iterable[str],
+) -> Tuple[List[str], List[Tuple[str, str]]]:
+    """(wake-worthy, quiet) for the pending proposals. A pending id the
+    Overseer has not left pending before is wake-worthy (new); one it has is
+    quiet, as `(id, reason)`, unless `defer_changed` finds a reason. The quiet
+    list is the seam where a future inbox or notes channel would take a
+    deferred proposal as a note instead of dropping it."""
+    ask_ids = list(open_ask_ids)
+    fresh: List[str] = []
+    quiet: List[Tuple[str, str]] = []
+    for pid in pending_ids:
+        seen = state.overseer_seen.get(str(pid))
+        if seen is None:
+            fresh.append(str(pid))
+            continue
+        if defer_changed(policy, state, seen, ask_ids) is not None:
+            fresh.append(str(pid))
+        else:
+            quiet.append((str(pid), "already deferred, nothing changed"))
+    return fresh, quiet
+
+
+def record_overseer_seen(state: LaneState, pending_ids: Sequence[str], open_ask_ids: Iterable[str]) -> None:
+    """After an OK Overseer run: the first `OVERSEER_BRIEF_CAP` proposals still
+    pending were shown to it and left pending, so they stop waking it until
+    `defer_changed`. A proposal past the cap stays wake-worthy. Ids that left
+    the pending list are forgotten; one re-woken for a change is re-stamped."""
+    ids = [str(p) for p in pending_ids]
+    asks = [str(a) for a in open_ask_ids]
+    for pid in ids[:OVERSEER_BRIEF_CAP]:
+        state.overseer_seen[pid] = {"asks": asks, "at": state.cycles}
+    keep = set(ids)
+    for pid in [p for p in state.overseer_seen if p not in keep]:
+        del state.overseer_seen[pid]
+
+
 def attribute_new_proposals(state: LaneState, role: str, known_ids: Set[str], pending_ids: Iterable[str]) -> Set[str]:
     """After `role`'s run: every pending proposal id not seen before was added
     by that run. Records the author and returns the enlarged known set."""
@@ -278,6 +396,31 @@ def attribute_new_proposals(state: LaneState, role: str, known_ids: Set[str], pe
     for pid in sorted(now - known_ids):
         state.proposers[pid] = role
     return known_ids | now
+
+
+def attribute_new_asks(state: LaneState, role: str, known_ids: Set[str], open_ask_ids: Iterable[str]) -> Set[str]:
+    """After `role`'s run: every open ask id not seen before was filed by that
+    run (the conductor cannot read an ask's author, as with proposals)."""
+    now = {str(i) for i in open_ask_ids}
+    for aid in sorted(now - known_ids):
+        state.askers[aid] = role
+    return known_ids | now
+
+
+def apply_answers(policy: Policy, state: LaneState, open_ask_ids: Iterable[str]) -> None:
+    """A learned ask no longer open was answered. Queue one wake for its asker
+    when the asker's lane has `answers`. If the asker is also being woken for
+    something else this cycle the cycle runs it once (one run per role), so the
+    answer arrives with that run; the place a notes channel would take the
+    answer instead of a wake is here."""
+    now = {str(i) for i in open_ask_ids}
+    for aid in [a for a in state.askers if a not in now]:
+        role = state.askers.pop(aid)
+        lane = _lane(policy, role)
+        if lane is not None and lane.answers:
+            state.pending.setdefault(role, {})[_ANSWER + aid] = f"{aid} was answered"
+        else:
+            LOG.info("%s was answered; its asker %s has no answer wake (lane_triggers.%s.answers is off)", aid, role, role)
 
 
 def apply_rulings(policy: Policy, state: LaneState, pending_ids: Iterable[str]) -> None:
@@ -302,7 +445,7 @@ def lane_wakes(policy: Policy, state: LaneState, events_by_role: Mapping[str, Se
         entries = state.pending.get(role) or {}
         for prefix, reason in (
             (_ALERT, REASON_ALERT), (_RULING, REASON_RULING), (_ORE, REASON_ORE),
-            (_UNSUPPLIED, REASON_UNSUPPLIED),
+            (_UNSUPPLIED, REASON_UNSUPPLIED), (_ANSWER, REASON_ANSWER),
             (REASON_STEP_DONE + ":", REASON_STEP_DONE), (REASON_STEP_ATTENTION + ":", REASON_STEP_ATTENTION),
             (REASON_PROJECT_IDLE + ":", REASON_PROJECT_IDLE),
         ):

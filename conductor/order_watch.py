@@ -59,16 +59,22 @@ rather than firing instantly off stale history.
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from typing import Iterable, List, Mapping, Optional, Tuple
 
+from conductor import backoff
 from conductor.cursors import CursorStore
+
+LOG = logging.getLogger(__name__)
 
 #: Reserved CursorStore key prefixes. No real role name can collide with
 #: these (role names are bare identifiers like "architect"; these always
 #: carry a numeric order id after the prefix).
 _FIRST_SEEN_PREFIX = "__order_first_seen_"
 _LAST_NOTIFIED_PREFIX = "__order_last_notified_"
+#: Wakes already sent for this stall episode (conductor/backoff.py).
+_WAKES_PREFIX = "__order_wakes_"
 
 STALLED = "stalled"
 BLOCKED = "blocked"
@@ -131,6 +137,8 @@ def evaluate_orders(
     renotify_ticks: int,
     cursor_store: CursorStore,
     dry_run: bool,
+    renotify_cap_ticks: int = 100800,
+    max_wakes: int = 3,
 ) -> OrderWatchResult:
     """One call per cycle, over `orders.list`'s own `orders` array. Reads
     (and, for a real cycle, writes) per-order bookkeeping via
@@ -155,12 +163,14 @@ def evaluate_orders(
             continue
         first_key = f"{_FIRST_SEEN_PREFIX}{order_id}"
         notified_key = f"{_LAST_NOTIFIED_PREFIX}{order_id}"
+        wakes_key = f"{_WAKES_PREFIX}{order_id}"
         condition = _condition(order)
 
         if condition is None:
             if not dry_run:
                 cursor_store.set(first_key, 0)
                 cursor_store.set(notified_key, 0)
+                cursor_store.set(wakes_key, 0)
             continue
 
         first_seen = cursor_store.get(first_key)
@@ -173,12 +183,29 @@ def evaluate_orders(
         if ticks_in_state < threshold_ticks:
             continue
 
+        # Exponential backoff in wakes, stalled after `max_wakes`
+        # (conductor/backoff.py). Bookkeeping from before it existed has a
+        # last-notified tick and no wake count: that was one wake.
         last_notified = cursor_store.get(notified_key)
-        if last_notified != 0 and (game_tick - last_notified) < renotify_ticks:
+        wakes = cursor_store.get(wakes_key)
+        if wakes == 0 and last_notified != 0:
+            wakes = 1
+        rule = backoff.Backoff(renotify_ticks, renotify_cap_ticks, max_wakes)
+        rec, due, newly_stalled = backoff.advance(
+            {"last": last_notified, "wakes": wakes, "stalled": wakes >= max_wakes} if wakes else None,
+            game_tick, rule,
+        )
+        if not due:
             continue
 
         if not dry_run:
             cursor_store.set(notified_key, game_tick)
+            cursor_store.set(wakes_key, rec["wakes"])
+        if newly_stalled:
+            LOG.info(
+                "order %s is %s and has had %d wakes: no more wakes for it until it clears (stalled)",
+                order_id, condition, rec["wakes"],
+            )
 
         (stalled if condition == STALLED else blocked).append(int(order_id))
 

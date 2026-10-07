@@ -48,6 +48,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Mapping, Optional, Tuple
 
+from conductor import backoff
+
 TICKS_PER_GAME_DAY = 1200
 
 UNCLAIMED = "unclaimed"
@@ -164,6 +166,8 @@ def evaluate_jobs(
     renotify_ticks: int,
     store: JobWatchStore,
     dry_run: bool,
+    renotify_cap_ticks: int = 100800,
+    max_wakes: int = 3,
 ) -> JobWatchResult:
     """One call per cycle over `stuckjobs.find`'s array. A dry run reads state
     but never writes it. `game_tick=None` returns an empty result and leaves
@@ -191,7 +195,13 @@ def evaluate_jobs(
         if first_seen is None or first_seen > game_tick:
             first_seen = game_tick
         last_notified = prior.get("last_notified")
-        entry: Dict[str, Optional[int]] = {"first_seen": first_seen, "last_notified": last_notified}
+        # Wakes already sent (conductor/backoff.py); state from before the
+        # backoff has a last-notified tick and no count: that was one wake.
+        wakes = int(prior.get("wakes") or (1 if last_notified is not None else 0))
+        entry: Dict[str, Any] = {
+            "first_seen": first_seen, "last_notified": last_notified, "wakes": wakes,
+            "stalled": wakes >= max_wakes,
+        }
         new_state[key] = entry
 
         age = max(0, game_tick - first_seen)
@@ -201,9 +211,16 @@ def evaluate_jobs(
 
         item = StuckJob(key=key, kind=kind, age_ticks=age, line=describe(job, kind, age))
         stuck.append(item)
-        if last_notified is None or (game_tick - last_notified) >= renotify_ticks:
+        rule = backoff.Backoff(renotify_ticks, renotify_cap_ticks, max_wakes)
+        rec, is_due, _ = backoff.advance(
+            {"last": last_notified or 0, "wakes": wakes, "stalled": entry["stalled"]} if wakes else None,
+            game_tick, rule,
+        )
+        if is_due:
             due.append(item)
             entry["last_notified"] = game_tick
+            entry["wakes"] = rec["wakes"]
+            entry["stalled"] = rec["stalled"]
 
     if not dry_run:
         store.save(new_state)

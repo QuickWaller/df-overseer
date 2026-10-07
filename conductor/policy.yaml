@@ -55,15 +55,13 @@ routine_review_interval_game_days: 84
 # cycle's normal dispatch lag. Not measured against a real run (no VM this
 # stream) -- worth retuning once a real cycle cadence is observed.
 #
-# stalled_order_renotify_ticks: once an order has fired once, how long
-# before the SAME order id is allowed to fire again while it stays
-# stalled/blocked. Set equal to the threshold (also 1 game day): a stalled
-# order is worth a daily reminder while unresolved, not a one-time-only
-# notice that could be silently forgotten, but never every single cycle
-# (handoffs/2026-09-23-stalled-order-poller.md item 1: "how not to wake
-# every cycle for the same order stalled for a known reason").
+# stalled_order_renotify_ticks: the BASE of the renotify backoff for the SAME
+# order id while it stays stalled/blocked (see "Renotify backoff" below). It was
+# 1200 (one game day) until 2026-10-07; at 100 FPS a game day is 12 real
+# seconds, so that fired every cycle (research/2026-10-07-wake-audit.md
+# finding 4). Now 10 game days, doubling per wake.
 stalled_order_threshold_ticks: 1200
-stalled_order_renotify_ticks: 1200
+stalled_order_renotify_ticks: 12000
 
 # handoffs/2026-10-05-stuck-job-watch.md (conductor/job_watch.py): the
 # stuck_job wake below fires from polling stuckjobs.find, not from a diff
@@ -72,8 +70,8 @@ stalled_order_renotify_ticks: 1200
 # since a fresh job is routinely unclaimed for hours. Suspended jobs have
 # their own key because a suspended job is often a deliberate wait
 # (buildingplan holds one until an item attaches), so it is tunable alone.
-# Renotify: a still-stuck job wakes again only after this many ticks (10
-# game days), never every cycle. Not tuned against a real run.
+# Renotify: the base of the backoff for a still-stuck job (10 game days),
+# doubling per wake. Not tuned against a real run.
 stuck_job_unclaimed_threshold_ticks: 2400
 stuck_job_suspended_threshold_ticks: 2400
 stuck_job_renotify_ticks: 12000
@@ -83,9 +81,29 @@ stuck_job_renotify_ticks: 12000
 # `ore_exposed` (ore or gem still walled in on a dug room's faces). A
 # (site, material) wakes the Architect once when first seen, re-arms when it
 # leaves the read (mined), and otherwise wakes again only after this many
-# game ticks still exposed (12000 = 10 game days), so a vein never wakes it
-# every cycle. Not tuned against a real run.
+# game ticks still exposed (12000 = 10 game days), doubling per wake, so a vein
+# never wakes it every cycle. Not tuned against a real run.
 ore_renotify_ticks: 12000
+
+# Renotify backoff (research/2026-10-07-wake-audit.md rec 3; conductor/
+# backoff.py), shared by stalled and blocked orders, stuck jobs, ore exposure
+# and threshold alerts. Counted in WAKES, not in a fixed tick interval: the
+# wait before the second wake is that reason's own base (the *_renotify_ticks
+# keys above), it doubles per wake sent up to renotify_cap_ticks (100800 = one
+# season), and after renotify_max_wakes wakes the fact is "stalled": no more
+# wakes (logged at INFO, still in the briefing's standing lines) until it
+# clears and recurs. A threshold alert wakes once on crossing and, only while
+# it stays crossed, again on this backoff (it had no renotify before).
+alert_renotify_ticks: 12000
+renotify_cap_ticks: 100800
+renotify_max_wakes: 3
+
+# queue_pending is an EDGE (research/2026-10-07-wake-audit.md rec 1). A proposal
+# the Overseer already saw and left pending (a defer) does not wake it again
+# while nothing observable changed (an ask open at the defer has since been
+# answered). As a backstop it wakes again after this many conductor cycles
+# (a counter persisted in lane_state.json, never ticks).
+overseer_defer_recheck_cycles: 12
 
 # Every wake reason this conductor build knows about. `clock` is the
 # fallback table entry (§2); `computable: true` means conductor/cycle.py
@@ -98,18 +116,16 @@ ore_renotify_ticks: 12000
 # handoffs/2026-10-05-stricter-wakes.md: a role wakes only on a change in its
 # own lane. `routine_review` still wakes both advisors every interval, so
 # nothing goes unchecked long. `prediction_graded` is raised by the cycle only
-# for a MISS (a hit is recorded, nobody wakes); its `wakes` lists both advisors
-# because queue.grade does not say who proposed the prediction, so a miss
-# cannot yet be narrowed to its proposer. `lane_event`, `alert_crossed` and
+# for a MISS (a hit is recorded, nobody wakes) and wakes only the PROPOSER, which
+# queue.grade's graded rows now name (2026-10-07, handoffs/2026-10-07-wake-
+# cleanup.md item 6); `wakes` (both advisors) is the fallback only for a grade
+# row that names no proposer (an older server). `lane_event`, `alert_crossed` and
 # `ruling_on_own` carry no fixed role list: the roles come from `lane_triggers`
 # below, per event.
 wake_reasons:
   routine_review:
     clock: full_speed
     wakes: [quartermaster]
-  prediction_due:
-    clock: full_speed
-    wakes: [architect, quartermaster]
   prediction_graded:
     clock: full_speed
     wakes: [architect, quartermaster]
@@ -118,10 +134,6 @@ wake_reasons:
   season_change:
     clock: full_speed
     wakes: [quartermaster]
-  # New citizens need beds (Architect) and food (Quartermaster).
-  migrant_wave:
-    clock: full_speed
-    wakes: [architect, quartermaster]
   lane_event:
     clock: full_speed
     wakes: []
@@ -136,6 +148,11 @@ wake_reasons:
   alert_crossed:
     clock: full_speed
     wakes: []
+  # Roles come from `lane_triggers.<role>.answers`: an ask the role filed was
+  # answered (handoffs/2026-10-07-wake-cleanup.md item 8).
+  answer_ready:
+    clock: full_speed
+    wakes: []
   ruling_on_own:
     clock: full_speed
     wakes: []
@@ -145,20 +162,15 @@ wake_reasons:
     clock: full_speed
     wakes: [quartermaster]
     computable: true
-  stock_below_target:
-    clock: full_speed
-    wakes: [quartermaster]
-    computable: true
   vital_nearing_threshold:
     clock: slowed
     wakes: [quartermaster]
     computable: true
-  caravan_present:
-    clock: slowed
-    wakes: [quartermaster]
-  hostile_seen_unreachable:
-    clock: slowed
-    wakes: []
+  # Deleted 2026-10-07 (handoffs/2026-10-07-wake-cleanup.md, research/2026-10-07-
+  # wake-audit.md rows 19 and 22 to 26): prediction_due, migrant_wave,
+  # caravan_present, hostile_seen_unreachable and stock_below_target, none of
+  # which had a source that could ever raise them, and the Quartermaster's
+  # stock_below_threshold lane event below.
   # handoffs/2026-09-23-stalled-order-poller.md item 1: same production
   # domain as stuck_job/stock_below_target above (both wake only the
   # quartermaster), so this reuses that same precedent rather than
@@ -342,6 +354,12 @@ threshold_alerts:
 #   proposer by watching which advisor's run added a pending proposal).
 # ore: an ore or gem newly exposed on a dug room's walls (edge triggered, see
 #   ore_renotify_ticks above).
+# answers: an ask this role filed was answered (`answer_ready`, once per ask).
+#   LEFT OFF for every role: no advisor has a read tool that returns an
+#   answer's text (the Consultant writes it with queue.answer; the asker has
+#   queue.my_filings for proposals only), so the wake would send a role to look
+#   for something it cannot read. Add `answers: true` to a role once it can.
+#   The detection, the pending entry and the wake are built and tested.
 #
 # Not observable by the conductor today: a new landmark. Dig and construction
 # completions stand in for it. Starting patterns, not tuned against a run.
@@ -361,8 +379,6 @@ lane_triggers:
     # execute phase's step_done / step_attention / project_idle.
     execution: true
   quartermaster:
-    events:
-      - type: stock_below_threshold
     stuck_jobs: ['brew|cook|prepare|make|craft|forge|weave|mill|process|butcher|tan|smelt|sew|clothes|plant|harvest|kiln|still|farm|collect']
     alerts: [drink_per_citizen, raw_food_per_citizen]
     rulings: true

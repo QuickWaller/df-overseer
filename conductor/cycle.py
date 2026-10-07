@@ -45,7 +45,8 @@ same code path with `FakeToolCaller`/`FakeRoleRunner` instead.
    announcement-class tripwire/event (`docs/AGENT-LOOP.md` §3: "the
    announcement tripwire... is still owed") feeding a genuine sighting event
    into `diff.since`, not a new grant of this tool. `hostile_seen_unreachable`
-   stays `False` always; left as a documented gap, not a silent one.
+   stayed `False` always, a documented gap; the stub (signal, policy entry) was
+   deleted in handoffs/2026-10-07-wake-cleanup.md and returns with a real source.
 """
 
 from __future__ import annotations
@@ -99,12 +100,14 @@ ALL_ROLES = (*ADVISORS, CONSULTANT, OVERSEER)
 #: stream) -- the exact key a drained event carries its classification
 #: under was not independently re-derived here; flagged in this stream's
 #: report as needing a live check before this mapping is trusted.
-EVENT_TYPE_TO_SIGNAL: Dict[str, str] = {
-    "migrant_wave": "migrant_wave",
-    "caravan_arrived": "caravan_present",
-    "season_change": "season_change",
-    "stock_below_threshold": "stock_below_target",
-}
+#:
+#: Empty since handoffs/2026-10-07-wake-cleanup.md: `migrant_wave`,
+#: `caravan_arrived`, `season_change` and `stock_below_threshold` were never
+#: emitted by any DFHack script (research/2026-10-07-wake-audit.md rows 19, 23
+#: to 25), so their entries and signals were deleted. `season_change` is now
+#: computed from the game tick (conductor/plan_watch.py), not drained. A real
+#: emitter would add its entry here again.
+EVENT_TYPE_TO_SIGNAL: Dict[str, str] = {}
 
 #: handoffs/2026-09-23-attention-tiers-ingame.md item 2 / this stream's item
 #: 4. The event `type` this stream ASSUMES the sibling in-game stream's
@@ -264,6 +267,34 @@ def _queue_summary_for(role: str, queue_state: Mapping[str, Any]) -> Mapping[str
         ids = list(to.get(role) or ())
         return {"count": len(ids), "ask_ids": ids}
     return queue_state.get("proposals") or _EMPTY_QUEUE_SUB_SUMMARY
+
+
+def _miss_proposers(policy: Any, grade_result: Mapping[str, Any], cycle_index: int) -> Tuple[str, ...]:
+    """Who a missed prediction wakes: its proposer only
+    (handoffs/2026-10-07-wake-cleanup.md item 6; research/2026-10-07-wake-audit.md
+    row 21, where the other advisor ran for nothing). `queue.grade`'s graded
+    rows carry `proposer`. A row without one (an older server) falls back to the
+    reason's own `wakes` list, so a rollout order cannot silence a miss. A
+    proposer this build does not run (the Planner while it is off, an unknown
+    role) is logged and wakes nobody, never someone else in its place."""
+    misses = [
+        g for g in (grade_result.get("graded") or ())
+        if isinstance(g, Mapping) and g.get("status") == "graded_false"
+    ]
+    if not misses:
+        return ()
+    if any("proposer" not in g for g in misses):
+        return tuple(policy.reason("prediction_graded").wakes)
+    runnable = {*ADVISORS, *((PLANNER,) if policy.plan.enabled else ())}
+    roles: List[str] = []
+    for g in misses:
+        who = g.get("proposer")
+        if who in runnable:
+            if who not in roles:
+                roles.append(who)
+        else:
+            LOG.info("cycle %s: a prediction missed whose proposer %r this build does not run; no wake", cycle_index, who)
+    return tuple(roles)
 
 
 def _open_ask_addressees(queue_state: Mapping[str, Any]) -> Tuple[str, ...]:
@@ -694,6 +725,7 @@ async def _run_cycle(cycle_index: int, deps: CycleDeps, hold: HoldState) -> Cycl
     # ---- 2. GRADE -----------------------------------------------------------
     prediction_graded = False
     prediction_misses = 0
+    prediction_miss_roles: Tuple[str, ...] = ()
     unexecuted: List[dict] = []
     to_carry_out: List[str] = []
     if not deps.dry_run:
@@ -710,6 +742,10 @@ async def _run_cycle(cycle_index: int, deps: CycleDeps, hold: HoldState) -> Cycl
             if isinstance(g, Mapping) and g.get("status") == "graded_false"
         )
         prediction_graded = prediction_misses > 0
+        prediction_miss_roles = _miss_proposers(deps.policy, grade_result, cycle_index)
+        if prediction_graded and not prediction_miss_roles:
+            # Nobody to wake (the proposer is not a role this build runs): no wake.
+            prediction_graded = False
         unexecuted = grade_result.get("unexecuted", []) or []
         # Over MCP, queue.grade returns only `unexecuted_proposal_ids` (the
         # local dfqueue call returns full `unexecuted` dicts). Read both.
@@ -728,6 +764,8 @@ async def _run_cycle(cycle_index: int, deps: CycleDeps, hold: HoldState) -> Cycl
         game_tick=game_tick,
         threshold_ticks=deps.policy.stalled_order_threshold_ticks,
         renotify_ticks=deps.policy.stalled_order_renotify_ticks,
+        renotify_cap_ticks=deps.policy.renotify_cap_ticks,
+        max_wakes=deps.policy.renotify_max_wakes,
         cursor_store=deps.cursor_store,
         dry_run=deps.dry_run,
     )
@@ -744,14 +782,25 @@ async def _run_cycle(cycle_index: int, deps: CycleDeps, hold: HoldState) -> Cycl
     lane_state = lanes.LaneState()
     lane_wakes: Tuple[Any, ...] = ()
     pending_ids: List[str] = []
+    #: queue_pending is an edge: pending proposals the Overseer has not already
+    #: left pending (or whose defer has a reason to be looked at again). With no
+    #: lane state every pending proposal counts, as before.
+    fresh_pending: Optional[List[str]] = None
     if deps.policy.lane_triggers:
         try:
             lane_state = lane_store.load()
             pending_ids = list((queue_state.get("proposals") or {}).get("proposal_ids") or [])
-            lanes.apply_alert_edges(deps.policy, lane_state, alert_crossed, alert_lines)
+            lane_state.cycles += 1
+            lanes.apply_alert_edges(deps.policy, lane_state, alert_crossed, alert_lines, game_tick)
             lanes.apply_ore_edges(deps.policy, lane_state, ore_read, game_tick)
             lanes.apply_unsupplied_edges(deps.policy, lane_state, unsupplied, game_tick)
             lanes.apply_rulings(deps.policy, lane_state, pending_ids)
+            lanes.apply_answers(deps.policy, lane_state, (queue_state.get("asks") or {}).get("ask_ids") or [])
+            fresh_pending, quiet_pending = lanes.split_pending_for_overseer(
+                deps.policy, lane_state, pending_ids, (queue_state.get("asks") or {}).get("ask_ids") or [],
+            )
+            for pid, why in quiet_pending:
+                LOG.info("cycle %s: %s pending but no wake for the Overseer: %s", cycle_index, pid, why)
             lane_wakes = lanes.lane_wakes(deps.policy, lane_state, events_by_role)
             if not deps.dry_run:
                 lane_store.save(lane_state)
@@ -785,13 +834,7 @@ async def _run_cycle(cycle_index: int, deps: CycleDeps, hold: HoldState) -> Cycl
         stuck_job=event_hits.get("stuck_job", False) or job_watch.any_due,
         stuck_job_detail=job_watch.wake_detail(),
         stuck_job_roles=stuck_roles,
-        stock_below_target=event_hits.get("stock_below_target", False),
-        migrant_wave=event_hits.get("migrant_wave", False),
-        caravan_present=event_hits.get("caravan_present", False),
-        season_change=event_hits.get("season_change", False) or bool(
-            season_edge is not None and season_edge.changed and deps.policy.plan.season_wake
-        ),
-        hostile_seen_unreachable=False,  # gap 2, see module docstring (documented, not fixable here)
+        season_change=bool(season_edge is not None and season_edge.changed and deps.policy.plan.season_wake),
         stalled_order=bool(order_watch.stalled_ids),
         stalled_order_ids=order_watch.stalled_ids,
         blocked_order=bool(order_watch.blocked_ids),
@@ -799,12 +842,15 @@ async def _run_cycle(cycle_index: int, deps: CycleDeps, hold: HoldState) -> Cycl
         slow_announcement=slow_hit,
         slow_announcement_roles=slow_roles,
         slow_announcement_detail=slow_detail,
-        prediction_due=False,             # folded into prediction_graded, see module docstring
         prediction_graded=prediction_graded,
         prediction_misses=prediction_misses,
+        prediction_miss_roles=prediction_miss_roles,
         lane_wakes=lane_wakes,
         game_days_since_routine_review=_game_days_since(deps.cursor_store, game_tick, deps.policy),
-        queue_holds_for_overseer=bool((queue_state.get("proposals") or {}).get("count", 0)) or bool(to_carry_out),
+        queue_holds_for_overseer=(
+            bool((queue_state.get("proposals") or {}).get("count", 0) if fresh_pending is None else fresh_pending)
+            or bool(to_carry_out)
+        ),
         open_ask_for_consultant=CONSULTANT in _open_ask_addressees(queue_state),  # gap 1, fixed
         open_ask_for_roles=_runnable_ask_addressees(queue_state, cycle_index),
     )
@@ -836,6 +882,7 @@ async def _run_cycle(cycle_index: int, deps: CycleDeps, hold: HoldState) -> Cycl
     extra_wakes: Dict[str, Wake] = {}
     queue_refreshed = False
     known_ids: Set[str] = set(pending_ids) | set(lane_state.proposers)
+    known_ask_ids: Set[str] = set((queue_state.get("asks") or {}).get("ask_ids") or []) | set(lane_state.askers)
     routing: Optional[Mapping[str, Any]] = early_routing
     routing_read = early_routing_read
     idx = 0
@@ -932,11 +979,24 @@ async def _run_cycle(cycle_index: int, deps: CycleDeps, hold: HoldState) -> Cycl
         # Learn who proposed what: a pending proposal id that appeared during an
         # advisor's run is that advisor's (the conductor cannot read an author).
         # A completed run also serves whatever lane wakes were owed to the role.
+        if deps.policy.lane_triggers and role == OVERSEER and run_result.ok:
+            try:
+                after = await call("queue.overview", {})
+                lanes.record_overseer_seen(
+                    lane_state, (after.get("proposals") or {}).get("proposal_ids") or [],
+                    (after.get("asks") or {}).get("ask_ids") or [],
+                )
+                lane_store.save(lane_state)
+            except Exception as exc:  # noqa: BLE001 -- best effort: worst case it wakes again
+                LOG.warning("cycle %s: recording the Overseer's seen proposals failed: %s", cycle_index, exc)
         if deps.policy.lane_triggers and role in PROPOSERS:
             try:
                 after = await call("queue.overview", {})
                 known_ids = lanes.attribute_new_proposals(
                     lane_state, role, known_ids, (after.get("proposals") or {}).get("proposal_ids") or [],
+                )
+                known_ask_ids = lanes.attribute_new_asks(
+                    lane_state, role, known_ask_ids, (after.get("asks") or {}).get("ask_ids") or [],
                 )
             except Exception as exc:  # noqa: BLE001 -- total: attribution is best effort
                 LOG.warning("cycle %s: proposer attribution after %s failed: %s", cycle_index, role, exc)
@@ -1408,6 +1468,8 @@ async def _job_watch(deps: "CycleDeps", call: Callable, game_tick: Optional[int]
             unclaimed_threshold_ticks=deps.policy.stuck_job_unclaimed_threshold_ticks,
             suspended_threshold_ticks=deps.policy.stuck_job_suspended_threshold_ticks,
             renotify_ticks=deps.policy.stuck_job_renotify_ticks,
+            renotify_cap_ticks=deps.policy.renotify_cap_ticks,
+            max_wakes=deps.policy.renotify_max_wakes,
             store=_job_store(deps), dry_run=deps.dry_run,
         )
     except Exception:  # noqa: BLE001 -- deliberately total, see docstring

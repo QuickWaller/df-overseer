@@ -50,6 +50,8 @@ from typing import Dict, Iterable, Mapping, Optional, Tuple
 
 import yaml
 
+from conductor.backoff import Backoff
+
 DEFAULT_POLICY_PATH = Path(__file__).resolve().parent / "policy.yaml"
 
 FULL_SPEED = "full_speed"
@@ -151,6 +153,10 @@ class LaneTriggers:
     #: (`step_done`, `step_attention`, `project_idle`) when the project's
     #: proposer is unknown to the conductor (docs/CONDUCTOR-EXECUTION.md 5).
     execution: bool = False
+    #: An ask this role filed has been answered: wake it once
+    #: (handoffs/2026-10-07-wake-cleanup.md item 8). Off in the shipped policy
+    #: until the role has a read that returns an answer's text.
+    answers: bool = False
 
 
 @dataclass(frozen=True)
@@ -285,6 +291,25 @@ class Policy:
     #: How many of a proposer's newest filings its briefing shows (policy.yaml
     #: `own_filings.recent`); 0 turns the block off.
     own_filings_recent: int = 5
+    #: queue_pending is an edge (research/2026-10-07-wake-audit.md rec 1): a
+    #: proposal the Overseer already saw and left pending (a defer) does not
+    #: wake it again until something observable changed, or after this many
+    #: cycles as a backstop. Counted in the conductor's own persisted cycle
+    #: counter, not ticks (ticks freeze under a hold and race at 100 FPS).
+    overseer_defer_recheck_cycles: int = 12
+    #: Renotify backoff shared by every standing wake (conductor/backoff.py): the
+    #: wait before the second wake is the reason's own base (`stalled_order_
+    #: renotify_ticks`, `stuck_job_renotify_ticks`, `ore_renotify_ticks`,
+    #: `alert_renotify_ticks`), doubling per wake up to `renotify_cap_ticks`
+    #: (one season), and the fact is stalled (no more wakes) after
+    #: `renotify_max_wakes` wakes.
+    renotify_cap_ticks: int = 100800
+    renotify_max_wakes: int = 3
+    alert_renotify_ticks: int = 12000
+
+    def backoff(self, base_ticks: int) -> Backoff:
+        """The shared renotify rule with this reason's base wait."""
+        return Backoff(base_ticks, self.renotify_cap_ticks, self.renotify_max_wakes)
 
     def reason(self, name: str) -> WakeReasonPolicy:
         try:
@@ -353,6 +378,7 @@ def _load_lane_triggers(raw, path: Path) -> Dict[str, LaneTriggers]:
             ore=bool(entry.get("ore", False)),
             unsupplied=bool(entry.get("unsupplied", False)),
             execution=bool(entry.get("execution", False)),
+            answers=bool(entry.get("answers", False)),
         )
     return lanes
 
@@ -570,6 +596,10 @@ def load_policy(path: "Path | str" = DEFAULT_POLICY_PATH) -> Policy:
 
     return Policy(
         own_filings_recent=own_recent,
+        overseer_defer_recheck_cycles=_pos_int(doc, "overseer_defer_recheck_cycles", 12, str(path)),
+        renotify_cap_ticks=_pos_int(doc, "renotify_cap_ticks", 100800, str(path)),
+        renotify_max_wakes=_pos_int(doc, "renotify_max_wakes", 3, str(path)),
+        alert_renotify_ticks=_pos_int(doc, "alert_renotify_ticks", 12000, str(path)),
         tripwire_owners=tripwire_owners,
         tripwire_repeat_limit=repeat_limit,
         tripwire_repeat_window_ticks=repeat_window,
