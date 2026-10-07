@@ -45,4 +45,37 @@ pytest` (lupa on PYTHONPATH) and `dfmcp/tests` in `.venv-dfmcp` green.
 
 ## Result
 
-(executor fills this in, with deploy targets)
+Done offline, nothing deployed.
+
+1. Structural duplicate refusal. `schema.step_identity(record)` builds the key
+   (type, step tool, identifying args, phases); identifying args per tool are
+   data in the new `dfqueue/step_identity.yaml` (a tool not listed compares on
+   all its args; a step with none of its identifying args present is never
+   structural). `store._find_structural_duplicate` runs inside `append` for
+   proposals and refuses against any live proposal (pending, deferred, accepted
+   not completed, in a project) from any role, naming it: "already proposed as
+   proposal-0024 by the architect, accepted". Follow-ups (project_id or
+   after_step) are exempt. The text near-duplicate rule is unchanged, still the
+   softer `duplicate_of` flag. Tests in `dfqueue/tests/test_stage2a.py` include
+   the 0024/0026 shape (paraphrase, accepted first); three existing tests that
+   filed identical steps now vary the step (`room(n)`, `rig.open_room(purpose=)`).
+2. Read answers: `queue.my_filings` takes `asks=true` and returns the caller's
+   own asks with status (open or answered) and the answer's full text
+   (`store.own_asks`; role filtered in the store). No tool added, so no tool
+   count changes. `answers: true` is on in `conductor/policy.yaml` for
+   architect, quartermaster and planner (the roles with queue.ask and
+   queue.my_filings); the Overseer has no lane. The detection test that
+   asserted "off by default" now sets the flag off explicitly.
+3. Briefing nit: needed one code line, not template only: `conductor/briefing.py`
+   rounded the per-citizen figure to 1 decimal before the template saw it;
+   it now rounds to 2 (1 of 22 reads 0.05, 19 of 20 reads 0.95). Two test
+   expectations updated. `briefing.py` was not in the declared surfaces; it is
+   not in the other stream's list either.
+
+Tests: ambient `python -m pytest` with lupa on PYTHONPATH, 3646 passed, 3 skipped;
+`dfmcp/tests` in `.venv-dfmcp`, all passed after the open_room fix.
+
+Deploy targets: dfqueue (store, schema, step_identity.yaml), dfmcp-server
+(queue_tools, agents/*/tools.yaml notes), conductor policy.yaml and briefing.py
+(VM 106). The role charters do not yet mention `asks=true`; an answer_ready
+wake names the ask, and the tool description says where to read it.

@@ -191,3 +191,33 @@ class TestBriefingFilings:
         lines = out["filings"]["architect"]
         assert any(first["id"] in l and " accepted" in l for l in lines)
         assert any(second["id"] in l and " pending" in l for l in lines)
+
+
+class TestOwnAsks:
+    async def _ask(self, path, role, question, **kw):
+        _t, rec = await _call(queue_tools.QUEUE_ASK, role, {"question": question, **kw}, path)
+        return rec
+
+    async def test_asks_listed_with_answer_text_and_status(self, tmp_path):
+        path = tmp_path / "q.sqlite3"
+        a1 = await self._ask(path, "architect", "How wide should a corridor be?")
+        a2 = await self._ask(path, "architect", "What does a Tomb need?")
+        await _call(queue_tools.QUEUE_ANSWER, "consultant", {"ask_id": a1["id"], "answer": "Three tiles wide."}, path)
+        text, s = await _mine(path, asks=True)
+        by_id = {a["id"]: a for a in s["asks"]}
+        assert by_id[a1["id"]]["status"] == "answered" and by_id[a1["id"]]["answer"] == "Three tiles wide."
+        assert by_id[a2["id"]]["status"] == "open" and by_id[a2["id"]]["answer"] is None
+        assert "Three tiles wide." in text and a2["id"] in text
+
+    async def test_another_roles_asks_and_answers_are_never_returned(self, tmp_path):
+        path = tmp_path / "q.sqlite3"
+        a = await self._ask(path, "quartermaster", "Which job makes a barrel?")
+        await _call(queue_tools.QUEUE_ANSWER, "consultant", {"ask_id": a["id"], "answer": "Cooperage."}, path)
+        _t, s = await _mine(path, role="architect", asks=True)
+        assert s["asks"] == []
+        _t, s = await _mine(path, role="quartermaster", asks=True)
+        assert [x["answer"] for x in s["asks"]] == ["Cooperage."]
+
+    async def test_status_filter_does_not_combine_with_asks(self, tmp_path):
+        with pytest.raises(queue_tools.QueueToolError, match="do not apply"):
+            await _mine(tmp_path / "q.sqlite3", asks=True, status="pending")

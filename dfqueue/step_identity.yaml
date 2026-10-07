@@ -1,0 +1,28 @@
+# dfqueue/step_identity.yaml
+#
+# What makes two proposals the same ACTION (handoffs/2026-10-07-filing-hygiene.md).
+# The store refuses a new proposal whose type, step tool and identifying
+# arguments equal an open proposal's, across all roles, however its summary is
+# worded (agents paraphrase; the text near-duplicate rule caught 0 of 5 real
+# repeats). Data, not code: a tool is one entry here.
+#
+# tools.<tool id>: the argument names (case-insensitive) that say WHAT the call
+#   acts on. A tool not listed here is compared on ALL its arguments. A call
+#   with none of its identifying arguments present (an empty `args`, say) is
+#   never refused as a structural duplicate: nothing says what it acts on.
+tools:
+  blueprint.apply: [site, phase]
+  blueprint.release: [site_id]
+  blueprint.unreserve: [res_id]
+  construction.mine-vein: [zone_id]
+  construction.mine-vein-site: [site_id]
+  zone.assign-owner: [zone_id]
+  farm.set-crop: [id, season]
+  orders.cancel: [id]
+  orders.reorder: [id]
+  orders.recheck: [id]
+  stockpile.configure: [id]
+  stockpile.settings: [id]
+  stockpile.set-materials: [id, category]
+  stockpile.remove: [id]
+  workjob.cancel: [job_id]

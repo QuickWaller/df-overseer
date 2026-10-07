@@ -572,6 +572,45 @@ def near_duplicate_reason(candidate: dict, existing: dict) -> str | None:
     return None
 
 
+STEP_IDENTITY_PATH = Path(__file__).resolve().parent / "step_identity.yaml"
+
+
+@lru_cache(maxsize=1)
+def _step_identity() -> dict:
+    with STEP_IDENTITY_PATH.open(encoding="utf-8") as fh:
+        return (yaml.safe_load(fh) or {}).get("tools") or {}
+
+
+def _canon_value(value) -> str:
+    if isinstance(value, str):
+        value = " ".join(value.lower().split())
+    return json.dumps(value, sort_keys=True, default=str)
+
+
+def step_identity(record: dict) -> tuple | None:
+    """What action a proposal asks for, as a comparable key, or `None` when
+    it has no step or names nothing it acts on. `(type, step tool, sorted
+    (arg, value) pairs of the identifying arguments, phases)`; the identifying
+    arguments of a tool are data (`dfqueue/step_identity.yaml`), a tool not
+    listed there is compared on all its arguments. Pure."""
+    step = record.get("step")
+    if not isinstance(step, dict) or not isinstance(step.get("tool"), str):
+        return None
+    raw_args = step.get("args")
+    args = {str(k).lower(): v for k, v in raw_args.items()} if isinstance(raw_args, dict) else {}
+    keys = _step_identity().get(step["tool"])
+    picked = {k: args[k] for k in (k.lower() for k in keys) if k in args} if keys is not None else args
+    picked = {k: v for k, v in picked.items() if k != "dry_run"}
+    if not picked:
+        return None
+    phases = record.get("phases")
+    return (
+        record.get("type"), step["tool"],
+        tuple(sorted((k, _canon_value(v)) for k, v in picked.items())),
+        _canon_value(phases) if phases else "",
+    )
+
+
 # ---- roster (agents/ROSTER.yaml), read-only ------------------------------------
 
 

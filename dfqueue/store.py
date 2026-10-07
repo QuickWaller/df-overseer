@@ -63,7 +63,7 @@ from .schema import (
     OBSERVATION, OBS_CONSISTENT, OBSERVATION_ROLE, PROJECT, PROPOSAL,
     PUBLIC_RATIONALE_MAX, READY, REJECT, RULING, SUCCESS, FAILURE,
     TRIGGER_ALL_DONE, TRIGGER_ALL_SUCCESS, WAITING, ask_addressee, executor, fort_name,
-    near_duplicate_reason, normalize_project, sole_writer, validate,
+    near_duplicate_reason, normalize_project, sole_writer, step_identity, validate,
 )
 
 #: A ruling's `decision` values that close a proposal for good. `defer`
@@ -454,6 +454,40 @@ def _find_duplicate_proposal(conn: sqlite3.Connection, record: dict) -> tuple[st
         reason = near_duplicate_reason(record, existing)
         if reason:
             return row["id"], reason
+    return None
+
+
+#: A proposal in one of these states is still live: filing the same action again
+#: would duplicate it (the same set a briefing always shows).
+_LIVE_FILING_STATUSES = ("pending", "accepted", "deferred", "in_project")
+
+
+def _find_structural_duplicate(conn: sqlite3.Connection, record: dict) -> str | None:
+    """The refusal text when `record` asks for the same action (type, step tool
+    and identifying arguments, `schema.step_identity`) as a proposal that is
+    still live, from any role, or `None`. A follow-up to a project
+    (`project_id` or `after_step`) is the next step of existing work, never a
+    duplicate. Oldest first, so the refusal names the original."""
+    if record.get("project_id") or record.get("after_step"):
+        return None
+    key = step_identity(record)
+    if key is None:
+        return None
+    rows = conn.execute(
+        "SELECT payload FROM records WHERE kind = ? AND type = ? ORDER BY ts ASC, rowid ASC",
+        (PROPOSAL, record.get("type")),
+    ).fetchall()
+    for row in rows:
+        existing = json.loads(row["payload"])
+        if existing.get("id") == record.get("id") or step_identity(existing) != key:
+            continue
+        status = _filing_row(conn, existing)["status"]
+        if status in _LIVE_FILING_STATUSES:
+            return (
+                f"already proposed as {existing['id']} by the {existing.get('role')}, {status}: "
+                f"the same {key[1]} action ({existing.get('summary')!r}). Do not file it again; "
+                "if it needs a change, file a follow-up on its project or wait for its ruling"
+            )
     return None
 
 
@@ -936,6 +970,11 @@ def _append_in_conn(
                 "game_tick: a proposal must be appended with an integer "
                 f"game_tick (its prediction's due_game_tick depends on it), got {game_tick!r}"
             )
+
+        if not errors:
+            structural = _find_structural_duplicate(conn, record)
+            if structural is not None:
+                errors.append(f"record.step: {structural}")
 
         if record.get("duplicate_of") is not None and not _duplicate_of_already_flagged(errors):
             # A caller (or a re-append) already set duplicate_of itself;
@@ -1661,6 +1700,36 @@ def own_filings(
             if status is not None and line["status"] != status:
                 continue
             out.append(line)
+            if limit is not None and len(out) >= limit:
+                break
+    return out
+
+
+def own_asks(path: str | Path, role: str, *, limit: int | None = None) -> list[dict]:
+    """The asks `role` itself filed, newest first, each with its answer's text
+    when it has one: `{id, to, question, proposal_id, status, answer_id,
+    answer}`, `status` `open` or `answered`. Filtered on `role` here, so no
+    other role's ask (or the answer to it) can be returned."""
+    with _connect(path) as conn:
+        rows = conn.execute(
+            "SELECT payload FROM records WHERE kind = ? AND role = ? ORDER BY ts DESC, rowid DESC",
+            (ASK, role),
+        ).fetchall()
+        out = []
+        for r in rows:
+            ask = json.loads(r["payload"])
+            ans = conn.execute(
+                "SELECT payload FROM records WHERE kind = ? AND json_extract(payload, '$.ask_id') = ? "
+                "ORDER BY rowid ASC", (ANSWER, ask["id"]),
+            ).fetchone()
+            answer = json.loads(ans["payload"]) if ans is not None else None
+            out.append({
+                "id": ask["id"], "to": ask_addressee(ask), "question": ask.get("question"),
+                "proposal_id": ask.get("proposal_id"),
+                "status": "answered" if answer is not None else "open",
+                "answer_id": answer["id"] if answer else None,
+                "answer": answer.get("answer") if answer else None,
+            })
             if limit is not None and len(out) >= limit:
                 break
     return out

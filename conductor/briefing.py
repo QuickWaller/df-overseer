@@ -121,7 +121,7 @@ def evaluate_threshold_alerts(alerts: Sequence[Any], read_results: Mapping[Any, 
             # Compare the unrounded ratio; round only for the text (21 of 22
             # is 0.95 and must cross below 1).
             measured_for_test = measured / float(alive)
-            per_value = round(measured_for_test, 1)
+            per_value = round(measured_for_test, 2)
         else:
             measured_for_test = measured
         if measured_for_test < alert.below:

@@ -204,7 +204,7 @@ def test_a_failed_read_drops_the_line_even_with_a_missing_default():
 
 def test_bedrooms_cross_below_one_per_citizen():
     assert evaluate_threshold_alerts([BEDS], {"beds": {"counts_by_kind": {"Bedroom": 19}}}, 20) == [
-        "Beds 19, 0.9 each (below 1)."
+        "Beds 19, 0.95 each (below 1)."
     ]
     assert evaluate_threshold_alerts([BEDS], {"beds": {"counts_by_kind": {"Bedroom": 20}}}, 20) == []
     assert evaluate_threshold_alerts([BEDS], {"beds": {"counts_by_kind": {"Bedroom": 25}}}, 20) == []
@@ -226,7 +226,7 @@ def test_missing_leaf_applies_only_to_the_last_segment():
 
 def test_unrounded_ratio_is_compared_21_of_22_crosses():
     assert evaluate_threshold_alerts([BEDS], {"beds": {"counts_by_kind": {"Bedroom": 21}}}, 22) == [
-        "Beds 21, 1.0 each (below 1)."
+        "Beds 21, 0.95 each (below 1)."
     ]
     assert evaluate_threshold_alerts([BEDS], {"beds": {"counts_by_kind": {"Bedroom": 22}}}, 22) == []
 

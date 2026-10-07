@@ -746,7 +746,9 @@ _MY_FILINGS_DESCRIPTION = (
     "in_project with the project's step state), urgency, the latest ruling's "
     "decision and reason, and the project or close outcome. Check it before "
     "filing: do not re-file what is accepted or already in a project. Filters: "
-    "status, proposal_id, limit."
+    "status, proposal_id, limit. With asks=true it returns your own questions to "
+    "the Consultant (queue.ask) instead, each with its status (open or answered) "
+    "and the answer's full text: read it here when an answer is ready."
 )
 
 _MY_FILINGS_SCHEMA = {
@@ -759,6 +761,11 @@ _MY_FILINGS_SCHEMA = {
             "description": "Keep only filings in this state.",
         },
         "proposal_id": {"type": "string", "description": "One of your own proposals, by id."},
+        "asks": {
+            "type": "boolean",
+            "description": "True: list your own asks with their answers instead of proposals "
+                           "(status and proposal_id do not apply).",
+        },
         "limit": {
             "type": "integer", "minimum": 1, "maximum": MY_FILINGS_MAX,
             "description": f"At most this many (default {MY_FILINGS_DEFAULT}, max {MY_FILINGS_MAX}).",
@@ -1348,7 +1355,7 @@ _PROPOSE_FIELDS = {
 _PASS_FIELDS = {"reason"}
 _RULE_FIELDS = {"proposal_id", "decision", "reason", "public_rationale", "urgency"}
 _PENDING_FIELDS = {"limit"}
-_MY_FILINGS_FIELDS = {"status", "proposal_id", "limit"}
+_MY_FILINGS_FIELDS = {"status", "proposal_id", "limit", "asks"}
 _FILINGS_BRIEF_FIELDS = {"roles", "recent"}
 _PENDING_BRIEF_FIELDS = {"limit"}
 _ASK_FIELDS = {"question", "proposal_id", "to"}
@@ -1594,6 +1601,36 @@ def filing_line(f: Mapping[str, Any]) -> str:
     return line
 
 
+ANSWER_TEXT_CAP = 4000
+
+
+def ask_line(a: Mapping[str, Any]) -> str:
+    """One own ask as plain text: its id, addressee and status, the question,
+    and the answer's full text when answered."""
+    line = f"{a['id']} to {a.get('to')} {a['status']}: {_clip(a.get('question'), 300)}"
+    if a.get("proposal_id"):
+        line += f" (about {a['proposal_id']})"
+    if a["status"] == "answered":
+        line += f"\n  answer {a.get('answer_id')}: {_clip(a.get('answer'), ANSWER_TEXT_CAP)}"
+    return line
+
+
+async def _my_asks(role: str, arguments: Mapping[str, Any], *, db_path) -> Tuple[str, dict]:
+    if arguments.get("status") is not None or arguments.get("proposal_id") is not None:
+        raise QueueToolError(f"{QUEUE_MY_FILINGS}: 'status' and 'proposal_id' do not apply with asks=true")
+    limit = arguments.get("limit", MY_FILINGS_DEFAULT)
+    if isinstance(limit, bool) or not isinstance(limit, int) or not (1 <= limit <= MY_FILINGS_MAX):
+        raise QueueToolError(f"{QUEUE_MY_FILINGS}: 'limit' must be an integer 1-{MY_FILINGS_MAX}, got {limit!r}")
+    try:
+        rows = await asyncio.to_thread(store.own_asks, db_path, role, limit=limit)
+    except store.QueueError as exc:
+        raise _write_error(QUEUE_MY_FILINGS, exc) from exc
+    except (sqlite3.Error, OSError) as exc:
+        raise _storage_error(QUEUE_MY_FILINGS, exc) from exc
+    text = "\n".join(ask_line(a) for a in rows) if rows else "No asks filed."
+    return text, {"count": len(rows), "asks": rows}
+
+
 async def _my_filings(
     role: str, arguments: Mapping[str, Any], *, db_path, call_dfhack: CallDFHack,
     write_lock: "asyncio.Lock",
@@ -1601,6 +1638,10 @@ async def _my_filings(
     """The caller's own proposals only: `role` comes from the credential, and
     there is no argument that names another role."""
     _reject_unknown_arguments(QUEUE_MY_FILINGS, arguments, _MY_FILINGS_FIELDS)
+    if arguments.get("asks") is not None and not isinstance(arguments["asks"], bool):
+        raise QueueToolError(f"{QUEUE_MY_FILINGS}: 'asks' must be true or false")
+    if arguments.get("asks"):
+        return await _my_asks(role, arguments, db_path=db_path)
     status = arguments.get("status")
     if status is not None and status not in store.FILING_STATUSES:
         raise QueueToolError(f"{QUEUE_MY_FILINGS}: 'status' must be one of {list(store.FILING_STATUSES)}, got {status!r}")

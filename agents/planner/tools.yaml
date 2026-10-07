@@ -77,7 +77,10 @@ read:
       status (pending, accepted, rejected, deferred, closed, completed, in a
       project), the latest ruling's reason and the project's step state. Your
       role comes from your credential; you cannot read anyone else's. Check it
-      before filing: do not re-file what is accepted or in a project.
+      before filing: do not re-file what is accepted or in a project. The
+      server refuses a repeat of an open action ("already proposed as
+      proposal-N"). With asks=true it lists your own asks to the
+      Consultant instead, each with its status and the answer's full text.
 
 write:
   - id: "plan.write"

@@ -54,6 +54,8 @@ def room(n: int = 1, **kw):
         summary=f"Reserve bedroom number {n} off the dining hall {'x' * n}",
         rationale=f"Dwarves sleep on the floor, bedroom number {n} fixes that {'y' * n}.",
     )
+    if n > 1:  # a different action per n, or the store refuses it as a structural duplicate
+        rec["step"] = {**STEP, "args": {**STEP["args"], "purpose": f"bedroom row {n}"}}
     rec.update(kw)
     return rec
 
@@ -1034,3 +1036,81 @@ def test_close_record_renders_in_the_feed_and_the_prompt_xml():
     assert "secret" not in str(item)
     xml = render.to_xml(rec)
     assert "<outcome>not_done</outcome>" in xml and "<ruling_id>ruling-0001</ruling_id>" in xml
+
+
+# ---- structural duplicate refusal (handoffs/2026-10-07-filing-hygiene.md) -----------
+
+
+def finish_site(summary, role="architect", site="site-4", **kw):
+    """A site finish worded as freely as an agent would: only the step matters."""
+    rec = make_proposal(
+        type="room_siting", role=role, summary=summary,
+        step={"tool": "blueprint.apply",
+              "args": {"template": "bedroom-cell-v1", "phase": "finish", "site": site}},
+        rationale=f"Unrelated words for {summary}: finish the cells so they get furnished {'q' * len(summary)}.",
+    )
+    rec.update(kw)
+    return rec
+
+
+def test_paraphrased_repeat_of_an_accepted_proposal_is_refused(routed):
+    """The live 0024/0026 case: same site finish, different words, accepted first."""
+    first = file(routed, finish_site("Finish the four bedroom cells at site-4"))
+    rule(routed, first["id"])
+    with pytest.raises(store.QueueError, match=rf"already proposed as {first['id']} by the architect, accepted"):
+        file(routed, finish_site("Complete the bedrooms on the fourth carved site"))
+
+
+@pytest.mark.parametrize("decision,expect", [("defer", "deferred"), (None, "pending")])
+def test_pending_and_deferred_proposals_also_block_a_repeat(routed, decision, expect):
+    first = file(routed, finish_site("Finish site four cells"))
+    if decision:
+        rule(routed, first["id"], decision)
+    with pytest.raises(store.QueueError, match=expect):
+        file(routed, finish_site("Complete everything at site four"))
+
+
+def test_different_site_or_phase_is_not_a_duplicate(routed):
+    file(routed, finish_site("Finish site four", site="site-4"))
+    file(routed, finish_site("Finish site five", site="site-5"))
+    other = finish_site("Shell site four", site="site-4")
+    other["step"]["args"]["phase"] = "shell"
+    file(routed, other)
+
+
+def test_a_rejected_proposal_does_not_block_a_refile(routed):
+    first = file(routed, finish_site("Finish site four"))
+    rule(routed, first["id"], "reject")
+    again = file(routed, finish_site("Finish site four, with a better case"))
+    assert again["id"] != first["id"]
+
+
+def test_a_follow_up_to_a_project_is_not_a_duplicate(routed):
+    p, r, proj = open_room(routed)
+    fol = room(1, step={"tool": "blueprint.apply",
+                        "args": {"template": "bedroom-cell-v1", "phase": "finish", "site": "site-9"}},
+               project_id=proj["id"], after_step=proj["steps"][0]["id"])
+    fol.pop("phases")
+    file(routed, fol)
+    again = room(1, step=dict(fol["step"]), project_id=proj["id"], after_step=proj["steps"][0]["id"],
+                 summary="A wholly different line about the second finish " + "w" * 9)
+    again.pop("phases")
+    file(routed, again)  # follow-ups are never structural duplicates
+
+
+def test_a_step_with_no_identifying_arguments_is_never_structural(routed):
+    a = room(1, step={"tool": "blueprint.release", "args": {}})
+    b = room(2, step={"tool": "blueprint.release", "args": {}})
+    a.pop("phases"), b.pop("phases")
+    file(routed, a)
+    file(routed, b)
+
+
+def test_step_identity_is_data_driven_and_case_insensitive():
+    a = finish_site("a")
+    b = finish_site("b")
+    b["step"]["args"] = {"SITE": "Site-4", "Phase": "finish", "template": "other-template"}
+    assert schema.step_identity(a) == schema.step_identity(b)  # template is not identifying for blueprint.apply
+    c = make_proposal(type="room_siting", step={"tool": "zone.place", "args": {"kind": "Bedroom"}})
+    d = make_proposal(type="room_siting", step={"tool": "zone.place", "args": {"kind": "Bedroom", "owner": "x"}})
+    assert schema.step_identity(c) != schema.step_identity(d)  # unlisted tool: all arguments count
