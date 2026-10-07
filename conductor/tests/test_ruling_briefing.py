@@ -124,7 +124,7 @@ def test_two_alerts_evaluate_independently():
 def test_shipped_policy_holds_the_alerts_as_generic_data():
     alerts = load_policy().threshold_alerts
     assert alerts and all(isinstance(a, ThresholdAlert) for a in alerts)
-    assert {a.tool for a in alerts} == {"stocks.food-drink"}
+    assert {a.tool for a in alerts} == {"stocks.food-drink", "zone.list"}
     assert all(a.per == "alive" and a.below > 0 and "{value}" in a.text for a in alerts)
 
 
@@ -169,3 +169,116 @@ def test_the_ask_says_to_carry_out_accepted_proposals_until_routing_exists():
     last = _build().splitlines()[-1]
     assert "carry out each proposal you accept" in last
     assert "queue.project" in last and "queue.executed" in last
+
+
+# ---- stage P0: the `missing` default and the bedroom alert ------------------
+
+BEDS = ThresholdAlert(
+    name="beds", tool="zone.list", args={}, field="counts_by_kind.Bedroom", per="alive", below=1,
+    text="Beds {value}, {per_value} each (below {threshold}).", missing_leaf=0,
+)
+BEDS_NO_DEFAULT = ThresholdAlert(
+    name="beds", tool="zone.list", args={}, field="counts_by_kind.Bedroom", per="alive", below=1, text="x",
+)
+
+
+def test_a_missing_default_stands_in_for_an_absent_field_of_a_successful_read():
+    # counts_by_kind is {} when no zone of any kind exists.
+    assert evaluate_threshold_alerts([BEDS], {"beds": {"counts_by_kind": {}}}, 20) == [
+        "Beds 0, 0.0 each (below 1)."
+    ]
+    # Other kinds present, no Bedroom key.
+    assert evaluate_threshold_alerts([BEDS], {"beds": {"counts_by_kind": {"Office": 1}}}, 20) == [
+        "Beds 0, 0.0 each (below 1)."
+    ]
+
+
+def test_without_a_missing_default_an_absent_field_still_drops_the_line():
+    assert evaluate_threshold_alerts([BEDS_NO_DEFAULT], {"beds": {"counts_by_kind": {}}}, 20) == []
+
+
+def test_a_failed_read_drops_the_line_even_with_a_missing_default():
+    assert evaluate_threshold_alerts([BEDS], {"beds": None}, 20) == []
+    assert evaluate_threshold_alerts([BEDS], {}, 20) == []
+
+
+def test_bedrooms_cross_below_one_per_citizen():
+    assert evaluate_threshold_alerts([BEDS], {"beds": {"counts_by_kind": {"Bedroom": 19}}}, 20) == [
+        "Beds 19, 0.9 each (below 1)."
+    ]
+    assert evaluate_threshold_alerts([BEDS], {"beds": {"counts_by_kind": {"Bedroom": 20}}}, 20) == []
+    assert evaluate_threshold_alerts([BEDS], {"beds": {"counts_by_kind": {"Bedroom": 25}}}, 20) == []
+
+
+@pytest.mark.parametrize("result", [
+    {}, {"error": "x"}, {"error": "x", "counts_by_kind": {}}, {"counts_by_kind": []}, {"counts_by_kind": 3},
+    [], "oops",
+])
+def test_missing_leaf_drops_an_error_shaped_or_malformed_read(result):
+    assert evaluate_threshold_alerts([BEDS], {"beds": result}, 20) == []
+
+
+def test_missing_leaf_applies_only_to_the_last_segment():
+    deep = ThresholdAlert(name="d", tool="t.x", args={}, field="a.b.c", below=1, text="c={value}", missing_leaf=0)
+    assert evaluate_threshold_alerts([deep], {"d": {"a": {"b": {}}}}, None) == ["c=0"]
+    assert evaluate_threshold_alerts([deep], {"d": {"a": {}}}, None) == []
+
+
+def test_unrounded_ratio_is_compared_21_of_22_crosses():
+    assert evaluate_threshold_alerts([BEDS], {"beds": {"counts_by_kind": {"Bedroom": 21}}}, 22) == [
+        "Beds 21, 1.0 each (below 1)."
+    ]
+    assert evaluate_threshold_alerts([BEDS], {"beds": {"counts_by_kind": {"Bedroom": 22}}}, 22) == []
+
+
+def test_quartermaster_lane_lists_its_alerts_explicitly_not_star():
+    lane = load_policy().lane_triggers["quartermaster"]
+    assert "*" not in lane.alerts
+    assert set(lane.alerts) == {"drink_per_citizen", "raw_food_per_citizen"}
+
+
+def test_bedroom_crossing_wakes_the_architect_and_not_the_quartermaster():
+    from conductor import lanes
+
+    policy = load_policy()
+    state = lanes.LaneState()
+    lanes.apply_alert_edges(policy, state, {"bedrooms_per_citizen": True}, {"bedrooms_per_citizen": "short"})
+    assert state.pending.get("architect")
+    assert not state.pending.get("quartermaster")
+
+
+def test_missing_default_does_not_rescue_a_non_container_or_a_bad_alive():
+    assert evaluate_threshold_alerts([BEDS], {"beds": {"counts_by_kind": None}}, 20) == []
+    assert evaluate_threshold_alerts([BEDS], {"beds": {"counts_by_kind": {}}}, 0) == []
+
+
+def test_shipped_bedroom_alert_is_policy_data_with_a_missing_default():
+    policy = load_policy()
+    (alert,) = [a for a in policy.threshold_alerts if a.name == "bedrooms_per_citizen"]
+    assert (alert.tool, alert.field, alert.per, alert.below, alert.missing_leaf) == (
+        "zone.list", "counts_by_kind.Bedroom", "alive", 1.0, 0.0)
+    assert dict(alert.args) == {"KIND_FILTER": "", "OWNER_FILTER": "", "VALID_FILTER": "", "NEAR_LANDMARK_FILTER": ""}
+    assert "bedrooms_per_citizen" in policy.lane_triggers["architect"].alerts
+
+
+def test_shipped_bedroom_alert_wakes_the_architect_once_per_edge():
+    from conductor import lanes
+
+    policy = load_policy()
+    (alert,) = [a for a in policy.threshold_alerts if a.name == "bedrooms_per_citizen"]
+    state = lanes.LaneState()
+
+    def tick(bedrooms):
+        found = evaluate_threshold_alerts([alert], {alert.name: {"counts_by_kind": bedrooms}}, 22)
+        lanes.apply_alert_edges(policy, state, {alert.name: bool(found)}, {alert.name: found[0] if found else ""})
+
+    key = lanes._ALERT + alert.name
+    tick({})                                   # no bedrooms at all: crossed
+    assert key in state.pending["architect"]
+    assert "Bedrooms are short: 0" in state.pending["architect"][key]
+    state.pending["architect"].clear()         # the Architect was woken and served
+    tick({"Bedroom": 5})                       # still short: no second wake
+    assert not state.pending.get("architect")
+    tick({"Bedroom": 22})                      # cleared
+    tick({"Bedroom": 3})                       # re-crossed: wakes again
+    assert key in state.pending["architect"]

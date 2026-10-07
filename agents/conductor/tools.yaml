@@ -174,6 +174,14 @@ read:
       steps ready to run, unresolved runs, abandoned projects awaiting cleanup,
       steps observed done after a cursor. Granted only here.
 
+  - id: "zone.list"
+    status: exists
+    note: >-
+      Added handoffs/2026-10-07-p0-bedroom-alert.md. Read-only zone inventory;
+      the conductor reads it unfiltered for `counts_by_kind` (the
+      `bedrooms_per_citizen` threshold alert, research/2026-10-07-planner-design.md
+      section 7). Same read the Architect holds.
+
 write:
   - id: "clock.set-speed"
     status: exists
