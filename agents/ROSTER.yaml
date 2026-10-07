@@ -63,20 +63,18 @@ roles:
     summary: Dwarf Fortress domain knowledge on demand. Answers questions, never decides.
 
   # Added handoffs/2026-10-07-planner-p1a.md (research/2026-10-07-planner-design.md,
-  # register 2026-10-07 "A Planner role"). Defined but NOT enabled: the server
-  # side (the fort_plan record, plan.write/read/status, the plan_change type) is
-  # built, the conductor wiring that wakes it is stage P1b. Flip `enabled` there.
+  # register 2026-10-07 "A Planner role"); enabled by the final commit of
+  # handoffs/2026-10-07-planner-p1b.md, which wires the conductor to wake it.
+  # The conductor ALSO keeps `plan.enabled` in conductor/policy.yaml: that
+  # switch, not this one, decides whether the conductor reads plan.status and
+  # wakes it, so a deploy of this file alone wakes nothing.
   # "Owns the plan" for the overseer entry above means its ordered plan of
   # accepted work (the `project` record), not this: the record kind here is
   # `fort_plan` so code never shares the word.
   planner:
-    enabled: false
+    enabled: true
     dir: planner
     kind: advisor
-    blocked_on: >-
-      Stage P1b: conductor wiring (triage run-first order, the plan_review and
-      plan_bootstrap wakes, the computed season cursor, config, token, pinned
-      openclaw config). Nothing wakes it until then.
     summary: Owns the fort plan as versioned data (targets now; districts, industries and flows later). Decides what the fort needs and how much, never where or how it is built.
 
   # `kind: system`, added handoffs/2026-09-22-loop-clock-conductor-role.md:

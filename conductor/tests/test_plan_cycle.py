@@ -25,6 +25,8 @@ from conductor.tests.test_cycle import (
 pytestmark = pytest.mark.asyncio
 
 POLICY = load_policy()
+#: The committed policy with the Planner switched off (the state before the enable commit).
+OFF = dataclasses.replace(POLICY, plan=dataclasses.replace(POLICY.plan, enabled=False))
 SEASON = 100800
 YEAR = 403200
 BASE = 12000
@@ -105,7 +107,7 @@ def _planner_calls(deps):
 
 async def test_the_season_cursor_wakes_the_quartermaster_once_per_season_even_with_the_planner_off(tmp_path):
     clock = Clock(4 * SEASON + 1000)
-    deps = _plan_deps(tmp_path, clock, {"unused": True}, policy=POLICY)  # the committed policy: planner off
+    deps = _plan_deps(tmp_path, clock, {"unused": True}, policy=OFF)  # the committed policy: planner off
     first = await run_cycle(1, deps)
     assert first.roles_woken == ()  # first sighting sets the cursor, wakes nobody
 
@@ -125,7 +127,7 @@ async def test_the_season_cursor_wakes_the_quartermaster_once_per_season_even_wi
 
 async def test_a_reload_resets_the_season_cursor_without_waking_anyone(tmp_path):
     clock = Clock(6 * SEASON + 5)
-    deps = _plan_deps(tmp_path, clock, {"unused": True}, policy=POLICY)
+    deps = _plan_deps(tmp_path, clock, {"unused": True}, policy=OFF)
     await run_cycle(1, deps)
     clock.tick = 2 * SEASON + 5  # the save was reloaded to an earlier season
     result = await run_cycle(2, deps)
@@ -135,7 +137,7 @@ async def test_a_reload_resets_the_season_cursor_without_waking_anyone(tmp_path)
 
 
 async def test_the_season_wake_can_be_switched_off(tmp_path):
-    pol = dataclasses.replace(POLICY, plan=dataclasses.replace(POLICY.plan, season_wake=False))
+    pol = dataclasses.replace(OFF, plan=dataclasses.replace(OFF.plan, season_wake=False))
     clock = Clock(SEASON + 5)
     deps = _plan_deps(tmp_path, clock, {"unused": True}, policy=pol)
     await run_cycle(1, deps)
@@ -151,7 +153,7 @@ async def test_the_season_wake_can_be_switched_off(tmp_path):
 
 async def test_with_the_planner_disabled_no_plan_status_is_read_and_nobody_is_woken(tmp_path):
     clock = Clock(4 * SEASON + 1000)
-    deps = _plan_deps(tmp_path, clock, _status(bootstrap=True), policy=POLICY)
+    deps = _plan_deps(tmp_path, clock, _status(bootstrap=True), policy=OFF)
     result = await run_cycle(1, deps)
     assert result.roles_woken == ()
     assert not any(t == "plan.status" for t, _ in deps.tool_caller.calls)
