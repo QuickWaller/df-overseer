@@ -140,7 +140,7 @@ import os
 import subprocess
 import sys
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any, Callable, Mapping, Optional
 
@@ -525,6 +525,38 @@ def _write_runs(out_root: Path, fort_id: str, runs_payload: Optional[dict]) -> N
     target.write_text(_canonical_json(runs_payload), encoding="utf-8")
 
 
+def _write_transcripts(out_root: Path, fort_id: str, bodies: Optional[dict]) -> list[str]:
+    """`<root>/forts/<fort_id>/transcripts/<run_id>.json`, one file per kept
+    run (`live.build_transcripts`), loaded by the Board when a run is
+    expanded. Files for runs no longer kept are removed here, in staging;
+    the caller prunes the relay's copy (`_prune_remote_transcripts`).
+    Nothing is touched without a run store. Returns the file names kept."""
+    if bodies is None:
+        return []
+    tdir = feed.fort_feed_dir(out_root, fort_id) / "transcripts"
+    tdir.mkdir(parents=True, exist_ok=True)
+    for name, body in bodies.items():
+        text = _canonical_json(body)
+        target = tdir / name
+        if not target.exists() or target.read_text(encoding="utf-8") != text:
+            target.write_text(text, encoding="utf-8")
+    for old in tdir.glob("*.json"):
+        if old.name not in bodies:
+            old.unlink()
+    return sorted(bodies)
+
+
+def _prune_remote_transcripts(
+    pusher: Pusher, local_root: Path, relay: RelayTarget, fort_id: str, rsync_bin: str,
+) -> None:
+    """rsync without `--delete` never removes a file, so a pruned transcript
+    would stay on the relay forever. Push just the transcripts directory
+    again, with `--delete`, into the same sub-path of the relay target."""
+    local = feed.fort_feed_dir(local_root, fort_id) / "transcripts"
+    sub = replace(relay, path=relay.path.rstrip("/") + f"/forts/{fort_id}/transcripts")
+    pusher(local, sub, delete=True, rsync_bin=rsync_bin)
+
+
 def _write_lessons(out_root: Path, fort_id: str, lessons_payload: Optional[dict]) -> None:
     """`<root>/forts/<fort_id>/lessons.json`: the gotchas written or
     confirmed during each run (`dfqueue/lessons.py`). Written only with a run
@@ -632,6 +664,8 @@ def run_cycle(
         gotchas_entries=gotchas_entries, public=False,
     )
     _write_runs(operator_out, fort_id, runs_operator)
+    op_names = _write_transcripts(
+        operator_out, fort_id, None if run_rows is None else live.build_transcripts(run_rows, public=False))
     _write_lessons(operator_out, fort_id, lessons_operator)
     operator_hash = compute_content_hash(
         operator_items, operator_projects, hash_status_operator,
@@ -645,6 +679,9 @@ def run_cycle(
         due = now - cursor.get("operator_last_push", 0) >= cfg.heartbeat_interval_seconds
         if operator_hash != cursor.get("operator_hash") or due:
             pusher(operator_out, cfg.operator_relay, delete=False, rsync_bin=cfg.rsync_bin)
+            if set(cursor.get("operator_transcripts") or []) - set(op_names):
+                _prune_remote_transcripts(pusher, operator_out, cfg.operator_relay, fort_id, cfg.rsync_bin)
+            cursor["operator_transcripts"] = op_names
             cursor["operator_hash"] = operator_hash
             cursor["operator_last_push"] = now
             result["operator"]["pushed"] = True
@@ -676,8 +713,14 @@ def run_cycle(
         public_out, agents_json=agents_json, tools_json=tools_json,
         gotchas_entries=gotchas_entries, public=True,
     )
-    if not public_off:
+    if public_off:
+        # The off push uses --delete, but staging must not carry the files either.
+        if (feed.fort_feed_dir(public_out, fort_id) / "transcripts").is_dir():
+            _write_transcripts(public_out, fort_id, {})
+    else:
         _write_runs(public_out, fort_id, runs_public)
+        pub_names = _write_transcripts(
+            public_out, fort_id, None if run_rows is None else live.build_transcripts(run_rows, public=True))
         _write_lessons(public_out, fort_id, lessons_public)
     public_hash = compute_content_hash(
         [] if public_off else public_items,
@@ -700,6 +743,12 @@ def run_cycle(
             pusher(
                 public_out, cfg.public_relay, delete=public_off, rsync_bin=cfg.rsync_bin,
             )
+            if public_off:
+                cursor["public_transcripts"] = []
+            else:
+                if set(cursor.get("public_transcripts") or []) - set(pub_names):
+                    _prune_remote_transcripts(pusher, public_out, cfg.public_relay, fort_id, cfg.rsync_bin)
+                cursor["public_transcripts"] = pub_names
             cursor["public_hash"] = public_hash
             cursor["public_last_push"] = now
             cursor["public_state"] = "off" if public_off else "on"

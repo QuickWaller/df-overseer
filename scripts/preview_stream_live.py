@@ -134,6 +134,36 @@ EXAMPLE_RUN_THINKING = {
 }
 
 
+# EXAMPLE DATA (preview only): one turn's transcript, in the shape the
+# conductor stores. Two spans trip the publisher's safety check on purpose
+# (a path in a result, an address in the reasoning), so the Board's withheld
+# look and the "withheld" count can be judged.
+EXAMPLE_TRANSCRIPT = {"omitted_rounds": 1, "rounds": [
+    {"reasoning": "Housing is the gap.\n\nThe store at 203.0.113.7 is not mine to read.", "text": "Checking stocks before I file anything.",
+     "usage": {"input": 5210, "output": 340, "cacheRead": 4800},
+     "calls": [
+         {"name": "stocks.get", "args": '{"kind":"drink"}', "result": "drink: 12\nsee /opt/df/stocks.lua for more\nfood: 9", "error": False},
+         {"name": "zone.list", "args": '{"kind":"bedroom"}', "result": None, "error": True},
+     ]},
+    {"reasoning": "Stocks are fine, so a bedroom is the next need.", "text": "Filing a bedroom proposal.",
+     "usage": {"input": 5600, "output": 410},
+     "calls": [{"name": "queue.propose", "args": '{"type":"room"}', "result": "proposal filed", "error": False}]},
+]}
+
+
+# EXAMPLE DATA (preview only): fields added to one demo proposal in the temp
+# copy of the records (the committed fixture is schema-checked and counted), so
+# the Board's collapsed "Full proposal" shows every row: preconditions, a step
+# and cited facts, one of them tripping the safety check so a withheld span shows.
+EXAMPLE_FULL_PROPOSAL = {
+    "id": "proposal-0004",
+    "preconditions": [{"landmark": "Embark site", "state": "reachable"}, {"area": "south clearing", "state": "free of boulders"}],
+    "step": {"tool": "diggable.dig-stair", "args": {"site": "south", "depth": 1}, "label": "Dig the stair"},
+    "cited": [{"tool": "stocks.get", "field": "drink", "value": 12, "tick": 12673100},
+              {"tool": "overview.get", "field": "path", "value": "/opt/df/overview.lua"}],
+}
+
+
 def _demo_runs(now: float) -> tuple:
     """Run rows linked to the demo fixture's records by the real
     `records_in_window`, and a made-up call journal in the same window, so
@@ -151,6 +181,10 @@ def _demo_runs(now: float) -> tuple:
             "error": None, "final_answer": DEMO_REPORTS.get(role, DEMO_SUMMARIES[role]), "records_json": json.dumps(linked),
             # EXAMPLE DATA (preview only): a turn's thinking.
             "thinking": EXAMPLE_RUN_THINKING.get(role),
+            # EXAMPLE DATA (preview only): a whole turn's transcript. The last
+            # run's file is deliberately not written (see main), to show the
+            # "no longer available" state.
+            "transcript": json.dumps(EXAMPLE_TRANSCRIPT),
         })
         for k, tool in enumerate(DEMO_READS[role]):
             calls.append({"ts": base + 10 + k, "role": role, "tool": tool, "is_error": role == "quartermaster" and k == 1})
@@ -193,8 +227,15 @@ def main(argv: list[str] | None = None) -> int:
     ]
     with tempfile.TemporaryDirectory() as tmp:
         records = Path(tmp) / "records.jsonl"
+        base_lines = []
+        for line in FIXTURE.read_text(encoding="utf8").splitlines():
+            if line.strip():
+                rec = json.loads(line)
+                if rec.get("id") == EXAMPLE_FULL_PROPOSAL["id"]:
+                    rec.update(EXAMPLE_FULL_PROPOSAL)
+                base_lines.append(json.dumps(rec))
         records.write_text(
-            FIXTURE.read_text(encoding="utf8").rstrip("\n") + "\n"
+            "\n".join(base_lines) + "\n"
             + "".join(json.dumps(c) + "\n" for c in closes), encoding="utf8")
         subprocess.run(
             [sys.executable, str(REPO_ROOT / "scripts" / "export_stream_feed.py"),
@@ -220,12 +261,20 @@ def main(argv: list[str] | None = None) -> int:
     run_rows, run_calls = _demo_runs(now)
     tools_info = {t["id"]: t for t in site_data.build_tools_json()["tools"]}
     record_ts = {json.loads(l)["id"]: json.loads(l)["ts"] for l in FIXTURE.read_text(encoding="utf8").splitlines() if l.strip()}
+    # The last demo run keeps no transcript file, so the Board's missing state shows.
+    transcript_rows = run_rows[:-1]
     for side, public in (("public", True), ("operator", False)):
         built = live.build_live(calls, now, public=public, conductor=conductor, runs=run_rows)
         runs_doc = live.build_runs(run_rows, now, public=public, calls=run_calls, tools=tools_info, record_ts=record_ts)
         for fort_dir in (out / side / "forts").glob("*"):
             (fort_dir / "runs.json").write_text(json.dumps(runs_doc, indent=2), encoding="utf-8")
             print(f"wrote {fort_dir.relative_to(REPO_ROOT)}/runs.json")
+            tdir = fort_dir / "transcripts"
+            tdir.mkdir(exist_ok=True)
+            for old in tdir.glob("*.json"):
+                old.unlink()
+            for name, body in live.build_transcripts(transcript_rows, public=public).items():
+                (tdir / name).write_text(json.dumps(body, indent=2), encoding="utf-8")
             (fort_dir / "lessons.json").write_text(
                 json.dumps(lessons.build_lessons(run_rows, DEMO_GOTCHAS, public=public), indent=2), encoding="utf-8")
         # EXAMPLE DATA, preview only: sample "Thinking" text on the First

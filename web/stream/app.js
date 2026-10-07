@@ -714,7 +714,7 @@ function usageLine(u) {
   return names.filter(([k]) => typeof u[k] === "number").map(([k, n]) => `${n} ${u[k]}`).join(" · ");
 }
 
-/** One run's transcript (the publisher's `runs.json` form) as DOM: each
+/** One run's transcript (its own file, `transcripts/<run_id>.json`) as DOM: each
  * round with its reasoning and text, and every tool call as its own
  * collapsed block (arguments, result). A withheld span shows as withheld. */
 function transcriptEl(tx) {
@@ -2426,20 +2426,51 @@ class SitePage {
     }));
   }
 
-  /** This role's run transcripts, newest first, each collapsed by default
-   * (full detail inside, tool calls collapsed again). Only the newest runs
-   * carry one (`live.TRANSCRIPT_RUNS_PUBLIC`). */
+  /** One run's transcript, fetched the first time it is wanted and kept for
+   * the session (handoffs/2026-10-07-transcripts-on-demand.md). Rejects when
+   * the file is missing, and a failure is not cached, so a reopen retries. */
+  _loadTranscript(runId) {
+    this.transcripts = this.transcripts || {};
+    if (this.transcripts[runId]) return Promise.resolve(this.transcripts[runId]);
+    const root = this.fortMeta ? `${this.dataRoot}/forts/${this.fortMeta.id}` : this.dataRoot;
+    return fetchJson(`${root}/transcripts/${encodeURIComponent(runId)}.json`).then((tx) => {
+      this.transcripts[runId] = tx;
+      return tx;
+    });
+  }
+
+  /** The body of one run's transcript row: a loading line, then the
+   * transcript, or a note when the file is gone (it is pruned past the
+   * newest few). Idempotent while loading or loaded. */
+  _openTranscript(holder, run) {
+    if (holder.loadState === "loading" || holder.loadState === "done") return Promise.resolve();
+    holder.loadState = "loading";
+    holder.replaceChildren(el("div", { class: "faint small ftload", text: "Loading transcript..." }));
+    return this._loadTranscript(run.run_id).then((tx) => {
+      holder.loadState = "done";
+      holder.replaceChildren(transcriptEl(tx));
+    }, () => {
+      holder.loadState = null;
+      holder.replaceChildren(el("div", { class: "faint small ftmissing", text: "This transcript is no longer available." }));
+    });
+  }
+
+  /** This role's runs that have a transcript, newest first. Each row is
+   * collapsed and loads its own file on first open (the list comes from
+   * `runs.json`'s `transcript` metadata; the body is never in that file).
+   * Only the newest runs keep one (`live.TRANSCRIPT_RUNS_KEPT`). */
   _transcriptTabEl(role) {
     const titles = (this.siteText && this.siteText.wake_reasons) || {};
-    const mine = ((this.fortRuns && this.fortRuns.runs) || []).filter((r) => r.role === role && r.transcript && (r.transcript.rounds || []).length);
+    const mine = ((this.fortRuns && this.fortRuns.runs) || []).filter((r) => r.role === role && r.run_id && r.transcript && r.transcript.available);
     if (!mine.length) return el("div", { class: "box" }, [el("div", { class: "faint", text: "No transcripts kept yet. Only recent turns have one." })]);
     return el("div", { class: "box ftxlist" }, mine.map((run) => {
       const reason = run.wake_reason ? (titles[run.wake_reason] || String(run.wake_reason).replace(/_/g, " ")) : "Turn";
-      const rounds = run.transcript.rounds;
-      const nCalls = rounds.reduce((n, r) => n + (r.calls || []).length, 0);
-      const label = [reason.charAt(0).toUpperCase() + reason.slice(1), run.started_at ? String(run.started_at).slice(0, 10) : null,
-        `${rounds.length} round${rounds.length === 1 ? "" : "s"}`, `${nCalls} tool call${nCalls === 1 ? "" : "s"}`].filter(Boolean).join(" · ");
-      return el("details", { class: "fx ftrun" }, [el("summary", { text: label }), transcriptEl(run.transcript)]);
+      const size = run.transcript.size ? `${Math.max(1, Math.round(run.transcript.size / 1024))} KB` : null;
+      const held = run.transcript.withheld_count ? `${run.transcript.withheld_count} withheld` : null;
+      const label = [reason.charAt(0).toUpperCase() + reason.slice(1), run.started_at ? String(run.started_at).slice(0, 10) : null, size, held].filter(Boolean).join(" · ");
+      const holder = el("div", { class: "fthold" }, []);
+      const det = el("details", { class: "fx ftrun", ontoggle: () => { if (det.open) this._openTranscript(holder, run); } }, [el("summary", { text: label }), holder]);
+      return det;
     }));
   }
 

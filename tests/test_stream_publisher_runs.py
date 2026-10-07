@@ -268,9 +268,12 @@ def _tx(**over):
     return json.dumps({"rounds": [rnd], "omitted_rounds": 0})
 
 
+def _pub_tx(row):
+    return live.build_transcripts([row], public=True)[live.transcript_file_name(row["run_id"])]
+
+
 def test_transcript_public_filters_every_field_and_shows_withheld_spans():
-    rows = [_row("run-0001", "architect", ended=100, transcript=_tx())]
-    pub = live.build_runs(rows, NOW, public=True)["runs"][0]["transcript"]
+    pub = _pub_tx(_row("run-0001", "architect", ended=100, transcript=_tx()))
     r = pub["rounds"][0]
     assert r["reasoning"].split("\n\n") == ["Check drink.", live.THINKING_WITHHELD_MARKER]
     assert r["calls"][0]["result"].split("\n") == ["drink: 12", live.THINKING_WITHHELD_MARKER, "food: 9"]
@@ -280,35 +283,110 @@ def test_transcript_public_filters_every_field_and_shows_withheld_spans():
     assert "/opt/" not in blob and "203.0.113.7" not in blob
 
 
+def test_runs_json_carries_only_transcript_metadata_never_a_body():
+    rows = [_row("run-0001", "architect", ended=100, transcript=_tx())]
+    for public in (True, False):
+        entry = live.build_runs(rows, NOW, public=public)["runs"][0]
+        meta = entry["transcript"]
+        assert set(meta) == {"available", "size", "withheld_count"} and meta["available"] is True
+        assert "rounds" not in meta and "rounds" not in json.dumps(live.build_runs(rows, NOW, public=public))
+        body = live.build_transcripts(rows, public=public)["run-0001.json"]
+        assert meta["size"] == len(json.dumps(body, sort_keys=True, ensure_ascii=False).encode("utf-8"))
+    # the public body has two withheld spans: the reasoning paragraph and the result line
+    assert live.build_runs(rows, NOW, public=True)["runs"][0]["transcript"]["withheld_count"] == 2
+    assert live.build_runs(rows, NOW, public=False)["runs"][0]["transcript"]["withheld_count"] == 0
+
+
 def test_transcript_unsafe_args_and_names_are_withheld_not_echoed():
     bad = _tx(calls=[{"id": "c", "name": "https://evil.example.com/x", "args": '{"u":"http://203.0.113.9/a"}',
                       "result": None, "error": True}])
-    rows = [_row("run-0001", "architect", ended=100, transcript=bad)]
-    c = live.build_runs(rows, NOW, public=True)["runs"][0]["transcript"]["rounds"][0]["calls"][0]
+    pub = _pub_tx(_row("run-0001", "architect", ended=100, transcript=bad))
+    c = pub["rounds"][0]["calls"][0]
     assert c["name"] == "tool" and c["name_withheld"] is True
     assert c["args"] is None and c["args_withheld"] is True and c["error"] is True
     assert "evil" not in json.dumps(c) and "203.0.113.9" not in json.dumps(c)
+    meta = live.build_runs([_row("run-0001", "architect", ended=100, transcript=bad)], NOW, public=True)["runs"][0]["transcript"]
+    assert meta["withheld_count"] == 3  # name, args, and the default reasoning paragraph
 
 
 def test_transcript_operator_gets_it_raw_and_switch_and_limits_apply(monkeypatch):
     rows = [_row("run-0001", "architect", ended=100, transcript=_tx())]
-    op = live.build_runs(rows, NOW, public=False)["runs"][0]["transcript"]
+    op = live.build_transcripts(rows, public=False)["run-0001.json"]
     assert "/opt/df/x.lua" in op["rounds"][0]["calls"][0]["result"]
     monkeypatch.setattr(live, "PUBLIC_TRANSCRIPTS", False)
+    assert live.build_transcripts(rows, public=True) == {}
     assert "transcript" not in live.build_runs(rows, NOW, public=True)["runs"][0]
     monkeypatch.setattr(live, "PUBLIC_TRANSCRIPTS", True)
-    many = [_row(f"run-{i:04d}", "architect", ended=100, transcript=_tx()) for i in range(12)]
+    many = [_row(f"run-{i:04d}", "architect", ended=100, transcript=_tx()) for i in range(30)]
     got = [("transcript" in r) for r in live.build_runs(many, NOW, public=True)["runs"]]
-    assert got.count(True) == live.TRANSCRIPT_RUNS_PUBLIC and got[0] is True
+    assert got.count(True) == live.TRANSCRIPT_RUNS_KEPT and got[0] is True and got[live.TRANSCRIPT_RUNS_KEPT] is False
+    assert len(live.build_transcripts(many, public=True)) == live.TRANSCRIPT_RUNS_KEPT
     failed = [_row("run-9", "architect", ended=100, ok=0, status="failed", transcript=_tx())]
     assert "transcript" not in live.build_runs(failed, NOW, public=True)["runs"][0]
     junk = [_row("r", "architect", ended=100, transcript="not json")]
     assert live.build_runs(junk, NOW, public=True)["runs"][0].get("transcript") is None
+    odd = [_row("../evil", "architect", ended=100, transcript=_tx())]
+    assert live.build_transcripts(odd, public=False) == {} and "transcript" not in live.build_runs(odd, NOW, public=False)["runs"][0]
 
 
 def test_transcript_public_total_is_capped_dropping_whole_later_rounds(monkeypatch):
     monkeypatch.setattr(live, "TRANSCRIPT_PUBLIC_MAX_CHARS", 600)
     rounds = [{"n": i, "reasoning": None, "text": "t" * 150, "calls": [], "usage": None} for i in range(10)]
-    rows = [_row("run-0001", "architect", ended=100, transcript=json.dumps({"rounds": rounds, "omitted_rounds": 2}))]
-    t = live.build_runs(rows, NOW, public=True)["runs"][0]["transcript"]
+    t = _pub_tx(_row("run-0001", "architect", ended=100, transcript=json.dumps({"rounds": rounds, "omitted_rounds": 2})))
     assert len(json.dumps(t["rounds"])) <= 600 and t["omitted_rounds"] == 2 + (10 - len(t["rounds"]))
+
+
+
+
+# ---- transcript files in staging and on the relay -------------------------
+
+
+class _RecPusher:
+    def __init__(self):
+        self.calls = []
+
+    def __call__(self, local_dir, relay, *, delete=False, rsync_bin="rsync"):
+        self.calls.append({"local": str(local_dir), "path": relay.path, "delete": delete})
+
+
+def _end_with_transcript(db, role="architect"):
+    rp = runs.runs_path(db)
+    run = runs.start_run(rp, role=role, wake_reason="routine_review", wake_detail="d", cycle=1)
+    runs.end_run(
+        rp, run_id=run["run_id"], role=None, wake_reason=None, wake_detail=None, cycle=None,
+        status="ok", ok=True, timed_out=False, duration_s=5.0, cost_usd=0.01, error=None,
+        final_answer="Did a thing.", records=[], transcript=_tx(),
+    )
+    return run["run_id"]
+
+
+def test_transcripts_are_written_per_run_filtered_and_pruned_locally_and_on_the_relay(tmp_path, monkeypatch):
+    db = _seed(tmp_path)
+    first = _end_with_transcript(db)
+    relay = sp.RelayTarget(host="<relay-vm-ip>", user="stream-pub", path="/srv/x", ssh_key=str(tmp_path / "k"))
+    cfg = sp.PublisherConfig(db_path=str(db), staging_dir=str(tmp_path / "stage"),
+                             public_relay=relay, operator_relay=relay, heartbeat_interval_seconds=10_000)
+    pusher = _RecPusher()
+    sp.run_cycle(cfg, now=NOW, pusher=pusher, journal_reader=lambda: [])
+    pub_file = tmp_path / f"stage/public/forts/queue/transcripts/{first}.json"
+    op_file = tmp_path / f"stage/operator/forts/queue/transcripts/{first}.json"
+    assert pub_file.exists() and op_file.exists()
+    assert "/opt/df/x.lua" not in pub_file.read_text() and "/opt/df/x.lua" in op_file.read_text()
+    assert not any(c["delete"] for c in pusher.calls)
+    runs_doc = json.loads((tmp_path / "stage/public/forts/queue/runs.json").read_text())
+    assert "rounds" not in json.dumps(runs_doc)
+    # keep only one: the second run pushes the first one out, locally and on the relay
+    monkeypatch.setattr(live, "TRANSCRIPT_RUNS_KEPT", 1)
+    second = _end_with_transcript(db, role="overseer")
+    pusher.calls.clear()
+    sp.run_cycle(cfg, now=NOW + 1, pusher=pusher, journal_reader=lambda: [])
+    pdir = tmp_path / "stage/public/forts/queue/transcripts"
+    assert sorted(f.name for f in pdir.iterdir()) in ([f"{first}.json"], [f"{second}.json"])
+    assert len(list(pdir.iterdir())) == 1
+    prunes = [c for c in pusher.calls if c["delete"]]
+    assert len(prunes) == 2 and all(c["path"] == "/srv/x/forts/queue/transcripts" for c in prunes)
+    # nothing more to prune the next time
+    pusher.calls.clear()
+    runs.start_run(runs.runs_path(db), role="architect", wake_reason="x", wake_detail=None, cycle=9)
+    sp.run_cycle(cfg, now=NOW + 2, pusher=pusher, journal_reader=lambda: [])
+    assert not any(c["delete"] for c in pusher.calls)
