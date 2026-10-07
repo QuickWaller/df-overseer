@@ -10,7 +10,8 @@ Overseer run for the idle line. Then serves `web/stream/` on localhost.
     python scripts/preview_stream_live.py --idle     # nobody awake: shows the last-run line
     python scripts/preview_stream_live.py --no-serve # just write the data
 
-Open http://127.0.0.1:8934/index.html (public) and /operator.html (adds cost).
+Open http://127.0.0.1:8934/index.html (public) and /operator.html (adds cost);
+#metrics is the Metrics tab, fed a real report over the committed fixture window.
 `web/stream/data/` is gitignored. The elapsed time counts up in the browser
 from the file's own `elapsed_s`, so reload the script to restart a run.
 """
@@ -164,6 +165,20 @@ EXAMPLE_FULL_PROPOSAL = {
 }
 
 
+def _demo_metrics() -> dict:
+    """A real `wake_metrics.compute` report over the committed 2026-10-05..07
+    window fixture (the same one its tests use), so the Metrics tab can be
+    judged locally with real-shaped numbers and no VM."""
+    from dfqueue import wake_metrics
+    from dfqueue.tests.test_wake_metrics import EPOCHS, FIXTURE as WINDOW, write_queue, write_runs
+    fx = json.loads(WINDOW.read_text(encoding="utf-8"))
+    with tempfile.TemporaryDirectory() as tmp:
+        q, r = Path(tmp) / "q.sqlite3", Path(tmp) / "r.sqlite3"
+        write_queue(q, fx["records"], fx["predictions"])
+        write_runs(r, fx["runs"], fx["transcripts"])
+        return wake_metrics.compute(q, r, epochs=EPOCHS)
+
+
 def _demo_runs(now: float) -> tuple:
     """Run rows linked to the demo fixture's records by the real
     `records_in_window`, and a made-up call journal in the same window, so
@@ -263,12 +278,15 @@ def main(argv: list[str] | None = None) -> int:
     record_ts = {json.loads(l)["id"]: json.loads(l)["ts"] for l in FIXTURE.read_text(encoding="utf8").splitlines() if l.strip()}
     # The last demo run keeps no transcript file, so the Board's missing state shows.
     transcript_rows = run_rows[:-1]
+    metrics_doc = _demo_metrics()
     for side, public in (("public", True), ("operator", False)):
         built = live.build_live(calls, now, public=public, conductor=conductor, runs=run_rows)
         runs_doc = live.build_runs(run_rows, now, public=public, calls=run_calls, tools=tools_info, record_ts=record_ts)
         for fort_dir in (out / side / "forts").glob("*"):
             (fort_dir / "runs.json").write_text(json.dumps(runs_doc, indent=2), encoding="utf-8")
             print(f"wrote {fort_dir.relative_to(REPO_ROOT)}/runs.json")
+            (fort_dir / "metrics.json").write_text(json.dumps(metrics_doc, indent=2), encoding="utf-8")
+            print(f"wrote {fort_dir.relative_to(REPO_ROOT)}/metrics.json")
             tdir = fort_dir / "transcripts"
             tdir.mkdir(exist_ok=True)
             for old in tdir.glob("*.json"):

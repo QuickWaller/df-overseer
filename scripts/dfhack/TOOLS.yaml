@@ -2297,6 +2297,19 @@ df-overseer-zone.lua:
         not_met/cannot_tell or whose owner_status reads unowned/cannot_tell)
         rather than listing every zone; any filter given returns matching
         zones' detail rows instead (capped at 500, `truncated` says so).
+        ADDED 2026-10-07 (handoffs/2026-10-07-planner-p1b.md): the unfiltered
+        summary also carries `furnished_by_kind` (zones of each kind holding
+        every defining furniture kind of ZONE_POLICY, complete buildings only;
+        null for a kind with no defining furniture) and
+        `furniture_counts_by_kind` (kind -> building type -> complete
+        buildings inside zones of that kind; no key for a kind with no zone).
+        A zone whose contents could not be read (over the 625-tile contents
+        bound, a failed tile lookup) makes its kind's entries null plus a
+        `read_failures` line, never a low count. Read from the game, generic
+        per kind (the per-kind data is ZONE_POLICY), coordinate-free, and only
+        in the summary: a filtered list does not pay for it. The fort plan's
+        `zones."KIND".furnished` and `.furniture."F"` signals read these.
+        Offline (lupa) only: the live check is a zone.list on the fort.
         IDENTITY is the zone's own id (already this project's precedent:
         place_zone's own read_back.id, order."ID".exists, landmark."NAME"),
         never a coordinate. VALIDITY reuses nobles.requirements' own

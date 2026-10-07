@@ -74,6 +74,7 @@ def status_from_cycle(result: CycleResult, *, state: str = "running") -> Dict[st
         "tripwire": result.tripwire,
         "escalated": result.escalated,
         "pause_watch": _pause_watch_block(result),
+        "plan_watch": result.plan_watch,
     }
 
 

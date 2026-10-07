@@ -1009,7 +1009,7 @@ class StreamPage {
     }
   }
 
-  /** The one-line "who is awake" strip at the top of the board column
+  /** The "who is awake" strip (one row per awake role) at the top of the board column
    * (`status.live`, built by dfqueue/live.py). Hidden when there is no live
    * data; shows the awake role, how long, its last tool and why it woke, or
    * the last finished run when nobody is awake. Costs show on the operator
@@ -1033,7 +1033,7 @@ class StreamPage {
           el("span", { style: `color:${ROLE_COLORS[a.role] || "var(--text)"};font-weight:600`, text: roleTitle(a.role) }),
           el("span", { class: "ls-t", text: formatElapsed((a.elapsed_s || 0) + sinceFetch) }),
           a.last_tool ? el("span", { class: "ls-tool", text: a.last_tool }) : null,
-          a.wake_reason ? el("span", { class: "faint", text: reason(a.wake_reason) }) : null,
+          a.wake_reason ? el("span", { class: "faint ls-why", text: reason(a.wake_reason) }) : null,
         ]);
         parts.push(seg);
       });
@@ -1864,6 +1864,8 @@ class SitePage {
     this.tools = null;
     this.gotchas = null;
     this.chronicleFixture = null;
+    this.metrics = undefined; // metrics.json (dfqueue/wake_metrics.py), null when absent
+    this.metricsState = { role: null };
     this._boardPage = null;
     this._boardContainer = null;
     this.mapSel = null;
@@ -1997,6 +1999,13 @@ class SitePage {
   /** The Chronicle is a clearly marked stub (handoff item 5): one fixture
    * file of pretend data, never mixed into anything real this page reads
    * elsewhere. */
+  /** metrics.json for the Metrics view; `null` when the fort has none yet.
+   * Refetched on each visit, since the publisher refreshes it slowly. */
+  async _ensureMetrics() {
+    const root = this.fortMeta ? `${this.dataRoot}/forts/${this.fortMeta.id}` : this.dataRoot;
+    this.metrics = await fetchJson(`${root}/metrics.json`).catch(() => null);
+  }
+
   async _ensureChronicleFixture() {
     if (this.chronicleFixture) return;
     // Served beside the page on the relay (flattened), under fixtures/ locally.
@@ -2010,7 +2019,7 @@ class SitePage {
     if (hash.startsWith("agent-")) return { view: "agents", param: hash.slice(6) };
     if (hash.startsWith("tool-")) return { view: "tools", param: hash.slice(5) };
     if (hash.startsWith("chronicle-")) return { view: "lost-chronicle", param: hash.slice(10) };
-    if (["board", "chronicle", "agents", "tools", "forts"].includes(hash)) return { view: hash, param: null };
+    if (["board", "chronicle", "metrics", "agents", "tools", "forts"].includes(hash)) return { view: hash, param: null };
     return { view: "board", param: null };
   }
 
@@ -2034,9 +2043,14 @@ class SitePage {
     this.main.classList.toggle("agentsview", route.view === "agents");
     // Agents fills the window exactly: the map stays put, only the open
     // tab's body scrolls.
-    this.shell.classList.toggle("fullheight", ["agents", "board", "tools", "forts"].includes(route.view));
+    this.shell.classList.toggle("fullheight", ["agents", "board", "tools", "forts", "metrics"].includes(route.view));
     if (route.view === "board") {
       this.main.appendChild(this._boardEl());
+      return;
+    }
+    if (route.view === "metrics") {
+      await this._ensureMetrics();
+      this.main.appendChild(metricsView(this.metrics, this.metricsState, () => this._render()));
       return;
     }
     if (route.view === "chronicle") {
@@ -2089,6 +2103,7 @@ class SitePage {
       el("span", { class: "fortpick", title: "The fort running now" }, [el("span", { class: "dot" }), document.createTextNode(" " + fortName)]),
       navLink("board", "Board", current === "board"),
       navLink("chronicle", "Chronicle", current === "chronicle"),
+      navLink("metrics", "Metrics", current === "metrics"),
     ]);
     const projectGroup = el("div", { class: "navgroup" }, [
       navLink("agents", "Agents", current === "agents"),
@@ -2849,6 +2864,275 @@ class SitePage {
       ]),
     ]);
   }
+}
+
+// ---- Metrics view (dfqueue/wake_metrics.py, schema `wake_metrics/1`) --------
+// Every figure here is a count, a mean or an id from metrics.json; nothing is
+// free text. A number resting on few wakes says so.
+
+//: Below this many wakes (or transcripts) a number is called thin.
+const METRICS_FEW_WAKES = 10;
+const METRICS_FEW_DAY_WAKES = 3;
+
+function metricsRoles(doc) {
+  const roles = Object.keys((doc && doc.by_role) || {});
+  const order = ["architect", "overseer", "quartermaster", "consultant"];
+  return roles.sort((a, b) => {
+    const ia = order.indexOf(a), ib = order.indexOf(b);
+    return (ia < 0 ? 99 : ia) - (ib < 0 ? 99 : ib) || a.localeCompare(b);
+  });
+}
+
+function metricsDays(doc) {
+  return Object.keys((doc && doc.by_day) || {}).sort();
+}
+
+/** `pick(group) -> number|null` per role per day: {role: [{v, wakes}, ...]}
+ * aligned with `metricsDays`. */
+function metricsSeries(doc, pick) {
+  const days = metricsDays(doc);
+  const out = {};
+  metricsRoles(doc).forEach((role) => {
+    out[role] = days.map((d) => {
+      const g = ((doc.by_day[d] || {})[role]) || null;
+      const v = g ? pick(g) : null;
+      return { v: (typeof v === "number" && isFinite(v)) ? v : null, wakes: g ? (g.wakes || 0) : 0 };
+    });
+  });
+  return out;
+}
+
+/** The first day each epoch shows up in the per-wake rows: where a deploy that
+ * changed what roles see starts, on a day axis. */
+function metricsEpochStarts(doc) {
+  const first = {};
+  ((doc && doc.wakes) || []).forEach((w) => {
+    if (!w.epoch || !w.day) return;
+    if (!(w.epoch in first) || w.day < first[w.epoch]) first[w.epoch] = w.day;
+  });
+  return Object.keys(first).map((id) => ({ id, day: first[id] })).sort((a, b) => a.day.localeCompare(b.day));
+}
+
+function metricsNice(max) {
+  if (!(max > 0)) return 1;
+  const p = Math.pow(10, Math.floor(Math.log10(max)));
+  const f = max / p;
+  return (f <= 1 ? 1 : f <= 2 ? 2 : f <= 5 ? 5 : 10) * p;
+}
+
+function metricsFmt(v, kind) {
+  if (v == null) return "none";
+  if (kind === "usd") return "$" + (v < 1 ? v.toFixed(3) : v.toFixed(2));
+  if (kind === "pct") return Math.round(v * 100) + "%";
+  return Math.abs(v) >= 10 ? String(Math.round(v)) : String(Math.round(v * 100) / 100);
+}
+
+function metricsAxis(svg, y, L, W, R, top, fmt) {
+  [0, top].forEach((v) => {
+    svg.appendChild(svgEl("line", { x1: L, x2: W - R, y1: y(v), y2: y(v), class: "mgrid" }));
+    const t = svgEl("text", { x: L - 4, y: y(v) + 3, class: "mtick", "text-anchor": "end" });
+    t.textContent = fmt(v);
+    svg.appendChild(t);
+  });
+}
+
+function metricsEpochLine(svg, xPos, T, H, B, e) {
+  const g = svgEl("line", { x1: xPos, x2: xPos, y1: T, y2: H - B, class: "mepoch" });
+  const title = svgEl("title", {});
+  title.textContent = `epoch ${e.id}, from ${e.day}`;
+  g.appendChild(title);
+  svg.appendChild(g);
+}
+
+/** A line chart, one line per role, as inline SVG. Hollow points rest on fewer
+ * than METRICS_FEW_DAY_WAKES wakes. Dashed verticals mark epochs. */
+function metricsLineChart(days, series, epochs, kind) {
+  const W = 320, H = 150, L = 38, R = 8, T = 10, B = 24;
+  let max = 0;
+  Object.values(series).forEach((pts) => pts.forEach((p) => { if (p.v != null && p.v > max) max = p.v; }));
+  const top = kind === "pct" ? 1 : metricsNice(max);
+  const x = (i) => L + (days.length <= 1 ? (W - L - R) / 2 : (i * (W - L - R)) / (days.length - 1));
+  const y = (v) => T + (H - T - B) * (1 - v / top);
+  const svg = svgEl("svg", { viewBox: `0 0 ${W} ${H}`, class: "mchart", role: "img", preserveAspectRatio: "xMidYMid meet" });
+  metricsAxis(svg, y, L, W, R, top, (v) => metricsFmt(v, kind));
+  const step = Math.max(1, Math.ceil(days.length / 6));
+  days.forEach((d, i) => {
+    if (i % step && i !== days.length - 1) return;
+    const t = svgEl("text", { x: x(i), y: H - 8, class: "mtick", "text-anchor": "middle" });
+    t.textContent = d.slice(5);
+    svg.appendChild(t);
+  });
+  (epochs || []).forEach((e) => {
+    const i = days.indexOf(e.day);
+    if (i >= 0) metricsEpochLine(svg, x(i), T, H, B, e);
+  });
+  Object.keys(series).forEach((role) => {
+    const color = ROLE_COLORS[role] || "var(--text)";
+    const pts = series[role];
+    let d = "", pen = false;
+    pts.forEach((p, i) => {
+      if (p.v == null) { pen = false; return; }
+      d += (pen ? "L" : "M") + x(i) + " " + y(p.v);
+      pen = true;
+    });
+    if (d) svg.appendChild(svgEl("path", { d, class: "mline", stroke: color }));
+    pts.forEach((p, i) => {
+      if (p.v == null) return;
+      const thin = p.wakes < METRICS_FEW_DAY_WAKES;
+      const c = svgEl("circle", { cx: x(i), cy: y(p.v), r: 3.2, class: thin ? "mdot thin" : "mdot", stroke: color, fill: thin ? "none" : color });
+      const title = svgEl("title", {});
+      title.textContent = `${roleTitle(role)} ${days[i]}: ${metricsFmt(p.v, kind)} over ${p.wakes} wake${p.wakes === 1 ? "" : "s"}`;
+      c.appendChild(title);
+      svg.appendChild(c);
+    });
+  });
+  return svg;
+}
+
+const METRICS_REPEAT_PARTS = [
+  ["m2", "repeat defers", "var(--accent)"],
+  ["m3", "duplicates", "var(--role-overseer)"],
+  ["m1_struct", "repeat proposals (struct rule)", "var(--role-architect)"],
+];
+
+/** Stacked bars of approximate repeats per day, all roles together. */
+function metricsRepeatChart(doc, days, epochs) {
+  const parts = METRICS_REPEAT_PARTS;
+  const roles = metricsRoles(doc);
+  const totals = days.map((d) => parts.map(([k]) => roles.reduce((n, r) => n + ((((doc.by_day[d] || {})[r]) || {})[k] || 0), 0)));
+  const W = 320, H = 150, L = 38, R = 8, T = 10, B = 24;
+  const top = metricsNice(Math.max(0, ...totals.map((t) => t.reduce((a, b) => a + b, 0))));
+  const slot = (W - L - R) / Math.max(1, days.length);
+  const bw = Math.min(40, slot * 0.6);
+  const y = (v) => T + (H - T - B) * (1 - v / top);
+  const svg = svgEl("svg", { viewBox: `0 0 ${W} ${H}`, class: "mchart", role: "img", preserveAspectRatio: "xMidYMid meet" });
+  metricsAxis(svg, y, L, W, R, top, (v) => String(v));
+  days.forEach((d, i) => {
+    const cx = L + slot * i + slot / 2;
+    let acc = 0;
+    parts.forEach(([, label, color], j) => {
+      const v = totals[i][j];
+      if (!v) return;
+      const r = svgEl("rect", { x: cx - bw / 2, y: y(acc + v), width: bw, height: y(acc) - y(acc + v), fill: color, class: "mbar" });
+      const title = svgEl("title", {});
+      title.textContent = `${d}: ${v} ${label}`;
+      r.appendChild(title);
+      svg.appendChild(r);
+      acc += v;
+    });
+    const t = svgEl("text", { x: cx, y: H - 8, class: "mtick", "text-anchor": "middle" });
+    t.textContent = d.slice(5);
+    svg.appendChild(t);
+    (epochs || []).filter((e) => e.day === d).forEach((e) => metricsEpochLine(svg, cx - slot / 2, T, H, B, e));
+  });
+  return { svg, totals };
+}
+
+function metricsWakesNote(n, what) {
+  if (!n) return el("div", { class: "mnote few", text: `No ${what} yet, so there is nothing to show.` });
+  const few = n < METRICS_FEW_WAKES;
+  return el("div", { class: "mnote" + (few ? " few" : ""), text: few
+    ? `Thin: this rests on only ${n} ${what}. Read it as a hint, not a rate.`
+    : `Rests on ${n} ${what}.` });
+}
+
+function metricsLegend(roles, extra) {
+  return el("div", { class: "mlegend" }, roles.map((r) => el("span", {}, [
+    el("i", { style: `background:${ROLE_COLORS[r] || "var(--text)"}` }),
+    document.createTextNode(" " + roleTitle(r)),
+  ])).concat(extra || []));
+}
+
+function metricsToolList(doc, role) {
+  const u = ((doc.tool_usage || {})[role]) || null;
+  if (!u) return el("div", { class: "muted small", text: "No tool data for this role." });
+  const calls = Object.entries(u.calls || {}).sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
+  const maxN = calls.length ? calls[0][1] : 1;
+  const never = (u.never_called || []).slice().sort();
+  const kids = [metricsWakesNote(u.wakes_with_transcript || 0, "wakes with a stored transcript")];
+  if (u.unmapped_calls) kids.push(el("div", { class: "mnote", text: `${u.unmapped_calls} calls could not be matched to a tool and are left out.` }));
+  kids.push(el("h3", { text: `Called (${calls.length})` }));
+  kids.push(calls.length
+    ? el("div", { class: "mtools" }, calls.map(([id, n]) => el("div", { class: "mtool" }, [
+      el("span", { class: "mtid", text: id }),
+      el("span", { class: "mtbar" }, [el("i", { style: `width:${Math.max(3, Math.round((n / maxN) * 100))}%` })]),
+      el("span", { class: "mtn", text: String(n) }),
+    ])))
+    : el("div", { class: "muted small", text: "None recorded." }));
+  kids.push(el("h3", { text: `Never called (${never.length})` }));
+  kids.push(never.length
+    ? el("div", { class: "mnever" }, never.map((id) => el("span", { class: "tag", text: id })))
+    : el("div", { class: "muted small", text: "Every allowed tool has been used." }));
+  return el("div", { class: "mtoollist" }, kids);
+}
+
+/** The Metrics page: charts per day on the left, tool usage per role on the
+ * right; each pane scrolls on its own. `state.role` is kept across renders. */
+function metricsView(doc, state, rerender) {
+  if (!doc || doc.schema !== "wake_metrics/1") {
+    return el("div", {}, [
+      el("h1", { text: "Metrics" }),
+      el("p", { class: "lede", text: "No metrics have been published for this fort yet." }),
+    ]);
+  }
+  const roles = metricsRoles(doc);
+  const days = metricsDays(doc);
+  const epochs = metricsEpochStarts(doc);
+  const totals = doc.totals || {};
+  if (!state.role || !roles.includes(state.role)) state.role = roles[0] || null;
+  const epochNote = epochs.length
+    ? el("span", { class: "mlegend-epoch" }, [el("i", { class: "dash" }), document.createTextNode(" deploy epoch: " + epochs.map((e) => `${e.id} (from ${e.day})`).join(", "))])
+    : null;
+  const cards = [];
+  const rep = metricsRepeatChart(doc, days, epochs);
+  cards.push(el("section", { class: "box mcard" }, [
+    el("h3", { text: "Repeats per day, all roles" }),
+    el("div", { class: "mnote approx", text: "Approximate. The proposal count uses a loose structural rule fitted on a small window; defers and duplicates are the firmer parts." }),
+    rep.svg,
+    el("div", { class: "mlegend" }, METRICS_REPEAT_PARTS.map(([, label, color]) => el("span", {}, [el("i", { style: `background:${color}` }), document.createTextNode(" " + label)])).concat(epochNote ? [epochNote] : [])),
+    metricsWakesNote(totals.at_risk_wakes || 0, "wakes where a repeat was possible"),
+  ]));
+  const lineCard = (title, pick, kind, basis, basisWhat, note) => {
+    const series = metricsSeries(doc, pick);
+    const shown = roles.filter((r) => series[r].some((p) => p.v != null));
+    return el("section", { class: "box mcard" }, [
+      el("h3", { text: title }),
+      el("div", { class: "mnote approx", text: note }),
+      shown.length ? metricsLineChart(days, series, epochs, kind) : el("div", { class: "mnone", text: "No data yet." }),
+      metricsLegend(shown, epochNote ? [epochNote] : []),
+      metricsWakesNote(basis, basisWhat),
+    ]);
+  };
+  cards.push(lineCard("Rounds per wake (mean)", (g) => (g.rounds || {}).mean, "n", totals.with_transcript || 0,
+    "wakes with a stored transcript", "Only wakes with a stored transcript count."));
+  cards.push(lineCard("Cost per wake (mean, USD)", (g) => (g.cost || {}).mean, "usd", (totals.cost || {}).n || 0,
+    "costed wakes", "Killed wakes report no cost and are left out."));
+  cards.push(lineCard("Pass rate", (g) => g.pass_rate, "pct", Math.max(0, (totals.wakes || 0) - (totals.killed || 0)),
+    "finished wakes", "Share of advisor wakes that filed a pass and nothing else."));
+  const strip = el("div", { class: "mstrip" }, roles.map((r) => el("span", { class: "rstat" }, [
+    el("b", { style: `color:${ROLE_COLORS[r] || "var(--text)"}`, text: roleTitle(r) }),
+    document.createTextNode(` ${(((doc.by_role || {})[r]) || {}).wakes || 0} wakes`),
+  ])));
+  const roleTabs = el("div", { class: "tabs", role: "tablist" }, roles.map((r) => el("button", {
+    type: "button", role: "tab", class: "tabbtn", "aria-selected": String(r === state.role),
+    onclick: () => { state.role = r; rerender(); }, text: roleTitle(r),
+  })));
+  const range = days.length ? `${days[0]} to ${days[days.length - 1]}` : "no days";
+  return el("div", { class: "mview" }, [
+    el("div", { class: "mhead" }, [
+      el("h1", { text: "Metrics" }),
+      el("p", { class: "lede", text: `How often the agents repeat themselves, how long a wake takes and what it costs, over ${range}: ${totals.wakes || 0} wakes in all. Refreshed slowly, not every few seconds.` }),
+      strip,
+    ]),
+    el("div", { class: "msplit" }, [
+      el("div", { class: "mpane" }, [el("div", { class: "mscroll mcharts" }, cards)]),
+      el("div", { class: "mpane" }, [
+        el("h2", { text: "Tool use by role" }),
+        roleTabs,
+        el("div", { class: "mscroll", role: "tabpanel" }, [state.role ? metricsToolList(doc, state.role) : null]),
+      ]),
+    ]),
+  ]);
 }
 
 window.SitePage = SitePage;
