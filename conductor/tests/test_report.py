@@ -129,3 +129,27 @@ async def test_the_transcript_goes_out_as_compact_json_and_is_archived(tmp_path)
     seen2 = []
     await run_cycle(2, _deps(tmp_path, tools=_ask_tools(lambda a: (seen2.append(dict(a)) or {"run_id": "run-0002"})), runner=runner2))
     assert "transcript" not in seen2[-1] and plain
+
+
+async def test_start_carries_every_wake_reason_headline_first(tmp_path):
+    from conductor.cycle import _run_role
+    from conductor.policy import FULL_SPEED
+    from conductor.triage import Wake
+    seen = []
+
+    async def call(tool, args):
+        seen.append(dict(args))
+        return {"run_id": "run-0009"}
+
+    runner = FakeRoleRunner({CONSULTANT: _ok(CONSULTANT)})
+    deps = _deps(tmp_path, tools=_ask_tools(lambda a: {}), runner=runner)
+    wake = Wake("open_ask", "an ask", (CONSULTANT,), FULL_SPEED)
+    await _run_role(deps, call, CONSULTANT, "p", wake=wake, cycle_index=1,
+                    wake_reasons=("routine_review", "open_ask", "season_change"))
+    assert seen[0]["wake_reason"] == "open_ask"
+    assert seen[0]["wake_reasons"] == ["open_ask", "routine_review", "season_change"]
+
+    # a lone wake (tripwire, pause verdict) is just its own reason
+    seen.clear()
+    await _run_role(deps, call, CONSULTANT, "p", wake=wake, cycle_index=2)
+    assert seen[0]["wake_reasons"] == ["open_ask"]

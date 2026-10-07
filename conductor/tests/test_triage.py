@@ -173,3 +173,21 @@ def test_stuck_job_detail_replaces_the_generic_detail_and_wakes_the_quartermaste
     wake = next(w for w in result.wakes if w.reason == "stuck_job")
     assert wake.detail == "1 stuck job: Construct Bed suspended for 3 game days"
     assert result.roles_to_wake == ("quartermaster",)
+
+
+def test_reasons_for_lists_every_reason_in_order_without_repeats():
+    from conductor.triage import TriageResult, Wake
+    result = TriageResult(
+        wakes=(
+            Wake("stuck_job", "a", ("architect", "overseer"), FULL_SPEED),
+            Wake("season_change", "b", ("architect",), FULL_SPEED),
+            Wake("stuck_job", "c", ("architect",), FULL_SPEED),
+            Wake("open_ask", "d", ("consultant",), FULL_SPEED),
+        ),
+        clock=FULL_SPEED, roles_to_wake=("architect", "consultant", "overseer"),
+    )
+    assert result.reasons_for("architect") == ("stuck_job", "season_change")
+    assert result.reasons_for("overseer") == ("stuck_job",)
+    assert result.reasons_for("quartermaster") == ()
+    # the headline wake is still the first one
+    assert result.wake_for("architect").reason == "stuck_job"

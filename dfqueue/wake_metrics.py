@@ -42,7 +42,7 @@ breaking change; additions are not breaking):
            "rounds_to_first_write": {...}, "orientation_reads": {...},
            "reread_rate", "pass_rate", "tokens": {"input","output",
            "cache_read","reasoning"}, "with_transcript", "truncated"}
-<per-wake row> = {"run_id","role","day","epoch","wake_reason","sweep",
+<per-wake row> = {"run_id","role","day","epoch","wake_reason","wake_reasons","sweep",
            "status","killed","at_risk","m1","m1_wide","m2","m3","r",
            "cost_usd","rounds","first_write_round","orientation_reads",
            "read_calls","redundant_reads","passed","source"}
@@ -601,6 +601,7 @@ def per_wake_rows(queue: dict, runs: List[dict], cls: Classified, epochs: List[d
             "day": start.date().isoformat() if start else None,
             "epoch": epoch_of(run.get("started_at"), epochs, hashes),
             "wake_reason": _safe_word(run.get("wake_reason")),
+            "wake_reasons": _wake_reasons(run),
             "sweep": sweeps.get(run["run_id"]), "status": _safe_word(run.get("status")),
             "killed": killed,
             "at_risk": _at_risk(run, records, cls, idx, predictions, runs),
@@ -622,6 +623,14 @@ def per_wake_rows(queue: dict, runs: List[dict], cls: Classified, epochs: List[d
             "source": "transcript" if tm else "missing",
         })
     return rows
+
+
+def _wake_reasons(run: dict) -> List[str]:
+    """Every reason the run was woken for, as safe words; a run recorded before
+    the `wake_reasons` column falls back to its one `wake_reason`."""
+    from dfqueue import runs as _runs
+    got = [w for w in (_safe_word(r) for r in _runs.decode_wake_reasons(run)) if w]
+    return got
 
 
 def _safe_word(value: Any) -> Optional[str]:
