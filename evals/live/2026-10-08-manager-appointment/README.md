@@ -178,3 +178,19 @@ planner 13, quartermaster 28. Test counts: ambient `python -m pytest` 3674 passe
    A direct write to `pause_state` was refused by the auto-mode classifier and not pursued. Fort left
    PAUSED, fps 100, tripwire re-armed on defaults. Order validating, job at a workshop and items
    rising across ticks are therefore NOT yet watched in this run.
+
+## Phase C watch (supervised unpause, `supervised-unpause.sh 100 240 40`; user had closed the Work Orders panel, which was what blocked resume)
+
+Reads with `/tmp/a8.lua` (order status, DRINK stack total, jobs carrying `order_id`, citizens alive):
+
+| tick | paused | order 2 | DRINK units | jobs with order_id | alive |
+|---|---|---|---|---|---|
+| 353868 (before) | true | validated, active, 10 of 13 left | 14 | CustomReaction order_id=2 | 24 |
+| 357222 .. 373202 (script polls, t=40..206 s) | false | not sampled | not sampled | not sampled | 24 |
+| 376560 (after, re-paused by the trap) | true | gone (finished, removed from the list) | 52 | none | 24 |
+
+22692 game ticks ran at 100 FPS in about 250 s. Vitals at every poll: 24 alive, warning_count 0, hunger and
+thirst fine; same after. Fort left PAUSED, fps 100, tripwire re-armed on defaults. The chain
+validated, job with `order_id=2` at a workshop, items rising (14 to 52 DRINK) is therefore observed
+at its two ends and by the finished order; the intermediate `amount_left` was not sampled, so the exact
+tick of each brew is not recorded.
