@@ -55,7 +55,8 @@ def test_the_real_policy_yaml_loads_cleanly():
     assert "tripwire" in policy.wake_reasons
     assert policy.reason("tripwire").clock == PAUSED
     assert policy.reason("tripwire").wakes == ("overseer",)
-    assert policy.reason("routine_review").wakes == ("architect", "quartermaster")
+    assert policy.reason("routine_review").wakes == ("quartermaster",)
+    assert policy.routine_review_interval_game_days == 84  # one season
 
 
 def test_load_policy_refuses_a_bad_clock_level(tmp_path):

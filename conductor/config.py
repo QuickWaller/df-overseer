@@ -16,10 +16,11 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Dict, Mapping, Optional
 
-#: The four roles this MVP roster runs (docs/AGENT-LOOP.md §4). The
+#: The roles this roster runs (docs/AGENT-LOOP.md §4, plus the Planner from
+#: handoffs/2026-10-07-planner-p1b.md, never woken until `plan.enabled`). The
 #: conductor itself is a fifth entry in agents/ROSTER.yaml but is never
 #: launched by conductor/runner.py -- it is this service.
-ROLES = ("architect", "quartermaster", "consultant", "overseer")
+ROLES = ("planner", "architect", "quartermaster", "consultant", "overseer")
 
 #: docs/AGENT-LOOP.md §4: "Models: DeepSeek for every role." Overridable
 #: per role by MCP_ROLE token env below matching, kept as the honest

@@ -178,6 +178,62 @@ class ExecutionPolicy:
 
 
 @dataclass(frozen=True)
+class ShortfallWatchPolicy:
+    """The plan shortfall watch (conductor/plan_watch.py). Ships OFF
+    (`enabled: false`, user's call 2026-10-07, planner open question 3) so the
+    Planner's first version can be read before anything it says wakes an owner.
+    Ticks are raw game ticks."""
+    enabled: bool = False
+    #: First renotify interval; it doubles per consecutive renotify with no
+    #: change in position, capped at `renotify_cap_ticks` (one season).
+    renotify_ticks: int = 12000
+    renotify_cap_ticks: int = 100800
+    #: Owner wakes per target per plan version while the position never moves
+    #: (the opening wake counts); then the target is `stalled`, stops waking its
+    #: owner, and wakes the Planner once.
+    stall_after: int = 3
+    #: In-flight plan work allowed per owner when `plan.status` names no
+    #: ceiling for it (mirrors dfqueue/plan_policy.yaml `in_flight_per_owner`).
+    owner_ceiling: int = 2
+    #: Per signal family (the part before the first dot), the proposal types
+    #: that serve a target; an owner whose family types are all frozen is not
+    #: woken (a frozen group takes no proposals). Data, so a new family is
+    #: one entry. Mirrors dfqueue/plan_policy.yaml `family_serving_types`.
+    serving_types: Mapping = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
+class PlanPolicy:
+    """The Planner's conductor-side wiring (handoffs/2026-10-07-planner-p1b.md),
+    its own top-level block `plan:` in policy.yaml."""
+    #: Master switch for everything that needs the Planner role: the
+    #: `plan.status` read each cycle, the bootstrap, review and ruling wakes
+    #: and the shortfall watch (itself behind `shortfall_watch.enabled`). Off
+    #: until the supervised first plan (the enable commit flips it).
+    enabled: bool = False
+    #: The season length in game ticks (a DF season is 100,800), for the
+    #: computed season index. Must match dfqueue/plan_policy.yaml `season_ticks`.
+    season_ticks: int = 100800
+    #: Compute the season index from the tick and raise `season_change` (the
+    #: Quartermaster's wake) when it changes. Independent of `enabled`: it needs
+    #: only the game tick, not the Planner.
+    season_wake: bool = True
+    #: Retry interval for a Planner wake that did not resolve its cause (no
+    #: plan yet, a review not done, an accepted plan_change not cited): it
+    #: doubles per wake, capped at `renotify_cap_ticks`.
+    renotify_ticks: int = 12000
+    renotify_cap_ticks: int = 100800
+    #: No active plan: after this many wakes that left no plan, tell the
+    #: operator with the last refusal text instead of waking again.
+    bootstrap_escalate_after: int = 3
+    #: Wakes for an owed season review, and for one accepted plan_change, before
+    #: each is left alone (the next season or version re-arms it).
+    review_max_wakes: int = 3
+    awaiting_max_wakes: int = 3
+    shortfall: ShortfallWatchPolicy = field(default_factory=ShortfallWatchPolicy)
+
+
+@dataclass(frozen=True)
 class Policy:
     base_fps: int
     think_fps: int
@@ -224,6 +280,8 @@ class Policy:
     tripwire_repeat_window_ticks: int = 4800
     #: The execute phase (docs/CONDUCTOR-EXECUTION.md 4.5, 5).
     execution: ExecutionPolicy = field(default_factory=ExecutionPolicy)
+    #: The Planner's wiring (policy.yaml `plan`).
+    plan: PlanPolicy = field(default_factory=PlanPolicy)
 
     def reason(self, name: str) -> WakeReasonPolicy:
         try:
@@ -341,7 +399,7 @@ def _load_execution(raw, path: Path) -> ExecutionPolicy:
 
 
 #: Roles a tripwire owner may name (the roster; the Overseer is implicit).
-_OWNER_ROLES = ("architect", "quartermaster", "consultant", "overseer")
+_OWNER_ROLES = ("architect", "quartermaster", "consultant", "overseer", "planner")
 
 
 def _load_tripwire_owners(raw, path: Path) -> Dict[str, Tuple[str, ...]]:
@@ -375,6 +433,60 @@ def _load_tripwire_repeat(raw, path: Path) -> Tuple[int, int]:
             raise PolicyError(f"{path}: tripwire_repeat.{key} must be a positive integer")
         out.append(v)
     return out[0], out[1]
+
+
+def _pos_int(raw: Mapping, key: str, default: int, where: str) -> int:
+    v = raw.get(key, default)
+    if isinstance(v, bool) or not isinstance(v, int) or v < 1:
+        raise PolicyError(f"{where}.{key} must be a positive integer")
+    return v
+
+
+def _flag(raw: Mapping, key: str, default: bool, where: str) -> bool:
+    v = raw.get(key, default)
+    if not isinstance(v, bool):
+        raise PolicyError(f"{where}.{key} must be true or false")
+    return v
+
+
+def _load_plan(raw, path: Path) -> PlanPolicy:
+    """The `plan:` block. Absent means everything off (a policy file that
+    predates the Planner loads unchanged)."""
+    if raw is None:
+        return PlanPolicy()
+    where = f"{path}: plan"
+    if not isinstance(raw, dict):
+        raise PolicyError(f"{where} must be a mapping")
+    sraw = raw.get("shortfall_watch") or {}
+    if not isinstance(sraw, dict):
+        raise PolicyError(f"{where}.shortfall_watch must be a mapping")
+    swhere = f"{where}.shortfall_watch"
+    types = sraw.get("serving_types") or {}
+    if not isinstance(types, dict) or not all(
+        isinstance(v, list) and all(isinstance(t, str) for t in v) for v in types.values()
+    ):
+        raise PolicyError(f"{swhere}.serving_types must map a signal family to a list of proposal types")
+    base = ShortfallWatchPolicy()
+    shortfall = ShortfallWatchPolicy(
+        enabled=_flag(sraw, "enabled", base.enabled, swhere),
+        renotify_ticks=_pos_int(sraw, "renotify_ticks", base.renotify_ticks, swhere),
+        renotify_cap_ticks=_pos_int(sraw, "renotify_cap_ticks", base.renotify_cap_ticks, swhere),
+        stall_after=_pos_int(sraw, "stall_after", base.stall_after, swhere),
+        owner_ceiling=_pos_int(sraw, "owner_ceiling", base.owner_ceiling, swhere),
+        serving_types={str(k): tuple(v) for k, v in types.items()},
+    )
+    pb = PlanPolicy()
+    return PlanPolicy(
+        enabled=_flag(raw, "enabled", pb.enabled, where),
+        season_ticks=_pos_int(raw, "season_ticks", pb.season_ticks, where),
+        season_wake=_flag(raw, "season_wake", pb.season_wake, where),
+        renotify_ticks=_pos_int(raw, "renotify_ticks", pb.renotify_ticks, where),
+        renotify_cap_ticks=_pos_int(raw, "renotify_cap_ticks", pb.renotify_cap_ticks, where),
+        bootstrap_escalate_after=_pos_int(raw, "bootstrap_escalate_after", pb.bootstrap_escalate_after, where),
+        review_max_wakes=_pos_int(raw, "review_max_wakes", pb.review_max_wakes, where),
+        awaiting_max_wakes=_pos_int(raw, "awaiting_max_wakes", pb.awaiting_max_wakes, where),
+        shortfall=shortfall,
+    )
 
 
 def load_policy(path: "Path | str" = DEFAULT_POLICY_PATH) -> Policy:
@@ -445,6 +557,7 @@ def load_policy(path: "Path | str" = DEFAULT_POLICY_PATH) -> Policy:
     tripwire_owners = _load_tripwire_owners(doc.get("tripwire_owners"), path)
     repeat_limit, repeat_window = _load_tripwire_repeat(doc.get("tripwire_repeat"), path)
     execution = _load_execution(doc.get("execution"), path)
+    plan = _load_plan(doc.get("plan"), path)
 
     return Policy(
         tripwire_owners=tripwire_owners,
@@ -452,6 +565,7 @@ def load_policy(path: "Path | str" = DEFAULT_POLICY_PATH) -> Policy:
         tripwire_repeat_window_ticks=repeat_window,
         lane_triggers=lane_triggers,
         execution=execution,
+        plan=plan,
         threshold_alerts=tuple(alerts),
         base_fps=int(_require(doc, "base_fps", path)),
         think_fps=int(_require(doc, "think_fps", path)),

@@ -1549,6 +1549,66 @@ local function resolve_valid_filter(s)
   return nil, "VALID_FILTER must be '', not_applicable, met, not_met or cannot_tell"
 end
 
+-- Furnishing tally for the summary (handoffs/2026-10-07-planner-p1b.md, the
+-- fort plan's `zones."KIND".furnished` and `.furniture."F"` signals). Read from
+-- the game, generic per kind: the defining furniture of a kind is its
+-- ZONE_POLICY furniture_kinds (data above), and every building type found
+-- inside a zone is counted by its df.building_type name. Only COMPLETE
+-- buildings count (flags.exists), as the contents read does.
+--   furnished_by_kind[TOKEN]: zones of the kind holding every defining
+--     furniture kind (complete). NULL for a kind with no defining furniture
+--     (furnished is meaningless there), so a signal reads it as unknown.
+--   furniture_counts_by_kind[TOKEN][F]: complete buildings of type F inside
+--     zones of the kind (an object, empty when the kind has zones with none).
+--     A kind with no zone has no key (the signal reads 0).
+-- A zone whose contents could not be read (too big for the contents bound, a
+-- failed tile lookup) makes its kind's furnished AND furniture entries NULL
+-- plus a read_failures line: an undercount must never read as a shortfall.
+-- The reads are each zone's own footprint, bounded by MAX_CONTENTS_TILES, so
+-- this runs only for the unfiltered summary, never a filtered list.
+local function furnishing_tally(zv, by_type, read_failures)
+  local furnished, furniture, unreadable = {}, {}, {}
+  for _, k in pairs(by_type) do
+    local p = policy_for(k)
+    furnished[k.token] = p.furniture_kinds and 0 or NULL
+  end
+  for i = 0, math.min(#zv, MAX_ZONE_SCAN) - 1 do
+    local z = zv[i]
+    local k = by_type[z.type]
+    local token = k and k.token or ("unknown_type_" .. tostring(z.type))
+    local ok_r, rep, rerr = pcall(zone_furniture_report, z)
+    if not ok_r then rerr = rep; rep = nil end
+    if not rep or (rep.read_failures and #rep.read_failures > 0) then
+      unreadable[token] = true
+      read_failures[#read_failures + 1] = "zone " .. tostring(z.id) .. ": furnishing read failed: "
+        .. tostring(rerr or (rep and rep.read_failures[1]))
+    else
+      local counts = furniture[token]
+      if not counts then counts = empty_object(); furniture[token] = counts end
+      local present = {}
+      for _, r in ipairs(rep.buildings) do
+        if r.exists == true and type(r.kind) == "string" then
+          counts[r.kind] = (counts[r.kind] or 0) + 1
+          present[r.kind] = true
+        end
+      end
+      local p = k and policy_for(k) or {}
+      if p.furniture_kinds then
+        local all = true
+        for _, name in ipairs(p.furniture_kinds) do
+          if not present[name] then all = false; break end
+        end
+        if all and furnished[token] ~= NULL then furnished[token] = furnished[token] + 1 end
+      end
+    end
+  end
+  for token in pairs(unreadable) do
+    furnished[token] = NULL
+    furniture[token] = NULL
+  end
+  return furnished, furniture
+end
+
 -- Read-only. Composable filters (each "" means no filter); an unfiltered
 -- call (every filter "") summarises rather than listing every zone -- see
 -- the header. A zone's own id is its identity (never a coordinate).
@@ -1669,6 +1729,7 @@ function list_zones(kind_filter, owner_filter, valid_filter, near, radius_tiles)
   }
   if not any_filter then
     result.summary = true
+    result.furnished_by_kind, result.furniture_counts_by_kind = furnishing_tally(zv, by_type, read_failures)
     result.needs_attention = needs_attention
     result.needs_attention_note = "Zones whose room value reads not_met/cannot_tell, or whose "
       .. "owner-capable kind reads unowned/cannot_tell. Every other zone in this fort's inventory "

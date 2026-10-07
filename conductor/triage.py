@@ -33,6 +33,13 @@ from conductor.policy import FULL_SPEED, Policy, clock_for_reason, most_urgent
 ADVISORS: Tuple[str, ...] = ("architect", "quartermaster")
 CONSULTANT = "consultant"
 OVERSEER = "overseer"
+#: The Planner runs FIRST, so a new plan version is in place before any other
+#: role is briefed (handoffs/2026-10-07-planner-p1b.md). It is not an advisor
+#: in the lane sense (it has no diff cursor and is woken only by plan wakes),
+#: but it files proposals (`plan_change`), so it is a PROPOSER: its proposals
+#: are attributed and its asks re-read like an advisor's.
+PLANNER = "planner"
+PROPOSERS: Tuple[str, ...] = (PLANNER, *ADVISORS)
 
 
 @dataclass(frozen=True)
@@ -150,6 +157,19 @@ class TriageResult:
             if role in wake.roles:
                 return wake
         return None
+
+    def merged_wake_for(self, role: str) -> Optional[Wake]:
+        """`wake_for`, but when several wakes name `role` the detail carries
+        every one (`reason: detail`, the first reason leading). A role woken for
+        a season review AND an accepted plan_change must hear about both: the
+        briefing carries one wake only, and the others would be silently
+        consumed."""
+        mine = [w for w in self.wakes if role in w.roles]
+        if len(mine) <= 1:
+            return mine[0] if mine else None
+        first = mine[0]
+        detail = " | ".join(f"{w.reason}: {w.detail}" for w in mine)
+        return Wake(first.reason, detail, first.roles, most_urgent(w.clock for w in mine))
 
 
 #: The subset of docs/AGENT-ARCHITECTURE.md §4's closed wake-event
@@ -294,7 +314,7 @@ def triage(signals: Signals, policy: Policy, *, base_fps: Optional[int] = None) 
         for role in wake.roles:
             if role and role not in roles_to_wake:
                 roles_to_wake.append(role)
-    ordered = tuple(r for r in (*ADVISORS, CONSULTANT, OVERSEER) if r in roles_to_wake)
+    ordered = tuple(r for r in (PLANNER, *ADVISORS, CONSULTANT, OVERSEER) if r in roles_to_wake)
     # An addressee the conductor has no fixed slot for runs after the
     # Consultant and before the Overseer, never silently dropped.
     extras = tuple(r for r in roles_to_wake if r not in ordered)

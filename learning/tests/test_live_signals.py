@@ -510,3 +510,15 @@ def test_furnished_and_furniture_read_their_fields_or_are_unresolvable_until_the
     assert read(parse('zones."DiningHall".furniture."Chair"'), full) == 4
     assert read(parse('zones."DiningHall".furniture."Table"'), full) == 0
     assert read(parse('zones."Office".furniture."Chair"'), full) == 0
+
+
+def test_a_null_furnishing_entry_is_unresolvable_never_zero():
+    """zone.list's null (a kind with no defining furniture, or a zone that
+    could not be read) must not read as a count."""
+    s = _zones({
+        "counts_by_kind": {"Bedroom": 9},
+        "furnished_by_kind": {"Bedroom": None, "MeetingHall": None},
+        "furniture_counts_by_kind": {"Bedroom": None},
+    })
+    assert read(parse('zones."Bedroom".furnished'), s) is UNRESOLVABLE
+    assert read(parse('zones."Bedroom".furniture."Bed"'), s) is UNRESOLVABLE

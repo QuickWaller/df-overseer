@@ -226,7 +226,9 @@ async def test_a_never_reviewed_fort_triggers_a_routine_review_on_its_first_cycl
     immediately, per conductor/cycle.py's own _game_days_since."""
     deps = _deps(tmp_path, just_reviewed=False)
     result = await run_cycle(1, deps)
-    assert result.roles_woken == ("architect", "quartermaster")
+    # The Architect's 7-day routine wake was retired (planner P1b, user's call
+    # 2026-10-07): only the Quartermaster's, now at season length, remains.
+    assert result.roles_woken == ("quartermaster",)
 
 
 # ---------------------------------------------------------------------------

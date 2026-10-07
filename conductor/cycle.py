@@ -75,8 +75,12 @@ from conductor.pause_watch import (
     finish_after_overseer, load_pause_policy, read_verdict_after, read_verdict_baseline, run_pause_watch,
 )
 from conductor.policy import FULL_SPEED, PAUSED, Policy
+from conductor.plan_watch import (
+    STATUS_TOOL as PLAN_STATUS_TOOL, PlanWatchResult, PlanWatchState, PlanWatchStore, SeasonEdge,
+    advance_season, evaluate as evaluate_plan, last_refusal,
+)
 from conductor.runner import RoleRunner, RunResult
-from conductor.triage import ADVISORS, CONSULTANT, OVERSEER, Signals, Wake, triage
+from conductor.triage import ADVISORS, CONSULTANT, OVERSEER, PLANNER, PROPOSERS, LaneWake, Signals, Wake, triage
 from conductor.tripwire import (
     TripwireStateError, TripwireStore, note_latch, owners_for, repeat_count,
 )
@@ -380,6 +384,11 @@ class CycleResult:
     #: The execute phase's report (`conductor.execute.ExecuteReport.as_dict()`),
     #: None when it did not run or was not attempted (dry run).
     execute: Optional[Dict[str, Any]] = None
+    #: The Planner watch's pass this cycle (`conductor/plan_watch.py`): the
+    #: season cursor, the plan wakes it raised, anything for the operator, and a
+    #: standing alert while a bootstrap has been given up on. None when it did
+    #: not run (unreadable state, a tripwire or watchdog cycle).
+    plan_watch: Optional[Dict[str, Any]] = None
 
 
 #: Fix 3 (`handoffs/2026-09-22-loop-conductor-fixes.md`): the queue tool
@@ -756,6 +765,20 @@ async def _run_cycle(cycle_index: int, deps: CycleDeps, hold: HoldState) -> Cycl
         if job_watch.any_due and not stuck_roles:
             LOG.info("cycle %s: due stuck job(s) belong to no role's lane; no wake", cycle_index)
 
+    # The Planner's side: the computed season cursor (which also gives the
+    # Quartermaster's `season_change` wake a real trigger) and, once the Planner
+    # is enabled, bootstrap, review, ruling and shortfall wakes from `plan.status`.
+    early_routing: Optional[Mapping[str, Any]] = None
+    early_routing_read = False
+    if deps.policy.plan.enabled and deps.policy.plan.shortfall.enabled:
+        early_routing_read = True
+        early_routing = await _read_routing(call, cycle_index)
+    plan_state, season_edge, plan_result = await _plan_watch(
+        deps, call, game_tick, cycle_index, hold, (early_routing or {}).get("frozen_types"),
+    )
+    plan_watch_dict = _plan_watch_dict(plan_state, season_edge, plan_result)
+    lane_wakes = (*lane_wakes, *(LaneWake(w.reason, w.detail, (w.role,)) for w in plan_result.wakes))
+
     signals = Signals(
         vital_nearing_threshold=_vital_nearing(vitals),
         vital_ticks_to_consequence=None,  # see module docstring: vitals.summary carries no timer
@@ -765,7 +788,9 @@ async def _run_cycle(cycle_index: int, deps: CycleDeps, hold: HoldState) -> Cycl
         stock_below_target=event_hits.get("stock_below_target", False),
         migrant_wave=event_hits.get("migrant_wave", False),
         caravan_present=event_hits.get("caravan_present", False),
-        season_change=event_hits.get("season_change", False),
+        season_change=event_hits.get("season_change", False) or bool(
+            season_edge is not None and season_edge.changed and deps.policy.plan.season_wake
+        ),
         hostile_seen_unreachable=False,  # gap 2, see module docstring (documented, not fixable here)
         stalled_order=bool(order_watch.stalled_ids),
         stalled_order_ids=order_watch.stalled_ids,
@@ -811,8 +836,8 @@ async def _run_cycle(cycle_index: int, deps: CycleDeps, hold: HoldState) -> Cycl
     extra_wakes: Dict[str, Wake] = {}
     queue_refreshed = False
     known_ids: Set[str] = set(pending_ids) | set(lane_state.proposers)
-    routing: Optional[Mapping[str, Any]] = None
-    routing_read = False
+    routing: Optional[Mapping[str, Any]] = early_routing
+    routing_read = early_routing_read
     idx = 0
     while True:
         # Advisors have run; anything they filed (an ask above all) is not in
@@ -823,7 +848,7 @@ async def _run_cycle(cycle_index: int, deps: CycleDeps, hold: HoldState) -> Cycl
         next_role = roles_to_run[idx] if idx < len(roles_to_run) else None
         if (
             not queue_refreshed and not deps.dry_run and deps.policy.consultant_rewake_after_advisors
-            and next_role not in ADVISORS and any(r.role in ADVISORS for r in role_runs)
+            and next_role not in PROPOSERS and any(r.role in PROPOSERS for r in role_runs)
         ):
             queue_refreshed = True
             try:
@@ -855,7 +880,11 @@ async def _run_cycle(cycle_index: int, deps: CycleDeps, hold: HoldState) -> Cycl
         role = roles_to_run[idx]
         idx += 1
 
-        wake = extra_wakes.get(role) or triage_result.wake_for(role)
+        # The Planner may be woken for several reasons at once (a review and an
+        # accepted plan_change): its briefing carries all of them.
+        wake = extra_wakes.get(role) or (
+            triage_result.merged_wake_for(role) if role == PLANNER else triage_result.wake_for(role)
+        )
         # Which proposal types the conductor runs or has frozen (stage 2D): one
         # cheap read, only when a role that needs it is about to be briefed.
         if not routing_read and not deps.dry_run and role in (*ADVISORS, OVERSEER):
@@ -899,7 +928,7 @@ async def _run_cycle(cycle_index: int, deps: CycleDeps, hold: HoldState) -> Cycl
         # Learn who proposed what: a pending proposal id that appeared during an
         # advisor's run is that advisor's (the conductor cannot read an author).
         # A completed run also serves whatever lane wakes were owed to the role.
-        if deps.policy.lane_triggers and role in ADVISORS:
+        if deps.policy.lane_triggers and role in PROPOSERS:
             try:
                 after = await call("queue.overview", {})
                 known_ids = lanes.attribute_new_proposals(
@@ -913,6 +942,15 @@ async def _run_cycle(cycle_index: int, deps: CycleDeps, hold: HoldState) -> Cycl
                 lane_store.save(lane_state)
             except Exception:  # noqa: BLE001
                 LOG.exception("cycle %s: could not save lane state", cycle_index)
+
+        # A bootstrap wake that left no plan: keep the refusal text for the
+        # operator alert if the attempts run out (conductor/plan_watch.py).
+        if role == PLANNER and plan_state is not None and wake is not None and "plan_bootstrap" in wake.reason + wake.detail:
+            plan_state.last_refusal = last_refusal(run_result)
+            try:
+                _plan_store(deps).save(plan_state)
+            except Exception:  # noqa: BLE001
+                LOG.exception("cycle %s: could not save the plan watch state", cycle_index)
 
         # Only a run that completed consumes its diff window and counts as
         # having performed a routine review.
@@ -958,6 +996,7 @@ async def _run_cycle(cycle_index: int, deps: CycleDeps, hold: HoldState) -> Cycl
         escalated=ordinary_escalated,
         unexecuted=unexecuted, archived_path=None, dry_run=deps.dry_run,
         pause_watch=pause_watch_dict,
+        plan_watch=plan_watch_dict,
         execute=execute_report.as_dict() if execute_report is not None else None,
         plan=(
             {
@@ -1240,6 +1279,67 @@ def _job_store(deps: "CycleDeps") -> JobWatchStore:
     return JobWatchStore(deps.cursor_store.path.with_name("job_watch.json"))
 
 
+def _plan_store(deps: "CycleDeps") -> PlanWatchStore:
+    return PlanWatchStore(deps.cursor_store.path.with_name("plan_watch.json"))
+
+
+async def _plan_watch(
+    deps: "CycleDeps", call: Callable, game_tick: Optional[int], cycle_index: int, hold: HoldState,
+    frozen_types: Optional[Sequence[str]],
+) -> Tuple[Optional[PlanWatchState], Optional[SeasonEdge], PlanWatchResult]:
+    """The Planner's conductor side (conductor/plan_watch.py): advance the
+    season cursor and, when the Planner is enabled, read `plan.status` once and
+    fold it in. Total by design, like the other watches: an unreadable state
+    file, an undeployed tool or a tool error logs, wakes nobody and leaves the
+    state as it was (a failed read never reads as "no plan" or "no shortfall").
+    The state is saved unless this is a dry run."""
+    plan = deps.policy.plan
+    result = PlanWatchResult()
+    if not (plan.season_wake or plan.enabled):
+        return None, None, result
+    store = _plan_store(deps)
+    try:
+        state = store.load()
+    except Exception:  # noqa: BLE001 -- a corrupt file must not stop the cycle or re-arm every backoff
+        LOG.exception("cycle %s: the plan watch state is unreadable; no plan wakes this cycle", cycle_index)
+        return None, None, result
+    edge = advance_season(state, game_tick, plan.season_ticks)
+    if plan.enabled:
+        status: Optional[Mapping[str, Any]] = None
+        try:
+            raw = await call(PLAN_STATUS_TOOL, {})
+            status = raw if isinstance(raw, Mapping) else None
+        except Exception as exc:  # noqa: BLE001 -- total, see docstring
+            LOG.warning("cycle %s: %s failed; no plan wakes this cycle: %s", cycle_index, PLAN_STATUS_TOOL, exc)
+        result = evaluate_plan(
+            status, game_tick, plan, state, edge, held=hold.held, frozen_types=frozen_types,
+        )
+        for alert in result.alerts:
+            LOG.critical("PLAN: %s", alert)
+    if not deps.dry_run:
+        try:
+            store.save(state)
+        except Exception:  # noqa: BLE001
+            LOG.exception("cycle %s: could not save the plan watch state", cycle_index)
+    return state, edge, result
+
+
+def _plan_watch_dict(
+    state: Optional[PlanWatchState], edge: Optional[SeasonEdge], result: PlanWatchResult,
+) -> Optional[Dict[str, Any]]:
+    if state is None:
+        return None
+    out: Dict[str, Any] = result.as_dict()
+    if edge is not None:
+        out["season"] = {"index": edge.index, "changed": edge.changed, "first": edge.first, "reload": edge.reload}
+    if state.bootstrap_escalated:
+        out["standing_alert"] = (
+            f"no fort plan after {state.bootstrap.wakes} Planner wakes; "
+            f"last refusal: {state.last_refusal or 'none recorded'}"
+        )
+    return out
+
+
 async def _ore_watch(deps: "CycleDeps", call: Callable, cycle_index: int) -> Optional[OreRead]:
     """Poll `blueprint.sites` for exposed ore (conductor/ore_watch.py). Total by
     design, like the job watch: an undeployed allowlist entry or a tool error
@@ -1432,6 +1532,7 @@ def _archive(
         "tripwire": result.tripwire,
         "escalated": result.escalated,
         "pause_watch": result.pause_watch,
+        "plan_watch": result.plan_watch,
         "execute": result.execute,
         "unexecuted_proposal_ids": [u.get("proposal", {}).get("id") for u in result.unexecuted],
     }
