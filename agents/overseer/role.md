@@ -69,6 +69,13 @@
 
 ## Does NOT own
 
+- **The fort plan.** The Planner owns it as versioned data and files a new
+  version on its own say-so; you never rule on a version. The one plan thing
+  you rule on is a `plan_change` proposal, the Planner's request to revise the
+  plan mid-season. It is **ruling-only**: accept or reject it and stop. Do not
+  open a project, run `queue.project` or record `queue.executed` for it; the
+  Planner's next version cites your ruling and closes it. Proposals that
+  carry `serves` are ordinary action proposals, ruled as always.
 - **Domain analysis.** That is what advisors are for. Do not re-derive an
   advisor's findings; arbitrate them.
 - **Re-reading cited facts.** Proposers cite the facts they rest on and the

@@ -156,10 +156,12 @@ a row per zone, and all three are INTEGER.
 - `zones."KIND".furniture."F"` -- buildings of kind F inside zones of the kind:
   `furniture_counts_by_kind[KIND][F]`.
 
-**`furnished` and `furniture` name fields `zone.list` does not carry yet** (the
-Lua read is a separate, later change; this stream touched no Lua). Until it
-does, those two read `UNRESOLVABLE`, which a target reports as `unresolved`,
-never as a shortfall: an honest "cannot tell", not a wrong zero.
+`zone.list`'s summary carries `furnished_by_kind` and `furniture_counts_by_kind`
+since `handoffs/2026-10-07-planner-p1b.md`. A JSON null there (a kind with no
+defining furniture, or a zone of the kind whose contents could not be read) and
+an older `zone.list` without the fields both read `UNRESOLVABLE`, which a target
+reports as `unresolved`, never as a shortfall: an honest "cannot tell", not a
+wrong zero. A kind with no zone has no `furniture_counts_by_kind` key and reads 0.
 
 A `KIND` the game does not have reads `UNRESOLVABLE`, never 0 (design F-13):
 `read()` checks the token against `zone.list-kinds` first. A kind that cannot
@@ -428,14 +430,16 @@ def _read_zone_signal(parsed: ParsedSignal, call_tool: CallTool):
         by_kind = summary.get("furnished_by_kind")
         if not isinstance(by_kind, dict):
             return UNRESOLVABLE  # zone.list does not carry the field yet
+        if parsed.zone_kind in by_kind and not isinstance(by_kind[parsed.zone_kind], (int, float)):
+            return UNRESOLVABLE  # null: a kind with no defining furniture, or a zone that could not be read
         return by_kind.get(parsed.zone_kind, 0)
     by_kind = summary.get("furniture_counts_by_kind")
     if not isinstance(by_kind, dict):
         return UNRESOLVABLE
-    inner = by_kind.get(parsed.zone_kind)
-    if inner is None:
-        return 0
-    if not isinstance(inner, dict):
+    if parsed.zone_kind not in by_kind:
+        return 0  # a kind with no zone: no key
+    inner = by_kind[parsed.zone_kind]
+    if not isinstance(inner, dict):  # null: a zone of the kind could not be read
         return UNRESOLVABLE
     return inner.get(parsed.furniture, 0)
 

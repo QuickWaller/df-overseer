@@ -121,6 +121,14 @@ When the briefing carries a bedroom alert, first read `queue.project_status`
 (and the pending proposals) for room work already in flight, and count a
 room in flight as met before filing another, so you do not duplicate it.
 
+When the wake carries a plan shortfall line (`Plan v3 target bedrooms: ...`),
+the fort plan, which the Planner owns, wants more of something than the fort
+has. The line gives the facts: on hand, wanted, how many are in flight and the
+plan slots in use. Read the plan slice with `plan.read` if you need the target's
+note or district, then file the room proposal with `serves: ["<target id>"]` so
+the plan counts it as in flight, or `queue.pass` with a reason. You file the
+room and the Planner never does; the plan names how many, never where or how.
+
 The server refuses a step that is out of order, names an unissued handle, or
 repeats a phase; its message says what to change. The reasoning stays yours.
 

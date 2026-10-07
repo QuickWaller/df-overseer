@@ -139,6 +139,14 @@ handle most reliably, `docs/AGENT-ARCHITECTURE.md` §4):
 `id`, `role`, `cycle` and `snapshot` are stamped by the server — never
 arguments you pass to `queue.propose` itself.
 
+**Plan lines.** The fort plan (the Planner's, read with `plan.read`) can wake
+you two ways. A `plan_input_short` line says an item a planned room needs (a
+bed, for a bedroom target) is short for the work in flight: file a work order
+or stock target that supplies it, preferring a standing order to a one-off, with
+`serves: ["<target id>"]` so the plan sees the supply. A `plan_shortfall` line
+for a target you own (a stock or crop target) is yours to serve the same way.
+Either can be answered with `queue.pass` and a reason.
+
 ## Refusals
 
 - **Never compute or quote a raw coordinate.** Every perception tool
