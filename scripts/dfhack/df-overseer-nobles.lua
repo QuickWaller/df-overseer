@@ -26,9 +26,11 @@
 --   unappoint POSITION_CODE [DRY_RUN] [VERSION]
 --
 -- DRY_RUN defaults to true; only the literal word `false` writes. VERSION is
--- `minimal` (default: the monarch script's writes only) or `with_event` (also
--- writes the matching history event, as the emigration helper does). The live
--- test builds the minimal version first and reports which one the game needed.
+-- `with_event` (default: everything the game's own Nobles screen writes,
+-- including the cached indexes and the history event) or `minimal` (the same
+-- without the event). The monarch script's recipe alone (ids, no cached
+-- indexes) was found NOT to be accepted by the Work Orders screen on
+-- 2026-10-08: see evals/live/2026-10-08-manager-appointment/README.md.
 --
 -- Every refusal names its reason and is derived from the position's own data
 -- (flags.ELECTED, requires_population with flags.HAS_MET_POP_REQ, the
@@ -210,6 +212,50 @@ local function position_link(fig, e, a)
   return nil
 end
 
+-- The two cached indexes the game's own Nobles screen sets and DFHack's
+-- make-monarch does not (evals/live/2026-10-08-manager-appointment/README.md).
+-- A tool-made MANAGER that left them at -1 passed every id-based check
+-- (getNoblePositions searches by id) and the Work Orders screen still said
+-- "must assign a manager". Both are read from the game's own vectors, never
+-- assumed equal to an id, and the lookups are bounded.
+--   entity index: where the entity sits in world.entities.all
+--                 (histfig_entity_link.entity_vector_idx, "entity_cached_index")
+--   position index: where the position sits in entity.positions.own
+--                 (entity_position_assignment.position_vector_idx)
+local function entity_index(e)
+  local all = df.global.world.entities.all
+  for i = 0, math.min(#all, 100000) - 1 do
+    if all[i].id == e.id then return i end
+  end
+  return nil
+end
+
+local function position_index(e, p)
+  for i = 0, math.min(#e.positions.own, MAX_ITEMS) - 1 do
+    if e.positions.own[i].id == p.id then return i end
+  end
+  return nil
+end
+
+-- True when a POSITION add/remove history event for this figure and position
+-- exists (newest first, bounded). Informational only: older appointments
+-- predate any event and the game still works with them.
+local MAX_EVENT_SCAN = 20000
+local function find_position_event(kind, hf_id, position_id)
+  local ev_class = kind == "add" and df.history_event_add_hf_entity_linkst
+    or df.history_event_remove_hf_entity_linkst
+  local events = df.global.world.history.events
+  local n = #events
+  for i = n - 1, math.max(0, n - MAX_EVENT_SCAN), -1 do
+    local ev = events[i]
+    if ev_class:is_instance(ev) and ev.histfig == hf_id and ev.position_id == position_id
+       and ev.link_type == df.histfig_entity_link_type.POSITION then
+      return ev.id
+    end
+  end
+  return nil
+end
+
 -- Both-sides consistency for every assignment of one code. Each check is a
 -- named boolean; `consistent` is true only if every held assignment passes.
 local function verify(code)
@@ -234,6 +280,18 @@ local function verify(code)
         row.assignment_histfig2_matches = (a.histfig2 == a.histfig)
         row.figure_has_position_link = (link ~= nil)
         row.link_vector_index_matches = link ~= nil and link.assignment_vector_idx == item.idx or false
+        -- The game's cached indexes (see entity_index above). id-based checks
+        -- cannot see these; the Work Orders screen apparently can.
+        local eidx = entity_index(e)
+        local pidx = position_index(e, item.p)
+        row.link_entity_cached_index_matches = link ~= nil and eidx ~= nil and link.entity_vector_idx == eidx or false
+        row.assignment_position_cached_index_matches = pidx ~= nil and a.position_vector_idx == pidx or false
+        if link ~= nil then row.link_entity_vector_idx = link.entity_vector_idx end
+        row.assignment_position_vector_idx = a.position_vector_idx
+        row.expected_entity_vector_idx = eidx == nil and NULL or eidx
+        row.expected_position_vector_idx = pidx == nil and NULL or pidx
+        local evid = find_position_event("add", fig.id, item.p.id)
+        row.position_add_event_found = evid ~= nil   -- informational, not required
         local unit = fig.unit_id >= 0 and df.unit.find(fig.unit_id) or nil
         row.holder_unit_id = fig.unit_id >= 0 and fig.unit_id or NULL
         if not unit then
@@ -254,6 +312,8 @@ local function verify(code)
         end
         for _, k in ipairs({"assignment_histfig_is_holder", "assignment_histfig2_matches",
                             "figure_has_position_link", "link_vector_index_matches",
+                            "link_entity_cached_index_matches",
+                            "assignment_position_cached_index_matches",
                             "get_noble_positions_lists_it"}) do
           if row[k] ~= true then consistent = false end
         end
@@ -538,27 +598,44 @@ local function next_event_id()
   return id
 end
 
-local function appoint(code, unit_id, dry_arg, version)
-  local e, err = entity()
-  if not e then return nil, err end
-  version = version or "minimal"
+-- VERSION: `with_event` (default) writes everything the game's own Nobles
+-- screen writes, including the history event; `minimal` skips only the event.
+-- Both write the cached indexes (entity_vector_idx on the link and
+-- position_vector_idx on the assignment): without them the game does not
+-- treat the appointment as real (evals/live/2026-10-08-manager-appointment).
+local function check_version(version)
+  version = version or "with_event"
   if version ~= "minimal" and version ~= "with_event" then
     return nil, "VERSION must be minimal or with_event"
   end
+  return version
+end
+
+local function appoint(code, unit_id, dry_arg, version)
+  local e, err = entity()
+  if not e then return nil, err end
+  local version, verr = check_version(version)
+  if not version then return nil, verr end
   local target, terr = check_position(e, code, false)
   if not target then return nil, terr end
   local unit, fig, uerr = check_unit(unit_id)
   if not unit then return nil, uerr end
 
   local a, p = target.a, target.p
+  local eidx = entity_index(e)
+  if not eidx then return nil, "refused: the fortress entity is not in world.entities.all; cannot set its cached index" end
+  local pidx = position_index(e, p)
+  if not pidx then return nil, "refused: the position is not in the entity's own position vector; cannot set its cached index" end
   local plan = {
     position = code, position_id = p.id, assignment_id = a.id, assignment_index = target.idx,
     unit_id = unit.id, unit_name = textutil.to_utf8(dfhack.units.getReadableName(unit)), histfig_id = fig.id,
     version = version,
     would_write = {
       "assignment.histfig = " .. fig.id, "assignment.histfig2 = " .. fig.id,
+      "assignment.position_vector_idx = " .. pidx,
       "insert histfig_entity_link_positionst (entity " .. e.id .. ", assignment " .. a.id
-        .. ", vector index " .. target.idx .. ", start_year " .. df.global.cur_year .. ")",
+        .. ", assignment_vector_idx " .. target.idx .. ", entity_vector_idx " .. eidx
+        .. ", start_year " .. df.global.cur_year .. ")",
     },
   }
   if version == "with_event" then
@@ -573,17 +650,19 @@ local function appoint(code, unit_id, dry_arg, version)
   local ok, werr = pcall(function()
     fig.entity_links:insert("#", {new = df.histfig_entity_link_positionst,
       entity_id = e.id, link_strength = 100, assignment_id = a.id,
-      assignment_vector_idx = target.idx, start_year = df.global.cur_year})
+      assignment_vector_idx = target.idx, entity_vector_idx = eidx,
+      start_year = df.global.cur_year})
   end)
   if not ok then return nil, "write failed before changing the assignment: " .. tostring(werr) end
   a.histfig = fig.id
   a.histfig2 = fig.id
+  a.position_vector_idx = pidx
   if version == "with_event" then
     local eok, eerr = pcall(function()
       df.global.world.history.events:insert("#", {new = df.history_event_add_hf_entity_linkst,
         year = df.global.cur_year, seconds = df.global.cur_year_tick, id = next_event_id(),
         civ = e.id, histfig = fig.id, link_type = df.histfig_entity_link_type.POSITION,
-        position_id = p.id})
+        position_id = p.id, appointer_hfid = -1, promise_to_hfid = -1})
     end)
     plan.event_written = eok
     if not eok then plan.event_error = tostring(eerr) end
@@ -592,13 +671,16 @@ local function appoint(code, unit_id, dry_arg, version)
   return plan
 end
 
+-- Mirrors what the game leaves behind when it removes a holder: the live
+-- link becomes a former_positionst link (its cached entity index is -1, as
+-- every game-made former link has it), histfig goes to -1, histfig2 keeps the
+-- last holder and position_vector_idx stays (both read off the civ entity's
+-- own vacated assignments), plus the remove event.
 local function unappoint(code, dry_arg, version)
   local e, err = entity()
   if not e then return nil, err end
-  version = version or "minimal"
-  if version ~= "minimal" and version ~= "with_event" then
-    return nil, "VERSION must be minimal or with_event"
-  end
+  local version, verr = check_version(version)
+  if not version then return nil, verr end
   local target, terr = check_position(e, code, true)
   if not target then return nil, terr end
   local a, p = target.a, target.p
@@ -610,7 +692,7 @@ local function unappoint(code, dry_arg, version)
     holder_histfig_id = fig.id, holder_unit_id = fig.unit_id >= 0 and fig.unit_id or NULL,
     version = version,
     would_write = {
-      "assignment.histfig = -1", "assignment.histfig2 = -1",
+      "assignment.histfig = -1 (histfig2 keeps the last holder, as the game leaves it)",
       link and "replace the figure's positionst link with a former_positionst link"
         or "no positionst link found on the figure (nothing to replace)",
     },
@@ -633,7 +715,7 @@ local function unappoint(code, dry_arg, version)
     assignment_id = a.id, start_year = start_year, entity_id = e.id,
     end_year = df.global.cur_year, link_strength = 100})
   a.histfig = -1
-  a.histfig2 = -1
+  a.histfig2 = fig.id
   if version == "with_event" then
     local eok, eerr = pcall(function()
       df.global.world.history.events:insert("#", {new = df.history_event_remove_hf_entity_linkst,

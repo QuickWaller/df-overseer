@@ -4911,7 +4911,7 @@ df-overseer-nobles.lua:
   # Documented defaults (each the value the Lua script already uses when the
   # argument is omitted), used by dfmcp/tools.py to fill a slot an agent
   # skipped while naming a later optional argument by name.
-  arg_defaults: {DRY_RUN: "true", VERSION: "minimal"}
+  arg_defaults: {DRY_RUN: "true", VERSION: "with_event"}
   commands:
     list:
       lua_function: list
@@ -4944,7 +4944,13 @@ df-overseer-nobles.lua:
         Read-only consistency check for one position, from both sides: the
         assignment's holder, the holder's position link and its vector index,
         and dfhack.units.getNoblePositions. consistent is true only if every
-        check passes.
+        check passes. Since 2026-10-08 it also requires the game's cached
+        indexes (the link's entity_vector_idx equals the entity's index in
+        world.entities.all; the assignment's position_vector_idx equals the
+        position's index in positions.own): getNoblePositions searches by id
+        and cannot see them, which is how an appointment the Work Orders
+        screen rejected read as consistent. position_add_event_found is
+        informational.
       summary: "Checks that an appointment is internally consistent from both sides (the position's own holder link and the unit's own position link)."
       guide:
         arguments:
@@ -5034,12 +5040,16 @@ df-overseer-nobles.lua:
         writes. Refuses, with a named reason, an unknown code, an elected
         position, an unmet population requirement, a position already held,
         and a unit that is missing, dead, not a citizen, not an adult or has
-        no historical figure. VERSION minimal (default) writes what DFHack's
-        make-monarch writes and was sufficient live; with_event also writes the
-        matching history event and is untested. An appointment alone did not
-        start the fort's queued manager orders within three game days: the
-        Manager needs an office, and the fort has none (handoffs/2026-09-21-
-        nobles-appoint.md).
+        no historical figure. CORRECTED 2026-10-08: the original recipe
+        (DFHack's make-monarch: ids only) made an appointment that
+        nobles.verify called consistent and that the Work Orders screen did
+        not accept ("must assign a manager"). The game's own Nobles screen
+        also sets two cached indexes (the holder link's entity_vector_idx,
+        the assignment's position_vector_idx) and writes an
+        ADD_HF_ENTITY_LINK history event; appoint now writes all of them
+        (VERSION with_event, the default; minimal skips only the event)
+        (evals/live/2026-10-08-manager-appointment/README.md). The Manager
+        also needs an office (nobles.requirements).
       summary: "Appoints a citizen to a vacant noble position."
       guide:
         arguments:
@@ -5062,11 +5072,11 @@ df-overseer-nobles.lua:
               change.
           - name: "VERSION"
             required: false
-            default: "minimal"
+            default: "with_event"
             meaning: >-
-              How much the write records: minimal (the default, the two assignment fields and the
-              position link) or with_event (also the history event). Leave it out unless minimal
-              fails a nobles.verify.
+              How much the write records: with_event (the default: everything the game's own Nobles
+              screen writes, including its cached indexes and the history event) or minimal (the
+              same without the event). Leave it out.
         returns: >-
           Appointing someone does not by itself make the Manager's queued orders start working; the
           position still needs its own office and other requirements met (see nobles.requirements).
@@ -5088,6 +5098,8 @@ df-overseer-nobles.lua:
       notes: >
         Removes the holder of a held, non-elected position. Same DRY_RUN and
         VERSION semantics as appoint. Refuses a vacant or elected position.
+        Leaves what the game leaves: a former_positionst link, histfig -1,
+        histfig2 keeping the last holder, and the remove event (2026-10-08).
       summary: "Removes the holder of a noble position."
       guide:
         arguments:
@@ -5105,11 +5117,11 @@ df-overseer-nobles.lua:
               change.
           - name: "VERSION"
             required: false
-            default: "minimal"
+            default: "with_event"
             meaning: >-
-              How much the write records: minimal (the default, the two assignment fields and the
-              position link) or with_event (also the history event). Leave it out unless minimal
-              fails a nobles.verify.
+              How much the write records: with_event (the default: everything the game's own Nobles
+              screen writes, including its cached indexes and the history event) or minimal (the
+              same without the event). Leave it out.
         returns: >-
           Removes the holder of a noble position.
         before_a_real_run:

@@ -325,9 +325,10 @@ _ARG_DESCRIPTIONS: Dict[str, str] = {
         "error that lists the known ones."
     ),
     "VERSION": (
-        "How much the write records: minimal (the default, the two "
-        "assignment fields and the position link) or with_event (also the "
-        "history event). Leave it out unless minimal fails a nobles.verify."
+        "How much the write records: with_event (the default: everything the "
+        "game's own Nobles screen writes, including its cached indexes and "
+        "the history event) or minimal (the same without the event). Leave "
+        "it out."
     ),
     "DRY_RUN": (
         "true (the default) only reports what would change; only the exact "
