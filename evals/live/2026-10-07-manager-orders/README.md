@@ -10,6 +10,10 @@ All live reads were `dfhack-run` Lua and the existing `df-overseer-nobles requir
 > Follow-up: `research/2026-10-08-validated-orders-never-run.md`.
 > **2026-10-08, user: the manager's Study icon on the Nobles screen is green.** Finding 5's
 > room-value cause is ruled out.
+> **2026-10-08, ROOT CAUSE (user):** the Work Orders screen said "must assign a manager for work
+> orders" despite unit 345 holding MANAGER by our tool. The user appointed a new manager through the
+> Nobles screen and gave them the office; the message is gone. Our `nobles.appoint` writes an
+> appointment the game does not accept. See the register, 2026-10-08.
 
 ## Verdict (honest)
 
