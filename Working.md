@@ -21,9 +21,9 @@ Do not decide alone. Inputs ready: `research/2026-10-07-session-inbox-options.md
 - Own filings: `queue.my_filings` for proposers, and a "your recent filings" briefing block ON AS A TRIAL (switch: `own_filings.recent: 0` in conductor/policy.yaml); whether it stays depends on the session design.
 - Orders tool issues valid orders (material defaults from DFHack's order library; `invalid_material` flag). **Live repair done:** cancelled invalid orders 0, 1, 3, 4; created 5 blocks (rock), 6 mechanisms (rock), 7 throne (rock), 8 barrels daily while under 20 (wood); kept 2 (brew x13, user set 13). New orders not yet validated: needs running time to see whether the manager validates them (`evals/live/2026-10-07-manager-orders/README.md`: manager has never organised; separate possible cause). gotcha-0002 ("manager route stuck") is suspect: correct it once orders are seen to run.
 
-**In flight (agents):** filing hygiene (structural duplicate refusal naming the original; agents read answers to their asks; `handoffs/2026-10-07-filing-hygiene.md`); all-wake-reasons deploy; red team of the fort dossier design.
+**In flight:** filing hygiene agent (structural duplicate refusal naming the original; agents read answers to their asks; `handoffs/2026-10-07-filing-hygiene.md`); all-wake-reasons merged on main, test-and-deploy running (server, then conductor, then publisher and relay).
 
-**Designed, not built:** Planner revision 2 (`research/2026-10-07-planner-design.md`, red team done; P2+ later), Logistics role (in that design, stage L), notebook (deferred: metrics then own filings first; `research/2026-10-07-notebook-*.md`), fort dossier and crafting search (`research/2026-10-07-fort-dossier-and-crafting-search.md`, red team running; its 3 user questions wait for the red team).
+**Designed, not built:** Planner revision 2 (`research/2026-10-07-planner-design.md`, red team done; P2+ later), Logistics role (in that design, stage L), notebook (deferred: metrics then own filings first; `research/2026-10-07-notebook-*.md`), fort dossier and crafting search (`research/2026-10-07-fort-dossier-and-crafting-search.md`; red team `research/2026-10-07-fort-dossier-red-team.md`: direction holds, NOT ready to build. Blockers: DFHack's job table covers only 16 of 33 workshop kinds so the crafting graph cannot be completed from it; landmark reads lack ids, exists flag and level difference, so relations cannot key on handles. Its simpler first path: D0 restated plus a Quartermaster-only in-memory block, tested by paired runs on the same paused fort state into a scratch queue. Its user questions are held for the user).
 
 **Next, in order:**
 1. Tripwire live check (user said go ahead without watching): steps in `handoffs/2026-10-06-stage-t-tripwire.md` Result, "Live check". Its resume step also gives running time to see whether new orders 5 to 8 validate.
@@ -33,7 +33,7 @@ Do not decide alone. Inputs ready: `research/2026-10-07-session-inbox-options.md
 5. Tool cuts by evidence after about a week of transcripts (user: cut hard).
 6. Stockpile write verbs live-verified on a throwaway pile before Logistics.
 
-**Owed with the user (do not decide alone):** the inbox and session design (section below); fort dossier open questions (after its red team).
+**Owed with the user (do not decide alone):** the inbox and session design (section below); fort dossier questions: (1) may Chronicler notes reach deciding agents (designer and red team: no for now); (2) how push vs pull is decided per role (red team: paired runs on a paused fort, not epochs); (3) retire `stockpile.health`/`plan-feed` into one `logistics.gaps` (designer: yes); plus the red team's simpler first path. Also: whether to watch the first order-validation run (orders 5 to 8).
 
 ## START HERE: handover, 2026-09-30 (read this first)
 
