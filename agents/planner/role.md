@@ -84,3 +84,5 @@ versions.
 
 Every DFHack-backed tool result carries a `tool_guidance` block. Read
 `agents/CONFIDENCE-LEGEND.md` for what each level means.
+
+Before you file, read YOUR RECENT FILINGS in your briefing (or call `queue.my_filings`): do not re-file what is accepted or already in a project.

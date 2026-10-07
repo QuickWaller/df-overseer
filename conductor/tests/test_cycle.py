@@ -1085,3 +1085,35 @@ async def test_the_unexecuted_wake_is_suppressed_under_an_operator_hold(tmp_path
     result = await run_cycle(1, deps)
     assert OVERSEER not in result.roles_woken
     assert not [c for c in deps.tool_caller.calls if c[0] == "queue.cutover"]
+
+# ---------------------------------------------------------------------------
+# YOUR RECENT FILINGS (handoffs/2026-10-07-own-filings.md)
+# ---------------------------------------------------------------------------
+
+
+async def test_a_proposer_briefing_carries_its_own_recent_filings_block(tmp_path):
+    tools = _base_tools()
+    tools["diff.since"] = _diff_sequence([[{"id": 1, "type": "migrant_wave"}]])
+    tools["queue.filings_brief"] = {"filings": {
+        "architect": ["proposal-0024 room_siting accepted: Dig the bedroom | accept: Worth it."],
+    }}
+    runner = FakeRoleRunner()
+    deps = _deps(tmp_path, tools=tools, runner=runner)
+    await run_cycle(1, deps)
+
+    briefing = json.loads(next(c for c in runner.calls if c["role"] == "architect")["prompt"])
+    block = briefing["your_recent_filings"]
+    assert "proposal-0024 room_siting accepted" in block["items"]["items"][0]
+    assert "re-file" in block["note"]
+    keys = list(briefing)
+    assert keys.index("game_tick") + 1 == keys.index("your_recent_filings")
+
+
+async def test_a_failed_filings_read_omits_the_block_and_does_not_block_the_role(tmp_path):
+    tools = _base_tools()
+    tools["diff.since"] = _diff_sequence([[{"id": 1, "type": "migrant_wave"}]])
+    runner = FakeRoleRunner()
+    deps = _deps(tmp_path, tools=tools, runner=runner)  # no queue.filings_brief at all
+    await run_cycle(1, deps)
+    briefing = json.loads(next(c for c in runner.calls if c["role"] == "architect")["prompt"])
+    assert "your_recent_filings" not in briefing

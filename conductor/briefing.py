@@ -47,6 +47,13 @@ MAX_LEDGER_ROWS = 10
 MAX_STUCK_JOB_LINES = 5
 MAX_ORE_LINES = 5
 
+#: The block's standing instruction (after the stable prefix, before the ask).
+FILINGS_NOTE = (
+    "Check this before filing. Do not re-file what is accepted or already in a "
+    "project; a rejected or deferred one needs a new reason, not a repeat."
+)
+MAX_FILING_LINES = 30
+
 #: The freeze line (docs/CONDUCTOR-EXECUTION.md 6.6, 2b).
 FREEZE_LINE = (
     "Proposals of these types move to exact actions at the next deploy and wait until it. "
@@ -142,6 +149,7 @@ def build_briefing(
     alerts: Optional[Sequence[str]] = None,
     ore_exposed: Optional[Sequence[str]] = None,
     frozen_types: Optional[Sequence[str]] = None,
+    own_filings: Optional[Sequence[str]] = None,
 ) -> Dict[str, Any]:
     """One role's briefing for this cycle. `vitals` is `vitals.summary`'s own
     result, passed through as-is (already Tier 0 by construction -- see
@@ -167,6 +175,10 @@ def build_briefing(
     briefing: Dict[str, Any] = {
         "role": role,
         "game_tick": game_tick,
+        **(
+            {"your_recent_filings": {"note": FILINGS_NOTE, "items": _capped(own_filings, MAX_FILING_LINES)}}
+            if own_filings is not None else {}
+        ),
         "wake_reason": wake.reason,
         "wake_detail": wake.detail,
         "clock": wake.clock,

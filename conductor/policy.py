@@ -282,6 +282,9 @@ class Policy:
     execution: ExecutionPolicy = field(default_factory=ExecutionPolicy)
     #: The Planner's wiring (policy.yaml `plan`).
     plan: PlanPolicy = field(default_factory=PlanPolicy)
+    #: How many of a proposer's newest filings its briefing shows (policy.yaml
+    #: `own_filings.recent`); 0 turns the block off.
+    own_filings_recent: int = 5
 
     def reason(self, name: str) -> WakeReasonPolicy:
         try:
@@ -558,8 +561,15 @@ def load_policy(path: "Path | str" = DEFAULT_POLICY_PATH) -> Policy:
     repeat_limit, repeat_window = _load_tripwire_repeat(doc.get("tripwire_repeat"), path)
     execution = _load_execution(doc.get("execution"), path)
     plan = _load_plan(doc.get("plan"), path)
+    own_raw = doc.get("own_filings") or {}
+    if not isinstance(own_raw, dict):
+        raise PolicyError(f"{path}: own_filings must be a mapping")
+    own_recent = own_raw.get("recent", 5)
+    if isinstance(own_recent, bool) or not isinstance(own_recent, int) or own_recent < 0:
+        raise PolicyError(f"{path}: own_filings.recent must be a non-negative integer")
 
     return Policy(
+        own_filings_recent=own_recent,
         tripwire_owners=tripwire_owners,
         tripwire_repeat_limit=repeat_limit,
         tripwire_repeat_window_ticks=repeat_window,

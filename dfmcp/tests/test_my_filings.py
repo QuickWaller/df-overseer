@@ -160,3 +160,34 @@ def test_granted_to_every_proposing_role_and_only_them():
         if (d / "tools.yaml").exists() and 'id: "queue.my_filings"' in (d / "tools.yaml").read_text(encoding="utf-8")
     }
     assert granted == {"architect", "quartermaster", "planner"}
+
+
+class TestBriefingFilings:
+    async def test_recent_cap_but_open_work_always_shown_and_conductor_only(self, tmp_path):
+        path = tmp_path / "q.sqlite3"
+        ids = []
+        for i in range(4):
+            rec = await _file(path, summary=f"Distinct filing number {i} about different matters {i * 7}.",
+                              rationale=f"Reason {i} unrelated entirely to others {i * 13}.")
+            ids.append(rec["id"])
+        await _rule(path, ids[0], "accept", "Worth doing.")  # oldest, accepted-not-done
+        await _rule(path, ids[1], "reject", "No.")           # old, rejected: ages out
+        _t, out = await _call(queue_tools.QUEUE_FILINGS_BRIEF, "conductor", {"roles": ["architect"], "recent": 1}, path)
+        lines = out["filings"]["architect"]
+        joined = "\n".join(lines)
+        assert ids[3] in lines[0]            # newest first, within recent=1
+        assert ids[0] in joined and "accepted" in joined   # old but accepted-not-done: kept
+        assert ids[1] not in joined          # old rejected: dropped
+        with pytest.raises(queue_tools.QueueToolError, match="only the conductor"):
+            await _call(queue_tools.QUEUE_FILINGS_BRIEF, "architect", {"roles": ["architect"]}, path)
+
+    async def test_the_1007_duplicate_shows_0024_as_accepted(self, tmp_path):
+        path = tmp_path / "q.sqlite3"
+        first = await _file(path)
+        await _rule(path, first["id"], "accept", "Do it.")
+        second = await _file(path, summary="A different bedroom plan entirely, east wing.",
+                             rationale="Unrelated rationale about stairs and dust.")
+        _t, out = await _call(queue_tools.QUEUE_FILINGS_BRIEF, "conductor", {"roles": ["architect"], "recent": 5}, path)
+        lines = out["filings"]["architect"]
+        assert any(first["id"] in l and " accepted" in l for l in lines)
+        assert any(second["id"] in l and " pending" in l for l in lines)

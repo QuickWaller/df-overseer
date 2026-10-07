@@ -386,6 +386,12 @@ transcript:
   max_round_text_chars: 2000
   max_total_chars: 60000
 
+# handoffs/2026-10-07-own-filings.md: the "YOUR RECENT FILINGS" block each
+# proposing role's briefing carries. `recent` is how many of its newest filings
+# show; anything still pending, accepted, deferred or in a project always shows.
+own_filings:
+  recent: 5
+
 # The Planner's conductor-side wiring (handoffs/2026-10-07-planner-p1b.md,
 # research/2026-10-07-planner-design.md 5). Read by conductor/plan_watch.py via
 # conductor/policy.py's PlanPolicy. Ticks are raw game ticks. Starting values,

@@ -890,10 +890,14 @@ async def _run_cycle(cycle_index: int, deps: CycleDeps, hold: HoldState) -> Cycl
         if not routing_read and not deps.dry_run and role in (*ADVISORS, OVERSEER):
             routing_read = True
             routing = await _read_routing(call, cycle_index)
+        own_filings = None
+        if role in PROPOSERS and not deps.dry_run and deps.policy.own_filings_recent > 0:
+            own_filings = await _read_own_filings(call, role, deps.policy.own_filings_recent, cycle_index)
         briefing = build_briefing(
             role=role, game_tick=game_tick or 0, wake=wake, vitals=vitals,
             diff_events=events_by_role.get(role, []),
             queue_summary=_queue_summary_for(role, queue_state),
+            own_filings=own_filings,
             stuck_jobs=job_watch.lines, alerts=alerts,
             ore_exposed=_ore_lines_for(deps.policy, role, ore_read),
             frozen_types=(routing or {}).get("frozen_types") if role in ADVISORS else None,
@@ -1055,6 +1059,18 @@ async def _read_alert_state(
 
 async def _read_alerts(call: Callable, policy: Policy, vitals: Mapping[str, Any], cycle_index: int) -> List[str]:
     return (await _read_alert_state(call, policy, vitals, cycle_index))[0]
+
+
+async def _read_own_filings(call: Callable, role: str, recent: int, cycle_index: int) -> Optional[List[str]]:
+    """`queue.filings_brief` for one proposer's "YOUR RECENT FILINGS" block;
+    `None` (block omitted) if the read fails: a briefing never blocks on it."""
+    try:
+        result = await call("queue.filings_brief", {"roles": [role], "recent": recent})
+    except Exception as exc:  # noqa: BLE001 -- deliberately total
+        LOG.error("cycle %s: queue.filings_brief failed for %s: %s", cycle_index, role, exc)
+        return None
+    lines = ((result or {}).get("filings") or {}).get(role) if isinstance(result, dict) else None
+    return list(lines) if isinstance(lines, list) else None
 
 
 async def _read_pending_brief(call: Callable, cycle_index: int) -> Optional[Dict[str, Any]]:

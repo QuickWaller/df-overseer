@@ -1663,6 +1663,19 @@ def own_filings(
     return out
 
 
+#: Statuses a briefing always carries regardless of age: work the role can
+#: still duplicate (accepted or in a project but not done, deferred, pending).
+FILINGS_ALWAYS_SHOWN = ("pending", "accepted", "deferred", "in_project")
+
+
+def briefing_filings(path: str | Path, role: str, recent: int) -> list[dict]:
+    """The filings a role's briefing shows: its `recent` newest, plus every
+    one in `FILINGS_ALWAYS_SHOWN` however old. Newest first, no repeats."""
+    rows = own_filings(path, role)
+    keep = [f for i, f in enumerate(rows) if i < recent or f["status"] in FILINGS_ALWAYS_SHOWN]
+    return keep
+
+
 def apply_grades(path: str | Path, updates: list[dict]) -> None:
     """Persist a grading pass's results, all in one transaction. Each entry
     in `updates` is `{"id", "status", "actual_value", "graded_at",

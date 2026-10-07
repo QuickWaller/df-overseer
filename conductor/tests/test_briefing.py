@@ -96,3 +96,31 @@ def test_stuck_jobs_digest_is_capped_and_omitted_when_not_given():
     assert digest["count"] == 500 and digest["truncated"] is True
     assert len(digest["items"]) == MAX_STUCK_JOB_LINES
     assert all(len(s) <= 160 for s in digest["items"])
+
+
+def test_filings_block_sits_after_game_tick_and_leaves_the_prefix_byte_stable():
+    import json
+    base = dict(
+        role="architect", game_tick=5, wake=_WAKE, vitals=_VITALS,
+        diff_events=[], queue_summary={"count": 0, "proposal_ids": []},
+    )
+    plain = build_briefing(**base)
+    with_block = build_briefing(**base, own_filings=["proposal-0024 room_siting accepted: x"])
+    keys = list(with_block)
+    assert keys.index("your_recent_filings") == keys.index("game_tick") + 1
+    # everything up to and including game_tick is byte-identical with or without it
+    cut = list(plain).index("game_tick") + 1
+    assert json.dumps({k: plain[k] for k in list(plain)[:cut]}) == json.dumps({k: with_block[k] for k in keys[:cut]})
+    # and removing the block gives back exactly the plain briefing
+    assert {k: v for k, v in with_block.items() if k != "your_recent_filings"} == plain
+    assert "your_recent_filings" not in plain
+
+
+def test_filings_block_is_capped():
+    from conductor.briefing import MAX_FILING_LINES
+    b = build_briefing(
+        role="architect", game_tick=5, wake=_WAKE, vitals=_VITALS, diff_events=[],
+        queue_summary={"count": 0}, own_filings=[f"proposal-{i:04d} x" for i in range(500)],
+    )
+    assert len(b["your_recent_filings"]["items"]["items"]) == MAX_FILING_LINES
+    assert b["your_recent_filings"]["items"]["truncated"] is True
