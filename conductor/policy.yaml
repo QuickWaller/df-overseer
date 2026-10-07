@@ -419,7 +419,7 @@ plan:
   # the bootstrap, review and ruling wakes, the shortfall watch). Flipped on by
   # the enable commit, after the token, the pinned openclaw config and the
   # allowlist are in place.
-  enabled: false
+  enabled: true
   # A DF season: three 33,600-tick months. Must match
   # dfqueue/plan_policy.yaml `season_ticks`.
   season_ticks: 100800

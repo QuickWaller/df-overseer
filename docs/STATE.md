@@ -50,3 +50,5 @@ count changes. `queue.my_filings` takes `asks=true` (own asks with answer text),
 - `df-fortress.service` (df, risk=high): active=active, enabled=enabled
 - `dfmcp-server.service` (df, risk=low): active=active, enabled=enabled
 - `stream-publisher.timer` (df, risk=low): active=active, enabled=enabled
+
+Hand-edited 2026-10-08 (planner enable merge): the planner is enabled (13 with `queue.my_filings`); the conductor gained `plan.status` (37 to 38). Regenerate with `python scripts/drift_check.py --write-state` after the deploy.
