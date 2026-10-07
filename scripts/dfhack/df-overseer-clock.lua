@@ -294,6 +294,16 @@ function clock_pause()
   return { ok = true, paused = dfhack.world.ReadPauseState() }
 end
 
+-- Which open panel (if any) blocks resume, by name and focus string. The
+-- rules are data in df-overseer-screen.lua. Never throws; nil when none.
+local function read_blocking_panel()
+  local ok, screen = pcall(reqscript, 'df-overseer-screen')
+  if not ok or not screen or not screen.blocking_panel then return nil end
+  local ok2, res = pcall(screen.blocking_panel)
+  if ok2 then return res end
+  return nil
+end
+
 function clock_resume()
   local latch = read_latch()
   if latch then
@@ -304,8 +314,17 @@ function clock_resume()
       tripwire = latch,
     }
   end
+  -- An open info panel (the Work Orders panel, 2026-10-08) leaves the game
+  -- paused however many times this is called. Name it; never close it.
+  local blocking = read_blocking_panel()
   dfhack.world.SetPauseState(false)
-  return { ok = true, paused = dfhack.world.ReadPauseState() }
+  local res = { ok = true, paused = dfhack.world.ReadPauseState() }
+  if blocking then
+    res.blocking_panel = blocking
+    res.warning = "a panel is open that blocks resume: " .. tostring(blocking.focus)
+      .. "; the game may stay paused until a player closes it"
+  end
+  return res
 end
 
 -- ----------------------------------------------------------------------------
@@ -321,6 +340,9 @@ function clock_status()
     abs_tick = ok_tick and abs_tick or nil,
     armed = repeatUtil.isScheduled(TRIPWIRE_NAME),
     tripwire = read_latch(),
+    -- Added 2026-10-08: the open panel that blocks resume ({name, focus}),
+    -- or nil. Lets the conductor name why a resume did not move the tick.
+    blocking_panel = read_blocking_panel(),
     -- Added handoffs/2026-09-23-attention-tiers-ingame.md: the most recent
     -- slow-tier trip, if any -- purely informational, never blocks resume
     -- (see read_advisory's own comment).

@@ -332,6 +332,10 @@ class WatchOutcome:
     waiting_on_human: bool = False
     #: True when an operator hold stood on this pass.
     held_by_operator: bool = False
+    #: The open in-game panel that blocks resume, `{"name", "focus"}`, when a
+    #: resume did not move the tick and the game reports one (2026-10-08: the
+    #: Work Orders panel). Reported only, never closed by the conductor.
+    blocking_panel: Optional[Dict[str, Any]] = None
 
     def as_dict(self) -> Dict[str, Any]:
         return {
@@ -341,6 +345,7 @@ class WatchOutcome:
             "cause": (self.why or {}).get("cause"),
             "alert": self.alert, "waiting_on_human": self.waiting_on_human,
             "held_by_operator": self.held_by_operator,
+            "blocking_panel": self.blocking_panel,
         }
 
 
@@ -411,6 +416,13 @@ async def _dismiss(call: Callable, cap: int, outcome: WatchOutcome, state: Watch
         state.note(now, "dismissed", {"kind": c.get("kind"), "said": c.get("said")})
 
 
+def panel_note(panel: Optional[Mapping[str, Any]]) -> str:
+    """A clause naming the blocking panel for an alert, or an empty string."""
+    if not panel:
+        return ""
+    return f" (blocked by an open panel: {panel.get('name')} at {panel.get('focus')}; a player must close it)"
+
+
 async def resume_and_verify(
     call: Callable, policy: PausePolicy, sleep: Sleep, *, before_tick: Optional[int], outcome: WatchOutcome,
 ) -> bool:
@@ -423,6 +435,8 @@ async def resume_and_verify(
         outcome.actions.append({"tool": "clock.resume", "error": str(exc)})
         return False
     outcome.actions.append({"tool": "clock.resume", "result": res})
+    if isinstance(res, dict) and res.get("blocking_panel"):
+        outcome.blocking_panel = res["blocking_panel"]
     if not (isinstance(res, dict) and res.get("ok", False)):
         return False
     await sleep(policy.verify_wait_seconds)
@@ -440,6 +454,11 @@ async def resume_and_verify(
         "before": before_tick, "after": after.get("abs_tick"),
     })
     if not moved:
+        panel = after.get("blocking_panel") or outcome.blocking_panel
+        if panel:
+            outcome.blocking_panel = panel
+            LOG.error("pause watchdog: resume did not move the tick; blocked by an open panel: %s", panel)
+            outcome.actions.append({"tool": "clock.status", "blocking_panel": panel})
         try:
             await call("clock.pause", {})
             outcome.actions.append({"tool": "clock.pause", "why": "verify failed; back to the safe state"})
@@ -480,7 +499,10 @@ async def run_pause_watch(
     if not paused:
         state.end_episode()
         if frozen:
-            outcome = await _frozen_pass(call, policy, state, outcome, now, dry_run=dry_run)
+            outcome = await _frozen_pass(
+                call, policy, state, outcome, now, dry_run=dry_run,
+                blocking_panel=clock_status.get("blocking_panel"),
+            )
         if not dry_run:
             store.save(state)
         return outcome
@@ -539,7 +561,10 @@ async def run_pause_watch(
                 state.note(now, "resumed", {"causes": [r for r in (why or {}).get("recent_reports", [])]})
                 state.end_episode()
             else:
-                _alert(state, outcome, now, "a harmless-cause resume did not move the tick; staying paused")
+                _alert(
+                    state, outcome, now,
+                    "a harmless-cause resume did not move the tick; staying paused" + panel_note(outcome.blocking_panel),
+                )
                 outcome.verdict = Verdict.ALERT
         elif verdict is Verdict.ALERT:
             _alert(state, outcome, now, decision.reason)
@@ -566,6 +591,7 @@ async def run_pause_watch(
 
 async def _frozen_pass(
     call: Callable, policy: PausePolicy, state: WatchState, outcome: WatchOutcome, now: float, *, dry_run: bool,
+    blocking_panel: Optional[Mapping[str, Any]] = None,
 ) -> WatchOutcome:
     """The tick has not moved for a while though the game is not paused."""
     why = await _read_why(call, policy.cause_window_ticks)
@@ -573,6 +599,8 @@ async def _frozen_pass(
     outcome.verdict = Verdict.ALERT
     outcome.reason = "the tick has stopped advancing though the fort is not paused"
     outcome.still_paused = True
+    if blocking_panel:
+        outcome.blocking_panel = dict(blocking_panel)
     if dry_run:
         return outcome
     if why and int(why.get("popups_pending") or 0) > 0:
@@ -583,7 +611,10 @@ async def _frozen_pass(
         state.last_tick_change = now
         return outcome
     cause = (why or {}).get("cause", "unknown")
-    _alert(state, outcome, now, f"the tick is not advancing and the fort is not paused (cause: {cause})")
+    _alert(
+        state, outcome, now,
+        f"the tick is not advancing and the fort is not paused (cause: {cause})" + panel_note(blocking_panel),
+    )
     return outcome
 
 
@@ -680,7 +711,11 @@ async def finish_after_overseer(
         state.note(now, "resumed_after_overseer", None)
         state.end_episode()
     else:
-        _alert(state, outcome, now, "resuming after the Overseer's verdict did not move the tick; staying paused")
+        _alert(
+            state, outcome, now,
+            "resuming after the Overseer's verdict did not move the tick; staying paused"
+            + panel_note(outcome.blocking_panel),
+        )
         outcome.verdict = Verdict.ALERT
     store.save(state)
     return outcome

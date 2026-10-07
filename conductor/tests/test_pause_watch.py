@@ -151,7 +151,7 @@ def test_liveness_fires_once_per_interval():
 class FakeFort:
     def __init__(self, *, paused=True, popups=0, reports=(), tripwire=None, resume_moves_tick=True,
                  dismiss_works=True, viewscreen="viewscreen_dwarfmodest", why_available=True,
-                 verdict=None, verdict_store_down=False):
+                 verdict=None, verdict_store_down=False, blocking_panel=None):
         self.paused = paused
         self.tick = TICK
         self.popups = popups
@@ -162,6 +162,8 @@ class FakeFort:
         self.viewscreen = viewscreen
         self.why_available = why_available
         self.resume_calls = 0
+        #: An open in-game panel that blocks resume (2026-10-08, Work Orders): {name, focus} or None.
+        self.blocking_panel = blocking_panel
         #: The Overseer's pause.verdict, as the store would show it once the
         #: Overseer's run has written it: None (silence) or {"resume", "reason"}.
         self.verdict = verdict
@@ -178,7 +180,10 @@ class FakeFort:
         return {"latest_id": len(rows), "verdicts": rows}
 
     def status(self, _a=None):
-        return {"paused": self.paused, "fps": 100, "abs_tick": self.tick, "armed": True, "tripwire": self.tripwire}
+        out = {"paused": self.paused, "fps": 100, "abs_tick": self.tick, "armed": True, "tripwire": self.tripwire}
+        if self.blocking_panel:
+            out["blocking_panel"] = self.blocking_panel
+        return out
 
     def why(self, _a=None):
         if not self.why_available:
@@ -209,6 +214,9 @@ class FakeFort:
         self.resume_calls += 1
         if self.tripwire:
             raise MCPToolError("refused: a tripwire is latched")
+        if self.blocking_panel:
+            # The real game: SetPauseState(false) is a no-op behind the panel.
+            return {"ok": True, "paused": True, "blocking_panel": self.blocking_panel, "warning": "a panel is open"}
         self.paused = False
         return {"ok": True, "paused": False}
 
@@ -222,7 +230,7 @@ class FakeFort:
         return {"ok": True, "paused": True}
 
     async def sleep(self, _seconds):
-        if not self.paused and self.resume_moves_tick:
+        if not self.paused and self.resume_moves_tick and not self.blocking_panel:
             self.tick += 700
 
     def tool_map(self):
@@ -694,3 +702,46 @@ async def test_cycle_a_quiet_running_fort_is_untouched_by_the_watchdog(tmp_path)
     assert result.pause_watch["verdict"] == "idle"
     assert result.roles_woken == ()
     assert fort.resume_calls == 0
+
+
+# ---------------------------------------------------------------------------
+# an open panel blocks resume (2026-10-08): report it by name, never close it
+# ---------------------------------------------------------------------------
+
+PANEL = {"name": "info_panel", "focus": "dwarfmode/Info/WORK_ORDERS/Default"}
+
+
+@pytest.mark.asyncio
+async def test_a_harmless_resume_blocked_by_an_open_panel_alerts_naming_the_panel(tmp_path):
+    fort = FakeFort(reports=[_report()], blocking_panel=PANEL)
+    store = PauseWatchStore(tmp_path / "pw.json")
+    out, caller = await _run(fort, store)
+    assert out.resumed is False and out.verdict is Verdict.ALERT
+    assert out.blocking_panel == PANEL
+    assert "dwarfmode/Info/WORK_ORDERS/Default" in out.alerts[0]["reason"]
+    assert out.as_dict()["blocking_panel"] == PANEL
+    # Report only: nothing tried to close it, and the fort is left paused.
+    assert {c[0] for c in caller.calls} <= {"clock.status", "pause.why", "clock.resume", "clock.pause"}
+    assert fort.paused is True
+
+
+@pytest.mark.asyncio
+async def test_a_verdict_resume_blocked_by_an_open_panel_alerts_naming_the_panel(tmp_path):
+    fort = FakeFort(reports=[_report("MEGABEAST_ARRIVAL")], blocking_panel=PANEL)
+    store = PauseWatchStore(tmp_path / "pw.json")
+    await _run(fort, store)
+    fin = await finish_after_overseer(
+        fort.tools().call_tool, store, POLICY, escalated=False, clock_status=fort.status(), now=NOW + 1,
+        sleep=fort.sleep, verdict={"resume": True, "reason": "safe"},
+    )
+    assert fin.resumed is False and fin.blocking_panel == PANEL
+    assert "WORK_ORDERS" in fin.alerts[0]["reason"]
+
+
+@pytest.mark.asyncio
+async def test_a_frozen_unpaused_fort_behind_an_open_panel_names_it(tmp_path):
+    fort = FakeFort(paused=False, blocking_panel=PANEL)
+    store = PauseWatchStore(tmp_path / "pw.json")
+    await _run(fort, store, now=NOW)
+    out, _ = await _run(fort, store, now=NOW + POLICY.frozen_after_seconds + 1)
+    assert out.blocking_panel == PANEL and "WORK_ORDERS" in out.alerts[0]["reason"]
