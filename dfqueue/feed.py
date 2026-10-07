@@ -160,6 +160,7 @@ ROLE_DISPLAY_NAMES = {
     "architect": "Architect",
     "consultant": "Consultant",
     "quartermaster": "Quartermaster",
+    "planner": "Planner",
     "conductor": "System",
     "marshal": "Marshal",
     "chronicler": "Chronicler",

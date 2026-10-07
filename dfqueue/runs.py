@@ -22,7 +22,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Iterator, Mapping, Optional
 
-RUN_ROLES = ("architect", "overseer", "quartermaster", "consultant")
+RUN_ROLES = ("architect", "overseer", "quartermaster", "consultant", "planner")
 
 FINAL_ANSWER_MAX = 4000
 #: The conductor already caps reasoning at 12,000 characters (start and end
