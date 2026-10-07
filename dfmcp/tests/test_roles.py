@@ -53,7 +53,7 @@ def test_real_roster_loads(registry):
     assert roster.sole_writer == "overseer"
     # "conductor" added handoffs/2026-09-22-loop-clock-conductor-role.md:
     # kind: system, code never an agent -- see the system-kind tests below.
-    assert set(roster.roles) == {"overseer", "architect", "consultant", "conductor", "quartermaster"}
+    assert set(roster.roles) == {"overseer", "architect", "consultant", "conductor", "quartermaster", "planner"}
 
 
 def test_only_the_sole_writer_has_fort_mutating_write_entries(registry):
