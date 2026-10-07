@@ -596,3 +596,102 @@ def test_the_default_plan_and_policy_pass_their_own_checks():
     assert plan.check_sections(base, CTX) == []
     pol = copy.deepcopy(plan.policy())
     assert set(pol["open_sections"]) <= set(pol["sections"]) and pol["season_ticks"] == SEASON
+
+
+# ---- the mapping form of `want` -----------------------------------------------------------
+
+MAPPED = {
+    "id": "bedrooms", "signal": 'zones."Bedroom".furnished',
+    "want": {"per_alive": 1.0, "plus": 3, "min": 10, "max": 60}, "reorder_gap": 2, "owner": "architect",
+}
+
+
+def _bad(target):
+    return [f for f in plan.check_sections({"targets": [target]}, CTX) if f["code"] not in plan.INFO_CODES]
+
+
+def test_a_sound_mapping_want_raises_no_flag():
+    assert _bad(MAPPED) == []
+    assert _bad({**MAPPED, "want": {"plus": 5}}) == []
+    assert _bad({**MAPPED, "want": {"per_alive": 0.5}}) == []
+    assert _bad({**MAPPED, "want": {"per_alive": 1, "plus": -2, "min": 4}}) == []   # only plus may be negative
+
+
+def test_a_mapping_want_is_not_a_bad_threshold_where_the_old_code_flagged_it():
+    # The old check flagged any non-number want as bad_threshold.
+    assert "bad_threshold" not in _codes(plan.check_sections({"targets": [MAPPED]}, CTX))
+
+
+@pytest.mark.parametrize("want", [
+    {},                                         # neither per_alive nor plus
+    {"min": 5, "max": 9},                       # neither per_alive nor plus
+    {"per_alive": 1.0, "min": 9, "max": 5},     # min above max
+    {"per_alive": -1.0},                        # negative
+    {"plus": 1, "min": -1},                     # negative min
+    {"plus": 1, "max": -1},                     # negative max
+    {"per_alive": float("inf")},                # not finite
+    {"plus": float("nan")},
+    {"per_alive": "1"},                         # not a number
+    {"per_alive": True},                        # bool is not a number
+    {"plus": 1, "bonus": 2},                    # unknown key
+])
+def test_bad_mapping_wants_are_flagged_with_repair_text_and_go_inert(want):
+    flags = _bad({**MAPPED, "want": want})
+    th = [f for f in flags if f["code"] == "bad_threshold"]
+    assert th and all(f["id"] == "bedrooms" for f in th)
+    assert all("want:" in f["message"] for f in th)
+    assert ("targets", "bedrooms") in plan.inert_keys(flags)
+
+
+def test_per_with_a_mapping_want_is_flagged():
+    flags = _bad({**MAPPED, "per": "alive"})
+    assert any(f["code"] == "bad_field" and "per" in f["message"] for f in flags)
+
+
+def test_a_scalar_want_that_is_not_finite_is_flagged():
+    assert "bad_threshold" in _codes(plan.check_sections({"targets": [{**BEDROOMS, "want": float("inf")}]}, CTX))
+
+
+def test_a_mapping_reorder_above_max_is_flagged_and_the_text_says_absolute():
+    t = {k: v for k, v in MAPPED.items() if k != "reorder_gap"}
+    t["reorder"] = 99
+    flags = _bad(t)
+    assert any(f["code"] == "bad_threshold" and "absolute" in f["message"] for f in flags)
+    t["reorder"] = 40
+    assert _bad(t) == []
+
+
+def test_mapping_want_computes_the_clamped_level():
+    for alive, level in ((2, 10), (10, 13), (30, 33), (100, 60)):
+        pos = plan.target_position(MAPPED, 0, 0, alive)
+        assert pos["want_units"] == level, (alive, pos)
+
+
+def test_mapping_reorder_gap_compares_against_the_computed_level_in_units():
+    # 10 alive: level 13, gap 2 opens at position 11
+    assert plan.target_position(MAPPED, 11, 0, 10)["state"] == "open"
+    assert plan.target_position(MAPPED, 12, 0, 10)["state"] == "quiet"
+    assert plan.target_position(MAPPED, 12, 0, 10)["below_want"] is True
+    assert plan.target_position(MAPPED, 13, 0, 10)["below_want"] is False
+
+
+def test_mapping_reorder_is_an_absolute_level_not_scaled_by_alive():
+    t = {k: v for k, v in MAPPED.items() if k != "reorder_gap"}
+    t["reorder"] = 12
+    assert plan.target_position(t, 11, 0, 10)["state"] == "open"
+    assert plan.target_position(t, 12, 0, 10)["state"] == "quiet"
+    assert plan.target_position(t, 11, 0, 30)["state"] == "open"   # still 12, not 12 * 30
+
+
+def test_a_plus_only_want_needs_no_alive_count_but_per_alive_does():
+    flat = {**MAPPED, "want": {"plus": 5}}
+    assert plan.target_position(flat, 1, 0, None)["state"] == "open"
+    assert plan.target_position(flat, 1, 0, None)["want_units"] == 5
+    assert plan.target_position(MAPPED, 1, 0, None)["state"] == "unresolved"
+    assert plan.want_uses_alive(MAPPED) and not plan.want_uses_alive(flat)
+
+
+def test_the_scalar_forms_are_unchanged():
+    assert plan.target_position(BEDROOMS, 8, 0, 10)["want_units"] == 10
+    assert plan.want_uses_alive(BEDROOMS)
+    assert plan.target_position({"id": "w", "signal": "x", "want": 5, "reorder_gap": 1}, 2, 0, None)["want_units"] == 5

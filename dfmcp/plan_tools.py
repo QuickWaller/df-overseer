@@ -111,8 +111,17 @@ _TARGET_SCHEMA = {
         "id": {"type": "string"},
         "signal": {"type": "string", "description": 'e.g. zones."Bedroom".furnished'},
         "per": {"type": "string", "enum": list(plan.policy()["target"]["per"])},
-        "want": {"type": "number"},
-        "reorder": {"type": "number", "description": "open when position is below this level (per citizen when per is alive)"},
+        "want": {
+            "description": (
+                "a number (with per: alive it is per citizen), or a mapping {per_alive, plus, min, max}: "
+                "wanted level = clamp(per_alive * alive + plus, min, max); give at least one of per_alive or plus"
+            ),
+            "oneOf": [
+                {"type": "number"},
+                {"type": "object", "properties": {k: {"type": "number"} for k in ("per_alive", "plus", "min", "max")}},
+            ],
+        },
+        "reorder": {"type": "number", "description": "open when position is below this level (per citizen when per is alive; an absolute level with a mapping want)"},
         "reorder_gap": {"type": "number", "description": "open when this many units short of want"},
         "owner": {"type": "string", "description": "the role that serves the target"},
         "district": {"type": "string"},
@@ -415,7 +424,7 @@ async def _target_status(
         targets = plan.slice_for_role(targets, only_role)
     live = [t for t in targets if ("targets", t.get("id")) not in inert]
     alive = None
-    if any(t.get("per") == "alive" for t in live):
+    if any(plan.want_uses_alive(t) for t in live):
         vit = await _try(call_dfhack, "vitals.summary", {})
         v = vit.get("alive") if isinstance(vit, dict) else None
         alive = v if isinstance(v, (int, float)) and not isinstance(v, bool) else None

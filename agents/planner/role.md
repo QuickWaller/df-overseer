@@ -54,7 +54,15 @@ versions.
    living citizens; `want` is the level to order up to; give exactly one of
    `reorder` (open a shortfall when the position falls below this level) or
    `reorder_gap` (open when this many units short; use it for per-citizen
-   needs). `owner` is the role that serves it. Targets are in **priority
+   needs). `want` may instead be a mapping `{per_alive, plus, min, max}`: the
+   wanted level is `clamp(per_alive * alive + plus, min, max)`, every key
+   optional but at least one of `per_alive` or `plus` (numbers only, 0 or
+   more, except `plus` may be negative; `min` no more than `max`; do not also
+   set `per`). Example, bedrooms: `want: {per_alive: 1.0, plus: 2}` with
+   `reorder_gap: 2`. `reorder_gap` is always units short of the computed
+   wanted level; with the mapping form `reorder` is an **absolute level**
+   (not per citizen), at most `max` if you set one. `owner` is the role that
+   serves it. Targets are in **priority
    order**: earlier targets get an owner's in-flight budget first.
 6. **Say why.** A `reason` is required from version 2. `relies_on` may cite a
    live signal (`{signal: ...}`, which can cite a zero) or a read

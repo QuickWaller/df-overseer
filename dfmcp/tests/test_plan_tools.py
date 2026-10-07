@@ -493,3 +493,14 @@ async def test_the_planner_role_card_is_consistent_with_the_server():
     assert tools["role"] == "planner" and tools["write_authority"] == "none"
     model = yaml.safe_load((REPO / "agents" / "planner" / "model.yaml").read_text(encoding="utf-8"))
     assert model["role"] == "planner" and model["cadence"]["rounds_budget"] == 8
+
+
+async def test_status_shows_the_computed_level_for_a_mapping_want(db, fort):
+    mapped = {"id": "bedrooms", "signal": 'zones."Bedroom".furnished',
+              "want": {"per_alive": 1.0, "plus": 3, "min": 10, "max": 60}, "reorder_gap": 2, "owner": "architect"}
+    await _write(db, fort, {"base_version": 0, "set": {"targets": [mapped]}})
+    fort.bedrooms_furnished, fort.alive = 6, 10
+    st = await _plan(plan_tools.PLAN_STATUS, "conductor", {}, db, fort)
+    assert st["alive"] == 10
+    row = next(t for t in st["targets"] if t["id"] == "bedrooms")
+    assert row["want"] == mapped["want"] and row["want_units"] == 13.0 and row["state"] == "open"

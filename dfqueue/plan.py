@@ -42,8 +42,14 @@ per alive: compare against want * alive
 open (reorder_gap)  = want*alive - position >= reorder_gap
 open (reorder)      = position < reorder * alive
 ```
-A target whose signal cannot be read, or whose `per: alive` has no alive count,
-is `unresolved`, never a shortfall.
+A target whose signal cannot be read, or whose want needs an alive count that
+is missing, is `unresolved`, never a shortfall.
+
+A `want` is a number (optionally with `per: alive`, want * alive) or a mapping
+`{per_alive, plus, min, max}`: wanted level = clamp(per_alive * alive + plus,
+min, max). `reorder_gap` is always units short of the computed wanted level;
+with the mapping form `reorder` is an absolute level (no per-citizen scale),
+since the wanted level is not a constant multiple of alive.
 """
 
 from __future__ import annotations
@@ -51,6 +57,7 @@ from __future__ import annotations
 import difflib
 import hashlib
 import json
+import math
 from pathlib import Path
 from typing import Any, Iterable, Mapping, Optional
 
@@ -270,6 +277,59 @@ def check_signal(signal: Any, ctx: PlanContext, section: str, eid) -> list[dict]
     return out
 
 
+WANT_KEYS = ("per_alive", "plus", "min", "max")
+
+
+def _finite_num(v) -> bool:
+    return _is_num(v) and math.isfinite(v)
+
+
+def want_mapping_problems(want: Mapping) -> list[str]:
+    """Repair text for every fault in a mapping-form `want` (empty when it is
+    sound): unknown keys, non-finite or negative numbers, neither of
+    per_alive/plus, min above max."""
+    probs: list[str] = []
+    for k in want:
+        if k not in WANT_KEYS:
+            probs.append(f"{k}: not a want key (keys: {list(WANT_KEYS)})")
+    for k in WANT_KEYS:
+        if k not in want:
+            continue
+        v = want[k]
+        if not _finite_num(v):
+            probs.append(f"{k}: expected a finite number, got {v!r}")
+        elif v < 0 and k != "plus":
+            probs.append(f"{k}: expected a number of 0 or more (only plus may be negative), got {v!r}")
+    if "per_alive" not in want and "plus" not in want:
+        probs.append("give at least one of per_alive or plus")
+    if _finite_num(want.get("min")) and _finite_num(want.get("max")) and want["min"] > want["max"]:
+        probs.append(f"min {want['min']!r} is above max {want['max']!r}")
+    return probs
+
+
+def want_uses_alive(target: Mapping) -> bool:
+    """Whether the target's wanted level needs the alive count."""
+    w = target.get("want")
+    if isinstance(w, Mapping):
+        return "per_alive" in w
+    return target.get("per") == "alive"
+
+
+def want_units(target: Mapping, alive: Optional[float]) -> float:
+    """The computed wanted level in absolute units (the caller has checked
+    alive when `want_uses_alive`). Scalar form: want, times alive under
+    `per: alive`. Mapping form: clamp(per_alive * alive + plus, min, max)."""
+    w = target["want"]
+    if not isinstance(w, Mapping):
+        return float(w) * (float(alive) if target.get("per") == "alive" else 1.0)
+    level = float(w.get("per_alive", 0.0)) * (float(alive) if "per_alive" in w else 0.0) + float(w.get("plus", 0.0))
+    if "min" in w:
+        level = max(level, float(w["min"]))
+    if "max" in w:
+        level = min(level, float(w["max"]))
+    return level
+
+
 def check_target(entry: Mapping, index: int, ctx: PlanContext, pol: Mapping) -> list[dict]:
     eid = entry.get("id") if isinstance(entry.get("id"), str) and entry.get("id") else f"#{index}"
     out: list[dict] = []
@@ -294,8 +354,19 @@ def check_target(entry: Mapping, index: int, ctx: PlanContext, pol: Mapping) -> 
     if per is not None and per not in pol["target"]["per"]:
         out.append(_flag("targets", eid, "bad_field", f"per: expected one of {pol['target']['per']} or absent, got {per!r}"))
     want = entry.get("want")
-    if not _is_num(want) or want <= 0:
-        out.append(_flag("targets", eid, "bad_threshold", f"want: expected a number above 0, got {want!r}"))
+    mapping_form = isinstance(want, Mapping)
+    if mapping_form:
+        probs = want_mapping_problems(want)
+        for pr in probs:
+            out.append(_flag("targets", eid, "bad_threshold", f"want: {pr}"))
+        if per is not None:
+            out.append(_flag("targets", eid, "bad_field", "per: not used with a mapping want; put per_alive inside want, or drop per"))
+        want = want.get("max") if not probs and _finite_num(want.get("max")) else None
+    elif not _is_num(want) or want <= 0 or not math.isfinite(want):
+        out.append(_flag(
+            "targets", eid, "bad_threshold",
+            f"want: expected a number above 0 or a mapping {{per_alive, plus, min, max}}, got {want!r}",
+        ))
         want = None
     has_ratio, has_gap = "reorder" in entry, "reorder_gap" in entry
     if has_ratio == has_gap:
@@ -303,7 +374,7 @@ def check_target(entry: Mapping, index: int, ctx: PlanContext, pol: Mapping) -> 
     elif has_ratio:
         r = entry["reorder"]
         if not _is_num(r) or r <= 0 or (want is not None and r > want):
-            out.append(_flag("targets", eid, "bad_threshold", f"reorder: expected a number above 0 and no more than want, got {r!r}"))
+            out.append(_flag("targets", eid, "bad_threshold", f"reorder: expected a number above 0 and no more than want{' (an absolute level with a mapping want; at most its max)' if mapping_form else ''}, got {r!r}"))
     else:
         g = entry["reorder_gap"]
         if not _is_num(g) or g <= 0:
@@ -455,22 +526,25 @@ def target_position(
     `state` is `unresolved` when the signal or the alive count cannot be
     read, `open` below the reorder level (or `reorder_gap` units short),
     `quiet` otherwise; `below_want` says whether the want itself is met."""
-    per_alive = target.get("per") == "alive"
+    per_alive = want_uses_alive(target)
+    mapping_form = isinstance(target.get("want"), Mapping)
     out: dict = {"on_hand": on_hand, "in_flight": in_flight}
     if on_hand is None:
         return {**out, "state": "unresolved", "why": "signal could not be read"}
     if per_alive and (alive is None or isinstance(alive, bool) or alive <= 0):
         return {**out, "state": "unresolved", "why": "no alive count to divide by"}
-    scale = float(alive) if per_alive else 1.0
+    # A scalar `reorder` is per citizen under `per: alive`; with a mapping
+    # want it is an absolute level.
+    scale = float(alive) if (per_alive and not mapping_form) else 1.0
     position = on_hand + in_flight
-    want_units = float(target["want"]) * scale
-    short = want_units - position
-    out.update({"position": position, "want_units": want_units, "short_units": max(0.0, short)})
+    wanted = want_units(target, alive)
+    short = wanted - position
+    out.update({"position": position, "want_units": wanted, "short_units": max(0.0, short)})
     if "reorder_gap" in target:
         is_open = short >= float(target["reorder_gap"])
     else:
         is_open = position < float(target["reorder"]) * scale
-    out["below_want"] = position < want_units
+    out["below_want"] = position < wanted
     out["state"] = "open" if is_open else "quiet"
     return out
 
