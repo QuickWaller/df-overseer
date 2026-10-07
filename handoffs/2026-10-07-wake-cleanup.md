@@ -13,6 +13,18 @@ Biggest live costs: a deferred proposal re-wakes the Overseer every cycle
 (queue_pending is a level trigger), and one fact (drink 0) produced five
 wake kinds and nine Quartermaster runs.
 
+## Scope change, 2026-10-07 (orchestrator, user's direction)
+
+Build items 1, 2, 3, 6, 7 and 8 only. **Do not build items 4 and 5 (the
+notes channel and the WARNING rows as briefing notes):** briefing and inbox
+structure is undecided (`research/2026-10-07-session-inbox-options.md`).
+Where an item below says "a note, not a wake", implement it as "no wake"
+(suppressed, logged at INFO with the reason) and leave a clear seam
+(one function) where a future inbox or notes channel would hook in. Do not
+add new briefing keys. The goal is that the conductor can run unattended
+without re-waking roles every cycle on a running fort (at 100 FPS one game
+day is 12 s, so tick-based renotify fires every cycle).
+
 ## Scope, in this order, a commit per item
 
 1. `queue_pending` becomes an edge: a proposal already ruled `defer` with
