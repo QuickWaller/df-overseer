@@ -1,0 +1,32 @@
+# plans/default-v1.yaml
+#
+# The base the Planner's version 1 is composed from
+# (research/2026-10-07-planner-design.md 2.1, 2.3; handoffs/
+# 2026-10-07-planner-p1a.md). The first `plan.write` (base_version 0) takes
+# this as the active plan, applies its own `set` sections on top, and files
+# the result as version 1. An empty `set` adopts it as it stands.
+#
+# Generic by rule: kinds and signals only, no fort coordinates, no landmark
+# names. Stage P1 holds targets only. Each target's wanted level is a
+# starting guess for the Planner to revise, not game data.
+#
+# Targets are in priority order: earlier targets get an owner's in-flight
+# budget first (design F-7).
+
+targets:
+  - id: bedrooms
+    signal: 'zones."Bedroom".furnished'
+    per: alive
+    want: 1.0
+    reorder_gap: 2
+    owner: architect
+    max_in_flight: 2
+    note: "One furnished bedroom per citizen; a dormitory is acceptable overflow"
+  - id: dining_seats
+    signal: 'zones."DiningHall".furniture."Chair"'
+    per: alive
+    want: 1.0
+    reorder: 0.7
+    owner: architect
+    max_in_flight: 1
+    note: "A chair in the dining hall for most citizens"

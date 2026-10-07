@@ -45,5 +45,12 @@ floor:
 
 supersedes: office-room-v1
 
+# What one built copy adds to a fort-plan target's signal (read by
+# dfqueue/templates.py; the plan derives a target's inputs from `requires`
+# below and counts a serving site in flight from this).
+provides:
+  - signal: 'zones."Office".furnished'
+    units: 1
+
 requires:
   - chair

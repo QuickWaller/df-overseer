@@ -58,22 +58,31 @@ def _validate(raw: dict) -> dict:
             raise RoutingError(f"action_tools.yaml: group {name!r} must be a mapping")
         for key in ("types", "tools"):
             v = g.get(key)
+            # A `ruling_only` group (a type the Overseer rules and nothing
+            # executes, e.g. `plan_change`) has no tools to run.
+            if key == "tools" and g.get("ruling_only") is True and v in (None, []):
+                continue
             if not isinstance(v, list) or not v or not all(isinstance(i, str) and i for i in v):
                 raise RoutingError(f"action_tools.yaml: {name}.{key} must be a non-empty list of strings")
-        for flag in ("routed", "frozen", "coverage"):
+        for flag in ("routed", "frozen", "coverage", "ruling_only"):
             if not isinstance(g.get(flag, False), bool):
                 raise RoutingError(f"action_tools.yaml: {name}.{flag} must be a boolean")
         for t in g["types"]:
             if t in seen_types:
                 raise RoutingError(f"action_tools.yaml: type {t!r} is in {seen_types[t]!r} and {name!r}")
             seen_types[t] = name
-        for t in g["tools"]:
+        if g.get("ruling_only") and (g.get("routed") or g.get("tools")):
+            raise RoutingError(
+                f"action_tools.yaml: group {name!r} is ruling_only, so it has no tools and is not routed"
+            )
+        for t in g.get("tools") or []:
             if t in seen_tools:
                 raise RoutingError(f"action_tools.yaml: tool {t!r} is in {seen_tools[t]!r} and {name!r}")
             seen_tools[t] = name
         out[name] = {
             "types": list(g["types"]),
-            "tools": list(g["tools"]),
+            "tools": list(g.get("tools") or []),
+            "ruling_only": bool(g.get("ruling_only", False)),
             "routed": bool(g.get("routed", False)),
             "frozen": bool(g.get("frozen", False)),
             "coverage": bool(g.get("coverage", False)),
@@ -110,6 +119,18 @@ def is_routed(type_: str) -> bool:
     return g is not None and _load()["groups"][g]["routed"]
 
 
+def is_ruling_only(type_: str) -> bool:
+    """A third class beside routed and unrouted (design F-9): a type the
+    Overseer rules and nothing executes. It is never on the unexecuted list,
+    and the store closes it when the thing it authorises files."""
+    g = group_of(type_)
+    return g is not None and _load()["groups"][g]["ruling_only"]
+
+
+def ruling_only_types() -> list[str]:
+    return [t for g in _load()["groups"].values() if g["ruling_only"] for t in g["types"]]
+
+
 def is_frozen(type_: str) -> bool:
     g = group_of(type_)
     return g is not None and _load()["groups"][g]["frozen"]
@@ -143,7 +164,10 @@ def routed_tools() -> list[str]:
 def unrouted_types() -> list[str]:
     """Types in a group that is not routed yet: what the ruling ask and the
     unexecuted to-do line name (design section 3, P3-M4)."""
-    return [t for n, g in _load()["groups"].items() if not g["routed"] for t in g["types"]]
+    return [
+        t for n, g in _load()["groups"].items()
+        if not g["routed"] and not g["ruling_only"] for t in g["types"]
+    ]
 
 
 def retired() -> list[str]:

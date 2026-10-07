@@ -1,0 +1,75 @@
+# dfqueue/plan_policy.yaml
+#
+# Policy data for the fort plan (`fort_plan` records, `dfqueue/plan.py`).
+# research/2026-10-07-planner-design.md sections 2.1 to 2.6, handoffs/
+# 2026-10-07-planner-p1a.md. Data, not code: a limit changes here and the
+# store, the tools and the tests all read it.
+#
+# Nothing here is a game fact. Every number is this project's choice.
+
+# One plan version per season index (game tick // season_ticks). A DF season
+# is 100,800 ticks (three months of 33,600-tick months).
+season_ticks: 100800
+
+# Item caps per section, and the longest free-text field. Over a cap is
+# FLAGGED, never refused (Planner open question 1, option b): the entries
+# over the cap are inert until the plan is fixed.
+caps:
+  targets: 16
+  districts: 10
+  closeness: 15
+  industries: 16
+  flows: 30
+  access: 10
+  relies_on: 6
+field_max: 160
+public_rationale_max: 300
+
+# Which sections a plan version may carry at which stage. A section whose
+# stage has not landed is refused by name (it cannot be stored in the record
+# shape yet). P1 holds targets only.
+sections:
+  targets: P1
+  districts: P2
+  closeness: P2
+  industries: P3
+  flows: P3
+  access: P4
+open_sections: [targets]
+
+# Target defaults and bounds.
+target:
+  max_in_flight_default: 2
+  max_in_flight_max: 8
+  per: [alive]
+
+# `plan_change` requests are rate-limited by the server (design Q2): a
+# cooldown between requests and a cap per season index. A rejected request
+# still counts, so the limit bounds what the Overseer is asked to rule.
+plan_change:
+  cooldown_ticks: 12000
+  per_season_cap: 2
+
+# `plan.read` history length (design F-20).
+history_lines: 8
+
+# Which proposal types can serve a target, by the family of its signal
+# (the part before the first dot). A target whose owner holds none of these
+# types is flagged `owner_cannot_serve`. A family not listed here is not
+# checked.
+family_serving_types:
+  zones: [room_siting, corridor]
+  stocks: [work_order, stock_target, crop_plan]
+  order: [work_order]
+
+# A target's derived inputs (from the serving template's `requires:`) are
+# owned by the role that supplies the item. An item with no entry here
+# defaults to `default_item_owner`.
+default_item_owner: quartermaster
+item_owner:
+  bed: quartermaster
+
+# `requires:` item name -> the `stocks.availability` TYPE key to read.
+# An item with no entry is read as its upper-case name.
+item_types:
+  bed: BED
