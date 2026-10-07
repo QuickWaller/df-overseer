@@ -1095,6 +1095,210 @@ function cancel_job(job_id, dry_run)
   return base
 end
 
+-- ============================================================================
+-- unsupplied (handoffs/2026-10-07-unsupplied-building-watch.md). READ ONLY.
+--
+-- A buildingplan-planned building waits for items. When an item kind it needs
+-- has none available and nothing makes it, the building waits forever (live
+-- 2026-10-07: the fort's only Bed, 38 game days, BED stock 0, nobody ever
+-- queued ConstructBed; evals/live/2026-10-07-stuck-bed/README.md). This reads
+-- the facts a watcher needs, per needed item kind: how many planned buildings
+-- need it, how many units are free, which jobs at which BUILT workshops make
+-- it, and whether such a job is queued at a workshop right now. Whether a
+-- MANAGER ORDER exists for it is the caller's to join (orders.list has the
+-- order's job and reaction; `producers` below names the jobs to match).
+--
+-- Only item kinds a building's job names concretely are read (an element whose
+-- item_type is -1, a material-class wildcard such as "any wood", is skipped:
+-- it names no kind). No coordinates; kinds, counts and workshop kind names.
+--
+-- PRODUCT TABLE (the one place this file guesses): df.job_type carries no
+-- queryable "product" attribute (see df-overseer-orders.lua's header). A
+-- reaction job's products ARE game data (reaction.products[i].item_type) and
+-- are read. A hard-coded job's product is taken from its NAME: the job_type
+-- name with its leading verb word removed ("ConstructBed" -> BED,
+-- "MakeBarrel" -> BARREL) when that spells an item_type; the few names that
+-- do not (JOB_PRODUCT_ALIASES) are listed there. A job whose product cannot
+-- be named is simply not matched, so the caller then sees no producer, never
+-- a made-up one. UNVERIFIED LIVE: the name rule and the fake-world tests
+-- only; check against `workjob.list-jobs` of a real Carpenter's.
+--
+-- `getJobs` is called only for workshop and furnace kinds that exist in the
+-- fort (one call per kind), so a kind that makes X but is not built is not
+-- named; the caller says no built workshop offers X.
+-- ============================================================================
+
+-- Job names whose product's name differs from the job's own. Extend here only
+-- when a live check shows another; everything else comes from the name rule
+-- or the reaction's own products.
+JOB_PRODUCT_ALIASES = {
+  ConstructThrone = "CHAIR",
+  ConstructChest = "BOX",
+}
+
+local function verb_stripped_upper(job_name)
+  local rest = job_name:match("^%u%l*(%u.*)$")
+  if not rest then return nil end
+  return (rest:gsub("(%l)(%u)", "%1_%2")):upper()
+end
+
+-- The item_type names (e.g. {"BED"}) a job_type / reaction entry produces, or nil.
+function job_product_item(job_type_name, reaction_code)
+  if job_type_name == "CustomReaction" then
+    if not reaction_code then return nil end
+    local ok, found = pcall(function()
+      for _, r in ipairs(df.global.world.raws.reactions.reactions) do
+        if r.code == reaction_code then
+          local out = {}
+          for _, p in ipairs(r.products) do
+            local okp, it = pcall(function() return df.item_type[p.item_type] end)
+            if okp and it then out[#out + 1] = it end
+          end
+          return out
+        end
+      end
+    end)
+    return ok and found or nil
+  end
+  if not job_type_name then return nil end
+  local alias = JOB_PRODUCT_ALIASES[job_type_name]
+  if alias then return {alias} end
+  local guess = verb_stripped_upper(job_type_name)
+  if guess and df.item_type[guess] ~= nil then return {guess} end
+  return nil
+end
+
+local function makes(products, item_name)
+  for _, p in ipairs(products or {}) do
+    if p == item_name then return true end
+  end
+  return false
+end
+
+function unsupplied_buildings()
+  local errors = {}
+  local ok_bp, bp = pcall(function() return require('plugins.buildingplan') end)
+  if not ok_bp or not bp or not bp.isPlannedBuilding then
+    return nil, "buildingplan's Lua API is not available, planned buildings cannot be read"
+  end
+
+  -- needs[item_name] = {buildings = n, units = n}
+  local needs, order = {}, {}
+  local workshops = {}  -- every built workshop/furnace, for kinds and live jobs
+  for _, bld in ipairs(df.global.world.buildings.all) do
+    local okt, btype = pcall(function() return bld:getType() end)
+    if okt and (btype == df.building_type.Workshop or btype == df.building_type.Furnace) then
+      local okx, built = pcall(function() return bld.flags.exists end)
+      if okx and built then workshops[#workshops + 1] = bld end
+    end
+    local okp, planned = pcall(bp.isPlannedBuilding, bld)
+    if okp and planned then
+      local seen = {}
+      local okj, jobs = pcall(function() return bld.jobs end)
+      if okj and jobs then
+        for _, job in ipairs(jobs) do
+          local oke, elements = pcall(function() return job.job_items.elements end)
+          if oke and elements then
+            for _, el in ipairs(elements) do
+              local okq, it, q = pcall(function() return el.item_type, el.quantity end)
+              if okq and it ~= nil and it >= 0 and q and q > 0 then
+                local name = df.item_type[it]
+                if name then
+                  if not needs[name] then
+                    needs[name] = {buildings = 0, units = 0}
+                    order[#order + 1] = name
+                  end
+                  needs[name].units = needs[name].units + q
+                  if not seen[name] then
+                    seen[name] = true
+                    needs[name].buildings = needs[name].buildings + 1
+                  end
+                end
+              end
+            end
+          end
+        end
+      end
+    end
+  end
+  table.sort(order)
+
+  -- Jobs each distinct built workshop kind offers, and what is queued now.
+  local kinds = {}  -- label -> {name = kind_name, jobs = {{job, reaction, products}}}
+  local queued_products = {}  -- item_name -> count of live jobs making it
+  for _, bld in ipairs(workshops) do
+    local btype, sub, custom, kind_name, kerr = workshop_kind_ids(bld)
+    if not kerr then
+      local label = kind_name or "?"
+      if sub == df.workshop_type.Custom and btype == df.building_type.Workshop then
+        label = "Custom:" .. tostring(custom)
+      end
+      if not kinds[label] then
+        local okg, defs = pcall(workshops_mod.getJobs, btype, sub, custom)
+        local list = {}
+        if okg and defs then
+          for _, contents in pairs(defs) do
+            local _, jname, rname = job_token(contents)
+            local products = job_product_item(jname, rname)
+            if products then
+              list[#list + 1] = {job = jname, reaction = rname, products = products}
+            end
+          end
+        else
+          errors[#errors + 1] = "getJobs failed for " .. label
+        end
+        kinds[label] = {name = kind_name or label, jobs = list}
+      end
+    end
+    local okj, jobs = pcall(function() return bld.jobs end)
+    if okj and jobs then
+      for _, job in ipairs(jobs) do
+        local okn, jt = pcall(function() return df.job_type[job.job_type] end)
+        local rname
+        if okn and jt == "CustomReaction" then
+          local okr, r = pcall(function() return job.reaction_name end)
+          rname = okr and r or nil
+        end
+        for _, p in ipairs((okn and job_product_item(jt, rname)) or {}) do
+          queued_products[p] = (queued_products[p] or 0) + 1
+        end
+      end
+    end
+  end
+
+  local label_list = {}
+  for label in pairs(kinds) do label_list[#label_list + 1] = label end
+  table.sort(label_list)
+
+  local rows = {}
+  for _, name in ipairs(order) do
+    local okav, av = pcall(stocks_mod.get_availability, name)
+    local available = (okav and av) and av.available_units or nil
+    local producers = {}
+    for _, label in ipairs(label_list) do
+      for _, j in ipairs(kinds[label].jobs) do
+        if makes(j.products, name) then
+          producers[#producers + 1] = {
+            job = j.job, reaction = j.reaction, workshop_kind = kinds[label].name,
+          }
+        end
+      end
+    end
+    rows[#rows + 1] = {
+      item = name,
+      buildings_waiting = needs[name].buildings,
+      units_needed = needs[name].units,
+      available = available,  -- nil (omitted from JSON): the caller drops the row
+      producers = producers,
+      jobs_queued_now = queued_products[name] or 0,
+    }
+    if available == nil then
+      errors[#errors + 1] = "could not read availability of " .. name
+    end
+  end
+  return {unsupplied = rows, read_failures = errors}
+end
+
 -- Same module-load guard as every other df-overseer-*.lua script.
 if dfhack_flags.module then
   return
@@ -1119,6 +1323,9 @@ elseif cmd == "queue" then
     local result, err = queue_job(job, workshop, dry_run, repeat_flag, count, reagent_choices)
     print(json.encode(err and {error = err} or result))
   end
+elseif cmd == "unsupplied" then
+  local result, err = unsupplied_buildings()
+  print(json.encode(err and {error = err} or result))
 elseif cmd == "cancel" then
   local job_id, dry_run = args[2], args[3]
   if not job_id then
@@ -1131,5 +1338,6 @@ else
   print("usage: df-overseer-workjob list")
   print("usage: df-overseer-workjob list-jobs WORKSHOP_LANDMARK_NAME")
   print("usage: df-overseer-workjob queue JOB WORKSHOP_LANDMARK_NAME [DRY_RUN] [REPEAT] [COUNT] [REAGENT_CHOICE...]")
+  print("usage: df-overseer-workjob unsupplied")
   print("usage: df-overseer-workjob cancel JOB_ID [DRY_RUN]")
 end
