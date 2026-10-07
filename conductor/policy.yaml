@@ -87,6 +87,13 @@ stuck_job_renotify_ticks: 12000
 # every cycle. Not tuned against a real run.
 ore_renotify_ticks: 12000
 
+# queue_pending is an EDGE (research/2026-10-07-wake-audit.md rec 1). A proposal
+# the Overseer already saw and left pending (a defer) does not wake it again
+# while nothing observable changed (an ask open at the defer has since been
+# answered). As a backstop it wakes again after this many conductor cycles
+# (a counter persisted in lane_state.json, never ticks).
+overseer_defer_recheck_cycles: 12
+
 # Every wake reason this conductor build knows about. `clock` is the
 # fallback table entry (§2); `computable: true` means conductor/cycle.py
 # will prefer the ticks-to-consequence rule over this fallback whenever it

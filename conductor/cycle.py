@@ -744,14 +744,24 @@ async def _run_cycle(cycle_index: int, deps: CycleDeps, hold: HoldState) -> Cycl
     lane_state = lanes.LaneState()
     lane_wakes: Tuple[Any, ...] = ()
     pending_ids: List[str] = []
+    #: queue_pending is an edge: pending proposals the Overseer has not already
+    #: left pending (or whose defer has a reason to be looked at again). With no
+    #: lane state every pending proposal counts, as before.
+    fresh_pending: Optional[List[str]] = None
     if deps.policy.lane_triggers:
         try:
             lane_state = lane_store.load()
             pending_ids = list((queue_state.get("proposals") or {}).get("proposal_ids") or [])
+            lane_state.cycles += 1
             lanes.apply_alert_edges(deps.policy, lane_state, alert_crossed, alert_lines)
             lanes.apply_ore_edges(deps.policy, lane_state, ore_read, game_tick)
             lanes.apply_unsupplied_edges(deps.policy, lane_state, unsupplied, game_tick)
             lanes.apply_rulings(deps.policy, lane_state, pending_ids)
+            fresh_pending, quiet_pending = lanes.split_pending_for_overseer(
+                deps.policy, lane_state, pending_ids, (queue_state.get("asks") or {}).get("ask_ids") or [],
+            )
+            for pid, why in quiet_pending:
+                LOG.info("cycle %s: %s pending but no wake for the Overseer: %s", cycle_index, pid, why)
             lane_wakes = lanes.lane_wakes(deps.policy, lane_state, events_by_role)
             if not deps.dry_run:
                 lane_store.save(lane_state)
@@ -804,7 +814,10 @@ async def _run_cycle(cycle_index: int, deps: CycleDeps, hold: HoldState) -> Cycl
         prediction_misses=prediction_misses,
         lane_wakes=lane_wakes,
         game_days_since_routine_review=_game_days_since(deps.cursor_store, game_tick, deps.policy),
-        queue_holds_for_overseer=bool((queue_state.get("proposals") or {}).get("count", 0)) or bool(to_carry_out),
+        queue_holds_for_overseer=(
+            bool((queue_state.get("proposals") or {}).get("count", 0) if fresh_pending is None else fresh_pending)
+            or bool(to_carry_out)
+        ),
         open_ask_for_consultant=CONSULTANT in _open_ask_addressees(queue_state),  # gap 1, fixed
         open_ask_for_roles=_runnable_ask_addressees(queue_state, cycle_index),
     )
@@ -932,6 +945,16 @@ async def _run_cycle(cycle_index: int, deps: CycleDeps, hold: HoldState) -> Cycl
         # Learn who proposed what: a pending proposal id that appeared during an
         # advisor's run is that advisor's (the conductor cannot read an author).
         # A completed run also serves whatever lane wakes were owed to the role.
+        if deps.policy.lane_triggers and role == OVERSEER and run_result.ok:
+            try:
+                after = await call("queue.overview", {})
+                lanes.record_overseer_seen(
+                    lane_state, (after.get("proposals") or {}).get("proposal_ids") or [],
+                    (after.get("asks") or {}).get("ask_ids") or [],
+                )
+                lane_store.save(lane_state)
+            except Exception as exc:  # noqa: BLE001 -- best effort: worst case it wakes again
+                LOG.warning("cycle %s: recording the Overseer's seen proposals failed: %s", cycle_index, exc)
         if deps.policy.lane_triggers and role in PROPOSERS:
             try:
                 after = await call("queue.overview", {})

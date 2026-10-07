@@ -90,6 +90,13 @@ class LaneState:
     #: wake, "wakes": wakes so far, "stalled": no more wakes}, while unsupplied
     #: (conductor/unsupplied_watch.py).
     unsupplied: Dict[str, Dict[str, Any]] = field(default_factory=dict)
+    #: Conductor cycles seen, persisted: the clock for every cycle-counted
+    #: window here (a service restart or a `--once` run must not reset it).
+    cycles: int = 0
+    #: proposal id -> {"asks": open ask ids when the Overseer last ran and left
+    #: it pending, "at": `cycles` then}. The Overseer's wake for a pending
+    #: proposal is an edge: see `split_pending_for_overseer`.
+    overseer_seen: Dict[str, Dict[str, Any]] = field(default_factory=dict)
 
 
 class LaneStore:
@@ -115,6 +122,11 @@ class LaneStore:
                          "wakes": int(v.get("wakes", 0)), "stalled": bool(v.get("stalled", False))}
                 for k, v in (raw.get("unsupplied") or {}).items() if isinstance(v, dict)
             },
+            cycles=int(raw.get("cycles") or 0),
+            overseer_seen={
+                str(k): {"asks": [str(a) for a in (v.get("asks") or [])], "at": int(v.get("at", 0))}
+                for k, v in (raw.get("overseer_seen") or {}).items() if isinstance(v, dict)
+            },
         )
 
     def save(self, state: LaneState) -> None:
@@ -124,7 +136,8 @@ class LaneStore:
             with open(fd, "w", encoding="utf-8") as fh:
                 json.dump(
                     {"alerts": state.alerts, "proposers": state.proposers, "pending": state.pending,
-                     "ore": state.ore, "unsupplied": state.unsupplied},
+                     "ore": state.ore, "unsupplied": state.unsupplied,
+                     "cycles": state.cycles, "overseer_seen": state.overseer_seen},
                     fh, indent=2, sort_keys=True,
                 )
             Path(tmp_name).replace(self.path)
@@ -269,6 +282,70 @@ def apply_unsupplied_edges(
         del state.unsupplied[key]
         for entries in state.pending.values():
             entries.pop(_UNSUPPLIED + key, None)
+
+
+#: How many pending proposals the Overseer's ruling briefing shows (the same
+#: cap as `dfmcp.queue_tools.BRIEF_MAX_PROPOSALS`); a pending proposal past it
+#: was never put in front of the Overseer, so it is never recorded as seen.
+OVERSEER_BRIEF_CAP = 8
+
+
+def defer_changed(policy: Policy, state: LaneState, seen: Mapping[str, Any], open_ask_ids: Iterable[str]) -> Optional[str]:
+    """Why a proposal the Overseer already left pending should be looked at
+    again, or None. The one place that defines "changed since the defer":
+
+    - a new answer: an ask that was open at the defer is no longer open;
+    - the backstop: `policy.overseer_defer_recheck_cycles` cycles elapsed.
+
+    Not observable by the conductor today, and so not tested here: a new
+    citation on the proposal (a proposal record is immutable; the cited facts
+    live in `queue.pending_brief`, which costs a read per cycle) and a defer
+    that names its own condition (free text in a ruling's reason). Both would
+    hook in here."""
+    still_open = {str(a) for a in open_ask_ids}
+    answered = [a for a in seen.get("asks", ()) if a not in still_open]
+    if answered:
+        return f"ask {', '.join(answered)} answered since the defer"
+    if state.cycles - int(seen.get("at", 0)) >= policy.overseer_defer_recheck_cycles:
+        return f"{policy.overseer_defer_recheck_cycles} cycles since the defer"
+    return None
+
+
+def split_pending_for_overseer(
+    policy: Policy, state: LaneState, pending_ids: Sequence[str], open_ask_ids: Iterable[str],
+) -> Tuple[List[str], List[Tuple[str, str]]]:
+    """(wake-worthy, quiet) for the pending proposals. A pending id the
+    Overseer has not left pending before is wake-worthy (new); one it has is
+    quiet, as `(id, reason)`, unless `defer_changed` finds a reason. The quiet
+    list is the seam where a future inbox or notes channel would take a
+    deferred proposal as a note instead of dropping it."""
+    ask_ids = list(open_ask_ids)
+    fresh: List[str] = []
+    quiet: List[Tuple[str, str]] = []
+    for pid in pending_ids:
+        seen = state.overseer_seen.get(str(pid))
+        if seen is None:
+            fresh.append(str(pid))
+            continue
+        if defer_changed(policy, state, seen, ask_ids) is not None:
+            fresh.append(str(pid))
+        else:
+            quiet.append((str(pid), "already deferred, nothing changed"))
+    return fresh, quiet
+
+
+def record_overseer_seen(state: LaneState, pending_ids: Sequence[str], open_ask_ids: Iterable[str]) -> None:
+    """After an OK Overseer run: the first `OVERSEER_BRIEF_CAP` proposals still
+    pending were shown to it and left pending, so they stop waking it until
+    `defer_changed`. A proposal past the cap stays wake-worthy. Ids that left
+    the pending list are forgotten; one re-woken for a change is re-stamped."""
+    ids = [str(p) for p in pending_ids]
+    asks = [str(a) for a in open_ask_ids]
+    for pid in ids[:OVERSEER_BRIEF_CAP]:
+        state.overseer_seen[pid] = {"asks": asks, "at": state.cycles}
+    keep = set(ids)
+    for pid in [p for p in state.overseer_seen if p not in keep]:
+        del state.overseer_seen[pid]
 
 
 def attribute_new_proposals(state: LaneState, role: str, known_ids: Set[str], pending_ids: Iterable[str]) -> Set[str]:

@@ -285,6 +285,12 @@ class Policy:
     #: How many of a proposer's newest filings its briefing shows (policy.yaml
     #: `own_filings.recent`); 0 turns the block off.
     own_filings_recent: int = 5
+    #: queue_pending is an edge (research/2026-10-07-wake-audit.md rec 1): a
+    #: proposal the Overseer already saw and left pending (a defer) does not
+    #: wake it again until something observable changed, or after this many
+    #: cycles as a backstop. Counted in the conductor's own persisted cycle
+    #: counter, not ticks (ticks freeze under a hold and race at 100 FPS).
+    overseer_defer_recheck_cycles: int = 12
 
     def reason(self, name: str) -> WakeReasonPolicy:
         try:
@@ -570,6 +576,7 @@ def load_policy(path: "Path | str" = DEFAULT_POLICY_PATH) -> Policy:
 
     return Policy(
         own_filings_recent=own_recent,
+        overseer_defer_recheck_cycles=_pos_int(doc, "overseer_defer_recheck_cycles", 12, str(path)),
         tripwire_owners=tripwire_owners,
         tripwire_repeat_limit=repeat_limit,
         tripwire_repeat_window_ticks=repeat_window,
