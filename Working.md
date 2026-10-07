@@ -28,7 +28,7 @@ Do not decide alone. Inputs ready: `research/2026-10-07-session-inbox-options.md
 **Plan of attack for the next session** (written 2026-10-07 for the next orchestrator session and the user; each phase lists its gate, so do them in order and stop at a gate that fails):
 
 *Phase 0, land what is built (agent work, no user needed).*
-1. Confirm the all-wake-reasons deploy finished clean (server, conductor, publisher, relay); if it stopped, rerun `scripts/deploy.py` per target.
+1. **The all-wake-reasons deploy did NOT happen** (2026-10-07 ~03:50 UTC): tests passed (3653 + 987) and main was pushed, but every SSH from the workstation timed out (network change on the user's side). Server and conductor are both still on the previous version, so they are consistent. When the VMs are reachable again (`scripts/vm-ssh.sh df 'echo ok'`), deploy in order: vm103-dfmcp, vm106-conductor, vm103-stream-publisher, relay-web, relay-web-operator.
 2. Merge `worktree-agent-a2fa5e18395cd3a3b` (filing hygiene), full ambient pytest plus `dfmcp/tests` in `.venv-dfmcp` (the agent did not rerun dfmcp/tests after its last fix), deploy vm103-dfmcp, vm103-stream-publisher, vm106-agents, vm106-conductor. Live check: re-filing an open action is refused naming the original; `queue.my_filings asks=true` shows answer text.
 3. Flip `handoffs/INDEX.md` rows for today's streams (several are missing: P0, unsupplied watch, wake cleanup, own filings, transcripts, metrics, valid orders, filing hygiene, all wake reasons) and add register rows for: valid orders and the live repair, wake cleanup, own filings, filing hygiene.
 
