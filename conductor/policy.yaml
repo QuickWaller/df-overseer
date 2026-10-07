@@ -30,10 +30,13 @@ closing_in_multiple: 3
 # forever -- see that function's own docstring for the update rule.
 expected_thinking_seconds: 90
 
-# §4 triage rules v1: "at least every 7 game days" if nothing else has woken
-# the advisors. DF's fixed calendar is 1200 ticks/day (dfqueue/grade.py's
-# own GAME_TICKS_PER_YEAR comment cites the same wiki source).
-routine_review_interval_game_days: 7
+# §4 triage rules v1 said "at least every 7 game days". Planner P1b (user's
+# call 2026-10-07, planner open question 5) retired the Architect's 7-day wake
+# (its work now comes from the plan's shortfall wakes and its lane triggers)
+# and kept the Quartermaster's at SEASON length: 84 game days = 100,800 ticks.
+# DF's fixed calendar is 1200 ticks/day (dfqueue/grade.py's own
+# GAME_TICKS_PER_YEAR comment cites the same wiki source).
+routine_review_interval_game_days: 84
 
 # handoffs/2026-09-23-stalled-order-poller.md: research/2026-09-23-
 # announcement-severity.md §C found that a manager order which never
@@ -103,7 +106,7 @@ ore_renotify_ticks: 12000
 wake_reasons:
   routine_review:
     clock: full_speed
-    wakes: [architect, quartermaster]
+    wakes: [quartermaster]
   prediction_due:
     clock: full_speed
     wakes: [architect, quartermaster]
@@ -207,6 +210,26 @@ wake_reasons:
   unexplained_pause:
     clock: paused
     wakes: [overseer]
+
+# Planner P1b (handoffs/2026-10-07-planner-p1b.md). The plan_* reasons below are
+# raised by conductor/plan_watch.py and queued per role through the lane
+# machinery (conductor/lanes.py), so `wakes` stays empty: the role comes from
+# the event. Only `clock` is read from these entries.
+  plan_bootstrap:
+    clock: full_speed
+    wakes: []
+  plan_review:
+    clock: full_speed
+    wakes: []
+  plan_target_stalled:
+    clock: full_speed
+    wakes: []
+  plan_shortfall:
+    clock: full_speed
+    wakes: []
+  plan_input_short:
+    clock: full_speed
+    wakes: []
 
 # Stage T (handoffs/2026-10-06-stage-t-tripwire.md): who runs after a tripwire
 # latches, before the Overseer. Keyed by the latch's own `reason`. A reason
@@ -326,6 +349,10 @@ lane_triggers:
     stuck_jobs: ['brew|cook|prepare|make|craft|forge|weave|mill|process|butcher|tan|smelt|sew|clothes|plant|harvest|kiln|still|farm|collect']
     alerts: ["*"]
     rulings: true
+  # The Planner files only plan_change proposals; a ruling on one wakes it
+  # (`ruling_on_own`). Its other wakes come from conductor/plan_watch.py.
+  planner:
+    rulings: true
 
 # Caps on the full per-run transcript the conductor archives and reports
 # (conductor/runner.py build_transcript; handoffs/2026-10-07-transcripts-and-
@@ -338,3 +365,59 @@ transcript:
   max_result_chars: 800
   max_round_text_chars: 2000
   max_total_chars: 60000
+
+# The Planner's conductor-side wiring (handoffs/2026-10-07-planner-p1b.md,
+# research/2026-10-07-planner-design.md 5). Read by conductor/plan_watch.py via
+# conductor/policy.py's PlanPolicy. Ticks are raw game ticks. Starting values,
+# not tuned against a real run.
+plan:
+  # Everything that needs the Planner role (the `plan.status` read each cycle,
+  # the bootstrap, review and ruling wakes, the shortfall watch). Flipped on by
+  # the enable commit, after the token, the pinned openclaw config and the
+  # allowlist are in place.
+  enabled: false
+  # A DF season: three 33,600-tick months. Must match
+  # dfqueue/plan_policy.yaml `season_ticks`.
+  season_ticks: 100800
+  # The season index is computed from the tick, with a cursor (planner design
+  # F-3, F-11): a changed index raises `season_change` (the Quartermaster's
+  # wake, which never fired before) and, when the active plan is from an
+  # earlier season, `plan_review` for the Planner. A tick that goes backwards
+  # is a reload and resets the cursor without waking anyone. Needs only the
+  # game tick, so it runs even while `enabled` is false.
+  season_wake: true
+  # A Planner wake that did not resolve its cause (no plan yet, an owed review
+  # not done, an accepted plan_change not cited) is retried after this many
+  # ticks (10 game days), doubling per wake, capped at a season (F-19).
+  renotify_ticks: 12000
+  renotify_cap_ticks: 100800
+  # No active plan: after this many wakes that left no plan, tell the operator
+  # with the last refusal text instead of waking the Planner again.
+  bootstrap_escalate_after: 3
+  # Wakes for an owed season review, and for one accepted plan_change, before
+  # each is left alone (the next season or version re-arms it).
+  review_max_wakes: 3
+  awaiting_max_wakes: 3
+  # The shortfall watch, SHIPPED OFF (user's call 2026-10-07, planner open
+  # question 3) so version 1 can be read before anything it says wakes an
+  # owner. While off, a target's shortfall wakes nobody.
+  shortfall_watch:
+    enabled: false
+    # Renotify starts here (10 game days) and doubles per consecutive renotify
+    # with no change in position, capped at one season (F-8).
+    renotify_ticks: 12000
+    renotify_cap_ticks: 100800
+    # Owner wakes per target per plan version while the position never moves
+    # (the opening wake counts); then the target is `stalled`, stops waking its
+    # owner, and wakes the Planner once.
+    stall_after: 3
+    # In-flight plan work allowed per owner when plan.status names no ceiling
+    # for it. Mirrors dfqueue/plan_policy.yaml in_flight_per_owner.
+    owner_ceiling: 2
+    # Proposal types that serve a target, per signal family. An owner whose
+    # family types are all frozen (queue.execution_state routing) is not woken.
+    # Mirrors dfqueue/plan_policy.yaml family_serving_types.
+    serving_types:
+      zones: [room_siting, corridor]
+      stocks: [work_order, stock_target, crop_plan]
+      order: [work_order]
