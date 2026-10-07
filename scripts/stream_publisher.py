@@ -153,6 +153,8 @@ from dfqueue import feed, feed_status, lessons, live, site_data  # noqa: E402  (
 DEFAULT_ENV_PATH = REPO_ROOT / ".env"
 DEFAULT_HEARTBEAT_INTERVAL_SECONDS = 60
 DEFAULT_LOOP_INTERVAL_SECONDS = 5
+#: How often `metrics.json` is recomputed (seconds); slower than the feed on purpose.
+DEFAULT_METRICS_INTERVAL_SECONDS = 3600
 CURSOR_FILENAME = ".publisher-cursor.json"
 # Same default `scripts/export_stream_feed.py --fort-name` uses -- the one
 # real fort this repo automates today (CLAUDE.md's own "Current state").
@@ -226,6 +228,10 @@ class PublisherConfig:
     # `dfqueue/runs.py`'s store. Default: `<db stem>.runs.sqlite3` beside the
     # queue database, used only if that file exists (see `resolved_runs_db`).
     runs_db: Optional[str] = None
+    # Wake metrics (`dfqueue/wake_metrics.py`, handoffs/2026-10-07-metrics-tab.md):
+    # `metrics.json` is recomputed at most this often (seconds), a slower
+    # cadence than the feed; between recomputes the last staged file is reused.
+    metrics_interval_seconds: int = DEFAULT_METRICS_INTERVAL_SECONDS
 
     def resolved_runs_db(self) -> Optional[str]:
         if self.runs_db:
@@ -340,6 +346,8 @@ def config_from_env(env: Mapping[str, str], *, validate: bool = True) -> Publish
         kwargs["conductor_dir"] = env["STREAM_PUBLISHER_CONDUCTOR_DIR"]
     if env.get("STREAM_PUBLISHER_RUNS_DB"):
         kwargs["runs_db"] = env["STREAM_PUBLISHER_RUNS_DB"]
+    if env.get("STREAM_PUBLISHER_METRICS_SECONDS"):
+        kwargs["metrics_interval_seconds"] = int(env["STREAM_PUBLISHER_METRICS_SECONDS"])
 
     public_relay = _relay_from_env(env, "PUBLIC")
     operator_relay = _relay_from_env(env, "OPERATOR")
@@ -502,7 +510,10 @@ def _site_hash_payload(agents_json: dict, tools_json: dict, gotchas: list) -> di
     return {"agents": agents_stable, "tools": tools_stable, "gotchas": gotchas}
 
 
-def _with_runs(site: dict, runs_payload: Optional[dict], lessons_payload: Optional[dict] = None) -> dict:
+def _with_runs(
+    site: dict, runs_payload: Optional[dict], lessons_payload: Optional[dict] = None,
+    metrics_payload: Optional[dict] = None,
+) -> dict:
     """Folds the run reports into the change-detection payload (minus their
     wall-clock `as_of`), only when a run store exists, so a fort without one
     hashes exactly as before."""
@@ -511,6 +522,8 @@ def _with_runs(site: dict, runs_payload: Optional[dict], lessons_payload: Option
     out = {**site, "runs": live.live_hash_payload(runs_payload)}
     if lessons_payload is not None:
         out["lessons"] = lessons_payload
+    if metrics_payload is not None:
+        out["metrics"] = {k: v for k, v in metrics_payload.items() if k != "generated_at"}
     return out
 
 
@@ -566,6 +579,55 @@ def _write_lessons(out_root: Path, fort_id: str, lessons_payload: Optional[dict]
     target = feed.fort_feed_dir(out_root, fort_id) / "lessons.json"
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_text(_canonical_json(lessons_payload), encoding="utf-8")
+
+
+def _metrics_path(out_root: Path, fort_id: str) -> Path:
+    return feed.fort_feed_dir(out_root, fort_id) / "metrics.json"
+
+
+def _build_metrics(
+    cfg: PublisherConfig, now: float, cursor: dict[str, Any], staging: Path, fort_id: str,
+) -> Optional[dict]:
+    """The `wake_metrics/1` report (`dfqueue.wake_metrics.compute`, read-only
+    over the queue and runs files), or `None` with no run store. Recomputed at
+    most every `metrics_interval_seconds`; in between, the last staged file is
+    reused so the feed cadence is unaffected. A failure to compute never fails
+    the cycle: the previous file (or nothing) stands. Records the compute time
+    in `cursor["metrics_last"]`."""
+    runs_db = cfg.resolved_runs_db()
+    if runs_db is None:
+        return None
+    prior = _metrics_path(staging / "operator", fort_id)
+    fresh = now - cursor.get("metrics_last", 0) < cfg.metrics_interval_seconds
+    if fresh and prior.is_file():
+        try:
+            return json.loads(prior.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            pass
+    try:
+        from dfqueue import wake_metrics
+        doc = wake_metrics.compute(cfg.db_path, runs_db)
+    except Exception as exc:  # noqa: BLE001 - metrics must never stop the feed
+        print(f"metrics: compute failed ({type(exc).__name__}); keeping the last file", file=sys.stderr)
+        if prior.is_file():
+            try:
+                return json.loads(prior.read_text(encoding="utf-8"))
+            except (OSError, ValueError):
+                return None
+        return None
+    cursor["metrics_last"] = now
+    return doc
+
+
+def _write_metrics(out_root: Path, fort_id: str, metrics_payload: Optional[dict]) -> None:
+    """`<root>/forts/<fort_id>/metrics.json`. Written only with a run store."""
+    if metrics_payload is None:
+        return
+    target = _metrics_path(out_root, fort_id)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    text = _canonical_json(metrics_payload)
+    if not target.exists() or target.read_text(encoding="utf-8") != text:
+        target.write_text(text, encoding="utf-8")
 
 
 # ---- one cycle --------------------------------------------------------------
@@ -645,6 +707,7 @@ def run_cycle(
     staging = Path(cfg.staging_dir)
     cursor_path = staging / CURSOR_FILENAME
     cursor = _read_cursor(cursor_path)
+    metrics_doc = _build_metrics(cfg, now, cursor, staging, fort_id)
 
     result: dict[str, Any] = {
         "kill_switch_active": kill_switch_active,
@@ -667,9 +730,10 @@ def run_cycle(
     op_names = _write_transcripts(
         operator_out, fort_id, None if run_rows is None else live.build_transcripts(run_rows, public=False))
     _write_lessons(operator_out, fort_id, lessons_operator)
+    _write_metrics(operator_out, fort_id, metrics_doc)
     operator_hash = compute_content_hash(
         operator_items, operator_projects, hash_status_operator,
-        site=_with_runs(_site_hash_payload(agents_json, tools_json, operator_gotchas), runs_operator, lessons_operator),
+        site=_with_runs(_site_hash_payload(agents_json, tools_json, operator_gotchas), runs_operator, lessons_operator, metrics_doc),
     )
     if kill_switch_active:
         result["operator"]["reason"] = "kill_switch_file"
@@ -722,12 +786,13 @@ def run_cycle(
         pub_names = _write_transcripts(
             public_out, fort_id, None if run_rows is None else live.build_transcripts(run_rows, public=True))
         _write_lessons(public_out, fort_id, lessons_public)
+        _write_metrics(public_out, fort_id, metrics_doc)
     public_hash = compute_content_hash(
         [] if public_off else public_items,
         {"thread_to_project": {}, "projects": {}} if public_off else public_projects,
         None if public_off else hash_status_public,
         site=None if public_off else _with_runs(
-            _site_hash_payload(agents_json, tools_json, public_gotchas), runs_public, lessons_public),
+            _site_hash_payload(agents_json, tools_json, public_gotchas), runs_public, lessons_public, metrics_doc),
     )
 
     if kill_switch_active:
@@ -812,6 +877,11 @@ def _build_arg_parser() -> argparse.ArgumentParser:
         help="the conductor's run-report store (dfqueue/runs.py), read-only. Default: the "
              "<queue db stem>.runs.sqlite3 file beside --db, if it exists. STREAM_PUBLISHER_RUNS_DB",
     )
+    parser.add_argument(
+        "--metrics-interval", type=int, default=None,
+        help="seconds between recomputes of metrics.json (default 3600; 0 = every cycle). "
+             "STREAM_PUBLISHER_METRICS_SECONDS",
+    )
     parser.add_argument("--once", action="store_true", help="run a single cycle and exit (the systemd-timer-triggered mode, infra/stream-publisher.timer.example)")
     parser.add_argument("--env-file", default=str(DEFAULT_ENV_PATH), help="path to a .env file to merge under the real environment (default: repo root .env)")
     return parser
@@ -849,6 +919,8 @@ def _config_from_args(args: argparse.Namespace) -> PublisherConfig:
         overrides["conductor_dir"] = args.conductor_dir
     if args.runs_db:
         overrides["runs_db"] = args.runs_db
+    if args.metrics_interval is not None:
+        overrides["metrics_interval_seconds"] = args.metrics_interval
 
     def _relay_override(prefix: str) -> Optional[RelayTarget]:
         host = getattr(args, f"{prefix}_relay_host")
