@@ -28,7 +28,7 @@ def test_detail_rows_label_each_part_and_mark_withheld_spans():
 
 
 def test_full_proposal_is_collapsed_and_shows_withheld_as_withheld():
-    res = _run(WALK + "const n = fullProposalEl(DATA); walk(n); walkTags(n); return {seen, tags, isOpen: "open" in n.attrs};", DETAIL)
+    res = _run(WALK + "const n = fullProposalEl(DATA); walk(n); walkTags(n); return {seen, tags, isOpen: 'open' in n.attrs};", DETAIL)
     assert res["tags"][0] == "details.fx ffull" and res["isOpen"] is False
     assert "Full proposal" in res["seen"] and "(withheld)" in res["seen"]
     assert "Cited facts" in res["seen"] and "Dig a stair." in res["seen"]
