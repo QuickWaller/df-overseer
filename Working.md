@@ -25,13 +25,34 @@ Do not decide alone. Inputs ready: `research/2026-10-07-session-inbox-options.md
 
 **Designed, not built:** Planner revision 2 (`research/2026-10-07-planner-design.md`, red team done; P2+ later), Logistics role (in that design, stage L), notebook (deferred: metrics then own filings first; `research/2026-10-07-notebook-*.md`), fort dossier and crafting search (`research/2026-10-07-fort-dossier-and-crafting-search.md`; red team `research/2026-10-07-fort-dossier-red-team.md`: direction holds, NOT ready to build. Blockers: DFHack's job table covers only 16 of 33 workshop kinds so the crafting graph cannot be completed from it; landmark reads lack ids, exists flag and level difference, so relations cannot key on handles. Its simpler first path: D0 restated plus a Quartermaster-only in-memory block, tested by paired runs on the same paused fort state into a scratch queue. Its user questions are held for the user).
 
-**Next, in order:**
-1. Tripwire live check (user said go ahead without watching): steps in `handoffs/2026-10-06-stage-t-tripwire.md` Result, "Live check". Its resume step also gives running time to see whether new orders 5 to 8 validate.
-2. Staged arm of `conductor.service` (user's go-ahead in principle 2026-10-07): service on with the operator hold, watch wakes and cost on the Metrics tab, then lift the hold. Only after the tripwire check passes. Enabling the service is the user's call to confirm at the time.
-3. Planner first plan, supervised: token, pinned config with 12 tools, deploy enable commit, bootstrap, user reads v1, then shortfall wakes on.
-4. Supervised bedroom end to end (site-4 finish accepted twice: proposal-0024 and duplicate 0026; the filing-hygiene stream prevents repeats).
-5. Tool cuts by evidence after about a week of transcripts (user: cut hard).
-6. Stockpile write verbs live-verified on a throwaway pile before Logistics.
+**Plan of attack for the next session** (written 2026-10-07 for the next orchestrator session and the user; each phase lists its gate, so do them in order and stop at a gate that fails):
+
+*Phase 0, land what is built (agent work, no user needed).*
+1. Confirm the all-wake-reasons deploy finished clean (server, conductor, publisher, relay); if it stopped, rerun `scripts/deploy.py` per target.
+2. Merge `worktree-agent-a2fa5e18395cd3a3b` (filing hygiene), full ambient pytest plus `dfmcp/tests` in `.venv-dfmcp` (the agent did not rerun dfmcp/tests after its last fix), deploy vm103-dfmcp, vm103-stream-publisher, vm106-agents, vm106-conductor. Live check: re-filing an open action is refused naming the original; `queue.my_filings asks=true` shows answer text.
+3. Flip `handoffs/INDEX.md` rows for today's streams (several are missing: P0, unsupplied watch, wake cleanup, own filings, transcripts, metrics, valid orders, filing hygiene, all wake reasons) and add register rows for: valid orders and the live repair, wake cleanup, own filings, filing hygiene.
+
+*Phase 1, prove the fort works when running (gate for everything after).*
+4. **Tripwire live check** (user said go ahead without watching): `handoffs/2026-10-06-stage-t-tripwire.md` Result, "Live check", steps 1 to 6. Clear the operator hold first (step 3 needs no hold), restore normal thresholds and pause at the end, re-set the hold. Record in `evals/live/<date>-tripwire-live/`.
+5. **Did the new manager orders run?** During step 4's resumed time, or a bounded supervised window, read orders 5 to 8: validated? jobs at the Mason's/Mechanic's workshops? blocks/mechanisms/throne made? If yes: correct gotcha-0002 and tell agents standing orders work. If they stay unvalidated: the manager never organises (no ORGANIZATION skill, no ManageWorkOrders job ever): ask the user to look at the Nobles screen and try unticking his mason labours (`evals/live/2026-10-07-manager-orders/README.md`). Barrels will not run (27 on hand, order runs below 20).
+6. **Bed and drink:** once orders run, the Quartermaster should set standing buffer orders (bed while fewer than 2; drink). If not, check the unsupplied-building wake fired and why the ruling deferred.
+
+*Phase 2, arm the conductor (needs the user's yes at the time).*
+7. Staged arm: `conductor.service` enabled with the operator hold ON (agents cycle, nothing executes), watch an hour on the Board Metrics tab (wakes per role, cost per wake, repeat defers, duplicates, rounds). Then lift the hold. Never enable without the user confirming that day.
+
+*Phase 3, supervised firsts (user present or explicitly cleared).*
+8. Supervised bedroom end to end: site-4 finish is accepted (proposal-0024; the duplicate 0026 also accepted: close one before executing).
+9. Planner bootstrap: issue `MCP_ROLE_TOKEN_PLANNER` (rotation row), pinned openclaw config with exactly the 12 tools, deploy enable commit `2b8c315`, one cycle, user reads plan v1 on the Board, then set `plan.shortfall_watch.enabled: true`.
+10. Stockpile write verbs on a throwaway pile (`handoffs/2026-10-07-stockpile-tool-gaps.md` Result plan), before any Logistics work.
+
+*Phase 4, design sessions WITH the user (do not decide alone).*
+11. Inbox and session design (section below): the evidence is in; candidate is inbox-as-data plus one Gateway session per role, items pushed one at a time, `/new` between wakes. Settles: own-filings block, Overseer one-at-a-time vs grouped, where "the fort is paused" goes.
+12. Fort dossier and crafting search: work through the red team (`research/2026-10-07-fort-dossier-red-team.md`) and its simpler first path; three user questions listed below.
+
+*Phase 5, evidence-driven trims (after about a week of transcripts).*
+13. Rerun `python -m dfqueue.wake_metrics` against live copies; compare to `evals/live/2026-10-07-wake-baseline/`. Cut each role's tools to what it called (user: cut hard), Architect and Overseer first.
+
+**Standing lessons from today:** agents cannot tell a paused fort from a broken one (fix belongs in the session design); argument names in policy must match the tool schema (a test for this is owed); the deploy tool's Lua target reports drift once when a tool list changes until vm103-dfmcp deploys (ordering effect, harmless); deploys change the tool list and invalidate the prompt cache, so batch them.
 
 **Owed with the user (do not decide alone):** the inbox and session design (section below); fort dossier questions: (1) may Chronicler notes reach deciding agents (designer and red team: no for now); (2) how push vs pull is decided per role (red team: paired runs on a paused fort, not epochs); (3) retire `stockpile.health`/`plan-feed` into one `logistics.gaps` (designer: yes); plus the red team's simpler first path. Also: whether to watch the first order-validation run (orders 5 to 8).
 
