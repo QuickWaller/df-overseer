@@ -195,6 +195,28 @@ async def test_a_store_made_before_thinking_gains_the_column(db):
     assert runs.get_run(path, "run-0001")["thinking"] == "Short thought."
 
 
+async def test_end_carries_transcript_whole_and_drops_an_oversize_one(db):
+    await _call({"phase": "start", "role": "architect"}, db)
+    body = '{"rounds":[{"n":1}],"omitted_rounds":0}'
+    await _call({"phase": "end", "run_id": "run-0001", "status": "ok", "ok": True, "transcript": body}, db)
+    assert runs.get_run(runs.runs_path(db), "run-0001")["transcript"] == body
+    await _call({"phase": "start", "role": "overseer"}, db)
+    await _call({"phase": "end", "run_id": "run-0002", "transcript": "y" * (runs.TRANSCRIPT_MAX + 1)}, db)
+    assert runs.get_run(runs.runs_path(db), "run-0002")["transcript"] is None
+
+
+async def test_a_store_made_before_transcripts_gains_the_column(db):
+    path = runs.runs_path(db)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    conn = sqlite3.connect(path)
+    conn.executescript(runs._SCHEMA.replace(",\n    transcript TEXT", ""))
+    conn.close()
+    assert "transcript" not in {r[1] for r in sqlite3.connect(path).execute("PRAGMA table_info(runs)")}
+    await _call({"phase": "start", "role": "architect"}, db)
+    await _call({"phase": "end", "run_id": "run-0001", "transcript": "{}"}, db)
+    assert runs.get_run(path, "run-0001")["transcript"] == "{}"
+
+
 # ---- pause.verdict / pause.verdict_read (handoffs/2026-10-05-safe-to-resume.md) ----
 
 

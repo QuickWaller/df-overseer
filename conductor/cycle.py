@@ -539,6 +539,8 @@ async def _run_role(
     }
     if run_result.thinking:
         end_args["thinking"] = run_result.thinking
+    if run_result.transcript:
+        end_args["transcript"] = json.dumps(run_result.transcript, sort_keys=True, separators=(",", ":"))
     if run_id:
         end_args["run_id"] = run_id
     else:
