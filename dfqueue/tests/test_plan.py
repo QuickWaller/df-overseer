@@ -568,6 +568,29 @@ def test_role_slices_show_a_role_only_its_lane():
     assert ids("consultant") == []
 
 
+def test_a_fort_plan_in_the_queue_renders_in_the_feed_xml_and_public_view_without_leaking(db):
+    """Found by an executor smoke test: before `fort_plan` was a known kind the
+    stream feed raised on the first plan record, which would have stopped the
+    publisher the moment the Planner filed version 1."""
+    from dfqueue import feed, render
+    rec = _file(db, [BEDROOMS, DINING], 100, reason=None, public_rationale="We plan a bed for everyone.")
+    records = store.load(db)
+    public = feed.build_items(records, public=True)
+    operator = feed.build_items(records, public=False)
+    assert public[0]["text"] == "Plan version 1. We plan a bed for everyone."
+    assert public[0]["speaker"] == "Planner" and "targets" not in public[0]
+    assert operator[0]["record"]["targets"][0]["id"] == "bedrooms"
+    xml = render.to_xml(rec)
+    assert xml.startswith("<fort_plan ") and "<version>1</version>" in xml and "bedrooms" in xml
+    assert set(render.public_view(rec)) <= set(render.ALLOWED_PUBLIC_FIELDS)
+    assert "targets" not in render.public_view(rec)
+    # no rationale: a fixed line, never the reason or the changes
+    nxt = _file(db, [BEDROOMS], SEASON + 1, reason="Dining waits, internal reasoning.")
+    text = feed.build_items(store.load(db), public=True)[1]["text"]
+    assert text == "Plan version 2 filed." and "internal" not in text
+    assert nxt["version"] == 2
+
+
 def test_the_default_plan_and_policy_pass_their_own_checks():
     base = plan.default_plan()
     assert plan.check_sections(base, CTX) == []

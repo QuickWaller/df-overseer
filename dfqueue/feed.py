@@ -87,7 +87,7 @@ from typing import Any, Iterable, Optional
 from . import feed_status
 from .schema import (
     ABANDON, ACCEPT, AMEND, ANSWER, ASK, CLOSE, DEFER, ESCALATION, EXECUTED,
-    OBSERVATION, PASS, PROJECT, PROPOSAL, REJECT, RULING,
+    FORT_PLAN, OBSERVATION, PASS, PROJECT, PROPOSAL, REJECT, RULING,
 )
 
 # ---- named gaps -----------------------------------------------------------
@@ -248,6 +248,9 @@ def compute_reply_to(record: dict) -> Optional[str]:
         return record.get("ruling_id")
     if kind == PROJECT:
         return record.get("from_ruling")
+    if kind == FORT_PLAN:
+        # A mid-season version answers the accepted plan_change it cites.
+        return record.get("ruling_id")
     if kind in (AMEND, ABANDON, OBSERVATION):
         return record.get("project_id")
     if kind == CLOSE:
@@ -567,8 +570,18 @@ def _close_public_text(record: dict, ctx: dict) -> Optional[str]:
     return _CLOSE_PUBLIC_TEXT.get(record.get("outcome"), "Closed.")
 
 
+def _fort_plan_public_text(record: dict, ctx: dict) -> Optional[str]:
+    # handoffs/2026-10-07-planner-p1a.md: the Planner's `public_rationale`
+    # when it wrote one, else a fixed line. Never its `reason`, `changes` or
+    # targets, which are written for the model audience.
+    head = f"Plan version {record.get('version')}"
+    rationale = record.get("public_rationale")
+    return f"{head}. {rationale}" if rationale else f"{head} filed."
+
+
 PUBLIC_TEXT_BUILDERS = {
     CLOSE: _close_public_text,
+    FORT_PLAN: _fort_plan_public_text,
     PROPOSAL: _proposal_public_text,
     RULING: _ruling_public_text,
     EXECUTED: _executed_public_text,
@@ -602,7 +615,7 @@ PUBLIC_ITEM_FIELDS = frozenset({
 #: of vanishing from the feed.
 KNOWN_KINDS = frozenset({
     PROPOSAL, PASS, RULING, EXECUTED, ASK, ANSWER, ESCALATION, PROJECT,
-    OBSERVATION, AMEND, ABANDON, CLOSE,
+    OBSERVATION, AMEND, ABANDON, CLOSE, FORT_PLAN,
 })
 
 

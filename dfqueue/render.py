@@ -17,8 +17,8 @@ import json
 from xml.sax.saxutils import escape, quoteattr
 
 from .schema import (
-    ABANDON, AMEND, ANSWER, ASK, CLOSE, ESCALATION, EXECUTED, OBSERVATION,
-    PASS, PROJECT, PROPOSAL, RULING,
+    ABANDON, AMEND, ANSWER, ASK, CLOSE, ESCALATION, EXECUTED, FORT_PLAN,
+    OBSERVATION, PASS, PROJECT, PROPOSAL, RULING,
 )
 
 #: §8's allowlist, plus id/ts/kind "so the feed can order and thread items"
@@ -280,12 +280,30 @@ def _escalation_xml(record: dict) -> str:
     ])
 
 
+def _fort_plan_xml(record: dict) -> str:
+    """A fort plan version (handoffs/2026-10-07-planner-p1a.md): who it
+    supersedes, why, what changed, what the server flagged, and the targets."""
+    lines = [_open_tag("fort_plan", record)]
+    lines.append(f"  <version>{escape(str(record.get('version')))}</version>")
+    if record.get("supersedes") is not None:
+        lines.append(f"  <supersedes>{escape(record['supersedes'])}</supersedes>")
+    lines.append(f"  <season_index>{escape(str(record.get('season_index')))}</season_index>")
+    if record.get("reason") is not None:
+        lines.append(f"  <reason>{escape(record['reason'])}</reason>")
+    if record.get("ruling_id") is not None:
+        lines.append(f"  <ruling_id>{escape(record['ruling_id'])}</ruling_id>")
+    for tag in ("changes", "flags", "targets"):
+        lines.append(f"  <{tag}>{escape(json.dumps(record.get(tag) or [], sort_keys=True))}</{tag}>")
+    lines.append("</fort_plan>")
+    return "\n".join(lines)
+
+
 _RENDERERS = {
     PROPOSAL: _proposal_xml, PASS: _pass_xml, RULING: _ruling_xml,
     EXECUTED: _executed_xml, ASK: _ask_xml, ANSWER: _answer_xml,
     ESCALATION: _escalation_xml, PROJECT: _project_xml,
     OBSERVATION: _observation_xml, AMEND: _amend_xml, ABANDON: _abandon_xml,
-    CLOSE: _close_xml,
+    CLOSE: _close_xml, FORT_PLAN: _fort_plan_xml,
 }
 
 
