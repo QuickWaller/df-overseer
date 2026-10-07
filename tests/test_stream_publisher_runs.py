@@ -255,3 +255,60 @@ def test_public_summary_keeps_line_breaks_and_still_checks_the_safety_rule():
     # an unsafe pattern on a later line still withholds the whole summary
     assert live._public_summary("Fine.\n- see http://example.com/x") is None
     assert live._public_summary("Fine.\n- see /home/user/file") is None
+
+
+# ---- full transcripts (handoffs/2026-10-07-transcripts-and-full-proposals.md) ----
+
+def _tx(**over):
+    call = {"id": "c1", "name": "stocks.get", "args": '{"kind":"drink"}',
+            "result": "drink: 12\nsee /opt/df/x.lua for more\nfood: 9", "error": False}
+    rnd = {"n": 1, "reasoning": "Check drink.\n\nThe host 10.1.2.3 is odd.", "text": "ok",
+           "calls": [call], "usage": {"input": 5, "output": 2, "evil": "x"}}
+    rnd.update(over)
+    return json.dumps({"rounds": [rnd], "omitted_rounds": 0})
+
+
+def test_transcript_public_filters_every_field_and_shows_withheld_spans():
+    rows = [_row("run-0001", "architect", ended=100, transcript=_tx())]
+    pub = live.build_runs(rows, NOW, public=True)["runs"][0]["transcript"]
+    r = pub["rounds"][0]
+    assert r["reasoning"].split("\n\n") == ["Check drink.", live.THINKING_WITHHELD_MARKER]
+    assert r["calls"][0]["result"].split("\n") == ["drink: 12", live.THINKING_WITHHELD_MARKER, "food: 9"]
+    assert r["calls"][0]["name"] == "stocks.get" and r["calls"][0]["args"] == '{"kind":"drink"}'
+    assert r["usage"] == {"input": 5, "output": 2}
+    blob = json.dumps(pub)
+    assert "/opt/" not in blob and "10.1.2.3" not in blob
+
+
+def test_transcript_unsafe_args_and_names_are_withheld_not_echoed():
+    bad = _tx(calls=[{"id": "c", "name": "https://evil.example.com/x", "args": '{"u":"http://10.0.0.1/a"}',
+                      "result": None, "error": True}])
+    rows = [_row("run-0001", "architect", ended=100, transcript=bad)]
+    c = live.build_runs(rows, NOW, public=True)["runs"][0]["transcript"]["rounds"][0]["calls"][0]
+    assert c["name"] == "tool" and c["name_withheld"] is True
+    assert c["args"] is None and c["args_withheld"] is True and c["error"] is True
+    assert "evil" not in json.dumps(c) and "10.0.0.1" not in json.dumps(c)
+
+
+def test_transcript_operator_gets_it_raw_and_switch_and_limits_apply(monkeypatch):
+    rows = [_row("run-0001", "architect", ended=100, transcript=_tx())]
+    op = live.build_runs(rows, NOW, public=False)["runs"][0]["transcript"]
+    assert "/opt/df/x.lua" in op["rounds"][0]["calls"][0]["result"]
+    monkeypatch.setattr(live, "PUBLIC_TRANSCRIPTS", False)
+    assert "transcript" not in live.build_runs(rows, NOW, public=True)["runs"][0]
+    monkeypatch.setattr(live, "PUBLIC_TRANSCRIPTS", True)
+    many = [_row(f"run-{i:04d}", "architect", ended=100, transcript=_tx()) for i in range(12)]
+    got = [("transcript" in r) for r in live.build_runs(many, NOW, public=True)["runs"]]
+    assert got.count(True) == live.TRANSCRIPT_RUNS_PUBLIC and got[0] is True
+    failed = [_row("run-9", "architect", ended=100, ok=0, status="failed", transcript=_tx())]
+    assert "transcript" not in live.build_runs(failed, NOW, public=True)["runs"][0]
+    junk = [_row("r", "architect", ended=100, transcript="not json")]
+    assert live.build_runs(junk, NOW, public=True)["runs"][0].get("transcript") is None
+
+
+def test_transcript_public_total_is_capped_dropping_whole_later_rounds(monkeypatch):
+    monkeypatch.setattr(live, "TRANSCRIPT_PUBLIC_MAX_CHARS", 600)
+    rounds = [{"n": i, "reasoning": None, "text": "t" * 150, "calls": [], "usage": None} for i in range(10)]
+    rows = [_row("run-0001", "architect", ended=100, transcript=json.dumps({"rounds": rounds, "omitted_rounds": 2}))]
+    t = live.build_runs(rows, NOW, public=True)["runs"][0]["transcript"]
+    assert len(json.dumps(t["rounds"])) <= 600 and t["omitted_rounds"] == 2 + (10 - len(t["rounds"]))
