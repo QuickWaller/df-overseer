@@ -605,7 +605,7 @@ PUBLIC_ITEM_FIELDS = frozenset({
     "ts", "reply_to", "thread", "text", "badge", "withheld",
     "withheld_reason", "step_label", "step_targets", "step_total",
     "step_outcome", "title", "fact_check", "answered", "answer_preview",
-    "actions",
+    "actions", "detail",
 })
 
 #: Kinds this module knows how to render at all, public or operator side.
@@ -617,6 +617,97 @@ KNOWN_KINDS = frozenset({
     PROPOSAL, PASS, RULING, EXECUTED, ASK, ANSWER, ESCALATION, PROJECT,
     OBSERVATION, AMEND, ABANDON, CLOSE, FORT_PLAN,
 })
+
+
+# ---- a proposal's full detail (handoffs/2026-10-07-transcripts-and-full-proposals.md) --
+
+_DETAIL_TEXT_MAX = 1200
+
+
+def _detail_text(value: Any) -> Optional[str]:
+    """A field's text as a stripped string, capped, or None when it has none."""
+    if value is None:
+        return None
+    s = value if isinstance(value, str) else json.dumps(value, sort_keys=True, separators=(", ", ": "), default=str)
+    s = s.strip()
+    if not s:
+        return None
+    return s if len(s) <= _DETAIL_TEXT_MAX else s[: _DETAIL_TEXT_MAX - 1].rstrip() + "\u2026"
+
+
+def _precondition_line(p: Any) -> Optional[str]:
+    if not isinstance(p, dict):
+        return _detail_text(p)
+    where = p.get("landmark") or p.get("area")
+    return _detail_text(f"{where}: {p.get('state')}" if where else p.get("state"))
+
+
+def _prediction_line(p: Any) -> Optional[str]:
+    if not isinstance(p, dict):
+        return _detail_text(p)
+    line = f"{p.get('signal')} {p.get('op')} {p.get('value')}"
+    if p.get("check_after_ticks") is not None:
+        line += f" after {p['check_after_ticks']} ticks"
+    return line
+
+
+def _cited_line(c: Any) -> Optional[str]:
+    if not isinstance(c, dict):
+        return _detail_text(c)
+    line = f"{c.get('tool')} {c.get('field')} = {c.get('value')}"
+    if c.get("tick") is not None:
+        line += f" (tick {c['tick']})"
+    return line
+
+
+def proposal_detail(record: dict, *, public: bool = True) -> dict:
+    """A proposal's full content for the Board's collapsed "Full proposal":
+    `summary`, `rationale`, `preconditions` (lines), `prediction`, `step`
+    (`{tool, args, label}`, args as compact JSON) and `cited` (lines). A key
+    is absent when the record has nothing there. With `public`, every text
+    goes through `find_unsafe_pattern`; an unsafe one becomes `None` (shown
+    as withheld, never edited or dropped), and `withheld` lists the field
+    names (the category is not named, the matched text never appears).
+    The operator form (`public=False`) skips the check. The step is as filed:
+    the schema already refuses coordinates in it."""
+    withheld: list[str] = []
+
+    def keep(name: str, text: Optional[str]) -> Optional[str]:
+        if text is None or not public:
+            return text
+        if find_unsafe_pattern(text) is not None:
+            if name not in withheld:
+                withheld.append(name)
+            return None
+        return text
+
+    out: dict[str, Any] = {}
+    for name in ("summary", "rationale"):
+        text = _detail_text(record.get(name))
+        if text is not None:
+            out[name] = keep(name, text)
+    pre = [_precondition_line(p) for p in (record.get("preconditions") or [])]
+    pre = [p for p in pre if p]
+    if pre:
+        out["preconditions"] = [keep("preconditions", p) for p in pre]
+    pred = _prediction_line(record.get("prediction")) if record.get("prediction") else None
+    if pred:
+        out["prediction"] = keep("prediction", pred)
+    step = record.get("step")
+    if isinstance(step, dict) and step.get("tool"):
+        args = step.get("args") or {}
+        out["step"] = {
+            "tool": keep("step", _detail_text(step.get("tool"))),
+            "args": keep("step", _detail_text(json.dumps(args, sort_keys=True, separators=(",", ":")))) if args else None,
+            "label": keep("step", _detail_text(step.get("label"))),
+        }
+    cited = [_cited_line(c) for c in (record.get("cited") or [])]
+    cited = [c for c in cited if c]
+    if cited:
+        out["cited"] = [keep("cited", c) for c in cited]
+    if withheld:
+        out["withheld"] = withheld
+    return out
 
 
 def build_public_item(record: dict, *, seq: int, reply_to: Optional[str],
@@ -652,6 +743,7 @@ def build_public_item(record: dict, *, seq: int, reply_to: Optional[str],
     if kind == PROPOSAL:
         out["type"] = humanize_type(record.get("type"))
         out["title"] = _public_display_name({"summary": record.get("summary")})
+        out["detail"] = proposal_detail(record)
     if kind == EXECUTED:
         out.update(executed_step_info(record, ctx))
         out["actions"] = public_actions(record)
@@ -707,6 +799,7 @@ def build_operator_item(record: dict, *, seq: int, reply_to: Optional[str],
         extra.update(ask_info(record, ctx or {}))
     if kind == PROPOSAL:
         extra["title"] = _public_display_name({"summary": record.get("summary")}, safe=False)
+        extra["detail"] = proposal_detail(record, public=False)
     return {
         **extra,
         "seq": seq,

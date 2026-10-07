@@ -62,7 +62,7 @@ def test_list_reports_null_not_a_guess_when_fields_missing(world):
 
 def test_links_read_carries_links_only_for_a_stockpile(world):
     pile = world.make_pile(["stone"])
-    pile.use_links_only = 1
+    pile.stockpile_flag.use_links_only = True
     r, err = world.stockpile_links(pile.id)
     assert err is None
     assert d(world, r)["links_only"] is True
@@ -82,7 +82,7 @@ def test_settings_dry_run_reports_changes_without_writing(world):
     assert ch["use_links_only"] == {"from": False, "to": True}
     assert ch["max_bins"] == {"from": 4, "to": 0}
     assert "max_barrels" not in ch
-    assert pile.use_links_only == 0 and pile.max_bins == 4
+    assert pile.stockpile_flag.use_links_only is False and pile.storage.max_bins == 4
 
 
 def test_settings_real_run_writes_and_reads_back(world):
@@ -90,9 +90,9 @@ def test_settings_real_run_writes_and_reads_back(world):
     r, err = world.stockpile_settings(pile.id, "true", "keep", "0", "2", "false")
     assert err is None
     r = d(world, r)
-    assert pile.use_links_only == 1  # written in the install's own (int) type
-    assert pile.max_barrels == 0 and pile.max_wheelbarrows == 2
-    assert pile.max_bins == 4  # untouched
+    assert pile.stockpile_flag.use_links_only is True
+    assert pile.storage.max_barrels == 0 and pile.storage.max_wheelbarrows == 2
+    assert pile.storage.max_bins == 4  # untouched
     assert r["read_back"]["links_only"] is True
     assert r["read_back"]["containers"]["max_barrels"] == 0
 
@@ -101,7 +101,7 @@ def test_settings_refuses_unreadable_field_rather_than_writing_blind(world):
     pile = world.make_pile(["stone"], no_container_fields=True)
     r, err = world.stockpile_settings(pile.id, "true", None, None, None, "false")
     assert r is None
-    assert "use_links_only" in err and "unverified" in err
+    assert "use_links_only" in err and "refusing to write blind" in err
 
 
 @pytest.mark.parametrize("args,needle", [
@@ -161,29 +161,29 @@ def test_set_materials_dry_run_then_real(world):
     r = d(world, r)
     assert r["dry_run"] is True
     assert sorted(L(world, r["would_enable"])) == ["GRANITE", "MARBLE"]
-    assert pile.settings.stone.mats[1] is False
+    assert pile.settings.stone.mats[1] == 0
 
     r, err = world.stockpile_set_materials(pile.id, "stone", "granite,MARBLE", "false")
     assert err is None
     r = d(world, r)
     assert sorted(L(world, r["read_back"]["enabled"])) == ["GRANITE", "MARBLE"]
     # the metal the list excluded is never touched
-    assert pile.settings.stone.mats[0] is False
-    assert pile.settings.stone.mats[1] is True and pile.settings.stone.mats[2] is True
-    assert pile.settings.stone.mats[3] is False
+    assert pile.settings.stone.mats[0] == 0
+    assert pile.settings.stone.mats[1] == 1 and pile.settings.stone.mats[2] == 1
+    assert pile.settings.stone.mats[3] == 0
 
 
 def test_set_materials_replace_semantics_disables_the_rest(world):
     pile = world.make_pile(["stone"])
     world.stockpile_set_materials(pile.id, "stone", "all", "false")
-    assert pile.settings.stone.mats[3] is True
+    assert pile.settings.stone.mats[3] == 1
     r, err = world.stockpile_set_materials(pile.id, "stone", "HEMATITE", "false")
     assert err is None
     r = d(world, r)
     assert sorted(L(world, r["would_disable"])) == ["GRANITE", "MARBLE"]
-    assert pile.settings.stone.mats[1] is False and pile.settings.stone.mats[3] is True
+    assert pile.settings.stone.mats[1] == 0 and pile.settings.stone.mats[3] == 1
     world.stockpile_set_materials(pile.id, "stone", "none", "false")
-    assert pile.settings.stone.mats[3] is False
+    assert pile.settings.stone.mats[3] == 0
 
 
 def test_set_materials_rejects_unknown_material(world):
@@ -191,7 +191,7 @@ def test_set_materials_rejects_unknown_material(world):
     r, err = world.stockpile_set_materials(pile.id, "stone", "GRANITE,UNOBTAINIUM", "false")
     assert r is None
     assert "UNOBTAINIUM" in err
-    assert pile.settings.stone.mats[1] is False  # nothing written on a bad name
+    assert pile.settings.stone.mats[1] == 0  # nothing written on a bad name
 
 
 def test_set_materials_warns_when_category_not_accepted(world):
@@ -601,3 +601,13 @@ def test_plan_feed_unknown_kind_lists_enum_kinds(world):
     r, err = world.stockpile_plan_feed("Teleporter")
     assert r is None
     assert "Craftsdwarfs" in err and "Custom" not in err
+
+
+def test_old_recalled_direct_fields_are_not_read(world):
+    # the first cut read bld.use_links_only / bld.max_bins; the live read
+    # 2026-10-07 showed the real paths are stockpile_flag.* and storage.*
+    pile = world.make_pile(["stone"], no_container_fields=True)
+    pile.use_links_only = True
+    pile.max_bins = 9
+    entry = L(world, d(world, world.list_stockpiles())["stockpiles"])[0]
+    assert entry.get("links_only") is None and entry.get("containers") is None

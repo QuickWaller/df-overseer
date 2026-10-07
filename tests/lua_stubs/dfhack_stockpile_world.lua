@@ -132,8 +132,8 @@ local function make_stockpile(x, y, z, w, h, flags, no_container_fields)
     _type = df.building_type.Stockpile,
     settings = {
       flags = flags or {},
-      stone = {mats = new_vec({false, false, false, false})},
-      wood = {mats = new_vec({false, false, false})},
+      stone = {mats = new_vec({0, 0, 0, 0})},  -- vector<char>, verified live 2026-10-07
+      wood = {mats = new_vec({0, 0, 0})},
     },
     _contents = {},
     links = {
@@ -142,10 +142,10 @@ local function make_stockpile(x, y, z, w, h, flags, no_container_fields)
     },
   }
   if not no_container_fields then
-    bld.use_links_only = 0
-    bld.max_barrels = w * h
-    bld.max_bins = w * h
-    bld.max_wheelbarrows = 0
+    -- real paths, read live 2026-10-07: stockpile_flag is a bitfield (bool),
+    -- storage is stockpile_storage_infost
+    bld.stockpile_flag = {use_links_only = false}
+    bld.storage = {max_barrels = w * h, max_bins = w * h, max_wheelbarrows = 0}
   end
   function bld:getType() return self._type end
   next_id = next_id + 1

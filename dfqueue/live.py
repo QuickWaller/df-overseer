@@ -81,6 +81,17 @@ PUBLIC_THINKING = True
 THINKING_WITHHELD_MARKER = "[one paragraph withheld]"
 PARA = chr(10) * 2
 SUMMARY_PUBLIC_MAX = 280
+#: The same switch for a run's full transcript (handoffs/2026-10-07-
+#: transcripts-and-full-proposals.md; user's call 2026-10-07). Every text
+#: span passes `feed.find_unsafe_pattern`; a span that fails is shown as
+#: withheld, never edited or dropped.
+PUBLIC_TRANSCRIPTS = True
+#: Only the newest runs carry a transcript in `runs.json` (it is polled; 40
+#: runs of 60 KB would be megabytes), and one run's public transcript is cut
+#: at this many JSON characters, dropping whole later rounds and counting them.
+TRANSCRIPT_RUNS_PUBLIC = 8
+TRANSCRIPT_PUBLIC_MAX_CHARS = 40000
+_TOOL_NAME_PUBLIC = re.compile(r"^[A-Za-z][A-Za-z0-9_.\-]{0,79}$")
 RUNS_LIMIT = 40
 CHECK_NOTE_MAX = 80
 
@@ -338,6 +349,90 @@ def _checks_for(
     return list(order.values())
 
 
+def _redact_spans(text: Optional[str], sep: str) -> Optional[str]:
+    """`text` split on `sep` with each unsafe span replaced by the withheld
+    marker (never the matched text); None for empty text."""
+    if not isinstance(text, str) or not text.strip():
+        return None
+    from dfqueue import feed
+    out = []
+    for part in text.split(sep):
+        part = part.strip()
+        if part:
+            out.append(THINKING_WITHHELD_MARKER if feed.find_unsafe_pattern(part) else part)
+    return sep.join(out) or None
+
+
+def _num(v: Any) -> Optional[float]:
+    return None if isinstance(v, bool) or not isinstance(v, (int, float)) else v
+
+
+def _parse_transcript(raw: Any) -> Optional[dict]:
+    if isinstance(raw, dict):
+        data = raw
+    else:
+        try:
+            data = json.loads(raw) if isinstance(raw, str) and raw else None
+        except ValueError:
+            return None
+    if not isinstance(data, dict) or not isinstance(data.get("rounds"), list):
+        return None
+    return data
+
+
+def _public_transcript(raw: Any) -> Optional[dict]:
+    """The public form of a run's transcript: `{"rounds": [{n, reasoning,
+    text, calls: [{name, args, args_withheld, result, error}], usage}],
+    "omitted_rounds"}`. Every free-text field goes through the feed's pattern
+    check: reasoning and text paragraph by paragraph, a tool result line by
+    line, call arguments as one string (an unsafe one becomes
+    `args_withheld: true`), a tool name that is not a plain identifier is
+    shown as `tool` with `name_withheld`. Usage keeps numbers only. None when
+    there is nothing to show."""
+    if not PUBLIC_TRANSCRIPTS:
+        return None
+    data = _parse_transcript(raw)
+    if data is None:
+        return None
+    from dfqueue import feed
+    rounds = []
+    for r in data["rounds"]:
+        if not isinstance(r, dict):
+            continue
+        calls = []
+        for c in r.get("calls") or []:
+            if not isinstance(c, dict):
+                continue
+            name = c.get("name")
+            name_ok = isinstance(name, str) and _TOOL_NAME_PUBLIC.match(name) and not feed.find_unsafe_pattern(name)
+            args = c.get("args")
+            args_bad = isinstance(args, str) and feed.find_unsafe_pattern(args) is not None
+            call = {
+                "name": name if name_ok else "tool",
+                "args": None if (args_bad or not isinstance(args, str)) else args,
+                "result": _redact_spans(c.get("result"), chr(10)),
+                "error": bool(c.get("error")),
+            }
+            if not name_ok:
+                call["name_withheld"] = True
+            if args_bad:
+                call["args_withheld"] = True
+            calls.append(call)
+        usage = r.get("usage") if isinstance(r.get("usage"), dict) else None
+        rounds.append({
+            "n": len(rounds) + 1,
+            "reasoning": _redact_spans(r.get("reasoning"), PARA),
+            "text": _redact_spans(r.get("text"), PARA),
+            "calls": calls,
+            "usage": {k: v for k, v in usage.items() if isinstance(k, str) and _num(v) is not None} if usage else None,
+        })
+    omitted = int(_num(data.get("omitted_rounds")) or 0)
+    while len(rounds) > 1 and len(json.dumps(rounds)) > TRANSCRIPT_PUBLIC_MAX_CHARS:
+        rounds.pop()
+        omitted += 1
+    return {"rounds": rounds, "omitted_rounds": omitted} if rounds else None
+
+
 def build_runs(
     rows: Optional[list], now: float, *, public: bool, limit: int = RUNS_LIMIT,
     calls: Optional[list] = None, tools: Optional[Mapping[str, Any]] = None,
@@ -402,9 +497,17 @@ def build_runs(
                 thinking = _public_thinking(row.get("thinking"))
                 if thinking:
                     entry["thinking"] = thinking
+                if len(out_runs) < TRANSCRIPT_RUNS_PUBLIC:
+                    transcript = _public_transcript(row.get("transcript"))
+                    if transcript:
+                        entry["transcript"] = transcript
         else:
             if row.get("thinking"):
                 entry["thinking"] = row.get("thinking")
+            if len(out_runs) < TRANSCRIPT_RUNS_PUBLIC:
+                transcript = _parse_transcript(row.get("transcript"))
+                if transcript:
+                    entry["transcript"] = transcript
             entry.update({
                 "wake_detail": row.get("wake_detail"), "cycle": row.get("cycle"),
                 "cost_usd": row.get("cost_usd"), "error": row.get("error"),

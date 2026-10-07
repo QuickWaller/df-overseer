@@ -83,7 +83,7 @@ _DESCRIPTION = (
     "Report one role run to the operator's record, conductor only. phase='start' when "
     "launching a run (role, wake_reason, wake_detail, cycle); it returns a run_id. "
     "phase='end' when it finishes (run_id, status, ok, timed_out, duration_s, cost_usd, "
-    "error, final_answer, thinking; both texts are capped). The server stamps times and works "
+    "error, final_answer, thinking, transcript; the texts are capped, transcript is a JSON string). The server stamps times and works "
     "out which queue records the run wrote. Never changes the fort."
 )
 
@@ -106,6 +106,7 @@ _SCHEMA: dict = {
         "error": {"type": ["string", "null"]},
         "final_answer": {"type": ["string", "null"]},
         "thinking": {"type": ["string", "null"]},
+        "transcript": {"type": ["string", "null"]},
     },
 }
 
@@ -279,7 +280,7 @@ def _report_sync(arguments: Mapping[str, Any], queue_db_path: Any) -> Tuple[str,
             timed_out=_opt_bool(arguments, "timed_out"), duration_s=duration_s,
             cost_usd=_opt_num(arguments, "cost_usd"), error=_opt_str(arguments, "error"),
             final_answer=_opt_str(arguments, "final_answer"), records=linked,
-            thinking=_opt_str(arguments, "thinking"),
+            thinking=_opt_str(arguments, "thinking"), transcript=_opt_str(arguments, "transcript"),
         )
         return f"{out['run_id']} ended, {out['records']} record(s) linked", out
     except runs.RunsError as exc:
