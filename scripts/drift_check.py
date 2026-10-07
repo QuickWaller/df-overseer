@@ -247,11 +247,11 @@ def _load_registry_and_roster(agents_dir: Path = REPO_ROOT / "agents"):
     sys.path.insert(0, str(REPO_ROOT))
     from dfmcp.registry import load_registry
     from dfmcp.roles import load_roster
-    from dfmcp import queue_tools, doctrine_tools, series_tools, gotchas_tools, knowledge_tools, conductor_tools, plan_tools
+    from dfmcp import queue_tools, doctrine_tools, series_tools, gotchas_tools, knowledge_tools, conductor_tools
 
     registry = load_registry(native_tools={
         **queue_tools.NATIVE_TOOLS, **doctrine_tools.NATIVE_TOOLS, **series_tools.NATIVE_TOOLS,
-        **gotchas_tools.NATIVE_TOOLS, **knowledge_tools.NATIVE_TOOLS, **conductor_tools.NATIVE_TOOLS, **plan_tools.NATIVE_TOOLS,
+        **gotchas_tools.NATIVE_TOOLS, **knowledge_tools.NATIVE_TOOLS, **conductor_tools.NATIVE_TOOLS,
     })
     roster = load_roster(registry, agents_dir=agents_dir)
     return registry, roster

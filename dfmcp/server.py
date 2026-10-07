@@ -975,7 +975,6 @@ def main() -> None:
     registry = load_registry(native_tools={
         **queue_tools.NATIVE_TOOLS, **doctrine_tools.NATIVE_TOOLS, **series_tools.NATIVE_TOOLS,
         **gotchas_tools.NATIVE_TOOLS, **knowledge_tools.NATIVE_TOOLS, **conductor_tools.NATIVE_TOOLS,
-        **plan_tools.NATIVE_TOOLS,
     })
     roster = load_roster(registry)
     tokens = load_role_tokens(roster)

@@ -29,7 +29,7 @@ from typing import Any, Dict, Mapping, Optional, Tuple
 
 from dfqueue import runs
 
-from . import executor_tools
+from . import executor_tools, plan_tools
 
 CONDUCTOR_REPORT = "conductor.report"
 #: handoffs/2026-10-05-safe-to-resume.md. The Overseer's explicit answer to
@@ -72,6 +72,12 @@ NATIVE_TOOLS: Dict[str, Any] = {
 # place that registers "the conductor's native tools" picks them up; the server
 # routes their calls to `executor_tools.call`, ahead of this module's own.
 NATIVE_TOOLS.update(executor_tools.NATIVE_TOOLS)
+# The plan tools (dfmcp/plan_tools.py: plan.write, plan.read, plan.status) ride
+# the same table for the same reason: roles other than the conductor hold them
+# (the Planner writes, four roles read), and every place that builds a registry
+# from "the native tools" already merges this table, so none can forget them.
+# The server routes their calls to `plan_tools.call`, ahead of this module's.
+NATIVE_TOOLS.update(plan_tools.NATIVE_TOOLS)
 
 _DESCRIPTION = (
     "Report one role run to the operator's record, conductor only. phase='start' when "

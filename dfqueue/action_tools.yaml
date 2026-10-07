@@ -60,6 +60,9 @@ groups:
     coverage: false
   plan:
     types: [plan_change]
+    routed: false
+    frozen: false
+    coverage: false
     ruling_only: true
 
 retired:

@@ -1,0 +1,34 @@
+schema_version: 1
+role: planner
+
+model: deepseek/deepseek-v4-pro  # every role on DeepSeek pro for now, user's call 2026-10-01 (register)
+fallback:
+  - anthropic/claude-haiku-4-5-20251001
+
+rationale: >-
+  Judgment over a few numbers, a few times a game year. The plan is intent,
+  never action, so its blast radius is a wake the Overseer can reject. Output
+  is most of the cost (research/2026-10-07-cross-run-cache.md), so the lever
+  is few rounds, not a cheaper model.
+
+cadence:
+  mode: woken
+  woken_by: [triage]
+  note: >-
+    Not woken yet: the role is disabled until stage P1b. Then: a supervised
+    bootstrap (no active plan), once a season (the computed season index
+    changes), once when a target stalls, and on a ruling on its own plan_change.
+    Never on a timer and never on a migrant wave.
+  rounds_budget: 8   # per review, from the run envelope's assistant_turns; revisit after three real reviews
+
+budget:
+  ceiling_usd_per_day: 1
+  enforcement: ours          # see overseer/model.yaml, the host has no hard cap
+
+selection:
+  method: eval
+  suite: agents/planner/evals/
+  status: not built
+  note: >-
+    Judge on whether a plan version's targets were sensible against the digest
+    it was given, and on how few rounds it took, not on prose.

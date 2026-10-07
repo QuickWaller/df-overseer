@@ -156,14 +156,14 @@ def test_every_group_type_is_a_real_proposal_type():
 
 def _tool_universe():
     from dfmcp import (
-        conductor_tools, plan_tools, doctrine_tools, gotchas_tools, knowledge_tools,
+        conductor_tools, doctrine_tools, gotchas_tools, knowledge_tools,
         queue_tools, series_tools,
     )
     from dfmcp.registry import load_registry
     from dfmcp.roles import load_roster
     registry = load_registry(native_tools={
         **queue_tools.NATIVE_TOOLS, **doctrine_tools.NATIVE_TOOLS, **series_tools.NATIVE_TOOLS,
-        **gotchas_tools.NATIVE_TOOLS, **knowledge_tools.NATIVE_TOOLS, **conductor_tools.NATIVE_TOOLS, **plan_tools.NATIVE_TOOLS,
+        **gotchas_tools.NATIVE_TOOLS, **knowledge_tools.NATIVE_TOOLS, **conductor_tools.NATIVE_TOOLS,
     })
     return registry, load_roster(registry)
 

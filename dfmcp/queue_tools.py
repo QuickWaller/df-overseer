@@ -598,6 +598,17 @@ def _propose_schema_base(role: str) -> dict:
                     "Coordinate-free."
                 ),
             },
+            "serves": {
+                "type": "array",
+                "maxItems": schema.SERVES_MAX,
+                "items": {"type": "string"},
+                "description": (
+                    "Optional: the fort plan target ids (plan.read) this proposal serves, e.g. "
+                    "[\"bedrooms\"]. The server checks each is a target of the active plan and that "
+                    "you own it or one of its derived inputs. Proposals serving the same target are "
+                    "not flagged as duplicates of one another."
+                ),
+            },
             "relies_on": {
                 "type": "array",
                 "maxItems": schema.RELIES_ON_MAX,
@@ -1265,6 +1276,8 @@ def _reject_unknown_arguments(tool_id: str, arguments: Mapping[str, Any], known:
 _PROPOSE_FIELDS = {
     "type", "summary", "rationale", "prediction", "cost",
     "suggested_priority", "preconditions", "public_rationale", "relies_on",
+    # The fort plan targets this serves (handoffs/2026-10-07-planner-p1a.md).
+    "serves",
     # Stage 2 (docs/CONDUCTOR-EXECUTION.md 2.1): an exact step, its declared
     # phases, a follow-up's project and the step it follows, a Board title and an
     # optional urgency. The store refuses all of them for a type that is not
@@ -1441,6 +1454,13 @@ async def _pass_(
         **{k: arguments[k] for k in _PASS_FIELDS if k in arguments},
     }
     written = await _append_locked(QUEUE_PASS, record, db_path, tick, write_lock)
+    if role == schema.PLAN_ROLE:
+        # A Planner pass is a plan review that filed nothing: record the tick
+        # so the pass is visible beside the active version (design 2.4).
+        try:
+            await asyncio.to_thread(store.mark_plan_reviewed, db_path, tick)
+        except (sqlite3.Error, OSError) as exc:
+            raise _storage_error(QUEUE_PASS, exc) from exc
     return render.to_xml(written), written
 
 

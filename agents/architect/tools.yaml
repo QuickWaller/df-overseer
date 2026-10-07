@@ -359,6 +359,15 @@ read:
       counts, the top blocker's reason if held), never the whole graph. Read
       this before proposing something a project already covers.
 
+  - id: "plan.read"
+    status: exists
+    note: >-
+      Added handoffs/2026-10-07-planner-p1a.md (research/2026-10-07-planner-design.md
+      2.5). The fort plan: the targets you serve (and the targets whose derived
+      inputs you own), their computed position with status=true, and the last 8
+      version lines. A proposal that serves a target names its id in `serves`.
+      Read-only. Dispatched natively, not DFHack.
+
 write:
   - id: "queue.propose"
     status: exists

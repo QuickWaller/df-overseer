@@ -185,11 +185,11 @@ async def test_execution_state_is_read_only_and_empty_on_a_quiet_queue(db):
 
 def _registry():
     from dfmcp import (
-        conductor_tools, plan_tools, doctrine_tools, gotchas_tools, knowledge_tools, series_tools,
+        conductor_tools, doctrine_tools, gotchas_tools, knowledge_tools, series_tools,
     )
     return load_registry(native_tools={
         **queue_tools.NATIVE_TOOLS, **doctrine_tools.NATIVE_TOOLS, **series_tools.NATIVE_TOOLS,
-        **gotchas_tools.NATIVE_TOOLS, **knowledge_tools.NATIVE_TOOLS, **conductor_tools.NATIVE_TOOLS, **plan_tools.NATIVE_TOOLS,
+        **gotchas_tools.NATIVE_TOOLS, **knowledge_tools.NATIVE_TOOLS, **conductor_tools.NATIVE_TOOLS,
     })
 
 
