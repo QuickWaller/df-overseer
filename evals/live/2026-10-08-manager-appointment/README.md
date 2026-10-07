@@ -116,3 +116,22 @@ overwritten).
 ## Phase B and C
 
 Appended below as they complete.
+
+## Repro with the OLD tool (before deploying the fix), same unit 347
+
+Fort paused throughout (tick 353715). Through the real MCP server as the Overseer, with the old
+deployed `nobles` script (VERSION minimal): `nobles__unappoint MANAGER dry_run=false`, then
+`nobles__appoint MANAGER 347 dry_run=false`. Tool output: both `consistent: true`.
+
+State read afterwards (same dump as Phase A): assignment 6 `histfig=333 histfig2=333
+position_vector_idx=6`; hf 333 links: positionst assignment 8 (entity_vector_idx 36), former_positionst
+assignment 6, positionst assignment 6 with `avidx 6` and `entity_vector_idx 36`; `hist_event_next_id`
+still 1651 (no add event written); office zone 13 still owned by 347 (unappoint does not clear it).
+
+SURPRISE, recorded honestly: the old `appoint` does not set `entity_vector_idx` (it inserts the link
+without it), yet it reads 36 afterwards, and `position_vector_idx` was never touched by either verb and
+simply kept 6 from the game's earlier appointment. So either the game fills the link's cached index
+lazily, or DFHack's insert initialises it; and in THIS repro the assignment's cache survives from the
+game-made appointment. This repro therefore reproduces only the missing history event and the extra
+former link, NOT the first-time state of unit 345 (a never-held assignment: `position_vector_idx` -1).
+Which of those the Work Orders screen cares about is what the user's check on this exact state decides.
