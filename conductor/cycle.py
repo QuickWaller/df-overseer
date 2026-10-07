@@ -67,6 +67,7 @@ from conductor.hold import HoldState, HoldStore, hold_path_for
 from conductor.mcp_client import MCPToolError, ToolCaller, tool_name
 from conductor.job_watch import JobWatchResult, JobWatchStore, evaluate_jobs, jobs_from_result
 from conductor.ore_watch import POLL_TOOL as ORE_POLL_TOOL, OreRead, ore_read_from_sites
+from conductor.unsupplied_watch import POLL_TOOL as UNSUPPLIED_POLL_TOOL, UnsuppliedRead, unsupplied_read
 from conductor.order_watch import OrderWatchResult, evaluate_orders
 from conductor.pause_watch import (
     OWNED_ESCALATION, UNEXPLAINED_PAUSE, PauseWatchStore, PausePolicy, Verdict, WatchOutcome,
@@ -729,6 +730,7 @@ async def _run_cycle(cycle_index: int, deps: CycleDeps, hold: HoldState) -> Cycl
     # wake the role it belongs to; the briefings reuse the same lines.
     alerts, alert_crossed, alert_lines = await _read_alert_state(call, deps.policy, vitals, cycle_index)
     ore_read = await _ore_watch(deps, call, cycle_index)
+    unsupplied = await _unsupplied_watch(deps, call, orders_state, cycle_index)
     lane_store = _lane_store(deps)
     lane_state = lanes.LaneState()
     lane_wakes: Tuple[Any, ...] = ()
@@ -739,6 +741,7 @@ async def _run_cycle(cycle_index: int, deps: CycleDeps, hold: HoldState) -> Cycl
             pending_ids = list((queue_state.get("proposals") or {}).get("proposal_ids") or [])
             lanes.apply_alert_edges(deps.policy, lane_state, alert_crossed, alert_lines)
             lanes.apply_ore_edges(deps.policy, lane_state, ore_read, game_tick)
+            lanes.apply_unsupplied_edges(deps.policy, lane_state, unsupplied, game_tick)
             lanes.apply_rulings(deps.policy, lane_state, pending_ids)
             lane_wakes = lanes.lane_wakes(deps.policy, lane_state, events_by_role)
             if not deps.dry_run:
@@ -1248,6 +1251,24 @@ async def _ore_watch(deps: "CycleDeps", call: Callable, cycle_index: int) -> Opt
         return ore_read_from_sites(await call(ORE_POLL_TOOL, {}))
     except Exception:  # noqa: BLE001 -- deliberately total, see docstring
         LOG.exception("cycle %s: the ore watch failed; carrying on without it", cycle_index)
+        return None
+
+
+async def _unsupplied_watch(
+    deps: "CycleDeps", call: Callable, orders_state: Any, cycle_index: int,
+) -> Optional[UnsuppliedRead]:
+    """Poll `workjob.unsupplied` and join this cycle's `orders.list`
+    (conductor/unsupplied_watch.py). Total by design, like the ore watch: a
+    tool error or an undeployed allowlist entry logs loudly and returns `None`,
+    leaving the lane state as it was. An order list with no `orders` array is
+    passed on as unreadable, never as an empty list."""
+    if not any(lane.unsupplied for lane in deps.policy.lane_triggers.values()):
+        return None
+    orders = orders_state.get("orders") if isinstance(orders_state, Mapping) else None
+    try:
+        return unsupplied_read(await call(UNSUPPLIED_POLL_TOOL, {}), orders if isinstance(orders, list) else None)
+    except Exception:  # noqa: BLE001 -- deliberately total, see docstring
+        LOG.exception("cycle %s: the unsupplied-building watch failed; carrying on without it", cycle_index)
         return None
 
 

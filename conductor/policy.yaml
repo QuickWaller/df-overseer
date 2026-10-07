@@ -126,6 +126,10 @@ wake_reasons:
   ore_exposed:
     clock: full_speed
     wakes: []
+  # Roles come from `lane_triggers.<role>.unsupplied`.
+  unsupplied_building:
+    clock: full_speed
+    wakes: []
   alert_crossed:
     clock: full_speed
     wakes: []
@@ -339,6 +343,9 @@ lane_triggers:
     stuck_jobs: ['brew|cook|prepare|make|craft|forge|weave|mill|process|butcher|tan|smelt|sew|clothes|plant|harvest|kiln|still|farm|collect']
     alerts: [drink_per_citizen, raw_food_per_citizen]
     rulings: true
+    # A planned building waits on an item kind nothing makes
+    # (handoffs/2026-10-07-unsupplied-building-watch.md).
+    unsupplied: true
 
 # Caps on the full per-run transcript the conductor archives and reports
 # (conductor/runner.py build_transcript; handoffs/2026-10-07-transcripts-and-
@@ -351,3 +358,16 @@ transcript:
   max_result_chars: 800
   max_round_text_chars: 2000
   max_total_chars: 60000
+
+# handoffs/2026-10-07-unsupplied-building-watch.md (conductor/unsupplied_watch.py):
+# the Quartermaster wakes when a buildingplan-planned building needs an item kind
+# with none free, no manager order or workshop job making it. Edge-triggered per
+# item kind: one wake when it first appears, then again after base_ticks, doubling
+# each time up to cap_ticks (100800 = one season), and "stalled" (no more wakes,
+# still listed in the status block) after max_wakes wakes. Clears when the kind
+# stops being unsupplied, so a later recurrence wakes afresh. Not gated by the
+# operator hold (research/2026-10-07-wake-audit.md finding 5). Not tuned.
+unsupplied_building:
+  base_ticks: 6000
+  cap_ticks: 100800
+  max_wakes: 3
