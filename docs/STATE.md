@@ -24,7 +24,7 @@ Last check: 2026-10-05T06:34:49Z, overall: clean
 ## Per-role tool counts (offline, from the repo's own registry + roster)
 
 - **architect**: 54
-- **conductor**: 36
+- **conductor**: 37
 - **consultant**: 29
 - **overseer**: 82
 - **planner**: 12
@@ -32,7 +32,7 @@ Last check: 2026-10-05T06:34:49Z, overall: clean
 
 Hand-edited 2026-10-07 (handoffs/2026-10-07-planner-p1b.md), not yet regenerated:
 the **planner** (8 reads, 4 writes) is enabled in `agents/ROSTER.yaml`, and the
-conductor gained `plan.status` (35 to 36). Architect, overseer and quartermaster
+conductor gained `plan.status` (36 to 37; the unsupplied watch took it from 35 to 36). Architect, overseer and quartermaster
 each gained `plan.read` in P1a. The conductor's own `plan.enabled` switch in
 `conductor/policy.yaml` is separate: the Planner is never woken while it is off.
 Regenerate with `python scripts/drift_check.py --write-state` after the P1b deploy.
