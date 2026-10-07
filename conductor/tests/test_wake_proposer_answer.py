@@ -38,7 +38,7 @@ async def test_a_miss_with_no_named_proposer_falls_back_to_both_advisors(tmp_pat
 
 @pytest.mark.asyncio
 async def test_a_miss_by_a_role_this_build_does_not_run_wakes_nobody(tmp_path):
-    tools = _base_tools(**{"queue.grade": _miss("planner")})  # plan.enabled is false
+    tools = _base_tools(**{"queue.grade": _miss("ghostrole")})  # a role no build runs
     result = await run_cycle(1, _deps(tmp_path, tools=tools))
     assert result.roles_woken == ()
 
