@@ -8,6 +8,8 @@ All live reads were `dfhack-run` Lua and the existing `df-overseer-nobles requir
 > inference from the missing ORGANIZATION skill, not a direct observation, and is wrong. The
 > user's reading: many orders were validated but broken (the "unknown material" ones never ran).
 > Follow-up: `research/2026-10-08-validated-orders-never-run.md`.
+> **2026-10-08, user: the manager's Study icon on the Nobles screen is green.** Finding 5's
+> room-value cause is ruled out.
 
 ## Verdict (honest)
 
