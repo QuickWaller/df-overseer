@@ -8,15 +8,32 @@ actually going on right now.
 
 Do not decide alone. Inputs ready: `research/2026-10-07-session-inbox-options.md`, `research/2026-10-07-openclaw-source-sessions.md`, `evals/live/2026-10-07-openclaw-multiturn/README.md`, `evals/live/2026-10-07-cache-miss-cause/README.md`, `research/2026-10-07-persistent-sessions.md`, `research/2026-10-07-wake-audit.md`. Depending on it: the own-filings briefing block (left on as a trial), Overseer items one-at-a-time vs grouped, where "the fort is paused" goes (briefing line, tool-reply stamp, pushed message).
 
-## Order agreed 2026-10-07 (user), conductor-executes rollout
+## START HERE: current state, 2026-10-07 (evening, NZ)
 
-1. Land stage 2E (`handoffs/2026-10-06-stage-2e.md`, held for the cutover) and the ruling-urgency build (`handoffs/2026-10-07-ruling-urgency.md`). After 2E, add the Overseer charter line: **`high` urgency only for work answering a survival threat** (water, food, hostiles, injury), since high is what still runs under a tripwire latch; otherwise `elevated`.
-2. Supervised room cutover with the user: freeze rooms, one Overseer wake, `/tmp/cutover.sh rooms --check` then `--apply`, deploy 2E, one supervised bedroom end to end.
-3. Supervised tripwire live check (no verdict holds, resume verdict resumes, repeat brake, re-arm).
-4. A short unattended stretch with the user watching: measure turn length, which wakes fire, and cross-run cache reuse (unmeasured).
-After the cutover, from the user's play (register 2026-10-07): fix Water Source/Fishing placement (shore, incl. above a sunken pool; finder plus doctrine), then stockpile links as the logistics layer driven by the crafting graph (`research/2026-10-07-stockpile-logistics.md`).
-5. Tool cuts (user, 2026-10-07: cut hard): after a week of captured transcripts, remove every tool a role never called, Architect and Overseer first.
-5. Then decide further Overseer tool cuts (target a ruling-only Overseer, roughly 20 to 30 tools) from that evidence. Stage 2c (coverage) after the first supervised bedroom.
+**Fort:** Uniboslan, paused, 24 alive (2 births in a 46-day supervised run today), hunger and thirst fine, tripwire armed on defaults. Operator hold set earlier today (expired or near expiry; check `/tmp/hold.sh show` on VM 106). `conductor.service` disabled and inactive: cycles are hand-run `--once` only. DRINK 0 (well covers water), BED 0 with one planned Bed waiting, BARREL 27.
+
+**Live and deployed today** (register rows dated 2026-10-07 have each decision):
+- Rooms routed (deploy 2b): the conductor executes accepted room steps; Overseer 82 tools. Urgency set by the Overseer in its ruling (high only for survival).
+- Ore mining routed (`mine-vein-site`, a site mines its own reserved walls). Shore Water Source/Fishing zones (finder offers ground beside water, incl. above a sunken pool). Ask addressing (`to` on asks). Stockpile tool gaps (links-only, containers, materials, health, plan-feed, remove; field paths verified live, writes unverified, on no allowlist).
+- P0 bedroom alert (Architect). Unsupplied-building watch (Quartermaster). Wake cleanup safety items (deferred proposals no longer re-wake the Overseer, dead wakes removed, backoff in wakes with stalled after 3, grades wake the proposer, answer wake built but off).
+- Planner P1a and P1b deployed DARK: the role exists, its enable commit `2b8c315` is NOT deployed; token and pinned openclaw config not issued. User reads plan v1 before shortfall wakes go on.
+- Transcripts captured per run and public on the Board (Transcript tab, loaded on demand); full proposals collapsed in threads; Metrics tab (`dfqueue/wake_metrics.py`, baseline `evals/live/2026-10-07-wake-baseline/`); awake strip stacks per role.
+- Own filings: `queue.my_filings` for proposers, and a "your recent filings" briefing block ON AS A TRIAL (switch: `own_filings.recent: 0` in conductor/policy.yaml); whether it stays depends on the session design.
+- Orders tool issues valid orders (material defaults from DFHack's order library; `invalid_material` flag). **Live repair done:** cancelled invalid orders 0, 1, 3, 4; created 5 blocks (rock), 6 mechanisms (rock), 7 throne (rock), 8 barrels daily while under 20 (wood); kept 2 (brew x13, user set 13). New orders not yet validated: needs running time to see whether the manager validates them (`evals/live/2026-10-07-manager-orders/README.md`: manager has never organised; separate possible cause). gotcha-0002 ("manager route stuck") is suspect: correct it once orders are seen to run.
+
+**In flight (agents):** filing hygiene (structural duplicate refusal naming the original; agents read answers to their asks; `handoffs/2026-10-07-filing-hygiene.md`); all-wake-reasons deploy; red team of the fort dossier design.
+
+**Designed, not built:** Planner revision 2 (`research/2026-10-07-planner-design.md`, red team done; P2+ later), Logistics role (in that design, stage L), notebook (deferred: metrics then own filings first; `research/2026-10-07-notebook-*.md`), fort dossier and crafting search (`research/2026-10-07-fort-dossier-and-crafting-search.md`, red team running; its 3 user questions wait for the red team).
+
+**Next, in order:**
+1. Tripwire live check (user said go ahead without watching): steps in `handoffs/2026-10-06-stage-t-tripwire.md` Result, "Live check". Its resume step also gives running time to see whether new orders 5 to 8 validate.
+2. Staged arm of `conductor.service` (user's go-ahead in principle 2026-10-07): service on with the operator hold, watch wakes and cost on the Metrics tab, then lift the hold. Only after the tripwire check passes. Enabling the service is the user's call to confirm at the time.
+3. Planner first plan, supervised: token, pinned config with 12 tools, deploy enable commit, bootstrap, user reads v1, then shortfall wakes on.
+4. Supervised bedroom end to end (site-4 finish accepted twice: proposal-0024 and duplicate 0026; the filing-hygiene stream prevents repeats).
+5. Tool cuts by evidence after about a week of transcripts (user: cut hard).
+6. Stockpile write verbs live-verified on a throwaway pile before Logistics.
+
+**Owed with the user (do not decide alone):** the inbox and session design (section below); fort dossier open questions (after its red team).
 
 ## START HERE: handover, 2026-09-30 (read this first)
 
