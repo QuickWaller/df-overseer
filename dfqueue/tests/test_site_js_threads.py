@@ -20,6 +20,7 @@ class Node {
   setAttribute(k, v) { this.attrs[k] = String(v); if (k === "hidden") this.hidden = true; }
   addEventListener(t, f) { this.listeners[t] = f; }
   appendChild(c) { this.children.push(c); return c; }
+  replaceChildren(...c) { this.children = c; }
   querySelector(sel) { const cls = sel.slice(1); const walk = (n) => { for (const c of n.children) { if (c.className.split(" ").includes(cls)) return c; const r = walk(c); if (r) return r; } return null; }; return walk(this); }
   get onclick() { return this.listeners.click; }
   set onclick(f) { this.listeners.click = f; }

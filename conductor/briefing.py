@@ -66,11 +66,30 @@ def _field(result: Any, path: str) -> Any:
     return node
 
 
+def _leaf_default(alert: Any, result: Any) -> Optional[Any]:
+    """The alert's `missing_leaf` default, or `None` when it does not apply.
+    It applies only to the last path segment: the read must be a mapping with
+    no `error` key and the parent of the leaf must exist as a mapping, so an
+    error-shaped or malformed result never reads as zero."""
+    default = getattr(alert, "missing_leaf", None)
+    if default is None or not isinstance(result, Mapping) or "error" in result:
+        return None
+    parts = alert.field.split(".")
+    try:
+        parent = _field(result, ".".join(parts[:-1])) if len(parts) > 1 else result
+    except (KeyError, IndexError, TypeError, ValueError):
+        return None
+    if not isinstance(parent, Mapping) or parts[-1] in parent:
+        return None
+    return default
+
+
 def evaluate_threshold_alerts(alerts: Sequence[Any], read_results: Mapping[Any, Any], alive: Any) -> List[str]:
     """Alert lines for the thresholds currently crossed. `alerts` are
     `conductor.policy.ThresholdAlert`s; `read_results` maps `alert.name` to the
     parsed result of its read (absent or `None` when the read failed). Total: a
-    missing result, a missing field, a non-number or an unusable `alive` simply
+    missing result, a missing field (unless the alert declares a `missing_leaf`
+    default and the read is well formed, which then stands in for it), a non-number or an unusable `alive` simply
     drops that alert's line."""
     lines: List[str] = []
     for alert in alerts:
@@ -79,7 +98,11 @@ def evaluate_threshold_alerts(alerts: Sequence[Any], read_results: Mapping[Any, 
             continue
         try:
             value = _field(result, alert.field)
-        except (KeyError, IndexError, TypeError, ValueError):
+        except (KeyError, IndexError):
+            value = _leaf_default(alert, result)
+            if value is None:
+                continue
+        except (TypeError, ValueError):
             continue
         if isinstance(value, bool) or not isinstance(value, (int, float)):
             continue
@@ -88,8 +111,10 @@ def evaluate_threshold_alerts(alerts: Sequence[Any], read_results: Mapping[Any, 
         if alert.per == "alive":
             if isinstance(alive, bool) or not isinstance(alive, (int, float)) or alive <= 0:
                 continue
-            per_value = round(measured / float(alive), 1)
-            measured_for_test = per_value
+            # Compare the unrounded ratio; round only for the text (21 of 22
+            # is 0.95 and must cross below 1).
+            measured_for_test = measured / float(alive)
+            per_value = round(measured_for_test, 1)
         else:
             measured_for_test = measured
         if measured_for_test < alert.below:

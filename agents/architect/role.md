@@ -117,6 +117,10 @@ arguments you pass to `queue.propose` itself.
    proposal that cites its existing `site-N` handle (`blueprint.sites`).
 4. Wait for the ore rule above before any finish phase.
 
+When the briefing carries a bedroom alert, first read `queue.project_status`
+(and the pending proposals) for room work already in flight, and count a
+room in flight as met before filing another, so you do not duplicate it.
+
 The server refuses a step that is out of order, names an unissued handle, or
 repeats a phase; its message says what to change. The reasoning stays yours.
 

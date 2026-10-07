@@ -66,24 +66,89 @@ def test_transcript_renders_rounds_calls_collapsed_and_withheld_args():
     assert sum(1 for t in res["tags"] if t.startswith("details.fx")) == 3
 
 
-def test_transcript_tab_lists_runs_collapsed_newest_first_and_skips_runs_without_one():
+def _run_async(expr, data):
+    """Like `_run`, but `expr` may `await` (the body is an async function)."""
+    import json, subprocess, tempfile
+    from pathlib import Path
+    from dfqueue.tests.test_site_js_threads import APP, STUB
+    script = STUB + APP.read_text(encoding="utf8") + "\nconst DATA = %s;\n" % json.dumps(data) + (
+        "(async function(){ %s })().then((r) => console.log(JSON.stringify(r)), (e) => { console.error(e); process.exit(1); });" % expr)
+    with tempfile.TemporaryDirectory() as tmp:
+        path = Path(tmp) / "run.js"
+        path.write_text(script, encoding="utf8")
+        out = subprocess.run(["node", str(path)], capture_output=True, text=True, encoding="utf8")
+    assert out.returncode == 0, out.stderr[-2000:]
+    return json.loads(out.stdout.strip().splitlines()[-1])
+
+
+RUNS = [
+    {"run_id": "run-0002", "role": "architect", "wake_reason": "routine_review", "started_at": "2026-10-07T10:00:00+00:00",
+     "transcript": {"available": True, "size": 20480, "withheld_count": 2}},
+    {"run_id": "run-0001", "role": "architect", "started_at": "2026-10-07T09:00:00+00:00"},
+    {"run_id": "run-0003", "role": "overseer", "started_at": "2026-10-07T09:00:00+00:00",
+     "transcript": {"available": True, "size": 100, "withheld_count": 0}},
+]
+
+
+def test_transcript_tab_lists_runs_collapsed_newest_first_without_fetching():
     expr = WALK + r"""
+      globalThis.fetch = async () => { throw new Error("must not fetch before a run is opened"); };
       const page = Object.create(SitePage.prototype);
       page.siteText = { wake_reasons: { routine_review: "Regular check-in" } };
-      page.fortRuns = { runs: [
-        { role: "architect", wake_reason: "routine_review", started_at: "2026-10-07T10:00:00+00:00", transcript: DATA },
-        { role: "architect", started_at: "2026-10-07T09:00:00+00:00" },
-        { role: "overseer", started_at: "2026-10-07T09:00:00+00:00", transcript: DATA },
-      ] };
+      page.fortRuns = { runs: DATA };
       const n = page._transcriptTabEl("architect"); walk(n);
       const det = n.children.filter((c) => c.tag === "details");
       return { seen, count: det.length, open: det.map((d) => d.attrs.open) };
     """
-    res = _run(expr, TX)
+    res = _run(expr, RUNS)
     assert res["count"] == 1 and res["open"] == [None]
-    assert "Regular check-in · 2026-10-07 · 2 rounds · 2 tool calls" in res["seen"]
+    assert "Regular check-in · 2026-10-07 · 20 KB · 2 withheld" in res["seen"]
     empty = _run("const p = Object.create(SitePage.prototype); p.fortRuns = { runs: [] }; return p._transcriptTabEl('architect').children.length;", {})
     assert empty == 1
+
+
+def test_opening_a_run_shows_loading_then_the_fetched_transcript_and_caches_it():
+    expr = WALK + r"""
+      const urls = [];
+      globalThis.fetch = async (u) => { urls.push(u); return { ok: true, json: async () => DATA.tx }; };
+      const page = Object.create(SitePage.prototype);
+      page.dataRoot = "/data/public"; page.fortMeta = { id: "ragwind" }; page.siteText = {};
+      page.fortRuns = { runs: DATA.runs };
+      const n = page._transcriptTabEl("architect");
+      const det = n.children[0]; const holder = det.children[1];
+      const before = holder.children.length;
+      det.open = true; det.listeners.toggle();
+      const loading = holder.children.map((c) => c.textContent);
+      await new Promise((r) => setTimeout(r, 0));
+      walk(holder);
+      det.listeners.toggle(); det.listeners.toggle();
+      await new Promise((r) => setTimeout(r, 0));
+      return { before, loading, seen, urls, cached: !!page.transcripts["run-0002"] };
+    """
+    res = _run_async(expr, {"runs": RUNS, "tx": TX})
+    assert res["before"] == 0 and res["loading"] == ["Loading transcript..."]
+    assert "Round 1" in res["seen"] and "stocks.get" in res["seen"]
+    assert res["urls"] == ["/data/public/forts/ragwind/transcripts/run-0002.json"]  # once, though toggled again
+    assert res["cached"] is True
+
+
+def test_a_missing_transcript_file_shows_a_note_and_a_reopen_retries():
+    expr = r"""
+      let calls = 0;
+      globalThis.fetch = async () => { calls += 1; return { ok: false, status: 404, json: async () => ({}) }; };
+      const page = Object.create(SitePage.prototype);
+      page.dataRoot = "/d"; page.fortMeta = null; page.siteText = {};
+      page.fortRuns = { runs: DATA };
+      const det = page._transcriptTabEl("architect").children[0]; const holder = det.children[1];
+      det.open = true; det.listeners.toggle();
+      await new Promise((r) => setTimeout(r, 0));
+      const first = holder.children.map((c) => c.textContent);
+      det.listeners.toggle();
+      await new Promise((r) => setTimeout(r, 0));
+      return { first, calls };
+    """
+    res = _run_async(expr, RUNS)
+    assert res["first"] == ["This transcript is no longer available."] and res["calls"] == 2
 
 
 def test_a_transcript_tab_exists_for_live_roles_only():

@@ -304,6 +304,17 @@ threshold_alerts:
     per: alive
     below: 1
     text: "Raw food is low: {value} units, {per_value} per citizen (alert below {threshold})."
+  # Stage P0 (research/2026-10-07-planner-design.md section 7). counts_by_kind
+  # is an empty object when no zone of a kind exists, so `missing_leaf: 0` is what
+  # lets a fort with no bedrooms at all alert. Edge-triggered, wakes the
+  # Architect via lane_triggers.architect.alerts; it does not count work in
+  # flight, so the Architect reads queue.project_status before filing.
+  - name: bedrooms_per_citizen
+    read: {tool: zone.list, args: {KIND_FILTER: "", OWNER_FILTER: "", VALID_FILTER: "", NEAR_LANDMARK_FILTER: ""}, field: counts_by_kind.Bedroom}
+    per: alive
+    below: 1
+    missing_leaf: 0
+    text: "Bedrooms are short: {value} for the fort, {per_value} per citizen (alert below {threshold}). File a room proposal."
 
 # The old `unexecuted_wake_ignore` list is gone (stage 2D). Deploy 2a closes
 # every accepted pre-cutover ruling (`python -m conductor.cutover legacy
@@ -340,6 +351,8 @@ lane_triggers:
     # Ore exposed by a dig is the Architect's to propose mining
     # (handoffs/2026-10-05-ore-exposed-signal.md).
     ore: true
+    # Bedroom shortfall (stage P0): wakes once per crossing.
+    alerts: [bedrooms_per_citizen]
     # The Architect proposes rooms, so it is the fallback recipient of the
     # execute phase's step_done / step_attention / project_idle.
     execution: true
@@ -347,7 +360,7 @@ lane_triggers:
     events:
       - type: stock_below_threshold
     stuck_jobs: ['brew|cook|prepare|make|craft|forge|weave|mill|process|butcher|tan|smelt|sew|clothes|plant|harvest|kiln|still|farm|collect']
-    alerts: ["*"]
+    alerts: [drink_per_citizen, raw_food_per_citizen]
     rulings: true
   # The Planner files only plan_change proposals; a ruling on one wakes it
   # (`ruling_on_own`). Its other wakes come from conductor/plan_watch.py.
