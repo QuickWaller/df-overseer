@@ -135,3 +135,46 @@ lazily, or DFHack's insert initialises it; and in THIS repro the assignment's ca
 game-made appointment. This repro therefore reproduces only the missing history event and the extra
 former link, NOT the first-time state of unit 345 (a never-held assignment: `position_vector_idx` -1).
 Which of those the Work Orders screen cares about is what the user's check on this exact state decides.
+
+## Cause, inferred (strong)
+
+After the old-tool unappoint and re-appoint of 347, the user pressed play briefly and reported it worked
+(no manager message, orders moving). So re-appointment with the old tool works; the original failure
+was specific to a FIRST-TIME appointment of a never-held assignment, where the old tool left
+`assignment.position_vector_idx` at -1 (and wrote no event). The link's `entity_vector_idx` read 36
+after the old appoint, so DFHack or the game fills it; the assignment's cached position index is the
+one thing the old tool never set and the game's own appointment does. Not proven by a spare-position
+repro (skipped on instruction); inferred from: the game-made state, the working re-appointment, and
+the fact that no other difference remained. The fix writes the assignment index, the link index and
+the event anyway.
+
+## Deploy
+
+Pushed to main (3d5109d). `deploy.py` vm103-dfhack-scripts then vm103-dfmcp: the first reported
+drift only because the dfmcp side (conductor 38 vs live 37, plan.status) was undeployed; after
+vm103-dfmcp both report `[clean]`, tool counts architect 55, conductor 38, consultant 29, overseer 82,
+planner 13, quartermaster 28. Test counts: ambient `python -m pytest` 3674 passed, 3 skipped, 0 failed
+(lupa present); `dfmcp/tests` in `.venv-dfmcp` 990 passed.
+
+## Phase C, with the fixed tool (Overseer, real MCP server, fort paused, tick 353715 to 353868)
+
+1. `nobles__unappoint MANAGER dry_run=false` then `nobles__appoint MANAGER 347 dry_run=false`
+   (default VERSION with_event): `event_written: true` both times, game did not crash.
+2. `nobles__verify MANAGER`: `consistent: true`, `link_entity_cached_index_matches: true`,
+   `assignment_position_cached_index_matches: true` (index 6 of expected 6, link 36 of expected 36),
+   `position_add_event_found: true`. `hist_event_next_id` 1651 to 1653.
+3. Office zone 13 still owned by 347 afterwards (unappoint does not clear owners), so no reassign.
+4. THE SCREEN, read directly: the game's Work Orders screen was open (focus
+   `dwarfmode/Info/WORK_ORDERS/Default`) and its text can be read with `dfhack.screen.readTile`
+   over the 160x60 window. It shows the order "Brew drink from plant 10/13", "Can use any shop", and
+   the normal footer "All work orders must be validated by the manager before they become active."
+   and NO "must assign a manager" message. (This read is only as good as the screen being the one
+   the user's earlier failure showed it on; the message is absent after the fixed re-appointment.)
+5. State before the watch: `orders.list` order 2 `validated: true, active: true, amount_left 10 of 13`
+   (3 already brewed in the user's earlier play), a CustomReaction job with `order_id=2` exists, DRINK
+   stack total 14, 24 citizens alive.
+6. The bounded supervised unpause did NOT run: `supervised-unpause.sh 100 240 40` resumed but the
+   tick stayed at 353868 (the script's "stuck viewscreen" stop), with the Work Orders panel open.
+   A direct write to `pause_state` was refused by the auto-mode classifier and not pursued. Fort left
+   PAUSED, fps 100, tripwire re-armed on defaults. Order validating, job at a workshop and items
+   rising across ticks are therefore NOT yet watched in this run.
