@@ -239,3 +239,17 @@ None gives a reason string. Closest, all read-only **[source unless noted]**:
 - The Gamepur guide and the DF bug tracker could not be fetched this session (403 and connection refused);
   their content was not used.
 - Steam threads were read through a summarising fetcher, so wording is paraphrase.
+
+## Update: office ruled out (user observation, relayed by coordinator 2026-10-08)
+
+The user reports the manager's Study (office) icon on the Nobles screen is GREEN, so the room-value
+requirement is met. That removes the office/room-value cause (the 2026-10-07 README's item 5 and the
+wiki's red-Study-icon case) from the list. Consequences for weighting:
+
+- Suspect 3 loses its office branch; what remains is starvation or interruption of `ManageWorkOrders`
+  (manager's other labors, the interrupted-never-recreated bug) and stone-use restrictions.
+- Suspects 1 (brew inputs) and 2 (script versus UI order fields, material, `items`) rise in relative
+  weight. This is consistent with the user seeing validation happen: the pipeline up to validation works,
+  so the failure is at or after the validated-to-jobs step, where inputs and order fields matter.
+- Validation working also makes explanation (a) or (c) in section 6 (different validator, or no
+  ORGANIZATION XP granted) more likely than (b) or (d), though still unconfirmed.
