@@ -45,7 +45,8 @@ same code path with `FakeToolCaller`/`FakeRoleRunner` instead.
    announcement-class tripwire/event (`docs/AGENT-LOOP.md` §3: "the
    announcement tripwire... is still owed") feeding a genuine sighting event
    into `diff.since`, not a new grant of this tool. `hostile_seen_unreachable`
-   stays `False` always; left as a documented gap, not a silent one.
+   stayed `False` always, a documented gap; the stub (signal, policy entry) was
+   deleted in handoffs/2026-10-07-wake-cleanup.md and returns with a real source.
 """
 
 from __future__ import annotations
@@ -99,12 +100,14 @@ ALL_ROLES = (*ADVISORS, CONSULTANT, OVERSEER)
 #: stream) -- the exact key a drained event carries its classification
 #: under was not independently re-derived here; flagged in this stream's
 #: report as needing a live check before this mapping is trusted.
-EVENT_TYPE_TO_SIGNAL: Dict[str, str] = {
-    "migrant_wave": "migrant_wave",
-    "caravan_arrived": "caravan_present",
-    "season_change": "season_change",
-    "stock_below_threshold": "stock_below_target",
-}
+#:
+#: Empty since handoffs/2026-10-07-wake-cleanup.md: `migrant_wave`,
+#: `caravan_arrived`, `season_change` and `stock_below_threshold` were never
+#: emitted by any DFHack script (research/2026-10-07-wake-audit.md rows 19, 23
+#: to 25), so their entries and signals were deleted. `season_change` is now
+#: computed from the game tick (conductor/plan_watch.py), not drained. A real
+#: emitter would add its entry here again.
+EVENT_TYPE_TO_SIGNAL: Dict[str, str] = {}
 
 #: handoffs/2026-09-23-attention-tiers-ingame.md item 2 / this stream's item
 #: 4. The event `type` this stream ASSUMES the sibling in-game stream's
@@ -795,13 +798,7 @@ async def _run_cycle(cycle_index: int, deps: CycleDeps, hold: HoldState) -> Cycl
         stuck_job=event_hits.get("stuck_job", False) or job_watch.any_due,
         stuck_job_detail=job_watch.wake_detail(),
         stuck_job_roles=stuck_roles,
-        stock_below_target=event_hits.get("stock_below_target", False),
-        migrant_wave=event_hits.get("migrant_wave", False),
-        caravan_present=event_hits.get("caravan_present", False),
-        season_change=event_hits.get("season_change", False) or bool(
-            season_edge is not None and season_edge.changed and deps.policy.plan.season_wake
-        ),
-        hostile_seen_unreachable=False,  # gap 2, see module docstring (documented, not fixable here)
+        season_change=bool(season_edge is not None and season_edge.changed and deps.policy.plan.season_wake),
         stalled_order=bool(order_watch.stalled_ids),
         stalled_order_ids=order_watch.stalled_ids,
         blocked_order=bool(order_watch.blocked_ids),
@@ -809,7 +806,6 @@ async def _run_cycle(cycle_index: int, deps: CycleDeps, hold: HoldState) -> Cycl
         slow_announcement=slow_hit,
         slow_announcement_roles=slow_roles,
         slow_announcement_detail=slow_detail,
-        prediction_due=False,             # folded into prediction_graded, see module docstring
         prediction_graded=prediction_graded,
         prediction_misses=prediction_misses,
         lane_wakes=lane_wakes,

@@ -93,12 +93,8 @@ class Signals:
     #: wake the roles policy.yaml names for `stuck_job`
     #: (handoffs/2026-10-05-stricter-wakes.md).
     stuck_job_roles: Optional[Tuple[str, ...]] = None
-    stock_below_target: bool = False
-    stock_below_target_ticks_to_consequence: Optional[int] = None
-    migrant_wave: bool = False
-    caravan_present: bool = False
+    #: Computed from the game tick (conductor/plan_watch.py); no diff event.
     season_change: bool = False
-    hostile_seen_unreachable: bool = False
 
     # handoffs/2026-09-23-stalled-order-poller.md: polled from orders.list
     # via conductor/order_watch.py, never from a diff.since event -- there
@@ -122,7 +118,6 @@ class Signals:
     slow_announcement_detail: str = ""
 
     # This cycle's own queue.grade result.
-    prediction_due: bool = False
     #: A prediction graded as a MISS this cycle. A hit is recorded and wakes
     #: nobody (handoffs/2026-10-05-stricter-wakes.md).
     prediction_graded: bool = False
@@ -177,13 +172,11 @@ class TriageResult:
 #: ticks-to-consequence). Kept here, as data, rather than as a chain of
 #: `if signals.x: ...` per field -- one place wiring a `Signals` field to
 #: its `policy.yaml` reason name.
-_BOOLEAN_REASONS: Tuple[str, ...] = (
-    "migrant_wave", "caravan_present", "season_change", "hostile_seen_unreachable",
-)
+_BOOLEAN_REASONS: Tuple[str, ...] = ("season_change",)
 #: The subset marked `computable: true` in policy.yaml -- each one also
 #: carries a `<reason>_ticks_to_consequence` field on `Signals`.
 _COMPUTABLE_REASONS: Tuple[str, ...] = (
-    "stuck_job", "stock_below_target", "vital_nearing_threshold",
+    "stuck_job", "vital_nearing_threshold",
 )
 
 
@@ -195,12 +188,6 @@ def triage(signals: Signals, policy: Policy, *, base_fps: Optional[int] = None) 
     """
     wakes: List[Wake] = []
 
-    if signals.prediction_due:
-        rp = policy.reason("prediction_due")
-        wakes.append(Wake(
-            "prediction_due", "a prediction fell due this cycle",
-            rp.wakes, clock_for_reason("prediction_due", policy),
-        ))
     if signals.prediction_graded:
         rp = policy.reason("prediction_graded")
         detail = "a prediction was graded this cycle"

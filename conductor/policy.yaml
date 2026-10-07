@@ -114,9 +114,6 @@ wake_reasons:
   routine_review:
     clock: full_speed
     wakes: [quartermaster]
-  prediction_due:
-    clock: full_speed
-    wakes: [architect, quartermaster]
   prediction_graded:
     clock: full_speed
     wakes: [architect, quartermaster]
@@ -125,10 +122,6 @@ wake_reasons:
   season_change:
     clock: full_speed
     wakes: [quartermaster]
-  # New citizens need beds (Architect) and food (Quartermaster).
-  migrant_wave:
-    clock: full_speed
-    wakes: [architect, quartermaster]
   lane_event:
     clock: full_speed
     wakes: []
@@ -152,20 +145,15 @@ wake_reasons:
     clock: full_speed
     wakes: [quartermaster]
     computable: true
-  stock_below_target:
-    clock: full_speed
-    wakes: [quartermaster]
-    computable: true
   vital_nearing_threshold:
     clock: slowed
     wakes: [quartermaster]
     computable: true
-  caravan_present:
-    clock: slowed
-    wakes: [quartermaster]
-  hostile_seen_unreachable:
-    clock: slowed
-    wakes: []
+  # Deleted 2026-10-07 (handoffs/2026-10-07-wake-cleanup.md, research/2026-10-07-
+  # wake-audit.md rows 19 and 22 to 26): prediction_due, migrant_wave,
+  # caravan_present, hostile_seen_unreachable and stock_below_target, none of
+  # which had a source that could ever raise them, and the Quartermaster's
+  # stock_below_threshold lane event below.
   # handoffs/2026-09-23-stalled-order-poller.md item 1: same production
   # domain as stuck_job/stock_below_target above (both wake only the
   # quartermaster), so this reuses that same precedent rather than
@@ -368,8 +356,6 @@ lane_triggers:
     # execute phase's step_done / step_attention / project_idle.
     execution: true
   quartermaster:
-    events:
-      - type: stock_below_threshold
     stuck_jobs: ['brew|cook|prepare|make|craft|forge|weave|mill|process|butcher|tan|smelt|sew|clothes|plant|harvest|kiln|still|farm|collect']
     alerts: [drink_per_citizen, raw_food_per_citizen]
     rulings: true

@@ -137,6 +137,15 @@ def _base_tools(**overrides):
     return results
 
 
+def _wake_both_advisors(tools, qm_events=()):
+    """Wake the Architect (a dig completed in its own drain) and the
+    Quartermaster (drink at 0 crosses the drink alert) in one cycle. Stands in
+    for the `migrant_wave` event that wakes both and no longer exists
+    (handoffs/2026-10-07-wake-cleanup.md)."""
+    tools["diff.since"] = _diff_sequence([[{"id": 1, "type": "JOB_COMPLETED", "detail": "Dig"}], list(qm_events)])
+    tools["stocks.food-drink"] = _food_drink(drink=0)
+
+
 def _deps(tmp_path, *, tools=None, runner=None, dry_run=False, policy=None, just_reviewed=True):
     """`just_reviewed=True` (the default): the routine-review cursor is
     pre-seeded to this fixture's own game tick, so an ordinary test's
@@ -198,7 +207,7 @@ async def test_a_quiet_cycle_still_re_arms_a_disarmed_watcher(tmp_path):
 
 async def test_migrant_wave_wakes_both_advisors_at_full_speed(tmp_path):
     tools = _base_tools()
-    tools["diff.since"] = _diff_sequence([[{"id": 1, "type": "migrant_wave"}]])
+    _wake_both_advisors(tools)
     deps = _deps(tmp_path, tools=tools)
     result = await run_cycle(1, deps)
 
@@ -207,16 +216,15 @@ async def test_migrant_wave_wakes_both_advisors_at_full_speed(tmp_path):
     assert [c["role"] for c in deps.role_runner.calls] == ["architect", "quartermaster"]
 
 
-async def test_caravan_present_slows_the_clock_and_wakes_only_the_quartermaster(tmp_path):
+async def test_events_no_script_emits_wake_nobody(tmp_path):
+    """handoffs/2026-10-07-wake-cleanup.md: these four were deleted as wake
+    sources (nothing in scripts/dfhack/ emits them)."""
+    dead = [{"id": i, "type": t} for i, t in enumerate(
+        ("migrant_wave", "caravan_arrived", "season_change", "stock_below_threshold"), start=1)]
     tools = _base_tools()
-    tools["diff.since"] = _diff_sequence([[], [{"id": 1, "type": "caravan_arrived"}]])
-    deps = _deps(tmp_path, tools=tools)
-    result = await run_cycle(1, deps)
-
-    assert result.roles_woken == ("quartermaster",)
-    assert result.clock_level == SLOWED
-    change = next(c for c in result.clock_changes if c["tool"] == "clock.set-speed")
-    assert change["args"]["fps"] == POLICY.think_fps
+    tools["diff.since"] = _diff_sequence([dead, dead])
+    result = await run_cycle(1, _deps(tmp_path, tools=tools))
+    assert result.roles_woken == ()
 
 
 async def test_a_never_reviewed_fort_triggers_a_routine_review_on_its_first_cycle(tmp_path):
@@ -395,7 +403,7 @@ async def test_a_tripwire_takes_priority_over_ordinary_triage_this_cycle(tmp_pat
     tools["clock.status"] = _clock_status(
         paused=True, tripwire={"reason": "hunger_critical", "tick": 999, "detail": "x"},
     )
-    tools["diff.since"] = _diff_sequence([[{"id": 1, "type": "migrant_wave"}]])
+    _wake_both_advisors(tools)
     runner = FakeRoleRunner({
         OVERSEER: RunResult(
             role=OVERSEER, ok=True, status="ok", cost_usd=0.0, wall_clock_seconds=1.0,
@@ -417,7 +425,7 @@ async def test_a_tripwire_takes_priority_over_ordinary_triage_this_cycle(tmp_pat
 
 async def test_dry_run_reports_a_plan_without_changing_the_clock_or_launching_anyone(tmp_path):
     tools = _base_tools()
-    tools["diff.since"] = _diff_sequence([[{"id": 1, "type": "migrant_wave"}]])
+    _wake_both_advisors(tools)
     tools["queue.overview"] = _queue_overview(proposals={"count": 1, "proposal_ids": ["proposal-0001"]})
     runner = FakeRoleRunner()
     deps = _deps(tmp_path, tools=tools, runner=runner, dry_run=True)
@@ -446,7 +454,7 @@ async def test_dry_run_never_calls_queue_grade_or_mutates_the_clock(tmp_path):
 
 async def test_dry_run_does_not_advance_diff_cursors(tmp_path):
     tools = _base_tools()
-    tools["diff.since"] = _diff_sequence([[{"id": 1, "type": "migrant_wave"}]])
+    _wake_both_advisors(tools)
     deps = _deps(tmp_path, tools=tools, dry_run=True)
     await run_cycle(1, deps)
     assert deps.cursor_store.get("architect") == 0  # unchanged
@@ -473,7 +481,7 @@ async def test_a_real_cycle_advances_every_roles_diff_cursor(tmp_path):
 
 async def test_a_real_cycle_writes_a_full_archive(tmp_path):
     tools = _base_tools()
-    tools["diff.since"] = _diff_sequence([[{"id": 1, "type": "migrant_wave"}]])
+    _wake_both_advisors(tools)
     deps = _deps(tmp_path, tools=tools)
     result = await run_cycle(1, deps)
 
@@ -487,7 +495,7 @@ async def test_a_real_cycle_writes_a_full_archive(tmp_path):
 
 async def test_daily_cost_accumulates_across_role_runs(tmp_path):
     tools = _base_tools()
-    tools["diff.since"] = _diff_sequence([[{"id": 1, "type": "migrant_wave"}]])
+    _wake_both_advisors(tools)
     runner = FakeRoleRunner({
         "architect": RunResult(
             role="architect", ok=True, status="ok", cost_usd=0.01, wall_clock_seconds=1,
@@ -508,7 +516,7 @@ async def test_daily_cost_accumulates_across_role_runs(tmp_path):
 
 async def test_the_run_archive_keeps_usage_and_turns(tmp_path):
     tools = _base_tools()
-    tools["diff.since"] = _diff_sequence([[{"id": 1, "type": "migrant_wave"}]])
+    _wake_both_advisors(tools)
     usage = {"input": 100, "output": 20, "cacheRead": 900, "total": 1020}
     runner = FakeRoleRunner({
         "architect": RunResult(
@@ -531,7 +539,7 @@ async def test_the_run_archive_keeps_usage_and_turns(tmp_path):
 
 async def test_the_woken_roles_charter_and_briefing_reach_the_runner(tmp_path):
     tools = _base_tools()
-    tools["diff.since"] = _diff_sequence([[{"id": 1, "type": "migrant_wave"}]])
+    _wake_both_advisors(tools)
     runner = FakeRoleRunner()
     deps = _deps(tmp_path, tools=tools, runner=runner)
     await run_cycle(1, deps)
@@ -540,7 +548,7 @@ async def test_the_woken_roles_charter_and_briefing_reach_the_runner(tmp_path):
     assert call["charter"] == CHARTERS["architect"]
     briefing = json.loads(call["prompt"])
     assert briefing["role"] == "architect"
-    assert briefing["wake_reason"] == "migrant_wave"
+    assert briefing["wake_reason"] == "lane_event"
     assert briefing["clock"] == FULL_SPEED
 
 
@@ -827,7 +835,7 @@ async def test_a_successful_run_advances_the_routine_review_cursor(tmp_path):
 
 async def test_a_failed_run_keeps_its_roles_diff_events_unconsumed(tmp_path):
     tools = _base_tools()
-    tools["diff.since"] = _diff_sequence([[{"id": 1, "type": "migrant_wave"}], [{"id": 2}, {"id": 3}]])
+    _wake_both_advisors(tools, qm_events=[{"id": 2}, {"id": 3}])
     runner = FakeRoleRunner({"architect": _failed("architect", "no_output")})
     deps = _deps(tmp_path, tools=tools, runner=runner)
     await run_cycle(1, deps)
@@ -846,7 +854,7 @@ async def test_an_ask_filed_by_an_advisor_mid_cycle_wakes_the_consultant_this_cy
 
     tools = _base_tools()
     tools["queue.overview"] = _queue
-    tools["diff.since"] = _diff_sequence([[{"id": 1, "type": "migrant_wave"}]])
+    _wake_both_advisors(tools)
     runner = FakeRoleRunner()
     deps = _deps(tmp_path, tools=tools, runner=runner)
     result = await run_cycle(1, deps)
@@ -858,7 +866,7 @@ async def test_an_ask_filed_by_an_advisor_mid_cycle_wakes_the_consultant_this_cy
 
 async def test_no_new_ask_means_no_consultant_wake(tmp_path):
     tools = _base_tools()
-    tools["diff.since"] = _diff_sequence([[{"id": 1, "type": "migrant_wave"}]])
+    _wake_both_advisors(tools)
     runner = FakeRoleRunner()
     await run_cycle(1, _deps(tmp_path, tools=tools, runner=runner))
     assert CONSULTANT not in [c["role"] for c in runner.calls]
@@ -892,7 +900,7 @@ async def test_a_soul_write_failure_is_a_recorded_failed_run_and_keeps_the_curso
         subprocess_exec=_never,
     )
     tools = _base_tools()
-    tools["diff.since"] = _diff_sequence([[{"id": 1, "type": "migrant_wave"}], [{"id": 2}]])
+    _wake_both_advisors(tools, qm_events=[{"id": 2}])
     deps = _deps(tmp_path, tools=tools, runner=runner)
     await run_cycle(1, deps)  # must not raise
     assert deps.cursor_store.get("architect") == 0  # failed run: not advanced
@@ -1093,7 +1101,7 @@ async def test_the_unexecuted_wake_is_suppressed_under_an_operator_hold(tmp_path
 
 async def test_a_proposer_briefing_carries_its_own_recent_filings_block(tmp_path):
     tools = _base_tools()
-    tools["diff.since"] = _diff_sequence([[{"id": 1, "type": "migrant_wave"}]])
+    _wake_both_advisors(tools)
     tools["queue.filings_brief"] = {"filings": {
         "architect": ["proposal-0024 room_siting accepted: Dig the bedroom | accept: Worth it."],
     }}
@@ -1111,7 +1119,7 @@ async def test_a_proposer_briefing_carries_its_own_recent_filings_block(tmp_path
 
 async def test_a_failed_filings_read_omits_the_block_and_does_not_block_the_role(tmp_path):
     tools = _base_tools()
-    tools["diff.since"] = _diff_sequence([[{"id": 1, "type": "migrant_wave"}]])
+    _wake_both_advisors(tools)
     runner = FakeRoleRunner()
     deps = _deps(tmp_path, tools=tools, runner=runner)  # no queue.filings_brief at all
     await run_cycle(1, deps)
