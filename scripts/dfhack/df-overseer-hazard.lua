@@ -120,50 +120,58 @@ local function tile_state(x, y, z)
   return s
 end
 
--- Every z level that holds at least one REVEALED hazard tile of each kind.
--- Walks the map's allocated blocks once, reading `hidden` before anything else.
-local function bands()
+-- Per-level band scan, lazy and cached. A whole-map walk read live took ~11 s
+-- (6.8M tile reads), so a level is scanned only when a hidden tile on or near
+-- it is actually being judged (a handful of levels per finder run). The block
+-- index (one pass over the allocated blocks, grouped by z) is built once per
+-- cache window; each level's blocks are then read, `hidden` first.
+local function level_flags(z)
   local t = now_ms()
-  if band_cache and (t - band_cache.at) < POLICY.cache_ms then return band_cache.kinds end
-  local kinds = {aquifer = {}, magma = {}}
+  if not band_cache or (t - band_cache.at) >= POLICY.cache_ms then
+    band_cache = {at = t, index = nil, levels = {}, unreadable = false}
+  end
+  local lv = band_cache.levels[z]
+  if lv then return lv end
+  lv = {aquifer = false, magma = false}
   local ok = pcall(function()
-    local blocks = df.global.world.map.map_blocks
-    for i = 0, #blocks - 1 do
-      local blk = blocks[i]
-      local z = blk.map_pos.z
-      local need_a = not kinds.aquifer[z]
-      local need_m = not kinds.magma[z]
-      if need_a or need_m then
-        for tx = 0, 15 do
-          for ty = 0, 15 do
-            local d = blk.designation[tx][ty]
-            if not d.hidden then
-              if need_a and d.water_table then kinds.aquifer[z] = true; need_a = false end
-              if need_m and d.flow_size > 0 and d.liquid_type == df.tile_liquid.Magma then
-                kinds.magma[z] = true; need_m = false
-              end
-            end
+    if not band_cache.index then
+      local index = {}
+      local blocks = df.global.world.map.map_blocks
+      for i = 0, #blocks - 1 do
+        local blk = blocks[i]
+        local bz = blk.map_pos.z
+        local list = index[bz]
+        if not list then list = {}; index[bz] = list end
+        list[#list + 1] = blk
+      end
+      band_cache.index = index
+    end
+    for _, blk in ipairs(band_cache.index[z] or {}) do
+      for tx = 0, 15 do
+        for ty = 0, 15 do
+          local d = blk.designation[tx][ty]
+          if not d.hidden then
+            if d.water_table then lv.aquifer = true end
+            if d.flow_size > 0 and d.liquid_type == df.tile_liquid.Magma then lv.magma = true end
           end
-          if not (need_a or need_m) then break end
         end
       end
+      if lv.aquifer and lv.magma then break end
     end
   end)
   if not ok then
-    -- An unreadable map is not "no hazard": refuse by marking every kind as
-    -- banded everywhere. Callers see a clear reason rather than a silent pass.
-    kinds = {aquifer = {_all = true}, magma = {_all = true}, unreadable = true}
+    -- An unreadable map is not "no hazard": every kind counts as present, so
+    -- the caller gets a clear refusal rather than a silent pass.
+    lv = {aquifer = true, magma = true, unreadable = true}
   end
-  band_cache = {at = t, kinds = kinds}
-  return kinds
+  band_cache.levels[z] = lv
+  return lv
 end
 
 local function in_band(kind, z)
-  local set = bands()[kind]
-  if set._all then return true end
   local m = POLICY.unknown_band_margin or 0
   for dz = -m, m do
-    if set[z + dz] then return true end
+    if level_flags(z + dz)[kind] then return true end
   end
   return false
 end
