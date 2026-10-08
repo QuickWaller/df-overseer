@@ -62,6 +62,7 @@ from conductor.archive import CycleArchive
 from conductor.briefing import paused_line, build_briefing, build_ruling_briefing, evaluate_threshold_alerts, routing_from_state
 from conductor import lanes
 from conductor.cursors import CursorStore
+from conductor.backoff import RetryClock
 from conductor.game_tick import GameTickError, game_tick_from_overview
 from conductor.execute import ExecuteStore, ExecuteReport, run_execute, skipped_report
 from conductor.hold import HoldState, HoldStore, hold_path_for
@@ -602,6 +603,19 @@ async def _run_role(
     return run_result
 
 
+def _retry_tick(deps: "CycleDeps", game_tick: Optional[int], cycle_index: int) -> Optional[int]:
+    """The backoff clock for this cycle (`RetryClock`); the real tick when the
+    fallback is off or its state cannot be read (never stops a cycle)."""
+    pol = deps.policy
+    try:
+        return RetryClock(
+            deps.cursor_store, pol.paused_retry_seconds, pol.paused_retry_ticks, persist=not deps.dry_run,
+        ).now(game_tick)
+    except Exception:  # noqa: BLE001 -- total
+        LOG.exception("cycle %s: the retry clock failed; using the real tick", cycle_index)
+        return game_tick
+
+
 def _timeout_for(deps: "CycleDeps", role: str) -> float:
     """Per-role cap from `policy.yaml` (`role_timeout_seconds`) if set, else the
     service-wide cap."""
@@ -689,6 +703,9 @@ async def _run_cycle(cycle_index: int, deps: CycleDeps, hold: HoldState) -> Cycl
             "poller) cannot run this cycle",
             cycle_index, game_tick_error,
         )
+    # The backoffs' own clock: the real tick plus whatever a paused fort has
+    # earned (conductor/backoff.py RetryClock). Backoffs only.
+    retry_tick = _retry_tick(deps, game_tick, cycle_index)
     tripwire = clock_status.get("tripwire")
     armed = clock_status.get("armed")
 
@@ -773,7 +790,7 @@ async def _run_cycle(cycle_index: int, deps: CycleDeps, hold: HoldState) -> Cycl
 
     order_watch: OrderWatchResult = evaluate_orders(
         (orders_state.get("orders") or []),
-        game_tick=game_tick,
+        game_tick=game_tick, retry_tick=retry_tick,
         threshold_ticks=deps.policy.stalled_order_threshold_ticks,
         renotify_ticks=deps.policy.stalled_order_renotify_ticks,
         renotify_cap_ticks=deps.policy.renotify_cap_ticks,
@@ -781,7 +798,7 @@ async def _run_cycle(cycle_index: int, deps: CycleDeps, hold: HoldState) -> Cycl
         cursor_store=deps.cursor_store,
         dry_run=deps.dry_run,
     )
-    job_watch = await _job_watch(deps, call, game_tick, cycle_index)
+    job_watch = await _job_watch(deps, call, game_tick, cycle_index, retry_tick)
     slow_hit, slow_roles, slow_detail = _classify_slow_announcements(events_by_role)
 
     # Lane triggers (handoffs/2026-10-05-stricter-wakes.md): what changed in
@@ -804,10 +821,10 @@ async def _run_cycle(cycle_index: int, deps: CycleDeps, hold: HoldState) -> Cycl
             lane_state = lane_store.load()
             pending_ids = list((queue_state.get("proposals") or {}).get("proposal_ids") or [])
             lane_state.cycles += 1
-            lanes.apply_alert_edges(deps.policy, lane_state, alert_crossed, alert_lines, game_tick)
-            lanes.apply_ore_edges(deps.policy, lane_state, ore_read, game_tick)
-            lanes.apply_unsupplied_edges(deps.policy, lane_state, unsupplied, game_tick)
-            lanes.apply_noble_room_edges(deps.policy, lane_state, noble_rooms, game_tick)
+            lanes.apply_alert_edges(deps.policy, lane_state, alert_crossed, alert_lines, retry_tick)
+            lanes.apply_ore_edges(deps.policy, lane_state, ore_read, retry_tick)
+            lanes.apply_unsupplied_edges(deps.policy, lane_state, unsupplied, retry_tick)
+            lanes.apply_noble_room_edges(deps.policy, lane_state, noble_rooms, retry_tick)
             lanes.apply_rulings(deps.policy, lane_state, pending_ids)
             lanes.apply_answers(deps.policy, lane_state, (queue_state.get("asks") or {}).get("ask_ids") or [])
             fresh_pending, quiet_pending = lanes.split_pending_for_overseer(
@@ -837,7 +854,7 @@ async def _run_cycle(cycle_index: int, deps: CycleDeps, hold: HoldState) -> Cycl
         early_routing_read = True
         early_routing = await _read_routing(call, cycle_index)
     plan_state, season_edge, plan_result = await _plan_watch(
-        deps, call, game_tick, cycle_index, hold, (early_routing or {}).get("frozen_types"),
+        deps, call, game_tick, cycle_index, hold, (early_routing or {}).get("frozen_types"), retry_tick,
     )
     plan_watch_dict = _plan_watch_dict(plan_state, season_edge, plan_result)
     roadmap_line = (plan_result.roadmap or {}).get("line")
@@ -1385,7 +1402,7 @@ def _plan_store(deps: "CycleDeps") -> PlanWatchStore:
 
 async def _plan_watch(
     deps: "CycleDeps", call: Callable, game_tick: Optional[int], cycle_index: int, hold: HoldState,
-    frozen_types: Optional[Sequence[str]],
+    frozen_types: Optional[Sequence[str]], retry_tick: Optional[int] = None,
 ) -> Tuple[Optional[PlanWatchState], Optional[SeasonEdge], PlanWatchResult]:
     """The Planner's conductor side (conductor/plan_watch.py): advance the
     season cursor and, when the Planner is enabled, read `plan.status` once and
@@ -1413,6 +1430,7 @@ async def _plan_watch(
             LOG.warning("cycle %s: %s failed; no plan wakes this cycle: %s", cycle_index, PLAN_STATUS_TOOL, exc)
         result = evaluate_plan(
             status, game_tick, plan, state, edge, held=hold.held, frozen_types=frozen_types,
+            retry_tick=retry_tick,
         )
         for alert in result.alerts:
             LOG.critical("PLAN: %s", alert)
@@ -1561,14 +1579,15 @@ def _ore_lines_for(policy: Any, role: str, ore_read: Optional[OreRead]) -> Optio
     return ore_read.lines
 
 
-async def _job_watch(deps: "CycleDeps", call: Callable, game_tick: Optional[int], cycle_index: int) -> JobWatchResult:
+async def _job_watch(deps: "CycleDeps", call: Callable, game_tick: Optional[int], cycle_index: int,
+                     retry_tick: Optional[int] = None) -> JobWatchResult:
     """Poll `stuckjobs.find` (conductor/job_watch.py). Total by design, like the
     pause watchdog: an undeployed allowlist entry, a tool error or a corrupt
     state file logs loudly and the cycle carries on with no stuck-job signal."""
     try:
         found = await call("stuckjobs.find", {})
         return evaluate_jobs(
-            jobs_from_result(found), game_tick=game_tick,
+            jobs_from_result(found), game_tick=game_tick, retry_tick=retry_tick,
             unclaimed_threshold_ticks=deps.policy.stuck_job_unclaimed_threshold_ticks,
             suspended_threshold_ticks=deps.policy.stuck_job_suspended_threshold_ticks,
             renotify_ticks=deps.policy.stuck_job_renotify_ticks,

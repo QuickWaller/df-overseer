@@ -139,6 +139,7 @@ def evaluate_orders(
     dry_run: bool,
     renotify_cap_ticks: int = 100800,
     max_wakes: int = 3,
+    retry_tick: Optional[int] = None,
 ) -> OrderWatchResult:
     """One call per cycle, over `orders.list`'s own `orders` array. Reads
     (and, for a real cycle, writes) per-order bookkeeping via
@@ -190,16 +191,17 @@ def evaluate_orders(
         wakes = cursor_store.get(wakes_key)
         if wakes == 0 and last_notified != 0:
             wakes = 1
+        rt = retry_tick if retry_tick is not None else game_tick  # backoff clock (conductor/backoff.py RetryClock)
         rule = backoff.Backoff(renotify_ticks, renotify_cap_ticks, max_wakes)
         rec, due, newly_stalled = backoff.advance(
             {"last": last_notified, "wakes": wakes, "stalled": wakes >= max_wakes} if wakes else None,
-            game_tick, rule,
+            rt, rule,
         )
         if not due:
             continue
 
         if not dry_run:
-            cursor_store.set(notified_key, game_tick)
+            cursor_store.set(notified_key, rt)
             cursor_store.set(wakes_key, rec["wakes"])
         if newly_stalled:
             LOG.info(

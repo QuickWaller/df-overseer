@@ -326,6 +326,13 @@ class Policy:
     renotify_cap_ticks: int = 100800
     renotify_max_wakes: int = 3
     alert_renotify_ticks: int = 12000
+    #: Paused-fort fallback (conductor/backoff.py `RetryClock`): every
+    #: renotify wait above is counted in game ticks, and a paused fort never
+    #: advances them, so a retry owed to a standing fact would never come.
+    #: When the tick has not moved for this many real seconds the retry clock
+    #: advances by `paused_retry_ticks`. 0 turns the fallback off.
+    paused_retry_seconds: float = 0.0
+    paused_retry_ticks: int = 12000
 
     def backoff(self, base_ticks: int) -> Backoff:
         """The shared renotify rule with this reason's base wait."""
@@ -505,6 +512,13 @@ def _load_tripwire_repeat(raw, path: Path) -> Tuple[int, int]:
     return out[0], out[1]
 
 
+def _nonneg_float(raw: Mapping, key: str, default: float, where: str) -> float:
+    val = raw.get(key, default)
+    if isinstance(val, bool) or not isinstance(val, (int, float)) or val < 0:
+        raise PolicyError(f"{where}: {key} must be a non-negative number")
+    return float(val)
+
+
 def _pos_int(raw: Mapping, key: str, default: int, where: str) -> int:
     v = raw.get(key, default)
     if isinstance(v, bool) or not isinstance(v, int) or v < 1:
@@ -641,6 +655,8 @@ def load_policy(path: "Path | str" = DEFAULT_POLICY_PATH) -> Policy:
         renotify_cap_ticks=_pos_int(doc, "renotify_cap_ticks", 100800, str(path)),
         renotify_max_wakes=_pos_int(doc, "renotify_max_wakes", 3, str(path)),
         alert_renotify_ticks=_pos_int(doc, "alert_renotify_ticks", 12000, str(path)),
+        paused_retry_seconds=_nonneg_float(doc, "paused_retry_seconds", 0.0, str(path)),
+        paused_retry_ticks=_pos_int(doc, "paused_retry_ticks", 12000, str(path)),
         tripwire_owners=tripwire_owners,
         tripwire_repeat_limit=repeat_limit,
         tripwire_repeat_window_ticks=repeat_window,

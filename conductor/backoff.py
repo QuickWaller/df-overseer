@@ -69,3 +69,53 @@ def advance(rec: Optional[Mapping[str, Any]], now: int, rule: Backoff) -> Tuple[
     stalled = out["wakes"] >= rule.max_wakes
     out["stalled"] = stalled
     return out, True, stalled
+
+
+class RetryClock:
+    """A tick clock for the backoffs that also runs while the fort is paused.
+
+    Every backoff above is counted in game ticks, and a paused fort never
+    advances them, so a retry owed to a standing fact never came (live
+    2026-10-08: the Planner's roadmap wake timed out with the fort paused and
+    its next try was 12000 ticks away). `now()` returns the real tick plus an
+    offset that grows by `retry_ticks` each time the real tick has stood still
+    for `paused_seconds` of wall clock. It is monotone while the game runs
+    (the offset only grows), so once the tick moves again nothing fires twice:
+    stored `last`/`next_tick` values were written in the same clock. A tick
+    that goes BACKWARDS (a reloaded save) resets the offset, which is exactly
+    the case the backoffs already re-arm on.
+
+    State lives in the cursor store under `__retry_*__` keys (integers). Only
+    the backoffs may read this clock: ages, briefings and cursors use the real
+    tick."""
+
+    SEEN = "__retry_seen_tick__"
+    WALL = "__retry_wall__"
+    OFFSET = "__retry_offset__"
+
+    def __init__(self, store: Any, paused_seconds: float, retry_ticks: int, wall: Any = None, persist: bool = True):
+        import time
+        self.store, self.paused_seconds, self.retry_ticks = store, float(paused_seconds), int(retry_ticks)
+        self.wall = wall or time.time
+        self.persist = persist
+
+    def now(self, real_tick: Optional[int]) -> Optional[int]:
+        if real_tick is None or self.paused_seconds <= 0 or self.store is None:
+            return real_tick
+        cur = self.store.load()
+        seen, wall0, off = cur.get(self.SEEN), cur.get(self.WALL), int(cur.get(self.OFFSET, 0))
+        now_wall = int(self.wall())
+        if seen is None or wall0 is None:
+            seen, wall0 = real_tick, now_wall
+        elif real_tick < seen:
+            seen, wall0, off = real_tick, now_wall, 0
+        elif real_tick > seen:
+            seen, wall0 = real_tick, now_wall
+        elif now_wall - wall0 >= self.paused_seconds:
+            off += self.retry_ticks
+            wall0 = now_wall
+        if self.persist:
+            for key, val in ((self.SEEN, seen), (self.WALL, wall0), (self.OFFSET, off)):
+                if cur.get(key) != val:
+                    self.store.set(key, val)
+        return real_tick + off

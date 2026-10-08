@@ -98,6 +98,17 @@ alert_renotify_ticks: 12000
 renotify_cap_ticks: 100800
 renotify_max_wakes: 3
 
+# Paused-fort fallback (conductor/backoff.py RetryClock). Every wait above is
+# in GAME TICKS, which a paused fort never advances, so a retry owed to a
+# standing fact (live 2026-10-08: a roadmap wake owed with the fort paused)
+# never came. While the tick has not moved for paused_retry_seconds of real
+# time, the retry clock the backoffs read advances by paused_retry_ticks (one
+# base wait), so the doubling still applies and the Nth retry waits N bases.
+# The clock only feeds the backoffs; ages, briefings and cursors keep the real
+# tick. 0 seconds turns it off.
+paused_retry_seconds: 900
+paused_retry_ticks: 12000
+
 # queue_pending is an EDGE (research/2026-10-07-wake-audit.md rec 1). A proposal
 # the Overseer already saw and left pending (a defer) does not wake it again
 # while nothing observable changed (an ask open at the defer has since been
