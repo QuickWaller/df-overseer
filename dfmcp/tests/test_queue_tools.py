@@ -706,11 +706,14 @@ class TestQueueOverview:
         )
         assert overview["proposals"]["count"] == 1
         assert overview["proposals"]["proposal_ids"] == [proposal["id"]]
+        # The recorded author, from the credential, for author-based attribution.
+        assert overview["proposals"]["by_role"] == {proposal["id"]: "architect"}
         # WAKE: this is the signal conductor/cycle.py turns into
         # Signals.open_ask_for_consultant -- non-zero, so the Consultant
         # would wake.
         assert overview["asks"]["count"] == 1
         assert overview["asks"]["ask_ids"] == [ask["id"]]
+        assert overview["asks"]["by_role"] == {ask["id"]: "overseer"}
 
         # The ruling is blocked while this fact-check is open (same
         # invariant TestAskAnswer's own fact-check test proves; re-checked
@@ -766,8 +769,8 @@ class TestQueueOverview:
             db_path=path, call_dfhack=_ok_call_dfhack, write_lock=asyncio.Lock(),
         )
         assert overview == {
-            "proposals": {"count": 0, "proposal_ids": []},
-            "asks": {"count": 0, "ask_ids": [], "to": {}},
+            "proposals": {"count": 0, "proposal_ids": [], "by_role": {}},
+            "asks": {"count": 0, "ask_ids": [], "to": {}, "by_role": {}},
         }
 
     async def test_overview_ignores_the_caller_role_entirely(self, tmp_path):

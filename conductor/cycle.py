@@ -1033,9 +1033,11 @@ async def _run_cycle(cycle_index: int, deps: CycleDeps, hold: HoldState) -> Cycl
                 after = await call("queue.overview", {})
                 known_ids = lanes.attribute_new_proposals(
                     lane_state, role, known_ids, (after.get("proposals") or {}).get("proposal_ids") or [],
+                    authors=(after.get("proposals") or {}).get("by_role"),
                 )
                 known_ask_ids = lanes.attribute_new_asks(
                     lane_state, role, known_ask_ids, (after.get("asks") or {}).get("ask_ids") or [],
+                    authors=(after.get("asks") or {}).get("by_role"),
                 )
             except Exception as exc:  # noqa: BLE001 -- total: attribution is best effort
                 LOG.warning("cycle %s: proposer attribution after %s failed: %s", cycle_index, role, exc)
