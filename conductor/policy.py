@@ -46,7 +46,7 @@ import re
 
 from dataclasses import dataclass, field, replace
 from pathlib import Path
-from typing import Dict, Iterable, Mapping, Optional, Tuple
+from typing import Any, Dict, Iterable, Mapping, Optional, Tuple
 
 import yaml
 
@@ -133,6 +133,21 @@ class UnsuppliedPolicy:
 
 
 @dataclass(frozen=True)
+class NobleRoomPolicy:
+    """The noble-room watch (policy.yaml `noble_room`; conductor/noble_room_watch.py):
+    a position holder who owns no room of a kind their position requires wakes
+    the room owner. Same backoff shape as the unsupplied-building wake.
+    `statuses`: the `nobles.requirements` room-value statuses that count as
+    unmet (data, so a later widening is an edit). `max_positions`: held
+    positions read per cycle (one `nobles.requirements` call each)."""
+    base_ticks: int = 6000
+    cap_ticks: int = 100800
+    max_wakes: int = 3
+    max_positions: int = 12
+    statuses: Tuple[str, ...] = ("not_met",)
+
+
+@dataclass(frozen=True)
 class LaneTriggers:
     """What counts as a change in one role's own lane (handoffs/2026-10-05-
     stricter-wakes.md). Pure data; conductor/lanes.py reads it generically.
@@ -149,6 +164,9 @@ class LaneTriggers:
     #: A planned building waits on an item kind nobody makes
     #: (handoffs/2026-10-07-unsupplied-building-watch.md).
     unsupplied: bool = False
+    #: A position holder owns no room their position requires (the
+    #: `noble_room_unmet` wake, conductor/noble_room_watch.py).
+    noble_rooms: bool = False
     #: The role is told of its routed projects' progress and holds
     #: (`step_done`, `step_attention`, `project_idle`) when the project's
     #: proposer is unknown to the conductor (docs/CONDUCTOR-EXECUTION.md 5).
@@ -269,6 +287,8 @@ class Policy:
     ore_renotify_ticks: int = 12000
     #: handoffs/2026-10-07-unsupplied-building-watch.md (its own policy block).
     unsupplied_building: UnsuppliedPolicy = field(default_factory=UnsuppliedPolicy)
+    #: The noble-room watch's own policy block (`noble_room`).
+    noble_room: NobleRoomPolicy = field(default_factory=NobleRoomPolicy)
     #: Threshold alerts for every role's briefing (policy.yaml `threshold_alerts`).
     threshold_alerts: Tuple[ThresholdAlert, ...] = ()
     #: Per-role lane triggers (policy.yaml `lane_triggers`). Empty: no lane
@@ -377,6 +397,7 @@ def _load_lane_triggers(raw, path: Path) -> Dict[str, LaneTriggers]:
             rulings=bool(entry.get("rulings", False)),
             ore=bool(entry.get("ore", False)),
             unsupplied=bool(entry.get("unsupplied", False)),
+            noble_rooms=bool(entry.get("noble_rooms", False)),
             execution=bool(entry.get("execution", False)),
             answers=bool(entry.get("answers", False)),
         )
@@ -397,6 +418,26 @@ def _load_unsupplied(raw, path: Path) -> UnsuppliedPolicy:
     if out["cap_ticks"] < out["base_ticks"]:
         raise PolicyError(f"{path}: unsupplied_building.cap_ticks must be at least base_ticks")
     return UnsuppliedPolicy(**out)
+
+
+def _load_noble_room(raw, path: Path) -> NobleRoomPolicy:
+    if raw is None:
+        return NobleRoomPolicy()
+    if not isinstance(raw, dict):
+        raise PolicyError(f"{path}: noble_room must be a mapping")
+    out: Dict[str, Any] = {}
+    for key, default in (("base_ticks", 6000), ("cap_ticks", 100800), ("max_wakes", 3), ("max_positions", 12)):
+        v = raw.get(key, default)
+        if isinstance(v, bool) or not isinstance(v, int) or v < 1:
+            raise PolicyError(f"{path}: noble_room.{key} must be a positive integer")
+        out[key] = v
+    if out["cap_ticks"] < out["base_ticks"]:
+        raise PolicyError(f"{path}: noble_room.cap_ticks must be at least base_ticks")
+    statuses = raw.get("statuses", ["not_met"])
+    if not isinstance(statuses, list) or not statuses or not all(isinstance(x, str) and x for x in statuses):
+        raise PolicyError(f"{path}: noble_room.statuses must be a non-empty list of status names")
+    out["statuses"] = tuple(statuses)
+    return NobleRoomPolicy(**out)
 
 
 def _load_execution(raw, path: Path) -> ExecutionPolicy:
@@ -627,6 +668,7 @@ def load_policy(path: "Path | str" = DEFAULT_POLICY_PATH) -> Policy:
         stuck_job_renotify_ticks=int(doc.get("stuck_job_renotify_ticks", 12000)),
         ore_renotify_ticks=int(doc.get("ore_renotify_ticks", 12000)),
         unsupplied_building=_load_unsupplied(doc.get("unsupplied_building"), path),
+        noble_room=_load_noble_room(doc.get("noble_room"), path),
         role_timeout_seconds={str(k): float(v) for k, v in (doc.get("role_timeout_seconds") or {}).items()},
     )
 

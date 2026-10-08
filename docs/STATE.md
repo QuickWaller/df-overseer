@@ -52,3 +52,5 @@ count changes. `queue.my_filings` takes `asks=true` (own asks with answer text),
 - `stream-publisher.timer` (df, risk=low): active=active, enabled=enabled
 
 Hand-edited 2026-10-08 (planner enable merge): the planner is enabled (13 with `queue.my_filings`); the conductor gained `plan.status` (37 to 38). Regenerate with `python scripts/drift_check.py --write-state` after the deploy.
+
+Hand-edited 2026-10-08 (noble rooms): the conductor gained `nobles.list` and `nobles.requirements` for the noble-room watch (38 to 40). Regenerate with `python scripts/drift_check.py --write-state` after the deploy.

@@ -54,6 +54,7 @@ from pathlib import Path
 from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Set, Tuple
 
 from conductor import backoff
+from conductor.noble_room_watch import NobleRoomRead
 from conductor.ore_watch import OreRead
 from conductor.policy import LaneTriggers, Policy
 from conductor.triage import LaneWake
@@ -68,6 +69,7 @@ REASON_ALERT = "alert_crossed"
 REASON_RULING = "ruling_on_own"
 REASON_ORE = "ore_exposed"
 REASON_UNSUPPLIED = "unsupplied_building"
+REASON_NOBLE_ROOM = "noble_room_unmet"
 REASON_ANSWER = "answer_ready"
 #: The execute phase's wakes (conductor/execute.py), queued into `pending`
 #: under `<reason>:<key>` for the project's proposer.
@@ -80,6 +82,7 @@ _ALERT = "alert:"
 _RULING = "ruling:"
 _ORE = "ore:"
 _UNSUPPLIED = "unsupplied:"
+_NOBLE_ROOM = "noble_room:"
 _ANSWER = "answer:"
 
 
@@ -101,6 +104,9 @@ class LaneState:
     #: wake, "wakes": wakes so far, "stalled": no more wakes}, while unsupplied
     #: (conductor/unsupplied_watch.py).
     unsupplied: Dict[str, Dict[str, Any]] = field(default_factory=dict)
+    #: "<position>:<unit id>:<room kind>" -> the same backoff record, while the
+    #: holder lacks that room (conductor/noble_room_watch.py).
+    noble_rooms: Dict[str, Dict[str, Any]] = field(default_factory=dict)
     #: ask id -> the role whose run added it, until its answer is seen.
     askers: Dict[str, str] = field(default_factory=dict)
     #: Conductor cycles seen, persisted: the clock for every cycle-counted
@@ -141,6 +147,11 @@ class LaneStore:
                          "wakes": int(v.get("wakes", 0)), "stalled": bool(v.get("stalled", False))}
                 for k, v in (raw.get("unsupplied") or {}).items() if isinstance(v, dict)
             },
+            noble_rooms={
+                str(k): {"first": int(v.get("first", 0)), "last": int(v.get("last", 0)),
+                         "wakes": int(v.get("wakes", 0)), "stalled": bool(v.get("stalled", False))}
+                for k, v in (raw.get("noble_rooms") or {}).items() if isinstance(v, dict)
+            },
             askers={str(k): str(v) for k, v in (raw.get("askers") or {}).items()},
             cycles=int(raw.get("cycles") or 0),
             overseer_seen={
@@ -156,7 +167,7 @@ class LaneStore:
             with open(fd, "w", encoding="utf-8") as fh:
                 json.dump(
                     {"alerts": state.alerts, "proposers": state.proposers, "pending": state.pending,
-                     "ore": state.ore, "unsupplied": state.unsupplied,
+                     "ore": state.ore, "unsupplied": state.unsupplied, "noble_rooms": state.noble_rooms,
                      "cycles": state.cycles, "overseer_seen": state.overseer_seen,
                      "ore_wakes": state.ore_wakes, "alert_wakes": state.alert_wakes, "askers": state.askers},
                     fh, indent=2, sort_keys=True,
@@ -325,6 +336,52 @@ def apply_unsupplied_edges(
             entries.pop(_UNSUPPLIED + key, None)
 
 
+def apply_noble_room_edges(
+    policy: Policy, state: LaneState, read: Optional[NobleRoomRead], game_tick: Optional[int],
+) -> None:
+    """Fold one noble-room poll into `state`, the same edge and backoff rule as
+    the unsupplied-building wake. `read=None` (the poll failed) changes nothing.
+    A (position, holder, kind) seen unmet for the first time wakes every role
+    whose lane has `noble_rooms`; it wakes again after `base_ticks`, doubling to
+    `cap_ticks`, and stalls after `max_wakes`. An item covered by an open
+    assign-owner proposal or step is not woken but keeps its record (so the
+    backoff does not restart if the cover lapses). An item that leaves the read
+    (met, or the holder changed) loses its state and any wake not yet served;
+    one merely unjudgeable this poll keeps it."""
+    if read is None:
+        return
+    pol = policy.noble_room
+    rule = backoff.Backoff(pol.base_ticks, pol.cap_ticks, pol.max_wakes)
+    now = game_tick if game_tick is not None else 0
+    roles = [role for role, lane in policy.lane_triggers.items() if lane.noble_rooms]
+    live = set()
+    for it in read.items:
+        live.add(it.key)
+        prior = state.noble_rooms.get(it.key)
+        if prior is not None and prior.get("first", 0) > now:
+            prior = None  # a save reload put the clock behind it: start over
+        if it.unit_id in read.covered_units:
+            if prior is not None:
+                state.noble_rooms[it.key] = prior
+            for entries in state.pending.values():
+                entries.pop(_NOBLE_ROOM + it.key, None)
+            continue
+        rec, due, _ = backoff.advance(prior, now, rule)
+        if prior is None:
+            rec["first"] = now
+        state.noble_rooms[it.key] = rec
+        if due:
+            for role in roles:
+                state.pending.setdefault(role, {})[_NOBLE_ROOM + it.key] = it.line()
+    for key in [k for k in state.noble_rooms if k not in live]:
+        position_code = key.split(":", 1)[0]
+        if key in read.unreadable or position_code in read.unreadable_codes:
+            continue
+        del state.noble_rooms[key]
+        for entries in state.pending.values():
+            entries.pop(_NOBLE_ROOM + key, None)
+
+
 #: How many pending proposals the Overseer's ruling briefing shows (the same
 #: cap as `dfmcp.queue_tools.BRIEF_MAX_PROPOSALS`); a pending proposal past it
 #: was never put in front of the Overseer, so it is never recorded as seen.
@@ -445,7 +502,7 @@ def lane_wakes(policy: Policy, state: LaneState, events_by_role: Mapping[str, Se
         entries = state.pending.get(role) or {}
         for prefix, reason in (
             (_ALERT, REASON_ALERT), (_RULING, REASON_RULING), (_ORE, REASON_ORE),
-            (_UNSUPPLIED, REASON_UNSUPPLIED), (_ANSWER, REASON_ANSWER),
+            (_UNSUPPLIED, REASON_UNSUPPLIED), (_NOBLE_ROOM, REASON_NOBLE_ROOM), (_ANSWER, REASON_ANSWER),
             (REASON_STEP_DONE + ":", REASON_STEP_DONE), (REASON_STEP_ATTENTION + ":", REASON_STEP_ATTENTION),
             (REASON_PROJECT_IDLE + ":", REASON_PROJECT_IDLE),
         ):

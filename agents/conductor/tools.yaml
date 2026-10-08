@@ -201,6 +201,20 @@ read:
       `bedrooms_per_citizen` threshold alert, research/2026-10-07-planner-design.md
       section 7). Same read the Architect holds.
 
+  - id: "nobles.list"
+    status: exists
+    note: >-
+      The noble-room watch (conductor/noble_room_watch.py) reads every fortress
+      position and its holder once per cycle to find the held ones. Read-only,
+      the same read the Architect holds.
+  - id: "nobles.requirements"
+    status: exists
+    note: >-
+      The noble-room watch reads each held position's room requirements (office,
+      bedroom, dining, tomb) and whether the holder owns a room of the kind. Read
+      only, bounded by policy.yaml `noble_room.max_positions`; the same read the
+      Architect holds.
+
   - id: "workjob.unsupplied"
     status: exists
     note: >-
