@@ -60,7 +60,8 @@ async def test_the_phase_runs_after_the_overseer(tmp_path):
 async def test_a_dry_run_makes_no_execute_call(tmp_path):
     deps = _deps(tmp_path, tools=_tools(), dry_run=True)
     await run_cycle(1, deps)
-    assert not [n for n in _names(deps) if n.startswith("queue.execution_state") or n == "queue.run_step"]
+    # queue.execution_state is a read the plan watch also makes; run_step is the execute call
+    assert "queue.run_step" not in _names(deps)
 
 
 async def test_an_operator_hold_skips_the_phase(tmp_path):

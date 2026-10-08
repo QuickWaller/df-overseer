@@ -484,7 +484,7 @@ plan:
   # question 3) so version 1 can be read before anything it says wakes an
   # owner. While off, a target's shortfall wakes nobody.
   shortfall_watch:
-    enabled: false
+    enabled: true
     # Renotify starts here (10 game days) and doubles per consecutive renotify
     # with no change in position, capped at one season (F-8).
     renotify_ticks: 12000

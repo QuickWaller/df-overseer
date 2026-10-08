@@ -272,10 +272,10 @@ def test_the_shortfall_watch_is_off_by_default_and_wakes_no_owner():
     assert state.targets == {}
 
 
-def test_the_committed_policy_ships_the_watch_off_and_the_planner_off():
+def test_the_committed_policy_ships_the_watch_on():  # user's call 2026-10-09
     from conductor.policy import load_policy
     plan = load_policy().plan
-    assert plan.shortfall.enabled is False
+    assert plan.shortfall.enabled is True
 
 
 # ---------------------------------------------------------------------------
