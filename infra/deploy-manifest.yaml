@@ -195,6 +195,36 @@ targets:
       independently re-hashed this pass (see Result for what WAS re-hashed
       2026-10-02).
 
+  vm103-dfhack-init:
+    host: df
+    destination_root: /opt/df/game/dfhack-config/init
+    strip_prefix: infra/dfhack-init/
+    stamp: false   # a DEPLOYED_COMMIT would litter DFHack's init directory;
+                    # drift compares these files to origin/main instead
+    # Added 2026-10-09: the intended plugin enable set, re-applied on every
+    # map load so a rollback to an older save cannot silently drop it. DFHack
+    # runs every onMapLoad*.init in dfhack-config/init, so this ships as its
+    # OWN file and the host's existing onMapLoad.init (clock, sampler,
+    # autosave) is left alone, never overwritten. NOT yet deployed or
+    # confirmed live: that the directory is writable by the deploy account
+    # and that DFHack runs the extra file on the next map load are
+    # first-deploy checks.
+    paths:
+      - infra/dfhack-init/
+    exclude: []
+    leave_alone:
+      - onMapLoad.init   # host-edited today: clock, sampler, autosave wiring
+    restart: []
+    post_deploy:
+      - "Nothing is restarted. The file runs on the next map load. To apply
+         it to the running fort without a reload, run each line once with
+         dfhack-run (enable suspendmanager, enable autoslab, enable
+         autolabor, ban-cooking all): all are idempotent."
+    verified: >-
+      unverified: offline only (2026-10-09). The path
+      /opt/df/game/dfhack-config is read from
+      infra/units/df/dfseries-import.service.
+
   vm103-stream-publisher:
     host: df
     destination_root: /opt/df/dfmcp-smoke

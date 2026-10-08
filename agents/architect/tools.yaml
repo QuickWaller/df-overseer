@@ -329,6 +329,21 @@ read:
     note: >-
       Same handoff. The site handles a real apply has issued, with the phases
       applied to each and the nearest landmark. Never a coordinate.
+  - id: "circulation.graph"
+    status: exists
+    note: >-
+      Read-only circulation graph of the rooms we have made: rooms, landmarks,
+      stairs and ramps, dead ends and junctions as nodes, the walkable links
+      between them as edges. Added 2026-10-09 (circulation stage C2, register
+      2026-10-08): read it before proposing or planning a room, to see how
+      people actually move through the block. Never a coordinate.
+  - id: "circulation.walk"
+    status: exists
+    note: >-
+      Read-only: the route between two named places from the same bounded
+      window as circulation.graph, and what it passes through. Added
+      2026-10-09 (C2). Use it to check that a room is not a corridor to
+      another room before filing.
   - id: "blueprint.status"
     status: planned
     note: >-

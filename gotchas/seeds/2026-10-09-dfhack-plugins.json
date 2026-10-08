@@ -1,0 +1,10 @@
+[
+  {
+    "title": "suspendmanager is on: never suspend a construction job as a hold",
+    "body": "DFHack's suspendmanager is enabled on this fort. It unsuspends any suspended ConstructBuilding job it has no reason for, so a job you suspend on purpose (to stop a wall closing off an entrance or sitting beside ore) is released again within a cycle. Never use suspend as a hold. To keep something from being built, do not place it, or cancel the job and re-place it when ready. Do not read a job that un-suspends itself as a bug in your tool. The plugin also does the opposite for you: it suspends constructions that would block access to other constructions, and releases jobs suspended only for inaccessible materials or scared workers."
+  },
+  {
+    "title": "autoslab only engraves memorial slabs: keep blank slabs and build the engraved one",
+    "body": "DFHack's autoslab is enabled. When a citizen's ghost exists and no slab carries their memorial and no order for one exists, it queues an engrave order naming the right dead unit. It does only that. Blank slabs must already exist: a slab is made from one stone at a stoneworker's workshop (the craftsdwarf's workshop is the alternative, check the wiki mirror), so keep a small blank-slab buffer (the Quartermaster holds a standing target of 2). It also does not place the result: the engraved slab must then be BUILT as a memorial before the ghost is calmed. An engraved slab sitting in a stockpile does nothing."
+  }
+]

@@ -622,3 +622,22 @@ class TestMaintainerRevision:
         p = Path(__file__).resolve().parents[2] / "gotchas" / "revisions" / "gotcha-0002.body.txt"
         body = p.read_text(encoding="utf-8").strip()
         assert gs._text_problems("body", body, gs.BODY_MIN_CHARS, gs.BODY_MAX_CHARS) == []
+
+
+class TestSeedEntries:
+    """seed_entries: repo-held gotchas (gotchas/seeds/*.json) load idempotently."""
+
+    def _seed_files(self):
+        from pathlib import Path
+        d = Path(__file__).resolve().parents[2] / "gotchas" / "seeds"
+        return sorted(d.glob("*.json"))
+
+    def test_committed_seeds_load_accepted_and_rerun_is_a_noop(self, db):
+        for f in self._seed_files():
+            data = json.loads(f.read_text(encoding="utf-8"))
+            ids = gs.seed_entries(db, data)
+            assert len(ids) == len(data)
+            assert gs.seed_entries(db, data) == []
+        general = gs.entries_for_tool(db, None, statuses=[gs.STATUS_ACCEPTED])
+        titles = " ".join(e["title"] for e in general).lower()
+        assert "suspendmanager" in titles and "autoslab" in titles

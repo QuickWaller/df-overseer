@@ -26,3 +26,9 @@ and the overseer hold `gotchas.get` and `gotchas.write`; the consultant holds
 `gotchas.get` only. The join that adds operating labors to a building result
 (`dfmcp/labor_join.py`) needs the production graph database and is described in
 `dfmcp/README.md`; a fix to its result shapes is merged and not yet redeployed.
+
+**Seeds (2026-10-09).** `gotchas/seeds/*.json` hold maintainer-written general
+gotchas (a JSON list of `{title, body}`, optional `tool`, `kind`, `list`).
+`python -m dfmcp.gotchas_store seed <db> <file>` loads them into the runtime
+store as `accepted`, skipping any whose title already exists, so it is safe to
+re-run after every deploy. Run by hand on the host that owns the store.

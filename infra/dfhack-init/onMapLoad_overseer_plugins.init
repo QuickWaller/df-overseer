@@ -1,0 +1,35 @@
+# Managed by scripts/deploy.py (target vm103-dfhack-init). Do not edit on the host.
+#
+# The intended DFHack plugin set, re-applied on EVERY map load, including a
+# load of an older save. Plugin enabled state lives in the world save, so a
+# rollback to a save written before an `enable` silently loses it (the kitchen
+# ban was lost this way, 2026-09-19; research/2026-10-09-dfhack-automation-survey.md
+# section 1). Everything here is idempotent: enabling an enabled plugin or
+# re-banning a banned kind changes nothing.
+#
+# This is a SEPARATE file from the host's own onMapLoad.init (clock, sampler,
+# autosave wiring), which deploy does not touch: DFHack runs every
+# onMapLoad*.init in dfhack-config/init.
+#
+# Adding to the set: one line here, then redeploy. Plugins deliberately NOT
+# here, and why, are in the survey (fastdwarf, infinite-sky, seedwatch beside
+# ban-cooking, orders-sort beside orders.reorder, and the rest).
+
+# Unsuspends construction jobs with no reason to be suspended and suspends
+# ones that would block access (register 2026-10-09). Our tools must never
+# suspend a job as a hold: it will be released (seeded gotcha).
+enable suspendmanager
+
+# Engraves a memorial slab for a ghost's dead unit. Needs blank slabs in stock
+# (doctrine blank-slab-buffer) and the engraved slab must still be built.
+enable autoslab
+
+# Automatic labour assignment; the fort's labour model assumes it (register
+# 2026-09-11). Already saved on the live fort, listed so an old save gets it.
+enable autolabor
+
+# Kitchen exclusion of every cookable kind (user's ruling 2026-09-18, so food
+# is eaten as meals and brewing stock is kept). The exclusions live in the
+# save and were lost on the 2026-09-19 rollback. A one-shot command, not a
+# plugin, but idempotent, so it belongs on load.
+ban-cooking all

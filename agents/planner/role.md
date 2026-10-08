@@ -82,6 +82,9 @@ never settling it for you.
 
 - **Version 1 is the current stage's targets.** `plan.write` with an empty
   `set` adopts them. Each carries `roadmap_ref`, the id of its roadmap entry.
+- **Copy the current stage's targets verbatim into the plan's wants** (value,
+  reorder rule and `roadmap_ref`, unchanged) unless you propose a deviation, and
+  then give its `deviation_reason`. Do not paraphrase, round or re-derive them.
 - **Comply or explain.** Change a target however the fort needs, nothing is
   refused. If a target with a `roadmap_ref` differs from its entry (the server
   computes `up`, `down` or `shape`), say why in its `deviation_reason`; without

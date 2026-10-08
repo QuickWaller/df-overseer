@@ -461,14 +461,15 @@ async def test_the_real_roster_has_the_planner_enabled():
     assert "planner" in load_roster(load_registry(native_tools=ALL_NATIVE_TOOLS)).roles
 
 
-async def test_the_planner_allowlist_loads_enabled_with_thirteen_non_mutating_tools(tmp_path):
+async def test_the_planner_allowlist_loads_enabled_with_fifteen_non_mutating_tools(tmp_path):
     reg = load_registry(native_tools=ALL_NATIVE_TOOLS)
     roster = load_roster(reg, agents_dir=_roster_copy(tmp_path))
     perms = roster.roles["planner"]
-    assert len(perms.read) + len(perms.write) == 13
+    assert len(perms.read) + len(perms.write) == 15
     assert sorted(perms.read) == sorted([
         "overview.get", "vitals.summary", "zone.list", "zone.list-kinds", "nobles.requirements",
         "blueprint.sites", "queue.project_status", "queue.my_filings", "plan.read",
+        "circulation.graph", "circulation.walk",
     ])
     assert sorted(perms.write) == ["plan.write", "queue.ask", "queue.pass", "queue.propose"]
     assert not any(reg.get(t).mutates for t in list(perms.read) + list(perms.write))
