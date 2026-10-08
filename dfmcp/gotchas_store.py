@@ -916,6 +916,28 @@ def revise_entry(
         return _record(conn, row)
 
 
+def seed_entries(path: str | Path, entries: Sequence[Mapping[str, Any]], *, by: str = "maintainer-cli") -> List[str]:
+    """Maintainer-only: load repo-held entries (`gotchas/seeds/*.json`) into
+    the runtime store as `accepted`, idempotently. An entry whose title
+    already exists (any status, same tool and list) is skipped, so re-running
+    after a deploy never duplicates. Returns the ids written. Not a tool."""
+    written: List[str] = []
+    for entry in entries:
+        record = dict(entry)
+        record.setdefault("list", LIST_GOTCHA)
+        record["written_by_role"] = by
+        record["run_id"] = f"seed-{by}"
+        existing = entries_for_tool(path, record.get("tool"), with_outcomes=False)
+        wanted = _normalise(record.get("title", ""))
+        if any(_normalise(e["title"]) == wanted for e in existing):
+            continue
+        tools = [record["tool"]] if record.get("tool") else []
+        rec = add_entry(path, record, known_tools=tools, max_new_per_run=10**6)
+        set_status(path, rec["id"], STATUS_ACCEPTED, by=by, note="seeded from repo")
+        written.append(rec["id"])
+    return written
+
+
 def export_jsonl(path: str | Path, out_dir: str | Path) -> None:
     """Deterministic dump to `out_dir/gotchas.jsonl`, one entry per line in id
     order with its outcomes, git-trackable (accepted entries are committed to
@@ -931,7 +953,7 @@ def export_jsonl(path: str | Path, out_dir: str | Path) -> None:
 
 
 def _main(argv: Sequence[str]) -> int:
-    usage = "usage: python -m dfmcp.gotchas_store init PATH | migrate PATH | export PATH OUT_DIR | revise PATH ID BODY_FILE [TITLE]"
+    usage = "usage: python -m dfmcp.gotchas_store init PATH | migrate PATH | export PATH OUT_DIR | revise PATH ID BODY_FILE [TITLE] | seed PATH JSON_FILE"
     if len(argv) >= 2 and argv[0] == "init" and len(argv) == 2:
         init_store(argv[1])
         print(f"gotcha store ready at {argv[1]}")
@@ -951,6 +973,11 @@ def _main(argv: Sequence[str]) -> int:
             title=argv[4] if len(argv) == 5 else None,
         )
         print(f"revised {rec['id']} (old text kept in status_history)")
+        return 0
+    if len(argv) == 3 and argv[0] == "seed":
+        data = json.loads(Path(argv[2]).read_text(encoding="utf-8"))
+        ids = seed_entries(argv[1], data)
+        print(f"seeded {len(ids)} entries: {ids}")
         return 0
     print(usage, file=sys.stderr)
     return 2
