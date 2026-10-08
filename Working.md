@@ -4,7 +4,9 @@ What's currently in progress. Remove an item once it's done, tabled, or
 shelved, don't mark it paused. Any session should read this and know what's
 actually going on right now.
 
-## Owed: inbox and session design session WITH the user (user, 2026-10-07: "I need to be involved here")
+## Sessions: decided 2026-10-08 (register), design in progress
+
+(Was: owed with the user.) Built per the 2026-10-08 register row.
 
 Do not decide alone. Inputs ready: `research/2026-10-07-session-inbox-options.md`, `research/2026-10-07-openclaw-source-sessions.md`, `evals/live/2026-10-07-openclaw-multiturn/README.md`, `evals/live/2026-10-07-cache-miss-cause/README.md`, `research/2026-10-07-persistent-sessions.md`, `research/2026-10-07-wake-audit.md`. Depending on it: the own-filings briefing block (left on as a trial), Overseer items one-at-a-time vs grouped, where "the fort is paused" goes (briefing line, tool-reply stamp, pushed message).
 
