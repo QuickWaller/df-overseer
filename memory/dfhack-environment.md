@@ -234,9 +234,13 @@ tool builds:
   `ban-cooking <type|all>`, with types including `seeds`, `brew`, `booze`
   and `fruit`, plus `--unban`. Its own docs call `ban-cooking all` a
   sensible first action in a new fort, and it bans types not yet in stock,
-  which clicking the Kitchen screen cannot do. **Uniboslan has never run
-  it.** So "protect the seed stock" is a one-command write, not a settings
-  screen, and doctrine's seed rules are actionable today.
+  which clicking the Kitchen screen cannot do. So "protect the seed stock"
+  is a one-command write, not a settings screen. **History:** run
+  2026-09-18 (exclusions 110 to 1279); silently lost, most likely by the
+  2026-09-19 rollback to a 2026-09-16 save (found 2026-10-09 back at 110);
+  re-run 2026-10-09 (1279 again). Kitchen settings and plugin enable
+  states live in the world save, so any reload to an older save undoes
+  them: re-check after every reload.
 
 **ADDED 2026-09-18**, from the production-model live-state audit
 (`research/2026-09-18-schema-extraction-live.md`), read-only, fort paused
