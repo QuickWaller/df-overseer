@@ -1,3 +1,4 @@
+--@module = true
 -- GENERATED from blueprints/room-kinds.yaml and blueprints/templates/*.yaml by
 --   python -m dfqueue.room_kinds --write-lua
 -- Do not edit by hand: a test fails when this differs from the YAML. The guest

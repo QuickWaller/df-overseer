@@ -213,6 +213,7 @@ def render_lua(doc: dict | None = None, templates_dir: Path | None = None) -> st
     doc = doc if doc is not None else load()
     data = lua_data(doc, templates_dir)
     head = (
+        "--@module = true\n"
         "-- GENERATED from blueprints/room-kinds.yaml and blueprints/templates/*.yaml by\n"
         "--   python -m dfqueue.room_kinds --write-lua\n"
         "-- Do not edit by hand: a test fails when this differs from the YAML. The guest\n"

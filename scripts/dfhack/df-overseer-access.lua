@@ -1,3 +1,4 @@
+--@module = true
 -- Placement access gate: pure logic (stage C3, register 2026-10-08, D2 and D7).
 --
 -- WHAT IS CHECKED, honestly. This is the ENTRANCE-CELL check, not a check of

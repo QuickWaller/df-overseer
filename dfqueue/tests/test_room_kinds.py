@@ -76,6 +76,15 @@ def test_committed_lua_matches_yaml():
     assert committed == rk.render_lua(), "run: python -m dfqueue.room_kinds --write-lua"
 
 
+@pytest.mark.parametrize("name", ["df-overseer-roomkinds.lua", "df-overseer-access.lua"])
+def test_reqscript_modules_declare_themselves_modules(name):
+    # DFHack refuses reqscript on a script without this first-line marker
+    # ("Cannot be used as a module"); found live 2026-10-08 on the first
+    # deploy, when it broke every reader of these two files.
+    first = (rk.REPO_ROOT / "scripts" / "dfhack" / name).read_text(encoding="utf-8").splitlines()[0]
+    assert first.strip() == "--@module = true"
+
+
 def test_lua_zone_map_skips_location_kinds(doc):
     data = rk.lua_data(doc)
     assert data["zone_to_kind"]["MeetingHall"] == "meeting_hall"
