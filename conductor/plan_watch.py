@@ -415,6 +415,7 @@ def stalled_line(version: Any, target: Mapping, wakes: int) -> str:
 def evaluate(
     status: Optional[Mapping[str, Any]], tick: Optional[int], policy: PlanPolicy, state: PlanWatchState,
     edge: Optional[SeasonEdge], *, held: bool = False, frozen_types: Optional[Iterable[str]] = None,
+    retry_tick: Optional[int] = None,
 ) -> PlanWatchResult:
     """Fold one `plan.status` read into `state` and return the wakes owed. A
     `None` status (the read failed) or an unknown tick changes nothing and
@@ -424,6 +425,9 @@ def evaluate(
     if not policy.enabled or not isinstance(status, Mapping) or tick is None:
         return out
     base, cap = policy.renotify_ticks, policy.renotify_cap_ticks
+    # The backoffs read the retry clock (conductor/backoff.py RetryClock), which
+    # also runs while the fort is paused; positions and `since` stay on `tick`.
+    rt = retry_tick if retry_tick is not None else tick
     active = status.get("active") if isinstance(status.get("active"), Mapping) else None
     rm = status.get("roadmap") if isinstance(status.get("roadmap"), Mapping) else None
     if rm is not None:
@@ -442,7 +446,7 @@ def evaluate(
         b = state.bootstrap
         if state.bootstrap_escalated:
             out.notes.append("bootstrap: escalated to the operator, not waking the Planner")
-        elif _due(b, tick, cap):
+        elif _due(b, rt, cap):
             if b.wakes >= policy.bootstrap_escalate_after:
                 state.bootstrap_escalated = True
                 out.alerts.append(
@@ -452,7 +456,7 @@ def evaluate(
                     "until a plan exists."
                 )
             else:
-                _note_wake(b, tick, base, cap)
+                _note_wake(b, rt, base, cap)
                 out.wakes.append(PlanWake(
                     REASON_BOOTSTRAP, PLANNER,
                     f"The fort has no plan (attempt {b.wakes} of {policy.bootstrap_escalate_after}). Read plan.read "
@@ -509,8 +513,8 @@ def evaluate(
             done = plan_stage == state.roadmap_owed or passed
             if done:
                 state.roadmap_owed, state.roadmap_since, state.roadmap = None, None, Backoff()
-            elif state.roadmap.wakes < policy.review_max_wakes and _due(state.roadmap, tick, cap):
-                _note_wake(state.roadmap, tick, base, cap)
+            elif state.roadmap.wakes < policy.review_max_wakes and _due(state.roadmap, rt, cap):
+                _note_wake(state.roadmap, rt, base, cap)
                 summary = f" ({rm.get('summary')})" if isinstance(rm.get("summary"), str) and rm.get("summary") else ""
                 filed = f"for the {plan_stage} stage" if isinstance(plan_stage, str) else "before stages existed"
                 out.wakes.append(PlanWake(
@@ -541,8 +545,8 @@ def evaluate(
             state.review_index = None
             state.review_since = None
             state.review = Backoff()
-        elif state.review.wakes < policy.review_max_wakes and _due(state.review, tick, cap):
-            _note_wake(state.review, tick, base, cap)
+        elif state.review.wakes < policy.review_max_wakes and _due(state.review, rt, cap):
+            _note_wake(state.review, rt, base, cap)
             out.wakes.append(PlanWake(
                 REASON_REVIEW, PLANNER,
                 f"Season {state.review_index} has begun and the active plan (v{version}) is from season "
@@ -559,8 +563,8 @@ def evaluate(
     for a in awaiting:
         rid = str(a.get("ruling_id"))
         b = state.awaiting.setdefault(rid, Backoff())
-        if b.wakes < policy.awaiting_max_wakes and _due(b, tick, cap):
-            _note_wake(b, tick, base, cap)
+        if b.wakes < policy.awaiting_max_wakes and _due(b, rt, cap):
+            _note_wake(b, rt, base, cap)
             out.wakes.append(PlanWake(
                 REASON_RULING, PLANNER,
                 f"{a.get('proposal_id')} (plan_change) was accepted by {rid}: file a plan version with "
@@ -575,7 +579,7 @@ def evaluate(
     if held:
         out.notes.append("shortfall watch: operator hold in force, no owner wakes")
         return out
-    _shortfall(status, tick, version, sw, state, out, frozen_types)
+    _shortfall(status, rt, version, sw, state, out, frozen_types)
     return out
 
 

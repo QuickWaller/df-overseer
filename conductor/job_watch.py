@@ -168,6 +168,7 @@ def evaluate_jobs(
     dry_run: bool,
     renotify_cap_ticks: int = 100800,
     max_wakes: int = 3,
+    retry_tick: Optional[int] = None,
 ) -> JobWatchResult:
     """One call per cycle over `stuckjobs.find`'s array. A dry run reads state
     but never writes it. `game_tick=None` returns an empty result and leaves
@@ -211,14 +212,15 @@ def evaluate_jobs(
 
         item = StuckJob(key=key, kind=kind, age_ticks=age, line=describe(job, kind, age))
         stuck.append(item)
+        rt = retry_tick if retry_tick is not None else game_tick  # backoff clock (conductor/backoff.py RetryClock)
         rule = backoff.Backoff(renotify_ticks, renotify_cap_ticks, max_wakes)
         rec, is_due, _ = backoff.advance(
             {"last": last_notified or 0, "wakes": wakes, "stalled": entry["stalled"]} if wakes else None,
-            game_tick, rule,
+            rt, rule,
         )
         if is_due:
             due.append(item)
-            entry["last_notified"] = game_tick
+            entry["last_notified"] = rt
             entry["wakes"] = rec["wakes"]
             entry["stalled"] = rec["stalled"]
 

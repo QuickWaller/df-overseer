@@ -450,6 +450,13 @@ class DockerOpenClawRunner:
         self._clock = clock
         self._grace = outer_kill_grace_seconds
 
+    @property
+    def isolated_state(self) -> bool:
+        """Every run gets its own openclaw `--state-dir` (so concurrent runs
+        share no session state or lock): true when `thinking_state_root` is
+        set. Workspaces are already per role."""
+        return self.thinking_state_root is not None
+
     def _workspace_dir(self, role: str) -> Path:
         return self.workspace_root / f"{role}-workspace"
 

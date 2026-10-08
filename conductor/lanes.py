@@ -446,21 +446,34 @@ def record_overseer_seen(state: LaneState, pending_ids: Sequence[str], open_ask_
         del state.overseer_seen[pid]
 
 
-def attribute_new_proposals(state: LaneState, role: str, known_ids: Set[str], pending_ids: Iterable[str]) -> Set[str]:
-    """After `role`'s run: every pending proposal id not seen before was added
-    by that run. Records the author and returns the enlarged known set."""
+def attribute_new_proposals(
+    state: LaneState, role: str, known_ids: Set[str], pending_ids: Iterable[str],
+    authors: Optional[Mapping[str, Any]] = None,
+) -> Set[str]:
+    """Learn who filed each pending proposal. With `authors` (the `by_role` map
+    `queue.overview` returns: the role recorded on the record, set by the
+    server from the caller's credential) each new id goes to its recorded
+    author, whichever role's run is finishing, so roles running at once cannot
+    swap credit. Without it (an older server) fall back to the diff: every id
+    not seen before was added by `role`'s run. Returns the enlarged known set."""
     now = {str(i) for i in pending_ids}
     for pid in sorted(now - known_ids):
-        state.proposers[pid] = role
+        author = authors.get(pid) if authors is not None else role
+        if isinstance(author, str) and author:
+            state.proposers[pid] = author
     return known_ids | now
 
 
-def attribute_new_asks(state: LaneState, role: str, known_ids: Set[str], open_ask_ids: Iterable[str]) -> Set[str]:
-    """After `role`'s run: every open ask id not seen before was filed by that
-    run (the conductor cannot read an ask's author, as with proposals)."""
+def attribute_new_asks(
+    state: LaneState, role: str, known_ids: Set[str], open_ask_ids: Iterable[str],
+    authors: Optional[Mapping[str, Any]] = None,
+) -> Set[str]:
+    """As `attribute_new_proposals`, for open asks (`state.askers`)."""
     now = {str(i) for i in open_ask_ids}
     for aid in sorted(now - known_ids):
-        state.askers[aid] = role
+        author = authors.get(aid) if authors is not None else role
+        if isinstance(author, str) and author:
+            state.askers[aid] = author
     return known_ids | now
 
 

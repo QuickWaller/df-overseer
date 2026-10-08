@@ -242,6 +242,27 @@ def test_attribution_names_the_advisor_whose_run_added_the_id():
     assert state.proposers == {"p2": "quartermaster"} and known == {"p1", "p2"}
 
 
+def test_attribution_by_recorded_author_ignores_which_run_finished():
+    state = lanes.LaneState()
+    # Two roles ran at once; the Quartermaster's run finishes last, yet both
+    # filings keep their recorded authors.
+    known = lanes.attribute_new_proposals(
+        state, "quartermaster", {"p1"}, ["p1", "p2", "p3"],
+        authors={"p1": "planner", "p2": "architect", "p3": "quartermaster"},
+    )
+    assert state.proposers == {"p2": "architect", "p3": "quartermaster"} and known == {"p1", "p2", "p3"}
+    asks = lanes.attribute_new_asks(
+        state, "quartermaster", set(), ["a1", "a2"], authors={"a1": "architect", "a2": "quartermaster"},
+    )
+    assert state.askers == {"a1": "architect", "a2": "quartermaster"} and asks == {"a1", "a2"}
+
+
+def test_an_id_with_no_recorded_author_is_left_unattributed_not_guessed():
+    state = lanes.LaneState()
+    lanes.attribute_new_proposals(state, "architect", set(), ["p1"], authors={})
+    assert state.proposers == {}
+
+
 def test_lane_state_round_trips(tmp_path):
     store = lanes.LaneStore(tmp_path / "s.json")
     state = lanes.LaneState(alerts={"a": True}, proposers={"p": "architect"}, pending={"architect": {"k": "v"}})

@@ -98,6 +98,17 @@ alert_renotify_ticks: 12000
 renotify_cap_ticks: 100800
 renotify_max_wakes: 3
 
+# Paused-fort fallback (conductor/backoff.py RetryClock). Every wait above is
+# in GAME TICKS, which a paused fort never advances, so a retry owed to a
+# standing fact (live 2026-10-08: a roadmap wake owed with the fort paused)
+# never came. While the tick has not moved for paused_retry_seconds of real
+# time, the retry clock the backoffs read advances by paused_retry_ticks (one
+# base wait), so the doubling still applies and the Nth retry waits N bases.
+# The clock only feeds the backoffs; ages, briefings and cursors keep the real
+# tick. 0 seconds turns it off.
+paused_retry_seconds: 900
+paused_retry_ticks: 12000
+
 # queue_pending is an EDGE (research/2026-10-07-wake-audit.md rec 1). A proposal
 # the Overseer already saw and left pending (a defer) does not wake it again
 # while nothing observable changed (an ask open at the defer has since been
@@ -309,6 +320,20 @@ role_timeout_seconds:
 # After the advisors run, re-read the queue and wake the Consultant for an ask
 # they filed this cycle (otherwise it waits a whole cycle; ask-0001 did).
 consultant_rewake_after_advisors: true
+
+# Parallel proposers (register 2026-10-08, user's call: proposers may run
+# together, exactly one judge). When on, the cycle runs the Planner, then the
+# Architect, Quartermaster and Consultant concurrently (each still its own
+# container, timeout, cost, transcript and runs row), then the Overseer alone.
+# Starts are staggered by stagger_seconds so a later run can reuse the first's
+# prompt cache. Needs per-run openclaw state (CONDUCTOR_THINKING_STATE_DIR set),
+# else it falls back to serial with a warning. Off until the runs table shows
+# how often two advisors co-wake. DFHack reads share a pool of 4 connections
+# and queue.propose bounds its cited reads at 60 s: heavy overlap can mean
+# "busy, file again" refusals.
+parallel:
+  proposers: false
+  stagger_seconds: 1.5
 
 # docs/CONDUCTOR-EXECUTION.md 3.3: threshold alerts replace fixed stock lists.
 # A line appears in every role's briefing only while the read value (divided by

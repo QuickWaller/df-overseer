@@ -1844,8 +1844,17 @@ async def _overview(
     for r in asks:
         asks_to.setdefault(schema.ask_addressee(r), []).append(r["id"])
     structured = {
-        "proposals": {"count": len(proposals), "proposal_ids": proposal_ids},
-        "asks": {"count": len(asks), "ask_ids": ask_ids, "to": asks_to},
+        # `by_role`: id -> the role recorded on the record (set by the server
+        # from the caller's credential). The conductor attributes filings by
+        # this, not by diffing id lists around a role's run.
+        "proposals": {
+            "count": len(proposals), "proposal_ids": proposal_ids,
+            "by_role": {r["id"]: r.get("role") for r in proposals},
+        },
+        "asks": {
+            "count": len(asks), "ask_ids": ask_ids, "to": asks_to,
+            "by_role": {r["id"]: r.get("role") for r in asks},
+        },
     }
     if open_steps is not None:
         structured["open_steps"] = open_steps
