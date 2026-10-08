@@ -24,7 +24,7 @@ Last check: 2026-10-05T06:34:49Z, overall: clean
 ## Per-role tool counts (offline, from the repo's own registry + roster)
 
 - **architect**: 55
-- **conductor**: 39
+- **conductor**: 41
 - **consultant**: 29
 - **overseer**: 83
 - **quartermaster**: 28
@@ -53,6 +53,8 @@ count changes. `queue.my_filings` takes `asks=true` (own asks with answer text),
 
 Hand-edited 2026-10-08 (planner enable merge): the planner is enabled (13 with `queue.my_filings`); the conductor gained `plan.status` (37 to 38). Regenerate with `python scripts/drift_check.py --write-state` after the deploy.
 
+Hand-edited 2026-10-08 (noble rooms): the conductor gained `nobles.list` and `nobles.requirements` for the noble-room watch (38 to 40). Regenerate with `python scripts/drift_check.py --write-state` after the deploy.
+
 Hand-edited 2026-10-08 (roadmap V1 stream, item 0): `screen.read` granted to the overseer (82 to 83). Hand-edited because `--write-state` needs live access. Regenerate with `python scripts/drift_check.py --write-state`.
 
-Hand-edited 2026-10-08 (roadmap V1 stream): the conductor gained `labor.unit-status` (utilisation sampling), 38 to 39 (the generated list above still read 37 before this edit).
+Hand-edited 2026-10-08 (roadmap V1 stream): the conductor gained `labor.unit-status` (utilisation sampling), 40 to 41 once merged with the noble-room watch (the generated list above reads 41).

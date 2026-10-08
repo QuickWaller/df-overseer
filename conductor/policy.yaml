@@ -145,6 +145,11 @@ wake_reasons:
   unsupplied_building:
     clock: full_speed
     wakes: []
+  # Roles come from `lane_triggers.<role>.noble_rooms`: a position holder owns
+  # no room of a kind their position requires (conductor/noble_room_watch.py).
+  noble_room_unmet:
+    clock: full_speed
+    wakes: []
   alert_crossed:
     clock: full_speed
     wakes: []
@@ -379,6 +384,9 @@ lane_triggers:
     ore: true
     # Bedroom shortfall (stage P0): wakes once per crossing.
     alerts: [bedrooms_per_citizen]
+    # A noble holds a position whose room they do not own: the Architect files
+    # the routed zone.assign-owner step (conductor/noble_room_watch.py).
+    noble_rooms: true
     # The Architect proposes rooms, so it is the fallback recipient of the
     # execute phase's step_done / step_attention / project_idle.
     execution: true
@@ -483,3 +491,18 @@ unsupplied_building:
   base_ticks: 6000
   cap_ticks: 100800
   max_wakes: 3
+
+# The noble-room watch (conductor/noble_room_watch.py): after an appointment, a
+# position that requires a room (nobles.requirements, status in `statuses`) whose
+# holder owns none of that kind wakes the lane's `noble_rooms` role with
+# `noble_room_unmet`. Edge-triggered per (position, holder, room kind): one wake,
+# then again after base_ticks, doubling to cap_ticks, stalled after max_wakes.
+# Clears when the requirement is met or the holder changes. No wake while an open
+# proposal or project step already assigns an owner to that holder
+# (queue.overview open_steps_for). `max_positions` bounds the per-cycle reads.
+noble_room:
+  base_ticks: 6000
+  cap_ticks: 100800
+  max_wakes: 3
+  max_positions: 12
+  statuses: [not_met]

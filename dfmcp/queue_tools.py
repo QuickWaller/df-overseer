@@ -996,6 +996,15 @@ _OVERVIEW_SCHEMA = {
             "minimum": 1,
             "description": "Return at most this many of EACH (proposals and asks). Omit for all of them.",
         },
+        "open_steps_for": {
+            "type": "array",
+            "items": {"type": "string"},
+            "description": (
+                "Step tool ids (for example zone.assign-owner). When given, the result also carries "
+                "open_steps: every still-live proposal whose step uses one of them, with its args "
+                "and status, so a watch can tell whether filed work already covers a need."
+            ),
+        },
     },
 }
 
@@ -1792,7 +1801,7 @@ async def _grade(
     return text, structured
 
 
-_OVERVIEW_FIELDS = {"limit"}
+_OVERVIEW_FIELDS = {"limit", "open_steps_for"}
 
 
 async def _overview(
@@ -1816,6 +1825,16 @@ async def _overview(
     except (sqlite3.Error, OSError) as exc:
         raise _storage_error(QUEUE_OVERVIEW, exc) from exc
 
+    open_steps = None
+    steps_for = arguments.get("open_steps_for")
+    if steps_for is not None:
+        if not isinstance(steps_for, list) or not all(isinstance(t, str) and t for t in steps_for):
+            raise QueueToolError(f"{QUEUE_OVERVIEW}: 'open_steps_for' must be a list of tool ids")
+        try:
+            open_steps = await asyncio.to_thread(store.open_step_calls, db_path, steps_for)
+        except (sqlite3.Error, OSError) as exc:
+            raise _storage_error(QUEUE_OVERVIEW, exc) from exc
+
     proposal_ids = [r["id"] for r in proposals]
     ask_ids = [r["id"] for r in asks]
     # `to`: open asks per addressee, so the conductor wakes the right answerer
@@ -1828,6 +1847,8 @@ async def _overview(
         "proposals": {"count": len(proposals), "proposal_ids": proposal_ids},
         "asks": {"count": len(asks), "ask_ids": ask_ids, "to": asks_to},
     }
+    if open_steps is not None:
+        structured["open_steps"] = open_steps
     proposals_xml = "\n\n".join(render.to_xml(r) for r in proposals) if proposals else "<proposals/>"
     asks_xml = "\n\n".join(render.to_xml(r) for r in asks) if asks else "<asks/>"
     text = f"<queue-overview>\n{proposals_xml}\n{asks_xml}\n</queue-overview>"

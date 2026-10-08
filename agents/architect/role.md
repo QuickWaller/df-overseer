@@ -132,6 +132,42 @@ room and the Planner never does; the plan names how many, never where or how.
 The server refuses a step that is out of order, names an unissued handle, or
 repeats a phase; its message says what to change. The reasoning stays yours.
 
+## A noble's room (wake `noble_room_unmet`)
+
+The wake line names a position (for example MANAGER), its holder (unit id and
+name) and a room kind (Office, Bedroom, DiningHall, Tomb) the holder owns none
+of, plus the ids of that kind's zones that exist with no owner. Orders, and the
+nobles' own screens, will not work until the holder owns that room. Giving it is
+a routed `zone.assign-owner` step with `zone_id` and `unit_id` (never
+`OVERRIDE`): you file it, the Overseer rules, the conductor executes.
+
+1. **Read first.** `queue.project_status` and your recent filings: if a step
+   already assigns that holder an owner, or a project is building or furnishing
+   a room of that kind, you are not done yet but you do not file twice. The
+   server refuses a second `zone.assign-owner` for the same zone, whichever way
+   it is filed.
+2. **A project you filed is building that room.** Join it (the server refuses a
+   project another role filed): file a follow-up (type
+   `room_siting`) naming its `project_id` and `after_step`, with the step
+   `zone.assign-owner`. Set `after_step` to the project's own step that creates
+   or finishes the zone, so the owner is assigned only once the zone exists. If
+   the zone does not exist yet there is nothing to assign: wait for that step's
+   `step_done` wake, then file.
+3. **No project, but an unowned zone of that kind exists** (the wake line lists
+   them). File a standalone `room_siting` proposal whose single step is
+   `zone.assign-owner` on that zone. Check with `zone.contents` that it is the
+   right room (the defining furniture stands in it) before choosing between
+   several.
+4. **No zone of that kind exists.** Build one first, as any room (a template
+   project), and say in its rationale that it is for this holder; step 2 then
+   applies once its zone is made.
+5. **Never take a room from someone else.** A zone that already has an owner is
+   not on the line. Do not use `OVERRIDE` to move one; if the only fit is owned,
+   `queue.pass` with that reason or `queue.ask` the Overseer.
+
+The wake repeats a few times if nothing is filed, then goes quiet; it ends the
+moment the holder owns the room.
+
 ## Refusals
 
 - **Never compute or quote a raw coordinate.** Every perception tool strips

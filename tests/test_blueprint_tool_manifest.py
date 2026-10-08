@@ -66,7 +66,17 @@ RELEASE_ID = "blueprint.release"
 RESERVE_READ_ID = "blueprint.reservations"
 RESERVE_ID = "blueprint.reserve"
 UNRESERVE_ID = "blueprint.unreserve"
-ALL_IDS = READ_IDS | {APPLY_ID, RELEASE_ID} | {RESERVE_READ_ID, RESERVE_ID, UNRESERVE_ID}
+# Circulation hands (red team B3): registers a generated blueprint by name. A
+# generator reaches it, an agent does not, so it sits on no role's allowlist
+# (test_generate_is_granted_to_no_role below).
+GENERATE_ID = "blueprint.generate"
+ALL_IDS = READ_IDS | {APPLY_ID, RELEASE_ID} | {RESERVE_READ_ID, RESERVE_ID, UNRESERVE_ID} | {GENERATE_ID}
+
+
+def test_generate_is_granted_to_no_role():
+    roster = _roster()
+    for role in roster.roles.values():
+        assert not role.allows(GENERATE_ID), role.role
 
 
 def _text():
@@ -167,7 +177,7 @@ def test_overseer_gets_everything():
     roster = _roster()
     # Stage 2E: the rooms tools (apply, release, reserve, unreserve) are run by
     # the executor, and plan/preview are the siting reads that went with them.
-    left = {APPLY_ID, RELEASE_ID, RESERVE_ID, UNRESERVE_ID, "blueprint.plan", "blueprint.preview"}
+    left = {APPLY_ID, RELEASE_ID, RESERVE_ID, UNRESERVE_ID, "blueprint.plan", "blueprint.preview", GENERATE_ID}
     for tool_id in ALL_IDS:
         allowed, reason = roster.check("overseer", tool_id)
         if tool_id in left:

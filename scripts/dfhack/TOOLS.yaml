@@ -6353,6 +6353,43 @@ df-overseer-blueprint.lua:
           wall tile still held by another reservation is not freed.
         before_a_real_run: []
         traps: []
+    "generate NAME CSV_JSON":
+      lua_function: register_generated
+      effect: read
+      coordinate_bearing: false
+      live_deployed: false
+      verified: "offline lupa tests only (2026-10-08, circulation hands B3); the installed quickfort.apply_blueprint signature was read on the guest. Not yet run live."
+      knowledge_scope: player_derivable
+      notes: >
+        Registers a GENERATED blueprint (red team B3 of research/2026-10-08-architect-circulation-red-team.md):
+        the quickfort CSV text a generator produced at run time, held in this verb's persistent
+        state under a name that must start gen-. From then on plan, preview, apply, reserve, status
+        and release take that name as TEMPLATE and apply the same checks they apply to a deployed
+        file (siting hazard, reservations, access gate, shell-before-furniture, read-back); the
+        phases are applied through quickfort.apply_blueprint (one mode per section, never rotated)
+        instead of a file. Single-level only: a `#>` or `#<` line is refused here as everywhere.
+        No meta sections (apply each section as its own phase). Writes nothing to the map or the fort: it only stores the text in this verb's own scratch registry (classified read for that reason; if it should count as mutating it needs a dfqueue/action_tools.yaml entry). CSV_JSON
+        is the blueprint text as one JSON string. Granted to no role: a generator reaches it, an
+        agent does not.
+      summary: "Registers a generated single-level blueprint by name so the blueprint verbs can apply it without a deployed file."
+      guide:
+        arguments:
+          - name: "NAME"
+            required: true
+            default: null
+            meaning: >-
+              gen- followed by letters, digits, underscore or hyphen. Must not name a deployed
+              template.
+          - name: "CSV_JSON"
+            required: true
+            default: null
+            meaning: >-
+              The blueprint's quickfort CSV text, JSON-encoded as one string. Single level; dig,
+              build, place, zone and notes sections only.
+        returns: >-
+          The registered name, its footprint and its phases (label, mode, cell count).
+        before_a_real_run: []
+        traps: []
 df-overseer-clock.lua:
   build_order_item: "agent loop MVP items 1-2 (docs/AGENT-LOOP.md); handoffs/2026-09-22-loop-clock-conductor-role.md"
   commands:

@@ -579,9 +579,24 @@ STEP_IDENTITY_PATH = Path(__file__).resolve().parent / "step_identity.yaml"
 
 
 @lru_cache(maxsize=1)
-def _step_identity() -> dict:
+def _step_identity_doc() -> dict:
     with STEP_IDENTITY_PATH.open(encoding="utf-8") as fh:
-        return (yaml.safe_load(fh) or {}).get("tools") or {}
+        return yaml.safe_load(fh) or {}
+
+
+def _step_identity() -> dict:
+    return _step_identity_doc().get("tools") or {}
+
+
+def follow_up_checked(tool) -> bool:
+    """Whether a follow-up whose step is `tool` is still compared for
+    duplication (`dfqueue/step_identity.yaml` `follow_up_checked`). A follow-up
+    is normally the next step of existing work and never a duplicate; a tool
+    that gives a fixed thing a fixed state (an owner for a zone) can be filed
+    twice, once standalone and once joined to a project, or by two projects, and
+    those are the same action. For such a tool the comparison also ignores the
+    proposal `type`, since the two filings may sit in different types of one group."""
+    return tool in set(_step_identity_doc().get("follow_up_checked") or ())
 
 
 def _canon_value(value) -> str:

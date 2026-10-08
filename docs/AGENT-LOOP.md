@@ -259,7 +259,10 @@ the second wake is the reason's base, doubling per wake up to a season, and
 the fact is `stalled` (no more wakes, still listed in the briefing, logged at
 INFO) after three. It covers stalled and blocked orders, stuck jobs, ore
 exposure, threshold alerts (renotify only while still crossed) and the
-unsupplied-building watch. `queue_pending` is an edge: a proposal the Overseer
+unsupplied-building watch and the noble-room watch (`noble_room_unmet`: a position
+holder owns no room their position requires, so the Architect files a routed
+`zone.assign-owner` step; quiet while an open step already covers the holder;
+`conductor/noble_room_watch.py`). `queue_pending` is an edge: a proposal the Overseer
 already left pending wakes it again only on a new proposal, an ask answered
 since the defer, or `overseer_defer_recheck_cycles`. A missed prediction wakes
 its proposer only. An answered ask can wake its asker once

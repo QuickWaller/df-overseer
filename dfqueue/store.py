@@ -63,7 +63,7 @@ from .schema import (
     OBSERVATION, OBS_CONSISTENT, OBSERVATION_ROLE, PROJECT, PROPOSAL,
     PUBLIC_RATIONALE_MAX, READY, REJECT, RULING, SUCCESS, FAILURE,
     TRIGGER_ALL_DONE, TRIGGER_ALL_SUCCESS, WAITING, ask_addressee, executor, fort_name,
-    near_duplicate_reason, normalize_project, sole_writer, step_identity, validate,
+    follow_up_checked, near_duplicate_reason, normalize_project, sole_writer, step_identity, validate,
 )
 
 #: A ruling's `decision` values that close a proposal for good. `defer`
@@ -468,18 +468,33 @@ def _find_structural_duplicate(conn: sqlite3.Connection, record: dict) -> str | 
     still live, from any role, or `None`. A follow-up to a project
     (`project_id` or `after_step`) is the next step of existing work, never a
     duplicate. Oldest first, so the refusal names the original."""
-    if record.get("project_id") or record.get("after_step"):
+    is_follow_up = bool(record.get("project_id") or record.get("after_step"))
+    tool = (record.get("step") or {}).get("tool") if isinstance(record.get("step"), dict) else None
+    type_free = follow_up_checked(tool)
+    if is_follow_up and not type_free:
         return None
     key = step_identity(record)
     if key is None:
         return None
-    rows = conn.execute(
-        "SELECT payload FROM records WHERE kind = ? AND type = ? ORDER BY ts ASC, rowid ASC",
-        (PROPOSAL, record.get("type")),
-    ).fetchall()
+    if type_free:
+        # Same action in any proposal type: the key's first element is the type.
+        key = (None, *key[1:])
+        rows = conn.execute(
+            "SELECT payload FROM records WHERE kind = ? AND json_extract(payload, '$.step.tool') = ? "
+            "ORDER BY ts ASC, rowid ASC",
+            (PROPOSAL, tool),
+        ).fetchall()
+    else:
+        rows = conn.execute(
+            "SELECT payload FROM records WHERE kind = ? AND type = ? ORDER BY ts ASC, rowid ASC",
+            (PROPOSAL, record.get("type")),
+        ).fetchall()
     for row in rows:
         existing = json.loads(row["payload"])
-        if existing.get("id") == record.get("id") or step_identity(existing) != key:
+        ekey = step_identity(existing)
+        if type_free and ekey is not None:
+            ekey = (None, *ekey[1:])
+        if existing.get("id") == record.get("id") or ekey != key:
             continue
         status = _filing_row(conn, existing)["status"]
         if status in _LIVE_FILING_STATUSES:
@@ -3153,6 +3168,34 @@ def open_projects(path: str | Path) -> list[dict]:
                 "role": proposal.get("role"), "urgency": project.get("urgency") or "normal",
                 "summary": project.get("summary"), "status": status["status"],
                 "steps_open": steps_open, "phases_remaining": remaining,
+            })
+    return out
+
+
+def open_step_calls(path: str | Path, tools: list[str]) -> list[dict]:
+    """Read-only: every still-live proposal (pending, deferred, accepted or in
+    a project not yet done, the same set the structural duplicate check treats
+    as live) whose step tool is one of `tools`, as `{proposal_id, project_id,
+    tool, args, status}`. What the conductor's watches read to know a need is
+    already covered by filed work. Oldest first."""
+    wanted = [t for t in tools if isinstance(t, str) and t]
+    if not wanted:
+        return []
+    marks = ",".join("?" for _ in wanted)
+    out = []
+    with _connect(path) as conn:
+        for row in conn.execute(
+            f"SELECT payload FROM records WHERE kind = ? AND json_extract(payload, '$.step.tool') IN ({marks}) "
+            "ORDER BY ts ASC, rowid ASC", (PROPOSAL, *wanted),
+        ).fetchall():
+            proposal = json.loads(row["payload"])
+            status = _filing_row(conn, proposal)["status"]
+            if status not in _LIVE_FILING_STATUSES:
+                continue
+            step = proposal["step"]
+            out.append({
+                "proposal_id": proposal["id"], "project_id": proposal.get("project_id"),
+                "tool": step["tool"], "args": step.get("args") or {}, "status": status,
             })
     return out
 
