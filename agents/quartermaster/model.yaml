@@ -10,7 +10,7 @@ role: quartermaster
 # deepseek-v4-flash specifically, matching the Architect: this role is the
 # same kind (advisor, read-only, proposes never acts), so it gets the same
 # starting model rather than a fresh, ungrounded guess.
-model: deepseek/deepseek-v4-pro  # every role on DeepSeek pro for now, user's call 2026-10-01 (register)
+model: deepseek/deepseek-v4-flash  # every role on DeepSeek flash, user's call 2026-10-09 (reversible; was pro since 2026-10-01)
 fallback:
   - anthropic/claude-haiku-4-5-20251001
 
