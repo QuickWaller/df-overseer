@@ -532,10 +532,10 @@ def evaluate(
             state.review = Backoff()
     if state.review_index is not None:
         a_season = active.get("season_index")
-        reviewed = status.get("last_reviewed_tick")
+        reviewed = status.get("last_pass_tick")   # explicit pass only: last_reviewed_tick folds in the plan filing tick
         done = (
             (isinstance(a_season, int) and a_season >= state.review_index)
-            or (isinstance(reviewed, (int, float)) and state.review_since is not None and reviewed >= state.review_since)
+            or (isinstance(reviewed, int) and not isinstance(reviewed, bool) and state.review_since is not None and reviewed >= state.review_since)
         )
         if done:
             state.review_index = None

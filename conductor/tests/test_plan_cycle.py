@@ -63,7 +63,7 @@ def _status(*, bootstrap=False, version=3, season=1, targets=(), owners=None, aw
         return {"active": None, "bootstrap": True, "last_reviewed_tick": None, "plan_changes_awaiting": []}
     return {
         "active": {"id": f"plan-{version}", "version": version, "season_index": season, "tick": 5},
-        "bootstrap": False, "last_reviewed_tick": reviewed,
+        "bootstrap": False, "last_reviewed_tick": reviewed, "last_pass_tick": reviewed,
         "plan_changes_awaiting": [{"proposal_id": p, "ruling_id": r} for p, r in awaiting],
         "targets": list(targets), "owners": owners or {}, "alive": 22,
     }
