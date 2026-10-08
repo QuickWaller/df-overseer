@@ -17,7 +17,7 @@ _REAL_SHAPE_ENVELOPE = {
 
 async def _answer(tmp_path, envelope):
     runner = _runner(tmp_path, _fake_exec(_FakeProcess(json.dumps(envelope).encode())))
-    return (await runner.run("consultant", "q", model="m")).final_answer
+    return (await runner.run("consultant", "q", model="m", charter="# C")).final_answer
 
 
 @pytest.mark.asyncio
@@ -55,7 +55,7 @@ _USAGE = {
 async def test_usage_and_turns_are_kept_with_cache_read(tmp_path):
     env = dict(_REAL_SHAPE_ENVELOPE, usage=_USAGE, assistantTurns=5)
     runner = _runner(tmp_path, _fake_exec(_FakeProcess(json.dumps(env).encode())))
-    result = await runner.run("overseer", "q", model="m")
+    result = await runner.run("overseer", "q", model="m", charter="# C")
     assert result.assistant_turns == 5
     assert result.usage == {
         "input": 10212, "output": 2639, "cacheRead": 28928, "cacheWrite": 0,
@@ -67,7 +67,7 @@ async def test_usage_and_turns_are_kept_with_cache_read(tmp_path):
 async def test_missing_or_malformed_usage_is_none_never_zero(tmp_path):
     for env in (_REAL_SHAPE_ENVELOPE, dict(_REAL_SHAPE_ENVELOPE, usage="x", assistantTurns=True)):
         runner = _runner(tmp_path, _fake_exec(_FakeProcess(json.dumps(env).encode())))
-        result = await runner.run("overseer", "q", model="m")
+        result = await runner.run("overseer", "q", model="m", charter="# C")
         assert result.usage is None and result.assistant_turns is None
 
 
@@ -75,4 +75,4 @@ async def test_missing_or_malformed_usage_is_none_never_zero(tmp_path):
 async def test_a_usage_key_that_is_absent_stays_absent(tmp_path):
     env = dict(_REAL_SHAPE_ENVELOPE, usage={"input": 5, "cacheRead": "n/a", "junk": 1})
     runner = _runner(tmp_path, _fake_exec(_FakeProcess(json.dumps(env).encode())))
-    assert (await runner.run("overseer", "q", model="m")).usage == {"input": 5}
+    assert (await runner.run("overseer", "q", model="m", charter="# C")).usage == {"input": 5}

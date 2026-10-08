@@ -1106,7 +1106,8 @@ async def test_a_proposer_briefing_carries_its_own_recent_filings_block(tmp_path
         "architect": ["proposal-0024 room_siting accepted: Dig the bedroom | accept: Worth it."],
     }}
     runner = FakeRoleRunner()
-    deps = _deps(tmp_path, tools=tools, runner=runner)
+    import dataclasses
+    deps = _deps(tmp_path, tools=tools, runner=runner, policy=dataclasses.replace(load_policy(), own_filings_recent=5))
     await run_cycle(1, deps)
 
     briefing = json.loads(next(c for c in runner.calls if c["role"] == "architect")["prompt"])
@@ -1125,3 +1126,45 @@ async def test_a_failed_filings_read_omits_the_block_and_does_not_block_the_role
     await run_cycle(1, deps)
     briefing = json.loads(next(c for c in runner.calls if c["role"] == "architect")["prompt"])
     assert "your_recent_filings" not in briefing
+
+
+# ---------------------------------------------------------------------------
+# FORT PAUSED line (2026-10-08)
+# ---------------------------------------------------------------------------
+
+
+async def test_a_tripwire_cycle_briefs_every_role_that_the_fort_is_paused_and_why(tmp_path):
+    tools = _base_tools()
+    tools["clock.status"] = _clock_status(
+        paused=True, tripwire={"reason": "hunger_critical", "tick": 999, "detail": "Urist is starving"},
+    )
+    runner = FakeRoleRunner()
+    deps = _deps(tmp_path, tools=tools, runner=runner)
+    await run_cycle(1, deps)
+    qm = json.loads(next(c for c in runner.calls if c["role"] == QUARTERMASTER)["prompt"])
+    assert "tripwire stop (hunger_critical)" in qm["fort_paused"]
+    assert "not broken" in qm["fort_paused"]
+    ruling = next(c for c in runner.calls if c["role"] == OVERSEER)["prompt"]
+    assert "FORT PAUSED: tripwire stop (hunger_critical)" in ruling
+
+
+async def test_an_ordinary_held_cycle_names_the_hold_and_the_panel(tmp_path):
+    from conductor.hold import HoldStore, hold_path_for
+    tools = _base_tools(**{"clock.status": _clock_status(paused=True, blocking_panel={"name": "dwarfmode/Info"})})
+    _wake_both_advisors(tools)
+    runner = FakeRoleRunner()
+    deps = _deps(tmp_path, tools=tools, runner=runner)
+    HoldStore(hold_path_for(deps.cursor_store.path)).set("keep it paused", who="test")
+    await run_cycle(1, deps)
+    architect = json.loads(next(c for c in runner.calls if c["role"] == "architect")["prompt"])
+    assert "operator hold (keep it paused)" in architect["fort_paused"]
+    assert "blocking panel (dwarfmode/Info)" in architect["fort_paused"]
+
+
+async def test_a_running_fort_has_no_paused_line(tmp_path):
+    tools = _base_tools()
+    _wake_both_advisors(tools)
+    runner = FakeRoleRunner()
+    await run_cycle(1, _deps(tmp_path, tools=tools, runner=runner))
+    architect = json.loads(next(c for c in runner.calls if c["role"] == "architect")["prompt"])
+    assert "fort_paused" not in architect
