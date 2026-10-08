@@ -95,3 +95,34 @@ about the charter's size. Check each of the five roles, since only one is verifi
 - Whether the fix works: nothing was modified or launched (no docker access from the
   read-only session, by design).
 - The date it started.
+
+## Result (fix applied and verified live, 2026-10-08)
+
+**Fix.** `DockerOpenClawRunner.build_command` now adds a read-only bind mount of the
+per-run charter, `-v <workspace>/SOUL.md:/app/SOUL.md:ro` (`CHARTER_MOUNT` in
+`conductor/runner.py`). The file mount was chosen over `-w` or a workspace setting
+because the prompt names the exact path it looked in, and it does not depend on how
+openclaw resolves its working directory or `agents.entries.<role>.workspace`. The
+image could not be listed (the session's docker access is denied, and a mount over a
+shipped file was the risk), but the earlier run reported `/app/SOUL.md` as `[MISSING]`,
+so nothing of that name is shipped to be shadowed.
+
+**Fail loud.** `run()` now refuses a role whose charter is `None`, empty or
+whitespace: no launch, status `charter_missing`, an ERROR log line "refusing to run
+without a charter". Previously `charter=None` skipped the charter silently.
+Tests: command contains the mount, parametrised refusal (None, "", whitespace).
+
+**Live check (VM 106, no conductor cycle).** `verify_driver.py` (this directory) called
+`DockerOpenClawRunner.run` for the Consultant through a transient unit mirroring
+`conductor.service`, prompt "Reply with the first heading of your charter and nothing
+else." Result: status ok, $0.0047, 9.6 s, answer `# Consultant`. The kept state dir's
+`trajectory_runtime_events` seq 2 system prompt shows `## /app/SOUL.md` followed by
+the Consultant charter text (`# Consultant`, `**Kind:** advisor...`, `## Owns`...),
+not `[MISSING]`. The conductor service stayed inactive and disabled; the driver and
+kept state were removed afterwards; vm106-conductor drift-clean at 4521d26.
+
+**Still open.** `/app/AGENTS.md` and `/app/IDENTITY.md` remain `[MISSING]` (the
+conductor writes neither; AGENTS.md could carry shared rules if wanted). Only the
+Consultant was verified live; the other roles use the identical code path. The first
+run of each role after this change is a prompt-cache miss (the stable prefix grew by
+the charter).
