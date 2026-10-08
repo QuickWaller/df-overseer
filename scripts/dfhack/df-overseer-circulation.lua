@@ -203,6 +203,32 @@ local function is_room_zone(zone)
   return area <= DATA.zone_max_tiles
 end
 
+-- One bounding rectangle per level for a reservation's real tiles (the output
+-- of reservations.tiles_of: a list of {x, y, z}). A multi-level tile set gives
+-- one entry per level it touches, so a stair column opens a window on every
+-- level. Entries are {id, x, y, z, w, h}.
+function reservation_entries(id, tiles)
+  local per, order = {}, {}
+  for _, t in ipairs(tiles or {}) do
+    local r = per[t.z]
+    if not r then
+      r = { x1 = t.x, y1 = t.y, x2 = t.x, y2 = t.y }
+      per[t.z] = r
+      order[#order + 1] = t.z
+    else
+      r.x1, r.y1 = math.min(r.x1, t.x), math.min(r.y1, t.y)
+      r.x2, r.y2 = math.max(r.x2, t.x), math.max(r.y2, t.y)
+    end
+  end
+  table.sort(order)
+  local out = {}
+  for _, z in ipairs(order) do
+    local r = per[z]
+    out[#out + 1] = { id = id, x = r.x1, y = r.y1, z = z, w = r.x2 - r.x1 + 1, h = r.y2 - r.y1 + 1 }
+  end
+  return out
+end
+
 -- Returns windows, total_tiles, outside_landmarks or nil, error.
 local function make_windows(world, cap)
   local per = {}
@@ -1393,7 +1419,7 @@ end
 -- ---------------------------------------------------------------------------
 -- Live world
 -- ---------------------------------------------------------------------------
-local function live_world()
+function live_world()
   local w = { sites = {}, reservations = {}, zones = {}, landmarks = {} }
   local errs = {}
 
@@ -1408,7 +1434,17 @@ local function live_world()
   local okr, rs = pcall(reqscript, 'df-overseer-reservations')
   if okr and rs and rs.list_raw then
     for _, r in ipairs(rs.list_raw()) do
-      w.reservations[#w.reservations + 1] = { id = r.handle, x = r.x, y = r.y, z = r.z, w = r.w, h = r.h }
+      -- Read the tiles the reservation really covers (both stored shapes: a
+      -- rectangle and a tile set that may span levels), not the rectangle
+      -- fields, which describe only the lowest level of a tile set.
+      local okt, tiles = pcall(rs.tiles_of, r.handle)
+      local entries = okt and tiles and reservation_entries(r.handle, tiles) or nil
+      if entries and #entries > 0 then
+        for _, e in ipairs(entries) do w.reservations[#w.reservations + 1] = e end
+      else
+        w.reservations[#w.reservations + 1] = { id = r.handle, x = r.x, y = r.y, z = r.z, w = r.w, h = r.h }
+        errs[#errs + 1] = "could not read tiles of reservation " .. tostring(r.handle) .. "; used its rectangle"
+      end
     end
   else
     errs[#errs + 1] = "could not read reservations"

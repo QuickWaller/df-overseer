@@ -24,7 +24,12 @@ local TEXTUTIL = {
   to_utf8 = function(s) return s end,
 }
 
+-- Tests may install fake modules (or a real file's source) by name.
+FAKE_MODULES = {}
+local LOADED = {}
+
 function reqscript(n)
+  if FAKE_MODULES[n] then return FAKE_MODULES[n] end
   if n == "df-overseer-textutil" then return TEXTUTIL end
   return {}
 end
