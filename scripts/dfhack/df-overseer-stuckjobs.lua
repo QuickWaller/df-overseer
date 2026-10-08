@@ -93,6 +93,9 @@ local json = require('json')
 local utils = require('utils')
 local landmarks_mod = reqscript('df-overseer-landmarks')
 local textutil = reqscript('df-overseer-textutil')
+-- 2026-10-08: a dig the game itself cancelled (DIG_CANCEL_DAMP / _WARM) is
+-- not a stuck job; see df-overseer-digcancel.lua.
+local digcancel_mod = reqscript('df-overseer-digcancel')
 
 if not _G.__df_overseer_stuckjobs_registered then
   _G.__df_overseer_job_start_tick = _G.__df_overseer_job_start_tick or {}
@@ -109,6 +112,11 @@ end
 function get_stuck_jobs(min_idle_ticks)
   local now = dfhack.world.ReadCurrentTick()
   local results = {}
+  local cancelled = {}
+  for _, c in ipairs((digcancel_mod.recent(nil))) do
+    local key = c.x .. "," .. c.y .. "," .. c.z
+    if not cancelled[key] then cancelled[key] = c.kind end
+  end
   for _, job in utils.listpairs(df.global.world.jobs.list) do
     local ok_worker, worker = pcall(dfhack.job.getWorker, job)
     local has_worker = ok_worker and worker ~= nil
@@ -129,11 +137,15 @@ function get_stuck_jobs(min_idle_ticks)
           landmarks_mod.nearest_landmark, job.pos.x, job.pos.y, job.pos.z)
         local info = ok_near and near_info
         local origin = job_origin(job)
+        local cancel_kind = cancelled[job.pos.x .. "," .. job.pos.y .. "," .. job.pos.z]
+        local waiting_on = job.flags.suspend and "suspended" or "no worker assigned"
+        if cancel_kind then waiting_on = digcancel_mod.label(cancel_kind) end
         table.insert(results, {
           job_type = ok_type and jtype or "unknown",
           detail = ok_name and textutil.to_utf8(name) or nil,
           building = building_name,
-          waiting_on = job.flags.suspend and "suspended" or "no worker assigned",
+          waiting_on = waiting_on,
+          cancelled_by_game = cancel_kind,
           idle_ticks = idle_ticks,
           near_landmark = info and info.name or nil,
           direction = info and info.direction or nil,

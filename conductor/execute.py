@@ -344,7 +344,13 @@ class _Phase:
                                 f"{_clip(out.get('detail'), 120)}.")
                 continue
             self.st.unknown.pop(sid, None)
-            if obs in ("stalled", "blocked_material"):
+            if obs == "cancelled_by_game":
+                # The game itself cancelled the dig beside damp or warm stone (2026-10-08).
+                # Not a stall: it is attended once with that name, and nothing here ever
+                # re-issues or retries it.
+                self.attend(pid, sid, obs, "the game cancelled the dig (damp or warm stone beside it), "
+                            "not a stuck dig: choose another site, do not retry this one")
+            elif obs in ("stalled", "blocked_material"):
                 label = "the work has stalled" if obs == "stalled" else "a material it needs is blocked"
                 self.attend(pid, sid, obs, f"{label}: {_clip(out.get('detail'), 160)}.")
             elif obs == "issued":

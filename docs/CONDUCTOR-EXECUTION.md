@@ -353,7 +353,7 @@ per-tool data), `agents/conductor/tools.yaml`, `dfmcp/tests/`.
 | `queue.apply_followup` | `proposal_id` | `{project_id, version, step_id}` |
 | `queue.run_step` | `project_id, step_id` | `{class, executed_id?, handle?, detail}`; `class` in success, transient, waiting, needs_judgment, failed, uncertain, not_runnable (with `reasons`) |
 | `queue.resolve_uncertain` | `run_id` | `{class: success|transient|uncertain, handle?}` |
-| `queue.observe` | `project_id, step_id` | `{state: issued|done|stalled|unknown|blocked_material, observation_id}` |
+| `queue.observe` | `project_id, step_id` | `{state: issued|done|stalled|unknown|blocked_material|cancelled_by_game, observation_id}` |
 | `queue.cleanup_project` | `project_id` | `{released: [...], unreserved: [...], failed: [...]}` |
 | `queue.close` | `project_id, outcome, reason` | `{close_id}` (idle and pass closes) |
 | `queue.close_legacy` | `target_id, reason` | `{close_id, outcome}`; outcome computed by the store; never calls DFHack |

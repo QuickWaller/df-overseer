@@ -171,7 +171,7 @@ def parse(tool_id: str, raw: Any, *, takes_dry_run: bool = True) -> ExecSpec:
         if not isinstance(progress, dict) or not isinstance(progress.get("read"), dict) \
                 or not isinstance(progress.get("done_field"), str):
             raise ActionDataError(f"{tool_id}: execution.progress needs read {{tool, args}} and done_field")
-        extra = sorted(set(progress) - {"read", "done_field", "not_done_if", "stalled_if", "blocked_if"})
+        extra = sorted(set(progress) - {"read", "done_field", "not_done_if", "stalled_if", "blocked_if", "cancelled_if"})
         if extra:
             raise ActionDataError(f"{tool_id}: execution.progress has unknown key(s) {extra}")
     landed = raw.get("landed") or []
@@ -441,7 +441,9 @@ def _cond(out: Any, cond: Optional[Mapping[str, Any]]) -> bool:
 
 def judge_progress(spec: ExecSpec, out: Any) -> Dict[str, Any]:
     """`{state, done}` for one progress read. `state` is `done`, `issued` (in
-    progress), `stalled`, `blocked_material` or `unknown` (an unreadable or
+    progress), `stalled`, `blocked_material`, `cancelled_by_game` (the game itself
+    cancelled the dig as damp or warm stone: a distinct fact, never a stall, never
+    retried; 2026-10-08) or `unknown` (an unreadable or
     null read never counts as done)."""
     p = spec.progress
     if p is None:
@@ -455,6 +457,9 @@ def judge_progress(spec: ExecSpec, out: Any) -> Dict[str, Any]:
         return {"state": "done", "done": True, "reason": "the game says it is done"}
     if _cond(out, p.get("blocked_if")):
         return {"state": "blocked_material", "done": False, "reason": "something cannot be finished (material)"}
+    if _cond(out, p.get("cancelled_if")):
+        return {"state": "cancelled_by_game", "done": False,
+                "reason": "cancelled by the game (damp or warm stone beside the dig); not a stall, never retried"}
     if _cond(out, p.get("stalled_if")):
         return {"state": "stalled", "done": False, "reason": "work has stalled"}
     return {"state": "issued", "done": False, "reason": "in progress"}

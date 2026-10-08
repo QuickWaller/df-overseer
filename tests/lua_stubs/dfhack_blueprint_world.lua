@@ -13,9 +13,22 @@ df = {
   tile_dig_designation = {No = 0, Default = 1},
   tiletype = {attrs = {}},
   job_type = enum({"Dig","DigChannel","SmoothWall","ConstructBuilding"}),
+  -- 2026-10-08: the siting policy (df-overseer-hazard.lua) and the dig-cancel
+  -- reader (df-overseer-digcancel.lua) are loaded for real; they need these.
+  tile_liquid = {Water = 0, Magma = 1},
+  announcement_type = {DIG_CANCEL_WARM = 51, DIG_CANCEL_DAMP = 52},
   -- cur_year: abs_tick() (df-overseer-reservations.lua) reads it with
   -- ReadCurrentTick; tests move time with NOW (and YEAR where a year boundary matters).
-  global = setmetatable({world = {jobs = {list = {next = nil}}}}, {__index = function(_, k) if k == 'cur_year' then return YEAR or 0 end end}),
+  global = setmetatable({world = {jobs = {list = {next = nil}},
+    -- REPORTS: list of {type=, x=, y=, z=, year=, time=} the cancel reader scans.
+    status = {reports = setmetatable({}, {__len = function() return #(REPORTS or {}) end,
+      __index = function(_, i)
+        local r = (REPORTS or {})[i + 1]
+        return r and {type = r.type, year = r.year or 0, time = r.time or 0, pos = {x = r.x, y = r.y, z = r.z}} or nil
+      end})},
+    -- map_blocks: one pseudo-block per set tile; every other cell reads hidden.
+    map = {map_blocks = setmetatable({}, {__len = function() return #BLOCKS_LIST() end,
+      __index = function(_, i) return BLOCKS_LIST()[i + 1] end})}}}, {__index = function(_, k) if k == 'cur_year' then return YEAR or 0 end end}),
 }
 -- set_jobs({{job_type="Dig", x=, y=, z=}, ...}) rebuilds the linked list
 -- DFHack exposes at df.global.world.jobs.list.
@@ -33,10 +46,25 @@ function set_dig(x, y, z, v) TILES[x .. ',' .. y .. ',' .. z].dig = v end
 -- tiles: key "x,y,z" -> {shape, material, special, dig, smooth, occupied}
 TILES = {}
 local function key(x, y, z) return x .. "," .. y .. "," .. z end
+function BLOCKS_LIST()
+  local out = {}
+  for k, t in pairs(TILES) do
+    local x, y, z = k:match("^(-?%d+),(-?%d+),(-?%d+)$")
+    local cell = {hidden = t.hidden and true or false, water_table = t.aquifer and true or false,
+      flow_size = t.magma and 7 or 0, liquid_type = t.magma and 1 or 0}
+    local hid = {hidden = true, water_table = false, flow_size = 0, liquid_type = 0}
+    out[#out + 1] = {map_pos = {x = 0, y = 0, z = tonumber(z)},
+      designation = setmetatable({}, {__index = function(_, tx)
+        return setmetatable({}, {__index = function(_, ty) return (tx == 0 and ty == 0) and cell or hid end})
+      end})}
+  end
+  return out
+end
 function set_tile(x, y, z, shape, mat, special, extra)
   local id = #df.tiletype.attrs + 1
   df.tiletype.attrs[id] = {shape = df.tiletype_shape[shape], material = df.tiletype_material[mat], special = df.tiletype_special[special or "NORMAL"]}
-  TILES[key(x, y, z)] = {tt = id, dig = 0, smooth = 0, occupied = extra and extra.occupied, hidden = extra and extra.hidden}
+  TILES[key(x, y, z)] = {tt = id, dig = 0, smooth = 0, occupied = extra and extra.occupied, hidden = extra and extra.hidden,
+    aquifer = extra and extra.aquifer, magma = extra and extra.magma}
 end
 -- set_building(x, y, z, id, stage, max): a building object on a tile, with the
 -- getBuildStage/getMaxBuildStage methods the real one has. One id may be set
@@ -59,7 +87,14 @@ dfhack = {
       local shape = df.tiletype.attrs[t.tt].shape
       return (shape == df.tiletype_shape.FLOOR or shape == df.tiletype_shape.RAMP) and 1 or 0
     end,
-    getTileFlags = function(pos) local t = TILES[key(pos.x, pos.y, pos.z)]; return {dig = t.dig, smooth = t.smooth} end,
+    getTileFlags = function(pos, y, z)
+      if type(pos) ~= "table" then pos = {x = pos, y = y, z = z} end
+      local t = TILES[key(pos.x, pos.y, pos.z)]
+      if not t then return nil end
+      return {dig = t.dig, smooth = t.smooth, hidden = t.hidden and true or false,
+        water_table = t.aquifer and true or false,
+        flow_size = t.magma and 7 or 0, liquid_type = t.magma and 1 or 0}
+    end,
   },
   buildings = {
     findAtTile = function(pos)
@@ -89,6 +124,7 @@ dfhack = {
     saveSiteData = function(k, v) dfhack.persistent._s[k] = v end,
   },
   world = {ReadCurrentTick = function() return NOW or 1234 end},
+  getTickCount = function() return CLOCK_MS or 0 end,
   printerr = function(m) ERRS = (ERRS or "") .. m .. "\n" end,
   run_command_silent = function(cmd, ...)
     local a = {...}
@@ -168,6 +204,20 @@ function reqscript(n)
       RESERVATIONS_MOD = env
     end
     return RESERVATIONS_MOD
+  end
+  if n == "df-overseer-hazard" or n == "df-overseer-digcancel" then
+    -- Both are dependency-free leaves: loaded for real, so the stub proves the
+    -- real siting policy and the real report reader, not a parallel fake.
+    LEAF_MODS = LEAF_MODS or {}
+    if not LEAF_MODS[n] then
+      local f = io.open(n == "df-overseer-hazard" and HAZARD_LUA_PATH or DIGCANCEL_LUA_PATH, "r")
+      local src = f:read("*a")
+      f:close()
+      local env = setmetatable({}, {__index = _G})
+      assert(load(src, n .. ".lua", "t", env))()
+      LEAF_MODS[n] = env
+    end
+    return LEAF_MODS[n]
   end
   if n == "df-overseer-blueprint-parse" then
     -- Loads the REAL df-overseer-blueprint-parse.lua (handoffs/2026-09-30-

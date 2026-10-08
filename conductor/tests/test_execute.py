@@ -152,6 +152,19 @@ async def test_stalled_and_blocked_go_to_the_proposer_once_per_cause():
     assert [w.reason for w in report3.wakes] == ["step_attention"]
 
 
+async def test_a_game_cancelled_dig_is_named_once_and_never_retried():
+    s = {"open_projects": [_proj()], "issued_steps": [{"project_id": "project-0001", "step_id": "project-0001/s1"}]}
+    answers = {"queue.observe": {"state": "cancelled_by_game", "detail": "cancelled by the game"}}
+    script = Script(s, answers)
+    report, state = await _run(script)
+    assert [w.reason for w in report.wakes] == ["step_attention"]
+    assert "not a stuck dig" in report.wakes[0].text and "do not retry" in report.wakes[0].text
+    report2, _ = await _run(Script(s, answers), state)
+    assert report2.wakes == []
+    # nothing was re-issued: only the observe read was made
+    assert set(script.names()) <= {"queue.execution_state", "queue.observe"}
+
+
 async def test_unknown_reads_wake_only_on_the_third():
     s = {"open_projects": [_proj()], "issued_steps": [{"project_id": "project-0001", "step_id": "project-0001/s1"}]}
     answers = {"queue.observe": {"state": "unknown", "detail": "no read"}}

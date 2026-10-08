@@ -780,6 +780,8 @@ df-overseer-diggable.lua:
         before_a_real_run: []
         traps:
           - >-
+            Siting policy (2026-10-08, user decision): sites that are, or touch, a revealed aquifer or magma tile are never offered or dug, and hidden rock on a level band with a revealed aquifer counts as unsafe. An empty answer may mean this; the error then says how many tiles were excluded. The policy is data (df-overseer-hazard POLICY). The game also cancels digs beside damp or warm stone on its own; that reads as cancelled_by_game, never a stall, and is never retried.
+          - >-
             A still-hidden (unrevealed) tile is offered as a candidate, matching how the game's own
             digging designation treats blind tiles; material is left out for it, and only
             interior_fully_revealed says whether the whole area has actually been seen.
@@ -878,7 +880,9 @@ df-overseer-diggable.lua:
           - >-
             Shares its candidate ranking with diggable.find, so run find first to check what RANK
             will pick and whether the site is actually walkable once dug.
-        traps: []
+        traps:
+          - >-
+            Siting policy (2026-10-08, user decision): sites that are, or touch, a revealed aquifer or magma tile are never offered or dug, and hidden rock on a level band with a revealed aquifer counts as unsafe. An empty answer may mean this; the error then says how many tiles were excluded. The policy is data (df-overseer-hazard POLICY). The game also cancels digs beside damp or warm stone on its own; that reads as cancelled_by_game, never a stall, and is never retried.
     "find-stair [LEVEL] NEAR_LANDMARK [RADIUS_TILES] [RES_ID]":
       lua_function: find_stair_down
       effect: read
@@ -961,7 +965,9 @@ df-overseer-diggable.lua:
           offered and silently failing to dig later. Pair with diggable.dig-stair to actually
           designate one.
         before_a_real_run: []
-        traps: []
+        traps:
+          - >-
+            Siting policy (2026-10-08, user decision): sites that are, or touch, a revealed aquifer or magma tile are never offered or dug, and hidden rock on a level band with a revealed aquifer counts as unsafe. An empty answer may mean this; the error then says how many tiles were excluded. The policy is data (df-overseer-hazard POLICY). The game also cancels digs beside damp or warm stone on its own; that reads as cancelled_by_game, never a stall, and is never retried.
     "dig-stair [LEVEL] NEAR_LANDMARK [RANK] [RADIUS_TILES] [DRY_RUN] [RES_ID] [OVERRIDE]":
       lua_function: dig_stair_down
       effect: mutate
@@ -1074,7 +1080,9 @@ df-overseer-diggable.lua:
           rather than left as an orphan. A failure returns an error rather than a success-looking
           result with a buried failure flag.
         before_a_real_run: []
-        traps: []
+        traps:
+          - >-
+            Siting policy (2026-10-08, user decision): sites that are, or touch, a revealed aquifer or magma tile are never offered or dug, and hidden rock on a level band with a revealed aquifer counts as unsafe. An empty answer may mean this; the error then says how many tiles were excluded. The policy is data (df-overseer-hazard POLICY). The game also cancels digs beside damp or warm stone on its own; that reads as cancelled_by_game, never a stall, and is never retried.
 df-overseer-farm.lua:
   build_order_item: "gap named 2026-09-16, handoffs/2026-09-16-farm-and-still-tools.md Part 2"
   # Documented defaults (each the value the Lua script already uses when the
@@ -5417,7 +5425,9 @@ df-overseer-construction.lua:
             Only designates a tile that is confidently identified as ore or gem (via surface.vein-
             material's own decoding); anything it cannot classify confidently is refused by name
             rather than guessed.
-        traps: []
+        traps:
+          - >-
+            Siting policy (2026-10-08, user decision): sites that are, or touch, a revealed aquifer or magma tile are never offered or dug, and hidden rock on a level band with a revealed aquifer counts as unsafe. An empty answer may mean this; the error then says how many tiles were excluded. The policy is data (df-overseer-hazard POLICY). The game also cancels digs beside damp or warm stone on its own; that reads as cancelled_by_game, never a stall, and is never retried.
     "mine-vein-site SITE_ID [DRY_RUN] [RES_ID] [OVERRIDE]":
       lua_function: mine_vein
       effect: mutate
@@ -5890,6 +5900,8 @@ df-overseer-blueprint.lua:
         before_a_real_run: []
         traps:
           - >-
+            Siting policy (2026-10-08, user decision): sites that are, or touch, a revealed aquifer or magma tile are never offered or dug, and hidden rock on a level band with a revealed aquifer counts as unsafe. An empty answer may mean this; the error then says how many tiles were excluded. The policy is data (df-overseer-hazard POLICY). The game also cancels digs beside damp or warm stone on its own; that reads as cancelled_by_game, never a stall, and is never retried.
+          - >-
             A build, zone or place phase also reports whether phase ordering would block it (for
             example a zone phase run before its shell is dug); read that alongside the designation
             result, not just whether tiles were accepted.
@@ -5949,6 +5961,7 @@ df-overseer-blueprint.lua:
           done_field: phase.done
           not_done_if: {path: dig.state, equals: in_progress}
           stalled_if: {path: dig.state, equals: stalled}
+          cancelled_if: {path: dig.state, equals: cancelled_by_game}
           blocked_if: {path: finish_state.blocked_total, greater_than: 0}
         landed:
           - when: {arg: site, matches: '^res-[0-9]+$'}
@@ -6038,6 +6051,8 @@ df-overseer-blueprint.lua:
             entrance reaches revealed walkable ground; if none works, the call is refused outright
             and nothing is designated, unless ALLOW_STRANDED is explicitly set to true.
         traps:
+          - >-
+            Siting policy (2026-10-08, user decision): sites that are, or touch, a revealed aquifer or magma tile are never offered or dug, and hidden rock on a level band with a revealed aquifer counts as unsafe. An empty answer may mean this; the error then says how many tiles were excluded. The policy is data (df-overseer-hazard POLICY). The game also cancels digs beside damp or warm stone on its own; that reads as cancelled_by_game, never a stall, and is never retried.
           - >-
             A seam wall shared between two tiled templates is allowed to overlap by design, not
             refused as a collision; only a genuine conflict outside a declared seam is refused.

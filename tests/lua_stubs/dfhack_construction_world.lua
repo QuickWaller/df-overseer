@@ -402,6 +402,18 @@ package.loaded['df-overseer-building'] = FAKE_BUILDING
 package.loaded['df-overseer-reservations'] = FAKE_RESERVATIONS
 package.loaded['df-overseer-reachability'] = FAKE_REACHABILITY
 package.loaded['df-overseer-connectivity'] = FAKE_CONNECTIVITY
+-- 2026-10-08 siting policy: a fake hazard module. HAZARD_TILES["x,y,z"] = true makes
+-- that tile refuse (the real policy has its own tests in
+-- tests/test_aquifer_siting_lua_logic.py).
+HAZARD_TILES = {}
+package.loaded['df-overseer-hazard'] = {
+  begin_scan = function() end,
+  check_tile = function(x, y, z)
+    if HAZARD_TILES[x .. "," .. y .. "," .. z] then return {kind = "aquifer", where = "tile", via = "revealed"} end
+    return nil
+  end,
+  message = function(hz) return "refused by the siting policy: aquifer" end,
+}
 package.loaded['json'] = {encode = function(v) return "json" end}
 package.loaded['utils'] = {listpairs = function(t) return ipairs(t) end}
 

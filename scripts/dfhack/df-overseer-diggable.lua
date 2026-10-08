@@ -291,6 +291,12 @@ local landmarks_mod = reqscript('df-overseer-landmarks')
 -- a tile inside a reservation they do not hold (decision 4: no holding
 -- concept for this tool -- "other tools ... simply refuse").
 local reservations_mod = reqscript('df-overseer-reservations')
+-- 2026-10-08 user decision ("for now lets only choose spots with no
+-- aquifer"): every dig this file sites or designates is checked against
+-- df-overseer-hazard.lua's data policy (aquifer and magma, revealed tiles
+-- only; hidden tiles are unknown, see that file). A tile that is, or touches,
+-- a hazard is not diggable here: finders drop it, dig/dig-stair refuse it.
+local hazard_mod = reqscript('df-overseer-hazard')
 
 local MAX_RADIUS = 60
 local DEFAULT_RADIUS = 30
@@ -370,6 +376,7 @@ local function is_diggable(x, y, z)
     return false, nil, false
   end
   if not visible then
+    if hazard_mod.check_tile(x, y, z) then return false, nil, false end
     return true, nil, true
   end
   if walkable_group(x, y, z) ~= 0 then
@@ -385,6 +392,9 @@ local function is_diggable(x, y, z)
   end
   local ok_mat, mat = pcall(function() return df.tiletype.attrs[tt].material end)
   if not ok_mat or not DIGGABLE_MATERIALS[mat] then
+    return false, nil, false
+  end
+  if hazard_mod.check_tile(x, y, z) then
     return false, nil, false
   end
   return true, mat, false
@@ -508,6 +518,7 @@ local function ranked_candidates(w, h, level, near, radius_tiles, res_id)
     return nil, level_err
   end
   local radius = math.min(radius_tiles or DEFAULT_RADIUS, MAX_RADIUS)
+  hazard_mod.begin_scan()
 
   local anchor_group = walkable_group(ax, ay, az)
   if anchor_group == 0 then
@@ -583,6 +594,10 @@ function find_diggable_area(w, h, level, near, radius_tiles, res_id)
       borders_walkable_network = true,  -- v1 only returns these; see header
     })
   end
+  if #results == 0 then
+    local note = hazard_mod.exclusion_note()
+    if note then return nil, "no site found: " .. note end
+  end
   return results
 end
 
@@ -635,9 +650,19 @@ function dig_diggable_area(w, h, level, near, blueprint_file, rank, radius_tiles
   if rank < 1 or rank > #chosen then
     return nil, string.format(
       "no candidate at rank %d (found %d near %s)", rank, #chosen, near)
+      .. (hazard_mod.exclusion_note() and ("; " .. hazard_mod.exclusion_note()) or "")
   end
 
   local c = chosen[rank]
+  -- Re-checked at the moment of designating, not only when ranked: the rule
+  -- is enforced here too, so a stale rank can never reach quickfort.
+  local hz = hazard_mod.check_rect(c.x, c.y, z, w, h)
+  if hz then
+    local okn, ni = pcall(landmarks_mod.nearest_landmark, hz.x, hz.y, z)
+    local where = okn and ni and string.format("%s tiles %s of %s", tostring(ni.distance_tiles),
+      tostring(ni.direction), tostring(ni.name)) or nil
+    return nil, hazard_mod.message(hz, where)
+  end
   local cx = c.x + math.floor((w - 1) / 2)
   local cy = c.y + math.floor((h - 1) / 2)
 
@@ -725,6 +750,7 @@ local function ranked_stair_candidates(level, near, radius_tiles, res_id)
       "no level below level %d from %s to place an upstair", level or 0, near)
   end
   local radius = math.min(radius_tiles or DEFAULT_RADIUS, MAX_RADIUS)
+  hazard_mod.begin_scan()
 
   local anchor_group = walkable_group(ax, ay, upper_z)
   if anchor_group == 0 then
@@ -749,7 +775,8 @@ local function ranked_stair_candidates(level, near, radius_tiles, res_id)
         -- already requires WALL-shaped or hidden) -- defense in depth, not
         -- because the research found a live mechanism for it.
         if group ~= 0 and (not anchor_group or group == anchor_group)
-            and tile_unoccupied(x, y, upper_z) then
+            and tile_unoccupied(x, y, upper_z)
+            and not hazard_mod.check_tile(x, y, upper_z) then
           local admit, lower_mat, lower_hidden = is_diggable(x, y, lower_z)
           if admit and tile_unoccupied(x, y, lower_z) then
             local ok_ut, upper_tt = pcall(dfhack.maps.getTileType, x, y, upper_z)
@@ -825,6 +852,10 @@ function find_stair_down(level, near, radius_tiles, res_id)
   for _, c in ipairs(chosen) do
     table.insert(results, describe_stair_candidate(c, upper_z))
   end
+  if #results == 0 then
+    local note = hazard_mod.exclusion_note()
+    if note then return nil, "no stair site found: " .. note end
+  end
   return results
 end
 
@@ -873,8 +904,17 @@ function dig_stair_down(level, near, rank, radius_tiles, dry_run, res_id, overri
   if rank < 1 or rank > #chosen then
     return nil, string.format(
       "no candidate at rank %d (found %d near %s)", rank, #chosen, near)
+      .. (hazard_mod.exclusion_note() and ("; " .. hazard_mod.exclusion_note()) or "")
   end
   local c = chosen[rank]
+  -- Enforced again at designation time (see dig_diggable_area).
+  local hz = hazard_mod.check_tiles({{x = c.x, y = c.y, z = upper_z}, {x = c.x, y = c.y, z = lower_z}})
+  if hz then
+    local okn, ni = pcall(landmarks_mod.nearest_landmark, c.x, c.y, upper_z)
+    local where = okn and ni and string.format("%s tiles %s of %s", tostring(ni.distance_tiles),
+      tostring(ni.direction), tostring(ni.name)) or nil
+    return nil, hazard_mod.message(hz, where)
+  end
   local described = describe_stair_candidate(c, upper_z)
   described.rank = rank
 

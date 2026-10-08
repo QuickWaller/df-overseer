@@ -45,6 +45,8 @@ class LandmarksWorld:
         self.lua = lupa.LuaRuntime(unpack_returned_tuples=True)
         self.lua.execute("RESERVATIONS_LUA_PATH = %r" % str(RESERVATIONS_LUA))
         self.lua.execute("BLUEPRINT_PARSE_LUA_PATH = %r" % str(PARSE_LUA))
+        self.lua.execute("HAZARD_LUA_PATH = %r" % str(PARSE_LUA.parent / "df-overseer-hazard.lua"))
+        self.lua.execute("DIGCANCEL_LUA_PATH = %r" % str(PARSE_LUA.parent / "df-overseer-digcancel.lua"))
         self.lua.execute(STUB.read_text(encoding="utf-8"))
         load = self.lua.eval("function(src, name) return load(src, name) end")
         chunk = load(LANDMARKS_LUA.read_text(encoding="utf-8"), "landmarks.lua")
