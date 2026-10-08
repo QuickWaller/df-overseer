@@ -337,3 +337,13 @@ def test_the_fixture_check_can_fail(specs):
     wrong = ad.parse("x.y", {"verdict": {"dry_ok": "would_reserv"}, "dry_run_echo": "dry_run"})
     missing = [p for p in ad.declared_paths(wrong)["dry"] if not ad.get_path(data["reserve_dry_run"], p)[0]]
     assert missing == ["would_reserv"]
+
+def test_a_game_cancelled_dig_is_its_own_state_not_a_stall(specs):
+    apply = specs["blueprint.apply"]
+    assert apply.progress["cancelled_if"] == {"path": "dig.state", "equals": "cancelled_by_game"}
+    out = {"phase": {"done": False}, "dig": {"state": "cancelled_by_game"}, "finish_state": {"blocked_total": 0}}
+    judged = ad.judge_progress(apply, out)
+    assert judged["state"] == "cancelled_by_game" and judged["done"] is False
+    assert "never retried" in judged["reason"]
+    stalled = {"phase": {"done": False}, "dig": {"state": "stalled"}, "finish_state": {"blocked_total": 0}}
+    assert ad.judge_progress(apply, stalled)["state"] == "stalled"

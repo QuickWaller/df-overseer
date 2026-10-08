@@ -175,8 +175,8 @@ _register(
 _register(
     QUEUE_OBSERVE,
     "Conductor only. Read an issued step's progress through its tool's declared progress read and "
-    "record one observation. Returns {state: issued|done|stalled|unknown|blocked_material, "
-    "observation_id}. Only `done` completes the step (the game says so, not the call).",
+    "record one observation. Returns {state: issued|done|stalled|unknown|blocked_material|cancelled_by_game, "
+    "observation_id}. `cancelled_by_game` means the game cancelled a dig beside damp or warm stone: not a stall, never retried. Only `done` completes the step (the game says so, not the call).",
     {"project_id": _PROJECT_ID, "step_id": _STEP_ID},
     ("project_id", "step_id"),
 )

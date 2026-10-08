@@ -725,6 +725,13 @@
     "blueprint": "bedroom-cell-v1",
     "dig_before": {
       "blind_no_walkable_neighbour": 0,
+      "cancelled_by_game": {
+        "damp": 0,
+        "read_ok": true,
+        "tiles": [],
+        "total": 0,
+        "warm": 0
+      },
       "designations_with_a_job": 0,
       "designations_without_a_job": 0,
       "job_census_error": null,
@@ -937,8 +944,17 @@
   ],
   "status_bedroom_cell_v1_build_complete": {
     "blueprint": "bedroom-cell-v1",
+    "cancel_note": null,
+    "cancelled_by_game": false,
     "dig": {
       "blind_no_walkable_neighbour": 0,
+      "cancelled_by_game": {
+        "damp": 0,
+        "read_ok": true,
+        "tiles": [],
+        "total": 0,
+        "warm": 0
+      },
       "designations_with_a_job": 0,
       "designations_without_a_job": 0,
       "job_census_error": null,
@@ -1055,8 +1071,17 @@
   },
   "status_bedroom_cell_v1_build_furniture_pending": {
     "blueprint": "bedroom-cell-v1",
+    "cancel_note": null,
+    "cancelled_by_game": false,
     "dig": {
       "blind_no_walkable_neighbour": 0,
+      "cancelled_by_game": {
+        "damp": 0,
+        "read_ok": true,
+        "tiles": [],
+        "total": 0,
+        "warm": 0
+      },
       "designations_with_a_job": 0,
       "designations_without_a_job": 0,
       "job_census_error": null,
@@ -1173,8 +1198,17 @@
   },
   "status_bedroom_cell_v1_finish_complete": {
     "blueprint": "bedroom-cell-v1",
+    "cancel_note": null,
+    "cancelled_by_game": false,
     "dig": {
       "blind_no_walkable_neighbour": 0,
+      "cancelled_by_game": {
+        "damp": 0,
+        "read_ok": true,
+        "tiles": [],
+        "total": 0,
+        "warm": 0
+      },
       "designations_with_a_job": 0,
       "designations_without_a_job": 0,
       "job_census_error": null,
@@ -1292,8 +1326,17 @@
   },
   "status_bedroom_cell_v1_finish_furniture_pending": {
     "blueprint": "bedroom-cell-v1",
+    "cancel_note": null,
+    "cancelled_by_game": false,
     "dig": {
       "blind_no_walkable_neighbour": 0,
+      "cancelled_by_game": {
+        "damp": 0,
+        "read_ok": true,
+        "tiles": [],
+        "total": 0,
+        "warm": 0
+      },
       "designations_with_a_job": 0,
       "designations_without_a_job": 0,
       "job_census_error": null,
@@ -1411,8 +1454,17 @@
   },
   "status_bedroom_cell_v1_shell_complete": {
     "blueprint": "bedroom-cell-v1",
+    "cancel_note": null,
+    "cancelled_by_game": false,
     "dig": {
       "blind_no_walkable_neighbour": 0,
+      "cancelled_by_game": {
+        "damp": 0,
+        "read_ok": true,
+        "tiles": [],
+        "total": 0,
+        "warm": 0
+      },
       "designations_with_a_job": 0,
       "designations_without_a_job": 0,
       "job_census_error": null,
@@ -1524,8 +1576,17 @@
   },
   "status_bedroom_cell_v1_shell_furniture_pending": {
     "blueprint": "bedroom-cell-v1",
+    "cancel_note": null,
+    "cancelled_by_game": false,
     "dig": {
       "blind_no_walkable_neighbour": 0,
+      "cancelled_by_game": {
+        "damp": 0,
+        "read_ok": true,
+        "tiles": [],
+        "total": 0,
+        "warm": 0
+      },
       "designations_with_a_job": 0,
       "designations_without_a_job": 0,
       "job_census_error": null,
@@ -1637,8 +1698,17 @@
   },
   "status_bedroom_cell_v1_zone_complete": {
     "blueprint": "bedroom-cell-v1",
+    "cancel_note": null,
+    "cancelled_by_game": false,
     "dig": {
       "blind_no_walkable_neighbour": 0,
+      "cancelled_by_game": {
+        "damp": 0,
+        "read_ok": true,
+        "tiles": [],
+        "total": 0,
+        "warm": 0
+      },
       "designations_with_a_job": 0,
       "designations_without_a_job": 0,
       "job_census_error": null,
@@ -1750,8 +1820,17 @@
   },
   "status_bedroom_cell_v1_zone_furniture_pending": {
     "blueprint": "bedroom-cell-v1",
+    "cancel_note": null,
+    "cancelled_by_game": false,
     "dig": {
       "blind_no_walkable_neighbour": 0,
+      "cancelled_by_game": {
+        "damp": 0,
+        "read_ok": true,
+        "tiles": [],
+        "total": 0,
+        "warm": 0
+      },
       "designations_with_a_job": 0,
       "designations_without_a_job": 0,
       "job_census_error": null,
@@ -1863,8 +1942,17 @@
   },
   "status_no_phase_after_shell_apply": {
     "blueprint": "bedroom-cell-v1",
+    "cancel_note": null,
+    "cancelled_by_game": false,
     "dig": {
       "blind_no_walkable_neighbour": 0,
+      "cancelled_by_game": {
+        "damp": 0,
+        "read_ok": true,
+        "tiles": [],
+        "total": 0,
+        "warm": 0
+      },
       "designations_with_a_job": 0,
       "designations_without_a_job": 0,
       "job_census_error": null,

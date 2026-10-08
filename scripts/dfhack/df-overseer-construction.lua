@@ -405,6 +405,7 @@ function mine_vein(zone_id, dry_run, res_id, override)
   local dry = truthy_dry_run(dry_run)
 
   local candidates, already_open, refused = {}, {}, {}
+  hazard_mod.begin_scan()
   for i, xyz in ipairs(ring) do
     local x, y, z = xyz[1], xyz[2], xyz[3]
     local rec = hooks.decode_vein_tile(x, y, z)

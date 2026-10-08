@@ -5949,6 +5949,7 @@ df-overseer-blueprint.lua:
           done_field: phase.done
           not_done_if: {path: dig.state, equals: in_progress}
           stalled_if: {path: dig.state, equals: stalled}
+          cancelled_if: {path: dig.state, equals: cancelled_by_game}
           blocked_if: {path: finish_state.blocked_total, greater_than: 0}
         landed:
           - when: {arg: site, matches: '^res-[0-9]+$'}

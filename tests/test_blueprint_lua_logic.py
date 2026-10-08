@@ -71,6 +71,10 @@ class World:
         # above.
         self.lua.execute("BLUEPRINT_PARSE_LUA_PATH = %r" % str(
             REPO_ROOT / "scripts" / "dfhack" / "df-overseer-blueprint-parse.lua"))
+        self.lua.execute("HAZARD_LUA_PATH = %r" % str(
+            REPO_ROOT / "scripts" / "dfhack" / "df-overseer-hazard.lua"))
+        self.lua.execute("DIGCANCEL_LUA_PATH = %r" % str(
+            REPO_ROOT / "scripts" / "dfhack" / "df-overseer-digcancel.lua"))
         self.lua.execute(STUB.read_text(encoding="utf-8"))
         load = self.lua.eval("function(src) return load(src, 'blueprint.lua') end")
         chunk = load(LUA.read_text(encoding="utf-8"))
