@@ -26,7 +26,7 @@ Last check: 2026-10-05T06:34:49Z, overall: clean
 - **architect**: 55
 - **conductor**: 37
 - **consultant**: 29
-- **overseer**: 82
+- **overseer**: 83
 - **quartermaster**: 28
 
 Hand-edited 2026-10-07 (handoffs/2026-10-07-planner-p1a.md), not yet regenerated:
@@ -52,3 +52,5 @@ count changes. `queue.my_filings` takes `asks=true` (own asks with answer text),
 - `stream-publisher.timer` (df, risk=low): active=active, enabled=enabled
 
 Hand-edited 2026-10-08 (planner enable merge): the planner is enabled (13 with `queue.my_filings`); the conductor gained `plan.status` (37 to 38). Regenerate with `python scripts/drift_check.py --write-state` after the deploy.
+
+Hand-edited 2026-10-08 (roadmap V1 stream, item 0): `screen.read` granted to the overseer (82 to 83). Hand-edited because `--write-state` needs live access. Regenerate with `python scripts/drift_check.py --write-state`.

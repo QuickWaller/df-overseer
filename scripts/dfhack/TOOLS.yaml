@@ -6929,7 +6929,7 @@ df-overseer-screen.lua:
         to prose-like lines. It REFUSES the text whenever no readable panel
         is open (the plain map included), so it never returns a map or tile
         grid (docs/PURPOSE.md commitment 1). Reads only what a player can see;
-        simulates no input, closes and opens nothing. On NO role allowlist yet.
+        simulates no input, closes and opens nothing. On the Overseer allowlist only (2026-10-08).
       summary: "Reports which panel or menu is open, whether it blocks resuming the fort, and optionally the panel's text; never the map."
       guide:
         arguments:

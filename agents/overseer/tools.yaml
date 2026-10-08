@@ -29,6 +29,13 @@ read:
       left out; a theft/kill row never decays).
   - id: "overview.get"
     status: exists
+  - id: "screen.read"
+    status: exists
+    note: >-
+      Added 2026-10-08 (register: screen.read goes to the Overseer). Use it to
+      tell a paused fort from a broken one: it names the open panel or menu and
+      says whether it blocks resume. WITH_TEXT adds the panel's own text; it
+      never returns the map. Read-only; closing a panel stays a human action.
   - id: "landmarks.list"
     status: exists
   - id: "landmarks.get"
