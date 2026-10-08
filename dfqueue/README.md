@@ -229,7 +229,8 @@ owner. `dfqueue/plan.py` is the pure logic (composition, the diff, flags, the
 season interval, the shortfall arithmetic), `store.py` the stateful checks
 (the base version, the cited ruling, `plan_change` rate limit, `serves`,
 in-flight work), `plan_policy.yaml` the limits, `templates.py` the loader for
-a template's `provides` and `requires`, `plans/default-v1.yaml` the base for
+a template's `provides` and `requires`, `fort_roadmap/seed-v1.yaml` (the fort roadmap, via
+`default_plan`) the base for
 version 1.
 
 **Accept and flag, never refuse for content.** A kind typo, an unknown
