@@ -74,7 +74,7 @@ def test_the_wake_is_settled_by_a_plan_filed_in_that_stage():
 def test_a_planner_pass_settles_it_too():
     state = PlanWatchState()
     run(with_roadmap(status(), rm("hamlet")), 1000, state)
-    res = run(with_roadmap(status(reviewed=1500), rm("hamlet")), 1000 + BASE, state)
+    res = run(with_roadmap({**status(reviewed=1500), "last_pass_tick": 1500}, rm("hamlet")), 1000 + BASE, state)
     assert stage_wakes(res) == [] and state.roadmap_owed is None
 
 
@@ -313,5 +313,5 @@ def test_a_planner_pass_is_not_re_owed_every_cycle_but_the_next_stage_is():
     state = PlanWatchState()
     run(with_roadmap(status(), rm("hamlet")), 1000, state)
     for t in (1000 + BASE, 1000 + 2 * BASE):
-        assert stage_wakes(run(with_roadmap(status(reviewed=1500), rm("hamlet")), t, state)) == []
-    assert len(stage_wakes(run(with_roadmap(status(reviewed=1500), rm("village")), 90000, state))) == 1
+        assert stage_wakes(run(with_roadmap({**status(reviewed=1500), "last_pass_tick": 1500}, rm("hamlet")), t, state)) == []
+    assert len(stage_wakes(run(with_roadmap({**status(reviewed=1500), "last_pass_tick": 1500}, rm("village")), 90000, state))) == 1
