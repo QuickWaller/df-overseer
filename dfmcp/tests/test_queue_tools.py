@@ -797,6 +797,48 @@ class TestQueueOverview:
                 db_path=path, call_dfhack=_ok_call_dfhack, write_lock=asyncio.Lock(),
             )
 
+    async def test_overview_open_steps_for_lists_live_work_of_those_tools(self, tmp_path, monkeypatch):
+        """2026-10-08, noble rooms: the conductor asks which filed work already
+        uses a step tool, to tell whether a need is covered."""
+        from dfqueue import store as dfstore
+        from dfqueue.tests._helpers import make_proposal
+        from dfqueue.tests._helpers import make_ruling
+        from dfqueue.tests.test_stage2a import set_routing
+        path = tmp_path / "queue.sqlite3"
+        legacy = dfstore.append(make_proposal(type="room_siting", summary="Legacy room idea zzz"), path, game_tick=1)
+        dfstore.append(make_ruling(legacy["id"], decision="accept"), path)
+        set_routing(monkeypatch, tmp_path, routed=True)
+        dfstore.set_cutover(path, "rooms", "ruling-0001")
+        dfstore.append(make_proposal(
+            type="room_siting", summary="Give the manager the office", rationale="No office owned " + "r" * 20,
+            step={"tool": "zone.assign-owner", "args": {"zone_id": 13, "unit_id": 345}},
+        ), path, game_tick=100)
+        _t, plain = await queue_tools.call(
+            queue_tools.QUEUE_OVERVIEW, "conductor", {},
+            db_path=path, call_dfhack=_ok_call_dfhack, write_lock=asyncio.Lock(),
+        )
+        assert "open_steps" not in plain
+        _t, got = await queue_tools.call(
+            queue_tools.QUEUE_OVERVIEW, "conductor", {"limit": 1, "open_steps_for": ["zone.assign-owner"]},
+            db_path=path, call_dfhack=_ok_call_dfhack, write_lock=asyncio.Lock(),
+        )
+        (row,) = got["open_steps"]
+        assert row["tool"] == "zone.assign-owner" and row["args"] == {"zone_id": 13, "unit_id": 345}
+        assert row["status"] == "pending"
+        _t, other = await queue_tools.call(
+            queue_tools.QUEUE_OVERVIEW, "conductor", {"open_steps_for": ["zone.place"]},
+            db_path=path, call_dfhack=_ok_call_dfhack, write_lock=asyncio.Lock(),
+        )
+        assert other["open_steps"] == []
+
+    async def test_overview_refuses_a_bad_open_steps_for(self, tmp_path):
+        path = tmp_path / "queue.sqlite3"
+        with pytest.raises(queue_tools.QueueToolError, match="open_steps_for"):
+            await queue_tools.call(
+                queue_tools.QUEUE_OVERVIEW, "conductor", {"open_steps_for": "zone.assign-owner"},
+                db_path=path, call_dfhack=_ok_call_dfhack, write_lock=asyncio.Lock(),
+            )
+
     async def test_overview_refuses_a_non_positive_limit(self, tmp_path):
         path = tmp_path / "queue.sqlite3"
         with pytest.raises(queue_tools.QueueToolError, match="positive integer"):
