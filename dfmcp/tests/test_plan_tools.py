@@ -29,7 +29,7 @@ _REAL_ROSTER = schema._load_roster
 SEASON = 100800
 REPO = Path(__file__).resolve().parents[2]
 
-KINDS = [{"token": t} for t in ("Bedroom", "DiningHall", "Office", "Tomb")]
+KINDS = [{"token": t} for t in ("Bedroom", "DiningHall", "Office", "Tomb", "Dormitory")]
 
 
 class Fort:
@@ -164,7 +164,9 @@ async def test_version_one_with_an_empty_set_adopts_the_default_plan(db, fort):
     out = await _write(db, fort, {"base_version": 0})
     assert out["filed"] and out["version"] == 1 and out["changes"] == [] and out["flags"] == []
     active = store.active_plan(db)
-    assert [t["id"] for t in active["targets"]] == ["bedrooms", "dining_seats"]
+    # the default is the fort roadmap's stage for the fort (10 alive: founding)
+    assert [t["id"] for t in active["targets"]] == ["dormitory_beds", "dining_tables"]
+    assert active["roadmap_stage"] == "founding"
     assert active["role"] == "planner" and active["season_index"] == 0 and active["cycle"] == 100
 
 
@@ -296,7 +298,8 @@ async def test_landmarks_are_read_only_when_a_signal_names_one(db, fort):
 
 async def test_read_before_version_one_returns_the_default_plan(db, fort):
     out = await _plan(plan_tools.PLAN_READ, "planner", {}, db, fort)
-    assert out["active_version"] == 0 and [t["id"] for t in out["default"]["targets"]] == ["bedrooms", "dining_seats"]
+    assert out["active_version"] == 0 and [t["id"] for t in out["default"]["targets"]] == ["dormitory_beds", "dining_tables"]
+    assert out["roadmap"]["stage"] == "founding"
     assert "base_version 0" in out["note"]
 
 
@@ -351,7 +354,7 @@ async def test_the_planner_and_overseer_see_plan_changes_awaiting_others_do_not(
 
 
 async def test_status_computes_position_in_flight_and_the_derived_bed_input(db, fort):
-    await _write(db, fort, {"base_version": 0})
+    await _write(db, fort, {"base_version": 0, "set": {"targets": [BEDROOMS, DINING]}})
     fort.bedrooms_furnished, fort.alive, fort.beds = 6, 10, 0
     a = store.append(make_proposal(role="architect", type="stockpile_siting", serves=["bedrooms"],
                                    summary="Site a bedroom block near the hall."), db, game_tick=100)
@@ -371,7 +374,7 @@ async def test_status_computes_position_in_flight_and_the_derived_bed_input(db, 
 
 
 async def test_status_without_an_in_flight_room_has_no_input_line(db, fort):
-    await _write(db, fort, {"base_version": 0})
+    await _write(db, fort, {"base_version": 0, "set": {"targets": [BEDROOMS, DINING]}})
     out = await _plan(plan_tools.PLAN_STATUS, "conductor", {}, db, fort)
     row = next(t for t in out["targets"] if t["id"] == "bedrooms")
     assert row["in_flight"] == 0.0 and row["inputs"] == [] and row["at_max_in_flight"] is False
@@ -394,14 +397,14 @@ async def test_status_before_version_one_says_bootstrap(db, fort):
 
 
 async def test_status_with_an_unreadable_alive_count_never_invents_a_shortfall(db, fort):
-    await _write(db, fort, {"base_version": 0})
+    await _write(db, fort, {"base_version": 0, "set": {"targets": [BEDROOMS, DINING]}})
     fort.fail.add("vitals.summary")
     out = await _plan(plan_tools.PLAN_STATUS, "conductor", {}, db, fort)
     assert {t["state"] for t in out["targets"]} == {"unresolved"} and out["alive"] is None
 
 
 async def test_read_with_status_is_sliced_to_the_role(db, fort):
-    await _write(db, fort, {"base_version": 0})
+    await _write(db, fort, {"base_version": 0, "set": {"targets": [BEDROOMS, DINING]}})
     out = await _plan(plan_tools.PLAN_READ, "architect", {"status": True}, db, fort)
     assert [t["id"] for t in out["status"]["targets"]] == ["bedrooms", "dining_seats"]
     out = await _plan(plan_tools.PLAN_READ, "consultant", {"status": True}, db, fort)
@@ -426,7 +429,7 @@ async def test_a_planner_pass_notes_the_review_tick(db, fort):
 async def test_propose_offers_serves_and_the_planner_a_plan_change_only(db, fort):
     _text, props = queue_tools.NATIVE_TOOLS[queue_tools.QUEUE_PROPOSE].describe("planner")
     assert props["properties"]["type"]["enum"] == ["plan_change"] and "serves" in props["properties"]
-    await _write(db, fort, {"base_version": 0})
+    await _write(db, fort, {"base_version": 0, "set": {"targets": [BEDROOMS, DINING]}})
     _t, rec = await _queue(queue_tools.QUEUE_PROPOSE, "architect", {
         "type": "stockpile_siting", "summary": "Site a bedroom block near the hall.", "rationale": "A bedroom shortfall.",
         "prediction": {"signal": "fort.population", "op": "gte", "value": 1, "check_after_ticks": 1200},

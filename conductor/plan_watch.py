@@ -20,6 +20,12 @@ What it raises, by wake reason (all in `conductor/policy.yaml wake_reasons`):
 - `ruling_on_own`, an accepted `plan_change` no version has cited yet (the
   lane machinery already wakes the Planner once on a ruling; this is the
   backstop with backoff when it passes without filing).
+- `roadmap_stage_entered`, the fort's roadmap stage (`plan.status`'s `roadmap`
+  block: `alive` with a high-water mark, see `fort_roadmap/roadmap.py`) is not
+  the stage the active plan was filed for. Edge triggered on a stage change
+  (and on the first sight of a stage, which is how a plan filed before stages
+  existed is asked to adopt the current one), retried on the review backoff,
+  and settled by a plan version filed in that stage or a Planner pass.
 - `plan_shortfall`, a target is open and its owner is woken with a fixed-shape
   line, edge triggered, renotified on a doubling backoff, suppressed while the
   target holds its max in flight, while the owner's plan budget is used (targets
@@ -60,6 +66,7 @@ REASON_BOOTSTRAP = "plan_bootstrap"
 REASON_REVIEW = "plan_review"
 REASON_STALLED = "plan_target_stalled"
 REASON_SHORTFALL = "plan_shortfall"
+REASON_STAGE = "roadmap_stage_entered"
 REASON_INPUT_SHORT = "plan_input_short"
 #: Reused from conductor/lanes.py (its own reason name), raised here for an
 #: accepted plan_change nobody has cited.
@@ -116,6 +123,12 @@ class PlanWatchState:
     awaiting: Dict[str, Backoff] = field(default_factory=dict)
     targets: Dict[str, TargetState] = field(default_factory=dict)
     inputs: Dict[str, Backoff] = field(default_factory=dict)
+    #: The last fort-roadmap stage seen, the stage an adoption is owed for (if
+    #: any), the tick it was raised and its retry state.
+    roadmap_stage: Optional[str] = None
+    roadmap_owed: Optional[str] = None
+    roadmap_since: Optional[int] = None
+    roadmap: Backoff = field(default_factory=Backoff)
 
 
 def _backoff(raw: Any) -> Backoff:
@@ -127,12 +140,16 @@ def _backoff(raw: Any) -> Backoff:
 
 def _from_dict(raw: Mapping[str, Any]) -> PlanWatchState:
     st = PlanWatchState()
-    for key in ("season_index", "season_tick", "review_index", "review_since", "last_refusal"):
+    for key in (
+        "season_index", "season_tick", "review_index", "review_since", "last_refusal",
+        "roadmap_stage", "roadmap_owed", "roadmap_since",
+    ):
         if key in raw:
             setattr(st, key, raw[key])
     st.bootstrap_escalated = bool(raw.get("bootstrap_escalated", False))
     st.review = _backoff(raw.get("review"))
     st.bootstrap = _backoff(raw.get("bootstrap"))
+    st.roadmap = _backoff(raw.get("roadmap"))
     st.awaiting = {str(k): _backoff(v) for k, v in (raw.get("awaiting") or {}).items()}
     st.inputs = {str(k): _backoff(v) for k, v in (raw.get("inputs") or {}).items()}
     for tid, tr in (raw.get("targets") or {}).items():
@@ -247,12 +264,19 @@ class PlanWatchResult:
     alerts: List[str] = field(default_factory=list)
     #: Why something was not woken, for the archive and tests.
     notes: List[str] = field(default_factory=list)
+    #: The fort-roadmap block `plan.status` returned this cycle (stage, the
+    #: one-line summary, the cross-check), for the briefing; `None` when the
+    #: read failed or the server predates it.
+    roadmap: Optional[Dict[str, Any]] = None
 
     def as_dict(self) -> Dict[str, Any]:
-        return {
+        out: Dict[str, Any] = {
             "wakes": [{"reason": w.reason, "role": w.role, "key": w.key, "detail": w.detail} for w in self.wakes],
             "alerts": list(self.alerts), "notes": list(self.notes),
         }
+        if self.roadmap is not None:
+            out["roadmap"] = {k: self.roadmap.get(k) for k in ("stage", "alive", "entered", "held", "line", "cross_check")}
+        return out
 
 
 def _clip(text: str) -> str:
@@ -388,6 +412,17 @@ def evaluate(
         return out
     base, cap = policy.renotify_ticks, policy.renotify_cap_ticks
     active = status.get("active") if isinstance(status.get("active"), Mapping) else None
+    rm = status.get("roadmap") if isinstance(status.get("roadmap"), Mapping) else None
+    if rm is not None:
+        out.roadmap = dict(rm)
+    stage = rm.get("stage") if rm is not None and isinstance(rm.get("stage"), str) and rm.get("stage") else None
+    if rm is not None:
+        for c in rm.get("cross_check") or []:
+            if isinstance(c, Mapping) and c.get("state") == "disagree":
+                out.notes.append(
+                    f"roadmap: the game's population flag ({c.get('requires_population')}) disagrees with alive "
+                    f"{_num(c.get('alive'))}; reported, not acted on"
+                )
 
     # ---- bootstrap (F-19) -------------------------------------------------
     if status.get("bootstrap") is True:
@@ -419,11 +454,44 @@ def evaluate(
         state.last_refusal = None
 
     if active is None:
-        # Nothing below applies before version 1.
+        # Nothing below applies before version 1; version 1 is composed from
+        # the current stage, so no adoption is owed.
         state.review_index = None
+        if stage:
+            state.roadmap_stage, state.roadmap_owed, state.roadmap_since = stage, None, None
+            state.roadmap = Backoff()
         return out
 
     version = active.get("version")
+
+    # ---- a new roadmap stage the plan was not filed for ---------------------
+    if stage:
+        plan_stage = active.get("roadmap_stage")
+        if state.roadmap_stage != stage:
+            state.roadmap_stage = stage
+            if plan_stage != stage:
+                state.roadmap_owed, state.roadmap_since, state.roadmap = stage, int(tick), Backoff()
+        if state.roadmap_owed is not None:
+            reviewed = status.get("last_reviewed_tick")
+            done = (
+                plan_stage == state.roadmap_owed
+                or (isinstance(reviewed, (int, float)) and state.roadmap_since is not None and reviewed >= state.roadmap_since)
+            )
+            if done:
+                state.roadmap_owed, state.roadmap_since, state.roadmap = None, None, Backoff()
+            elif state.roadmap.wakes < policy.review_max_wakes and _due(state.roadmap, tick, cap):
+                _note_wake(state.roadmap, tick, base, cap)
+                summary = f" ({rm.get('summary')})" if isinstance(rm.get("summary"), str) and rm.get("summary") else ""
+                filed = f"for the {plan_stage} stage" if isinstance(plan_stage, str) else "before stages existed"
+                out.wakes.append(PlanWake(
+                    REASON_STAGE, PLANNER,
+                    f"The fort is in the {state.roadmap_owed} stage{summary}; the active plan (v{version}) was "
+                    f"filed {filed}. "
+                    "Read plan.read (its roadmap block lists the stage's targets and rationale), then adopt them "
+                    "with plan.write (dry run first): a revision that only adopts the stage's targets is allowed "
+                    "this season. A target that differs from its entry needs a deviation_reason. Or pass with a reason.",
+                    key=f"stage-{state.roadmap_owed}",
+                ))
 
     # ---- season review ----------------------------------------------------
     if edge is not None and (edge.changed or edge.first):

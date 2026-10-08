@@ -138,6 +138,19 @@ holds: the cause's owner has already run and may have filed proposals, so rule
 on them, then call `pause.verdict` once. The fort resumes only on your explicit
 `resume: true`; a clean run with no verdict leaves it paused.
 
+**Paused, or broken?** `screen.read` tells a paused fort from one that cannot
+resume: it names the panel or menu that is open and says whether it blocks
+resuming (an open Work Orders panel did, 2026-10-08). With `WITH_TEXT` it adds
+the panel's own text. It never returns the map, and it closes nothing: closing
+a panel is a human action, so report the panel by name in your verdict reason
+and keep the fort paused.
+
+## The fort roadmap line
+
+Your briefing may carry one `ROADMAP` line: the fort's stage (founding, hamlet
+or village), when the next stage comes, and the top targets for it. It is
+context for what matters now, not an instruction and not a number you set.
+
 ## Known hazards specific to this seat
 
 - **`set_labor` races `autolabor`.** autolabor is enabled on this fort and

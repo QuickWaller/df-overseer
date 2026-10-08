@@ -81,6 +81,7 @@ from conductor.plan_watch import (
     STATUS_TOOL as PLAN_STATUS_TOOL, PlanWatchResult, PlanWatchState, PlanWatchStore, SeasonEdge,
     advance_season, evaluate as evaluate_plan, last_refusal,
 )
+from conductor.utilisation import UNIT_STATUS_TOOL, UtilisationStore, sample as utilisation_sample
 from conductor.runner import RoleRunner, RunResult
 from conductor.triage import ADVISORS, CONSULTANT, OVERSEER, PLANNER, PROPOSERS, LaneWake, Signals, Wake, triage
 from conductor.tripwire import (
@@ -839,6 +840,8 @@ async def _run_cycle(cycle_index: int, deps: CycleDeps, hold: HoldState) -> Cycl
         deps, call, game_tick, cycle_index, hold, (early_routing or {}).get("frozen_types"),
     )
     plan_watch_dict = _plan_watch_dict(plan_state, season_edge, plan_result)
+    roadmap_line = (plan_result.roadmap or {}).get("line")
+    utilisation = await _utilisation(deps, call, vitals, game_tick, cycle_index)
     lane_wakes = (*lane_wakes, *(LaneWake(w.reason, w.detail, (w.role,)) for w in plan_result.wakes))
 
     signals = Signals(
@@ -961,6 +964,8 @@ async def _run_cycle(cycle_index: int, deps: CycleDeps, hold: HoldState) -> Cycl
             stuck_jobs=job_watch.lines, alerts=alerts,
             ore_exposed=_ore_lines_for(deps.policy, role, ore_read),
             frozen_types=(routing or {}).get("frozen_types") if role in ADVISORS else None,
+            roadmap_line=roadmap_line if role in (OVERSEER, PLANNER) else None,
+            utilisation=utilisation if role == PLANNER else None,
         )
         briefings[role] = briefing
         prompt = json.dumps(briefing, default=str)
@@ -973,6 +978,7 @@ async def _run_cycle(cycle_index: int, deps: CycleDeps, hold: HoldState) -> Cycl
                 game_tick=game_tick or 0, wake=wake, vitals=vitals, alerts=alerts,
                 pending_brief=pending_brief, diff_events=events_by_role.get(role, []),
                 stuck_jobs=job_watch.lines, to_carry_out=to_carry_out, routing=routing,
+                roadmap_line=roadmap_line,
             )
             briefings[role] = {"ruling_prompt": prompt, "pending_brief": pending_brief}
 
@@ -1412,6 +1418,29 @@ async def _plan_watch(
         except Exception:  # noqa: BLE001
             LOG.exception("cycle %s: could not save the plan watch state", cycle_index)
     return state, edge, result
+
+
+async def _utilisation(
+    deps: "CycleDeps", call: Callable, vitals: Mapping[str, Any], game_tick: Optional[int], cycle_index: int,
+) -> Optional[Dict[str, Any]]:
+    """Fort roadmap V1 item 6 (conductor/utilisation.py): one `labor.unit-status`
+    read a cycle, counted into a sample and appended to the series (not on a
+    dry run), and the series' summary for the Planner's briefing. Total, like
+    the other watches: a failed read logs and gives `None`, never a zero."""
+    if not deps.policy.plan.enabled:
+        return None
+    store = UtilisationStore(deps.cursor_store.path.with_name("utilisation.jsonl"))
+    try:
+        row = utilisation_sample(await call(UNIT_STATUS_TOOL, {}), vitals.get("alive"), game_tick)
+        if row is None:
+            LOG.warning("cycle %s: %s gave no usable citizen list; no utilisation sample", cycle_index, UNIT_STATUS_TOOL)
+        elif not deps.dry_run:
+            store.append(row)
+        summary = store.summary()
+        return summary if summary.get("samples") else None
+    except Exception as exc:  # noqa: BLE001 -- total, see docstring
+        LOG.warning("cycle %s: utilisation sampling failed: %s", cycle_index, exc)
+        return None
 
 
 def _plan_watch_dict(

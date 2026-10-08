@@ -403,13 +403,15 @@ def test_main_dry_run_all_targets_succeeds(monkeypatch, capsys):
     assert "WOULD NOT restart (high risk" in out
 
 
-def test_dfmcp_target_ships_the_default_plan_file():
-    """plan.read failed live (2026-10-08) because plans/default-v1.yaml was
-    not in the vm103-dfmcp manifest. Every file dfqueue.plan reads at runtime
-    must be shipped."""
+def test_dfmcp_target_ships_the_fort_roadmap_seed():
+    """plan.read failed live (2026-10-08) because the file it composes version
+    1 from was not in the vm103-dfmcp manifest. Every file dfqueue.plan and
+    fort_roadmap read at runtime must be shipped: now the roadmap seed."""
+    from fort_roadmap import roadmap
     from dfqueue import plan
     targets = dc.load_manifest()
     head = dc.current_commit()
     files = dc.target_files(targets["vm103-dfmcp"], head)
-    rel = plan.DEFAULT_PLAN_PATH.relative_to(plan.REPO_ROOT).as_posix()
+    rel = roadmap.SEED_PATH.relative_to(plan.REPO_ROOT).as_posix()
     assert rel in files
+    assert "plans/default-v1.yaml" not in files

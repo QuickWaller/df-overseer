@@ -150,6 +150,8 @@ def build_briefing(
     ore_exposed: Optional[Sequence[str]] = None,
     frozen_types: Optional[Sequence[str]] = None,
     own_filings: Optional[Sequence[str]] = None,
+    roadmap_line: Optional[str] = None,
+    utilisation: Optional[Mapping[str, Any]] = None,
 ) -> Dict[str, Any]:
     """One role's briefing for this cycle. `vitals` is `vitals.summary`'s own
     result, passed through as-is (already Tier 0 by construction -- see
@@ -214,6 +216,13 @@ def build_briefing(
         briefing["frozen"] = {"types": [str(t) for t in frozen_types][:MAX_QUEUE_IDS], "note": FREEZE_LINE}
     if ledger_digest is not None:
         briefing["ledger"] = _capped(ledger_digest, MAX_LEDGER_ROWS)
+    if roadmap_line:
+        # Fort roadmap V1: the stage and its top targets, one compact line.
+        briefing["roadmap"] = str(roadmap_line)[:MAX_ROADMAP_LINE_CHARS]
+    if utilisation:
+        # The Planner's learning signal: peak and p90 concurrent sleepers, diners
+        # and drinkers per alive citizen over the recent series (conductor/utilisation.py).
+        briefing["utilisation"] = dict(utilisation)
     return briefing
 
 
@@ -222,6 +231,7 @@ def build_briefing(
 # ---------------------------------------------------------------------------
 
 MAX_ALERT_LINES = 6
+MAX_ROADMAP_LINE_CHARS = 400
 
 #: The ask, last. Cited facts are refreshed by the server; the Overseer judges
 #: reasoning and does not re-read them. Until a proposal type is routed to the
@@ -296,6 +306,7 @@ def build_ruling_briefing(
     pending_brief: Optional[Mapping[str, Any]], diff_events: Sequence[Mapping[str, Any]] = (),
     stuck_jobs: Sequence[str] = (), to_carry_out: Sequence[str] = (),
     routing: Optional[Mapping[str, Sequence[str]]] = None,
+    roadmap_line: Optional[str] = None,
 ) -> str:
     """The Overseer's prompt for an ordinary ruling wake, as text in a fixed
     order, stable material first and the ask last (cache-friendly, bounded):
@@ -316,6 +327,8 @@ def build_ruling_briefing(
     )
     for line in list(alerts)[:MAX_ALERT_LINES]:
         out.append(f"ALERT {line}")
+    if roadmap_line:
+        out.append(str(roadmap_line)[:MAX_ROADMAP_LINE_CHARS])
 
     out.append("DECIDED, DO NOT REDO")
     proposals: List[Mapping[str, Any]] = []

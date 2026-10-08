@@ -156,3 +156,14 @@ def test_clock_source_resume_and_status_call_the_blocking_panel_helper():
     assert "blocking_panel = read_blocking_panel()" in status
     # Report only: neither path simulates input or closes anything.
     assert "simulateInput" not in src
+
+
+def test_the_script_requires_json_before_it_prints():
+    """Found live 2026-10-08: `read` died with "attempt to index a nil value
+    (global 'json')". The stub above defines a global json, so no test that runs
+    the module path can see a missing `require`; assert it on the source."""
+    src = SCREEN_LUA.read_text(encoding="utf-8")
+    assert "local json = require('json')" in src
+    assert src.index("local json = require('json')") < src.index("json.encode(screen_read")
+    # and after the module-load guard, which tests rely on to load the file without running it
+    assert src.index("dfhack_flags.module") < src.index("local json = require('json')")

@@ -17,7 +17,7 @@ from dfqueue.tests._helpers import make_pass, make_proposal, make_ruling
 _REAL_ROSTER = schema._load_roster
 
 SEASON = 100800
-ZONE_KINDS = {"Bedroom", "DiningHall", "Office", "Tomb", "Barracks"}
+ZONE_KINDS = {"Bedroom", "DiningHall", "Office", "Tomb", "Barracks", "Dormitory"}
 CTX = plan.PlanContext(zone_kinds=ZONE_KINDS, landmarks={"Dining Hall", "Wagon"})
 
 BEDROOMS = {
@@ -134,8 +134,10 @@ def test_version_two_needs_a_reason_version_one_does_not(db):
 
 
 def test_version_one_composes_from_the_default_plan(db):
+    # The default is the fort roadmap's first stage (plans/default-v1.yaml was retired).
     base = plan.compose(None, {})
-    assert [t["id"] for t in base["targets"]] == ["bedrooms", "dining_seats"]
+    assert [t["id"] for t in base["targets"]] == ["dormitory_beds", "dining_tables"]
+    assert all(t["roadmap_ref"] == t["id"] for t in base["targets"])
     rec = _file(db, base["targets"], 100, reason=None)
     assert rec["version"] == 1 and rec["changes"] == []   # an empty diff against the default
     assert rec["season_index"] == 0 and rec["id"] == "fort_plan-0001"

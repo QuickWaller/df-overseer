@@ -251,6 +251,11 @@ wake_reasons:
   plan_input_short:
     clock: full_speed
     wakes: []
+  # Fort roadmap V1 (conductor/plan_watch.py): the fort entered a roadmap stage
+  # its plan was not filed for; wakes the Planner to adopt it.
+  roadmap_stage_entered:
+    clock: full_speed
+    wakes: []
 
 # Stage T (handoffs/2026-10-06-stage-t-tripwire.md): who runs after a tripwire
 # latches, before the Overseer. Keyed by the latch's own `reason`. A reason

@@ -157,6 +157,14 @@ read:
       reachable ahead of that, the same order queue.grade/queue.overview
       were granted in. One line per project (status, target counts, the top
       blocker's reason), never the whole graph.
+  - id: "labor.unit-status"
+    status: exists
+    note: >-
+      Added with fort roadmap V1 (register 2026-10-08; utilisation
+      sampling). Read once a cycle by conductor/cycle.py `_utilisation`: the
+      citizens' current_job names, counted into concurrent Sleep, Eat and Drink
+      jobs per alive citizen (conductor/utilisation.py). Plain DFHack-backed
+      read, one JSON object. Read-only.
   - id: "plan.status"
     status: exists
     note: >-

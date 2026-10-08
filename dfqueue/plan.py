@@ -63,13 +63,13 @@ from typing import Any, Iterable, Mapping, Optional
 
 import yaml
 
+from fort_roadmap import roadmap as fort_roadmap
 from learning import live_signals
 
 from . import schema, templates
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 POLICY_PATH = Path(__file__).resolve().parent / "plan_policy.yaml"
-DEFAULT_PLAN_PATH = REPO_ROOT / "plans" / "default-v1.yaml"
 
 _cache: dict = {}
 
@@ -91,9 +91,12 @@ def policy() -> dict:
     return _read_cached(POLICY_PATH, "policy")
 
 
-def default_plan() -> dict:
-    """`plans/default-v1.yaml`: the base version 1 is composed from."""
-    return _read_cached(DEFAULT_PLAN_PATH, "default")
+def default_plan(stage_id: Optional[str] = None) -> dict:
+    """The base version 1 is composed from: the fort roadmap's targets for
+    `stage_id` (the first stage, `founding`, when none is named), each with
+    its `roadmap_ref`. Replaced `plans/default-v1.yaml` (register 2026-10-08,
+    roadmap V1)."""
+    return {"targets": fort_roadmap.plan_targets(stage_id)}
 
 
 # ---- season ---------------------------------------------------------------------
@@ -117,10 +120,11 @@ class PlanShapeError(Exception):
     message lists every problem."""
 
 
-def compose(active: Optional[Mapping], set_sections: Any) -> dict:
+def compose(active: Optional[Mapping], set_sections: Any, base: Optional[Mapping] = None) -> dict:
     """The full `targets` (and later sections) of the new version: the active
-    version's sections (or `plans/default-v1.yaml` for version 1) with each
-    section in `set_sections` replacing its whole list. Raises
+    version's sections (or `base`, the current stage's roadmap targets, for
+    version 1; `default_plan()` when none is given) with each section in
+    `set_sections` replacing its whole list. Raises
     `PlanShapeError` listing every problem; content mistakes are not problems
     here (they are flagged by `check_sections`)."""
     pol = policy()
@@ -150,7 +154,7 @@ def compose(active: Optional[Mapping], set_sections: Any) -> dict:
                 errors.append(f"set.{name}.{i}: expected an object")
     if errors:
         raise PlanShapeError("; ".join(errors))
-    base = dict(active) if active is not None else dict(default_plan())
+    base = dict(active) if active is not None else dict(base if base is not None else default_plan())
     out: dict = {}
     for name in open_sections:
         items = set_sections[name] if name in set_sections else base.get(name, [])
@@ -207,11 +211,13 @@ def diff_changes(old: Mapping, new: Mapping) -> list[dict]:
 # ---- flags -------------------------------------------------------------------------
 
 #: Flags that are information, not a fault: the entry still works.
-INFO_CODES = frozenset({"kinds_unchecked", "unreadable_citation"})
+INFO_CODES = frozenset({
+    "kinds_unchecked", "unreadable_citation", "unexplained_deviation", "roadmap_ref_unknown",
+})
 
 TARGET_FIELDS = (
     "id", "signal", "per", "want", "reorder", "reorder_gap", "owner",
-    "district", "max_in_flight", "note",
+    "district", "max_in_flight", "note", "roadmap_ref", "deviation_reason",
 )
 
 
@@ -398,7 +404,10 @@ def check_target(entry: Mapping, index: int, ctx: PlanContext, pol: Mapping) -> 
     mif = entry.get("max_in_flight")
     if mif is not None and (isinstance(mif, bool) or not isinstance(mif, int) or not 1 <= mif <= pol["target"]["max_in_flight_max"]):
         out.append(_flag("targets", eid, "bad_field", f"max_in_flight: expected an integer 1 to {pol['target']['max_in_flight_max']}"))
-    for name in ("note", "district"):
+    ref = entry.get("roadmap_ref")
+    if ref is not None and not (isinstance(ref, str) and ref):
+        out.append(_flag("targets", eid, "bad_field", "roadmap_ref: expected the id of a roadmap entry, a string"))
+    for name in ("note", "district", "deviation_reason"):
         v = entry.get(name)
         if v is None:
             continue
@@ -486,11 +495,12 @@ def fix_only(changes: list, active_flags: Iterable[Mapping]) -> bool:
 
 def guardrail(
     active: Optional[Mapping], tick: int, changes: list, ruling_id: Optional[str] = None,
-    pol: Optional[Mapping] = None,
+    pol: Optional[Mapping] = None, adopt_stage: bool = False,
 ) -> dict:
     """The season interval (design 2.4 item 1): `{ok, reason, refusal?}`.
     `reason` names why a version was allowed: `first`, `new_season`,
-    `reload`, `fix_only` or `ruled`. The ruling's own validity is the
+    `reload`, `fix_only`, `adopt_stage` (a revision that only adopts a newly
+    entered roadmap stage's targets, `fort_roadmap.adopts_stage`) or `ruled`. The ruling's own validity is the
     store's check; here a cited `ruling_id` only makes the interval exempt."""
     pol = pol or policy()
     if active is None:
@@ -505,6 +515,8 @@ def guardrail(
         return {"ok": True, "reason": "reload"}
     if fix_only(changes, active.get("flags") or []):
         return {"ok": True, "reason": "fix_only"}
+    if adopt_stage:
+        return {"ok": True, "reason": "adopt_stage"}
     return {
         "ok": False, "reason": "interval",
         "refusal": (
