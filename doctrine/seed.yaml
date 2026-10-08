@@ -1481,3 +1481,44 @@
     independently (noted, not settled, in
     noble-position-room-value-and-furniture-requirements and unchanged by
     this pass).
+
+- id: blank-slab-buffer
+  scope: universal
+  status: prior
+  topics: [material, rooms]
+  sources:
+    - kind: wiki
+      ref: Slab
+      describes: "53.16"
+      read: opened
+      accessed: 2026-10-09
+    - kind: wiki
+      ref: Ghost
+      describes: "53.16"
+      read: opened
+      accessed: 2026-10-09
+    - kind: research
+      ref: research/2026-10-09-dfhack-automation-survey.md (autoslab)
+      describes: "53.16"
+      read: opened
+      accessed: 2026-10-09
+  statement: >-
+    Keep a standing buffer of 2 blank slabs, permanently. DFHack's autoslab
+    (enabled on this fort) only engraves: when a ghost exists and no
+    memorial slab or order for one exists it queues an engrave order, and
+    that order needs a blank slab in stock. A blank slab is made from one
+    stone at a stoneworker's workshop (the craftsdwarf's workshop is the
+    alternative), so the buffer is a standing manager order with an item
+    condition (for example make slabs while fewer than 2 are in stock),
+    not a one-off. The engraved slab must then be BUILT as a memorial to
+    calm the ghost; autoslab does not place it. A death arrives without
+    warning and a ghost is a slow, costly problem, so this is an
+    Insurance-band good (a level held against a threat, never drawn to
+    zero), the same shape as bucket-par-and-labor-redundancy.
+  note: >-
+    A starting value, not a measured one: 2 covers one death while the next
+    blank is made, and a larger buffer only locks up stone. The wiki pages
+    were read in the mirror on 2026-10-09 (register 2026-10-09, autoslab
+    enabled); no live slab has yet been made by this fort's own order.
+    Consumers: the Quartermaster files the standing work_order and its
+    stock_target; the Architect or Overseer builds the engraved slab.
