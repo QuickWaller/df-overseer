@@ -4,6 +4,18 @@ What's currently in progress. Remove an item once it's done, tabled, or
 shelved, don't mark it paused. Any session should read this and know what's
 actually going on right now.
 
+## START HERE 2026-10-08 (late): where we stopped
+
+**Fort:** paused, operator hold ON (no expiry, no routed steps), conductor.service disabled. Manager unit 194 owns office 13; orders validate and run.
+**Cycle 3** (first with charters): Planner woke on `roadmap_stage_entered` but TIMED OUT at 600 s (5 turns, 43.5k reasoning tokens, nothing filed); plan is still v1 (default). User said do NOT change the timeout yet. Pro rates confirmed against our bill ($0.435/M in, $0.87/M out, $0.003625/M cache); output (reasoning) is ~64% of cost.
+**In flight when the laptop closed (worktree branches; committed work survives, uncommitted may not):**
+- attribution by author + `parallel.proposers` (flag off, Overseer strictly serial, 1.5 s stagger) + paused-fort retry clock (item 2 committed c0c2735 on branch worktree-agent-a43dcde47a8ae3cdd, not merged);
+- thinking-budget research (`research/2026-10-08-thinking-budget.md`): DeepSeek budget parameter, openclaw pass-through, loop guards, Flash vs Pro, per-wake-reason table and A/B plan;
+- loop signals on the Metrics tab (wake_metrics).
+Check each branch, merge what is done, redeploy shared targets once from main (TRAPS: deploy race).
+**User decisions open:** (1) item binding 1-6 (recommended: buildings exact items yes; workshop jobs option A materials only; foreign jobs name only; route consuming Overseer direct actions through claims; live tests only T1 on the live fort; economic/scarce material only when ruled); (2) sessions D1-D5 as listed (local route first; reuse backoff; one budget per role per wake with per-turn waits; pause stamp on tool replies while paused; Opus blind grader, user reviews disagreements plus a capped sample); (3) Planner timeout or tighter task; (4) thinking budget and Flash/Pro per wake reason once the research lands.
+**Next after that:** cycle 4 (Planner adopts hamlet as v2; user reads it; then shortage watch on), sessions v1 (red team's small version), circulation C2/C4/D12 retrofit (supervised), tripwire live check, staged arm.
+
 ## Sessions: decided 2026-10-08 (register), design in progress
 
 (Was: owed with the user.) Built per the 2026-10-08 register row.
