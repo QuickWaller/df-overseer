@@ -4,6 +4,15 @@ What's currently in progress. Remove an item once it's done, tabled, or
 shelved, don't mark it paused. Any session should read this and know what's
 actually going on right now.
 
+## NEXT, as of 2026-10-09 (read first after a compact)
+
+State: fort paused, operator hold ON, conductor.service disabled; every role on DeepSeek Flash (conductor.env Pro pins removed, backup `.bak-20261009-pre-flash`); suspendmanager and autoslab on, ban-cooking re-applied, quicksave in autosave 3 holds suspendmanager on (autoslab needs the next save). Plan still v1; proposal-0034 (plan_change) pending; server adopt bug fixed.
+1. Plan v2: run one hold-on cycle (`bash /tmp/cycle.sh` on VM 106, ~5 min on Flash); user reads v2; then `plan.shortfall_watch.enabled: true`.
+2. Housekeeping (no user decision): land loop-signals branch `worktree-agent-a15440fc4feb9ab7f` (full suites, merge, deploy publisher + web); Metrics costs from DeepSeek's real peak/off-peak rates; gotchas: suspendmanager releases deliberate suspensions (never suspend as a hold), autoslab only engraves (keep blank slabs, place engraved ones; verified on the wiki mirror: slab made and engraved at the stoneworker's, then built); Planner charter line: copy the stage's targets verbatim; circulation graph tools onto Architect and Planner allowlists (C2); intended plugin enable set in `onMapLoad.init` under deploy.
+3. User decisions still open: item binding refinements 3a/3b and 5-6; sessions 7-11; thinking/cost 13-15; whether the hold blocks the Overseer's direct writes; DFHack rulings (prioritize, work-now, timestream, pop-control); autofarm vs farm.setcrop later. The user wants each explained in full, one at a time.
+4. Builds they unlock: stock claims (then `parallel.proposers` on; needs CONDUCTOR_THINKING_STATE_DIR, already set), sessions v1 (red team's small version), effort per wake reason.
+5. Supervised bedroom-block retrofit (user watching), tripwire live check, staged arm (user's yes on the day).
+
 ## START HERE 2026-10-08 (late): where we stopped
 
 **Fort:** paused, operator hold ON (no expiry, no routed steps), conductor.service disabled. Manager unit 194 owns office 13; orders validate and run.
