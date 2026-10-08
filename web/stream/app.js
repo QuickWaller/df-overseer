@@ -3080,6 +3080,58 @@ function metricsToolList(doc, role) {
   return el("div", { class: "mtoollist" }, kids);
 }
 
+const METRICS_FLAG_LABELS = {
+  repeat_calls: "repeated calls", idle_rounds: "idle rounds", rereads: "re-reads", no_output: "no output",
+};
+
+/** Loop and deliberation signals (the additive `loops` block, absent in older
+ * files): one compact table, a row per role. Counts only; no arguments. */
+function metricsLoopsCard(doc) {
+  const lp = doc.loops;
+  if (!lp || !lp.by_role) return null;
+  const roles = metricsRoles(doc).filter((r) => lp.by_role[r]);
+  if (!roles.length) return null;
+  const num = (v) => (v == null ? "-" : String(Math.round(v)));
+  const k = (v) => (v == null ? "-" : v >= 1000 ? `${(v / 1000).toFixed(1)}k` : String(Math.round(v)));
+  const head = ["role", "wakes", "flagged", "repeats", "idle", "re-reads", "reasoning/run", "per round", "timeouts", "no output"];
+  const rowFor = (r) => {
+    const g = lp.by_role[r];
+    const cells = [roleTitle(r), g.wakes, g.flagged, g.repeated_calls, g.idle_rounds, g.rereads,
+      k(g.reasoning_per_run), k(g.reasoning_per_round), g.timeouts, g.no_output];
+    return el("tr", {}, cells.map((c, i) => el("td", i === 0 ? { style: `color:${ROLE_COLORS[r] || "var(--text)"}` } : {}, [document.createTextNode(String(c == null ? "-" : c))])));
+  };
+  const th = lp.thresholds || {};
+  return el("section", { class: "box mcard mwide" }, [
+    el("h3", { text: "Loops and deliberation, by role" }),
+    el("div", { class: "mnote approx", text: `A wake is flagged at ${th.repeat_calls || 3}+ repeated identical calls, ${th.idle_rounds || 3}+ read-only rounds with no write after, ${th.rereads || 3}+ re-reads, or when it ended with no output. Reasoning tokens need a stored transcript.` }),
+    el("div", { class: "mtablewrap" }, [el("table", { class: "mtable" }, [
+      el("thead", {}, [el("tr", {}, head.map((h) => el("th", { text: h })))]),
+      el("tbody", {}, roles.map(rowFor)),
+    ])]),
+  ]);
+}
+
+/** Flagged wakes for one role, newest first: id, why, and the worst repeated tool. */
+function metricsFlaggedList(doc, role) {
+  const lp = doc.loops;
+  if (!lp || !Array.isArray(lp.flagged)) return null;
+  const mine = lp.flagged.filter((f) => f.role === role);
+  const kids = [el("h3", { text: `Flagged wakes (${mine.length})` })];
+  if (!mine.length) kids.push(el("div", { class: "muted small", text: "None flagged." }));
+  mine.slice(0, 20).forEach((f) => {
+    const bits = [];
+    if (f.worst_tool) bits.push(`${f.worst_tool} x${f.worst_count}`);
+    if (f.idle_rounds) bits.push(`${f.idle_rounds} idle`);
+    if (f.reasoning_tokens != null) bits.push(`${Math.round(f.reasoning_tokens / 1000)}k reasoning`);
+    kids.push(el("div", { class: "mflag" }, [
+      el("span", { class: "mfid", text: `${f.run_id} ${f.day || ""}` }),
+      el("span", { class: "mfwhy" }, (f.flags || []).map((x) => el("span", { class: "tag", text: METRICS_FLAG_LABELS[x] || x }))),
+      bits.length ? el("span", { class: "mfbits", text: bits.join(", ") }) : null,
+    ]));
+  });
+  return el("div", { class: "mflags" }, kids);
+}
+
 /** The Metrics page: charts per day on the left, tool usage per role on the
  * right; each pane scrolls on its own. `state.role` is kept across renders. */
 function metricsView(doc, state, rerender) {
@@ -3123,6 +3175,8 @@ function metricsView(doc, state, rerender) {
     "costed wakes", "Killed wakes report no cost and are left out."));
   cards.push(lineCard("Pass rate", (g) => g.pass_rate, "pct", Math.max(0, (totals.wakes || 0) - (totals.killed || 0)),
     "finished wakes", "Share of advisor wakes that filed a pass and nothing else."));
+  const loopsCard = metricsLoopsCard(doc);
+  if (loopsCard) cards.push(loopsCard);
   const strip = el("div", { class: "mstrip" }, roles.map((r) => el("span", { class: "rstat" }, [
     el("b", { style: `color:${ROLE_COLORS[r] || "var(--text)"}`, text: roleTitle(r) }),
     document.createTextNode(` ${(((doc.by_role || {})[r]) || {}).wakes || 0} wakes`),
@@ -3143,7 +3197,7 @@ function metricsView(doc, state, rerender) {
       el("div", { class: "mpane" }, [
         el("h2", { text: "Tool use by role" }),
         roleTabs,
-        el("div", { class: "mscroll", role: "tabpanel" }, [state.role ? metricsToolList(doc, state.role) : null]),
+        el("div", { class: "mscroll", role: "tabpanel" }, [state.role ? metricsFlaggedList(doc, state.role) : null, state.role ? metricsToolList(doc, state.role) : null]),
       ]),
     ]),
   ]);

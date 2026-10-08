@@ -823,6 +823,17 @@ a { color: var(--accent); }
 .site .mtbar i { display: block; height: 100%; background: var(--accent); }
 .site .mtn { text-align: right; font-variant-numeric: tabular-nums; color: var(--muted); }
 .site .mnever { display: flex; flex-wrap: wrap; gap: 4px 6px; }
+.site .mwide { grid-column: 1 / -1; }
+.site .mtablewrap { overflow-x: auto; }
+.site .mtable { width: 100%; border-collapse: collapse; font-size: 12.5px; font-variant-numeric: tabular-nums; }
+.site .mtable th { text-align: right; font-weight: 500; color: var(--faint); padding: 2px 8px; white-space: nowrap; }
+.site .mtable td { text-align: right; padding: 3px 8px; border-top: 1px solid var(--line); }
+.site .mtable th:first-child, .site .mtable td:first-child { text-align: left; }
+.site .mflags h3 { font-size: 0.9em; margin: 0 0 6px; }
+.site .mflag { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 8px; font-size: 12.5px; padding-block: 3px; border-top: 1px solid var(--line); }
+.site .mfid { color: var(--muted); font-variant-numeric: tabular-nums; }
+.site .mfwhy { display: inline-flex; flex-wrap: wrap; gap: 4px; }
+.site .mfbits { color: var(--faint); }
 @media (max-width: 900px) {
   .site .msplit { grid-template-columns: minmax(0, 1fr); }
   .site .mscroll { overflow: visible; }
