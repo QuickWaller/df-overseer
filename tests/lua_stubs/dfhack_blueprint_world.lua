@@ -16,10 +16,21 @@ df = {
   -- 2026-10-08: the siting policy (df-overseer-hazard.lua) and the dig-cancel
   -- reader (df-overseer-digcancel.lua) are loaded for real; they need these.
   tile_liquid = {Water = 0, Magma = 1},
+  -- C3 placement gate: room zones as the game's ACTIVITY_ZONE vector (0-based,
+  -- with a length). ZONES is a list of {id, kind, x1, y1, x2, y2, z, name}.
+  civzone_type = enum({"Home", "Bedroom", "DiningHall", "Office", "Dormitory", "Barracks",
+    "MeetingHall", "Hospital", "Tomb", "Pen"}),
   announcement_type = {DIG_CANCEL_WARM = 51, DIG_CANCEL_DAMP = 52},
   -- cur_year: abs_tick() (df-overseer-reservations.lua) reads it with
   -- ReadCurrentTick; tests move time with NOW (and YEAR where a year boundary matters).
   global = setmetatable({world = {jobs = {list = {next = nil}},
+    buildings = {other = {ACTIVITY_ZONE = setmetatable({}, {
+      __len = function() return #(ZONES or {}) end,
+      __index = function(_, i)
+        local z = (ZONES or {})[i + 1]
+        return z and {id = z.id, type = df.civzone_type[z.kind], x1 = z.x1, y1 = z.y1, x2 = z.x2, y2 = z.y2,
+          z = z.z, name = z.name or ""} or nil
+      end})}},
     -- REPORTS: list of {type=, x=, y=, z=, year=, time=} the cancel reader scans.
     status = {reports = setmetatable({}, {__len = function() return #(REPORTS or {}) end,
       __index = function(_, i)
@@ -218,6 +229,20 @@ function reqscript(n)
       RESERVATIONS_MOD = env
     end
     return RESERVATIONS_MOD
+  end
+  if n == "df-overseer-roomkinds" or n == "df-overseer-access" then
+    -- C3: the room-kind data and the pure access rules, loaded for real.
+    LEAF_MODS = LEAF_MODS or {}
+    if not LEAF_MODS[n] then
+      local path = (n == "df-overseer-roomkinds") and ROOMKINDS_LUA_PATH or ACCESS_LUA_PATH
+      local f = io.open(path, "r")
+      local src = f:read("*a")
+      f:close()
+      local env = setmetatable({}, {__index = _G})
+      assert(load(src, n .. ".lua", "t", env))()
+      LEAF_MODS[n] = env
+    end
+    return LEAF_MODS[n]
   end
   if n == "df-overseer-hazard" or n == "df-overseer-digcancel" then
     -- Both are dependency-free leaves: loaded for real, so the stub proves the

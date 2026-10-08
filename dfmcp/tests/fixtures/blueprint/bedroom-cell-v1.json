@@ -379,6 +379,16 @@
     "mode": "dig",
     "ok": true,
     "phase": "bedroom_cell_v1_shell",
+    "placement_access": {
+      "access": "corridor",
+      "entrances_checked": 1,
+      "kind": "bedroom",
+      "refusals": [],
+      "rooms_considered": 0,
+      "rule_checked": "entrance cells only (not the planned circulation graph)",
+      "verdict": "clear",
+      "zones_unreadable": false
+    },
     "quickfort": {
       "error": null,
       "problems": [],
@@ -439,6 +449,16 @@
     "mode": "dig",
     "ok": true,
     "phase": "bedroom_cell_v1_shell",
+    "placement_access": {
+      "access": "corridor",
+      "entrances_checked": 1,
+      "kind": "bedroom",
+      "refusals": [],
+      "rooms_considered": 0,
+      "rule_checked": "entrance cells only (not the planned circulation graph)",
+      "verdict": "clear",
+      "zones_unreadable": false
+    },
     "quickfort": {
       "error": null,
       "problems": [],
@@ -843,6 +863,16 @@
     "level": 0,
     "near_landmark": "Well",
     "orientation": "none",
+    "placement_access": {
+      "access": "corridor",
+      "entrances_checked": 1,
+      "kind": "bedroom",
+      "refusals": [],
+      "rooms_considered": 0,
+      "rule_checked": "entrance cells only (not the planned circulation graph)",
+      "verdict": "clear",
+      "zones_unreadable": false
+    },
     "purpose": "fixture room",
     "read_failures": [],
     "would_reserve": true
@@ -916,6 +946,16 @@
     "level": 0,
     "near_landmark": "Well",
     "orientation": "none",
+    "placement_access": {
+      "access": "corridor",
+      "entrances_checked": 1,
+      "kind": "bedroom",
+      "refusals": [],
+      "rooms_considered": 0,
+      "rule_checked": "entrance cells only (not the planned circulation graph)",
+      "verdict": "clear",
+      "zones_unreadable": false
+    },
     "purpose": "fixture room",
     "read_failures": []
   },

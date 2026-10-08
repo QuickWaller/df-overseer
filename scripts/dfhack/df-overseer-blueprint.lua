@@ -150,6 +150,10 @@ local parse_mod = reqscript('df-overseer-blueprint-parse')
 -- leaves; this file reqscripts them, they never reqscript this file.
 local hazard_mod = reqscript('df-overseer-hazard')
 local digcancel_mod = reqscript('df-overseer-digcancel')
+-- 2026-10-08 (C3, D2/D7): room-kind data (generated from blueprints/room-kinds.yaml)
+-- and the pure entrance-cell access rules. Leaves; they never reqscript this file.
+local roomkinds_mod = reqscript('df-overseer-roomkinds')
+local access_mod = reqscript('df-overseer-access')
 
 local NULL = "\0"
 local function encode(v) return json.encode(v, {null = NULL}) end
@@ -1325,7 +1329,7 @@ end
 -- NO orientation could even be searched, i.e. the very first, "none",
 -- orientation's find_new_site call itself errored -- see the `f.err`
 -- handling below, identical to the original inline code); or nil, err.
-function resolve_new_site(bp, site_arg, level, rank, radius, dig_leaves, carve_needed, failures)
+function resolve_new_site(bp, site_arg, level, rank, radius, dig_leaves, carve_needed, failures, gate)
   local tried, chosen_ok, analysis, site = {}, false, nil, nil
   local by_dims = {}
   for _, o in ipairs(ORIENTS) do
@@ -1353,10 +1357,19 @@ function resolve_new_site(bp, site_arg, level, rank, radius, dig_leaves, carve_n
           entry.carve_cells_reachable = ea.carve_cells_reachable
           entry.carve_cells_unreachable = ea.carve_cells_unreachable
         end
+        -- The access gate (C3): an orientation whose entrance would open into a
+        -- private room, or break the kind's access rule, is never the chosen one
+        -- while another orientation is clean.
+        local gate_clear = true
+        if gate then
+          local gv = gate(cand)
+          gate_clear = (gv == nil) or gv.verdict ~= "refused"
+          entry.placement_access = gv and gv.verdict or NULL
+        end
         tried[#tried + 1] = entry
         if not site then site, analysis = cand, ea end   -- fallback: the first
         if ea and ea.entrance_reachable == true and ea.carve_cells_unreachable == 0
-            and not chosen_ok then
+            and gate_clear and not chosen_ok then
           site, analysis, chosen_ok = cand, ea, true
         end
       end
@@ -1377,6 +1390,110 @@ local function site_hazard_refusal(site)
   local where = okn and ni and string.format("%s tiles %s of %s", tostring(ni.distance_tiles),
     tostring(ni.direction), tostring(ni.name)) or nil
   return hazard_mod.message(hz, where), hz
+end
+
+-- ---------------------------------------------------------------------------
+-- Placement access gate (C3, register 2026-10-08 D2 and D7). The rules are in
+-- df-overseer-access.lua (pure); this gathers the existing room footprints.
+-- Checked for NEW placements only (a new site, or the first carve of a
+-- reservation, and reserve): reading, later phases and releasing existing
+-- sites are never blocked by it. IMPLEMENTED: the entrance-cell check, not a
+-- planned-state graph search (see df-overseer-access.lua's header).
+-- ---------------------------------------------------------------------------
+local ROOM_ZONE_MAX_TILES = 900   -- a zone larger than this is not a room (pastures etc.)
+local ZONE_RING = 1               -- a zone's wall ring, around its interior
+
+local function kind_title(kind_id)
+  local s = tostring(kind_id):gsub("_", " ")
+  return (s:sub(1, 1):upper() .. s:sub(2))
+end
+
+-- Existing room footprints near the world: blueprint sites, room reservations
+-- not yet carved, and room zones (padded by their wall ring). Returns list,
+-- unreadable (true when the zone list could not be read: the verdict is then
+-- reported with that caveat, never silently treated as clear).
+local function existing_room_footprints(exclude_reservation)
+  local out, rects = {}, {}
+  for _, s in ipairs(all_sites_raw()) do
+    local kind = roomkinds_mod.kind_of_blueprint(s.blueprint)
+    if kind then
+      out[#out + 1] = {name = string.format("%s (%s)", kind_title(kind), s.handle), kind = kind, z = s.z,
+        x1 = s.x, y1 = s.y, x2 = s.x + s.w - 1, y2 = s.y + s.h - 1}
+      rects[#rects + 1] = out[#out]
+    end
+  end
+  for _, r in ipairs(reservations_mod.list_raw()) do
+    local kind = roomkinds_mod.kind_of_blueprint(r.blueprint)
+    if kind and r.handle ~= exclude_reservation and r.role ~= "corridor" and not r.site_handle then
+      out[#out + 1] = {name = string.format("%s (%s)", kind_title(kind), r.handle), kind = kind, z = r.z,
+        x1 = r.x, y1 = r.y, x2 = r.x + r.w - 1, y2 = r.y + r.h - 1}
+      rects[#rects + 1] = out[#out]
+    end
+  end
+  local unreadable = false
+  local okz, zv = pcall(function() return df.global.world.buildings.other.ACTIVITY_ZONE end)
+  if okz and zv then
+    for i = 0, #zv - 1 do
+      local z = zv[i]
+      local okk, zk = pcall(function() return df.civzone_type[z.type] end)
+      local kind = okk and type(zk) == "string" and roomkinds_mod.kind_of_zone(zk) or nil
+      if kind and (z.x2 - z.x1 + 1) * (z.y2 - z.y1 + 1) <= ROOM_ZONE_MAX_TILES then
+        -- A zone inside a site or reservation already counted is that same room.
+        local covered = false
+        for _, rc in ipairs(rects) do
+          if rc.z == z.z and z.x1 >= rc.x1 and z.x2 <= rc.x2 and z.y1 >= rc.y1 and z.y2 <= rc.y2 then
+            covered = true
+            break
+          end
+        end
+        if not covered then
+          local name = ""
+          local okn, nm = pcall(function() return z.name end)
+          if okn and type(nm) == "string" then
+            local oku, u = pcall(function() return dfhack.df2utf and dfhack.df2utf(nm) or nm end)
+            name = oku and u or nm
+          end
+          if name == "" then name = string.format("%s #%s", zk, tostring(z.id)) end
+          out[#out + 1] = {name = name, kind = kind, z = z.z,
+            x1 = z.x1 - ZONE_RING, y1 = z.y1 - ZONE_RING, x2 = z.x2 + ZONE_RING, y2 = z.y2 + ZONE_RING}
+        end
+      end
+    end
+  else
+    unreadable = true
+  end
+  return out, unreadable
+end
+
+-- A gate function for one blueprint: gate(site) -> verdict (see access_mod),
+-- or nil when the blueprint's kind is not in the room-kind data. Caches the
+-- existing footprints across the orientations tried in one call.
+local function make_placement_gate(bp, exclude_reservation)
+  local kind = roomkinds_mod.kind_of_blueprint(bp.name)
+  if not kind then return nil end
+  local cache
+  return function(site)
+    if not cache then
+      local rooms, unreadable = existing_room_footprints(exclude_reservation)
+      cache = {rooms = rooms, unreadable = unreadable}
+    end
+    local _, portal_cells = classify_footprint_cells(bp, site.orient)
+    local portals = {}
+    for k in pairs(portal_cells) do
+      local rx, ry = k:match("^(-?%d+),(-?%d+)$")
+      rx, ry = tonumber(rx), tonumber(ry)
+      local x, y = site.x + rx, site.y + ry
+      local outward = {}
+      if rx == 0 then outward[#outward + 1] = {x = x - 1, y = y} end
+      if rx == site.w - 1 then outward[#outward + 1] = {x = x + 1, y = y} end
+      if ry == 0 then outward[#outward + 1] = {x = x, y = y - 1} end
+      if ry == site.h - 1 then outward[#outward + 1] = {x = x, y = y + 1} end
+      portals[#portals + 1] = {x = x, y = y, outward = outward}
+    end
+    local v = access_mod.check_entrances({kind = kind, z = site.z, portals = portals}, cache.rooms)
+    v.zones_unreadable = cache.unreadable
+    return v
+  end
 end
 
 local function run_phase(name, phase, site_arg, level, rank, radius, dry, allow_stranded)
@@ -1460,7 +1577,8 @@ local function run_phase(name, phase, site_arg, level, rank, radius, dry, allow_
     if sec.mode ~= "dig" and not (sec.mode == "meta" and leaves[1] and leaves[1].mode == "dig") then
       return nil, "a new site can only be found for a phase that starts by digging; give a site-N handle for phase '" .. phase .. "'"
     end
-    local s, t, c_ok, an = resolve_new_site(bp, site_arg, level, rank, radius, dig_leaves, carve_needed, failures)
+    local s, t, c_ok, an = resolve_new_site(bp, site_arg, level, rank, radius, dig_leaves, carve_needed, failures,
+      make_placement_gate(bp, nil))
     if not s then return nil, t end
     site, tried, chosen_ok, analysis = s, t, c_ok, an
     site_level = level or 0
@@ -1551,6 +1669,26 @@ local function run_phase(name, phase, site_arg, level, rank, radius, dry, allow_
       distance_tiles = reservation_conflict.distance_tiles}
     result.ok = false
     return result
+  end
+
+  -- Placement access gate (C3, D2/D7): a NEW placement only. A site-N handle
+  -- (a later phase of an existing site) is never gated, so reading, finishing
+  -- or releasing the existing bedroom block is not blocked by this rule.
+  if not handle and #dig_leaves > 0 then
+    local gate = make_placement_gate(bp, from_reservation)
+    local av = gate and gate(site) or nil
+    if av then
+      result.placement_access = {verdict = av.verdict, rule_checked = av.implemented, kind = av.checked_kind,
+        access = av.access, rooms_considered = av.rooms_considered, entrances_checked = av.portals_checked,
+        zones_unreadable = av.zones_unreadable, refusals = av.refusals}
+      local refusal = access_mod.refusal_text(av)
+      if refusal then
+        result.blocked = true
+        result.blocked_reason = refusal
+        result.ok = false
+        return result
+      end
+    end
   end
 
   -- Order guard, by mode.
@@ -1827,7 +1965,8 @@ function reserve_site(template, purpose, site_arg, dry_run, level, rank, radius)
   if #dig_leaves == 0 then
     return nil, "template '" .. bp.name .. "' has no #dig section; nothing to reserve a footprint for"
   end
-  local site, tried, chosen_ok, analysis = resolve_new_site(bp, site_arg, level, rank, radius, dig_leaves, carve_needed, failures)
+  local gate = make_placement_gate(bp, nil)
+  local site, tried, chosen_ok, analysis = resolve_new_site(bp, site_arg, level, rank, radius, dig_leaves, carve_needed, failures, gate)
   if not site then return nil, tried end
   if site.w * site.h > MAX_SITE_TILES then
     return nil, "reservation footprint is over this tool's " .. MAX_SITE_TILES .. "-tile bound"
@@ -1855,6 +1994,7 @@ function reserve_site(template, purpose, site_arg, dry_run, level, rank, radius)
   end
   local conflicts = reservations_mod.find_conflicts(site.x, site.y, site.z, site.w, site.h, wall_cells,
     other_footprints, nil, portal_cells, "room")
+  local access_verdict = gate and gate(site) or nil
   local brief = site_brief(site)
   local result = {
     blueprint = bp.name, purpose = purpose, dry_run = dry,
@@ -1879,6 +2019,18 @@ function reserve_site(template, purpose, site_arg, dry_run, level, rank, radius)
     result.blocked_reason = "overlaps existing " .. table.concat(names, ", ")
       .. " on at least one tile neither side marks as a shared wall"
     return result
+  end
+  if access_verdict then
+    result.placement_access = {verdict = access_verdict.verdict, rule_checked = access_verdict.implemented,
+      kind = access_verdict.checked_kind, access = access_verdict.access,
+      rooms_considered = access_verdict.rooms_considered, entrances_checked = access_verdict.portals_checked,
+      zones_unreadable = access_verdict.zones_unreadable, refusals = access_verdict.refusals}
+    local refusal = access_mod.refusal_text(access_verdict)
+    if refusal then
+      result.refused = true
+      result.blocked_reason = refusal
+      return result
+    end
   end
   if not dig_can_start then
     result.would_strand = "the reserved footprint's entrance touches no revealed walkable ground in any tried "
