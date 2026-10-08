@@ -432,7 +432,7 @@ async def observe(env: ExecEnv, arguments: Mapping[str, Any]) -> Tuple[str, dict
             else:
                 judged = ad.judge_progress(spec, out)
                 p = spec.progress
-                conds = [c for c in (p.get("not_done_if"), p.get("stalled_if"), p.get("blocked_if")) if c]
+                conds = [c for c in (p.get("not_done_if"), p.get("stalled_if"), p.get("blocked_if"), p.get("cancelled_if")) if c]
                 for path in [p["done_field"]] + [c["path"] for c in conds]:
                     f, v = ad.get_path(out, path)
                     if f and (v is None or isinstance(v, (bool, int, float, str))):

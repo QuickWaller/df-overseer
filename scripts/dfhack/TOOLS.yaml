@@ -780,6 +780,8 @@ df-overseer-diggable.lua:
         before_a_real_run: []
         traps:
           - >-
+            Siting policy (2026-10-08, user decision): sites that are, or touch, a revealed aquifer or magma tile are never offered or dug, and hidden rock on a level band with a revealed aquifer counts as unsafe. An empty answer may mean this; the error then says how many tiles were excluded. The policy is data (df-overseer-hazard POLICY). The game also cancels digs beside damp or warm stone on its own; that reads as cancelled_by_game, never a stall, and is never retried.
+          - >-
             A still-hidden (unrevealed) tile is offered as a candidate, matching how the game's own
             digging designation treats blind tiles; material is left out for it, and only
             interior_fully_revealed says whether the whole area has actually been seen.
@@ -878,7 +880,9 @@ df-overseer-diggable.lua:
           - >-
             Shares its candidate ranking with diggable.find, so run find first to check what RANK
             will pick and whether the site is actually walkable once dug.
-        traps: []
+        traps:
+          - >-
+            Siting policy (2026-10-08, user decision): sites that are, or touch, a revealed aquifer or magma tile are never offered or dug, and hidden rock on a level band with a revealed aquifer counts as unsafe. An empty answer may mean this; the error then says how many tiles were excluded. The policy is data (df-overseer-hazard POLICY). The game also cancels digs beside damp or warm stone on its own; that reads as cancelled_by_game, never a stall, and is never retried.
     "find-stair [LEVEL] NEAR_LANDMARK [RADIUS_TILES] [RES_ID]":
       lua_function: find_stair_down
       effect: read
@@ -961,7 +965,9 @@ df-overseer-diggable.lua:
           offered and silently failing to dig later. Pair with diggable.dig-stair to actually
           designate one.
         before_a_real_run: []
-        traps: []
+        traps:
+          - >-
+            Siting policy (2026-10-08, user decision): sites that are, or touch, a revealed aquifer or magma tile are never offered or dug, and hidden rock on a level band with a revealed aquifer counts as unsafe. An empty answer may mean this; the error then says how many tiles were excluded. The policy is data (df-overseer-hazard POLICY). The game also cancels digs beside damp or warm stone on its own; that reads as cancelled_by_game, never a stall, and is never retried.
     "dig-stair [LEVEL] NEAR_LANDMARK [RANK] [RADIUS_TILES] [DRY_RUN] [RES_ID] [OVERRIDE]":
       lua_function: dig_stair_down
       effect: mutate
@@ -1074,7 +1080,9 @@ df-overseer-diggable.lua:
           rather than left as an orphan. A failure returns an error rather than a success-looking
           result with a buried failure flag.
         before_a_real_run: []
-        traps: []
+        traps:
+          - >-
+            Siting policy (2026-10-08, user decision): sites that are, or touch, a revealed aquifer or magma tile are never offered or dug, and hidden rock on a level band with a revealed aquifer counts as unsafe. An empty answer may mean this; the error then says how many tiles were excluded. The policy is data (df-overseer-hazard POLICY). The game also cancels digs beside damp or warm stone on its own; that reads as cancelled_by_game, never a stall, and is never retried.
 df-overseer-farm.lua:
   build_order_item: "gap named 2026-09-16, handoffs/2026-09-16-farm-and-still-tools.md Part 2"
   # Documented defaults (each the value the Lua script already uses when the
@@ -5417,7 +5425,9 @@ df-overseer-construction.lua:
             Only designates a tile that is confidently identified as ore or gem (via surface.vein-
             material's own decoding); anything it cannot classify confidently is refused by name
             rather than guessed.
-        traps: []
+        traps:
+          - >-
+            Siting policy (2026-10-08, user decision): sites that are, or touch, a revealed aquifer or magma tile are never offered or dug, and hidden rock on a level band with a revealed aquifer counts as unsafe. An empty answer may mean this; the error then says how many tiles were excluded. The policy is data (df-overseer-hazard POLICY). The game also cancels digs beside damp or warm stone on its own; that reads as cancelled_by_game, never a stall, and is never retried.
     "mine-vein-site SITE_ID [DRY_RUN] [RES_ID] [OVERRIDE]":
       lua_function: mine_vein
       effect: mutate
@@ -5890,6 +5900,8 @@ df-overseer-blueprint.lua:
         before_a_real_run: []
         traps:
           - >-
+            Siting policy (2026-10-08, user decision): sites that are, or touch, a revealed aquifer or magma tile are never offered or dug, and hidden rock on a level band with a revealed aquifer counts as unsafe. An empty answer may mean this; the error then says how many tiles were excluded. The policy is data (df-overseer-hazard POLICY). The game also cancels digs beside damp or warm stone on its own; that reads as cancelled_by_game, never a stall, and is never retried.
+          - >-
             A build, zone or place phase also reports whether phase ordering would block it (for
             example a zone phase run before its shell is dug); read that alongside the designation
             result, not just whether tiles were accepted.
@@ -5949,6 +5961,7 @@ df-overseer-blueprint.lua:
           done_field: phase.done
           not_done_if: {path: dig.state, equals: in_progress}
           stalled_if: {path: dig.state, equals: stalled}
+          cancelled_if: {path: dig.state, equals: cancelled_by_game}
           blocked_if: {path: finish_state.blocked_total, greater_than: 0}
         landed:
           - when: {arg: site, matches: '^res-[0-9]+$'}
@@ -6038,6 +6051,8 @@ df-overseer-blueprint.lua:
             entrance reaches revealed walkable ground; if none works, the call is refused outright
             and nothing is designated, unless ALLOW_STRANDED is explicitly set to true.
         traps:
+          - >-
+            Siting policy (2026-10-08, user decision): sites that are, or touch, a revealed aquifer or magma tile are never offered or dug, and hidden rock on a level band with a revealed aquifer counts as unsafe. An empty answer may mean this; the error then says how many tiles were excluded. The policy is data (df-overseer-hazard POLICY). The game also cancels digs beside damp or warm stone on its own; that reads as cancelled_by_game, never a stall, and is never retried.
           - >-
             A seam wall shared between two tiled templates is allowed to overlap by design, not
             refused as a collision; only a genuine conflict outside a declared seam is refused.
@@ -6932,3 +6947,86 @@ df-overseer-screen.lua:
           - >-
             Only dwarfmode/Info/WORK_ORDERS/Default is a verified blocker; other panels follow the
             table's stated guess, each entry's `verified` field says which.
+df-overseer-circulation.lua:
+  build_order_item: "stage C1 of research/2026-10-08-architect-circulation-design.md (read-only graph), cut per research/2026-10-08-architect-circulation-red-team.md"
+  commands:
+    graph:
+      lua_function: circulation_graph
+      effect: read
+      coordinate_bearing: false
+      live_deployed: true
+      verified: "2026-10-08 (offline lupa tests plus a live read-only run on the paused fort: 853 tiles in 3 windows over 3 levels, 0.08 to 0.13 s wall including process start, flagged the bedroom block's rooms-through-rooms and bedrooms opening onto each other). Not on any role allowlist."
+      knowledge_scope: player_derivable
+      notes: >
+        A read-only circulation graph of the rooms we have made: nodes are
+        rooms (zones of room kinds), named landmarks, stairs and ramps, open
+        areas, dead ends, window-edge frontiers and junctions; edges carry
+        length in steps, width class, level change and doors. Checks come back
+        as named booleans and lists: rooms reached only by walking through
+        another room (and whether the room crossed is private), private rooms
+        opening onto each other, dead ends, single links that alone join
+        named anchors (landmarks, stairs, public rooms), disconnected pieces,
+        and walk steps from the bedrooms to the dining hall, the well and the
+        stairs. Built only from a window around OUR OWN records (blueprint
+        sites, reservations, room zones, nearby landmarks), per level, with a
+        hard tile cap held in the script's data; over the cap it REFUSES with
+        an error and never truncates, and it never scans the map or a
+        walkable group's extent. Hidden tiles are never read as open or shut,
+        they become frontier nodes and an entry in `unknown`. Reachability
+        comes from tile shapes; the game's walkable groups are compared and any
+        disagreement reported (that cache only updates while the game runs, so
+        on a paused fort a disagreement can be stale). Output holds ids, kinds,
+        names and numbers only, levels relative to the window's lowest level,
+        never a coordinate or a grid (docs/PURPOSE.md commitment 1). On NO role
+        allowlist yet.
+      summary: "Describes how the rooms we have made connect: rooms reached through other rooms, dead ends, single links, and walk lengths to dining, the well and the stairs."
+      guide:
+        arguments: []
+        returns: >-
+          `flags` holds named booleans (room_reached_only_through_another_room,
+          private_room_reached_only_through_a_private_room, private_rooms_open_onto_each_other,
+          dead_end_present, single_point_of_failure_between_anchors, graph_in_one_piece, has_unknowns);
+          `checks` holds the matching lists; `walks` gives steps per bedroom and a per-kind summary;
+          `nodes` and `edges` give the graph by id and name; `unknown` lists everything it could not
+          establish. An error with ok false means the window was refused (over the cap) or had no records.
+        before_a_real_run: []
+        traps:
+          - >-
+            Steps are tile steps inside the window only. A place outside the window is not described, and
+            the game's walkable-group cache lags while the fort is paused.
+    "walk FROM TO":
+      lua_function: circulation_walk
+      effect: read
+      coordinate_bearing: false
+      live_deployed: true
+      verified: "unverified live (offline lupa tests only; the graph it shares was run live read-only 2026-10-08)."
+      knowledge_scope: player_derivable
+      notes: >
+        Steps, doors, rooms walked through and the nodes passed between two
+        named endpoints, from the same bounded window as circulation.graph.
+        Names match the way landmark names do (case, spacing and punctuation
+        ignored; an ambiguous name is refused with its candidates). Endpoints
+        are rooms ("Bedroom #12" or the zone's own name), landmarks and
+        "Stair n". Unreachable inside the window is its own status, never read
+        as unreachable in the fort (connectivity.check answers that). On NO
+        role allowlist yet.
+      summary: "Measures the walk between two named places: steps, doors, and the rooms passed through."
+      guide:
+        arguments:
+          - name: "FROM"
+            required: true
+            default: null
+            meaning: >-
+              A room name ("Bedroom #12" or the zone's own name), a landmark name, or "Stair n" as
+              circulation.graph names them.
+          - name: "TO"
+            required: true
+            default: null
+            meaning: >-
+              The other endpoint, named the same way.
+        returns: >-
+          `status` is reachable, unreachable_in_window or unknown (with a reason); when reachable,
+          `steps`, `doors_on_path`, `rooms_walked_through`, `narrowest` and `via` (the nodes passed,
+          by name).
+        before_a_real_run: []
+        traps: []

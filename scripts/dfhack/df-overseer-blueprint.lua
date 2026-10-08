@@ -145,6 +145,11 @@ local zone_mod = reqscript('df-overseer-zone')
 -- above) -- see that leaf file's own header. One-directional, same as the
 -- other four above: this file reqscripts it; it reqscripts nothing.
 local parse_mod = reqscript('df-overseer-blueprint-parse')
+-- 2026-10-08: the aquifer/magma siting policy and the game's own dig
+-- cancellations (DIG_CANCEL_DAMP / DIG_CANCEL_WARM). Both are dependency-free
+-- leaves; this file reqscripts them, they never reqscript this file.
+local hazard_mod = reqscript('df-overseer-hazard')
+local digcancel_mod = reqscript('df-overseer-digcancel')
 
 local NULL = "\0"
 local function encode(v) return json.encode(v, {null = NULL}) end
@@ -477,8 +482,9 @@ local function find_new_site(bp, near, level, rank, radius)
   if not ok then return nil, "site search failed: " .. tostring(chosen) end
   if err then return nil, err end
   if rank < 1 or rank > #chosen then
+    local note = hazard_mod.exclusion_note()
     return nil, string.format("no candidate at rank %d (found %d near %s for a %dx%d footprint)",
-      rank, #chosen, near, bp.w, bp.h)
+      rank, #chosen, near, bp.w, bp.h) .. (note and ("; " .. note) or "")
   end
   local c = chosen[rank]
   return {x = c.x, y = c.y, z = z, w = bp.w, h = bp.h, any_hidden = c.any_hidden and true or false}
@@ -983,8 +989,14 @@ local function dig_progress(site, failures, applied_tick)
   end
   local tick = reservations_mod.abs_tick()
   local since = (tick and applied_tick) and (tick - applied_tick) or nil
+  -- The game's own cancellations (DIG_CANCEL_DAMP / DIG_CANCEL_WARM) inside
+  -- the site since the apply. It removes the designation when it cancels, so
+  -- without this the site reads "none_pending" or "stalled".
+  local cancels = digcancel_mod.in_rect(site.x, site.y, site.w, site.h, site.z, applied_tick)
   local state
-  if jobs and njobs > 0 then state = "in_progress"
+  if cancels.total > 0 and not (jobs and njobs > 0) and with_job == 0 and startable == 0 then
+    state = "cancelled_by_game"
+  elseif jobs and njobs > 0 then state = "in_progress"
   elseif pending == 0 and unknown == 0 then state = "none_pending"
   elseif jerr and with_job == 0 and blind < pending then state = "unknown"
   elseif with_job > 0 then state = "in_progress"
@@ -1004,7 +1016,24 @@ local function dig_progress(site, failures, applied_tick)
     jobs_claimed_by_a_worker = nn(nclaimed),
     ticks_since_apply = nn(since),
     job_census_error = nn(jerr),
+    cancelled_by_game = {
+      damp = cancels.damp, warm = cancels.warm, total = cancels.total,
+      read_ok = cancels.read_ok,
+      tiles = digcancel_mod.describe(cancels.tiles, 5),
+    },
   }
+end
+
+local function cancel_note(dp)
+  if dp.state ~= "cancelled_by_game" then return NULL end
+  local c = dp.cancelled_by_game
+  local kinds = {}
+  if c.damp > 0 then kinds[#kinds + 1] = "damp" end
+  if c.warm > 0 then kinds[#kinds + 1] = "warm" end
+  return string.format("cancelled by the game: %s. DF cancelled %d dig tile(s) beside aquifer (damp) or magma (warm) "
+    .. "stone. This is not a stuck or stranded dig and it is never retried automatically: re-applying would be "
+    .. "cancelled again. `release` the site and choose another spot (the siting policy already avoids revealed "
+    .. "aquifer and magma; this spot was unrevealed rock).", table.concat(kinds, " and "), c.total)
 end
 
 local function stall_remedy(dp)
@@ -1275,6 +1304,20 @@ function resolve_new_site(bp, site_arg, level, rank, radius, dig_leaves, carve_n
   return site, tried, chosen_ok, analysis
 end
 
+-- The siting policy (df-overseer-hazard.lua) over a site's whole footprint.
+-- Returns nil when clear, else a coordinate-free refusal sentence. Checked for
+-- every dig-bearing apply and preview, and when a reservation is made: a stored
+-- site or reservation can predate the rule or have become damp since.
+local function site_hazard_refusal(site)
+  hazard_mod.begin_scan()
+  local hz = hazard_mod.check_rect(site.x, site.y, site.z, site.w, site.h)
+  if not hz then return nil end
+  local okn, ni = pcall(landmarks_mod.nearest_landmark, hz.x, hz.y, hz.z)
+  local where = okn and ni and string.format("%s tiles %s of %s", tostring(ni.distance_tiles),
+    tostring(ni.direction), tostring(ni.name)) or nil
+  return hazard_mod.message(hz, where), hz
+end
+
 local function run_phase(name, phase, site_arg, level, rank, radius, dry, allow_stranded)
   local bp, err = load_blueprint(name)
   if not bp then return nil, err end
@@ -1408,6 +1451,19 @@ local function run_phase(name, phase, site_arg, level, rank, radius, dry, allow_
   -- LEVEL relative to the landmark, the same convention as the LEVEL
   -- argument; null for a site stored before this field existed.
   result.site.level = nn(site_level)
+
+  -- Siting policy (2026-10-08): no dig on, or touching, aquifer or magma
+  -- stone. There is no override: relax df-overseer-hazard's POLICY instead.
+  if #dig_leaves > 0 then
+    local refusal, hz = site_hazard_refusal(site)
+    if refusal then
+      result.blocked = true
+      result.blocked_reason = refusal
+      result.siting_hazard = {kind = hz.kind, where = hz.where, via = hz.via}
+      result.ok = false
+      return result
+    end
+  end
 
   -- Reservation check (handoffs/2026-09-30-room-reservations.md decision 3):
   -- refuse any tile of this site that falls inside a reservation this call
@@ -1581,6 +1637,8 @@ function site_status(handle, phase)
     dig = dp,
     stalled = dp.state == "stalled",
     stall_remedy = stall_remedy(dp),
+    cancelled_by_game = dp.state == "cancelled_by_game",
+    cancel_note = cancel_note(dp),
     site = {near_landmark = b.near_landmark, direction = b.direction, distance_tiles = b.distance_tiles,
       footprint = {width = site.w, height = site.h}},
     shell = pre,
@@ -1640,9 +1698,9 @@ function release_site(handle, dry_run, any_pending)
   local last = (site.phases or {})[#(site.phases or {})]
   local dp = dig_progress(site, failures, last and last.tick or nil)
   result.dig_before = dp
-  if dp.state ~= "stalled" and not any then
+  if dp.state ~= "stalled" and dp.state ~= "cancelled_by_game" and not any then
     result.released = false
-    result.refused = "the site is '" .. dp.state .. "', not stalled; release only withdraws designations no dwarf can start"
+    result.refused = "the site is '" .. dp.state .. "', not stalled or cancelled by the game; release only withdraws designations no dwarf can start"
     return result
   end
   local undone = 0
@@ -1713,6 +1771,8 @@ function reserve_site(template, purpose, site_arg, dry_run, level, rank, radius)
   if site.w * site.h > MAX_SITE_TILES then
     return nil, "reservation footprint is over this tool's " .. MAX_SITE_TILES .. "-tile bound"
   end
+  local hazard_refusal = site_hazard_refusal(site)
+  if hazard_refusal then return nil, hazard_refusal end
   local dig_can_start = true
   if carve_needed and analysis then
     dig_can_start = (analysis.entrance_reachable == true and analysis.carve_cells_unreachable == 0)

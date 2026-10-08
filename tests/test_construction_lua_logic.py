@@ -177,6 +177,20 @@ def test_mine_vein_finds_ore_skips_open_and_refuses_unknown(w):
     assert res["results"][0]["mineral_name"] == "HEMATITE"
 
 
+def test_mine_vein_refuses_an_ore_tile_the_siting_policy_rejects(w):
+    w.add_zone(13)
+    w.set_ring(13, [(1, 1, 0), (2, 1, 0)])
+    for x in (1, 2):
+        w.set_tile(x, 1, 0, "WALL")
+        w.set_vein(x, 1, 0, "ore_or_gem", "HEMATITE")
+    w.lua.execute('HAZARD_TILES["1,1,0"] = true')
+    w.queue_quickfort("  Tiles designated for digging: 1\n", res=0)
+    res = w.mine_vein(13, "true")
+    assert res["ore_tiles_found"] == 1
+    assert len(res["refused"]) == 1 and "siting policy" in res["refused"][0]
+    assert len(res["results"]) == 1
+
+
 def test_mine_vein_dry_run_defaults_true_and_passes_d_flag(w):
     w.add_zone(13)
     w.set_ring(13, [(1, 1, 0)])

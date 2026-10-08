@@ -864,6 +864,13 @@
     "blueprint": "office-room-v2",
     "dig_before": {
       "blind_no_walkable_neighbour": 0,
+      "cancelled_by_game": {
+        "damp": 0,
+        "read_ok": true,
+        "tiles": [],
+        "total": 0,
+        "warm": 0
+      },
       "designations_with_a_job": 0,
       "designations_without_a_job": 0,
       "job_census_error": null,
@@ -1088,8 +1095,17 @@
   ],
   "status_no_phase_after_shell_apply": {
     "blueprint": "office-room-v2",
+    "cancel_note": null,
+    "cancelled_by_game": false,
     "dig": {
       "blind_no_walkable_neighbour": 0,
+      "cancelled_by_game": {
+        "damp": 0,
+        "read_ok": true,
+        "tiles": [],
+        "total": 0,
+        "warm": 0
+      },
       "designations_with_a_job": 0,
       "designations_without_a_job": 0,
       "job_census_error": null,
@@ -1174,8 +1190,17 @@
   },
   "status_office_room_v2_build_complete": {
     "blueprint": "office-room-v2",
+    "cancel_note": null,
+    "cancelled_by_game": false,
     "dig": {
       "blind_no_walkable_neighbour": 0,
+      "cancelled_by_game": {
+        "damp": 0,
+        "read_ok": true,
+        "tiles": [],
+        "total": 0,
+        "warm": 0
+      },
       "designations_with_a_job": 0,
       "designations_without_a_job": 0,
       "job_census_error": null,
@@ -1293,8 +1318,17 @@
   },
   "status_office_room_v2_build_furniture_pending": {
     "blueprint": "office-room-v2",
+    "cancel_note": null,
+    "cancelled_by_game": false,
     "dig": {
       "blind_no_walkable_neighbour": 0,
+      "cancelled_by_game": {
+        "damp": 0,
+        "read_ok": true,
+        "tiles": [],
+        "total": 0,
+        "warm": 0
+      },
       "designations_with_a_job": 0,
       "designations_without_a_job": 0,
       "job_census_error": null,
@@ -1412,8 +1446,17 @@
   },
   "status_office_room_v2_finish_complete": {
     "blueprint": "office-room-v2",
+    "cancel_note": null,
+    "cancelled_by_game": false,
     "dig": {
       "blind_no_walkable_neighbour": 0,
+      "cancelled_by_game": {
+        "damp": 0,
+        "read_ok": true,
+        "tiles": [],
+        "total": 0,
+        "warm": 0
+      },
       "designations_with_a_job": 0,
       "designations_without_a_job": 0,
       "job_census_error": null,
@@ -1532,8 +1575,17 @@
   },
   "status_office_room_v2_finish_furniture_pending": {
     "blueprint": "office-room-v2",
+    "cancel_note": null,
+    "cancelled_by_game": false,
     "dig": {
       "blind_no_walkable_neighbour": 0,
+      "cancelled_by_game": {
+        "damp": 0,
+        "read_ok": true,
+        "tiles": [],
+        "total": 0,
+        "warm": 0
+      },
       "designations_with_a_job": 0,
       "designations_without_a_job": 0,
       "job_census_error": null,
@@ -1652,8 +1704,17 @@
   },
   "status_office_room_v2_floor_complete": {
     "blueprint": "office-room-v2",
+    "cancel_note": null,
+    "cancelled_by_game": false,
     "dig": {
       "blind_no_walkable_neighbour": 0,
+      "cancelled_by_game": {
+        "damp": 0,
+        "read_ok": true,
+        "tiles": [],
+        "total": 0,
+        "warm": 0
+      },
       "designations_with_a_job": 0,
       "designations_without_a_job": 0,
       "job_census_error": null,
@@ -1766,8 +1827,17 @@
   },
   "status_office_room_v2_floor_furniture_pending": {
     "blueprint": "office-room-v2",
+    "cancel_note": null,
+    "cancelled_by_game": false,
     "dig": {
       "blind_no_walkable_neighbour": 0,
+      "cancelled_by_game": {
+        "damp": 0,
+        "read_ok": true,
+        "tiles": [],
+        "total": 0,
+        "warm": 0
+      },
       "designations_with_a_job": 0,
       "designations_without_a_job": 0,
       "job_census_error": null,
@@ -1880,8 +1950,17 @@
   },
   "status_office_room_v2_shell_complete": {
     "blueprint": "office-room-v2",
+    "cancel_note": null,
+    "cancelled_by_game": false,
     "dig": {
       "blind_no_walkable_neighbour": 0,
+      "cancelled_by_game": {
+        "damp": 0,
+        "read_ok": true,
+        "tiles": [],
+        "total": 0,
+        "warm": 0
+      },
       "designations_with_a_job": 0,
       "designations_without_a_job": 0,
       "job_census_error": null,
@@ -1994,8 +2073,17 @@
   },
   "status_office_room_v2_shell_furniture_pending": {
     "blueprint": "office-room-v2",
+    "cancel_note": null,
+    "cancelled_by_game": false,
     "dig": {
       "blind_no_walkable_neighbour": 0,
+      "cancelled_by_game": {
+        "damp": 0,
+        "read_ok": true,
+        "tiles": [],
+        "total": 0,
+        "warm": 0
+      },
       "designations_with_a_job": 0,
       "designations_without_a_job": 0,
       "job_census_error": null,
@@ -2108,8 +2196,17 @@
   },
   "status_office_room_v2_zone_complete": {
     "blueprint": "office-room-v2",
+    "cancel_note": null,
+    "cancelled_by_game": false,
     "dig": {
       "blind_no_walkable_neighbour": 0,
+      "cancelled_by_game": {
+        "damp": 0,
+        "read_ok": true,
+        "tiles": [],
+        "total": 0,
+        "warm": 0
+      },
       "designations_with_a_job": 0,
       "designations_without_a_job": 0,
       "job_census_error": null,
@@ -2222,8 +2319,17 @@
   },
   "status_office_room_v2_zone_furniture_pending": {
     "blueprint": "office-room-v2",
+    "cancel_note": null,
+    "cancelled_by_game": false,
     "dig": {
       "blind_no_walkable_neighbour": 0,
+      "cancelled_by_game": {
+        "damp": 0,
+        "read_ok": true,
+        "tiles": [],
+        "total": 0,
+        "warm": 0
+      },
       "designations_with_a_job": 0,
       "designations_without_a_job": 0,
       "job_census_error": null,
