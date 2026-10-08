@@ -6954,8 +6954,8 @@ df-overseer-circulation.lua:
       lua_function: circulation_graph
       effect: read
       coordinate_bearing: false
-      live_deployed: false
-      verified: "unverified (offline build under lupa with a fake map, tests/test_circulation_lua_logic.py). Live read-only timing on the paused fort is recorded where this stream's report is filed."
+      live_deployed: true
+      verified: "2026-10-08 (offline lupa tests plus a live read-only run on the paused fort: 853 tiles in 3 windows over 3 levels, 0.08 to 0.13 s wall including process start, flagged the bedroom block's rooms-through-rooms and bedrooms opening onto each other). Not on any role allowlist."
       knowledge_scope: player_derivable
       notes: >
         A read-only circulation graph of the rooms we have made: nodes are
@@ -6998,8 +6998,8 @@ df-overseer-circulation.lua:
       lua_function: circulation_walk
       effect: read
       coordinate_bearing: false
-      live_deployed: false
-      verified: "unverified (offline build under lupa with a fake map, tests/test_circulation_lua_logic.py)."
+      live_deployed: true
+      verified: "unverified live (offline lupa tests only; the graph it shares was run live read-only 2026-10-08)."
       knowledge_scope: player_derivable
       notes: >
         Steps, doors, rooms walked through and the nodes passed between two
