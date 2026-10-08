@@ -1136,7 +1136,7 @@ function summarize(g)
   for _, id in ipairs(g.node_order) do maxlevel = math.max(maxlevel, level_of(g, g.nodes[id])) end
 
   report.window = {
-    windows = g.window_count, levels = g.level_count, tiles = g.window_tiles, cap = g.cap,
+    windows = g.window_count, levels = g.level_count, tile_count = g.window_tiles, tile_cap = g.cap,
     hidden_tiles = g.hidden_tiles, unreadable_tiles = g.unreadable_tiles,
     landmarks_outside_window = g.outside_landmarks,
   }
@@ -1172,11 +1172,11 @@ function summarize(g)
 
   local openings = {}
   for _, e in ipairs(g.edges) do
-    if e.kind == "opening" and is_room(g, e.a) and is_room(g, e.b) then
+    if e.kind ~= "vertical" and is_room(g, e.a) and is_room(g, e.b) then
       local a, b = g.nodes[e.a], g.nodes[e.b]
       openings[#openings + 1] = {
         rooms = { a.name, b.name }, kinds = { a.room_kind, b.room_kind },
-        both_private = a.private and b.private or false, opening_width = e.width,
+        both_private = a.private and b.private or false, steps = e.steps,
       }
     end
   end
