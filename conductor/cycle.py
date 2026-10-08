@@ -95,6 +95,10 @@ LOG = logging.getLogger("conductor.cycle")
 #: order docs/AGENT-LOOP.md §4 names: "advisors, then Consultant, then
 #: Overseer." Tuple, not a set, so it also fixes drain/launch order.
 ALL_ROLES = (*ADVISORS, CONSULTANT, OVERSEER)
+#: Roles that may run together when `parallel.proposers` is on: every proposer
+#: but the Planner (which runs first, alone), plus the Consultant. Never the
+#: Overseer: there is exactly one judge and it runs after them.
+CONCURRENT_ROLES = (*ADVISORS, CONSULTANT)
 
 #: docs/AGENT-ARCHITECTURE.md §4's own closed wake-event vocabulary, scoped
 #: to the subset conductor/triage.py's Signals carries as a plain boolean.
@@ -423,6 +427,11 @@ class CycleResult:
     #: standing alert while a bootstrap has been given up on. None when it did
     #: not run (unreadable state, a tripwire or watchdog cycle).
     plan_watch: Optional[Dict[str, Any]] = None
+    #: How the roles ran this cycle: one entry per run group (roles, whether
+    #: they ran concurrently, group and per-run wall seconds), and the role
+    #: phase's wall clock in total. Empty/None on paths that run no roles here.
+    role_groups: Optional[List[Dict[str, Any]]] = None
+    wall_seconds: Optional[float] = None
 
 
 #: Fix 3 (`handoffs/2026-09-22-loop-conductor-fixes.md`): the queue tool
@@ -918,6 +927,32 @@ async def _run_cycle(cycle_index: int, deps: CycleDeps, hold: HoldState) -> Cycl
     known_ask_ids: Set[str] = set((queue_state.get("asks") or {}).get("ask_ids") or []) | set(lane_state.askers)
     routing: Optional[Mapping[str, Any]] = early_routing
     routing_read = early_routing_read
+    parallel_on = bool(deps.policy.parallel_proposers)
+    if parallel_on and not getattr(deps.role_runner, "isolated_state", True):
+        LOG.warning(
+            "cycle %s: parallel.proposers is on but the runner has no per-run state dir "
+            "(CONDUCTOR_THINKING_STATE_DIR unset); running serially", cycle_index,
+        )
+        parallel_on = False
+    parallel_groups: List[Dict[str, Any]] = []
+    cycle_started = time.monotonic()
+
+    async def _launch(role: str, wake: Any, prompt: str, delay: float) -> RunResult:
+        """One role's run: quicksave first for the Overseer, then the run
+        itself. `delay` staggers the start of concurrent roles."""
+        if delay > 0:
+            await asyncio.sleep(delay)
+        if role == OVERSEER:
+            # docs/AGENT-LOOP.md §1 step 6: "quicksave before the Overseer
+            # runs whenever it may act."
+            await _call_write(call, "fort.quicksave", {}, clock_changes=clock_changes, cycle_index=cycle_index)
+
+        run_result = await _run_role(
+            deps, call, role, prompt, wake=wake, cycle_index=cycle_index,
+            wake_reasons=triage_result.reasons_for(role),
+        )
+        return run_result
+
     idx = 0
     while True:
         # Advisors have run; anything they filed (an ask above all) is not in
@@ -959,130 +994,149 @@ async def _run_cycle(cycle_index: int, deps: CycleDeps, hold: HoldState) -> Cycl
             break
         role = roles_to_run[idx]
         idx += 1
+        # Parallel proposers (policy `parallel.proposers`, default off): the
+        # consecutive concurrent-safe roles from here run together. The Planner
+        # (first) and the Overseer (the one judge, last) always run alone.
+        group = [role]
+        if parallel_on and role in CONCURRENT_ROLES:
+            while idx < len(roles_to_run) and roles_to_run[idx] in CONCURRENT_ROLES:
+                group.append(roles_to_run[idx])
+                idx += 1
+        prepared: List[Tuple[str, Any, str]] = []
+        for role in group:
 
-        # The Planner may be woken for several reasons at once (a review and an
-        # accepted plan_change): its briefing carries all of them.
-        wake = extra_wakes.get(role) or (
-            triage_result.merged_wake_for(role) if role == PLANNER else triage_result.wake_for(role)
-        )
-        # Which proposal types the conductor runs or has frozen (stage 2D): one
-        # cheap read, only when a role that needs it is about to be briefed.
-        if not routing_read and not deps.dry_run and role in (*ADVISORS, OVERSEER):
-            routing_read = True
-            routing = await _read_routing(call, cycle_index)
-        paused_now = paused_line(clock_status, hold, still_paused=pause_outcome is None or pause_outcome.still_paused)
-        own_filings = None
-        if role in PROPOSERS and not deps.dry_run and deps.policy.own_filings_recent > 0:
-            own_filings = await _read_own_filings(call, role, deps.policy.own_filings_recent, cycle_index)
-        briefing = build_briefing(
-            role=role, game_tick=game_tick or 0, wake=wake, vitals=vitals,
-            diff_events=events_by_role.get(role, []),
-            queue_summary=_queue_summary_for(role, queue_state),
-            own_filings=own_filings,
-            stuck_jobs=job_watch.lines, alerts=alerts,
-            ore_exposed=_ore_lines_for(deps.policy, role, ore_read),
-            frozen_types=(routing or {}).get("frozen_types") if role in ADVISORS else None,
-            roadmap_line=roadmap_line if role in (OVERSEER, PLANNER) else None,
-            utilisation=utilisation if role == PLANNER else None,
-            paused=paused_now,
-        )
-        briefings[role] = briefing
-        prompt = json.dumps(briefing, default=str)
-        if role == OVERSEER and not deps.dry_run:
-            # docs/CONDUCTOR-EXECUTION.md 3.3: the ruling turn gets a fixed-order
-            # text briefing built from queue.pending_brief, ask last. A failed
-            # read says so in the briefing; the run still goes ahead.
-            pending_brief = await _read_pending_brief(call, cycle_index)
-            prompt = build_ruling_briefing(
-                game_tick=game_tick or 0, wake=wake, vitals=vitals, alerts=alerts,
-                pending_brief=pending_brief, diff_events=events_by_role.get(role, []),
-                stuck_jobs=job_watch.lines, to_carry_out=to_carry_out, routing=routing,
-                roadmap_line=roadmap_line, paused=paused_now,
+            # The Planner may be woken for several reasons at once (a review and an
+            # accepted plan_change): its briefing carries all of them.
+            wake = extra_wakes.get(role) or (
+                triage_result.merged_wake_for(role) if role == PLANNER else triage_result.wake_for(role)
             )
-            briefings[role] = {"ruling_prompt": prompt, "pending_brief": pending_brief}
+            # Which proposal types the conductor runs or has frozen (stage 2D): one
+            # cheap read, only when a role that needs it is about to be briefed.
+            if not routing_read and not deps.dry_run and role in (*ADVISORS, OVERSEER):
+                routing_read = True
+                routing = await _read_routing(call, cycle_index)
+            paused_now = paused_line(clock_status, hold, still_paused=pause_outcome is None or pause_outcome.still_paused)
+            own_filings = None
+            if role in PROPOSERS and not deps.dry_run and deps.policy.own_filings_recent > 0:
+                own_filings = await _read_own_filings(call, role, deps.policy.own_filings_recent, cycle_index)
+            briefing = build_briefing(
+                role=role, game_tick=game_tick or 0, wake=wake, vitals=vitals,
+                diff_events=events_by_role.get(role, []),
+                queue_summary=_queue_summary_for(role, queue_state),
+                own_filings=own_filings,
+                stuck_jobs=job_watch.lines, alerts=alerts,
+                ore_exposed=_ore_lines_for(deps.policy, role, ore_read),
+                frozen_types=(routing or {}).get("frozen_types") if role in ADVISORS else None,
+                roadmap_line=roadmap_line if role in (OVERSEER, PLANNER) else None,
+                utilisation=utilisation if role == PLANNER else None,
+                paused=paused_now,
+            )
+            briefings[role] = briefing
+            prompt = json.dumps(briefing, default=str)
+            if role == OVERSEER and not deps.dry_run:
+                # docs/CONDUCTOR-EXECUTION.md 3.3: the ruling turn gets a fixed-order
+                # text briefing built from queue.pending_brief, ask last. A failed
+                # read says so in the briefing; the run still goes ahead.
+                pending_brief = await _read_pending_brief(call, cycle_index)
+                prompt = build_ruling_briefing(
+                    game_tick=game_tick or 0, wake=wake, vitals=vitals, alerts=alerts,
+                    pending_brief=pending_brief, diff_events=events_by_role.get(role, []),
+                    stuck_jobs=job_watch.lines, to_carry_out=to_carry_out, routing=routing,
+                    roadmap_line=roadmap_line, paused=paused_now,
+                )
+                briefings[role] = {"ruling_prompt": prompt, "pending_brief": pending_brief}
 
-        if deps.dry_run:
+            if deps.dry_run:
+                continue
+            prepared.append((role, wake, prompt))
+        if not prepared:
             continue
 
-        if role == OVERSEER:
-            # docs/AGENT-LOOP.md §1 step 6: "quicksave before the Overseer
-            # runs whenever it may act."
-            await _call_write(call, "fort.quicksave", {}, clock_changes=clock_changes, cycle_index=cycle_index)
+        group_started = time.monotonic()
+        if len(prepared) == 1:
+            runs_done = [await _launch(prepared[0][0], prepared[0][1], prepared[0][2], 0.0)]
+        else:
+            LOG.info("cycle %s: running %s concurrently", cycle_index, [r for r, _, _ in prepared])
+            runs_done = list(await asyncio.gather(*(
+                _launch(r, w, pr, i * deps.policy.parallel_stagger_seconds)
+                for i, (r, w, pr) in enumerate(prepared)
+            )))
+        parallel_groups.append({
+            "roles": [r for r, _, _ in prepared], "concurrent": len(prepared) > 1,
+            "wall_seconds": round(time.monotonic() - group_started, 3),
+            "run_seconds": {rr.role: round(float(rr.wall_clock_seconds or 0.0), 3) for rr in runs_done},
+        })
+        role_runs.extend(runs_done)
 
-        run_result = await _run_role(
-            deps, call, role, prompt, wake=wake, cycle_index=cycle_index,
-            wake_reasons=triage_result.reasons_for(role),
-        )
-        role_runs.append(run_result)
+        for (role, wake, _prompt), run_result in zip(prepared, runs_done):
+            # Learn who proposed what: a pending proposal id that appeared during an
+            # advisor's run is that advisor's (the conductor cannot read an author).
+            # A completed run also serves whatever lane wakes were owed to the role.
+            if deps.policy.lane_triggers and role == OVERSEER and run_result.ok:
+                try:
+                    after = await call("queue.overview", {})
+                    lanes.record_overseer_seen(
+                        lane_state, (after.get("proposals") or {}).get("proposal_ids") or [],
+                        (after.get("asks") or {}).get("ask_ids") or [],
+                    )
+                    lane_store.save(lane_state)
+                except Exception as exc:  # noqa: BLE001 -- best effort: worst case it wakes again
+                    LOG.warning("cycle %s: recording the Overseer's seen proposals failed: %s", cycle_index, exc)
+            if deps.policy.lane_triggers and role in PROPOSERS:
+                try:
+                    after = await call("queue.overview", {})
+                    known_ids = lanes.attribute_new_proposals(
+                        lane_state, role, known_ids, (after.get("proposals") or {}).get("proposal_ids") or [],
+                        authors=(after.get("proposals") or {}).get("by_role"),
+                    )
+                    known_ask_ids = lanes.attribute_new_asks(
+                        lane_state, role, known_ask_ids, (after.get("asks") or {}).get("ask_ids") or [],
+                        authors=(after.get("asks") or {}).get("by_role"),
+                    )
+                except Exception as exc:  # noqa: BLE001 -- total: attribution is best effort
+                    LOG.warning("cycle %s: proposer attribution after %s failed: %s", cycle_index, role, exc)
+                if run_result.ok:
+                    lanes.clear_served(lane_state, role)
+                try:
+                    lane_store.save(lane_state)
+                except Exception:  # noqa: BLE001
+                    LOG.exception("cycle %s: could not save lane state", cycle_index)
 
-        # Learn who proposed what: a pending proposal id that appeared during an
-        # advisor's run is that advisor's (the conductor cannot read an author).
-        # A completed run also serves whatever lane wakes were owed to the role.
-        if deps.policy.lane_triggers and role == OVERSEER and run_result.ok:
-            try:
-                after = await call("queue.overview", {})
-                lanes.record_overseer_seen(
-                    lane_state, (after.get("proposals") or {}).get("proposal_ids") or [],
-                    (after.get("asks") or {}).get("ask_ids") or [],
-                )
-                lane_store.save(lane_state)
-            except Exception as exc:  # noqa: BLE001 -- best effort: worst case it wakes again
-                LOG.warning("cycle %s: recording the Overseer's seen proposals failed: %s", cycle_index, exc)
-        if deps.policy.lane_triggers and role in PROPOSERS:
-            try:
-                after = await call("queue.overview", {})
-                known_ids = lanes.attribute_new_proposals(
-                    lane_state, role, known_ids, (after.get("proposals") or {}).get("proposal_ids") or [],
-                    authors=(after.get("proposals") or {}).get("by_role"),
-                )
-                known_ask_ids = lanes.attribute_new_asks(
-                    lane_state, role, known_ask_ids, (after.get("asks") or {}).get("ask_ids") or [],
-                    authors=(after.get("asks") or {}).get("by_role"),
-                )
-            except Exception as exc:  # noqa: BLE001 -- total: attribution is best effort
-                LOG.warning("cycle %s: proposer attribution after %s failed: %s", cycle_index, role, exc)
+            # A bootstrap wake that left no plan: keep the refusal text for the
+            # operator alert if the attempts run out (conductor/plan_watch.py).
+            if role == PLANNER and plan_state is not None and wake is not None and "plan_bootstrap" in wake.reason + wake.detail:
+                plan_state.last_refusal = last_refusal(run_result)
+                try:
+                    _plan_store(deps).save(plan_state)
+                except Exception:  # noqa: BLE001
+                    LOG.exception("cycle %s: could not save the plan watch state", cycle_index)
+
+            # Only a run that completed consumes its diff window and counts as
+            # having performed a routine review.
             if run_result.ok:
-                lanes.clear_served(lane_state, role)
-            try:
-                lane_store.save(lane_state)
-            except Exception:  # noqa: BLE001
-                LOG.exception("cycle %s: could not save lane state", cycle_index)
+                _commit_cursor(deps, new_cursors, role)
+                if game_tick is not None and any(
+                    w.reason == "routine_review" and role in w.roles for w in triage_result.wakes
+                ):
+                    deps.cursor_store.set("__routine_review__", game_tick)
 
-        # A bootstrap wake that left no plan: keep the refusal text for the
-        # operator alert if the attempts run out (conductor/plan_watch.py).
-        if role == PLANNER and plan_state is not None and wake is not None and "plan_bootstrap" in wake.reason + wake.detail:
-            plan_state.last_refusal = last_refusal(run_result)
-            try:
-                _plan_store(deps).save(plan_state)
-            except Exception:  # noqa: BLE001
-                LOG.exception("cycle %s: could not save the plan watch state", cycle_index)
-
-        # Only a run that completed consumes its diff window and counts as
-        # having performed a routine review.
-        if run_result.ok:
-            _commit_cursor(deps, new_cursors, role)
-            if game_tick is not None and any(
-                w.reason == "routine_review" and role in w.roles for w in triage_result.wakes
-            ):
-                deps.cursor_store.set("__routine_review__", game_tick)
-
-        # Fix 3: the Overseer's own Escalation section
-        # (agents/overseer/role.md) is not tripwire-specific -- an
-        # irreversible action, a contradicted fact or a repeatedly-failed
-        # plan step can come up in an ORDINARY cycle too, not only while a
-        # tripwire is already latched. A clean run that mechanically called
-        # queue.escalate here pauses the fort the same way a tripwire does,
-        # rather than only being detectable the next time one happens to
-        # latch.
-        if role == OVERSEER and _overseer_called_escalate(run_result):
-            ordinary_escalated = True
-            await _call_write(call, "clock.pause", {}, clock_changes=clock_changes, cycle_index=cycle_index)
-            _mark_pause_owned(deps)
-            LOG.error(
-                "ESCALATION: cycle %s's Overseer explicitly escalated via queue.escalate "
-                "during an ordinary cycle; the fort is now PAUSED.",
-                cycle_index,
-            )
+            # Fix 3: the Overseer's own Escalation section
+            # (agents/overseer/role.md) is not tripwire-specific -- an
+            # irreversible action, a contradicted fact or a repeatedly-failed
+            # plan step can come up in an ORDINARY cycle too, not only while a
+            # tripwire is already latched. A clean run that mechanically called
+            # queue.escalate here pauses the fort the same way a tripwire does,
+            # rather than only being detectable the next time one happens to
+            # latch.
+            if role == OVERSEER and _overseer_called_escalate(run_result):
+                ordinary_escalated = True
+                await _call_write(call, "clock.pause", {}, clock_changes=clock_changes, cycle_index=cycle_index)
+                _mark_pause_owned(deps)
+                LOG.error(
+                    "ESCALATION: cycle %s's Overseer explicitly escalated via queue.escalate "
+                    "during an ordinary cycle; the fort is now PAUSED.",
+                    cycle_index,
+                )
 
     # ---- 6. EXECUTE (docs/CONDUCTOR-EXECUTION.md 4.5) --------------------------
     execute_report: Optional[ExecuteReport] = None
@@ -1103,6 +1157,7 @@ async def _run_cycle(cycle_index: int, deps: CycleDeps, hold: HoldState) -> Cycl
         pause_watch=pause_watch_dict,
         plan_watch=plan_watch_dict,
         execute=execute_report.as_dict() if execute_report is not None else None,
+        role_groups=parallel_groups, wall_seconds=round(time.monotonic() - cycle_started, 3),
         plan=(
             {
                 "would_read": list(ALL_ROLES),
@@ -1737,6 +1792,8 @@ def _archive(
         "escalated": result.escalated,
         "pause_watch": result.pause_watch,
         "plan_watch": result.plan_watch,
+        "role_groups": result.role_groups,
+        "wall_seconds": result.wall_seconds,
         "execute": result.execute,
         "unexecuted_proposal_ids": [u.get("proposal", {}).get("id") for u in result.unexecuted],
     }

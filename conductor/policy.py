@@ -272,6 +272,12 @@ class Policy:
     #: Re-read the queue after the advisors run and wake the Consultant for an
     #: ask they filed this cycle (see conductor/cycle.py's role loop).
     consultant_rewake_after_advisors: bool = True
+    #: `parallel.proposers`: run the Architect, Quartermaster and Consultant
+    #: concurrently (after the Planner, before the one Overseer). Off by
+    #: default. `parallel.stagger_seconds`: start each concurrent run this much
+    #: after the previous so the later ones can reuse a warm prompt cache.
+    parallel_proposers: bool = False
+    parallel_stagger_seconds: float = 1.5
     #: Per-role cap on one `agent exec` run, seconds. Roles absent here use
     #: the service-wide `CONDUCTOR_ROLE_TIMEOUT_SECONDS`.
     role_timeout_seconds: Dict[str, float] = field(default_factory=dict)
@@ -679,6 +685,8 @@ def load_policy(path: "Path | str" = DEFAULT_POLICY_PATH) -> Policy:
         ),
         wake_reasons=wake_reasons,
         consultant_rewake_after_advisors=bool(doc.get("consultant_rewake_after_advisors", True)),
+        parallel_proposers=bool((doc.get("parallel") or {}).get("proposers", False)),
+        parallel_stagger_seconds=_nonneg_float(doc.get("parallel") or {}, "stagger_seconds", 1.5, str(path)),
         stuck_job_unclaimed_threshold_ticks=int(doc.get("stuck_job_unclaimed_threshold_ticks", 2400)),
         stuck_job_suspended_threshold_ticks=int(doc.get("stuck_job_suspended_threshold_ticks", 2400)),
         stuck_job_renotify_ticks=int(doc.get("stuck_job_renotify_ticks", 12000)),

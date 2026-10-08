@@ -321,6 +321,20 @@ role_timeout_seconds:
 # they filed this cycle (otherwise it waits a whole cycle; ask-0001 did).
 consultant_rewake_after_advisors: true
 
+# Parallel proposers (register 2026-10-08, user's call: proposers may run
+# together, exactly one judge). When on, the cycle runs the Planner, then the
+# Architect, Quartermaster and Consultant concurrently (each still its own
+# container, timeout, cost, transcript and runs row), then the Overseer alone.
+# Starts are staggered by stagger_seconds so a later run can reuse the first's
+# prompt cache. Needs per-run openclaw state (CONDUCTOR_THINKING_STATE_DIR set),
+# else it falls back to serial with a warning. Off until the runs table shows
+# how often two advisors co-wake. DFHack reads share a pool of 4 connections
+# and queue.propose bounds its cited reads at 60 s: heavy overlap can mean
+# "busy, file again" refusals.
+parallel:
+  proposers: false
+  stagger_seconds: 1.5
+
 # docs/CONDUCTOR-EXECUTION.md 3.3: threshold alerts replace fixed stock lists.
 # A line appears in every role's briefing only while the read value (divided by
 # `per`, "alive" for the live citizen count, or omitted) is BELOW `below`; a
