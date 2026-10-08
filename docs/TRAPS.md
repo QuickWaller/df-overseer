@@ -766,3 +766,7 @@ status block (`pause_watch.held`). Commands, with the conductor's env file
 loaded so `CONDUCTOR_CURSOR_STORE_PATH` is set (or pass `--cursor-store PATH`):
 `python -m conductor.hold set --reason "..." [--for-hours N]`,
 `python -m conductor.hold show`, `python -m conductor.hold clear`.
+
+## Lua test stubs hide two live-only failures (2026-10-08)
+
+Twice in one day a new DFHack script passed every offline test and failed on its first live call, because the lupa stubs provide what the real guest does not: (1) `df-overseer-screen.lua` used `json` without `local json = require('json')` (the stub defines a global `json`); (2) two new modules lacked the `--@module = true` first line, so `reqscript` refused them ("Cannot be used as a module") and broke `circulation.graph`. Both now have source-level regression tests. Before deploying a new Lua file: check it requires every library it uses and declares `--@module = true` if anything `reqscript`s it, and make one live read-only call after the deploy.
