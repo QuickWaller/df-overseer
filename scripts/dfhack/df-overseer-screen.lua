@@ -218,6 +218,12 @@ if dfhack_flags.module then
   return
 end
 
+-- `json` is not a global in a DFHack script; every other df-overseer-*.lua
+-- requires it. Missing here, `read` died live on its first call (2026-10-08,
+-- "attempt to index a nil value (global 'json')"): the offline tests stub a
+-- global json and cannot see it.
+local json = require('json')
+
 local args = {...}
 local cmd = args[1]
 
