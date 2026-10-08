@@ -308,3 +308,12 @@ property of one cell) and not room value (owned by the sibling
   facing one direction. A double-loaded layout is a second template or a
   mirrored placement of this one by the future generator, not something
   v1 needs to encode itself.
+
+## Room kinds (`room-kinds.yaml`)
+
+One entry per room kind (shape generator, size range, required furniture,
+access rule, privacy, door policy; register 2026-10-08, D1, D2, D5, D7). Every
+template's YAML `kind:` must name an entry here (`python -m dfqueue.room_kinds
+--check`). The guest cannot parse YAML, so the same data is rendered to
+`scripts/dfhack/df-overseer-roomkinds.lua` with
+`python -m dfqueue.room_kinds --write-lua`; a test fails if that file drifts.

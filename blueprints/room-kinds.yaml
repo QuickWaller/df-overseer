@@ -1,0 +1,195 @@
+# Room kind data: one entry per room kind (register 2026-10-08, D1, D2, D5, D7).
+#
+# The Architect designs by parameters only. A room kind is DATA: which shape
+# generator draws it, how big it may be, what furniture it needs, how it
+# attaches to circulation, whether it is private, and its door policy. The
+# next room kind costs one entry here and no code. Generic by rule: no fort
+# coordinates, no landmark names (docs/PURPOSE.md commitment 1).
+#
+# Validated by dfqueue/room_kinds.py (tests in dfqueue/tests/test_room_kinds.py).
+# The guest has no YAML parser, so the same data is rendered to
+# scripts/dfhack/df-overseer-roomkinds.lua by
+#   python -m dfqueue.room_kinds --write-lua
+# and a test fails if the committed Lua drifts from this file.
+#
+# Provenance of each fact is marked per entry:
+#   basis: game      the game's own data or a verified doctrine entry
+#   basis: template  a committed template's own `requires`
+#   basis: prior     wiki or convention, NOT verified on this install
+#   basis: user      the user's stated call (decision register)
+
+version: 1
+
+# The six shape generators of D1. None is built yet (stage C4); a kind names
+# the one that will draw it. Odd shapes (well over water, cistern) are
+# human-authored templates and name no generator.
+shape_generators:
+  - rectangular_room   # one walled room with an interior zone and one entrance
+  - room_row           # N rooms off one side of a corridor, sharing seam walls
+  - corridor_piece     # a straight run, turn or junction of a routed corridor
+  - stair_column       # up, middle and down stairs in one column
+  - workshop_bay       # a workshop with its pile tiles and a portal on a collector
+  - soil_room          # a room dug in soil (constructed walls, no smoothing)
+
+# Closed list of door grounds (research 2026-10-08, section 3.4).
+door_grounds:
+  - fluid_containment
+  - access_control
+  - user_standard
+  - hygiene           # disabled until miasma containment is verified
+
+# access: how a room's entrances attach.
+#   corridor            every entrance opens onto a corridor (a tile that is
+#                       inside no room's footprint)
+#   {opens_onto: [k]}   a corridor, or a room of one of the listed kinds
+#   any                 no restriction
+# private: true means nobody should walk through this room to reach another
+# (D7: a room reached only through a private room is refused at filing).
+# door_policy: {default: none | door, ground: <door ground> | null}; a door is
+# a later, separate phase that never blocks a room counting as built (D5).
+
+kinds:
+  bedroom:
+    zone_kind: Bedroom
+    shape_generator: rectangular_room   # tiled by room_row off a corridor
+    size: { interior_width: [3, 3], interior_depth: [3, 3] }
+    required_furniture:
+      - { item: bed, count: 1, basis: template }
+    access: corridor
+    private: true
+    door_policy: { default: door, ground: user_standard }   # basis: user, D5
+    basis: >-
+      access and size follow the bedroom-cell template and the bedroom-block
+      defect the user caught (D7); furniture is the template's own `requires`.
+  dormitory:
+    zone_kind: Dormitory
+    shape_generator: rectangular_room
+    size: { interior_width: [4, 8], interior_depth: [4, 8] }
+    required_furniture:
+      - { item: bed, count: 4, basis: prior }
+    access: corridor
+    private: true
+    door_policy: { default: none, ground: null }
+    basis: prior (wiki Dormitory); privacy matches the circulation graph's existing private-kind list.
+  dining_hall:
+    zone_kind: DiningHall
+    shape_generator: rectangular_room
+    size: { interior_width: [5, 12], interior_depth: [5, 12] }
+    required_furniture:
+      - { item: table, count: 1, basis: game }
+      - { item: chair, count: 1, basis: game }
+    access: corridor
+    private: false
+    door_policy: { default: none, ground: null }   # never a door on its main opening (user's own example)
+    basis: >-
+      furniture counts per citizen come from the fort plan, not here; the
+      game's room value requirement is the entity position data in doctrine
+      noble-position-room-value-and-furniture-requirements.
+  meeting_hall:
+    zone_kind: MeetingHall
+    shape_generator: rectangular_room
+    size: { interior_width: [5, 12], interior_depth: [5, 12] }
+    required_furniture: []
+    access: corridor
+    private: false
+    door_policy: { default: none, ground: null }
+    basis: prior; the zone a tavern, temple or library location is assigned on.
+  office:
+    zone_kind: Office
+    shape_generator: rectangular_room
+    size: { interior_width: [3, 3], interior_depth: [3, 3] }
+    required_furniture:
+      - { item: chair, count: 1, basis: template }
+    access: corridor               # D2: the Office is corridor-only
+    private: true
+    door_policy: { default: none, ground: null }
+    basis: >-
+      D2 (corridor-only); furniture is office-room-v2's `requires`; room
+      value requirement is doctrine noble-position-room-value-and-furniture-requirements.
+  hospital:
+    zone_kind: Hospital
+    shape_generator: rectangular_room
+    size: { interior_width: [5, 9], interior_depth: [5, 9] }
+    required_furniture:
+      - { item: bed, count: 2, basis: prior }
+      - { item: table, count: 1, basis: prior }
+    access: corridor
+    private: false
+    door_policy: { default: none, ground: null }
+    basis: prior (wiki Hospital)
+  tavern:
+    zone_kind: MeetingHall   # a location assigned on a meeting hall zone
+    location: Tavern
+    shape_generator: rectangular_room
+    size: { interior_width: [5, 12], interior_depth: [5, 12] }
+    required_furniture:
+      - { item: table, count: 2, basis: prior }
+      - { item: chair, count: 2, basis: prior }
+    access: { opens_onto: [dining_hall] }
+    private: false
+    door_policy: { default: none, ground: null }
+    basis: prior (wiki Tavern); opening onto a dining hall is a convention, not a rule.
+  temple:
+    zone_kind: MeetingHall   # a location assigned on a meeting hall zone
+    location: Temple
+    shape_generator: rectangular_room
+    size: { interior_width: [4, 10], interior_depth: [4, 10] }
+    required_furniture: []
+    access: corridor
+    private: false
+    door_policy: { default: none, ground: null }
+    basis: prior (wiki Temple); a temple is a location with no required furniture.
+  library:
+    zone_kind: MeetingHall   # a location assigned on a meeting hall zone
+    location: Library
+    shape_generator: rectangular_room
+    size: { interior_width: [4, 10], interior_depth: [4, 10] }
+    required_furniture:
+      - { item: bookcase, count: 1, basis: prior }
+    access: corridor
+    private: false
+    door_policy: { default: none, ground: null }
+    basis: prior (wiki Library)
+  barracks:
+    zone_kind: Barracks
+    shape_generator: rectangular_room
+    size: { interior_width: [5, 10], interior_depth: [5, 10] }
+    required_furniture:
+      - { item: bed, count: 2, basis: prior }
+      - { item: weapon_rack, count: 1, basis: prior }
+      - { item: armor_stand, count: 1, basis: prior }
+    access: corridor
+    private: false
+    door_policy: { default: none, ground: null }
+    basis: prior (wiki Barracks)
+  jail:
+    zone_kind: Dungeon
+    shape_generator: rectangular_room
+    size: { interior_width: [3, 8], interior_depth: [3, 8] }
+    required_furniture:
+      - { item: cage, count: 1, basis: prior }
+    access: corridor
+    private: false
+    door_policy: { default: door, ground: access_control }
+    basis: prior (wiki Dungeon); a locked door is the Overseer's decision, the Architect leaves it door-ready.
+  tomb:
+    zone_kind: Tomb
+    shape_generator: rectangular_room
+    size: { interior_width: [1, 3], interior_depth: [1, 3] }
+    required_furniture:
+      - { item: coffin, count: 1, basis: game }
+    access: any                      # low traffic
+    private: false
+    door_policy: { default: none, ground: null }
+    basis: coffin per the game's tomb zone; access from research 2026-10-08 section 3.6.
+  workshop_room:
+    # Placeholder: a workshop bay is sized from Logistics' pile answer (D4),
+    # after Logistics stage L. Only the access rule is real today.
+    zone_kind: null
+    shape_generator: workshop_bay
+    size: { interior_width: [3, 9], interior_depth: [3, 9] }
+    required_furniture: []
+    access: corridor                 # a collector or spine, for hauling
+    private: false
+    door_policy: { default: none, ground: null }
+    basis: prior; D4 sizes the real bay, this entry exists so the kind list is complete.
