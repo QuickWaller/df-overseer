@@ -178,6 +178,8 @@ local building_mod = reqscript('df-overseer-building')
 -- both hold (not refuse) a ring tile inside a reservation neither holds --
 -- see apply_reservation_guard below, next to the other two guards.
 local reservations_mod = reqscript('df-overseer-reservations')
+-- 2026-10-08 siting policy (no aquifer or magma), applied to mine-vein's digs.
+local hazard_mod = reqscript('df-overseer-hazard')
 -- handoffs/2026-10-01-entrances-get-doors.md: the shared tri-state
 -- reachability primitive (group_matches, never a new pathfind) and the
 -- "main walkable group" reading (get_connectivity_report's own

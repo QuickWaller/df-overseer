@@ -211,7 +211,7 @@ def test_every_dig_path_consults_the_hazard_policy():
     assert dig.count("hazard_mod.message(hz") == 2
     assert dig.count("hazard_mod.begin_scan()") == 2
     construction = _src("df-overseer-construction.lua")
-    assert "hazard_mod.check_tile(x, y, z)" in construction and "hazard_mod.begin_scan()" in construction
+    assert "reqscript('df-overseer-hazard')" in construction and "hazard_mod.check_tile(x, y, z)" in construction and "hazard_mod.begin_scan()" in construction
     bp = _src("df-overseer-blueprint.lua")
     assert bp.count("site_hazard_refusal(site)") == 3        # definition use in run_phase and reserve_site
 
