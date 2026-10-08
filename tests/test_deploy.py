@@ -415,3 +415,19 @@ def test_dfmcp_target_ships_the_fort_roadmap_seed():
     rel = roadmap.SEED_PATH.relative_to(plan.REPO_ROOT).as_posix()
     assert rel in files
     assert "plans/default-v1.yaml" not in files
+
+
+def test_dfhack_init_target_ships_the_plugin_enable_set_as_its_own_file():
+    """Plugin state lives in the save, so the intended set is re-applied from an
+    init file on every map load (register 2026-10-09). It ships as its own
+    onMapLoad*.init so the host's own onMapLoad.init is never overwritten."""
+    t = dc.load_manifest()["vm103-dfhack-init"]
+    assert t.strip_prefix == "infra/dfhack-init/" and not t.stamp
+    assert t.restart == []
+    init_dir = dc.REPO_ROOT / "infra" / "dfhack-init"
+    names = [p.name for p in init_dir.glob("*")]
+    assert names and all(n.startswith("onMapLoad") and n.endswith(".init") for n in names)
+    assert "onMapLoad.init" not in names
+    body = (init_dir / "onMapLoad_overseer_plugins.init").read_text(encoding="utf-8")
+    lines = {ln.strip() for ln in body.splitlines()}
+    assert {"enable suspendmanager", "enable autoslab", "ban-cooking all"} <= lines
