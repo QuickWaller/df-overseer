@@ -611,6 +611,7 @@ async def _status(
         active = await asyncio.to_thread(store.active_plan, db_path)
         awaiting = await asyncio.to_thread(store.plan_changes_awaiting, db_path)
         reviewed = await asyncio.to_thread(store.plan_last_reviewed_tick, db_path)
+        last_pass = await asyncio.to_thread(store.plan_last_pass_tick, db_path)
     except (sqlite3.Error, OSError) as exc:
         raise queue_tools._storage_error(PLAN_STATUS, exc) from exc
     block = await _roadmap_block(db_path, call_dfhack, persist=True)
@@ -622,6 +623,7 @@ async def _status(
         },
         "bootstrap": active is None,
         "last_reviewed_tick": reviewed,
+        "last_pass_tick": last_pass,
         "plan_changes_awaiting": [{"proposal_id": a["proposal"]["id"], "ruling_id": a["ruling_id"]} for a in awaiting],
     }
     if active is not None:

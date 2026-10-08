@@ -2332,6 +2332,16 @@ def mark_plan_reviewed(path: str | Path, tick: int) -> None:
             )
 
 
+def plan_last_pass_tick(path: str | Path) -> int | None:
+    """The tick of the last explicit Planner review (`mark_plan_reviewed`, a
+    `queue.pass`), and nothing else: unlike `plan_last_reviewed_tick` it does
+    not fold in the active version's filing tick, so it is evidence of a pass
+    and only of a pass."""
+    with _connect(path) as conn:
+        row = conn.execute("SELECT value FROM meta WHERE key = ?", (_PLAN_REVIEWED_KEY,)).fetchone()
+    return int(row["value"]) if row is not None else None
+
+
 def plan_last_reviewed_tick(path: str | Path) -> int | None:
     """The later of the last explicit review (`mark_plan_reviewed`) and the
     tick of the active version, or `None` with no plan and no review."""

@@ -134,6 +134,16 @@ class PlanWatchState:
     roadmap: Backoff = field(default_factory=Backoff)
 
 
+def _passed_for(marker: Optional[str], stage: str) -> bool:
+    """A recorded pass must carry the pass tick (`<stage>@<tick>`); a bare
+    stage name (written by the 0730333 build, which inferred passes) is not
+    evidence of a Planner run and is ignored."""
+    if not isinstance(marker, str) or "@" not in marker:
+        return False
+    name, _, tick = marker.partition("@")
+    return name == stage and tick.isdigit()
+
+
 def _backoff(raw: Any) -> Backoff:
     if not isinstance(raw, dict):
         return Backoff()
@@ -480,14 +490,22 @@ def evaluate(
         elif state.roadmap_stage != stage:
             state.roadmap_owed, state.roadmap_since, state.roadmap = stage, int(tick), Backoff()
             state.roadmap_passed = None
-        elif state.roadmap_owed != stage and state.roadmap_passed != stage:
+        elif state.roadmap_owed != stage and not _passed_for(state.roadmap_passed, stage):
             state.roadmap_owed, state.roadmap_since, state.roadmap = stage, int(tick), Backoff()
         state.roadmap_stage = stage
         if state.roadmap_owed is not None:
-            reviewed = status.get("last_reviewed_tick")
-            passed = isinstance(reviewed, (int, float)) and state.roadmap_since is not None and reviewed >= state.roadmap_since
+            # A pass is recorded ONLY from `last_pass_tick`, the tick of an
+            # explicit Planner `queue.pass`. `last_reviewed_tick` also folds in
+            # the active plan's own filing tick, which on a paused fort equals
+            # the current tick and read as a pass (live bug 2026-10-08). A
+            # server without `last_pass_tick` never yields a pass.
+            pass_tick = status.get("last_pass_tick")
+            passed = (
+                isinstance(pass_tick, int) and not isinstance(pass_tick, bool)
+                and state.roadmap_since is not None and pass_tick >= state.roadmap_since
+            )
             if passed:
-                state.roadmap_passed = state.roadmap_owed
+                state.roadmap_passed = f"{state.roadmap_owed}@{pass_tick}"
             done = plan_stage == state.roadmap_owed or passed
             if done:
                 state.roadmap_owed, state.roadmap_since, state.roadmap = None, None, Backoff()
