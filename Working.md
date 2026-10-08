@@ -14,6 +14,7 @@ actually going on right now.
 - loop signals on the Metrics tab (wake_metrics).
 Check each branch, merge what is done, redeploy shared targets once from main (TRAPS: deploy race).
 **User decisions open:** (1) item binding 1-6 (recommended: buildings exact items yes; workshop jobs option A materials only; foreign jobs name only; route consuming Overseer direct actions through claims; live tests only T1 on the live fort; economic/scarce material only when ruled); (2) sessions D1-D5 as listed (local route first; reuse backoff; one budget per role per wake with per-turn waits; pause stamp on tool replies while paused; Opus blind grader, user reviews disagreements plus a capped sample); (3) Planner timeout or tighter task; (4) thinking budget and Flash/Pro per wake reason once the research lands.
+**Queued research (user, 2026-10-08, last message):** would this project benefit from decision models (assumed DMN-style decision tables; confirm with the user)? Candidates: Overseer fast-paths for routine items, model/thinking-budget/timeout per wake reason, and today's scattered rule data (aquifer policy, access rules, thresholds, backoffs) in one testable, auditable form recording which rule fired.
 **Next after that:** cycle 4 (Planner adopts hamlet as v2; user reads it; then shortage watch on), sessions v1 (red team's small version), circulation C2/C4/D12 retrofit (supervised), tripwire live check, staged arm.
 
 ## Sessions: decided 2026-10-08 (register), design in progress
