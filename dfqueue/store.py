@@ -2118,10 +2118,11 @@ def _active_plan_conn(conn: sqlite3.Connection) -> dict | None:
     return json.loads(row["payload"]) if row is not None else None
 
 
-def _plan_base_sections(active: dict | None) -> dict:
+def _plan_base_sections(active: dict | None, base: dict | None = None) -> dict:
     """The sections a new version is diffed against: the active version's, or
-    `plans/default-v1.yaml` for version 1."""
-    src = active if active is not None else plan.default_plan()
+    for version 1 `base` (the current stage's roadmap targets) when given,
+    else the first roadmap stage's."""
+    src = active if active is not None else (base if base is not None else plan.default_plan())
     return {s: list(src.get(s) or []) for s in plan.policy()["open_sections"]}
 
 
@@ -2154,7 +2155,9 @@ def _check_fort_plan(conn, errors: list[str], record: dict, game_tick) -> None:
             f"({plan.season_index(game_tick)}); the server stamps it"
         )
     new_sections = {s: list(record.get(s) or []) for s in plan.policy()["open_sections"]}
-    changes = plan.diff_changes(_plan_base_sections(active), new_sections)
+    stage_id = record.get("roadmap_stage") if isinstance(record.get("roadmap_stage"), str) else None
+    base = plan.default_plan(stage_id) if active is None and stage_id else None
+    changes = plan.diff_changes(_plan_base_sections(active, base), new_sections)
     if record.get("changes") != changes:
         errors.append("record.changes: server-computed; it does not match the diff against the base")
     if active is not None and not changes:
@@ -2168,7 +2171,10 @@ def _check_fort_plan(conn, errors: list[str], record: dict, game_tick) -> None:
             errors.append(f"record.ruling_id: {problem}")
         else:
             ruling_ok = True
-    verdict = plan.guardrail(active, game_tick, changes, rid if ruling_ok else None)
+    verdict = plan.guardrail(
+        active, game_tick, changes, rid if ruling_ok else None,
+        adopt_stage=plan.fort_roadmap.adopts_stage(active, changes, new_sections, stage_id),
+    )
     if not verdict["ok"]:
         errors.append("record: " + verdict["refusal"])
 

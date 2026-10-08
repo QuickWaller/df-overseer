@@ -477,11 +477,14 @@ KIND_FIELDS: dict[str, tuple[str, ...]] = {
         "cleanup",
     ),
     #: `version`/`supersedes`/`season_index`/`changes`/`flags`/`cited` are
-    #: server-stamped by `plan.write`. `ruling_id` names the accepted
+    #: server-stamped by `plan.write`, as are `roadmap_stage` (the fort's
+    #: fort-roadmap stage when the version was filed) and `deviations` (the
+    #: code-computed differences from that stage's entries). `ruling_id` names the accepted
     #: `plan_change` ruling that authorises a mid-season version.
     FORT_PLAN: (
         "version", "supersedes", "season_index", "reason", "changes", "flags",
         "relies_on", "cited", "public_rationale", "ruling_id", "targets",
+        "roadmap_stage", "deviations",
     ),
 }
 
@@ -1839,7 +1842,10 @@ def _validate_fort_plan_fields(record: dict, errors: list[str]) -> None:
     if "ruling_id" in record and record["ruling_id"] is not None:
         if not isinstance(record["ruling_id"], str) or not record["ruling_id"]:
             errors.append("record.ruling_id: expected a non-empty string when given")
-    for name in ("targets", "changes", "flags", "relies_on", "cited"):
+    if "roadmap_stage" in record and record["roadmap_stage"] is not None:
+        if not isinstance(record["roadmap_stage"], str) or not record["roadmap_stage"]:
+            errors.append("record.roadmap_stage: expected a non-empty string when given (the server stamps it)")
+    for name in ("targets", "changes", "flags", "relies_on", "cited", "deviations"):
         if name not in record:
             if name == "targets":
                 errors.append("record.targets: required (a list, possibly empty)")

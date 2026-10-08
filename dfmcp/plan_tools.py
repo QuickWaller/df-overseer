@@ -16,7 +16,7 @@ Takes `base_version` (0 before version 1) and only the **sections changed**
 (`set`), a `reason`, optional `relies_on` (a tool field **or a live signal**,
 so a zero can be cited, F-14), `public_rationale`, `ruling_id` and `dry_run`.
 The server composes the full record from the active version (or
-`plans/default-v1.yaml` for version 1), refuses a `base_version` that is not
+the fort roadmap's current-stage targets for version 1), refuses a `base_version` that is not
 the active one (so a retry after a timeout is safe), stamps the version, the
 season index and the server-computed `changes`, and **accepts and flags**
 content mistakes: the reply lists every flag with repair text, and a flagged
@@ -24,6 +24,17 @@ entry is inert until fixed. Only a payload that cannot be stored is refused:
 the wrong writer role, coordinates, a payload that is not the schema shape, a
 section with no home yet. A dry run returns everything a real write would
 (flags, changes, the season verdict) and writes nothing.
+
+## The fort roadmap (register 2026-10-08, `fort_roadmap/`)
+
+Every plan tool computes the fort's roadmap stage (`alive` with a stored
+high-water mark, cross-checked against `nobles.list`'s population flags) and
+returns it as a `roadmap` block. `plan.write` stamps `roadmap_stage` on the
+version, computes the deviation of every `roadmap_ref` target from its stage
+entry (flagged without a `deviation_reason`, never refused), and lets a
+revision that only adopts a newly entered stage's targets skip the season
+interval. `plan.status` (the conductor's per-cycle read) persists the stage
+mark when it advances.
 
 ## `plan.read`
 
@@ -59,6 +70,7 @@ from dataclasses import dataclass
 from typing import Any, Awaitable, Callable, Dict, Mapping, Optional, Tuple
 
 from dfqueue import plan, schema, store, templates
+from fort_roadmap import roadmap as fort_roadmap
 from learning import live_signals
 
 from . import queue_tools
@@ -266,6 +278,18 @@ async def _read_signals(call_dfhack: CallDFHack, signals: list) -> Dict[str, Any
     return await asyncio.to_thread(run)
 
 
+async def _roadmap_block(db_path, call_dfhack: CallDFHack, persist: bool) -> dict:
+    """The fort's roadmap block (`fort_roadmap.resolve`): `alive` from
+    `vitals.summary`, the population flags from `nobles.list`, the stage mark
+    stored beside the fort database. Each read tolerant: a failed one makes
+    that part `unreadable`/unknown, never a guess."""
+    vit = await _try(call_dfhack, "vitals.summary", {})
+    alive = vit.get("alive") if isinstance(vit, dict) else None
+    nobles = await _try(call_dfhack, "nobles.list", {})
+    store_ = fort_roadmap.StageStore.beside(db_path)
+    return await asyncio.to_thread(fort_roadmap.resolve, alive, nobles, store_, None, persist)
+
+
 def _compact(structured: dict) -> str:
     return json.dumps(structured, sort_keys=True, default=str, ensure_ascii=False)
 
@@ -348,16 +372,21 @@ async def _write(
             "Read plan.read, then send your sections against the active version (a retry after a timeout "
             "may already have filed)."
         )
+    block = await _roadmap_block(db_path, call_dfhack, persist=not dry_run)
+    stage_id = block["stage"]
+    base = plan.default_plan(stage_id) if active is None else None
     try:
-        sections = plan.compose(active, arguments.get("set"))
+        sections = plan.compose(active, arguments.get("set"), base)
     except plan.PlanShapeError as exc:
         raise PlanToolError(f"{PLAN_WRITE}: refused: {exc}") from exc
 
-    base_sections = store._plan_base_sections(active)
+    base_sections = store._plan_base_sections(active, base)
     changes = plan.diff_changes(base_sections, sections)
     ctx = await _context(call_dfhack, sections, relies_on)
     flags = plan.check_sections(sections, ctx)
     flags += plan.check_text_fields(arguments.get("reason"), arguments.get("public_rationale"), relies_on, ctx)
+    refs = fort_roadmap.check_refs(sections.get("targets") or [], stage_id, block.get("alive"))
+    flags += refs["flags"]
     cited, cite_flags = await _citations(role, relies_on, call_dfhack, fact_reader, tick)
     flags += cite_flags
 
@@ -365,6 +394,7 @@ async def _write(
         "kind": schema.FORT_PLAN, "role": role, "cycle": tick, "snapshot": snapshot,
         "version": have + 1, "supersedes": active["id"] if active else None,
         "season_index": plan.season_index(tick), "changes": changes, "flags": flags,
+        "roadmap_stage": stage_id, "deviations": refs["deviations"],
         **sections,
     }
     for name in ("reason", "public_rationale", "ruling_id"):
@@ -380,7 +410,10 @@ async def _write(
         )
     except (sqlite3.Error, OSError) as exc:
         raise queue_tools._storage_error(PLAN_WRITE, exc) from exc
-    verdict = plan.guardrail(active, tick, changes, None if ruling_problem else ruling_id)
+    verdict = plan.guardrail(
+        active, tick, changes, None if ruling_problem else ruling_id,
+        adopt_stage=fort_roadmap.adopts_stage(active, changes, sections, stage_id),
+    )
     if active is not None and not changes:
         verdict = {"ok": False, "reason": "no_change", "refusal": "nothing changes against the active version"}
 
@@ -389,6 +422,10 @@ async def _write(
         "version": record["version"], "season_index": record["season_index"], "tick": tick,
         "changes": changes, "flags": flags, "inert_entries": inert,
         "season": verdict,
+        "roadmap": {
+            "stage": stage_id, "entered": block.get("entered"), "deviations": refs["deviations"],
+            "stage_entries_not_in_plan": refs["missing"], "cross_check": block.get("cross_check"),
+        },
     }
     if ruling_problem:
         structured["ruling_problem"] = ruling_problem
@@ -507,13 +544,19 @@ async def _read(
     if chosen is None:
         if version is not None:
             raise PlanToolError(f"{PLAN_READ}: there is no plan version {version}")
-        base = plan.default_plan()
+        block = await _roadmap_block(db_path, call_dfhack, persist=False)
+        base = plan.default_plan(block["stage"])
         structured = {
             "active_version": 0,
-            "note": "no plan has been filed; this is the default plan to start from. File version 1 with plan.write base_version 0.",
+            "note": (
+                f"no plan has been filed; this is the fort roadmap's {block['stage']} stage to start from. "
+                "File version 1 with plan.write base_version 0."
+            ),
             "default": {s: base.get(s, []) for s in plan.policy()["open_sections"]},
             "history": [],
         }
+        if role in (schema.PLAN_ROLE, schema.sole_writer()):
+            structured["roadmap"] = block
         return _compact(structured), structured
 
     sliced_targets = plan.slice_for_role(chosen.get("targets") or [], role)
@@ -536,6 +579,13 @@ async def _read(
         structured["plan_changes_awaiting"] = [
             {"proposal_id": a["proposal"]["id"], "ruling_id": a["ruling_id"]} for a in awaiting
         ]
+    if role in (schema.PLAN_ROLE, schema.sole_writer()):
+        block = await _roadmap_block(db_path, call_dfhack, persist=False)
+        refs = fort_roadmap.check_refs(active.get("targets") or [], block["stage"], block.get("alive"))
+        structured["roadmap"] = {
+            **block, "plan_stage": active.get("roadmap_stage"), "deviations": refs["deviations"],
+            "stage_entries_not_in_plan": refs["missing"],
+        }
     if want_status:
         if version is not None and chosen["version"] != active["version"]:
             raise PlanToolError(f"{PLAN_READ}: status is computed only for the active version")
@@ -561,10 +611,12 @@ async def _status(
         reviewed = await asyncio.to_thread(store.plan_last_reviewed_tick, db_path)
     except (sqlite3.Error, OSError) as exc:
         raise queue_tools._storage_error(PLAN_STATUS, exc) from exc
+    block = await _roadmap_block(db_path, call_dfhack, persist=True)
     structured: dict = {
+        "roadmap": block,
         "active": None if active is None else {
             "id": active["id"], "version": active["version"], "season_index": active.get("season_index"),
-            "tick": active.get("cycle"),
+            "tick": active.get("cycle"), "roadmap_stage": active.get("roadmap_stage"),
         },
         "bootstrap": active is None,
         "last_reviewed_tick": reviewed,

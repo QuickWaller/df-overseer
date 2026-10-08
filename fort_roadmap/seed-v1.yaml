@@ -1,0 +1,171 @@
+# fort_roadmap/seed-v1.yaml
+#
+# The fort roadmap, version 1: the generic numbers a fort's plan starts from,
+# by stage of growth. Built from research/2026-10-08-roadmap-role-design.md
+# as cut down by research/2026-10-08-roadmap-role-red-team.md (section 3, the
+# smallest version worth building first). Register: 2026-10-08, "Roadmap
+# decisions".
+#
+# What it is: TARGETS ONLY, in the shape of a fort-plan target (dfqueue/plan.py
+# TARGET_FIELDS), plus the provenance a roadmap number needs. The Planner's
+# plan version 1 for a fort is the current stage's targets; each plan target
+# may carry `roadmap_ref: <entry id>` and code computes any deviation from the
+# entry (comply or explain, flagged and never refused).
+#
+# What it is not:
+#   - No stock numbers (cover days, par levels). Doctrine owns those, and
+#     doctrine/seed.yaml `cover-target-not-yet-settable` forbids inventing one.
+#   - No coordinates, landmark names, anchors or fort names. The validator
+#     (fort_roadmap/roadmap.py) refuses those. This file is public and
+#     generic by rule.
+#   - Not data about one fort. Every number is a PRIOR: a starting point from
+#     community play or this project's own call, never measured here.
+#
+# Fields
+#   game_version   the DF install the numbers are tuned for.
+#   stages         ORDER IS PROGRESSION. Each stage lists its whole target set
+#                  (a later stage does not inherit an earlier one).
+#     id           stable.
+#     summary      one line, shown to the Planner and the Overseer.
+#     enter_when   {always: true} or {alive_gte: N}. A fort's stage is the
+#                  last stage whose condition has ever held (a high-water
+#                  mark, never stepping back down on a dip).
+#     game_check   optional {requires_population: N}: the game's own flag for
+#                  a position needing population N (HAS_MET_POP_REQ, read
+#                  with nobles.list) is cross-checked against `alive`.
+#                  Disagreement is reported, never guessed at.
+#     targets      plan-shaped entries plus:
+#       confidence   prior (the only value in V1).
+#       rationale    why this number, one or two sentences.
+#       sources      doctrine/seed.yaml provenance format (kind, ref,
+#                    describes, read, accessed; revid for kind wiki).
+#                    `kind: project` is not a doctrine kind: a number that is
+#                    this project's own call cites `kind: user` instead.
+
+kind: fort_roadmap
+version: 1
+game_version: "53.16"
+
+stages:
+  - id: founding
+    summary: "Shelter, drink, food and workshops; survive to the first migrant waves. A shared dormitory, a few tables."
+    enter_when: {always: true}
+    targets:
+      - id: dormitory_beds
+        signal: 'zones."Dormitory".furniture."Bed"'
+        want: {per_alive: 0.1, min: 4, max: 10}
+        reorder_gap: 1
+        owner: architect
+        max_in_flight: 1
+        confidence: prior
+        rationale: >-
+          About a tenth of a fort sleeps at once, so a dormitory rarely needs
+          more than ten beds. Individual bedrooms come with the next stage.
+        sources:
+          - kind: wiki
+            ref: Quickstart guide
+            page_title: Quickstart guide
+            revid: 320477
+            describes: "v50+"
+            read: opened
+            accessed: 2026-10-08
+      - id: dining_tables
+        signal: 'zones."DiningHall".furniture."Table"'
+        want: {per_alive: 0.2, min: 2}
+        reorder_gap: 1
+        owner: architect
+        max_in_flight: 1
+        confidence: prior
+        rationale: >-
+          One table serves one diner, and the wiki's rule of thumb is enough
+          for one fifth of the fortress. Count tables, not chairs.
+        sources:
+          - kind: wiki
+            ref: Dining room
+            page_title: Dining room
+            describes: "v50+"
+            read: opened
+            accessed: 2026-10-08
+  - id: hamlet
+    summary: "Twenty or more citizens: moods begin, so every citizen needs a bedroom of their own."
+    enter_when: {alive_gte: 20}
+    targets:
+      - id: bedrooms
+        signal: 'zones."Bedroom".furnished'
+        want: {per_alive: 1.0}
+        reorder_gap: 2
+        owner: architect
+        max_in_flight: 2
+        confidence: prior
+        rationale: >-
+          This project's own default is one furnished bedroom per citizen from
+          the point the fort can afford it; the wiki prefers a dormitory
+          earlier, which the founding stage keeps.
+        sources:
+          - kind: user
+            ref: "plan v1 default, register 2026-10-07 and 2026-10-08"
+            describes: unknown
+            read: recalled
+            accessed: 2026-10-08
+          - kind: wiki
+            ref: Quickstart guide
+            page_title: Quickstart guide
+            revid: 320477
+            describes: "v50+"
+            read: opened
+            accessed: 2026-10-08
+      - id: dining_tables
+        signal: 'zones."DiningHall".furniture."Table"'
+        want: {per_alive: 0.2, min: 4}
+        reorder_gap: 1
+        owner: architect
+        max_in_flight: 1
+        confidence: prior
+        rationale: >-
+          The founding rule of one table per five citizens, with a floor of
+          four so a young hall is not undersized.
+        sources:
+          - kind: wiki
+            ref: Dining room
+            page_title: Dining room
+            describes: "v50+"
+            read: opened
+            accessed: 2026-10-08
+  - id: village
+    summary: "Fifty or more citizens: the mayor and the guard captain need their population and their rooms."
+    enter_when: {alive_gte: 50}
+    game_check: {requires_population: 50}
+    targets:
+      - id: bedrooms
+        signal: 'zones."Bedroom".furnished'
+        want: {per_alive: 1.0, plus: 2}
+        reorder_gap: 2
+        owner: architect
+        max_in_flight: 2
+        confidence: prior
+        rationale: >-
+          One bedroom per citizen plus two spare, so a migrant wave does not
+          arrive to no bed. The spare is this project's own call.
+        sources:
+          - kind: user
+            ref: "register 2026-10-08, wants get a structured shape (bedrooms = citizens plus a spare)"
+            describes: unknown
+            read: recalled
+            accessed: 2026-10-08
+      - id: dining_tables
+        signal: 'zones."DiningHall".furniture."Table"'
+        want: {per_alive: 0.2}
+        reorder_gap: 1
+        owner: architect
+        max_in_flight: 1
+        confidence: prior
+        rationale: >-
+          One fifth of the fortress eats at once; at this size the floor of
+          four no longer binds.
+        sources:
+          - kind: wiki
+            ref: Dining room
+            page_title: Dining room
+            describes: "v50+"
+            read: opened
+            accessed: 2026-10-08
