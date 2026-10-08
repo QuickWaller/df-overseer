@@ -100,3 +100,19 @@ def test_hollow_points_mark_days_resting_on_few_wakes(report):
       return { thin, solid };
     """, report)
     assert out["thin"] + out["solid"] > 0
+
+
+def test_loops_card_and_flagged_list_render_and_old_files_still_work(report):
+    out = _run("""
+      const state = { role: null };
+      const v = metricsView(DOC, state, () => {});
+      const old = JSON.parse(JSON.stringify(DOC)); delete old.loops;
+      const v2 = metricsView(old, { role: null }, () => {});
+      const f = metricsFlaggedList(DOC, "ghost-role");
+      return { text: texts(v).join(" | "), tables: count(v, "table"), oldTables: count(v2, "table"),
+               oldText: texts(v2).join(" | "), ghost: texts(f).join(" | ") };
+    """, report)
+    assert out["tables"] == 1 and out["oldTables"] == 0
+    for needle in ("Loops and deliberation", "Flagged wakes", "reasoning/run"):
+        assert needle in out["text"], needle
+    assert "Flagged wakes" not in out["oldText"] and "None flagged" in out["ghost"]

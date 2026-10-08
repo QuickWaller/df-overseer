@@ -32,6 +32,9 @@ breaking change; additions are not breaking):
                "n_wakes_per_arm_rr50", "days_rr50"},
   "tool_usage": {role: {"wakes_with_transcript", "calls": {tool_id: n},
                          "unmapped_calls", "never_called": [tool_id]}},
+  "minor": 1,                                 # additions since /1: `loops`, row `loop`
+  "loops": {"thresholds", "by_role": {role: {counts, reasoning tokens}},
+            "flagged": [{run_id, role, day, flags, repeated_calls, worst_tool, ...}]},
   "wakes": [<per-wake row>],                  # ids and numbers only
   "unattributed": {"proposals", "repeats"},   # records no run wrote
   "notes": [str]                              # fixed strings
@@ -92,6 +95,12 @@ WINDOW_FALLBACK_DAYS = 7   # ... when the role has fewer prior runs than that
 BOOTSTRAP_RESAMPLES = 2000
 BOOTSTRAP_SEED = 20261007
 
+# Loop and deliberation signals (additive block `loops`, `minor` 1): a run is
+# flagged when any count reaches its threshold, or it ended without output.
+LOOP_REPEAT_MIN = 3     # repeated identical tool calls (calls beyond the first)
+LOOP_IDLE_MIN = 3       # read-only rounds with no write after them
+LOOP_REREAD_MIN = 3     # re-reads of the same read with no write between
+
 _DUP_RE = re.compile(r"duplicat|already (queued|pending|open|accepted|ordered)", re.I)
 _PROPOSAL_ID_RE = re.compile(r"proposal-\d{4,}")
 _SAFE_TOOL_RE = re.compile(r"^[A-Za-z0-9_.\-*]{1,80}$")
@@ -108,6 +117,10 @@ DEFINITIONS = {
     "reread": "same read tool, same arguments, no write in between, earlier call succeeded",
     "orientation_reads": "read calls before the first write call",
     "pass_rate": "advisor wakes that filed a pass and no proposal, ask or plan",
+    "repeated_calls": "tool calls beyond the first with the same tool and canonical arguments in one wake",
+    "idle_rounds": "rounds whose calls were all reads and after which the wake made no further write call",
+    "no_output": "wake with no records written that was killed (timeout) or ended with an empty final answer",
+    "reasoning": "reasoning tokens as the provider reported them per round, summed per wake; per-round mean over rounds of wakes with a transcript",
 }
 NOTES = [
     "Runs older than the runs store's retention are gone; per-wake rows are a snapshot, keep them.",
@@ -431,6 +444,16 @@ def classify(records: List[dict], predictions: Optional[dict] = None,
 # ---- transcript metrics -----------------------------------------------------
 
 
+def _parsable(args: Any) -> bool:
+    if not isinstance(args, str):
+        return args is not None
+    try:
+        json.loads(args)
+        return True
+    except ValueError:
+        return False
+
+
 def _canon_args(args: Any) -> str:
     if isinstance(args, str):
         try:
@@ -466,8 +489,16 @@ def transcript_metrics(transcript_json: Any, role: str, allow: Dict[str, Dict[st
     first_write_round = None
     seq = 0
     read_log: List[tuple] = []
+    identical: Dict[tuple, int] = {}
+    round_kinds: List[str] = []      # per round: "write", "read" (every call a read) or "other"
+    reasoning_rounds: List[int] = []
+    reasoning_chars = 0
     for rd in rounds:
         u = rd.get("usage") or {}
+        reasoning_rounds.append(int(u.get("reasoningTokens") or 0))
+        if isinstance(rd.get("reasoning"), str):
+            reasoning_chars += len(rd["reasoning"])
+        kinds_here = set()
         tokens["input"] += int(u.get("input") or 0)
         tokens["output"] += int(u.get("output") or 0)
         tokens["cache_read"] += int(u.get("cacheRead") or 0)
@@ -477,8 +508,15 @@ def transcript_metrics(transcript_json: Any, role: str, allow: Dict[str, Dict[st
             if tid is None:
                 unmapped += 1
                 seq += 1
+                kinds_here.add("other")
                 continue
             counts[tid] = counts.get(tid, 0) + 1
+            # Identity needs whole arguments: the stored transcript clips them, so
+            # unparsable (clipped) args and failed attempts (retries) are not keyed.
+            if not call.get("error") and _parsable(call.get("args")):
+                ikey = (tid, _canon_args(call.get("args")))
+                identical[ikey] = identical.get(ikey, 0) + 1
+            kinds_here.add("write" if tid in writes else "read" if tid in reads else "other")
             if tid in writes:
                 if first_write_round is None:
                     first_write_round = rd.get("n")
@@ -491,7 +529,30 @@ def transcript_metrics(transcript_json: Any, role: str, allow: Dict[str, Dict[st
                     redundant += 1
                 read_log.append((key, bool(call.get("error")), seq))
             seq += 1
+        round_kinds.append("write" if "write" in kinds_here else
+                           "read" if kinds_here == {"read"} else "other")
+    last_write_round = max((i for i, k in enumerate(round_kinds) if k == "write"), default=-1)
+    idle = sum(1 for i, k in enumerate(round_kinds) if k == "read" and i > last_write_round)
+    per_tool: Dict[str, int] = {}
+    for (tid, _a), n in identical.items():
+        per_tool[tid] = max(per_tool.get(tid, 0), n)
+    repeated = sum(n - 1 for n in identical.values() if n > 1)
+    worst_tool = max(per_tool, key=lambda t: (per_tool[t], t)) if per_tool else None
+    worst_n = per_tool.get(worst_tool, 0) if worst_tool else 0
+    n_rounds = len(rounds)
+    loop = {
+        "repeated_calls": repeated,
+        "worst_tool": worst_tool if worst_n > 1 and _SAFE_TOOL_RE.match(worst_tool or "") else None,
+        "worst_count": worst_n if worst_n > 1 else 0,
+        "idle_rounds": idle,
+        "rereads": redundant,
+        "reasoning_tokens": sum(reasoning_rounds),
+        "reasoning_per_round": round(sum(reasoning_rounds) / n_rounds, 1) if n_rounds else None,
+        "reasoning_max_round": max(reasoning_rounds) if reasoning_rounds else 0,
+        "reasoning_chars": reasoning_chars,
+    }
     return {
+        "loop": loop,
         "rounds": len(rounds) + omitted, "truncated": omitted > 0, "tokens": tokens,
         "calls": counts, "unmapped": unmapped, "read_calls": read_calls,
         "redundant_reads": redundant,
@@ -620,9 +681,35 @@ def per_wake_rows(queue: dict, runs: List[dict], cls: Classified, epochs: List[d
             "calls": tm["calls"] if tm else None,
             "unmapped_calls": tm["unmapped"] if tm else None,
             "passed": passed,
+            "loop": _loop_row(run, tm, bool(ids)),
             "source": "transcript" if tm else "missing",
         })
     return rows
+
+
+def _loop_row(run: dict, tm: Optional[dict], wrote: bool) -> dict:
+    """Per-wake loop and deliberation signals. The transcript figures are None
+    when the wake has no stored transcript; `no_output` never needs one."""
+    timed_out = bool(run.get("timed_out")) or run.get("status") == "timeout"
+    empty_final = not str(run.get("final_answer") or "").strip()
+    no_output = (not wrote) and (timed_out or empty_final)
+    lp = dict(tm["loop"]) if tm else {
+        "repeated_calls": None, "worst_tool": None, "worst_count": None, "idle_rounds": None,
+        "rereads": None, "reasoning_tokens": None, "reasoning_per_round": None,
+        "reasoning_max_round": None, "reasoning_chars": None}
+    lp["timeout"] = timed_out
+    lp["no_output"] = no_output
+    why = []
+    if (lp["repeated_calls"] or 0) >= LOOP_REPEAT_MIN:
+        why.append("repeat_calls")
+    if (lp["idle_rounds"] or 0) >= LOOP_IDLE_MIN:
+        why.append("idle_rounds")
+    if (lp["rereads"] or 0) >= LOOP_REREAD_MIN:
+        why.append("rereads")
+    if no_output:
+        why.append("no_output")
+    lp["flags"] = why
+    return lp
 
 
 def _wake_reasons(run: dict) -> List[str]:
@@ -805,6 +892,47 @@ def _tool_usage(rows: List[dict], allow: Dict[str, Dict[str, set]]) -> dict:
     return out
 
 
+def _loops(rows: List[dict]) -> dict:
+    """The `loops` block: per-role aggregates and the flagged runs."""
+    by_role: Dict[str, dict] = {}
+    flagged: List[dict] = []
+    for role in sorted({r["role"] for r in rows}):
+        rr = [r for r in rows if r["role"] == role]
+        with_t = [r for r in rr if r["loop"]["repeated_calls"] is not None]
+        worst = max(((r["loop"]["worst_count"], r["loop"]["worst_tool"]) for r in with_t
+                     if r["loop"]["worst_tool"]), default=None)
+        rounds_t = sum(r["rounds"] or 0 for r in with_t)
+        reas = sum(r["loop"]["reasoning_tokens"] or 0 for r in with_t)
+        by_role[role] = {
+            "wakes": len(rr), "with_transcript": len(with_t),
+            "flagged": sum(1 for r in rr if r["loop"]["flags"]),
+            "runs_with_repeats": sum(1 for r in with_t if r["loop"]["repeated_calls"]),
+            "repeated_calls": sum(r["loop"]["repeated_calls"] for r in with_t),
+            "worst_tool": worst[1] if worst else None, "worst_count": worst[0] if worst else 0,
+            "idle_rounds": sum(r["loop"]["idle_rounds"] for r in with_t),
+            "rereads": sum(r["loop"]["rereads"] for r in with_t),
+            "reasoning_tokens": reas,
+            "reasoning_per_run": round(reas / len(with_t), 1) if with_t else None,
+            "reasoning_per_round": round(reas / rounds_t, 1) if rounds_t else None,
+            "timeouts": sum(1 for r in rr if r["loop"]["timeout"]),
+            "no_output": sum(1 for r in rr if r["loop"]["no_output"]),
+        }
+    for r in rows:
+        lp = r["loop"]
+        if lp["flags"]:
+            flagged.append({
+                "run_id": r["run_id"], "role": r["role"], "day": r["day"], "flags": lp["flags"],
+                "repeated_calls": lp["repeated_calls"], "worst_tool": lp["worst_tool"],
+                "worst_count": lp["worst_count"], "idle_rounds": lp["idle_rounds"],
+                "rereads": lp["rereads"], "reasoning_tokens": lp["reasoning_tokens"],
+                "rounds": r["rounds"], "timeout": lp["timeout"], "no_output": lp["no_output"],
+            })
+    flagged.sort(key=lambda f: f["run_id"], reverse=True)
+    return {"thresholds": {"repeat_calls": LOOP_REPEAT_MIN, "idle_rounds": LOOP_IDLE_MIN,
+                           "rereads": LOOP_REREAD_MIN},
+            "by_role": by_role, "flagged": flagged}
+
+
 # ---- the public function ---------------------------------------------------
 
 
@@ -843,7 +971,7 @@ def compute(queue_db: "str | Path", runs_db: "str | Path", since: Optional[str] 
     for r in rows:
         by_role.setdefault(r["role"], []).append(r)
     return {
-        "schema": SCHEMA_ID,
+        "schema": SCHEMA_ID, "minor": 1,
         "generated_at": (now or datetime.now(timezone.utc)).isoformat(),
         "since": since, "until": until,
         "definitions": DEFINITIONS,
@@ -855,6 +983,7 @@ def compute(queue_db: "str | Path", runs_db: "str | Path", since: Optional[str] 
         "interval": {role: {"r_per_at_risk_wake": _bootstrap(g)} for role, g in sorted(by_role.items())},
         "power": _power(rows, episodes),
         "tool_usage": _tool_usage(rows, allow),
+        "loops": _loops(rows),
         "wakes": public_rows,
         "unattributed": {"repeats": len(unattributed_repeats)},
         "notes": NOTES,
@@ -895,6 +1024,17 @@ def render_text(report: dict) -> str:
                      f"{u['unmapped_calls']} unmapped): {top or 'none'}")
         if u["never_called"]:
             lines.append(f"  never called: {len(u['never_called'])} allowlisted tools")
+    lp = report.get("loops")
+    if lp:
+        lines.append("")
+        lines.append(f"{'loops':14}{'wakes':>6}{'flag':>5}{'rep':>5}{'idle':>5}{'rerd':>5}"
+                     f"{'reasn/run':>10}{'reasn/rnd':>10}{'t/o':>4}{'noout':>6}")
+        for role, g in lp["by_role"].items():
+            lines.append(f"{role:14}{g['wakes']:>6}{g['flagged']:>5}{g['repeated_calls']:>5}"
+                         f"{g['idle_rounds']:>5}{g['rereads']:>5}{f(g['reasoning_per_run']):>10}"
+                         f"{f(g['reasoning_per_round']):>10}{g['timeouts']:>4}{g['no_output']:>6}")
+        for fl in lp["flagged"][:10]:
+            lines.append(f"  flagged {fl['run_id']} {fl['role']}: {', '.join(fl['flags'])}")
     lines.append("")
     lines.extend(report["notes"])
     return "\n".join(lines)
