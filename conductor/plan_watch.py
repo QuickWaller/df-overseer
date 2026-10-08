@@ -23,7 +23,7 @@ What it raises, by wake reason (all in `conductor/policy.yaml wake_reasons`):
 - `roadmap_stage_entered`, the fort's roadmap stage (`plan.status`'s `roadmap`
   block: `alive` with a high-water mark, see `fort_roadmap/roadmap.py`) is not
   the stage the active plan was filed for. Edge triggered on a stage change
-  (and on the first sight of a stage, which is how a plan filed before stages
+  (and whenever the plan stamp differs from the stage, a missing stamp included, regardless of the stored cursor: that is how a plan filed before stages
   existed is asked to adopt the current one), retried on the review backoff,
   and settled by a plan version filed in that stage or a Planner pass.
 - `plan_shortfall`, a target is open and its owner is woken with a fixed-shape
@@ -128,6 +128,9 @@ class PlanWatchState:
     roadmap_stage: Optional[str] = None
     roadmap_owed: Optional[str] = None
     roadmap_since: Optional[int] = None
+    #: The stage a Planner pass settled (so a passed stage is not re-owed
+    #: every cycle); cleared when the stage changes or a plan matches it.
+    roadmap_passed: Optional[str] = None
     roadmap: Backoff = field(default_factory=Backoff)
 
 
@@ -142,7 +145,7 @@ def _from_dict(raw: Mapping[str, Any]) -> PlanWatchState:
     st = PlanWatchState()
     for key in (
         "season_index", "season_tick", "review_index", "review_since", "last_refusal",
-        "roadmap_stage", "roadmap_owed", "roadmap_since",
+        "roadmap_stage", "roadmap_owed", "roadmap_since", "roadmap_passed",
     ):
         if key in raw:
             setattr(st, key, raw[key])
@@ -467,16 +470,25 @@ def evaluate(
     # ---- a new roadmap stage the plan was not filed for ---------------------
     if stage:
         plan_stage = active.get("roadmap_stage")
-        if state.roadmap_stage != stage:
-            state.roadmap_stage = stage
-            if plan_stage != stage:
-                state.roadmap_owed, state.roadmap_since, state.roadmap = stage, int(tick), Backoff()
+        # Owed whenever the plan's stamp (a missing one included) differs from
+        # the current stage, whatever the stored cursor says: a first
+        # observation is not a baseline. A stage change re-owes; a pass for
+        # this stage (roadmap_passed) stops the re-owing until the next change.
+        if plan_stage == stage:
+            state.roadmap_owed, state.roadmap_since, state.roadmap_passed = None, None, None
+            state.roadmap = Backoff()
+        elif state.roadmap_stage != stage:
+            state.roadmap_owed, state.roadmap_since, state.roadmap = stage, int(tick), Backoff()
+            state.roadmap_passed = None
+        elif state.roadmap_owed != stage and state.roadmap_passed != stage:
+            state.roadmap_owed, state.roadmap_since, state.roadmap = stage, int(tick), Backoff()
+        state.roadmap_stage = stage
         if state.roadmap_owed is not None:
             reviewed = status.get("last_reviewed_tick")
-            done = (
-                plan_stage == state.roadmap_owed
-                or (isinstance(reviewed, (int, float)) and state.roadmap_since is not None and reviewed >= state.roadmap_since)
-            )
+            passed = isinstance(reviewed, (int, float)) and state.roadmap_since is not None and reviewed >= state.roadmap_since
+            if passed:
+                state.roadmap_passed = state.roadmap_owed
+            done = plan_stage == state.roadmap_owed or passed
             if done:
                 state.roadmap_owed, state.roadmap_since, state.roadmap = None, None, Backoff()
             elif state.roadmap.wakes < policy.review_max_wakes and _due(state.roadmap, tick, cap):

@@ -272,3 +272,46 @@ async def test_the_series_is_not_sampled_with_the_planner_switched_off(tmp_path)
     assert not (tmp_path / "utilisation.jsonl").exists()
     assert not any(t == "labor.unit-status" for t, _ in deps.tool_caller.calls)
     assert dataclasses.is_dataclass(OFF)
+
+
+# ---- the first observation is not a baseline (live bug 2026-10-08) --------------------------------
+
+
+def test_an_unstamped_plan_with_a_stage_already_recorded_still_wakes_on_first_observation():
+    state = PlanWatchState(roadmap_stage="hamlet")      # recorded earlier, nothing owed
+    (w,) = stage_wakes(run(with_roadmap(status(), rm("hamlet")), 1000, state))
+    assert w.key == "stage-hamlet" and state.roadmap_owed == "hamlet"
+
+
+def test_the_exact_live_state_file_shape_wakes_on_the_next_cycle(tmp_path):
+    path = tmp_path / "plan_watch.json"
+    path.write_text(json.dumps({"roadmap_stage": "hamlet", "roadmap_owed": None, "roadmap": {"wakes": 0}}))
+    state = PlanWatchStore(path).load()
+    assert state.roadmap_stage == "hamlet" and state.roadmap_owed is None
+    (w,) = stage_wakes(run(with_roadmap(status(), rm("hamlet")), 5000, state))
+    assert w.role == "planner" and "before stages existed" in w.detail
+
+
+def test_a_stamped_plan_at_the_current_stage_does_not_wake_even_with_a_stale_cursor():
+    for stored in (None, "hamlet", "village"):
+        state = PlanWatchState(roadmap_stage=stored)
+        res = run(with_roadmap(status(), rm("hamlet"), plan_stage="hamlet"), 1000, state)
+        assert stage_wakes(res) == [] and state.roadmap_owed is None
+
+
+def test_a_stage_advance_with_a_stamped_plan_wakes_once_then_backs_off():
+    state = PlanWatchState()
+    st = lambda: with_roadmap(status(), rm("village", alive=51), plan_stage="hamlet")
+    run(with_roadmap(status(), rm("hamlet"), plan_stage="hamlet"), 900, state)
+    assert len(stage_wakes(run(st(), 1000, state))) == 1
+    assert stage_wakes(run(st(), 1001, state)) == []
+    assert stage_wakes(run(st(), 1000 + BASE - 1, state)) == []
+    assert len(stage_wakes(run(st(), 1000 + BASE, state))) == 1
+
+
+def test_a_planner_pass_is_not_re_owed_every_cycle_but_the_next_stage_is():
+    state = PlanWatchState()
+    run(with_roadmap(status(), rm("hamlet")), 1000, state)
+    for t in (1000 + BASE, 1000 + 2 * BASE):
+        assert stage_wakes(run(with_roadmap(status(reviewed=1500), rm("hamlet")), t, state)) == []
+    assert len(stage_wakes(run(with_roadmap(status(reviewed=1500), rm("village")), 90000, state))) == 1
