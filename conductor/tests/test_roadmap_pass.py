@@ -34,6 +34,19 @@ def test_a_plan_filing_tick_is_not_a_planner_pass_and_a_wrongly_recorded_pass_is
     assert stage_wakes(run(dict(LIVE_STATUS), 12930359, state)) == [] and state.roadmap_owed == "hamlet"
 
 
+def test_a_season_review_is_not_settled_by_the_plan_filing_tick_on_a_paused_fort():
+    from conductor.plan_watch import REASON_REVIEW, SeasonEdge, evaluate
+    from conductor.tests.test_plan_watch import policy
+    state = PlanWatchState()
+    st = {**LIVE_STATUS, "active": {**LIVE_STATUS["active"], "season_index": 127}, "roadmap": rm("hamlet"),
+          "last_reviewed_tick": 12930359, "last_pass_tick": None}
+    out = evaluate(st, 12930359, policy(shortfall=False), state, SeasonEdge(128, changed=True))     # tick == the plan's tick
+    assert any(w.reason == REASON_REVIEW for w in out.wakes) and state.review_index == 128
+    # a real pass at or after the owed tick settles it
+    out = evaluate({**st, "last_pass_tick": 12930359}, 12930359, policy(shortfall=False), state, SeasonEdge(128))
+    assert not any(w.reason == REASON_REVIEW for w in out.wakes) and state.review_index is None
+
+
 def test_a_real_pass_carries_its_tick_and_settles_without_re_owing():
     state = PlanWatchState()
     run(dict(LIVE_STATUS), 12930359, state)
