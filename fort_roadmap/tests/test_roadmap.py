@@ -304,6 +304,27 @@ def test_a_plan_that_predates_stages_may_drop_its_old_default_targets_when_adopt
     assert roadmap.adopts_stage(_active(None, old), _changes(old, new), {"targets": new}, "hamlet")
 
 
+def test_a_plan_stamped_with_a_null_stage_counts_as_predating_stages():
+    """Live 2026-10-09: version 1 carried `roadmap_stage: null` (key present), so dropping its old
+    default target was treated as touching a fort-local one and the adoption was refused."""
+    old = [
+        {"id": "bedrooms", "signal": 'zones."Bedroom".furnished', "per": "alive", "want": 1.0, "reorder_gap": 2,
+         "owner": "architect", "max_in_flight": 2},
+        {"id": "dining_seats", "signal": 'zones."DiningHall".furniture."Chair"', "per": "alive", "want": 1.0,
+         "reorder": 0.7, "owner": "architect", "max_in_flight": 1},
+    ]
+    new = roadmap.plan_targets("hamlet")
+    active = {"version": 1, "targets": old, "roadmap_stage": None}
+    assert roadmap.adopts_stage(active, _changes(old, new), {"targets": new}, "hamlet")
+
+
+def test_an_exact_copy_of_a_mapping_want_is_not_a_deviation():
+    for t in roadmap.plan_targets("hamlet"):
+        entry = {k: v for k, v in t.items() if k != "roadmap_ref"}
+        assert roadmap.deviation(t, entry, 24) is None
+    assert roadmap.check_refs(roadmap.plan_targets("hamlet"), "hamlet", 24)["deviations"] == []
+
+
 def test_adopting_and_deviating_is_not_exempt():
     old = roadmap.plan_targets("founding")
     new = roadmap.plan_targets("hamlet")

@@ -551,7 +551,7 @@ def adopts_stage(
     if not entries:
         return False
     by_id = {e["id"]: e for e in entries}
-    legacy = "roadmap_stage" not in active
+    legacy = active.get("roadmap_stage") is None   # absent or null: filed before stages existed
     new_items = list(sections.get("targets") or [])
     old_items = list(active.get("targets") or [])
     new_map = dict(zip(plan._keys(new_items), new_items))

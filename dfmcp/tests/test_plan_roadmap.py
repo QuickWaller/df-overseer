@@ -175,6 +175,34 @@ async def test_a_plan_filed_before_stages_existed_can_adopt_the_current_stage_at
     assert [t["id"] for t in store.active_plan(db)["targets"]] == ["bedrooms", "dining_tables"]
 
 
+async def test_a_null_stamped_v1_adopts_at_once_even_when_the_stage_was_already_entered(db, fort):
+    """Live 2026-10-09: v1 had `roadmap_stage: null`, the stage mark was already hamlet (entered false)."""
+    fort.alive = 24
+    legacy = [
+        {"id": "bedrooms", "signal": 'zones."Bedroom".furnished', "per": "alive", "want": 1.0, "reorder_gap": 2,
+         "owner": "architect", "max_in_flight": 2},
+        {"id": "dining_seats", "signal": 'zones."DiningHall".furniture."Chair"', "per": "alive", "want": 1.0,
+         "reorder": 0.7, "owner": "architect", "max_in_flight": 1},
+    ]
+    await _write(db, fort, {"base_version": 0, "set": {"targets": legacy}})
+    import json
+    import sqlite3
+    with sqlite3.connect(db) as conn:
+        row = conn.execute("SELECT rowid, payload FROM records WHERE kind = 'fort_plan'").fetchone()
+        payload = json.loads(row[1])
+        payload["roadmap_stage"] = None
+        conn.execute("UPDATE records SET payload = ? WHERE rowid = ?", (json.dumps(payload), row[0]))
+    fort.tick = 5000
+    dry = await _write(db, fort, {"base_version": 1, "dry_run": True, "reason": "adopt",
+                                  "set": {"targets": _stage_targets("hamlet")}})
+    assert dry["roadmap"]["entered"] is False and dry["season"]["reason"] == "adopt_stage" and dry["would_file"]
+    assert dry["roadmap"]["deviations"] == []          # an exact mapping-want copy is no deviation
+    # adopting with scalar wants is a different want form: a flagged deviation, and not exempt
+    scalar = [{**t, "want": 1.0} if t["id"] == "bedrooms" else t for t in _stage_targets("hamlet")]
+    dry = await _write(db, fort, {"base_version": 1, "dry_run": True, "reason": "adopt", "set": {"targets": scalar}})
+    assert dry["roadmap"]["deviations"][0]["kind"] == "shape" and dry["season"]["ok"] is False
+
+
 async def test_a_dry_run_does_not_store_the_stage_mark(db, fort):
     fort.alive = 24
     out = await _write(db, fort, {"base_version": 0, "dry_run": True})
