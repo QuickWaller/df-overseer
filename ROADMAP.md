@@ -1,6 +1,9 @@
 # Roadmap
 
-**Last reviewed:** 2026-10-08 (twenty-seventh pass, targeted: the 2026-10-02
+**Last reviewed:** 2026-10-09 (twenty-eighth pass, targeted: a new top Now
+item for 2026-10-08/09; Next and Later not re-scanned.)
+
+**Previously reviewed:** 2026-10-08 (twenty-seventh pass, targeted: the 2026-10-02
 item's open list was re-read against `Working.md`'s plan of attack and the
 2026-10-07 register rows, and a new top Now item records the week's shift
 from "make the conductor run" to "more, narrower agents, measured": rooms
@@ -154,6 +157,30 @@ or `decisions/DECISIONS.md`, not here.
 
 ## Now
 <!-- Actively being worked, or the clear immediate next step. -->
+
+- **NEW 2026-10-09: the team runs on Flash with charters, a roadmap and a
+  circulation picture; next is plan v2, then the decisions that unlock
+  sessions, stock claims and circulation builds.** Landed 2026-10-08/09:
+  manager orders proven end to end (the old `nobles.appoint` made an
+  appointment the game ignored; fixed; the Overseer appointed a manager
+  unaided); agents had been running WITHOUT their charters (fixed,
+  verified); fort roadmap V1 (three stages) with Planner comply-or-explain;
+  aquifer/magma siting policy; circulation graph read, tile-set reservations,
+  generated blueprints, room-kind data and an access gate; noble rooms via
+  routed proposal steps; pause line in briefings; paused-fort retries;
+  attribution by author and parallel proposers (flag off); every role on
+  DeepSeek Flash (trial; cycles drop from ~20 min to ~2 min). The real
+  DeepSeek bill is 3-5x the logged cost. **Open, in order:** (1) plan v2
+  read by the user, then the shortage watch; (2) judge Flash; fix Metrics
+  cost to real rates; land loop signals; decide whether the hold also stops
+  the Overseer's direct writes; (3) user decisions: stock claims (item
+  binding 1-6), sessions v1 (7-11), thinking effort and a conductor-side
+  reasoning stop (12-15); (4) circulation C2/C4 and the supervised
+  bedroom-block retrofit; (5) phase 1 live checks and a staged arm
+  (user's yes on the day). Later: Logistics, workshop rooms, the Elder,
+  evidence-based tool cuts, openclaw decision models. → `Working.md`
+  START HERE (late 2026-10-08), `decisions/DECISIONS.md` 2026-10-08/09
+  rows, `research/2026-10-08-*`, `evals/live/2026-10-08-*`.
 
 - **NEW 2026-10-08: more, narrower agents, measured; the next gate is
   proving the fort works when running.** Since the item below, the user's
