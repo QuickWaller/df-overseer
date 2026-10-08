@@ -208,6 +208,9 @@ targets:
       - dfqueue/lessons.py             # gotchas written or confirmed per run (lessons.json)
       - dfqueue/site_data.py
       - dfqueue/charter_changes.json   # charter history; the VM has no git
+      - dfqueue/wake_metrics.py        # the Metrics report the publisher computes (imported lazily)
+      - dfqueue/wake_epochs.yaml
+      - dfqueue/deepseek_pricing.yaml  # list rates and peak window for the computed cost
       - web/stream/site-text.yaml      # role labels, map ring, past forts
     exclude: []
     leave_alone:
