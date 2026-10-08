@@ -180,6 +180,20 @@ function reqscript(n)
   if n == "df-overseer-zone" then
     return {kind_token_for_key = function(key) return ZONE_KIND_BY_KEY[key] end}
   end
+  if n == "quickfort" then
+    -- The runtime route for generated blueprints (circulation hands, B3):
+    -- records every call in API_CALLS and answers with API_STATS (a list of
+    -- {label, value}), the shape of the installed quickfort.apply_blueprint
+    -- return (internal/quickfort/api.lua clean_stats).
+    return {apply_blueprint = function(params)
+      API_CALLS = API_CALLS or {}
+      API_CALLS[#API_CALLS + 1] = params
+      if API_ERROR then error(API_ERROR) end
+      local out = {}
+      for i, st in ipairs(API_STATS or {}) do out["stat" .. i] = {label = st[1], value = st[2]} end
+      return out
+    end}
+  end
   if n == "df-overseer-reservations" then
     -- Loads the REAL df-overseer-reservations.lua (a dependency-free leaf:
     -- it only reqscripts df-overseer-landmarks, already stubbed above, and
