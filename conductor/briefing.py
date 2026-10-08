@@ -132,6 +132,35 @@ def evaluate_threshold_alerts(alerts: Sequence[Any], read_results: Mapping[Any, 
     return lines
 
 
+PAUSED_TAIL = (
+    "A paused fort is not broken: no job, haul or crop progresses and no tick passes "
+    "until it resumes, so do not read stalled figures as faults."
+)
+
+
+def paused_line(
+    clock_status: Optional[Mapping[str, Any]], hold: Any = None, *, still_paused: bool = True,
+) -> Optional[str]:
+    """One compact line saying the fort is paused at wake time and why, or
+    `None` when it is not (or the state is unknown). Reasons come from what the
+    cycle already read: an operator hold (with its reason), a latched tripwire
+    (which one), a blocking panel (its name), else a plain pause. Total."""
+    if not isinstance(clock_status, Mapping) or not still_paused or not clock_status.get("paused"):
+        return None
+    causes: List[str] = []
+    if getattr(hold, "held", False):
+        reason = getattr(hold, "reason", None)
+        causes.append(f"operator hold ({reason})" if reason else "operator hold")
+    tripwire = clock_status.get("tripwire")
+    if isinstance(tripwire, Mapping) and tripwire:
+        causes.append(f"tripwire stop ({tripwire.get('reason')})")
+    panel = clock_status.get("blocking_panel")
+    if isinstance(panel, Mapping) and panel.get("name"):
+        causes.append(f"blocking panel ({panel.get('name')}) a player must close")
+    why = "; ".join(causes) if causes else "plain pause (likely a player or the save)"
+    return f"FORT PAUSED: {why}. {PAUSED_TAIL}"[:500]
+
+
 def _capped(items: Sequence[Any], cap: int) -> Dict[str, Any]:
     items = list(items)
     return {
@@ -152,6 +181,7 @@ def build_briefing(
     own_filings: Optional[Sequence[str]] = None,
     roadmap_line: Optional[str] = None,
     utilisation: Optional[Mapping[str, Any]] = None,
+    paused: Optional[str] = None,
 ) -> Dict[str, Any]:
     """One role's briefing for this cycle. `vitals` is `vitals.summary`'s own
     result, passed through as-is (already Tier 0 by construction -- see
@@ -184,6 +214,7 @@ def build_briefing(
         "wake_reason": wake.reason,
         "wake_detail": wake.detail,
         "clock": wake.clock,
+        **({"fort_paused": str(paused)} if paused else {}),
         "vitals": {
             "alive": vitals.get("alive"),
             "dead_total": vitals.get("dead_total"),
@@ -307,6 +338,7 @@ def build_ruling_briefing(
     stuck_jobs: Sequence[str] = (), to_carry_out: Sequence[str] = (),
     routing: Optional[Mapping[str, Sequence[str]]] = None,
     roadmap_line: Optional[str] = None,
+    paused: Optional[str] = None,
 ) -> str:
     """The Overseer's prompt for an ordinary ruling wake, as text in a fixed
     order, stable material first and the ask last (cache-friendly, bounded):
@@ -317,6 +349,8 @@ def build_ruling_briefing(
     out: List[str] = []
     head = f"WAKE {wake.reason}: {wake.detail}. Game tick {game_tick}. Clock {wake.clock}."
     out.append(head)
+    if paused:
+        out.append(str(paused))
 
     v = vitals
     out.append(

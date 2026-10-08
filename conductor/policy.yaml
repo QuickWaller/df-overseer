@@ -421,7 +421,7 @@ transcript:
 # proposing role's briefing carries. `recent` is how many of its newest filings
 # show; anything still pending, accepted, deferred or in a project always shows.
 own_filings:
-  recent: 5
+  recent: 0   # 0 = the block is off (2026-10-08); queue.my_filings stays
 
 # The Planner's conductor-side wiring (handoffs/2026-10-07-planner-p1b.md,
 # research/2026-10-07-planner-design.md 5). Read by conductor/plan_watch.py via
