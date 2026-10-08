@@ -1,0 +1,22 @@
+# DeepSeek list prices, the one place the wake metrics read them from.
+# USD per 1M tokens, off-peak. Source: https://api-docs.deepseek.com/quick_start/pricing
+# (fetched 2026-10-08, new prices effective 2026-08-16 16:00 UTC; see
+# research/2026-10-08-thinking-budget.md "Pricing"). Peak is the multiple below.
+# These are LIST rates, not the bill: openclaw's logged cost_usd is its own
+# lower estimate table, and no balance movement has been checked against these.
+peak_multiplier: 2
+# Peak window, UTC, Monday to Friday only; everything else is off-peak.
+peak_window:
+  weekdays: [0, 1, 2, 3, 4]      # Python weekday(): Monday is 0
+  hours_utc: [[1, 4], [6, 10]]   # [start, end) hours: 01:00-04:00 and 06:00-10:00
+models:
+  deepseek/deepseek-v4-pro:    {cache_miss: 0.66, cache_hit: 0.022, output: 1.98}
+  deepseek/deepseek-v4-flash:  {cache_miss: 0.15, cache_hit: 0.003, output: 0.60}
+# Which model a wake ran on, when the run row does not say (it has no model
+# column). First entry whose `until` is later than the wake start wins; the last
+# entry has no `until`. Mirrors agents/*/model.yaml history: Pro from 2026-10-01,
+# Flash for every role from 2026-10-09 (the cut is a UTC-midnight approximation).
+model_eras:
+  - {until: "2026-10-01T00:00:00+00:00", model: deepseek/deepseek-v4-flash}
+  - {until: "2026-10-09T00:00:00+00:00", model: deepseek/deepseek-v4-pro}
+  - {model: deepseek/deepseek-v4-flash}

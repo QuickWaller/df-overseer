@@ -88,6 +88,7 @@ SCHEMA_ID = "wake_metrics/1"
 REPO_ROOT = Path(__file__).resolve().parent.parent
 AGENTS_DIR = REPO_ROOT / "agents"
 EPOCHS_PATH = Path(__file__).with_name("wake_epochs.yaml")
+PRICING_PATH = Path(__file__).with_name("deepseek_pricing.yaml")
 
 ADVISOR_ROLES = ("architect", "quartermaster", "planner")
 WINDOW_WAKES = 10          # M1 window, in the role's own wakes
@@ -127,6 +128,7 @@ NOTES = [
     "Transcript metrics exist only for wakes recorded with a transcript; others read null and are counted.",
     "A transcript is capped; truncated wakes undercount late calls and are flagged.",
     "Killed runs report no cost and are excluded from cost summaries.",
+    "cost is openclaw's own estimate and under-reports; list_cost is computed from stored token counts at DeepSeek's published list rates (peak and off-peak, deepseek_pricing.yaml), for wakes with a transcript, with the model inferred from the wake date. Not checked against an actual bill.",
 ]
 
 
@@ -627,6 +629,50 @@ def _sweeps(runs: List[dict]) -> Dict[str, int]:
     return out
 
 
+# ---- cost from tokens at DeepSeek list rates -------------------------------
+
+def load_pricing(path=None) -> dict:
+    import yaml
+    return yaml.safe_load(Path(path or PRICING_PATH).read_text(encoding="utf-8")) or {}
+
+
+def _is_peak(when: datetime, pricing: dict) -> bool:
+    win = pricing.get("peak_window") or {}
+    when = when.astimezone(timezone.utc)
+    if when.weekday() not in (win.get("weekdays") or []):
+        return False
+    return any(a <= when.hour < b for a, b in (win.get("hours_utc") or []))
+
+
+def model_for(run: dict, pricing: dict) -> Optional[str]:
+    """The run's own model if it records one, else the era table's."""
+    if run.get("model"):
+        return str(run["model"])
+    start = _parse(run.get("started_at"))
+    if start is None:
+        return None
+    for era in pricing.get("model_eras") or []:
+        until = _parse(era.get("until")) if era.get("until") else None
+        if until is None or start < until:
+            return era.get("model")
+    return None
+
+
+def list_cost_usd(tokens: Optional[dict], started_at, model: Optional[str], pricing: dict) -> Optional[float]:
+    """Cost of one wake from its token counts at list rates: cache-miss input,
+    cache-read input and output (reasoning is part of output). Peak rates when
+    the wake started in the peak window. None when tokens, model, rates or
+    start time are unknown; never a guess."""
+    rates = (pricing.get("models") or {}).get(model or "")
+    start = _parse(started_at)
+    if not tokens or not rates or start is None:
+        return None
+    mult = float(pricing.get("peak_multiplier") or 1) if _is_peak(start, pricing) else 1.0
+    usd = (tokens.get("input", 0) * rates["cache_miss"] + tokens.get("cache_read", 0) * rates["cache_hit"]
+           + tokens.get("output", 0) * rates["output"]) / 1_000_000
+    return round(usd * mult, 6)
+
+
 def per_wake_rows(queue: dict, runs: List[dict], cls: Classified, epochs: List[dict],
                   allow: Dict[str, Dict[str, set]]) -> List[dict]:
     records = queue["records"]
@@ -638,6 +684,7 @@ def per_wake_rows(queue: dict, runs: List[dict], cls: Classified, epochs: List[d
         all_known |= sec["read"] | sec["write"]
     sweeps = _sweeps(runs)
     rows = []
+    pricing = load_pricing()
     for run in runs:
         if not run.get("ended_at"):
             continue
@@ -671,6 +718,8 @@ def per_wake_rows(queue: dict, runs: List[dict], cls: Classified, epochs: List[d
             "r": len(r_events),
             "r_ids": sorted(r_events),
             "cost_usd": None if run.get("cost_usd") is None else float(run["cost_usd"]),
+            "list_cost_usd": list_cost_usd(tm["tokens"] if tm else None, run.get("started_at"),
+                                           model_for(run, pricing), pricing),
             "rounds": tm["rounds"] if tm else None,
             "truncated": bool(tm and tm["truncated"]),
             "first_write_round": tm["first_write_round"] if tm else None,
@@ -762,6 +811,7 @@ def _group(rows: List[dict]) -> dict:
         "r_per_wake": round(r_total / n, 4) if n else None,
         "r_per_at_risk_wake": round(sum(r["r"] for r in at_risk) / len(at_risk), 4) if at_risk else None,
         "cost": _summ([r["cost_usd"] for r in rows if not r["killed"]]),
+        "list_cost": _summ([r["list_cost_usd"] for r in rows]),
         "rounds": _summ([r["rounds"] for r in rows]),
         "rounds_to_first_write": _summ([r["first_write_round"] for r in rows]),
         "orientation_reads": _summ([r["orientation_reads"] for r in rows]),

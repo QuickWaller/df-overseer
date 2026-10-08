@@ -53,8 +53,8 @@ def test_view_renders_every_chart_and_the_tool_lists(report):
       const v = metricsView(DOC, state, () => {});
       return { svgs: count(v, "svg"), text: texts(v).join(" | "), role: state.role };
     """, report)
-    assert out["svgs"] == 4
-    for needle in ("Repeats per day", "Rounds per wake", "Cost per wake", "Pass rate", "Never called", "Approximate"):
+    assert out["svgs"] == 5
+    for needle in ("Repeats per day", "Rounds per wake", "Cost per wake", "from list rates", "Pass rate", "Never called", "Approximate"):
         assert needle in out["text"], needle
     assert out["role"] == "architect"
 

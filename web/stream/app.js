@@ -3173,6 +3173,8 @@ function metricsView(doc, state, rerender) {
     "wakes with a stored transcript", "Only wakes with a stored transcript count."));
   cards.push(lineCard("Cost per wake (mean, USD)", (g) => (g.cost || {}).mean, "usd", (totals.cost || {}).n || 0,
     "costed wakes", "Killed wakes report no cost and are left out."));
+  cards.push(lineCard("Cost per wake, from list rates (mean, USD)", (g) => (g.list_cost || {}).mean, "usd", (totals.list_cost || {}).n || 0,
+    "wakes with a stored transcript", "Computed from token counts at DeepSeek's published list rates, peak and off-peak. Not the bill; the card above is openclaw's lower estimate."));
   cards.push(lineCard("Pass rate", (g) => g.pass_rate, "pct", Math.max(0, (totals.wakes || 0) - (totals.killed || 0)),
     "finished wakes", "Share of advisor wakes that filed a pass and nothing else."));
   const loopsCard = metricsLoopsCard(doc);
