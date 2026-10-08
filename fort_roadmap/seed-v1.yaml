@@ -83,6 +83,7 @@ stages:
           - kind: wiki
             ref: Dining room
             page_title: Dining room
+            revid: 312062
             describes: "v50+"
             read: opened
             accessed: 2026-10-08
@@ -128,6 +129,7 @@ stages:
           - kind: wiki
             ref: Dining room
             page_title: Dining room
+            revid: 312062
             describes: "v50+"
             read: opened
             accessed: 2026-10-08
@@ -166,6 +168,7 @@ stages:
           - kind: wiki
             ref: Dining room
             page_title: Dining room
+            revid: 312062
             describes: "v50+"
             read: opened
             accessed: 2026-10-08
