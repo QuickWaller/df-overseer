@@ -6947,3 +6947,86 @@ df-overseer-screen.lua:
           - >-
             Only dwarfmode/Info/WORK_ORDERS/Default is a verified blocker; other panels follow the
             table's stated guess, each entry's `verified` field says which.
+df-overseer-circulation.lua:
+  build_order_item: "stage C1 of research/2026-10-08-architect-circulation-design.md (read-only graph), cut per research/2026-10-08-architect-circulation-red-team.md"
+  commands:
+    graph:
+      lua_function: circulation_graph
+      effect: read
+      coordinate_bearing: false
+      live_deployed: false
+      verified: "unverified (offline build under lupa with a fake map, tests/test_circulation_lua_logic.py). Live read-only timing on the paused fort is recorded where this stream's report is filed."
+      knowledge_scope: player_derivable
+      notes: >
+        A read-only circulation graph of the rooms we have made: nodes are
+        rooms (zones of room kinds), named landmarks, stairs and ramps, open
+        areas, dead ends, window-edge frontiers and junctions; edges carry
+        length in steps, width class, level change and doors. Checks come back
+        as named booleans and lists: rooms reached only by walking through
+        another room (and whether the room crossed is private), private rooms
+        opening onto each other, dead ends, single links that alone join
+        named anchors (landmarks, stairs, public rooms), disconnected pieces,
+        and walk steps from the bedrooms to the dining hall, the well and the
+        stairs. Built only from a window around OUR OWN records (blueprint
+        sites, reservations, room zones, nearby landmarks), per level, with a
+        hard tile cap held in the script's data; over the cap it REFUSES with
+        an error and never truncates, and it never scans the map or a
+        walkable group's extent. Hidden tiles are never read as open or shut,
+        they become frontier nodes and an entry in `unknown`. Reachability
+        comes from tile shapes; the game's walkable groups are compared and any
+        disagreement reported (that cache only updates while the game runs, so
+        on a paused fort a disagreement can be stale). Output holds ids, kinds,
+        names and numbers only, levels relative to the window's lowest level,
+        never a coordinate or a grid (docs/PURPOSE.md commitment 1). On NO role
+        allowlist yet.
+      summary: "Describes how the rooms we have made connect: rooms reached through other rooms, dead ends, single links, and walk lengths to dining, the well and the stairs."
+      guide:
+        arguments: []
+        returns: >-
+          `flags` holds named booleans (room_reached_only_through_another_room,
+          private_room_reached_only_through_a_private_room, private_rooms_open_onto_each_other,
+          dead_end_present, single_point_of_failure_between_anchors, graph_in_one_piece, has_unknowns);
+          `checks` holds the matching lists; `walks` gives steps per bedroom and a per-kind summary;
+          `nodes` and `edges` give the graph by id and name; `unknown` lists everything it could not
+          establish. An error with ok false means the window was refused (over the cap) or had no records.
+        before_a_real_run: []
+        traps:
+          - >-
+            Steps are tile steps inside the window only. A place outside the window is not described, and
+            the game's walkable-group cache lags while the fort is paused.
+    "walk FROM TO":
+      lua_function: circulation_walk
+      effect: read
+      coordinate_bearing: false
+      live_deployed: false
+      verified: "unverified (offline build under lupa with a fake map, tests/test_circulation_lua_logic.py)."
+      knowledge_scope: player_derivable
+      notes: >
+        Steps, doors, rooms walked through and the nodes passed between two
+        named endpoints, from the same bounded window as circulation.graph.
+        Names match the way landmark names do (case, spacing and punctuation
+        ignored; an ambiguous name is refused with its candidates). Endpoints
+        are rooms ("Bedroom #12" or the zone's own name), landmarks and
+        "Stair n". Unreachable inside the window is its own status, never read
+        as unreachable in the fort (connectivity.check answers that). On NO
+        role allowlist yet.
+      summary: "Measures the walk between two named places: steps, doors, and the rooms passed through."
+      guide:
+        arguments:
+          - name: "FROM"
+            required: true
+            default: null
+            meaning: >-
+              A room name ("Bedroom #12" or the zone's own name), a landmark name, or "Stair n" as
+              circulation.graph names them.
+          - name: "TO"
+            required: true
+            default: null
+            meaning: >-
+              The other endpoint, named the same way.
+        returns: >-
+          `status` is reachable, unreachable_in_window or unknown (with a reason); when reachable,
+          `steps`, `doors_on_path`, `rooms_walked_through`, `narrowest` and `via` (the nodes passed,
+          by name).
+        before_a_real_run: []
+        traps: []
