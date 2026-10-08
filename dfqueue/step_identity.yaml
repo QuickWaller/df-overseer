@@ -26,3 +26,11 @@ tools:
   stockpile.set-materials: [id, category]
   stockpile.remove: [id]
   workjob.cancel: [job_id]
+
+# follow_up_checked: tools whose follow-ups are still compared for duplication
+# (a follow-up is normally the next step of existing work and never a duplicate).
+# An owner for a zone is the same action whether it is filed on its own or joined
+# to a room project, so for these tools the comparison also ignores proposal type
+# (2026-10-08, noble rooms: the Architect appends zone.assign-owner to a room
+# project, or files it alone, and must not do both for the same zone).
+follow_up_checked: [zone.assign-owner]
