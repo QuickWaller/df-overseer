@@ -304,3 +304,28 @@ def test_no_output_field_contains_coordinates(circ):
     for kind, val, path in _walk_values(w):
         if kind == "key":
             assert val not in BANNED_KEYS, (val, path)
+
+
+def test_site_without_a_zone_stands_in_as_a_room():
+    # Two 5x5 bedroom-cell sites (3x3 interior, entrance gap south) off one
+    # corridor, shells dug but no zone yet: they are still bedrooms.
+    layer = [
+        "##########",
+        "#...##...#",
+        "#...##...#",
+        "#...##...#",
+        "##.####.##",
+        "#........#",
+        "##########",
+    ]
+    sites = [
+        {"id": "site-3", "kind": "bedroom-cell-v1", "x": 0, "y": 0, "z": 0, "w": 5, "h": 5},
+        {"id": "site-4", "kind": "bedroom-cell-v1", "x": 5, "y": 0, "z": 0, "w": 5, "h": 5},
+    ]
+    r = Circ({0: layer}, {"sites": sites}).report()
+    rooms = {n["name"]: n for n in r["nodes"] if n["kind"] == "room"}
+    assert set(rooms) == {"Bedroom (site-3)", "Bedroom (site-4)"}
+    assert all(n["room_kind"] == "Bedroom" and n["private"] for n in rooms.values())
+    assert r["walks"]["by_room_kind"]["Bedroom"]["rooms"] == 2
+    assert r["walks"]["targets_present"]["dining"] == 0
+

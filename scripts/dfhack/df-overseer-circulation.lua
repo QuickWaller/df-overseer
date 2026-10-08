@@ -124,6 +124,12 @@ local DATA = {
     { label = "well", landmark_kind = "Well" },
     { label = "stairs", vertical = true },
   },
+  -- A blueprint site with no room zone over its interior still IS a room
+  -- (the fort digs the shell before it zones). Kind by blueprint id with its
+  -- "-vN" revision suffix stripped; an unlisted blueprint is kind "Site".
+  site_room_kinds = { ["bedroom-cell"] = "Bedroom", ["office-room"] = "Office" },
+  -- Tiles of wall ring at each side of a site footprint, before the interior.
+  site_interior_inset = 1,
   -- Output caps (listed counts are always given in full alongside).
   max_rows = 60,
   max_nodes_listed = 300,
@@ -432,6 +438,30 @@ function build_graph(world, opts)
   local zones = {}
   for _, zn in ipairs(world.zones or {}) do
     if is_room_zone(zn) then zones[#zones + 1] = zn end
+  end
+  -- Sites with no room zone over their interior stand in as rooms.
+  for _, st in ipairs(world.sites or {}) do
+    local inset = DATA.site_interior_inset
+    local iw, ih = st.w - 2 * inset, st.h - 2 * inset
+    if iw >= 1 and ih >= 1 then
+      local ix1, iy1 = st.x + inset, st.y + inset
+      local ix2, iy2 = ix1 + iw - 1, iy1 + ih - 1
+      local covered = false
+      for _, zn in ipairs(zones) do
+        if zn.z == st.z and zn.x1 <= ix2 and zn.x2 >= ix1 and zn.y1 <= iy2 and zn.y2 >= iy1 then
+          covered = true
+          break
+        end
+      end
+      if not covered then
+        local base = tostring(st.kind or ""):gsub("%-v%d+$", "")
+        local kind = DATA.site_room_kinds[base] or "Site"
+        zones[#zones + 1] = {
+          id = st.id, kind = kind, name = string.format("%s (%s)", kind, tostring(st.id)),
+          x1 = ix1, y1 = iy1, x2 = ix2, y2 = iy2, z = st.z, from_site = true,
+        }
+      end
+    end
   end
   table.sort(zones, function(a, b)
     local aa = (a.x2 - a.x1 + 1) * (a.y2 - a.y1 + 1)
@@ -1063,18 +1093,21 @@ local function walk_numbers(g)
   local fields = {}
   for _, t in ipairs(DATA.walk_targets) do fields[#fields + 1] = t.label end
 
-  local dists = {}
+  local dists, tpresent = {}, {}
   for _, t in ipairs(DATA.walk_targets) do
     local srcs = {}
+    local count = 0
     for _, id in ipairs(g.node_order) do
       local n = g.nodes[id]
       local hit = (t.room_kind and n.kind == "room" and n.room_kind == t.room_kind)
         or (t.landmark_kind and n.kind == "landmark" and n.landmark_kind == t.landmark_kind)
         or (t.vertical and (n.kind == "stair" or n.kind == "ramp"))
       if hit then
+        count = count + 1
         for _, k in ipairs(n.tiles) do srcs[#srcs + 1] = k end
       end
     end
+    tpresent[t.label] = count
     if #srcs > 0 then dists[t.label] = (tile_bfs(g, srcs)) else dists[t.label] = false end
   end
 
@@ -1117,7 +1150,7 @@ local function walk_numbers(g)
                                rooms_reaching = #vals, rooms_not_reaching = rec.unreachable }
     end
   end
-  return rows, summary
+  return rows, summary, tpresent
 end
 
 function summarize(g)
@@ -1274,7 +1307,7 @@ function summarize(g)
     if c > 1 then sharing = sharing + 1 end
   end
 
-  local rows, wsum = walk_numbers(g)
+  local rows, wsum, tpresent = walk_numbers(g)
   local shown_rows = {}
   for i, r in ipairs(rows) do
     if i <= DATA.max_rows then shown_rows[#shown_rows + 1] = r end
@@ -1309,7 +1342,7 @@ function summarize(g)
   report.counts.rooms_through_rooms = #through
   report.counts.private_rooms_through_private_rooms = private_through
   report.counts.leaf_bridges_not_listed = leaf_bridges
-  report.walks = { rows = shown_rows, rows_total = #rows, by_room_kind = wsum }
+  report.walks = { rows = shown_rows, rows_total = #rows, by_room_kind = wsum, targets_present = tpresent }
   report.unknown = g.unknown
   report.notes = g.notes
   return report
