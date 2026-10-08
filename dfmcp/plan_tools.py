@@ -139,6 +139,8 @@ _TARGET_SCHEMA = {
         "district": {"type": "string"},
         "max_in_flight": {"type": "integer"},
         "note": {"type": "string"},
+        "roadmap_ref": {"type": "string", "description": "the id of the fort roadmap entry this target adopts (plan.read's roadmap block lists them)"},
+        "deviation_reason": {"type": "string", "description": "why this target differs from its roadmap entry; without one a deviation is flagged (never refused)"},
     },
 }
 
