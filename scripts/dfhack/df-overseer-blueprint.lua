@@ -336,6 +336,11 @@ end
 -- (item 3) -- the parsing itself moved there so df-overseer-landmarks.lua can
 -- reuse it too; the shape this returns is unchanged.
 function load_blueprint(name)
+  if type(name) == 'string' and name:sub(1, 4) == 'gen-' then
+    local g = (dfhack.persistent.getSiteData(STATE_KEY, {}) or {}).generated
+    local entry = g and g[name]
+    if entry then return generated_bp(name, entry.csv) end
+  end
   return parse_mod.load_blueprint(name)
 end
 
@@ -344,7 +349,7 @@ end
 -- ---------------------------------------------------------------------------
 
 local function load_state()
-  return dfhack.persistent.getSiteData(STATE_KEY, {next_id = 1, sites = {}})
+  return dfhack.persistent.getSiteData(STATE_KEY, {next_id = 1, sites = {}, generated = {}})
 end
 local function save_state(state)
   dfhack.persistent.saveSiteData(STATE_KEY, state)
@@ -392,19 +397,30 @@ end
 -- permissive answer" rule. Uses EVERY #dig section in the blueprint, not one
 -- phase's leaves: a reservation holds the template's whole eventual
 -- footprint, not one phase of it.
+-- A second return value, `portal`: the template's entrance tiles, i.e. every
+-- carve cell (CARVE_SYMBOLS) on the footprint's outer edge -- the same cells
+-- entrance_analysis treats as entrances. A portal is the one tile a room may
+-- share with a corridor (df-overseer-reservations.lua, TILE CLASSES AND
+-- SHAPES). It is read from the template's own #dig cells, never declared
+-- separately, so a new template needs no new data. A cell that is also a
+-- smooth (wall) cell stays wall.
 function classify_footprint_cells(bp, orient)
-  local wall = {}
+  local wall, portal = {}, {}
   for _, sec in ipairs(bp.sections) do
     if sec.mode == "dig" then
       for _, c in ipairs(sec.cells) do
+        local rx, ry = orient_cell(orient or "none", c.x, c.y, bp.w, bp.h)
+        local key = (rx - 1) .. "," .. (ry - 1)
         if c.text == SMOOTH_SYMBOL then
-          local rx, ry = orient_cell(orient or "none", c.x, c.y, bp.w, bp.h)
-          wall[(rx - 1) .. "," .. (ry - 1)] = true
+          wall[key] = true
+        elseif CARVE_SYMBOLS[c.text] and (c.x == 1 or c.y == 1 or c.x == bp.w or c.y == bp.h) then
+          portal[key] = true
         end
       end
     end
   end
-  return wall
+  for key in pairs(wall) do portal[key] = nil end
+  return wall, portal
 end
 
 -- handoffs/2026-09-30-reservation-holding.md item 1: what a template's own
@@ -455,7 +471,7 @@ end
 -- rather than guesses compatibility with a site whose own template is gone.
 local function classify_site_cells(s)
   local bp2 = load_blueprint(s.blueprint)
-  if not bp2 then return {} end
+  if not bp2 then return {}, {} end
   return classify_footprint_cells(bp2, s.orient or "none")
 end
 
@@ -1159,7 +1175,52 @@ local function parse_stats(output)
   return stats
 end
 
+-- The runtime route for a generated blueprint (red team B3): no file, no
+-- label lookup; the section's cells go to quickfort.apply_blueprint as a
+-- sparse {[z]={[y]={[x]=text}}} grid relative to `pos` (installed DFHack
+-- 53.16 quickfort.lua apply_blueprint + internal/quickfort/api.lua: one MODE
+-- and the grid per call, `dry_run` and `command` ('run'|'undo') honoured,
+-- no transform and no preview tiles). Coordinates stay in this file. The
+-- returned stats are {id = {label, value}}; they are flattened to the same
+-- label -> number table parse_stats builds from the command line's output, so
+-- assess() and every caller read both routes identically.
+local APPLY_MODES = {dig = true, build = true, place = true, zone = true}
+local function run_generated(bp, label, site, dry, verb)
+  if (site.orient or "none") ~= "none" then
+    return {ran = false, stats = {}, error = "a generated blueprint is applied unrotated; the generator owns orientation"}
+  end
+  local sec = section_by_label(bp.sections, label)
+  if not sec or sec.mode == "meta" or not APPLY_MODES[sec.mode] then
+    return {ran = false, stats = {}, error = "generated blueprint has no applicable section '" .. tostring(label) .. "'"}
+  end
+  local grid = {[0] = {}}
+  for _, c in ipairs(sec.cells) do
+    local row = grid[0][c.y - 1]
+    if not row then row = {}; grid[0][c.y - 1] = row end
+    row[c.x - 1] = c.text
+  end
+  local okq, qf = pcall(reqscript, 'quickfort')
+  if not okq or not qf or not qf.apply_blueprint then
+    return {ran = false, stats = {}, error = "quickfort API is not available: " .. tostring(qf)}
+  end
+  local ok, res = pcall(qf.apply_blueprint, {
+    mode = sec.mode, data = grid, pos = {x = site.x, y = site.y, z = site.z},
+    dry_run = dry and true or false, command = (verb == 'undo') and 'undo' or 'run',
+  })
+  local stats = {}
+  if ok and type(res) == 'table' then
+    for _, st in pairs(res) do
+      if type(st) == 'table' and st.label and tonumber(st.value) then stats[st.label] = tonumber(st.value) end
+    end
+  end
+  return {ran = ok, result = ok and CR_OK or nil, stats = stats, error = (not ok) and tostring(res) or nil}
+end
+
 local function run_quickfort(qname, label, site, dry, verb)
+  if type(qname) == 'table' then
+    if qname.generated then return run_generated(qname, label, site, dry, verb) end
+    qname = qname.qname
+  end
   local o = ORIENT_BY_NAME[site.orient or "none"]
   local cx, cy = cursor_for(o.name, site)
   local coord = string.format('%d,%d,%d', cx, cy, site.z)
@@ -1268,7 +1329,7 @@ function resolve_new_site(bp, site_arg, level, rank, radius, dig_leaves, carve_n
   local tried, chosen_ok, analysis, site = {}, false, nil, nil
   local by_dims = {}
   for _, o in ipairs(ORIENTS) do
-    if o.name == "none" or carve_needed then
+    if o.name == "none" or (carve_needed and not bp.generated) then
       local w, h = bp.w, bp.h
       if o.swap then w, h = h, w end
       local dkey = w .. "x" .. h
@@ -1519,7 +1580,7 @@ local function run_phase(name, phase, site_arg, level, rank, radius, dry, allow_
   end
 
   -- Ask quickfort.
-  local run = run_quickfort(bp.qname, phase, site, dry)
+  local run = run_quickfort(bp, phase, site, dry)
   local ok, problems, designated, total = assess(run, sec)
   result.quickfort = {
     ran = run.ran, result_ok = run.ran and run.result == CR_OK,
@@ -1706,7 +1767,7 @@ function release_site(handle, dry_run, any_pending)
   local undone = 0
   local runs = {}
   for i = #labels, 1, -1 do
-    local run = run_quickfort(bp.qname, labels[i], site, dry, 'undo')
+    local run = run_quickfort(bp, labels[i], site, dry, 'undo')
     runs[#runs + 1] = {phase = labels[i], ran = run.ran, result_ok = run.ran and run.result == CR_OK,
       error = nn(run.error), stats = next(run.stats) and run.stats or empty_object()}
     undone = undone + (run.stats[LABEL_UNDIG] or 0)
@@ -1777,14 +1838,23 @@ function reserve_site(template, purpose, site_arg, dry_run, level, rank, radius)
   if carve_needed and analysis then
     dig_can_start = (analysis.entrance_reachable == true and analysis.carve_cells_unreachable == 0)
   end
-  local wall_cells = classify_footprint_cells(bp, site.orient)
+  local wall_cells, portal_cells = classify_footprint_cells(bp, site.orient)
   local allowed_kinds = template_allowed_kinds(bp)
   local other_footprints = {}
   for _, s in ipairs(all_sites_raw()) do
+    local swall, sportal = classify_site_cells(s)
+    -- a site carved from a reservation takes that reservation's role (so a
+    -- carved corridor still counts as a corridor for portal sharing)
+    local srole = nil
+    if s.reservation then
+      local rrec = reservations_mod.get_raw(s.reservation)
+      srole = rrec and rrec.role or nil
+    end
     other_footprints[#other_footprints + 1] = {x = s.x, y = s.y, z = s.z, w = s.w, h = s.h,
-      wall_cells = classify_site_cells(s), label = s.handle}
+      wall_cells = swall, portal_cells = sportal, role = srole, label = s.handle}
   end
-  local conflicts = reservations_mod.find_conflicts(site.x, site.y, site.z, site.w, site.h, wall_cells, other_footprints)
+  local conflicts = reservations_mod.find_conflicts(site.x, site.y, site.z, site.w, site.h, wall_cells,
+    other_footprints, nil, portal_cells, "room")
   local brief = site_brief(site)
   local result = {
     blueprint = bp.name, purpose = purpose, dry_run = dry,
@@ -1821,11 +1891,155 @@ function reserve_site(template, purpose, site_arg, dry_run, level, rank, radius)
   local handle = reservations_mod.create({
     x = site.x, y = site.y, z = site.z, w = site.w, h = site.h,
     orient = site.orient or "none", bw = site.bw or site.w, bh = site.bh or site.h,
-    blueprint = bp.name, purpose = purpose, wall_cells = wall_cells,
-    allowed_kinds = allowed_kinds, level = level or 0,
+    blueprint = bp.name, purpose = purpose, wall_cells = wall_cells, portal_cells = portal_cells,
+    role = "room", allowed_kinds = allowed_kinds, level = level or 0,
   })
   result.handle = handle
   return result
+end
+
+-- reserve_tile_set PURPOSE ROLE TILES [DRY_RUN]: a reservation over an
+-- arbitrary set of tiles on any levels (a routed corridor, a stair column),
+-- for a Lua caller that already holds real coordinates (the router in
+-- df-overseer-circulation.lua); there is deliberately NO command-line form,
+-- since TILES is coordinates. TILES: {["x,y,z"] = "wall"|"portal"|"strict"}.
+-- ROLE: "room" | "corridor" (portal sharing needs one of each). Refuses on
+-- any tile that clashes with an existing reservation or carved site under
+-- df-overseer-reservations.lua's sharing rule, and on a hazard tile (the
+-- siting policy) -- only for the tiles it would dig, i.e. class strict or
+-- portal. The result carries counts and handles only, never a coordinate.
+function reserve_tile_set(purpose, role, tiles, dry_run)
+  if type(purpose) ~= 'string' or #purpose == 0 or #purpose > 200 then
+    return nil, "PURPOSE must be a non-empty string, at most 200 characters"
+  end
+  if role ~= "room" and role ~= "corridor" then return nil, "ROLE must be room or corridor" end
+  if type(tiles) ~= 'table' or next(tiles) == nil then return nil, "TILES must be a non-empty set" end
+  local n = 0
+  for _ in pairs(tiles) do n = n + 1 end
+  if n > MAX_SITE_TILES then
+    return nil, "tile set is over this tool's " .. MAX_SITE_TILES .. "-tile bound"
+  end
+  local dry = truthy_dry_run(dry_run)
+  local result = {purpose = purpose, role = role, dry_run = dry, tile_count = n}
+  hazard_mod.begin_scan()
+  for key, cls in pairs(tiles) do
+    if cls ~= "wall" then
+      local x, y, z = key:match("^(-?%d+),(-?%d+),(-?%d+)$")
+      if x then
+        local hz = hazard_mod.check_tile(tonumber(x), tonumber(y), tonumber(z))
+        if hz then
+          result.refused = true
+          result.blocked_reason = hazard_mod.message(hz, nil)
+          return result
+        end
+      end
+    end
+  end
+  local other_footprints = {}
+  for _, s in ipairs(all_sites_raw()) do
+    local swall, sportal = classify_site_cells(s)
+    local srole = nil
+    if s.reservation then
+      local rrec = reservations_mod.get_raw(s.reservation)
+      srole = rrec and rrec.role or nil
+    end
+    other_footprints[#other_footprints + 1] = {x = s.x, y = s.y, z = s.z, w = s.w, h = s.h,
+      wall_cells = swall, portal_cells = sportal, role = srole, label = s.handle}
+  end
+  local conflicts = reservations_mod.find_conflicts_tiles(tiles, role, other_footprints)
+  if #conflicts > 0 then
+    result.refused = true
+    result.conflicts = conflicts
+    result.blocked_reason = "overlaps an existing reservation or site on a tile the sharing rule does not allow"
+    return result
+  end
+  if dry then
+    result.would_reserve = true
+    return result
+  end
+  local handle, err = reservations_mod.create_tile_set({tiles = tiles, role = role, purpose = purpose})
+  if not handle then return nil, err end
+  result.handle = handle
+  return result
+end
+
+-- ---------------------------------------------------------------------------
+-- generate NAME CSV_JSON: register a GENERATED blueprint (red team B3)
+-- ---------------------------------------------------------------------------
+-- A generator (not a deploy) produced this blueprint at run time. It is held
+-- as quickfort CSV text in this file's persistent state under a name that
+-- must start `gen-`, and from then on plan / preview / apply / reserve /
+-- status / release take that name as TEMPLATE exactly as they take a deployed
+-- template's, through the same checks (hazard policy, reservations, access
+-- gate, shell-before-furniture, finished-intent read-back), because
+-- load_blueprint() returns the same shape for both. What differs: phases are
+-- applied through quickfort.apply_blueprint (run_generated above), one mode
+-- per section, never rotated, and `meta` sections are refused (apply each
+-- section as its own phase, in order). CSV text is the same single-level
+-- quickfort syntax; a `#>`/`#<` level change is refused by the shared parser.
+local GENERATED_MAX_BYTES = 65536
+local GENERATED_MAX_KEPT = 64
+local GENERATED_MODES = {dig = true, build = true, place = true, zone = true, notes = true}
+
+function generated_bp(name, csv)
+  local sections = parse_mod.parse_sections(csv)
+  if #sections == 0 then return nil, "no quickfort sections found in the generated blueprint" end
+  local fp, err = parse_mod.footprint_from_sections(sections)
+  if not fp then return nil, err end
+  return {name = name, qname = "(generated) " .. name, sections = sections, w = fp.w, h = fp.h,
+    room = fp.room, generated = true}
+end
+
+function register_generated(name, csv)
+  if type(name) ~= 'string' or not name:match('^gen%-[%w_%-]+$') or #name > 80 then
+    return nil, "NAME must start with gen- and use only letters, digits, _ and - (at most 80 characters)"
+  end
+  if type(csv) ~= 'string' or #csv == 0 then return nil, "the blueprint text must be a non-empty string" end
+  if #csv > GENERATED_MAX_BYTES then return nil, "generated blueprint is over " .. GENERATED_MAX_BYTES .. " bytes" end
+  local _, ferr = parse_mod.load_blueprint(name)
+  if not (ferr and tostring(ferr):find("no blueprint '", 1, true)) then
+    return nil, "'" .. name .. "' collides with a deployed template of that name"
+  end
+  local bp, err = generated_bp(name, csv)
+  if not bp then return nil, err end
+  for _, sec in ipairs(bp.sections) do
+    if not GENERATED_MODES[sec.mode] then
+      return nil, "generated blueprints may hold dig, build, place, zone and notes sections only; section '"
+        .. tostring(sec.label) .. "' is " .. sec.mode .. " (apply each section as its own phase)"
+    end
+  end
+  if bp.w * bp.h > MAX_SITE_TILES then
+    return nil, "generated blueprint footprint is over this tool's " .. MAX_SITE_TILES .. "-tile bound"
+  end
+  local state = load_state()
+  state.generated = state.generated or {}
+  local referenced = {}
+  for _, s in pairs(state.sites) do referenced[s.blueprint] = true end
+  for _, r in ipairs(reservations_mod.list_raw()) do referenced[r.blueprint] = true end
+  local existing = state.generated[name]
+  if existing and existing.csv ~= csv then
+    if referenced[name] then
+      return nil, "'" .. name .. "' is already registered with different content and a site or reservation uses it"
+    end
+  end
+  state.generated[name] = {csv = csv, tick = reservations_mod.abs_tick()}
+  -- keep the store bounded: drop the oldest unreferenced entries beyond the cap
+  local names = {}
+  for n in pairs(state.generated) do names[#names + 1] = n end
+  if #names > GENERATED_MAX_KEPT then
+    table.sort(names, function(a, b) return (state.generated[a].tick or 0) < (state.generated[b].tick or 0) end)
+    local drop = #names - GENERATED_MAX_KEPT
+    for _, n in ipairs(names) do
+      if drop <= 0 then break end
+      if n ~= name and not referenced[n] then state.generated[n] = nil; drop = drop - 1 end
+    end
+  end
+  save_state(state)
+  local phases = {}
+  for _, sec in ipairs(bp.sections) do
+    if sec.mode ~= "notes" then phases[#phases + 1] = {label = sec.label, mode = sec.mode, cells = #sec.cells} end
+  end
+  return {blueprint = name, registered = true, footprint = {width = bp.w, height = bp.h}, phases = phases}
 end
 
 -- reservations: every reservation, handle/purpose/footprint size/nearest
@@ -1897,6 +2111,7 @@ local USAGE = {
   "usage: df-overseer-blueprint reserve TEMPLATE PURPOSE SITE [DRY_RUN] [LEVEL] [RANK] [RADIUS_TILES]",
   "usage: df-overseer-blueprint reservations",
   "usage: df-overseer-blueprint unreserve RES_ID [DRY_RUN]",
+  "usage: df-overseer-blueprint generate NAME CSV_JSON   (CSV_JSON is the blueprint text as one JSON string)",
 }
 
 local function emit(res, err)
@@ -1922,6 +2137,13 @@ elseif cmd == "reserve" then
   else emit(reserve_site(args[2], args[3], args[4], args[5], tonumber(args[6]), tonumber(args[7]), tonumber(args[8]))) end
 elseif cmd == "reservations" then
   print(encode(list_reservations()))
+elseif cmd == "generate" then
+  if not (args[2] and args[3]) then print(USAGE[10])
+  else
+    local okj, text = pcall(json.decode, args[3])
+    if not okj or type(text) ~= 'string' then emit(nil, "CSV_JSON must be one JSON string holding the blueprint text")
+    else emit(register_generated(args[2], text)) end
+  end
 elseif cmd == "unreserve" then
   if not args[2] then print(USAGE[9]) else emit(unreserve_site(args[2], args[3])) end
 else

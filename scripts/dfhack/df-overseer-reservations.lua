@@ -143,17 +143,71 @@ end
 -- Overlap math
 -- ---------------------------------------------------------------------------
 
--- True if (x, y, z) falls inside footprint `rec` (x, y, z, w, h); also
--- returns the tile's 0-based position local to rec (dx, dy).
-local function contains(rec, x, y, z)
-  if z ~= rec.z then return false end
+-- TILE CLASSES AND SHAPES (circulation hands, red team B2).
+-- A footprint is one of two stored shapes, both read through class_at:
+--   rect:  {x, y, z, w, h, wall_cells, portal_cells} -- one level, a
+--          rectangle (every reservation made before 2026-10-08, and every
+--          template reservation still); wall_cells/portal_cells are sets of
+--          0-based "dx,dy" keys, every other tile of the rectangle is strict.
+--   tiles: {tiles = {["x,y,z"] = class}} -- any set of tiles on any levels (a
+--          routed corridor, a stair column). x, y, z (the LOWEST level), w, h
+--          and z_max are kept as the bounding box so a reader that only knows
+--          rectangles still gets a sane (if coarser) answer.
+-- Classes: "wall" (a boundary tile no dig ever touches), "portal" (the tile
+-- where a room's entrance meets a corridor) and "strict" (carve, interior,
+-- or anything else). A footprint also has a `role`, "room" or "corridor".
+-- Two footprints may share a tile ONLY if (a) both call it wall (the
+-- original shared-wall rule), or (b) one calls it portal, the other calls it
+-- portal or wall, and their roles are the two DIFFERENT known roles: so one
+-- room and one corridor, never two rooms and never two corridors, and a
+-- third footprint on a tile already shared by a room and a corridor always
+-- clashes with one of them. A footprint with no role never shares a portal
+-- (the strict default). Everything else is refused.
+local CLASSES = {wall = true, portal = true, strict = true}
+local ROLES = {room = true, corridor = true}
+
+-- The class this footprint gives tile (x, y, z), or nil if it does not cover it.
+local function class_at(rec, x, y, z)
+  if rec.tiles ~= nil then return rec.tiles[x .. "," .. y .. "," .. z] end
+  if z ~= rec.z then return nil end
   local dx, dy = x - rec.x, y - rec.y
-  if dx < 0 or dx >= rec.w or dy < 0 or dy >= rec.h then return false end
-  return true, dx, dy
+  if dx < 0 or dx >= rec.w or dy < 0 or dy >= rec.h then return nil end
+  local key = dx .. "," .. dy
+  if rec.wall_cells ~= nil and rec.wall_cells[key] == true then return "wall" end
+  if rec.portal_cells ~= nil and rec.portal_cells[key] == true then return "portal" end
+  return "strict"
 end
 
-local function is_wall(rec, dx, dy)
-  return rec.wall_cells ~= nil and rec.wall_cells[dx .. "," .. dy] == true
+-- True if footprint `rec` covers (x, y, z), either shape.
+local function contains(rec, x, y, z)
+  return class_at(rec, x, y, z) ~= nil
+end
+
+-- Calls fn(x, y, z, class) for every tile `rec` covers, either shape.
+local function each_tile(rec, fn)
+  if rec.tiles ~= nil then
+    for key, cls in pairs(rec.tiles) do
+      local x, y, z = key:match("^(-?%d+),(-?%d+),(-?%d+)$")
+      fn(tonumber(x), tonumber(y), tonumber(z), cls)
+    end
+    return
+  end
+  for dx = 0, rec.w - 1 do
+    for dy = 0, rec.h - 1 do
+      local x, y = rec.x + dx, rec.y + dy
+      fn(x, y, rec.z, class_at(rec, x, y, rec.z))
+    end
+  end
+end
+
+-- May two footprints share one tile? See the header above.
+local function compatible(cls_a, role_a, cls_b, role_b)
+  if cls_a == "wall" and cls_b == "wall" then return true end
+  local portal_a, portal_b = cls_a == "portal", cls_b == "portal"
+  if (portal_a or portal_b) and (cls_a == "wall" or portal_a) and (cls_b == "wall" or portal_b) then
+    return role_a ~= nil and role_b ~= nil and role_a ~= role_b
+  end
+  return false
 end
 
 -- Every existing footprint (this file's own stored reservations, plus
@@ -168,40 +222,55 @@ end
 -- always checking a footprint that does not exist yet). Returns a list of
 -- {kind = "reservation"|"site", handle =, purpose =} -- never a coordinate
 -- -- deduplicated, one entry per conflicting existing footprint.
-function find_conflicts(new_x, new_y, new_z, new_w, new_h, new_wall_cells, other_footprints, exclude_handle)
+function find_conflicts(new_x, new_y, new_z, new_w, new_h, new_wall_cells, other_footprints, exclude_handle,
+    new_portal_cells, new_role)
+  local tiles = {}
+  for dx = 0, new_w - 1 do
+    for dy = 0, new_h - 1 do
+      local key = dx .. "," .. dy
+      local cls = "strict"
+      if new_wall_cells ~= nil and new_wall_cells[key] == true then cls = "wall"
+      elseif new_portal_cells ~= nil and new_portal_cells[key] == true then cls = "portal" end
+      tiles[(new_x + dx) .. "," .. (new_y + dy) .. "," .. new_z] = cls
+    end
+  end
+  return find_conflicts_tiles(tiles, new_role, other_footprints, exclude_handle)
+end
+
+-- The same check for a proposed footprint that is any set of tiles:
+-- new_tiles is {["x,y,z"] = class}, new_role "room"|"corridor"|nil.
+function find_conflicts_tiles(new_tiles, new_role, other_footprints, exclude_handle)
   local state = load_state()
   local existing = {}
   for handle, rec in pairs(state.reservations) do
     if handle ~= exclude_handle then
-      existing[#existing + 1] = {kind = "reservation", handle = handle, purpose = rec.purpose,
-        x = rec.x, y = rec.y, z = rec.z, w = rec.w, h = rec.h, wall_cells = rec.wall_cells}
+      existing[#existing + 1] = {kind = "reservation", handle = handle, purpose = rec.purpose, role = rec.role,
+        x = rec.x, y = rec.y, z = rec.z, w = rec.w, h = rec.h, wall_cells = rec.wall_cells,
+        portal_cells = rec.portal_cells, tiles = rec.tiles}
     end
   end
   for _, f in ipairs(other_footprints or {}) do
-    existing[#existing + 1] = {kind = "site", handle = f.label, purpose = nil,
-      x = f.x, y = f.y, z = f.z, w = f.w, h = f.h, wall_cells = f.wall_cells}
+    existing[#existing + 1] = {kind = "site", handle = f.label, purpose = nil, role = f.role,
+      x = f.x, y = f.y, z = f.z, w = f.w, h = f.h, wall_cells = f.wall_cells,
+      portal_cells = f.portal_cells, tiles = f.tiles}
   end
 
   local conflicts, seen = {}, {}
-  for dx = 0, new_w - 1 do
-    for dy = 0, new_h - 1 do
-      local x, y = new_x + dx, new_y + dy
-      local new_wall = new_wall_cells ~= nil and new_wall_cells[dx .. "," .. dy] == true
-      for _, e in ipairs(existing) do
-        local key = e.kind .. ":" .. tostring(e.handle)
-        if not seen[key] then
-          local inside, edx, edy = contains(e, x, y, new_z)
-          if inside then
-            local existing_wall = is_wall(e, edx, edy)
-            if not (new_wall and existing_wall) then
-              seen[key] = true
-              conflicts[#conflicts + 1] = {kind = e.kind, handle = e.handle, purpose = e.purpose}
-            end
-          end
+  for key, new_cls in pairs(new_tiles) do
+    local x, y, z = key:match("^(-?%d+),(-?%d+),(-?%d+)$")
+    x, y, z = tonumber(x), tonumber(y), tonumber(z)
+    for _, e in ipairs(existing) do
+      local ekey = e.kind .. ":" .. tostring(e.handle)
+      if not seen[ekey] then
+        local ecls = class_at(e, x, y, z)
+        if ecls ~= nil and not compatible(new_cls, new_role, ecls, e.role) then
+          seen[ekey] = true
+          conflicts[#conflicts + 1] = {kind = e.kind, handle = e.handle, purpose = e.purpose}
         end
       end
     end
   end
+  table.sort(conflicts, function(a, b) return tostring(a.handle) < tostring(b.handle) end)
   return conflicts
 end
 
@@ -232,6 +301,47 @@ function create(rec)
   state.reservations[handle] = stored
   save_state(state)
   return handle
+end
+
+-- A reservation over any set of tiles on any levels (a routed corridor, a
+-- stair column). rec: {tiles = {["x,y,z"] = "wall"|"portal"|"strict"},
+-- role = "room"|"corridor", purpose, blueprint (optional), allowed_kinds
+-- (optional)}. Derives the bounding box (x, y, lowest z, w, h, z_max) and
+-- stores it with the tiles. Returns handle, or nil, err.
+function create_tile_set(rec)
+  if type(rec) ~= 'table' or type(rec.tiles) ~= 'table' or next(rec.tiles) == nil then
+    return nil, "a tile-set reservation needs a non-empty tiles table"
+  end
+  if rec.role ~= nil and not ROLES[rec.role] then
+    return nil, "role must be 'room' or 'corridor'"
+  end
+  local x1, y1, z1, x2, y2, z2 = 1e9, 1e9, 1e9, -1e9, -1e9, -1e9
+  for key, cls in pairs(rec.tiles) do
+    if not CLASSES[cls] then return nil, "tile class must be wall, portal or strict, got " .. tostring(cls) end
+    local x, y, z = key:match("^(-?%d+),(-?%d+),(-?%d+)$")
+    if not x then return nil, "tile keys must look like 'x,y,z'" end
+    x, y, z = tonumber(x), tonumber(y), tonumber(z)
+    x1 = math.min(x1, x); x2 = math.max(x2, x)
+    y1 = math.min(y1, y); y2 = math.max(y2, y)
+    z1 = math.min(z1, z); z2 = math.max(z2, z)
+  end
+  local stored = {}
+  for k, v in pairs(rec) do stored[k] = v end
+  stored.x, stored.y, stored.z = x1, y1, z1
+  stored.w, stored.h, stored.z_max = x2 - x1 + 1, y2 - y1 + 1, z2
+  stored.shape = "tiles"
+  return create(stored)
+end
+
+-- Every tile a reservation covers, as a list of {x, y, z, class}. Internal
+-- (real coordinates), like get_raw: for a Lua caller that routes or checks,
+-- never for anything surfaced to an agent. Reads both stored shapes.
+function tiles_of(handle)
+  local rec = get_raw(handle)
+  if not rec then return nil end
+  local out = {}
+  each_tile(rec, function(x, y, z, cls) out[#out + 1] = {x = x, y = y, z = z, class = cls} end)
+  return out
 end
 
 -- True if `kind` is one of `handle`'s own declared allowed kinds. False (not
@@ -310,19 +420,14 @@ function remove(handle)
   state.reservations[handle] = nil
   save_state(state)
   local remaining, seen = {}, {}
-  for dx = 0, rec.w - 1 do
-    for dy = 0, rec.h - 1 do
-      local x, y = rec.x + dx, rec.y + dy
-      for other_handle, other in pairs(state.reservations) do
-        if not seen[other_handle] then
-          if contains(other, x, y, rec.z) then
-            seen[other_handle] = true
-            remaining[#remaining + 1] = other_handle
-          end
-        end
+  each_tile(rec, function(x, y, z)
+    for other_handle, other in pairs(state.reservations) do
+      if not seen[other_handle] and contains(other, x, y, z) then
+        seen[other_handle] = true
+        remaining[#remaining + 1] = other_handle
       end
     end
-  end
+  end)
   table.sort(remaining)
   return true, remaining, nil
 end

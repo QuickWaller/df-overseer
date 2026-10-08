@@ -86,7 +86,13 @@ function parse_sections(text)
   for raw in (text .. "\n"):gmatch("([^\n]*)\n") do
     local line = raw:gsub("\r$", "")
     local mode = line:match("^#(%a+)")
-    if mode and VALID_MODES[mode] then
+    if line:match("^#%s*[<>]") then
+      -- quickfort's level-change line (`#>` down, `#<` up, optionally with a
+      -- count). Without this the line falls through to the grid-row branch
+      -- below, whose first cell starts with `#` and ends the row: an empty
+      -- row, and the levels beyond it silently folded onto the first.
+      sections.multi_level = true
+    elseif mode and VALID_MODES[mode] then
       unnamed = unnamed + 1
       cur = {
         mode = mode,
@@ -103,6 +109,11 @@ function parse_sections(text)
         x = x + 1
         local t = cell:match("^%s*(.-)%s*$")
         if t:sub(1, 1) == "#" then break end
+        if cur.mode == "meta" and t:find("repeat%s*%(") and (t:find("up") or t:find("down")
+            or t:find("[<>]")) then
+          -- a meta cell that repeats a blueprint up or down levels
+          sections.multi_level = true
+        end
         if #t > 0 and t ~= "`" then
           cur.cells[#cur.cells + 1] = {x = x, y = cur.row, text = t}
           if x > cur.w then cur.w = x end
@@ -120,6 +131,11 @@ end
 -- has any cells at all. Moved verbatim from df-overseer-blueprint.lua's own
 -- load_blueprint -- see header.
 function footprint_from_sections(sections)
+  if sections.multi_level then
+    return nil, "this blueprint changes levels (a `#>` or `#<` line, or a meta that repeats up or down); "
+      .. "this verb reads and applies ONE level only and would fold the levels onto one footprint, so it refuses. "
+      .. "Join levels with the stair pair tool (diggable dig-stair) and apply each level as its own blueprint"
+  end
   local w, h = 0, 0
   local room = nil
   for _, s in ipairs(sections) do
