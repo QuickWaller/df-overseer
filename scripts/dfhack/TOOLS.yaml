@@ -6355,7 +6355,7 @@ df-overseer-blueprint.lua:
         traps: []
     "generate NAME CSV_JSON":
       lua_function: register_generated
-      effect: mutate
+      effect: read
       coordinate_bearing: false
       live_deployed: false
       verified: "offline lupa tests only (2026-10-08, circulation hands B3); the installed quickfort.apply_blueprint signature was read on the guest. Not yet run live."
@@ -6368,7 +6368,7 @@ df-overseer-blueprint.lua:
         file (siting hazard, reservations, access gate, shell-before-furniture, read-back); the
         phases are applied through quickfort.apply_blueprint (one mode per section, never rotated)
         instead of a file. Single-level only: a `#>` or `#<` line is refused here as everywhere.
-        No meta sections (apply each section as its own phase). Writes nothing to the map. CSV_JSON
+        No meta sections (apply each section as its own phase). Writes nothing to the map or the fort: it only stores the text in this verb's own scratch registry (classified read for that reason; if it should count as mutating it needs a dfqueue/action_tools.yaml entry). CSV_JSON
         is the blueprint text as one JSON string. Granted to no role: a generator reaches it, an
         agent does not.
       summary: "Registers a generated single-level blueprint by name so the blueprint verbs can apply it without a deployed file."
