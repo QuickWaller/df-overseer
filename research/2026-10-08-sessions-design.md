@@ -653,9 +653,13 @@ sessions:
   fallback: oneshot
 ```
 
-`DockerOpenClawRunner` stays as is. Rollback for a role is one line back to `oneshot`
-and takes effect next cycle (policy is read per cycle today [V, charters and policy
-re-read]). New code: `conductor/inbox.py` (pure: build, coalesce, order, render,
+`DockerOpenClawRunner` stays as is. Rollback for a role is one line back to `oneshot`.
+It takes effect on the next `--once` run, but under the service only after a restart:
+`conductor/service.py` `build_deps` loads the policy and the charters once at start
+[V], although the `service.py` module docstring and `load_charters`'s own docstring say
+charters are "read fresh every cycle". That is a doc-versus-code discrepancy worth
+fixing on its own (reload policy per cycle, or correct the docstrings); flagged here,
+not changed. New code: `conductor/inbox.py` (pure: build, coalesce, order, render,
 ack checks), `conductor/session_runner.py` (transport protocol, gateway, local, fake),
 a session loop called from `cycle.py` per role, dfmcp `conductor.report` fields and
 `runs` columns, `live.py` grouping, `wake_metrics` items group.
