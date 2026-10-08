@@ -51,6 +51,7 @@ def _lua_literal(v):
 class Circ:
     def __init__(self, layers, spec):
         self.lua = lupa.LuaRuntime(unpack_returned_tuples=True)
+        self.lua.execute("ROOMKINDS_LUA_PATH = %r" % str(REPO_ROOT / "scripts" / "dfhack" / "df-overseer-roomkinds.lua"))
         self.lua.execute(STUB.read_text(encoding="utf-8"))
         load = self.lua.eval("function(src, name) return load(src, name) end")
         chunk = load(LUA.read_text(encoding="utf-8"), "circulation.lua")

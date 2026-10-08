@@ -28,8 +28,20 @@ local TEXTUTIL = {
 FAKE_MODULES = {}
 local LOADED = {}
 
+local ROOMKINDS
 function reqscript(n)
   if FAKE_MODULES[n] then return FAKE_MODULES[n] end
+  if n == "df-overseer-roomkinds" then
+    -- the REAL generated room-kind data
+    if not ROOMKINDS then
+      local f = io.open(ROOMKINDS_LUA_PATH, "r")
+      local src = f:read("*a")
+      f:close()
+      ROOMKINDS = setmetatable({}, {__index = _G})
+      assert(load(src, "roomkinds.lua", "t", ROOMKINDS))()
+    end
+    return ROOMKINDS
+  end
   if n == "df-overseer-textutil" then return TEXTUTIL end
   return {}
 end

@@ -68,3 +68,9 @@ def test_reservation_entries_one_rect_per_level(circ):
         {"id": "res-9", "x": 2, "y": 7, "z": 0, "w": 1, "h": 1},
         {"id": "res-9", "x": 2, "y": 3, "z": 1, "w": 4, "h": 1},
     ]
+
+
+def test_private_kinds_and_site_kinds_come_from_the_room_kind_data(circ):
+    d = _py(circ.lua.eval("(function() local d = data(); return {p = d.private_kinds, s = d.site_room_kinds} end)()"))
+    assert d["p"] == {"Bedroom": True, "Dormitory": True, "Office": True}
+    assert d["s"]["bedroom-cell"] == "Bedroom" and d["s"]["office-room"] == "Office"

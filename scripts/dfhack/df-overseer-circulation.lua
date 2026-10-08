@@ -70,6 +70,10 @@
 
 local json = require('json')
 local textutil = reqscript('df-overseer-textutil')
+-- Room-kind data (generated from blueprints/room-kinds.yaml): which kinds are
+-- private, and which kind a blueprint's room is. One source for the placement
+-- gate and this graph.
+local roomkinds = reqscript('df-overseer-roomkinds')
 
 -- ---------------------------------------------------------------------------
 -- Data: everything per-kind or per-fort-policy lives here, not in branches.
@@ -92,7 +96,8 @@ local DATA = {
     Library = true, Temple = true,
   },
   -- Room kinds that must be leaves: nobody should walk through them.
-  private_kinds = { Bedroom = true, Dormitory = true },
+  -- (Derived from the room-kind data below this table: zone kind -> true.)
+  private_kinds = {},
   -- Building types (df.building_type names) worth being a named landmark.
   landmark_building_kinds = {
     Well = true, Workshop = true, Furnace = true, TradeDepot = true,
@@ -127,7 +132,8 @@ local DATA = {
   -- A blueprint site with no room zone over its interior still IS a room
   -- (the fort digs the shell before it zones). Kind by blueprint id with its
   -- "-vN" revision suffix stripped; an unlisted blueprint is kind "Site".
-  site_room_kinds = { ["bedroom-cell"] = "Bedroom", ["office-room"] = "Office" },
+  -- (Derived from the room-kind data below this table: template id -> zone kind.)
+  site_room_kinds = {},
   -- Tiles of wall ring at each side of a site footprint, before the interior.
   site_interior_inset = 1,
   -- Output caps (listed counts are always given in full alongside).
@@ -135,6 +141,17 @@ local DATA = {
   max_nodes_listed = 300,
   max_edges_listed = 400,
 }
+
+do
+  local rk = roomkinds.data()
+  for id, k in pairs(rk.kinds) do
+    if k.private and k.zone_kind and not k.location then DATA.private_kinds[k.zone_kind] = true end
+  end
+  for tid, kid in pairs(rk.template_kind) do
+    local k = rk.kinds[kid]
+    if k and k.zone_kind then DATA.site_room_kinds[tid] = k.zone_kind end
+  end
+end
 
 function data() return DATA end
 
