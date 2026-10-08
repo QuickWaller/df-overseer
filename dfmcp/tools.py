@@ -456,6 +456,14 @@ _ARG_DESCRIPTIONS: Dict[str, str] = {
         "a path and never a coordinate. It must already be deployed on the game "
         "host, else the error says so."
     ),
+    "blueprint.NAME": (
+        "gen- followed by letters, digits, underscore or hyphen: the name a generated blueprint is "
+        "registered under. It must not name a deployed template."
+    ),
+    "blueprint.CSV_JSON": (
+        "The generated blueprint's quickfort CSV text, JSON-encoded as one string. Single level; "
+        "dig, build, place, zone and notes sections only."
+    ),
     "blueprint.PHASE": (
         "One quickfort section label from blueprint.plan's `phases` list "
         "(a shell's dig phase, a zone phase, a #meta bundle). Apply phases in "
