@@ -124,3 +124,37 @@ def test_filings_block_is_capped():
     )
     assert len(b["your_recent_filings"]["items"]["items"]) == MAX_FILING_LINES
     assert b["your_recent_filings"]["items"]["truncated"] is True
+
+
+def test_paused_line_causes_and_absence():
+    from types import SimpleNamespace
+    from conductor.briefing import paused_line
+    assert paused_line({"paused": False}) is None
+    assert paused_line(None) is None
+    assert paused_line({"paused": True}, still_paused=False) is None
+    plain = paused_line({"paused": True, "tripwire": None})
+    assert "plain pause" in plain and "not broken" in plain
+    held = SimpleNamespace(held=True, reason="deploying")
+    both = paused_line({"paused": True, "tripwire": {"reason": "unit_critical"}, "blocking_panel": {"name": "Info"}}, held)
+    assert "operator hold (deploying)" in both and "tripwire stop (unit_critical)" in both and "blocking panel (Info)" in both
+
+
+def test_paused_line_sits_after_the_stable_head_in_both_briefings():
+    import json
+    from conductor.briefing import build_ruling_briefing
+    base = dict(role="architect", game_tick=5, wake=_WAKE, vitals=_VITALS, diff_events=[], queue_summary={"count": 0})
+    plain = build_briefing(**base)
+    paused = build_briefing(**base, paused="FORT PAUSED: x")
+    keys = list(paused)
+    assert keys.index("fort_paused") > keys.index("wake_reason")
+    cut = list(plain).index("wake_detail") + 1
+    assert json.dumps({k: plain[k] for k in list(plain)[:cut]}) == json.dumps({k: paused[k] for k in keys[:cut]})
+    assert {k: v for k, v in paused.items() if k != "fort_paused"} == plain
+    text = build_ruling_briefing(game_tick=5, wake=_WAKE, vitals=_VITALS, alerts=[], pending_brief=None, paused="FORT PAUSED: x")
+    lines = text.split("\n")
+    assert lines[0].startswith("WAKE") and lines[1] == "FORT PAUSED: x"
+
+
+def test_shipped_policy_has_the_filings_block_off():
+    from conductor.policy import load_policy
+    assert load_policy().own_filings_recent == 0

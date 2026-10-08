@@ -59,7 +59,7 @@ from dataclasses import dataclass
 from typing import Any, Callable, Dict, List, Mapping, Optional, Sequence, Set, Tuple
 
 from conductor.archive import CycleArchive
-from conductor.briefing import build_briefing, build_ruling_briefing, evaluate_threshold_alerts, routing_from_state
+from conductor.briefing import paused_line, build_briefing, build_ruling_briefing, evaluate_threshold_alerts, routing_from_state
 from conductor import lanes
 from conductor.cursors import CursorStore
 from conductor.game_tick import GameTickError, game_tick_from_overview
@@ -953,6 +953,7 @@ async def _run_cycle(cycle_index: int, deps: CycleDeps, hold: HoldState) -> Cycl
         if not routing_read and not deps.dry_run and role in (*ADVISORS, OVERSEER):
             routing_read = True
             routing = await _read_routing(call, cycle_index)
+        paused_now = paused_line(clock_status, hold, still_paused=pause_outcome is None or pause_outcome.still_paused)
         own_filings = None
         if role in PROPOSERS and not deps.dry_run and deps.policy.own_filings_recent > 0:
             own_filings = await _read_own_filings(call, role, deps.policy.own_filings_recent, cycle_index)
@@ -966,6 +967,7 @@ async def _run_cycle(cycle_index: int, deps: CycleDeps, hold: HoldState) -> Cycl
             frozen_types=(routing or {}).get("frozen_types") if role in ADVISORS else None,
             roadmap_line=roadmap_line if role in (OVERSEER, PLANNER) else None,
             utilisation=utilisation if role == PLANNER else None,
+            paused=paused_now,
         )
         briefings[role] = briefing
         prompt = json.dumps(briefing, default=str)
@@ -978,7 +980,7 @@ async def _run_cycle(cycle_index: int, deps: CycleDeps, hold: HoldState) -> Cycl
                 game_tick=game_tick or 0, wake=wake, vitals=vitals, alerts=alerts,
                 pending_brief=pending_brief, diff_events=events_by_role.get(role, []),
                 stuck_jobs=job_watch.lines, to_carry_out=to_carry_out, routing=routing,
-                roadmap_line=roadmap_line,
+                roadmap_line=roadmap_line, paused=paused_now,
             )
             briefings[role] = {"ruling_prompt": prompt, "pending_brief": pending_brief}
 
@@ -1277,6 +1279,7 @@ async def _tripwire_cycle(
             prompt = build_ruling_briefing(
                 game_tick=game_tick or 0, wake=wake, vitals=vitals, alerts=[],
                 pending_brief=pending_brief, diff_events=events_by_role.get(OVERSEER, []),
+                paused=paused_line(clock_status, hold),
             )
             briefings[OVERSEER] = {"ruling_prompt": prompt, "pending_brief": pending_brief}
             verdict_baseline = await read_verdict_baseline(call)
@@ -1286,6 +1289,7 @@ async def _tripwire_cycle(
                 role=role, game_tick=game_tick or 0, wake=wake, vitals=vitals,
                 diff_events=events_by_role.get(role, []),
                 queue_summary=_queue_summary_for(role, queue_state),
+                paused=paused_line(clock_status, hold),
             )
             briefings[role] = briefing
             prompt = json.dumps(briefing, default=str)
@@ -1631,6 +1635,7 @@ async def _paused_cycle_result(
             role=OVERSEER, game_tick=game_tick or 0, wake=wake, vitals=vitals,
             diff_events=events_by_role.get(OVERSEER, []),
             queue_summary=_queue_summary_for(OVERSEER, queue_state),
+            paused=paused_line(clock_status, hold),
         )
         briefings[OVERSEER] = briefing
         verdict_baseline = await read_verdict_baseline(call)
