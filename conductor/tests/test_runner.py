@@ -73,9 +73,15 @@ class TestBuildCommand:
         joined = " ".join(command)
         assert "docker run --rm --hostname overseer --entrypoint node" in joined
         assert str(tmp_path / "config" / "overseer.json") in joined
-        assert joined.count(":ro") == 1  # only the pinned config overlay is read-only
+        assert joined.count(":ro") == 2  # pinned config overlay and the charter mount
         assert "--env-file" in command
         assert str(tmp_path / "secrets.env") in command
+
+    def test_charter_is_mounted_read_only_where_openclaw_reads_it(self, tmp_path):
+        runner = _runner(tmp_path, _fake_exec(_FakeProcess(b"{}")))
+        command = runner.build_command("overseer", "x", model="m")
+        soul = tmp_path / "workspaces" / "overseer-workspace" / "SOUL.md"
+        assert f"{soul}:/app/SOUL.md:ro" in command
 
     def test_hostname_is_fixed_per_role_so_the_prompt_prefix_is_stable(self, tmp_path):
         runner = _runner(tmp_path, _fake_exec(_FakeProcess(b"")))
@@ -118,7 +124,7 @@ class TestBuildCommand:
 class TestRun:
     async def test_a_successful_run_parses_the_envelope(self, tmp_path):
         runner = _runner(tmp_path, _fake_exec(_FakeProcess(json.dumps(_OK_ENVELOPE).encode())))
-        result = await runner.run("overseer", "rule on proposal-0001", model="deepseek/deepseek-v4-pro")
+        result = await runner.run("overseer", "rule on proposal-0001", model="deepseek/deepseek-v4-pro", charter="# C")
         assert isinstance(result, RunResult)
         assert result.ok is True
         assert result.status == "ok"
@@ -131,27 +137,27 @@ class TestRun:
     async def test_a_failed_envelope_is_ok_false_never_an_exception(self, tmp_path):
         envelope = {"ok": False, "status": "error", "costUsd": 0.001, "toolSummary": {}}
         runner = _runner(tmp_path, _fake_exec(_FakeProcess(json.dumps(envelope).encode())))
-        result = await runner.run("architect", "x", model="m")
+        result = await runner.run("architect", "x", model="m", charter="# C")
         assert result.ok is False
         assert result.status == "error"
 
     async def test_invalid_json_stdout_is_a_refusal_not_a_crash(self, tmp_path):
         runner = _runner(tmp_path, _fake_exec(_FakeProcess(b"not json at all")))
-        result = await runner.run("architect", "x", model="m")
+        result = await runner.run("architect", "x", model="m", charter="# C")
         assert result.ok is False
         assert result.status == "bad_json"
         assert "did not print valid JSON" in result.error
 
     async def test_empty_stdout_is_a_refusal_not_a_crash(self, tmp_path):
         runner = _runner(tmp_path, _fake_exec(_FakeProcess(b"")))
-        result = await runner.run("architect", "x", model="m")
+        result = await runner.run("architect", "x", model="m", charter="# C")
         assert result.ok is False
         assert result.status == "no_output"
 
     async def test_a_timeout_kills_the_process_and_reports_timed_out(self, tmp_path):
         process = _FakeProcess(b"", hang=True)
         runner = _runner(tmp_path, _fake_exec(process))
-        result = await runner.run("architect", "x", model="m", timeout_seconds=0.01)
+        result = await runner.run("architect", "x", model="m", charter="# C", timeout_seconds=0.01)
         assert result.timed_out is True
         assert result.status == "timeout"
         assert process.killed is True
@@ -160,7 +166,7 @@ class TestRun:
         process = _FakeProcess(b"", hang=True)
         fake = _fake_exec(process)
         runner = _runner(tmp_path, fake)
-        result = await runner.run("architect", "x", model="m", timeout_seconds=0.01)
+        result = await runner.run("architect", "x", model="m", charter="# C", timeout_seconds=0.01)
         run_cmd = fake.calls[0]
         name = run_cmd[run_cmd.index("--name") + 1]
         assert name.startswith("conductor-architect-")
@@ -170,26 +176,26 @@ class TestRun:
     async def test_inner_deadline_is_passed_to_agent_exec(self, tmp_path):
         fake = _fake_exec(_FakeProcess(json.dumps(_OK_ENVELOPE).encode()))
         runner = _runner(tmp_path, fake)
-        await runner.run("architect", "x", model="m", timeout_seconds=600)
+        await runner.run("architect", "x", model="m", charter="# C", timeout_seconds=600)
         cmd = list(fake.calls[0])
         assert cmd[cmd.index("--timeout") + 1] == "600"
         assert cmd.index("--timeout") > cmd.index("exec")
 
     async def test_failed_launches_and_missing_cost_are_unknown_not_zero(self, tmp_path):
         no_out = _runner(tmp_path, _fake_exec(_FakeProcess(b"")))
-        assert (await no_out.run("architect", "x", model="m")).cost_usd is None
+        assert (await no_out.run("architect", "x", model="m", charter="# C")).cost_usd is None
         bad = _runner(tmp_path, _fake_exec(_FakeProcess(b"nope")))
-        assert (await bad.run("architect", "x", model="m")).cost_usd is None
+        assert (await bad.run("architect", "x", model="m", charter="# C")).cost_usd is None
         nocost = _runner(tmp_path, _fake_exec(_FakeProcess(b'{"ok": true, "status": "ok"}')))
-        assert (await nocost.run("architect", "x", model="m")).cost_usd is None
+        assert (await nocost.run("architect", "x", model="m", charter="# C")).cost_usd is None
         zero = _runner(tmp_path, _fake_exec(_FakeProcess(b'{"ok": true, "status": "ok", "costUsd": 0}')))
-        assert (await zero.run("architect", "x", model="m")).cost_usd == 0.0
+        assert (await zero.run("architect", "x", model="m", charter="# C")).cost_usd == 0.0
 
     async def test_launch_failure_is_a_refusal_not_a_crash(self, tmp_path):
         async def _broken_exec(*args, **kwargs):
             raise FileNotFoundError("docker: command not found")
         runner = _runner(tmp_path, _broken_exec)
-        result = await runner.run("architect", "x", model="m")
+        result = await runner.run("architect", "x", model="m", charter="# C")
         assert result.ok is False
         assert result.status == "launch_failed"
         assert "docker" in result.error
@@ -233,12 +239,16 @@ class TestRunWithCharter:
         assert result.timed_out is True
         assert not soul_path.is_file()
 
-    async def test_run_with_no_charter_never_writes_a_soul_file(self, tmp_path):
-        runner = _runner(tmp_path, _fake_exec(_FakeProcess(json.dumps(_OK_ENVELOPE).encode())))
-        soul_path = tmp_path / "workspaces" / "overseer-workspace" / "SOUL.md"
-
-        await runner.run("overseer", "rule", model="m")  # no charter=
-        assert not soul_path.is_file()
+    @pytest.mark.parametrize("charter", [None, "", "  \n"])
+    async def test_run_refuses_a_role_with_no_charter(self, tmp_path, caplog, charter):
+        def _boom(*a, **k):
+            raise AssertionError("must not launch without a charter")
+        runner = _runner(tmp_path, _boom)
+        with caplog.at_level("ERROR"):
+            result = await runner.run("overseer", "rule", model="m", charter=charter)
+        assert result.ok is False
+        assert result.status == "charter_missing"
+        assert "refusing to run without a charter" in caplog.text
 
 
 @pytest.mark.asyncio

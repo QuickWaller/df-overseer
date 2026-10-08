@@ -63,6 +63,9 @@ DEFAULT_TIMEOUT_SECONDS = 600.0
 #: outer kill still applies and cost stays unknown (None).
 OUTER_KILL_GRACE_SECONDS = 60.0
 
+#: Where openclaw looks for the charter inside the container.
+CHARTER_MOUNT = "/app/SOUL.md"
+
 #: Bound on the best-effort `docker kill` after a timeout.
 DOCKER_KILL_WAIT_SECONDS = 30.0
 
@@ -498,6 +501,11 @@ class DockerOpenClawRunner:
             "-v", f"{self.openclaw_state_dir}:/home/node/.openclaw",
             "-v", f"{self.pinned_config_dir / (role + '.json')}:/home/node/.openclaw/openclaw.json:ro",
             "-v", f"{self._workspace_dir(role)}:{self._workspace_dir(role)}",
+            # openclaw injects its bootstrap files from the container cwd
+            # (/app), not the configured workspace: without this mount the
+            # charter reads `[MISSING]` in the model's system prompt
+            # (evals/live/2026-10-08-charter-delivery). /app ships no SOUL.md.
+            "-v", f"{self._workspace_dir(role) / 'SOUL.md'}:{CHARTER_MOUNT}:ro",
             *state_mount,
             self.image, "openclaw.mjs", "agent", "exec", "--json",
             *state_args, *timeout_args, "--model", model, prompt,
@@ -526,6 +534,13 @@ class DockerOpenClawRunner:
         deploy config already carries a persisted charter another way) skips
         both steps."""
         started = self._clock()
+        if charter is None or not charter.strip():
+            # A role without its charter must never run: it would silently
+            # work from tool descriptions alone (2026-10-08 finding).
+            return self._failed_run(
+                role, "charter_missing", started, "refusing to run without a charter",
+                ValueError(f"charter for role {role} is absent or empty"),
+            )
         if charter is not None:
             try:
                 self.write_soul(role, charter)
