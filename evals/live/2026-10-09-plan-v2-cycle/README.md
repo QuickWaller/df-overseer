@@ -69,3 +69,35 @@ stalled (3 wakes, no more until mined).
 - Runs DB (`Uniboslan.runs.sqlite3` on VM 103, read-only): run rows for status, duration, final answer, record ids, and the transcript for tool-call repeats.
 - Plan: live `plan__read` through the MCP client as the planner role.
 - Hold: `/tmp/hold.sh show` on VM 106 before (the cycle log also says "HELD by operator") and after the cycle.
+
+## Second cycle (2026-10-08 23:43 UTC): plan v2 ADOPTED
+
+Same rules: hold ON before and after (hold script `show`), no service, no unpause, no save, no timeout change. Cycle wall time 1 min 14 s; only the Planner woke.
+
+| run | role | wake reason | turns | duration | cost_usd (logged) | tokens |
+|---|---|---|---|---|---|---|
+| run-0049 | planner | ruling_on_own (ruling-0047) | 7 | 71.4 s | 0.0052 | input 8,611, output 13,119 (reasoning 10,466), cacheRead 126,720, total 148,450 |
+
+No error, no timeout. Tool calls: plan.read, queue.my_filings, then five plan.write calls (dry runs
+then the real filing, by the Planner's own account; my repeat check keyed on the first 60 characters
+of arguments reported a max repeat of 4, so those five writes are the only loop-adjacent signal and
+were not diffed argument by argument).
+
+Result: `plan.read` now shows active_version 2, `fort_plan-0002`, ruling_id ruling-0047, `plan_stage`
+hamlet, `stage_entries_not_in_plan` empty, no flags, history of two versions (v2 has 3 changes).
+Reason on file: "Ruling-0047: adopt the hamlet roadmap targets (bedrooms 1/alive; dining_tables
+0.2/alive floor 4), replacing the pre-stage dining_seats target."
+
+Plan v2 targets verbatim (from `plan.read`):
+
+- `bedrooms`: owner architect, per alive, want 1, reorder_gap 2, roadmap_ref bedrooms, signal `zones."Bedroom".furnished`
+- `dining_tables`: owner architect, per alive, want 0.2, reorder_gap 1, roadmap_ref dining_tables, signal `zones."DiningHall".furniture."Table"`
+
+`dining_seats` was removed. Neither want carries `plus`, `min` or `max`.
+
+Deviations from the hamlet targets (the server records both as kind "shape"):
+
+1. `bedrooms`: roadmap `{per_alive: 1.0}` filed as numeric 1 per alive. Equivalent.
+2. `dining_tables`: roadmap `{per_alive: 0.2, min: 4}` filed as 0.2 per alive. **The floor of 4 is lost**, because `plan.write` accepts only a numeric `want`. At 24 alive, 0.2 x 24 = 4.8 so the effective want is still above the floor; it would fall under 4 only below 20 alive. A real gap in `plan.write` (no min/max on a want), worth a fix before the plan is relied on at smaller populations or the village stage.
+
+Verified by: the cycle log, a live `plan__read` as planner, the runs DB row and transcript for run-0049, and the hold script after the cycle (still HELD, expires never).
