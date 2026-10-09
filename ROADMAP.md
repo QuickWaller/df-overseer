@@ -1,7 +1,7 @@
 # Roadmap
 
 **Last reviewed:** 2026-10-09 (twenty-eighth pass, targeted: a new top Now
-item for 2026-10-08/09; Next and Later not re-scanned.)
+item for 2026-10-08/09, updated at checkpoint 1 for done items and the day's decisions; Next and Later not re-scanned.)
 
 **Previously reviewed:** 2026-10-08 (twenty-seventh pass, targeted: the 2026-10-02
 item's open list was re-read against `Working.md`'s plan of attack and the
