@@ -7,7 +7,9 @@ from pathlib import Path
 
 import pytest
 
-from dfmcp import pause_stamp as ps
+pytest.importorskip("mcp.server.context")  # ambient python lacks the MCP SDK; .venv-dfmcp has it
+
+from dfmcp import pause_stamp as ps  # noqa: E402
 from dfmcp.server import build_asgi_app, build_mcp_server
 from dfmcp.tests.test_dfhack_client import make_ok_action
 from dfmcp.tests.test_server import (  # noqa: F401 -- fixtures
