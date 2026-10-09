@@ -195,14 +195,15 @@ def deploy_target(
         runner.run(target.host, "sudo -n systemctl daemon-reload")
         print("  systemctl daemon-reload done")
 
-    for service in plan["low_risk_restarts"]:
-        runner.run(target.host, f"sudo systemctl restart {service}")
-        print(f"  restarted {service}")
+    for entry in target.restart:
+        if not entry.is_high_risk:
+            runner.run(entry.host or target.host, f"sudo systemctl restart {entry.service}")
+            print(f"  restarted {entry.service}")
 
     for entry in target.restart:
         if entry.is_high_risk:
             print(f"  NOT restarting high-risk service '{entry.service}'. Manual step:")
-            print(f"    scripts/vm-ssh.sh {target.host} 'sudo systemctl restart {entry.service}'")
+            print(f"    scripts/vm-ssh.sh {entry.host or target.host} 'sudo systemctl restart {entry.service}'")
             print(f"    Read first: {entry.why.strip()}")
 
     # The deploy is only done when this target's drift check is clean (the

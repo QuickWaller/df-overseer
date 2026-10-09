@@ -469,3 +469,16 @@ def test_read_stamp_prefers_the_targets_own_stamp():
     t = _target(name="vm103-dfmcp")
     assert drift_check.stamp_command(t, "/opt/x").startswith("cat /opt/x/DEPLOYED_COMMIT.vm103-dfmcp ")
     assert "|| cat /opt/x/DEPLOYED_COMMIT 2>/dev/null" in drift_check.stamp_command(t, "/opt/x")
+
+
+def test_check_services_probes_a_cross_host_entry_on_its_own_host():
+    targets = {
+        "t1": _target(host="df", restart=[dc.RestartEntry(
+            service="gw.service", risk="high", why="x", host="openclaw")]),
+    }
+    runner = dc.FakeRunner({
+        ("openclaw", "systemctl show gw.service --property=ActiveState,UnitFileState 2>&1 || true"):
+            "ActiveState=active\nUnitFileState=disabled\n",
+    })
+    result = drift_check.check_services(targets, runner)
+    assert result["gw.service"] == {"host": "openclaw", "active": "active", "enabled": "disabled", "risk": "high"}

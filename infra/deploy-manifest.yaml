@@ -135,6 +135,18 @@ targets:
           across a DFHack restart per infra/dfmcp-server.service.example's
           own header, and this is the reverse direction, MCP server over
           DFHack, which is even less coupled).
+      - service: openclaw-gateway.service
+        host: openclaw
+        risk: high
+        why: >-
+          Added 2026-10-09 (research/2026-10-09-gateway-sessions-v1.md 7.4). The
+          Gateway keeps MCP servers' connections and cached tools, and its config
+          is not hot-reloaded, so a dfmcp change to tools or their descriptions may
+          not reach the roles until it restarts. Not low risk: a requested stop
+          drains in-flight turns for up to 5 minutes, and a restart under a live
+          conductor wake is what the drain and the start-time session wipe exist
+          for. Restart only while the conductor is idle, by hand. The service is
+          started by hand and may be stopped on purpose; deploy.py never starts it.
     post_deploy:
       - "doctrine/ changes do NOT need this restart -- dfmcp/doctrine_tools.py
          re-reads doctrine/seed.yaml on every call (infra/local.example.env's
@@ -362,6 +374,46 @@ targets:
       agents/, which both drifted targets share a host with); a follow-up
       drift_check.py run will cover it going forward.
 
+  vm106-gateway:
+    host: openclaw
+    destination_root: /opt/openclaw/gateway
+    # Added 2026-10-09 (handoffs / research/2026-10-09-gateway-sessions-v1.md 3.4,
+    # 7). The Gateway's merged config, committed with ${ENV} placeholders only;
+    # openclaw resolves them from the container environment at load, so the
+    # deployed bytes ARE the repo bytes and drift_check compares file hashes (the
+    # "config hash" check). The unit itself ships through vm106-units
+    # (infra/units/openclaw/openclaw-gateway.service). The env templates
+    # (infra/openclaw/*.example.env) are NOT deployed: the real
+    # /opt/openclaw/gateway/gateway.env and /opt/openclaw/secrets/gateway-token.env
+    # exist only on the host.
+    strip_prefix: infra/openclaw/
+    stamp: false     # the destination is a config directory, not a code checkout
+    paths:
+      - infra/openclaw/config/
+    exclude: []
+    leave_alone:
+      - gateway.env        # host-only, non-secret settings (port, image digest, MCP URL)
+      - workspaces/        # per-role SOUL.md, written by the conductor from agents/<role>/role.md
+    restart:
+      - service: openclaw-gateway.service
+        risk: high
+        why: >-
+          The config is mounted read-only and not hot-reloaded
+          (gateway.reload.mode=off), so a changed file takes effect only on a
+          restart. A requested stop drains in-flight turns for up to 5 minutes;
+          restart only while the conductor is idle. The unit is never enabled at
+          boot by any deploy and this repo's rule is that starting or restarting
+          it is by hand until the 24 h idle canary has passed and the user says so.
+    post_deploy:
+      - "deploy.py copies the config and stops. It never enables, starts or
+         restarts openclaw-gateway.service. Validate first on the host
+         (`openclaw.mjs config validate` in the image, as the S0 run did), then
+         restart by hand while the conductor is idle."
+    verified: >-
+      unverified as a deploy.py target (2026-10-09): the S0 run installed the
+      same bytes by hand (evals/live/2026-10-09-gateway-s0/README.md); a first
+      real deploy.py run is the check.
+
   relay-web:
     host: relay
     destination_root: /srv/stream/web-public
@@ -497,6 +549,13 @@ targets:
     exclude: []
     leave_alone: []
     restart:
+      - service: openclaw-gateway.service
+        risk: high
+        why: >-
+          Added 2026-10-09. Shipping its unit file never enables or starts it,
+          and deploy.py never restarts it. It is started by hand until the 24 h
+          idle canary passes; enabling at boot is the user's separate go-ahead.
+          A restart drains in-flight turns for up to 5 minutes.
       - service: conductor.service
         risk: high
         why: >-

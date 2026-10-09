@@ -410,7 +410,7 @@ def check_services(targets: Dict[str, dc.Target], runner) -> dict:
     seen = {}
     for target in targets.values():
         for entry in target.restart:
-            seen[(target.host, entry.service)] = entry
+            seen[(entry.host or target.host, entry.service)] = entry
     out = {}
     for (host, service), entry in seen.items():
         try:
