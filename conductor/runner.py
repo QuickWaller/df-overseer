@@ -37,6 +37,8 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import os
+import re
 import shutil
 import time
 import uuid
@@ -46,9 +48,57 @@ from typing import Any, Awaitable, Callable, Dict, List, Optional, Protocol
 
 LOG = logging.getLogger("conductor.runner")
 
-#: The image every real run so far has used, unchanged 2026-09-14 through
-#: 2026-09-18 (research/2026-09-18-openclaw-capabilities.md).
-DEFAULT_IMAGE = "ghcr.io/openclaw/openclaw:latest"
+#: The image repository every real run has used (research/2026-09-18-openclaw-
+#: capabilities.md). Runs are pinned by DIGEST, never a floating tag: the
+#: digest comes from `CONDUCTOR_OPENCLAW_IMAGE` (`infra/conductor.example.env`,
+#: `ghcr.io/openclaw/openclaw@sha256:<64 hex>`; the Gateway S0 pinned
+#: `sha256:cc596b84...f101`, truncated in its write-up, so the full value
+#: lives in the VM's env file, not in this public repo's source).
+IMAGE_REPOSITORY = "ghcr.io/openclaw/openclaw"
+IMAGE_ENV_VAR = "CONDUCTOR_OPENCLAW_IMAGE"
+#: Only used when the env var is unset (tests, a bare workstation). Wiring
+#: code that must not run unpinned checks `image_is_pinned`.
+FALLBACK_IMAGE = IMAGE_REPOSITORY + ":latest"
+
+
+def image_is_pinned(image: str) -> bool:
+    """True for `<repo>@sha256:<64 hex>`: a digest pin, not a tag."""
+    return bool(re.fullmatch(r"[\w./:-]+@sha256:[0-9a-f]{64}", image or ""))
+
+
+def resolve_image(environ: Optional[Dict[str, str]] = None) -> str:
+    """The image to run: `CONDUCTOR_OPENCLAW_IMAGE` if set and a digest pin,
+    else the unpinned fallback (callers that need a pin check `image_is_pinned`)."""
+    value = ((environ if environ is not None else os.environ).get(IMAGE_ENV_VAR) or "").strip()
+    return value if image_is_pinned(value) else FALLBACK_IMAGE
+
+
+DEFAULT_IMAGE = resolve_image()
+
+#: Failed or unparseable runs keep their raw stdout and stderr (Gateway S0
+#: open item: the Quartermaster's empty envelope left nothing to diagnose).
+RAW_RETENTION_CHARS = 65536
+
+
+def retain_raw(
+    stdout: Any, stderr: Any, exit_code: Optional[int], *, envelope: Optional[dict] = None,
+) -> Dict[str, Any]:
+    """The `RunResult.raw` of a failed run: the run's own stdout and stderr
+    (each capped at `RAW_RETENTION_CHARS`, start and end kept) and its exit
+    code. With a parsed `envelope`, the envelope's keys stay as they were and
+    the retained text goes under `_stdout`, `_stderr`, `_exit_code`; without
+    one the keys are `stdout`, `stderr`, `exit_code`."""
+    def text(v: Any) -> str:
+        t = v.decode("utf-8", errors="replace") if isinstance(v, (bytes, bytearray)) else (v or "")
+        if len(t) <= RAW_RETENTION_CHARS:
+            return t
+        half = RAW_RETENTION_CHARS // 2
+        return t[:half] + "\n[... middle left out ...]\n" + t[-half:]
+    if envelope is None:
+        return {"stdout": text(stdout), "stderr": text(stderr), "exit_code": exit_code}
+    out = dict(envelope)
+    out.update({"_stdout": text(stdout), "_stderr": text(stderr), "_exit_code": exit_code})
+    return out
 
 #: openclaw's own `agent exec --help` documents 600s as its default
 #: deadline; kept the same here rather than invented, and overridable per
@@ -378,6 +428,33 @@ class RunResult:
     assistant_turns: Optional[int] = None
     #: The full turn sequence (`build_transcript`), or None when not captured.
     transcript: Optional[Dict[str, Any]] = None
+    #: Gateway turns only (`conductor/session_runner.py`): the session key the
+    #: turn ran in and the Gateway's run id. None for a one-shot run.
+    session_key: Optional[str] = None
+    run_id: Optional[str] = None
+
+
+def map_exec_envelope(
+    role: str, envelope: dict, wall_clock_seconds: float, *,
+    stdout: Any = b"", stderr: Any = b"", exit_code: Optional[int] = None,
+) -> RunResult:
+    """`agent exec --json` envelope -> `RunResult`. A run that is not ok keeps
+    its raw stdout, stderr and exit code next to the envelope (`retain_raw`);
+    an ok run's `raw` is the envelope untouched."""
+    ok = bool(envelope.get("ok", False))
+    return RunResult(
+        role=role,
+        ok=ok,
+        status=str(envelope.get("status", "unknown")),
+        cost_usd=_cost_from(envelope),
+        wall_clock_seconds=wall_clock_seconds,
+        timed_out=False,
+        tool_summary=envelope.get("toolSummary", {}) or {},
+        final_answer=_final_answer(envelope),
+        raw=envelope if ok else retain_raw(stdout, stderr, exit_code, envelope=envelope),
+        usage=usage_from(envelope),
+        assistant_turns=turns_from(envelope),
+    )
 
 
 class RoleRunner(Protocol):
@@ -643,7 +720,8 @@ class DockerOpenClawRunner:
             return RunResult(
                 role=role, ok=False, status="timeout", cost_usd=None,
                 wall_clock_seconds=self._clock() - started, timed_out=True,
-                tool_summary={}, final_answer=None, raw={},
+                tool_summary={}, final_answer=None,
+                raw=retain_raw(b"", b"", None),
                 error=f"timed out after {timeout_seconds + self._grace}s (cost unknown)",
             )
 
@@ -653,7 +731,7 @@ class DockerOpenClawRunner:
             return RunResult(
                 role=role, ok=False, status="no_output", cost_usd=None,
                 wall_clock_seconds=wall_clock, timed_out=False, tool_summary={}, final_answer=None,
-                raw={"stderr": stderr.decode("utf-8", errors="replace")},
+                raw=retain_raw(stdout, stderr, process.returncode),
                 error="agent exec --json printed nothing",
             )
         try:
@@ -662,20 +740,11 @@ class DockerOpenClawRunner:
             return RunResult(
                 role=role, ok=False, status="bad_json", cost_usd=None,
                 wall_clock_seconds=wall_clock, timed_out=False, tool_summary={}, final_answer=None,
-                raw={"stdout": text, "stderr": stderr.decode("utf-8", errors="replace")},
+                raw=retain_raw(stdout, stderr, process.returncode),
                 error="agent exec --json did not print valid JSON",
             )
 
-        return RunResult(
-            role=role,
-            ok=bool(envelope.get("ok", False)),
-            status=str(envelope.get("status", "unknown")),
-            cost_usd=_cost_from(envelope),
-            wall_clock_seconds=wall_clock,
-            timed_out=False,
-            tool_summary=envelope.get("toolSummary", {}) or {},
-            final_answer=_final_answer(envelope),
-            raw=envelope,
-            usage=usage_from(envelope),
-            assistant_turns=turns_from(envelope),
+        return map_exec_envelope(
+            role, envelope, wall_clock, stdout=stdout, stderr=stderr,
+            exit_code=process.returncode,
         )

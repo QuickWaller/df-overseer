@@ -315,3 +315,52 @@ class TestFakeRoleRunner:
         await fake.run("architect", "a", model="m1", timeout_seconds=1)
         await fake.run("quartermaster", "b", model="m2", timeout_seconds=2)
         assert [c["role"] for c in fake.calls] == ["architect", "quartermaster"]
+
+
+@pytest.mark.asyncio
+class TestRawRetentionAndImagePin:
+    async def test_a_failed_parsed_envelope_keeps_raw_stdout_and_stderr(self, tmp_path):
+        envelope = {"ok": False, "status": "error", "toolSummary": {}}
+        runner = _runner(tmp_path, _fake_exec(_FakeProcess(
+            json.dumps(envelope).encode(), b"container said this", returncode=1)))
+        result = await runner.run("quartermaster", "x", model="m", charter="# C")
+        assert result.raw["status"] == "error"
+        assert result.raw["_stderr"] == "container said this"
+        assert result.raw["_exit_code"] == 1
+        assert json.loads(result.raw["_stdout"]) == envelope
+
+    async def test_an_ok_run_raw_is_the_envelope_untouched(self, tmp_path):
+        runner = _runner(tmp_path, _fake_exec(_FakeProcess(json.dumps(_OK_ENVELOPE).encode(), b"noise")))
+        result = await runner.run("overseer", "x", model="m", charter="# C")
+        assert result.raw == _OK_ENVELOPE
+
+    async def test_bad_json_and_no_output_keep_both_streams(self, tmp_path):
+        runner = _runner(tmp_path, _fake_exec(_FakeProcess(b"oops", b"err", returncode=2)))
+        bad = await runner.run("architect", "x", model="m", charter="# C")
+        assert bad.raw == {"stdout": "oops", "stderr": "err", "exit_code": 2}
+        runner = _runner(tmp_path, _fake_exec(_FakeProcess(b"", b"only stderr", returncode=1)))
+        empty = await runner.run("architect", "x", model="m", charter="# C")
+        assert empty.raw["stderr"] == "only stderr" and empty.raw["exit_code"] == 1
+
+
+class TestImagePin:
+    def test_digest_pin_detection(self):
+        from conductor.runner import image_is_pinned
+        assert image_is_pinned("ghcr.io/openclaw/openclaw@sha256:" + "0" * 64)
+        assert not image_is_pinned("ghcr.io/openclaw/openclaw:latest")
+        assert not image_is_pinned("ghcr.io/openclaw/openclaw@sha256:cc596b84")
+
+    def test_resolve_image_takes_only_a_digest_pin_from_the_env(self):
+        from conductor.runner import FALLBACK_IMAGE, resolve_image
+        pinned = "ghcr.io/openclaw/openclaw@sha256:" + "b" * 64
+        assert resolve_image({"CONDUCTOR_OPENCLAW_IMAGE": pinned}) == pinned
+        assert resolve_image({"CONDUCTOR_OPENCLAW_IMAGE": "x:latest"}) == FALLBACK_IMAGE
+        assert resolve_image({}) == FALLBACK_IMAGE
+
+    def test_the_runner_uses_the_given_image(self, tmp_path):
+        pinned = "ghcr.io/openclaw/openclaw@sha256:" + "c" * 64
+        runner = DockerOpenClawRunner(
+            pinned_config_dir=tmp_path, openclaw_state_dir=tmp_path, workspace_root=tmp_path,
+            secrets_env_file=tmp_path / "s.env", image=pinned,
+        )
+        assert pinned in runner.build_command("overseer", "x", model="m")
