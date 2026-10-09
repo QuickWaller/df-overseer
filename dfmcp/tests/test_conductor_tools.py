@@ -137,7 +137,7 @@ async def test_end_links_records_the_role_wrote_in_the_window(db):
             )
     time.sleep(0.01)
     _, out = await _call({"phase": "end", "run_id": "run-0001", "ok": True}, db)
-    assert out["records"] == 1
+    assert out["records"] == 1 and out["record_ids"] == ["pass-0001"]
     row = runs.get_run(runs.runs_path(db), "run-0001")
     assert json.loads(row["records_json"]) == [{"id": "pass-0001", "kind": "pass", "thread": "pass-0001"}]
 

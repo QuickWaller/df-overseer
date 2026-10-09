@@ -9,6 +9,7 @@ import pytest
 
 from conductor.cycle import run_cycle
 from conductor.execute import ExecuteStore
+from conductor.tests.contain import seed
 from conductor.hold import HoldStore, hold_path_for
 from conductor.runner import FakeRoleRunner
 from conductor.tests.test_cycle import (
@@ -20,7 +21,8 @@ pytestmark = pytest.mark.asyncio
 
 ARCHITECT = "architect"
 
-READY = {"open_projects": [{"project_id": "project-0001", "role": "architect", "steps_open": 1, "phases_remaining": 1}],
+READY = {"open_projects": [{"project_id": "project-0001", "role": "architect", "steps_open": 1, "phases_remaining": 1,
+                       "ruling_id": "ruling-0001"}],
          "ready_steps": [{"project_id": "project-0001", "step_id": "project-0001/s1", "urgency": "normal"}]}
 
 
@@ -37,7 +39,7 @@ def _names(deps):
 
 
 async def test_an_ordinary_cycle_runs_the_ready_step_after_a_quicksave(tmp_path):
-    deps = _deps(tmp_path, tools=_tools())
+    deps = seed(_deps(tmp_path, tools=_tools()))
     result = await run_cycle(1, deps)
     names = _names(deps)
     assert "queue.run_step" in names
@@ -50,7 +52,7 @@ async def test_the_phase_runs_after_the_overseer(tmp_path):
     tools = _tools()
     tools["queue.overview"] = {"proposals": {"count": 1, "proposal_ids": ["proposal-0001"]}, "asks": {"count": 0, "ask_ids": []}}
     runner = FakeRoleRunner()
-    deps = _deps(tmp_path, tools=tools, runner=runner)
+    deps = seed(_deps(tmp_path, tools=tools, runner=runner))
     result = await run_cycle(1, deps)
     assert OVERSEER in result.roles_woken
     assert any(c["role"] == OVERSEER for c in runner.calls)
@@ -58,14 +60,14 @@ async def test_the_phase_runs_after_the_overseer(tmp_path):
 
 
 async def test_a_dry_run_makes_no_execute_call(tmp_path):
-    deps = _deps(tmp_path, tools=_tools(), dry_run=True)
+    deps = seed(_deps(tmp_path, tools=_tools(), dry_run=True))
     await run_cycle(1, deps)
     # queue.execution_state is a read the plan watch also makes; run_step is the execute call
     assert "queue.run_step" not in _names(deps)
 
 
 async def test_an_operator_hold_skips_the_phase(tmp_path):
-    deps = _deps(tmp_path, tools=_tools())
+    deps = seed(_deps(tmp_path, tools=_tools()))
     HoldStore(hold_path_for(deps.cursor_store.path)).set("keep paused", who="test")
     result = await run_cycle(1, deps)
     assert "queue.run_step" not in _names(deps)
@@ -75,7 +77,7 @@ async def test_an_operator_hold_skips_the_phase(tmp_path):
 async def test_a_hold_with_allow_execution_runs_steps_but_never_resumes(tmp_path):
     tools = _tools()
     tools["clock.status"] = _clock_status(paused=True)
-    deps = _deps(tmp_path, tools=tools)
+    deps = seed(_deps(tmp_path, tools=tools))
     HoldStore(hold_path_for(deps.cursor_store.path)).set("keep paused", who="test", allow_execution=True)
     result = await run_cycle(1, deps)
     names = _names(deps)
@@ -88,7 +90,7 @@ async def test_an_escalation_this_cycle_skips_the_phase(tmp_path):
     tools = _tools()
     tools["queue.overview"] = {"proposals": {"count": 1, "proposal_ids": ["proposal-0001"]}, "asks": {"count": 0, "ask_ids": []}}
     runner = FakeRoleRunner({OVERSEER: _run_that_called("queue.escalate")})
-    deps = _deps(tmp_path, tools=tools, runner=runner)
+    deps = seed(_deps(tmp_path, tools=tools, runner=runner))
     result = await run_cycle(1, deps)
     assert result.escalated is True
     assert "queue.run_step" not in _names(deps)
@@ -97,16 +99,17 @@ async def test_an_escalation_this_cycle_skips_the_phase(tmp_path):
 
 async def test_an_unreadable_execution_state_does_not_stop_the_cycle(tmp_path):
     tools = _base_tools()  # no queue.execution_state: the fake raises, as an undeployed dfmcp would
-    deps = _deps(tmp_path, tools=tools)
+    deps = seed(_deps(tmp_path, tools=tools))
     result = await run_cycle(1, deps)
     assert result.execute["ran"] is False
 
 
 async def test_a_done_step_owes_the_proposer_a_wake_that_fires_next_cycle(tmp_path):
-    state = {"open_projects": [{"project_id": "project-0001", "role": "architect", "steps_open": 1, "phases_remaining": 1}],
+    state = {"open_projects": [{"project_id": "project-0001", "role": "architect", "steps_open": 1, "phases_remaining": 1,
+                       "ruling_id": "ruling-0001"}],
              "issued_steps": [{"project_id": "project-0001", "step_id": "project-0001/s1"}]}
     tools = _tools(state, **{"queue.observe": {"state": "done", "observation_id": "observation-0001", "detail": "ok", "recorded": True}})
-    deps = _deps(tmp_path, tools=tools)
+    deps = seed(_deps(tmp_path, tools=tools))
     first = await run_cycle(1, deps)
     assert any(w["reason"] == "step_done" for w in first.execute["wakes"])
     lane = json.loads((tmp_path / "lane_state.json").read_text(encoding="utf-8"))
@@ -144,11 +147,12 @@ def _latched_tools(state):
 
 
 async def test_a_latch_runs_only_high_urgency_steps_and_never_resumes(tmp_path):
-    state = {"open_projects": [{"project_id": "project-0001", "role": "architect", "steps_open": 2, "phases_remaining": 0}],
+    state = {"open_projects": [{"project_id": "project-0001", "role": "architect", "steps_open": 2, "phases_remaining": 0,
+                       "ruling_id": "ruling-0001"}],
              "ready_steps": [
                  {"project_id": "project-0001", "step_id": "project-0001/s1", "urgency": "normal"},
                  {"project_id": "project-0001", "step_id": "project-0001/s2", "urgency": "high"}]}
-    deps = _deps(tmp_path, tools=_latched_tools(state))
+    deps = seed(_deps(tmp_path, tools=_latched_tools(state)))
     result = await run_cycle(1, deps)
     ran = [a["step_id"] for t, a in deps.tool_caller.calls if t == "queue.run_step"]
     assert ran == ["project-0001/s2"]
@@ -158,14 +162,14 @@ async def test_a_latch_runs_only_high_urgency_steps_and_never_resumes(tmp_path):
 
 async def test_a_latch_with_an_escalating_overseer_runs_no_step(tmp_path):
     runner = FakeRoleRunner({OVERSEER: _run_that_called("queue.escalate")})
-    deps = _deps(tmp_path, tools=_latched_tools(READY), runner=runner)
+    deps = seed(_deps(tmp_path, tools=_latched_tools(READY), runner=runner))
     result = await run_cycle(1, deps)
     assert result.escalated is True and "queue.run_step" not in _names(deps)
     assert result.execute is None
 
 
 async def test_a_latch_under_a_plain_hold_runs_no_step(tmp_path):
-    deps = _deps(tmp_path, tools=_latched_tools(READY))
+    deps = seed(_deps(tmp_path, tools=_latched_tools(READY)))
     HoldStore(hold_path_for(deps.cursor_store.path)).set("keep paused", who="test")
     await run_cycle(1, deps)
     assert "queue.run_step" not in _names(deps)

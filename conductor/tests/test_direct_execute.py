@@ -7,6 +7,7 @@ import pytest
 
 from conductor.cycle import run_cycle
 from conductor.execute import ExecuteState, run_execute
+from conductor.tests.contain import contained_state, seed
 from conductor.hold import HoldStore, hold_path_for
 from conductor.policy import ExecutionPolicy
 from conductor.tests.test_cycle import _base_tools, _deps
@@ -14,7 +15,7 @@ from conductor.tests.test_cycle import _base_tools, _deps
 pytestmark = pytest.mark.asyncio
 
 STATE = {
-    "open_projects": [{"project_id": "project-0001", "role": "overseer", "direct": True,
+    "open_projects": [{"project_id": "project-0001", "role": "overseer", "direct": True, "ruling_id": "ruling-0001",
                        "steps_open": 1, "phases_remaining": 0}],
     "ready_steps": [{"project_id": "project-0001", "step_id": "project-0001/s1", "urgency": "normal",
                      "tool": "trees.fell", "args": {}}],
@@ -34,7 +35,7 @@ def _names(deps):
 
 
 async def test_the_hold_blocks_a_direct_action(tmp_path):
-    deps = _deps(tmp_path, tools=_tools())
+    deps = seed(_deps(tmp_path, tools=_tools()))
     HoldStore(hold_path_for(deps.cursor_store.path)).set("keep paused", who="test")
     result = await run_cycle(1, deps)
     assert "queue.run_step" not in _names(deps)
@@ -42,7 +43,7 @@ async def test_the_hold_blocks_a_direct_action(tmp_path):
 
 
 async def test_a_direct_action_runs_with_a_quicksave_first(tmp_path):
-    deps = _deps(tmp_path, tools=_tools())
+    deps = seed(_deps(tmp_path, tools=_tools()))
     result = await run_cycle(1, deps)
     names = _names(deps)
     assert result.execute["steps_run"] == 1
@@ -50,7 +51,7 @@ async def test_a_direct_action_runs_with_a_quicksave_first(tmp_path):
 
 
 async def test_dry_run_cycle_makes_no_write(tmp_path):
-    deps = _deps(tmp_path, tools=_tools(), dry_run=True)
+    deps = seed(_deps(tmp_path, tools=_tools(), dry_run=True))
     await run_cycle(1, deps)
     assert "queue.run_step" not in _names(deps) and "fort.quicksave" not in _names(deps)
 
@@ -68,7 +69,7 @@ async def test_a_failed_direct_action_wakes_the_overseer_and_closes_not_done():
             return {"close_id": "close-1"}
         return {}
 
-    report = await run_execute(call, ExecutionPolicy(), ExecuteState(), game_tick=100, fallback_roles=("overseer",))
+    report = await run_execute(call, ExecutionPolicy(), contained_state(), game_tick=100, fallback_roles=("overseer",))
     assert [w.role for w in report.wakes] == ["overseer"]
     assert "did not run" in report.wakes[0].text and "tree is gone" in report.wakes[0].text
     close = [c for c in calls if c[0] == "queue.close"]

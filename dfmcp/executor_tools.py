@@ -387,7 +387,8 @@ def _execution_state_sync(arguments: Mapping[str, Any], db_path: Any) -> Tuple[s
             "open_projects": [
                 {k: p[k] for k in ("project_id", "group", "role", "urgency", "status", "steps_open",
                                    "phases_remaining")}
-                | {"summary": _clip(p.get("summary")), "direct": p["group"] in routing.direct_groups()}
+                | {"summary": _clip(p.get("summary")), "direct": p["group"] in routing.direct_groups(),
+                   "ruling_id": p.get("from_ruling")}
                 for p in opens
             ],
             "ready_steps": ready,

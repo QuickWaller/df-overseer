@@ -100,10 +100,43 @@ class ExecuteState:
     #: The only thing a stock check stores (register 2026-10-09, stateless): it is dropped the
     #: pass the step runs or leaves the ready list, and feeds the Overseer's briefing line.
     holds: Dict[str, Dict[str, Any]] = field(default_factory=dict)
+    #: Execute containment (research/2026-10-09-gateway-sessions-v1.md 15.9): activation id ->
+    #: {"role", "run_id", "opened_at", "closed_at", "records"}. An activation is the span the
+    #: conductor opened around an Overseer run (or, later, a session activation); `records` are
+    #: the ids the server worked out that the role wrote inside it (`conductor.report` end, on
+    #: the server's own clock, so no cross-host skew). Only a ruling in here may be executed.
+    activations: Dict[str, Dict[str, Any]] = field(default_factory=dict)
+    #: Rulings already alerted as uncontained, so each is named once, not every cycle.
+    uncontained: List[str] = field(default_factory=list)
 
 
 _FIELDS = ("since", "sent", "uncertain", "transient", "unknown", "attention", "ore_held",
-           "refused", "cleanup_failed", "idle", "roles", "direct", "holds")
+           "refused", "cleanup_failed", "idle", "roles", "direct", "holds", "activations", "uncontained")
+
+#: Containment applies to rulings written by this role (the roster's sole writer).
+CONTAINED_ROLE = "overseer"
+ACTIVATIONS_KEEP = 200
+
+
+def record_activation(
+    state: ExecuteState, *, activation_id: str, role: str, run_id: Optional[str], opened_at: str,
+    closed_at: Optional[str], records: Optional[Sequence[str]],
+) -> None:
+    """Remember an activation the conductor opened and closed. `records` None means the server
+    could not say what the run wrote: nothing is then contained by it (fail closed)."""
+    state.activations[activation_id] = {
+        "role": role, "run_id": run_id, "opened_at": opened_at, "closed_at": closed_at,
+        "records": [str(r) for r in (records or ())],
+    }
+    for old in list(state.activations)[:-ACTIVATIONS_KEEP]:
+        del state.activations[old]
+
+
+def contained_record_ids(state: ExecuteState, role: str = CONTAINED_ROLE) -> "set[str]":
+    return {
+        r for a in state.activations.values() if isinstance(a, Mapping) and a.get("role") == role
+        for r in (a.get("records") or ())
+    }
 
 
 class ExecuteStore:
@@ -479,6 +512,8 @@ class _Phase:
             pid, sid = str(step.get("project_id") or ""), str(step.get("step_id") or "")
             if not pid or not sid:
                 continue
+            if not self.contained(pid, sid):
+                continue
             if self.latched and str(step.get("urgency") or "normal") != "high":
                 continue
             if pid in blocked_projects:
@@ -512,6 +547,25 @@ class _Phase:
                 continue
             self.report.steps_run += 1
             self.after_run(pid, sid, out)
+
+    def contained(self, pid: str, sid: str) -> bool:
+        """Execute containment: a step runs only if the ruling its project came from was written
+        inside an Overseer activation the conductor opened. Anything else is not run and is named
+        once in `report.errors`, the line the cycle logs as a warning."""
+        ruling = str((self.projects.get(pid) or {}).get("ruling_id") or "")
+        if ruling and ruling in contained_record_ids(self.st):
+            return True
+        key = ruling or pid
+        why = ("its ruling is not inside any Overseer activation the conductor opened" if ruling
+               else "the server did not say which ruling it came from")
+        self.report.act("uncontained", project=pid, step=sid, ruling=ruling or None)
+        if key not in self.st.uncontained:
+            self.st.uncontained.append(key)
+            del self.st.uncontained[:-_SENT_KEEP]
+            line = f"ALERT execute containment: not running {sid} (project {pid}, ruling {ruling or '?'}): {why}"
+            self.report.errors.append(_clip(line, 240))
+            LOG.warning("%s", line)
+        return False
 
     async def stock_check(self, step: Mapping[str, Any]) -> Optional[str]:
         """The stateless stock check at execution (register 2026-10-09, "stock checks go

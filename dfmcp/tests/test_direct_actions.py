@@ -132,6 +132,7 @@ async def test_the_executor_runs_it_once_as_a_one_node_project(rig):
     opened = await open_it(env, w)
     _t, st = await run_tool(env, w, "queue.execution_state")
     assert st["open_projects"][0]["direct"] is True
+    assert st["open_projects"][0]["ruling_id"].startswith("ruling-")
     assert [r["step_id"] for r in st["ready_steps"]] == [opened["step_ids"][0]]
     _t, ran = await run_tool(env, w, "queue.run_step", project_id=opened["project_id"], step_id=opened["step_ids"][0])
     assert ran["class"] == "success"

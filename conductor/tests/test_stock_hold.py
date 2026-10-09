@@ -9,6 +9,7 @@ import pytest
 
 from conductor import stock_hold
 from conductor.briefing import build_briefing, build_ruling_briefing
+from conductor.tests.contain import contained_state
 from conductor.execute import ExecuteState, ExecuteStore, REASON_ATTENTION, run_execute
 from conductor.policy import (
     ExecutionPolicy, PolicyError, StockCheckPolicy, StockConsumer, load_policy,
@@ -35,7 +36,7 @@ def _stock(free, in_job=0):
 
 
 async def _run(script, state=None, tick=10000, policy=POLICY):
-    state = state or ExecuteState()
+    state = state or contained_state()
     report = await run_execute(script, policy, state, game_tick=tick)
     return report, state
 
@@ -82,7 +83,7 @@ async def test_short_stock_holds_the_step_with_a_one_line_reason_and_does_not_ru
     async def quicksave():
         saves.append(1)
 
-    state = ExecuteState()
+    state = contained_state()
     report = await run_execute(script, POLICY, state, game_tick=10000, quicksave=quicksave)
     assert _runs(script) == [] and not saves and report.steps_run == 0
     note = state.holds["project-0001/s1"]
@@ -93,7 +94,7 @@ async def test_short_stock_holds_the_step_with_a_one_line_reason_and_does_not_ru
 
 
 async def test_the_held_step_retries_next_cycle_and_the_note_goes_when_it_runs():
-    state = ExecuteState()
+    state = contained_state()
     snap = {"open_projects": [_proj()], "ready_steps": [_blocks()]}
     await _run(Script(snap, {"stocks.availability": _stock(1)}), state, tick=10000)
     assert "project-0001/s1" in state.holds
@@ -103,7 +104,7 @@ async def test_the_held_step_retries_next_cycle_and_the_note_goes_when_it_runs()
 
 
 async def test_the_note_keeps_its_first_tick_across_cycles_and_dies_with_the_step():
-    state = ExecuteState()
+    state = contained_state()
     snap = {"open_projects": [_proj()], "ready_steps": [_blocks()]}
     await _run(Script(snap, {"stocks.availability": _stock(0)}), state, tick=10000)
     await _run(Script(snap, {"stocks.availability": _stock(0)}), state, tick=10300)
@@ -144,7 +145,7 @@ async def test_one_item_is_read_once_per_pass():
 async def test_a_survival_hold_wakes_once():
     brew = _ready(1, tool="orders.create", args={"job": "ConstructBlocks", "amount": 8, "note": "drink supply"})
     snap = {"open_projects": [_proj()], "ready_steps": [brew]}
-    state = ExecuteState()
+    state = contained_state()
     report, _ = await _run(Script(snap, {"stocks.availability": _stock(0)}), state)
     assert [w.reason for w in report.wakes] == [REASON_ATTENTION]
     assert "food, drink or defence" in report.wakes[0].text and "short BOULDER" in report.wakes[0].text
@@ -154,7 +155,7 @@ async def test_a_survival_hold_wakes_once():
 
 async def test_a_hold_older_than_a_game_day_wakes():
     snap = {"open_projects": [_proj()], "ready_steps": [_blocks()]}
-    state = ExecuteState()
+    state = contained_state()
     first, _ = await _run(Script(snap, {"stocks.availability": _stock(0)}), state, tick=10000)
     assert first.wakes == []
     later, _ = await _run(Script(snap, {"stocks.availability": _stock(0)}), state, tick=11199)
@@ -199,7 +200,7 @@ def test_the_overseer_briefings_carry_the_hold_lines_and_omit_them_when_none():
 
 
 async def test_the_hold_note_survives_the_store_round_trip(tmp_path):
-    state = ExecuteState()
+    state = contained_state()
     state.holds["p/s1"] = {"pid": "p", "tool": "t", "why": "w", "since": 5}
     store = ExecuteStore(tmp_path / "e.json")
     store.save(state)

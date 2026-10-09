@@ -5,6 +5,7 @@ from dataclasses import replace
 
 import pytest
 
+from conductor.tests.contain import contained_state
 from conductor.execute import ExecuteState, ExecuteStore, run_execute
 from conductor.mcp_client import MCPToolError
 from conductor.ore_watch import OreExposure, OreRead
@@ -42,11 +43,12 @@ def _ready(n, urgency="normal", **extra):
 
 
 def _proj(role="architect", **kw):
-    return {"project_id": "project-0001", "role": role, "steps_open": 1, "phases_remaining": 2, **kw}
+    return {"project_id": "project-0001", "role": role, "steps_open": 1, "phases_remaining": 2,
+            "ruling_id": "ruling-0001", **kw}
 
 
 async def _run(script, state=None, **kw):
-    state = state or ExecuteState()
+    state = state or contained_state()
     kw.setdefault("game_tick", 10000)
     kw.setdefault("policy", POLICY)
     policy = kw.pop("policy")
@@ -168,7 +170,7 @@ async def test_a_game_cancelled_dig_is_named_once_and_never_retried():
 async def test_unknown_reads_wake_only_on_the_third():
     s = {"open_projects": [_proj()], "issued_steps": [{"project_id": "project-0001", "step_id": "project-0001/s1"}]}
     answers = {"queue.observe": {"state": "unknown", "detail": "no read"}}
-    state = ExecuteState()
+    state = contained_state()
     woke = []
     for _ in range(3):
         report, state = await _run(Script(s, answers), state)
@@ -178,7 +180,7 @@ async def test_unknown_reads_wake_only_on_the_third():
 
 async def test_transient_third_time_needs_judgment_and_needs_judgment_wakes_once():
     s = {"open_projects": [_proj()], "ready_steps": [_ready(1)]}
-    state = ExecuteState()
+    state = contained_state()
     counts = []
     for _ in range(3):
         report, state = await _run(Script(s, {"queue.run_step": {"class": "transient", "detail": "busy"}}), state)
@@ -214,7 +216,7 @@ async def test_open_and_apply_then_a_second_state_read():
 
 async def test_a_refused_open_is_tried_a_bounded_number_of_times():
     s = {"to_open": [{"ruling_id": "ruling-0040"}]}
-    state = ExecuteState()
+    state = contained_state()
     for _ in range(5):
         await _run(Script(s, {}), state)  # queue.open_project has no answer: a refusal
     assert state.refused["ruling-0040"] == POLICY.refusal_limit
@@ -233,7 +235,7 @@ async def test_cleanup_runs_for_each_abandoned_project():
 
 async def test_idle_project_wakes_once_then_closes_completed_idle():
     s = {"open_projects": [_proj(steps_open=0, phases_remaining=1)]}
-    state = ExecuteState()
+    state = contained_state()
     r0, state = await _run(Script(s), state, game_tick=1000)
     assert r0.wakes == []
     r1, state = await _run(Script(s), state, game_tick=1000 + POLICY.idle_wake_ticks)

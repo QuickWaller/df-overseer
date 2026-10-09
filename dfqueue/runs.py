@@ -237,7 +237,12 @@ def end_run(
             "(SELECT run_id FROM runs ORDER BY started_at DESC LIMIT ?)", (KEEP_ROWS,),
         )
         conn.commit()
-    return {"run_id": run_id, "ended_at": now.isoformat(), "records": len(records[:RECORDS_MAX])}
+    kept = records[:RECORDS_MAX]
+    # `record_ids`: what the conductor's execute containment checks a ruling against (a record
+    # the run wrote, on the server's own clock). Capped like the stored list, so a run that
+    # wrote more than RECORDS_MAX records leaves the rest uncontained (fail closed).
+    return {"run_id": run_id, "ended_at": now.isoformat(), "records": len(kept),
+            "record_ids": [r["id"] for r in kept if isinstance(r, dict) and r.get("id")]}
 
 
 def get_run(path: "str | Path", run_id: str) -> Optional[dict]:

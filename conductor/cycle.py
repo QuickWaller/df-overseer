@@ -55,6 +55,7 @@ import asyncio
 import json
 import logging
 import time
+from datetime import datetime, timezone
 from dataclasses import dataclass
 from typing import Any, Callable, Dict, List, Mapping, Optional, Sequence, Set, Tuple
 
@@ -65,7 +66,9 @@ from conductor.autofarm_sync import run_autofarm_sync
 from conductor.cursors import CursorStore
 from conductor.backoff import RetryClock
 from conductor.game_tick import GameTickError, game_tick_from_overview
-from conductor.execute import ExecuteStore, ExecuteReport, run_execute, skipped_report
+from conductor.execute import (
+    CONTAINED_ROLE, ExecuteStore, ExecuteReport, record_activation, run_execute, skipped_report,
+)
 from conductor.hold import HoldState, HoldStore, hold_path_for
 from conductor.mcp_client import MCPToolError, ToolCaller, tool_name
 from conductor.job_watch import JobWatchResult, JobWatchStore, evaluate_jobs, jobs_from_result
@@ -632,6 +635,7 @@ async def _run_role(
         "wake_reasons": reasons, "wake_detail": wake.detail, "cycle": cycle_index,
     })
     run_id = (started or {}).get("run_id")
+    opened_at = datetime.now(timezone.utc).isoformat()
     run_result = await deps.role_runner.run(
         role, prompt, model=deps.models[role],
         timeout_seconds=_timeout_for(deps, role), charter=deps.charters.get(role),
@@ -654,8 +658,32 @@ async def _run_role(
             "role": role, "wake_reason": wake.reason, "wake_reasons": reasons,
             "wake_detail": wake.detail, "cycle": cycle_index,
         })
-    await _report(call, end_args)
+    ended = await _report(call, end_args)
+    if role == CONTAINED_ROLE and not deps.dry_run:
+        _close_activation(deps, role, run_id, opened_at, ended)
     return run_result
+
+
+def _close_activation(
+    deps: "CycleDeps", role: str, run_id: Optional[str], opened_at: str, ended: Optional[Mapping[str, Any]],
+) -> None:
+    """Execute containment (research/2026-10-09-gateway-sessions-v1.md 15.9): the conductor opened
+    an activation around this Overseer run and closes it now, recording which records the server
+    says the run wrote. Today's one-shot run is one activation, `act-<run_id>`. Only a ruling in
+    here may be executed. Never raises: a failure leaves the run's rulings unexecuted and alerted,
+    never a failed cycle."""
+    try:
+        ids = (ended or {}).get("record_ids")
+        store = _execute_store(deps)
+        state = store.load()
+        record_activation(
+            state, activation_id=f"act-{run_id or opened_at}", role=role, run_id=run_id, opened_at=opened_at,
+            closed_at=datetime.now(timezone.utc).isoformat(),
+            records=ids if isinstance(ids, list) else None,
+        )
+        store.save(state)
+    except Exception:  # noqa: BLE001
+        LOG.exception("could not record the %s activation for run %s", role, run_id)
 
 
 def _retry_tick(deps: "CycleDeps", game_tick: Optional[int], cycle_index: int) -> Optional[int]:
