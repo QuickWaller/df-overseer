@@ -130,6 +130,7 @@ from .dfhack_client import (
 )
 from . import conductor_tools, doctrine_tools, executor_filing, executor_run, executor_tools, gotchas_store, gotchas_tools, knowledge_tools, labor_join, plan_tools, queue_tools, series_tools
 from .confidence import DEFAULT_CONFIDENCE_PATH, ConfidenceConfig, load_confidence
+from . import pause_stamp as pause_stamp_mod
 from .registry import Registry, load_registry
 from .roles import Roster, load_roster
 from .tool_guidance import ToolGuidance, enrich
@@ -436,6 +437,7 @@ def build_mcp_server(
     brave_api_key: Optional[str] = None,
     wiki_snapshot_path: Optional[str] = knowledge_tools.DEFAULT_WIKI_SNAPSHOT_PATH,
     dfhack_source_root: Optional[str] = knowledge_tools.DEFAULT_DFHACK_SOURCE_ROOT,
+    stamp_pause: bool = False,
 ) -> Server:
     """Build the low-level Server, wired to this registry/roster/pool.
 
@@ -543,6 +545,14 @@ def build_mcp_server(
         if isinstance(parsed, dict) and set(parsed) == {"error"} and isinstance(parsed["error"], str):
             raise DFHackCallError(parsed["error"])
         return parsed
+
+    # Decision 10 (dfmcp/pause_stamp.py): False (the default, so older callers and
+    # tests are unchanged) adds nothing; `_serve` passes True. Reads the game's own
+    # clock.status, cached a few seconds, failing open.
+    pause_stamp = (
+        pause_stamp_mod.PauseStamp(lambda: _call_dfhack(pause_stamp_mod.STATUS_TOOL_ID, {}))
+        if stamp_pause else None
+    )
 
     async def _exec_call_tool(
         tool_id: str, arguments: Mapping[str, Any], *, timeout: Optional[float] = None,
@@ -893,6 +903,8 @@ def build_mcp_server(
             is_error=bool(result.is_error), error=text if result.is_error else None, result_chars=len(text),
         )
         CALL_LOG.info(json.dumps(line, default=str, sort_keys=True))
+        if pause_stamp is not None:
+            result = pause_stamp_mod.apply(result, await pause_stamp.current())
         return result
 
     return Server(
@@ -955,7 +967,7 @@ async def _serve(
             registry, roster, pool, Path(config.queue_db), Path(config.doctrine_path),
             config.series_db, config.gotchas_db, confidence, config.production_db,
             brave_api_key=config.brave_api_key, wiki_snapshot_path=config.wiki_snapshot_path,
-            dfhack_source_root=config.dfhack_source_root,
+            dfhack_source_root=config.dfhack_source_root, stamp_pause=True,
         )
         app = build_asgi_app(server, tokens, config.bind_host)
         uvicorn_config = uvicorn.Config(app, host=config.bind_host, port=config.bind_port, log_level="info")
