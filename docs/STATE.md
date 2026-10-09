@@ -24,11 +24,11 @@ Last check: 2026-10-09T00:37:11Z, overall: DRIFT
 
 ## Per-role tool counts (offline, from the repo's own registry + roster)
 
-- **architect**: 57
-- **conductor**: 41
+- **architect**: 58
+- **conductor**: 42
 - **consultant**: 29
 - **overseer**: 83
-- **planner**: 15
+- **planner**: 16
 - **quartermaster**: 28
 
 ## Services

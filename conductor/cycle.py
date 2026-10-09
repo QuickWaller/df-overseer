@@ -68,6 +68,7 @@ from conductor.execute import ExecuteStore, ExecuteReport, run_execute, skipped_
 from conductor.hold import HoldState, HoldStore, hold_path_for
 from conductor.mcp_client import MCPToolError, ToolCaller, tool_name
 from conductor.job_watch import JobWatchResult, JobWatchStore, evaluate_jobs, jobs_from_result
+from conductor import space_watch
 from conductor.ore_watch import POLL_TOOL as ORE_POLL_TOOL, OreRead, ore_read_from_sites
 from conductor import noble_room_watch
 from conductor.unsupplied_watch import POLL_TOOL as UNSUPPLIED_POLL_TOOL, UnsuppliedRead, unsupplied_read
@@ -921,6 +922,7 @@ async def _run_cycle(cycle_index: int, deps: CycleDeps, hold: HoldState) -> Cycl
     ordinary_escalated = False
     roles_to_run: List[str] = list(triage_result.roles_to_wake)
     roles_woken_out: List[str] = list(roles_to_run)
+    unused_space = await _space_survey(deps, call, roles_to_run, cycle_index)
     extra_wakes: Dict[str, Wake] = {}
     queue_refreshed = False
     known_ids: Set[str] = set(pending_ids) | set(lane_state.proposers)
@@ -1029,6 +1031,7 @@ async def _run_cycle(cycle_index: int, deps: CycleDeps, hold: HoldState) -> Cycl
                 frozen_types=(routing or {}).get("frozen_types") if role in ADVISORS else None,
                 roadmap_line=roadmap_line if role in (OVERSEER, PLANNER) else None,
                 utilisation=utilisation if role == PLANNER else None,
+                unused_space=unused_space if role == "architect" else None,
                 paused=paused_now,
             )
             briefings[role] = briefing
@@ -1519,6 +1522,31 @@ async def _utilisation(
         return summary if summary.get("samples") else None
     except Exception as exc:  # noqa: BLE001 -- total, see docstring
         LOG.warning("cycle %s: utilisation sampling failed: %s", cycle_index, exc)
+        return None
+
+
+async def _space_survey(
+    deps: "CycleDeps", call: Callable, roles_to_run: Sequence[str], cycle_index: int,
+) -> Optional[List[str]]:
+    """The Architect's unused-space briefing lines (conductor/space_watch.py,
+    policy `space_survey`). Read only when the Architect is about to be briefed;
+    never a wake reason. The remembered set is saved only on a live (not dry)
+    run. Total by design: a failed read logs and gives `None`, memory untouched."""
+    pol = deps.policy.space_survey
+    if not pol.enabled or "architect" not in roles_to_run:
+        return None
+    path = deps.cursor_store.path.with_name("space_survey.json")
+    try:
+        report = await call(space_watch.POLL_TOOL, {})
+        if not isinstance(report, Mapping) or not isinstance(report.get("regions"), list):
+            LOG.warning("cycle %s: %s gave no usable region list; no unused-space line", cycle_index, space_watch.POLL_TOOL)
+            return None
+        lines, seen = space_watch.new_lines(report, space_watch.load_seen(path), pol.min_tiles, pol.min_rectangularity)
+        if not deps.dry_run:
+            space_watch.save_seen(path, seen)
+        return lines or None
+    except Exception as exc:  # noqa: BLE001 -- total, see docstring
+        LOG.warning("cycle %s: the unused-space survey failed: %s", cycle_index, exc)
         return None
 
 

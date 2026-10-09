@@ -148,6 +148,16 @@ class NobleRoomPolicy:
 
 
 @dataclass(frozen=True)
+class SpaceSurveyPolicy:
+    """The Architect's unused-space briefing line (policy.yaml `space_survey`;
+    conductor/space_watch.py). Never a wake reason. `min_tiles` and
+    `min_rectangularity` decide which regions are worth a line."""
+    enabled: bool = True
+    min_tiles: int = 12
+    min_rectangularity: float = 0.6
+
+
+@dataclass(frozen=True)
 class LaneTriggers:
     """What counts as a change in one role's own lane (handoffs/2026-10-05-
     stricter-wakes.md). Pure data; conductor/lanes.py reads it generically.
@@ -295,6 +305,8 @@ class Policy:
     unsupplied_building: UnsuppliedPolicy = field(default_factory=UnsuppliedPolicy)
     #: The noble-room watch's own policy block (`noble_room`).
     noble_room: NobleRoomPolicy = field(default_factory=NobleRoomPolicy)
+    #: The unused-space briefing line (`space_survey`); informational only.
+    space_survey: SpaceSurveyPolicy = field(default_factory=SpaceSurveyPolicy)
     #: Threshold alerts for every role's briefing (policy.yaml `threshold_alerts`).
     threshold_alerts: Tuple[ThresholdAlert, ...] = ()
     #: Per-role lane triggers (policy.yaml `lane_triggers`). Empty: no lane
@@ -431,6 +443,23 @@ def _load_unsupplied(raw, path: Path) -> UnsuppliedPolicy:
     if out["cap_ticks"] < out["base_ticks"]:
         raise PolicyError(f"{path}: unsupplied_building.cap_ticks must be at least base_ticks")
     return UnsuppliedPolicy(**out)
+
+
+def _load_space_survey(raw, path: Path) -> SpaceSurveyPolicy:
+    if raw is None:
+        return SpaceSurveyPolicy()
+    if not isinstance(raw, dict):
+        raise PolicyError(f"{path}: space_survey must be a mapping")
+    enabled = raw.get("enabled", True)
+    if not isinstance(enabled, bool):
+        raise PolicyError(f"{path}: space_survey.enabled must be true or false")
+    mt = raw.get("min_tiles", 12)
+    if isinstance(mt, bool) or not isinstance(mt, int) or mt < 1:
+        raise PolicyError(f"{path}: space_survey.min_tiles must be a positive integer")
+    mr = raw.get("min_rectangularity", 0.6)
+    if isinstance(mr, bool) or not isinstance(mr, (int, float)) or not 0 <= mr <= 1:
+        raise PolicyError(f"{path}: space_survey.min_rectangularity must be a number from 0 to 1")
+    return SpaceSurveyPolicy(enabled=enabled, min_tiles=mt, min_rectangularity=float(mr))
 
 
 def _load_noble_room(raw, path: Path) -> NobleRoomPolicy:
@@ -693,6 +722,7 @@ def load_policy(path: "Path | str" = DEFAULT_POLICY_PATH) -> Policy:
         ore_renotify_ticks=int(doc.get("ore_renotify_ticks", 12000)),
         unsupplied_building=_load_unsupplied(doc.get("unsupplied_building"), path),
         noble_room=_load_noble_room(doc.get("noble_room"), path),
+        space_survey=_load_space_survey(doc.get("space_survey"), path),
         role_timeout_seconds={str(k): float(v) for k, v in (doc.get("role_timeout_seconds") or {}).items()},
     )
 

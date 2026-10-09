@@ -121,6 +121,13 @@ read:
       conductor/ore_watch.py: each site carries ore_exposed, the ore or gem
       still walled in on its room's faces (player-visible tiles only). The
       edge-triggered wake for the Architect is built from this. Read-only.
+  - id: "openarea.survey"
+    status: exists
+    note: >-
+      Register 2026-10-09 "Unused dug space survey". Polled once per cycle by
+      conductor/space_watch.py when the Architect is about to be briefed: new
+      sizeable unused dug regions become one briefing line each, never a wake.
+      Read-only, numbers and names only.
   - id: "stuckjobs.find"
     status: exists
     note: >-

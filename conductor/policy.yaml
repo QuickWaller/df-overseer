@@ -531,3 +531,14 @@ noble_room:
   max_wakes: 3
   max_positions: 12
   statuses: [not_met]
+
+# Register 2026-10-09 "Unused dug space survey" (conductor/space_watch.py): once a
+# cycle the conductor reads openarea.survey and, for each NEW region at least
+# min_tiles big and min_rectangularity square that it has not shown before, adds
+# one line to the Architect's briefing so it can propose reuse of dug space.
+# Never a wake reason by itself. Remembered in space_survey.json beside the
+# cursor store. enabled false: no read, no line.
+space_survey:
+  enabled: true
+  min_tiles: 12
+  min_rectangularity: 0.6
