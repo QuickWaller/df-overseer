@@ -64,7 +64,7 @@ def _validate(raw: dict) -> dict:
                 continue
             if not isinstance(v, list) or not v or not all(isinstance(i, str) and i for i in v):
                 raise RoutingError(f"action_tools.yaml: {name}.{key} must be a non-empty list of strings")
-        for flag in ("routed", "frozen", "coverage", "ruling_only"):
+        for flag in ("routed", "frozen", "coverage", "ruling_only", "direct"):
             if not isinstance(g.get(flag, False), bool):
                 raise RoutingError(f"action_tools.yaml: {name}.{flag} must be a boolean")
         for t in g["types"]:
@@ -75,7 +75,13 @@ def _validate(raw: dict) -> dict:
             raise RoutingError(
                 f"action_tools.yaml: group {name!r} is ruling_only, so it has no tools and is not routed"
             )
+        if g.get("direct") and (g.get("frozen") or g.get("coverage") or g.get("ruling_only")):
+            raise RoutingError(f"action_tools.yaml: group {name!r} is direct, so it is never frozen, covered or ruling_only")
         for t in g.get("tools") or []:
+            # A direct group names tools that other groups (or no group) also name: the
+            # Overseer still calls them by name, and the call is recorded as an action.
+            if g.get("direct"):
+                continue
             if t in seen_tools:
                 raise RoutingError(f"action_tools.yaml: tool {t!r} is in {seen_tools[t]!r} and {name!r}")
             seen_tools[t] = name
@@ -86,6 +92,7 @@ def _validate(raw: dict) -> dict:
             "routed": bool(g.get("routed", False)),
             "frozen": bool(g.get("frozen", False)),
             "coverage": bool(g.get("coverage", False)),
+            "direct": bool(g.get("direct", False)),
         }
     retired = raw.get("retired") or []
     if not isinstance(retired, list) or not all(isinstance(i, str) for i in retired):
@@ -115,8 +122,13 @@ def _group(group: str) -> dict:
 
 
 def is_routed(type_: str) -> bool:
+    """The conductor runs this type's steps. A direct group is always on (it has no
+    cutover to wait for), whatever its `routed` flag says."""
     g = group_of(type_)
-    return g is not None and _load()["groups"][g]["routed"]
+    if g is None:
+        return False
+    grp = _load()["groups"][g]
+    return grp["routed"] or grp["direct"]
 
 
 def is_ruling_only(type_: str) -> bool:
@@ -150,14 +162,46 @@ def types(group: str) -> list[str]:
 
 
 def routed_groups() -> list[str]:
+    """The groups cut over to the conductor, by flag. A direct group is not one of them
+    (it is always on): see `executed_groups`."""
     return [n for n, g in _load()["groups"].items() if g["routed"]]
 
 
+def executed_groups() -> list[str]:
+    """Every group whose open projects the conductor's execute phase runs."""
+    return [n for n, g in _load()["groups"].items() if g["routed"] or g["direct"]]
+
+
+def is_direct(type_: str) -> bool:
+    """True for the one type of a `direct` group: a ready-ruled one-step action the
+    Overseer's own write-tool call records and the conductor runs (2026-10-09, "the
+    conductor is the only game writer"). It is routed (the conductor opens and runs
+    it) but is never filed or ruled as a proposal by a model."""
+    g = group_of(type_)
+    return g is not None and _load()["groups"][g]["direct"]
+
+
+def direct_groups() -> list[str]:
+    return [n for n, g in _load()["groups"].items() if g["direct"]]
+
+
+def direct_type() -> str | None:
+    gs = direct_groups()
+    return _load()["groups"][gs[0]]["types"][0] if gs else None
+
+
+def direct_tools() -> list[str]:
+    """The tools the Overseer calls by name that are recorded instead of written."""
+    return [t for n in direct_groups() for t in _load()["groups"][n]["tools"]]
+
+
 def routed_types() -> list[str]:
+    """The types a model rules and the conductor runs; a direct type is not one."""
     return [t for n in routed_groups() for t in _load()["groups"][n]["types"]]
 
 
 def routed_tools() -> list[str]:
+    """Tools that left the Overseer's allowlist: a direct group's did not."""
     return [t for n in routed_groups() for t in _load()["groups"][n]["tools"]]
 
 

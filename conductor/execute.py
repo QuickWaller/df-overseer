@@ -91,10 +91,14 @@ class ExecuteState:
     idle: Dict[str, Dict[str, Optional[int]]] = field(default_factory=dict)
     #: project -> proposer role, remembered after it leaves the open list.
     roles: Dict[str, str] = field(default_factory=dict)
+    #: Project ids that are direct actions (an Overseer write-tool call the server
+    #: recorded as a ready-ruled one-step project), remembered after they leave the
+    #: open list so a late `step_done` is still known to be one.
+    direct: List[str] = field(default_factory=list)
 
 
 _FIELDS = ("since", "sent", "uncertain", "transient", "unknown", "attention", "ore_held",
-           "refused", "cleanup_failed", "idle", "roles")
+           "refused", "cleanup_failed", "idle", "roles", "direct")
 
 
 class ExecuteStore:
@@ -176,6 +180,8 @@ class _Phase:
         self.report = ExecuteReport(ran=True)
         self.projects: Dict[str, Mapping[str, Any]] = {}
         self.saved = False
+        #: Direct projects that did not run to done this pass: closed `not_done` at the end.
+        self.to_close: List[Tuple[str, str]] = []
 
     # -- plumbing ----------------------------------------------------------
 
@@ -191,6 +197,12 @@ class _Phase:
             LOG.exception("execute: %s raised", tool_id)
             return None
 
+    def is_direct(self, project_id: str) -> bool:
+        """A direct action: an Overseer write-tool call run here instead (2026-10-09). It has
+        no proposer to wake with a follow-up, so `step_done` is silent and a failure is
+        reported in the Overseer's next briefing, not asked about."""
+        return bool((self.projects.get(project_id) or {}).get("direct")) or project_id in self.st.direct
+
     def roles_for(self, project_id: str) -> Tuple[str, ...]:
         role = (self.projects.get(project_id) or {}).get("role") or self.st.roles.get(project_id)
         return (str(role),) if role else self.fallback
@@ -204,9 +216,15 @@ class _Phase:
         if self.st.attention.get(step_id) == cause:
             return
         self.st.attention[step_id] = cause
-        self.wake(project_id, REASON_ATTENTION, step_id,
-                  f"project {project_id} step {step_id}: {text} File a follow-up, or queue.pass naming "
-                  f"{project_id} to close it.")
+        if self.is_direct(project_id):
+            self.wake(project_id, REASON_ATTENTION, step_id,
+                      f"your direct action {project_id} did not run: {text} Nothing was changed by it; "
+                      f"call the tool again if it is still wanted.")
+            self.to_close.append((project_id, _clip(text, 200)))
+        else:
+            self.wake(project_id, REASON_ATTENTION, step_id,
+                      f"project {project_id} step {step_id}: {text} File a follow-up, or queue.pass naming "
+                      f"{project_id} to close it.")
         self.report.act("attention", project=project_id, step=step_id, cause=cause)
 
     def done(self, project_id: str, step_id: str, detail: str = "") -> None:
@@ -218,6 +236,9 @@ class _Phase:
         self.st.transient.pop(step_id, None)
         self.st.unknown.pop(step_id, None)
         self.st.ore_held.pop(step_id, None)
+        if self.is_direct(project_id):
+            self.report.act("step_done", project=project_id, step=step_id, direct=True)
+            return
         left = (self.projects.get(project_id) or {}).get("phases_remaining")
         tail = f" {left} declared phase(s) left." if isinstance(left, int) and left > 0 else ""
         self.wake(
@@ -244,6 +265,9 @@ class _Phase:
         for pid, p in self.projects.items():
             if p.get("role"):
                 self.st.roles[pid] = str(p["role"])
+            if p.get("direct") and pid not in self.st.direct:
+                self.st.direct.append(pid)
+                del self.st.direct[:-_SENT_KEEP]
         return out
 
     async def resolve_uncertain(self, runs: Sequence[Mapping[str, Any]]) -> int:
@@ -443,6 +467,10 @@ class _Phase:
             if sid in self.st.ore_held:
                 del self.st.ore_held[sid]
                 self.report.act("ore_released", project=pid, step=sid)
+            why = await self.stock_check(step)
+            if why:
+                self.attend(pid, sid, f"stock:{_clip(why, 60)}", why)
+                continue
             if not quicksaved and self.quicksave is not None:
                 quicksaved = True
                 try:
@@ -455,6 +483,24 @@ class _Phase:
                 continue
             self.report.steps_run += 1
             self.after_run(pid, sid, out)
+
+    async def stock_check(self, step: Mapping[str, Any]) -> Optional[str]:
+        """HOOK, the stateless stock check at execution (register 2026-10-09, "stock checks go
+        stateless"). A separate later build: it will read what the step relies on at run time
+        (not a cited snapshot from filing) and return a one-line reason to hold the step, or
+        None to let it run. Called once per ready step, just before the quicksave and the
+        real call, for every routed step. Deliberately returns None today."""
+        del step
+        return None
+
+    async def close_failed_direct(self) -> None:
+        """A direct action that did not run is closed `not_done` (a project left open on a step
+        that will never run would sit in the work-in-progress list). Best effort."""
+        for pid, reason in dict.fromkeys(self.to_close):
+            out = await self.tool("queue.close", {"project_id": pid, "outcome": "not_done", "reason": reason})
+            if isinstance(out, Mapping) and out.get("close_id"):
+                self.report.act("direct_closed", project=pid, close_id=out["close_id"])
+        self.to_close.clear()
 
     def after_run(self, pid: str, sid: str, out: Mapping[str, Any]) -> None:
         cls = out.get("class")
@@ -507,4 +553,5 @@ async def run_execute(
     if isinstance(latest, str):
         state.since = latest
     await ph.run_ready(snap)
+    await ph.close_failed_direct()
     return ph.report

@@ -128,7 +128,7 @@ from .dfhack_client import (
     DFHackNotSentError,
     DFHackProtocolError,
 )
-from . import conductor_tools, doctrine_tools, executor_filing, executor_run, executor_tools, gotchas_store, gotchas_tools, knowledge_tools, labor_join, plan_tools, queue_tools, series_tools
+from . import conductor_tools, direct_actions, doctrine_tools, executor_filing, executor_run, executor_tools, gotchas_store, gotchas_tools, knowledge_tools, labor_join, plan_tools, queue_tools, series_tools
 from .confidence import DEFAULT_CONFIDENCE_PATH, ConfidenceConfig, load_confidence
 from . import pause_stamp as pause_stamp_mod
 from .registry import Registry, load_registry
@@ -749,6 +749,22 @@ def build_mcp_server(
                 content=[types.TextContent(type="text", text=text)],
                 structuredContent=structured,
                 isError=False,
+            )
+
+        if direct_actions.is_direct_tool(tool_id, role) and not direct_actions.is_preview(tool, params.arguments or {}):
+            # The conductor is the only writer to the game (register 2026-10-09): the
+            # Overseer's write call is validated and recorded, then run by the
+            # conductor's execute phase. A dry-run call falls through unchanged.
+            env = executor_run.ExecEnv(
+                db_path=queue_db_path, write_lock=queue_write_lock, call_tool=_exec_call_tool,
+                call_dfhack=_call_dfhack, registry=registry,
+            )
+            try:
+                text, structured = await direct_actions.file_action(env, role, tool_id, params.arguments or {})
+            except queue_tools.QueueToolError as exc:
+                return _tool_result_error(str(exc))
+            return types.CallToolResult(
+                content=[types.TextContent(type="text", text=text)], structuredContent=structured, isError=False,
             )
 
         result = await _run_dfhack_tool(tool, tool_id, params)

@@ -338,7 +338,7 @@ def _execution_state_sync(arguments: Mapping[str, Any], db_path: Any) -> Tuple[s
         issued: list = []
         plans: dict = {}
         for p in opens:
-            if p.get("group") is None or p["group"] not in routing.routed_groups():
+            if p.get("group") is None or p["group"] not in routing.executed_groups():
                 continue
             seen: list = []
             for row in store.target_states(db_path, p["project_id"]):
@@ -372,7 +372,7 @@ def _execution_state_sync(arguments: Mapping[str, Any], db_path: Any) -> Tuple[s
             "open_projects": [
                 {k: p[k] for k in ("project_id", "group", "role", "urgency", "status", "steps_open",
                                    "phases_remaining")}
-                | {"summary": _clip(p.get("summary"))}
+                | {"summary": _clip(p.get("summary")), "direct": p["group"] in routing.direct_groups()}
                 for p in opens
             ],
             "ready_steps": ready,

@@ -113,6 +113,22 @@ class ExecSpec:
     landed: Tuple[Dict[str, Any], ...] = ()
     cleanup: Optional[Dict[str, Any]] = None
     preview_fields: Tuple[str, ...] = ()
+    #: False for a tool that takes no DRY_RUN argument (a direct action's default
+    #: spec): no dry run is made and no `dry_run` argument is sent.
+    dry_run: bool = True
+
+
+def direct_spec(tool_id: str, takes_dry_run: bool) -> ExecSpec:
+    """The default spec of a direct action's tool that declares no `execution:` block
+    (2026-10-09, `dfqueue/action_tools.yaml` group `direct`). The call itself is the
+    work: a script's own `{"error": ...}` refusal (or `ok: false` with an error) is a
+    refusal that changed nothing, anything else is a success, no handle is issued and
+    no progress is read (so the step reads done at the next reconcile). A tool's own
+    `execution:` block still wins when it has one."""
+    return ExecSpec(
+        tool_id=tool_id, verdict={"refused_if_present": ["error"]}, dry_run_echo="",
+        nothing_applied={"refusal": True}, dry_run=takes_dry_run,
+    )
 
 
 def _str_list(tool_id: str, key: str, raw: Any) -> Tuple[str, ...]:
@@ -216,8 +232,12 @@ def spec_for(tool: Any) -> Optional[ExecSpec]:
     raw = getattr(tool, "execution", None)
     if raw is None:
         return None
-    takes = any(a.lower().strip("[]") in ("dry_run",) or "DRY_RUN" in a for a in getattr(tool, "args", []))
-    return parse(tool.id, raw, takes_dry_run=takes)
+    return parse(tool.id, raw, takes_dry_run=takes_dry_run(tool))
+
+
+def takes_dry_run(tool: Any) -> bool:
+    """Does the command's signature carry a DRY_RUN argument?"""
+    return any(a.lower().strip("[]") in ("dry_run",) or "DRY_RUN" in a for a in getattr(tool, "args", []))
 
 
 def load_all(registry: Any) -> Dict[str, ExecSpec]:
@@ -257,15 +277,18 @@ def judge(spec: ExecSpec, out: Any, *, dry: bool) -> Verdict:
         return Verdict("refused", err)
     if not isinstance(out, Mapping):
         return Verdict("invalid", "the output is not an object")
-    found, echo = get_path(out, spec.dry_run_echo)
-    if not found:
-        return Verdict("invalid", f"the output has no {spec.dry_run_echo!r} field", (spec.dry_run_echo,))
-    if echo is not dry:
-        return Verdict(
-            "invalid",
-            f"the output says {spec.dry_run_echo}={echo!r} but this was a {'dry' if dry else 'real'} call",
-            (),
-        )
+    if spec.dry_run_echo:
+        found, echo = get_path(out, spec.dry_run_echo)
+        if not found:
+            return Verdict("invalid", f"the output has no {spec.dry_run_echo!r} field", (spec.dry_run_echo,))
+        if echo is not dry:
+            return Verdict(
+                "invalid",
+                f"the output says {spec.dry_run_echo}={echo!r} but this was a {'dry' if dry else 'real'} call",
+                (),
+            )
+    elif out.get("ok") is False and isinstance(out.get("error"), str):
+        return Verdict("refused", out["error"])  # the clock/fort family's refusal shape
     v = spec.verdict
     reason = ""
     if v.get("reason"):

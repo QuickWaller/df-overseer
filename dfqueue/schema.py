@@ -377,6 +377,14 @@ QUARTERMASTER_TYPES = (WORK_ORDER, CROP_PLAN, STOCK_TARGET)
 PLAN_CHANGE = "plan_change"
 PLANNER_TYPES = (PLAN_CHANGE,)
 
+#: `direct_action` (2026-10-09, register "conductor is the only game writer"): the
+#: record an Overseer write-tool call leaves. The server files it, already ruled
+#: accept, as one step (`dfqueue/action_tools.yaml` group `direct`). It is not in any
+#: role's vocabulary (the Overseer still files no proposal by hand, and the planner
+#: reads these tables for who proposes what); `_validate_proposal_fields` accepts it
+#: from the sole writer only.
+DIRECT_ACTION = "direct_action"
+
 TYPE_VOCAB_BY_ROLE: dict[str, tuple[str, ...]] = {
     "architect": ARCHITECT_TYPES,
     # The Overseer arbitrates proposals and writes rulings; it never writes
@@ -1060,7 +1068,9 @@ def _validate_proposal_fields(record: dict, role, errors: list[str]) -> None:
             errors.append("record.type: expected a non-empty string")
         else:
             vocab = TYPE_VOCAB_BY_ROLE.get(role, ()) if isinstance(role, str) else ()
-            if not vocab:
+            if ptype == DIRECT_ACTION and role == sole_writer():
+                pass
+            elif not vocab:
                 errors.append(
                     f"record.type: role {role!r} has no proposal-type vocabulary "
                     "(it does not propose)"

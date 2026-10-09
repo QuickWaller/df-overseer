@@ -14,6 +14,13 @@
 #   frozen    true only during the freeze before a cutover: step-less
 #             proposals of the group's types are refused with a message
 #   coverage  true once covered follow-ups skip the Overseer (2c)
+#   direct    true for the one group of ready-ruled one-step actions, always on
+#             (no cutover; `routed` is ignored for it)
+#             (2026-10-09, "the conductor is the only game writer"): the
+#             Overseer's write tools keep their names and arguments but a call
+#             records an action here instead of writing, and the conductor's
+#             execute phase runs it. Its tools may also be in another group,
+#             and stay on the Overseer's allowlist (routing.routed_tools skips it).
 #   ruling_only  true for a type the Overseer rules and nothing executes
 #             (handoffs/2026-10-07-planner-p1a.md, design F-9): no tools, never
 #             routed, never on the unexecuted list; the store closes it when the
@@ -56,6 +63,28 @@ groups:
       - workjob.cancel
       - farm.set-crop
     routed: false
+    frozen: false
+    coverage: false
+  direct:
+    types: [direct_action]
+    tools:
+      - openarea.build
+      - diggable.dig
+      - landmarks.build
+      - farm.build
+      - workshop.build
+      - zone.clear-owner
+      - trees.fell
+      - well.build
+      - orders.create
+      - orders.reorder
+      - orders.recheck
+      - orders.cancel
+      - workjob.queue
+      - workjob.cancel
+      - labor.set-labor
+    routed: false   # unused: a direct group is always on (routing.is_routed)
+    direct: true
     frozen: false
     coverage: false
   plan:
