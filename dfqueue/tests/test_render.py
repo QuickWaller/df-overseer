@@ -115,7 +115,7 @@ def test_to_xml_executed_is_well_formed_with_one_action_per_element():
         id="executed-0001",
         actions=[
             {"tool": "workshop.build", "outcome": "success"},
-            {"tool": "farm.set-crop", "outcome": "failure", "detail": "stale precondition"},
+            {"tool": "orders.create", "outcome": "failure", "detail": "stale precondition"},
         ],
     )
     xml = render.to_xml(record)

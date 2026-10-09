@@ -17,7 +17,7 @@ fallback:
 # A read-only advisor cannot hurt the fort directly: its only output is a
 # proposal the Overseer may ignore or reject. Same reasoning as
 # agents/architect/model.yaml's own rationale, applied to a role whose
-# proposal types (work_order, crop_plan, stock_target) are all still
+# proposal types (work_order, stock_target) are all still
 # UNTESTED live (no VM this stream) -- the cheap end of the model range is
 # exactly right for a role this early in its own track record.
 rationale: read-only advisor, zero blast radius, three brand-new untested proposal types

@@ -268,6 +268,12 @@ class PlanPolicy:
 
 
 @dataclass(frozen=True)
+class AutofarmSyncPolicy:
+    """policy.yaml `autofarm_sync`: apply the plan's `sync: autofarm` targets to the game each cycle."""
+    enabled: bool = False
+
+
+@dataclass(frozen=True)
 class Policy:
     base_fps: int
     think_fps: int
@@ -326,6 +332,8 @@ class Policy:
     execution: ExecutionPolicy = field(default_factory=ExecutionPolicy)
     #: The Planner's wiring (policy.yaml `plan`).
     plan: PlanPolicy = field(default_factory=PlanPolicy)
+    #: The autofarm sync phase (policy.yaml `autofarm_sync`).
+    autofarm_sync: AutofarmSyncPolicy = field(default_factory=AutofarmSyncPolicy)
     #: How many of a proposer's newest filings its briefing shows (policy.yaml
     #: `own_filings.recent`); 0 turns the block off.
     own_filings_recent: int = 5
@@ -695,6 +703,8 @@ def load_policy(path: "Path | str" = DEFAULT_POLICY_PATH) -> Policy:
         lane_triggers=lane_triggers,
         execution=execution,
         plan=plan,
+        autofarm_sync=AutofarmSyncPolicy(
+            enabled=_flag(doc.get("autofarm_sync") or {}, "enabled", False, f"{path}: autofarm_sync")),
         threshold_alerts=tuple(alerts),
         base_fps=int(_require(doc, "base_fps", path)),
         think_fps=int(_require(doc, "think_fps", path)),

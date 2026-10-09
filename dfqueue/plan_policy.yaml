@@ -64,7 +64,7 @@ history_lines: 8
 # checked.
 family_serving_types:
   zones: [room_siting, corridor]
-  stocks: [work_order, stock_target, crop_plan]
+  stocks: [work_order, stock_target]
   order: [work_order]
 
 # A target's derived inputs (from the serving template's `requires:`) are

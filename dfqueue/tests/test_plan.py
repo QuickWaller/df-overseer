@@ -697,3 +697,33 @@ def test_the_scalar_forms_are_unchanged():
     assert plan.target_position(BEDROOMS, 8, 0, 10)["want_units"] == 10
     assert plan.want_uses_alive(BEDROOMS)
     assert plan.target_position({"id": "w", "signal": "x", "want": 5, "reorder_gap": 1}, 2, 0, None)["want_units"] == 5
+
+
+# ---- synced targets (autofarm crop levels) ----------------------------------------------
+
+SYNCED = {"id": "crop_plump_helmet", "sync": "autofarm", "crop": "MUSHROOM_HELMET_PLUMP", "want": {"per_alive": 4}}
+
+
+def test_a_synced_crop_target_needs_no_owner_signal_or_reorder():
+    flags = plan.check_sections({"targets": [SYNCED]}, CTX)
+    assert [f for f in flags if f["inert"]] == []
+    assert plan.is_synced(SYNCED) and not plan.is_synced(BEDROOMS)
+
+
+def test_a_synced_target_may_want_zero_and_default_is_a_valid_crop():
+    for t in ({**SYNCED, "want": 0}, {"id": "d", "sync": "autofarm", "crop": "default", "want": 10}):
+        assert not [f for f in plan.check_sections({"targets": [t]}, CTX) if f["inert"]]
+
+
+@pytest.mark.parametrize("bad", [
+    {"crop": "plump helmet"}, {"crop": "mushroom_helmet_plump"}, {"crop": None}, {"sync": "autoseed"},
+    {"want": -1}, {"want": {"per_alive": -1}}, {"want": "lots"},
+])
+def test_a_bad_synced_target_is_flagged_inert(bad):
+    flags = plan.check_sections({"targets": [{**SYNCED, **bad}]}, CTX)
+    assert [f for f in flags if f["inert"] and f["id"] == "crop_plump_helmet"]
+
+
+def test_crop_without_sync_is_flagged():
+    flags = plan.check_sections({"targets": [{**BEDROOMS, "crop": "X"}]}, CTX)
+    assert any(f["code"] == "bad_field" and "crop" in f["message"] for f in flags)

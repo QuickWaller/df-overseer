@@ -61,6 +61,8 @@ SYSTEM_CLASS_TOOL_IDS = frozenset({
     # automatic mining and clears it after a cavern breach. Code's job, run only
     # in the conductor's own phase (blocked by an operator hold).
     "automine.scan",
+    # register 2026-10-09: the Planner owns crop levels; the conductor applies them.
+    "autofarm.set",
 })
 
 

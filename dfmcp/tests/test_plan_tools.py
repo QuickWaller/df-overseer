@@ -508,3 +508,29 @@ async def test_status_shows_the_computed_level_for_a_mapping_want(db, fort):
     assert st["alive"] == 10
     row = next(t for t in st["targets"] if t["id"] == "bedrooms")
     assert row["want"] == mapped["want"] and row["want_units"] == 13.0 and row["state"] == "open"
+
+
+# ---- synced crop targets (register 2026-10-09, autofarm) ------------------------------
+
+CROP_DEFAULT = {"id": "crop_default", "sync": "autofarm", "crop": "default", "want": 0}
+CROP_PLUMP = {"id": "crop_plump_helmet", "sync": "autofarm", "crop": "MUSHROOM_HELMET_PLUMP",
+              "want": {"per_alive": 4, "min": 20}}
+
+
+async def test_a_synced_crop_target_is_accepted_unflagged_and_reported_synced_with_its_number(db, fort):
+    out = await _write(db, fort, {"base_version": 0, "set": {"targets": [BEDROOMS, CROP_DEFAULT, CROP_PLUMP]}})
+    assert not [f for f in out.get("flags", []) if f.get("inert")]
+    fort.alive = 10
+    st = await _plan(plan_tools.PLAN_STATUS, "conductor", {}, db, fort)
+    rows = {t["id"]: t for t in st["targets"]}
+    assert rows["crop_plump_helmet"]["state"] == "synced" and rows["crop_plump_helmet"]["want_units"] == 40.0
+    assert rows["crop_plump_helmet"]["crop"] == "MUSHROOM_HELMET_PLUMP" and "owner" not in rows["crop_plump_helmet"]
+    assert rows["crop_default"]["want_units"] == 0.0
+    assert rows["bedrooms"]["state"] != "synced"
+
+
+async def test_a_synced_target_needs_no_alive_count_when_its_want_is_a_plain_number(db, fort):
+    await _write(db, fort, {"base_version": 0, "set": {"targets": [CROP_DEFAULT]}})
+    fort.fail.add("vitals.summary")
+    st = await _plan(plan_tools.PLAN_STATUS, "conductor", {}, db, fort)
+    assert st["targets"][0]["state"] == "synced" and st["targets"][0]["want_units"] == 0.0

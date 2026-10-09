@@ -47,12 +47,12 @@ GOOD_SPEC = [
 # ---- roster data ------------------------------------------------------------
 
 
-def test_only_the_consultant_is_an_answerer_in_the_real_roster():
-    assert schema.answer_roles() == frozenset({"consultant"})
+def test_the_consultant_and_quartermaster_are_the_answerers_in_the_real_roster():
+    assert schema.answer_roles() == frozenset({"consultant", "quartermaster"})
 
 
 def test_the_fixture_roster_adds_an_answerer(logistics_roster):
-    assert schema.answer_roles() == frozenset({"consultant", "logistics"})
+    assert schema.answer_roles() == frozenset({"consultant", "quartermaster", "logistics"})
 
 
 # ---- the default path is unchanged ------------------------------------------

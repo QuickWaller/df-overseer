@@ -17,7 +17,6 @@ tools:
   construction.mine-vein: [zone_id]
   construction.mine-vein-site: [site_id]
   zone.assign-owner: [zone_id]
-  farm.set-crop: [id, season]
   orders.cancel: [id]
   orders.reorder: [id]
   orders.recheck: [id]

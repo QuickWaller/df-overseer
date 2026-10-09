@@ -101,5 +101,5 @@ def test_quartermaster_proposal_type_vocabulary_matches_the_schema():
     change) is exactly the MVP's three types named in role.md and
     tools.yaml's own `queue.propose` note."""
     assert dfqueue_schema.TYPE_VOCAB_BY_ROLE["quartermaster"] == (
-        dfqueue_schema.WORK_ORDER, dfqueue_schema.CROP_PLAN, dfqueue_schema.STOCK_TARGET,
+        dfqueue_schema.WORK_ORDER, dfqueue_schema.STOCK_TARGET,
     )

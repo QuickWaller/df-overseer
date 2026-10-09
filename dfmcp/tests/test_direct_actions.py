@@ -65,7 +65,7 @@ TOOL = "zone.clear-owner"
 def test_routing_marks_the_direct_tools_and_leaves_set_crop_alone():
     tools = routing.direct_tools()
     assert len(tools) == 15 and "farm.set-crop" not in tools
-    assert routing.group_of_tool("farm.set-crop") == "orders"
+    assert routing.group_of_tool("farm.set-crop") is None  # retired 2026-10-09 (autofarm)
     assert routing.is_routed("direct_action") and routing.is_direct("direct_action")
     assert routing.executed_groups() == ["direct"]
     assert routing.routed_tools() == []  # the Overseer keeps every tool on its allowlist

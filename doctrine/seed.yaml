@@ -1522,3 +1522,39 @@
     enabled); no live slab has yet been made by this fort's own order.
     Consumers: the Quartermaster files the standing work_order and its
     stock_target; the Architect or Overseer builds the engraved slab.
+
+- id: autofarm-semantics
+  scope: universal
+  status: verified
+  topics: [farming, seeds, food]
+  sources:
+    - kind: research
+      ref: research/2026-10-09-autofarm-switch.md (plugins/autofarm.cpp at tag 53.16-r1, section 1)
+      describes: "53.16"
+      read: opened
+      accessed: 2026-10-09
+    - kind: game-data
+      ref: hack/docs/docs/tools/autofarm.txt and raw/objects/plant_standard.txt, this install
+      describes: "53.16"
+      read: opened
+      accessed: 2026-10-09
+  statement: >-
+    DFHack autofarm sets what each built farm plot grows from plant stock alone,
+    in the CURRENT season's slot only, about every 53 running ticks (nothing
+    happens while the game is paused). Each crop has a level, a count of plants
+    (plants and their growths, in barrels and stockpiles too; items inside a
+    building, rotten ones, drinks and seeds do not count); 0 means never plant
+    it. A crop is eligible when it can be planted now (the season allows it and
+    it will finish growing in season), the fort holds at least one of its seeds
+    (there is no seed floor), it suits the plot's underground or surface
+    biome, and its stock is below its level. With one plot: it keeps the plot's
+    current crop while that crop is eligible, otherwise it moves to the
+    eligible crop with the lowest raw index, and when no crop is eligible the
+    plot is left fallow (no crop). Only plump helmet is edible raw among the
+    underground crops; the others brew, mill or spin. Stock counts after
+    brewing fall again, so a crop is planted again once its plants are drunk.
+  note: >-
+    The 30-seed floor (seed-stock-never-falls) cannot be expressed in autofarm;
+    it stays with the kitchen ban and the brewing orders. Settings live in the
+    world save. Read from source and the install's docs, not observed running on
+    this fort yet.

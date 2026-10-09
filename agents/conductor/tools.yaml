@@ -232,6 +232,13 @@ read:
       (conductor/unsupplied_watch.py).
 
 write:
+  - id: "autofarm.set"
+    status: exists
+    note: >-
+      Added 2026-10-09 (register "switch farming to autofarm"). Writes the Planner's synced
+      crop levels (plan targets with `sync: autofarm`) into DFHack's autofarm plugin and
+      enables it, once a cycle in the autofarm sync phase (conductor/autofarm_sync.py), never
+      under an operator hold. In dfmcp/roles.py's SYSTEM_CLASS_TOOL_IDS: no model may hold it.
   - id: "clock.set-speed"
     status: exists
     note: base_fps / think_fps switching, per the wake-reason policy table (docs/AGENT-LOOP.md ss2).
