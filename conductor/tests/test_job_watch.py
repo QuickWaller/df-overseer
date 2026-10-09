@@ -129,3 +129,18 @@ def test_jobs_from_result_tolerates_shapes():
     assert jobs_from_result({"jobs": [_job()]}) == [_job()]
     assert jobs_from_result(None) == []
     assert jobs_from_result({"error": "x"}) == []
+
+
+def test_a_dig_on_an_auto_followed_tile_is_not_a_stuck_job(tmp_path):
+    """research/2026-10-09-auto-mine.md 4.4: the game's own auto-follow is not our failure."""
+    from conductor.job_watch import JobWatchStore, evaluate_jobs
+
+    jobs = [
+        {"job_type": "Dig", "waiting_on": "auto_followed", "auto_followed": True, "near_landmark": "Well"},
+        {"job_type": "Dig", "waiting_on": "no worker assigned", "near_landmark": "Well"},
+    ]
+    store = JobWatchStore(tmp_path / "job_watch.json")
+    kw = dict(unclaimed_threshold_ticks=10, suspended_threshold_ticks=10, renotify_ticks=100, store=store, dry_run=False)
+    evaluate_jobs(jobs, game_tick=100, **kw)
+    res = evaluate_jobs(jobs, game_tick=1000, **kw)
+    assert len(res.lines) == 1 and "Dig" in res.lines[0]

@@ -531,3 +531,12 @@ noble_room:
   max_wakes: 3
   max_positions: 12
   statuses: [not_met]
+
+# The automine pass (conductor/automine.py, research/2026-10-09-auto-mine.md): once
+# per cycle the conductor calls automine.scan, which designates revealed ore and gem
+# tiles next to our digs for the game's automatic mining and clears auto mining after
+# a cavern breach. A game write, so it is conductor-only and blocked by an operator
+# hold. `enabled: false` turns the whole pass off with no code change.
+automine:
+  enabled: true
+  max_per_call: 40

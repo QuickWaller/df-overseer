@@ -150,6 +150,15 @@ local parse_mod = reqscript('df-overseer-blueprint-parse')
 -- leaves; this file reqscripts them, they never reqscript this file.
 local hazard_mod = reqscript('df-overseer-hazard')
 local digcancel_mod = reqscript('df-overseer-digcancel')
+-- 2026-10-09 (research/2026-10-09-auto-mine.md): the game's auto-mine dig mode.
+-- A leaf; optional, so an older guest without the file still applies blueprints.
+local automine_cached = nil
+local function automine()
+  if automine_cached then return automine_cached end
+  local ok, m = pcall(reqscript, 'df-overseer-automine')
+  if ok and type(m) == 'table' then automine_cached = m; return m end
+  return nil
+end
 -- 2026-10-08 (C3, D2/D7): room-kind data (generated from blueprints/room-kinds.yaml)
 -- and the pure entrance-cell access rules. Leaves; they never reqscript this file.
 local roomkinds_mod = reqscript('df-overseer-roomkinds')
@@ -988,12 +997,19 @@ end
 local function dig_progress(site, failures, applied_tick)
   local jobs, njobs, jerr, nclaimed = dig_jobs_in_site(site, failures)
   local pending, with_job, blind, startable, unknown = 0, 0, 0, 0, 0
+  -- Tiles the game designated by auto-following a vein are not part of what we
+  -- applied: counted apart, never as pending or stalled (research/2026-10-09-auto-mine.md 4.4).
+  local automine_mod = automine()
+  local followed = automine_mod and automine_mod.followed_checker() or function() return false end
+  local auto_followed = 0
   for x = site.x, site.x + site.w - 1 do
     for y = site.y, site.y + site.h - 1 do
       local ok, flags = pcall(dfhack.maps.getTileFlags, xyz2pos(x, y, site.z))
       if not ok or not flags then
         note_failure(failures, "dig progress designation", flags)
         unknown = unknown + 1
+      elseif flags.dig ~= df.tile_dig_designation.No and followed(x, y, site.z) then
+        auto_followed = auto_followed + 1
       elseif flags.dig ~= df.tile_dig_designation.No then
         pending = pending + 1
         if jobs and jobs[x .. "," .. y] then
@@ -1027,6 +1043,7 @@ local function dig_progress(site, failures, applied_tick)
   return {
     state = state,
     pending_dig_designations = pending,
+    auto_followed = auto_followed,
     designations_with_a_job = with_job,
     designations_without_a_job = pending - with_job,
     blind_no_walkable_neighbour = blind,
@@ -1496,7 +1513,7 @@ local function make_placement_gate(bp, exclude_reservation)
   end
 end
 
-local function run_phase(name, phase, site_arg, level, rank, radius, dry, allow_stranded)
+local function run_phase(name, phase, site_arg, level, rank, radius, dry, allow_stranded, auto_mine)
   local bp, err = load_blueprint(name)
   if not bp then return nil, err end
   if not valid_name(phase) then return nil, "PHASE must be a section label from `plan`" end
@@ -1733,6 +1750,22 @@ local function run_phase(name, phase, site_arg, level, rank, radius, dry, allow_
     return result
   end
 
+  -- Auto-mine (2026-10-09): after quickfort reports OK, set the game's
+  -- dig_auto bit on this site's Default-dig tiles so a vein our dig touches is
+  -- followed. Never on a channel, stair or ramp (the leaf checks). On by
+  -- default; AUTO_MINE=false opts out. A fault here never fails the apply.
+  if ok and dig_can_start and #dig_leaves > 0 and auto_mine ~= false then
+    local automine_mod = automine()
+    if automine_mod then
+      local oka, am = pcall(automine_mod.mark_rect, site.x, site.y, site.z, site.w, site.h)
+      result.auto_mine = oka and am or {error = tostring(am)}
+    else
+      result.auto_mine = {skipped = "df-overseer-automine is not deployed"}
+    end
+  elseif auto_mine == false then
+    result.auto_mine = {skipped = "opted out (AUTO_MINE false)"}
+  end
+
   -- Real run: prove it from the game, not from quickfort's counters.
   if total >= 1 and not handle then
     state = state or load_state()
@@ -1778,9 +1811,15 @@ local function explicit_true(v)
   return s == "true" or s == "1" or s == "yes"
 end
 
-function apply_phase(name, phase, site_arg, dry_run, level, rank, radius, allow_stranded)
+local function explicit_false(v)
+  if v == nil then return false end
+  local s = tostring(v):lower()
+  return s == "false" or s == "0" or s == "no"
+end
+
+function apply_phase(name, phase, site_arg, dry_run, level, rank, radius, allow_stranded, auto_mine)
   return run_phase(name, phase, site_arg, level, rank, radius, truthy_dry_run(dry_run),
-    explicit_true(allow_stranded))
+    explicit_true(allow_stranded), not explicit_false(auto_mine))
 end
 
 function list_sites()
@@ -2256,7 +2295,7 @@ local cmd = args[1]
 local USAGE = {
   "usage: df-overseer-blueprint plan TEMPLATE",
   "usage: df-overseer-blueprint preview TEMPLATE PHASE SITE [LEVEL] [RANK] [RADIUS_TILES]",
-  "usage: df-overseer-blueprint apply TEMPLATE PHASE SITE [DRY_RUN] [LEVEL] [RANK] [RADIUS_TILES] [ALLOW_STRANDED]",
+  "usage: df-overseer-blueprint apply TEMPLATE PHASE SITE [DRY_RUN] [LEVEL] [RANK] [RADIUS_TILES] [ALLOW_STRANDED] [AUTO_MINE]",
   "usage: df-overseer-blueprint sites",
   "usage: df-overseer-blueprint status SITE_ID [PHASE]",
   "usage: df-overseer-blueprint release SITE_ID [DRY_RUN] [ANY_PENDING]",
@@ -2277,7 +2316,7 @@ elseif cmd == "preview" then
   else emit(preview_phase(args[2], args[3], args[4], tonumber(args[5]), tonumber(args[6]), tonumber(args[7]))) end
 elseif cmd == "apply" then
   if not (args[2] and args[3] and args[4]) then print(USAGE[3])
-  else emit(apply_phase(args[2], args[3], args[4], args[5], tonumber(args[6]), tonumber(args[7]), tonumber(args[8]), args[9])) end
+  else emit(apply_phase(args[2], args[3], args[4], args[5], tonumber(args[6]), tonumber(args[7]), tonumber(args[8]), args[9], args[10])) end
 elseif cmd == "sites" then
   print(encode(list_sites()))
 elseif cmd == "status" then

@@ -96,6 +96,10 @@ local textutil = reqscript('df-overseer-textutil')
 -- 2026-10-08: a dig the game itself cancelled (DIG_CANCEL_DAMP / _WARM) is
 -- not a stuck job; see df-overseer-digcancel.lua.
 local digcancel_mod = reqscript('df-overseer-digcancel')
+-- 2026-10-09: a dig on a tile the game auto-followed onto is not our failure
+-- (research/2026-10-09-auto-mine.md 4.4). Optional leaf.
+local automine_ok, automine_mod = pcall(reqscript, 'df-overseer-automine')
+if not automine_ok or type(automine_mod) ~= 'table' then automine_mod = nil end
 
 if not _G.__df_overseer_stuckjobs_registered then
   _G.__df_overseer_job_start_tick = _G.__df_overseer_job_start_tick or {}
@@ -117,6 +121,7 @@ function get_stuck_jobs(min_idle_ticks)
     local key = c.x .. "," .. c.y .. "," .. c.z
     if not cancelled[key] then cancelled[key] = c.kind end
   end
+  local followed = automine_mod and automine_mod.followed_checker() or function() return false end
   for _, job in utils.listpairs(df.global.world.jobs.list) do
     local ok_worker, worker = pcall(dfhack.job.getWorker, job)
     local has_worker = ok_worker and worker ~= nil
@@ -140,12 +145,16 @@ function get_stuck_jobs(min_idle_ticks)
         local cancel_kind = cancelled[job.pos.x .. "," .. job.pos.y .. "," .. job.pos.z]
         local waiting_on = job.flags.suspend and "suspended" or "no worker assigned"
         if cancel_kind then waiting_on = digcancel_mod.label(cancel_kind) end
+        local is_followed = (not cancel_kind) and job.job_type == df.job_type.Dig
+          and followed(job.pos.x, job.pos.y, job.pos.z) or false
+        if is_followed then waiting_on = "auto_followed" end
         table.insert(results, {
           job_type = ok_type and jtype or "unknown",
           detail = ok_name and textutil.to_utf8(name) or nil,
           building = building_name,
           waiting_on = waiting_on,
           cancelled_by_game = cancel_kind,
+          auto_followed = is_followed or nil,
           idle_ticks = idle_ticks,
           near_landmark = info and info.name or nil,
           direction = info and info.direction or nil,

@@ -148,6 +148,16 @@ class NobleRoomPolicy:
 
 
 @dataclass(frozen=True)
+class AutominePolicy:
+    """The conductor's automine pass (policy.yaml `automine`; conductor/automine.py).
+    `enabled` is the switch; `max_per_call` bounds the tiles one scan designates
+    (the Lua side has its own cap). The dataclass default is off so a test that
+    builds a Policy by hand never runs the phase; the shipped policy.yaml is on."""
+    enabled: bool = False
+    max_per_call: int = 40
+
+
+@dataclass(frozen=True)
 class LaneTriggers:
     """What counts as a change in one role's own lane (handoffs/2026-10-05-
     stricter-wakes.md). Pure data; conductor/lanes.py reads it generically.
@@ -295,6 +305,8 @@ class Policy:
     unsupplied_building: UnsuppliedPolicy = field(default_factory=UnsuppliedPolicy)
     #: The noble-room watch's own policy block (`noble_room`).
     noble_room: NobleRoomPolicy = field(default_factory=NobleRoomPolicy)
+    #: The automine pass (`automine`, conductor/automine.py).
+    automine: AutominePolicy = field(default_factory=AutominePolicy)
     #: Threshold alerts for every role's briefing (policy.yaml `threshold_alerts`).
     threshold_alerts: Tuple[ThresholdAlert, ...] = ()
     #: Per-role lane triggers (policy.yaml `lane_triggers`). Empty: no lane
@@ -451,6 +463,20 @@ def _load_noble_room(raw, path: Path) -> NobleRoomPolicy:
         raise PolicyError(f"{path}: noble_room.statuses must be a non-empty list of status names")
     out["statuses"] = tuple(statuses)
     return NobleRoomPolicy(**out)
+
+
+def _load_automine(raw, path: Path) -> AutominePolicy:
+    if raw is None:
+        return AutominePolicy()
+    if not isinstance(raw, dict):
+        raise PolicyError(f"{path}: automine must be a mapping")
+    enabled = raw.get("enabled", False)
+    if not isinstance(enabled, bool):
+        raise PolicyError(f"{path}: automine.enabled must be true or false")
+    cap = raw.get("max_per_call", 40)
+    if isinstance(cap, bool) or not isinstance(cap, int) or cap < 1:
+        raise PolicyError(f"{path}: automine.max_per_call must be a positive integer")
+    return AutominePolicy(enabled=enabled, max_per_call=cap)
 
 
 def _load_execution(raw, path: Path) -> ExecutionPolicy:
@@ -693,6 +719,7 @@ def load_policy(path: "Path | str" = DEFAULT_POLICY_PATH) -> Policy:
         ore_renotify_ticks=int(doc.get("ore_renotify_ticks", 12000)),
         unsupplied_building=_load_unsupplied(doc.get("unsupplied_building"), path),
         noble_room=_load_noble_room(doc.get("noble_room"), path),
+        automine=_load_automine(doc.get("automine"), path),
         role_timeout_seconds={str(k): float(v) for k, v in (doc.get("role_timeout_seconds") or {}).items()},
     )
 

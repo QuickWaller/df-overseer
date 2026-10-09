@@ -785,7 +785,7 @@ df-overseer-diggable.lua:
             A still-hidden (unrevealed) tile is offered as a candidate, matching how the game's own
             digging designation treats blind tiles; material is left out for it, and only
             interior_fully_revealed says whether the whole area has actually been seen.
-    "dig W H [LEVEL] NEAR_LANDMARK BLUEPRINT_FILE [RANK] [RADIUS_TILES] [RES_ID] [OVERRIDE]":
+    "dig W H [LEVEL] NEAR_LANDMARK BLUEPRINT_FILE [RANK] [RADIUS_TILES] [RES_ID] [OVERRIDE] [AUTO_MINE]":
       lua_function: dig_diggable_area
       effect: mutate
       coordinate_bearing: internal-only
@@ -872,6 +872,13 @@ df-overseer-diggable.lua:
               never changes the reservation's own purpose or allowed kinds, re-purposing a room is
               unreserve plus a new reserve, never this. Leave it out otherwise; the refusal names
               the handle, its purpose and the kinds it does allow.
+          - name: "AUTO_MINE"
+            required: false
+            default: "true"
+            meaning: >-
+              Optional, give it last (RES_ID and OVERRIDE before it may be a lone - for not given).
+              The word false opts out of the game's automatic mining on this dig's plain dig tiles.
+              Default on; the result's auto_mine block counts what was set.
         returns: >-
           Designates a dig blueprint over a diggable-area site found near a landmark.
         before_a_real_run:
@@ -5905,7 +5912,7 @@ df-overseer-blueprint.lua:
             A build, zone or place phase also reports whether phase ordering would block it (for
             example a zone phase run before its shell is dug); read that alongside the designation
             result, not just whether tiles were accepted.
-    "apply TEMPLATE PHASE SITE [DRY_RUN] [LEVEL] [RANK] [RADIUS_TILES] [ALLOW_STRANDED]":
+    "apply TEMPLATE PHASE SITE [DRY_RUN] [LEVEL] [RANK] [RADIUS_TILES] [ALLOW_STRANDED] [AUTO_MINE]":
       lua_function: apply_phase
       effect: mutate
       coordinate_bearing: internal-only
@@ -6040,6 +6047,14 @@ df-overseer-blueprint.lua:
               dig whose entrance touches no revealed walkable ground in any orientation is refused
               by default, because DF would never make a dig job for it. Anything but the word true,
               or omitting it, keeps the gate. When used, the result says stranded_override_used.
+          - name: "AUTO_MINE"
+            required: false
+            default: "true"
+            meaning: >-
+              Optional, give it last. The word false opts a dig phase out of the game's automatic
+              mining. By default a real dig phase sets the auto-mine bit on its plain dig tiles (never
+              stairs, ramps or channels), so a vein the dig cuts into is followed by the miners on its
+              own. The result's auto_mine block counts what was set.
         returns: >-
           Applying a dig phase at a new landmark site registers a site-N handle that every later
           phase should then reference. A real run reads the result back (outstanding designations,
@@ -7067,3 +7082,40 @@ df-overseer-circulation.lua:
           by name).
         before_a_real_run: []
         traps: []
+df-overseer-automine.lua:
+  build_order_item: "the game's auto-mine dig mode on our digs plus an exposed-ore pass and a cavern reaction (research/2026-10-09-auto-mine.md, decisions/DECISIONS.md 2026-10-09 Auto mining)"
+  commands:
+    "scan [MAX]":
+      lua_function: scan
+      effect: mutate
+      coordinate_bearing: false
+      live_deployed: false
+      verified: "unverified (offline build, 2026-10-09). Run only against a fake world. The research file lists the live checks owed: the auto bit on a plain tile, vein following and its priority, a damp-stone cancel on a followed tile, FEATURE_DISCOVERY's position."
+      knowledge_scope: player_visible
+      notes: >
+        The conductor's once-per-cycle automine pass. (1) Cavern reaction: for a
+        new FEATURE_DISCOVERY report, clears the auto bit and the dig designation on undug auto
+        tiles within a radius of the report (of the last few digs when the report carries no
+        position). (2) Designates, as plain dig plus the auto bit, REVEALED ore and gem vein tiles
+        in the walls of digs we made; reads the game's own isOre and isGem, never a hidden tile.
+        Skips a tile in a hazard band (aquifer or magma, df-overseer-hazard); a tile inside a
+        reservation is still designated and reported. Bounded per call. Conductor only, system
+        kind: on no model's allowlist, and run only in the conductor's own phase, which an operator
+        hold blocks.
+      summary: "Designates revealed ore and gem veins next to our digs for automatic mining and clears auto mining after a cavern breach."
+      guide:
+        arguments:
+          - name: "MAX"
+            required: false
+            default: "40"
+            meaning: >-
+              Optional. The most tiles to designate in this call, capped by the script's own policy.
+        returns: >-
+          Counts only: designated, vein_tiles_seen, skipped_hazard, in_reservation (with the
+          reservation handles and purposes), by_mineral, capped, and a cavern block (breaches,
+          cleared_tiles, note) when the game reported a cavern breach since the last call.
+        before_a_real_run: []
+        traps:
+          - >-
+            Following starts only from a dug vein tile, so a straight hall through plain rock follows
+            nothing. A designated vein tile beside damp stone is cancelled by the game itself.
