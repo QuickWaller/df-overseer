@@ -116,7 +116,7 @@ NATIVE_TOOLS: Dict[str, NativeTool] = {t: NativeTool(id=t) for t in NATIVE_TOOL_
 _TARGET_SCHEMA = {
     "type": "object",
     "description": (
-        "One target: {id, signal, per, want, reorder or reorder_gap, owner, max_in_flight, note}. "
+        "One target: {id, signal, per, want, want_min/want_max/want_plus, reorder or reorder_gap, owner, max_in_flight, note}. "
         "Mistakes are flagged by the server, not refused."
     ),
     "properties": {
@@ -124,16 +124,18 @@ _TARGET_SCHEMA = {
         "signal": {"type": "string", "description": 'e.g. zones."Bedroom".furnished'},
         "per": {"type": "string", "enum": list(plan.policy()["target"]["per"])},
         "want": {
+            "type": "number",
             "description": (
-                "a number (with per: alive it is per citizen), or a mapping {per_alive, plus, min, max}: "
-                "wanted level = clamp(per_alive * alive + plus, min, max); give at least one of per_alive or plus"
+                "the wanted level: a number (with per: alive it is per citizen). For a floor, a cap or a flat "
+                "addition give want_min, want_max or want_plus beside it: wanted level = clamp(want * alive + "
+                "want_plus, want_min, want_max) under per: alive, clamp(want + want_plus, want_min, want_max) "
+                "otherwise. Never an object."
             ),
-            "oneOf": [
-                {"type": "number"},
-                {"type": "object", "properties": {k: {"type": "number"} for k in ("per_alive", "plus", "min", "max")}},
-            ],
         },
-        "reorder": {"type": "number", "description": "open when position is below this level (per citizen when per is alive; an absolute level with a mapping want)"},
+        "want_plus": {"type": "number", "description": "added to the wanted level (may be negative; 0 or absent for none)"},
+        "want_min": {"type": "number", "description": "floor on the wanted level, in units (not per citizen)"},
+        "want_max": {"type": "number", "description": "cap on the wanted level, in units (not per citizen)"},
+        "reorder": {"type": "number", "description": "open when position is below this level (per citizen when per is alive; an absolute level when want_min, want_max or want_plus is given)"},
         "reorder_gap": {"type": "number", "description": "open when this many units short of want"},
         "owner": {"type": "string", "description": "the role that serves the target"},
         "district": {"type": "string"},
@@ -292,6 +294,14 @@ async def _roadmap_block(db_path, call_dfhack: CallDFHack, persist: bool) -> dic
     nobles = await _try(call_dfhack, "nobles.list", {})
     store_ = fort_roadmap.StageStore.beside(db_path)
     return await asyncio.to_thread(fort_roadmap.resolve, alive, nobles, store_, None, persist)
+
+
+def _flat(items: Any, section: str) -> Any:
+    """A section as the model reads it: each target's mapping `want` in the flat
+    form `plan.write` takes (`want`, `per`, `want_plus`, `want_min`, `want_max`)."""
+    if section != "targets" or not isinstance(items, list):
+        return items
+    return [plan.flat_want(t) if isinstance(t, dict) else t for t in items]
 
 
 def _compact(structured: dict) -> str:
@@ -563,7 +573,7 @@ async def _read(
                 f"no plan has been filed; this is the fort roadmap's {block['stage']} stage to start from. "
                 "File version 1 with plan.write base_version 0."
             ),
-            "default": {s: base.get(s, []) for s in plan.policy()["open_sections"]},
+            "default": {s: _flat(base.get(s, []), s) for s in plan.policy()["open_sections"]},
             "history": [],
         }
         if role in (schema.PLAN_ROLE, schema.sole_writer()):
@@ -575,7 +585,7 @@ async def _read(
     body: dict = {}
     for s in plan.policy()["open_sections"]:
         if section is None or section == s:
-            body[s] = sliced_targets if s == "targets" else chosen.get(s, [])
+            body[s] = _flat(sliced_targets, s) if s == "targets" else chosen.get(s, [])
     structured = {
         "active_version": active["version"], "version": chosen["version"], "id": chosen["id"],
         "season_index": chosen.get("season_index"), "reason": chosen.get("reason"),

@@ -50,6 +50,11 @@ A `want` is a number (optionally with `per: alive`, want * alive) or a mapping
 min, max). `reorder_gap` is always units short of the computed wanted level;
 with the mapping form `reorder` is an absolute level (no per-citizen scale),
 since the wanted level is not a constant multiple of alive.
+
+The tool schema takes `want` as a number only, with `want_plus`/`want_min`/`want_max`
+beside it (`canonical_want` folds them into the mapping stored here; `flat_want`
+is the inverse shown by plan.read): a `oneOf` in the schema was flattened to its
+first branch by openclaw and refused client-side (live, 2026-10-09).
 """
 
 from __future__ import annotations
@@ -160,6 +165,8 @@ def compose(active: Optional[Mapping], set_sections: Any, base: Optional[Mapping
     for name in open_sections:
         items = set_sections[name] if name in set_sections else base.get(name, [])
         out[name] = json.loads(json.dumps(items))  # a deep copy; never alias the base
+        if name == "targets" and name in set_sections:
+            out[name] = [canonical_want(t) if isinstance(t, dict) else t for t in out[name]]
     return out
 
 
@@ -349,6 +356,93 @@ def want_mapping_problems(want: Mapping) -> list[str]:
     if _finite_num(want.get("min")) and _finite_num(want.get("max")) and want["min"] > want["max"]:
         probs.append(f"min {want['min']!r} is above max {want['max']!r}")
     return probs
+
+
+#: Flat sibling fields that carry a mapping `want` through tool layers that
+#: flatten a `oneOf` to its first branch (openclaw did, live 2026-10-09: the
+#: Planner's `{per_alive, min}` was refused client-side as "must be number").
+#: Each maps onto the mapping key of the same name minus `want_`.
+WANT_SIBLINGS = {"want_plus": "plus", "want_min": "min", "want_max": "max"}
+
+
+def canonical_want(target: Mapping) -> dict:
+    """A copy of a target with the flat form folded into the stored form.
+
+    `want` a number plus any of `want_plus`/`want_min`/`want_max` becomes the
+    mapping `{per_alive, plus, min, max}`: under `per: alive` the number is
+    `per_alive` (and `per` is dropped, a mapping carries its own); otherwise
+    it is an absolute level, `plus` (added to any `want_plus`). A `want_plus`
+    of 0 beside `per_alive` is a no-op and is left out, so `{want: 1, per:
+    alive, want_plus: 0}` is exactly the mapping `{per_alive: 1}`. A target
+    with none of the siblings, or whose `want` is not a plain number, is
+    returned unchanged (a mapping `want` sent directly still works)."""
+    out = dict(target)
+    sib = {k: out[k] for k in WANT_SIBLINGS if k in out}
+    want = out.get("want")
+    if not sib or isinstance(want, bool) or not isinstance(want, (int, float)):
+        return out
+    for k in sib:
+        del out[k]
+    m: dict = {}
+    plus = sib.get("want_plus")
+    if out.get("per") == "alive":
+        m["per_alive"] = want
+        del out["per"]
+        if plus is not None and not (_is_num(plus) and plus == 0):
+            m["plus"] = plus
+    else:
+        out.pop("per", None)
+        if plus is None:
+            m["plus"] = want
+        elif _is_num(plus):
+            m["plus"] = want + plus
+        else:
+            m["plus"] = plus  # not a number: left for the mapping check to flag
+    for k in ("want_min", "want_max"):
+        if k in sib:
+            m[WANT_SIBLINGS[k]] = sib[k]
+    out["want"] = m
+    return out
+
+
+def flat_want(target: Mapping) -> dict:
+    """The inverse for display: a mapping `want` shown in the flat form a
+    client can send back (`want` a number, `per: alive` when it is per_alive,
+    `want_plus`/`want_min`/`want_max`). A per_alive mapping always shows
+    `want_plus` (0 when it has no plus) so it round-trips as a mapping, not a
+    scalar (they differ for `reorder`). Other targets are returned unchanged."""
+    w = target.get("want")
+    out = dict(target)
+    if not isinstance(w, Mapping) or any(k not in WANT_KEYS for k in w):
+        return out
+    if "per_alive" in w:
+        out["want"], out["per"] = w["per_alive"], "alive"
+        out["want_plus"] = w.get("plus", 0)
+    elif "plus" in w:
+        out["want"] = w["plus"]
+        out.pop("per", None)
+    else:
+        return out
+    for k in ("min", "max"):
+        if k in w:
+            out[f"want_{k}"] = w[k]
+    return out
+
+
+def comparable_want(target: Mapping) -> dict:
+    """The target with its want in one comparable form, for the roadmap
+    deviation check: the flat form is folded, and a scalar `per: alive` with
+    no `reorder` (whose meaning is then the same) becomes the equivalent
+    `{per_alive}` mapping with `per` dropped."""
+    out = canonical_want(target)
+    w = out.get("want")
+    if (
+        out.get("per") == "alive" and "reorder" not in out
+        and not isinstance(w, (Mapping, bool)) and _is_num(w)
+    ):
+        out["want"] = {"per_alive": w}
+        del out["per"]
+    return out
 
 
 def want_uses_alive(target: Mapping) -> bool:

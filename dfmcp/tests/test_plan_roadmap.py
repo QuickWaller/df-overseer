@@ -259,3 +259,81 @@ async def test_status_carries_the_roadmap_check_the_conductors_planner_to_do_lis
     await _write(db, fort, {"base_version": active["version"], "set": {"targets": targets}, "reason": "drop the hall"})
     chk = (await _plan(plan_tools.PLAN_STATUS, "conductor", {}, db, fort))["roadmap_check"]
     assert chk["missing"] == ["dining_tables"]
+
+
+# ---- the flat want form (live 2026-10-09: oneOf was flattened to `number` by openclaw) ------
+
+def _no_union(node, path="schema"):
+    """Every `oneOf`/`anyOf`/`allOf` in a schema, since a client may flatten any of them."""
+    bad = []
+    if isinstance(node, dict):
+        for k, v in node.items():
+            if k in ("oneOf", "anyOf", "allOf"):
+                bad.append(f"{path}.{k}")
+            bad += _no_union(v, f"{path}.{k}")
+    elif isinstance(node, list):
+        for i, v in enumerate(node):
+            bad += _no_union(v, f"{path}[{i}]")
+    return bad
+
+
+def test_the_plan_write_schema_has_no_union_types_and_want_is_a_plain_number():
+    from dfmcp.plan_tools import _SCHEMAS
+
+    schema = _SCHEMAS[plan_tools.PLAN_WRITE]
+    assert _no_union(schema) == []
+    props = schema["properties"]["set"]["properties"]["targets"]["items"]["properties"]
+    assert props["want"]["type"] == "number"
+    for k in ("want_plus", "want_min", "want_max"):
+        assert props[k]["type"] == "number"
+
+
+async def test_the_flat_want_form_files_as_the_roadmap_mapping_and_is_no_deviation(db, fort):
+    fort.alive = 24
+    await _write(db, fort, {"base_version": 0})
+    fort.tick = SEASON + 5
+    # move off the roadmap's mapping first (v2 numeric, the live state), then file the flat form
+    numeric = [
+        {**t, "want": 1.0 if t["id"] == "bedrooms" else 0.2, "per": "alive"}
+        for t in roadmap.plan_targets("hamlet")
+    ]
+    await _write(db, fort, {"base_version": 1, "set": {"targets": numeric}, "reason": "numeric"})
+    fort.tick = 2 * SEASON + 5
+    flat_bed = {"id": "bedrooms", "signal": 'zones."Bedroom".furnished', "want": 1.0, "per": "alive",
+                "want_plus": 0, "reorder_gap": 2, "owner": "architect", "max_in_flight": 2,
+                "roadmap_ref": "bedrooms"}
+    flat_tables = {"id": "dining_tables", "signal": 'zones."DiningHall".furniture."Table"', "want": 0.2,
+                   "per": "alive", "want_min": 4, "reorder_gap": 1, "owner": "architect", "max_in_flight": 1,
+                   "roadmap_ref": "dining_tables"}
+    out = await _write(db, fort, {"base_version": 2, "set": {"targets": [flat_bed, flat_tables]}, "reason": "adopt"})
+    assert out["filed"] and out["roadmap"]["deviations"] == [] and out["flags"] == []
+    stored = {t["id"]: t for t in store.active_plan(db)["targets"]}
+    assert stored["bedrooms"]["want"] == {"per_alive": 1.0} and "per" not in stored["bedrooms"]
+    assert stored["dining_tables"]["want"] == {"per_alive": 0.2, "min": 4} and "want_min" not in stored["dining_tables"]
+
+
+async def test_a_numeric_per_alive_want_equals_the_per_alive_mapping_for_the_deviation_check(db, fort):
+    """The plain numeric form (what v2 holds) is the same level as the roadmap's `{per_alive}`."""
+    fort.alive = 24
+    await _write(db, fort, {"base_version": 0})
+    fort.tick = SEASON + 5
+    plain = {"id": "bedrooms", "signal": 'zones."Bedroom".furnished', "want": 1.0, "per": "alive",
+             "reorder_gap": 2, "owner": "architect", "max_in_flight": 2, "roadmap_ref": "bedrooms"}
+    await _write(db, fort, {"base_version": 1, "set": {"targets": [plain]}, "reason": "plain"})
+    chk = (await _plan(plan_tools.PLAN_STATUS, "conductor", {}, db, fort))["roadmap_check"]
+    assert [d for d in chk["deviations"] if d["id"] == "bedrooms"] == []
+
+
+async def test_plan_read_and_the_roadmap_block_show_targets_in_the_flat_form_that_files_back_verbatim(db, fort):
+    fort.alive = 24
+    await _write(db, fort, {"base_version": 0})
+    out = await _plan(plan_tools.PLAN_READ, "planner", {}, db, fort)
+    tables = next(t for t in out["targets"] if t["id"] == "dining_tables")
+    assert tables["want"] == 0.2 and tables["per"] == "alive" and tables["want_min"] == 4
+    assert not any(isinstance(t["want"], dict) for t in out["targets"])
+    block = next(t for t in out["roadmap"]["targets"] if t["id"] == "dining_tables")
+    assert (block["want"], block["per"], block["want_min"]) == (0.2, "alive", 4)
+    # a plan.read target sent straight back changes nothing: the stored mapping is identical
+    echoed = await _write(
+        db, fort, {"base_version": 1, "set": {"targets": out["targets"]}, "reason": "echo", "dry_run": True})
+    assert echoed["changes"] == [] and echoed["season"]["reason"] == "no_change" and echoed["flags"] == []

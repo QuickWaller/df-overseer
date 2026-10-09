@@ -727,3 +727,36 @@ def test_a_bad_synced_target_is_flagged_inert(bad):
 def test_crop_without_sync_is_flagged():
     flags = plan.check_sections({"targets": [{**BEDROOMS, "crop": "X"}]}, CTX)
     assert any(f["code"] == "bad_field" and "crop" in f["message"] for f in flags)
+
+
+# ---- the flat want form --------------------------------------------------------------
+
+@pytest.mark.parametrize("flat, mapping", [
+    ({"want": 0.2, "per": "alive", "want_min": 4}, {"per_alive": 0.2, "min": 4}),
+    ({"want": 1.0, "per": "alive", "want_plus": 2}, {"per_alive": 1.0, "plus": 2}),
+    ({"want": 1.0, "per": "alive", "want_plus": 0}, {"per_alive": 1.0}),
+    ({"want": 0.1, "per": "alive", "want_min": 4, "want_max": 10}, {"per_alive": 0.1, "min": 4, "max": 10}),
+    ({"want": 5, "want_min": 2, "want_max": 8}, {"plus": 5, "min": 2, "max": 8}),
+    ({"want": 5, "want_plus": 1}, {"plus": 6}),
+])
+def test_the_flat_want_folds_into_the_mapping_and_back(flat, mapping):
+    t = plan.canonical_want({"id": "x", **flat})
+    assert t["want"] == mapping and "per" not in t and not any(k in t for k in plan.WANT_SIBLINGS)
+    assert plan.want_mapping_problems(t["want"]) == []
+    back = plan.flat_want(t)
+    again = plan.canonical_want(back)                              # round trip is stable (same level)
+    for alive in (1, 10, 24, 80):
+        assert plan.want_units(again, alive) == plan.want_units(t, alive)
+
+
+def test_a_target_without_siblings_or_with_a_mapping_want_is_left_alone():
+    plain = {"id": "x", "want": 1.0, "per": "alive"}
+    assert plan.canonical_want(plain) == plain
+    mapped = {"id": "x", "want": {"per_alive": 1, "min": 2}}
+    assert plan.canonical_want(mapped) == mapped
+    assert plan.canonical_want({"id": "x", "want": "lots", "want_min": 2}) == {"id": "x", "want": "lots", "want_min": 2}
+
+
+def test_a_bad_sibling_is_flagged_by_the_mapping_check_not_lost():
+    t = plan.canonical_want({"id": "x", "want": 1.0, "per": "alive", "want_min": "four"})
+    assert plan.want_mapping_problems(t["want"])
