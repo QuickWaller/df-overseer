@@ -771,16 +771,19 @@ def _summary_text(tool: Tool) -> str:
     return notes if notes.endswith(".") else notes + "."
 
 
+#: The only provenance a model sees about a DFHack-backed tool.
+STATUS_VERIFIED = "Status: live-verified."
+STATUS_UNVERIFIED = "Status: not live-verified."
+
+
 def _tool_description(tool: Tool) -> str:
     parts = [_summary_text(tool)]
     parts.append("Mutates fort state." if tool.mutates else "Read-only: does not mutate fort state.")
-    if tool.is_verified:
-        parts.append(f"Verified against a live fort: {tool.verified}.")
-    else:
-        parts.append(
-            "NOT VERIFIED against a live fort as of writing -- treat its output or "
-            "effect with caution."
-        )
+    # One short status token; the full provenance (dates, handoffs, deploy
+    # history) stays in TOOLS.yaml's `verified` field and is never sent to a
+    # model (research/2026-10-09-openclaw-context-audit.md). One rule, no
+    # per-tool branches.
+    parts.append(STATUS_VERIFIED if tool.is_verified else STATUS_UNVERIFIED)
     return " ".join(parts)
 
 

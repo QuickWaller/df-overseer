@@ -1110,8 +1110,7 @@ _STEP_SCHEMA = {
 
 _PROJECT_DESCRIPTION = (
     "Instantiate the ordered plan for one accepted ruling -- the Overseer's "
-    "own write-ahead log (docs/AGENT-ARCHITECTURE.md §9; design "
-    "research/2026-09-28-job-dependency-graph.md §4.1/§6). Only the roster's "
+    "own write-ahead log (docs/AGENT-ARCHITECTURE.md §9). Only the roster's "
     "sole writer may call this (enforced at load time in dfmcp.roles and "
     "again at write time in dfqueue.schema) -- a ruling's own project is "
     "created by the ruling on it, never proposed. A ruling gets exactly one "
@@ -1206,9 +1205,8 @@ _PROJECT_STATUS_SCHEMA = {
 
 _AMEND_DESCRIPTION = (
     "Write a new numbered plan version of an already-accepted project "
-    "(research/2026-09-30-goal-tree-red-team.md F-3: before this existed, "
-    "nothing could carry a change to an accepted project at all -- an "
-    "escalation answer of 'update the plan' had nowhere to go). Nothing "
+    "(this is how a change to an accepted project, such as an escalation "
+    "answer of 'update the plan', is carried). Nothing "
     "already written is overwritten: the original queue.project and every "
     "earlier queue.amend stay readable, and a step already carried out via "
     "queue.executed keeps its own record regardless of which version named "
@@ -1269,8 +1267,7 @@ _AMEND_SCHEMA = {
 
 _ABANDON_DESCRIPTION = (
     "Mark an already-accepted project (and its still-open steps) abandoned "
-    "with a required reason (research/2026-09-30-goal-tree-red-team.md F-3: "
-    "the abandonment path F-3 flagged as unimplemented). Executed history "
+    "with a required reason. Executed history "
     "is untouched -- this never edits or removes a queue.executed record, "
     "only adds this project's own closing record. queue.project_status "
     "reports 'abandoned' status for this project from then on, with the "
