@@ -20,7 +20,7 @@ versions.
 - **Crop stock levels** (register 2026-10-09). Which crops the fort grows is
   DFHack's `autofarm`, and you set its levels as plan targets. Give each crop a
   target `{id: crop_<name>, sync: autofarm, crop: <PLANT_RAW_TOKEN>, want: ...}`
-  (`want` in the usual number or `{per_alive, plus, min, max}` form; a level is
+  (`want` a number, with `want_min`/`want_max`/`want_plus` beside it if needed; a level is
   a count of plants, 0 means never plant it) and one
   `{id: crop_default, sync: autofarm, crop: default, want: ...}` for the level
   of every crop you do not name (leave it out and the default is 0). No
@@ -70,14 +70,18 @@ versions.
    living citizens; `want` is the level to order up to; give exactly one of
    `reorder` (open a shortfall when the position falls below this level) or
    `reorder_gap` (open when this many units short; use it for per-citizen
-   needs). `want` may instead be a mapping `{per_alive, plus, min, max}`: the
-   wanted level is `clamp(per_alive * alive + plus, min, max)`, every key
-   optional but at least one of `per_alive` or `plus` (numbers only, 0 or
-   more, except `plus` may be negative; `min` no more than `max`; do not also
-   set `per`). Example, bedrooms: `want: {per_alive: 1.0, plus: 2}` with
-   `reorder_gap: 2`. `reorder_gap` is always units short of the computed
-   wanted level; with the mapping form `reorder` is an **absolute level**
-   (not per citizen), at most `max` if you set one. `owner` is the role that
+   needs). `want` is always a **number**, never an object. For a floor, a cap
+   or a flat addition give `want_min`, `want_max` or `want_plus` beside it: the
+   wanted level is `clamp(want * alive + want_plus, want_min, want_max)` under
+   `per: alive`, `clamp(want + want_plus, want_min, want_max)` otherwise (the
+   floor, cap and plus are in units, not per citizen; `want_plus` may be
+   negative, the others 0 or more; `want_min` no more than `want_max`).
+   Example, dining tables: `want: 0.2, per: alive, want_min: 4`; bedrooms
+   with spares: `want: 1.0, per: alive, want_plus: 2` with `reorder_gap: 2`.
+   `plan.read` and the roadmap block show targets in this same form, so copy
+   them verbatim. `reorder_gap` is always units short of the computed wanted
+   level; once any of the three is given `reorder` is an **absolute level**
+   (not per citizen), at most `want_max` if you set one. `owner` is the role that
    serves it. Targets are in **priority
    order**: earlier targets get an owner's in-flight budget first.
 6. **Say why.** A `reason` is required from version 2. `relies_on` may cite a

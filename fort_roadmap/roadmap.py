@@ -380,7 +380,10 @@ def status_line(block: Mapping) -> str:
     if isinstance(nxt, Mapping):
         tail += f", {nxt.get('stage')} at {nxt.get('alive_gte')}"
     bits.append(f"({tail})")
-    tgts = [f"{t.get('id')} {_want_text(t.get('want'))}" for t in (block.get("targets") or [])[:3]]
+    from dfqueue import plan
+
+    # block targets carry the flat want form; the line reads the mapping
+    tgts = [f"{t.get('id')} {_want_text(plan.canonical_want(t).get('want'))}" for t in (block.get("targets") or [])[:3]]
     if tgts:
         bits.append(": " + "; ".join(tgts))
     line = " ".join(bits).replace(" :", ":")
@@ -400,6 +403,8 @@ def resolve(
     """The fort's roadmap block: stage (high-water, persisted when it
     advances), the next stage, the cross-check, the stage's targets with
     their rationale, and the one-line summary. Total over bad inputs."""
+    from dfqueue import plan
+
     data = data or seed()
     stored, unreadable = store.load() if store is not None else (None, False)
     cs = compute_stage(alive, stored, data)
@@ -416,9 +421,12 @@ def resolve(
         "entered": cs["entered"], "held": cs["held"], "alive_known": cs["alive_known"],
         "next": next_stage(cs["index"], alive, data),
         "cross_check": cross_check(alive, nobles, data),
+        # `want` in the flat form plan.write takes (`want`, `per`, `want_plus`,
+        # `want_min`, `want_max`), so a target copied from here files verbatim.
         "targets": [
             {
-                "id": t.get("id"), "signal": t.get("signal"), "want": t.get("want"),
+                "id": t.get("id"), "signal": t.get("signal"),
+                **plan.flat_want({k: t[k] for k in ("want", "per") if t.get(k) is not None}),
                 "reorder_gap": t.get("reorder_gap"), "reorder": t.get("reorder"),
                 "confidence": t.get("confidence"), "rationale": (t.get("rationale") or "").strip(),
             }
@@ -465,6 +473,10 @@ def deviation(target: Mapping, entry: Mapping, alive: Any = None) -> Optional[st
     set, reorder rule or any other parameter)."""
     from dfqueue import plan
 
+    # Compare the want in one form: the flat siblings are folded and a scalar
+    # per-alive want equals its `{per_alive}` mapping (so a verbatim copy of an
+    # entry sent through the flat form shows no deviation).
+    target, entry = plan.comparable_want(target), plan.comparable_want(entry)
     keys = _SHAPE_KEYS + ("want", "reorder", "reorder_gap")
     if all(target.get(k) == entry.get(k) for k in keys):
         return None
