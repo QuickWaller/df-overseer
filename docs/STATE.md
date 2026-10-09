@@ -24,7 +24,7 @@ Last check: 2026-10-05T06:34:49Z, overall: clean
 ## Per-role tool counts (offline, from the repo's own registry + roster)
 
 - **architect**: 57
-- **conductor**: 41
+- **conductor**: 42
 - **consultant**: 29
 - **overseer**: 83
 - **quartermaster**: 28
@@ -60,3 +60,5 @@ Hand-edited 2026-10-08 (roadmap V1 stream, item 0): `screen.read` granted to the
 Hand-edited 2026-10-08 (roadmap V1 stream): the conductor gained `labor.unit-status` (utilisation sampling), 40 to 41 once merged with the noble-room watch (the generated list above reads 41).
 
 Hand-edited 2026-10-09 (circulation C2): `circulation.graph` and `circulation.walk` granted to the architect (55 to 57, listed above) and the planner (13 to 15). Regenerate with `python scripts/drift_check.py --write-state` after the deploy.
+
+Hand-edited 2026-10-09 (auto mining): the conductor gained `automine.scan` (41 to 42), a system-class game write run only in the conductor's own phase. Regenerate with `python scripts/drift_check.py --write-state` after the deploy.
