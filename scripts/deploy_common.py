@@ -36,6 +36,10 @@ class RestartEntry:
     service: str
     risk: str  # "low" | "high"
     why: str = ""
+    #: vm-ssh.sh target the service lives on, when it is NOT the target's own
+    #: host (a dfmcp deploy on `df` that must restart the Gateway on `openclaw`).
+    #: Empty means the target's host.
+    host: str = ""
 
     @property
     def is_high_risk(self) -> bool:
@@ -126,10 +130,15 @@ def load_manifest(path: Path = MANIFEST_PATH) -> Dict[str, Target]:
         if host not in ("df", "openclaw", "relay"):
             raise ManifestError(f"target '{name}': host must be one of df/openclaw/relay, got {host!r}")
         restart = [
-            RestartEntry(service=r["service"], risk=r.get("risk", "high"), why=r.get("why", ""))
+            RestartEntry(service=r["service"], risk=r.get("risk", "high"), why=r.get("why", ""),
+                         host=r.get("host", "") or "")
             for r in (entry.get("restart") or [])
         ]
         for r in restart:
+            if r.host and r.host not in ("df", "openclaw", "relay"):
+                raise ManifestError(
+                    f"target '{name}' restart entry '{r.service}': host must be df/openclaw/relay, got {r.host!r}"
+                )
             if r.risk not in ("low", "high"):
                 raise ManifestError(
                     f"target '{name}' restart entry '{r.service}': risk must be 'low' or 'high', got {r.risk!r}"

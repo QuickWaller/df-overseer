@@ -1,0 +1,9 @@
+{
+  "ok": false,
+  "error": {
+    "type": "gateway_request_error",
+    "code": "INVALID_REQUEST",
+    "message": "unauthorized",
+    "retryable": false
+  }
+}

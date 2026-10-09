@@ -774,3 +774,7 @@ Twice in one day a new DFHack script passed every offline test and failed on its
 ## Parallel streams deploying the same target race (2026-10-08)
 
 Two worktree streams each merged main and deployed `vm106-conductor` within minutes. The later deploy was built from a branch that did not contain the earlier stream's fix, so the server briefly ran without the charter fix while `drift_check` read clean (it compares against the deployed stamp, not origin/main). After parallel streams land, the orchestrator redeploys the shared targets once from main and checks the stamp equals origin/main's head.
+
+## Never restart dfmcp-server while a conductor cycle may be in flight (2026-10-09)
+
+Restarting `dfmcp-server.service` drops every open MCP connection (the Gateway logged "closed; next request reconnects" once per role server). A one-shot role run in the middle of a cycle holds its own connections; during the Gateway S0 work a restart at about 03:34:15 landed inside a live Quartermaster run, which then finished with `status: error`, no turns and an empty envelope. The restart is the likely explanation (not proven: the archive keeps no raw stdout). Before restarting dfmcp, check for a running cycle on VM 106 (`systemctl list-units 'conductor-once-*'`, a `conductor-planner-*`/`conductor-<role>-*` container in `docker ps`, a fresh `cycle-*` directory under the runtime root) and wait for it to finish. The same applies to any dfmcp deploy that restarts it.

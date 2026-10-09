@@ -431,3 +431,58 @@ def test_dfhack_init_target_ships_the_plugin_enable_set_as_its_own_file():
     body = (init_dir / "onMapLoad_overseer_plugins.init").read_text(encoding="utf-8")
     lines = {ln.strip() for ln in body.splitlines()}
     assert {"enable suspendmanager", "enable autoslab", "ban-cooking all"} <= lines
+
+
+# ---------------------------------------------------------------------------
+# cross-host restart entries (2026-10-09, openclaw Gateway)
+# ---------------------------------------------------------------------------
+
+
+def test_load_manifest_reads_restart_host(tmp_path):
+    path = write_manifest(tmp_path, """
+        targets:
+          t:
+            host: df
+            destination_root: /tmp/x
+            paths: []
+            restart:
+              - {service: gw.service, risk: high, host: openclaw, why: because}
+              - {service: own.service, risk: low}
+    """)
+    t = dc.load_manifest(path)["t"]
+    assert [(r.service, r.host) for r in t.restart] == [("gw.service", "openclaw"), ("own.service", "")]
+
+
+def test_load_manifest_rejects_bad_restart_host(tmp_path):
+    path = write_manifest(tmp_path, """
+        targets:
+          t:
+            host: df
+            destination_root: /tmp/x
+            paths: []
+            restart:
+              - {service: gw.service, risk: high, host: nowhere}
+    """)
+    with pytest.raises(dc.ManifestError):
+        dc.load_manifest(path)
+
+
+def test_deploy_target_low_risk_restart_goes_to_the_entrys_own_host():
+    target = _sample_target(restart=[
+        dc.RestartEntry(service="far.service", risk="low", why="ok", host="openclaw"),
+    ])
+    runner = dc.FakeRunner({("df", "*"): "", ("openclaw", "*"): ""})
+    deploy_mod.deploy_target(target, dc.current_commit(), {}, runner, dry_run=False, yes=True)
+    restarts = [c for c in runner.calls if "systemctl restart" in c[1]]
+    assert [(c[0], c[1]) for c in restarts] == [("openclaw", "sudo systemctl restart far.service")]
+
+
+def test_deploy_target_high_risk_cross_host_prints_the_right_host(capsys):
+    target = _sample_target(restart=[
+        dc.RestartEntry(service="gw.service", risk="high", why="drain first", host="openclaw"),
+    ])
+    runner = dc.FakeRunner({("df", "*"): ""})
+    deploy_mod.deploy_target(target, dc.current_commit(), {}, runner, dry_run=False, yes=True)
+    out = capsys.readouterr().out
+    assert "scripts/vm-ssh.sh openclaw 'sudo systemctl restart gw.service'" in out
+    assert not [c for c in runner.calls if "systemctl restart" in c[1]]

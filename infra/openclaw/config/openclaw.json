@@ -1,0 +1,179 @@
+{
+  "gateway": {
+    "mode": "local",
+    "bind": "loopback",
+    "auth": {
+      "mode": "token"
+    },
+    "reload": {
+      "mode": "off"
+    },
+    "controlUi": {
+      "enabled": false
+    },
+    "terminal": {
+      "enabled": false
+    }
+  },
+  "cron": {
+    "enabled": false
+  },
+  "session": {
+    "reset": {
+      "mode": "none"
+    }
+  },
+  "mcp": {
+    "servers": {
+      "df-architect": {
+        "url": "${OPENCLAW_MCP_URL}",
+        "transport": "streamable-http",
+        "headers": {
+          "Authorization": "Bearer ${DF_MCP_TOKEN_ARCHITECT}"
+        },
+        "requestTimeoutMs": 5000,
+        "connectionTimeoutMs": 5000
+      },
+      "df-consultant": {
+        "url": "${OPENCLAW_MCP_URL}",
+        "transport": "streamable-http",
+        "headers": {
+          "Authorization": "Bearer ${DF_MCP_TOKEN_CONSULTANT}"
+        },
+        "requestTimeoutMs": 5000,
+        "connectionTimeoutMs": 5000
+      },
+      "df-overseer": {
+        "url": "${OPENCLAW_MCP_URL}",
+        "transport": "streamable-http",
+        "headers": {
+          "Authorization": "Bearer ${DF_MCP_TOKEN_OVERSEER}"
+        },
+        "requestTimeoutMs": 5000,
+        "connectionTimeoutMs": 5000
+      },
+      "df-planner": {
+        "url": "${OPENCLAW_MCP_URL}",
+        "transport": "streamable-http",
+        "headers": {
+          "Authorization": "Bearer ${DF_MCP_TOKEN_PLANNER}"
+        },
+        "requestTimeoutMs": 5000,
+        "connectionTimeoutMs": 5000
+      },
+      "df-quartermaster": {
+        "url": "${OPENCLAW_MCP_URL}",
+        "transport": "streamable-http",
+        "headers": {
+          "Authorization": "Bearer ${DF_MCP_TOKEN_QUARTERMASTER}"
+        },
+        "requestTimeoutMs": 5000,
+        "connectionTimeoutMs": 5000
+      }
+    }
+  },
+  "plugins": {
+    "allow": [
+      "deepseek"
+    ],
+    "entries": {
+      "deepseek": {
+        "enabled": true
+      }
+    },
+    "slots": {
+      "memory": "none"
+    },
+    "deny": [
+      "memory-core"
+    ]
+  },
+  "update": {
+    "checkOnStart": false
+  },
+  "models": {
+    "providers": {
+      "deepseek": {
+        "apiKey": {
+          "source": "env",
+          "provider": "default",
+          "id": "DEEPSEEK_API_KEY"
+        }
+      }
+    }
+  },
+  "agents": {
+    "ownership": "explicit",
+    "defaults": {
+      "model": {
+        "primary": "deepseek/deepseek-v4-flash"
+      },
+      "models": {
+        "deepseek/deepseek-v4-flash": {},
+        "deepseek/deepseek-v4-pro": {}
+      },
+      "skipBootstrap": true,
+      "contextInjection": "always",
+      "compaction": {
+        "enabled": false
+      },
+      "heartbeat": {
+        "every": "0m"
+      },
+      "skills": []
+    },
+    "entries": {
+      "architect": {
+        "workspace": "/opt/openclaw/gateway/workspaces/architect",
+        "tools": {
+          "allow": [
+            "df-architect__*"
+          ]
+        }
+      },
+      "consultant": {
+        "workspace": "/opt/openclaw/gateway/workspaces/consultant",
+        "tools": {
+          "allow": [
+            "df-consultant__*"
+          ]
+        }
+      },
+      "overseer": {
+        "workspace": "/opt/openclaw/gateway/workspaces/overseer",
+        "model": {
+          "primary": "deepseek/deepseek-v4-pro"
+        },
+        "tools": {
+          "allow": [
+            "df-overseer__*"
+          ]
+        }
+      },
+      "planner": {
+        "workspace": "/opt/openclaw/gateway/workspaces/planner",
+        "tools": {
+          "allow": [
+            "df-planner__*"
+          ]
+        }
+      },
+      "quartermaster": {
+        "workspace": "/opt/openclaw/gateway/workspaces/quartermaster",
+        "tools": {
+          "allow": [
+            "df-quartermaster__*"
+          ]
+        }
+      }
+    }
+  },
+  "skills": {
+    "allowBundled": [],
+    "workshop": {
+      "autonomous": {
+        "mode": "off"
+      }
+    }
+  }
+}

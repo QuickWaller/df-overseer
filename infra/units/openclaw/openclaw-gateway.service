@@ -1,0 +1,62 @@
+[Unit]
+Description=df-overseer openclaw Gateway (openclaw-gateway.service, the always-running session host)
+After=network-online.target docker.service
+Wants=network-online.target
+Requires=docker.service
+
+[Service]
+Type=simple
+User=df
+Group=df
+# Docker socket access scoped to this unit, as conductor.service does.
+SupplementaryGroups=docker
+
+# Non-secret settings only: OPENCLAW_GATEWAY_PORT, OPENCLAW_GATEWAY_IMAGE (the
+# image pinned BY DIGEST), OPENCLAW_MCP_URL. Template: infra/openclaw/gateway.example.env.
+EnvironmentFile=/opt/openclaw/gateway/gateway.env
+
+# A leftover container from a crash.
+ExecStartPre=-/usr/bin/docker rm -f openclaw-gateway
+# Clean slate at every start (research/2026-10-09-gateway-sessions-v1.md 7.2):
+# openclaw resumes turns a crash interrupted, on its own, with no conductor
+# watching. Deleting the per-agent session databases leaves nothing to resume.
+# The files belong to uid 1000 (this unit's user and the container's "node").
+ExecStartPre=-/usr/bin/find /var/lib/openclaw-gateway/state/agents -path '*/agent/openclaw-agent.sqlite*' -type f -delete
+
+# Loopback only, token auth (token from the env file, never argv), the config
+# mounted read-only and not hot-reloaded, its OWN state dir (never the one-shot
+# runs' /opt/openclaw/config: a Gateway takes an exclusive lock on its state dir).
+# OPENCLAW_SKIP_CRON=1 backs up cron.enabled=false: no heartbeat, no automations.
+ExecStart=/usr/bin/docker run --rm --name openclaw-gateway --hostname openclaw-gateway \
+  --network host --entrypoint node \
+  --env-file /opt/openclaw/secrets/openclaw_secrets.env \
+  --env-file /opt/openclaw/secrets/gateway-token.env \
+  --env-file /opt/openclaw/gateway/gateway.env \
+  -e OPENCLAW_SKIP_CRON=1 \
+  -v /var/lib/openclaw-gateway/state:/home/node/.openclaw \
+  -v /opt/openclaw/gateway/config/openclaw.json:/home/node/.openclaw/openclaw.json:ro \
+  -v /opt/openclaw/gateway/workspaces:/opt/openclaw/gateway/workspaces \
+  ${OPENCLAW_GATEWAY_IMAGE} \
+  openclaw.mjs gateway run --bind loopback --port ${OPENCLAW_GATEWAY_PORT} --auth token
+
+# A requested stop drains active turns for up to 5 minutes. Killing only the
+# `docker run` client would leave the container running.
+ExecStop=/usr/bin/docker stop -t 300 openclaw-gateway
+TimeoutStopSec=330
+
+Restart=on-failure
+RestartSec=10
+# The Gateway exits 78 when it finds another healthy owner of its state dir;
+# looping on that would be wrong.
+RestartPreventExitStatus=78
+
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/openclaw-gateway
+
+# Not enabled at boot by any deploy: started by hand until the idle canary
+# passes, then enabled only on the user's go-ahead.
+[Install]
+WantedBy=multi-user.target
