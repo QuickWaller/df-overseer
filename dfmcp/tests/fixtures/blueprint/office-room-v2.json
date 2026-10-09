@@ -396,6 +396,9 @@
     "would_designate": 25
   },
   "apply_office_room_v2_floor_success": {
+    "auto_mine": {
+      "skipped": "df-overseer-automine is not deployed"
+    },
     "blueprint": "office-room-v2",
     "designated": {
       "buildings": 0,
@@ -557,6 +560,9 @@
       "carve_cells_unreachable": 0,
       "entrance_reachable": true,
       "entrances": 1
+    },
+    "auto_mine": {
+      "skipped": "df-overseer-automine is not deployed"
     },
     "blueprint": "office-room-v2",
     "designated": {
@@ -883,6 +889,7 @@
     "any_pending": true,
     "blueprint": "office-room-v2",
     "dig_before": {
+      "auto_followed": 0,
       "blind_no_walkable_neighbour": 0,
       "cancelled_by_game": {
         "damp": 0,
@@ -1138,6 +1145,7 @@
     "cancel_note": null,
     "cancelled_by_game": false,
     "dig": {
+      "auto_followed": 0,
       "blind_no_walkable_neighbour": 0,
       "cancelled_by_game": {
         "damp": 0,
@@ -1233,6 +1241,7 @@
     "cancel_note": null,
     "cancelled_by_game": false,
     "dig": {
+      "auto_followed": 0,
       "blind_no_walkable_neighbour": 0,
       "cancelled_by_game": {
         "damp": 0,
@@ -1361,6 +1370,7 @@
     "cancel_note": null,
     "cancelled_by_game": false,
     "dig": {
+      "auto_followed": 0,
       "blind_no_walkable_neighbour": 0,
       "cancelled_by_game": {
         "damp": 0,
@@ -1489,6 +1499,7 @@
     "cancel_note": null,
     "cancelled_by_game": false,
     "dig": {
+      "auto_followed": 0,
       "blind_no_walkable_neighbour": 0,
       "cancelled_by_game": {
         "damp": 0,
@@ -1618,6 +1629,7 @@
     "cancel_note": null,
     "cancelled_by_game": false,
     "dig": {
+      "auto_followed": 0,
       "blind_no_walkable_neighbour": 0,
       "cancelled_by_game": {
         "damp": 0,
@@ -1747,6 +1759,7 @@
     "cancel_note": null,
     "cancelled_by_game": false,
     "dig": {
+      "auto_followed": 0,
       "blind_no_walkable_neighbour": 0,
       "cancelled_by_game": {
         "damp": 0,
@@ -1870,6 +1883,7 @@
     "cancel_note": null,
     "cancelled_by_game": false,
     "dig": {
+      "auto_followed": 0,
       "blind_no_walkable_neighbour": 0,
       "cancelled_by_game": {
         "damp": 0,
@@ -1993,6 +2007,7 @@
     "cancel_note": null,
     "cancelled_by_game": false,
     "dig": {
+      "auto_followed": 0,
       "blind_no_walkable_neighbour": 0,
       "cancelled_by_game": {
         "damp": 0,
@@ -2116,6 +2131,7 @@
     "cancel_note": null,
     "cancelled_by_game": false,
     "dig": {
+      "auto_followed": 0,
       "blind_no_walkable_neighbour": 0,
       "cancelled_by_game": {
         "damp": 0,
@@ -2239,6 +2255,7 @@
     "cancel_note": null,
     "cancelled_by_game": false,
     "dig": {
+      "auto_followed": 0,
       "blind_no_walkable_neighbour": 0,
       "cancelled_by_game": {
         "damp": 0,
@@ -2362,6 +2379,7 @@
     "cancel_note": null,
     "cancelled_by_game": false,
     "dig": {
+      "auto_followed": 0,
       "blind_no_walkable_neighbour": 0,
       "cancelled_by_game": {
         "damp": 0,
