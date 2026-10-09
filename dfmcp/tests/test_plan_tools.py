@@ -469,7 +469,7 @@ async def test_the_planner_allowlist_loads_enabled_with_sixteen_non_mutating_too
     assert sorted(perms.read) == sorted([
         "overview.get", "vitals.summary", "zone.list", "zone.list-kinds", "nobles.requirements",
         "blueprint.sites", "queue.project_status", "queue.my_filings", "plan.read",
-        "circulation.graph", "circulation.walk",
+        "circulation.graph", "circulation.walk", "openarea.survey",
     ])
     assert sorted(perms.write) == ["plan.write", "queue.ask", "queue.pass", "queue.propose"]
     assert not any(reg.get(t).mutates for t in list(perms.read) + list(perms.write))
