@@ -5,49 +5,37 @@ story without you. See **[docs/PURPOSE.md](docs/PURPOSE.md)** for what this is
 and why, and **[docs/MEMORY-ARCHITECTURE.md](docs/MEMORY-ARCHITECTURE.md)** for the overseer's memory and
 learning architecture.
 
-> **Status, 2026-09-25.** Current work and next steps: `Working.md`
-> ("Current state", top of file). History: `decisions/DECISIONS.md`,
+> **Status, 2026-10-09.** Current work and next steps: `Working.md`
+> ("NEXT", top of file). History: `decisions/DECISIONS.md`,
 > `working-archive/`, `evals/live/`. Game knowledge (crop and water rules
 > the agents should use) goes in `doctrine/seed.yaml`, not the register.
 >
-> - **Current state, as last verified live 2026-09-25.** Uniboslan is
->   paused, 22 alive and 1 dead, `dfmcp-server` active. Role tool lists
->   (read plus write): **see `docs/STATE.md`'s generated per-role tool
->   counts** (last matched live 2026-10-01, re-measured offline 2026-10-02).
->   The office is built, furnished and owned by the Manager, and the game itself accepts
->   it (the room-value proxy's earlier false negative is fixed). The ghost
->   has been laid to rest (a Tomb zone over its coffin, confirmed by direct
->   struct reads and the game's own report). **Manager work orders: the user reports they work**
->   (2026-09-30), superseding the 2026-09-24 finding that none dispatched;
->   they are now the main route for workshop production (register 2026-09-30). **The Consultant now answers from the full
->   offline wiki mirror** on VM 103 (4,450 pages, SQLite plus FTS5,
->   one-week hold on recent edits); it goes stale without a manual refresh,
->   since the refresh timers (S8) are not built. The conductor is
->   installed on VM 106 (`conductor.service`), **disabled and inactive**,
->   run by hand only (`--once` through a transient unit mirroring it). Real
->   `--once` cycles on 2026-09-25 and 2026-09-28 made real decisions: all four
->   roles ran, proposals were filed, ruled and executed (a stair, a bedroom
->   dig), asks answered (`evals/live/2026-09-25-first-real-conductor-cycle/`).
->   **Reloading a save is ruled a test-harness power only, never an
->   agent's** (`docs/ARMOK-RULINGS.md`). The districting design session's
->   prior-art research is complete (df-ai, then Systematic Layout Planning/
->   adjacency/zoning), and observability (every inter-agent message with
->   sender, recipient, type, one-line rationale, joinable to its tool
->   calls) is now an agreed input to that session's agenda alongside
->   blueprint connector properties; the session, and a real supervised
->   conductor run, both wait on the user.
-> - **Recent history**, each in full in the register, `Working.md` and
->   `evals/live/`: the 2026-09-22/23 agent loop MVP (clock/tripwire,
->   `conductor` role, Quartermaster enabled, Consultant retrieval) and its
->   live-caught tier-classifier bug, fixed the same day; the 2026-09-24
->   zone/nobles/furniture-siting deploy and the room-value proxy's
->   false-negative fix (`zone contents`); the ghost's diagnosis and burial;
->   the Consultant's offline wiki mirror designed, built (S1-S6) and given
->   its first real pull on VM 103; a 2026-09-25 switch-over attempt
->   (blocked on undeployed reader code, rolled back cleanly, explaining a
->   day's 27-vs-28 tool-count mismatch) followed by the reader deploy that
->   actually switched the Consultant over, both live-verified by the
->   orchestrator.
+> - **Current state, 2026-10-09.** Uniboslan is paused (22 alive, 1 dead as
+>   last counted), `dfmcp-server` active; per-role tool counts are generated
+>   in `docs/STATE.md`. The **operator hold is ON** (agents cycle and file,
+>   nothing executes) and `conductor.service` is installed but **disabled**:
+>   the conductor runs only as hand-run `--once` cycles, never yet as a
+>   service. Roles: Architect, Overseer, Quartermaster, Consultant and the
+>   **Planner** (fort roadmap and plan; comply-or-explain against stage
+>   targets). **Every role runs on DeepSeek Flash** (a trial, 2026-10-09; Pro
+>   is the rollback); cycles take 1 to 4 minutes. **Plan v2 is adopted**
+>   (`fort_plan-0002`, hamlet: bedrooms 1/alive, dining tables 0.2/alive); a
+>   `{min: 4}` floor was lost to a stale live `plan.write` and is being
+>   restored by deploying commit ea12ff5. The shortage watch is ON in
+>   `conductor/policy.yaml`, silent under the hold. **Manager work orders
+>   work** (user-confirmed; the old `nobles.appoint` wrote an appointment the
+>   game ignored, fixed) and are the main route for workshop production. The
+>   Consultant answers from the offline wiki mirror (refresh by hand; S8
+>   timers not built). DFHack's suspendmanager and autoslab are on. The
+>   Board's Metrics tab shows loop signals and DeepSeek list-rate costs (the
+>   real bill is about 3-5x the logged cost). **Decided, not yet built:**
+>   stateless stock checks (no claim ledger), openclaw Gateway sessions with
+>   an inbox derived from conductor state, run limits kept at 10/20 min.
+>   Still with the user: the districting/zoning design session, DFHack
+>   rulings (prioritize, work-now, timestream, pop-control), autofarm vs
+>   `farm.setcrop`, and the arm decision (staged arm needs the user's yes on
+>   the day). **Reloading a save is a test-harness power only, never an
+>   agent's** (`docs/ARMOK-RULINGS.md`).
 >
 > - **The fort.** VM 103 (`df-colony-01`) runs **Uniboslan, "Ragwind,"** the
 >   one fort, on DF Classic plus DFHack under Xvfb, built by
@@ -98,14 +86,13 @@ learning architecture.
 > - **Incident capture** on VMs 103 and 106 (guest agent, persistent journal,
 >   a netwatch dump on gateway loss), with `docs/RUNBOOK-DARK-GUEST.md`. VM 106
 >   went dark on 2026-09-14, cause unknown; it was rebuilt in place.
-> - **Agents.** openclaw on VM 106 is configured with four pinned roles
->   (architect, overseer, quartermaster, consultant), each validated and
->   probed live against the real MCP server (tool counts match exactly).
->   All four have run real decisions through the conductor's `--once` cycles
->   (2026-09-25 and 2026-09-28, `evals/live/2026-09-25-first-real-conductor-cycle/`):
->   proposals filed and ruled, a stair and a bedroom dig executed, asks
->   answered. The conductor has never run as its installed systemd service,
->   only as manual `--once` runs through a transient unit. Everything in `docs/` and `research/` beyond the
+> - **Agents.** openclaw on VM 106 runs pinned roles (architect, overseer,
+>   quartermaster, consultant, planner), each validated against the real MCP
+>   server (tool counts in `docs/STATE.md`). Real `--once` cycles since
+>   2026-09-25 filed, ruled and executed proposals (a stair, bedroom digs,
+>   rooms, ore mining, noble rooms); evidence in
+>   `evals/live/2026-09-25-first-real-conductor-cycle/` and later
+>   `evals/live/` runs. Everything in `docs/` and `research/` beyond the
 >   above is design or proposal unless marked verified.
 >
 > **Traps before running anything:**
