@@ -222,3 +222,26 @@ async def test_the_planner_and_overseer_read_the_roadmap_block_others_do_not(db,
     out = await _plan(plan_tools.PLAN_READ, "planner", {}, db, fort)
     assert out["roadmap"]["plan_stage"] == "hamlet" and out["roadmap"]["deviations"] == []
     assert out["roadmap"]["targets"][0]["rationale"]
+
+
+async def test_roadmap_wants_copied_verbatim_keep_their_floor_and_are_no_deviation(db, fort):
+    """Regression (2026-10-09 plan v2): the roadmap's {per_alive, min} want is
+    stored as the mapping, read back intact, and is not a `shape` deviation."""
+    from dfqueue import plan
+
+    fort.alive = 24
+    await _write(db, fort, {"base_version": 0})
+    fort.tick = SEASON + 5
+    entries = {t["id"]: t for t in roadmap.plan_targets("hamlet")}
+    tables = entries["dining_tables"]
+    assert tables["want"] == {"per_alive": 0.2, "min": 4}
+    # the plain numeric form still files (backward compatible), then the verbatim want replaces it
+    plain = {k: v for k, v in tables.items() if k != "want"} | {"want": 0.2, "per": "alive"}
+    await _write(db, fort, {"base_version": 1, "set": {"targets": [entries["bedrooms"], plain]}, "reason": "numeric"})
+    fort.tick = 2 * SEASON + 5
+    out = await _write(db, fort, {"base_version": 2, "set": {"targets": [entries["bedrooms"], tables]}, "reason": "adopt"})
+    assert out["filed"] and out["roadmap"]["deviations"] == []
+    stored = {t["id"]: t for t in store.active_plan(db)["targets"]}
+    assert stored["dining_tables"]["want"] == {"per_alive": 0.2, "min": 4}
+    assert plan.want_units(stored["dining_tables"], 10) == 4.0     # the floor holds at small populations
+    assert plan.want_units(stored["dining_tables"], 24) == pytest.approx(4.8)
