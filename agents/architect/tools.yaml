@@ -29,6 +29,14 @@ read:
   - id: "openarea.find"
     status: exists
     note: Ranked candidates in already-open, walkable space.
+  - id: "openarea.survey"
+    status: exists
+    note: >-
+      Added 2026-10-09 (register "Unused dug space survey"). Read-only:
+      already-dug floor that belongs to no room, zone, stockpile, reservation
+      or corridor, with size, squareness (tiles to square it off), level and
+      nearest landmarks. Use it to propose reuse of dug space before digging
+      new rock. Numbers and names only, never a coordinate.
   - id: "diggable.find"
     status: exists
     note: >-

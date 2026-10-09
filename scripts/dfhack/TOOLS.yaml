@@ -468,7 +468,7 @@ df-overseer-openarea.lua:
   # Documented defaults (each the value the Lua script already uses when the
   # argument is omitted), used by dfmcp/tools.py to fill a slot an agent
   # skipped while naming a later optional argument by name.
-  arg_defaults: {LEVEL: "0", RANK: "1", RADIUS_TILES: "30", DRY_RUN: "true"}
+  arg_defaults: {LEVEL: "0", RANK: "1", RADIUS_TILES: "30", DRY_RUN: "true", MIN_TILES: "9", MAX_RESULTS: "10"}
   commands:
     "find W H [LEVEL] NEAR_LANDMARK [RADIUS_TILES] [RES_ID]":
       lua_function: find_open_area
@@ -540,6 +540,49 @@ df-overseer-openarea.lua:
           are offered. Pair with openarea.build to actually designate one.
         before_a_real_run: []
         traps: []
+    "survey [MIN_TILES] [MAX_RESULTS]":
+      lua_function: survey_open_space
+      effect: read
+      coordinate_bearing: false
+      live_deployed: false
+      verified: "offline lupa tests only (2026-10-09). Not yet run live."
+      knowledge_scope: player_derivable
+      notes: >
+        Register 2026-10-09 "Unused dug space survey". Connected regions of
+        revealed, dug floor that belong to nothing: not inside a zone, a
+        stockpile, a building footprint, a reservation, or a one-tile-wide
+        corridor. Logic in df-overseer-spacesurvey.lua. Scans only a padded
+        window around our own records (zones, stockpiles, buildings,
+        reservations, sites, landmarks) with a hard tile cap; over the cap it
+        refuses and never truncates. Stairs, ramps, hidden tiles, open sky and
+        deep liquid are never space. Output is ids (a hash, not a coordinate),
+        counts, bounding-box width and height, rectangularity, tiles to square
+        a region off, level offset and straight distance to the nearest
+        landmarks, and whether it touches a corridor. Never a coordinate or a
+        grid. Live check owed: that a natural cavern floor inside a window is
+        not reported as dug space.
+      summary: "Surveys already-dug floor that belongs to no room, stockpile or corridor: size, squareness, nearest landmarks."
+      guide:
+        arguments:
+          - name: "MIN_TILES"
+            required: false
+            default: "9"
+            meaning: >-
+              Smallest region, in tiles, worth listing.
+          - name: "MAX_RESULTS"
+            required: false
+            default: "10"
+            meaning: >-
+              How many regions to return, best first (size times squareness). Capped at 30.
+        returns: >-
+          `regions`, each with `id`, `tiles`, `bbox` (w, h), `rectangularity` (tiles over bounding-box
+          area), `tiles_to_square` (tiles missing to fill the box), `level_vs_nearest_landmark`,
+          `nearest_landmarks` (name, straight distance, level offset) and `touches_corridor`; plus
+          `found`, `shown`, `scanned_tiles` and `notes`. An `error` means the window was over the cap.
+        before_a_real_run: []
+        traps:
+          - >-
+            Only space near our own records is seen, and distances are straight-line, not walking distance.
     "build W H [LEVEL] NEAR_LANDMARK BLUEPRINT_FILE [RANK] [RADIUS_TILES] [RES_ID] [OVERRIDE]":
       lua_function: build_open_area
       effect: mutate

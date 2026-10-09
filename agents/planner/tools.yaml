@@ -72,6 +72,12 @@ read:
       window as circulation.graph, and what it passes through. Added
       2026-10-09 (C2). Use it to check that a room is not a corridor to
       another room before filing.
+  - id: "openarea.survey"
+    status: exists
+    note: >-
+      Read-only: already-dug floor that belongs to no room, zone, stockpile,
+      reservation or corridor (size, squareness, nearest landmarks). Added
+      2026-10-09. Plan reuse of dug space before new digging.
   - id: "queue.project_status"
     status: exists
     note: >-
