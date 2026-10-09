@@ -92,8 +92,10 @@ A one-shot Quartermaster run in a `--once` cycle (03:30:55 to 03:34:56Z) was rec
   `/var/lib/openclaw-gateway/canary-start`). The 24 h window ends 2026-10-10T03:35:34Z.
 - Read it: `scripts/vm-ssh.sh openclaw '/home/df/gateway_idle_canary.sh check'`. PASS needs: unit active; zero
   model calls and zero agent runs in the Gateway journal since the start; zero sessions touched; zero enabled
-  cron/heartbeat jobs. It prints the matching dfmcp-side command (role tool calls since the start; expect none).
-- No turns may be run during the window (they would count as a FAIL); a Gateway restart inside the window
+  cron/heartbeat jobs. It counts only Gateway-originated activity, so one-shot conductor cycles
+  may keep running during the window. There is deliberately no dfmcp-journal check: one-shot runs
+  use the same VM, address and role tokens, and the journal cannot tell the two apart.
+- No turns may be sent through the Gateway during the window (they would count as a FAIL); a Gateway restart inside the window
   restarts the clock (the script reports `gateway starts inside window`).
 - First check at 03:35:38Z: PASS (0 model calls, 0 agent runs, 0 sessions, 0 enabled jobs, 312 MiB).
 

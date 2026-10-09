@@ -8,10 +8,9 @@
 #   scripts/ops/gateway_idle_canary.sh start    # record "now" as the canary start (once, after the last restart)
 #   scripts/ops/gateway_idle_canary.sh check    # PASS/FAIL report, exit 1 on FAIL
 #
-# Any conductor-opened or hand-run turn after `start` makes it FAIL by design:
-# run no turns during the canary. The matching dfmcp-side check (role tool calls
-# in the dfmcp journal since the same instant) is printed as a command at the end
-# because dfmcp lives on another host.
+# It counts only Gateway-originated activity (the Gateway's own model-fetch and agent-run
+# log lines, its session store, its cron jobs), so ordinary one-shot conductor cycles may
+# keep running. A turn sent THROUGH the Gateway after `start` still makes it FAIL.
 set -u
 STATE=/var/lib/openclaw-gateway/canary-start
 UNIT=openclaw-gateway.service
@@ -78,8 +77,9 @@ fi
 
 echo "resident memory:"; /home/df/dk.sh stats --no-stream --format '  {{.MemUsage}} cpu={{.CPUPerc}}' openclaw-gateway 2>/dev/null
 
-echo "dfmcp side, run from the workstation (expect 0 role tool calls since the start):"
-echo "  scripts/vm-ssh.sh df 'journalctl -u dfmcp-server.service --utc --no-pager -o cat --since \"${START/T/ }\" | grep -a tools/call | grep -ac role'"
+# No dfmcp-side count: one-shot conductor cycles (same VM, same source address, same role tokens)
+# legitimately call dfmcp during the window, and the dfmcp journal carries nothing that tells a
+# Gateway MCP client from a one-shot one. Everything above reads Gateway-only evidence.
 
 if [ "$fail" -eq 0 ]; then echo "CANARY: PASS"; else echo "CANARY: FAIL"; fi
 exit "$fail"
