@@ -53,6 +53,12 @@
 #     whose code was fixed in the repo but where VM 103 is still running an
 #     older version of the file -- distinct from a clean true/false, since
 #     the file IS present, just not the current code.
+#   real_write_tested
+#     Optional, per command, default true. Set false on a MUTATING command whose
+#     real (non-dry-run) write has never been run against a live fort even though
+#     the dry-run/preview path has: dfmcp then sends the model "Status: preview
+#     verified, real write not live-tested." instead of "live-verified". Remove
+#     the line once a real run is recorded in `verified`.
 #   execution
 #     Optional, per command. How the conductor (code) runs this tool as a proposed step and
 #     judges its output (docs/CONDUCTOR-EXECUTION.md 2.3), as DATA so the next tool is one entry
@@ -1460,6 +1466,7 @@ df-overseer-workshop.lua:
       effect: mutate
       coordinate_bearing: internal-only
       live_deployed: true
+      real_write_tested: false
       verified: "2026-09-16 (DRY_RUN=true path only; the real quickfort path is UNTESTED live). Deployed to VM 103 2026-09-17 (handoffs/2026-09-17-farm-tools-deploy.md and the water-industry deploy, hash-verified) and dry-run there for still, kitchen, mason and mechanic"
       knowledge_scope: player_derivable
       notes: >
@@ -2626,6 +2633,7 @@ df-overseer-trees.lua:
       effect: mutate
       coordinate_bearing: internal-only
       live_deployed: true
+      real_write_tested: false
       verified: "2026-09-17 (DRY_RUN=true path only; the real dfhack.designations.markPlant call is UNTESTED live, mutation forbidden this session). Deployed to VM 103 2026-09-17 (handoffs/2026-09-17-water-industry-tools-deploy.md, hash-verified) and dry-run there"
       knowledge_scope: player_derivable
       notes: >
@@ -3037,6 +3045,7 @@ df-overseer-orders.lua:
       effect: mutate
       coordinate_bearing: false
       live_deployed: true
+      real_write_tested: false
       verified: "2026-09-17 (dry-run path live-verified against a nonexistent id -- refused correctly; the real erase+delete path is UNTESTED live, inferred by convention from workorder.lua's own cleanup code and research/2026-09-16-food-and-drink-logistics.md's own :erase(idx) finding, not independently proven). Redeployed 2026-09-18 unchanged (only create_order's JOB_INFO/workshop_exists_count changed this stream), not re-exercised."
       knowledge_scope: player_visible
       notes: >

@@ -34,6 +34,7 @@ FROM/TO (connectivity.check) were confirmed as strings, not integers, by the
 call tonumber -- see df-overseer-connectivity.lua:142-157.
 """
 
+import re
 import textwrap
 
 import pytest
@@ -383,14 +384,76 @@ def test_description_states_mutation_and_verification_status(registry, roster):
 
     build_desc = defs["openarea__build"]["description"]
     assert "Mutates fort state." in build_desc
-    assert "Verified against a live fort: 2026-09-12" in build_desc
+    assert "Status: live-verified." in build_desc
+    assert "2026-09-12" not in build_desc  # provenance is not sent to models
 
     landmarks_build_desc = defs["landmarks__build"]["description"]
     assert "Mutates fort state." in landmarks_build_desc
-    assert "NOT VERIFIED" in landmarks_build_desc
+    assert "Status: not live-verified." in landmarks_build_desc
 
     read_desc = defs["overview__get"]["description"]
     assert "Read-only" in read_desc
+
+
+_PROVENANCE = re.compile(
+    r"Verified against a live fort|NOT VERIFIED against|\b20\d\d-\d\d-\d\d\b"
+    r"|handoffs/|research/|evals/live|working-archive|DECISIONS\.md|Deployed to VM|\bVM 10\d\b"
+)
+_ROLES = ("architect", "overseer", "quartermaster", "consultant", "planner")
+
+
+def test_no_description_sent_to_a_model_carries_provenance(registry, roster):
+    """Dates, handoff/research paths and deploy history live in the repo
+    files (TOOLS.yaml `verified`), never in what a model is sent
+    (research/2026-10-09-openclaw-context-audit.md). The only provenance a
+    model sees is one `Status:` line."""
+    checked = 0
+    for role in _ROLES:
+        for d in tool_definitions(registry, roster, role):
+            checked += 1
+            m = _PROVENANCE.search(d["description"])
+            assert m is None, f"{role}/{d['name']}: provenance {m.group(0)!r} in description"
+    assert checked > 100
+
+
+def test_dfhack_backed_descriptions_carry_exactly_one_status_line(registry, roster):
+    for role in _ROLES:
+        for d in tool_definitions(registry, roster, role):
+            tool_id = next(i for i in registry.ids() if build_tool_names(registry)[0][i] == d["name"])
+            if hasattr(registry.get(tool_id), "describe"):
+                continue
+            desc = d["description"]
+            assert desc.count("Status: ") == 1, d["name"]
+            assert desc.endswith((
+                "Status: live-verified.", "Status: not live-verified.",
+                "Status: preview verified, real write not live-tested.",
+            )), d["name"]
+
+
+def test_preview_only_writes_get_the_third_status(registry, roster):
+    """`real_write_tested: false` in TOOLS.yaml (data, no per-tool code) marks a
+    mutating tool whose real write was never run live. farm.build and well.build
+    are NOT among them: their entries record a real run (2026-09-17, corrections
+    in `verified`), so they stay plain live-verified."""
+    third = "Status: preview verified, real write not live-tested."
+    defs = {d["name"]: d["description"] for d in tool_definitions(registry, roster, "overseer")}
+    for name in ("workshop__build", "trees__fell", "orders__cancel"):
+        assert defs[name].endswith(third), name
+    for name in ("farm__build", "well__build"):
+        assert defs[name].endswith("Status: live-verified."), name
+    for tool in registry.all():
+        if not getattr(tool, "real_write_tested", True):
+            assert tool.mutates and tool.is_verified, tool.id
+
+
+def test_every_tool_sent_to_a_role_is_a_registry_tool(registry, roster):
+    """Cheap check that no foreign (non-dfmcp) tool name reaches a role's list:
+    every name sent is the MCP name of a registry id the roster allows."""
+    id_to_name, _ = build_tool_names(registry)
+    for role in _ROLES:
+        allowed = {id_to_name[i] for i in registry.ids() if roster.check(role, i)[0]}
+        sent = [d["name"] for d in tool_definitions(registry, roster, role)]
+        assert set(sent) == allowed and len(sent) == len(set(sent)), role
 
 
 def _make_tool(**overrides) -> Tool:
