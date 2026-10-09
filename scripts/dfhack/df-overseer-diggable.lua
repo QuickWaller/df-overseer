@@ -291,6 +291,10 @@ local landmarks_mod = reqscript('df-overseer-landmarks')
 -- a tile inside a reservation they do not hold (decision 4: no holding
 -- concept for this tool -- "other tools ... simply refuse").
 local reservations_mod = reqscript('df-overseer-reservations')
+-- 2026-10-09 (research/2026-10-09-auto-mine.md): the game's auto-mine dig mode,
+-- set on this dig's Default tiles after quickfort returns OK. Optional leaf.
+local automine_ok, automine_mod = pcall(reqscript, 'df-overseer-automine')
+if not automine_ok or type(automine_mod) ~= 'table' then automine_mod = nil end
 -- 2026-10-08 user decision ("for now lets only choose spots with no
 -- aquifer"): every dig this file sites or designates is checked against
 -- df-overseer-hazard.lua's data policy (aquifer and magma, revealed tiles
@@ -637,7 +641,7 @@ end
 -- df-overseer-blueprint.lua's apply RES_ID path, which is the true holder,
 -- not this generic tool), so a dig inside any reservation is refused unless
 -- OVERRIDE.
-function dig_diggable_area(w, h, level, near, blueprint_file, rank, radius_tiles, res_id, override)
+function dig_diggable_area(w, h, level, near, blueprint_file, rank, radius_tiles, res_id, override, auto_mine)
   if override ~= nil and res_id == nil then
     return nil, "OVERRIDE requires RES_ID"
   end
@@ -706,7 +710,20 @@ function dig_diggable_area(w, h, level, near, blueprint_file, rank, radius_tiles
     reservations_mod.record_override(res_id, "diggable.dig", "dig", override)
   end
 
+  -- Auto-mine: only after quickfort said OK, only on Default-dig tiles (the
+  -- leaf never touches a stair, ramp or channel). AUTO_MINE=false opts out.
+  local auto_result = nil
+  if quickfort_ok and tostring(auto_mine):lower() ~= "false" then
+    if automine_mod then
+      local oka, am = pcall(automine_mod.mark_rect, c.x, c.y, z, w, h)
+      auto_result = oka and am or {error = tostring(am)}
+    else
+      auto_result = {skipped = "df-overseer-automine is not deployed"}
+    end
+  end
+
   return {
+    auto_mine = auto_result,
     rank = rank,
     dims = {w, h},
     near_landmark = info and info.name or nil,
@@ -1054,19 +1071,23 @@ if cmd == "find" then
   end
 elseif cmd == "dig" then
   local w, h = tonumber(args[2]), tonumber(args[3])
-  local level, near, blueprint, rank, radius, res_id, override
+  local level, near, blueprint, rank, radius, res_id, override, auto_mine
   if tonumber(args[4]) then
-    level, near, blueprint, rank, radius, res_id, override =
-      tonumber(args[4]), args[5], args[6], tonumber(args[7]), tonumber(args[8]), args[9], args[10]
+    level, near, blueprint, rank, radius, res_id, override, auto_mine =
+      tonumber(args[4]), args[5], args[6], tonumber(args[7]), tonumber(args[8]), args[9], args[10], args[11]
   else
-    near, blueprint, rank, radius, res_id, override =
-      args[4], args[5], tonumber(args[6]), tonumber(args[7]), args[8], args[9]
+    near, blueprint, rank, radius, res_id, override, auto_mine =
+      args[4], args[5], tonumber(args[6]), tonumber(args[7]), args[8], args[9], args[10]
   end
+  -- Positional optionals cannot be skipped, so AUTO_MINE (last) would need a
+  -- RES_ID and OVERRIDE before it. A lone "-" there means "not given".
+  if res_id == "-" then res_id = nil end
+  if override == "-" then override = nil end
   if not (w and h and near and blueprint) then
     print("usage: df-overseer-diggable dig W H [LEVEL] NEAR_LANDMARK"
-      .. " BLUEPRINT_FILE [RANK] [RADIUS_TILES] [RES_ID] [OVERRIDE]")
+      .. " BLUEPRINT_FILE [RANK] [RADIUS_TILES] [RES_ID] [OVERRIDE] [AUTO_MINE]")
   else
-    local result, err = dig_diggable_area(w, h, level, near, blueprint, rank, radius, res_id, override)
+    local result, err = dig_diggable_area(w, h, level, near, blueprint, rank, radius, res_id, override, auto_mine)
     print(json.encode(err and {error = err} or result))
   end
 elseif cmd == "find-stair" then
@@ -1101,7 +1122,7 @@ elseif cmd == "dig-stair" then
 else
   print("usage: df-overseer-diggable find W H [LEVEL] NEAR_LANDMARK [RADIUS_TILES] [RES_ID]")
   print("usage: df-overseer-diggable dig W H [LEVEL] NEAR_LANDMARK"
-    .. " BLUEPRINT_FILE [RANK] [RADIUS_TILES] [RES_ID] [OVERRIDE]")
+    .. " BLUEPRINT_FILE [RANK] [RADIUS_TILES] [RES_ID] [OVERRIDE] [AUTO_MINE]")
   print("usage: df-overseer-diggable find-stair [LEVEL] NEAR_LANDMARK [RADIUS_TILES] [RES_ID]")
   print("usage: df-overseer-diggable dig-stair [LEVEL] NEAR_LANDMARK"
     .. " [RANK] [RADIUS_TILES] [DRY_RUN] [RES_ID] [OVERRIDE]")

@@ -185,6 +185,10 @@ def evaluate_jobs(
     for job in jobs:
         if not isinstance(job, Mapping):
             continue
+        if job.get("auto_followed") or job.get("waiting_on") == "auto_followed":
+            # A dig on a tile the game auto-followed onto (research/2026-10-09-auto-mine.md
+            # 4.4): not a failure of ours, never a stuck-job wake.
+            continue
         base = _base_key(job)
         index = seen_counts.get(base, 0)
         seen_counts[base] = index + 1

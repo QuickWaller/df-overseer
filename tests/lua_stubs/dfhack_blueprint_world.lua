@@ -182,6 +182,19 @@ local PARSE_MOD = nil
 local BUILD_KIND_BY_KEY = {b = "bed", c = "chair"}
 local ZONE_KIND_BY_KEY = {b = "bedroom", o = "office"}
 function reqscript(n)
+  if n == "df-overseer-automine" then
+    -- 2026-10-09: a recording fake, opt-in per test (AUTOMINE_FAKE = true);
+    -- without it the optional leaf reads as not deployed.
+    if not AUTOMINE_FAKE then error("no such script") end
+    return {
+      mark_rect = function(x, y, z, w, h)
+        AUTOMINE_CALLS = AUTOMINE_CALLS or {}
+        AUTOMINE_CALLS[#AUTOMINE_CALLS + 1] = {x = x, y = y, z = z, w = w, h = h}
+        return {requested = w * h, marked = w * h}
+      end,
+      followed_checker = function() return function() return false end end,
+    }
+  end
   if n == "df-overseer-landmarks" then return landmarks end
   if n == "df-overseer-diggable" then return {find_diggable_area = function() return ranked_candidates() end} end
   if n == "df-overseer-surface" then return surface end

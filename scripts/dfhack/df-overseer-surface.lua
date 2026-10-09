@@ -790,6 +790,13 @@ local function decode_vein_tile(x, y, z)
   }
 end
 
+-- Exported for df-overseer-automine.lua (2026-10-09): the one tile-level vein
+-- classifier, so the exposed-ore pass reads the game's own isOre/isGem and not
+-- a second copy. A coordinate in, a classification out, never printed.
+function decode_vein(x, y, z)
+  return decode_vein_tile(x, y, z)
+end
+
 function vein_material(zone_id)
   local b, err = find_zone(zone_id)
   if not b then return {error = err} end

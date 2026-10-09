@@ -70,6 +70,7 @@ from conductor.mcp_client import MCPToolError, ToolCaller, tool_name
 from conductor.job_watch import JobWatchResult, JobWatchStore, evaluate_jobs, jobs_from_result
 from conductor.ore_watch import POLL_TOOL as ORE_POLL_TOOL, OreRead, ore_read_from_sites
 from conductor import noble_room_watch
+from conductor import automine as automine_mod
 from conductor.unsupplied_watch import POLL_TOOL as UNSUPPLIED_POLL_TOOL, UnsuppliedRead, unsupplied_read
 from conductor.order_watch import OrderWatchResult, evaluate_orders
 from conductor.pause_watch import (
@@ -191,6 +192,33 @@ async def _read_routing(call: Callable, cycle_index: int) -> Optional[Mapping[st
     except Exception as exc:  # noqa: BLE001 -- total: a briefing never depends on this read
         LOG.warning("cycle %s: routing read failed (%s); briefings carry no routing lines", cycle_index, exc)
         return None
+
+
+def _automine_store(deps: "CycleDeps") -> automine_mod.AutomineStore:
+    return automine_mod.AutomineStore(deps.cursor_store.path.with_name("automine_state.json"))
+
+
+async def _automine_phase(
+    deps: "CycleDeps", call: Callable, *, cycle_index: int, hold: HoldState, escalated: bool,
+) -> automine_mod.AutomineReport:
+    """The automine pass (conductor/automine.py). Skipped under ANY operator hold
+    (unlike the execute phase, `--allow-execution` does not allow it), after an
+    escalation, and when policy turns it off. Total."""
+    pol = deps.policy.automine
+    try:
+        report = await automine_mod.run_automine(
+            call, enabled=pol.enabled, held=hold.held, escalated=escalated,
+            store=_automine_store(deps), max_per_call=pol.max_per_call,
+        )
+    except Exception:  # noqa: BLE001
+        LOG.exception("cycle %s: the automine phase failed", cycle_index)
+        return automine_mod.AutomineReport(skipped="the automine phase raised")
+    if report.ran:
+        LOG.info("cycle %s: automine: %d designated, %d in a reservation, %d cavern breach(es)",
+                 cycle_index, report.designated, report.in_reservation, report.cavern_breaches)
+    elif report.skipped and report.skipped != "disabled in policy":
+        LOG.info("cycle %s: automine skipped: %s", cycle_index, report.skipped)
+    return report
 
 
 def _execute_store(deps: "CycleDeps") -> ExecuteStore:
@@ -422,6 +450,9 @@ class CycleResult:
     #: The execute phase's report (`conductor.execute.ExecuteReport.as_dict()`),
     #: None when it did not run or was not attempted (dry run).
     execute: Optional[Dict[str, Any]] = None
+    #: The automine pass (`conductor/automine.py`): None when it was not attempted
+    #: (dry run, a tripwire or watchdog cycle).
+    automine: Optional[Dict[str, Any]] = None
     #: The Planner watch's pass this cycle (`conductor/plan_watch.py`): the
     #: season cursor, the plan wakes it raised, anything for the operator, and a
     #: standing alert while a bootstrap has been given up on. None when it did
@@ -1019,11 +1050,14 @@ async def _run_cycle(cycle_index: int, deps: CycleDeps, hold: HoldState) -> Cycl
             own_filings = None
             if role in PROPOSERS and not deps.dry_run and deps.policy.own_filings_recent > 0:
                 own_filings = await _read_own_filings(call, role, deps.policy.own_filings_recent, cycle_index)
+            # A cavern breach noted by last cycle's automine pass, said once to the
+            # Overseer (taken from the store, so it is not repeated).
+            automine_notes = _automine_store(deps).take() if (role == OVERSEER and not deps.dry_run) else []
             briefing = build_briefing(
                 role=role, game_tick=game_tick or 0, wake=wake, vitals=vitals,
                 diff_events=events_by_role.get(role, []),
                 queue_summary=_queue_summary_for(role, queue_state),
-                own_filings=own_filings,
+                own_filings=own_filings, automine_notes=automine_notes,
                 stuck_jobs=job_watch.lines, alerts=alerts,
                 ore_exposed=_ore_lines_for(deps.policy, role, ore_read),
                 frozen_types=(routing or {}).get("frozen_types") if role in ADVISORS else None,
@@ -1042,7 +1076,7 @@ async def _run_cycle(cycle_index: int, deps: CycleDeps, hold: HoldState) -> Cycl
                     game_tick=game_tick or 0, wake=wake, vitals=vitals, alerts=alerts,
                     pending_brief=pending_brief, diff_events=events_by_role.get(role, []),
                     stuck_jobs=job_watch.lines, to_carry_out=to_carry_out, routing=routing,
-                    roadmap_line=roadmap_line, paused=paused_now,
+                    roadmap_line=roadmap_line, paused=paused_now, automine_notes=automine_notes,
                 )
                 briefings[role] = {"ruling_prompt": prompt, "pending_brief": pending_brief}
 
@@ -1146,6 +1180,13 @@ async def _run_cycle(cycle_index: int, deps: CycleDeps, hold: HoldState) -> Cycl
             ore_read=ore_read, lane_state=lane_state, clock_changes=clock_changes, latched=False,
         )
 
+    # ---- 7. AUTOMINE (research/2026-10-09-auto-mine.md): a game write, blocked by any hold --
+    automine_report: Optional[automine_mod.AutomineReport] = None
+    if not deps.dry_run:
+        automine_report = await _automine_phase(
+            deps, call, cycle_index=cycle_index, hold=hold, escalated=ordinary_escalated,
+        )
+
     result = CycleResult(
         cycle_index=cycle_index, game_tick=game_tick, game_tick_error=game_tick_error,
         signals=signals,
@@ -1157,6 +1198,7 @@ async def _run_cycle(cycle_index: int, deps: CycleDeps, hold: HoldState) -> Cycl
         pause_watch=pause_watch_dict,
         plan_watch=plan_watch_dict,
         execute=execute_report.as_dict() if execute_report is not None else None,
+        automine=automine_report.as_dict() if automine_report is not None else None,
         role_groups=parallel_groups, wall_seconds=round(time.monotonic() - cycle_started, 3),
         plan=(
             {

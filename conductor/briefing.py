@@ -182,6 +182,7 @@ def build_briefing(
     roadmap_line: Optional[str] = None,
     utilisation: Optional[Mapping[str, Any]] = None,
     paused: Optional[str] = None,
+    automine_notes: Optional[Sequence[str]] = None,
 ) -> Dict[str, Any]:
     """One role's briefing for this cycle. `vitals` is `vitals.summary`'s own
     result, passed through as-is (already Tier 0 by construction -- see
@@ -245,6 +246,9 @@ def build_briefing(
         # docs/CONDUCTOR-EXECUTION.md 6.6 (2b): a group frozen ahead of its cutover.
         # Skipped, not refused (the user's call): the role does not file these types.
         briefing["frozen"] = {"types": [str(t) for t in frozen_types][:MAX_QUEUE_IDS], "note": FREEZE_LINE}
+    if automine_notes:
+        # conductor/automine.py: a cavern breach the last automine pass reacted to.
+        briefing["automine"] = [str(n)[:240] for n in automine_notes][:3]
     if ledger_digest is not None:
         briefing["ledger"] = _capped(ledger_digest, MAX_LEDGER_ROWS)
     if roadmap_line:
@@ -339,6 +343,7 @@ def build_ruling_briefing(
     routing: Optional[Mapping[str, Sequence[str]]] = None,
     roadmap_line: Optional[str] = None,
     paused: Optional[str] = None,
+    automine_notes: Optional[Sequence[str]] = None,
 ) -> str:
     """The Overseer's prompt for an ordinary ruling wake, as text in a fixed
     order, stable material first and the ask last (cache-friendly, bounded):
@@ -363,6 +368,8 @@ def build_ruling_briefing(
         out.append(f"ALERT {line}")
     if roadmap_line:
         out.append(str(roadmap_line)[:MAX_ROADMAP_LINE_CHARS])
+    for note in list(automine_notes or [])[:3]:
+        out.append(f"NOTE {str(note)[:240]}")
 
     out.append("DECIDED, DO NOT REDO")
     proposals: List[Mapping[str, Any]] = []

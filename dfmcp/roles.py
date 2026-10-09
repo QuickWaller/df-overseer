@@ -57,6 +57,10 @@ SYSTEM_CLASS_TOOL_IDS = frozenset({
     # handoffs/2026-10-05-pause-safety.md: closes a popup box a player could
     # close (never resumes). Code's job, like the clock verbs above.
     "pause.dismiss",
+    # research/2026-10-09-auto-mine.md: designates revealed ore for the game's
+    # automatic mining and clears it after a cavern breach. Code's job, run only
+    # in the conductor's own phase (blocked by an operator hold).
+    "automine.scan",
 })
 
 

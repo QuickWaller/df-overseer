@@ -289,6 +289,15 @@ write:
       player could close (Okay, More, a help box) and reports what each said.
       Never resumes and never touches a latch. In dfmcp/roles.py's
       SYSTEM_CLASS_TOOL_IDS, so only a role of kind system may hold it.
+  - id: "automine.scan"
+    status: exists
+    note: >-
+      Added research/2026-10-09-auto-mine.md. The once-per-cycle automine pass
+      (conductor/automine.py): designates revealed ore and gem tiles beside our
+      digs for the game's automatic mining and, after a cavern breach, clears
+      auto mining near it. A game write, so it is in dfmcp/roles.py's
+      SYSTEM_CLASS_TOOL_IDS (only a role of kind system may hold it) and on no
+      model's allowlist. The conductor skips it under any operator hold.
   - id: "queue.close_legacy"
     status: exists
     note: >-
