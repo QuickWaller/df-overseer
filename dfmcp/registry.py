@@ -277,6 +277,9 @@ class Tool:
     #: The command's raw `execution` block (docs/CONDUCTOR-EXECUTION.md 2.3), or
     #: None. Parsed and validated by dfmcp/action_data.py, not here.
     execution: Optional[dict] = None
+    #: TOOLS.yaml `real_write_tested` (default true): false marks a mutating
+    #: command whose real write has not been run live, only its dry-run.
+    real_write_tested: bool = True
 
     @property
     def mutates(self) -> bool:
@@ -533,6 +536,7 @@ def load_registry(path=DEFAULT_TOOLS_YAML, *, native_tools: Optional[Mapping[str
                 skippable=tuple(skippable),
                 defaults=defaults,
                 execution=spec.get("execution"),
+                real_write_tested=bool(spec.get("real_write_tested", True)),
             )
 
     collisions = {tid: sigs for tid, sigs in seen.items() if len(sigs) > 1}

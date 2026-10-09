@@ -774,6 +774,7 @@ def _summary_text(tool: Tool) -> str:
 #: The only provenance a model sees about a DFHack-backed tool.
 STATUS_VERIFIED = "Status: live-verified."
 STATUS_UNVERIFIED = "Status: not live-verified."
+STATUS_PREVIEW_ONLY = "Status: preview verified, real write not live-tested."
 
 
 def _tool_description(tool: Tool) -> str:
@@ -783,7 +784,12 @@ def _tool_description(tool: Tool) -> str:
     # history) stays in TOOLS.yaml's `verified` field and is never sent to a
     # model (research/2026-10-09-openclaw-context-audit.md). One rule, no
     # per-tool branches.
-    parts.append(STATUS_VERIFIED if tool.is_verified else STATUS_UNVERIFIED)
+    if not tool.is_verified:
+        parts.append(STATUS_UNVERIFIED)
+    elif tool.mutates and not tool.real_write_tested:
+        parts.append(STATUS_PREVIEW_ONLY)
+    else:
+        parts.append(STATUS_VERIFIED)
     return " ".join(parts)
 
 

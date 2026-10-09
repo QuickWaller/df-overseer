@@ -424,7 +424,26 @@ def test_dfhack_backed_descriptions_carry_exactly_one_status_line(registry, rost
                 continue
             desc = d["description"]
             assert desc.count("Status: ") == 1, d["name"]
-            assert desc.endswith(("Status: live-verified.", "Status: not live-verified.")), d["name"]
+            assert desc.endswith((
+                "Status: live-verified.", "Status: not live-verified.",
+                "Status: preview verified, real write not live-tested.",
+            )), d["name"]
+
+
+def test_preview_only_writes_get_the_third_status(registry, roster):
+    """`real_write_tested: false` in TOOLS.yaml (data, no per-tool code) marks a
+    mutating tool whose real write was never run live. farm.build and well.build
+    are NOT among them: their entries record a real run (2026-09-17, corrections
+    in `verified`), so they stay plain live-verified."""
+    third = "Status: preview verified, real write not live-tested."
+    defs = {d["name"]: d["description"] for d in tool_definitions(registry, roster, "overseer")}
+    for name in ("workshop__build", "trees__fell", "orders__cancel"):
+        assert defs[name].endswith(third), name
+    for name in ("farm__build", "well__build"):
+        assert defs[name].endswith("Status: live-verified."), name
+    for tool in registry.all():
+        if not getattr(tool, "real_write_tested", True):
+            assert tool.mutates and tool.is_verified, tool.id
 
 
 def test_every_tool_sent_to_a_role_is_a_registry_tool(registry, roster):
