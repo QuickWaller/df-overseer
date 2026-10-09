@@ -902,7 +902,8 @@ async def _run_cycle(cycle_index: int, deps: CycleDeps, hold: HoldState) -> Cycl
     )
     plan_watch_dict = _plan_watch_dict(plan_state, season_edge, plan_result)
     autofarm_report = await run_autofarm_sync(
-        call, deps.policy.autofarm_sync.enabled, held=hold.held, dry_run=deps.dry_run,
+        # No plan to read while the Planner is off (plan.enabled), so nothing to sync.
+        call, deps.policy.autofarm_sync.enabled and deps.policy.plan.enabled, held=hold.held, dry_run=deps.dry_run,
     )
     roadmap_line = (plan_result.roadmap or {}).get("line")
     utilisation = await _utilisation(deps, call, vitals, game_tick, cycle_index)
