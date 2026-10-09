@@ -4,6 +4,17 @@ What's currently in progress. Remove an item once it's done, tabled, or
 shelved, don't mark it paused. Any session should read this and know what's
 actually going on right now.
 
+## PAUSED 2026-10-09 (user left; read first)
+
+**Live state (checked at pause):** fort paused, operator hold ON, conductor.service inactive and disabled, no cycle running. Gateway (openclaw-gateway.service) running by hand, NOT enabled at boot; 24 h idle canary started 2026-10-09T03:35:34Z, PASS at pause; ends 2026-10-10T03:35:34Z (check: `/home/df/gateway_idle_canary.sh check` on VM 106). Send no turns through the Gateway until then.
+**Deploy is split:** vm103-dfmcp is at 46d1370 (head: flat plan want form live); vm106-agents and vm106-conductor are at 7445804 (12 behind: lack the Planner charter's flat-want text, the session transport, raw-stdout retention). Redeploy vm106-agents and vm106-conductor from main BEFORE the next cycle, after checking no cycle is running.
+**Unmerged branches (stopped mid-work, commits survive):**
+- `worktree-agent-af21ee19aedd7f38c` (3 commits): Gateway streams 4+5, execute containment (activations) and run-record session fields. Owed before merge: grandfather every ruling present at cutover as a `legacy` activation (else accepted bedroom proposals never run), then re-run conductor/dfqueue/dfmcp suites. Deploy order: dfmcp first, then conductor.
+- `worktree-agent-af0f7b3f591402e4d` (1 commit): Gateway stream 3 (sessions.py, news.py), unfinished (was adding a `session_news` wake reason and wiring cycle.py). Ships with `sessions.enabled: false`.
+**Next, in order:** (1) finish and merge the two branches; (2) redeploy vm106-agents/conductor (+ dfmcp for containment); (3) hold-on cycles: Quartermaster answers ask-0009 (crop question), Planner files crop targets (`sync: autofarm`) and dining_tables with want_min 4, Overseer rules, Planner adopts (evals/live/2026-10-09-crop-targets-cycle/); (4) after the canary passes: flip the Quartermaster to session mode (first role); (5) game save once autofarm has thresholds (user's yes); (6) auto-mine live checks on a throwaway reload (user's yes).
+**Open user calls:** stale-order cleanup includes completed proposals after a 1-day grace (built that way; user did not object); ConstructBlocks = 0.25 boulder per block in the stock check is unverified.
+**Decided today, all in the register 2026-10-09:** pause stamp, conductor-only writer, stateless stock checks + 3a/3b, auto mining, autofarm via Planner targets, tool-description trim, unused space survey, Planner work queue, Gateway sessions (per relevant open proposal; Overseer per wake; news; adaptive concurrency; batching), no Jev, DFHack rulings.
+
 ## NEXT, as of 2026-10-09 (checkpoint 2; read first after a compact)
 
 State: fort paused (24 alive per the 2026-10-09 plan cycle), operator hold ON, conductor.service disabled (hand-run `--once` only); every role on DeepSeek Flash (Pro is the rollback). suspendmanager and autoslab on, ban-cooking re-applied.
