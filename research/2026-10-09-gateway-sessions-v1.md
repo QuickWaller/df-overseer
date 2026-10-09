@@ -1,5 +1,11 @@
 # Gateway sessions v1: buildable plan and self red team
 
+> **v1.1 (2026-10-09, same day): section 15 revises the session layout** for the
+> register row "Session layout: per relevant open proposal; Overseer per wake;
+> mid-run news". Where section 15 disagrees with sections 1 to 14 (session keys,
+> reset, items, concurrency, rollout, build streams), section 15 wins. Containment,
+> supervision, fallback and S0 stand as written.
+
 Date: 2026-10-09. Design spec, read-only: no VM touched, no config changed, no agent
 run. Written for the user's register rows of 2026-10-09 (sessions 7: openclaw's
 always-running Gateway now, overriding the red team's local-file-first; 8: the inbox
@@ -693,3 +699,277 @@ whether VM 106 sets `CONDUCTOR_THINKING_STATE_DIR`; the session-stall watchdog
 against long reasoning; output-token change from one item per turn. The source read
 was at tag `v2026.9.4`; the installed image is recorded as that commit by the context
 audit, not re-inspected here.
+
+## 15. v1.1: sessions per relevant open proposal (2026-10-09)
+
+Input: register row 2026-10-09 "Session layout: per relevant open proposal; Overseer
+per wake; mid-run news" (user). Its premise, accepted here: sessions do not lower
+per-token cost (section 10 showed DeepSeek already caches prefixes); their value is
+fewer re-orientation turns, quick back-and-forth on one piece of work, and news
+arriving mid-run. Same confidence key as above.
+
+Defaults carried over unchanged: U1 one Gateway; U4 started by hand until the 24 h
+canary passes; U8 a dfmcp deploy restarts the Gateway; the whole of sections 3.2 to
+3.4, 4, 7, 9 and the S0 list. Changed by the new layout: U2 (key per wake) is
+replaced by keys per (role, proposal) (15.1); U3 (wipe on restart) stands but now
+resets sessions that span many wakes (15.6); U7 (containment) is restated per
+activation instead of per wake (15.9).
+
+### 15.1 Session keys
+
+| Session | Key | Opens | Closes |
+|---|---|---|---|
+| Proposal session | the draft key it was mapped from, or `agent:<role>:p<proposal_id>` on a reopen | the role is relevant to an open proposal and has something to act on (15.3) | proposal closed, size cap, Gateway restart (15.6) |
+| Drafting session | `agent:<role>:d<activation_id>` | a lane item for this role that none of its open proposals covers (an alert, an ore site, the review item) | at the end of its activation if nothing was filed; otherwise it becomes the filed proposal's session |
+| Overseer session | `agent:overseer:w<wake_id>` | the Overseer wakes | nothing pending and every other session in the cycle idle, or its 20 min activation budget |
+| Planner, Consultant | none: one-shot as today | | |
+
+- **Draft to proposal: mapped, not re-keyed.** No session rename was found in
+  openclaw's method registry [I]; a new key would be a new, empty session and lose the
+  drafting context, which is the point. So the conductor records `proposal_id ->
+  session key` when it sees the filing (records carry their author, and the turn
+  window identifies the session) [V for the author column, `dfqueue/store.py`]. A
+  reopen after a close or a wipe uses the canonical `p<proposal_id>` key with a
+  re-brief (15.6).
+- **A drafting activation that files two or more proposals**: one session, mapped to
+  all of them, closed when the last closes (Q1).
+- **Planner and Consultant** run one-shot unless pulled into a proposal (15.3); then
+  they get a proposal session like anyone else. The Planner's own `plan_change`
+  proposals count as its own (Q2).
+- The map and a per-session "news delivered up to" cursor live in one small
+  single-writer file beside the cursor store (`sessions_state.json`). It is a key
+  map, not an inbox: every item and every piece of news is still derived each cycle
+  from the queue and the conductor's existing state (decision 8).
+
+### 15.2 Overseer: one pipelined session per wake
+
+- Opens when triage wakes the Overseer (pending proposals, a verdict item,
+  carry-out items). First message: today's ruling briefing header (FORT line, DECIDED
+  block) plus a docket overview of everything pending, then the first proposal.
+- Pipelined: after every turn of any other session in the cycle, the conductor
+  re-reads the pending list (`queue.pending_brief`) and pushes each newly filed
+  proposal into the Overseer session as its next item, with a one-line overview of
+  the rest (the 2026-10-08 one-at-a-time row) [V for the read]. The Overseer rules each
+  as it arrives and no longer waits for the slowest proposer.
+- So the Overseer runs at the same time as the advisors' sessions; today's cycle
+  order (advisors, then Overseer) gives way to "Overseer session open while proposal
+  sessions run". That needs the concurrency of 15.5 from the start.
+- Game actions: the conductor executes ready-ruled actions recorded inside the
+  Overseer's activation window. At first it executes once, when the session closes
+  (as v1). Executing after each ruling turn, the full pipelining, is a later switch
+  (Q5). Escalation is still checked after every Overseer turn.
+
+### 15.3 How the conductor decides relevance
+
+A role R is relevant to an open proposal P when any of these holds:
+
+| Rule | Read from |
+|---|---|
+| R filed P | the record's `role` [V, store] |
+| an ask with `proposal_id = P` is addressed to R (R pulled in to answer) | asks carry an optional `proposal_id`, validated to name a real proposal [V, `dfqueue/store.py` near line 579] |
+| R filed an ask or a pass with `proposal_id = P` (R asked about it, or advised on it) | same records [V for asks; I for passes] |
+| P is the Overseer's to rule | not per proposal: the Overseer sees P through its per-wake session (15.2) |
+
+Anything else does not get a proposal session:
+- an ask with no `proposal_id`: the Consultant answers it one-shot, as today;
+- a lane fact that none of R's open proposals covers (an alert, an ore site, the
+  review item): a drafting session;
+- a lane fact that one of R's open proposals does cover (an ore site R already
+  proposed mining, an unsupplied building R already filed for): routed to that
+  proposal's session as news, not a new draft. "Covers" is matched on the step
+  identity the duplicate refusal already uses (`dfqueue/step_identity.yaml`) for typed
+  proposals, and not matched otherwise [V for typed identities; I for untyped];
+- no session for a proposal R has no part in (the user's rule).
+
+### 15.4 News routing
+
+Sources are only what the conductor already observes [V for each module named]:
+
+| Event | Source | Tied to | Class |
+|---|---|---|---|
+| step done | `execute.py` (`done`) | project, so proposal | informational; actionable when it is the last step |
+| step needs attention (failed, transient, unknown, ore held) | `execute.py` (`attend`) | proposal | actionable |
+| stock hold on a step | `stock_hold.py` note | proposal | informational; actionable at the 3a thresholds (survival target, older than one game day, blocking other steps) [V, register 3a] |
+| ruling on P (accept, reject, defer, amend) | queue records | P | reject, defer, amend actionable; accept informational |
+| answered ask about P | queue records | P, to the asker's session | actionable |
+| graded prediction missed | `queue.grade` names the proposer [V, `lanes.py` docstring] | P | actionable |
+| stuck job | `job_watch.py` | P only if the job came from one of P's issued steps; otherwise the role's lane | actionable after its threshold |
+| dig cancelled into damp or warm stone | the game cancels it [V, register auto mining]; the conductor sees the dig vanish or the step fail | P via the step, if traceable [I] | informational unless the step fails |
+| cavern breach | `automine.py` cavern note | fort-wide | actionable, to every affected session and the Overseer |
+| tripwire, starvation risk, unexplained pause | `tripwire.py`, vitals alerts, `pause_watch.py` | fort-wide | actionable; a tripwire also stops new turns (red team M8) |
+| pause state change | pause poller | fort-wide | control line; mid-turn the stamp already says it |
+
+- "Affected sessions" for a fort-wide alarm: every open session of a role whose lane
+  lists that alarm in `lane_triggers` (policy data, no per-role branch), plus the
+  Overseer [V for `lane_triggers`].
+- **Actionable news triggers an activation** of its session (a turn) in the next
+  cycle if the session is idle. **Informational news is batched**: it rides as lines
+  at the top of the session's next message, whenever that comes, capped at 8 lines
+  with "and k more".
+- News is derived each cycle from queue records and execute state since the
+  session's delivered cursor, so a conductor restart loses nothing. The cursor
+  advances only when a turn carrying the lines completes ok.
+
+### 15.5 Concurrency and run limits
+
+- Parallel sessions of one role on different proposals are allowed: each key has its
+  own lane in the Gateway, and the process-wide lane admits at least 8 runs [S,
+  `docs/concepts/queue.md`]. Never two activations on the same key.
+- Caps (policy data): `max_concurrent_per_role` 2, `max_concurrent_total` 4, set by the
+  DFHack pool of four connections and the 60 s filing read bound (red team M4) [V].
+  DeepSeek Flash allows 2500 concurrent requests per account [V, thinking-budget
+  research]. Anything over the cap waits for the next cycle, oldest actionable first.
+- Starts are staggered as `parallel.stagger_seconds` already does (1.5 s) [V], so a
+  same-role session started second can read the first's cached system prompt and
+  tools.
+- **The 10/20 min limit applies per session activation.** An activation is the run of
+  turns a session takes from being woken until nothing actionable is left; each
+  turn's `--timeout` is what remains of that activation's 600 s (Overseer 1200 s). Two
+  sessions of one role each get their own budget.
+- Conflicts between two sessions of one role are caught where they are today: the
+  duplicate refusal holds one lock over check and write, reservations are checked in
+  one game-side call, and the Overseer rules on both [V, register 2026-10-08
+  concurrency row].
+
+### 15.6 Close and reset
+
+- **Proposal closed** (final reject, project done or abandoned, superseded,
+  withdrawn): every session mapped to it leaves the map and its key is never sent to
+  again. Its rows are left to openclaw's pruning and the start-time wipe.
+- **Size cap**: when a turn's prompt passes the cap, the session is dropped and the
+  next activation opens a fresh `p<proposal_id>` key (with a suffix) with a
+  **re-brief built from the queue**: the proposal, its ruling, its steps and their
+  state, open asks and answers about it, and the undelivered news. Never a model-made
+  summary of the old transcript. Recommended cap for cross-wake sessions: 120k, lower
+  than v1's 250k, because a session resumed after the provider cache has expired pays
+  its whole history at the miss rate (15.8) (Q4).
+- **Gateway restart** (a crash, or every dfmcp deploy under U8): the wipe empties
+  every session, and each open proposal reopens with the same re-brief on its next
+  activation. Deploys are frequent, so sessions will often restart from a re-brief.
+  That is acceptable because the re-brief comes from the record, and it is the price
+  of keeping U3 and U8.
+- **Staleness**: a proposal session can carry tool results from days ago. Every
+  activation's first message opens with a fresh FORT line and vitals and one fixed
+  line: "earlier tool results in this session may be out of date; re-read before
+  acting". This is the stale-belief risk the persistent-sessions research
+  documented, bounded here by the proposal's lifetime and the cap (Q9).
+- A drafting session that filed nothing closes at the end of its activation.
+
+### 15.7 News for a session whose role is mid-turn
+
+- Never sent while that session's turn is in flight: a second `agent` call would only
+  wait in the session's lane [S], and no verified mid-turn injection exists.
+- Held, and delivered as the first lines of the session's next message. If the
+  in-flight turn ends with nothing else queued, actionable news starts the next turn
+  at once within the same activation, budget permitting; informational news waits.
+- A pause or tripwire reaches the model mid-turn through the tool-reply stamp
+  (decision 10) [V]; a tripwire also stops new turns.
+- Another session of the same role being mid-turn does not hold this session's news:
+  news is per session.
+
+### 15.8 Cost of N open sessions on the Gateway
+
+- **Idle: no tokens.** A session that is not activated sends nothing; its transcript is
+  rows in the per-agent SQLite [S]. Memory per idle session is probably small [I]; S0
+  records RSS with several sessions open.
+- **Resume after the provider cache has expired** (hours to days; retention unstated
+  [V, cross-run cache research]): the whole carried history is re-read once at the
+  miss rate. Flash: 60k carried costs $0.009, 120k $0.018, 250k $0.0375. Pro: $0.040,
+  $0.079, $0.165. A one-shot run instead pays its roughly 30k base cold ($0.0045 on
+  Flash) plus the rounds spent re-orienting (reasoning output, $0.60/M on Flash).
+  Sessions win when the re-orientation they save outweighs the cold history; the cap
+  bounds the worst resume (Q4).
+- **Resume while warm** (same hour): the carried history at the hit rate, about
+  $0.0003 per 100k on Flash.
+- **Fan-out**: a fort-wide alarm activates every affected session, so N open sessions
+  cost N turns. Only actionable alarms do this; informational news never starts a
+  turn.
+- **Disk**: rows accumulate per key; the start-time wipe and openclaw's 30 day / 5000
+  row pruning bound it [S].
+
+### 15.9 What else changes
+
+- U7 restated: execute only Overseer actions recorded inside an Overseer activation
+  the conductor opened.
+- Transcript: `chat.history` read at the end of each activation for that key. Runs
+  rows per turn gain `session_key`, `proposal_id` and `activation_id` beside v1's
+  columns (section 8).
+- Items (5.1) are now per session: a proposal session's items are its actionable news
+  plus any lane fact routed to it; a drafting session's item is the lane fact that
+  opened it.
+
+### 15.10 Rollout, revised
+
+| Stage | What | Gate |
+|---|---|---|
+| S0 | as section 12, plus several open sessions for RSS, and one session resumed after a cache gap for its cold cost | README; canary clean |
+| S1 | code merged, every role one-shot; runs columns; instance lock; execute window rule; digest pin; `sessions_state.json` written but unused | ordinary cycles unchanged |
+| S2 | first proposal-session role at `max_concurrent_per_role` 1 (Q6: Quartermaster) | a proposal filed from a drafting session and mapped; a step result and a ruling delivered as news; an answered ask triggers a turn; the size cap and re-brief forced once |
+| S3 | Architect, still one session at a time | the same checks; an alert fan-out reaches its sessions |
+| S4 | Overseer per-wake session, executing at close | rules proposals pushed during the cycle; escalation pauses at once |
+| S5 | concurrency on: 2 per role, 4 in total | busy refusals no higher than today; no duplicate filing lands |
+| S6 | Overseer executes after each ruling turn | each ruled action executes within its activation; the hold blocks it |
+| Later | Planner and Consultant proposal sessions when pulled in (one-shot until then) | |
+
+### 15.11 Build streams, revised (no file in two streams)
+
+At the time of writing another session had an unfinished merge in the shared
+working tree touching `conductor/cycle.py`, `conductor/execute.py`,
+`conductor/policy.py` and `conductor/policy.yaml`, and adding `conductor/stock_hold.py`.
+Every conductor stream below starts after that lands on main.
+
+1. **Gateway infra and S0** (live, VM 106): `infra/units/openclaw/openclaw-gateway.service`
+   (new); a Gateway config template under `infra/openclaw/` (new);
+   `infra/deploy-manifest.yaml`; `infra/conductor.example.env`; `scripts/drift_check.py`;
+   `evals/live/<date>-gateway-s0/README.md`; a row in the gitignored secrets-rotation file.
+2. **Session transport** (offline, fake transport): `conductor/session_runner.py` (new:
+   transport protocol, Gateway transport, fake, envelope mapping, `chat.history`
+   adapter); `conductor/runner.py` (digest pin, shared `RunResult` mapping);
+   `conductor/tests/test_session_runner.py` (new); `conductor/tests/test_runner.py`.
+3. **Sessions and news** (offline): `conductor/sessions.py` (new: key map, relevance,
+   open and close rules, size cap, re-brief, `sessions_state.json`); `conductor/news.py`
+   (new: event-to-session routing, classes, batching); `conductor/cycle.py` (activation
+   loop, Overseer pipelining, concurrency caps); `conductor/policy.py` and
+   `conductor/policy.yaml` (a `sessions` block: per-role mode, caps, size cap, news
+   classes as data); `conductor/config.py`; `conductor/service.py` (instance lock);
+   `conductor/briefing.py` (re-brief and the staleness line);
+   `conductor/tests/test_sessions.py` and `test_news.py` (new); `conductor/tests/test_cycle.py`.
+4. **Execute containment**: `conductor/execute.py` (activation-window rule; execute at
+   close now, per ruling later behind a flag); `conductor/tests/test_execute.py`.
+5. **Records and metrics** (dfmcp, dfqueue): `dfmcp/conductor_tools.py` (report fields);
+   `dfmcp/queue_tools.py` (only if `queue.overview` or `pending_brief` must expose the
+   `proposal_id` of asks and passes, or the author per proposal; check what is already
+   exposed first); `dfqueue/runs.py`; `dfqueue/wake_metrics.py`; `dfqueue/live.py`;
+   their tests.
+
+Order: 1 first (its S0 fixtures feed 2); 2, 4 and 5 can run in parallel offline; 3
+after 2's interface is fixed.
+
+### 15.12 Open questions, with recommendations
+
+- **Q1** A drafting activation files two proposals: **one shared session mapped to
+  both**, closed when the last closes (splitting would lose the shared context).
+- **Q2** The Planner's own `plan_change` proposals count as "its own", giving it a
+  proposal session for them: **yes**, consistent with "own proposals".
+- **Q3** Concurrency caps: **2 sessions per role, 4 in total** to start; raise only on
+  S5 data.
+- **Q4** Size cap for cross-wake sessions: **120k prompt tokens**, then a re-brief
+  from the queue.
+- **Q5** Overseer actions: **execute when its session closes first**, then after each
+  ruling turn from S6.
+- **Q6** First proposal-session role: **Quartermaster** (smaller proposals; stock-hold
+  news exercises the router), then the Architect.
+- **Q7** Is an accepted ruling actionable for the proposer? **No, informational**:
+  execution does the work. Reject, defer and amend are actionable.
+- **Q8** Stuck jobs and dig cancels that cannot be traced to a step: **the role's lane,
+  as today** (a drafting session), never guessed onto a proposal.
+- **Q9** Staleness guard: **yes**, a fresh FORT and vitals block and the "re-read
+  before acting" line at the top of every activation.
+
+### 15.13 Not verified (additions)
+
+That openclaw has no session rename (only the method registry was searched); whether
+passes carry `proposal_id` as asks do; whether dig cancels into damp or warm stone are
+observable per step today; RSS and disk per open session; the cold cost of a real
+resumed session (arithmetic only; S0 measures one); whether `queue.overview` already
+exposes the author per proposal on main (a branch built it; not checked here).
