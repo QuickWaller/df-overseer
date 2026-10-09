@@ -4,23 +4,26 @@ What's currently in progress. Remove an item once it's done, tabled, or
 shelved, don't mark it paused. Any session should read this and know what's
 actually going on right now.
 
-## NEXT, as of 2026-10-09 (checkpoint 1; read first after a compact)
+## NEXT, as of 2026-10-09 (checkpoint 2; read first after a compact)
 
-State: fort paused, operator hold ON, conductor.service disabled (hand-run `--once` only); every role on DeepSeek Flash (Pro is the rollback, backup `.bak-20261009-pre-flash`); cycles take 1 to 4 minutes. suspendmanager and autoslab on, ban-cooking re-applied, quicksave autosave 3 holds suspendmanager on (autoslab needs the next save).
+State: fort paused (24 alive per the 2026-10-09 plan cycle), operator hold ON, conductor.service disabled (hand-run `--once` only); every role on DeepSeek Flash (Pro is the rollback). suspendmanager and autoslab on, ban-cooking re-applied.
 
-**Done today** (register 2026-10-09 rows; `evals/live/2026-10-09-plan-v2-cycle/README.md`):
-- Plan v2 adopted (`fort_plan-0002`, hamlet: bedrooms 1/alive, dining_tables 0.2/alive, dining_seats removed). Its `{min: 4}` floor was lost because the live `plan.write` predated commit ea12ff5 (want mappings).
-- Shortage watch turned ON in `conductor/policy.yaml` (silent while the hold is on).
-- Loop signals and DeepSeek list-rate costs live on the Board Metrics tab (506fdc0).
-- Housekeeping merged: suspendmanager/autoslab gotcha seeds, blank-slab doctrine entry, Planner charter "copy stage targets verbatim", `circulation.graph`/`walk` on Architect (57) and Planner (15) allowlists, deploy target `vm103-dfhack-init` (not yet deployed, pending checks).
-- User decisions: holds are briefing lines (3a); code may clean up only our own stale jobs/orders (3b); stock checks stateless (live stock minus margin, fail cleanly and retry, no claim ledger); scarce materials need no ruling (6); no live binding test (5); sessions on openclaw's Gateway now (7), inbox derived from conductor state (8), keep today's run limits 10/20 min (9, so no new loop guard).
+**Done (built; deploy of this batch is in flight, an agent is running it):**
+- Plan v2 adopted (hamlet); shortage watch ON; loop signals and real-rate costs on Metrics; housekeeping and `vm103-dfhack-init` target merged.
+- Pause stamp: `fort_paused` on every tool reply. Conductor is now the only game writer: the Overseer's 15 write tools queue ready-ruled `direct_action` steps (hold scope = conductor-only writer); `farm.set-crop` retired.
+- Auto mining built (our digs, exposed-ore pass, cavern reaction); live checks owed on a throwaway reload (`research/2026-10-09-auto-mine.md`).
+- Autofarm switch built: Planner owns crop levels as `sync: autofarm` plan targets, Quartermaster advises and is now an answerer, conductor syncs into autofarm; `crop_plan` and `farm.set-crop` retired (`research/2026-10-09-autofarm-switch.md`).
+- Tool descriptions trimmed to a one-line status (three values); unused dug space survey (`openarea.survey` plus an Architect briefing line).
+- User rulings: pause stamp yes, Opus ruling grader not yet, prioritize no, work-now no, timestream no, pop-control never, run limits kept, stateless stock checks, 3a/3b accepted, sessions on openclaw's Gateway with a derived inbox. openclaw context audit: nothing to switch off.
 
-**Remaining, in order:**
-1. Deploy ea12ff5 (want mappings, in progress), then the Planner re-files `dining_tables` as `{per_alive: 0.2, min: 4}`; user reads the result.
-2. Deploy `vm103-dfhack-init` (intended plugin enable set in `onMapLoad.init`) after its checks.
-3. Build the stateless stock check (replaces the claim ledger; then `parallel.proposers` on, needs CONDUCTOR_THINKING_STATE_DIR, already set), sessions v1 on the Gateway with the derived inbox, effort per wake reason.
-4. User decisions still open: 10, 11, 13, 14; whether the hold blocks the Overseer's direct writes; DFHack rulings (prioritize, work-now, timestream, pop-control); autofarm vs farm.setcrop. Idea under discussion: DF's auto-mine designation (follows revealed ore/gem veins) on our digs or as a prospecting pass, needing a watcher for hazard bands and reservations.
-5. Supervised bedroom-block retrofit (user watching), tripwire live check, staged arm (user's yes on the day).
+**In flight:** the deploy of all of the above; a build for the stateless stock check plus 3a holds plus 3b cleanup; a Gateway sessions v1 design.
+
+**Next:**
+1. After deploy: a hold-on cycle (Planner re-files `dining_tables` with min 4 and its first crop targets); user reads it.
+2. A game save (needs the user's yes).
+3. Auto-mine live checks on a throwaway reload.
+4. Remaining user decisions: 13, 14, and the Gateway sessions design when it lands.
+5. Supervised bedroom-block retrofit, tripwire live check, staged arm (user's yes on the day).
 
 ## START HERE 2026-10-08 (late): where we stopped
 

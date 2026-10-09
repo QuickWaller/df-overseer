@@ -10,8 +10,8 @@ learning architecture.
 > `working-archive/`, `evals/live/`. Game knowledge (crop and water rules
 > the agents should use) goes in `doctrine/seed.yaml`, not the register.
 >
-> - **Current state, 2026-10-09.** Uniboslan is paused (22 alive, 1 dead as
->   last counted), `dfmcp-server` active. Role tool lists (read plus write): **see
+> - **Current state, 2026-10-09.** Uniboslan is paused (about 24 alive per the
+>   2026-10-09 plan cycle), `dfmcp-server` active. Role tool lists (read plus write): **see
 >   `docs/STATE.md`'s generated per-role tool counts**. The **operator hold is ON** (agents cycle and file,
 >   nothing executes) and `conductor.service` is installed but **disabled**:
 >   the conductor runs only as hand-run `--once` cycles, never yet as a
@@ -28,9 +28,7 @@ learning architecture.
 >   Consultant answers from the offline wiki mirror (refresh by hand; S8
 >   timers not built). DFHack's suspendmanager and autoslab are on. The
 >   Board's Metrics tab shows loop signals and DeepSeek list-rate costs (the
->   real bill is about 3-5x the logged cost). **Decided, not yet built:**
->   stateless stock checks (no claim ledger), openclaw Gateway sessions with
->   an inbox derived from conductor state, run limits kept at 10/20 min.
+>   real bill is about 3-5x the logged cost). **Built, deploy in flight (2026-10-09):** pause stamp (`fort_paused` on every tool reply), the conductor as the only game writer, auto mining, the autofarm switch (Planner owns crop levels), the dug-space survey. **Decided, not yet built:** stateless stock checks (no claim ledger), openclaw Gateway sessions with an inbox derived from conductor state, run limits kept at 10/20 min.
 >   Still with the user: the districting/zoning design session, DFHack
 >   rulings (prioritize, work-now, timestream, pop-control), autofarm vs
 >   `farm.setcrop`, and the arm decision (staged arm needs the user's yes on
