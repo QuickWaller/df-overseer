@@ -69,7 +69,7 @@ from conductor.execute import ExecuteStore, ExecuteReport, run_execute, skipped_
 from conductor.hold import HoldState, HoldStore, hold_path_for
 from conductor.mcp_client import MCPToolError, ToolCaller, tool_name
 from conductor.job_watch import JobWatchResult, JobWatchStore, evaluate_jobs, jobs_from_result
-from conductor import space_watch
+from conductor import space_watch, stock_hold
 from conductor.ore_watch import POLL_TOOL as ORE_POLL_TOOL, OreRead, ore_read_from_sites
 from conductor import noble_room_watch
 from conductor import automine as automine_mod
@@ -283,6 +283,16 @@ async def _execute_phase(
     for err in report.errors:
         LOG.warning("cycle %s: execute error: %s", cycle_index, err)
     return report
+
+
+def _stock_hold_lines(deps: "CycleDeps") -> List[str]:
+    """One briefing line per step the execute phase is holding on short stock (item binding
+    3a): read from the execute state's hold notes. Total: an unreadable state gives none."""
+    try:
+        return stock_hold.hold_lines(_execute_store(deps).load().holds)
+    except Exception:  # noqa: BLE001 -- a briefing line must never stop a cycle
+        LOG.exception("could not read the execute state for hold lines")
+        return []
 
 
 def _queue_summary_for(role: str, queue_state: Mapping[str, Any]) -> Mapping[str, Any]:
@@ -961,6 +971,7 @@ async def _run_cycle(cycle_index: int, deps: CycleDeps, hold: HoldState) -> Cycl
     roles_to_run: List[str] = list(triage_result.roles_to_wake)
     roles_woken_out: List[str] = list(roles_to_run)
     unused_space = await _space_survey(deps, call, roles_to_run, cycle_index)
+    stock_holds = _stock_hold_lines(deps) if OVERSEER in roles_to_run else []
     extra_wakes: Dict[str, Wake] = {}
     queue_refreshed = False
     known_ids: Set[str] = set(pending_ids) | set(lane_state.proposers)
@@ -1073,6 +1084,7 @@ async def _run_cycle(cycle_index: int, deps: CycleDeps, hold: HoldState) -> Cycl
                 roadmap_line=roadmap_line if role in (OVERSEER, PLANNER) else None,
                 utilisation=utilisation if role == PLANNER else None,
                 unused_space=unused_space if role == "architect" else None,
+                stock_holds=stock_holds if role == OVERSEER else None,
                 paused=paused_now,
             )
             briefings[role] = briefing
@@ -1087,6 +1099,7 @@ async def _run_cycle(cycle_index: int, deps: CycleDeps, hold: HoldState) -> Cycl
                     pending_brief=pending_brief, diff_events=events_by_role.get(role, []),
                     stuck_jobs=job_watch.lines, to_carry_out=to_carry_out, routing=routing,
                     roadmap_line=roadmap_line, paused=paused_now, automine_notes=automine_notes,
+                    stock_holds=stock_holds,
                 )
                 briefings[role] = {"ruling_prompt": prompt, "pending_brief": pending_brief}
 

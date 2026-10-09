@@ -76,7 +76,9 @@ class ExecEnv:
             else:
                 spec = ad.spec_for(tool)
                 if spec is None and tool_id in routing.direct_tools():
-                    spec = ad.direct_spec(tool_id, takes_dry_run=ad.takes_dry_run(tool))
+                    ref = routing.created_refs().get(tool_id)
+                    spec = ad.direct_spec(tool_id, takes_dry_run=ad.takes_dry_run(tool),
+                                          issues_handle=ref["handle_path"] if ref else None)
                 self._specs[tool_id] = spec
         return self._specs[tool_id]
 
@@ -291,7 +293,7 @@ async def run_step(env: ExecEnv, arguments: Mapping[str, Any]) -> Tuple[str, dic
         verdict = ad.judge(spec, out, dry=False)
         if verdict.ok:
             handle = ad.issued_handle(spec, out)
-            if spec.issues_handle and handle is None:
+            if spec.issues_handle and handle is None and not spec.handle_optional:
                 return _result("uncertain", run_id=run_id, detail="the call reported success but no handle")
             executed = {
                 "actions": [{
@@ -459,6 +461,109 @@ async def observe(env: ExecEnv, arguments: Mapping[str, Any]) -> Tuple[str, dict
     return _obs(state, rec["id"], judged["reason"], recorded=True)
 
 
+# ---------------------------------------------------------------- cancel_stale_orders
+
+QUEUE_CANCEL_STALE = "queue.cancel_stale_orders"
+
+
+def _order_started(row: Mapping[str, Any]) -> bool:
+    """Has the game begun this order? Started means active, or part of it already made. An order
+    whose state cannot be read counts as started: it is left alone."""
+    if row.get("active") is True:
+        return True
+    left, total = row.get("amount_left"), row.get("amount_total")
+    if isinstance(left, (int, float)) and isinstance(total, (int, float)):
+        return left != total
+    return True
+
+
+async def cancel_stale_orders(env: ExecEnv, arguments: Mapping[str, Any]) -> Tuple[str, dict]:
+    """Item binding 3b. Cancel the things our own direct steps created (`dfqueue/action_tools.yaml`
+    `created_refs`, traced through the handle each run recorded) once their project is finished,
+    abandoned or superseded, never one the game has started, never one we did not create. Each
+    cancel (or each reason one was left) is written as a `cleanup:<handle>` run against its project
+    and returned with its proposal id. Total per ref: one failure does not stop the others."""
+    outcomes = arguments.get("outcomes", [dq_schema.CLOSE_ABANDONED, dq_schema.CLOSE_SUPERSEDED])
+    if not isinstance(outcomes, list) or not all(o in dq_schema.CLOSE_OUTCOMES for o in outcomes):
+        raise QueueToolError(f"{QUEUE_CANCEL_STALE}: 'outcomes' must be a list of close outcomes")
+    grace = arguments.get("completed_grace_ticks", 1200)
+    cap = arguments.get("max", 4)
+    tick = arguments.get("tick")
+    if any(isinstance(v, bool) or not isinstance(v, int) or v < 0 for v in (grace, cap)) or (
+            tick is not None and (isinstance(tick, bool) or not isinstance(tick, int))):
+        raise QueueToolError(f"{QUEUE_CANCEL_STALE}: 'completed_grace_ticks', 'max' and 'tick' must be integers")
+    cancelled: List[dict] = []
+    left: List[dict] = []
+    failed: List[dict] = []
+    for tool_id, ref in routing.created_refs().items():
+        stale = await _r(env, QUEUE_CANCEL_STALE, store.stale_created_refs, env.db_path, ref["prefix"],
+                         tuple(outcomes), tick=tick, completed_grace_ticks=grace)
+        if not stale:
+            continue
+        try:
+            listing = ad.unwrap(await env.call_tool(ref["list_tool"], {}, timeout=READ_TIMEOUT_SECONDS))
+            found, rows = ad.get_path(listing, ref["list_rows"])
+        except (CallNotSent, CallOutcomeUnknown, CallFailed) as exc:
+            failed.append({"tool": tool_id, "detail": f"the order list could not be read: {_clip(exc)}"})
+            continue
+        if not found or not isinstance(rows, list):
+            failed.append({"tool": tool_id, "detail": "the order list was unusable"})
+            continue
+        tick_now, _ = await _stamp_cycle_snapshot(env.call_dfhack)
+        for item in stale:
+            if len(cancelled) >= cap:
+                break
+            pid, handle = item["project_id"], item["handle"]
+            base = {"project_id": pid, "proposal_id": item.get("proposal_id"), "handle": handle,
+                    "outcome": item["outcome"]}
+            ref_id = handle[len(ref["prefix"]):]
+            for run in await _r(env, QUEUE_CANCEL_STALE, store.unresolved_step_runs, env.db_path):
+                if run["project_id"] == pid and run["step_id"] == store.CLEANUP_PREFIX + handle:
+                    await _w(env, QUEUE_CANCEL_STALE, store.resolve_step_run, env.db_path, run["run_id"],
+                             "transient", tick=tick_now, notes="redoing an idempotent cancel")
+            row = next((r for r in rows if isinstance(r, Mapping) and str(r.get(ref["id_field"])) == ref_id), None)
+            why = None
+            if row is None:
+                why = "already gone"
+            elif _order_started(row):
+                why = "left alone: the game has started it"
+            run_id = await _w(env, QUEUE_CANCEL_STALE, store.begin_step_run, env.db_path, pid,
+                              store.CLEANUP_PREFIX + handle, tick=tick_now, baseline=None)
+            if why is not None:
+                await _w(env, QUEUE_CANCEL_STALE, store.finish_step_run, env.db_path, run_id,
+                         {"actions": [{"tool": ref["cancel_tool"], "outcome": dq_schema.SUCCESS, "detail": why}]})
+                left.append({**base, "why": why})
+                continue
+            cargs = {**ad.substitute(ref["cancel_args"], {"ref": ref_id}), ad.DRY_RUN_ARG: "false"}
+            try:
+                out = await env.call_tool(ref["cancel_tool"], cargs, timeout=REAL_CALL_TIMEOUT_SECONDS)
+            except CallNotSent as exc:
+                await _w(env, QUEUE_CANCEL_STALE, store.resolve_step_run, env.db_path, run_id, "transient",
+                         tick=tick_now)
+                failed.append({**base, "detail": f"never sent: {_clip(exc)}"})
+                continue
+            except Exception as exc:  # may have run; the marker stays and the next pass redoes it
+                failed.append({**base, "detail": f"outcome unknown: {_clip(exc)}"})
+                continue
+            err = ad.error_text(out)
+            if err is None and isinstance(out, Mapping) and out.get("erase_ok") is False:
+                err = "the game did not remove the order"
+            if err is not None and "no manager order" in err:
+                err, why = None, "already gone"
+            if err is not None:
+                await _w(env, QUEUE_CANCEL_STALE, store.finish_step_run, env.db_path, run_id,
+                         {"actions": [{"tool": ref["cancel_tool"], "outcome": dq_schema.FAILURE,
+                                       "detail": _clip(err)}]})
+                failed.append({**base, "detail": _clip(err)})
+                continue
+            await _w(env, QUEUE_CANCEL_STALE, store.finish_step_run, env.db_path, run_id,
+                     {"actions": [{"tool": ref["cancel_tool"], "outcome": dq_schema.SUCCESS,
+                                   "detail": why or f"cancelled {handle} ({item['outcome']} project)"}]})
+            (left if why else cancelled).append({**base, **({"why": why} if why else {})})
+    out_d = {"cancelled": cancelled, "left": left, "failed": failed}
+    return f"{len(cancelled)} cancelled, {len(left)} left alone, {len(failed)} failed", out_d
+
+
 # ---------------------------------------------------------------- cleanup_project
 
 
@@ -476,7 +581,9 @@ async def cleanup_project(env: ExecEnv, arguments: Mapping[str, Any]) -> Tuple[s
     groups: Dict[str, List[str]] = {}
     failed: List[dict] = []
     cleanup_log: List[dict] = []
-    for handle in reversed(waiting[pid]["handles"]):
+    # A manager order a direct step created is the stale-order pass's to cancel, not this cleanup's.
+    own_prefixes = tuple(r["prefix"] for r in routing.created_refs().values())
+    for handle in reversed([h for h in waiting[pid]["handles"] if not (own_prefixes and h.startswith(own_prefixes))]):
         found = ad.cleanup_for(env.registry, handle)
         if found is None:
             failed.append({"handle": handle, "detail": "no cleanup declared for this kind of handle"})

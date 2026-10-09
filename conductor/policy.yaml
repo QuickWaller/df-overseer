@@ -303,6 +303,37 @@ execution:
   urgency_order: [high, normal, low]
   ore_hold_phase: '(_finish|_zone|_build)$'
 
+# Item binding 3a/3b (register 2026-10-09 "Stock checks go stateless"). No ledger:
+# at execution a step that consumes counted stock is held when live free stock is
+# under need plus margin, and retried next cycle. consumers: tool -> what it eats,
+# read from the step's own arguments (a tool not listed is never checked). per_unit
+# for ConstructBlocks is UNVERIFIED (assumed one boulder per four blocks). survival:
+# a held step whose tool+arguments match wakes the Overseer at once, as does a hold
+# older than wake_after_ticks (one game day) or one that blocks its project's other
+# steps; any other hold is one line in the Overseer's next briefing.
+stock_check:
+  enabled: true
+  margin: 1
+  margin_fraction: 0.1
+  read_tool: stocks.availability
+  wake_after_ticks: 1200
+  survival: '(brew|drink|meal|cook|food|prepare|butcher|fish|weapon|armor|armour|shield|helm|ammo|crossbow|bolt)'
+  consumers:
+    orders.create:
+      item_arg: job
+      item_map: {ConstructBlocks: BOULDER}
+      count_arg: amount
+      per_unit: 0.25
+
+# 3b: cancel or shrink only manager orders our system created (traced to a project
+# through the handle its create step issued), whose project is done with them, and
+# never one the game has started. A `completed` project's orders wait the grace first.
+stale_orders:
+  enabled: true
+  outcomes: [abandoned, superseded, completed]
+  completed_grace_ticks: 1200
+  max_per_cycle: 4
+
 # Per-role cap (real seconds) on one `agent exec` run; roles not listed use
 # CONDUCTOR_ROLE_TIMEOUT_SECONDS (default 600). First real cycle 2026-09-25
 # (evals/live/2026-09-25-first-real-conductor-cycle): the Architect took 158 s

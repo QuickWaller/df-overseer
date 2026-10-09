@@ -58,7 +58,7 @@ from learning.predictions.schema import PENDING
 from . import plan, routing
 from .schema import (
     ABANDON, ABANDONED, ACCEPT, AMEND, ANSWER, ASK, CLOSE, CLOSE_COMPLETED,
-    CLOSE_NOT_DONE, DONE, EXECUTED, FAILED, FORT_PLAN, GUARDS_DEFAULT, HELD, ISSUED,
+    CLOSE_ABANDONED, CLOSE_NOT_DONE, DONE, EXECUTED, FAILED, FORT_PLAN, GUARDS_DEFAULT, HELD, ISSUED,
     PLAN_CHANGE, PLAN_ROLE,
     OBSERVATION, OBS_CONSISTENT, OBSERVATION_ROLE, PROJECT, PROPOSAL,
     PUBLIC_RATIONALE_MAX, READY, REJECT, RULING, SUCCESS, FAILURE,
@@ -3015,6 +3015,56 @@ def projects_awaiting_cleanup(path: str | Path) -> list[dict]:
                 ).fetchall()
             ]
             out.append({"project_id": pid, "handles": hs})
+    return out
+
+
+def stale_created_refs(
+    path: str | Path, prefix: str, outcomes: tuple[str, ...], *, tick: int | None = None,
+    completed_grace_ticks: int = 0,
+) -> list[dict]:
+    """Things our own steps created (a run's handle starting with `prefix`) whose project is
+    done with them and which no earlier pass has settled (item binding 3b). A project counts when
+    it is closed with an outcome in `outcomes`, or abandoned and `abandoned` is listed. A
+    `completed` project waits `completed_grace_ticks` after its close first (and is skipped when
+    `tick` is unknown). A ref with a settled `cleanup:<handle>` marker is not listed again.
+    Each entry is `{project_id, proposal_id, handle, outcome}`, oldest first."""
+    out: list[dict] = []
+    with _connect(path) as conn:
+        closes = {
+            r["pid"]: (r["outcome"], r["cycle"]) for r in conn.execute(
+                "SELECT json_extract(payload, '$.project_id') AS pid, "
+                "json_extract(payload, '$.outcome') AS outcome, cycle FROM records WHERE kind = ? "
+                "AND json_extract(payload, '$.project_id') IS NOT NULL", (CLOSE,)).fetchall()
+        }
+        rows = conn.execute(
+            "SELECT project_id, handle FROM step_runs WHERE substr(handle, 1, ?) = ? AND status IN (?, ?) "
+            "ORDER BY id ASC", (len(prefix), prefix, RUN_RECORDED, RUN_RESOLVED),
+        ).fetchall()
+        seen: set[tuple] = set()
+        for r in rows:
+            pid, handle = r["project_id"], r["handle"]
+            if (pid, handle) in seen:
+                continue
+            seen.add((pid, handle))
+            outcome = None
+            if pid in closes:
+                outcome, closed_at = closes[pid]
+                if outcome == CLOSE_COMPLETED and (
+                        tick is None or closed_at is None or int(tick) - int(closed_at) < completed_grace_ticks):
+                    continue
+            elif CLOSE_ABANDONED in outcomes and _is_abandoned(conn, pid):
+                outcome = CLOSE_ABANDONED
+            if outcome not in outcomes:
+                continue
+            settled = conn.execute(
+                "SELECT 1 FROM step_runs WHERE project_id = ? AND step_id = ? AND status = ? AND outcome = ?",
+                (pid, CLEANUP_PREFIX + handle, RUN_RECORDED, "success")).fetchone()
+            if settled is not None:
+                continue
+            project = _get(conn, pid, PROJECT) or {}
+            ruling = _get(conn, project.get("from_ruling"), RULING) or {}
+            out.append({"project_id": pid, "proposal_id": ruling.get("proposal_id"), "handle": handle,
+                        "outcome": outcome})
     return out
 
 

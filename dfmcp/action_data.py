@@ -116,9 +116,11 @@ class ExecSpec:
     #: False for a tool that takes no DRY_RUN argument (a direct action's default
     #: spec): no dry run is made and no `dry_run` argument is sent.
     dry_run: bool = True
+    #: A handle is expected but its absence is not an error (a direct tool's created ref).
+    handle_optional: bool = False
 
 
-def direct_spec(tool_id: str, takes_dry_run: bool) -> ExecSpec:
+def direct_spec(tool_id: str, takes_dry_run: bool, issues_handle: Optional[str] = None) -> ExecSpec:
     """The default spec of a direct action's tool that declares no `execution:` block
     (2026-10-09, `dfqueue/action_tools.yaml` group `direct`). The call itself is the
     work: a script's own `{"error": ...}` refusal (or `ok: false` with an error) is a
@@ -128,6 +130,7 @@ def direct_spec(tool_id: str, takes_dry_run: bool) -> ExecSpec:
     return ExecSpec(
         tool_id=tool_id, verdict={"refused_if_present": ["error"]}, dry_run_echo="",
         nothing_applied={"refusal": True}, dry_run=takes_dry_run,
+        issues_handle=issues_handle, handle_optional=bool(issues_handle),
     )
 
 
