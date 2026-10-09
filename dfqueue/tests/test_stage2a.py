@@ -150,7 +150,7 @@ def test_malformed_routing_file_is_refused(tmp_path, monkeypatch):
 
 
 def test_every_group_type_is_a_real_proposal_type():
-    vocab = {t for ts in schema.TYPE_VOCAB_BY_ROLE.values() for t in ts}
+    vocab = {t for ts in schema.TYPE_VOCAB_BY_ROLE.values() for t in ts} | {schema.DIRECT_ACTION}
     for g in routing.groups():
         for t in routing.types(g):
             assert t in vocab, (g, t)

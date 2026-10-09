@@ -74,7 +74,10 @@ class ExecEnv:
             except KeyError:
                 self._specs[tool_id] = None
             else:
-                self._specs[tool_id] = ad.spec_for(tool)
+                spec = ad.spec_for(tool)
+                if spec is None and tool_id in routing.direct_tools():
+                    spec = ad.direct_spec(tool_id, takes_dry_run=ad.takes_dry_run(tool))
+                self._specs[tool_id] = spec
         return self._specs[tool_id]
 
 
@@ -222,16 +225,19 @@ async def run_step(env: ExecEnv, arguments: Mapping[str, Any]) -> Tuple[str, dic
     proposal = _by_id(records).get(proposal_id, {})
 
     # (2) dry run
-    try:
-        dry_args = {**ad.apply_append(spec, args, ctx), ad.DRY_RUN_ARG: "true"}
-        dry = await env.call_tool(tool, dry_args, timeout=DRY_RUN_TIMEOUT_SECONDS)
-    except (CallNotSent, CallOutcomeUnknown, CallFailed) as exc:
-        return _result("transient", detail=f"the dry run could not be completed: {_clip(exc)}")
-    verdict = ad.judge(spec, dry, dry=True)
-    if verdict.kind != "ok":
-        await _record_attention(env, pid, sid, verdict.reason, records)
-        return _result("needs_judgment", detail=_clip(verdict.reason), verdict=verdict.kind)
-    if spec.resolution_fields:
+    # A tool with no DRY_RUN argument (a direct action's default spec) skips it.
+    dry: Any = {}
+    if spec.dry_run:
+        try:
+            dry_args = {**ad.apply_append(spec, args, ctx), ad.DRY_RUN_ARG: "true"}
+            dry = await env.call_tool(tool, dry_args, timeout=DRY_RUN_TIMEOUT_SECONDS)
+        except (CallNotSent, CallOutcomeUnknown, CallFailed) as exc:
+            return _result("transient", detail=f"the dry run could not be completed: {_clip(exc)}")
+        verdict = ad.judge(spec, dry, dry=True)
+        if verdict.kind != "ok":
+            await _record_attention(env, pid, sid, verdict.reason, records)
+            return _result("needs_judgment", detail=_clip(verdict.reason), verdict=verdict.kind)
+    if spec.dry_run and spec.resolution_fields:
         now, missing = ad.resolution(spec, dry)
         was = (proposal.get("preview") or {}).get("resolution") or {}
         changed = {k: {"was": was.get(k), "now": now.get(k)} for k in spec.resolution_fields
@@ -263,7 +269,9 @@ async def run_step(env: ExecEnv, arguments: Mapping[str, Any]) -> Tuple[str, dic
         return _result("not_runnable", reasons=[_clip(exc, 400)])
 
     # (4) the real call. From here on, anything but "not sent" leaves the row issuing.
-    real_args = {**ad.apply_append(spec, args, ctx), ad.DRY_RUN_ARG: "false"}
+    real_args = ad.apply_append(spec, args, ctx)
+    if spec.dry_run:
+        real_args[ad.DRY_RUN_ARG] = "false"
     try:
         out = await env.call_tool(tool, real_args, timeout=REAL_CALL_TIMEOUT_SECONDS)
     except CallNotSent as exc:

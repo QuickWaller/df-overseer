@@ -387,7 +387,10 @@ class TestServerCallEdgeCases:
         roster actually grants it to, succeeds -- proving the Architect's
         refusal above is the roster's role-scoping, not a bug that denies
         everyone regardless of role."""
-        fake_dfhack.queue_actions(make_ok_action('{"built": true}'))
+        # Since 2026-10-09 the Overseer's write call is recorded for the conductor to run
+        # (dfmcp/direct_actions.py), not sent to DFHack: only the overview read (to stamp the
+        # record) is queued on the fake, so a stray build command would fail this test.
+        fake_dfhack.queue_actions(make_ok_action(_OVERVIEW_JSON))
         app = _app(registry, roster, pool)
         async with mcp_session(app, OVERSEER_TOKEN) as session:
             result = await session.call_tool(
@@ -395,7 +398,8 @@ class TestServerCallEdgeCases:
                 {"w": 3, "h": 3, "near_landmark": "MainHall", "blueprint_file": "stockpile.csv"},
             )
         assert result.is_error is False
-        assert result.structured_content == {"built": True}
+        assert result.structured_content["queued"] is True
+        assert result.structured_content["tool"] == "openarea.build"
 
     async def test_unknown_tool_name_is_a_tool_error_not_a_crash(self, registry, roster, pool):
         app = _app(registry, roster, pool)

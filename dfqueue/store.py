@@ -2442,7 +2442,10 @@ def _highest_ruling_conn(conn: sqlite3.Connection) -> str | None:
 
 def _effective_cutover_num(conn: sqlite3.Connection, group: str | None) -> int | None:
     """The larger of the legacy cutover and the group's own; `None` if
-    neither is set."""
+    neither is set. A direct group (a ready-ruled one-step action) has no legacy
+    to close: its cutover is 0, so every ruling of it is above it."""
+    if group is not None and group in routing.direct_groups():
+        return 0
     nums = []
     for g in {LEGACY, group} - {None}:
         c = _cutover_conn(conn, g)
@@ -2475,6 +2478,23 @@ def _build_step(project_id: str, n: int, proposal: dict, requires: list[str]) ->
     if label:
         step["label"] = label
     return step
+
+
+def file_direct_action(
+    path: str | Path, proposal: dict, ruling: dict, *, game_tick: int | None = None,
+) -> tuple[dict, dict]:
+    """One transaction: a `direct_action` proposal and its accepting ruling, so a
+    refusal of either leaves nothing behind (2026-10-09, "the conductor is the only
+    game writer"). The ruling's `proposal_id` is set here. Both are written by the
+    sole writer (the Overseer) as ordinary records; the conductor opens the project
+    at the start of its next execute phase (`openable_rulings`). Refuses any other
+    proposal type. Returns `(proposal, ruling)` as written."""
+    if not routing.is_direct(proposal.get("type") or ""):
+        raise QueueError(f"file_direct_action: {proposal.get('type')!r} is not a direct action type")
+    with _locked(path) as conn:
+        prop = _append_in_conn(conn, proposal, game_tick, commit=False)
+        rul = _append_in_conn(conn, {**ruling, "proposal_id": prop["id"]}, game_tick, commit=False)
+        return prop, rul
 
 
 def open_project_from_ruling(
