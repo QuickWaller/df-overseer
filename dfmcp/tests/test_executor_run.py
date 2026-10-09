@@ -887,7 +887,7 @@ async def test_execution_state_additions_are_read_only(rig):
 async def test_conductor_phase_round_trips_the_state_end_to_end(rig):
     """conductor/execute.py's own parser, fed the real tool: it opens the ruled
     proposal, runs its step, reconciles it done and applies a follow-up."""
-    from conductor.execute import ExecuteState, run_execute
+    from conductor.execute import ExecuteState, record_activation, run_execute
     from conductor.policy import ExecutionPolicy
 
     calls = []
@@ -897,8 +897,14 @@ async def test_conductor_phase_round_trips_the_state_end_to_end(rig):
         return (await rig.tool(tool, **args))[1]
 
     p = await rig.propose(rig.reserve_step(), phases={"tool": "blueprint.apply", "list": [SHELL, FINISH]})
-    rig.rule(p["id"])
+    ruling = rig.rule(p["id"])
     state = ExecuteState()
+
+    def contain(*ids):  # the Overseer ruled inside an activation the conductor opened (execute containment)
+        record_activation(state, activation_id="act-t", role="overseer", run_id="run-1", opened_at="t",
+                          closed_at="t", records=list(ids))
+
+    contain(ruling["id"])
     rep = await run_execute(call, ExecutionPolicy(), state, game_tick=100)
     assert not rep.errors and "queue.open_project" in calls and "queue.run_step" in calls
     (proj,) = store.open_projects(rig.db)
@@ -907,7 +913,7 @@ async def test_conductor_phase_round_trips_the_state_end_to_end(rig):
     rep = await run_execute(call, ExecutionPolicy(), state, game_tick=200)
     assert "queue.observe" in calls and rig.target_states(pid, s1) == ["done"]
     f1 = await rig.propose(rig.apply_step("res-1", SHELL), project_id=pid, after_step=s1)
-    rig.rule(f1["id"])
+    contain(ruling["id"], rig.rule(f1["id"])["id"])
     rep = await run_execute(call, ExecutionPolicy(), state, game_tick=300)
     assert "queue.apply_followup" in calls and not rep.errors
     assert any(st["id"] == f"{pid}/s2" for st in store.current_plan_steps(rig.db, pid))
