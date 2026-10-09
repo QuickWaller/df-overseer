@@ -618,12 +618,16 @@ async def _report(call: Callable, arguments: Mapping[str, Any]) -> Optional[Dict
 
 async def _run_role(
     deps: "CycleDeps", call: Callable, role: str, prompt: str, *, wake: Any, cycle_index: int,
-    wake_reasons: Any = None,
+    wake_reasons: Any = None, session_fields: Optional[Mapping[str, Any]] = None,
 ) -> RunResult:
     """`deps.role_runner.run`, bracketed by two `conductor.report` calls (start,
     end). The wake reason and its detail go out at launch; the outcome, cost,
     duration and final answer at the end. When the start call failed, the end
-    call carries `role`, `wake_reason` and `cycle` too, so it is self-contained."""
+    call carries `role`, `wake_reason` and `cycle` too, so it is self-contained.
+
+    `session_fields` (transport, session_key, activation_id, items_pushed, news_lines) are the
+    run row's session columns; a Gateway session activation passes them, and a one-shot run
+    reports `transport: one_shot` and `activation_id: act-<run_id>` by default."""
     # Every reason the role was woken for (ordered, deduplicated), the headline
     # reason first; a lone wake (tripwire, pause) is just its own reason.
     reasons = [wake.reason]
@@ -647,6 +651,10 @@ async def _run_role(
         "cost_usd": run_result.cost_usd, "error": run_result.error,
         "final_answer": run_result.final_answer,
     }
+    end_args["transport"] = "one_shot"
+    if run_id:
+        end_args["activation_id"] = f"act-{run_id}"
+    end_args.update({k: v for k, v in (session_fields or {}).items() if v is not None})
     if run_result.thinking:
         end_args["thinking"] = run_result.thinking
     if run_result.transcript:
@@ -660,12 +668,13 @@ async def _run_role(
         })
     ended = await _report(call, end_args)
     if role == CONTAINED_ROLE and not deps.dry_run:
-        _close_activation(deps, role, run_id, opened_at, ended)
+        _close_activation(deps, role, run_id, opened_at, ended, activation_id=end_args.get("activation_id"))
     return run_result
 
 
 def _close_activation(
     deps: "CycleDeps", role: str, run_id: Optional[str], opened_at: str, ended: Optional[Mapping[str, Any]],
+    activation_id: Optional[str] = None,
 ) -> None:
     """Execute containment (research/2026-10-09-gateway-sessions-v1.md 15.9): the conductor opened
     an activation around this Overseer run and closes it now, recording which records the server
@@ -677,7 +686,7 @@ def _close_activation(
         store = _execute_store(deps)
         state = store.load()
         record_activation(
-            state, activation_id=f"act-{run_id or opened_at}", role=role, run_id=run_id, opened_at=opened_at,
+            state, activation_id=activation_id or f"act-{run_id or opened_at}", role=role, run_id=run_id, opened_at=opened_at,
             closed_at=datetime.now(timezone.utc).isoformat(),
             records=ids if isinstance(ids, list) else None,
         )

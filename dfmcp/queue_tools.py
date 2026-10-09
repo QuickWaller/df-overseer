@@ -676,6 +676,7 @@ _PASS_SCHEMA = {
     "required": ["reason"],
     "properties": {
         "reason": {"type": "string", "description": "Why nothing is proposed this cycle. Coordinate-free."},
+        "proposal_id": {"type": "string", "description": "Optional: the open proposal this pass advises on (a pass on a proposal, not a quiet cycle)."},
     },
 }
 
@@ -1358,7 +1359,7 @@ _PROPOSE_FIELDS = {
     # routed; `urgency` is kept in the server-set `preview`, not on the record.
     "step", "phases", "project_id", "after_step", "public_title", "urgency",
 }
-_PASS_FIELDS = {"reason"}
+_PASS_FIELDS = {"reason", "proposal_id"}
 _RULE_FIELDS = {"proposal_id", "decision", "reason", "public_rationale", "urgency"}
 _PENDING_FIELDS = {"limit"}
 _MY_FILINGS_FIELDS = {"status", "proposal_id", "limit", "asks"}

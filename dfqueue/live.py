@@ -489,6 +489,25 @@ def build_transcripts(rows: Optional[list], *, public: bool, limit: int = RUNS_L
     return out
 
 
+def _session_block(row: Mapping[str, Any], *, public: bool) -> dict:
+    """The run row's session columns (research/2026-10-09-gateway-sessions-v1.md 15.9). Public:
+    the transport and the two counts (conductor-written numbers, no text). Operator adds the
+    session key and activation id. A row from before the columns has none of them."""
+    from dfqueue import runs as _runs
+    out: dict = {}
+    if row.get("transport"):
+        out["transport"] = row["transport"] if row["transport"] in _runs.TRANSPORTS else "other"
+    for k in ("items_pushed", "news_lines"):
+        v = row.get(k)
+        if isinstance(v, int) and not isinstance(v, bool):
+            out[k] = v
+    if not public:
+        for k in ("session_key", "activation_id"):
+            if row.get(k):
+                out[k] = row[k]
+    return out
+
+
 def build_runs(
     rows: Optional[list], now: float, *, public: bool, limit: int = RUNS_LIMIT,
     calls: Optional[list] = None, tools: Optional[Mapping[str, Any]] = None,
@@ -530,6 +549,7 @@ def build_runs(
             "ended_at": row.get("ended_at"),
             "duration_s": None if row.get("duration_s") is None else round(row["duration_s"]),
             "records": [{"id": r["id"], "kind": r.get("kind"), "thread": r.get("thread") or r["id"]} for r in records],
+            **_session_block(row, public=public),
         }
         answer = row.get("final_answer")
         if public:
@@ -745,6 +765,7 @@ def build_live(
                 "wake_reasons": _reasons_of(row, public=public),
                 "ok": None if row.get("ok") is None else bool(row["ok"]),
                 "source": "report",
+                **_session_block(row, public=public),
             }
             if not public:
                 report_entry["cost_usd"] = row.get("cost_usd")

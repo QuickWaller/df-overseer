@@ -38,6 +38,14 @@ WAKE_DETAIL_MAX = 300
 #: list of codes in the `wake_reasons` column; `wake_reason` stays the first.
 WAKE_REASONS_MAX = 12
 ERROR_MAX = 500
+#: Session fields (research/2026-10-09-gateway-sessions-v1.md 15.9), all nullable: a row from
+#: before them, or a run that reported none, has NULLs. `transport` is one of TRANSPORTS;
+#: `activation_id` is the conductor's activation the run was part of (a one-shot Overseer run is
+#: its own activation, `act-<run_id>`); `items_pushed` and `news_lines` count what the conductor
+#: sent into the session on that activation.
+TRANSPORTS = ("one_shot", "gateway")
+SESSION_KEY_MAX = 120
+ACTIVATION_ID_MAX = 120
 STATUS_MAX = 40
 RECORDS_MAX = 50
 KEEP_ROWS = 500
@@ -62,7 +70,12 @@ CREATE TABLE IF NOT EXISTS runs (
     final_answer TEXT,
     records_json TEXT,
     thinking TEXT,
-    transcript TEXT
+    transcript TEXT,
+    transport TEXT,
+    session_key TEXT,
+    activation_id TEXT,
+    items_pushed INTEGER,
+    news_lines INTEGER
 );
 CREATE INDEX IF NOT EXISTS idx_runs_started ON runs(started_at);
 """
@@ -94,6 +107,10 @@ def _connect(path: "str | Path") -> Iterator[sqlite3.Connection]:
             conn.execute("ALTER TABLE runs ADD COLUMN transcript TEXT")
         if "wake_reasons" not in cols:  # stores made before 2026-10-07 (all wake reasons)
             conn.execute("ALTER TABLE runs ADD COLUMN wake_reasons TEXT")
+        for name, kind in (("transport", "TEXT"), ("session_key", "TEXT"), ("activation_id", "TEXT"),
+                           ("items_pushed", "INTEGER"), ("news_lines", "INTEGER")):
+            if name not in cols:  # stores made before 2026-10-09 (session fields)
+                conn.execute(f"ALTER TABLE runs ADD COLUMN {name} {kind}")
         yield conn
     finally:
         conn.close()
@@ -148,6 +165,20 @@ def decode_wake_reasons(row: Any) -> list:
     return [one] if isinstance(one, str) and one else []
 
 
+def session_values(
+    transport: Optional[str], session_key: Optional[str], activation_id: Optional[str],
+    items_pushed: Optional[int], news_lines: Optional[int],
+) -> tuple:
+    """The five session columns, validated and capped; all None for a run that has none."""
+    if transport is not None and transport not in TRANSPORTS:
+        raise RunsError(f"transport {transport!r} is not one of {list(TRANSPORTS)}")
+    for name, v in (("items_pushed", items_pushed), ("news_lines", news_lines)):
+        if v is not None and (isinstance(v, bool) or not isinstance(v, int) or v < 0):
+            raise RunsError(f"{name} must be a non-negative integer")
+    return (transport, _cap(session_key, SESSION_KEY_MAX), _cap(activation_id, ACTIVATION_ID_MAX),
+            items_pushed, news_lines)
+
+
 def _next_run_id(conn: sqlite3.Connection) -> str:
     row = conn.execute("SELECT MAX(CAST(SUBSTR(run_id, 5) AS INTEGER)) AS n FROM runs").fetchone()
     return f"run-{(row['n'] or 0) + 1:04d}"
@@ -156,17 +187,21 @@ def _next_run_id(conn: sqlite3.Connection) -> str:
 def start_run(
     path: "str | Path", *, role: str, wake_reason: Optional[str], wake_detail: Optional[str],
     cycle: Optional[int], now: Optional[datetime] = None, wake_reasons: Optional[list] = None,
+    transport: Optional[str] = None, session_key: Optional[str] = None, activation_id: Optional[str] = None,
+    items_pushed: Optional[int] = None, news_lines: Optional[int] = None,
 ) -> dict:
     if role not in RUN_ROLES:
         raise RunsError(f"role {role!r} is not one of {list(RUN_ROLES)}")
+    sess = session_values(transport, session_key, activation_id, items_pushed, news_lines)
     now = now or _now()
     with _connect(path) as conn:
         run_id = _next_run_id(conn)
         conn.execute(
-            "INSERT INTO runs (run_id, role, wake_reason, wake_detail, wake_reasons, cycle, started_at) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO runs (run_id, role, wake_reason, wake_detail, wake_reasons, cycle, started_at, "
+            "transport, session_key, activation_id, items_pushed, news_lines) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (run_id, role, _cap(wake_reason, WAKE_REASON_MAX), _cap(wake_detail, WAKE_DETAIL_MAX),
-             encode_wake_reasons(wake_reasons, wake_reason), cycle, now.isoformat()),
+             encode_wake_reasons(wake_reasons, wake_reason), cycle, now.isoformat(), *sess),
         )
         conn.commit()
     return {"run_id": run_id, "started_at": now.isoformat()}
@@ -197,9 +232,12 @@ def end_run(
     final_answer: Optional[str], records: list, now: Optional[datetime] = None,
     thinking: Optional[str] = None, transcript: Optional[str] = None,
     wake_reasons: Optional[list] = None,
+    transport: Optional[str] = None, session_key: Optional[str] = None, activation_id: Optional[str] = None,
+    items_pushed: Optional[int] = None, news_lines: Optional[int] = None,
 ) -> dict:
     """Completes `run_id`, or, when it is None (the start call failed),
     creates the row from `role` and backdates `started_at` by `duration_s`."""
+    sess = session_values(transport, session_key, activation_id, items_pushed, news_lines)
     now = now or _now()
     with _connect(path) as conn:
         if run_id is not None:
@@ -214,15 +252,19 @@ def end_run(
             started = now - timedelta(seconds=max(0.0, duration_s or 0.0))
             run_id = _next_run_id(conn)
             conn.execute(
-                "INSERT INTO runs (run_id, role, wake_reason, wake_detail, wake_reasons, cycle, started_at) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                "INSERT INTO runs (run_id, role, wake_reason, wake_detail, wake_reasons, cycle, started_at, "
+                "transport, session_key, activation_id, items_pushed, news_lines) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (run_id, role, _cap(wake_reason, WAKE_REASON_MAX),
                  _cap(wake_detail, WAKE_DETAIL_MAX), encode_wake_reasons(wake_reasons, wake_reason),
-                 cycle, started.isoformat()),
+                 cycle, started.isoformat(), *sess),
             )
         conn.execute(
             "UPDATE runs SET ended_at=?, status=?, ok=?, timed_out=?, duration_s=?, cost_usd=?, "
-            "error=?, final_answer=?, records_json=?, thinking=?, transcript=? WHERE run_id=?",
+            "error=?, final_answer=?, records_json=?, thinking=?, transcript=?, "
+            "transport=COALESCE(?, transport), session_key=COALESCE(?, session_key), "
+            "activation_id=COALESCE(?, activation_id), items_pushed=COALESCE(?, items_pushed), "
+            "news_lines=COALESCE(?, news_lines) WHERE run_id=?",
             (now.isoformat(), _cap(status, STATUS_MAX),
              None if ok is None else int(bool(ok)),
              None if timed_out is None else int(bool(timed_out)),
@@ -230,7 +272,7 @@ def end_run(
              _cap(final_answer, FINAL_ANSWER_MAX, marker=True),
              json.dumps(records[:RECORDS_MAX]),
              _cap(thinking, THINKING_MAX, marker=True), _whole_or_none(transcript, TRANSCRIPT_MAX),
-             run_id),
+             *sess, run_id),
         )
         conn.execute(
             "DELETE FROM runs WHERE run_id NOT IN "

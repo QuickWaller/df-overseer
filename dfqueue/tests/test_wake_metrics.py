@@ -401,3 +401,33 @@ def test_per_wake_reasons_list_falls_back_to_the_single_reason_and_stays_safe():
     assert wm._wake_reasons({"wake_reason": "queue_pending"}) == ["queue_pending"]
     assert wm._wake_reasons({"wake_reason": "a", "wake_reasons": json.dumps(["a", "b c", "d"])}) == ["a", "other", "d"]
     assert wm._wake_reasons({}) == []
+
+
+def test_session_fields_reach_the_wake_rows_and_a_per_transport_summary(tmp_path):
+    from dfqueue import runs as run_store
+    q, r = tmp_path / "q.sqlite3", tmp_path / "r.sqlite3"
+    write_queue(q, [])
+    a = run_store.start_run(r, role="architect", wake_reason="queue_pending", wake_detail=None, cycle=1)["run_id"]
+    run_store.end_run(r, run_id=a, role=None, wake_reason=None, wake_detail=None, cycle=None, status="ok", ok=True,
+                      timed_out=False, duration_s=5, cost_usd=0.02, error=None, final_answer="x", records=[],
+                      transport="gateway", session_key="agent:architect:p3", activation_id="act-7",
+                      items_pushed=2, news_lines=4)
+    b = run_store.start_run(r, role="overseer", wake_reason="queue_pending", wake_detail=None, cycle=1)["run_id"]
+    run_store.end_run(r, run_id=b, role=None, wake_reason=None, wake_detail=None, cycle=None, status="ok", ok=True,
+                      timed_out=False, duration_s=5, cost_usd=0.04, error=None, final_answer="x", records=[],
+                      transport="one_shot", activation_id="act-" + b)
+    rep = wm.compute(q, r, epochs=EPOCHS)
+    by_run = {w["run_id"]: w for w in rep["wakes"]}
+    assert by_run[a]["transport"] == "gateway" and by_run[a]["session_key"] == "agent:architect:p3"
+    assert by_run[a]["items_pushed"] == 2 and by_run[a]["news_lines"] == 4
+    assert by_run[b]["transport"] == "one_shot" and by_run[b]["items_pushed"] is None
+    assert rep["sessions"]["gateway"]["wakes"] == 1 and rep["sessions"]["gateway"]["news_lines"]["mean"] == 4
+    assert rep["sessions"]["one_shot"]["items_pushed"]["n"] == 0
+    assert "sessions:" in wm.render_text(rep)
+
+
+def test_rows_from_before_the_session_columns_are_unknown_transport(tmp_path):
+    recs, runs = small_world()
+    rep, *_ = make_report(tmp_path, runs, recs)
+    assert set(rep["sessions"]) == {"unknown"} and rep["sessions"]["unknown"]["wakes"] == 4
+    assert all(w["transport"] is None and w["news_lines"] is None for w in rep["wakes"])

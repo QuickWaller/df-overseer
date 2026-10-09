@@ -48,7 +48,10 @@ breaking change; additions are not breaking):
 <per-wake row> = {"run_id","role","day","epoch","wake_reason","wake_reasons","sweep",
            "status","killed","at_risk","m1","m1_wide","m2","m3","r",
            "cost_usd","rounds","first_write_round","orientation_reads",
-           "read_calls","redundant_reads","passed","source"}
+           "read_calls","redundant_reads","passed","source",
+           "transport","session_key","activation_id","items_pushed","news_lines"}
+<sessions> = {transport: {"wakes", "items_pushed": <summ>, "news_lines": <summ>,
+              "cost": <summ>}}          # transport is one_shot, gateway or "unknown" (older rows)
 ```
 
 Safe to publish by construction: every string is an id, a role, a day, an
@@ -730,6 +733,11 @@ def per_wake_rows(queue: dict, runs: List[dict], cls: Classified, epochs: List[d
             "calls": tm["calls"] if tm else None,
             "unmapped_calls": tm["unmapped"] if tm else None,
             "passed": passed,
+            "transport": _safe_word(run.get("transport")),
+            "session_key": _safe_word(run.get("session_key")),
+            "activation_id": _safe_word(run.get("activation_id")),
+            "items_pushed": _count(run.get("items_pushed")),
+            "news_lines": _count(run.get("news_lines")),
             "loop": _loop_row(run, tm, bool(ids)),
             "source": "transcript" if tm else "missing",
         })
@@ -767,6 +775,25 @@ def _wake_reasons(run: dict) -> List[str]:
     from dfqueue import runs as _runs
     got = [w for w in (_safe_word(r) for r in _runs.decode_wake_reasons(run)) if w]
     return got
+
+
+def _count(value: Any) -> Optional[int]:
+    return value if isinstance(value, int) and not isinstance(value, bool) and value >= 0 else None
+
+
+def _sessions(rows: List[dict]) -> dict:
+    """Per transport (rows from before the session columns count as `unknown`): how many wakes,
+    and the items pushed and news lines delivered per activation (gateway sessions only report
+    them; a one-shot run's are None and not averaged)."""
+    out: Dict[str, List[dict]] = {}
+    for r in rows:
+        out.setdefault(r.get("transport") or "unknown", []).append(r)
+    return {
+        t: {"wakes": len(g), "items_pushed": _summ([r["items_pushed"] for r in g]),
+            "news_lines": _summ([r["news_lines"] for r in g]),
+            "cost": _summ([r["cost_usd"] for r in g])}
+        for t, g in sorted(out.items())
+    }
 
 
 def _safe_word(value: Any) -> Optional[str]:
@@ -1034,6 +1061,7 @@ def compute(queue_db: "str | Path", runs_db: "str | Path", since: Optional[str] 
         "power": _power(rows, episodes),
         "tool_usage": _tool_usage(rows, allow),
         "loops": _loops(rows),
+        "sessions": _sessions(rows),
         "wakes": public_rows,
         "unattributed": {"repeats": len(unattributed_repeats)},
         "notes": NOTES,
@@ -1074,6 +1102,13 @@ def render_text(report: dict) -> str:
                      f"{u['unmapped_calls']} unmapped): {top or 'none'}")
         if u["never_called"]:
             lines.append(f"  never called: {len(u['never_called'])} allowlisted tools")
+    ss = report.get("sessions")
+    if ss:
+        lines.append("")
+        lines.append("sessions: " + "; ".join(
+            f"{t} {g['wakes']} wakes, items/activation {f(g['items_pushed']['mean'])}, "
+            f"news/activation {f(g['news_lines']['mean'])}, cost {f(g['cost']['mean'])}"
+            for t, g in ss.items()))
     lp = report.get("loops")
     if lp:
         lines.append("")

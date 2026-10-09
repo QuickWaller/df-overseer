@@ -63,7 +63,7 @@ from .schema import (
     OBSERVATION, OBS_CONSISTENT, OBSERVATION_ROLE, PROJECT, PROPOSAL,
     PUBLIC_RATIONALE_MAX, READY, REJECT, RULING, SUCCESS, FAILURE,
     TRIGGER_ALL_DONE, TRIGGER_ALL_SUCCESS, WAITING, ask_addressee, executor, fort_name,
-    follow_up_checked, near_duplicate_reason, normalize_project, sole_writer, step_identity, validate,
+    follow_up_checked, near_duplicate_reason, normalize_project, sole_writer, step_identity, validate, PASS,
 )
 
 #: A ruling's `decision` values that close a proposal for good. `defer`
@@ -933,7 +933,7 @@ def _append_in_conn(
                         f"{project_id!r}"
                     )
 
-    if kind == ASK and "proposal_id" in record and not _proposal_id_already_flagged(errors):
+    if kind in (ASK, PASS) and "proposal_id" in record and not _proposal_id_already_flagged(errors):
         proposal_id = record.get("proposal_id")
         found = conn.execute(
             "SELECT 1 FROM records WHERE id = ? AND kind = ?", (proposal_id, PROPOSAL)

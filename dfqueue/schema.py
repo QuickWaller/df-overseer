@@ -438,7 +438,9 @@ KIND_FIELDS: dict[str, tuple[str, ...]] = {
         #: this proposal serves. Checked against the active plan at write time.
         "serves",
     ),
-    PASS: ("reason",),
+    #: `proposal_id` (optional) added 2026-10-09: the open proposal the pass advises on, so the
+    #: conductor can tell a role has a part in it (gateway sessions research 15.3).
+    PASS: ("reason", "proposal_id"),
     #: `urgency` (optional, accept only) added handoffs/2026-10-07-ruling-urgency.md.
     RULING: ("decision", "proposal_id", "reason", "public_rationale", "urgency"),
     #: `step_id` added handoffs/2026-09-28-dfqueue-project-step-schema.md:
@@ -2096,6 +2098,8 @@ def validate(record) -> list[str]:
         _validate_proposal_fields(record, role, errors)
     elif kind == PASS:
         _validate_text_field(record, "reason", errors)
+        if "proposal_id" in record and (not isinstance(record["proposal_id"], str) or not record["proposal_id"]):
+            errors.append("record.proposal_id: expected a non-empty string")
     elif kind == RULING:
         _validate_ruling_fields(record, errors)
     elif kind == EXECUTED:

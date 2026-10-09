@@ -1824,3 +1824,13 @@ def test_abandon_role_must_be_the_sole_writer(tmp_path):
     _ruling, project = _rule_and_project(path)
     with pytest.raises(store.QueueError, match="sole_writer"):
         store.append(make_abandon(project_id=project["id"], role="architect"), path)
+
+
+def test_a_pass_may_name_the_proposal_it_advises_on(tmp_path):
+    path = _db(tmp_path)
+    proposal = store.append(make_proposal(), path, game_tick=0)
+    written = store.append(make_pass(proposal_id=proposal["id"]), path)
+    assert written["proposal_id"] == proposal["id"]
+    with pytest.raises(store.QueueError, match="does not refer to an existing proposal"):
+        store.append(make_pass(proposal_id="proposal-9999"), path)
+    assert store.append(make_pass(), path)["kind"] == "pass"   # the field stays optional

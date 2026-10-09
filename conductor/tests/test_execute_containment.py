@@ -118,6 +118,13 @@ async def test_a_one_shot_overseer_run_opens_an_activation_that_contains_its_rul
     assert act["opened_at"] and act["closed_at"]
 
 
+async def test_a_one_shot_run_reports_its_transport_and_activation_id(tmp_path):
+    deps = _deps(tmp_path, tools=_overseer_tools(["ruling-0001"]), runner=FakeRoleRunner())
+    await run_cycle(1, deps)
+    ends = [a for t, a in deps.tool_caller.calls if t == "conductor.report" and a.get("phase") == "end"]
+    assert ends and all(e["transport"] == "one_shot" and e["activation_id"] == "act-run-0042" for e in ends)
+
+
 async def test_a_ruling_the_overseer_run_did_not_write_is_alerted_not_run(tmp_path):
     deps = _deps(tmp_path, tools=_overseer_tools(["ruling-0007"]), runner=FakeRoleRunner())
     result = await run_cycle(1, deps)

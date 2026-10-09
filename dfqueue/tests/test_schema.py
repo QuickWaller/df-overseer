@@ -1075,3 +1075,9 @@ def test_abandon_requires_a_project_id():
     del record["project_id"]
     errors = _errors_mentioning(schema.validate(record), "record.project_id")
     assert errors
+
+
+def test_a_pass_proposal_id_is_optional_but_must_be_a_non_empty_string():
+    assert schema.validate(make_pass(proposal_id="proposal-0001")) == []
+    assert _errors_mentioning(schema.validate(make_pass(proposal_id="")), "record.proposal_id")
+    assert _errors_mentioning(schema.validate(make_pass(proposal_id=7)), "record.proposal_id")

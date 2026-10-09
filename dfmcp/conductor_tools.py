@@ -83,7 +83,8 @@ _DESCRIPTION = (
     "Report one role run to the operator's record, conductor only. phase='start' when "
     "launching a run (role, wake_reason, wake_detail, cycle); it returns a run_id. "
     "phase='end' when it finishes (run_id, status, ok, timed_out, duration_s, cost_usd, "
-    "error, final_answer, thinking, transcript; the texts are capped, transcript is a JSON string). The server stamps times and works "
+    "error, final_answer, thinking, transcript; the texts are capped, transcript is a JSON string). Session runs may also carry "
+    "transport, session_key, activation_id, items_pushed, news_lines. The server stamps times and works "
     "out which queue records the run wrote. Never changes the fort."
 )
 
@@ -112,6 +113,14 @@ _SCHEMA: dict = {
         "final_answer": {"type": ["string", "null"]},
         "thinking": {"type": ["string", "null"]},
         "transcript": {"type": ["string", "null"]},
+        "transport": {"type": "string", "enum": list(runs.TRANSPORTS),
+                      "description": "How the role ran: a one-shot run or a Gateway session activation."},
+        "session_key": {"type": "string", "maxLength": runs.SESSION_KEY_MAX},
+        "activation_id": {"type": "string", "maxLength": runs.ACTIVATION_ID_MAX},
+        "items_pushed": {"type": "integer", "minimum": 0,
+                         "description": "Items the conductor pushed into the session this activation."},
+        "news_lines": {"type": "integer", "minimum": 0,
+                       "description": "News lines delivered to the session this activation."},
     },
 }
 
@@ -271,13 +280,18 @@ def _report_sync(arguments: Mapping[str, Any], queue_db_path: Any) -> Tuple[str,
     wake_detail = _opt_str(arguments, "wake_detail")
     wake_reasons = _opt_str_list(arguments, "wake_reasons")
     cycle = _opt_int(arguments, "cycle")
+    sess = {
+        "transport": _opt_str(arguments, "transport"), "session_key": _opt_str(arguments, "session_key"),
+        "activation_id": _opt_str(arguments, "activation_id"),
+        "items_pushed": _opt_int(arguments, "items_pushed"), "news_lines": _opt_int(arguments, "news_lines"),
+    }
     try:
         if phase == "start":
             if role is None:
                 raise ConductorToolError(f"{CONDUCTOR_REPORT}: start needs 'role'")
             out = runs.start_run(
                 path, role=role, wake_reason=wake_reason, wake_detail=wake_detail, cycle=cycle,
-                wake_reasons=wake_reasons,
+                wake_reasons=wake_reasons, **sess,
             )
             return f"{out['run_id']} started ({role})", out
 
@@ -297,7 +311,7 @@ def _report_sync(arguments: Mapping[str, Any], queue_db_path: Any) -> Tuple[str,
             cost_usd=_opt_num(arguments, "cost_usd"), error=_opt_str(arguments, "error"),
             final_answer=_opt_str(arguments, "final_answer"), records=linked,
             thinking=_opt_str(arguments, "thinking"), transcript=_opt_str(arguments, "transcript"),
-            wake_reasons=wake_reasons,
+            wake_reasons=wake_reasons, **sess,
         )
         return f"{out['run_id']} ended, {out['records']} record(s) linked", out
     except runs.RunsError as exc:

@@ -313,3 +313,40 @@ def test_an_old_store_is_migrated_and_old_rows_fall_back_to_the_one_reason(tmp_p
     old, new = runs.get_run(p, "run-0001"), runs.get_run(p, "run-0002")
     assert runs.decode_wake_reasons(old) == ["routine_review"]
     assert runs.decode_wake_reasons(new) == ["a", "b"]
+
+
+async def test_session_fields_round_trip_and_bad_ones_are_refused(db):
+    _, out = await _call({"phase": "start", "role": "architect", "wake_reason": "queue_pending",
+                          "transport": "gateway", "session_key": "agent:architect:p3",
+                          "activation_id": "act-3"}, db)
+    await _call({"phase": "end", "run_id": out["run_id"], "ok": True, "items_pushed": 2, "news_lines": 5}, db)
+    row = runs.get_run(runs.runs_path(db), out["run_id"])
+    assert (row["transport"], row["session_key"], row["activation_id"]) == ("gateway", "agent:architect:p3", "act-3")
+    assert (row["items_pushed"], row["news_lines"]) == (2, 5)
+    with pytest.raises(ct.ConductorToolError, match="transport"):
+        await _call({"phase": "start", "role": "architect", "transport": "carrier_pigeon"}, db)
+    with pytest.raises(ct.ConductorToolError, match="items_pushed"):
+        await _call({"phase": "start", "role": "architect", "items_pushed": -1}, db)
+
+
+async def test_a_run_without_session_fields_has_nulls_and_a_later_end_does_not_clear_them(db):
+    _, out = await _call({"phase": "start", "role": "architect", "transport": "one_shot"}, db)
+    await _call({"phase": "end", "run_id": out["run_id"], "ok": True}, db)
+    row = runs.get_run(runs.runs_path(db), out["run_id"])
+    assert row["transport"] == "one_shot" and row["session_key"] is None and row["items_pushed"] is None
+
+
+def test_an_old_store_gains_the_session_columns(tmp_path):
+    p = tmp_path / "old.runs.sqlite3"
+    conn = sqlite3.connect(p)
+    conn.execute("CREATE TABLE runs (run_id TEXT PRIMARY KEY, role TEXT NOT NULL, wake_reason TEXT, "
+                 "wake_detail TEXT, cycle INTEGER, started_at TEXT NOT NULL, ended_at TEXT, status TEXT, "
+                 "ok INTEGER, timed_out INTEGER, duration_s REAL, cost_usd REAL, error TEXT, "
+                 "final_answer TEXT, records_json TEXT)")
+    conn.execute("INSERT INTO runs (run_id, role, started_at) VALUES ('run-0001', 'architect', '2026-10-01T00:00:00+00:00')")
+    conn.commit()
+    conn.close()
+    runs.start_run(p, role="overseer", wake_reason="a", wake_detail=None, cycle=1, transport="gateway", news_lines=3)
+    old, new = runs.get_run(p, "run-0001"), runs.get_run(p, "run-0002")
+    assert old["transport"] is None and old["news_lines"] is None
+    assert new["transport"] == "gateway" and new["news_lines"] == 3

@@ -136,3 +136,21 @@ def test_runs_payload_carries_every_wake_reason_and_falls_back_for_old_rows():
         by_id = {r["run_id"]: r for r in out["runs"]}
         assert by_id["run-0002"]["wake_reasons"] == expected
         assert by_id["run-0001"]["wake_reasons"] == ["routine_review"]
+
+
+def test_session_fields_are_public_counts_and_operator_keys():
+    row = {"run_id": "run-0003", "role": "architect", "wake_reason": "stuck_job",
+           "started_at": "2026-10-09T00:00:00+00:00", "ended_at": "2026-10-09T00:01:00+00:00",
+           "status": "ok", "ok": 1, "duration_s": 60.0, "records_json": "[]",
+           "transport": "gateway", "session_key": "agent:architect:p3", "activation_id": "act-9",
+           "items_pushed": 2, "news_lines": 5}
+    old = {**row, "run_id": "run-0001", "transport": None, "session_key": None, "activation_id": None,
+           "items_pushed": None, "news_lines": None}
+    pub = {r["run_id"]: r for r in live.build_runs([row, old], 0.0, public=True)["runs"]}
+    op = {r["run_id"]: r for r in live.build_runs([row, old], 0.0, public=False)["runs"]}
+    assert pub["run-0003"]["transport"] == "gateway" and pub["run-0003"]["items_pushed"] == 2
+    assert pub["run-0003"]["news_lines"] == 5 and "session_key" not in pub["run-0003"]
+    assert op["run-0003"]["session_key"] == "agent:architect:p3" and op["run-0003"]["activation_id"] == "act-9"
+    assert "transport" not in pub["run-0001"] and "items_pushed" not in op["run-0001"]
+    last = live.build_live([], 1.0, public=True, runs=[row])["last_runs"]["architect"]
+    assert last["transport"] == "gateway" and last["news_lines"] == 5
