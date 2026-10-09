@@ -62,7 +62,9 @@ def test_config_is_json_and_every_proactive_feature_is_off():
     assert c["cron"]["enabled"] is False
     assert c["agents"]["defaults"]["heartbeat"]["every"] == "0m"
     assert c["agents"]["defaults"]["compaction"]["enabled"] is False
-    assert c["plugins"]["entries"]["memory-core"]["config"]["dreaming"]["enabled"] is False
+    # only the model provider loads: an explicit allow-list, and no entries that auto-enable others
+    assert c["plugins"]["allow"] == ["deepseek"]
+    assert set(c["plugins"]["entries"]) == {"deepseek"}
     assert c["update"]["checkOnStart"] is False
     assert c["session"]["reset"]["mode"] == "none"
 

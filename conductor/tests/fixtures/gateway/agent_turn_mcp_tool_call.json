@@ -1,0 +1,439 @@
+{
+  "runId": "4ca3404c-e37f-408c-aa88-c0a96742e391",
+  "status": "ok",
+  "summary": "completed",
+  "result": {
+    "payloads": [
+      {
+        "text": "S0 check: doctrine topic `farming` returns 5 entries (3 priors on plump-helmet use and seed/break-even rules, 2 verified — plump helmet brewability and DFHack autofarm semantics), no refuted entries omitted.",
+        "mediaUrl": null
+      }
+    ],
+    "meta": {
+      "durationMs": 5201,
+      "agentMeta": {
+        "sessionId": "67d2954c-6b66-491e-a63f-7a964021cab2",
+        "sessionFile": "agent:consultant:s0-p",
+        "provider": "deepseek",
+        "model": "deepseek-v4-flash",
+        "contextTokens": 1000000,
+        "contextTokensSource": "resolved",
+        "agentHarnessId": "openclaw",
+        "credentialSource": {
+          "kind": "direct",
+          "evidence": "environment",
+          "authorization": "declared"
+        },
+        "usage": {
+          "input": 3356,
+          "output": 130,
+          "cacheRead": 22912,
+          "cacheWrite": 0,
+          "reasoningTokens": 27,
+          "total": 26398,
+          "cost": {
+            "total": 0.0005703936000000001
+          }
+        },
+        "lastCallUsage": {
+          "input": 3031,
+          "output": 57,
+          "cacheRead": 11648,
+          "cacheWrite": 0,
+          "cost": {
+            "total": 0.00047291440000000003
+          },
+          "reasoningTokens": 0,
+          "total": 14736
+        },
+        "promptTokens": 14679,
+        "contextBudgetStatus": {
+          "schemaVersion": 1,
+          "source": "pre-prompt-estimate",
+          "updatedAt": 1791516838227,
+          "provider": "deepseek",
+          "model": "deepseek-v4-flash",
+          "route": "fits",
+          "shouldCompact": false,
+          "estimatedPromptTokens": 4554,
+          "contextTokenBudget": 1000000,
+          "promptBudgetBeforeReserve": 980000,
+          "reserveTokens": 20000,
+          "effectiveReserveTokens": 20000,
+          "remainingPromptBudgetTokens": 975446,
+          "overflowTokens": 0,
+          "toolResultReducibleChars": 0,
+          "messageCount": 0,
+          "unwindowedMessageCount": 0,
+          "sessionId": "67d2954c-6b66-491e-a63f-7a964021cab2"
+        },
+        "codeModeEngaged": false,
+        "assistantTurns": 2,
+        "costUsd": 0.0005703936000000001,
+        "terminalReceipt": {
+          "runId": "4ca3404c-e37f-408c-aa88-c0a96742e391",
+          "sessionId": "67d2954c-6b66-491e-a63f-7a964021cab2",
+          "turnId": "4ca3404c-e37f-408c-aa88-c0a96742e391",
+          "requested": {
+            "provider": "deepseek",
+            "model": "deepseek-v4-flash"
+          },
+          "effective": {
+            "provider": "deepseek",
+            "model": "deepseek-v4-flash",
+            "responseModel": "deepseek-flash"
+          },
+          "successfulToolNames": [
+            "df-consultant__doctrine__get"
+          ],
+          "rerouted": true
+        }
+      },
+      "aborted": false,
+      "systemPromptReport": {
+        "source": "run",
+        "generatedAt": 1791516838096,
+        "sessionId": "67d2954c-6b66-491e-a63f-7a964021cab2",
+        "sessionKey": "agent:consultant:s0-p",
+        "provider": "deepseek",
+        "model": "deepseek-v4-flash",
+        "workspaceDir": "/opt/openclaw/gateway/workspaces/consultant",
+        "bootstrapMaxChars": 20000,
+        "bootstrapTotalMaxChars": 60000,
+        "bootstrapTruncation": {
+          "warningMode": "always",
+          "warningShown": false,
+          "truncatedFiles": 0,
+          "nearLimitFiles": 0,
+          "totalNearLimit": false
+        },
+        "sandbox": {
+          "mode": "off",
+          "sandboxed": false
+        },
+        "systemPrompt": {
+          "chars": 14918,
+          "hash": "ce095b71ac152f75ec7245e6a00b09323aba73c13507590964c1bddf347223f7",
+          "projectContextChars": 7675,
+          "nonProjectContextChars": 7243
+        },
+        "injectedWorkspaceFiles": [
+          {
+            "name": "AGENTS.md",
+            "path": "/opt/openclaw/gateway/workspaces/consultant/AGENTS.md",
+            "missing": true,
+            "rawChars": 0,
+            "injectedChars": 76,
+            "truncated": false
+          },
+          {
+            "name": "SOUL.md",
+            "path": "/opt/openclaw/gateway/workspaces/consultant/SOUL.md",
+            "missing": false,
+            "rawChars": 6661,
+            "injectedChars": 6661,
+            "truncated": false
+          },
+          {
+            "name": "IDENTITY.md",
+            "path": "/opt/openclaw/gateway/workspaces/consultant/IDENTITY.md",
+            "missing": true,
+            "rawChars": 0,
+            "injectedChars": 78,
+            "truncated": false
+          },
+          {
+            "name": "BOOTSTRAP.md",
+            "path": "/opt/openclaw/gateway/workspaces/consultant/BOOTSTRAP.md",
+            "missing": true,
+            "rawChars": 0,
+            "injectedChars": 0,
+            "truncated": false
+          }
+        ],
+        "skills": {
+          "promptChars": 0,
+          "hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "entries": []
+        },
+        "tools": {
+          "listChars": 0,
+          "schemaChars": 17295,
+          "entries": [
+            {
+              "name": "df-consultant__dfhack__source_read",
+              "summaryChars": 114,
+              "summaryHash": "53f2e80f4b8c4969fa4b1bc283cf1486c4c916313d668d577523d54c8ed1f884",
+              "schemaChars": 398,
+              "schemaHash": "239072b208e5cf16e0b93d832e4ac812df57dd05b004d9c254feaf82c427e5af",
+              "propertiesCount": 3
+            },
+            {
+              "name": "df-consultant__dfhack__source_search",
+              "summaryChars": 356,
+              "summaryHash": "d9d724ee13b663ec93ec840aa3a0633c69ebd00f7680aa568c311ee54166d065",
+              "schemaChars": 527,
+              "schemaHash": "4c0f408627ff05b2b64c3e6a70bd62046595134f0313a0896634a6ae24de6986",
+              "propertiesCount": 4
+            },
+            {
+              "name": "df-consultant__doctrine__get",
+              "summaryChars": 1049,
+              "summaryHash": "65a187e716f8154ea5cc3aff0faefbd6932adebc539ba4cbcd87c0f915ace970",
+              "schemaChars": 1237,
+              "schemaHash": "8e313e38f9b4b2f136bfd3c8efc2c331c86e35aaeb65bd7a57232f8de553db38",
+              "propertiesCount": 3
+            },
+            {
+              "name": "df-consultant__gotchas__get",
+              "summaryChars": 324,
+              "summaryHash": "359f46bba8184c42e9f018ea26a93e5313abca6e764962086f9cdaefd22cf373",
+              "schemaChars": 1347,
+              "schemaHash": "9ab36122a25a336fc1d1d7ad9ba79e0ded1162db66981a6a074d104107ba8ad5",
+              "propertiesCount": 7
+            },
+            {
+              "name": "df-consultant__knowledge__wiki_lookup",
+              "summaryChars": 923,
+              "summaryHash": "b050235da626310cb91ca562be04c4f53049b93cdd843ae946359e56433e4f32",
+              "schemaChars": 706,
+              "schemaHash": "4fe654fe48421c16bcaba76aaa2d5acf189073907599df249dc0e65aec860c96",
+              "propertiesCount": 5
+            },
+            {
+              "name": "df-consultant__knowledge__wiki_search",
+              "summaryChars": 711,
+              "summaryHash": "8e8e39e24ac87e8106b545aa4557baff001f1c10a6d1055e6e978ddebb0d1bdc",
+              "schemaChars": 599,
+              "schemaHash": "dc6e0f399ec8b8ce29998ad524f3df8e599c519ddb1eda444c7ae670252f5e5a",
+              "propertiesCount": 5
+            },
+            {
+              "name": "df-consultant__landmarks__list",
+              "summaryChars": 175,
+              "summaryHash": "bfe4526ac7c8c15eb3b36babcdfc56649c4afb6aaae68188f8673d9762a26d7a",
+              "schemaChars": 33,
+              "schemaHash": "8243f0af367f188a376f2c17b5eabe872a2f7a979813e0d4e2be6d594c2aa259",
+              "propertiesCount": 0
+            },
+            {
+              "name": "df-consultant__nobles__list",
+              "summaryChars": 176,
+              "summaryHash": "1e59510e709a74625a16bef63459ae0f4ce5e1899441eb0743d0d176a7852c43",
+              "schemaChars": 33,
+              "schemaHash": "8243f0af367f188a376f2c17b5eabe872a2f7a979813e0d4e2be6d594c2aa259",
+              "propertiesCount": 0
+            },
+            {
+              "name": "df-consultant__nobles__requirements",
+              "summaryChars": 158,
+              "summaryHash": "9f7398df368db289574fcb13b035aa0a35875670f31a723d2ff110ae36896b0a",
+              "schemaChars": 274,
+              "schemaHash": "728910427492fb348512d0d66498eee20bf9c42a37497b9b2d01cff89e84fafc",
+              "propertiesCount": 1
+            },
+            {
+              "name": "df-consultant__nobles__verify",
+              "summaryChars": 196,
+              "summaryHash": "cfacb2998de5e25fe75b8812f8fb154b2bf905fbd68117d660b922c250e5cb5b",
+              "schemaChars": 274,
+              "schemaHash": "728910427492fb348512d0d66498eee20bf9c42a37497b9b2d01cff89e84fafc",
+              "propertiesCount": 1
+            },
+            {
+              "name": "df-consultant__overview__get",
+              "summaryChars": 213,
+              "summaryHash": "de11bc9b703f978db91a9bcd27830d8adef048fbc9bc4db1f89c6a73e6813613",
+              "schemaChars": 33,
+              "schemaHash": "8243f0af367f188a376f2c17b5eabe872a2f7a979813e0d4e2be6d594c2aa259",
+              "propertiesCount": 0
+            },
+            {
+              "name": "df-consultant__queue__answer",
+              "summaryChars": 266,
+              "summaryHash": "2e46ca2feac9dcbbfcc72154d13df498fc4c829d36fff1a68c3812e05ed819e6",
+              "schemaChars": 646,
+              "schemaHash": "a252e3ef247ce19cddeac0361d44c3775dc205327af22402c99b3c573a23aff4",
+              "propertiesCount": 3
+            },
+            {
+              "name": "df-consultant__queue__pending",
+              "summaryChars": 179,
+              "summaryHash": "1af0a7327a24002c90a4c076b198e0ee5ad218306df38c6eea90f50fc9072003",
+              "schemaChars": 180,
+              "schemaHash": "4bac2adf8c1e4e3a42452bfa89b8c0af8a2776e51f51edeb5eb6d7c1e1ad20f5",
+              "propertiesCount": 1
+            },
+            {
+              "name": "df-consultant__series__dwarf_day_events",
+              "summaryChars": 673,
+              "summaryHash": "bfbb913aee7c3440e7398bf3dfbc153109fe61161a36319d3224b4b2ccbe10a2",
+              "schemaChars": 1290,
+              "schemaHash": "3a10a80e462bf126694957bf5029a100234b55b66bfc7bf59f53c5f6f0791749",
+              "propertiesCount": 4
+            },
+            {
+              "name": "df-consultant__series__get",
+              "summaryChars": 615,
+              "summaryHash": "f58bdca95b8e6281821d492f92ca8e92694b363da68fc38e6a6e2e982c285d9b",
+              "schemaChars": 1752,
+              "schemaHash": "ff73ade77ea94a2199ecc865ee633a41c57741d2d92b969e881e01b789522d8d",
+              "propertiesCount": 5
+            },
+            {
+              "name": "df-consultant__series__latest",
+              "summaryChars": 485,
+              "summaryHash": "f9a5182c0f546eaf8597146187ffcbeafc3efdcb99bf96e594f415d33a319075",
+              "schemaChars": 1460,
+              "schemaHash": "ca701a43ecd72e942fac2a461c2eb28f82576e4adc77a244078f1b3c981b51df",
+              "propertiesCount": 3
+            },
+            {
+              "name": "df-consultant__series__rate",
+              "summaryChars": 763,
+              "summaryHash": "97957976fde07222c6b7f7a21fb5a51b1d831b1a704241ade5383de12caca76b",
+              "schemaChars": 1752,
+              "schemaHash": "ff73ade77ea94a2199ecc865ee633a41c57741d2d92b969e881e01b789522d8d",
+              "propertiesCount": 5
+            },
+            {
+              "name": "df-consultant__series__resets",
+              "summaryChars": 699,
+              "summaryHash": "9ecfb8780d74015e5569d55623aaa0b8fe4b0ab56d4feb3c82d6eec9a6ad3bdf",
+              "schemaChars": 1752,
+              "schemaHash": "ff73ade77ea94a2199ecc865ee633a41c57741d2d92b969e881e01b789522d8d",
+              "propertiesCount": 5
+            },
+            {
+              "name": "df-consultant__series__timelines",
+              "summaryChars": 396,
+              "summaryHash": "f21e0e255648a860aef8d90235fae64a22770dad126ac642a419e43da9b6fd77",
+              "schemaChars": 62,
+              "schemaHash": "32062bdb9024160d3b9816f12ba2f337808ee107449f8bf08d55b0026944f51e",
+              "propertiesCount": 0
+            },
+            {
+              "name": "df-consultant__stocks__food-drink",
+              "summaryChars": 161,
+              "summaryHash": "2fe6106fe2fe3983f3ff44f0a61aee543f253c88b66f0f7136ab64da5a34543a",
+              "schemaChars": 33,
+              "schemaHash": "8243f0af367f188a376f2c17b5eabe872a2f7a979813e0d4e2be6d594c2aa259",
+              "propertiesCount": 0
+            },
+            {
+              "name": "df-consultant__stocks__seeds",
+              "summaryChars": 158,
+              "summaryHash": "6103e80ef292f9c3f86fd5d94ca33d6ba8b799069e94a920ea442cd1e5969b7e",
+              "schemaChars": 33,
+              "schemaHash": "8243f0af367f188a376f2c17b5eabe872a2f7a979813e0d4e2be6d594c2aa259",
+              "propertiesCount": 0
+            },
+            {
+              "name": "df-consultant__surface__enclosure",
+              "summaryChars": 165,
+              "summaryHash": "54c1a65829c43caf6375de404f6e17ebcad5380c200cdfb7a2a4d3cfe7e52002",
+              "schemaChars": 408,
+              "schemaHash": "79f351b591684117821de404da49599b23c42b60f625caec6a9c29a7cd2a7eab",
+              "propertiesCount": 1
+            },
+            {
+              "name": "df-consultant__surface__finish",
+              "summaryChars": 173,
+              "summaryHash": "deba876f530da5d5e22a65b520d37148789e4a5c55e35e9db0d7f8a47fd19875",
+              "schemaChars": 408,
+              "schemaHash": "79f351b591684117821de404da49599b23c42b60f625caec6a9c29a7cd2a7eab",
+              "propertiesCount": 1
+            },
+            {
+              "name": "df-consultant__surface__material",
+              "summaryChars": 123,
+              "summaryHash": "bb21a0cef8a4bfb56ad5d1418dc72db166fed4033c70ebaefc7883c70433ecfc",
+              "schemaChars": 408,
+              "schemaHash": "79f351b591684117821de404da49599b23c42b60f625caec6a9c29a7cd2a7eab",
+              "propertiesCount": 1
+            },
+            {
+              "name": "df-consultant__surface__traffic",
+              "summaryChars": 161,
+              "summaryHash": "acdb6485d0ee5ee46fac8713ce1ff66791fdd0807e2ea438ad68e0c0a51312a4",
+              "schemaChars": 408,
+              "schemaHash": "79f351b591684117821de404da49599b23c42b60f625caec6a9c29a7cd2a7eab",
+              "propertiesCount": 1
+            },
+            {
+              "name": "df-consultant__surface__vein-material",
+              "summaryChars": 249,
+              "summaryHash": "3eecdce711298b8f3823ae5b640d06899ef8fc8e0214cf92a8aa9c64423a3113",
+              "schemaChars": 408,
+              "schemaHash": "79f351b591684117821de404da49599b23c42b60f625caec6a9c29a7cd2a7eab",
+              "propertiesCount": 1
+            },
+            {
+              "name": "df-consultant__web__fetch",
+              "summaryChars": 453,
+              "summaryHash": "eb6716d57169664fa282fb46dfbc4198291a67d33e33bbfaa1abd29097b21f21",
+              "schemaChars": 146,
+              "schemaHash": "1789f63345f1c8fde1246de02cbe4bb4878a089d096282cae4816c1f377fa038",
+              "propertiesCount": 1
+            },
+            {
+              "name": "df-consultant__web__search",
+              "summaryChars": 451,
+              "summaryHash": "005862ed8bba3aa45477d1e5357d583050fdacfdb51d144eb61dddc0576ff2e4",
+              "schemaChars": 280,
+              "schemaHash": "8183d1d37bd360cc631fa68fee2d37b8d2b731c012f8ffa75ad19b4661267fb5",
+              "propertiesCount": 2
+            },
+            {
+              "name": "df-consultant__zone__contents",
+              "summaryChars": 193,
+              "summaryHash": "d060c1d044495700a56d7b7acd9de9c0fd031d364c8cfa1e6e0efafefd92a750",
+              "schemaChars": 408,
+              "schemaHash": "79f351b591684117821de404da49599b23c42b60f625caec6a9c29a7cd2a7eab",
+              "propertiesCount": 1
+            }
+          ]
+        },
+        "currentTurn": {
+          "promptChars": 136,
+          "runtimeContextChars": 0,
+          "modelOnlyPromptChars": 0
+        }
+      },
+      "finalPromptText": "S0 check, no game action. Call your doctrine lookup tool once with topic farming, then reply with one short sentence. Call nothing else.",
+      "finalAssistantVisibleText": "S0 check: doctrine topic `farming` returns 5 entries (3 priors on plump-helmet use and seed/break-even rules, 2 verified — plump helmet brewability and DFHack autofarm semantics), no refuted entries omitted.",
+      "finalAssistantRawText": "S0 check: doctrine topic `farming` returns 5 entries (3 priors on plump-helmet use and seed/break-even rules, 2 verified — plump helmet brewability and DFHack autofarm semantics), no refuted entries omitted.",
+      "replayInvalid": true,
+      "livenessState": "working",
+      "stopReason": "stop",
+      "executionTrace": {
+        "winnerProvider": "deepseek",
+        "winnerModel": "deepseek-v4-flash",
+        "attempts": [
+          {
+            "provider": "deepseek",
+            "model": "deepseek-v4-flash",
+            "result": "success",
+            "stage": "assistant"
+          }
+        ],
+        "fallbackUsed": false,
+        "runner": "embedded"
+      },
+      "requestShaping": {
+        "thinking": "high"
+      },
+      "completion": {
+        "stopReason": "stop",
+        "finishReason": "stop"
+      },
+      "toolSummary": {
+        "calls": 1,
+        "tools": [
+          "df-consultant__doctrine__get"
+        ],
+        "failures": 0
+      }
+    }
+  }
+}

@@ -1,0 +1,13 @@
+Gateway agent call connection closed; the Gateway may still be running this turn (accepted run 8adfbe1f-349f-4adf-8af6-7c4a718a4652). Check `openclaw gateway status` and the session transcript before retrying or rerunning with --local, so the turn does not execute twice.
+gateway closed (1006 abnormal closure (no close frame)): no close reason
+Gateway target: ws://<ip>:18789
+Source: local loopback
+Config: /home/node/.openclaw/openclaw.json
+Bind: loopback
+
+Possible causes:
+- Connection dropped without a close frame (retry; check network and gateway load)
+- Gateway not yet ready to accept connections (retry after a moment)
+- TLS mismatch (connecting with ws:// to a wss:// gateway, or vice versa)
+- Gateway process stopped or became unreachable (confirm it is still running)
+Run `openclaw doctor` for diagnostics.
