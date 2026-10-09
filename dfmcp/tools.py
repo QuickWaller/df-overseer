@@ -490,6 +490,13 @@ _ARG_DESCRIPTIONS: Dict[str, str] = {
         "never make a dig job for it. Anything but the word true, or omitting "
         "it, keeps the gate. When used, the result says stranded_override_used."
     ),
+    "AUTO_MINE": (
+        "Optional, give it last. The word false opts a dig out of the game's "
+        "automatic mining. By default a real dig sets the auto-mine bit on its "
+        "plain dig tiles (never stairs, ramps or channels), so a vein the dig "
+        "cuts into is followed by the miners on its own. On diggable.dig, a "
+        "lone - stands for a RES_ID or OVERRIDE you are not giving."
+    ),
     "blueprint.ANY_PENDING": (
         "Optional, give it last. The word true withdraws every outstanding dig "
         "and smooth designation of the site, not only a stalled one's; a tile "
