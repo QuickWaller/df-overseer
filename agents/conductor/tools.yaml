@@ -88,6 +88,12 @@ read:
       newest few plus anything still pending, accepted, deferred or in a
       project), so a role sees what it already filed without asking. Refused
       for any role but the conductor. Read-only.
+  - id: "stocks.availability"
+    status: exists
+    note: >-
+      Register 2026-10-09, stateless stock check. Read by the execute phase just before it
+      runs a step whose tool consumes counted stock (policy.yaml stock_check.consumers):
+      free units of one item type. Read-only.
   - id: "stocks.food-drink"
     status: exists
     note: >-
@@ -360,6 +366,14 @@ write:
     status: exists
     note: >-
       Added handoffs/2026-10-06-stage-2c.md (docs/CONDUCTOR-EXECUTION.md 6.3). Abandon cleanup: releases what the abandoned project reserved and designated (never dug tiles) through each handle's declared cleanup tool, then closes it with the results.
+      Native tool (dfmcp/executor_tools.py), executor-only (dfmcp/roles.py rule 8: only a
+      role of kind system may hold it). Granted only here.
+  - id: "queue.cancel_stale_orders"
+    status: exists
+    note: >-
+      Register 2026-10-09, item binding 3b. Cancels manager orders our own system created (traced
+      through the handle the create step recorded) whose project is finished, abandoned or
+      superseded, never one the game has started, logging each cancel against its project.
       Native tool (dfmcp/executor_tools.py), executor-only (dfmcp/roles.py rule 8: only a
       role of kind system may hold it). Granted only here.
   - id: "queue.close"

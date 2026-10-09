@@ -190,7 +190,7 @@ def test_conductor_is_kind_system_and_holds_exactly_the_clock_writes(registry):
     assert set(conductor.write) == SYSTEM_CLASS_TOOL_IDS | {
         "queue.grade", "conductor.report", "queue.close_legacy", "queue.cutover",
         "queue.open_project", "queue.apply_followup", "queue.run_step", "queue.resolve_uncertain",
-        "queue.observe", "queue.cleanup_project", "queue.close",
+        "queue.observe", "queue.cleanup_project", "queue.close", "queue.cancel_stale_orders",
     }
     # conductor.report (handoffs/2026-10-05-conductor-report.md): native, never
     # mutates the fort, and granted to no other role.

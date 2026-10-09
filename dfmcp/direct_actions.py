@@ -22,10 +22,13 @@ game's state.
 A call that is a dry run (`dry_run` true, or left at the tool's default of true) is not recorded: it is a preview
 and is passed through to the tool as before (`is_preview`).
 
-HOOK, stateless stock check (a separate later build, register 2026-10-09 "stock
-checks go stateless"): `_Phase.stock_check` in `conductor/execute.py` is where a
-check that the stock a step relies on still holds at execution would run; this
-module records nothing it would need.
+Stateless stock check (register 2026-10-09 "stock checks go stateless", built): it lives in
+`conductor/execute.py` (`_Phase.stock_check`, `conductor/stock_hold.py`), reads live free stock at
+execution and holds a short step; this module records nothing it needs.
+
+Created things (item binding 3b): a direct tool listed under `created_refs` in
+`dfqueue/action_tools.yaml` (today `orders.create`) leaves a handle on its run, so the manager order
+it made traces to a project and proposal; `queue.cancel_stale_orders` cancels only those.
 """
 
 from __future__ import annotations

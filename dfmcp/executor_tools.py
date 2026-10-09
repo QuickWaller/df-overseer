@@ -70,11 +70,12 @@ QUEUE_RESOLVE_UNCERTAIN = "queue.resolve_uncertain"
 QUEUE_OBSERVE = "queue.observe"
 QUEUE_CLEANUP_PROJECT = "queue.cleanup_project"
 QUEUE_CLOSE = "queue.close"
+QUEUE_CANCEL_STALE_ORDERS = "queue.cancel_stale_orders"
 
 _TOOL_IDS = [
     QUEUE_CLOSE_LEGACY, QUEUE_CUTOVER, QUEUE_EXECUTION_STATE,
     QUEUE_OPEN_PROJECT, QUEUE_APPLY_FOLLOWUP, QUEUE_RUN_STEP, QUEUE_RESOLVE_UNCERTAIN,
-    QUEUE_OBSERVE, QUEUE_CLEANUP_PROJECT, QUEUE_CLOSE,
+    QUEUE_OBSERVE, QUEUE_CLEANUP_PROJECT, QUEUE_CLOSE, QUEUE_CANCEL_STALE_ORDERS,
 ]
 NATIVE_TOOLS: Dict[str, NativeTool] = {i: NativeTool(id=i) for i in _TOOL_IDS}
 NATIVE_TOOL_IDS = tuple(NATIVE_TOOLS)
@@ -188,6 +189,20 @@ _register(
     "unreserved, failed}; the project is closed with the results listed once nothing failed.",
     {"project_id": _PROJECT_ID},
     ("project_id",),
+)
+_register(
+    QUEUE_CANCEL_STALE_ORDERS,
+    "Conductor only. Item binding 3b. Cancel manager orders our own direct steps created (traced "
+    "through the handle each recorded) once their project is closed with one of `outcomes` (or "
+    "abandoned); a `completed` project's orders wait `completed_grace_ticks` first. Never an order "
+    "the game has started, never one we did not create. Each cancel is logged against its project "
+    "and returned with the proposal id: {cancelled, left, failed}.",
+    {
+        "outcomes": {"type": "array", "items": {"type": "string", "enum": list(dq_schema.CLOSE_OUTCOMES)}},
+        "completed_grace_ticks": {"type": "integer", "minimum": 0},
+        "max": {"type": "integer", "minimum": 0, "description": "At most this many cancels per call."},
+        "tick": {"type": "integer", "description": "The game tick now, for the completed grace."},
+    },
 )
 _register(
     QUEUE_CLOSE,
@@ -416,6 +431,7 @@ _RUN = {
     QUEUE_OBSERVE: run.observe,
     QUEUE_CLEANUP_PROJECT: run.cleanup_project,
     QUEUE_CLOSE: run.close_project,
+    QUEUE_CANCEL_STALE_ORDERS: run.cancel_stale_orders,
 }
 
 

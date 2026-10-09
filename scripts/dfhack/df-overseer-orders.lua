@@ -870,6 +870,10 @@ function create_order(
     end
     if found then
       base.order = describe_order(found)
+      -- Item binding 3b: a handle the conductor records against the project that made this
+      -- order, so only orders our system created are ever cancelled by code
+      -- (dfqueue/action_tools.yaml created_refs).
+      base.order_handle = "order-" .. tostring(found.id)
     else
       base.create_note = "order reported created but not found at expected id "
         .. tostring(expected_id) .. " -- amount_total may have resolved to a"

@@ -288,6 +288,8 @@ def test_real_create_reads_the_order_back_from_the_queue(w):
     assert order["validated"] is False
     assert order["active"] is False
     assert isinstance(order["id"], int)
+    # item binding 3b: the handle the conductor records so only orders we made are ever cancelled
+    assert r["order_handle"] == "order-%d" % order["id"]
 
 
 def test_workorder_output_is_captured_not_printed_to_stdout(w):

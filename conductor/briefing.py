@@ -47,6 +47,7 @@ MAX_LEDGER_ROWS = 10
 MAX_STUCK_JOB_LINES = 5
 MAX_ORE_LINES = 5
 MAX_SPACE_LINES = 3
+MAX_HOLD_LINES = 5
 
 #: The block's standing instruction (after the stable prefix, before the ask).
 FILINGS_NOTE = (
@@ -185,6 +186,7 @@ def build_briefing(
     paused: Optional[str] = None,
     automine_notes: Optional[Sequence[str]] = None,
     unused_space: Optional[Sequence[str]] = None,
+    stock_holds: Optional[Sequence[str]] = None,
 ) -> Dict[str, Any]:
     """One role's briefing for this cycle. `vitals` is `vitals.summary`'s own
     result, passed through as-is (already Tier 0 by construction -- see
@@ -248,6 +250,10 @@ def build_briefing(
         # Register 2026-10-09: new sizeable dug space nobody uses (conductor/space_watch.py).
         # Information only, never a wake reason; absent when nothing is new.
         briefing["unused_dug_space"] = _capped([str(s)[:220] for s in unused_space], MAX_SPACE_LINES)
+    if stock_holds:
+        # Register 2026-10-09, item binding 3a: a step held on short stock is one line here,
+        # not its own wake (survival, over a game day and blocking holds do wake). Absent when none.
+        briefing["held_steps"] = [str(s)[:240] for s in stock_holds][:MAX_HOLD_LINES]
     if frozen_types:
         # docs/CONDUCTOR-EXECUTION.md 6.6 (2b): a group frozen ahead of its cutover.
         # Skipped, not refused (the user's call): the role does not file these types.
@@ -350,6 +356,7 @@ def build_ruling_briefing(
     roadmap_line: Optional[str] = None,
     paused: Optional[str] = None,
     automine_notes: Optional[Sequence[str]] = None,
+    stock_holds: Optional[Sequence[str]] = None,
 ) -> str:
     """The Overseer's prompt for an ordinary ruling wake, as text in a fixed
     order, stable material first and the ask last (cache-friendly, bounded):
@@ -376,6 +383,8 @@ def build_ruling_briefing(
         out.append(str(roadmap_line)[:MAX_ROADMAP_LINE_CHARS])
     for note in list(automine_notes or [])[:3]:
         out.append(f"NOTE {str(note)[:240]}")
+    for line in list(stock_holds or [])[:MAX_HOLD_LINES]:
+        out.append(f"HELD {str(line)[:240]}")
 
     out.append("DECIDED, DO NOT REDO")
     proposals: List[Mapping[str, Any]] = []

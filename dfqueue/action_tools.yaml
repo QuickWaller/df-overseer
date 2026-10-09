@@ -93,6 +93,22 @@ groups:
     coverage: false
     ruling_only: true
 
+# Item binding 3b (register 2026-10-09): a direct tool whose real call creates something we
+# may later cancel. `handle_path` is the result field holding its handle (the Lua tool adds
+# it), `prefix` how the handle starts, `cancel_tool`/`cancel_args` the call that undoes it
+# (`$ref` is the handle without the prefix), `list_tool` where its state is read, `id_field`
+# the row key that equals `$ref`. The handle is recorded on the step's run, so every created
+# thing traces to a project and proposal; the stale-order pass cancels only these.
+created_refs:
+  orders.create:
+    handle_path: order_handle
+    prefix: "order-"
+    list_tool: orders.list
+    list_rows: orders
+    id_field: id
+    cancel_tool: orders.cancel
+    cancel_args: {id: "$ref"}
+
 retired:
   # Mutating tools held by no proposing role and by no conductor allowlist
   # entry: nothing proposes or runs them, and that is deliberate.

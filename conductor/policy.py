@@ -198,6 +198,52 @@ class LaneTriggers:
 
 
 @dataclass(frozen=True)
+class StockConsumer:
+    """What one tool's step consumes, read from its arguments (policy.yaml
+    `stock_check.consumers`). `item` is a literal item type, or `item_arg` names the
+    argument holding it, optionally mapped through `item_map` (an unmapped value consumes
+    nothing we can count, so it is skipped). Count is the `count_arg` value (default 1)
+    times `per_unit`, rounded up."""
+    item: Optional[str] = None
+    item_arg: Optional[str] = None
+    item_map: Mapping[str, str] = field(default_factory=dict)
+    count_arg: Optional[str] = None
+    per_unit: float = 1.0
+
+
+@dataclass(frozen=True)
+class StockCheckPolicy:
+    """The stateless stock check at execution (register 2026-10-09). No ledger: a step
+    is held when live free stock is under need plus margin, and retried next cycle."""
+    enabled: bool = False
+    #: Extra units required on top of need: the larger of `margin` and need * `margin_fraction`.
+    margin: int = 1
+    margin_fraction: float = 0.0
+    read_tool: str = "stocks.availability"
+    read_arg: str = "type"
+    free_field: str = "available_units"
+    #: Units other jobs hold, named in the hold line when present.
+    in_job_field: str = "in_job_units"
+    consumers: Mapping[str, StockConsumer] = field(default_factory=dict)
+    #: A held step whose tool and arguments match this serves a survival target
+    #: (food, drink, defence) and wakes the Overseer at once.
+    survival: Optional["re.Pattern"] = None
+    #: A hold older than this many game ticks wakes the Overseer (one game day).
+    wake_after_ticks: int = 1200
+
+
+@dataclass(frozen=True)
+class StaleOrderPolicy:
+    """3b: cancel manager orders our system created whose project is done with them."""
+    enabled: bool = False
+    #: Project close outcomes that make an order ours to cancel.
+    outcomes: Tuple[str, ...] = ("abandoned", "superseded", "completed")
+    #: A `completed` project's orders are left this long (game ticks) before they go.
+    completed_grace_ticks: int = 1200
+    max_per_cycle: int = 4
+
+
+@dataclass(frozen=True)
 class ExecutionPolicy:
     """The execute phase's knobs (policy.yaml `execution`, docs/CONDUCTOR-
     EXECUTION.md 4 and 5), all data. Game ticks are raw ticks."""
@@ -219,6 +265,8 @@ class ExecutionPolicy:
     urgency_order: Tuple[str, ...] = ("high", "normal", "low")
     #: A refused open or apply is tried at most this many times.
     refusal_limit: int = 3
+    stock_check: StockCheckPolicy = field(default_factory=StockCheckPolicy)
+    stale_orders: StaleOrderPolicy = field(default_factory=StaleOrderPolicy)
 
 
 @dataclass(frozen=True)
@@ -516,6 +564,69 @@ def _load_automine(raw, path: Path) -> AutominePolicy:
     return AutominePolicy(enabled=enabled, max_per_call=cap)
 
 
+def _load_stock_check(raw, path: Path) -> StockCheckPolicy:
+    if raw is None:
+        return StockCheckPolicy()
+    where = f"{path}: stock_check"
+    if not isinstance(raw, dict):
+        raise PolicyError(f"{where} must be a mapping")
+    margin = raw.get("margin", 1)
+    if isinstance(margin, bool) or not isinstance(margin, int) or margin < 0:
+        raise PolicyError(f"{where}.margin must be a non-negative integer")
+    frac = raw.get("margin_fraction", 0.0)
+    if isinstance(frac, bool) or not isinstance(frac, (int, float)) or frac < 0:
+        raise PolicyError(f"{where}.margin_fraction must be a non-negative number")
+    wake = raw.get("wake_after_ticks", 1200)
+    if isinstance(wake, bool) or not isinstance(wake, int) or wake < 1:
+        raise PolicyError(f"{where}.wake_after_ticks must be a positive integer")
+    consumers: Dict[str, StockConsumer] = {}
+    for tool, c in (raw.get("consumers") or {}).items():
+        if not isinstance(c, dict) or not (c.get("item") or c.get("item_arg")):
+            raise PolicyError(f"{where}.consumers.{tool} needs item or item_arg")
+        imap = c.get("item_map") or {}
+        if not isinstance(imap, dict):
+            raise PolicyError(f"{where}.consumers.{tool}.item_map must be a mapping")
+        per = c.get("per_unit", 1.0)
+        if isinstance(per, bool) or not isinstance(per, (int, float)) or per <= 0:
+            raise PolicyError(f"{where}.consumers.{tool}.per_unit must be a positive number")
+        consumers[str(tool)] = StockConsumer(
+            item=c.get("item"), item_arg=c.get("item_arg"),
+            item_map={str(k): str(v) for k, v in imap.items()}, count_arg=c.get("count_arg"), per_unit=float(per))
+    survival = raw.get("survival")
+    compiled = None
+    if survival is not None:
+        try:
+            compiled = re.compile(str(survival), re.IGNORECASE)
+        except re.error as exc:
+            raise PolicyError(f"{where}.survival is not a valid regex: {exc}") from None
+    base = StockCheckPolicy()
+    return StockCheckPolicy(
+        enabled=bool(raw.get("enabled", False)), margin=margin, margin_fraction=float(frac),
+        read_tool=str(raw.get("read_tool", base.read_tool)), read_arg=str(raw.get("read_arg", base.read_arg)),
+        free_field=str(raw.get("free_field", base.free_field)),
+        in_job_field=str(raw.get("in_job_field", base.in_job_field)),
+        consumers=consumers, survival=compiled, wake_after_ticks=wake)
+
+
+def _load_stale_orders(raw, path: Path) -> StaleOrderPolicy:
+    if raw is None:
+        return StaleOrderPolicy()
+    where = f"{path}: stale_orders"
+    if not isinstance(raw, dict):
+        raise PolicyError(f"{where} must be a mapping")
+    base = StaleOrderPolicy()
+    outcomes = raw.get("outcomes", list(base.outcomes))
+    if not isinstance(outcomes, list) or not all(isinstance(o, str) for o in outcomes):
+        raise PolicyError(f"{where}.outcomes must be a list of close outcomes")
+    ints = {}
+    for key in ("completed_grace_ticks", "max_per_cycle"):
+        v = raw.get(key, getattr(base, key))
+        if isinstance(v, bool) or not isinstance(v, int) or v < 0:
+            raise PolicyError(f"{where}.{key} must be a non-negative integer")
+        ints[key] = v
+    return StaleOrderPolicy(enabled=bool(raw.get("enabled", False)), outcomes=tuple(outcomes), **ints)
+
+
 def _load_execution(raw, path: Path) -> ExecutionPolicy:
     if raw is None:
         return ExecutionPolicy()
@@ -542,6 +653,11 @@ def _load_execution(raw, path: Path) -> ExecutionPolicy:
         except re.error as exc:
             raise PolicyError(f"{path}: execution.ore_hold_phase is not a valid regex: {exc}") from None
     return ExecutionPolicy(ore_hold_phase=compiled, urgency_order=tuple(order), **ints)
+
+
+def _with_hold_policies(execution: ExecutionPolicy, doc: Mapping, path: Path) -> ExecutionPolicy:
+    return replace(execution, stock_check=_load_stock_check(doc.get("stock_check"), path),
+                   stale_orders=_load_stale_orders(doc.get("stale_orders"), path))
 
 
 #: Roles a tripwire owner may name (the roster; the Overseer is implicit).
@@ -709,7 +825,7 @@ def load_policy(path: "Path | str" = DEFAULT_POLICY_PATH) -> Policy:
     lane_triggers = _load_lane_triggers(doc.get("lane_triggers"), path)
     tripwire_owners = _load_tripwire_owners(doc.get("tripwire_owners"), path)
     repeat_limit, repeat_window = _load_tripwire_repeat(doc.get("tripwire_repeat"), path)
-    execution = _load_execution(doc.get("execution"), path)
+    execution = _with_hold_policies(_load_execution(doc.get("execution"), path), doc, path)
     plan = _load_plan(doc.get("plan"), path)
     own_raw = doc.get("own_filings") or {}
     if not isinstance(own_raw, dict):

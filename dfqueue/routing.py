@@ -97,8 +97,20 @@ def _validate(raw: dict) -> dict:
     retired = raw.get("retired") or []
     if not isinstance(retired, list) or not all(isinstance(i, str) for i in retired):
         raise RoutingError("action_tools.yaml: 'retired' must be a list of strings")
-    return {"groups": out, "retired": list(retired),
+    refs = raw.get("created_refs") or {}
+    if not isinstance(refs, dict):
+        raise RoutingError("action_tools.yaml: 'created_refs' must be a mapping")
+    for tool, r in refs.items():
+        need = ("handle_path", "prefix", "list_tool", "list_rows", "id_field", "cancel_tool", "cancel_args")
+        if not isinstance(r, dict) or any(k not in r for k in need):
+            raise RoutingError(f"action_tools.yaml: created_refs.{tool} needs {list(need)}")
+    return {"groups": out, "retired": list(retired), "created_refs": dict(refs),
             "type_to_group": seen_types, "tool_to_group": seen_tools}
+
+
+def created_refs() -> dict:
+    """Direct tools whose real call leaves a handle we can cancel later (3b)."""
+    return dict(_load()["created_refs"])
 
 
 def groups() -> list[str]:

@@ -45,6 +45,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Awaitable, Callable, Dict, List, Mapping, Optional, Sequence, Tuple
 
+from conductor import stock_hold
 from conductor.mcp_client import MCPToolError
 from conductor.ore_watch import MINE_TOOL, OreRead
 from conductor.policy import ExecutionPolicy
@@ -95,10 +96,14 @@ class ExecuteState:
     #: recorded as a ready-ruled one-step project), remembered after they leave the
     #: open list so a late `step_done` is still known to be one.
     direct: List[str] = field(default_factory=list)
+    #: step id -> the hold note for a step held on short stock: {pid, tool, why, since}.
+    #: The only thing a stock check stores (register 2026-10-09, stateless): it is dropped the
+    #: pass the step runs or leaves the ready list, and feeds the Overseer's briefing line.
+    holds: Dict[str, Dict[str, Any]] = field(default_factory=dict)
 
 
 _FIELDS = ("since", "sent", "uncertain", "transient", "unknown", "attention", "ore_held",
-           "refused", "cleanup_failed", "idle", "roles", "direct")
+           "refused", "cleanup_failed", "idle", "roles", "direct", "holds")
 
 
 class ExecuteStore:
@@ -182,6 +187,8 @@ class _Phase:
         self.saved = False
         #: Direct projects that did not run to done this pass: closed `not_done` at the end.
         self.to_close: List[Tuple[str, str]] = []
+        #: item type -> its stock read, once per pass (a pass reads each item at most once).
+        self._stock_reads: Dict[str, Any] = {}
 
     # -- plumbing ----------------------------------------------------------
 
@@ -343,6 +350,26 @@ class _Phase:
             else:
                 self.st.cleanup_failed.pop(pid, None)
 
+    async def cancel_stale_orders(self) -> None:
+        """3b: manager orders our system created whose project is finished, abandoned or
+        superseded are cancelled by the server-side tool (never a started order, never one we
+        did not make; each cancel is logged against its project). Policy-gated and total."""
+        pol = self.pol.stale_orders
+        if not pol.enabled:
+            return
+        out = await self.tool("queue.cancel_stale_orders", {
+            "outcomes": list(pol.outcomes), "completed_grace_ticks": pol.completed_grace_ticks,
+            "max": pol.max_per_cycle, **({"tick": self.tick} if self.tick is not None else {}),
+        })
+        if not isinstance(out, Mapping):
+            return
+        for row in out.get("cancelled") or ():
+            self.report.act("order_cancelled", project=row.get("project_id"), handle=row.get("handle"),
+                            outcome=row.get("outcome"))
+        for row in out.get("left") or ():
+            self.report.act("order_left", project=row.get("project_id"), handle=row.get("handle"),
+                            why=row.get("why"))
+
     async def reconcile(self, state: Mapping[str, Any]) -> None:
         for entry in state.get("done_since") or ():
             if isinstance(entry, Mapping) and entry.get("step_id"):
@@ -444,6 +471,7 @@ class _Phase:
             enumerate(ready), key=lambda t: (order.get(str(t[1].get("urgency") or "normal"), len(order)), t[0]),
         )
         quicksaved = False
+        self.prune_holds({str(r.get("step_id")) for r in ready})
         for _i, step in indexed:
             if self.report.steps_run >= self.pol.max_steps_per_cycle:
                 self.report.act("cap", max=self.pol.max_steps_per_cycle)
@@ -469,8 +497,9 @@ class _Phase:
                 self.report.act("ore_released", project=pid, step=sid)
             why = await self.stock_check(step)
             if why:
-                self.attend(pid, sid, f"stock:{_clip(why, 60)}", why)
+                self.hold(step, why)
                 continue
+            self.release_hold(sid)
             if not quicksaved and self.quicksave is not None:
                 quicksaved = True
                 try:
@@ -485,13 +514,65 @@ class _Phase:
             self.after_run(pid, sid, out)
 
     async def stock_check(self, step: Mapping[str, Any]) -> Optional[str]:
-        """HOOK, the stateless stock check at execution (register 2026-10-09, "stock checks go
-        stateless"). A separate later build: it will read what the step relies on at run time
-        (not a cited snapshot from filing) and return a one-line reason to hold the step, or
-        None to let it run. Called once per ready step, just before the quicksave and the
-        real call, for every routed step. Deliberately returns None today."""
-        del step
-        return None
+        """The stateless stock check at execution (register 2026-10-09, "stock checks go
+        stateless"). For a step whose tool is listed in `stock_check.consumers`, read the live
+        free stock of what it eats and return a one-line reason naming what is short (need plus
+        margin not covered), else None. Nothing is reserved or stored; a step with nothing
+        countable, an unreadable stock or a tool error runs as before (it fails open)."""
+        pol = self.pol.stock_check
+        if not pol.enabled:
+            return None
+        consumer = pol.consumers.get(str(step.get("tool") or ""))
+        args = step.get("args") if isinstance(step.get("args"), Mapping) else {}
+        if consumer is None:
+            return None
+        need = stock_hold.need_for(consumer, args)
+        if need is None:
+            return None
+        item, count = need
+        if item not in self._stock_reads:
+            self._stock_reads[item] = await self.tool(pol.read_tool, {pol.read_arg: item})
+        got = stock_hold.free_units(pol, self._stock_reads[item])
+        if got is None:
+            return None
+        free, in_jobs = got
+        return stock_hold.short_reason(item, count, stock_hold.required_with_margin(pol, count), free, in_jobs)
+
+    def hold(self, step: Mapping[str, Any], why: str) -> None:
+        """Mark a step held on short stock: the note, the log line, and (3a) a wake only when it
+        serves a survival target, has been held over a game day or blocks other steps in its
+        project; otherwise it waits for the Overseer's next briefing as one line."""
+        pid, sid = str(step.get("project_id")), str(step.get("step_id"))
+        rec = self.st.holds.get(sid)
+        if rec is None or (self.tick is not None and isinstance(rec.get("since"), int) and rec["since"] > self.tick):
+            rec = {"since": self.tick}  # new, or a save reload put the old note in the future
+        rec.update(pid=pid, tool=str(step.get("tool") or ""), why=_clip(why, 200))
+        self.st.holds[sid] = rec
+        self.report.act("stock_hold", project=pid, step=sid, why=_clip(why, 120))
+        blocks = int((self.projects.get(pid) or {}).get("steps_open") or 0) > 1
+        kind = stock_hold.wake_kind(self.pol.stock_check, step, rec, self.tick, blocks)
+        if kind is None:
+            self.st.attention.pop(sid, None)
+            return
+        cause = f"hold:{kind}"
+        if self.st.attention.get(sid) == cause:
+            return
+        self.st.attention[sid] = cause
+        self.wake(pid, REASON_ATTENTION, f"{sid}:hold:{kind}", stock_hold.survival_or_age_text(kind, pid, sid, why))
+        self.report.act("hold_wake", project=pid, step=sid, cause=kind)
+
+    def release_hold(self, sid: str) -> None:
+        if self.st.holds.pop(sid, None) is not None:
+            self.st.attention.pop(sid, None)
+            self.report.act("hold_released", step=sid)
+
+    def prune_holds(self, ready_ids: "set[str]") -> None:
+        """A note for a step that is no longer ready (done, abandoned, blocked on a prerequisite)
+        goes: nothing outlives the step it was about."""
+        for sid in [k for k in self.st.holds if k not in ready_ids]:
+            del self.st.holds[sid]
+            if str(self.st.attention.get(sid) or "").startswith("hold:"):
+                self.st.attention.pop(sid, None)
 
     async def close_failed_direct(self) -> None:
         """A direct action that did not run is closed `not_done` (a project left open on a step
@@ -547,6 +628,7 @@ async def run_execute(
         snap = await ph.read_state() or snap
     if not latched:
         await ph.cleanup(snap)
+        await ph.cancel_stale_orders()
         await ph.reconcile(snap)
         await ph.idle()
     latest = snap.get("latest_observation_id")
