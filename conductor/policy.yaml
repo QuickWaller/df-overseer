@@ -267,6 +267,11 @@ wake_reasons:
   roadmap_stage_entered:
     clock: full_speed
     wakes: []
+  # The Planner's derived to-do list (conductor/plan_todo.py, plan.work_queue):
+  # one wake carrying every open item.
+  plan_todo:
+    clock: full_speed
+    wakes: []
 
 # Stage T (handoffs/2026-10-06-stage-t-tripwire.md): who runs after a tripwire
 # latches, before the Overseer. Keyed by the latch's own `reason`. A reason
@@ -534,6 +539,22 @@ plan:
       zones: [room_siting, corridor]
       stocks: [work_order, stock_target]
       order: [work_order]
+  # The Planner's derived to-do list (register 2026-10-09, "A work queue for the
+  # Planner"; conductor/plan_todo.py). Rebuilt every cycle from plan.status, no
+  # store of its own: stage targets missing from the plan, targets that differ
+  # from their roadmap entry, owned kinds with no targets, open asks to the
+  # Planner, and its other wake reasons (bootstrap, stage entered, season review,
+  # plan_change ruling, stalled target) folded in. One wake carries every item;
+  # an item gets max_wakes wakes on the renotify backoff, stops waking when the
+  # Planner files a pass or after those wakes, and reopens when its state changes.
+  # Not gated by the operator hold (the Planner may run under one).
+  work_queue:
+    enabled: true
+    max_wakes: 3
+    max_items: 8
+    # sync kind -> what the Planner owes it. One entry per kind, no code.
+    owned_kinds:
+      autofarm: "crop targets (one {sync: autofarm, crop: <PLANT_RAW_TOKEN>} target per crop to grow, plus crop_default)"
 
 # handoffs/2026-10-07-unsupplied-building-watch.md (conductor/unsupplied_watch.py):
 # the Quartermaster wakes when a buildingplan-planned building needs an item kind

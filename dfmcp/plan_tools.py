@@ -638,6 +638,14 @@ async def _status(
     if active is not None:
         structured.update(await _target_status(db_path, call_dfhack, active))
         structured["flags"] = [f for f in active.get("flags") or [] if f.get("inert")]
+        # The plan against the fort's CURRENT stage (comply or explain), for the
+        # conductor's Planner to-do list (conductor/plan_todo.py): which stage
+        # entries no target adopts, and each target that differs from its entry.
+        if isinstance(block.get("stage"), str) and block.get("stage"):
+            refs = fort_roadmap.check_refs(active.get("targets") or [], block["stage"], block.get("alive"))
+            structured["roadmap_check"] = {
+                "stage": block["stage"], "deviations": refs["deviations"], "missing": refs["missing"],
+            }
     return _compact(structured), structured
 
 

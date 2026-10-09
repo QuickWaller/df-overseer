@@ -81,6 +81,7 @@ from conductor.pause_watch import (
     finish_after_overseer, load_pause_policy, read_verdict_after, read_verdict_baseline, run_pause_watch,
 )
 from conductor.policy import FULL_SPEED, PAUSED, Policy
+from conductor import plan_todo
 from conductor.plan_watch import (
     STATUS_TOOL as PLAN_STATUS_TOOL, PlanWatchResult, PlanWatchState, PlanWatchStore, SeasonEdge,
     advance_season, evaluate as evaluate_plan, last_refusal,
@@ -909,6 +910,7 @@ async def _run_cycle(cycle_index: int, deps: CycleDeps, hold: HoldState) -> Cycl
         early_routing = await _read_routing(call, cycle_index)
     plan_state, season_edge, plan_result = await _plan_watch(
         deps, call, game_tick, cycle_index, hold, (early_routing or {}).get("frozen_types"), retry_tick,
+        planner_asks=tuple((((queue_state.get("asks") or {}).get("to") or {}).get(PLANNER)) or ()),
     )
     plan_watch_dict = _plan_watch_dict(plan_state, season_edge, plan_result)
     autofarm_report = await run_autofarm_sync(
@@ -1526,6 +1528,7 @@ def _plan_store(deps: "CycleDeps") -> PlanWatchStore:
 async def _plan_watch(
     deps: "CycleDeps", call: Callable, game_tick: Optional[int], cycle_index: int, hold: HoldState,
     frozen_types: Optional[Sequence[str]], retry_tick: Optional[int] = None,
+    planner_asks: Sequence[str] = (),
 ) -> Tuple[Optional[PlanWatchState], Optional[SeasonEdge], PlanWatchResult]:
     """The Planner's conductor side (conductor/plan_watch.py): advance the
     season cursor and, when the Planner is enabled, read `plan.status` once and
@@ -1555,6 +1558,12 @@ async def _plan_watch(
             status, game_tick, plan, state, edge, held=hold.held, frozen_types=frozen_types,
             retry_tick=retry_tick,
         )
+        # The Planner's to-do list (conductor/plan_todo.py): its wakes, and the
+        # plan's known gaps, become one wake. Total: a fault leaves the wakes as they were.
+        try:
+            plan_todo.fold(result, status, game_tick, retry_tick, plan, state, planner_asks)
+        except Exception:  # noqa: BLE001
+            LOG.exception("cycle %s: the Planner work queue failed; its wakes stand as raised", cycle_index)
         for alert in result.alerts:
             LOG.critical("PLAN: %s", alert)
     if not deps.dry_run:

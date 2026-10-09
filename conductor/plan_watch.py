@@ -132,6 +132,9 @@ class PlanWatchState:
     #: every cycle); cleared when the stage changes or a plan matches it.
     roadmap_passed: Optional[str] = None
     roadmap: Backoff = field(default_factory=Backoff)
+    #: The Planner to-do list's per-item backoff (conductor/plan_todo.py):
+    #: item key -> {sig, wakes, next_tick, stalled, pass_at_wake}.
+    todo: Dict[str, Dict[str, Any]] = field(default_factory=dict)
 
 
 def _passed_for(marker: Optional[str], stage: str) -> bool:
@@ -165,6 +168,7 @@ def _from_dict(raw: Mapping[str, Any]) -> PlanWatchState:
     st.roadmap = _backoff(raw.get("roadmap"))
     st.awaiting = {str(k): _backoff(v) for k, v in (raw.get("awaiting") or {}).items()}
     st.inputs = {str(k): _backoff(v) for k, v in (raw.get("inputs") or {}).items()}
+    st.todo = {str(k): dict(v) for k, v in (raw.get("todo") or {}).items() if isinstance(v, dict)}
     for tid, tr in (raw.get("targets") or {}).items():
         if not isinstance(tr, dict):
             continue

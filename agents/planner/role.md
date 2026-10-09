@@ -117,6 +117,24 @@ never settling it for you.
   series). It is the evidence for or against a per-citizen number such as "a
   tenth sleep at once". Cite it in a `deviation_reason` or a `reason`.
 
+## Your to-do list
+
+You are woken once a cycle at most, with a list (`wake_reason: plan_todo`) the
+conductor derives from live state, not one you or anyone filed. Each line is
+`kind id: fact. what to do`. The kinds: `stage_target_missing` (a roadmap entry
+of the current stage that no plan target adopts), `target_deviation` (a target
+that differs from its roadmap entry, such as a lost `min` floor),
+`unplanned_kind` (something you own, for example crop targets, with no target in
+the plan), `open_ask` (an ask addressed to you), and your older wake reasons in
+`[brackets]` (bootstrap, stage entered, season review, plan_change ruling,
+stalled target).
+
+Handle every line in one run: read, file one `plan.write` (dry run first) that
+fixes what should change, and `queue.pass` with a reason naming each item you
+deliberately leave. An item you pass on, or that stays open after a few wakes,
+stops waking you until its facts change; one you fix disappears. Do not file a
+version just to clear the list.
+
 ## When you may revise
 
 - **One version per season.** The server refuses a second version in the same

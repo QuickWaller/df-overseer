@@ -295,6 +295,19 @@ class ShortfallWatchPolicy:
 
 
 @dataclass(frozen=True)
+class WorkQueuePolicy:
+    """The Planner's derived to-do list (conductor/plan_todo.py)."""
+    enabled: bool = False
+    #: Wakes an item gets (backed off) before it is left alone until its state changes.
+    max_wakes: int = 3
+    #: Items listed in one briefing; the rest wait for the next wake.
+    max_items: int = 8
+    #: Kinds the Planner owns: a `sync` kind -> what its targets are. A kind
+    #: with no target of it in the plan is an item.
+    owned_kinds: Mapping = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
 class PlanPolicy:
     """The Planner's conductor-side wiring (handoffs/2026-10-07-planner-p1b.md),
     its own top-level block `plan:` in policy.yaml."""
@@ -323,6 +336,7 @@ class PlanPolicy:
     review_max_wakes: int = 3
     awaiting_max_wakes: int = 3
     shortfall: ShortfallWatchPolicy = field(default_factory=ShortfallWatchPolicy)
+    work_queue: WorkQueuePolicy = field(default_factory=WorkQueuePolicy)
 
 
 @dataclass(frozen=True)
@@ -744,6 +758,20 @@ def _load_plan(raw, path: Path) -> PlanPolicy:
         owner_ceiling=_pos_int(sraw, "owner_ceiling", base.owner_ceiling, swhere),
         serving_types={str(k): tuple(v) for k, v in types.items()},
     )
+    wraw = raw.get("work_queue") or {}
+    wwhere = f"{where}.work_queue"
+    if not isinstance(wraw, dict):
+        raise PolicyError(f"{wwhere} must be a mapping")
+    kinds = wraw.get("owned_kinds") or {}
+    if not isinstance(kinds, dict) or not all(isinstance(k, str) and isinstance(v, str) for k, v in kinds.items()):
+        raise PolicyError(f"{wwhere}.owned_kinds must map a sync kind to a description")
+    wb = WorkQueuePolicy()
+    work_queue = WorkQueuePolicy(
+        enabled=_flag(wraw, "enabled", wb.enabled, wwhere),
+        max_wakes=_pos_int(wraw, "max_wakes", wb.max_wakes, wwhere),
+        max_items=_pos_int(wraw, "max_items", wb.max_items, wwhere),
+        owned_kinds=dict(kinds),
+    )
     pb = PlanPolicy()
     return PlanPolicy(
         enabled=_flag(raw, "enabled", pb.enabled, where),
@@ -755,6 +783,7 @@ def _load_plan(raw, path: Path) -> PlanPolicy:
         review_max_wakes=_pos_int(raw, "review_max_wakes", pb.review_max_wakes, where),
         awaiting_max_wakes=_pos_int(raw, "awaiting_max_wakes", pb.awaiting_max_wakes, where),
         shortfall=shortfall,
+        work_queue=work_queue,
     )
 
 

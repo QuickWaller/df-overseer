@@ -245,3 +245,17 @@ async def test_roadmap_wants_copied_verbatim_keep_their_floor_and_are_no_deviati
     assert stored["dining_tables"]["want"] == {"per_alive": 0.2, "min": 4}
     assert plan.want_units(stored["dining_tables"], 10) == 4.0     # the floor holds at small populations
     assert plan.want_units(stored["dining_tables"], 24) == pytest.approx(4.8)
+
+
+async def test_status_carries_the_roadmap_check_the_conductors_planner_to_do_list_reads(db, fort):
+    fort.alive = 24
+    assert "roadmap_check" not in await _plan(plan_tools.PLAN_STATUS, "conductor", {}, db, fort)   # no plan yet
+    await _write(db, fort, {"base_version": 0})
+    chk = (await _plan(plan_tools.PLAN_STATUS, "conductor", {}, db, fort))["roadmap_check"]
+    assert chk == {"stage": "hamlet", "deviations": [], "missing": []}
+    active = store.active_plan(db)
+    targets = [t for t in active["targets"] if t["id"] != "dining_tables"]
+    fort.tick = SEASON + 5
+    await _write(db, fort, {"base_version": active["version"], "set": {"targets": targets}, "reason": "drop the hall"})
+    chk = (await _plan(plan_tools.PLAN_STATUS, "conductor", {}, db, fort))["roadmap_check"]
+    assert chk["missing"] == ["dining_tables"]
