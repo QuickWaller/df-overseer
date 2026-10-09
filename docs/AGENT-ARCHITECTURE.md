@@ -135,6 +135,18 @@ the calls made here and why.
 
 ---
 
+> **Update 2026-10-09 (decisions in the register, later than the text below).**
+> **Verified live:** the roster now has a Planner beside the original four
+> roles, and every role runs on `deepseek/deepseek-v4-flash` (a trial; Pro is
+> the rollback), so model names in older passages below are history. **Decided,
+> not yet built:** (a) item stock is checked statelessly (live stock minus a
+> margin at ruling time, a short step fails cleanly and retries; there is no
+> claim ledger, so any "claim" or "promise" wording about stock is superseded);
+> (b) agent sessions use openclaw's always-running Gateway, with each wake's
+> inbox derived from conductor state (queue, retry clock), not a new inbox store;
+> (c) per-run time limits stay at 10 minutes (Overseer 20) with no new loop guard.
+> A hold on a step is a line in the Overseer's next briefing, not its own wake.
+
 ## 1. Principles
 
 Eight rules. Everything below is a consequence of one of them, and a change to
