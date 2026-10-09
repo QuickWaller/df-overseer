@@ -549,13 +549,6 @@ targets:
     exclude: []
     leave_alone: []
     restart:
-      - service: openclaw-gateway.service
-        risk: high
-        why: >-
-          Added 2026-10-09. Shipping its unit file never enables or starts it,
-          and deploy.py never restarts it. It is started by hand until the 24 h
-          idle canary passes; enabling at boot is the user's separate go-ahead.
-          A restart drains in-flight turns for up to 5 minutes.
       - service: conductor.service
         risk: high
         why: >-
@@ -563,6 +556,13 @@ targets:
           CLAUDE.md status block). Shipping its unit file never enables or
           starts it, and deploy.py never restarts it; enabling or starting is
           the user's separate go-ahead each time.
+      - service: openclaw-gateway.service
+        risk: high
+        why: >-
+          Added 2026-10-09. Shipping its unit file never enables or starts it,
+          and deploy.py never restarts it. It is started by hand until the 24 h
+          idle canary passes; enabling at boot is the user's separate go-ahead.
+          A restart drains in-flight turns for up to 5 minutes.
     post_deploy:
       - "daemon-reload runs; conductor.service is not enabled, started or
          restarted. Confirm afterwards with `drift_check.py` (services section):
