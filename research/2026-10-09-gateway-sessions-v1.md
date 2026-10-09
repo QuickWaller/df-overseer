@@ -1,0 +1,695 @@
+# Gateway sessions v1: buildable plan and self red team
+
+Date: 2026-10-09. Design spec, read-only: no VM touched, no config changed, no agent
+run. Written for the user's register rows of 2026-10-09 (sessions 7: openclaw's
+always-running Gateway now, overriding the red team's local-file-first; 8: the inbox
+derived from conductor state, no new store; 9: keep today's run limits, 10 min per
+run and 20 for the Overseer, no per-turn budget shape; 10: pause stamp on tool
+replies, now built in `dfmcp/pause_stamp.py`), plus the 2026-10-09 row making the
+conductor the only writer to the game and the 2026-10-08 row "the Overseer rules one
+item at a time".
+
+Supersedes, where they disagree: `research/2026-10-08-sessions-design.md` (the
+per-wake Gateway container, the inbox store, strikes) and the red team's
+"local route first" (`research/2026-10-08-sessions-red-team.md`, M1). Keeps the red
+team's two blockers (B1 charter and prompt, B2 envelope) and most of its smaller
+fixes, which apply to the Gateway route unchanged.
+
+Confidence key, per claim:
+- **[V]** verified in this repo's code or a recorded live run in `evals/live/`.
+- **[S]** read in openclaw source or its bundled docs at tag `v2026.9.4` (commit
+  3a9d69d, the commit `research/2026-10-09-openclaw-context-audit.md` records as the
+  image installed on VM 106), from a sparse clone in a scratch directory, deleted
+  after. Read, not run.
+- **[I]** inferred, not checked.
+- **[gap]** cannot be settled offline; stage S0 (section 11) must answer it.
+
+## 1. Answer
+
+1. **One always-running openclaw Gateway on VM 106, in a docker container under a
+   new systemd unit `openclaw-gateway.service`, hosting all five roles as five
+   agents.** Loopback only, token auth, its own state directory (never the shared
+   one the one-shot runs mount), image pinned by digest, config read-only and not
+   hot-reloaded, and every proactive Gateway feature switched off (heartbeat, cron,
+   Control UI, operator terminal). The conductor stays the dispatcher; the queue
+   stays the only channel between roles.
+2. **The conductor talks to it through the openclaw CLI thin client**, one short
+   `docker run --rm --network host ... openclaw.mjs agent --session-key ... --json
+   --timeout <s> --message-file <f>` per item (about 2 s overhead, proven live), and
+   `openclaw.mjs gateway call <method>` for the few RPCs it needs (`chat.history` for
+   the transcript, `sessions.abort` for a stuck turn). No Python WebSocket client.
+3. **One session per role per wake, keyed `agent:<role>:w<wake_id>`.** A fresh key is
+   the reset between wakes: no `/new`, no admin-only reset call, no reply-text
+   detection. Inside a wake, items are pushed one at a time, each a new user message
+   appended to the session. Proactive compaction off; no idle or daily reset; a
+   per-wake prompt-token ceiling (250k) stops the wake and carries the rest.
+4. **Items are derived per wake, in memory, from what the conductor already holds**
+   (lane pending keys, triage reasons merged into one review item, `pending_brief`,
+   open asks, the retry clock). Outcomes are runs-row columns. A failed or timed-out
+   item advances that key's existing backoff record. No new store, no strikes.
+5. **Run limits unchanged.** The role's 600 s (Overseer 1200 s) is the whole wake's
+   budget across all its items; each turn's `--timeout` is what is left of it, plus
+   today's 60 s outer grace. No per-item cap, no loop guard.
+6. **Gateway down means today's path.** The conductor probes the Gateway's
+   unauthenticated `/startupz` at each wake open; anything but "started" runs that
+   role through today's `agent exec` one-shot, with one site alert per outage.
+7. **Cost: neutral on input, unknown on output.** The Gateway does not warm the
+   provider cache across wakes and costs no tokens while idle (once the proactive
+   features are off). Within a wake a pushed item reads the whole earlier context
+   from cache, as one-shot rounds already do. Output (reasoning) is two thirds of
+   cost and is what one-item-per-turn might move; measure it, do not assume it.
+8. **Staged rollout**: S0 checks and a 24 h idle canary, then the Consultant alone,
+   then the Planner, then the Quartermaster and Architect, then the Overseer in `all`
+   mode, then `single`. Per-role policy flag; one-shot stays the default and the
+   rollback.
+
+The plain cost of the Gateway, and how each part is contained, is section 9. In one
+line: an always-on process that holds every role's credentials and, by default,
+starts agent turns on its own; contained by switching that behaviour off, proving it
+off with an idle canary, wiping session state at every start, and refusing to
+execute any game action that was not recorded inside a wake the conductor opened.
+
+## 2. What changed since the design and the red team
+
+| Topic | 2026-10-08 design | Red team | This plan | Why |
+|---|---|---|---|---|
+| Transport | Gateway container per role per wake | local `agent --local` first, Gateway later | one always-running Gateway, all roles | decision 7 |
+| Inbox | conductor SQLite item store, 8 states, strikes | derive in memory, reuse backoff | derive in memory, reuse backoff | decision 8 |
+| Timeouts | role budget plus per-item cap (half) | agree | role budget only, turn wait = remainder | decision 9 |
+| Mid-turn push | turn-boundary push; stamp as D8 | recommend stamp | stamp built; turn-boundary line added on top | decision 10 |
+| Reset | fresh per-wake state dir | agree | fresh session key per wake, one state dir | always-running process owns one dir |
+| Overseer | `single` vs `all` paired experiment | stage it; harness only on evidence | `all` then `single` on live wakes; no grader | 2026-10-08 one-at-a-time row, decision 11 |
+| Game writes | Overseer tools wrote directly | n/a | conductor is the only writer | 2026-10-09 row; becomes a containment (9.3) |
+
+## 3. Topology and process model on VM 106
+
+```
+conductor.service (python, host)                 openclaw-gateway.service
+  |-- probe GET 127.0.0.1:<port>/startupz -------> [container: gateway run --bind loopback --auth token]
+  |-- docker run --rm --network host                 state dir: /var/lib/openclaw-gateway/state (own)
+  |     openclaw.mjs agent --session-key ...  -----> agents: architect, consultant, overseer, planner, quartermaster
+  |     openclaw.mjs gateway call chat.history       workspaces: <role>-workspace/SOUL.md (charter, read-only)
+  |-- docker run --rm ... agent exec  (fallback)     MCP: one dfmcp server entry per role, role token each
+  `-- dfmcp (VM 103) for queue, briefing, report
+```
+
+### 3.1 One Gateway, not one per role
+
+- One process, five `agents.entries`, the five dfmcp server entries in `mcp.servers`,
+  each agent's `tools.allow` limited to its own server prefix, as every pinned config
+  already does [V, `evals/live/2026-09-15-overseer-first-ruling/pinned-config.json`;
+  context audit "Tools"]. The real boundary stays server-side: dfmcp enforces each
+  role's allowlist from the bearer token [V, CLAUDE.md "Per-role allowlists enforced
+  server-side"].
+- Token exposure does not change: today one secrets env file carrying every role's
+  token goes to every run container (`CONDUCTOR_SECRETS_ENV_FILE`, one path for all
+  roles) [V, `infra/conductor.example.env`, `runner.py` `build_command`]. What
+  changes is that the holder is alive around the clock instead of for one run.
+- The default run lane is process-wide with concurrency `min(16, max(8, CPUs))`, so
+  five sessions can run at once if `parallel.proposers` is ever turned on; each
+  session key has its own serialising lane [S, `docs/concepts/queue.md`].
+- openclaw's own docs say operator scopes "are a control-plane guardrail inside one
+  trusted Gateway operator domain, not hostile multi-tenant isolation. For strong
+  separation ... run separate Gateways" [S, `docs/gateway/operator-scopes.md`]. Our
+  roles are one trust domain (same owner, same secrets file), so one Gateway is
+  enough; per-role Gateways are the alternative if a role ever needs real isolation
+  (open decision U1).
+
+### 3.2 Its own state directory
+
+- A Gateway takes an exclusive ownership lock keyed by its state directory; `agent
+  --local` and `agent exec --state-dir` refuse to start while a Gateway owns that
+  directory [S, `docs/gateway/gateway-lock.md`, `docs/cli/agent.md`]. The one-shot
+  runs mount the shared `openclaw_state_dir` read-write at `/home/node/.openclaw`
+  [V, `runner.py` `build_command`]. So the Gateway must never be given that
+  directory, or the fallback path breaks exactly when it is needed.
+- Lock liveness is judged from the recorded PID and process start identity [S, same
+  doc]. Across containers each process sees its own PID namespace, so a second
+  container could judge a live owner dead and reclaim the lock [I]. Never share a
+  state dir across containers; do not test whether the lock holds.
+- Contents: the DeepSeek provider plugin (`npm/`, copied once at install, as the
+  multiturn test had to [V]), the merged config mounted read-only over
+  `openclaw.json`, the five workspaces, and the per-agent session SQLite. The
+  DeepSeek key comes from the environment through the config
+  (`models.providers.deepseek.apiKey = {source: env, provider: default, id:
+  DEEPSEEK_API_KEY}`, the form the multiturn test used [V]), so no plaintext key is
+  written into the Gateway's auth store (red team M5).
+- The one-shot fallback should run with an isolated `--state-dir`
+  (`CONDUCTOR_THINKING_STATE_DIR` set), which also captures its transcript; whether
+  VM 106 sets it today is not recorded here [gap; `Working.md` notes
+  `parallel.proposers` needs it].
+
+### 3.3 Charter and prompt (red team B1, still a blocker)
+
+- `agent` (Gateway or local) uses each agent's configured workspace and seeds
+  openclaw's bootstrap templates unless `skipBootstrap` is set; `agent exec` forces
+  workspace to its cwd and skips bootstrap [S, red team B1 citing
+  `agent-exec-input.ts`, `prepare.ts`; `docs/cli/agent.md` exec section confirms
+  "workspace bootstrap files are skipped"].
+- So the merged config sets `agents.defaults.skipBootstrap: true` and
+  `agents.defaults.contextInjection: "always"` (the documented default, set
+  explicitly: `continuation-skip` would drop the charter from later turns and change
+  the prompt mid-session) [S, `docs/gateway/config-agents/workspace-and-bootstrap.md`].
+  Never `"never"`, which drops `SOUL.md` (context audit).
+- Each workspace holds only `SOUL.md`. The charter stays in place between wakes
+  (unlike today's write-then-delete); at each wake open the conductor checks the
+  workspace `SOUL.md` hash against `agents/<role>/role.md` and rewrites it if they
+  differ. A role whose charter cannot be confirmed does not open a session (today's
+  refusal rule, `runner.py` `charter_missing`, carried over) [V for the rule].
+- Whether the Gateway re-reads `SOUL.md` per turn or caches it is [gap]; S0 changes
+  it between two turns and reads the next request. If cached, a charter deploy
+  restarts the Gateway (section 7).
+- The fallback path keeps today's `/app/SOUL.md` mount from the same workspace file,
+  so both routes read one charter source [V, `runner.py` `CHARTER_MOUNT`].
+- The two routes' system prompts will differ slightly (workspace line, exec's
+  overlay) [S, B1]. Consequences: switching a role between routes costs one cold
+  prefix, and session-route metrics need a short re-baseline rather than a direct
+  comparison with pre-session one-shot runs.
+
+### 3.4 Gateway config (merged, committed as a template)
+
+Today's pinned configs live only on VM 106 (`/opt/openclaw/conductor/pinned-configs/`)
+[V, context audit; `conductor/config.py`]. v1 brings the Gateway config under the
+repo as a template with `${ENV}` placeholders only (no address, no token, no
+hostname), rendered by the deploy. Keys that matter, all [S] unless marked:
+
+```json5
+{
+  gateway: {
+    mode: "local",                       // startup refuses without it
+    bind: "loopback", port: 18789,       // port from conductor.env in practice
+    auth: { mode: "token" },             // token from OPENCLAW_GATEWAY_TOKEN env
+    reload: { mode: "off" },             // config changes only at an explicit restart
+    controlUi: { enabled: false },
+  },
+  terminal: { enabled: false },          // default true: an admin-scoped host PTY
+  cron: { enabled: false },              // no automations, so no scheduled heartbeats
+  session: { reset: { mode: "none" } },  // the default, set explicitly
+  agents: {
+    defaults: {
+      skipBootstrap: true, contextInjection: "always",
+      compaction: { enabled: false },
+      heartbeat: { every: "0m" },
+      // model default as today; per-run --model still passed
+    },
+    entries: { /* five roles: workspace, tools.allow, skills: [] */ },
+  },
+  mcp: { servers: { /* five, url and token by ${ENV} */ } },
+  models: { providers: { deepseek: { apiKey: { source: "env", provider: "default", id: "DEEPSEEK_API_KEY" } } } },
+}
+```
+
+`${ENV}` interpolation in MCP headers is used today [V, pinned config example]; in the
+MCP `url` field it is [I], checked when the template is first rendered.
+
+## 4. How the conductor talks to the Gateway
+
+### 4.1 One turn
+
+Per item, a client container on the host network with its own empty state dir and a
+tiny client config (`gateway.mode: local`, the port), the token in its env file:
+
+```
+docker run --rm --network host --entrypoint node --env-file <secrets> \
+  -v <client-state>:/home/node/.openclaw -v <client-config>:/home/node/.openclaw/openclaw.json:ro \
+  -v <msg dir>:/msg:ro <image@digest> openclaw.mjs agent \
+  --session-key agent:<role>:w<wake_id> --model <model> --json \
+  --timeout <remaining s> --message-file /msg/<item>.txt
+```
+
+- Proven live on 2026-10-07 with `--auth none`: client container on the host
+  network, its own empty state dir, about 2 s overhead per message [V, multiturn
+  README]. Token auth through the client is [gap], S0.
+- `--model` makes the CLI request admin scope; a local (not remote-mode) CLI asks for
+  admin anyway [S, `agent-via-gateway.ts` lines 1070 to 1086]. Shared-token auth is
+  "trusted operator access" [S, operator-scopes "Shared-secret auth"], so admin is
+  expected to be granted [I, S0]. Passing `--model` per turn keeps
+  `CONDUCTOR_MODEL_<ROLE>` working without a Gateway restart.
+- `--timeout` is sent as the run's own deadline (`timeout` in the `agent` RPC) and
+  also bounds the client wait [S, lines 1099 to 1120]. The conductor's outer kill
+  stays at `timeout + 60 s` (`OUTER_KILL_GRACE_SECONDS`) [V].
+- The CLI picks a random idempotency key per invocation and has no flag to set it
+  (`opts.runId` is not a registered option) [S, `register.agent-turn.ts`,
+  `agent-via-gateway.ts` line 1070]. So a conductor retry is never deduplicated by
+  openclaw; exactly-once rests on the queue (4.4).
+- Exit status: 0 for a completed turn, 1 for error, timeout or cancel; an unknown
+  status string fails closed [S, `markAgentRunExitCode`].
+- `--message-file` avoids argv limits (4 MiB cap) [S, docs].
+
+### 4.2 Envelope mapping (red team B2, still a blocker)
+
+- Gateway `--json` prints the raw Gateway response `{runId, status, summary,
+  result}`, adding `deliveryStatus` only when delivering [S,
+  `buildGatewayJsonResponse`, line 930]. The run stats live on `result.meta.agentMeta`
+  and the tool summary on `result.meta.toolSummary` [S, `docs/cli/agent.md`: "The
+  agent run-stat fields appear on `meta.agentMeta` in the `openclaw agent --json`
+  response; the outer tool summary remains at `meta.toolSummary`"].
+- One pure function maps it onto today's `RunResult` (status, ok, cost, usage,
+  assistant turns, tool summary, final text), so `cycle.py`, the archive and
+  `_overseer_called_escalate` see the same shape as from exec [V for those readers].
+  Its unit tests use real envelopes captured at S0 [gap until then]: a plain reply,
+  an MCP tool call, an inner timeout, a provider error, an abort, and `in_flight`.
+- Escalation is checked after every Overseer turn, not at wake close: a turn whose
+  tool summary contains `queue.escalate` pauses the fort at once and ends the wake.
+
+### 4.3 Transcript
+
+- Read once per wake at close through `openclaw.mjs gateway call chat.history
+  --params '{"sessionKey": ...}' --json` (method registered, `operator.read`) [S,
+  `src/gateway/methods/core-descriptors.ts` line 355]. Its reply shape against our
+  `build_transcript` is [gap]; S0 captures it and an adapter is written if needed.
+- Not read from the Gateway's SQLite on the host: that file is owned by the
+  container's user and in WAL mode while the Gateway writes it, the trap the
+  publisher hit (`Working.md`, 2026-10-02) [V for the trap].
+- If the history read fails, each item's runs row still has its envelope (cost,
+  usage, tools, final text); only the per-round transcript is lost. Cut per item at
+  each user message, as the design proposed (design section 7).
+
+### 4.4 Exactly-once
+
+Unchanged from the design and the red team, and now load-bearing: the queue refuses
+a repeated final ruling, a second answer to an ask, and a repeated typed step [V,
+design 4.3, `dfqueue/store.py`, `dfmcp/queue_tools.py` `_append_locked`]. Before any
+resend the conductor reads the goal state; after transport loss it never resends
+the same item in the same wake, because the Gateway may still finish the turn [S,
+`docs/cli/agent.md`: "Transport loss is ambiguous"].
+
+## 5. One session per role, items one at a time
+
+### 5.1 Items, derived (decision 8)
+
+| Role | Items, in order | Source, all existing [V] |
+|---|---|---|
+| Consultant | one per open ask addressed to it | `queue.overview` asks |
+| Planner | one item: the plan wake (red team M7: its wakes end in one plan write) | plan watch, triage |
+| Architect, Quartermaster | one per lane key naming a distinct thing (alert, ore site, unsupplied building, noble room, answer to its ask, ruling on its proposal), then ONE review item merging every keyless reason (`routine_review`, `stuck_job`, vitals, unused space line) | `LaneState.pending`, triage reasons |
+| Overseer `all` | one item: today's ruling briefing | `build_ruling_briefing` |
+| Overseer `single` | a docket header (one line per pending proposal: id, role, type, urgency, flags), then one proposal per item, then accepted-not-carried-out items | `queue.pending_brief`, `to_carry_out` |
+
+- Order within a role: owed replies first (asks, answers, rulings on own filings),
+  then lane work, then the review item; deterministic, ticks not wall times, so the
+  rendered text is replay-stable.
+- `max_items_per_wake` 8; the rest are carried (stay pending, no penalty).
+- Done means: a server-visible goal state where one exists (a ruling naming the
+  proposal, an answer to the ask, a plan record) [V, design 4.3]; otherwise the turn
+  ended ok. Red team M3: a turn that wrote any record in its window counts as
+  progress, never as a failure, even if it then timed out.
+- A failed or timed-out item: its lane key stays pending and its backoff record
+  (`conductor/backoff.py`) counts one more wake; a key that keeps failing stalls and
+  alerts through the mechanism that exists [V, `backoff.py` docstring].
+- Outcome per item recorded as runs-row columns (section 8), nothing else.
+- Superseded mid-wake (the goal state appears before the item is sent, for example
+  an ask answered elsewhere): skipped and named in the next message.
+
+### 5.2 The message stream
+
+- First message: the wake briefing (today's builders, unchanged content: FORT line,
+  vitals, alerts, roadmap, DECIDED block) plus the docket line ("N items this wake,
+  one at a time; finish each, then stop") plus item 1. One turn, no "ready" turn.
+- Each later message: any control lines since the last turn, then `ITEM k of N`, the
+  item text and its ask.
+- Control lines: a pause-state change since the last turn ("FORT CHANGED at tick T:
+  running to paused, tripwire thirst_critical"), filtered of the conductor's own
+  actions or attributed to them (red team m8); an item stopped by the budget ("item
+  k was stopped at the time limit and returns next wake; do not continue it",
+  because a timed-out prompt stays in history [V, multiturn]).
+- Mid-turn, the pause stamp on every tool reply already tells the model the fort is
+  paused [V, `dfmcp/pause_stamp.py`, decision 10]; the control line covers the
+  turn boundary and the reason, which the stamp keeps short.
+
+### 5.3 Reset, compaction, ceiling
+
+- **Between wakes: a fresh session key** (`agent:<role>:w<wake_id>`). A new key
+  starts at the system prompt; proven live as "the safest local-route reset" and the
+  cross-run cache hit on first calls of fresh keys [V, multiturn Addition A]. Only one
+  session per role is live at a time, which is the user's "one session per role".
+- Alternative (open decision U2): a fixed key `agent:<role>:main` with `/new` sent at
+  wake open. Proven live on the Gateway [V], but the envelope keeps the old session id
+  so the reset is detected only by the reply text "New session started." [V], it
+  needs admin scope [S, line 1073], and old windows accumulate under one key.
+- **Compaction: never in v1.** `agents.defaults.compaction.enabled: false` stops
+  proactive compaction; overflow recovery remains but cannot trigger below about
+  980k on a 1M window [S, source report section 6]. Pruning stays off (it rewrites old
+  messages and breaks the prefix cache) [S].
+- **Ceiling:** when a turn's prompt (input plus cache read) passes 250k tokens, no
+  further item is sent; the rest are carried to the next wake, which opens a fresh
+  key. No rotation inside a wake (red team m5). For scale, a whole one-shot Overseer
+  run reached 108.7k [V, persistent-sessions 3.1].
+- No idle or daily reset: an idle reset fired mid-wake in the live test and broke
+  recall [V, multiturn Addition B].
+- **Session store hygiene:** the store is disposable by design (the queue and the
+  runs DB are the record). It is wiped at every Gateway start (section 7.2); between
+  restarts, built-in maintenance prunes after 30 days or 5000 rows [S, source report
+  section 8].
+
+### 5.4 Run limits (decision 9)
+
+- Budget per role per wake = `role_timeout_seconds` (600 s, Overseer 1200 s), the
+  same numbers as today [V, `policy.yaml`, `cycle.py` `_timeout_for`].
+- Each turn's `--timeout` = floor of what is left; outer kill at that plus 60 s.
+- Fewer than 60 s left: stop, carry the rest. (A practical floor, not a per-item
+  cap: a turn cannot do anything useful in less.)
+- Budget hit mid-turn: SIGTERM the client, which sends `chat.abort` for an accepted
+  run [S, `docs/cli/agent.md`]; then `gateway call sessions.abort` for the key as a
+  belt [S, method registered `operator.write`]; the wake ends. The session is never
+  reused (next wake has a new key), so the half-finished turn in its history does not
+  matter.
+
+### 5.5 Overseer specifics
+
+- `all` first: the session route with today's single ruling turn. Behaviour equals
+  one-shot apart from transport and the B1 prompt differences, so it is the safe
+  first setting.
+- `single` next, per the 2026-10-08 row: one proposal per turn with the docket header
+  as the overview of the rest. Judged on live wakes by cost per docket, defer rate,
+  consistency errors (accepting both of an `overlaps` or `duplicate_of` pair) and
+  prediction grading; no blind grader for now (decision 11).
+- Game actions: the Overseer's direct write tools record ready-ruled one-step
+  actions and the conductor executes them after the Overseer's run [V, register
+  2026-10-09]. In v1 "after the run" means after the Overseer's wake closes.
+  Executing per item (the pipelining the 2026-10-08 row wants) is a later stage.
+
+## 6. Concurrency
+
+v1 is serial, in today's order (Planner, advisors, Consultant, Overseer, execute).
+`parallel.proposers` already exists and is built [V, `policy.yaml` `parallel`,
+`cycle.py` lines 970 to 1110]; with sessions, parallel roles are concurrent sessions
+in one Gateway, so the per-run isolated state dir it needs for exec is not needed on
+the session route. Turning it on stays a separate, later switch (the DFHack pool of
+four and the 60 s filing read bound are the risks, red team M4).
+
+## 7. Supervision
+
+### 7.1 The unit (`infra/units/openclaw/openclaw-gateway.service`, new)
+
+- `User=df`, `SupplementaryGroups=docker`, the same hardening block as
+  `conductor.service` [V, `infra/units/openclaw/conductor.service`].
+- `ExecStartPre=-/usr/bin/docker rm -f openclaw-gateway` (a leftover container from a
+  crash).
+- `ExecStartPre=` the session wipe (7.2).
+- `ExecStart=/usr/bin/docker run --rm --name openclaw-gateway --network host
+  --entrypoint node --env-file <secrets> -v <gw state>:/home/node/.openclaw -v
+  <gateway config>:/home/node/.openclaw/openclaw.json:ro -v <workspaces...>
+  <image@digest> openclaw.mjs gateway run --bind loopback --port <p> --auth token`.
+- `ExecStop=/usr/bin/docker stop -t 300 openclaw-gateway`, `TimeoutStopSec=330`: a
+  requested stop drains active turns for up to 5 minutes by default [S,
+  `docs/gateway/restart-recovery.md`]; killing only the `docker run` client would
+  leave the container running, the same trap the runner documents [V, `runner.py`
+  timeout path].
+- `Restart=on-failure`, `RestartSec=10`, `RestartPreventExitStatus=78`: a Gateway that
+  finds another healthy owner exits 78 so a supervisor does not loop [S,
+  `docs/gateway/gateway-lock.md`].
+- Not `OPENCLAW_SUPERVISOR_MODE=external`: that mode is for supervisors that consume
+  openclaw's restart handoffs [S, `restart-and-supervision.md`]; systemd plus docker
+  restarting a fresh process is simpler and the handoff is not needed.
+
+### 7.2 Restart is a clean slate
+
+- Restart recovery is "always on": a turn interrupted by a crash or forced stop is
+  re-dispatched a few seconds after startup with a synthetic "your previous turn was
+  interrupted" message, up to three charged attempts, if the interruption is under
+  2 hours old [S, `restart-recovery.md` "Automatic resume"]. No config switch to turn
+  it off was found [S, searched that doc; not exhaustive in source].
+- A recovered turn would run with no conductor watching: it could file queue records
+  and, for the Overseer, record ready-ruled actions.
+- Containment: `ExecStartPre` deletes the per-agent session databases
+  (`agents/*/agent/openclaw-agent.sqlite*`) in the Gateway's state dir before start,
+  so recovery has nothing to resume. Whether startup is clean on a state dir with
+  those files absent (it should be: a fresh install has none) is [I], S0 checks it
+  and that no recovery dispatch appears in the log. The files are owned by the
+  container's user, so the wipe runs as a short container with the same user [I].
+- Whether recovery even applies to `agent` RPC turns on explicit keys (the docs say
+  "main-session" turns) is not settled [gap]; the wipe makes the answer irrelevant.
+
+### 7.3 Health check and what the conductor does
+
+- At each wake open: `GET http://127.0.0.1:<port>/startupz` with a 2 s timeout, from
+  Python directly (no container). `200` with `status: "started"` means usable;
+  anything else means down [S, `docs/gateway/health.md`: unauthenticated probes;
+  `/startupz` "for traffic admission", `/healthz` liveness only].
+- Down: that role runs today's one-shot `agent exec` this wake, with its items
+  rendered into one briefing as today; a site alert "Gateway down, roles on one-shot"
+  once per outage, renotified by the backoff rule. No retry loop.
+- Lost mid-wake (client exits with a transport error, or the probe now fails): the
+  in-flight item's goal state is read; the remaining items of that role are carried
+  (not handed to a fallback run in the same wake, since the Gateway may still finish
+  the in-flight turn). Next wake probes again.
+- `scripts/drift_check.py` adds `openclaw-gateway.service` to its services section
+  (active, enabled once the user says so).
+- The conductor never starts, stops or restarts the unit. Restarts are deploy steps
+  (7.4) or systemd's own on crash.
+
+### 7.4 Deploys that must restart the Gateway
+
+- **Every vm103-dfmcp deploy.** A Gateway keeps unchanged MCP servers' connections
+  "and cached tools, including for runs already in progress" [S, `docs/tools/mcp.md`];
+  with reload off, a dfmcp change to tools or their descriptions would not reach the
+  roles until the Gateway restarts. Whether a dfmcp restart forces a reconnect and a
+  fresh tool list is [gap], S0. Until shown, the deploy manifest restarts the Gateway
+  after vm103-dfmcp.
+- Every Gateway config, image or charter change (charter only if S0 shows caching).
+- Only while the conductor is idle: the conductor takes an exclusive lock on its
+  state dir for each cycle (red team M6, owed anyway), and the deploy step waits for
+  it (`flock`) before restarting. A restart under a live wake is what the drain and
+  the wipe exist for, but avoiding it is cheaper.
+- Every such restart costs one cold prefix per role on its next wake (already true of
+  any tool-list change, `Working.md` lesson 2026-10-08).
+
+## 8. Runs rows, metrics, Board
+
+As the design (section 7) with the red team's amendments: one runs row per item turn
+with additive columns `wake_id`, `item_seq`, `item_kind`, `item_ref`, `outcome`,
+`transport` (`gateway` or `oneshot`), `cycle_id`; per-wake figures defined per wake,
+not summed where a sum means nothing (red team m2); one public summary per wake from a
+`wake_close` report, item replies kept in the transcript tab (m3); the awake strip
+keyed on `wake_open` and `wake_close`. A one-shot run is a wake of one item, so old
+and new rows read the same way.
+
+## 9. Self red team: what the Gateway costs, and how each cost is contained
+
+The red team preferred the local route because the Gateway's measurable gain is
+small: live wakes carry 1 to 3 items, so the 5 to 7 s saved per message is 10 to 20 s
+per role wake, under 5 percent of a run [V, red team M1]. That is still true. The
+user chose the Gateway anyway, for the structure (a live session per role that items
+are pushed into, later pipelining for the Overseer). Here is the price, plainly.
+
+### 9.1 An always-on process that starts agent turns by itself (severity: high)
+
+By default a Gateway runs heartbeat turns every 30 minutes in each agent's main
+session [S, `docs/gateway/heartbeat.md` "Defaults"], serves a Control UI with chat,
+offers an admin-scoped operator terminal that "starts a host PTY in the selected
+agent workspace" (default on) [S, `config-gateway.md`], resumes interrupted turns
+after a restart (9.3), and applies config edits live. Any of these would be an agent
+acting on the fort, or spending, outside the conductor.
+
+- What already limits it: with no channel configured, an ambient heartbeat poll has
+  no route and is skipped before the model is called ("Routeless ambient polls are
+  pure model burn, but only they may skip") [S, `src/infra/heartbeat-runner-execution.ts`
+  lines 356 to 367]. Triggered wakes (hook, cron, exec completion) are not skipped.
+- Containment: `heartbeat.every: "0m"`, `cron.enabled: false`, `controlUi.enabled:
+  false`, `terminal.enabled: false`, `reload.mode: "off"`, no channels, no hooks,
+  loopback bind with token auth, config mounted read-only.
+- Proof, not trust: a 24 hour idle canary at S0 with zero model calls (no new
+  transcript rows, no DeepSeek usage in the Gateway's logs) and zero dfmcp tool calls
+  attributed to role tokens in the dfmcp journal outside conductor-opened wakes.
+  The same dfmcp-journal check runs as a standing drift check afterwards.
+
+### 9.2 Every role's credentials live in one long-running process (medium)
+
+Same tokens as today's run containers, but resident around the clock; anyone who can
+reach the loopback port with the Gateway token can drive any role.
+
+- Containment: loopback only (host network, `--bind loopback`); token in the secrets
+  env file only, never argv (the docs warn inline secrets show in process listings)
+  [S]; a new row in the gitignored secrets-rotation list for the Gateway token; the
+  dfmcp side still enforces each role's allowlist by token, and game writes are the
+  conductor's alone (9.3).
+
+### 9.3 Work the conductor did not open (high, contained by the single-writer rule)
+
+Restart recovery, a mis-set feature, or a stray client could run a role turn the
+conductor never opened.
+
+- First containment: the session wipe at start (7.2).
+- Second, and the one that matters: since 2026-10-09 no role writes to the game; the
+  Overseer's write tools record ready-ruled actions that the conductor's execute
+  phase runs [V, register]. v1 adds one rule to `conductor/execute.py`: execute only
+  actions recorded inside the time window of an Overseer wake the conductor opened
+  (`runs.records_in_window` already finds records by role and window [V, red team
+  M3]); anything else is held and raised as an alert, never executed. So the worst a
+  stray turn can do is file queue records, which the server validates, deduplicates
+  and the Overseer rules on.
+
+### 9.4 A second execution path to keep working (medium)
+
+Two envelope shapes, two charter delivery routes, two prompt variants, and a
+fallback that only runs when something is already wrong.
+
+- Containment: one mapping function to `RunResult` with contract tests on captured
+  envelopes from both routes; the charter hash check on both; a forced-down test at
+  every rollout stage (stop the Gateway, run one `--once` cycle, see the role run
+  one-shot and the alert fire); the per-role flag means a misbehaving role goes back
+  to one-shot with one line.
+
+### 9.5 Drift between the Gateway and everything around it (medium)
+
+Cached MCP tool catalogs (7.4), a config that changes only at restart, an image tag
+that moves (`runner.py` `DEFAULT_IMAGE` is `:latest` today [V]), and a pinned config
+that today lives only on the VM.
+
+- Containment: image pinned by digest for the Gateway, the client and the fallback,
+  recorded on every runs row (red team m10, do it now regardless); Gateway config
+  committed as a template and deployed (3.4); dfmcp deploys restart the Gateway
+  (7.4); `drift_check.py` compares the rendered config's hash with the deployed one.
+
+### 9.6 Ambiguity after a lost connection (low)
+
+A turn can finish after its client died [S]; there is no conductor-chosen
+idempotency key [S, 4.1].
+
+- Containment: never resend in the same wake; read the goal state; the queue's
+  refusals make a later repeat harmless for rulings, answers and typed steps [V].
+  Untyped near-duplicates are only flagged, not refused [V, red team M3]; the Overseer
+  sees the `duplicate_of` flag in its briefing.
+
+### 9.7 Resources and new unknowns (low to medium)
+
+- Memory and CPU of a resident Node process on VM 106: unmeasured [gap]; S0 records
+  RSS after a day.
+- A Gateway-side watchdog can abort sessions "stalled" past a built-in threshold [S,
+  `docs/concepts/queue.md` troubleshooting]. DeepSeek reasoning streams tokens, so a
+  long think should read as progress [I]; S0 watches for `session.stalled` in logs.
+- Startup migrations write the config when legacy keys need migrating [S,
+  `cli/gateway/running.md`]; with a read-only mount that write fails, so a template
+  that needs migrating fails loudly at start rather than silently changing [I].
+- Gateway token auth, the client over the host network with a token, MCP tools inside
+  a Gateway turn, `chat.history`'s shape, and abort behaviour: all [gap], S0.
+
+### 9.8 Things this plan deliberately does not use
+
+`steer`, `followup` or `collect` queue modes (the conductor sends one item at a time
+and waits, so no turn is ever queued behind another); `sessions.send`; the private
+SDK; Tool Search; openclaw memory and skills; `contextInjection: "never"`. Each was
+either unverified, unnecessary for one-at-a-time delivery, or rejected by the context
+audit.
+
+## 10. Token and cache effect
+
+Rates, official DeepSeek off-peak per million tokens [V, `research/2026-10-08-thinking-budget.md`]:
+Flash cache hit $0.003, miss $0.15, output $0.60; Pro hit $0.022, miss $0.66, output
+$1.98. All roles are on Flash for now (register 2026-10-09). The real bill has run 3
+to 5 times the logged cost (same register row), so treat these as ratios.
+
+| Case | Prompt | Cached | Measured where |
+|---|---|---|---|
+| Today, cold first call of a wake (Architect) | 20,237 | 384 | context audit [V] |
+| Today, cold first call (Overseer run-0023) | 29,860 | 0 | persistent sessions 3.1 [V] |
+| Today, rounds 2+ within a run | grows to 62k to 109k | 96 to 99 percent | same [V] |
+| Session, pushed turn in a warm session (throwaway) | about 31k | 30,208 to 31,232 | multiturn [V] |
+| Session, first turn after a reset or in a new process (same day) | about 30.5k | 30,208 to 30,720 | multiturn [V] |
+
+What follows, per wake:
+
+- **The cold prefix is the same on both routes.** The provider caches by prefix, not
+  by process, and the Gateway does not keep the provider's cache warm between wakes.
+  A wake that starts cold pays it either way: about 30k x $0.15/M = $0.0045 on Flash
+  ($0.020 on Pro) for the Overseer's first call. Wakes are hours apart and DeepSeek's
+  retention is unstated, hits proven up to 215 minutes [V, cross-run cache research].
+- **A pushed item is nearly free on input.** At 100k carried context, 100k x $0.003/M
+  plus about 800 new tokens x $0.15/M is about $0.0004 per item on Flash. One-shot
+  pays the same for its later rounds; splitting into items adds one extra first
+  request per item, not a new prefix.
+- **Output decides.** Output is about two thirds of cost (reasoning) [V, register
+  2026-10-09 Flash row]. Whether one item per turn makes the model re-orient per item
+  (more reasoning) or think less per item (narrower task) is unknown; the red team's
+  guess was 0 to 15 percent above today [I]. The runs columns (section 8) measure it per
+  role at each stage.
+- **Avoidable cold prefixes:** each switch between routes for a role (3.3), each
+  Gateway restart after a dfmcp or charter deploy (7.4), and the date line at UTC
+  midnight [S]. Batch deploys.
+- **Idle cost: zero tokens**, once 9.1 is proven by the canary.
+
+## 11. Failure modes and tests
+
+| Failure | Detection | Response | Test |
+|---|---|---|---|
+| Gateway down at wake open | `/startupz` not 200 started | role runs one-shot; one alert per outage | unit: fake probe down, assert one-shot path and alert; live: stop unit, run `--once` |
+| Gateway dies mid-wake | client transport error, probe fails | read goal state of in-flight item; carry the rest; no fallback in the same wake | unit: fake transport raises after accept; assert no resend |
+| Turn hits its `--timeout` | envelope status timeout or `incomplete_turn` | item carried, backoff advanced unless it wrote a record; wake ends if budget gone | unit: fake timeout envelope; live S2: tiny budget on one item |
+| Outer kill needed | conductor wait expires | SIGTERM client (sends `chat.abort`), `gateway call sessions.abort`, end wake | unit; live S0 (abort mid MCP call, then check no further dfmcp calls from that session in the dfmcp journal) |
+| Overseer escalates in item k | `queue.escalate` in `meta.toolSummary` | pause at once, end the wake, skip execute | unit: fake turn with the tool, assert pause called before item k+1 |
+| Tripwire latches mid-wake | pause poller | start no new items in any session, kill in-flight non-owner turns, skip execute, end cycle; next cycle takes the tripwire branch (red team M8) | unit |
+| Stray turn records an Overseer action | record outside an opened wake window | not executed; alert | unit in `execute.py` tests |
+| Restart recovery resumes a turn | dfmcp journal shows role calls with no open wake | wipe at start prevents; alert if seen | live S0: kill the container mid-turn, restart unit, watch for 10 minutes |
+| Idle Gateway runs a turn | canary: transcript rows, provider usage, dfmcp calls | config fix; Gateway off until fixed | live S0, 24 h |
+| Tool list stale after dfmcp deploy | first turn's tool summary names a removed tool, or drift check | restart Gateway (deploy step) | live S0: deploy-equivalent dfmcp restart, compare tool list before and after |
+| Charter missing or stale | hash check at wake open | refuse to open the session; one-shot also refuses | unit; live S0 capture shows `SOUL.md` text, no `AGENTS.md`/`BOOTSTRAP.md`/`IDENTITY.md`/`USER.md` template text |
+| Envelope shape changes (image moved) | mapping returns unknown status | fail closed as an error item | contract tests on captured fixtures; digest pin |
+| Session grows past ceiling | turn usage | stop sending, carry | unit |
+| Lost connection, turn finishes anyway | goal state appears later | counted next cycle by goal state; no resend | unit |
+| Two conductors at once | instance lock | second exits | unit on the lock |
+| State dir shared by mistake | exec refuses to start ("Gateway owns it") | config error at deploy | deploy check: Gateway state path differs from `CONDUCTOR_OPENCLAW_STATE_DIR` |
+
+Offline tests use a `FakeSessionTransport` in the style of `FakeRoleRunner` [V,
+`runner.py`]; no test runs docker. Live checks run with the fort paused under the
+operator hold unless stated.
+
+## 12. Staged rollout
+
+| Stage | What | Gate to pass |
+|---|---|---|
+| S0 | Install `openclaw-gateway.service` with the template config; checks: token auth through the client on the host network; request capture for the Consultant on both routes (system prompt and tool list hashes; charter present; no template files); `chat.history` shape; MCP tool call inside a Gateway turn; abort mid MCP call; kill mid-turn plus restart with the wipe; dfmcp restart and the tool list; charter change between turns; envelope fixtures; RSS after a day; 24 h idle canary | `evals/live/<date>-gateway-s0/README.md` answering each; canary clean. Nothing below starts before the canary passes |
+| S1 | Conductor code merged with every role on `oneshot`; runs columns; instance lock; execute-window rule; image digest pin | ordinary `--once` cycles unchanged; columns filled with `transport: oneshot` |
+| S2 | Consultant on `session` | a cycle with two staged asks: both answered once, two item rows under one `wake_id`, transcript per item on the Board; hold flipped during the wake shows the control line in the next message; forced-down test runs it one-shot |
+| S3 | Planner on `session` (single item) | several routine cycles: plan writes as before, cost and wall per wake recorded |
+| S4 | Quartermaster, then Architect | a wake with at least two items each; lane keys cleared per key; a forced timeout carries an item without losing a record it wrote |
+| S5 | Overseer on `session`, mode `all` | rules a live docket with the same records a one-shot run would; escalation test pauses the fort |
+| S6 | Overseer mode `single` | a run of live ruling wakes; cost per docket, defer rate and consistency errors compared with S5; register row with the numbers |
+| Later | per-item execute for the Overseer (pipelining); `parallel.proposers` on sessions; true mid-turn steering only if ever needed | each its own decision |
+
+Arming `conductor.service` stays on its own track; every stage above runs under
+hand-run `--once` cycles. Policy is loaded once at service start [V, `service.py`
+`build_deps`], so under the service a flag change needs a restart; under `--once` it
+does not.
+
+Policy block (`conductor/policy.yaml`):
+
+```yaml
+sessions:
+  transport: gateway          # gateway | oneshot: global kill switch
+  roles:                      # per role, oneshot is the default and the rollback
+    consultant: oneshot
+    planner: oneshot
+    quartermaster: oneshot
+    architect: oneshot
+    overseer: oneshot
+  overseer_ruling_mode: all   # all | single
+  max_items_per_wake: 8
+  min_turn_seconds: 60
+  max_session_prompt_tokens: 250000
+  probe_timeout_seconds: 2
+```
+
+## 13. Discrepancies found
+
+- `Working.md` "User decisions open (older list)" still recommends the local route
+  first for sessions; decision 7 overrides it. Worth a memory audit pass.
+- `conductor/service.py`'s docstring says charters are read fresh every cycle; the code
+  loads them once at start (already flagged by the 2026-10-08 design, still open).
+- `research/2026-10-07-persistent-sessions.md` says the Gateway was never run in this
+  project; the 2026-10-07 multiturn test ran a throwaway one. The research predates it.
+- openclaw docs against code: none found on the points used here. The docs'
+  `chat.history` and `sessions.abort` scopes match the method registry [S].
+
+## 14. Not verified
+
+Everything marked [gap] above, collected: token auth through the CLI client; admin
+scope granted to a shared-token client for `--model`; MCP tools inside a Gateway turn;
+the emitted Gateway envelope (fixture); `chat.history`'s reply shape; abort behaviour
+in practice; whether restart recovery applies to explicit-key `agent` turns and
+whether the start-time wipe is clean; whether `SOUL.md` is cached; whether a dfmcp
+restart refreshes the Gateway's tool list; `${ENV}` in an MCP `url`; resident memory;
+whether VM 106 sets `CONDUCTOR_THINKING_STATE_DIR`; the session-stall watchdog
+against long reasoning; output-token change from one item per turn. The source read
+was at tag `v2026.9.4`; the installed image is recorded as that commit by the context
+audit, not re-inspected here.
