@@ -118,7 +118,8 @@ write:
     status: exists
     note: >-
       A lookup question to the Consultant when a fact about game mechanics,
-      not this fort's state, would change a target.
+      not this fort's state, would change a target; or to the Quartermaster
+      (`to: quartermaster`) for stock and consumption facts behind a crop level.
 
 deny:
   - id: "doctrine.get"

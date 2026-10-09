@@ -358,17 +358,16 @@ ARCHITECT_TYPES = (
 )
 
 WORK_ORDER = "work_order"
-CROP_PLAN = "crop_plan"
 STOCK_TARGET = "stock_target"
 
 #: `docs/AGENT-LOOP.md` item 5 (`handoffs/2026-09-22-loop-queue-quartermaster.md`
 #: "Why", item 5): the Quartermaster's closed vocabulary for the MVP.
 #: `work_order` -- a manager order or a direct workshop job, standing repeat
-#: orders included. `crop_plan` -- what a farm plot grows, per season.
+#: orders included. `crop_plan` was retired 2026-10-09 (autofarm; the Planner sets crop levels).
 #: `stock_target` -- a par level or cover-day target for a named item class
 #: (`docs/PRODUCTION-MODEL.md` §10). Deliberately NOT included: a labor
 #: proposal (`set_labor` still races `autolabor`, unfixed).
-QUARTERMASTER_TYPES = (WORK_ORDER, CROP_PLAN, STOCK_TARGET)
+QUARTERMASTER_TYPES = (WORK_ORDER, STOCK_TARGET)
 
 #: `plan_change` (research/2026-10-07-planner-design.md 2.4 item 3): the
 #: Planner's request for a revision inside a season, ruled by the Overseer,

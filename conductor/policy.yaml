@@ -501,7 +501,7 @@ plan:
     # Mirrors dfqueue/plan_policy.yaml family_serving_types.
     serving_types:
       zones: [room_siting, corridor]
-      stocks: [work_order, stock_target, crop_plan]
+      stocks: [work_order, stock_target]
       order: [work_order]
 
 # handoffs/2026-10-07-unsupplied-building-watch.md (conductor/unsupplied_watch.py):
@@ -531,3 +531,11 @@ noble_room:
   max_wakes: 3
   max_positions: 12
   statuses: [not_met]
+
+# The autofarm sync (conductor/autofarm_sync.py, register 2026-10-09 "switch farming to
+# autofarm"): each cycle, unless an operator hold is in force, the plan targets with
+# `sync: autofarm` are written into DFHack's autofarm through the conductor-only
+# `autofarm.set` tool (the default level from the `crop: default` target, else 0), and
+# autofarm is enabled. Nothing is written until at least one crop target exists.
+autofarm_sync:
+  enabled: true

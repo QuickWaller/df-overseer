@@ -139,6 +139,8 @@ _TARGET_SCHEMA = {
         "district": {"type": "string"},
         "max_in_flight": {"type": "integer"},
         "note": {"type": "string"},
+        "sync": {"type": "string", "enum": list(plan.SYNC_KINDS), "description": "a level the conductor writes into the game's autofarm each cycle (no owner, signal or reorder needed); give `crop` with it"},
+        "crop": {"type": "string", "description": "with sync: the plant raw token (e.g. MUSHROOM_HELMET_PLUMP) whose stock level `want` sets, or `default` for autofarm's default level"},
         "roadmap_ref": {"type": "string", "description": "the id of the fort roadmap entry this target adopts (plan.read's roadmap block lists them)"},
         "deviation_reason": {"type": "string", "description": "why this target differs from its roadmap entry; without one a deviation is flagged (never refused)"},
     },
@@ -490,11 +492,18 @@ async def _target_status(
     owner_use: Dict[str, int] = {}
     for t in targets:
         tid = t.get("id")
-        row: dict = {k: t[k] for k in ("id", "signal", "per", "want", "reorder", "reorder_gap", "owner", "max_in_flight") if k in t}
+        row: dict = {k: t[k] for k in ("id", "signal", "per", "want", "reorder", "reorder_gap", "owner", "max_in_flight", "sync", "crop") if k in t}
         serving = work.get(tid, [])
         row["serving"] = serving
         if ("targets", tid) in inert:
             row.update({"state": "inert", "flags": [f for f in active.get("flags") or [] if f.get("id") == tid and f.get("section") == "targets"]})
+            out_targets.append(row)
+            continue
+        if plan.is_synced(t):
+            # Synced into the game by the conductor: no owner, no measure, no shortfall.
+            needs_alive = plan.want_uses_alive(t)
+            row["want_units"] = None if (needs_alive and alive is None) else plan.want_units(t, alive)
+            row["state"] = "synced"
             out_targets.append(row)
             continue
         tpl = tpl_by_target.get(tid)

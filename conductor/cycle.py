@@ -61,6 +61,7 @@ from typing import Any, Callable, Dict, List, Mapping, Optional, Sequence, Set, 
 from conductor.archive import CycleArchive
 from conductor.briefing import paused_line, build_briefing, build_ruling_briefing, evaluate_threshold_alerts, routing_from_state
 from conductor import lanes
+from conductor.autofarm_sync import run_autofarm_sync
 from conductor.cursors import CursorStore
 from conductor.backoff import RetryClock
 from conductor.game_tick import GameTickError, game_tick_from_overview
@@ -427,6 +428,8 @@ class CycleResult:
     #: standing alert while a bootstrap has been given up on. None when it did
     #: not run (unreadable state, a tripwire or watchdog cycle).
     plan_watch: Optional[Dict[str, Any]] = None
+    #: The autofarm sync phase's report (conductor/autofarm_sync.py), None when not attempted.
+    autofarm_sync: Optional[Dict[str, Any]] = None
     #: How the roles ran this cycle: one entry per run group (roles, whether
     #: they ran concurrently, group and per-run wall seconds), and the role
     #: phase's wall clock in total. Empty/None on paths that run no roles here.
@@ -866,6 +869,9 @@ async def _run_cycle(cycle_index: int, deps: CycleDeps, hold: HoldState) -> Cycl
         deps, call, game_tick, cycle_index, hold, (early_routing or {}).get("frozen_types"), retry_tick,
     )
     plan_watch_dict = _plan_watch_dict(plan_state, season_edge, plan_result)
+    autofarm_report = await run_autofarm_sync(
+        call, deps.policy.autofarm_sync.enabled, held=hold.held, dry_run=deps.dry_run,
+    )
     roadmap_line = (plan_result.roadmap or {}).get("line")
     utilisation = await _utilisation(deps, call, vitals, game_tick, cycle_index)
     lane_wakes = (*lane_wakes, *(LaneWake(w.reason, w.detail, (w.role,)) for w in plan_result.wakes))
@@ -1156,6 +1162,7 @@ async def _run_cycle(cycle_index: int, deps: CycleDeps, hold: HoldState) -> Cycl
         unexecuted=unexecuted, archived_path=None, dry_run=deps.dry_run,
         pause_watch=pause_watch_dict,
         plan_watch=plan_watch_dict,
+        autofarm_sync=autofarm_report.as_dict(),
         execute=execute_report.as_dict() if execute_report is not None else None,
         role_groups=parallel_groups, wall_seconds=round(time.monotonic() - cycle_started, 3),
         plan=(
@@ -1792,6 +1799,7 @@ def _archive(
         "escalated": result.escalated,
         "pause_watch": result.pause_watch,
         "plan_watch": result.plan_watch,
+        "autofarm_sync": result.autofarm_sync,
         "role_groups": result.role_groups,
         "wall_seconds": result.wall_seconds,
         "execute": result.execute,

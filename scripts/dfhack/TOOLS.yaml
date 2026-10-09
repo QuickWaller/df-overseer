@@ -1313,7 +1313,7 @@ df-overseer-farm.lua:
         above, and this session was read-only/dry-run only) -- a real
         forced-failure write (e.g. destroying the plot mid-write) is the
         only thing that could exercise the new error-return path itself.
-      summary: "Sets which crop a farm plot grows in one season."
+      summary: "Operator break-glass: sets which crop a farm plot grows in one season (no role holds it; autofarm overwrites it within about 53 running ticks)."
       guide:
         arguments:
           - name: "ID"
@@ -6683,6 +6683,41 @@ df-overseer-fort.lua:
           minute, and blocking here risks a self-deadlock. With PRIOR_SAVE_DIR given, does not fire
           another save, only reports whether the game's own save-slot record has changed since; call
           this again later, spaced out, rather than in a tight loop.
+        before_a_real_run: []
+        traps: []
+df-overseer-autofarm.lua:
+  build_order_item: "register 2026-10-09 (switch farming to autofarm); research/2026-10-09-autofarm-switch.md"
+  commands:
+    "set DEFAULT [LEVELS]":
+      lua_function: autofarm_set
+      effect: mutate
+      coordinate_bearing: false
+      live_deployed: false
+      verified: "not live-verified (offline build 2026-10-09)"
+      knowledge_scope: player_derivable
+      notes: >
+        Conductor-only, held by no model. Runs `autofarm default N`, one
+        `autofarm threshold N TOKEN` per crop, `enable autofarm`, then reads
+        `autofarm status` back. Writes the plugin's state (kept in the world save),
+        never a plot slot. Idempotent. Autofarm overwrites a plot's current-season
+        crop within about 53 running ticks, so farm.set-crop is break-glass only.
+      summary: "Sets autofarm's default level and per-crop stock levels and enables it."
+      guide:
+        arguments:
+          - name: "DEFAULT"
+            required: true
+            default: null
+            meaning: >-
+              The default stock level, a whole number of plants, 0 or more. 0 means a crop with no
+              level of its own is never planted.
+          - name: "LEVELS"
+            required: false
+            default: null
+            meaning: >-
+              Per-crop levels as TOKEN=N pairs separated by commas, no spaces, e.g.
+              MUSHROOM_HELMET_PLUMP=60,BUSH_QUARRY=0. TOKEN is a plant raw token.
+        returns: >-
+          The default, the crops set, and the plugin's own status text after the change.
         before_a_real_run: []
         traps: []
 df-overseer-vitals.lua:

@@ -58,6 +58,7 @@ import difflib
 import hashlib
 import json
 import math
+import re
 from pathlib import Path
 from typing import Any, Iterable, Mapping, Optional
 
@@ -218,7 +219,44 @@ INFO_CODES = frozenset({
 TARGET_FIELDS = (
     "id", "signal", "per", "want", "reorder", "reorder_gap", "owner",
     "district", "max_in_flight", "note", "roadmap_ref", "deviation_reason",
+    "sync", "crop",
 )
+
+#: A synced target is not served by a role: the conductor writes its computed level
+#: into the named game plugin every cycle (register 2026-10-09, autofarm). `sync`
+#: names the plugin; `crop` is the plugin's key (an autofarm plant raw id, or
+#: `default` for the plugin's default level).
+SYNC_KINDS = ("autofarm",)
+SYNC_DEFAULT_CROP = "default"
+
+
+def is_synced(target: Any) -> bool:
+    """A target the conductor syncs into a game plugin (no owner, no shortfall watch)."""
+    return isinstance(target, Mapping) and target.get("sync") is not None
+
+
+def check_synced(entry: Mapping, eid) -> list[dict]:
+    """Flags for a `sync` target: a known plugin, a crop token, a want of 0 or more.
+    Nothing else applies (no owner, no reorder); a `signal`, if given, is only
+    information and is not measured."""
+    out: list[dict] = []
+    if entry.get("sync") not in SYNC_KINDS:
+        out.append(_flag("targets", eid, "bad_field", f"sync: expected one of {list(SYNC_KINDS)}, got {entry.get('sync')!r}"))
+    crop = entry.get("crop")
+    if not (isinstance(crop, str) and (crop == SYNC_DEFAULT_CROP or re.fullmatch(r"[A-Z][A-Z0-9_]*", crop))):
+        out.append(_flag(
+            "targets", eid, "bad_field",
+            f"crop: expected a plant raw token such as MUSHROOM_HELMET_PLUMP, or {SYNC_DEFAULT_CROP!r} for the default level, got {crop!r}",
+        ))
+    want = entry.get("want")
+    if isinstance(want, Mapping):
+        for pr in want_mapping_problems(want):
+            out.append(_flag("targets", eid, "bad_threshold", f"want: {pr}"))
+        if entry.get("per") is not None:
+            out.append(_flag("targets", eid, "bad_field", "per: not used with a mapping want"))
+    elif not _finite_num(want) or want < 0:
+        out.append(_flag("targets", eid, "bad_threshold", f"want: expected a number of 0 or more (0 means never plant) or a mapping {{per_alive, plus, min, max}}, got {want!r}"))
+    return out
 
 
 class PlanContext:
@@ -344,6 +382,10 @@ def check_target(entry: Mapping, index: int, ctx: PlanContext, pol: Mapping) -> 
     for k in entry:
         if k not in TARGET_FIELDS:
             out.append(_flag("targets", eid, "unknown_field", f"{k}: not a target field (fields: {list(TARGET_FIELDS)})"))
+    if is_synced(entry):
+        return out + check_synced(entry, eid)
+    if "crop" in entry:
+        out.append(_flag("targets", eid, "bad_field", "crop: only used with sync"))
     signal = entry.get("signal")
     if "signal" not in entry:
         out.append(_flag("targets", eid, "bad_signal", "signal: required"))

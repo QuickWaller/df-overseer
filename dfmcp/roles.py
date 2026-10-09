@@ -57,6 +57,8 @@ SYSTEM_CLASS_TOOL_IDS = frozenset({
     # handoffs/2026-10-05-pause-safety.md: closes a popup box a player could
     # close (never resumes). Code's job, like the clock verbs above.
     "pause.dismiss",
+    # register 2026-10-09: the Planner owns crop levels; the conductor applies them.
+    "autofarm.set",
 })
 
 

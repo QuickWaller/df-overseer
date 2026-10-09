@@ -351,15 +351,6 @@ write:
       at z168, verified by a direct struct read (decisions/DECISIONS.md
       2026-09-17). The blueprint is deployed to the guest's dfhack-
       config/blueprints/.
-  - id: "farm.set-crop"
-    status: exists
-    note: >-
-      Same handoff. DRY_RUN defaults to true. Writes
-      building_farmplotst.plant_id[season] directly, by the same pattern as
-      set_labor below. The real write was live-verified 2026-09-17 (plump helmet
-      in all four seasons, read back); a crop written before the plot's
-      construction completes does not survive it, so set the crop after
-      flags.exists (docs/TRAPS.md).
   - id: "workshop.build"
     status: exists
     note: >-
@@ -640,6 +631,11 @@ planned:
 
 # Explicitly denied, not merely absent. Denial is the point.
 deny:
+  - id: "farm.set-crop"
+    reason: >-
+      Autofarm owns crop choice (register 2026-10-09). The Planner sets crop stock levels as
+      plan targets and the conductor syncs them; a plot's crop written here is overwritten by
+      autofarm within about 53 running ticks. The Lua verb stays as operator break-glass.
   - id: "ui.*"
     reason: >-
       Embark-time bootstrap only. Depends on global focus and cursor state, is

@@ -437,7 +437,7 @@ deny:
   - id: "farm.build"
     reason: Advisors do not act. Propose it.
   - id: "farm.set-crop"
-    reason: Advisors do not act. Propose it.
+    reason: Autofarm owns crop choice (register 2026-10-09); the Planner sets crop levels as plan targets.
   - id: "workshop.build"
     reason: Advisors do not act. Propose it.
   - id: "zone.place"

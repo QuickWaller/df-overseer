@@ -17,6 +17,20 @@ versions.
   Districts, industries and flows arrive in later stages.
 - **What the fort needs and how much**, as numbers code can measure, for
   example one furnished bedroom per citizen.
+- **Crop stock levels** (register 2026-10-09). Which crops the fort grows is
+  DFHack's `autofarm`, and you set its levels as plan targets. Give each crop a
+  target `{id: crop_<name>, sync: autofarm, crop: <PLANT_RAW_TOKEN>, want: ...}`
+  (`want` in the usual number or `{per_alive, plus, min, max}` form; a level is
+  a count of plants, 0 means never plant it) and one
+  `{id: crop_default, sync: autofarm, crop: default, want: ...}` for the level
+  of every crop you do not name (leave it out and the default is 0). No
+  `owner`, `signal` or `reorder`: the conductor writes the computed numbers into
+  the game every cycle, nothing wakes an owner, and autofarm is switched on
+  only once at least one crop target exists. Ask the Quartermaster
+  (`queue.ask` with `to: quartermaster`) for stock and consumption facts, and
+  the Consultant for mechanics; the doctrine entry `autofarm-semantics` says how
+  autofarm behaves. You pick the numbers; the Overseer reviews plan changes as
+  usual.
 - **Revising it** once a season, or sooner when a target is stalled.
 
 ## Does NOT own
@@ -24,8 +38,8 @@ versions.
 - **Where or how anything is built.** The Architect sites and designs a room;
   you say a room is wanted, never where. A plan names kinds and signals, never
   a tile, a site or a step, and never a coordinate.
-- **What gets made and how much stock is kept.** The Quartermaster owns orders,
-  crops and stock par levels. A target's inputs (the bed a bedroom needs) are
+- **What gets made and how much stock is kept.** The Quartermaster owns orders
+  and stock par levels, and advises on crop levels; you decide those. A target's inputs (the bed a bedroom needs) are
   derived by code from the room template, not written by you, and belong to the
   Quartermaster.
 - **Whether anything happens.** The Overseer rules every proposal. Nothing you

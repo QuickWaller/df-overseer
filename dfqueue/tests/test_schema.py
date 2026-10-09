@@ -535,12 +535,12 @@ def test_escalation_rejects_an_unknown_field():
 
 def test_quartermaster_type_vocabulary_is_the_three_mvp_types():
     assert schema.TYPE_VOCAB_BY_ROLE["quartermaster"] == (
-        schema.WORK_ORDER, schema.CROP_PLAN, schema.STOCK_TARGET,
+        schema.WORK_ORDER, schema.STOCK_TARGET,
     )
 
 
 @pytest.mark.parametrize("ptype", [
-    schema.WORK_ORDER, schema.CROP_PLAN, schema.STOCK_TARGET,
+    schema.WORK_ORDER, schema.STOCK_TARGET,
 ])
 def test_quartermaster_proposal_with_an_own_type_only_fails_on_enabled_role(
     monkeypatch, ptype,
