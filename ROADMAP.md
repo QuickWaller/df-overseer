@@ -170,14 +170,7 @@ or `decisions/DECISIONS.md`, not here.
   routed proposal steps; pause line in briefings; paused-fort retries;
   attribution by author and parallel proposers (flag off); every role on
   DeepSeek Flash (trial; cycles drop from ~20 min to ~2 min). The real
-  DeepSeek bill is 3-5x the logged cost. **Open, in order:** (1) plan v2
-  read by the user, then the shortage watch; (2) judge Flash; fix Metrics
-  cost to real rates; land loop signals; decide whether the hold also stops
-  the Overseer's direct writes; (3) user decisions: stock claims (item
-  binding 1-6), sessions v1 (7-11), thinking effort and a conductor-side
-  reasoning stop (12-15); (4) circulation C2/C4 and the supervised
-  bedroom-block retrofit; (5) phase 1 live checks and a staged arm
-  (user's yes on the day). Later: Logistics, workshop rooms, the Elder,
+  DeepSeek bill is 3-5x the logged cost. **Done 2026-10-09 (checkpoint 1):** plan v2 adopted (hamlet), shortage watch ON (silent under the hold), loop signals and real-rate costs on Metrics, housekeeping merged, and the user decided stateless stock checks (no claim ledger), holds as briefing lines, cleanup of only our own stale jobs/orders, sessions on openclaw's Gateway with an inbox derived from conductor state, and today's 10/20 min run limits kept. **Open, in order:** (1) deploy ea12ff5 (want mappings), Planner re-files dining_tables with its floor; (2) deploy `vm103-dfhack-init`; (3) build the stateless stock check, sessions v1, effort per wake reason; (4) user decisions 10, 11, 13, 14, hold vs Overseer direct writes, DFHack rulings, autofarm vs farm.setcrop, and the auto-mine idea; (5) circulation C2/C4 and the supervised bedroom-block retrofit; (6) phase 1 live checks and a staged arm (user's yes on the day). Later: Logistics, workshop rooms, the Elder,
   evidence-based tool cuts, openclaw decision models. → `Working.md`
   START HERE (late 2026-10-08), `decisions/DECISIONS.md` 2026-10-08/09
   rows, `research/2026-10-08-*`, `evals/live/2026-10-08-*`.
