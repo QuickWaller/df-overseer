@@ -346,6 +346,83 @@ class AutofarmSyncPolicy:
 
 
 @dataclass(frozen=True)
+class CoverRule:
+    """policy.yaml `sessions.covers`: how a lane item is matched to a role's OWN
+    open proposal by typed step identity (`dfqueue/step_identity.yaml`). `kind`
+    is the lane key prefix (`ore`, `unsupplied`, `noble_room`); `part` the
+    zero-based `:`-separated part of the rest of the key that names the thing;
+    `tool` and `arg` the open proposal step whose argument `arg` must equal it.
+    A kind with no rule here is never matched (untyped)."""
+    kind: str
+    tool: str
+    arg: str
+    part: int = 0
+
+
+#: News classes (conductor/news.py). `actionable` triggers a turn, `informational`
+#: rides the next message, `last` is actionable only for the last step of a
+#: project, `urgent` is actionable only when the event is flagged urgent (the
+#: stock-hold thresholds of register 3a).
+NEWS_CLASSES = ("actionable", "informational", "last", "urgent")
+
+SESSION_MODES = ("one_shot", "session")
+
+#: The event kinds `sessions.news` classifies (conductor/news.py raises each).
+NEWS_KINDS = (
+    "step_done", "step_attention", "stock_hold", "ruling_accept", "ruling_reject", "ruling_defer",
+    "ruling_amend", "ask_answered", "prediction_missed", "stuck_job", "dig_cancel", "cavern_breach",
+    "alarm", "pause_change",
+)
+
+_DEFAULT_NEWS = {
+    "step_done": "last", "step_attention": "actionable", "stock_hold": "urgent",
+    "ruling_accept": "informational", "ruling_reject": "actionable", "ruling_defer": "actionable",
+    "ruling_amend": "actionable", "ask_answered": "actionable", "prediction_missed": "actionable",
+    "stuck_job": "actionable", "dig_cancel": "informational", "cavern_breach": "actionable",
+    "alarm": "actionable", "pause_change": "informational",
+}
+
+
+@dataclass(frozen=True)
+class SessionsPolicy:
+    """policy.yaml `sessions` (research/2026-10-09-gateway-sessions-v1.md section 15;
+    register 2026-10-09 "Session layout", "Session concurrency", "Overseer
+    bottleneck"). Ships OFF: `enabled: false`, and every role one-shot, so nothing
+    changes until a role is flipped to `session`."""
+    enabled: bool = False
+    #: role -> `one_shot` or `session`. A role not listed is one-shot.
+    modes: Dict[str, str] = field(default_factory=dict)
+    #: One adaptive limit on simultaneous model TURNS (not open sessions).
+    concurrency_start: int = 6
+    concurrency_min: int = 1
+    concurrency_max: int = 6
+    #: A turn longer than this counts as a slow turn and lowers the limit.
+    slow_turn_seconds: float = 300.0
+    #: Clean turns in a row before the limit is raised by one.
+    raise_after_clean_turns: int = 10
+    #: Consecutive cycles ending below the starting limit before the operator is alerted.
+    alert_after_cycles: int = 3
+    #: Gap between turn starts of the same role (a warm prompt cache).
+    stagger_seconds: float = 1.5
+    #: A session whose last turn's prompt passes this is dropped and re-briefed.
+    size_cap_tokens: int = 120000
+    #: The Overseer is handed this many or more waiting proposals as one batch.
+    overseer_batch_threshold: int = 3
+    #: Most news lines in one message ("and k more" after).
+    news_max_lines: int = 8
+    #: Parked informational news kept per role in sessions_state.json.
+    parked_news_cap: int = 50
+    news: Dict[str, str] = field(default_factory=lambda: dict(_DEFAULT_NEWS))
+    covers: Tuple[CoverRule, ...] = ()
+
+    def mode_of(self, role: str) -> str:
+        return self.modes.get(role, "one_shot") if self.enabled else "one_shot"
+
+    def session_roles(self) -> Tuple[str, ...]:
+        return tuple(r for r, m in self.modes.items() if self.enabled and m == "session")
+
+
+@dataclass(frozen=True)
 class Policy:
     base_fps: int
     think_fps: int
@@ -408,6 +485,8 @@ class Policy:
     plan: PlanPolicy = field(default_factory=PlanPolicy)
     #: The autofarm sync phase (policy.yaml `autofarm_sync`).
     autofarm_sync: AutofarmSyncPolicy = field(default_factory=AutofarmSyncPolicy)
+    #: Gateway sessions (policy.yaml `sessions`, conductor/sessions.py). Off by default.
+    sessions: SessionsPolicy = field(default_factory=SessionsPolicy)
     #: How many of a proposer's newest filings its briefing shows (policy.yaml
     #: `own_filings.recent`); 0 turns the block off.
     own_filings_recent: int = 5
@@ -787,6 +866,60 @@ def _load_plan(raw, path: Path) -> PlanPolicy:
     )
 
 
+def _load_sessions(raw, path: Path) -> SessionsPolicy:
+    """The `sessions:` block. Absent means off and every role one-shot."""
+    if raw is None:
+        return SessionsPolicy()
+    where = f"{path}: sessions"
+    if not isinstance(raw, dict):
+        raise PolicyError(f"{where} must be a mapping")
+    base = SessionsPolicy()
+    modes = raw.get("modes") or {}
+    if not isinstance(modes, dict) or not all(isinstance(k, str) and v in SESSION_MODES for k, v in modes.items()):
+        raise PolicyError(f"{where}.modes must map a role to one of {SESSION_MODES}")
+    craw = raw.get("concurrency") or {}
+    if not isinstance(craw, dict):
+        raise PolicyError(f"{where}.concurrency must be a mapping")
+    cw = f"{where}.concurrency"
+    start = _pos_int(craw, "start", base.concurrency_start, cw)
+    cmin = _pos_int(craw, "min", base.concurrency_min, cw)
+    cmax = _pos_int(craw, "max", max(start, base.concurrency_max), cw)
+    if not cmin <= start <= cmax:
+        raise PolicyError(f"{cw}: need min <= start <= max")
+    news = dict(_DEFAULT_NEWS)
+    nraw = raw.get("news") or {}
+    if not isinstance(nraw, dict):
+        raise PolicyError(f"{where}.news must be a mapping")
+    for kind, cls in nraw.items():
+        if kind not in NEWS_KINDS:
+            raise PolicyError(f"{where}.news.{kind}: unknown news kind (one of {NEWS_KINDS})")
+        if cls not in NEWS_CLASSES:
+            raise PolicyError(f"{where}.news.{kind} must be one of {NEWS_CLASSES}")
+        news[kind] = cls
+    covers = []
+    for i, c in enumerate(raw.get("covers") or []):
+        if not isinstance(c, dict) or not all(isinstance(c.get(k), str) and c.get(k) for k in ("kind", "tool", "arg")):
+            raise PolicyError(f"{where}.covers[{i}] needs kind, tool and arg strings")
+        part = c.get("part", 0)
+        if isinstance(part, bool) or not isinstance(part, int) or part < 0:
+            raise PolicyError(f"{where}.covers[{i}].part must be a non-negative integer")
+        covers.append(CoverRule(c["kind"], c["tool"], c["arg"], part))
+    return SessionsPolicy(
+        enabled=_flag(raw, "enabled", base.enabled, where),
+        modes=dict(modes),
+        concurrency_start=start, concurrency_min=cmin, concurrency_max=cmax,
+        slow_turn_seconds=_nonneg_float(craw, "slow_turn_seconds", base.slow_turn_seconds, cw),
+        raise_after_clean_turns=_pos_int(craw, "raise_after_clean_turns", base.raise_after_clean_turns, cw),
+        alert_after_cycles=_pos_int(craw, "alert_after_cycles", base.alert_after_cycles, cw),
+        stagger_seconds=_nonneg_float(raw, "stagger_seconds", base.stagger_seconds, where),
+        size_cap_tokens=_pos_int(raw, "size_cap_tokens", base.size_cap_tokens, where),
+        overseer_batch_threshold=_pos_int(raw, "overseer_batch_threshold", base.overseer_batch_threshold, where),
+        news_max_lines=_pos_int(raw, "news_max_lines", base.news_max_lines, where),
+        parked_news_cap=_pos_int(raw, "parked_news_cap", base.parked_news_cap, where),
+        news=news, covers=tuple(covers),
+    )
+
+
 def load_policy(path: "Path | str" = DEFAULT_POLICY_PATH) -> Policy:
     """Load and validate `conductor/policy.yaml` (or an override path, e.g.
     a test fixture). Raises `PolicyError` for anything malformed -- a typo
@@ -856,6 +989,7 @@ def load_policy(path: "Path | str" = DEFAULT_POLICY_PATH) -> Policy:
     repeat_limit, repeat_window = _load_tripwire_repeat(doc.get("tripwire_repeat"), path)
     execution = _with_hold_policies(_load_execution(doc.get("execution"), path), doc, path)
     plan = _load_plan(doc.get("plan"), path)
+    sessions = _load_sessions(doc.get("sessions"), path)
     own_raw = doc.get("own_filings") or {}
     if not isinstance(own_raw, dict):
         raise PolicyError(f"{path}: own_filings must be a mapping")
@@ -877,6 +1011,7 @@ def load_policy(path: "Path | str" = DEFAULT_POLICY_PATH) -> Policy:
         lane_triggers=lane_triggers,
         execution=execution,
         plan=plan,
+        sessions=sessions,
         autofarm_sync=AutofarmSyncPolicy(
             enabled=_flag(doc.get("autofarm_sync") or {}, "enabled", False, f"{path}: autofarm_sync")),
         threshold_alerts=tuple(alerts),

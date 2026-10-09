@@ -348,6 +348,30 @@ def _fmt_cited(c: Mapping[str, Any]) -> str:
     return line
 
 
+def format_proposal_lines(p: Mapping[str, Any], routed_types: Any = ()) -> List[str]:
+    """One pending proposal as the ruling briefing shows it (also the Overseer
+    session's per-proposal item, conductor/sessions.py): headline, rationale,
+    prediction and cost, citations, duplicate and overlap flags."""
+    out: List[str] = []
+    pred = p.get("prediction") or {}
+    cost = p.get("cost") or {}
+    out.append(f"- {p.get('id')} [{p.get('role')}, {p.get('type')}] priority {p.get('priority')}: {p.get('summary')}")
+    if p.get("type") in set(routed_types or ()):
+        out.append("  Routed: if you accept it, the conductor runs it. Rule only.")
+    out.append(f"  Rationale: {p.get('rationale')}")
+    out.append(
+        f"  Prediction: {pred.get('signal')} {pred.get('op')} {pred.get('value')} "
+        f"within {pred.get('check_after_ticks')} ticks. Cost: {cost.get('estimate')} {cost.get('unit')}."
+    )
+    for c in p.get("cited") or []:
+        out.append(f"  Cites: {_fmt_cited(c)}")
+    if p.get("duplicate_of"):
+        out.append(f"  Duplicate of {p['duplicate_of']}.")
+    if p.get("overlaps"):
+        out.append(f"  Overlaps {', '.join(p['overlaps'])}.")
+    return out
+
+
 def build_ruling_briefing(
     *, game_tick: int, wake: Wake, vitals: Mapping[str, Any], alerts: Sequence[str],
     pending_brief: Optional[Mapping[str, Any]], diff_events: Sequence[Mapping[str, Any]] = (),
@@ -409,22 +433,7 @@ def build_ruling_briefing(
     out.append(f"PENDING PROPOSALS ({shown} shown of {count})")
     routed_types = set((routing or {}).get("routed_types") or ())
     for p in proposals:
-        pred = p.get("prediction") or {}
-        cost = p.get("cost") or {}
-        out.append(f"- {p.get('id')} [{p.get('role')}, {p.get('type')}] priority {p.get('priority')}: {p.get('summary')}")
-        if p.get("type") in routed_types:
-            out.append("  Routed: if you accept it, the conductor runs it. Rule only.")
-        out.append(f"  Rationale: {p.get('rationale')}")
-        out.append(
-            f"  Prediction: {pred.get('signal')} {pred.get('op')} {pred.get('value')} "
-            f"within {pred.get('check_after_ticks')} ticks. Cost: {cost.get('estimate')} {cost.get('unit')}."
-        )
-        for c in p.get("cited") or []:
-            out.append(f"  Cites: {_fmt_cited(c)}")
-        if p.get("duplicate_of"):
-            out.append(f"  Duplicate of {p['duplicate_of']}.")
-        if p.get("overlaps"):
-            out.append(f"  Overlaps {', '.join(p['overlaps'])}.")
+        out.extend(format_proposal_lines(p, routed_types))
 
     todo = [str(i) for i in to_carry_out][:MAX_QUEUE_IDS]
     if todo:

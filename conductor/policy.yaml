@@ -609,3 +609,57 @@ space_survey:
   enabled: true
   min_tiles: 12
   min_rectangularity: 0.6
+
+# Gateway sessions (research/2026-10-09-gateway-sessions-v1.md section 15; register
+# 2026-10-09 "Session layout", "Session concurrency", "Overseer bottleneck"). Ships
+# OFF and every role one-shot: nothing changes live until `enabled: true` AND a role
+# is set to `session` under `modes` (roles not listed are one-shot). Needs the
+# Gateway (infra/units/openclaw) up; with the Gateway down a session role runs
+# one-shot that cycle (session_runner.decide_route).
+sessions:
+  enabled: false
+  modes: {}
+  # No per-role caps: one adaptive limit on simultaneous model turns. Lowered one
+  # step on a transport_lost, a timeout, an errored turn or a turn slower than
+  # slow_turn_seconds; raised one step after raise_after_clean_turns clean turns;
+  # alerted when it ends alert_after_cycles cycles in a row below `start`.
+  concurrency:
+    start: 6
+    min: 1
+    max: 6
+    slow_turn_seconds: 300
+    raise_after_clean_turns: 10
+    alert_after_cycles: 3
+  stagger_seconds: 1.5
+  # A session whose last prompt (input + cache read) passes this is dropped; its next
+  # activation opens a fresh key with a re-brief built from the queue.
+  size_cap_tokens: 120000
+  # The Overseer's session gets waiting proposals one at a time, or as one batch when
+  # this many or more are waiting.
+  overseer_batch_threshold: 3
+  news_max_lines: 8
+  parked_news_cap: 50
+  # News class per event kind: actionable (starts a turn), informational (rides the
+  # next message), last (actionable only for a project's last step), urgent
+  # (actionable only for a survival, old or blocking stock hold, register 3a).
+  news:
+    step_done: last
+    step_attention: actionable
+    stock_hold: urgent
+    ruling_accept: informational
+    ruling_reject: actionable
+    ruling_defer: actionable
+    ruling_amend: actionable
+    ask_answered: actionable
+    prediction_missed: actionable
+    stuck_job: actionable
+    dig_cancel: informational
+    cavern_breach: actionable
+    alarm: actionable
+    pause_change: informational
+  # A lane fact the role's OWN open proposal already covers is routed to that
+  # proposal's session as news, not a new draft. Matched on typed step identity
+  # (dfqueue/step_identity.yaml): the lane key's `part`-th piece must equal the
+  # open step's `arg`. Only typed kinds are matched; the next kind is one entry.
+  covers:
+    - {kind: ore, tool: construction.mine-vein-site, arg: site_id, part: 0}
