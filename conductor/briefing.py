@@ -46,6 +46,7 @@ MAX_LEDGER_ROWS = 10
 #: the count is always the full figure, the lines are the oldest few.
 MAX_STUCK_JOB_LINES = 5
 MAX_ORE_LINES = 5
+MAX_SPACE_LINES = 3
 
 #: The block's standing instruction (after the stable prefix, before the ask).
 FILINGS_NOTE = (
@@ -183,6 +184,7 @@ def build_briefing(
     utilisation: Optional[Mapping[str, Any]] = None,
     paused: Optional[str] = None,
     automine_notes: Optional[Sequence[str]] = None,
+    unused_space: Optional[Sequence[str]] = None,
 ) -> Dict[str, Any]:
     """One role's briefing for this cycle. `vitals` is `vitals.summary`'s own
     result, passed through as-is (already Tier 0 by construction -- see
@@ -242,6 +244,10 @@ def build_briefing(
         # One line per standing exposure (handoffs/2026-10-05-ore-exposed-signal.md),
         # only for a role whose lane carries ore; absent when nothing is exposed.
         briefing["ore_exposed"] = _capped([str(s)[:200] for s in ore_exposed], MAX_ORE_LINES)
+    if unused_space:
+        # Register 2026-10-09: new sizeable dug space nobody uses (conductor/space_watch.py).
+        # Information only, never a wake reason; absent when nothing is new.
+        briefing["unused_dug_space"] = _capped([str(s)[:220] for s in unused_space], MAX_SPACE_LINES)
     if frozen_types:
         # docs/CONDUCTOR-EXECUTION.md 6.6 (2b): a group frozen ahead of its cutover.
         # Skipped, not refused (the user's call): the role does not file these types.

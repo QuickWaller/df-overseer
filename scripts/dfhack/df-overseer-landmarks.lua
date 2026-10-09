@@ -412,6 +412,15 @@ function build_at_landmark(name, blueprint_file, res_id, override)
   }
 end
 
+-- Server-side only (real coordinates): every landmark as {name, kind, x, y, z}.
+-- For read-only surveys that rank landmarks by distance themselves
+-- (df-overseer-spacesurvey.lua). Never return the result to an agent.
+function landmarks_with_coords()
+  local landmarks, err = merged_landmarks_with_coords()
+  if err then return nil, err end
+  return landmarks
+end
+
 function nearest_landmark(x, y, z)
   local landmarks, err = merged_landmarks_with_coords()
   if err then

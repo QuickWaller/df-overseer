@@ -123,6 +123,7 @@
 -- result today -- it closes the structural gap rather than a live leak.
 --
 -- Usage: ./dfhack-run df-overseer-openarea find W H [LEVEL] NEAR_LANDMARK [RADIUS_TILES] [RES_ID]
+-- Usage: ./dfhack-run df-overseer-openarea survey [MIN_TILES] [MAX_RESULTS]
 -- Usage: ./dfhack-run df-overseer-openarea build W H [LEVEL] NEAR_LANDMARK BLUEPRINT_FILE [RANK] [RADIUS_TILES] [RES_ID] [OVERRIDE]
 
 local json = require('json')
@@ -416,6 +417,13 @@ function build_open_area(w, h, level, near, blueprint_file, rank, radius_tiles, 
   }
 end
 
+-- Read-only survey of unused dug space (register 2026-10-09). The logic lives
+-- in df-overseer-spacesurvey.lua; see its header. Numbers and names only.
+function survey_open_space(min_tiles, max_results)
+  local spacesurvey = reqscript('df-overseer-spacesurvey')
+  return spacesurvey.survey_live(min_tiles, max_results)
+end
+
 -- Same module-load guard as the other df-overseer-*.lua scripts.
 if dfhack_flags.module then
   return
@@ -442,6 +450,8 @@ if cmd == "find" then
     local results, err = find_open_area(w, h, level, near, radius, res_id)
     print(json.encode(err and {error = err} or results))
   end
+elseif cmd == "survey" then
+  print(json.encode(survey_open_space(tonumber(args[2]), tonumber(args[3]))))
 elseif cmd == "build" then
   local w, h = tonumber(args[2]), tonumber(args[3])
   local level, near, blueprint, rank, radius, res_id, override
@@ -461,6 +471,7 @@ elseif cmd == "build" then
   end
 else
   print("usage: df-overseer-openarea find W H [LEVEL] NEAR_LANDMARK [RADIUS_TILES] [RES_ID]")
+  print("usage: df-overseer-openarea survey [MIN_TILES] [MAX_RESULTS]")
   print("usage: df-overseer-openarea build W H [LEVEL] NEAR_LANDMARK"
     .. " BLUEPRINT_FILE [RANK] [RADIUS_TILES] [RES_ID] [OVERRIDE]")
 end
