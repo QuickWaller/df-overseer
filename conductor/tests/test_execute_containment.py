@@ -137,3 +137,35 @@ async def test_a_ruling_with_no_overseer_run_at_all_is_not_run(tmp_path):
     deps = _deps(tmp_path, tools=_tools())
     result = await run_cycle(1, deps)
     assert "queue.run_step" not in _names(deps) and result.execute["errors"]
+
+
+# ---- the one-time grandfather ------------------------------------------------------------
+
+
+async def test_rulings_present_at_first_run_are_grandfathered_later_ones_are_not():
+    snap = {**_snap("ruling-0003"), "ruling_ids": ["ruling-0001", "ruling-0003"]}
+    state = ExecuteState()
+    script = Script(snap, {"queue.run_step": SUCCESS})
+    report = await _run(script, state)
+    assert script.names().count("queue.run_step") == 1 and report.errors == []
+    assert state.grandfathered and state.activations["legacy"]["records"] == ["ruling-0001", "ruling-0003"]
+    # a ruling made after cutover is in no activation: not run, alerted
+    later = Script({**_snap("ruling-0005"), "ruling_ids": ["ruling-0001", "ruling-0003", "ruling-0005"]},
+                   {"queue.run_step": SUCCESS})
+    again = await _run(later, state)
+    assert "queue.run_step" not in later.names() and "ruling-0005" in again.errors[0]
+    assert state.activations["legacy"]["records"] == ["ruling-0001", "ruling-0003"]
+
+
+async def test_no_ruling_ids_from_the_server_grandfathers_nothing_and_legacy_survives_pruning(tmp_path):
+    state = ExecuteState()
+    await _run(Script(_snap(), {"queue.run_step": SUCCESS}), state)
+    assert not state.grandfathered and "legacy" not in state.activations
+    await _run(Script({**_snap(), "ruling_ids": ["ruling-0009"]}, {"queue.run_step": SUCCESS}), state)
+    for i in range(250):
+        record_activation(state, activation_id=f"a{i}", role="overseer", run_id=None, opened_at="t",
+                          closed_at="t", records=[])
+    assert "legacy" in state.activations
+    store = ExecuteStore(tmp_path / "s.json")
+    store.save(state)
+    assert store.load().grandfathered

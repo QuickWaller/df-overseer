@@ -41,6 +41,7 @@ from __future__ import annotations
 import json
 import logging
 import tempfile
+from datetime import datetime, timezone
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Awaitable, Callable, Dict, List, Mapping, Optional, Sequence, Tuple
@@ -108,10 +109,13 @@ class ExecuteState:
     activations: Dict[str, Dict[str, Any]] = field(default_factory=dict)
     #: Rulings already alerted as uncontained, so each is named once, not every cycle.
     uncontained: List[str] = field(default_factory=list)
+    #: One-time grandfather: set once the `legacy` activation (every ruling that existed when
+    #: containment first ran) has been recorded.
+    grandfathered: bool = False
 
 
 _FIELDS = ("since", "sent", "uncertain", "transient", "unknown", "attention", "ore_held",
-           "refused", "cleanup_failed", "idle", "roles", "direct", "holds", "activations", "uncontained")
+           "refused", "cleanup_failed", "idle", "roles", "direct", "holds", "activations", "uncontained", "grandfathered")
 
 #: Containment applies to rulings written by this role (the roster's sole writer).
 CONTAINED_ROLE = "overseer"
@@ -128,8 +132,8 @@ def record_activation(
         "role": role, "run_id": run_id, "opened_at": opened_at, "closed_at": closed_at,
         "records": [str(r) for r in (records or ())],
     }
-    for old in list(state.activations)[:-ACTIVATIONS_KEEP]:
-        del state.activations[old]
+    for old in [a for a in state.activations if a != "legacy"][:-ACTIVATIONS_KEEP]:
+        del state.activations[old]  # the grandfather record is never pruned
 
 
 def contained_record_ids(state: ExecuteState, role: str = CONTAINED_ROLE) -> "set[str]":
@@ -676,6 +680,15 @@ async def run_execute(
         ph.report.skipped = "queue.execution_state could not be read"
         ph.report.ran = False
         return ph.report
+    ids = snap.get("ruling_ids")
+    if not state.grandfathered and isinstance(ids, list):
+        # Rulings that exist when containment first runs keep executing as before; only later
+        # rulings need a real activation. A server that sends no `ruling_ids` grandfathers nothing.
+        now = datetime.now(timezone.utc).isoformat()
+        record_activation(state, activation_id="legacy", role=CONTAINED_ROLE, run_id=None, opened_at=now,
+                          closed_at=now, records=ids)
+        state.grandfathered = True
+        ph.report.act("grandfathered", rulings=len(ids))
     if await ph.resolve_uncertain(snap.get("unresolved_runs") or ()):
         snap = await ph.read_state() or snap
     if await ph.open_and_apply(snap):

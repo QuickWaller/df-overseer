@@ -406,6 +406,7 @@ def _execution_state_sync(arguments: Mapping[str, Any], db_path: Any) -> Tuple[s
             "awaiting_cleanup": store.projects_awaiting_cleanup(db_path),
             "done_since": done_since,
             "latest_observation_id": latest,
+            "ruling_ids": [r["id"] for r in records if r.get("kind") == "ruling"],
         }
     return (
         f"{len(opens)} open, {len(ready)} ready, {len(issued)} issued, {len(out['to_open'])} to open, "
