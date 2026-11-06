@@ -371,7 +371,7 @@ SESSION_MODES = ("one_shot", "session")
 NEWS_KINDS = (
     "step_done", "step_attention", "stock_hold", "ruling_accept", "ruling_reject", "ruling_defer",
     "ruling_amend", "ask_answered", "prediction_missed", "stuck_job", "dig_cancel", "cavern_breach",
-    "alarm", "pause_change",
+    "alarm", "pause_change", "lane_covered",
 )
 
 _DEFAULT_NEWS = {
@@ -379,7 +379,7 @@ _DEFAULT_NEWS = {
     "ruling_accept": "informational", "ruling_reject": "actionable", "ruling_defer": "actionable",
     "ruling_amend": "actionable", "ask_answered": "actionable", "prediction_missed": "actionable",
     "stuck_job": "actionable", "dig_cancel": "informational", "cavern_breach": "actionable",
-    "alarm": "actionable", "pause_change": "informational",
+    "alarm": "actionable", "pause_change": "informational", "lane_covered": "informational",
 }
 
 

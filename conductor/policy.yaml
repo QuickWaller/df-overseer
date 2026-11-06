@@ -172,6 +172,12 @@ wake_reasons:
   ruling_on_own:
     clock: full_speed
     wakes: []
+  # Actionable news for a session-mode role (conductor/sessions.py): a reject, defer or
+  # amend ruling, an urgent stock hold, a missed prediction, a fort-wide alarm. Inert while
+  # `sessions.enabled` is false. The role comes from the news event, never from here.
+  session_news:
+    clock: full_speed
+    wakes: []
   # Which role wakes is read per stuck job from `lane_triggers.<role>.
   # stuck_jobs` below; this list is only the fallback when no lane is defined.
   stuck_job:
@@ -657,6 +663,7 @@ sessions:
     cavern_breach: actionable
     alarm: actionable
     pause_change: informational
+    lane_covered: informational
   # A lane fact the role's OWN open proposal already covers is routed to that
   # proposal's session as news, not a new draft. Matched on typed step identity
   # (dfqueue/step_identity.yaml): the lane key's `part`-th piece must equal the
